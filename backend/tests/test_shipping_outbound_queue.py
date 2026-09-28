@@ -93,6 +93,8 @@ def test_list_batches_sync_events_and_counts_nonempty_page_once(db, waiting):
     assert len(rows) == total == 2
     assert sum("COUNT(*) OVER ()" in sql for sql in statements) == 1
     assert not any("SELECT COUNT(*) FROM (" in sql for sql in statements)
+    assert not any("SELECT COUNT(*) FROM `lsordertest`.`okki_outbound_records`" in sql
+                   for sql in statements)
     assert sum("FROM ark_shipping_operation_events" in sql
                and "ark_shipping_operation_events.scope" in sql
                for sql in statements) == 1

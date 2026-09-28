@@ -322,10 +322,12 @@ def list_outbound_records(
     page_size: int = 20,
     okki_user_id: str | None = None,
     record_ids: list[str] | None = None,
+    count_total: bool = True,
 ) -> tuple[list[dict], int]:
     """出库单分页列表：keyword 匹配单号/客户，date 按出库日期过滤（含当日）。
 
     okki_user_id 非空时按本地方舟订单归属或既有 OKKI 镜像归属过滤。
+    count_total=False 用于上层已计算总数的队列分页补数。
     """
     rm = _record_columns(db)
     im = _item_columns(db)
@@ -341,48 +343,45 @@ def list_outbound_records(
         query = text(sql)
         return query.bindparams(bindparam("record_ids", expanding=True)) if record_ids is not None else query
 
-    # 明细统计左连：明细表缺关联列时降级为 0，不拖垮主查询
+    # Aggregate only the selected page, not the entire OKKI item mirror.
     link, rm, im = _link(db)
-    stats_join = ""
-    item_count_expr = "0"
-    total_qty_expr = "0"
-    if link is not None:
-        qty_expr = f"SUM(i.`{im['quantity']}`)" if im["quantity"] else "NULL"
-        if link == "invoice":
-            join_key_item = im["invoice_id"]
-            join_key_record = rm["invoice_id"]
-        else:
-            join_key_item = im["record_id"]
-            join_key_record = rm["id"]
-        stats_join = f"""
-            LEFT JOIN (
-                SELECT i.`{join_key_item}` AS link_key,
-                       COUNT(*) AS item_count,
-                       {qty_expr} AS total_qty
-                FROM `{schema}`.`{ITEMS_TABLE}` i
-                GROUP BY i.`{join_key_item}`
-            ) s ON s.link_key = r.`{join_key_record}`
-        """
-        item_count_expr = "COALESCE(s.item_count, 0)"
-        total_qty_expr = "COALESCE(s.total_qty, 0)" if im["quantity"] else "0"
-
     order_by = f"r.`{rm['outbound_date']}` DESC, " if rm["outbound_date"] else ""
-    total = db.execute(statement(f"""
-        SELECT COUNT(*) FROM `{schema}`.`{RECORDS_TABLE}` r {where}
-    """), params).scalar() or 0
+    total = 0
+    if count_total:
+        total = db.execute(statement(f"""
+            SELECT COUNT(*) FROM `{schema}`.`{RECORDS_TABLE}` r {where}
+        """), params).scalar() or 0
 
     rows = db.execute(statement(f"""
-        SELECT {_record_select(rm)},
-               {item_count_expr} AS item_count,
-               {total_qty_expr} AS total_qty
+        SELECT {_record_select(rm)}
         FROM `{schema}`.`{RECORDS_TABLE}` r
-        {stats_join}
         {where}
         ORDER BY {order_by} r.`{rm['id']}` DESC
         LIMIT :limit OFFSET :offset
     """), {**params, "limit": page_size, "offset": (page - 1) * page_size}).mappings().all()
     from app.shipping_inspection.outbound_sync_state import apply_header
-    records = [_map_record_row(row) for row in rows]
+    stats = {}
+    record_key = "outbound_invoice_id" if link == "invoice" else "outbound_record_id"
+    if rows and link is not None:
+        item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
+        link_keys = {row[record_key] for row in rows if row[record_key] is not None}
+        if link_keys:
+            qty_expr = f"SUM(i.`{im['quantity']}`)" if im["quantity"] else "0"
+            stats_rows = db.execute(text(f"""
+                SELECT i.`{item_key}` AS link_key, COUNT(*) AS item_count,
+                       {qty_expr} AS total_qty
+                FROM `{schema}`.`{ITEMS_TABLE}` i
+                WHERE i.`{item_key}` IN :link_keys
+                GROUP BY i.`{item_key}`
+            """).bindparams(bindparam("link_keys", expanding=True)),
+                {"link_keys": list(link_keys)}).mappings().all()
+            stats = {str(item["link_key"]): item for item in stats_rows}
+
+    records = []
+    for row in rows:
+        item_stats = stats.get(str(row[record_key])) if link else None
+        records.append(_map_record_row({**row, "item_count": item_stats["item_count"] if item_stats else 0,
+                                        "total_qty": item_stats["total_qty"] if item_stats else 0}))
     if records:
         ids = order_ids_for_records(db, [record["outbound_record_id"] for record in records])
         for record in records:
@@ -399,7 +398,7 @@ def list_outbound_records(
             event = by_record.get(record["outbound_record_id"])
             if event is not None:
                 apply_header(db, record, event=event)
-    return records, int(total)
+    return records, int(total if count_total else len(records))
 
 
 def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = None, *, include_deleted=False) -> dict | None:
