@@ -20,6 +20,7 @@
       <div class="trend-stat"><span>最近 20 个观测日</span><strong :class="changeClass(market?.trend?.change_20d_pct)">{{ change(market?.trend?.change_20d_pct) }}</strong><p>{{ market?.trend?.usable ? '日度趋势可供参考' : '趋势缺失或已过期' }}</p></div>
     </div>
     <div v-show="market?.history?.length" ref="chartElement" class="history-chart" role="img" aria-label="美元兑人民币最近90个观测日至今的汇率图" />
+    <FxWeeklyHighs :history="market?.history" :today="today" />
     <div class="market-source">
       <span v-if="market?.trend">历史截至 {{ market.trend.as_of }}，滞后 {{ market.trend.lag_days }} 天；按周发布，不是实时走势。</span>
       <span v-else>历史数据获取后显示趋势。</span>
@@ -39,6 +40,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import GlassButton from '@/components/GlassButton.vue'
 import { currentBeijingDate, formatBeijingDateTime, parseApiDateTime } from '@/utils/datetime'
 import { buildMarketChartData } from './marketChartData'
+import FxWeeklyHighs from './FxWeeklyHighs.vue'
 
 echarts.use([LineChart, ScatterChart, GridComponent, TooltipComponent, CanvasRenderer])
 const props = defineProps({ market: Object, loading: Boolean, error: String, clock: Number })
