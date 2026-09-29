@@ -115,6 +115,7 @@
   <script>
     'use strict';
     const API = '/api/customer-media/portal';
+    const previewMode = new URLSearchParams(window.location.search).get('preview') === '1' && window.parent !== window;
     const $ = id => document.getElementById(id);
 
     let session = null;          // { customer_id, customer_name, email }
@@ -136,6 +137,11 @@
 
     function escapeHtml(v) { const d = document.createElement('div'); d.textContent = v; return d.innerHTML; }
     function escapeAttr(v) { return escapeHtml(v).replaceAll('&quot;', '&#34;').replaceAll("'", '&#39;'); }
+    function downloadUrl(contentUrl) {
+      const target = new URL(contentUrl, window.location.origin);
+      target.searchParams.set('download', 'true');
+      return target.href;
+    }
     function pad(n) { return String(n).padStart(2, '0'); }
     function fmtSize(bytes) {
       const size = Number(bytes) || 0;
@@ -255,7 +261,7 @@
                   ? `<img src="${a.content_url}" alt="${escapeAttr(a.file_name)}" loading="lazy" />`
                   : `<video src="${a.content_url}" muted preload="metadata"></video><span class="asset-play">▶</span>`}
               </button>
-              <div class="asset-footer"><span title="${escapeAttr(a.file_name)}"><strong>${escapeHtml(a.file_name)}</strong><small>${fmtSize(a.file_size)}</small></span><a href="${a.content_url}?download=true">Download ↓</a></div>
+              <div class="asset-footer"><span title="${escapeAttr(a.file_name)}"><strong>${escapeHtml(a.file_name)}</strong><small>${fmtSize(a.file_size)}</small></span><a href="${escapeAttr(downloadUrl(a.content_url))}">Download ↓</a></div>
             </article>`).join('')}</div>
             ${visibleGroupAssets(b.id, group).length ? '' : '<p class="group-empty">No materials match these tags.</p>'}
             </section>
@@ -302,7 +308,7 @@
         (asset.media_type === 'image'
           ? `<img src="${asset.content_url}" alt="${escapeAttr(asset.file_name)}" />`
           : `<video src="${asset.content_url}" controls autoplay></video>`) +
-        `<div class="lightbox-caption"><span><strong>Batch ${pad(b ? b.seq : 0)}</strong> · ${escapeHtml(asset.file_name)} · ${index + 1}/${list.length}</span><a href="${asset.content_url}?download=true">Download original ↓</a></div>`;
+        `<div class="lightbox-caption"><span><strong>Batch ${pad(b ? b.seq : 0)}</strong> · ${escapeHtml(asset.file_name)} · ${index + 1}/${list.length}</span><a href="${escapeAttr(downloadUrl(asset.content_url))}">Download original ↓</a></div>`;
       lb.classList.remove('hidden');
       $('lb-prev').classList.toggle('hidden', list.length < 2);
       $('lb-next').classList.toggle('hidden', list.length < 2);
@@ -378,6 +384,7 @@
       }
     };
     $('logout').onclick = async () => {
+      if (previewMode) return;
       libraryRequestVersion++;
       await request('/logout', { method: 'POST' }).catch(() => {});
       session = null; batches = []; selected = new Set(); previewState = null;
@@ -432,7 +439,7 @@
       if (!items.length) return;
       for (const asset of items) {
         const link = document.createElement('a');
-        link.href = asset.content_url + '?download=true';
+        link.href = downloadUrl(asset.content_url);
         link.download = asset.file_name;
         document.body.appendChild(link);
         link.click();
@@ -454,13 +461,29 @@
       if (e.key === 'ArrowRight') stepPreview(1);
     });
 
-    // 启动：先探活会话，再放开开场屏入口
-    (async () => {
-      try { session = await request('/me'); } catch { session = null; }
-      const btn = $('splash-enter');
-      btn.disabled = false;
-      btn.textContent = 'Enter Library';
-    })();
+    if (previewMode) {
+      $('splash-enter').textContent = 'Waiting for preview…';
+      $('logout').classList.add('hidden');
+      window.addEventListener('message', event => {
+        if (event.origin !== window.location.origin || event.source !== window.parent
+          || event.data?.type !== 'customer-media-preview') return;
+        const { customer, batch, dimensions } = event.data;
+        if (!customer?.customer_name || !Array.isArray(batch?.assets) || !Array.isArray(dimensions)) return;
+        session = customer;
+        batches = [{ ...batch, seq: 1 }];
+        tagGroups = dimensions.map(dim => ({ dimension_id: dim.id, name: dim.name, label: dim.label, values: dim.values || [] }));
+        activeBatch = 'all'; selected = new Set(); previewState = null; groupSelections = {};
+        showApp(); render();
+      });
+    } else {
+      // Normal portal startup still requires its own authenticated session.
+      (async () => {
+        try { session = await request('/me'); } catch { session = null; }
+        const btn = $('splash-enter');
+        btn.disabled = false;
+        btn.textContent = 'Enter Library';
+      })();
+    }
   </script>
 </body>
 </html>

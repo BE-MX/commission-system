@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { filterMediaByTags, groupMediaByTags } from '../src/views/design/customer-media/customerMediaGrouping.js'
+import { filterMediaByTags, groupMediaByColorAndTexture, groupMediaByTags } from '../src/views/design/customer-media/customerMediaGrouping.js'
 
 const dimensions = [
   { id: 1, name: 'customer_product_type', label: '产品类型' },
@@ -46,4 +46,24 @@ test('filter combines values within one dimension and intersects dimensions', ()
   assert.deepEqual(filterMediaByTags(assets, [201, 202]).map(asset => asset.id), [11, 12, 13, 14])
   assert.deepEqual(filterMediaByTags(assets, [201, 301]).map(asset => asset.id), [11])
   assert.deepEqual(filterMediaByTags(assets, [999]).map(asset => asset.id), [])
+})
+
+test('workspace rows separate color names and textures type inside product groups', () => {
+  const rowDimensions = [
+    ...dimensions,
+    { id: 4, name: 'color_names', label: 'Color names' },
+    { id: 5, name: 'textures_type', label: 'Textures type' },
+  ]
+  const tag = (dimension_id, tag_value_id, value) => ({ dimension_id, tag_value_id, value })
+  const images = [
+    { id: 1, tags: [product(101, '发帘'), tag(4, 401, 'Ash'), tag(5, 501, 'Straight')] },
+    { id: 2, tags: [product(101, '发帘'), tag(4, 401, 'Ash'), tag(5, 501, 'Straight')] },
+    { id: 3, tags: [product(101, '发帘'), tag(4, 401, 'Ash'), tag(5, 502, 'Wavy')] },
+    { id: 4, tags: [product(101, '发帘'), tag(4, 402, 'Brown'), tag(5, 501, 'Straight')] },
+  ]
+  const productGroup = groupMediaByTags(images, rowDimensions)[0]
+  const rows = groupMediaByColorAndTexture(productGroup.assets, rowDimensions)
+  assert.deepEqual(rows.map(row => [row.colorName, row.textureType, row.assets.map(asset => asset.id)]), [
+    ['Ash', 'Straight', [1, 2]], ['Ash', 'Wavy', [3]], ['Brown', 'Straight', [4]],
+  ])
 })

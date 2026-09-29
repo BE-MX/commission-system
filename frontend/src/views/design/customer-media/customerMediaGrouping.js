@@ -51,3 +51,35 @@ export function filterMediaByTags(assets = [], selectedIds = []) {
   return assets.filter(asset => [...selectedByDimension.entries()].every(([dimensionId, values]) =>
     (asset.tags || []).some(tag => tag.dimension_id === dimensionId && values.has(tag.tag_value_id))))
 }
+
+const normalizeDimension = value => String(value || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '')
+function findDimension(dimensions, names) {
+  return dimensions.find(dim => names.some(name =>
+    normalizeDimension(dim.name) === name || normalizeDimension(dim.label) === name))
+}
+
+export function groupMediaByColorAndTexture(assets = [], dimensions = []) {
+  const color = findDimension(dimensions, ['colornames', 'colorname', '颜色名称'])
+  const texture = findDimension(dimensions, ['texturestype', 'texturetype', '纹理类型'])
+  const rows = new Map()
+  for (const asset of assets) {
+    const tags = asset.tags || []
+    const colors = tags.filter(tag => color
+      ? tag.dimension_id === color.id : ['colornames', 'colorname', '颜色名称'].includes(normalizeDimension(tag.dimension_label)))
+    const textures = tags.filter(tag => texture
+      ? tag.dimension_id === texture.id : ['texturestype', 'texturetype', '纹理类型'].includes(normalizeDimension(tag.dimension_label)))
+    for (const colorTag of colors.length ? colors : [null]) {
+      for (const textureTag of textures.length ? textures : [null]) {
+        const id = `${colorTag?.tag_value_id ?? 'none'}:${textureTag?.tag_value_id ?? 'none'}`
+        if (!rows.has(id)) rows.set(id, {
+          id,
+          colorName: colorTag?.value || '未设置颜色',
+          textureType: textureTag?.value || '未设置纹理类型',
+          assets: [],
+        })
+        if (!rows.get(id).assets.some(item => item.id === asset.id)) rows.get(id).assets.push(asset)
+      }
+    }
+  }
+  return [...rows.values()]
+}

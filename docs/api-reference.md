@@ -941,11 +941,14 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 权限 / 会话 | 契约 |
 |---|---|---|---|
-| GET / POST | `/customers/{customer_id}/tags` | `design:write/manage` 或 `customer_media:admin` + 当前客户数据权限 | 读取或追加客户级标签；POST 请求体为 `{"tags":[{"dimension_id":1,"tag_value_ids":[2]}]}`。客户标签跨预约复用，重复追加幂等。 |
-| GET / POST | `/tasks/{task_id}/customer-tags` | `customer_media:write/admin` + 当前任务维护权限 | 设计师读取或追加该任务所属客户的标签；与预约页操作同一客户标签集合。 |
-| GET | `/tags/dimensions` | 客户素材读写或设计预约写权限 | 仅返回可见的客户标签维度和值。 |
-| POST | `/tags/values` | 同上 | 在客户标签维度中创建值；同名复用。创建标签值后仍需通过客户标签 POST 绑定到客户。 |
-| POST | `/batches/{batch_id}/assets` | `customer_media:write/admin` + 当前任务维护权限 | 上传图片或视频；multipart `tags_json` 至少包含一个有效客户标签。保存文件标签时，也把这些标签追加到客户标签集合。 |
+| GET / POST | `/customers/{customer_id}/tags` | `design:write/manage` 或 `customer_media:admin` + 当前客户数据权限 | 读取客户级标签；POST 请求体为 `{"tags":[{"dimension_id":1,"tag_value_ids":[2]}]}`，仅接受已归属该客户的标签。 |
+| GET / POST | `/tasks/{task_id}/customer-tags` | `customer_media:write/admin` + 当前任务维护权限 | 设计师读取该任务所属客户的标签；POST 仅接受已归属该客户的标签。 |
+| GET | `/batches/{batch_id}/customer-tags` | `customer_media:read/admin` + 当前批次审核权限 | 审核页读取该批次所属客户可选的标签。 |
+| GET | `/tags/dimensions` | 客户素材读写或设计预约写权限 | 仅返回可见的客户标签维度，不返回跨客户共享的标签值。 |
+| POST | `/customers/{customer_id}/tag-values` | 客户素材读写或设计预约写权限 + 客户/任务/批次上下文授权 | 创建标签时即绑定客户；body 为 `dimension_id/value`，设计任务传 `task_id`、审核批次传 `batch_id`。同客户同维度同名复用。 |
+| PATCH | `/customers/{customer_id}/tag-values/{value_id}` | 同上 | body 为 `{"value":"新名称"}`；只修改当前客户看到的名称，不改其他客户或历史素材 ID。 |
+| GET / DELETE | `/customers/{customer_id}/tag-values/{value_id}/usage`、`/customers/{customer_id}/tag-values/{value_id}` | GET 同上；DELETE 仅客户归属写权限、可维护全部关联批次的任务设计师或管理员，不接受审核批次上下文 | GET 返回当前客户关联素材数；DELETE 删除客户标签及该客户全部素材关联。有素材时须传 `confirm_associated=true`，服务端仍会重验数量，否则返回 409。 |
+| POST | `/batches/{batch_id}/assets` | `customer_media:write/admin` + 当前任务维护权限 | 上传图片或视频；multipart `tags_json` 至少包含一个已归属当前客户的标签，上传落库前再次验证。 |
 | GET | `/sales-portal/customers?search=` | `customer_media_portal:read` 或 `customer_media:admin` | 返回调用者范围内已配置门户的客户摘要、门户状态、图片/视频/交付批次数和最近更新时间。 |
 | GET | `/sales-portal/customers/{customer_id}` | 同上 | 返回客户摘要及其实际可见的已发布批次；批次标题与拍摄类型也由客户公开门户返回。停用账号不签发素材 URL。 |
 | GET | `/sales-portal/customers/{customer_id}/tags` | 同上 | 仅返回该客户已发布素材实际用到的标签维度与标签；每个维度包含稳定的 `name`（客户产品类型维度如 `customer_product_type`）、`dimension_id`、`label` 和 `values`。停用账号返回空列表。业务预览按产品类型分组，并在组内按其他维度筛选。 |
@@ -962,7 +965,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 业务预览页面位于 `/design/media/portal`，左侧客户导航只展示 API 已授权的门户；右侧直接渲染详情响应，不模拟草稿或审核中素材。`search` 只是授权结果集上的名称、客户 ID、登录邮箱过滤条件，不能扩大数据范围。
 
-当前界面只有“上传素材”一个上传入口：设计师先选至少一个客户标签，再选多个文件或拖入文件夹。文件夹只用于提取文件，不从名称识别、新建标签或目录；文件加入清单时固定本次选中标签，上传后素材按维度和标签显示。旧目录弹框仅用于维护既有目录与素材，不再上传。审核弹框、业务预览和客户外部站均按维度与标签组织素材，并提供标签筛选；同一素材可显示在多个分类下，下载仍是同一文件。历史未打标签素材显示在“未打标签”下。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。目录删除沿用原有可编辑状态约束，不绕过审核/发布流程。
+当前界面只有“上传素材”一个上传入口：设计师先选至少一个当前客户标签，再选多个文件或拖入文件夹。标签可在客户确认后新建、重命名或删除；删除时同步移除该客户素材的关联。文件夹只用于提取文件，不从名称识别、新建标签或目录；文件加入清单时固定本次选中标签。工作台素材按产品类型分组，再按 Color names + Textures type 逐行显示。旧目录弹框仅用于维护既有目录与素材。送审按钮旁的“客户效果预览”在同源 iframe 中复用外部站渲染当前批素材，不调用客户门户登录及已发布素材接口，也不改变批次发布状态。审核弹框、业务预览和客户外部站按产品类型分组并提供标签筛选。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。
 
 ## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
 

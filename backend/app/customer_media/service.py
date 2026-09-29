@@ -478,7 +478,7 @@ async def upload_asset(
         raise CustomerMediaConflict("当前状态不能上传素材")
     if not tags or not any(_tag_item_fields(item)[1] for item in tags):
         raise CustomerMediaError("请先选择至少一个客户标签再上传")
-    _validate_customer_tag_items(db, tags)
+    _validate_customer_tag_items(db, tags, batch.customer_id)
 
     from app.core.config import get_settings
     settings = get_settings()
@@ -547,7 +547,7 @@ async def upload_asset(
         db.add(asset)
         db.flush()
         _insert_asset_tags(db, asset.id, tags)
-        _ensure_customer_tag_links(db, batch.customer_id, tags, user_id)
+        _validate_customer_tag_items(db, tags, batch.customer_id, lock=True)
         batch.updated_at = beijing_now()
         db.commit()
     except Exception:
@@ -730,7 +730,7 @@ CUSTOMER_TAG_SCOPE = "customer"
 def list_customer_tag_dimensions(db: Session) -> list[dict]:
     """上传页/审核页可选的客户标签维度（可见的 customer scope）。"""
     from app.asset.tag_service import list_dimensions_cached
-    return [d for d in list_dimensions_cached(db, CUSTOMER_TAG_SCOPE) if d.get("is_visible", 1)]
+    return [{**d, "values": []} for d in list_dimensions_cached(db, CUSTOMER_TAG_SCOPE) if d.get("is_visible", 1)]
 
 
 def list_customer_tags(db: Session, customer_id: str) -> list[dict]:
@@ -739,7 +739,7 @@ def list_customer_tags(db: Session, customer_id: str) -> list[dict]:
         CustomerMediaCustomerTag.dimension_id,
         TagDimension.label,
         CustomerMediaCustomerTag.tag_value_id,
-        TagValue.value,
+        func.coalesce(CustomerMediaCustomerTag.display_value, TagValue.value),
     ).join(
         TagDimension, TagDimension.id == CustomerMediaCustomerTag.dimension_id,
     ).join(
@@ -756,26 +756,42 @@ def list_customer_tags(db: Session, customer_id: str) -> list[dict]:
     } for dim_id, label, value_id, value in rows]
 
 
-def _ensure_customer_tag_links(
-    db: Session, customer_id: str, tags: list, user_id: int,
+def authorize_customer_tag_context(
+    db: Session, payload: dict, customer_id: str,
+    *, task_id: int | None = None, batch_id: int | None = None,
 ) -> None:
-    for item in tags:
-        dim_id, value_ids = _tag_item_fields(item)
-        for value_id in dict.fromkeys(value_ids):
-            key = (customer_id, dim_id, value_id)
-            if db.get(CustomerMediaCustomerTag, key) is not None:
-                continue
-            # A concurrent editor may have added the same label after the read.
-            try:
-                with db.begin_nested():
-                    db.add(CustomerMediaCustomerTag(
-                        customer_id=customer_id, dimension_id=dim_id,
-                        tag_value_id=value_id, created_by=user_id,
-                    ))
-                    db.flush()
-            except IntegrityError:
-                if db.get(CustomerMediaCustomerTag, key) is None:
-                    raise
+    """Bind every customer-tag mutation to a verified customer, task or review batch."""
+    if task_id is not None and batch_id is not None:
+        raise CustomerMediaError("只能指定一种客户上下文")
+    permissions = set(payload.get("permissions", []))
+    if task_id is not None:
+        if not is_admin(payload) and "customer_media:write" not in permissions:
+            raise CustomerMediaForbidden("无权维护拍摄任务标签")
+        if task_customer_id(db, task_id, payload) != customer_id:
+            raise CustomerMediaForbidden("客户与拍摄任务不匹配")
+    elif batch_id is not None:
+        if not is_admin(payload) and "customer_media:read" not in permissions:
+            raise CustomerMediaForbidden("无权维护审核标签")
+        user_id, _, _ = user_identity(db, payload)
+        batch = db.get(CustomerMediaBatch, batch_id)
+        if not batch:
+            raise CustomerMediaNotFound("素材批次不存在")
+        _assert_batch_reviewer(db, payload, batch, user_id)
+        if batch.customer_id != customer_id:
+            raise CustomerMediaForbidden("客户与素材批次不匹配")
+    else:
+        if not is_admin(payload) and not permissions.intersection({"design:write", "design:manage"}):
+            raise CustomerMediaForbidden("无权维护客户标签")
+        validate_customer_access(db, payload, customer_id)
+
+
+def authorize_batch_reviewer(db: Session, payload: dict, batch_id: int) -> CustomerMediaBatch:
+    user_id, _, _ = user_identity(db, payload)
+    batch = db.get(CustomerMediaBatch, batch_id)
+    if not batch:
+        raise CustomerMediaNotFound("素材批次不存在")
+    _assert_batch_reviewer(db, payload, batch, user_id)
+    return batch
 
 
 def add_customer_tags(
@@ -783,10 +799,7 @@ def add_customer_tags(
 ) -> list[dict]:
     if not tags or not any(_tag_item_fields(item)[1] for item in tags):
         raise CustomerMediaError("请至少选择一个客户标签")
-    user_id, _, _ = user_identity(db, payload)
-    _validate_customer_tag_items(db, tags)
-    _ensure_customer_tag_links(db, customer_id, tags, user_id)
-    db.commit()
+    _validate_customer_tag_items(db, tags, customer_id)
     return list_customer_tags(db, customer_id)
 
 
@@ -827,32 +840,155 @@ def resolve_auto_create_tags(db: Session, payload: dict, auto_create_tags: dict[
 
 
 def create_customer_tag_value(
-    db: Session, payload: dict, dimension_id: int, value: str,
+    db: Session, payload: dict, customer_id: str, dimension_id: int, value: str,
     name_en: str | None = None, aliases: list[str] | None = None,
 ) -> dict:
-    """审核页/上传页现场新建客户标签；同名（忽略大小写）直接复用。"""
-    user_identity(db, payload)
+    """Create and bind a reusable label to the selected customer."""
+    user_id, _, _ = user_identity(db, payload)
     dim = db.get(TagDimension, dimension_id)
-    if not dim or dim.tag_scope != CUSTOMER_TAG_SCOPE:
+    if not dim or dim.tag_scope != CUSTOMER_TAG_SCOPE or not dim.is_visible:
         raise CustomerMediaNotFound("客户标签维度不存在")
     if dim.is_managed:
         raise CustomerMediaError(f"维度[{dim.label}]由系统维护，不能新建标签")
     clean = (value or "").strip()
     if not clean:
         raise CustomerMediaError("标签名不能为空")
-    existing = db.scalar(select(TagValue).where(
+    existing_link = db.scalar(select(CustomerMediaCustomerTag).where(
+        CustomerMediaCustomerTag.customer_id == customer_id,
+        CustomerMediaCustomerTag.dimension_id == dimension_id,
+        func.lower(CustomerMediaCustomerTag.display_value) == clean.lower(),
+    ))
+    if existing_link:
+        return {"id": existing_link.tag_value_id, "value": existing_link.display_value,
+                "dimension_id": dimension_id, "created": False}
+    candidate = db.scalar(select(TagValue).where(
         TagValue.dimension_id == dimension_id,
         func.lower(TagValue.value) == clean.lower(),
-        TagValue.is_active == 1,
     ))
-    if existing:
-        return {"id": existing.id, "value": existing.value, "dimension_id": dimension_id, "created": False}
-    from app.asset.tag_service import ManagedDimensionError, create_dimension_value
+    existing = candidate if candidate is not None and candidate.is_active else None
+    backing_value = clean if candidate is None or existing is not None else f"__customer_media_{secrets.token_hex(16)}"
+    if existing is not None and _customer_tag_link(db, customer_id, existing.id):
+        # A prior rename can leave this global backing ID bound under another local name.
+        existing = None
+        backing_value = f"__customer_media_{secrets.token_hex(16)}"
+    created_backing = False
+    if existing is None:
+        try:
+            with db.begin_nested():
+                existing = TagValue(dimension_id=dimension_id, value=backing_value, name_en=name_en,
+                                    aliases=aliases, is_active=1)
+                db.add(existing)
+                db.flush()
+            created_backing = True
+        except IntegrityError:
+            existing = db.scalar(select(TagValue).where(
+                TagValue.dimension_id == dimension_id,
+                func.lower(TagValue.value) == backing_value.lower(),
+                TagValue.is_active == 1,
+            ))
+            if existing is None:
+                raise CustomerMediaConflict("同名标签已存在，请刷新后重试") from None
     try:
-        tv = create_dimension_value(db, dimension_id, clean, name_en=name_en, aliases=aliases)
-    except ManagedDimensionError as exc:
-        raise CustomerMediaError(str(exc)) from exc
-    return {"id": tv.id, "value": tv.value, "dimension_id": dimension_id, "created": True}
+        db.add(CustomerMediaCustomerTag(
+            customer_id=customer_id, dimension_id=dimension_id,
+            tag_value_id=existing.id, display_value=clean, created_by=user_id,
+        ))
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        existing_link = db.scalar(select(CustomerMediaCustomerTag).where(
+            CustomerMediaCustomerTag.customer_id == customer_id,
+            CustomerMediaCustomerTag.dimension_id == dimension_id,
+            func.lower(CustomerMediaCustomerTag.display_value) == clean.lower(),
+        ))
+        if existing_link:
+            return {"id": existing_link.tag_value_id, "value": existing_link.display_value,
+                    "dimension_id": dimension_id, "created": False}
+        raise CustomerMediaConflict("同名标签已存在，请刷新后重试") from exc
+    if created_backing:
+        from app.asset.tag_service import invalidate_dim_cache
+        invalidate_dim_cache()
+    return {"id": existing.id, "value": clean, "dimension_id": dimension_id, "created": True}
+
+
+def _customer_tag_link(db: Session, customer_id: str, value_id: int, *, lock: bool = False):
+    statement = select(CustomerMediaCustomerTag).where(
+        CustomerMediaCustomerTag.customer_id == customer_id,
+        CustomerMediaCustomerTag.tag_value_id == value_id,
+    )
+    return db.scalar(statement.with_for_update() if lock else statement)
+
+
+def rename_customer_tag_value(db: Session, customer_id: str, value_id: int, value: str) -> dict:
+    link = _customer_tag_link(db, customer_id, value_id, lock=True)
+    if not link:
+        raise CustomerMediaNotFound("当前客户标签不存在")
+    clean = value.strip()
+    if not clean:
+        raise CustomerMediaError("标签名不能为空")
+    duplicate = db.scalar(select(CustomerMediaCustomerTag.tag_value_id).where(
+        CustomerMediaCustomerTag.customer_id == customer_id,
+        CustomerMediaCustomerTag.dimension_id == link.dimension_id,
+        CustomerMediaCustomerTag.tag_value_id != value_id,
+        func.lower(CustomerMediaCustomerTag.display_value) == clean.lower(),
+    ))
+    if duplicate is not None:
+        raise CustomerMediaConflict("当前客户已有同名标签")
+    link.display_value = clean
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise CustomerMediaConflict("当前客户已有同名标签") from exc
+    return {"id": value_id, "dimension_id": link.dimension_id, "value": clean}
+
+
+def customer_tag_asset_count(db: Session, customer_id: str, value_id: int) -> int:
+    if not _customer_tag_link(db, customer_id, value_id):
+        raise CustomerMediaNotFound("当前客户标签不存在")
+    return db.scalar(select(func.count(distinct(CustomerMediaAssetTag.asset_id))).select_from(
+        CustomerMediaAssetTag,
+    ).join(CustomerMediaAsset, CustomerMediaAsset.id == CustomerMediaAssetTag.asset_id).join(
+        CustomerMediaBatch, CustomerMediaBatch.id == CustomerMediaAsset.batch_id,
+    ).where(CustomerMediaBatch.customer_id == customer_id,
+            CustomerMediaAsset.deleted_at.is_(None),
+            CustomerMediaAssetTag.tag_value_id == value_id)) or 0
+
+
+def delete_customer_tag_value(
+    db: Session, customer_id: str, value_id: int, payload: dict,
+    *, confirm_associated: bool, task_id: int | None = None, batch_id: int | None = None,
+) -> dict:
+    link = _customer_tag_link(db, customer_id, value_id, lock=True)
+    if not link:
+        raise CustomerMediaNotFound("当前客户标签不存在")
+    if batch_id is not None:
+        raise CustomerMediaForbidden("审核批次不能删除客户全部素材的标签")
+    if task_id is not None and not is_admin(payload):
+        affected_batches = db.scalars(select(CustomerMediaBatch).join(
+            CustomerMediaAsset, CustomerMediaAsset.batch_id == CustomerMediaBatch.id,
+        ).join(CustomerMediaAssetTag, CustomerMediaAssetTag.asset_id == CustomerMediaAsset.id).where(
+            CustomerMediaBatch.customer_id == customer_id,
+            CustomerMediaAssetTag.dimension_id == link.dimension_id,
+            CustomerMediaAssetTag.tag_value_id == value_id,
+        ).distinct())
+        for affected_batch in affected_batches:
+            task, _ = _load_task(db, affected_batch.task_id)
+            _assert_writer(db, payload, task)
+    count = customer_tag_asset_count(db, customer_id, value_id)
+    if count and not confirm_associated:
+        raise CustomerMediaConflict("当前标签已关联部分素材，删除后关联关系将一并删除，是否确认？")
+    asset_ids = select(CustomerMediaAsset.id).join(
+        CustomerMediaBatch, CustomerMediaBatch.id == CustomerMediaAsset.batch_id,
+    ).where(CustomerMediaBatch.customer_id == customer_id)
+    db.execute(delete(CustomerMediaAssetTag).where(
+        CustomerMediaAssetTag.asset_id.in_(asset_ids),
+        CustomerMediaAssetTag.dimension_id == link.dimension_id,
+        CustomerMediaAssetTag.tag_value_id == value_id,
+    ))
+    db.delete(link)
+    db.commit()
+    return {"removed_asset_count": count}
 
 
 def _tag_item_fields(item) -> tuple[int, list[int]]:
@@ -862,7 +998,7 @@ def _tag_item_fields(item) -> tuple[int, list[int]]:
     return getattr(item, "dimension_id", None), list(getattr(item, "tag_value_ids", None) or [])
 
 
-def _validate_customer_tag_items(db: Session, tags: list) -> None:
+def _validate_customer_tag_items(db: Session, tags: list, customer_id: str, *, lock: bool = False) -> None:
     """校验 tags_json：仅可见非托管的 customer scope 维度；单选维度 ≤1 值；值属于维度且启用。"""
     if not tags:
         return
@@ -883,11 +1019,19 @@ def _validate_customer_tag_items(db: Session, tags: list) -> None:
     if not value_ids:
         return
     values = {v.id: v for v in db.scalars(select(TagValue).where(TagValue.id.in_(value_ids)))}
+    link_query = select(CustomerMediaCustomerTag).where(
+            CustomerMediaCustomerTag.customer_id == customer_id,
+            CustomerMediaCustomerTag.tag_value_id.in_(value_ids),
+        )
+    bound = {(row.dimension_id, row.tag_value_id) for row in db.scalars(
+        link_query.with_for_update() if lock else link_query)}
     for dim_id, tv_ids in parsed:
         for tv_id in dict.fromkeys(tv_ids):
             value = values.get(tv_id)
             if value is None or value.dimension_id != dim_id or not value.is_active:
                 raise CustomerMediaError("标签值不存在、已停用或不属于所选维度")
+            if (dim_id, tv_id) not in bound:
+                raise CustomerMediaError("只能选择当前客户已创建的标签")
 
 
 def _insert_asset_tags(db: Session, asset_id: int, tags: list) -> None:
@@ -914,7 +1058,7 @@ def update_asset_tags(db: Session, batch_id: int, asset_id: int, payload: dict, 
     ))
     if not asset:
         raise CustomerMediaNotFound("素材不存在")
-    _validate_customer_tag_items(db, tags)
+    _validate_customer_tag_items(db, tags, batch.customer_id, lock=True)
     dim_ids = [_tag_item_fields(item)[0] for item in tags]
     if dim_ids:
         db.execute(delete(CustomerMediaAssetTag).where(
@@ -922,7 +1066,6 @@ def update_asset_tags(db: Session, batch_id: int, asset_id: int, payload: dict, 
             CustomerMediaAssetTag.dimension_id.in_(dim_ids),
         ))
         _insert_asset_tags(db, asset.id, tags)
-        _ensure_customer_tag_links(db, batch.customer_id, tags, user_id)
         db.add(CustomerMediaReview(
             batch_id=batch.id, revision=batch.revision, action="update_tags",
             remark=f"更新素材[{asset.file_name}]客户标签", actor_user_id=user_id,
@@ -945,11 +1088,20 @@ def asset_tags_map(db: Session, asset_ids: list[int]) -> dict[int, list[dict]]:
         CustomerMediaAssetTag.dimension_id,
         TagDimension.label,
         CustomerMediaAssetTag.tag_value_id,
-        TagValue.value,
+        func.coalesce(CustomerMediaCustomerTag.display_value, TagValue.value),
     ).join(
         TagDimension, TagDimension.id == CustomerMediaAssetTag.dimension_id,
     ).join(
         TagValue, TagValue.id == CustomerMediaAssetTag.tag_value_id,
+    ).join(
+        CustomerMediaAsset, CustomerMediaAsset.id == CustomerMediaAssetTag.asset_id,
+    ).join(
+        CustomerMediaBatch, CustomerMediaBatch.id == CustomerMediaAsset.batch_id,
+    ).join(
+        CustomerMediaCustomerTag,
+        (CustomerMediaCustomerTag.customer_id == CustomerMediaBatch.customer_id)
+        & (CustomerMediaCustomerTag.dimension_id == CustomerMediaAssetTag.dimension_id)
+        & (CustomerMediaCustomerTag.tag_value_id == CustomerMediaAssetTag.tag_value_id),
     ).where(
         CustomerMediaAssetTag.asset_id.in_(asset_ids),
         TagDimension.tag_scope == CUSTOMER_TAG_SCOPE,
@@ -1011,7 +1163,7 @@ def portal_used_tags(db: Session, account: CustomerPortalAccount) -> list[dict]:
     """该客户已发布素材实际用到的客户标签，按维度分组（含每个值的素材数）。"""
     rows = db.execute(select(
         TagDimension.id, TagDimension.name, TagDimension.label, TagDimension.sort_order,
-        TagValue.id, TagValue.value, TagValue.sort_order,
+        TagValue.id, func.coalesce(CustomerMediaCustomerTag.display_value, TagValue.value), TagValue.sort_order,
         func.count(distinct(CustomerMediaAssetTag.asset_id)),
     ).select_from(CustomerMediaAssetTag).join(
         TagValue, TagValue.id == CustomerMediaAssetTag.tag_value_id,
@@ -1021,6 +1173,11 @@ def portal_used_tags(db: Session, account: CustomerPortalAccount) -> list[dict]:
         CustomerMediaAsset, CustomerMediaAsset.id == CustomerMediaAssetTag.asset_id,
     ).join(
         CustomerMediaBatch, CustomerMediaBatch.id == CustomerMediaAsset.batch_id,
+    ).join(
+        CustomerMediaCustomerTag,
+        (CustomerMediaCustomerTag.customer_id == CustomerMediaBatch.customer_id)
+        & (CustomerMediaCustomerTag.dimension_id == CustomerMediaAssetTag.dimension_id)
+        & (CustomerMediaCustomerTag.tag_value_id == CustomerMediaAssetTag.tag_value_id),
     ).where(
         CustomerMediaBatch.customer_id == account.customer_id,
         CustomerMediaBatch.status == "published",
@@ -1028,7 +1185,7 @@ def portal_used_tags(db: Session, account: CustomerPortalAccount) -> list[dict]:
         TagDimension.tag_scope == CUSTOMER_TAG_SCOPE,
     ).group_by(
         TagDimension.id, TagDimension.name, TagDimension.label, TagDimension.sort_order,
-        TagValue.id, TagValue.value, TagValue.sort_order,
+        TagValue.id, CustomerMediaCustomerTag.display_value, TagValue.value, TagValue.sort_order,
     ).order_by(
         TagDimension.sort_order, TagDimension.id, TagValue.sort_order, TagValue.id,
     )).all()

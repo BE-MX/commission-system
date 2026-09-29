@@ -55,5 +55,32 @@ with sync_playwright() as p:
     page.locator('#select-all').check()
     expect(page.locator('#selected-count')).to_have_text('1 selected across this page')
     assert not errors, errors
-    print(json.dumps({'passed': ['product grouping', 'group tag filtering', '200px thumbnail and filename'], 'page_errors': errors}))
+    preview_page = browser.new_page(viewport={'width': 1400, 'height': 900})
+    preview_page.on('pageerror', lambda error: errors.append(str(error)))
+    preview_calls = []
+    preview_page.route('**/api/customer-media/portal/**', lambda route: (preview_calls.append(route.request.url), route.abort()))
+    preview_page.route('**/mock/*.png', lambda route: route.fulfill(body=PNG, content_type='image/png'))
+    preview_page.goto('http://127.0.0.1:3077/')
+    preview_page.evaluate("""payload => {
+      const iframe = document.createElement('iframe');
+      iframe.src = '/customer-media/?preview=1';
+      iframe.onload = () => iframe.contentWindow.postMessage({
+        type: 'customer-media-preview',
+        customer: { customer_id: 'C001', customer_name: 'Test Client' },
+        batch: { ...payload.batch, seq: 1, assets: payload.assets },
+        dimensions: payload.dimensions,
+      }, location.origin);
+      document.body.append(iframe);
+    }""", {'batch': base, 'assets': [{**assets[0], 'content_url': '/mock/front.png?expires=123&token=abc'}, assets[1]],
+            'dimensions': [{'id': group['dimension_id'], 'name': group['name'], 'label': group['label']}
+                           for group in tag_groups]})
+    preview = preview_page.frame_locator('iframe')
+    expect(preview.locator('.asset-card')).to_have_count(2)
+    expect(preview.locator('#portal-customer')).to_have_text('Test Client')
+    signed_download = preview.locator('.asset-footer a').first.get_attribute('href')
+    assert signed_download.count('?') == 1 and 'token=abc' in signed_download and 'download=true' in signed_download
+    assert preview_calls == [], preview_calls
+    assert not errors, errors
+    print(json.dumps({'passed': ['product grouping', 'group tag filtering', '200px thumbnail and filename',
+                                 'same-origin draft preview without portal API'], 'page_errors': errors}))
     browser.close()

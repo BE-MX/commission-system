@@ -12,8 +12,8 @@ from app.core.storage.cos import StorageError
 from app.customer_media import service
 from app.customer_media.schemas import (
     AssetTagsUpdateIn, BatchReviewIn, BatchSubmitIn, CustomerMediaTagItem,
-    DirectoryNameIn, PortalAccountCreate, PortalAccountUpdate, TagResolveIn,
-    TagValidateIn, TagValueCreateIn,
+    DirectoryNameIn, PortalAccountCreate, PortalAccountUpdate, TagValueCreateIn,
+    TagValueRenameIn,
 )
 from app.customer_media.storage import MediaStorageError, storage_for
 
@@ -269,6 +269,16 @@ def add_task_customer_tags(
     return ok(_call(service.add_customer_tags, db, customer_id, payload, data.tags), "客户标签已更新")
 
 
+@router.get("/batches/{batch_id}/customer-tags")
+def batch_customer_tags(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:read", "customer_media:admin")),
+):
+    batch = _call(service.authorize_batch_reviewer, db, payload, batch_id)
+    return ok(_call(service.list_customer_tags, db, batch.customer_id))
+
+
 @router.get("/batches/{batch_id}/directories")
 def batch_directories(
     batch_id: int,
@@ -354,48 +364,73 @@ def customer_tag_dimensions(
     return ok(_call(service.list_customer_tag_dimensions, db))
 
 
-@router.post("/tags/validate")
-def validate_customer_tags(
-    data: TagValidateIn,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
-):
-    """文件夹名候选与客户标签库匹配：matched/suggested/missing/ambiguous。"""
-    result = _call(service.validate_tags, db, data.tag_names)
-    return ok({
-        "is_valid": result.is_valid,
-        "matched": result.matched,
-        "suggested": result.suggested,
-        "missing": result.missing,
-        "ambiguous": result.ambiguous,
-    })
-
-
-@router.post("/tags/resolve")
-def resolve_customer_tags(
-    data: TagResolveIn,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
-):
-    """确认后自动新建客户标签（幂等，唯一索引冲突即复用），返回 tag_mapping。"""
-    return ok({"tag_mapping": _call(service.resolve_auto_create_tags, db, payload, data.auto_create_tags)})
-
-
-@router.post("/tags/values")
+@router.post("/customers/{customer_id}/tag-values")
 def create_customer_tag_value(
+    customer_id: str,
     data: TagValueCreateIn,
+    task_id: int | None = Query(default=None),
+    batch_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission(
         "customer_media:read", "customer_media:write", "customer_media:admin",
         "design:write", "design:manage",
     )),
 ):
-    """上传页/审核页现场新建客户标签；同名直接复用。"""
+    _call(service.authorize_customer_tag_context, db, payload, customer_id,
+          task_id=task_id, batch_id=batch_id)
     row = _call(
-        service.create_customer_tag_value, db, payload, data.dimension_id, data.value,
+        service.create_customer_tag_value, db, payload, customer_id, data.dimension_id, data.value,
         name_en=data.name_en, aliases=data.aliases,
     )
     return ok(row, "标签已就绪")
+
+
+@router.patch("/customers/{customer_id}/tag-values/{value_id}")
+def rename_customer_tag_value(
+    customer_id: str, value_id: int, data: TagValueRenameIn,
+    task_id: int | None = Query(default=None), batch_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission(
+        "customer_media:read", "customer_media:write", "customer_media:admin",
+        "design:write", "design:manage",
+    )),
+):
+    _call(service.authorize_customer_tag_context, db, payload, customer_id,
+          task_id=task_id, batch_id=batch_id)
+    return ok(_call(service.rename_customer_tag_value, db, customer_id, value_id, data.value), "标签已重命名")
+
+
+@router.get("/customers/{customer_id}/tag-values/{value_id}/usage")
+def customer_tag_usage(
+    customer_id: str, value_id: int,
+    task_id: int | None = Query(default=None), batch_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission(  # customer scope is checked below
+        "customer_media:write", "customer_media:admin",
+        "design:write", "design:manage",
+    )),
+):
+    _call(service.authorize_customer_tag_context, db, payload, customer_id,
+          task_id=task_id, batch_id=batch_id)
+    return ok({"asset_count": _call(service.customer_tag_asset_count, db, customer_id, value_id)})
+
+
+@router.delete("/customers/{customer_id}/tag-values/{value_id}")
+def delete_customer_tag_value(
+    customer_id: str, value_id: int,
+    confirm_associated: bool = Query(default=False),
+    task_id: int | None = Query(default=None), batch_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission(  # customer scope and affected batches checked below
+        "customer_media:write", "customer_media:admin",
+        "design:write", "design:manage",
+    )),
+):
+    _call(service.authorize_customer_tag_context, db, payload, customer_id,
+          task_id=task_id, batch_id=batch_id)
+    return ok(_call(service.delete_customer_tag_value, db, customer_id, value_id, payload,
+                    confirm_associated=confirm_associated, task_id=task_id, batch_id=batch_id),
+              "客户标签已删除")
 
 
 @router.delete("/batches/{batch_id}/directories/{directory_id}")
