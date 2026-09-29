@@ -70,22 +70,6 @@
               <button v-for="option in mediaOptions" :key="option.value" type="button" :class="{ active: mediaType === option.value }" @click="mediaType = option.value">{{ option.label }}</button>
             </div>
           </div>
-          <div v-for="dim in filterableDimensions" :key="dim.id" class="finder-row tag-filter-row">
-            <span>{{ dim.label }}</span>
-            <div class="finder-options" role="group" :aria-label="`按${dim.label}筛选`">
-              <button
-                v-for="val in dim.values"
-                :key="val.id"
-                type="button"
-                :class="{ active: selectedTagIds.includes(val.id) }"
-                @click="toggleTag(val.id)"
-              >{{ val.value }}</button>
-            </div>
-          </div>
-          <div v-if="selectedTagIds.length" class="finder-row tag-clear-row">
-            <span />
-            <button type="button" class="tag-clear" @click="emit('update:selectedTagIds', [])">清除标签筛选 ×</button>
-          </div>
         </section>
 
         <div v-if="customer.status === 'disabled'" class="empty-state disabled-state">
@@ -105,11 +89,16 @@
               <span v-if="batch.shoot_type" class="shoot-tag">{{ batch.shoot_type }}</span>
             </header>
             <div v-for="group in groupMediaByTags(batch.assets, tagDimensions)" :key="group.id" class="portal-dimension">
-              <h3>{{ group.label }}</h3>
-              <section v-for="bucket in group.buckets" :key="bucket.id" class="portal-tag-group">
-                <h4>{{ bucket.label }} <span>{{ bucket.assets.length }} files</span></h4>
+              <h3>{{ group.label }} <span>{{ visibleGroupAssets(batch.id, group).length }} / {{ group.assets.length }} files</span></h3>
+              <div v-for="filter in group.filters" :key="filter.id" class="group-filter-row">
+                <strong>{{ filter.label }}</strong>
+                <div class="finder-options" role="group" :aria-label="`按${filter.label}筛选`">
+                  <button v-for="value in filter.values" :key="value.id" type="button" :aria-pressed="groupSelected(batch.id, group.id).includes(value.id)" :class="{ active: groupSelected(batch.id, group.id).includes(value.id) }" @click="toggleGroupTag(batch.id, group.id, value.id)">{{ value.value }}</button>
+                </div>
+              </div>
+              <section class="portal-tag-group">
                 <div class="asset-gallery">
-              <article v-for="(asset, assetIndex) in bucket.assets" :key="asset.id" class="asset-card">
+              <article v-for="asset in visibleGroupAssets(batch.id, group)" :key="asset.id" class="asset-card">
                 <button v-if="asset.media_type === 'image'" class="asset-preview" type="button" :aria-label="`Open ${asset.file_name}`" @click="previewAsset = asset">
                   <img :src="asset.content_url" :alt="asset.file_name" loading="lazy" />
                 </button>
@@ -117,7 +106,7 @@
                   <video :src="asset.content_url" controls preload="metadata" />
                 </div>
                 <div class="asset-footer">
-                  <span><strong>{{ asset.media_type === 'image' ? `View ${String(assetIndex + 1).padStart(2, '0')}` : 'Video' }}</strong><small>{{ formatFileSize(asset.file_size) }}</small></span>
+                  <span><strong :title="asset.file_name">{{ asset.file_name }}</strong><small>{{ formatFileSize(asset.file_size) }}</small></span>
                   <a :href="appendDownload(asset.content_url)">Download ↓</a>
                 </div>
                 <div v-if="(asset.tags || []).length" class="asset-tags">
@@ -125,6 +114,7 @@
                 </div>
               </article>
                 </div>
+                <p v-if="!visibleGroupAssets(batch.id, group).length" class="group-empty">No materials match these tags.</p>
               </section>
             </div>
           </section>
@@ -173,7 +163,7 @@ import {
   initials,
   portalStatusMeta,
 } from './portalPreviewState'
-import { groupMediaByTags } from './customerMediaGrouping'
+import { filterMediaByTags, groupMediaByTags } from './customerMediaGrouping'
 
 const props = defineProps({
   customer: { type: Object, default: null },
@@ -182,9 +172,7 @@ const props = defineProps({
   error: { type: String, default: '' },
   // 客户标签筛选条：维度（含值）与当前选中的 tag_value_id 列表
   tagDimensions: { type: Array, default: () => [] },
-  selectedTagIds: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['update:selectedTagIds'])
 
 const mediaOptions = [
   { label: 'All files', value: 'all' },
@@ -194,22 +182,20 @@ const mediaOptions = [
 const search = ref('')
 const mediaType = ref('all')
 const previewAsset = ref(null)
+const groupSelections = ref({})
 const status = computed(() => portalStatusMeta(props.customer?.status))
 const filteredBatches = computed(() => filterPreviewBatches(props.batches, {
   search: search.value,
   mediaType: mediaType.value,
 }))
-// 只展示有可选值的维度
-const filterableDimensions = computed(() => (
-  (props.tagDimensions || []).filter(dim => (dim.values || []).length)
-))
-
-function toggleTag(id) {
-  const next = props.selectedTagIds.includes(id)
-    ? props.selectedTagIds.filter(item => item !== id)
-    : [...props.selectedTagIds, id]
-  emit('update:selectedTagIds', next)
+function groupKey(batchId, groupId) { return `${batchId}:${groupId}` }
+function groupSelected(batchId, groupId) { return groupSelections.value[groupKey(batchId, groupId)] || [] }
+function toggleGroupTag(batchId, groupId, tagId) {
+  const key = groupKey(batchId, groupId)
+  const selected = groupSelected(batchId, groupId)
+  groupSelections.value[key] = selected.includes(tagId) ? selected.filter(id => id !== tagId) : [...selected, tagId]
 }
+function visibleGroupAssets(batchId, group) { return filterMediaByTags(group.assets, groupSelected(batchId, group.id)) }
 
 function batchAssetCount(batch, type) {
   return batch.assets.filter(asset => asset.media_type === type).length
@@ -222,6 +208,7 @@ function clearFilters() {
 
 watch(() => props.customer?.customer_id, () => {
   clearFilters()
+  groupSelections.value = {}
   previewAsset.value = null
 })
 </script>
@@ -229,6 +216,10 @@ watch(() => props.customer?.customer_id, () => {
 <style scoped>
 .portal-dimension { margin: 24px 0; }
 .portal-dimension h3 { margin: 0 0 14px; color: var(--text-primary); font-size: 18px; }
+.portal-dimension h3 span { margin-left: 8px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.group-filter-row { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 10px; }
+.group-filter-row strong { min-width: 90px; padding-top: 10px; color: var(--text-secondary); font-size: 12px; }
+.group-empty { color: var(--text-secondary); font-size: 12px; }
 .portal-tag-group { margin-bottom: 24px; }
 .portal-tag-group h4 { margin: 0 0 12px; color: var(--color-primary-hover); font-size: 14px; }
 .portal-tag-group h4 span { margin-left: 6px; color: var(--text-secondary); font-weight: 400; }
@@ -286,14 +277,14 @@ watch(() => props.customer?.customer_id, () => {
 .sku-heading h2 { margin: 6px 0 4px; font: 500 27px Georgia, serif; }
 .sku-heading p { margin: 0; color: var(--text-secondary); font-size: 12px; }
 .shoot-tag { padding: 7px 10px; border: 1px solid rgba(61, 51, 35, 0.12); border-radius: 999px; color: var(--text-secondary); background: rgba(255, 255, 255, 0.52); font-size: 11px; }
-.asset-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.asset-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
 .asset-card { overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.88); background: rgba(255, 255, 255, 0.68); box-shadow: 0 9px 28px rgba(117, 79, 24, 0.1); transition: transform 220ms var(--ease-out-strong), box-shadow 220ms var(--ease-out-strong); }
-.asset-preview { display: block; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border: 0; padding: 0; background: var(--border-color); cursor: zoom-in; }
-.asset-preview img,.asset-preview video { width: 100%; height: 100%; object-fit: cover; transition: transform 320ms var(--ease-out-strong); }
+.asset-preview { display: flex; width: 100%; height: 200px; align-items: center; justify-content: center; overflow: hidden; border: 0; padding: 0; background: var(--border-color); cursor: zoom-in; }
+.asset-preview img,.asset-preview video { display: block; width: auto; max-width: 100%; height: 200px; object-fit: contain; }
 .video-preview { cursor: default; }
 .asset-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 13px; }
 .asset-footer>span { display: grid; min-width: 0; gap: 3px; }
-.asset-footer strong { font-size: 12px; }
+.asset-footer strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .asset-footer small { color: var(--text-secondary); font-size: 10px; }
 .asset-footer a,.lightbox-caption a { flex: 0 0 auto; color: var(--color-primary-hover); font-size: 11px; font-weight: 700; text-decoration: none; }
 .empty-state { padding: 70px 24px; border: 1px dashed rgba(61, 51, 35, 0.18); text-align: center; }
@@ -313,7 +304,7 @@ watch(() => props.customer?.customer_id, () => {
 .lightbox-content img { display: block; max-width: 100%; max-height: 82vh; object-fit: contain; }
 .lightbox-caption { display: flex; justify-content: space-between; gap: 20px; padding: 12px 2px 0; color: var(--text-on-dark); }
 .lightbox-caption a { color: var(--color-gold); }
-@media (hover: hover) and (pointer: fine) { .asset-card:hover { transform: translateY(-2px); box-shadow: 0 14px 34px rgba(117, 79, 24, 0.16); }.asset-card:hover .asset-preview img { transform: scale(1.025); } }
+@media (hover: hover) and (pointer: fine) { .asset-card:hover { transform: translateY(-2px); box-shadow: 0 14px 34px rgba(117, 79, 24, 0.16); } }
 @media (max-width: 980px) { .collection-head { align-items: flex-start; flex-direction: column; }.summary-card { width: 100%; }.summary-card div { flex: 1; }.preview-topbar { padding-inline: 20px; }.preview-badge { display: none; } }
 @media (max-width: 700px) { .library-content { padding: 24px 16px 32px; }.portal-label { text-align: right; }.collection-identity { align-items: flex-start; }.collection-logo { width: 56px; height: 56px; }.collection-identity h1 { font-size: 29px; }.summary-card { display: grid; grid-template-columns: repeat(3, 1fr); }.summary-card div { min-width: 0; padding: 11px 9px; }.library-stats { grid-template-columns: repeat(2, 1fr); }.library-stats div:nth-child(2) { border-right: 0; }.library-stats div:nth-child(-n+2) { border-bottom: 1px solid rgba(61, 51, 35, 0.1); }.notice-private { display: none; }.finder-heading { align-items: stretch; flex-direction: column; }.search-field { width: 100%; }.finder-row { align-items: flex-start; flex-direction: column; gap: 10px; }.finder-row>span { width: auto; }.asset-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }.asset-footer { align-items: flex-start; flex-direction: column; }.library-footer { align-items: flex-start; flex-direction: column; } }
 </style>

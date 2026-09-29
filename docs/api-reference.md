@@ -948,7 +948,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | POST | `/batches/{batch_id}/assets` | `customer_media:write/admin` + 当前任务维护权限 | 上传图片或视频；multipart `tags_json` 至少包含一个有效客户标签。保存文件标签时，也把这些标签追加到客户标签集合。 |
 | GET | `/sales-portal/customers?search=` | `customer_media_portal:read` 或 `customer_media:admin` | 返回调用者范围内已配置门户的客户摘要、门户状态、图片/视频/交付批次数和最近更新时间。 |
 | GET | `/sales-portal/customers/{customer_id}` | 同上 | 返回客户摘要及其实际可见的已发布批次；批次标题与拍摄类型也由客户公开门户返回。停用账号不签发素材 URL。 |
-| GET | `/sales-portal/customers/{customer_id}/tags` | 同上 | 仅返回该客户已发布素材实际用到的标签维度与标签；停用账号返回空列表。业务预览据此筛选，与客户外部站保持一致。 |
+| GET | `/sales-portal/customers/{customer_id}/tags` | 同上 | 仅返回该客户已发布素材实际用到的标签维度与标签；每个维度包含稳定的 `name`（客户产品类型维度如 `customer_product_type`）、`dimension_id`、`label` 和 `values`。停用账号返回空列表。业务预览按产品类型分组，并在组内按其他维度筛选。 |
 | GET | `/sales-portal/assets/{asset_id}/content?expires=&token=&download=` | 业务预览 purpose-bound HMAC | 返回业务预览或下载文件；签名绑定用途、素材 ID 与过期时间，并在每次读取时重验门户账号仍启用、所属批次仍为 published，停用或下架立即 404。 |
 | GET | `/assets/{asset_id}/content?expires=&token=&download=` | 内部审核 HMAC | 返回设计审核工作流中的内部预览或下载文件；与业务预览签名不可互换。 |
 | GET | `/batches/{batch_id}/directories` | `customer_media:write/admin` + 任务维护权限 | 客户共享目录，`asset_count` 为本批次数量，`total_asset_count` 为目录跨批次未删素材总数。 |
@@ -956,6 +956,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | POST | `/portal/login` | 公开门户邮箱密码 | 登录限流后签发 HttpOnly 门户 Cookie；错误账号与密码统一 401。 |
 | POST | `/portal/logout` | 门户 Cookie | 撤销当前会话并删除 Cookie。 |
 | GET | `/portal/me` | 门户 Cookie | 返回当前客户身份。 |
+| GET | `/portal/tags` | 门户 Cookie | 返回该客户已发布素材实际用到的标签维度与标签，包含稳定的维度 `name`，外部站据此识别 `product_type` 并分组。 |
 | GET | `/portal/library` | 门户 Cookie | 按账号 customer_id 返回该客户已发布批次，包含与业务预览一致的任务标题、拍摄类型和素材。 |
 | GET | `/portal/assets/{asset_id}/content?download=` | 门户 Cookie | 再校验客户归属和批次发布状态；下载时写下载审计。 |
 

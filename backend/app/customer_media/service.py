@@ -1010,7 +1010,7 @@ def matching_asset_ids(
 def portal_used_tags(db: Session, account: CustomerPortalAccount) -> list[dict]:
     """该客户已发布素材实际用到的客户标签，按维度分组（含每个值的素材数）。"""
     rows = db.execute(select(
-        TagDimension.id, TagDimension.label, TagDimension.sort_order,
+        TagDimension.id, TagDimension.name, TagDimension.label, TagDimension.sort_order,
         TagValue.id, TagValue.value, TagValue.sort_order,
         func.count(distinct(CustomerMediaAssetTag.asset_id)),
     ).select_from(CustomerMediaAssetTag).join(
@@ -1027,14 +1027,14 @@ def portal_used_tags(db: Session, account: CustomerPortalAccount) -> list[dict]:
         CustomerMediaAsset.deleted_at.is_(None),
         TagDimension.tag_scope == CUSTOMER_TAG_SCOPE,
     ).group_by(
-        TagDimension.id, TagDimension.label, TagDimension.sort_order,
+        TagDimension.id, TagDimension.name, TagDimension.label, TagDimension.sort_order,
         TagValue.id, TagValue.value, TagValue.sort_order,
     ).order_by(
         TagDimension.sort_order, TagDimension.id, TagValue.sort_order, TagValue.id,
     )).all()
     dimensions: dict[int, dict] = {}
-    for dim_id, label, _dim_sort, value_id, value, _value_sort, count in rows:
-        entry = dimensions.setdefault(dim_id, {"dimension_id": dim_id, "label": label, "values": []})
+    for dim_id, name, label, _dim_sort, value_id, value, _value_sort, count in rows:
+        entry = dimensions.setdefault(dim_id, {"dimension_id": dim_id, "name": name, "label": label, "values": []})
         entry["values"].append({"id": value_id, "value": value, "count": count})
     return list(dimensions.values())
 

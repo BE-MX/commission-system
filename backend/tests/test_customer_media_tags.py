@@ -485,7 +485,7 @@ def test_sales_preview_tags_use_current_customer_scope_and_published_media(db):
         response = client.get(path)
         assert response.status_code == 200
         assert response.json()["data"] == [{
-            "dimension_id": dim.id, "label": "场景",
+            "dimension_id": dim.id, "name": "customer_scene", "label": "场景",
             "values": [{"id": values[0].id, "value": "白底", "count": 1}],
         }]
         account.is_active = False
@@ -631,6 +631,7 @@ def test_portal_tags_only_used_values_and_cross_customer_isolation(db):
         assert tags_a.status_code == 200
         data_a = tags_a.json()["data"]
         assert [d["dimension_id"] for d in data_a] == [dim.id]
+        assert data_a[0]["name"] == "customer_scene"
         assert data_a[0]["label"] == "客户场景"
         # 只出本客户实际用到的值：场景图（乙客户用）与未使用都不出现
         assert data_a[0]["values"] == [{"id": values[0].id, "value": "白底图", "count": 1}]

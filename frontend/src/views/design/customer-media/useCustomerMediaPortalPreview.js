@@ -14,8 +14,6 @@ export function useCustomerMediaPortalPreview({
   const loadingCustomers = ref(false)
   const loadingDetail = ref(false)
   const detailError = ref('')
-  // 客户标签筛选（tag_value_ids，同维度 OR、跨维度 AND，服务端过滤）
-  const tagValueIds = ref([])
   let customerRequestVersion = 0
   let detailRequestVersion = 0
 
@@ -54,7 +52,7 @@ export function useCustomerMediaPortalPreview({
       }).catch(() => {})
     }
     try {
-      const response = await api.getSalesPortalCustomer(customerId, tagValueIds.value)
+      const response = await api.getSalesPortalCustomer(customerId)
       if (requestVersion === detailRequestVersion) detail.value = response.data || null
       return true
     } catch (error) {
@@ -108,14 +106,6 @@ export function useCustomerMediaPortalPreview({
     }
   })
 
-  // 标签筛选条变更：带 tag_value_ids 重新拉取当前客户视图
-  async function applyTagFilter(ids) {
-    tagValueIds.value = [...ids]
-    if (selectedCustomerId.value) {
-      await selectCustomer(selectedCustomerId.value, { updateRoute: false })
-    }
-  }
-
   onMounted(() => loadCustomers({ preserveSelection: false }))
 
   return {
@@ -128,9 +118,7 @@ export function useCustomerMediaPortalPreview({
     loadingCustomers,
     loadingDetail,
     detailError,
-    tagValueIds,
     loadCustomers,
     selectCustomer,
-    applyTagFilter,
   }
 }

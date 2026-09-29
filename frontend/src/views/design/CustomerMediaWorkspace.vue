@@ -143,13 +143,17 @@
 
       <div v-if="assets.length" class="dimension-groups">
         <section v-for="group in assetGroups" :key="group.id" class="asset-dimension">
-          <h4>{{ group.label }}</h4>
-          <div v-for="bucket in group.buckets" :key="bucket.id" class="asset-tag-group">
-            <h5>{{ bucket.label }} <span>{{ bucket.assets.length }} 个文件</span></h5>
+          <h4>{{ group.label }} <span>{{ visibleGroupAssets(group).length }} / {{ group.assets.length }} 个文件</span></h4>
+          <div v-for="filter in group.filters" :key="filter.id" class="group-filter-row">
+            <strong>{{ filter.label }}</strong>
+            <div class="group-filter-values">
+              <button v-for="value in filter.values" :key="value.id" type="button" :aria-pressed="(groupSelections[group.id] || []).includes(value.id)" :class="{ active: (groupSelections[group.id] || []).includes(value.id) }" @click="toggleGroupTag(group.id, value.id)">{{ value.value }}</button>
+            </div>
+          </div>
+          <div class="asset-tag-group">
             <div class="asset-grid">
-        <article v-for="asset in bucket.assets" :key="asset.id" class="asset-card lg-card">
-          <img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="preview(asset)" />
-          <video v-else :src="asset.content_url" controls preload="metadata" />
+        <article v-for="asset in visibleGroupAssets(group)" :key="asset.id" class="asset-card lg-card">
+          <div class="asset-thumb"><img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="preview(asset)" /><video v-else :src="asset.content_url" controls preload="metadata" /></div>
           <div class="asset-info">
             <strong :title="asset.file_name">{{ asset.file_name }}</strong>
             <span>{{ formatSize(asset.file_size) }}</span>
@@ -158,6 +162,7 @@
           <GlassButton v-if="editable" variant="link" link-tone="danger" left-icon="Delete" @click="removeAsset(asset)">删除</GlassButton>
         </article>
             </div>
+            <p v-if="!visibleGroupAssets(group).length" class="group-empty">没有符合筛选条件的素材</p>
           </div>
         </section>
       </div>
@@ -195,7 +200,7 @@ import {
 import CustomerMediaDirectoryDialog from './customer-media/CustomerMediaDirectoryDialog.vue'
 import CustomerMediaTagPicker from './customer-media/CustomerMediaTagPicker.vue'
 import CustomerTagBoard from './customer-media/CustomerTagBoard.vue'
-import { groupMediaByTags } from './customer-media/customerMediaGrouping'
+import { filterMediaByTags, groupMediaByTags } from './customer-media/customerMediaGrouping'
 import { collectDroppedFiles, dropHasDirectory, webkitPathSegments } from './customer-media/droppedFiles'
 import { useCustomerMediaUpload } from './customer-media/composables/useCustomerMediaUpload'
 
@@ -219,6 +224,15 @@ const directories = computed(() => batch.value?.directories || [])
 const editable = computed(() => ['draft', 'changes_requested'].includes(batch.value?.status))
 const selectedTags = computed(() => customerTags.value.filter(tag => selectedTagIds.value.includes(tag.tag_value_id)))
 const assetGroups = computed(() => groupMediaByTags(assets.value, tagDimensions.value))
+const groupSelections = ref({})
+function toggleGroupTag(groupId, tagId) {
+  const selected = groupSelections.value[groupId] || []
+  groupSelections.value[groupId] = selected.includes(tagId) ? selected.filter(id => id !== tagId) : [...selected, tagId]
+}
+function visibleGroupAssets(group) {
+  const available = new Set(group.filters.flatMap(filter => filter.values.map(value => value.id)))
+  return filterMediaByTags(group.assets, (groupSelections.value[group.id] || []).filter(id => available.has(id)))
+}
 const totalSize = computed(() => formatSize(assets.value.reduce((sum, item) => sum + item.file_size, 0)))
 const statusMeta = computed(() => ({
   draft: { label: '整理中', type: 'info' },
@@ -388,11 +402,19 @@ onBeforeUnmount(reset)
 .dimension-groups { display: grid; gap: 26px; }
 .asset-dimension { border-top: 1px solid var(--border-color); padding-top: 16px; }
 .asset-dimension h4 { margin: 0 0 14px; color: var(--text-primary); font-size: 17px; }
+.asset-dimension h4 span { margin-left: 8px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.group-filter-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.group-filter-row strong { min-width: 90px; padding-top: 5px; font-size: 12px; color: var(--text-secondary); }
+.group-filter-values { display: flex; flex-wrap: wrap; gap: 7px; }
+.group-filter-values button { padding: 5px 10px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); background: var(--card-bg); cursor: pointer; }
+.group-filter-values button.active { border-color: var(--color-primary); color: var(--color-primary-hover); background: var(--color-primary-light); }
+.group-empty { color: var(--text-secondary); font-size: 13px; }
 .asset-tag-group { margin-bottom: 20px; }
 .asset-tag-group h5 { margin: 0 0 12px; font-size: 14px; color: var(--color-primary-hover); }
 .asset-tag-group h5 span { margin-left: 7px; color: var(--text-secondary); font-weight: 400; }
-.asset-card { overflow: hidden; padding-bottom: 12px; }
-.asset-card img, .asset-card video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--page-bg); cursor: pointer; }
+.asset-card { min-width: 0; overflow: hidden; padding-bottom: 12px; }
+.asset-thumb { display: flex; height: 200px; align-items: center; justify-content: center; overflow: hidden; background: var(--page-bg); }
+.asset-thumb img, .asset-thumb video { display: block; width: auto; max-width: 100%; height: 200px; object-fit: contain; cursor: pointer; }
 .asset-info { padding: 12px 14px 4px; display: grid; gap: 5px; }
 .asset-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .asset-card .glass-button { margin-left: 10px; }

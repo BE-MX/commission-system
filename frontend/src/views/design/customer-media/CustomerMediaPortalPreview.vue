@@ -64,8 +64,6 @@
           :loading="loadingDetail"
           :error="detailError"
           :tag-dimensions="tagDimensions"
-          :selected-tag-ids="tagValueIds"
-          @update:selected-tag-ids="applyTagFilter"
         />
       </div>
     </section>
@@ -97,10 +95,8 @@ const {
   loadingCustomers,
   loadingDetail,
   detailError,
-  tagValueIds,
   loadCustomers,
   selectCustomer,
-  applyTagFilter,
 } = useCustomerMediaPortalPreview({ route, router })
 
 async function chooseCustomer(customerId) {
@@ -116,7 +112,7 @@ watch(selectedCustomerId, async customerId => {
   try {
     const groups = (await getSalesPortalCustomerTags(customerId)).data || []
     if (version === tagsRequestVersion) tagDimensions.value = groups.map(group => ({
-      id: group.dimension_id, label: group.label, values: group.values,
+      id: group.dimension_id, name: group.name, label: group.label, values: group.values,
     }))
   } catch { /* 标签筛选条不可用不阻断预览 */ }
 })

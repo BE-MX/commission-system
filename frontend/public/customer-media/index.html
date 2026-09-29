@@ -77,7 +77,6 @@
             <label class="search-field"><span>⌕</span><input id="search" aria-label="Search files" placeholder="Search file name" /></label>
           </div>
           <div class="finder-row"><span>Batch</span><div class="finder-options" id="batch-filters" role="tablist" aria-label="Batches"></div></div>
-          <div id="tag-filters"></div>
         </section>
 
         <div class="bulk-download-bar hidden" id="bulk-bar">
@@ -123,8 +122,8 @@
     let activeBatch = 'all';     // 'all' | String(batch.id)
     let selected = new Set();    // 已勾选素材 id
     let previewState = null;     // { batchId, assetId }
-    let tagGroups = [];          // [{ dimension_id, label, values: [{id, value, count}] }]
-    let activeTags = new Set();  // 已选 tag_value_id（同维度 OR、跨维度 AND，服务端过滤）
+    let tagGroups = [];          // [{ dimension_id, name, label, values }]
+    let groupSelections = {};    // batch/product group -> selected tag IDs
     let libraryRequestVersion = 0;
     let toastTimer = 0;
 
@@ -138,6 +137,10 @@
     function escapeHtml(v) { const d = document.createElement('div'); d.textContent = v; return d.innerHTML; }
     function escapeAttr(v) { return escapeHtml(v).replaceAll('&quot;', '&#34;').replaceAll("'", '&#39;'); }
     function pad(n) { return String(n).padStart(2, '0'); }
+    function fmtSize(bytes) {
+      const size = Number(bytes) || 0;
+      return size < 1048576 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1048576).toFixed(1)} MB`;
+    }
     function initials(name) {
       const text = String(name || '').trim();
       const parts = text.split(/\s+/).filter(Boolean);
@@ -166,26 +169,48 @@
     function allAssets() { return batches.flatMap(b => b.assets); }
     function groupBatchAssets(assets) {
       const groups = new Map();
-      const unlabeled = [];
+      const isProductLabel = label => ['产品类型', 'product type'].includes(String(label || '').trim().toLowerCase());
+      const productDimension = tagGroups.find(group => ['customer_product_type', 'product_type_customer', 'product_type'].includes(group.name) || isProductLabel(group.label));
       for (const asset of assets) {
-        if (!(asset.tags || []).length) unlabeled.push(asset);
-        for (const tag of asset.tags || []) {
-          if (!groups.has(tag.dimension_id)) groups.set(tag.dimension_id, {
-            id: tag.dimension_id,
-            label: tag.dimension_label || tagGroups.find(group => group.dimension_id === tag.dimension_id)?.label || 'Client tags',
-            buckets: new Map(),
-          });
-          const group = groups.get(tag.dimension_id);
-          if (!group.buckets.has(tag.tag_value_id)) group.buckets.set(tag.tag_value_id, { id: tag.tag_value_id, label: tag.value, assets: [] });
-          group.buckets.get(tag.tag_value_id).assets.push(asset);
+        const products = (asset.tags || []).filter(tag => productDimension
+          ? tag.dimension_id === productDimension.dimension_id : isProductLabel(tag.dimension_label));
+        for (const tag of products.length ? products : [null]) {
+          const id = tag?.tag_value_id ?? 'unassigned';
+          if (!groups.has(id)) groups.set(id, { id, label: tag?.value || 'Unassigned product type', assets: [] });
+          if (!groups.get(id).assets.some(item => item.id === asset.id)) groups.get(id).assets.push(asset);
         }
       }
       const rank = new Map(tagGroups.map((group, index) => [group.dimension_id, index]));
-      const result = [...groups.values()]
-        .sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || a.id - b.id)
-        .map(group => ({ ...group, buckets: [...group.buckets.values()] }));
-      if (unlabeled.length) result.push({ id: 'unlabeled', label: 'Unlabeled', buckets: [{ id: 'unlabeled', label: 'Unlabeled', assets: unlabeled }] });
-      return result;
+      return [...groups.values()].map(group => {
+        const filters = new Map();
+        for (const asset of group.assets) for (const tag of asset.tags || []) {
+          if (tag.dimension_id === productDimension?.dimension_id || isProductLabel(tag.dimension_label)) continue;
+          if (!filters.has(tag.dimension_id)) filters.set(tag.dimension_id, {
+            id: tag.dimension_id, label: tag.dimension_label || tagGroups.find(dim => dim.dimension_id === tag.dimension_id)?.label || 'Client tag', values: new Map(),
+          });
+          filters.get(tag.dimension_id).values.set(tag.tag_value_id, { id: tag.tag_value_id, value: tag.value });
+        }
+        return { ...group, filters: [...filters.values()]
+          .sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || a.id - b.id)
+          .map(filter => ({ ...filter, values: [...filter.values.values()] })) };
+      }).sort((a, b) => (a.id === 'unassigned') - (b.id === 'unassigned'));
+    }
+    function visibleAssetIds(shown = visibleBatches()) {
+      return [...new Set(shown.flatMap(batch => groupBatchAssets(batch.viewAssets)
+        .flatMap(group => visibleGroupAssets(batch.id, group).map(asset => asset.id))))];
+    }
+    function groupKey(batchId, groupId) { return `${batchId}:${groupId}`; }
+    function selectedGroupTags(batchId, groupId) { return groupSelections[groupKey(batchId, groupId)] || []; }
+    function visibleGroupAssets(batchId, group) {
+      const ids = selectedGroupTags(batchId, group.id);
+      if (!ids.length) return group.assets;
+      const byDimension = new Map();
+      for (const filter of group.filters) for (const value of filter.values) if (ids.includes(value.id)) {
+        if (!byDimension.has(filter.id)) byDimension.set(filter.id, new Set());
+        byDimension.get(filter.id).add(value.id);
+      }
+      return group.assets.filter(asset => [...byDimension.entries()].every(([dimensionId, values]) =>
+        (asset.tags || []).some(tag => tag.dimension_id === dimensionId && values.has(tag.tag_value_id))));
     }
 
     function render() {
@@ -217,21 +242,23 @@
             <p>${fmtDate(b.published_at)} · ${b.viewAssets.length} ${b.viewAssets.length === 1 ? 'asset' : 'assets'} · ${imgs} photos · ${vids} videos${shootType}</p>
           </div></header>
           ${groupBatchAssets(b.viewAssets).map(group => `<div class="portal-dimension">
-            <h3>${escapeHtml(group.label)}</h3>
-            ${group.buckets.map(bucket => `<section class="portal-tag-group">
-              <h4>${escapeHtml(bucket.label)} <span>${bucket.assets.length} files</span></h4>
-              <div class="asset-gallery">${bucket.assets.map((a, i) => `
+            <h3>${escapeHtml(group.label)} <span>${visibleGroupAssets(b.id, group).length} / ${group.assets.length} files</span></h3>
+            ${group.filters.map(filter => `<div class="group-filter-row"><strong>${escapeHtml(filter.label)}</strong><div class="finder-options" role="group" aria-label="Filter by ${escapeAttr(filter.label)}">
+              ${filter.values.map(value => `<button type="button" data-group-tag="${value.id}" data-batch-id="${b.id}" data-group-id="${group.id}" aria-pressed="${selectedGroupTags(b.id, group.id).includes(value.id)}" class="${selectedGroupTags(b.id, group.id).includes(value.id) ? 'active' : ''}">${escapeHtml(value.value)}</button>`).join('')}
+            </div></div>`).join('')}
+            <section class="portal-tag-group">
+              <div class="asset-gallery">${visibleGroupAssets(b.id, group).map(a => `
             <article class="asset-card ${selected.has(a.id) ? 'selected' : ''}" data-card="${a.id}">
               <label class="asset-select"><input type="checkbox" data-select="${a.id}" ${selected.has(a.id) ? 'checked' : ''} /><span>Select</span></label>
-              <button class="asset-preview" data-preview-batch="${b.id}" data-preview-asset="${a.id}" aria-label="Open ${escapeAttr(a.file_name)}">
+              <button class="asset-preview" data-preview-batch="${b.id}" data-preview-group="${group.id}" data-preview-asset="${a.id}" aria-label="Open ${escapeAttr(a.file_name)}">
                 ${a.media_type === 'image'
                   ? `<img src="${a.content_url}" alt="${escapeAttr(a.file_name)}" loading="lazy" />`
                   : `<video src="${a.content_url}" muted preload="metadata"></video><span class="asset-play">▶</span>`}
-                ${cornerTags(a)}
               </button>
-              <div class="asset-footer"><span>View ${pad(i + 1)}</span><a href="${a.content_url}?download=true">Download ↓</a></div>
+              <div class="asset-footer"><span title="${escapeAttr(a.file_name)}"><strong>${escapeHtml(a.file_name)}</strong><small>${fmtSize(a.file_size)}</small></span><a href="${a.content_url}?download=true">Download ↓</a></div>
             </article>`).join('')}</div>
-            </section>`).join('')}
+            ${visibleGroupAssets(b.id, group).length ? '' : '<p class="group-empty">No materials match these tags.</p>'}
+            </section>
           </div>`).join('')}
         </section>`;
       }).join('');
@@ -242,14 +269,14 @@
         empty.classList.remove('hidden');
         $('empty-title').textContent = batches.length
           ? 'No batch matches your search.'
-          : (activeTags.size ? 'No materials match the selected tags.' : 'No materials published yet.');
-        $('empty-clear').classList.toggle('hidden', !batches.length && !activeTags.size);
+          : 'No materials published yet.';
+        $('empty-clear').classList.toggle('hidden', !batches.length);
       } else {
         empty.classList.add('hidden');
       }
 
       // 批量下载条
-      const visibleIds = shown.flatMap(b => b.viewAssets.map(a => a.id));
+      const visibleIds = visibleAssetIds(shown);
       const bar = $('bulk-bar');
       bar.classList.toggle('hidden', visibleIds.length === 0);
       const pickedVisible = visibleIds.filter(id => selected.has(id));
@@ -261,7 +288,8 @@
     // 灯箱
     function previewAssets() {
       const b = visibleBatches().find(item => String(item.id) === String(previewState?.batchId));
-      return b ? b.viewAssets : [];
+      const group = b && groupBatchAssets(b.viewAssets).find(item => String(item.id) === String(previewState?.groupId));
+      return group ? visibleGroupAssets(b.id, group) : [];
     }
     function renderLightbox() {
       const list = previewAssets();
@@ -284,7 +312,7 @@
       if (!list.length) return;
       const index = list.findIndex(a => String(a.id) === String(previewState.assetId));
       const next = (index + delta + list.length) % list.length;
-      previewState = { batchId: previewState.batchId, assetId: list[next].id };
+      previewState = { batchId: previewState.batchId, groupId: previewState.groupId, assetId: list[next].id };
       renderLightbox();
     }
 
@@ -305,8 +333,7 @@
     }
     async function loadLibrary() {
       const version = ++libraryRequestVersion;
-      const query = activeTags.size ? '?tag_value_ids=' + [...activeTags].join(',') : '';
-      const loaded = await request('/library' + query);
+      const loaded = await request('/library');
       if (version !== libraryRequestVersion) return;
       batches = loaded;
       batches.sort((a, b) => String(b.published_at || '').localeCompare(String(a.published_at || '')));
@@ -318,43 +345,16 @@
       render();
     }
 
-    // 标签筛选条：仅含该客户已发布素材实际用到的标签（/portal/tags）
+    // Dimension names identify product_type independently of the display label.
     async function loadTags() {
       try { tagGroups = await request('/tags'); } catch { tagGroups = []; }
-      renderTagFilters();
       render();
-    }
-    function renderTagFilters() {
-      const box = $('tag-filters');
-      if (!tagGroups.length) { box.innerHTML = ''; return; }
-      box.innerHTML = tagGroups.map(group => `
-        <div class="finder-row tag-filter-row"><span>${escapeHtml(group.label)}</span>
-          <div class="finder-options" role="group" aria-label="Filter by ${escapeAttr(group.label)}">${group.values.map(v => `
-            <button class="${activeTags.has(v.id) ? 'active' : ''}" data-tag="${v.id}" role="button">${escapeHtml(v.value)}<em class="tag-count">${v.count}</em></button>`).join('')}
-          </div>
-        </div>`).join('') +
-        (activeTags.size ? `<div class="finder-row tag-clear-row"><span></span><button class="tag-clear" id="tag-clear">Clear tag filters ×</button></div>` : '');
-      const clear = $('tag-clear');
-      if (clear) clear.onclick = () => { activeTags = new Set(); renderTagFilters(); loadLibrary(); };
-    }
-    function toggleTag(id) {
-      activeTags.has(id) ? activeTags.delete(id) : activeTags.add(id);
-      renderTagFilters();
-      loadLibrary();
-    }
-    // 图片卡角标：最多展示 3 个标签
-    function cornerTags(asset) {
-      const tags = asset.tags || [];
-      if (!tags.length) return '';
-      const chips = tags.slice(0, 3).map(t => `<i>${escapeHtml(t.value)}</i>`).join('');
-      const more = tags.length > 3 ? `<i>+${tags.length - 3}</i>` : '';
-      return `<span class="asset-corner-tags">${chips}${more}</span>`;
     }
 
     // 事件
     $('splash-enter').onclick = () => { session ? enterApp() : showLogin(); };
     async function enterApp() {
-      try { await loadLibrary(); loadTags(); showApp(); }
+      try { await loadLibrary(); await loadTags(); showApp(); }
       catch { session = null; showLogin(); }
     }
     $('login-form').onsubmit = async e => {
@@ -381,15 +381,14 @@
       libraryRequestVersion++;
       await request('/logout', { method: 'POST' }).catch(() => {});
       session = null; batches = []; selected = new Set(); previewState = null;
-      tagGroups = []; activeTags = new Set(); renderTagFilters();
+      tagGroups = []; groupSelections = {};
       showLogin();
     };
     $('browse-files').onclick = () => document.querySelector('.sku-finder')?.scrollIntoView({ behavior: 'smooth' });
     $('search').oninput = render;
     $('empty-clear').onclick = () => {
       activeBatch = 'all'; $('search').value = '';
-      if (activeTags.size) { activeTags = new Set(); renderTagFilters(); loadLibrary(); }
-      else render();
+      render();
     };
     $('batch-filters').addEventListener('click', e => {
       const btn = e.target.closest('button[data-batch]');
@@ -398,15 +397,20 @@
       render();
       window.setTimeout(() => document.querySelector('.sku-library')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
     });
-    $('tag-filters').addEventListener('click', e => {
-      const btn = e.target.closest('button[data-tag]');
+    $('library').addEventListener('click', e => {
+      const btn = e.target.closest('button[data-group-tag]');
       if (!btn) return;
-      toggleTag(Number(btn.dataset.tag));
+      const key = groupKey(btn.dataset.batchId, btn.dataset.groupId);
+      const id = Number(btn.dataset.groupTag);
+      const ids = groupSelections[key] || [];
+      groupSelections[key] = ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id];
+      render();
+      if (previewState) renderLightbox();
     });
     $('library').addEventListener('click', e => {
       const btn = e.target.closest('.asset-preview');
       if (!btn) return;
-      previewState = { batchId: btn.dataset.previewBatch, assetId: btn.dataset.previewAsset };
+      previewState = { batchId: btn.dataset.previewBatch, groupId: btn.dataset.previewGroup, assetId: btn.dataset.previewAsset };
       renderLightbox();
     });
     $('library').addEventListener('change', e => {
@@ -417,7 +421,7 @@
       render();
     });
     $('select-all').onchange = () => {
-      const visibleIds = visibleBatches().flatMap(b => b.viewAssets.map(a => a.id));
+      const visibleIds = visibleAssetIds();
       if (visibleIds.every(id => selected.has(id))) visibleIds.forEach(id => selected.delete(id));
       else visibleIds.forEach(id => selected.add(id));
       render();
