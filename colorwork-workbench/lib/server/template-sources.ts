@@ -186,7 +186,7 @@ function staticConfig(template: TemplateSummary, sourceVersionId: string | null)
     })),
     parseSummary: {
       layerCount: 0,
-      parsedColorCount: template.initialCards.length,
+      parsedColorCount: template.initialCards.filter((card) => card.kind !== 'display').length,
       parsedSpecCount: template.initialCards.reduce((sum, card) => sum + card.lengths.length, 0),
       sectionCount: template.sections.length,
       documentWidth: template.width,
@@ -600,7 +600,9 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
       typeof card.colorId !== 'string' || card.colorId.length > 120 || !allKnownColorIds.has(card.colorId) || !sourceColor ||
       typeof card.colorCode !== 'string' || card.colorCode.trim().length > 80 || !canonicalColorCode(card.colorCode) ||
       canonicalColorCode(card.colorCode) !== canonicalColorCode(sourceColor.code) ||
-      !Array.isArray(card.lengths) || !card.lengths.length ||
+      !Array.isArray(card.lengths) || (card.kind !== 'display' && !card.lengths.length) ||
+      (card.kind === 'display' && (card.lengths.length !== 0 || card.hot)) ||
+      (card.kind != null && card.kind !== 'stock' && card.kind !== 'display') ||
       card.lengths.some((value) => !Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > 100) ||
       new Set(card.lengths.map(Number)).size !== card.lengths.length ||
       !['exact', 'new', 'unresolved'].includes(card.matchState)
@@ -633,7 +635,8 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
       entryId: card.entryId,
       colorId: card.colorId,
       colorCode: card.colorCode.trim(),
-      lengths: [...new Set(card.lengths.map(Number))].sort((a, b) => a - b),
+      kind: card.kind === 'display' ? 'display' : 'stock',
+      lengths: card.kind === 'display' ? [] : [...new Set(card.lengths.map(Number))].sort((a, b) => a - b),
       section: card.section,
       matchedEntryId: card.matchedEntryId,
       matchReason: typeof card.matchReason === 'string' ? card.matchReason.slice(0, 500) : '',
@@ -687,11 +690,12 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
       initialCards: validatedCards.map((card, order) => ({
         ...card,
         order,
-        lengths: [...new Set(card.lengths.map(Number))].sort((a, b) => a - b),
-        hot: Boolean(card.hot),
+        kind: card.kind === 'display' ? 'display' : 'stock',
+        lengths: card.kind === 'display' ? [] : [...new Set(card.lengths.map(Number))].sort((a, b) => a - b),
+        hot: card.kind !== 'display' && Boolean(card.hot),
       })),
       warnings: normalizedIssues.map((issue) => issue.message),
-      initialColorCount: cards.length,
+      initialColorCount: validatedCards.filter((card) => card.kind !== 'display').length,
     },
     colors: colors.map((color) => ({
       id: color.id,
@@ -703,7 +707,7 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
     parseIssues: normalizedIssues,
     parseSummary: {
       layerCount: Math.max(0, Number(raw.parseSummary?.layerCount) || 0),
-      parsedColorCount: validatedCards.length,
+      parsedColorCount: validatedCards.filter((card) => card.kind !== 'display').length,
       parsedSpecCount: validatedCards.reduce((sum, card) => sum + card.lengths.length, 0),
       sectionCount: sections.length,
       documentWidth: width,

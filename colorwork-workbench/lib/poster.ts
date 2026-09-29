@@ -60,7 +60,7 @@ export function activeColorsFor(
   selection: Selection,
 ): ActiveColor[] {
   return selection
-    .filter((entry) => entry.lengths.length)
+    .filter((entry) => entry.kind === 'display' || entry.lengths.length)
     .map((entry) => ({ color: colorForId(colors, item, entry.colorId), entry }))
     .filter((value): value is ActiveColor => Boolean(value.color))
     .sort(
@@ -105,7 +105,11 @@ function sourceLayoutForActive(item: TemplateSummary, active: ActiveColor[]) {
   );
   const cards = active.map(({ entry }) => sourceByEntry.get(entry.entryId));
   if (cards.some((card) => !card?.geometry?.swatch)) return null;
-  return cards.map((card) => slotFromGeometry(card!));
+  // Keep the source positions, but assign them in the current display order.
+  // Otherwise moving a card only changes the editor list, not the exported JPG.
+  return [...cards]
+    .sort((left, right) => left!.order - right!.order || left!.entryId.localeCompare(right!.entryId))
+    .map((card) => slotFromGeometry(card!));
 }
 
 function sameReferenceComposition(item: TemplateSummary, active: ActiveColor[]) {
@@ -116,7 +120,7 @@ function sameReferenceComposition(item: TemplateSummary, active: ActiveColor[]) 
   return active.every(({ entry }, index) => {
     const card = sourceCards[index];
     if (!card || card.entryId !== entry.entryId || card.colorId !== entry.colorId) return false;
-    if (card.hot !== entry.hot || card.section !== entry.section || card.order !== entry.order) return false;
+    if ((card.kind ?? 'stock') !== (entry.kind ?? 'stock') || card.hot !== entry.hot || card.section !== entry.section || card.order !== entry.order) return false;
     const cardLengths = [...card.lengths].sort((left, right) => left - right);
     const entryLengths = [...entry.lengths].sort((left, right) => left - right);
     return cardLengths.length === entryLengths.length && cardLengths.every(
@@ -306,13 +310,11 @@ export async function paintPoster(
   item: TemplateSummary,
   selection: Selection,
   inventory?: InventoryStatusMap,
-  preserveSourceComposition = false,
 ) {
   const active = activeColorsFor(colors, item, selection);
   const baseResult = await loadBaseImage(item);
-  const preserveReferenceComposition = baseResult.fromReference && (
-    preserveSourceComposition || sameReferenceComposition(item, active)
-  );
+  const preserveReferenceComposition = baseResult.fromReference &&
+    sameReferenceComposition(item, active);
   const [photos, hot] = await Promise.all([
     preserveReferenceComposition
       ? Promise.resolve([] as HTMLImageElement[])
@@ -354,14 +356,16 @@ export async function paintPoster(
         slot.size + 1,
       );
       context.fillStyle = '#050505';
-      fitFont(context, color.code, slot.codeSize, slot.size + 8);
-      context.fillText(color.code, slot.x + slot.size / 2, slot.codeY);
-      const lengths = sizeText(entry.lengths);
-      fitFont(context, lengths, slot.lengthSize, slot.size + 12);
-      context.fillText(lengths, slot.x + slot.size / 2, slot.lengthY);
+      if (entry.kind !== 'display') {
+        fitFont(context, color.code, slot.codeSize, slot.size + 8);
+        context.fillText(color.code, slot.x + slot.size / 2, slot.codeY);
+        const lengths = sizeText(entry.lengths);
+        fitFont(context, lengths, slot.lengthSize, slot.size + 12);
+        context.fillText(lengths, slot.x + slot.size / 2, slot.lengthY);
+      }
     }
     drawInventoryOverlay(context, slot, entry, inventory);
-    if (!preserveReferenceComposition && entry.hot && hot) {
+    if (!preserveReferenceComposition && entry.kind !== 'display' && entry.hot && hot) {
       const width = slot.size >= 240 ? 65 : 47;
       context.drawImage(
         hot,

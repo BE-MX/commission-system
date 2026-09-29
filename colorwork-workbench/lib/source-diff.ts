@@ -55,7 +55,7 @@ export function computeSourceChanges(
   next: SourceTemplateConfig,
 ): SourceChangeSummary {
   const currentActive = [...currentSelection]
-    .filter((entry) => entry.lengths.length > 0)
+    .filter((entry) => entry.kind === 'display' || entry.lengths.length > 0)
     .sort((a, b) => a.order - b.order || a.entryId.localeCompare(b.entryId));
   const currentById = new Map(currentActive.map((entry, index) => [entry.entryId, { entry, index }]));
   const matchedIds = new Set<string>();
@@ -72,7 +72,7 @@ export function computeSourceChanges(
     const nextValue = nextItem(card, next.template);
     const matched = card.matchedEntryId ? currentById.get(card.matchedEntryId) : null;
     if (!matched) {
-      added.push(nextValue);
+      if (card.kind !== 'display') added.push(nextValue);
       if (nextValue.lengths.length) addedLengths.push(nextValue);
       return;
     }
@@ -80,8 +80,8 @@ export function computeSourceChanges(
     nextMatched.push({ entryId: matched.entry.entryId, item: nextValue });
     const previous = currentItem(matched.entry.entryId, currentActive, currentColors, currentTemplate)!;
     const sameSection = previous.section === nextValue.section;
-    if (sameNumbers(previous.lengths, nextValue.lengths)) {
-      if (sameSection) unchanged.push(nextValue);
+    if ((matched.entry.kind ?? 'stock') === (card.kind ?? 'stock') && sameNumbers(previous.lengths, nextValue.lengths)) {
+      if (sameSection && card.kind !== 'display') unchanged.push(nextValue);
     } else {
       resized.push({ ...nextValue, previousLengths: previous.lengths, nextLengths: nextValue.lengths });
       const nextOnly = nextValue.lengths.filter((length) => !previous.lengths.includes(length));
@@ -100,7 +100,7 @@ export function computeSourceChanges(
   });
 
   const removed = currentActive
-    .filter((entry) => !matchedIds.has(entry.entryId))
+    .filter((entry) => entry.kind !== 'display' && !matchedIds.has(entry.entryId))
     .map((entry) => currentItem(entry.entryId, currentActive, currentColors, currentTemplate)!)
     .filter(Boolean);
   for (const item of resized) {

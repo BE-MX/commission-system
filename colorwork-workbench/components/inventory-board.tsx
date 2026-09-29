@@ -178,6 +178,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
   const visibleEntries = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return masterSelection.filter((entry) => {
+      if (entry.kind === 'display') return false;
       const color = colorForId(colors, item, entry.colorId);
       const section = item.sections.find((value) => value.key === entry.section)?.label || '';
       return !keyword || color?.code.toLowerCase().includes(keyword) || section.toLowerCase().includes(keyword);
@@ -190,7 +191,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
     if (!target) return;
     const revision = ++renderRevision.current;
     setReady(false);
-    void paintPoster(colors, item, masterSelection, statusMap, previewOnly).then((poster) => {
+    void paintPoster(colors, item, masterSelection, statusMap).then((poster) => {
       if (revision !== renderRevision.current) return;
       target.width = poster.width;
       target.height = poster.height;
@@ -314,7 +315,6 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
         exportItem,
         activeMasterSelection(exportState.selection),
         statusMapForSpecs(exportState.specs),
-        previewOnly,
       );
       const jpg = await canvasBlob(exportPoster);
       await validateCurrent(exportState, exportItem.id);

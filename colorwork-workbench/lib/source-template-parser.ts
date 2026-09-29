@@ -284,7 +284,7 @@ function oldSemanticMap(
 ) {
   const byColorSection = new Map<string, string[]>();
   const byColor = new Map<string, string[]>();
-  for (const entry of selection.filter((value) => value.lengths.length)) {
+  for (const entry of selection.filter((value) => value.kind === 'display' || value.lengths.length)) {
     const code =
       colorForId(colors, template, entry.colorId)?.code ?? entry.colorId;
     const colorKey = semanticColorKey(code);
@@ -837,7 +837,7 @@ export async function parseTemplateSource(args: {
         candidateId,
         blocking: true,
       });
-    } else if (!sizeLabel) {
+    } else if (!sizeLabel && currentEntry?.kind !== 'display') {
       issues.push({
         code: 'SIZE_LABEL_NOT_FOUND',
         message: `${colorCode} 没有可靠识别到尺寸文字，当前仅作为待确认值显示。`,
@@ -915,8 +915,9 @@ export async function parseTemplateSource(args: {
         `source-entry-${hash(`${sourceVersionId}:${candidateId}`)}`,
       colorId,
       colorCode,
-      lengths: [...new Set(lengths)].sort((a, b) => a - b),
-      hot: isHot,
+      kind: currentEntry?.kind ?? 'stock',
+      lengths: currentEntry?.kind === 'display' ? [] : [...new Set(lengths)].sort((a, b) => a - b),
+      hot: currentEntry?.kind === 'display' ? false : isHot,
       section,
       order: index,
       geometry: {
@@ -1064,7 +1065,7 @@ export async function parseTemplateSource(args: {
       ...currentTemplate,
       width: psd.width,
       height: psd.height,
-      initialColorCount: cards.length,
+      initialColorCount: cards.filter((card) => card.kind !== 'display').length,
       sourcePsdName: psdFile.name,
       referenceJpgName: jpgFile.name,
       referenceUrl: sourceAssetUrl(sourceVersionId, 'reference.jpg'),
@@ -1085,7 +1086,7 @@ export async function parseTemplateSource(args: {
     parseIssues: identifiedIssues,
     parseSummary: {
       layerCount: flat.length,
-      parsedColorCount: cards.length,
+      parsedColorCount: cards.filter((card) => card.kind !== 'display').length,
       parsedSpecCount: cards.reduce(
         (sum, card) => sum + card.lengths.length,
         0,

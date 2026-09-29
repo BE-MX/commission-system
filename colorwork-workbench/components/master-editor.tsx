@@ -37,6 +37,7 @@ async function responseJson<T>(response: Response): Promise<T> {
 function comparable(selection: Selection) {
   return JSON.stringify(activeMasterSelection(selection).map((entry, index) => ({
     entryId: entry.entryId,
+    kind: entry.kind ?? 'stock',
     lengths: entry.lengths,
     hot: entry.hot,
     section: entry.section,
@@ -110,7 +111,7 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
         const section = item.sections.find((value) => value.key === entry.section)?.label || '';
         return !keyword || color?.code.toLowerCase().includes(keyword) || section.toLowerCase().includes(keyword);
       })
-      .sort((a, b) => Number(!a.lengths.length) - Number(!b.lengths.length) || a.order - b.order || a.entryId.localeCompare(b.entryId));
+      .sort((a, b) => Number(a.kind !== 'display' && !a.lengths.length) - Number(b.kind !== 'display' && !b.lengths.length) || a.order - b.order || a.entryId.localeCompare(b.entryId));
   }, [colors, draft, item, query]);
 
   useEffect(() => {
@@ -162,7 +163,16 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
   }
 
   function removeEntry(entry: SelectionEntry) {
-    changeEntry(entry.entryId, (current) => ({ ...current, lengths: [], hot: false }));
+    changeEntry(entry.entryId, (current) => ({ ...current, kind: 'stock', lengths: [], hot: false }));
+    setInitialStatuses((current) => {
+      const next = { ...current };
+      for (const length of entry.lengths) delete next[specKey(entry.entryId, length)];
+      return next;
+    });
+  }
+
+  function changeKind(entry: SelectionEntry, kind: 'stock' | 'display') {
+    changeEntry(entry.entryId, (current) => ({ ...current, kind, lengths: [], hot: false }));
     setInitialStatuses((current) => {
       const next = { ...current };
       for (const length of entry.lengths) delete next[specKey(entry.entryId, length)];
@@ -309,7 +319,7 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
         {state && <div className="revision-strip"><span><ShieldCheck size={15} />源 S{previewDefinition?.sourceVersion.number ?? state.sourceVersion.number ?? '—'} · {previewDefinition ? '历史预览' : `当前标准母版 v${state.version.number}`}</span><span>母版修订 {state.masterRevision}</span><span>{state.version.createdBy.displayName} · {new Date(state.version.createdAt).toLocaleString('zh-CN')}</span></div>}
         {state && !previewDefinition && <SourceVersionManager state={state} disabled={saving || dirty} onActivated={() => load(state.templateId)} />}
 
-        <div className="master-toolbar"><div className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 38 色、历史色或分区" /></div><span>当前 {activeDraft.length} 个颜色 · {activeDraft.reduce((sum, entry) => sum + entry.lengths.length, 0)} 个规格</span></div>
+        <div className="master-toolbar"><div className="search-box"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 38 色、历史色或分区" /></div><span>当前 {activeDraft.filter((entry) => entry.kind !== 'display').length} 个颜色 · {activeDraft.reduce((sum, entry) => sum + entry.lengths.length, 0)} 个规格</span></div>
         {loading && <p className="empty-state">正在读取标准母版…</p>}
         {!loading && error && <div className="state-error" role="alert"><AlertTriangle size={17} /><span>{error}</span>{conflict && <button onClick={() => void load(item.id)}><RefreshCw size={15} />刷新当前版本</button>}</div>}
         {!loading && state && (
@@ -319,11 +329,12 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
               if (!color) return null;
               const activeIndex = activeDraft.findIndex((candidate) => candidate.entryId === entry.entryId);
               return (
-                <article className={entry.lengths.length ? 'master-color-row active' : 'master-color-row'} key={entry.entryId}>
+                <article className={entry.kind === 'display' || entry.lengths.length ? 'master-color-row active' : 'master-color-row'} key={entry.entryId}>
                   <img src={workbenchUrl(color.image)} alt={`${color.code} 色块`} />
-                  <div className="master-color-title"><strong>{color.code}</strong>{color.legacy && <span>历史色</span>}</div>
+                  <div className="master-color-title"><strong>{entry.kind === 'display' ? '展示图片' : color.code}</strong>{color.legacy && <span>历史色</span>}</div>
+                  <select value={entry.kind ?? 'stock'} onChange={(event) => changeKind(entry, event.target.value as 'stock' | 'display')} aria-label={`${color.code} 图片类型`}><option value="stock">库存颜色</option><option value="display">展示图片／不关联库存</option></select>
                   <div className="master-lengths">
-                    {availableLengths.map((length) => {
+                    {entry.kind !== 'display' && availableLengths.map((length) => {
                       const enabled = entry.lengths.includes(length);
                       const key = specKey(entry.entryId, length);
                       const isAdded = enabled && !baseKeys.has(key);
@@ -336,11 +347,11 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
                     })}
                   </div>
                   <div className="master-entry-options">
-                    {item.sections.length > 0 && <select value={entry.section || item.sections.at(-1)!.key} disabled={!entry.lengths.length} onChange={(event) => changeEntry(entry.entryId, (current) => ({ ...current, section: event.target.value }))}>{item.sections.map((section) => <option key={section.key} value={section.key}>{section.label}</option>)}</select>}
-                    <button className={entry.hot ? 'hot on' : 'hot'} disabled={!entry.lengths.length} onClick={() => changeEntry(entry.entryId, (current) => ({ ...current, hot: !current.hot }))}><Flame size={14} />Hot</button>
+                    {item.sections.length > 0 && <select value={entry.section || item.sections.at(-1)!.key} disabled={entry.kind !== 'display' && !entry.lengths.length} onChange={(event) => changeEntry(entry.entryId, (current) => ({ ...current, section: event.target.value }))}>{item.sections.map((section) => <option key={section.key} value={section.key}>{section.label}</option>)}</select>}
+                    {entry.kind !== 'display' && <button className={entry.hot ? 'hot on' : 'hot'} disabled={!entry.lengths.length} onClick={() => changeEntry(entry.entryId, (current) => ({ ...current, hot: !current.hot }))}><Flame size={14} />Hot</button>}
                     <button disabled={activeIndex <= 0} onClick={() => moveEntry(entry, -1)} title="前移"><ArrowUp size={14} /></button>
                     <button disabled={activeIndex < 0 || activeIndex >= activeDraft.length - 1} onClick={() => moveEntry(entry, 1)} title="后移"><ArrowDown size={14} /></button>
-                    <button disabled={!entry.lengths.length} onClick={() => removeEntry(entry)} title="从当前母版移除"><Trash2 size={14} /></button>
+                    <button disabled={entry.kind !== 'display' && !entry.lengths.length} onClick={() => removeEntry(entry)} title="从当前母版移除"><Trash2 size={14} /></button>
                   </div>
                 </article>
               );
