@@ -201,6 +201,27 @@
           .map(filter => ({ ...filter, values: [...filter.values.values()] })) };
       }).sort((a, b) => (a.id === 'unassigned') - (b.id === 'unassigned'));
     }
+    function groupByColorAndTexture(assets) {
+      const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
+      const findDimension = names => tagGroups.find(group =>
+        names.includes(normalize(group.name)) || names.includes(normalize(group.label)));
+      const color = findDimension(['colornames', 'colorname', '颜色名称']);
+      const texture = findDimension(['texturestype', 'texturetype', '纹理类型']);
+      const rows = new Map();
+      for (const asset of assets) {
+        const tags = asset.tags || [];
+        const colors = tags.filter(tag => color
+          ? tag.dimension_id === color.dimension_id : ['colornames', 'colorname', '颜色名称'].includes(normalize(tag.dimension_label)));
+        const textures = tags.filter(tag => texture
+          ? tag.dimension_id === texture.dimension_id : ['texturestype', 'texturetype', '纹理类型'].includes(normalize(tag.dimension_label)));
+        for (const colorTag of colors.length ? colors : [null]) for (const textureTag of textures.length ? textures : [null]) {
+          const id = `${colorTag?.tag_value_id ?? 'none'}:${textureTag?.tag_value_id ?? 'none'}`;
+          if (!rows.has(id)) rows.set(id, { id, colorName: colorTag?.value || '', textureType: textureTag?.value || '', assets: [] });
+          if (!rows.get(id).assets.some(item => item.id === asset.id)) rows.get(id).assets.push(asset);
+        }
+      }
+      return [...rows.values()];
+    }
     function visibleAssetIds(shown = visibleBatches()) {
       return [...new Set(shown.flatMap(batch => groupBatchAssets(batch.viewAssets)
         .flatMap(group => visibleGroupAssets(batch.id, group).map(asset => asset.id))))];
@@ -247,13 +268,16 @@
             <h2>${escapeHtml(title)}</h2>
             <p>${fmtDate(b.published_at)} · ${b.viewAssets.length} ${b.viewAssets.length === 1 ? 'asset' : 'assets'} · ${imgs} photos · ${vids} videos${shootType}</p>
           </div></header>
-          ${groupBatchAssets(b.viewAssets).map(group => `<div class="portal-dimension">
-            <h3>${escapeHtml(group.label)} <span>${visibleGroupAssets(b.id, group).length} / ${group.assets.length} files</span></h3>
+          ${groupBatchAssets(b.viewAssets).map(group => {
+            const visible = visibleGroupAssets(b.id, group);
+            return `<div class="portal-dimension">
+            <h3>${escapeHtml(group.label)} <span>${visible.length} / ${group.assets.length} files</span></h3>
             ${group.filters.map(filter => `<div class="group-filter-row"><strong>${escapeHtml(filter.label)}</strong><div class="finder-options" role="group" aria-label="Filter by ${escapeAttr(filter.label)}">
               ${filter.values.map(value => `<button type="button" data-group-tag="${value.id}" data-batch-id="${b.id}" data-group-id="${group.id}" aria-pressed="${selectedGroupTags(b.id, group.id).includes(value.id)}" class="${selectedGroupTags(b.id, group.id).includes(value.id) ? 'active' : ''}">${escapeHtml(value.value)}</button>`).join('')}
             </div></div>`).join('')}
-            <section class="portal-tag-group">
-              <div class="asset-gallery">${visibleGroupAssets(b.id, group).map(a => `
+            ${groupByColorAndTexture(visible).map(row => `<section class="portal-tag-group">
+              ${row.textureType || row.colorName ? `<h4>${escapeHtml(row.textureType)}<span class="${row.textureType ? '' : 'color-only'}">${row.colorName ? `${escapeHtml(row.colorName)} · ` : ''}${row.assets.length} files</span></h4>` : ''}
+              <div class="asset-gallery">${row.assets.map(a => `
             <article class="asset-card ${selected.has(a.id) ? 'selected' : ''}" data-card="${a.id}">
               <label class="asset-select"><input type="checkbox" data-select="${a.id}" ${selected.has(a.id) ? 'checked' : ''} /><span>Select</span></label>
               <button class="asset-preview" data-preview-batch="${b.id}" data-preview-group="${group.id}" data-preview-asset="${a.id}" aria-label="Open ${escapeAttr(a.file_name)}">
@@ -263,9 +287,10 @@
               </button>
               <div class="asset-footer"><span title="${escapeAttr(a.file_name)}"><strong>${escapeHtml(a.file_name)}</strong><small>${fmtSize(a.file_size)}</small></span><a href="${escapeAttr(downloadUrl(a.content_url))}">Download ↓</a></div>
             </article>`).join('')}</div>
-            ${visibleGroupAssets(b.id, group).length ? '' : '<p class="group-empty">No materials match these tags.</p>'}
-            </section>
-          </div>`).join('')}
+            </section>`).join('')}
+            ${visible.length ? '' : '<p class="group-empty">No materials match these tags.</p>'}
+          </div>`;
+          }).join('')}
         </section>`;
       }).join('');
 
