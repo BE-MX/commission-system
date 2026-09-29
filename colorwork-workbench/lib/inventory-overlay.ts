@@ -71,7 +71,7 @@ export function createInventoryOverlayPlan(
   inventory?: InventoryStatusMap,
 ): InventoryOverlayPlan {
   const lengths = selectedLengths(entry);
-  if (!lengths.length || !inventory?.[entry.entryId])
+  if (entry.kind === 'display' || !lengths.length || !inventory?.[entry.entryId])
     return { badges: [], bounds: null };
 
   const groups = STATUS_ORDER.map((status) => ({

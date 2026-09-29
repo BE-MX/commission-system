@@ -151,6 +151,7 @@ export const masterVersionEntries = sqliteTable('master_version_entries', {
   versionId: text('version_id').notNull(),
   entryId: text('entry_id').notNull(),
   colorId: text('color_id').notNull(),
+  kind: text('kind', { enum: ['stock', 'display'] }).notNull().default('stock'),
   lengthsJson: text('lengths_json').notNull(),
   hot: integer('hot', { mode: 'boolean' }).notNull().default(false),
   sectionKey: text('section_key'),

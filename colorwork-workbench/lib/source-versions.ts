@@ -106,6 +106,7 @@ export type SourceMappingDecision = {
   entryId: string | null;
   treatAsNew: boolean;
   ignore?: boolean;
+  kind?: 'stock' | 'display';
   lengths: number[];
   section: string | null;
 };

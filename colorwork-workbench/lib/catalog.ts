@@ -17,6 +17,7 @@ export type StockColor = {
 export type SelectionEntry = {
   entryId: string;
   colorId: string;
+  kind?: 'stock' | 'display';
   lengths: number[];
   hot: boolean;
   section: string | null;
@@ -100,6 +101,7 @@ export function selectionForTemplate(colors: StockColor[], item: TemplateSummary
   const selected: Selection = item.initialCards.map((card) => ({
     entryId: card.entryId,
     colorId: card.colorId,
+    kind: card.kind ?? 'stock',
     lengths: [...card.lengths],
     hot: card.hot,
     section: card.section,
@@ -112,6 +114,7 @@ export function selectionForTemplate(colors: StockColor[], item: TemplateSummary
     selected.push({
       entryId: `${item.id}:available:${color.id}`,
       colorId: color.id,
+      kind: 'stock',
       lengths: [],
       hot: false,
       section: defaultSection,
@@ -145,7 +148,9 @@ export function normalizeSelection(colors: StockColor[], item: TemplateSummary, 
       ? input.lengths.map(Number).filter((size) => allowedLengths.includes(size))
       : [];
     target.lengths = [...new Set(lengths)].sort((a, b) => a - b);
-    target.hot = Boolean(input.hot);
+    target.kind = input.kind === 'display' ? 'display' : 'stock';
+    if (target.kind === 'display') target.lengths = [];
+    target.hot = target.kind === 'stock' && Boolean(input.hot);
     target.section = typeof input.section === 'string' && item.sections.some((section) => section.key === input.section)
       ? input.section
       : item.sections.at(-1)?.key ?? null;
@@ -181,7 +186,9 @@ export function selectionFromMaster(colors: StockColor[], item: TemplateSummary,
       ? input.lengths.map(Number).filter((size) => allowedLengths.includes(size))
       : [];
     target.lengths = [...new Set(lengths)].sort((a, b) => a - b);
-    target.hot = Boolean(input.hot) && target.lengths.length > 0;
+    target.kind = input.kind === 'display' ? 'display' : 'stock';
+    if (target.kind === 'display') target.lengths = [];
+    target.hot = target.kind === 'stock' && Boolean(input.hot) && target.lengths.length > 0;
     target.section = typeof input.section === 'string' && item.sections.some((section) => section.key === input.section)
       ? input.section
       : item.sections.at(-1)?.key ?? null;
@@ -192,18 +199,19 @@ export function selectionFromMaster(colors: StockColor[], item: TemplateSummary,
 
 export function activeMasterSelection(selection: Selection): Selection {
   return selection
-    .filter((entry) => entry.lengths.length > 0)
+    .filter((entry) => entry.kind === 'display' || entry.lengths.length > 0)
     .map((entry) => ({
       ...entry,
-      lengths: [...new Set(entry.lengths)].sort((a, b) => a - b),
-      hot: Boolean(entry.hot),
+      kind: entry.kind === 'display' ? 'display' as const : 'stock' as const,
+      lengths: entry.kind === 'display' ? [] : [...new Set(entry.lengths)].sort((a, b) => a - b),
+      hot: entry.kind !== 'display' && Boolean(entry.hot),
     }))
     .sort((a, b) => a.order - b.order || a.entryId.localeCompare(b.entryId));
 }
 
 export function defaultSizesForTemplate(item: TemplateSummary) {
   const counts = new Map<string, { values: number[]; count: number }>();
-  item.initialCards.forEach((card) => {
+  item.initialCards.filter((card) => card.kind !== 'display').forEach((card) => {
     const values = [...card.lengths].sort((a, b) => a - b);
     const key = values.join(',');
     counts.set(key, { values, count: (counts.get(key)?.count ?? 0) + 1 });

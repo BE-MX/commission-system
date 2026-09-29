@@ -77,7 +77,7 @@ export async function createLayeredPsd(
   const slots = layoutFor(item, active);
   if (slots.length !== active.length)
     throw new Error('当前颜色数量无法生成 PSD。');
-  const needsHot = active.some(({ entry }) => entry.hot);
+  const needsHot = active.some(({ entry }) => entry.kind !== 'display' && entry.hot);
   const [base, hot, ...photos] = await Promise.all([
     loadImage(item.baseUrl),
     needsHot ? loadImage(item.hotUrl ?? '/api/runtime-assets/hot.png') : Promise.resolve(null),
@@ -113,7 +113,7 @@ export async function createLayeredPsd(
         canvas: inventoryCanvas,
       });
     }
-    if (entry.hot && hot) {
+    if (entry.kind !== 'display' && entry.hot && hot) {
       const width = slot.size >= 240 ? 65 : 47;
       const hotCanvas = canvas(width, (width * hot.height) / hot.width);
       hotCanvas
@@ -126,7 +126,7 @@ export async function createLayeredPsd(
         canvas: hotCanvas,
       });
     }
-    children.push(
+    if (entry.kind !== 'display') children.push(
       textLayer(
         '尺寸（可编辑）',
         sizeText(entry.lengths),
@@ -143,18 +143,18 @@ export async function createLayeredPsd(
         slot.size + 20,
         slot.codeSize,
       ),
-      {
-        name: '色块图（可替换）',
-        left: Math.round(slot.x),
-        top: Math.round(slot.y),
-        canvas: photoCanvas,
-      },
     );
+    children.push({
+      name: entry.kind === 'display' ? '展示图片（可替换）' : '色块图（可替换）',
+      left: Math.round(slot.x),
+      top: Math.round(slot.y),
+      canvas: photoCanvas,
+    });
     const section = item.sections.find(
       (value) => value.key === entry.section,
     )?.label;
     return {
-      name: section ? `${color.code} · ${section}` : color.code,
+      name: entry.kind === 'display' ? '展示图片' : section ? `${color.code} · ${section}` : color.code,
       opened: false,
       children,
     };
