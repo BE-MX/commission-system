@@ -73,8 +73,8 @@ export function groupMediaByColorAndTexture(assets = [], dimensions = []) {
         const id = `${colorTag?.tag_value_id ?? 'none'}:${textureTag?.tag_value_id ?? 'none'}`
         if (!rows.has(id)) rows.set(id, {
           id,
-          colorName: colorTag?.value || '未设置颜色',
-          textureType: textureTag?.value || '未设置纹理类型',
+          colorName: colorTag?.value || '',
+          textureType: textureTag?.value || '',
           assets: [],
         })
         if (!rows.get(id).assets.some(item => item.id === asset.id)) rows.get(id).assets.push(asset)
