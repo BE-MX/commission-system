@@ -6,13 +6,12 @@
     <div class="login-map">
       <WorldMapCanvas />
     </div>
+    <ArkWakeCanvas :anchor="titleTextRef" :limit="brandPanelRef" />
 
     <!-- Content Overlay -->
     <div class="login-layout">
       <!-- Left Panel - Brand Zone -->
-      <div
-        class="brand-panel"
-      >
+      <div ref="brandPanelRef" class="brand-panel">
         <!-- Brand Header -->
         <div class="brand-header login-enter">
           <div class="brand-lockup">
@@ -26,11 +25,7 @@
         <div class="brand-copy login-enter">
           <p class="brand-eyebrow"><span class="brand-dot"></span>AI 驱动的企业协同平台</p>
           <h1 class="brand-title">
-            <span class="brand-wake" aria-hidden="true">
-              <i v-for="lane in 5" :key="`lane-${lane}`" class="wake-stream" :style="{ '--lane': lane }"></i>
-              <i v-for="particle in wakeParticles" :key="particle.id" class="wake-particle" :style="particle.style"></i>
-            </span>
-            <span class="brand-title-text">莱莎方舟</span>
+            <span ref="titleTextRef" class="brand-title-text">莱莎方舟</span>
           </h1>
           <p class="brand-latin">LeShine Ark Platform</p>
           <span class="brand-rule"></span>
@@ -154,25 +149,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
+import ArkWakeCanvas from '@/components/ArkWakeCanvas.vue'
 import logoGold from '@/assets/leshine-logo-gold.png'
 import { EXPO_KIOSK_PATH } from '@/router/expoKioskRoute'
 import { isShippingInspectionPath, isShippingStationPath } from '@/router/shippingStationRoute'
 import { isFxSettlementPath } from '@/router/fxSettlementRoute'
 import { readSessionItem } from '@/utils/safeSessionStorage'
 
-// Deterministic stagger keeps the wake continuous from the first frame.
-const wakeParticles = Array.from({ length: 38 }, (_, id) => ({
-  id,
-  style: {
-    '--origin-y': `${22 + (id * 17 % 57)}%`,
-    '--drift-y': `${(id * 23 % 65) - 32}px`,
-    '--travel': `${130 + (id * 31 % 130)}px`,
-    '--duration': `${2.6 + (id % 9) * 0.2}s`,
-    '--delay': `${-(id * 0.37 % 4.2)}s`,
-    '--size': `${id % 5 === 0 ? 3 : 1.5}px`,
-    '--length': `${id % 6 === 0 ? 16 : id % 3 === 0 ? 5 : 2}px`,
-  },
-}))
+const titleTextRef = ref(null)
+const brandPanelRef = ref(null)
 
 const router = useRouter()
 const route = useRoute()
@@ -264,32 +249,6 @@ const handleSubmit = async () => {
   background-clip: text; -webkit-background-clip: text; color: transparent;
   filter: drop-shadow(0 2px 8px var(--login-bg));
 }
-/* The wake travels LEFT from the title, implying forward sailing to the right. */
-.brand-wake {
-  position: absolute; right: calc(100% - 8px); top: -18%; width: 270px; height: 136%;
-  pointer-events: none; mask-image: linear-gradient(90deg, transparent, var(--login-bg) 30%);
-}
-.brand-wake::before {
-  content: ''; position: absolute; right: -4px; top: 5%; width: 95%; height: 90%;
-  background: radial-gradient(ellipse at right, var(--login-wake-glow), transparent 72%);
-}
-.wake-stream {
-  position: absolute; right: 0; top: calc(16% + var(--lane) * 11%);
-  width: calc(52% + var(--lane) * 8%); height: 1px; opacity: 0.42;
-  transform-origin: right; transform: rotate(calc((var(--lane) - 3) * 2deg));
-  background: linear-gradient(90deg, transparent, var(--login-wake-glow) 40%, var(--login-gold));
-}
-.wake-particle {
-  position: absolute; right: 0; top: var(--origin-y); width: var(--length); height: var(--size);
-  border-radius: 50%; background: linear-gradient(90deg, var(--login-gold), var(--login-gold-light));
-  animation: ark-wake var(--duration) linear var(--delay) infinite both;
-}
-@keyframes ark-wake {
-  0% { transform: translate(0, 0) scale(1); opacity: 0; }
-  12% { opacity: 0.85; }
-  55% { opacity: 0.35; }
-  100% { transform: translate(calc(-1 * var(--travel)), var(--drift-y)) scale(0.4); opacity: 0; }
-}
 @keyframes ark-sailing {
   0%, 100% { transform: translate(0, 0); }
   50% { transform: translate(8px, -3px); }
@@ -373,7 +332,6 @@ const handleSubmit = async () => {
 }
 @media (prefers-reduced-motion: reduce) {
   .login-enter, .brand-title { animation: none; }
-  .wake-particle { animation: none; opacity: 0; }
   .tech-btn-primary { transition: none; }
   .tech-btn-primary:active { transform: none; }
 }
