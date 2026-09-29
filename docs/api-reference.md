@@ -105,6 +105,7 @@
 | POST 空路径 | invoice_id、request_key、balance_version + 回款字段 | receipt:write |
 | GET `/{id}` | 单据、凭证元数据和审计日志 | read/write/admin 任一 |
 | PATCH `/{id}` | version + 回款字段；仅未被远端接受的待同步/失败单 | receipt:write |
+| PUT `/{id}/attachments` | version + attachment_ids（1–5 个不重复 ID）；仅订单自动生成的有效回款可更新当前截图，处理中的回款不可改；同步更新发票回款意图并记录审计 | receipt:write，且须在回款数据范围内 |
 | POST `/{id}/retry` | 明确失败的原单重新排队 | receipt:write |
 | POST `/{id}/void` | reason；仅本地待同步/明确失败单作废 | receipt:write |
 | POST `/{id}/reconcile` | 读取小满结果，不创建；返回候选或已核验单 | receipt:write/admin |
@@ -113,6 +114,7 @@
 回款字段：amount（>0，最多2位小数）、collection_date、payment_type、attachment_ids（1–5个不重复ID）、bank_charge（默认0，留空/null/空串均按0处理，且≤amount）、remark（≤500字）。币种、客户和远端订单 ID 由关联发票冻结，不接收客户端指定。request_key 为16–64位字母数字下划线/连字符；balance_version 为余额响应中的64位摘要。相同幂等键不同内容拒绝，余额变更返回409并要求刷新；参数错误422、资源/权限404或403、存储入口不可用503。代理上传超过限制413。
 
 库存发票 create/update 新增 `receipt_draft`（amount、collection_date、payment_type、remark、attachment_ids），detail 原样返回意图及生成状态；同步成功增加 receipt_generation_status/receipt_id。保存草稿可缺项，同步库存单前必须有截图；符合自动资格的新单还须完整回款字段。`pending/syncing/synced/failed/uncertain` 是传输状态，`collect_status=0/1/null` 是小满财务状态，二者不得混用。
+订单自动回款已生成后，发票编辑页的金额等字段保持冻结；有 `receipt:write` 的归属用户可在截图区移除、重传并单独保存凭证变更。至少保留一张当前凭证；移除的旧文件和绑定关系保留供审计，但旧 ID 不再可经凭证读取接口访问，也不可直接重新绑定；不会重新发送小满回款。
 
 ## 站点 AI 网关（2026-09-12，迁移 146 后可用）
 

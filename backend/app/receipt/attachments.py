@@ -75,6 +75,8 @@ def bind(db, ids, actor, invoice_id, receipt_id=None):
             raise ValueError("无权使用他人的回款凭证")
         if row.invoice_id not in (None, invoice_id) or row.receipt_id not in (None, receipt_id):
             raise ValueError("凭证已关联其他回款，请上传本次凭证")
+        if receipt_id and row.receipt_id == receipt_id and row.id not in receipt.attachment_ids:
+            raise ValueError("该截图已从回款中移除，请重新上传")
         if not origin() and not path_for(row).is_file():
             raise ValueError("回款凭证文件缺失，请重新上传")
         row.invoice_id = invoice_id

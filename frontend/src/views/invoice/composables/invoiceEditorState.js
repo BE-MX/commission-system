@@ -15,7 +15,7 @@ export function screenshotInvoiceNo(preview = {}) {
 
 export function emptyInvoiceForm() {
   return {
-    receipt_draft: null, receipt_uploading: false,
+    receipt_draft: null, receipt_uploading: false, receipt_proof_dirty: false,
     id: null, invoice_no: '', order_type: 'stock', sales_user_id: null, customer_id: '', customer_name: '',
     customer_grade: null,
     contact_name: '', contact_phone: '', contact_email: '', delivery_address: '',
