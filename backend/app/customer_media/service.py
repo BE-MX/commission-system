@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 from app.core.time import beijing_now
 
-from sqlalchemy import delete, distinct, func, or_, select
+from sqlalchemy import collate, delete, distinct, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -1099,7 +1099,7 @@ def asset_tags_map(db: Session, asset_ids: list[int]) -> dict[int, list[dict]]:
         CustomerMediaBatch, CustomerMediaBatch.id == CustomerMediaAsset.batch_id,
     ).join(
         CustomerMediaCustomerTag,
-        (CustomerMediaCustomerTag.customer_id == CustomerMediaBatch.customer_id)
+        (collate(CustomerMediaCustomerTag.customer_id, "utf8mb4_unicode_ci") == CustomerMediaBatch.customer_id)
         & (CustomerMediaCustomerTag.dimension_id == CustomerMediaAssetTag.dimension_id)
         & (CustomerMediaCustomerTag.tag_value_id == CustomerMediaAssetTag.tag_value_id),
     ).where(
@@ -1175,7 +1175,7 @@ def portal_used_tags(db: Session, account: CustomerPortalAccount) -> list[dict]:
         CustomerMediaBatch, CustomerMediaBatch.id == CustomerMediaAsset.batch_id,
     ).join(
         CustomerMediaCustomerTag,
-        (CustomerMediaCustomerTag.customer_id == CustomerMediaBatch.customer_id)
+        (collate(CustomerMediaCustomerTag.customer_id, "utf8mb4_unicode_ci") == CustomerMediaBatch.customer_id)
         & (CustomerMediaCustomerTag.dimension_id == CustomerMediaAssetTag.dimension_id)
         & (CustomerMediaCustomerTag.tag_value_id == CustomerMediaAssetTag.tag_value_id),
     ).where(

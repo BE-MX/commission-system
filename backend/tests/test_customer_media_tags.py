@@ -3,11 +3,13 @@
 import asyncio
 from datetime import date, datetime
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy import event
 from starlette.datastructures import UploadFile
 
 from app.asset import tag_service
@@ -264,6 +266,35 @@ def _seed_batch_with_asset(db, *, bind_existing=True):
     if bind_existing:
         _bind_existing(db, "CUST-TAG-1")
     return applicant, designer, outsider, batch, asset
+
+
+def test_asset_and_portal_tag_joins_match_customer_id_across_mysql_collations(db):
+    dim, values = _make_dim(db, "customer_texture", "Textures type", values=["Straight"])
+    _applicant, _designer, _outsider, batch, asset = _seed_batch_with_asset(db)
+    db.add(CustomerMediaAssetTag(asset_id=asset.id, dimension_id=dim.id, tag_value_id=values[0].id))
+    _publish(db, batch)
+
+    statements = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
+        if "JOIN ark_customer_media_customer_tags" in statement:
+            statements.append(statement)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        assert service.asset_tags_map(db, [asset.id])[asset.id][0]["value"] == "Straight"
+        used = service.portal_used_tags(db, SimpleNamespace(customer_id=batch.customer_id))
+        assert used[0]["values"][0]["value"] == "Straight"
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    assert len(statements) == 2
+    assert all(
+        "(ark_customer_media_customer_tags.customer_id COLLATE utf8mb4_unicode_ci) = "
+        "ark_customer_media_batches.customer_id" in statement
+        for statement in statements
+    )
 
 
 def test_upload_with_tags_json_persists_and_rejects_bad_scope(db, tmp_path, monkeypatch):
