@@ -67,3 +67,19 @@ test('workspace rows separate color names and textures type inside product group
     ['Ash', 'Straight', [1, 2]], ['Ash', 'Wavy', [3]], ['Brown', 'Straight', [4]],
   ])
 })
+
+test('missing color and texture labels leave the corresponding row headings empty', () => {
+  const rowDimensions = [
+    { id: 4, name: 'color_names', label: 'Color names' },
+    { id: 5, name: 'textures_type', label: 'Textures type' },
+  ]
+  const images = [
+    { id: 1, tags: [] },
+    { id: 2, tags: [{ dimension_id: 4, tag_value_id: 401, value: 'Ash' }] },
+    { id: 3, tags: [{ dimension_id: 5, tag_value_id: 501, value: 'Straight' }] },
+  ]
+  const rows = groupMediaByColorAndTexture(images, rowDimensions)
+  assert.deepEqual(rows.map(row => [row.colorName, row.textureType]), [
+    ['', ''], ['Ash', ''], ['', 'Straight'],
+  ])
+})

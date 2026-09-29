@@ -157,7 +157,10 @@
             </div>
           </div>
           <div v-for="row in visibleColorTextureRows(group)" :key="row.id" class="asset-tag-group">
-            <h5>{{ row.textureType }} <span>{{ row.colorName }} · {{ row.assets.length }} 个文件</span></h5>
+            <h5 v-if="row.textureType || row.colorName">
+              {{ row.textureType }}
+              <span :class="{ 'color-only': !row.textureType }">{{ row.colorName ? `${row.colorName} · ` : '' }}{{ row.assets.length }} 个文件</span>
+            </h5>
             <div class="asset-grid">
         <article v-for="asset in row.assets" :key="asset.id" class="asset-card lg-card">
           <div class="asset-thumb"><img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="preview(asset)" /><video v-else :src="asset.content_url" controls preload="metadata" /></div>
@@ -217,6 +220,7 @@ import CustomerMediaDirectoryDialog from './customer-media/CustomerMediaDirector
 import CustomerMediaTagPicker from './customer-media/CustomerMediaTagPicker.vue'
 import CustomerTagBoard from './customer-media/CustomerTagBoard.vue'
 import { filterMediaByTags, groupMediaByColorAndTexture, groupMediaByTags } from './customer-media/customerMediaGrouping'
+import { createCustomerMediaPreviewPayload } from './customer-media/customerMediaPreviewPayload'
 import { collectDroppedFiles, dropHasDirectory, webkitPathSegments } from './customer-media/droppedFiles'
 import { useCustomerMediaUpload } from './customer-media/composables/useCustomerMediaUpload'
 
@@ -355,17 +359,9 @@ async function removeCustomerTag(tag) {
 
 function sendCustomerPreview() {
   if (!customerPreviewVisible.value || !customerPreviewFrame.value?.contentWindow || !batch.value) return
-  const previewBatch = {
-    ...batch.value,
-    title: `拍摄素材 · ${batch.value.customer_name}`,
-    seq: 1,
-  }
-  customerPreviewFrame.value.contentWindow.postMessage({
-    type: 'customer-media-preview',
-    customer: { customer_id: batch.value.customer_id, customer_name: batch.value.customer_name },
-    batch: previewBatch,
-    dimensions: tagDimensions.value,
-  }, window.location.origin)
+  customerPreviewFrame.value.contentWindow.postMessage(
+    createCustomerMediaPreviewPayload(batch.value, tagDimensions.value), window.location.origin,
+  )
 }
 function openCustomerPreview() { customerPreviewVisible.value = true }
 
@@ -487,6 +483,7 @@ onBeforeUnmount(reset)
 .asset-tag-group { margin-bottom: 20px; }
 .asset-tag-group h5 { margin: 0 0 12px; font-size: 20px; font-weight: 800; color: var(--text-primary); }
 .asset-tag-group h5 span { margin-left: 7px; color: var(--text-secondary); font-weight: 400; }
+.asset-tag-group h5 span.color-only { margin-left: 0; }
 .asset-card { min-width: 0; overflow: hidden; padding-bottom: 12px; }
 .asset-thumb { display: flex; height: 200px; align-items: center; justify-content: center; overflow: hidden; background: var(--page-bg); }
 .asset-thumb img, .asset-thumb video { display: block; width: auto; max-width: 100%; height: 200px; object-fit: contain; cursor: pointer; }

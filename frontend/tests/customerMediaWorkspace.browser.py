@@ -55,7 +55,7 @@ with sync_playwright() as p, tempfile.TemporaryDirectory() as temp:
     expect(dialog).to_be_visible()
     expect(dialog.get_by_text('婚纱', exact=True)).to_be_visible()
     expect(dialog.get_by_role('button', name='选择文件夹')).to_be_disabled()
-    dialog.get_by_role('button', name='婚纱').click()
+    dialog.get_by_role('button', name='婚纱', exact=True).click()
     expect(dialog.get_by_role('button', name='选择文件夹')).to_be_enabled()
 
     folder = Path(temp) / '随意文件夹' / '二级目录'
@@ -72,10 +72,16 @@ with sync_playwright() as p, tempfile.TemporaryDirectory() as temp:
     assert 'name="directory_name"' not in uploads[0]
     assert 'name="directory_id"' not in uploads[0]
     dialog.get_by_role('button', name='Close').click()
-    expect(page.locator('.asset-dimension h4', has_text='客户标签')).to_be_visible()
-    expect(page.locator('.asset-tag-group h5', has_text='婚纱')).to_be_visible()
+    expect(page.locator('.asset-dimension h4', has_text='未设置产品类型')).to_be_visible()
+    expect(page.locator('.asset-tag-group h5')).to_have_count(0)
+    page.get_by_role('button', name='客户效果预览').click()
+    preview = page.frame_locator('iframe.customer-effect-frame')
+    expect(preview.locator('#app')).to_be_visible()
+    expect(preview.locator('#login')).to_be_hidden()
+    expect(preview.locator('.asset-card')).to_have_count(1)
     assert not errors, errors
     print(json.dumps({'passed': ['label required', 'folder flattened without name mapping',
-                                 'upload tags associated', 'asset grouped by dimension'],
+                                 'upload tags associated', 'missing row headings hidden',
+                                 'draft preview without portal login'],
                       'page_errors': errors}, ensure_ascii=False))
     browser.close()
