@@ -3,6 +3,17 @@
  * 后端统一 ok() 信封 {code,message,data}，拦截器返回整个响应体，取数用 res.data。
  */
 import { expoClient } from './clients'
+import { getAccessToken, useAuthStore } from '@/stores/auth'
+import { createKioskAuthRecovery } from './expoKioskAuth'
+
+export const KIOSK_AUTH_EXPIRED_EVENT = 'expo:kiosk-auth-expired'
+
+const recoverKioskAuth = createKioskAuthRecovery({
+  refreshToken: () => useAuthStore().refreshToken({ suppressToast: true }),
+  getAccessToken,
+  onExpired: () => window.dispatchEvent(new Event(KIOSK_AUTH_EXPIRED_EVENT)),
+})
+expoClient.interceptors.response.use(undefined, error => recoverKioskAuth(error, config => expoClient(config)))
 
 // ── 试戴主流程（展位设备） ──
 // kiosk 是客户共享屏：所有流程端点必须 suppressToast，禁止拦截器把 axios 原始
@@ -13,6 +24,7 @@ const KIOSK = {
   suppressToast: true,
   // 展会共享屏的认证异常由 kiosk 自己显示；绝不允许共用拦截器跳进方舟登录/后台。
   redirectOnUnauthorized: false,
+  recoverKioskAuth: true,
 }
 
 export function registerCustomer(data) {

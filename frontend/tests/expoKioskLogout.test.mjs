@@ -30,7 +30,8 @@ test('logout confirmation uses the auth store and stays open while logout is pen
   assert.match(source, /退出后需要重新输入展会设备账号才能继续使用/)
   assert.match(source, /:disabled="logoutPending"\s+@click="cancelLogout"[^>]*>\s*取消\s*<\/button>/)
   assert.match(source, /:disabled="logoutPending"\s+@click="confirmLogout"[^>]*>\s*退出登录\s*<\/button>/)
-  assert.equal((source.match(/:disabled="logoutPending"/g) || []).length, 2)
+  const logoutDialog = source.match(/<div v-if="logoutConfirm"[\s\S]*?<\/Transition>/)?.[0] || ''
+  assert.equal((logoutDialog.match(/:disabled="logoutPending"/g) || []).length, 2)
   assert.match(source, /function requestLogout\(\)\s*\{[\s\S]*?logoutConfirm\.value = true[\s\S]*?flow\.touch\(\)/)
   assert.match(source, /function cancelLogout\(\)\s*\{[\s\S]*?if \(logoutPending\.value\) return[\s\S]*?logoutConfirm\.value = false[\s\S]*?\}/)
 
