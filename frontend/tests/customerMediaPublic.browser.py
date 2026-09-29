@@ -10,14 +10,36 @@ base = {'id': 1, 'title': 'Spring shoot', 'published_at': '2026-09-01T10:00:00',
 assets = [
     {'id': 11, 'file_name': 'front.png', 'file_size': 1048576, 'media_type': 'image', 'content_url': '/mock/front.png',
      'tags': [{'dimension_id': 1, 'dimension_label': 'Product type', 'tag_value_id': 101, 'value': 'Wig'},
-              {'dimension_id': 2, 'dimension_label': 'Purpose', 'tag_value_id': 201, 'value': 'Front'}]},
+              {'dimension_id': 2, 'dimension_label': 'Purpose', 'tag_value_id': 201, 'value': 'Front'},
+              {'dimension_id': 3, 'dimension_label': 'Color names', 'tag_value_id': 301, 'value': 'Ash'},
+              {'dimension_id': 4, 'dimension_label': 'Textures type', 'tag_value_id': 401, 'value': 'Straight'}]},
     {'id': 12, 'file_name': 'detail.png', 'file_size': 2097152, 'media_type': 'image', 'content_url': '/mock/detail.png',
      'tags': [{'dimension_id': 1, 'dimension_label': 'Product type', 'tag_value_id': 101, 'value': 'Wig'},
+              {'dimension_id': 2, 'dimension_label': 'Purpose', 'tag_value_id': 202, 'value': 'Detail'},
+              {'dimension_id': 3, 'dimension_label': 'Color names', 'tag_value_id': 301, 'value': 'Ash'},
+              {'dimension_id': 4, 'dimension_label': 'Textures type', 'tag_value_id': 402, 'value': 'Wavy'}]},
+    {'id': 13, 'file_name': 'side.png', 'file_size': 1048576, 'media_type': 'image', 'content_url': '/mock/side.png',
+     'tags': [{'dimension_id': 1, 'dimension_label': 'Product type', 'tag_value_id': 101, 'value': 'Wig'},
+              {'dimension_id': 2, 'dimension_label': 'Purpose', 'tag_value_id': 202, 'value': 'Detail'},
+              {'dimension_id': 3, 'dimension_label': 'Color names', 'tag_value_id': 301, 'value': 'Ash'},
+              {'dimension_id': 4, 'dimension_label': 'Textures type', 'tag_value_id': 401, 'value': 'Straight'}]},
+    {'id': 14, 'file_name': 'untagged.png', 'file_size': 1048576, 'media_type': 'image', 'content_url': '/mock/untagged.png',
+     'tags': [{'dimension_id': 1, 'dimension_label': 'Product type', 'tag_value_id': 101, 'value': 'Wig'},
               {'dimension_id': 2, 'dimension_label': 'Purpose', 'tag_value_id': 202, 'value': 'Detail'}]},
+    {'id': 15, 'file_name': 'color-only.png', 'file_size': 1048576, 'media_type': 'image', 'content_url': '/mock/color-only.png',
+     'tags': [{'dimension_id': 1, 'dimension_label': 'Product type', 'tag_value_id': 101, 'value': 'Wig'},
+              {'dimension_id': 2, 'dimension_label': 'Purpose', 'tag_value_id': 202, 'value': 'Detail'},
+              {'dimension_id': 3, 'dimension_label': 'Color names', 'tag_value_id': 301, 'value': 'Ash'}]},
+    {'id': 16, 'file_name': 'texture-only.png', 'file_size': 1048576, 'media_type': 'image', 'content_url': '/mock/texture-only.png',
+     'tags': [{'dimension_id': 1, 'dimension_label': 'Product type', 'tag_value_id': 101, 'value': 'Wig'},
+              {'dimension_id': 2, 'dimension_label': 'Purpose', 'tag_value_id': 202, 'value': 'Detail'},
+              {'dimension_id': 4, 'dimension_label': 'Textures type', 'tag_value_id': 402, 'value': 'Wavy'}]},
 ]
 tag_groups = [
-    {'dimension_id': 1, 'name': 'customer_product_type', 'label': 'Product type', 'values': [{'id': 101, 'value': 'Wig', 'count': 2}]},
-    {'dimension_id': 2, 'name': 'purpose', 'label': 'Purpose', 'values': [{'id': 201, 'value': 'Front', 'count': 1}, {'id': 202, 'value': 'Detail', 'count': 1}]},
+    {'dimension_id': 1, 'name': 'customer_product_type', 'label': 'Product type', 'values': [{'id': 101, 'value': 'Wig', 'count': 6}]},
+    {'dimension_id': 2, 'name': 'purpose', 'label': 'Purpose', 'values': [{'id': 201, 'value': 'Front', 'count': 1}, {'id': 202, 'value': 'Detail', 'count': 5}]},
+    {'dimension_id': 3, 'name': 'color_names', 'label': 'Color names', 'values': [{'id': 301, 'value': 'Ash', 'count': 4}]},
+    {'dimension_id': 4, 'name': 'textures_type', 'label': 'Textures type', 'values': [{'id': 401, 'value': 'Straight', 'count': 2}, {'id': 402, 'value': 'Wavy', 'count': 2}]},
 ]
 errors = []
 
@@ -45,12 +67,19 @@ with sync_playwright() as p:
     page.route('**/mock/*.png', lambda route: route.fulfill(body=PNG, content_type='image/png'))
     page.goto('http://127.0.0.1:3077/customer-media/')
     page.get_by_role('button', name='Enter Library').click()
-    expect(page.locator('.portal-dimension h3')).to_have_text(['Wig 2 / 2 files'])
-    expect(page.locator('.group-filter-row')).to_have_count(1)
-    expect(page.locator('.asset-card')).to_have_count(2)
+    expect(page.locator('.portal-dimension h3')).to_have_text(['Wig 6 / 6 files'])
+    expect(page.locator('.group-filter-row')).to_have_count(3)
+    expect(page.locator('.portal-tag-group')).to_have_count(5)
+    expect(page.locator('.portal-tag-group h4')).to_have_count(4)
+    expect(page.locator('.portal-tag-group').first.locator('.asset-card')).to_have_count(2)
+    expect(page.locator('.portal-tag-group').first.locator('.asset-footer strong')).to_have_text(['front.png', 'side.png'])
+    expect(page.locator('.portal-tag-group').nth(2).locator('h4')).to_have_count(0)
+    expect(page.locator('.asset-card')).to_have_count(6)
+    assert '未设置' not in ' '.join(page.locator('.portal-tag-group h4').all_text_contents())
     page.locator('[data-group-tag="201"]').click()
     expect(page.locator('.asset-card')).to_have_count(1)
     expect(page.locator('.asset-footer strong')).to_have_text(['front.png'])
+    expect(page.locator('.portal-tag-group')).to_have_count(1)
     assert page.locator('.asset-preview').first.evaluate('(el) => el.getBoundingClientRect().height') == 200
     page.locator('#select-all').check()
     expect(page.locator('#selected-count')).to_have_text('1 selected across this page')
@@ -71,16 +100,41 @@ with sync_playwright() as p:
         dimensions: payload.dimensions,
       }, location.origin);
       document.body.append(iframe);
-    }""", {'batch': base, 'assets': [{**assets[0], 'content_url': '/mock/front.png?expires=123&token=abc'}, assets[1]],
+    }""", {'batch': base, 'assets': [{**assets[0], 'content_url': '/mock/front.png?expires=123&token=abc'}, *assets[1:]],
             'dimensions': [{'id': group['dimension_id'], 'name': group['name'], 'label': group['label']}
                            for group in tag_groups]})
     preview = preview_page.frame_locator('iframe')
-    expect(preview.locator('.asset-card')).to_have_count(2)
+    expect(preview.locator('.asset-card')).to_have_count(6)
+    expect(preview.locator('.portal-tag-group')).to_have_count(5)
+    expect(preview.locator('.portal-tag-group h4')).to_have_count(4)
     expect(preview.locator('#portal-customer')).to_have_text('Test Client')
     signed_download = preview.locator('.asset-footer a').first.get_attribute('href')
     assert signed_download.count('?') == 1 and 'token=abc' in signed_download and 'download=true' in signed_download
     assert preview_calls == [], preview_calls
     assert not errors, errors
-    print(json.dumps({'passed': ['product grouping', 'group tag filtering', '200px thumbnail and filename',
+
+    internal_page = browser.new_page(viewport={'width': 1400, 'height': 900})
+    internal_page.on('pageerror', lambda error: errors.append(str(error)))
+    internal_page.add_init_script('window.customerMediaQaData = ' + json.dumps({
+        'customer': {'customer_id': 'C001', 'customer_name': 'Test Client', 'status': 'ready',
+                     'asset_count': 6, 'image_count': 6, 'video_count': 0, 'published_batch_count': 1},
+        'batches': [{**base, 'assets': assets}],
+        'tagDimensions': [{'id': group['dimension_id'], 'name': group['name'], 'label': group['label']}
+                          for group in tag_groups],
+    }))
+    internal_page.route('**/mock/*.png', lambda route: route.fulfill(body=PNG, content_type='image/png'))
+    internal_page.goto('http://127.0.0.1:3077/tests/fixtures/customer-media-client-library-qa.html')
+    expect(internal_page.locator('.portal-tag-group')).to_have_count(5)
+    expect(internal_page.locator('.portal-tag-group h4')).to_have_count(4)
+    expect(internal_page.locator('.portal-tag-group').first.locator('.asset-card')).to_have_count(2)
+    expect(internal_page.locator('.portal-tag-group').first.locator('.asset-footer strong')).to_have_text(['front.png', 'side.png'])
+    expect(internal_page.locator('.portal-tag-group').nth(2).locator('h4')).to_have_count(0)
+    expect(internal_page.locator('.asset-card')).to_have_count(6)
+    internal_page.get_by_role('button', name='Front', exact=True).click()
+    expect(internal_page.locator('.portal-tag-group')).to_have_count(1)
+    expect(internal_page.locator('.asset-footer strong')).to_have_text(['front.png'])
+    assert not errors, errors
+    print(json.dumps({'passed': ['product grouping', 'color and texture rows in both client views',
+                                 'group tag filtering', '200px thumbnail and filename',
                                  'same-origin draft preview without portal API'], 'page_errors': errors}))
     browser.close()

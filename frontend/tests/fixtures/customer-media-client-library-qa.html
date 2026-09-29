@@ -1,0 +1,9 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>Customer media client library QA</title></head><body><div id="app"></div><script type="module">
+import { createApp, h } from 'vue'
+import '/src/styles/tokens.css'
+import '/src/styles/liquid-glass.css'
+import ClientLibrary from '/src/views/design/customer-media/CustomerMediaClientLibrary.vue'
+
+const data = window.customerMediaQaData
+createApp({ render: () => h(ClientLibrary, data) }).mount('#app')
+</script></body></html>

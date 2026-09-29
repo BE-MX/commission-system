@@ -96,9 +96,13 @@
                   <button v-for="value in filter.values" :key="value.id" type="button" :aria-pressed="groupSelected(batch.id, group.id).includes(value.id)" :class="{ active: groupSelected(batch.id, group.id).includes(value.id) }" @click="toggleGroupTag(batch.id, group.id, value.id)">{{ value.value }}</button>
                 </div>
               </div>
-              <section class="portal-tag-group">
+              <section v-for="row in groupMediaByColorAndTexture(visibleGroupAssets(batch.id, group), tagDimensions)" :key="row.id" class="portal-tag-group">
+                <h4 v-if="row.textureType || row.colorName">
+                  {{ row.textureType }}
+                  <span :class="{ 'color-only': !row.textureType }">{{ row.colorName ? `${row.colorName} · ` : '' }}{{ row.assets.length }} files</span>
+                </h4>
                 <div class="asset-gallery">
-              <article v-for="asset in visibleGroupAssets(batch.id, group)" :key="asset.id" class="asset-card">
+              <article v-for="asset in row.assets" :key="asset.id" class="asset-card">
                 <button v-if="asset.media_type === 'image'" class="asset-preview" type="button" :aria-label="`Open ${asset.file_name}`" @click="previewAsset = asset">
                   <img :src="asset.content_url" :alt="asset.file_name" loading="lazy" />
                 </button>
@@ -114,8 +118,8 @@
                 </div>
               </article>
                 </div>
-                <p v-if="!visibleGroupAssets(batch.id, group).length" class="group-empty">No materials match these tags.</p>
               </section>
+              <p v-if="!visibleGroupAssets(batch.id, group).length" class="group-empty">No materials match these tags.</p>
             </div>
           </section>
         </div>
@@ -163,7 +167,7 @@ import {
   initials,
   portalStatusMeta,
 } from './portalPreviewState'
-import { filterMediaByTags, groupMediaByTags } from './customerMediaGrouping'
+import { filterMediaByTags, groupMediaByColorAndTexture, groupMediaByTags } from './customerMediaGrouping'
 
 const props = defineProps({
   customer: { type: Object, default: null },
@@ -221,8 +225,9 @@ watch(() => props.customer?.customer_id, () => {
 .group-filter-row strong { min-width: 90px; padding-top: 10px; color: var(--text-secondary); font-size: 12px; }
 .group-empty { color: var(--text-secondary); font-size: 12px; }
 .portal-tag-group { margin-bottom: 24px; }
-.portal-tag-group h4 { margin: 0 0 12px; color: var(--color-primary-hover); font-size: 14px; }
-.portal-tag-group h4 span { margin-left: 6px; color: var(--text-secondary); font-weight: 400; }
+.portal-tag-group h4 { margin: 0 0 12px; color: var(--text-primary); font-size: 20px; font-weight: 800; }
+.portal-tag-group h4 span { margin-left: 7px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.portal-tag-group h4 span.color-only { margin-left: 0; }
 .client-library { min-height: 100%; color: var(--text-primary); background: linear-gradient(145deg, var(--dash-wash-from), var(--dash-wash-mid) 54%, var(--dash-wash-to)); }
 .preview-topbar { display: flex; min-height: 76px; align-items: center; justify-content: space-between; gap: 22px; padding: 12px 30px; border-bottom: 1px solid rgba(61, 51, 35, 0.12); background: rgba(255, 255, 255, 0.72); }
 .brand-lockup { display: flex; align-items: center; gap: 10px; }
