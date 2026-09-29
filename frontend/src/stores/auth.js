@@ -79,8 +79,8 @@ export const useAuthStore = defineStore('auth', () => {
     await router.push(target)
   }
 
-  async function refreshToken() {
-    const data = await authApi.refresh()
+  async function refreshToken(options) {
+    const data = await authApi.refresh(options)
     _setGlobalToken(data.access_token)
     return data.access_token
   }

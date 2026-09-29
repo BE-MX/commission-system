@@ -93,6 +93,16 @@
       </div>
     </Transition>
 
+    <div v-if="authExpired" class="xk-confirm">
+      <div class="xk-confirm-panel" role="dialog" aria-modal="true" aria-labelledby="auth-expired-title">
+        <div id="auth-expired-title" class="xc-title">展会设备登录已失效</div>
+        <div class="xc-sub">请重新登录后继续试戴；尚未提交的照片需重新拍摄。</div>
+        <div class="xc-actions">
+          <button class="xk-btn" :disabled="logoutPending" @click="confirmLogout">重新登录</button>
+        </div>
+      </div>
+    </div>
+
 
   </div>
 </template>
@@ -102,6 +112,7 @@ import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTryOnFlow } from './composables/useTryOnFlow'
 import { useStoreQuota } from './composables/useStoreQuota'
+import { KIOSK_AUTH_EXPIRED_EVENT } from '@/api/expo'
 import AttractScreen from './kiosk/AttractScreen.vue'
 import RegisterScreen from './kiosk/RegisterScreen.vue'
 import CaptureScreen from './kiosk/CaptureScreen.vue'
@@ -132,12 +143,14 @@ const quotaBlocked = computed(() =>
 let prevViewport = null
 const viewportMeta = () => document.querySelector('meta[name="viewport"]')
 onMounted(() => {
+  window.addEventListener(KIOSK_AUTH_EXPIRED_EVENT, onKioskAuthExpired)
   const meta = viewportMeta()
   if (!meta || meta.content.includes('viewport-fit')) return
   prevViewport = meta.content
   meta.content = `${prevViewport}, viewport-fit=cover`
 })
 onBeforeUnmount(() => {
+  window.removeEventListener(KIOSK_AUTH_EXPIRED_EVENT, onKioskAuthExpired)
   const meta = viewportMeta()
   if (meta && prevViewport !== null) meta.content = prevViewport
 })
@@ -170,6 +183,10 @@ const backDisabled = computed(() => flow.step.value === 'result' && flow.generat
 const homeConfirm = ref(false)
 const logoutConfirm = ref(false)
 const logoutPending = ref(false)
+const authExpired = ref(false)
+function onKioskAuthExpired() {
+  authExpired.value = true
+}
 function requestHome() {
   if (!flow.sessionId.value) {
     flow.resetAll() // 未拍照建会话，流程无实际代价，直接回
