@@ -63,11 +63,14 @@
       v-model="tagPickerVisible"
       :title="`编辑标签 · ${tagTarget?.file_name || ''}`"
       :dimensions="tagDimensions"
+      :available-tags="customerTags"
+      :context="{ customerId: current?.customer_id, batchId: current?.id }"
       :tags="tagTarget?.tags || []"
       :saving="tagSaving"
       hint="客户标签会展示在客户素材门户，命名即对外可见。"
       @save="saveTags"
       @created="onTagCreated"
+      @renamed="onTagRenamed"
     />
   </div>
 </template>
@@ -77,6 +80,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getCustomerTagDimensions,
+  getBatchCustomerTags,
   getMediaReviews,
   reviewMediaBatch,
   updateMediaAssetTags,
@@ -86,6 +90,7 @@ import { filterMediaByTags, groupMediaByTags } from './customer-media/customerMe
 
 const rows = ref([]); const loading = ref(false); const saving = ref(false); const drawer = ref(false); const current = ref(null); const comment = ref(''); const previewUrl = ref('')
 const tagDimensions = ref([])
+const customerTags = ref([])
 const tagPickerVisible = ref(false)
 const tagSaving = ref(false)
 const tagTarget = ref(null)
@@ -102,7 +107,10 @@ function visibleGroupAssets(group) {
 
 async function load() { loading.value = true; try { rows.value = (await getMediaReviews()).data || [] } finally { loading.value = false } }
 async function loadTagDimensions() { try { tagDimensions.value = (await getCustomerTagDimensions()).data || [] } catch { /* 标签编辑不可用不阻断审核 */ } }
-function open(row) { current.value = row; comment.value = ''; groupSelections.value = {}; drawer.value = true }
+async function open(row) {
+  current.value = row; comment.value = ''; groupSelections.value = {}; customerTags.value = []; drawer.value = true
+  try { customerTags.value = (await getBatchCustomerTags(row.id)).data || [] } catch { /* API interceptor reports errors */ }
+}
 function formatSize(bytes) { return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB` }
 function tagLabel(tag) { return tag.dimension_label ? `${tag.dimension_label}：${tag.value}` : tag.value }
 
@@ -128,10 +136,18 @@ async function saveTags({ tags }) {
 
 // 行内新建标签后同步进维度列表
 function onTagCreated({ dimension_id, value }) {
-  const dim = tagDimensions.value.find(d => d.id === dimension_id)
-  if (dim && !(dim.values || []).some(v => v.id === value.id)) {
-    dim.values = [...(dim.values || []), value]
-  }
+  if (!customerTags.value.some(tag => tag.tag_value_id === value.id)) customerTags.value.push({
+    dimension_id, tag_value_id: value.id, value: value.value,
+    dimension_label: tagDimensions.value.find(dim => dim.id === dimension_id)?.label || '',
+  })
+}
+function onTagRenamed({ id, value }) {
+  customerTags.value = customerTags.value.map(tag => tag.tag_value_id === id ? { ...tag, value } : tag)
+  if (current.value) current.value.assets = current.value.assets.map(asset => ({
+    ...asset,
+    tags: (asset.tags || []).map(tag => tag.tag_value_id === id ? { ...tag, value } : tag),
+  }))
+  tagTarget.value = current.value?.assets.find(asset => asset.id === tagTarget.value?.id) || null
 }
 
 async function decide(action) {

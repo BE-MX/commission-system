@@ -140,3 +140,15 @@ class TagValueCreateIn(BaseModel):
         if not normalized:
             raise ValueError("标签名不能为空")
         return normalized
+
+
+class TagValueRenameIn(BaseModel):
+    value: str = Field(min_length=1, max_length=128)
+
+    @field_validator("value")
+    @classmethod
+    def normalize_value(cls, value):
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("标签名不能为空")
+        return normalized

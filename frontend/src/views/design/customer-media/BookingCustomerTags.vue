@@ -10,10 +10,13 @@
       v-model="pickerVisible"
       title="为客户添加标签"
       :dimensions="dimensions"
+      :available-tags="customerTags"
+      :context="{ customerId: customerId }"
       :saving="saving"
       hint="标签属于当前客户，之后创建预约也会自动显示。"
       @save="save"
       @created="onCreated"
+      @renamed="onRenamed"
     />
   </div>
 </template>
@@ -65,8 +68,13 @@ async function save({ tags }) {
 }
 
 function onCreated({ dimension_id, value }) {
-  const dim = dimensions.value.find(item => item.id === dimension_id)
-  if (dim && !(dim.values || []).some(item => item.id === value.id)) dim.values = [...(dim.values || []), value]
+  if (!customerTags.value.some(tag => tag.tag_value_id === value.id)) {
+    customerTags.value.push({ dimension_id, tag_value_id: value.id, value: value.value,
+      dimension_label: dimensions.value.find(dim => dim.id === dimension_id)?.label || '' })
+  }
+}
+function onRenamed({ id, value }) {
+  customerTags.value = customerTags.value.map(tag => tag.tag_value_id === id ? { ...tag, value } : tag)
 }
 </script>
 

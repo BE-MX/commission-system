@@ -56,9 +56,24 @@ export function useCustomerMediaUpload({ getBatch, onBatch, getSelectedTags }) {
     items.value = []
   }
 
+  function removeTagFromItems(valueId) {
+    for (const item of items.value) {
+      if (item.status === 'uploading') continue
+      item.tags = item.tags.filter(tag => tag.tag_value_id !== valueId)
+      if (!item.tags.length) {
+        item.status = 'error'
+        item.error = '标签已删除，请移除文件后重新加入清单'
+      }
+    }
+  }
+
   async function uploadItem(item) {
     const batchId = getBatch()?.id
-    if (!batchId || !item.tags.length) return
+    if (!batchId || !item.tags.length) {
+      item.status = 'error'
+      item.error = '请重新选择客户标签后加入清单'
+      return
+    }
     item.status = 'uploading'
     item.progress = 0
     try {
@@ -94,5 +109,5 @@ export function useCustomerMediaUpload({ getBatch, onBatch, getSelectedTags }) {
   }
 
   return { items, uploading, busy, pendingCount, incompleteCount, hasItems,
-    addFiles, removeItem, clearItems, reset: clearItems, startUpload, retryItem }
+    addFiles, removeItem, clearItems, removeTagFromItems, reset: clearItems, startUpload, retryItem }
 }

@@ -28,29 +28,26 @@
           v-model="selection[dim.id]"
           size="small"
         >
-          <el-checkbox-button
-            v-for="val in dim.values"
-            :key="val.id"
-            :label="val.id"
-            :disabled="val.is_active === 0"
-          >
-            {{ val.value }}
-          </el-checkbox-button>
+          <span v-for="val in dim.values" :key="val.id" class="picker-value">
+            <el-checkbox-button :label="val.id">{{ val.value }}</el-checkbox-button>
+            <el-button link aria-label="编辑标签名称" @click.stop="startRename(dim, val)">编辑</el-button>
+          </span>
         </el-checkbox-group>
         <el-radio-group
           v-else
           v-model="selection[dim.id]"
           size="small"
         >
-          <el-radio-button
-            v-for="val in dim.values"
-            :key="val.id"
-            :label="val.id"
-            :disabled="val.is_active === 0"
-          >
-            {{ val.value }}
-          </el-radio-button>
+          <span v-for="val in dim.values" :key="val.id" class="picker-value">
+            <el-radio-button :label="val.id">{{ val.value }}</el-radio-button>
+            <el-button link aria-label="编辑标签名称" @click.stop="startRename(dim, val)">编辑</el-button>
+          </span>
         </el-radio-group>
+        <div v-if="renaming?.dimensionId === dim.id" class="picker-rename">
+          <el-input v-model="renaming.value" size="small" maxlength="128" class="picker-create-input" @keyup.enter="submitRename" />
+          <el-button type="primary" :loading="renamingSaving" @click="submitRename">保存名称</el-button>
+          <el-button link @click="renaming = null">取消</el-button>
+        </div>
         <div class="picker-create">
           <template v-if="creatingDimId === dim.id">
             <el-input
@@ -79,36 +76,45 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import GlassButton from '@/components/GlassButton.vue'
-import { createCustomerTagValue } from '@/api/customerMedia'
+import { createCustomerTagValue, renameCustomerTagValue } from '@/api/customerMedia'
 import { flattenSelection, groupTagsByDimension, selectionFromTags } from './customerMediaTags'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   // 客户标签维度（tag_scope='customer'），行内新建会直接追加到本地副本
   dimensions: { type: Array, default: () => [] },
+  availableTags: { type: Array, default: () => [] },
+  context: { type: Object, default: () => ({}) },
   // 当前标签 [{dimension_id, tag_value_id, ...}]，打开时回填
   tags: { type: Array, default: () => [] },
   title: { type: String, default: '编辑标签' },
   hint: { type: String, default: '' },
   saving: { type: Boolean, default: false },
 })
-const emit = defineEmits(['update:modelValue', 'save', 'created'])
+const emit = defineEmits(['update:modelValue', 'save', 'created', 'renamed'])
 
 const localDims = ref([])
 const selection = ref({})
 const creatingDimId = ref(null)
 const creatingValue = ref('')
 const creating = ref(false)
+const renaming = ref(null)
+const renamingSaving = ref(false)
 
 // 托管维度由系统派生，不允许人工编辑
 const editableDimensions = computed(() => localDims.value.filter(dim => !dim.is_managed))
 
 watch(() => props.modelValue, open => {
   if (!open) return
-  localDims.value = props.dimensions.map(dim => ({ ...dim, values: [...(dim.values || [])] }))
+  localDims.value = props.dimensions.map(dim => ({
+    ...dim,
+    values: props.availableTags.filter(tag => tag.dimension_id === dim.id)
+      .map(tag => ({ id: tag.tag_value_id, value: tag.value })),
+  }))
   selection.value = selectionFromTags(props.tags, editableDimensions.value)
   creatingDimId.value = null
   creatingValue.value = ''
+  renaming.value = null
 })
 
 function startCreate(dim) {
@@ -126,7 +132,7 @@ async function submitCreate(dim) {
   if (!value || creating.value) return
   creating.value = true
   try {
-    const res = await createCustomerTagValue(dim.id, value)
+    const res = await createCustomerTagValue(props.context, dim.id, value)
     const created = res.data
     const target = localDims.value.find(item => item.id === dim.id)
     if (target && !target.values.some(v => v.id === created.id)) {
@@ -145,6 +151,25 @@ async function submitCreate(dim) {
   }
 }
 
+function startRename(dim, val) {
+  renaming.value = { dimensionId: dim.id, valueId: val.id, value: val.value }
+}
+
+async function submitRename() {
+  if (!renaming.value?.value.trim() || renamingSaving.value) return
+  renamingSaving.value = true
+  try {
+    const { dimensionId, valueId } = renaming.value
+    const response = await renameCustomerTagValue(props.context, valueId, renaming.value.value.trim())
+    const target = localDims.value.find(dim => dim.id === dimensionId)?.values.find(val => val.id === valueId)
+    if (target) target.value = response.data.value
+    emit('renamed', { dimension_id: dimensionId, id: valueId, value: response.data.value })
+    renaming.value = null
+    ElMessage.success('标签名称已更新')
+  } catch { /* API interceptor displays the error */ }
+  finally { renamingSaving.value = false }
+}
+
 function handleSave() {
   const flat = flattenSelection(selection.value, editableDimensions.value)
   emit('save', { tags: groupTagsByDimension(flat), flat })
@@ -157,6 +182,9 @@ function handleSave() {
 .picker-dim-list { max-height: 52vh; overflow-y: auto; display: grid; gap: 16px; }
 .picker-dim-label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
 .picker-dim :deep(.el-checkbox-button), .picker-dim :deep(.el-radio-button) { margin: 0 8px 8px 0; }
+.picker-value { display: inline-flex; align-items: center; margin: 0 10px 8px 0; }
+.picker-value :deep(.el-checkbox-button), .picker-value :deep(.el-radio-button) { margin: 0 4px 0 0; }
+.picker-rename { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; }
 .picker-create { display: flex; align-items: center; gap: 8px; }
 .picker-create-input { width: 200px; }
 </style>

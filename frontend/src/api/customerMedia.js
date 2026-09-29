@@ -18,17 +18,22 @@ export const getCustomerTags = customerId => customerMediaClient.get(`/customers
 export const addCustomerTags = (customerId, tags) => customerMediaClient.post(`/customers/${encodeURIComponent(customerId)}/tags`, { tags })
 export const getTaskCustomerTags = taskId => customerMediaClient.get(`/tasks/${taskId}/customer-tags`, { showLoading: false })
 export const addTaskCustomerTags = (taskId, tags) => customerMediaClient.post(`/tasks/${taskId}/customer-tags`, { tags })
-export const validateCustomerTags = tagNames => customerMediaClient.post('/tags/validate', { tag_names: tagNames }, {
-  showLoading: false,
-  timeout: 30000,
-})
-// autoCreateTags: { 标签名: dimension_id }，幂等；确认动作在前端完成
-export const resolveCustomerTags = autoCreateTags => customerMediaClient.post('/tags/resolve', { auto_create_tags: autoCreateTags }, {
-  loadingText: '正在创建标签...',
-  timeout: 30000,
-})
-// 同名复用返回已有值
-export const createCustomerTagValue = (dimensionId, value) => customerMediaClient.post('/tags/values', { dimension_id: dimensionId, value })
+export const getBatchCustomerTags = batchId => customerMediaClient.get(`/batches/${batchId}/customer-tags`, { showLoading: false })
+const customerTagPath = customerId => `/customers/${encodeURIComponent(customerId)}/tag-values`
+const tagContextParams = context => ({ task_id: context?.taskId, batch_id: context?.batchId })
+export const createCustomerTagValue = (context, dimensionId, value) => customerMediaClient.post(
+  customerTagPath(context.customerId), { dimension_id: dimensionId, value }, { params: tagContextParams(context) },
+)
+export const renameCustomerTagValue = (context, valueId, value) => customerMediaClient.patch(
+  `${customerTagPath(context.customerId)}/${valueId}`, { value }, { params: tagContextParams(context) },
+)
+export const getCustomerTagUsage = (context, valueId) => customerMediaClient.get(
+  `${customerTagPath(context.customerId)}/${valueId}/usage`, { params: tagContextParams(context), showLoading: false },
+)
+export const deleteCustomerTagValue = (context, valueId, confirmAssociated = false) => customerMediaClient.delete(
+  `${customerTagPath(context.customerId)}/${valueId}`,
+  { params: { ...tagContextParams(context), confirm_associated: confirmAssociated } },
+)
 // 按维度全量覆盖：tags = [{dimension_id, tag_value_ids}]，空数组清该维度
 export const updateMediaAssetTags = (batchId, assetId, tags) => customerMediaClient.patch(`/batches/${batchId}/assets/${assetId}/tags`, { tags })
 

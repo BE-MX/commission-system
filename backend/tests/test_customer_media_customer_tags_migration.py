@@ -20,7 +20,7 @@ from tests.test_customer_media_tags import _make_dim, _seed_batch_with_asset
 @pytest.mark.parametrize("mysql_comparison", [False, True])
 def test_backfill_live_asset_tags_is_idempotent(db, monkeypatch, existing_table, mysql_comparison):
     dimension, values = _make_dim(db, "customer_scene", "场景", values=["白底", "废弃"])
-    _applicant, designer, _outsider, batch, live = _seed_batch_with_asset(db)
+    _applicant, designer, _outsider, batch, live = _seed_batch_with_asset(db, bind_existing=False)
     deleted = CustomerMediaAsset(
         batch_id=batch.id, file_name="deleted.png", media_type="image",
         content_type="image/png", file_size=100, sha256="d" * 64,

@@ -4,6 +4,8 @@
 
 `ark_customer_media_customer_tags` 以 `(customer_id, dimension_id, tag_value_id)` 为联合主键，保存客户长期持有的标签，独立于预约单、设计任务和素材批次。`dimension_id`、`tag_value_id` 关联现有标签库，`created_by` 关联方舟用户，`created_at` 使用北京时间；按 `(tag_value_id, customer_id)` 建索引。新增标签采取追加和重复写幂等语义。迁移从未删除素材的既有打标记录按客户去重回填，不改动现有素材标签、目录或文件。2026-09-25 的生产恢复与验证见[恢复报告](reports/2026-09-25-migration168-collation.md)。
 
+171 迁移增加可空 `display_value` 并从原标签值回填，唯一索引为 `(customer_id, dimension_id, display_value)`。此列保存客户专属名称；底层 `ark_tag_values` ID 仍作为素材关联键。客户改名不影响其他客户，删除客户绑定时同步删除该客户素材的标签关联，不删除共享的底层标签值。
+
 ## 预售结算与汇总回款（166_presale_settlement，未部署）
 
 开发分支新增 `170_presale_freight_name`（父 `169_pcw_customer_workbench`）：为 `ark_receivables` 增加唯一的 `remote_order_name`、冻结的 `remote_payload` 和摘要，以及发送令牌、租约、错误和版本列；为 `ark_shipment_outbounds` 增加首次远端明细核验快照和 `last_check_attempt_at`，分别用于确认实际出库时固定行 ID/成本单价、以及远端读取失败后的公平轮询。运费目标在远端写入前先预留可匹配名称；远端 ID 回读核验后绑定。生产迁移仍只能经候选发布入口执行，本地未对共享数据库升级。
