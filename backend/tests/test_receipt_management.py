@@ -13,7 +13,7 @@ from app.core.time import beijing_now
 from app.invoice import okki_client
 from app.invoice.models import Invoice
 from app.receipt import attachments, balance, invoice_link, remote, service, sync_service
-from app.receipt.models import Receipt, ReceiptIntent
+from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent, ReceiptLog
 from app.receipt.schemas import ReceiptCreate, ReceiptDraft, ReceiptFields, Resolution
 
 USER = {"sub": "1", "roles": [], "permissions": ["receipt:read", "receipt:write"]}
@@ -172,6 +172,62 @@ def test_ready_intent_reserves_then_transfers_once(db, order):
     assert db.query(Receipt).count() == 1
     assert Decimal(service.order_balance(db, order)["remaining_amount"]) == Decimal("4260")
     assert invoice_link.get_intent(db, order.id).status == "converted"
+
+
+def test_converted_invoice_proofs_can_be_replaced_without_changing_money(db, order):
+    original = proof(db)
+    draft = ReceiptDraft(amount="600", collection_date="2026-09-17", payment_type="T/T",
+                         attachment_ids=[original])
+    invoice_link.save_draft(db, order, draft, 1, new=True)
+    invoice_link.arm(db, order, 1); invoice_link.mark_success(db, order); db.commit()
+    sync_service.generate_ready(db)
+    row = db.query(Receipt).one()
+    row.sync_status = "synced"; row.xiaoman_receipt_id = "701"; db.commit()
+    replacement = proof(db)
+    before_version = row.version
+    with api_client(db, USER) as client:
+        response = client.put(f"/api/receipts/{row.id}/attachments", json={
+            "version": before_version, "attachment_ids": [replacement]})
+    assert response.status_code == 200
+    db.refresh(row)
+    assert row.attachment_ids == [replacement]
+    assert row.version == before_version + 1
+    assert row.amount == Decimal("600") and row.xiaoman_receipt_id == "701" and row.sync_status == "synced"
+    assert invoice_link.get_intent(db, order.id).attachment_ids == [replacement]
+    assert db.get(ReceiptAttachment, original).receipt_id == row.id
+    assert db.query(ReceiptLog).filter_by(receipt_id=row.id, action="proofs_updated").count() == 1
+    with api_client(db, USER) as client:
+        assert client.get(f"/api/receipts/attachments/{original}").status_code == 404
+        assert client.get(f"/api/receipts/attachments/{replacement}").status_code == 200
+        assert client.put(f"/api/receipts/{row.id}/attachments", json={
+            "version": before_version, "attachment_ids": [original]}).status_code == 409
+        assert client.put(f"/api/receipts/{row.id}/attachments", json={
+            "version": row.version, "attachment_ids": [original]}).status_code == 409
+        assert client.put(f"/api/receipts/{row.id}/attachments", json={
+            "version": row.version, "attachment_ids": []}).status_code == 422
+        assert client.put(f"/api/receipts/{row.id}/attachments", json={
+            "version": row.version, "attachment_ids": [replacement, replacement]}).status_code == 422
+    assert row.attachment_ids == [replacement]
+
+
+def test_converted_invoice_proof_write_requires_receipt_scope(db, order):
+    original = proof(db)
+    invoice_link.save_draft(db, order, ReceiptDraft(amount="600", collection_date="2026-09-17",
+        payment_type="T/T", attachment_ids=[original]), 1, new=True)
+    invoice_link.arm(db, order, 1); invoice_link.mark_success(db, order); db.commit()
+    sync_service.generate_ready(db)
+    row = db.query(Receipt).one()
+    replacement = proof(db)
+    payload = {"version": row.version, "attachment_ids": [replacement]}
+    with api_client(db, {**USER, "permissions": ["invoice:write"]}) as client:
+        assert client.put(f"/api/receipts/{row.id}/attachments", json=payload).status_code == 403
+    with api_client(db, {**USER, "sub": "2"}) as client:
+        assert client.put(f"/api/receipts/{row.id}/attachments", json=payload).status_code == 404
+    row.sync_status = "syncing"; db.commit()
+    with api_client(db, USER) as client:
+        assert client.put(f"/api/receipts/{row.id}/attachments", json=payload).status_code == 409
+    db.refresh(row)
+    assert row.attachment_ids == [original]
 
 
 def test_historical_invoice_does_not_backfill(db, order):

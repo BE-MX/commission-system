@@ -592,6 +592,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     await customerDefaultsPromise
     if (contextSeq !== customerContextSeq) return null
     if (form.receipt_uploading) { ElMessage.warning("请等待回款截图上传完成"); return null }
+    if (form.receipt_proof_dirty) { ElMessage.warning("请先保存回款截图变更"); return null }
     if (form.items.some(line => Number(line.total_price || 0) < 0)) {
       ElMessage.warning('产品行折扣不能超过该行金额')
       return null
