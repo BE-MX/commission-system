@@ -90,6 +90,14 @@ export async function selectSerial(order, invoiceNo, api, {regeneration = false}
   throw new Error('Outbound serial collision; no submission attempted');
 }
 
+// OKKI trims the edges of remarks on save. Preserve the submitted text and
+// compare only edge-normalized strings; internal spacing and lines are meaningful.
+function remarksMatch(actual, expected) {
+  actual ??= '';
+  expected ??= '';
+  return typeof actual === 'string' && typeof expected === 'string' && actual.trim() === expected.trim();
+}
+
 export function verifyCreated(detail, result, payload) {
   if (String(detail.outbound_invoice_id) !== String(result.outbound_invoice_id) ||
       detail.serial_id !== payload.serial_id || Number(detail.status) !== 1 ||
@@ -148,7 +156,7 @@ async function recoverExisting(existing, order, {api, directory, invoiceNo, invo
       if (saved.order_id !== String(order.order_id)) throw new Error('Submission intent order mismatch');
       const expected = saved.payload || {...buildPayload(order, invoiceNo, invoiceRemark), serial_id: existing.serial_id};
       verifyCreated(detail, existing, expected);
-      if ((detail.remark ?? '') !== expected.remark) throw new Error('Recovered outbound remark differs');
+      if (!remarksMatch(detail.remark, expected.remark)) throw new Error('Recovered outbound remark differs');
     } catch (error) { error.uncertain = true; throw error; }
   }
   return {outcome: 'existing', order_id: String(order.order_id), ...existing};
@@ -216,7 +224,7 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
       const detail = await api('/v1/invoices/outbound/info?outbound_invoice_id=' + result.outbound_invoice_id);
       if (!Array.isArray(detail.record_list) || !detail.record_list.some(r => String(r.order_id) === orderId)) throw new Error('Created outbound association not verified');
       verifyCreated(detail, result, payload);
-      if ((detail.remark ?? '') !== payload.remark) throw new Error('Created outbound remark differs from Ark invoice');
+      if (!remarksMatch(detail.remark, payload.remark)) throw new Error('Created outbound remark differs from Ark invoice');
       const row = {order_id: orderId, outbound_invoice_id: result.outbound_invoice_id, serial_id: result.serial_id, at: now()};
       fs.appendFileSync(ledger, JSON.stringify(row) + '\n', {mode: 0o600});
       return {outcome: 'created', ...row};

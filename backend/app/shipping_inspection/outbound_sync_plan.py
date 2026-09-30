@@ -28,6 +28,13 @@ def number(value):
     return result
 
 
+def remarks_match(actual, expected):
+    """OKKI strips edge whitespace; internal spacing and line breaks stay meaningful."""
+    actual = '' if actual is None else actual
+    expected = '' if expected is None else expected
+    return isinstance(actual, str) and isinstance(expected, str) and actual.strip() == expected.strip()
+
+
 def build(before, order, products, remark, *, serial_id=None):
     if before.get('status') != 1:
         raise ValueError('仅待出库单可同步；已出库单请按实际发货办理补发或退货')
@@ -92,7 +99,7 @@ def build(before, order, products, remark, *, serial_id=None):
     serial_changed = serial_id is not None and serial_id != before.get('serial_id')
     if serial_changed:
         payload['serial_id'] = serial_id
-    remark_changed = (before.get('remark') or '') != remark
+    remark_changed = not remarks_match(before.get('remark'), remark)
     return {'payload': payload, 'expected': expected, 'changes': changes,
             'serial_before': before.get('serial_id'),
             'serial_after': serial_id if serial_changed else before.get('serial_id'), 'serial_changed': serial_changed,
@@ -130,7 +137,7 @@ def verify(before, after, plan):
                'product_total_amount', 'product_total_amount_rmb', 'product_total_amount_usd'}
     if any(before.get(k) != after.get(k) for k in before if k not in allowed):
         raise ValueError('出库单状态或其他单头资料发生变化，需人工核对')
-    if (after.get('remark') or '') != plan['remark_after']:
+    if not remarks_match(after.get('remark'), plan['remark_after']):
         raise ValueError('出库备注未同步，需人工核对')
     if after.get('serial_id') != plan['serial_after']:
         raise ValueError('出库单号未同步，需人工核对')

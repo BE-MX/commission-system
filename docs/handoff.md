@@ -1,5 +1,16 @@
 # 当前交接与待办
 
+## 2026-09-30 出库备注空格误报与单据恢复
+
+- 后续重新同步仍被后端 `outbound_sync_plan.verify` 的严格备注比较卡住（event5152、record93064、sync_uncertain）。按持续数据修复授权，09:34:57备份并核验持久plan、完整invoice edit_version、当前小满订单、出库ID/单号/活动列表、所有明细/成本/其他单头及无验货记录后，仅将event.action/result恢复sync_done及已核验快照；原plan不变、不重发POST。办公室备份 `D:/commission-system/tmp/outbound-recovery-836/20260930-093457-304664-sync5152-before.json`；恢复材料交付保留在主目录 `tmp/outbound-remark-20260930/`；恢复脚本 `repair_outbound_sync_5152.py`。独立审查完成；实际生产 `ensure_printable + apply_header + list_outbound_items` 回滚式调用通过，最新明细10/1/5可打印。
+- **永久修复范围已补齐，尚未发布**：JS自动创建/恢复及后端 `outbound_sync_plan.build` 的remark_changed、`verify` 均仅忽略首尾空白；后端新增隔离回归覆盖即时核验与发送/回读异常后的恢复不重发。用户先要求修数据、随后授权合并推送；生产代码未发布。
+
+- 分支 `codex/outbound-remark-trim`，worktree `D:/commission-system-codex-outbound-remark`。`okki_outbound_creator.mjs` 创建回读及持久意图恢复时仅忽略备注首尾空白；原文提交、内部空格/换行、身份/商品/SKU/数量/单价及防重复保护不变。本次交付包含本地修复及用户授权的合并推送；生产服务未发布。
+- 整合最新 `origin/main`（5d0c1449）后：出库脚本79/79、后端同步/打印/任务104/104通过，后端在独立源码目录使用SQLite与假小满并禁用MySQL连接；新增22项JS和9项后端场景覆盖创建、回读、异常恢复及内部空白保护。独立 agent 最终审查通过，以origin/main为基点的严格约定检查与diff检查通过。Git 巡检为 `--no-fetch` 本地快照；主目录既有 `.pnpm-store/` 未动。
+- 用户授权下，2026-09-30 09:15:38 仅将发票836对应task356（order105822029109439）从误报 `uncertain` 修复为 `done`，清空 `last_error`，尝试次数仍1。原始意图、小满订单、按ID及单号查询的出库详情、有效列表均核验；3行数量10/1/5，金额USD463.25，仅备注末尾空格不同。保持outbound105822029440028待出库，不重建、不调用出库POST、不删除意图。
+- 办公室服务器原始数据/意图/实时核验备份：`D:/commission-system/tmp/outbound-recovery-836/20260930-091538-411631-before.json`；本地恢复脚本保留在主目录 `tmp/outbound-remark-20260930/repair_outbound_836.py`，默认只读，不要重复执行 `--apply`。使用现有严格校验连接 `acciowork@127.0.0.1:2233`；北京查询通过办公室现有受信任SSH连接。
+- 恢复后发现另一保存发生在09:16:13，发票转 `ready/not_synced`：首款Super改Standard（产品86457574472097/SKU86457574472159）、单价29.55→26；Other Items单价20→55。小满出库仍原版本。用户随后自行重新同步：发票09:21:04 synced，原出库09:21:29已更新到新产品及单价，三行金额USD462.75。
+
 ## 2026-09-29 客户素材门户颜色与纹理分行（2026-09-30 已发布）
 
 - 内部“客户素材门户”预览和客户外部查看站（包括拍摄工作区的“客户效果预览”弹框）在 Product type 分组及现有标签筛选之后，按 Color names + Textures type 的组合分别展示素材行；行首突出纹理类型，缺失的颜色或纹理不显示占位文字。
