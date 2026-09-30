@@ -68,6 +68,7 @@ type VersionRow = {
 type VersionEntryRow = {
   entryId: string;
   colorId: string;
+  kind: 'stock' | 'display';
   lengthsJson: string;
   hot: number;
   section: string | null;
@@ -225,6 +226,8 @@ function normalizedSelection(template: TemplateSummary, colors: StockColor[], va
       fail(400, 'INVALID_LENGTHS', '尺寸列表格式无效。', { entryId });
     }
     const lengths = input.lengths.map(Number);
+    const kind = input.kind === 'display' ? 'display' : input.kind == null || input.kind === 'stock' ? 'stock' : '__invalid__';
+    if (kind === '__invalid__') fail(422, 'INVALID_ENTRY_KIND', '图片类型无效。', { entryId });
     if (
       lengths.some((length) => !Number.isInteger(length) || !allowedLengths.includes(length)) ||
       new Set(lengths).size !== lengths.length
@@ -234,6 +237,9 @@ function normalizedSelection(template: TemplateSummary, colors: StockColor[], va
     lengths.sort((a, b) => a - b);
 
     if (typeof input.hot !== 'boolean') fail(400, 'INVALID_HOT', 'Hot 状态必须明确提交。', { entryId });
+    if (kind === 'display' && (lengths.length || input.hot)) {
+      fail(422, 'INVALID_DISPLAY_ENTRY', '展示图片不能关联尺寸或 Hot。', { entryId });
+    }
     if (!lengths.length && input.hot) {
       fail(422, 'INACTIVE_HOT_ENTRY', '没有任何尺寸的颜色不能标记为 Hot。', { entryId });
     }
@@ -254,6 +260,7 @@ function normalizedSelection(template: TemplateSummary, colors: StockColor[], va
     return {
       entryId,
       colorId: candidate.colorId,
+      kind,
       lengths,
       hot: input.hot,
       section,
@@ -417,7 +424,7 @@ async function readVersion(versionId: string, templateId: string) {
 
 async function readVersionSelection(versionId: string) {
   const result = await env.DB.prepare(`
-    SELECT entry_id AS entryId, color_id AS colorId, lengths_json AS lengthsJson,
+    SELECT entry_id AS entryId, color_id AS colorId, kind, lengths_json AS lengthsJson,
       hot, section_key AS section, display_order AS \`order\`
     FROM master_version_entries WHERE version_id = ?
     ORDER BY display_order, entry_id
@@ -433,6 +440,7 @@ async function readVersionSelection(versionId: string) {
     return {
       entryId: row.entryId,
       colorId: row.colorId,
+      kind: row.kind,
       lengths,
       hot: Boolean(row.hot),
       section: row.section,
@@ -714,11 +722,12 @@ async function commitVersion(args: {
 
   statements.push(...conditionalInserts(
     'master_version_entries',
-    ['version_id', 'entry_id', 'color_id', 'lengths_json', 'hot', 'section_key', 'display_order'],
+    ['version_id', 'entry_id', 'color_id', 'kind', 'lengths_json', 'hot', 'section_key', 'display_order'],
     selection.map((entry) => [
       versionId,
       entry.entryId,
       entry.colorId,
+      entry.kind ?? 'stock',
       JSON.stringify(entry.lengths),
       entry.hot ? 1 : 0,
       entry.section,
@@ -1094,11 +1103,13 @@ function sourceDecisions(value: unknown) {
     const entryId = item.entryId == null ? null : typeof item.entryId === 'string' ? item.entryId.slice(0, 220) : '__invalid__';
     const treatAsNew = item.treatAsNew === true;
     const ignore = item.ignore === true;
+    const kind = item.kind === 'display' ? 'display' : item.kind == null || item.kind === 'stock' ? 'stock' : '__invalid__';
     const lengths = Array.isArray(item.lengths) ? [...new Set(item.lengths.map(Number))].sort((a, b) => a - b) : [];
     const section = item.section == null ? null : typeof item.section === 'string' ? item.section.slice(0, 100) : '__invalid__';
     if (
       !candidateId || result.has(candidateId) || (!ignore && !treatAsNew && !entryId) ||
-      (!ignore && (!lengths.length || lengths.length > 20 || lengths.some((length) => !Number.isInteger(length) || length < 1 || length > 100))) ||
+      kind === '__invalid__' ||
+      (!ignore && (kind === 'display' ? lengths.length !== 0 : !lengths.length || lengths.length > 20 || lengths.some((length) => !Number.isInteger(length) || length < 1 || length > 100))) ||
       (!ignore && section === '__invalid__') || entryId === '__invalid__'
     ) fail(422, 'INVALID_SOURCE_MAPPING', '人工映射包含无效或重复内容。', { candidateId });
     result.set(candidateId, {
@@ -1106,6 +1117,7 @@ function sourceDecisions(value: unknown) {
       entryId: ignore ? null : entryId,
       treatAsNew: ignore ? false : treatAsNew,
       ignore,
+      kind: ignore ? 'stock' : kind,
       lengths: ignore ? [] : lengths,
       section: ignore ? null : section,
     });
@@ -1178,7 +1190,9 @@ export async function enableTemplateSourceVersion(
   }
 
   const config = sourceVersionConfig(row);
-  const blocking = config.parseIssues.filter((issue) => issue.blocking && !acknowledged.has(sourceIssueKey(issue)));
+  const blocking = config.parseIssues.filter((issue) => issue.blocking && !(
+    issue.code === 'SIZE_LABEL_NOT_FOUND' && decisions.get(issue.candidateId ?? '')?.kind === 'display'
+  ) && !acknowledged.has(sourceIssueKey(issue)));
   if (blocking.length) {
     fail(422, 'SOURCE_ISSUES_NOT_ACKNOWLEDGED', '仍有无法可靠识别的内容需要管理员逐项确认。', {
       issues: blocking.map((issue) => ({ ...issue, key: sourceIssueKey(issue) })),
@@ -1209,8 +1223,9 @@ export async function enableTemplateSourceVersion(
       });
     }
     const lengths = decision?.lengths ?? card.lengths;
+    const kind = decision?.kind ?? card.kind ?? 'stock';
     const section = decision ? decision.section : card.section;
-    if (!lengths.length || lengths.length > 20 || lengths.some((length) => !Number.isInteger(length) || !lengthsForTemplate(identity).includes(length))) {
+    if (kind === 'stock' && (!lengths.length || lengths.length > 20 || lengths.some((length) => !Number.isInteger(length) || !lengthsForTemplate(identity).includes(length)))) {
       fail(422, 'INVALID_SOURCE_LENGTHS', '只能使用目标产品旧母版 S1 允许的尺寸，请修改尺寸或排除该颜色。', { candidateId: card.candidateId });
     }
     if (
@@ -1245,7 +1260,9 @@ export async function enableTemplateSourceVersion(
       ...card,
       entryId,
       colorId,
-      lengths: [...new Set(lengths)].sort((a, b) => a - b),
+      kind,
+      lengths: kind === 'display' ? [] : [...new Set(lengths)].sort((a, b) => a - b),
+      hot: kind === 'display' ? false : card.hot,
       section,
       order: cards.length,
       matchState: requestedExisting ? 'exact' as const : 'new' as const,
@@ -1268,7 +1285,7 @@ export async function enableTemplateSourceVersion(
       sourceVersionId: row.id,
       availableLengths,
       initialCards: cards,
-      initialColorCount: cards.length,
+      initialColorCount: cards.filter((card) => card.kind !== 'display').length,
       sections,
       warnings: config.parseIssues.map((issue) => issue.message),
     },

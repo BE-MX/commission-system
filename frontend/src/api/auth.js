@@ -25,6 +25,8 @@ authRequest.interceptors.request.use(async config => {
 authRequest.interceptors.response.use(
   response => response,
   error => {
+    // Kiosk auth recovery needs the original HTTP status and handles its own UI.
+    if (error.config?.suppressToast) return Promise.reject(error)
     // 网络层错误（后端未启动、DNS 失败、CORS 等）
     if (!error.response) {
       const msg = error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK'
@@ -103,8 +105,8 @@ export const authApi = {
    * 刷新 Access Token（用 HttpOnly Cookie 中的 refresh_token）
    * @returns {Promise<{ access_token, token_type, expires_in }>}
    */
-  async refresh() {
-    const { data } = await authRequest.post('/refresh')
+  async refresh({ suppressToast = false } = {}) {
+    const { data } = await authRequest.post('/refresh', null, { suppressToast })
     return data
   },
 

@@ -11,7 +11,7 @@ from app.invoice.linked_sync_service import edit_version
 from app.invoice.models import Invoice, InvoiceSyncLog, OkkiOutboundTask
 from app.shipping_inspection.models import ShippingOperationEvent
 from app.receipt import remote
-from app.shipping_inspection import outbound_service, outbound_sync_service
+from app.shipping_inspection import outbound_service, outbound_sync_service, outbound_sync_state
 
 logger = logging.getLogger(__name__)
 DESTINATION_WAREHOUSE_ID = '8193514242746'  # Same warehouse as deploy/okki_outbound_creator.mjs.
@@ -198,33 +198,32 @@ def run(db, invoice, user):
                          and linked.steps.get('order', {}).get('status') == 'done'
                          and linked.before.get('invoice_no') != linked.after.get('invoice_no')
                          and linked.after.get('invoice_no') == invoice.invoice_no else None)
-    can_edit_outbound = ('super_admin' in user.get('roles', []) or
-                         'shipping_inspection:write' in user.get('permissions', []))
-    if not can_edit_outbound and not desired_serial_id:
-        return {'status': 'manual', 'message': '订单已同步；当前账号没有出库修改权限，请由仓库同步待出库单'}
     live = related[0]
-    from app.shipping_inspection.router import _outbound_scope
+    # The invoice:sync action already authorizes reconciliation of this exact
+    # order. _prepare checks the same invoice scope and the unique live binding.
+    # The warehouse data scope must not prevent the order's own follow-up.
     record = outbound_service.get_record_by_outbound_invoice_id(
-        db, str(live['outbound_invoice_id']), okki_user_id=_outbound_scope(db, user))
+        db, str(live['outbound_invoice_id']))
     if record is None:
         return {'status': 'manual', 'message': '小满出库单已存在，方舟镜像尚未更新；镜像到达后可重新核对'}
     if str(record['outbound_invoice_id']) != str(live['outbound_invoice_id']):
         raise ValueError('出库镜像与小满单据身份不一致，出库未处理')
-    preview = outbound_sync_service.preview(db, record, user, desired_serial_id=desired_serial_id,
-                                             number_only=not can_edit_outbound)
+    preview = outbound_sync_service.preview(db, record, user, desired_serial_id=desired_serial_id)
     if preview.get('recover'):
         result = outbound_sync_service.synchronize(db, record, user, None, check_only=True,
-                                                    desired_serial_id=desired_serial_id,
-                                                    number_only=not can_edit_outbound)
+                                                    desired_serial_id=desired_serial_id)
     elif preview.get('requires_recheck'):
-        return {'status': 'manual', 'message': '订单已同步；出库单已有验货资料，请到出库单确认“同步并重验”'
-                if preview.get('inspection_status') != 'submitted' else
-                '订单已同步；请先撤回已提交验货单，再到出库单确认“同步并重验”'}
+        result = outbound_sync_service.synchronize(db, record, user, preview['version'],
+                                                    confirm_recheck=True, desired_serial_id=desired_serial_id,
+                                                    auto_recall=True, source='invoice_sync')
     else:
         result = outbound_sync_service.synchronize(db, record, user, preview['version'],
-                                                    desired_serial_id=desired_serial_id,
-                                                    number_only=not can_edit_outbound)
+                                                    desired_serial_id=desired_serial_id, source='invoice_sync')
     if result['status'] == 'sync_done':
+        if outbound_sync_state.evidence(db, record['outbound_record_id'])[1]:
+            return {'status': 'manual', 'category': 'inspection_recheck', 'outbound_updated': True,
+                    'message': '出库明细已自动更新；原验货证据已失效，请仓库重新拍照并提交验货',
+                    'outbound_invoice_id': str(live['outbound_invoice_id'])}
         return {'status': 'done', 'message': result['message'], 'outbound_invoice_id': str(live['outbound_invoice_id'])}
     return {'status': 'manual', 'message': result.get('message') or '出库同步结果待核对，请在出库单查看'}
 

@@ -11,6 +11,7 @@ from uuid import uuid4
 from sqlalchemy import update
 
 from app.core.time import beijing_now
+from app.core.queue_scan import take
 from app.invoice import okki_client, xiaoman_service
 from app.invoice.lifecycle_guard import ensure_active
 from app.invoice.models import Invoice
@@ -290,9 +291,9 @@ def recover_expired(db):
 
 def process_pending(db):
     recover_expired(db)
-    ids = [identity for (identity,) in db.query(Receivable.id).filter(
+    ids = take(db.query(Receivable.id).filter(
         Receivable.kind == "freight", Receivable.remote_status == "unverified",
-    ).order_by(Receivable.id).limit(10)]
+    ), Receivable.id, "freight_unverified", 10)
     db.commit()
     for identity in ids:
         try:

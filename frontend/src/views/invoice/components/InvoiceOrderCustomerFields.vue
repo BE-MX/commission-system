@@ -111,7 +111,7 @@
         @input="onInvoiceNoInput"
         @blur="onInvoiceNoBlur"
       />
-      <div v-if="previousInvoiceNo" class="prev-order-tip">该业务员上一张{{ form.order_type === 'production' ? '生产单' : '库存单' }}：{{ previousInvoiceNo }}</div>
+      <div v-if="previousInvoiceNo" class="prev-order-tip">该业务员上一张{{ orderTypeLabel(form.order_type) }}：{{ previousInvoiceNo }}</div>
     </el-form-item>
     <el-form-item label="下单日期" required>
       <el-date-picker v-model="form.invoice_date" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -145,6 +145,7 @@
 <script setup>
 import { DocumentCopy } from '@element-plus/icons-vue'
 import { customerOptionLabel } from '../composables/useInvoiceCustomerSearch'
+import { orderTypeLabel } from '../composables/useInvoiceShipments'
 import { describeCustomerRule } from '../composables/useInvoiceEditor'
 import InvoiceCustomerSyncEntry from './InvoiceCustomerSyncEntry.vue'
 

@@ -19,23 +19,18 @@
     <el-drawer v-model="drawer" title="审核客户素材" size="72%">
       <template v-if="current">
         <div class="drawer-summary"><strong>{{ current.customer_name }}</strong><span>ID {{ current.customer_id }} · R{{ current.revision }} · {{ current.assets.length }} 个文件</span></div>
-        <div v-if="reviewDimensions.length" class="review-filters">
-          <div v-for="dim in reviewDimensions" :key="dim.id" class="review-filter-row">
-            <strong>{{ dim.label }}</strong>
+        <div v-for="group in reviewGroups" :key="group.id" class="review-dimension">
+          <h3>{{ group.label }} <span>{{ visibleGroupAssets(group).length }} / {{ group.assets.length }} 个文件</span></h3>
+          <div v-for="filter in group.filters" :key="filter.id" class="review-filter-row">
+            <strong>{{ filter.label }}</strong>
             <div class="review-filter-options">
-              <el-button v-for="value in dim.values" :key="value.id" :type="selectedTagIds.includes(value.id) ? 'primary' : 'default'" @click="toggleFilter(value.id)">{{ value.value }}</el-button>
+              <el-button v-for="value in filter.values" :key="value.id" :type="(groupSelections[group.id] || []).includes(value.id) ? 'primary' : 'default'" @click="toggleGroupTag(group.id, value.id)">{{ value.value }}</el-button>
             </div>
           </div>
-          <el-button v-if="selectedTagIds.length" link @click="selectedTagIds = []">清除筛选</el-button>
-        </div>
-        <div v-for="group in reviewGroups" :key="group.id" class="review-dimension">
-          <h3>{{ group.label }}</h3>
-          <section v-for="bucket in group.buckets" :key="bucket.id" class="review-tag-group">
-            <h4>{{ bucket.label }} <span>{{ bucket.assets.length }} 个文件</span></h4>
+          <section class="review-tag-group">
             <div class="asset-grid">
-          <article v-for="asset in bucket.assets" :key="asset.id" class="asset-card">
-            <img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="previewUrl = asset.content_url" />
-            <video v-else :src="asset.content_url" controls preload="metadata" />
+          <article v-for="asset in visibleGroupAssets(group)" :key="asset.id" class="asset-card">
+            <div class="asset-thumb"><img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="previewUrl = asset.content_url" /><video v-else :src="asset.content_url" controls preload="metadata" /></div>
             <div>
               <strong>{{ asset.file_name }}</strong><span>{{ formatSize(asset.file_size) }}</span>
               <div class="asset-tags">
@@ -52,6 +47,7 @@
             </div>
           </article>
             </div>
+            <p v-if="!visibleGroupAssets(group).length" class="group-empty">没有符合筛选条件的素材</p>
           </section>
         </div>
         <el-empty v-if="!reviewGroups.length" description="没有符合筛选条件的素材" />
@@ -67,11 +63,14 @@
       v-model="tagPickerVisible"
       :title="`编辑标签 · ${tagTarget?.file_name || ''}`"
       :dimensions="tagDimensions"
+      :available-tags="customerTags"
+      :context="{ customerId: current?.customer_id, batchId: current?.id }"
       :tags="tagTarget?.tags || []"
       :saving="tagSaving"
       hint="客户标签会展示在客户素材门户，命名即对外可见。"
       @save="saveTags"
       @created="onTagCreated"
+      @renamed="onTagRenamed"
     />
   </div>
 </template>
@@ -81,6 +80,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getCustomerTagDimensions,
+  getBatchCustomerTags,
   getMediaReviews,
   reviewMediaBatch,
   updateMediaAssetTags,
@@ -90,21 +90,27 @@ import { filterMediaByTags, groupMediaByTags } from './customer-media/customerMe
 
 const rows = ref([]); const loading = ref(false); const saving = ref(false); const drawer = ref(false); const current = ref(null); const comment = ref(''); const previewUrl = ref('')
 const tagDimensions = ref([])
+const customerTags = ref([])
 const tagPickerVisible = ref(false)
 const tagSaving = ref(false)
 const tagTarget = ref(null)
-const selectedTagIds = ref([])
-const reviewDimensions = computed(() => (tagDimensions.value || []).map(dim => ({ ...dim,
-  values: (dim.values || []).filter(value => current.value?.assets?.some(asset => (asset.tags || []).some(tag => tag.tag_value_id === value.id))),
-})).filter(dim => dim.values.length))
-const reviewGroups = computed(() => groupMediaByTags(filterMediaByTags(current.value?.assets || [], selectedTagIds.value), tagDimensions.value))
-function toggleFilter(id) {
-  selectedTagIds.value = selectedTagIds.value.includes(id) ? selectedTagIds.value.filter(value => value !== id) : [...selectedTagIds.value, id]
+const groupSelections = ref({})
+const reviewGroups = computed(() => groupMediaByTags(current.value?.assets || [], tagDimensions.value))
+function toggleGroupTag(groupId, tagId) {
+  const selected = groupSelections.value[groupId] || []
+  groupSelections.value[groupId] = selected.includes(tagId) ? selected.filter(id => id !== tagId) : [...selected, tagId]
+}
+function visibleGroupAssets(group) {
+  const available = new Set(group.filters.flatMap(filter => filter.values.map(value => value.id)))
+  return filterMediaByTags(group.assets, (groupSelections.value[group.id] || []).filter(id => available.has(id)))
 }
 
 async function load() { loading.value = true; try { rows.value = (await getMediaReviews()).data || [] } finally { loading.value = false } }
 async function loadTagDimensions() { try { tagDimensions.value = (await getCustomerTagDimensions()).data || [] } catch { /* 标签编辑不可用不阻断审核 */ } }
-function open(row) { current.value = row; comment.value = ''; selectedTagIds.value = []; drawer.value = true }
+async function open(row) {
+  current.value = row; comment.value = ''; groupSelections.value = {}; customerTags.value = []; drawer.value = true
+  try { customerTags.value = (await getBatchCustomerTags(row.id)).data || [] } catch { /* API interceptor reports errors */ }
+}
 function formatSize(bytes) { return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB` }
 function tagLabel(tag) { return tag.dimension_label ? `${tag.dimension_label}：${tag.value}` : tag.value }
 
@@ -121,7 +127,7 @@ async function saveTags({ tags }) {
     const response = await updateMediaAssetTags(current.value.id, tagTarget.value.id, [...tags, ...cleared])
     current.value.assets = response.data.assets
     tagTarget.value = current.value.assets.find(asset => asset.id === tagTarget.value.id) || null
-    selectedTagIds.value = selectedTagIds.value.filter(id => current.value.assets.some(asset =>
+    for (const groupId of Object.keys(groupSelections.value)) groupSelections.value[groupId] = groupSelections.value[groupId].filter(id => current.value.assets.some(asset =>
       (asset.tags || []).some(tag => tag.tag_value_id === id)))
     ElMessage.success('标签已更新')
     tagPickerVisible.value = false
@@ -130,10 +136,18 @@ async function saveTags({ tags }) {
 
 // 行内新建标签后同步进维度列表
 function onTagCreated({ dimension_id, value }) {
-  const dim = tagDimensions.value.find(d => d.id === dimension_id)
-  if (dim && !(dim.values || []).some(v => v.id === value.id)) {
-    dim.values = [...(dim.values || []), value]
-  }
+  if (!customerTags.value.some(tag => tag.tag_value_id === value.id)) customerTags.value.push({
+    dimension_id, tag_value_id: value.id, value: value.value,
+    dimension_label: tagDimensions.value.find(dim => dim.id === dimension_id)?.label || '',
+  })
+}
+function onTagRenamed({ id, value }) {
+  customerTags.value = customerTags.value.map(tag => tag.tag_value_id === id ? { ...tag, value } : tag)
+  if (current.value) current.value.assets = current.value.assets.map(asset => ({
+    ...asset,
+    tags: (asset.tags || []).map(tag => tag.tag_value_id === id ? { ...tag, value } : tag),
+  }))
+  tagTarget.value = current.value?.assets.find(asset => asset.id === tagTarget.value?.id) || null
 }
 
 async function decide(action) {
@@ -151,15 +165,16 @@ onMounted(() => { load(); loadTagDimensions() })
 
 <style scoped>
 .review-page { position: relative; }.review-aurora { inset: -24px -28px; }.page-header,.review-panel { position: relative; z-index: 1; }.page-header { display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px }.page-header h2{margin:0 0 5px}.page-header p{margin:0;color:var(--text-secondary)}
-.review-panel{background:var(--dash-glass-bg);border:1px solid var(--dash-glass-border);border-radius:var(--dash-card-radius);overflow:hidden}.drawer-summary{display:grid;gap:5px;margin-bottom:18px}.drawer-summary span,.asset-card span{color:var(--text-secondary)}.asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}.asset-card{border:1px solid var(--border-color);border-radius:12px;overflow:hidden;background:var(--card-bg)}.asset-card img,.asset-card video{width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--page-bg)}.asset-card>div{padding:10px;display:grid;gap:4px}.asset-card strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.review-form{margin-top:20px}
+.review-panel{background:var(--dash-glass-bg);border:1px solid var(--dash-glass-border);border-radius:var(--dash-card-radius);overflow:hidden}.drawer-summary{display:grid;gap:5px;margin-bottom:18px}.drawer-summary span,.asset-card span{color:var(--text-secondary)}.asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}.asset-card{min-width:0;border:1px solid var(--border-color);border-radius:12px;overflow:hidden;background:var(--card-bg)}.asset-thumb{display:flex;align-items:center;justify-content:center;height:200px;overflow:hidden;background:var(--page-bg)}.asset-thumb img,.asset-thumb video{display:block;width:auto;max-width:100%;height:200px;object-fit:contain}.asset-card>div:not(.asset-thumb){padding:10px;display:grid;gap:4px}.asset-card strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.review-form{margin-top:20px}
 .asset-tags{display:flex;flex-wrap:wrap;align-items:center;gap:5px}.tag-chip{max-width:150px;overflow:hidden;text-overflow:ellipsis}.no-tag{color:var(--text-muted);font-size:12px}.tag-edit{margin-left:auto}
-.review-filters { display: grid; gap: 10px; margin-bottom: 20px; padding: 14px; border: 1px solid var(--border-color); border-radius: 10px; }
-.review-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.review-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; }
 .review-filter-row strong { min-width: 92px; }
 .review-filter-options { display: flex; flex-wrap: wrap; gap: 6px; }
 .review-filter-options .el-button { margin-left: 0; }
 .review-dimension { margin: 22px 0; }
 .review-dimension h3 { margin: 0 0 14px; }
+.review-dimension h3 span { margin-left: 8px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.group-empty { color: var(--text-secondary); font-size: 13px; }
 .review-tag-group { margin: 0 0 20px; }
 .review-tag-group h4 { margin: 0 0 10px; color: var(--color-primary-hover); }
 .review-tag-group h4 span { color: var(--text-secondary); font-size: 12px; font-weight: 400; }

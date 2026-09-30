@@ -193,6 +193,27 @@ def change(db, row, invoice, body, actor):
     log(db, row, "edited", "已修正回款资料，待重新同步", actor)
 
 
+def change_proofs(db, row, invoice, body, actor):
+    if row.batch_id or row.source != "auto" or row.status != "active":
+        raise ValueError("仅订单自动生成的有效回款可在订单发票中修改截图")
+    if row.sync_status == "syncing":
+        raise ValueError("回款正在处理，请稍后刷新再修改截图")
+    if row.version != body.version:
+        raise HTTPException(409, "回款已被修改，请刷新后重试")
+    intent = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice.id).with_for_update().first()
+    if not intent or intent.status != "converted" or intent.receipt_id != row.id:
+        raise ValueError("订单回款记录已变化，请刷新后重试")
+    attachments.bind(db, body.attachment_ids, actor, invoice.id, row.id)
+    before = set(row.attachment_ids)
+    after = set(body.attachment_ids)
+    if before == after:
+        return
+    row.attachment_ids = list(body.attachment_ids)
+    intent.attachment_ids = list(body.attachment_ids)
+    row.version += 1
+    log(db, row, "proofs_updated", f"回款截图已更新：新增 {len(after - before)} 张，移除 {len(before - after)} 张", actor)
+
+
 def retry(db, row, actor):
     if row.status != "active" or row.sync_status != "failed" or row.xiaoman_receipt_id:
         raise ValueError("仅明确失败且未取得小满单号的回款可重试；待核对不能重发")

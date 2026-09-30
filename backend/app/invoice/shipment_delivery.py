@@ -8,6 +8,7 @@ from uuid import uuid4
 from sqlalchemy import and_, or_, update
 
 from app.core.config import get_settings
+from app.core.queue_scan import take
 from app.core.time import beijing_now
 from app.invoice import linked_outbound_service, okki_client, xiaoman_service
 from app.invoice.lifecycle_guard import ensure_active
@@ -82,6 +83,8 @@ def _live_candidate(db, invoice, settlement, *, pending=None):
                 reserved[str(item.get("order_record_id"))] += int(quantity)
     items = [{"quantity": item.quantity, "snapshot": item.snapshot} for item in db.query(
         SettlementItem).filter_by(settlement_id=settlement.id).all()]
+    for item in items:
+        reserved.setdefault(str(item["snapshot"]["order_record_id"]), 0)
     handler = xiaoman_service.resolve_okki_user_id(db, invoice.sales_user_id)
     return build_outbound_candidate(settlement.settlement_no, invoice.xiaoman_order_id,
         invoice.customer_id, invoice.currency, items, order, warehouse,
@@ -563,9 +566,9 @@ def recover_expired(db):
 
 def process_pending(db):
     recover_expired(db)
-    ids = [identity for (identity,) in db.query(ShipmentSettlement.id).filter(
+    ids = take(db.query(ShipmentSettlement.id).filter(
         ShipmentSettlement.state.in_(["awaiting_payment", "awaiting_verification", "ready"])
-    ).order_by(ShipmentSettlement.id).limit(10)]
+    ), ShipmentSettlement.id, "shipment_funding", 10)
     db.commit()
     for identity in ids:
         try:
@@ -574,8 +577,8 @@ def process_pending(db):
             db.rollback()
             logger.warning("shipment funding check failed id=%s (%s)", identity, type(exc).__name__)
             print(f"[shipment_delivery] funding check failed id={identity} ({type(exc).__name__})", flush=True)
-    outbound_ids = [identity for (identity,) in db.query(ShipmentOutbound.id).filter(
-        ShipmentOutbound.status == "pending").order_by(ShipmentOutbound.id).limit(10)]
+    outbound_ids = take(db.query(ShipmentOutbound.id).filter(
+        ShipmentOutbound.status == "pending"), ShipmentOutbound.id, "shipment_outbound_pending", 10)
     db.commit()
     for identity in outbound_ids:
         try:

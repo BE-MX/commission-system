@@ -105,6 +105,7 @@
 | POST 空路径 | invoice_id、request_key、balance_version + 回款字段 | receipt:write |
 | GET `/{id}` | 单据、凭证元数据和审计日志 | read/write/admin 任一 |
 | PATCH `/{id}` | version + 回款字段；仅未被远端接受的待同步/失败单 | receipt:write |
+| PUT `/{id}/attachments` | version + attachment_ids（1–5 个不重复 ID）；仅订单自动生成的有效回款可更新当前截图，处理中的回款不可改；同步更新发票回款意图并记录审计 | receipt:write，且须在回款数据范围内 |
 | POST `/{id}/retry` | 明确失败的原单重新排队 | receipt:write |
 | POST `/{id}/void` | reason；仅本地待同步/明确失败单作废 | receipt:write |
 | POST `/{id}/reconcile` | 读取小满结果，不创建；返回候选或已核验单 | receipt:write/admin |
@@ -113,6 +114,7 @@
 回款字段：amount（>0，最多2位小数）、collection_date、payment_type、attachment_ids（1–5个不重复ID）、bank_charge（默认0，留空/null/空串均按0处理，且≤amount）、remark（≤500字）。币种、客户和远端订单 ID 由关联发票冻结，不接收客户端指定。request_key 为16–64位字母数字下划线/连字符；balance_version 为余额响应中的64位摘要。相同幂等键不同内容拒绝，余额变更返回409并要求刷新；参数错误422、资源/权限404或403、存储入口不可用503。代理上传超过限制413。
 
 库存发票 create/update 新增 `receipt_draft`（amount、collection_date、payment_type、remark、attachment_ids），detail 原样返回意图及生成状态；同步成功增加 receipt_generation_status/receipt_id。保存草稿可缺项，同步库存单前必须有截图；符合自动资格的新单还须完整回款字段。`pending/syncing/synced/failed/uncertain` 是传输状态，`collect_status=0/1/null` 是小满财务状态，二者不得混用。
+订单自动回款已生成后，发票编辑页的金额等字段保持冻结；有 `receipt:write` 的归属用户可在截图区移除、重传并单独保存凭证变更。至少保留一张当前凭证；移除的旧文件和绑定关系保留供审计，但旧 ID 不再可经凭证读取接口访问，也不可直接重新绑定；不会重新发送小满回款。
 
 ## 站点 AI 网关（2026-09-12，迁移 146 后可用）
 
@@ -347,12 +349,13 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /customers/search?keyword=&private_only=&sales_user_id=` — 客户搜索（invoice:read/write）；`private_only=true` 时先验证当前用户可替 `sales_user_id` 录单，再过滤其 OKKI 绑定对应的 `customer_info.owner_user_ids`；未绑定返回 `{items:[], okki_bound:false}`；结果合并手动同步 overlay（`ark_invoice_customer_overlays`，镜像 update_time 追上后自动让位）
   - `POST /customers/sync-from-okki` — 按公司名从 OKKI 同步单个客户最新资料（invoice:write）：body `{company_name}`；走 OKKI 客户查重 `/v1/company/query`（search_field=name，名称/简称归一化精确命中优先，多候选 400 报候选名单）+ 详情 `/v1/company/info` 两个只读接口（需 company scope），upsert 进方舟自有 overlay 表（**不写 lsordertest 只读镜像**）；返回客户信息、负责人姓名、是否新客户与变更字段，前端弹框展示并可一键选用（选用仍过当前私海筛选，不绕过归属限制）
   - `GET /customers/contacts?keyword=&company_id=&private_only=&sales_user_id=` — 按联系人名搜客户（invoice:write）；私海口径同客户搜索，company_id 给定时收敛到该客户名下
-  - `GET /invoices/suggest-no?order_type=` — 新建单默认发票号（invoice:write，2026-07-14 版）：库存单 `{用户名}-KC-{MM}{NN}`（NN=该用户本月第几张，两位零填充）、生产单 `SC-{MM}{NN}`（全公司本月序列，不含用户名）；跨年撞号自动顺延，用户可改
+  - `GET /invoices/suggest-no?order_type=` — 新建单默认发票号（invoice:write，支持 stock/production/presale）：库存单与预售单共用 `{用户名}-KC-{MM}{NN}` 序列（NN=该用户本月同前缀下一序号，两位零填充）、生产单 `SC-{MM}{NN}`（全公司本月序列，不含用户名）；跨年撞号自动顺延，用户可改
   - `GET /invoices/check-no?invoice_no=&exclude_id=` — 发票号占用检查（invoice:write；exclude_id 编辑时排除自身）
+  - `GET /invoices/previous-no?sales_user_id=&order_type=&exclude_id=` — 同业务员同类型上一单号提醒（invoice:write，支持 stock/production/presale；exclude_id 编辑时排除自身）
   - `GET /customers/contact-defaults?customer_id=` — 该客户最近一张（created_at 倒序）带联系信息发票的联系人/电话/邮箱/地址快照，录入页自动填充用（invoice:write；组织级共享，刻意不受发票数据范围限制——联系人是客户数据非财务数据）。附带 `has_xiaoman_orders`（新成交预判）+ `last_order_date`（该客户 okki_orders 最新 account_date，「首返」旁参考展示，新成交为 null，仅展示不落库不推 OKKI）
   - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）；每维度返回级联候选 `models/colors/sizes/units`（按其余已选维度过滤）+ 全量候选 `all_models/all_colors/all_sizes/all_units`（前端「匹配当前组合/全部」双分组用，2026-07-30）
-  - `POST /import/preview` — Excel/WPS 粘贴明细批量预检（invoice:write）：请求含客户、订单类型、币种和最多 200 行标准字段；只读返回 passed/warning/blocked、产品/SKU 候选、同币种客户价差与批次指纹，不创建发票/定制产品、不自动换汇
-  - `POST /import/screenshot/preview?order_type=stock|production` — 上传一张 PNG/JPG/WebP OKKI 订单截图（invoice:write，分块读取，最大 10MB/4000 万像素）：AI 只做字段提取，服务端再按客户、授权业务员、产品编号+四维规格、SKU、日期/金额匹配业务库；返回可人工修正的预览，不保存原图，仅返回原图 SHA-256。截图文字始终按不可信数据处理，AI 调用仅保留 metadata 快照。
+  - `POST /import/preview` — Excel/WPS 粘贴明细批量预检（invoice:write，支持 stock/production/presale）：请求含客户、订单类型、币种和最多 200 行标准字段；预售单与库存单一样要求匹配已有产品/SKU，只有生产单可提示定制产品；只读返回 passed/warning/blocked、产品/SKU 候选、同币种客户价差与批次指纹，不创建发票/定制产品、不自动换汇
+  - `POST /import/screenshot/preview?order_type=stock|production|presale` — 上传一张 PNG/JPG/WebP OKKI 订单截图（invoice:write，分块读取，最大 10MB/4000 万像素）：AI 只做字段提取，服务端再按客户、授权业务员、产品编号+四维规格、SKU、日期/金额匹配业务库；返回可人工修正的预览，不保存原图，仅返回原图 SHA-256。截图文字始终按不可信数据处理，AI 调用仅保留 metadata 快照。
   - `POST /import/screenshot/resolve` — 对已有截图提取结果和人工选择重新执行确定性校验（invoice:write，不再次调用 AI）：客户/业务员/产品/SKU/产品合计/来源订单冲突会 `ready=false`；附加费总额始终忽略，运费/手续费/包装费按可见单项预填，无法归属的正差额落入运费，费用差异只警告不阻断。选择只能来自服务端候选及当前用户的代创建范围。`ready=true` 时返回 30 分钟有效的服务端签名预览凭证，绑定操作人、截图指纹、来源订单、客户/业务员、日期/币种/类型、产品/SKU/规格/数量/单价/折扣、费用和应付合计。
   - `POST /import/screenshot/create` — 使用上述签名凭证创建截图来源发票（invoice:write）；缺失/过期凭证、换用户或修改来源/客户/业务员/产品明细均拒绝，实时 OKKI 来源金额须与凭证中的截图订单金额一致。运费/手续费/包装费允许在编辑器人工修正，不会被凭证误判为篡改。普通 `POST /invoices` 不接受 `source_type=okki_screenshot`。
   - `GET /products/match` — 按 model/color/size/unit 精确匹配产品；SKU 来自 `okki_product_skus`，`stock_warning` 为无实际库存时的非阻断提示（空字符串表示无提示）。Excel `/import/preview` 的匹配项/候选项同样携带该字段，唯一匹配时纳入行 warnings，允许继续导入和保存
@@ -940,14 +943,17 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 权限 / 会话 | 契约 |
 |---|---|---|---|
-| GET / POST | `/customers/{customer_id}/tags` | `design:write/manage` 或 `customer_media:admin` + 当前客户数据权限 | 读取或追加客户级标签；POST 请求体为 `{"tags":[{"dimension_id":1,"tag_value_ids":[2]}]}`。客户标签跨预约复用，重复追加幂等。 |
-| GET / POST | `/tasks/{task_id}/customer-tags` | `customer_media:write/admin` + 当前任务维护权限 | 设计师读取或追加该任务所属客户的标签；与预约页操作同一客户标签集合。 |
-| GET | `/tags/dimensions` | 客户素材读写或设计预约写权限 | 仅返回可见的客户标签维度和值。 |
-| POST | `/tags/values` | 同上 | 在客户标签维度中创建值；同名复用。创建标签值后仍需通过客户标签 POST 绑定到客户。 |
-| POST | `/batches/{batch_id}/assets` | `customer_media:write/admin` + 当前任务维护权限 | 上传图片或视频；multipart `tags_json` 至少包含一个有效客户标签。保存文件标签时，也把这些标签追加到客户标签集合。 |
+| GET / POST | `/customers/{customer_id}/tags` | `design:write/manage` 或 `customer_media:admin` + 当前客户数据权限 | 读取客户级标签；POST 请求体为 `{"tags":[{"dimension_id":1,"tag_value_ids":[2]}]}`，仅接受已归属该客户的标签。 |
+| GET / POST | `/tasks/{task_id}/customer-tags` | `customer_media:write/admin` + 当前任务维护权限 | 设计师读取该任务所属客户的标签；POST 仅接受已归属该客户的标签。 |
+| GET | `/batches/{batch_id}/customer-tags` | `customer_media:read/admin` + 当前批次审核权限 | 审核页读取该批次所属客户可选的标签。 |
+| GET | `/tags/dimensions` | 客户素材读写或设计预约写权限 | 仅返回可见的客户标签维度，不返回跨客户共享的标签值。 |
+| POST | `/customers/{customer_id}/tag-values` | 客户素材读写或设计预约写权限 + 客户/任务/批次上下文授权 | 创建标签时即绑定客户；body 为 `dimension_id/value`，设计任务传 `task_id`、审核批次传 `batch_id`。同客户同维度同名复用。 |
+| PATCH | `/customers/{customer_id}/tag-values/{value_id}` | 同上 | body 为 `{"value":"新名称"}`；只修改当前客户看到的名称，不改其他客户或历史素材 ID。 |
+| GET / DELETE | `/customers/{customer_id}/tag-values/{value_id}/usage`、`/customers/{customer_id}/tag-values/{value_id}` | GET 同上；DELETE 仅客户归属写权限、可维护全部关联批次的任务设计师或管理员，不接受审核批次上下文 | GET 返回当前客户关联素材数；DELETE 删除客户标签及该客户全部素材关联。有素材时须传 `confirm_associated=true`，服务端仍会重验数量，否则返回 409。 |
+| POST | `/batches/{batch_id}/assets` | `customer_media:write/admin` + 当前任务维护权限 | 上传图片或视频；multipart `tags_json` 至少包含一个已归属当前客户的标签，上传落库前再次验证。 |
 | GET | `/sales-portal/customers?search=` | `customer_media_portal:read` 或 `customer_media:admin` | 返回调用者范围内已配置门户的客户摘要、门户状态、图片/视频/交付批次数和最近更新时间。 |
 | GET | `/sales-portal/customers/{customer_id}` | 同上 | 返回客户摘要及其实际可见的已发布批次；批次标题与拍摄类型也由客户公开门户返回。停用账号不签发素材 URL。 |
-| GET | `/sales-portal/customers/{customer_id}/tags` | 同上 | 仅返回该客户已发布素材实际用到的标签维度与标签；停用账号返回空列表。业务预览据此筛选，与客户外部站保持一致。 |
+| GET | `/sales-portal/customers/{customer_id}/tags` | 同上 | 仅返回该客户已发布素材实际用到的标签维度与标签；每个维度包含稳定的 `name`（客户产品类型维度如 `customer_product_type`）、`dimension_id`、`label` 和 `values`。停用账号返回空列表。业务预览按产品类型分组，并在组内按其他维度筛选。 |
 | GET | `/sales-portal/assets/{asset_id}/content?expires=&token=&download=` | 业务预览 purpose-bound HMAC | 返回业务预览或下载文件；签名绑定用途、素材 ID 与过期时间，并在每次读取时重验门户账号仍启用、所属批次仍为 published，停用或下架立即 404。 |
 | GET | `/assets/{asset_id}/content?expires=&token=&download=` | 内部审核 HMAC | 返回设计审核工作流中的内部预览或下载文件；与业务预览签名不可互换。 |
 | GET | `/batches/{batch_id}/directories` | `customer_media:write/admin` + 任务维护权限 | 客户共享目录，`asset_count` 为本批次数量，`total_asset_count` 为目录跨批次未删素材总数。 |
@@ -955,12 +961,13 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | POST | `/portal/login` | 公开门户邮箱密码 | 登录限流后签发 HttpOnly 门户 Cookie；错误账号与密码统一 401。 |
 | POST | `/portal/logout` | 门户 Cookie | 撤销当前会话并删除 Cookie。 |
 | GET | `/portal/me` | 门户 Cookie | 返回当前客户身份。 |
+| GET | `/portal/tags` | 门户 Cookie | 返回该客户已发布素材实际用到的标签维度与标签，包含稳定的维度 `name`，外部站据此识别 `product_type` 并分组。 |
 | GET | `/portal/library` | 门户 Cookie | 按账号 customer_id 返回该客户已发布批次，包含与业务预览一致的任务标题、拍摄类型和素材。 |
 | GET | `/portal/assets/{asset_id}/content?download=` | 门户 Cookie | 再校验客户归属和批次发布状态；下载时写下载审计。 |
 
 业务预览页面位于 `/design/media/portal`，左侧客户导航只展示 API 已授权的门户；右侧直接渲染详情响应，不模拟草稿或审核中素材。`search` 只是授权结果集上的名称、客户 ID、登录邮箱过滤条件，不能扩大数据范围。
 
-当前界面只有“上传素材”一个上传入口：设计师先选至少一个客户标签，再选多个文件或拖入文件夹。文件夹只用于提取文件，不从名称识别、新建标签或目录；文件加入清单时固定本次选中标签，上传后素材按维度和标签显示。旧目录弹框仅用于维护既有目录与素材，不再上传。审核弹框、业务预览和客户外部站均按维度与标签组织素材，并提供标签筛选；同一素材可显示在多个分类下，下载仍是同一文件。历史未打标签素材显示在“未打标签”下。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。目录删除沿用原有可编辑状态约束，不绕过审核/发布流程。
+当前界面只有“上传素材”一个上传入口：设计师先选至少一个当前客户标签，再选多个文件或拖入文件夹。标签可在客户确认后新建、重命名或删除；删除时同步移除该客户素材的关联。文件夹只用于提取文件，不从名称识别、新建标签或目录；文件加入清单时固定本次选中标签。工作台素材按产品类型分组，再按 Color names + Textures type 逐行显示。旧目录弹框仅用于维护既有目录与素材。送审按钮旁的“客户效果预览”在同源 iframe 中复用外部站渲染当前批素材，不调用客户门户登录及已发布素材接口，也不改变批次发布状态。审核弹框、业务预览和客户外部站按产品类型分组并提供标签筛选。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。
 
 ## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
 

@@ -38,6 +38,18 @@ class ReceiptUpdate(ReceiptFields):
     version: int = Field(gt=0)
 
 
+class ReceiptProofUpdate(BaseModel):
+    version: int = Field(gt=0)
+    attachment_ids: list[str] = Field(min_length=1, max_length=5)
+
+    @field_validator("attachment_ids")
+    @classmethod
+    def unique_attachments(cls, value):
+        if len(set(value)) != len(value):
+            raise ValueError("回款凭证不可重复")
+        return value
+
+
 class ReceiptDraft(BaseModel):
     amount: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
     collection_date: date | None = None

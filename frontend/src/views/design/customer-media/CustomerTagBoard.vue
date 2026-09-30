@@ -12,9 +12,8 @@
         <span class="dimension-label">{{ group.label }}</span>
         <div class="dimension-values">
           <span v-if="!group.tags.length" class="dimension-empty">尚未添加标签</span>
+          <span v-for="tag in group.tags" :key="tag.tag_value_id" class="customer-tag-wrap">
           <button
-            v-for="tag in group.tags"
-            :key="tag.tag_value_id"
             type="button"
             class="customer-tag"
             :class="{ selected: selectable && selectedTagIds.includes(tag.tag_value_id) }"
@@ -22,6 +21,9 @@
             :aria-pressed="selectable ? selectedTagIds.includes(tag.tag_value_id) : undefined"
             @click="$emit('toggle', tag)"
           >{{ tag.value }}</button>
+          <button v-if="deletable" type="button" class="customer-tag-delete" :disabled="disabled"
+            :aria-label="`删除标签 ${tag.value}`" @click.stop="$emit('delete', tag)">×</button>
+          </span>
         </div>
       </div>
     </div>
@@ -39,8 +41,9 @@ const props = defineProps({
   selectedTagIds: { type: Array, default: () => [] },
   selectable: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
+  deletable: { type: Boolean, default: false },
 })
-defineEmits(['add', 'toggle'])
+defineEmits(['add', 'toggle', 'delete'])
 
 const groups = computed(() => {
   const byId = new Map()
@@ -67,5 +70,9 @@ const groups = computed(() => {
 .customer-tag:enabled { cursor: pointer; }
 .customer-tag:enabled:hover { border-color: var(--color-primary); color: var(--color-primary-hover); }
 .customer-tag.selected { border-color: var(--color-primary); color: var(--color-primary-hover); background: var(--color-primary-light); font-weight: 600; }
+.customer-tag-wrap { position: relative; display: inline-flex; }
+.customer-tag-wrap .customer-tag { padding-right: 22px; }
+.customer-tag-delete { position: absolute; top: -8px; right: -8px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--border-color); border-radius: 50%; background: var(--card-bg); color: var(--color-danger); cursor: pointer; font-size: 17px; line-height: 1; }
+.customer-tag-delete:hover { border-color: var(--color-danger); }
 @media (max-width: 700px) { .board-heading { flex-direction: column; }.dimension-row { grid-template-columns: 1fr; gap: 5px; } }
 </style>

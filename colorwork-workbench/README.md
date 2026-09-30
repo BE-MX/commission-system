@@ -25,6 +25,8 @@
 
 实时库存仍回源方舟 `/api/colorwork/inventory-status`；23 套模板按 okki 库存口径计算：库存 0 或未匹配到小满规格为 Restocking，1–19 为 Low Stock，20 及以上不显示提醒。镜像同步时间（`source_synced_at`，取库存表时间）在页面标注「数据截至」。
 
+母版条目支持 `stock` 和 `display`（展示图片／不关联库存）。`display` 保留源图、位置与排序，无尺寸、库存状态、Hot 或库存提示标签，也不计入颜色及规格数量。源文件审阅与母版编辑均可设置类型；业务库存页只列出 `stock`。迁移 `0009_display_images.sql` 对当前 22 套误把顶栏展示图绑定到 16 英寸的源版本定向解除关联，保留原图、排序、历史规格注册与库存审计。第 23 套 `invisible-tape-weft-super` 的展示内容只在底图中，当前版本无误绑卡片。发布前用隔离数据核对目标数量；生产迁移只通过统一部署入口执行。
+
 ## 库存图直接下载
 
 工作台不再渲染内置顶栏、账号/页面路径栏或移动端底部导航，三个视图通过方舟主站菜单进入。
@@ -38,6 +40,7 @@
 通过 `/api/templates/:id/inventory/validate` 在绘图前后校验源版本、母版、库存修订及规格。
 这两个入口复用现有快照与校验服务；库存 PATCH 和成品写入仍要求 inventory 权限。
 回归运行 `node --test scripts/qa-library-live-download.mjs`。
+展示图片回归运行 `node scripts/qa-display-images.mjs` 与 `node scripts/qa-display-render.mjs`；迁移前的 D1 只读副本可运行 `python scripts/qa-display-live-copy.py <snapshot.sqlite>`，脚本只在内存副本执行迁移并核对 23 套数据。
 
 ## 部署
 

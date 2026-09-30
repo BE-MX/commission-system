@@ -1,18 +1,22 @@
-"""Fail-closed rollout policy; a feature switch is not remote capability evidence."""
+"""Fail-closed rollout policy for the verified presale delivery path."""
 from app.core.config import get_settings
 
 
 def require_enabled():
-    if not get_settings().PRESALE_SETTLEMENT_ENABLED:
-        raise ValueError("预售发货结算尚未启用")
+    if not capabilities()["enabled"]:
+        raise ValueError("预售全流程尚未启用")
 
 
 def capabilities():
-    return {"enabled": get_settings().PRESALE_SETTLEMENT_ENABLED,
-            "freight_delivery_enabled": False, "outbound_delivery_enabled": False,
-            "reason": "预售建单暂未开放：方舟全流程、权限和数据库迁移尚待验收"}
+    settings = get_settings()
+    warehouse = settings.OKKI_PRESALE_WAREHOUSE_ID
+    ready = bool(settings.PRESALE_SETTLEMENT_ENABLED and settings.PRESALE_DELIVERY_ENABLED
+                 and isinstance(warehouse, int) and not isinstance(warehouse, bool) and warehouse > 0)
+    return {"enabled": ready, "freight_delivery_enabled": ready,
+            "outbound_delivery_enabled": ready,
+            "reason": "" if ready else "预售建单暂未开放：全流程派发或出库仓库尚未启用"}
 
 
 def require_delivery():
-    # Deliberately no operator boolean bypass: replace only with a verified adapter.
-    raise ValueError("REMOTE_CAPABILITY_UNVERIFIED：预售端到端发货能力尚未验收")
+    if not capabilities()["enabled"]:
+        raise ValueError("预售全流程派发尚未启用")

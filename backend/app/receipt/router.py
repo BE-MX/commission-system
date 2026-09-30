@@ -14,8 +14,8 @@ from app.core.response import ok
 from app.core.config import get_settings
 from app.invoice.models import Invoice
 from app.receipt import access, attachments, remote, service, storage_proxy, sync_service
-from app.receipt.models import ReceiptAttachment, ReceiptIntent
-from app.receipt.schemas import ReceiptCreate, ReceiptUpdate, Reason, Resolution
+from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent
+from app.receipt.schemas import ReceiptCreate, ReceiptProofUpdate, ReceiptUpdate, Reason, Resolution
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -41,6 +41,8 @@ def list_rows(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=10
               db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin"))):
     data = service.list_receipts(db, user, page, page_size, keyword, sync_status, source, status, date_from, date_to, order_id=order_id)
     data["delivery_enabled"] = get_settings().RECEIPT_SYNC_ENABLED
+    from app.invoice.settlement_policy import capabilities
+    data["presale_delivery_enabled"] = capabilities()["enabled"]
     return ok(data)
 
 
@@ -96,9 +98,14 @@ def proof(identity: str, request: Request, db: Session = Depends(get_db), user=D
         intent = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == row.invoice_id).first()
         invoice_proof = intent and identity in intent.attachment_ids and any(p in permissions for p in ("invoice:read", "invoice:write", "invoice:sync"))
         if row.receipt_id:
+            receipt = db.get(Receipt, row.receipt_id)
+            if not receipt or receipt.invoice_id != row.invoice_id or identity not in receipt.attachment_ids:
+                raise HTTPException(404, "凭证不存在")
             if not has_receipt_access:
                 raise HTTPException(404, "凭证不存在")
             access.ensure_invoice(db, invoice, user)
+        elif not intent or identity not in intent.attachment_ids:
+            raise HTTPException(404, "凭证不存在")
         elif has_receipt_access:
             try:
                 access.ensure_invoice(db, invoice, user)
@@ -137,6 +144,16 @@ def edit(identity: int, body: ReceiptUpdate, db: Session = Depends(get_db), user
     def apply():
         row, invoice = service.get(db, identity, user, lock=True)
         service.change(db, row, invoice, body, access.user_id(user))
+        return service.describe(db, row, invoice, detail=True)
+    return execute(db, apply)
+
+
+@router.put("/{identity}/attachments", summary="Update automatic invoice receipt screenshots")
+def update_proofs(identity: int, body: ReceiptProofUpdate, db: Session = Depends(get_db),
+                  user=Depends(require_permission("receipt:write"))):
+    def apply():
+        row, invoice = service.get(db, identity, user, lock=True)
+        service.change_proofs(db, row, invoice, body, access.user_id(user))
         return service.describe(db, row, invoice, detail=True)
     return execute(db, apply)
 

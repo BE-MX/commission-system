@@ -45,6 +45,7 @@ type SourceList = {
 type MappingDraft = {
   mode: '' | 'existing' | 'new' | 'ignore';
   entryId: string;
+  kind: 'stock' | 'display';
   lengthText: string;
   section: string;
 };
@@ -167,13 +168,15 @@ export function SourceVersionManager({
       .flatMap((card) => {
         const mapping = mappings[card.candidateId];
         if (mapping?.mode === 'ignore') return [];
-        const lengths = parseLengths(mapping?.lengthText ?? '');
+        const lengths = mapping?.kind === 'display' ? [] : parseLengths(mapping?.lengthText ?? '');
         const existing = mapping?.mode === 'existing' && mapping.entryId;
         return [
           {
             ...card,
             entryId: existing ? mapping.entryId : card.entryId,
-            lengths: lengths.length ? lengths : card.lengths,
+            kind: mapping?.kind ?? card.kind ?? 'stock',
+            lengths: mapping?.kind === 'display' ? [] : lengths.length ? lengths : card.lengths,
+            hot: mapping?.kind === 'display' ? false : card.hot,
             section: mapping ? mapping.section || null : card.section,
             matchState: existing
               ? ('exact' as const)
@@ -205,7 +208,7 @@ export function SourceVersionManager({
         ...config.template,
         availableLengths,
         initialCards: cards,
-        initialColorCount: cards.length,
+        initialColorCount: cards.filter((card) => card.kind !== 'display').length,
         sections,
       },
     };
@@ -266,6 +269,7 @@ export function SourceVersionManager({
       next[card.candidateId] = {
         mode: card.matchState === 'exact' ? 'existing' : '',
         entryId: card.matchedEntryId ?? '',
+        kind: card.kind ?? 'stock',
         lengthText: card.lengths.join(', '),
         section: card.section ?? '',
       };
@@ -485,7 +489,7 @@ export function SourceVersionManager({
     }> = [];
     for (const card of config.template.initialCards) {
       const mapping = mappings[card.candidateId];
-      if (!mapping?.mode || mapping.mode === 'ignore') continue;
+      if (!mapping?.mode || mapping.mode === 'ignore' || mapping.kind === 'display') continue;
       const entryId =
         mapping.mode === 'existing'
           ? mapping.entryId
@@ -521,7 +525,9 @@ export function SourceVersionManager({
     });
   }, [candidate, requiredStatuses]);
   const blockingIssues =
-    config?.parseIssues.filter((issue) => issue.blocking) ?? [];
+    config?.parseIssues.filter((issue) => issue.blocking && !(
+      issue.code === 'SIZE_LABEL_NOT_FOUND' && mappings[issue.candidateId ?? '']?.kind === 'display'
+    )) ?? [];
   const mappingsReady = Boolean(
     config &&
     config.template.initialCards.every((card) => {
@@ -529,10 +535,10 @@ export function SourceVersionManager({
       return (
         mapping?.mode === 'ignore' ||
         (mapping?.mode &&
-          parseLengths(mapping.lengthText).length > 0 &&
-          parseLengths(mapping.lengthText).every((length) =>
-            config.availableLengths.includes(length),
-          ) &&
+          (mapping.kind === 'display' || (
+            parseLengths(mapping.lengthText).length > 0 &&
+            parseLengths(mapping.lengthText).every((length) => config.availableLengths.includes(length))
+          )) &&
           (mapping.mode === 'new' || Boolean(mapping.entryId)) &&
           (!config.template.sections.length || Boolean(mapping.section)))
       );
@@ -585,8 +591,9 @@ export function SourceVersionManager({
           entryId: mapping.mode === 'existing' ? mapping.entryId : null,
           treatAsNew: mapping.mode === 'new',
           ignore: mapping.mode === 'ignore',
+          kind: mapping.kind,
           lengths:
-            mapping.mode === 'ignore' ? [] : parseLengths(mapping.lengthText),
+            mapping.mode === 'ignore' || mapping.kind === 'display' ? [] : parseLengths(mapping.lengthText),
           section: mapping.mode === 'ignore' ? null : mapping.section || null,
         };
       });
@@ -815,7 +822,7 @@ export function SourceVersionManager({
             </div>
             <p>
               {config.template.width}×{config.template.height} px ·{' '}
-              {reviewConfig?.template.initialCards.length ?? 0} 个颜色 ·{' '}
+              {reviewConfig?.template.initialCards.filter((card) => card.kind !== 'display').length ?? 0} 个颜色 ·{' '}
               {reviewConfig?.template.initialCards.reduce(
                 (sum, card) => sum + card.lengths.length,
                 0,
@@ -1026,6 +1033,15 @@ export function SourceVersionManager({
                   )}
                   {mapping?.mode !== 'ignore' && (
                     <label>
+                      图片类型
+                      <select value={mapping?.kind ?? 'stock'} onChange={(event) => updateMapping(card.candidateId, { kind: event.target.value as 'stock' | 'display', lengthText: event.target.value === 'display' ? '' : card.lengths.join(', ') })}>
+                        <option value="stock">库存颜色</option>
+                        <option value="display">展示图片／不关联库存</option>
+                      </select>
+                    </label>
+                  )}
+                  {mapping?.mode !== 'ignore' && mapping?.kind !== 'display' && (
+                    <label>
                       尺寸（英寸，逗号分隔）
                       <input
                         value={mapping?.lengthText || ''}
@@ -1037,7 +1053,7 @@ export function SourceVersionManager({
                       />
                     </label>
                   )}
-                  {mapping?.mode !== 'ignore' &&
+                  {mapping?.mode !== 'ignore' && mapping?.kind !== 'display' &&
                     (!parseLengths(mapping?.lengthText || '').length ||
                       parseLengths(mapping?.lengthText || '').some(
                         (length) => !config.availableLengths.includes(length),

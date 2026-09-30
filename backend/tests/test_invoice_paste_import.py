@@ -268,12 +268,17 @@ def test_preview_import_allows_explicit_custom_path_only_for_production(db):
     stock = import_service.preview_import(
         db, customer_id="CUST001", order_type="stock", currency="USD", raw_rows=[valid_row()],
     )["rows"][0]
+    presale = import_service.preview_import(
+        db, customer_id="CUST001", order_type="presale", currency="USD", raw_rows=[valid_row()],
+    )["rows"][0]
     production = import_service.preview_import(
         db, customer_id="CUST001", order_type="production", currency="USD", raw_rows=[valid_row()],
     )["rows"][0]
 
     assert stock["status"] == "blocked"
     assert stock["can_create_custom"] is False
+    assert presale["status"] == "blocked"
+    assert presale["can_create_custom"] is False
     assert production["status"] == "blocked"
     assert production["can_create_custom"] is True
     assert db.query(CustomProduct).count() == 0
@@ -523,14 +528,15 @@ def test_import_preview_endpoint_requires_write_permission(db):
         assert client.post("/api/invoice/import/preview", json=body).status_code == 403
 
 
-def test_import_preview_endpoint_returns_unified_envelope(db):
+@pytest.mark.parametrize("order_type", ["stock", "presale"])
+def test_import_preview_endpoint_returns_unified_envelope(db, order_type):
     seed_okki_products(db, [
         (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
     ])
     seed_standard_price(db)
     body = {
         "customer_id": "CUST001",
-        "order_type": "stock",
+        "order_type": order_type,
         "currency": "USD",
         "rows": [valid_row()],
     }
@@ -541,6 +547,7 @@ def test_import_preview_endpoint_returns_unified_envelope(db):
     assert response.status_code == 200
     payload = response.json()
     assert payload["code"] == 200
+    assert payload["data"]["context"]["order_type"] == order_type
     assert payload["data"]["summary"]["passed"] == 1
     assert payload["data"]["rows"][0]["matched_product"]["product_id"] == 11
 

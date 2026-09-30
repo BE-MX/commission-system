@@ -93,9 +93,22 @@ def test_list_batches_sync_events_and_counts_nonempty_page_once(db, waiting):
     assert len(rows) == total == 2
     assert sum("COUNT(*) OVER ()" in sql for sql in statements) == 1
     assert not any("SELECT COUNT(*) FROM (" in sql for sql in statements)
+    assert not any("SELECT COUNT(*) FROM `lsordertest`.`okki_outbound_records`" in sql
+                   for sql in statements)
     assert sum("FROM ark_shipping_operation_events" in sql
                and "ark_shipping_operation_events.scope" in sql
                for sql in statements) == 1
+
+
+def test_queue_dedup_keeps_number_and_order_matches_separate(db, waiting):
+    db.execute(text("ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN order_id TEXT"))
+    outbound_service._columns_cache.clear()
+    query, _ = queue._queue_query(db, keyword=None, order_id=None, date_from=None,
+                                  date_to=None, okki_user_id=None)
+    local = query.split("UNION ALL", 1)[1]
+    assert local.count("NOT EXISTS (SELECT 1 FROM `lsordertest`.") == 2
+    assert "WHERE i.order_id=t.order_id" in local
+    assert "JOIN `lsordertest`.`okki_outbound_records` r ON" in local
 
 
 @pytest.mark.parametrize("state", ["pending", "running", "done", "failed", "uncertain"])

@@ -7,3 +7,13 @@ export function remainingShipmentQuantity(line, settlements) {
       .reduce((subtotal, item) => subtotal + Number(item.quantity || 0), 0), 0)
   return Math.max(0, Number(line.quantity || 0) - used)
 }
+
+export function canChangeShipment(row, action) {
+  if (['cancelled', 'completed', 'shipped', 'outbound_uncertain', 'review_required'].includes(row.state) || row.outbound) return false
+  if (['sending', 'verifying', 'uncertain'].includes(row.freight_target?.status)) return false
+  if (action === 'cancel') {
+    return !row.freight_target?.remote_order_id && row.freight_target?.status !== 'bound' &&
+      Number(row.balance?.registered_amount || 0) === 0
+  }
+  return action === 'pause' ? row.state !== 'paused' : action === 'resume' && row.state === 'paused'
+}

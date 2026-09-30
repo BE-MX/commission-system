@@ -11,6 +11,29 @@
 - 办公室服务器原始数据/意图/实时核验备份：`D:/commission-system/tmp/outbound-recovery-836/20260930-091538-411631-before.json`；本地恢复脚本在本任务 `tmp/repair_outbound_836.py`，默认只读，不要重复执行 `--apply`。使用现有严格校验连接 `acciowork@127.0.0.1:2233`；北京查询通过办公室现有受信任SSH连接。
 - 恢复后发现另一保存发生在09:16:13，发票转 `ready/not_synced`：首款Super改Standard（产品86457574472097/SKU86457574472159）、单价29.55→26；Other Items单价20→55。小满出库仍原版本。用户随后自行重新同步：发票09:21:04 synced，原出库09:21:29已更新到新产品及单价，三行金额USD462.75。
 
+## 2026-09-29 客户素材门户颜色与纹理分行（2026-09-30 已发布）
+
+- 内部“客户素材门户”预览和客户外部查看站（包括拍摄工作区的“客户效果预览”弹框）在 Product type 分组及现有标签筛选之后，按 Color names + Textures type 的组合分别展示素材行；行首突出纹理类型，缺失的颜色或纹理不显示占位文字。
+- 使用六张覆盖同组合、不同组合及缺失标签的素材做浏览器回归，两处页面行数、素材归属、筛选收敛与草稿预览均通过；共享分组单元测试 8 项、前端构建和约定检查通过。改动已合并推送 `main`（`bb7ff685`），统一入口固定该提交完成办公室与云端发布（`release_id=d62d6669f71d401796d9a5f304fc6d7b`，`deferred=[]`）；`leshine.cloud`、`leshine.work` 返回新版前端资源，客户外部站正式入口 `media.leshine.cloud/` 返回新版分组脚本与样式。实际登录态下的客户页面仍待人工复验。
+
+## 2026-09-29 客户拍摄素材预览与空标签标题（已发布）
+
+- “客户效果预览”原先直接把 Vue 响应式批次对象通过 `postMessage` 发给外部站 iframe，浏览器抛 `DataCloneError`，页面收不到草稿预览消息。现按外部站实际需要的字段构造普通对象，避免发送内部批次元数据；未设置 Color names / Textures type 时不显示占位标题和多余分隔符。
+- 用 `DST-20260723-0003`（task ID 59）的批次与标签做只读样本，本地浏览器注入模拟 API 后，工作区和客户效果预览各显示 18 张素材、无控制台异常或登录页；单元测试、前端构建与浏览器回归通过。修复已合并推送至 `a3b9329e`，统一入口固定该提交完成办公室与云端发布（`release_id=a7a753ded5fb4860b81ebecb2a0d5408`，`deferred=[]`）；两地主站公网均返回新前端制品，客户预览页监听器可访问。实际登录态下的任务页面仍待人工复验。
+
+## 2026-09-29 客户拍摄素材预览 MySQL 1267（已发布，任务页待复验）
+
+- 任务 `DST-20260723-0003`（task ID 59、批次 ID 8）打开“上传素材”时报“数据库连接失败”。线上数据库已在 171，`display_value` 存在；真实原因是批次 `customer_id` 使用 `utf8mb4_unicode_ci`，客户标签绑定表使用 `utf8mb4_0900_ai_ci`，素材标签联结触发 MySQL 1267。该批次当前有 18 张素材；带显式排序规则的只读 SQL 可正常联结，修复代码在共享 MySQL 上只读执行 `_batch_full` 返回 18 张素材、36 条客户标签，无数据库异常。
+- 分支 `codex/customer-media-collation-fix` 对内部预览和客户门户两处联结显式使用 `utf8mb4_unicode_ci`，不新增迁移或改业务数据。回归测试先失败后通过；`test_customer_media_tags.py` 16 项通过。`test_customer_media.py` 的目录上传测试因样例未绑定客户标签，在未修改的 main 上同样失败，和本修复无关。
+- 修复已随 `0bac2dfb` 发布，并包含在本次 `a3b9329e` 完整发布中；数据库仍为 `171_customer_tag_display_value`，任务页面仍待实际登录态复验。
+
+## 2026-09-28 预售全流程当前租户联调（页面回归修复已完整发布）
+
+- 分支 `codex/presale-full-flow` 已完成方舟创建预售主单、首款发送、独立运费单与运费回款发送、实时资金核验、待出库创建和确认实际出库的当前小满租户真实链路。专用测试单据已按精确 ID 清理：亮哥删除两笔测试回款后，有效回款列表确认消失；出库单、订单和客户也已删除并回读确认。无真实银行转账或实物发货。完整 ID、验证边界和清理证据见[预售全流程验证报告](reports/2026-09-28-presale-full-flow-verification.md)。
+- 修复首批出库占用初始化、预售与普通回款派发隔离、待处理队列饥饿和关联出库完整扫描；受影响后端 293 项、前端 21 项及生产构建通过，独立审查未发现新增 P0/P1。真实探针覆盖一件商品、一次最终出库、零手续费；多批次和手续费路径由隔离测试覆盖。
+- 已合并推送 `main` 并通过统一入口发布 `de689e3b` 到办公室和北京，`release_id=9d5247df872d4057a14a570fdedc0610`、状态 `succeeded`、迁移仍为 170、出库调度已核验恢复。两站运行配置均启用 `PRESALE_SETTLEMENT_ENABLED`、`PRESALE_DELIVERY_ENABLED`，仓库 ID 为已联调的 `8193514242746`；重启后两站预售能力均返回启用，公网健康均为 `ok/connected`。小满原生销售报表包含独立运费单，方舟已明确标注并从商品统计中排除。
+- 页面回归修复 `08bb5f73` 已合并推送 `main`，先经 `--cloud-only` 发布北京后端及 `leshine.cloud` 前端。办公室 SSH 恢复后，统一发布入口固定 `047e90ad` 完成办公室及云端完整发布，回执 `MANAGED APPLICATION RELEASE COMPLETED`、`scope=office-and-cloud`、`deferred=[]`；数据库迁移仍为 170，出库调度已核验恢复。办公室仓库 HEAD 为 `047e90ad`、NSSM 服务运行中，两站公网 `/health` 均返回 `ok/connected`。登录 `leshine.cloud` 与 `leshine.work` 实测“新建预售单”可打开，产品、配件、首笔定金和结算区域均呈现，未再出现 `order_type=presale` 的 422。当前 admin 业务员未绑定 OKKI 且无代办候选，本次未创建或同步新单据。
+
 ## 2026-09-28 Windows 远程更新中心（Codex，已授权合并推送，未部署）
 
 - 工作树 `D:/commission-system/tmp/commission-system-deploy-console`，分支 `codex/windows-deploy-console`，已整合远端 main `46a2f171`。交付原生 Windows `ArkDeploy.exe`：操作者电脑经 SSH 控制办公室，办公室复用统一 deploy 入口更新受管环境。

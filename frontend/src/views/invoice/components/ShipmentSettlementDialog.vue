@@ -35,8 +35,8 @@
         <el-table-column label="结算单号" min-width="180"><template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.settlement_no }}</el-button></template></el-table-column>
         <el-table-column label="状态" min-width="160"><template #default="{ row }">{{ stateLabel(row.state) }}</template></el-table-column>
         <el-table-column label="操作" class-name="table-action-column" min-width="200"><template #default="{ row }">
-          <el-button v-permission="'shipment:write'" v-if="!['cancelled','completed','shipped'].includes(row.state)" link :disabled="saving" @click="change(row, 'cancel')">取消</el-button>
-          <el-button v-permission="'shipment:write'" v-if="!['cancelled','completed','shipped'].includes(row.state)" link :disabled="saving" @click="change(row, row.state === 'paused' ? 'resume' : 'pause')">{{ row.state === 'paused' ? '恢复' : '暂停' }}</el-button>
+          <el-button v-permission="'shipment:write'" v-if="canChangeShipment(row, 'cancel')" link :disabled="saving" @click="change(row, 'cancel')">取消</el-button>
+          <el-button v-permission="'shipment:write'" v-if="canChangeShipment(row, row.state === 'paused' ? 'resume' : 'pause')" link :disabled="saving" @click="change(row, row.state === 'paused' ? 'resume' : 'pause')">{{ row.state === 'paused' ? '恢复' : '暂停' }}</el-button>
           <el-button v-permission="'shipment:write'" v-if="row.outbound?.status === 'pending_remote'" link type="primary" :disabled="saving" @click="confirmOutbound(row)">确认实际出库</el-button>
           <el-button v-permission="'shipment:write'" v-if="['uncertain','verifying'].includes(row.freight_target?.status) && (row.freight_target?.remote_order_id || auth.hasPermission('shipment:admin'))" link :disabled="saving" @click="reconcileTarget(row, 'freight')">核对运费单</el-button>
           <el-button v-permission="'shipment:write'" v-if="row.freight_target?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'freight')">重试运费单</el-button>
@@ -56,7 +56,7 @@ import { quoteShipment, createShipment, listShipments, getShipment, changeShipme
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
-import { remainingShipmentQuantity, hasActiveShipment } from '../composables/shipmentSettlementState'
+import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment } from '../composables/shipmentSettlementState'
 import { cents, latestRequest } from '@/views/receipt/batchReceiptState'
 import { money } from '@/views/receipt/useReceipts'
 import { currentBeijingDate } from '@/utils/datetime'

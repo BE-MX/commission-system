@@ -6,7 +6,11 @@
     <p class="method-note">小满回款方式默认按 Other 提交（小满侧非必填），无需选择。</p>
     <p v-if="form.order_type === 'presale'">请填写实际定金金额；定金保留至最后一批出库抵扣。</p>
     <ReceiptFields v-if="form.receipt_draft" :form="form.receipt_draft" :currency="form.currency"
-      :readonly="frozen" hide-payment-type @uploading="v => form.receipt_uploading = v" />
+      :readonly="frozen" :hide-proofs="canEditProofs" hide-payment-type @uploading="v => form.receipt_uploading = v" />
+    <InvoiceConvertedProofs v-if="canEditProofs" :key="form.receipt_draft.receipt_id" :receipt-id="form.receipt_draft.receipt_id"
+      @saved="(id, ids) => { if (form.receipt_draft?.receipt_id === id) form.receipt_draft.attachment_ids = ids }"
+      @uploading="value => form.receipt_uploading = value"
+      @dirty="value => form.receipt_proof_dirty = value" />
     <p v-if="form.receipt_draft?.last_error" class="receipt-error" role="alert">{{ form.receipt_draft.last_error }}</p>
     <p v-if="form.receipt_draft?.eligible === false" class="receipt-hint">此单为历史库存单，补传凭证后可同步订单，已有回款不会自动补建。</p>
   </section>
@@ -14,9 +18,14 @@
 <script setup>
 import { computed, watch } from 'vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
+import InvoiceConvertedProofs from './InvoiceConvertedProofs.vue'
+import { useAuthStore } from '@/stores/auth'
 import { currentBeijingDate } from '@/utils/datetime'
 const props = defineProps({ form: { type: Object, required: true } })
 const frozen = computed(() => props.form.receipt_draft?.status && props.form.receipt_draft.status !== 'draft')
+const auth = useAuthStore()
+const canEditProofs = computed(() => props.form.receipt_draft?.status === 'converted' &&
+  props.form.receipt_draft?.receipt_id && auth.hasPermission('receipt:write'))
 watch(() => props.form.receipt_draft, value => {
   if (!value) props.form.receipt_draft = { amount: props.form.order_type === 'presale' ? null : props.form.internal_received > 0 ? props.form.internal_received : null,
     collection_date: currentBeijingDate(), payment_type: 'Other',

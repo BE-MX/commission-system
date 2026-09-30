@@ -34,9 +34,11 @@
         :tags="customerTags"
         :selected-tag-ids="selectedTagIds"
         selectable
+        deletable
         :disabled="busy"
         @add="tagPickerVisible = true"
         @toggle="toggleTag"
+        @delete="removeCustomerTag"
       />
       <p class="upload-selection-hint">已选 {{ selectedTagIds.length }} 个标签。先选标签，再添加文件；本次所选标签会关联到添加的每个文件。</p>
     <section class="upload-panel lg-card">
@@ -110,6 +112,7 @@
             </div>
           </div>
           <div class="manifest-ops">
+            <span v-if="item.error" class="manifest-error">{{ item.error }}</span>
             <el-progress
               v-if="item.status === 'uploading'"
               :percentage="item.progress"
@@ -132,6 +135,8 @@
     <section class="asset-section">
       <div class="section-heading">
         <div><h3>本批素材</h3><span>{{ assets.length }} 个文件 · {{ totalSize }}</span></div>
+        <div class="batch-actions">
+        <GlassButton variant="secondary" left-icon="View" :disabled="!assets.length" @click="openCustomerPreview">客户效果预览</GlassButton>
         <GlassButton
           variant="warning"
           left-icon="Promotion"
@@ -139,17 +144,26 @@
           :loading="submitting"
           @click="submitForReview"
         >完成拍摄并送审</GlassButton>
+        </div>
       </div>
 
       <div v-if="assets.length" class="dimension-groups">
         <section v-for="group in assetGroups" :key="group.id" class="asset-dimension">
-          <h4>{{ group.label }}</h4>
-          <div v-for="bucket in group.buckets" :key="bucket.id" class="asset-tag-group">
-            <h5>{{ bucket.label }} <span>{{ bucket.assets.length }} 个文件</span></h5>
+          <h4>{{ group.label }} <span>{{ visibleGroupAssets(group).length }} / {{ group.assets.length }} 个文件</span></h4>
+          <div v-for="filter in group.filters" :key="filter.id" class="group-filter-row">
+            <strong>{{ filter.label }}</strong>
+            <div class="group-filter-values">
+              <button v-for="value in filter.values" :key="value.id" type="button" :aria-pressed="(groupSelections[group.id] || []).includes(value.id)" :class="{ active: (groupSelections[group.id] || []).includes(value.id) }" @click="toggleGroupTag(group.id, value.id)">{{ value.value }}</button>
+            </div>
+          </div>
+          <div v-for="row in visibleColorTextureRows(group)" :key="row.id" class="asset-tag-group">
+            <h5 v-if="row.textureType || row.colorName">
+              {{ row.textureType }}
+              <span :class="{ 'color-only': !row.textureType }">{{ row.colorName ? `${row.colorName} · ` : '' }}{{ row.assets.length }} 个文件</span>
+            </h5>
             <div class="asset-grid">
-        <article v-for="asset in bucket.assets" :key="asset.id" class="asset-card lg-card">
-          <img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="preview(asset)" />
-          <video v-else :src="asset.content_url" controls preload="metadata" />
+        <article v-for="asset in row.assets" :key="asset.id" class="asset-card lg-card">
+          <div class="asset-thumb"><img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="preview(asset)" /><video v-else :src="asset.content_url" controls preload="metadata" /></div>
           <div class="asset-info">
             <strong :title="asset.file_name">{{ asset.file_name }}</strong>
             <span>{{ formatSize(asset.file_size) }}</span>
@@ -159,12 +173,18 @@
         </article>
             </div>
           </div>
+          <p v-if="!visibleGroupAssets(group).length" class="group-empty">没有符合筛选条件的素材</p>
         </section>
       </div>
       <el-empty v-else description="尚未上传素材" />
     </section>
 
     <el-image-viewer v-if="previewUrl" :url-list="[previewUrl]" @close="previewUrl = ''" />
+    <el-dialog v-model="customerPreviewVisible" title="客户效果预览 · 当前批素材" width="min(1280px, 96vw)" class="customer-effect-dialog" destroy-on-close>
+      <p class="preview-hint">按客户外部站点的实际布局预览当前批素材，尚未送审的内容只在此窗口显示。</p>
+      <iframe ref="customerPreviewFrame" class="customer-effect-frame" src="/customer-media/?preview=1"
+        title="客户素材外部站点效果预览" @load="sendCustomerPreview" />
+    </el-dialog>
     <CustomerMediaDirectoryDialog
       v-model="showDirectoryDialog"
       :batch="batch"
@@ -175,10 +195,13 @@
       v-model="tagPickerVisible"
       title="为客户添加标签"
       :dimensions="tagDimensions"
+      :available-tags="customerTags"
+      :context="{ customerId: batch?.customer_id, taskId }"
       :saving="tagSaving"
       hint="添加后这位客户的后续预约也会显示。标签选择只作用于本次随后添加的文件。"
       @save="saveCustomerTags"
       @created="onTagCreated"
+      @renamed="onTagRenamed"
     />
   </div>
 </template>
@@ -189,13 +212,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Folder, UploadFilled } from '@element-plus/icons-vue'
 import {
-  addTaskCustomerTags, deleteMediaAsset, getCustomerTagDimensions,
+  addTaskCustomerTags, deleteCustomerTagValue, deleteMediaAsset, getCustomerTagDimensions,
+  getCustomerTagUsage,
   getTaskCustomerTags, getTaskMediaBatch, submitMediaBatch,
 } from '@/api/customerMedia'
 import CustomerMediaDirectoryDialog from './customer-media/CustomerMediaDirectoryDialog.vue'
 import CustomerMediaTagPicker from './customer-media/CustomerMediaTagPicker.vue'
 import CustomerTagBoard from './customer-media/CustomerTagBoard.vue'
-import { groupMediaByTags } from './customer-media/customerMediaGrouping'
+import { filterMediaByTags, groupMediaByColorAndTexture, groupMediaByTags } from './customer-media/customerMediaGrouping'
+import { createCustomerMediaPreviewPayload } from './customer-media/customerMediaPreviewPayload'
 import { collectDroppedFiles, dropHasDirectory, webkitPathSegments } from './customer-media/droppedFiles'
 import { useCustomerMediaUpload } from './customer-media/composables/useCustomerMediaUpload'
 
@@ -213,12 +238,26 @@ const tagSaving = ref(false)
 const folderInput = ref(null)
 const submitting = ref(false)
 const previewUrl = ref('')
+const customerPreviewVisible = ref(false)
+const customerPreviewFrame = ref(null)
 
 const assets = computed(() => batch.value?.assets || [])
 const directories = computed(() => batch.value?.directories || [])
 const editable = computed(() => ['draft', 'changes_requested'].includes(batch.value?.status))
 const selectedTags = computed(() => customerTags.value.filter(tag => selectedTagIds.value.includes(tag.tag_value_id)))
 const assetGroups = computed(() => groupMediaByTags(assets.value, tagDimensions.value))
+const groupSelections = ref({})
+function toggleGroupTag(groupId, tagId) {
+  const selected = groupSelections.value[groupId] || []
+  groupSelections.value[groupId] = selected.includes(tagId) ? selected.filter(id => id !== tagId) : [...selected, tagId]
+}
+function visibleGroupAssets(group) {
+  const available = new Set(group.filters.flatMap(filter => filter.values.map(value => value.id)))
+  return filterMediaByTags(group.assets, (groupSelections.value[group.id] || []).filter(id => available.has(id)))
+}
+function visibleColorTextureRows(group) {
+  return groupMediaByColorAndTexture(visibleGroupAssets(group), tagDimensions.value)
+}
 const totalSize = computed(() => formatSize(assets.value.reduce((sum, item) => sum + item.file_size, 0)))
 const statusMeta = computed(() => ({
   draft: { label: '整理中', type: 'info' },
@@ -230,7 +269,7 @@ const statusMeta = computed(() => ({
 
 const {
   items, uploading, busy, pendingCount, incompleteCount, hasItems,
-  addFiles, removeItem, clearItems, reset, startUpload, retryItem,
+  addFiles, removeItem, clearItems, removeTagFromItems, reset, startUpload, retryItem,
 } = useCustomerMediaUpload({
   getBatch: () => batch.value,
   onBatch: data => { batch.value = data },
@@ -280,9 +319,51 @@ async function saveCustomerTags({ tags, flat }) {
 }
 
 function onTagCreated({ dimension_id, value }) {
-  const dim = tagDimensions.value.find(item => item.id === dimension_id)
-  if (dim && !(dim.values || []).some(item => item.id === value.id)) dim.values = [...(dim.values || []), value]
+  if (!customerTags.value.some(tag => tag.tag_value_id === value.id)) customerTags.value.push({
+    dimension_id, tag_value_id: value.id, value: value.value,
+    dimension_label: tagDimensions.value.find(dim => dim.id === dimension_id)?.label || '',
+  })
 }
+function onTagRenamed({ id, value }) {
+  customerTags.value = customerTags.value.map(tag => tag.tag_value_id === id ? { ...tag, value } : tag)
+  for (const item of items.value) item.tags = item.tags.map(tag => tag.tag_value_id === id ? { ...tag, value } : tag)
+  loadBatch()
+}
+
+async function removeCustomerTag(tag) {
+  if (busy.value || !batch.value?.customer_id) return
+  const context = { customerId: batch.value.customer_id, taskId }
+  try {
+    const count = (await getCustomerTagUsage(context, tag.tag_value_id)).data.asset_count
+    await ElMessageBox.confirm(
+      count ? '当前标签已关联部分素材，删除后关联关系将一并删除，是否确认？' : `确认删除标签「${tag.value}」？`,
+      '删除客户标签', { type: 'warning', confirmButtonText: '确认删除' },
+    )
+    try {
+      await deleteCustomerTagValue(context, tag.tag_value_id, Boolean(count))
+    } catch (error) {
+      if (count || error?.response?.status !== 409) throw error
+      await ElMessageBox.confirm('当前标签已关联部分素材，删除后关联关系将一并删除，是否确认？',
+        '删除客户标签', { type: 'warning', confirmButtonText: '确认删除' })
+      await deleteCustomerTagValue(context, tag.tag_value_id, true)
+    }
+    selectedTagIds.value = selectedTagIds.value.filter(id => id !== tag.tag_value_id)
+    removeTagFromItems(tag.tag_value_id)
+    await Promise.all([loadCustomerTags(), loadBatch()])
+    ElMessage.success('客户标签已删除')
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    // API interceptor displays server errors.
+  }
+}
+
+function sendCustomerPreview() {
+  if (!customerPreviewVisible.value || !customerPreviewFrame.value?.contentWindow || !batch.value) return
+  customerPreviewFrame.value.contentWindow.postMessage(
+    createCustomerMediaPreviewPayload(batch.value, tagDimensions.value), window.location.origin,
+  )
+}
+function openCustomerPreview() { customerPreviewVisible.value = true }
 
 const FOLDER_ACCEPT_RE = /\.(jpe?g|png|webp|gif|mp4|mov|webm)$/i
 function filterAccepted(files) {
@@ -381,18 +462,31 @@ onBeforeUnmount(reset)
 .tag-chip { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .tags-more { color: var(--text-secondary); font-size: 12px; }
 .manifest-ops { display: flex; align-items: center; gap: 4px; }
+.manifest-error { color: var(--color-danger); font-size: 12px; }
 .row-progress { width: 160px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.batch-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.preview-hint { margin: 0 0 10px; color: var(--text-secondary); font-size: 12px; }
+.customer-effect-frame { display: block; width: 100%; height: min(75vh, 850px); border: 1px solid var(--border-color); border-radius: 8px; background: white; }
 .section-heading h3 { margin: 0 0 4px; }
 .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
 .dimension-groups { display: grid; gap: 26px; }
 .asset-dimension { border-top: 1px solid var(--border-color); padding-top: 16px; }
 .asset-dimension h4 { margin: 0 0 14px; color: var(--text-primary); font-size: 17px; }
+.asset-dimension h4 span { margin-left: 8px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.group-filter-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.group-filter-row strong { min-width: 90px; padding-top: 5px; font-size: 12px; color: var(--text-secondary); }
+.group-filter-values { display: flex; flex-wrap: wrap; gap: 7px; }
+.group-filter-values button { padding: 5px 10px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); background: var(--card-bg); cursor: pointer; }
+.group-filter-values button.active { border-color: var(--color-primary); color: var(--color-primary-hover); background: var(--color-primary-light); }
+.group-empty { color: var(--text-secondary); font-size: 13px; }
 .asset-tag-group { margin-bottom: 20px; }
-.asset-tag-group h5 { margin: 0 0 12px; font-size: 14px; color: var(--color-primary-hover); }
+.asset-tag-group h5 { margin: 0 0 12px; font-size: 20px; font-weight: 800; color: var(--text-primary); }
 .asset-tag-group h5 span { margin-left: 7px; color: var(--text-secondary); font-weight: 400; }
-.asset-card { overflow: hidden; padding-bottom: 12px; }
-.asset-card img, .asset-card video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--page-bg); cursor: pointer; }
+.asset-tag-group h5 span.color-only { margin-left: 0; }
+.asset-card { min-width: 0; overflow: hidden; padding-bottom: 12px; }
+.asset-thumb { display: flex; height: 200px; align-items: center; justify-content: center; overflow: hidden; background: var(--page-bg); }
+.asset-thumb img, .asset-thumb video { display: block; width: auto; max-width: 100%; height: 200px; object-fit: contain; cursor: pointer; }
 .asset-info { padding: 12px 14px 4px; display: grid; gap: 5px; }
 .asset-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .asset-card .glass-button { margin-left: 10px; }

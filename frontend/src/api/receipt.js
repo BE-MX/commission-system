@@ -12,6 +12,7 @@ export const voidReceipt = (id, reason) => unwrap(request.post(`/${id}/void`, { 
 export const reconcileReceipt = id => unwrap(request.post(`/${id}/reconcile`))
 export const resolveReceipt = (id, body) => unwrap(request.post(`/${id}/resolve`, body))
 export const getReceiptProof = id => request.get(`/attachments/${id}`, { responseType: 'blob', showLoading: false })
+export const updateReceiptProofs = (id, body) => unwrap(request.put(`/${id}/attachments`, body))
 export function uploadReceiptProof(file, onProgress) {
   const data = new FormData()
   data.append('file', file)

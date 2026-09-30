@@ -110,7 +110,7 @@ def _prepare(db, record, user, *, desired_serial_id=None, number_only=False):
             raise ValueError('新出库单号已被其他小满出库单占用，请先核对')
     inspection = db.query(ShippingInspection).filter_by(outbound_record_id=record['outbound_record_id']).with_for_update().populate_existing().first()
     media = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection.id).with_for_update().all() if inspection else []
-    if (number_only and not plan['serial_changed'] and inspection
+    if (not plan['serial_changed'] and inspection and inspection.outbound_no
             and inspection.outbound_no != before.get('serial_id')):
         raise ValueError('小满出库号已更新，但方舟验货单号尚未核对，请由仓库处理')
     plan['inspection'] = {'id': inspection.id, 'status': inspection.status, 'edit_version': inspection.edit_version,
@@ -170,7 +170,7 @@ def _verify_finish(db, event):
     previous = event.result or {}
     stale_ids = set(previous.get('stale_media_ids') or [])
     required_ids = set(previous.get('required_recheck_ids') or [])
-    if plan.get('material_changed') and recheck:
+    if (plan.get('material_changed') or plan.get('serial_changed')) and recheck:
         inspection = db.query(ShippingInspection).filter_by(id=recheck['id']).with_for_update().populate_existing().first()
         if inspection is None or inspection.edit_version != recheck['edit_version'] or inspection.status != recheck['status']:
             event.action = 'sync_uncertain'
@@ -183,6 +183,16 @@ def _verify_finish(db, event):
             event.result = {**previous, 'message': '出库已同步，但验货媒体发生变化，需人工核对'}
             commit(db)
             return {'status': 'sync_uncertain', 'recover': True, 'message': event.result['message']}
+        inspection.edit_version += 1  # Reject every workstation page opened against the old outbound version.
+        if event.payload.get('auto_recall') and plan['requires_recheck'] and inspection.status == 'submitted':
+            inspection.status = 'draft'
+            inspection.recalled_at = beijing_now()
+            inspection.recalled_by = event.operator_user_id
+            inspection.updated_at = inspection.recalled_at
+            inspection.updated_by = event.operator_user_id
+            audit_service.record(db, 'recall', event.operator_user_id, inspection.outbound_record_id,
+                                 inspection=inspection,
+                                 context={'source': 'invoice_sync', 'scope': f'invoice_sync:{event.operator_user_id}'})
         if plan.get('serial_changed'):
             inspection.outbound_no = after['serial_id']
         if media:
@@ -195,11 +205,13 @@ def _verify_finish(db, event):
                 stale_ids.update(photo.id for photo in media if photo.item_id is None)
             if plan['requires_whole_recheck']:
                 required_ids.add('__whole__')
-        inspection.edit_version += 1  # Reject every workstation page opened against the old outbound version.
+    verified = _snapshot(plan, after)
     event.action = 'sync_done'
-    event.result = {'verified': _snapshot(plan, after), 'checked_at': str(beijing_now()),
+    event.result = {'verified': verified, 'checked_at': str(beijing_now()),
                     'stale_media_ids': sorted(stale_ids), 'required_recheck_ids': sorted(required_ids),
                     'message': '已同步最新订单资料；请补验变更明细' if required_ids else '已同步最新订单资料，可直接打印'}
+    if previous.get('verified') == verified and previous.get('print_before_recheck'):
+        event.result['print_before_recheck'] = previous['print_before_recheck']
     commit(db)
     return {'status': 'sync_done', 'message': event.result['message']}
 
@@ -340,7 +352,8 @@ def _repair_missing(db, record, user, invoice, event):
 
 
 def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False,
-                desired_serial_id=None, number_only=False, repair=False):
+                desired_serial_id=None, number_only=False, repair=False, auto_recall=False,
+                source='pc'):
     invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
                                     number_only=number_only)
     if event.action in state.ACTIVE:
@@ -358,19 +371,22 @@ def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=
     if plan['requires_recheck'] and not confirm_recheck:
         commit(db)
         return {'status': state.RECHECK, 'message': '订单已更新，出库单需要仓库确认“同步并重验”'}
-    if plan['requires_recheck'] and plan['inspection']['status'] == 'submitted':
+    if plan['requires_recheck'] and plan['inspection']['status'] == 'submitted' and not auto_recall:
         raise ValueError('验货单已提交，请先撤回验货，再同步并重新验货')
     if not plan['changed']:
         event.payload = {'invoice_id': invoice.id, 'plan': plan}
+        event.source = source
         return _verify_finish(db, event)
     token = okki_client.ensure_access_token(db)
     if event.payload:
         audit_service.record(db, event.action, event.operator_user_id, event.outbound_record_id,
-            context={'scope': 'outbound-sync-history', 'source': 'pc'}, request_id=str(uuid4()),
+            context={'scope': 'outbound-sync-history', 'source': event.source}, request_id=str(uuid4()),
             payload=event.payload, result=event.result)
     send_nonce = str(uuid4())
     event.action = 'sync_pending'
-    event.payload = {'invoice_id': invoice.id, 'plan': plan, 'send_nonce': send_nonce}
+    event.source = source
+    event.payload = {'invoice_id': invoice.id, 'plan': plan, 'send_nonce': send_nonce,
+                     'auto_recall': auto_recall}
     event.operator_user_id = event.login_user_id = int(user['sub'])
     from app.auth.models import ArkUser
     actor = db.get(ArkUser, int(user['sub']))

@@ -310,6 +310,23 @@ def test_suggest_and_check_endpoints(db, bound_user):
         assert self_ok["available"] is True
 
 
+def test_previous_invoice_no_accepts_presale(db, bound_user):
+    db.add(Invoice(
+        invoice_no="PRESALE-0901", order_type="presale", customer_id="9001",
+        customer_name="Alpha Hair Studio", invoice_date=date(2026, 9, 28),
+        sales_user_id=bound_user.id,
+    ))
+    db.flush()
+
+    with _client(db, sub="5", permissions=["invoice:write"]) as client:
+        response = client.get(
+            "/api/invoice/invoices/previous-no",
+            params={"sales_user_id": bound_user.id, "order_type": "presale"},
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["previous_invoice_no"] == "PRESALE-0901"
+
+
 def test_create_endpoint_duplicate_returns_400(db, bound_user):
     with _client(db, sub="5", permissions=["invoice:write"]) as client:
         body = InvoiceCreate(**_payload(invoice_no="DUP-1")).model_dump(mode="json")

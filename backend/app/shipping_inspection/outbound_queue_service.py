@@ -40,27 +40,31 @@ def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id):
 
     # A header may sync before its items. Exact invoice number + customer suppresses
     # that transient duplicate; otherwise actual item order linkage is authoritative.
-    matched = []
+    dedup_clauses = []
     mysql = db.get_bind().dialect.name == "mysql"
+    visible = f" AND {records._owner_scope_clause(db, rm)}" if okki_user_id else ""
     if rm.get("outbound_no") and rm.get("company_id"):
         number = f"r.`{rm['outbound_no']}`"
         if mysql:
             number += " COLLATE utf8mb4_unicode_ci"
-        matched.append(f"({number}=f.invoice_no AND r.`{rm['company_id']}`=f.customer_id)")
+        dedup_clauses.append(f"""NOT EXISTS (SELECT 1 FROM `{schema}`.`{records.RECORDS_TABLE}` r
+            WHERE {number}=f.invoice_no AND r.`{rm['company_id']}`=f.customer_id{visible})""")
     link, _, im = records._link(db)
     if link and "order_id" in records._table_columns(db, records.ITEMS_TABLE):
         ik = im["invoice_id"] if link == "invoice" else im["record_id"]
         rk = rm["invoice_id"] if link == "invoice" else rm["id"]
-        matched.append(f"""EXISTS (SELECT 1 FROM `{schema}`.`{records.ITEMS_TABLE}` i
-            WHERE i.`{ik}`=r.`{rk}` AND i.order_id=t.order_id)""")
-    if not matched:
+        # Start from the indexed order_id, then resolve its mirrored header.
+        # Combining this match with the number match using OR forced MySQL to
+        # scan every mirrored header for each pending task.
+        dedup_clauses.append(f"""NOT EXISTS (SELECT 1 FROM `{schema}`.`{records.ITEMS_TABLE}` i
+            JOIN `{schema}`.`{records.RECORDS_TABLE}` r ON r.`{rk}`=i.`{ik}`
+            WHERE i.order_id=t.order_id{visible})""")
+    if not dedup_clauses:
         # Legacy schemas cannot safely deduplicate local entries; keep their
         # existing mirror-only view without granting any local queue access.
         local_clauses.append("1=0")
-        matched.append("1=0")
-    visible = f" AND {records._owner_scope_clause(db, rm)}" if okki_user_id else ""
-    local_clauses.append(f"""NOT EXISTS (SELECT 1 FROM `{schema}`.`{records.RECORDS_TABLE}` r
-        WHERE ({' OR '.join(matched)}){visible})""")
+    else:
+        local_clauses.extend(dedup_clauses)
     # Cast only identifiers (not business text) across UNION: database collations
     # differ between the Ark and business schemas on production MySQL.
     def key(expr):
@@ -152,6 +156,7 @@ def list_outbound_records(db, *, keyword=None, order_id=None, date_from=None, da
     if mirror_ids:
         mirror_rows, _ = records.list_outbound_records(
             db, record_ids=mirror_ids, page_size=page_size, okki_user_id=okki_user_id,
+            count_total=False,
         )
     mirror = {r["outbound_record_id"]: {**r, "record_source": "okki", "outbound_state": "ready",
               "can_print": True, "stock_shortages": []} for r in mirror_rows}

@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy import update
 
 from app.core.time import beijing_now
+from app.core.queue_scan import take
 from app.invoice import okki_client
 from app.invoice.models import Invoice
 from app.invoice.settlement_guard import ensure_receipt_sendable
@@ -19,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 def release_targets(db):
     """Turn a presale component into a sendable row only after exact target binding."""
-    ids = [identity for (identity,) in db.query(Receipt.id).filter(
+    ids = take(db.query(Receipt.id).filter(
         Receipt.status == "active", Receipt.sync_status == "waiting_target",
-        Receipt.batch_id.isnot(None)).order_by(Receipt.id).limit(20)]
+        Receipt.batch_id.isnot(None)), Receipt.id, "receipt_waiting_target", 20)
     db.commit()
     for identity in ids:
         row = db.get(Receipt, identity)
@@ -47,8 +48,8 @@ def release_targets(db):
 
 
 def generate_ready(db):
-    ids = [i for (i,) in db.query(ReceiptIntent.invoice_id).filter(ReceiptIntent.status == "ready")
-           .order_by(ReceiptIntent.updated_at, ReceiptIntent.id).limit(20)]
+    ids = take(db.query(ReceiptIntent.invoice_id).filter(ReceiptIntent.status == "ready"),
+               ReceiptIntent.invoice_id, "receipt_intent_ready", 20)
     for invoice_id in ids:
         try:
             invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()

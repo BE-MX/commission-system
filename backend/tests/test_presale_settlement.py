@@ -146,10 +146,31 @@ def test_partial_embedded_payment_stays_awaiting_payment(db,presale,monkeypatch)
     assert Decimal(service.funding_balance(db,row)["effective_amount"])==0
 
 
-def test_transport_requires_verified_capability_even_if_feature_enabled(monkeypatch):
+@pytest.mark.parametrize("settlement,delivery,warehouse,expected", [
+    (False, False, None, False),
+    (True, False, 123, False),
+    (True, True, None, False),
+    (True, True, True, False),
+    (True, True, -1, False),
+    (True, True, 123, True),
+])
+def test_presale_capabilities_require_all_rollout_settings(monkeypatch, settlement, delivery, warehouse, expected):
     from app.invoice import settlement_policy
-    with pytest.raises(ValueError,match="REMOTE_CAPABILITY_UNVERIFIED"):
+    monkeypatch.setattr(settlement_policy, "get_settings", lambda: SimpleNamespace(
+        PRESALE_SETTLEMENT_ENABLED=settlement, PRESALE_DELIVERY_ENABLED=delivery,
+        OKKI_PRESALE_WAREHOUSE_ID=warehouse))
+    result = settlement_policy.capabilities()
+    assert result["enabled"] is expected
+    assert result["freight_delivery_enabled"] is expected
+    assert result["outbound_delivery_enabled"] is expected
+    if expected:
+        settlement_policy.require_enabled()
         settlement_policy.require_delivery()
+    else:
+        with pytest.raises(ValueError, match="尚未启用"):
+            settlement_policy.require_enabled()
+        with pytest.raises(ValueError, match="尚未启用"):
+            settlement_policy.require_delivery()
 
 
 def test_history_remains_readable_after_order_not_ready(db,presale):
@@ -321,6 +342,57 @@ def test_verified_funding_queues_one_frozen_partial_outbound(db,presale,monkeypa
     assert task.payload==payload
     assert task.payload_hash==service.digest(payload)
     assert db.get(ShipmentSettlement,row.id).state=="outbound_pending"
+
+
+def test_first_batch_candidate_counts_unoccupied_remote_line_as_zero(db,presale,monkeypatch):
+    from app.invoice import shipment_delivery
+
+    row=make(db,presale,quantity=4,freight="0.00")
+    presale.customer_id="10"
+    order={"order_id":"100","company_id":"10","currency":"USD","amount":"10000.00",
+        "users":[{"user_id":"42"}],"exchange_rate":"100",
+        "exchange_rate_usd":"100","product_list":[{
+            "unique_id":"11","product_id":"1","sku_id":"2","count":10,
+            "unit_price":"1000","unit":"Piece","to_outbound_count":0,
+            "task_outbound_count":0}]}
+    monkeypatch.setattr(shipment_delivery,"get_settings",
+        lambda: SimpleNamespace(OKKI_PRESALE_WAREHOUSE_ID=123))
+    monkeypatch.setattr(shipment_delivery,"_live_funding",lambda *_:order)
+    monkeypatch.setattr(shipment_delivery.remote,"order_active",lambda *_:True)
+    monkeypatch.setattr(shipment_delivery.linked_outbound_service,"find_related",lambda *_:[])
+    monkeypatch.setattr(shipment_delivery.xiaoman_service,"resolve_okki_user_id",lambda *_:42)
+
+    payload=shipment_delivery._live_candidate(db,presale,row)
+    assert payload["serial_id"]==row.settlement_no
+    assert payload["record_list"][0]["outbound_count"]==4
+    assert payload["record_list"][0]["order_record_id"]==11
+
+
+def test_next_batch_candidate_counts_existing_remote_outbound(db,presale,monkeypatch):
+    from app.invoice import shipment_delivery
+
+    row=make(db,presale,quantity=4,freight="0.00")
+    presale.customer_id="10"
+    order={"order_id":"100","company_id":"10","currency":"USD","amount":"10000.00",
+        "users":[{"user_id":"42"}],"exchange_rate":"100",
+        "exchange_rate_usd":"100","product_list":[{
+            "unique_id":"11","product_id":"1","sku_id":"2","count":10,
+            "unit_price":"1000","unit":"Piece","to_outbound_count":0,
+            "task_outbound_count":0}]}
+    related=[{"outbound_invoice_id":"500","status":2,"record_list":[{
+        "order_id":"100","order_record_id":"11","outbound_count":4}]}]
+    monkeypatch.setattr(shipment_delivery,"get_settings",
+        lambda: SimpleNamespace(OKKI_PRESALE_WAREHOUSE_ID=123))
+    monkeypatch.setattr(shipment_delivery,"_live_funding",lambda *_:order)
+    monkeypatch.setattr(shipment_delivery.remote,"order_active",lambda *_:True)
+    monkeypatch.setattr(shipment_delivery.linked_outbound_service,"find_related",lambda *_:related)
+    monkeypatch.setattr(shipment_delivery,"check_outbounds",lambda *_args,**_kwargs:None)
+    monkeypatch.setattr(shipment_delivery.xiaoman_service,"resolve_okki_user_id",lambda *_:42)
+
+    assert shipment_delivery._live_candidate(db,presale,row)["record_list"][0]["outbound_count"]==4
+    related[0]["record_list"][0]["outbound_count"]=7
+    with pytest.raises(ValueError,match="剩余"):
+        shipment_delivery._live_candidate(db,presale,row)
 
 
 def test_partial_outbound_is_shipped_only_after_active_remote_status_two(db,presale,monkeypatch):

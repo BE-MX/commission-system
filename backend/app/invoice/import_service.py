@@ -66,8 +66,8 @@ def preview_import(
     currency: str,
     raw_rows: list[dict],
 ) -> dict:
-    if order_type not in {"stock", "production"}:
-        raise ValueError("order_type 必须是 stock 或 production")
+    if order_type not in {"stock", "production", "presale"}:
+        raise ValueError("order_type 必须是 stock、production 或 presale")
     if not str(customer_id or "").strip():
         raise ValueError("customer_id 必填")
     if not str(currency or "").strip():

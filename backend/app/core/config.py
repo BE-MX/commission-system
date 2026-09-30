@@ -21,6 +21,7 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 
 class Settings(BaseSettings):
     PRESALE_SETTLEMENT_ENABLED: bool = False
+    PRESALE_DELIVERY_ENABLED: bool = False
     OKKI_PRESALE_WAREHOUSE_ID: int | None = None
 
     # Object storage is enabled per domain only after its migration is verified.

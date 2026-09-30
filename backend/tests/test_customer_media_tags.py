@@ -3,11 +3,13 @@
 import asyncio
 from datetime import date, datetime
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy import event
 from starlette.datastructures import UploadFile
 
 from app.asset import tag_service
@@ -106,6 +108,16 @@ def _tag_rows(db, asset_id):
     return db.query(CustomerMediaAssetTag).filter_by(asset_id=asset_id).all()
 
 
+def _bind_existing(db, customer_id, values=None):
+    values = values if values is not None else db.query(TagValue).join(TagDimension).filter(
+        TagDimension.tag_scope == "customer").all()
+    for value in values:
+        if db.get(CustomerMediaCustomerTag, (customer_id, value.dimension_id, value.id)) is None:
+            db.add(CustomerMediaCustomerTag(customer_id=customer_id, dimension_id=value.dimension_id,
+                                            tag_value_id=value.id, display_value=value.value))
+    db.commit()
+
+
 # ── scope 隔离 ──────────────────────────────────────────
 
 def test_customer_scope_isolated_from_internal_validate_and_dimensions(db):
@@ -186,17 +198,59 @@ def test_create_customer_tag_value_reuses_same_name(db):
     _applicant, designer, _outsider, _request, _task = _seed_workflow(db)
     writer = _payload(designer, "customer_media:write")
 
-    created = service.create_customer_tag_value(db, writer, customer_dim.id, " 白底图 ")
+    created = service.create_customer_tag_value(db, writer, "CUST-TAG-1", customer_dim.id, " 白底图 ")
     assert created["created"] is True
-    reused = service.create_customer_tag_value(db, writer, customer_dim.id, "白底图")
+    reused = service.create_customer_tag_value(db, writer, "CUST-TAG-1", customer_dim.id, "白底图")
     assert reused["created"] is False and reused["id"] == created["id"]
     with pytest.raises(service.CustomerMediaNotFound):
-        service.create_customer_tag_value(db, writer, internal_dim.id, "内部标签")
+        service.create_customer_tag_value(db, writer, "CUST-TAG-1", internal_dim.id, "内部标签")
+
+
+def test_customer_tag_rename_and_confirmed_delete_are_customer_scoped(db):
+    dim, _ = _make_dim(db, "customer_texture", "Textures type")
+    applicant, _designer, _outsider, batch, asset = _seed_batch_with_asset(db, bind_existing=False)
+    _add_customer(db, "CUST-TAG-2", "标签客户乙")
+    admin = _payload(applicant, "customer_media:admin")
+    first = service.create_customer_tag_value(db, admin, "CUST-TAG-1", dim.id, "Straight")
+    second = service.create_customer_tag_value(db, admin, "CUST-TAG-2", dim.id, "Straight")
+    assert first["id"] == second["id"]
+    db.add(CustomerMediaAssetTag(asset_id=asset.id, dimension_id=dim.id, tag_value_id=first["id"]))
+    db.commit()
+
+    service.rename_customer_tag_value(db, "CUST-TAG-1", first["id"], "Silky straight")
+    assert service.asset_tags_map(db, [asset.id])[asset.id][0]["value"] == "Silky straight"
+    assert service.list_customer_tags(db, "CUST-TAG-2")[0]["value"] == "Straight"
+    assert service.customer_tag_asset_count(db, "CUST-TAG-1", first["id"]) == 1
+    with TestClient(_internal_app(db, _payload(applicant, "customer_media:read"))) as client:
+        denied = client.delete(f"/api/customer-media/customers/CUST-TAG-1/tag-values/{first['id']}",
+                               params={"batch_id": batch.id, "confirm_associated": True})
+        assert denied.status_code == 403
+    with pytest.raises(service.CustomerMediaConflict, match="当前标签已关联部分素材"):
+        service.delete_customer_tag_value(db, "CUST-TAG-1", first["id"], admin, confirm_associated=False)
+    assert _tag_rows(db, asset.id)
+    result = service.delete_customer_tag_value(db, "CUST-TAG-1", first["id"], admin, confirm_associated=True)
+    assert result == {"removed_asset_count": 1}
+    assert _tag_rows(db, asset.id) == []
+    assert service.list_customer_tags(db, "CUST-TAG-1") == []
+    assert service.list_customer_tags(db, "CUST-TAG-2")[0]["value"] == "Straight"
+
+
+def test_unbound_customer_tag_cannot_be_uploaded_or_selected(db, tmp_path, monkeypatch):
+    dim, values = _make_dim(db, "customer_color_names", "Color names", values=["Ash"])
+    _applicant, designer, _outsider, batch, _asset = _seed_batch_with_asset(db, bind_existing=False)
+    writer = _payload(designer, "customer_media:write")
+    monkeypatch.setattr(service, "storage_for", lambda provider="local": LocalMediaStorage(tmp_path))
+    tags = [{"dimension_id": dim.id, "tag_value_ids": [values[0].id]}]
+    with pytest.raises(service.CustomerMediaError, match="当前客户"):
+        service.add_customer_tags(db, batch.customer_id, writer, tags)
+    with pytest.raises(service.CustomerMediaError, match="当前客户"):
+        asyncio.run(service.upload_asset(db, batch.id, writer, _upload_png("unbound.png"), tags=tags))
+    assert list(tmp_path.rglob("*.png")) == []
 
 
 # ── 上传打标与标签编辑 ───────────────────────────────────
 
-def _seed_batch_with_asset(db):
+def _seed_batch_with_asset(db, *, bind_existing=True):
     """一个 draft 批次 + 一个直接入库的素材。"""
     _add_customer(db, "CUST-TAG-1", "标签客户甲")
     applicant, designer, outsider, _request, task = _seed_workflow(db)
@@ -209,7 +263,38 @@ def _seed_batch_with_asset(db):
     )
     db.add(asset)
     db.commit()
+    if bind_existing:
+        _bind_existing(db, "CUST-TAG-1")
     return applicant, designer, outsider, batch, asset
+
+
+def test_asset_and_portal_tag_joins_match_customer_id_across_mysql_collations(db):
+    dim, values = _make_dim(db, "customer_texture", "Textures type", values=["Straight"])
+    _applicant, _designer, _outsider, batch, asset = _seed_batch_with_asset(db)
+    db.add(CustomerMediaAssetTag(asset_id=asset.id, dimension_id=dim.id, tag_value_id=values[0].id))
+    _publish(db, batch)
+
+    statements = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
+        if "JOIN ark_customer_media_customer_tags" in statement:
+            statements.append(statement)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        assert service.asset_tags_map(db, [asset.id])[asset.id][0]["value"] == "Straight"
+        used = service.portal_used_tags(db, SimpleNamespace(customer_id=batch.customer_id))
+        assert used[0]["values"][0]["value"] == "Straight"
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    assert len(statements) == 2
+    assert all(
+        "(ark_customer_media_customer_tags.customer_id COLLATE utf8mb4_unicode_ci) = "
+        "ark_customer_media_batches.customer_id" in statement
+        for statement in statements
+    )
 
 
 def test_upload_with_tags_json_persists_and_rejects_bad_scope(db, tmp_path, monkeypatch):
@@ -217,6 +302,7 @@ def test_upload_with_tags_json_persists_and_rejects_bad_scope(db, tmp_path, monk
     internal_dim, internal_values = _make_dim(db, "internal_only", "内部专用", scope="internal", values=["内部图"])
     applicant, designer, outsider, batch, _asset = _seed_batch_with_asset(db)
     writer = _payload(designer, "customer_media:write")
+    _bind_existing(db, "CUST-TAG-1", values)
     monkeypatch.setattr(
         service, "storage_for", lambda provider="local": LocalMediaStorage(tmp_path),
     )
@@ -247,6 +333,7 @@ def test_customer_labels_survive_new_booking_and_upload_requires_label(db, tmp_p
     writer = _payload(designer, "customer_media:write")
     spring = [{"dimension_id": dim.id, "tag_value_ids": [values[0].id]}]
     summer = [{"dimension_id": dim.id, "tag_value_ids": [values[1].id]}]
+    service.create_customer_tag_value(db, salesperson, first_request.customer_id, dim.id, "春季")
     assert service.add_customer_tags(db, first_request.customer_id, salesperson, spring)[0]["value"] == "春季"
     assert service.add_customer_tags(db, first_request.customer_id, salesperson, spring) == service.list_customer_tags(db, first_request.customer_id)
 
@@ -269,6 +356,7 @@ def test_customer_labels_survive_new_booking_and_upload_requires_label(db, tmp_p
     assert service.task_customer_id(db, second_task.id, writer) == first_request.customer_id
     assert [tag["value"] for tag in service.list_customer_tags(db, second_request.customer_id)] == ["春季"]
 
+    service.create_customer_tag_value(db, writer, second_request.customer_id, dim.id, "夏季")
     service.add_customer_tags(db, second_request.customer_id, writer, summer)
     assert {tag["value"] for tag in service.list_customer_tags(db, first_request.customer_id)} == {"春季", "夏季"}
     assert db.query(CustomerMediaCustomerTag).filter_by(customer_id=first_request.customer_id).count() == 2
@@ -376,7 +464,7 @@ def _internal_app(db, payload):
 
 def test_booking_and_designer_customer_tag_endpoints_share_customer_labels(db):
     dim, values = _make_dim(db, "customer_use", "用途", values=["白底", "场景"])
-    applicant, designer, outsider, batch, _asset = _seed_batch_with_asset(db)
+    applicant, designer, outsider, batch, _asset = _seed_batch_with_asset(db, bind_existing=False)
     db.connection().exec_driver_sql(
         "UPDATE lsordertest.customer_info SET owner_user_ids = ? WHERE company_id = ?",
         ('[1007]', 'CUST-TAG-1'),
@@ -398,6 +486,9 @@ def test_booking_and_designer_customer_tag_endpoints_share_customer_labels(db):
     customer_path = "/api/customer-media/customers/CUST-TAG-1/tags"
     task_path = f"/api/customer-media/tasks/{batch.task_id}/customer-tags"
     with TestClient(_internal_app(db, _payload(applicant, "design:write"))) as client:
+        created = client.post("/api/customer-media/customers/CUST-TAG-1/tag-values",
+                              json={"dimension_id": dim.id, "value": "白底"})
+        assert created.status_code == 200
         response = client.post(customer_path, json={"tags": [
             {"dimension_id": dim.id, "tag_value_ids": [values[0].id]},
         ]})
@@ -407,6 +498,10 @@ def test_booking_and_designer_customer_tag_endpoints_share_customer_labels(db):
 
     with TestClient(_internal_app(db, _payload(designer, "customer_media:write"))) as client:
         assert [tag["value"] for tag in client.get(task_path).json()["data"]] == ["白底"]
+        created = client.post("/api/customer-media/customers/CUST-TAG-1/tag-values",
+                              params={"task_id": batch.task_id},
+                              json={"dimension_id": dim.id, "value": "场景"})
+        assert created.status_code == 200
         response = client.post(task_path, json={"tags": [
             {"dimension_id": dim.id, "tag_value_ids": [values[1].id]},
         ]})
@@ -485,7 +580,7 @@ def test_sales_preview_tags_use_current_customer_scope_and_published_media(db):
         response = client.get(path)
         assert response.status_code == 200
         assert response.json()["data"] == [{
-            "dimension_id": dim.id, "label": "场景",
+            "dimension_id": dim.id, "name": "customer_scene", "label": "场景",
             "values": [{"id": values[0].id, "value": "白底", "count": 1}],
         }]
         account.is_active = False
@@ -620,6 +715,7 @@ def test_portal_tags_only_used_values_and_cross_customer_isolation(db):
     db.flush()
     db.add(CustomerMediaAssetTag(asset_id=other_asset.id, dimension_id=dim.id, tag_value_id=values[1].id))
     db.commit()
+    _bind_existing(db, "CUST-TAG-2", [values[1]])
 
     admin = _payload(applicant, "customer_media:admin")
     service.create_portal_account(db, admin, "CUST-TAG-1", "client-a-tag@example.com", "ClientPass123")
@@ -631,6 +727,7 @@ def test_portal_tags_only_used_values_and_cross_customer_isolation(db):
         assert tags_a.status_code == 200
         data_a = tags_a.json()["data"]
         assert [d["dimension_id"] for d in data_a] == [dim.id]
+        assert data_a[0]["name"] == "customer_scene"
         assert data_a[0]["label"] == "客户场景"
         # 只出本客户实际用到的值：场景图（乙客户用）与未使用都不出现
         assert data_a[0]["values"] == [{"id": values[0].id, "value": "白底图", "count": 1}]
