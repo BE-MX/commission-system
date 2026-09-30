@@ -27,8 +27,7 @@
    会覆盖 .el-overlay 的 position: fixed，抽屉打开后看不见（2026-07-25 实翻车） */
 .invoice-page .page-header,
 .invoice-page .summary-section,
-.invoice-page .invoice-panel,
-.invoice-page .pagination-bar {
+.invoice-page .invoice-panel {
   position: relative;
   z-index: 1;
 }
@@ -79,11 +78,30 @@
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 14px;
   border-bottom: 1px solid var(--invoice-border);
   background: rgba(255, 255, 255, 0.4);
+}
+
+/* 筛选控件宽度三档（DESIGN.md FilterBar Spec：160/200/280，禁内联宽度） */
+.toolbar .filter-w-sm {
+  width: 160px;
+}
+
+.toolbar .filter-w-md {
+  width: 200px;
+}
+
+.toolbar .filter-w-lg {
+  width: 280px;
+}
+
+/* 表格工具四图标：钉在筛选区末尾右侧（List Page Spec 第 9 节试点） */
+.toolbar-tools {
+  margin-left: auto;
 }
 
 /* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
@@ -125,25 +143,16 @@
   text-overflow: clip;
 }
 
-.empty-state {
-  display: flex;
-  min-height: 180px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: var(--invoice-muted);
-}
-
-.empty-state strong {
-  color: var(--invoice-ink);
-  font-size: 16px;
-}
-
-.pagination-bar {
+/* 分页：表格卡片内底部（DESIGN.md List Page Spec 第 6 节） */
+.pager {
   display: flex;
   justify-content: flex-end;
-  padding: 16px 0;
+  padding: 12px 14px;
+}
+
+/* 全屏态：面板自身滚动 */
+.invoice-panel:fullscreen {
+  overflow: auto;
 }
 
 /* ============ 下单抽屉：左右两个独立滚动窗格 ============ */

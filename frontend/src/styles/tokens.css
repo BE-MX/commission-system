@@ -110,6 +110,11 @@
   --table-header-bg:      #fafbfe;
   --table-stripe-bg:      #fafbfe;
   --table-row-hover:      #fef9f0;
+  /* 表格密度三档（List Page Spec 第 9 节试点；行高由 cell 纵向 padding 决定） */
+  --table-cell-padding-x:        12px;
+  --table-cell-padding-compact:  6px;
+  --table-cell-padding-default:  10px;
+  --table-cell-padding-comfort:  14px;
   --input-hover-border:   #c5cce0;
 
   /* ── Badge tokens ── */

@@ -391,6 +391,28 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 - [ ] 状态 tag 用 pill 样式（如需），状态映射查域字典
 - [ ] 不在 scoped style 里重复写表格样式
 
+### 9. 扩展增强项（试点规范）
+
+以下条目来自 2026-09-30 参考框架调研（Art Design Pro / vue-pure-admin / vben5 / Soybean / shadcn-admin）。**不强制改造存量页面**；新页面或页面大改版时可试点，试点稳定后按「Component Adoption」晋升流程转为强制规范。
+
+**表格工具栏右侧标配**（借鉴 vben / pure-admin）
+
+- 表格卡片右上角可提供图标操作，固定顺序：刷新 → 列显示开关 → 密度切换 → 全屏 **[评审]**
+- 图标按钮用 GlassButton `variant="ghost"` 纯图标形态，与筛选区视觉分层
+- 列显示/密度等状态跟随页面本地状态，不入全局
+- 首批试点：订单发票管理、回款单
+
+**列配置数组驱动**（借鉴 pure-admin / Art Design Pro）
+
+- 新表格页可将列定义为配置数组（`label / prop / minWidth / maxWidth / formatter / slot`），渲染层仍输出标准 `el-table-column`，列宽等既有规则不变 **[评审]**
+- 配置化只是组织方式，不追求「页面无模板代码」：复杂列（操作列、多态状态列）继续用模板插槽（Art Design Pro 自身亦警示过度配置化会隐藏业务流程）
+- 配置数组便于机器检查列宽规则，是未来把列宽门禁做到字段级的前提
+
+**行密度**（借鉴 Soybean / shadcn-admin）
+
+- 当前全站唯一密度（cell padding 10px 12px、控件 36px），不提供用户级密度切换
+- 若试点密度切换，紧凑/默认/宽松三档值必须先落入 `tokens.css`，页面不手写像素值 **[评审]**
+
 ## Dialog & Form Spec
 
 弹窗与表单的用途、尺寸与底部操作区统一约定。现状：`el-dialog` 宽度手写值多达 11 档、`el-form` label 对齐两种并存（145 个表单仅 47 个显式 `label-position`）、底部按钮区类名三套并存，按本节收敛。
@@ -530,6 +552,8 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 | 2026-09-29 | 登录页地图去点阵与经纬网，改渐变光效填色 + 等高线，目标市场海岸线柔光 | 点阵与网格显碎，非目标大陆单调偏暗；目标市场要一眼可辨但不抢标题与登录卡。对比过“光墙”竖向挤出方案，因北欧碎海岸线过密、压标语而弃用 |
 | 2026-07-25 | 整页 Liquid Glass 材质体系（.lg-aurora + .lg-card + --dash-glass-* 令牌） | 工作台首发，配方源自赛事大屏、色调保暖金；含命名/层叠/固定列/性能四条红线（均为当日实翻车教训）；同日推广至发票/备货/售后/物流/设计预约模块 |
 | 2026-09-30 | 组件规范扩容：List Page Spec 增补筛选区/分页/三态三节，新增 Dialog & Form / Status Badge / Feedback / Format / Component Adoption 五个规范节 | 参考 Art Design Pro、vue-pure-admin、Soybean Admin、vben5、shadcn-admin 调研结论（表格之外无统一规范：筛选区 6 种写法并存、dialog 宽度 11 档、裸 ElMessage 497 处、money 格式化 4 份并存）；条目按 [门禁]/[可门禁]/[评审] 三级标注，[可门禁] 项同日扩展进 scripts/audit_frontend_ui.py（债务基线 15 项度量 + 白名单比对，新基线随本行文档一并提交后 check_conventions 门禁生效） |
+| 2026-10-01 | 调研剩余四条目处置：工具栏右侧标配/列配置驱动/行密度写入「扩展增强项」试点规范；操作列溢出维持换行方案，不引入 dropdown 收敛 | 操作列换行已有 table-actions.css + tableActions.test.mjs 回归门禁，dropdown 仅放「更多」低频动作；筛选按钮组保持跟随字段末尾（与存量页面一致），不采用右对齐 |
+| 2026-10-01 | 试点条款落地发票页：TableTools 四图标（刷新/列显示/密度/全屏）+ 列配置数组驱动渲染 + 密度三档入 tokens.css | TableTools 暂居 `views/invoice/components/`（晋升流程：回款单采用后升 `components/`）；列显隐与密度持久化于 localStorage 页面键；density 类挂在 list-table 上由 app.css 消费 token；全屏时取消 max-height |
 
 ## 登录页背景与动效（2026-09-06）
 

@@ -274,6 +274,10 @@
     "message_calls": 6,
     "money_format": 0
   },
+  "frontend/src/utils/money.js": {
+    "message_calls": 0,
+    "money_format": 2
+  },
   "frontend/src/views/aftersales/AfterSalesList.vue": {
     "bad_dialog_width": 0,
     "bad_drawer_size": 0,
@@ -2377,13 +2381,13 @@
   "frontend/src/views/invoice/InvoiceManage.vue": {
     "bad_dialog_width": 0,
     "bad_drawer_size": 1,
-    "bad_pagination_layout": 1,
+    "bad_pagination_layout": 0,
     "bad_value_format": 0,
     "deep_el_override": 0,
     "empty_text_attr": 0,
     "footer_alias": 0,
     "hex_colors": 0,
-    "inline_width": 5,
+    "inline_width": 1,
     "lines_over_500": 0,
     "message_calls": 0,
     "money_format": 0,
@@ -2744,7 +2748,7 @@
   },
   "frontend/src/views/invoice/composables/useInvoiceManagePage.js": {
     "message_calls": 3,
-    "money_format": 1
+    "money_format": 0
   },
   "frontend/src/views/invoice/composables/useLinkedInvoiceSync.js": {
     "message_calls": 8,

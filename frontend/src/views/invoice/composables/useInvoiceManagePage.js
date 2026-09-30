@@ -1,6 +1,7 @@
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
+import { formatMoney } from '@/utils/money'
 import {
   deleteInvoice,
   downloadInvoiceExcel,
@@ -29,6 +30,55 @@ export function useInvoiceManagePage() {
   let summaryRequestId = 0
   const filters = reactive({ keyword: '', order_id: '', status: '', order_type: '' })
   const pagination = reactive({ page: 1, page_size: 20, total: 0 })
+  const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.order_id || filters.status || filters.order_type))
+
+  function resetFilters() {
+    filters.keyword = ''
+    filters.order_id = ''
+    filters.status = ''
+    filters.order_type = ''
+    pagination.page = 1
+    loadInvoices()
+  }
+
+  function handleSizeChange() {
+    pagination.page = 1
+    loadInvoices()
+  }
+
+  // 表格视图状态：列显示 + 行密度，页面本地持久化（List Page Spec 第 9 节试点）
+  const columnDefs = [
+    { key: 'invoice_no', label: '发票号', prop: 'invoice_no', minWidth: 220, maxWidth: 320, className: 'invoice-number-column' },
+    { key: 'customer_name', label: '客户', prop: 'customer_name', minWidth: 180, maxWidth: 260, tooltip: true },
+    { key: 'order_type', label: '类型', minWidth: 76, maxWidth: 96 },
+    { key: 'invoice_date', label: '日期', prop: 'invoice_date', minWidth: 116, maxWidth: 150 },
+    { key: 'item_count', label: '明细', prop: 'item_count', minWidth: 80, maxWidth: 120, align: 'right' },
+    { key: 'total_amount', label: '金额（USD）', minWidth: 132, maxWidth: 160, align: 'right' },
+    { key: 'status', label: '状态', minWidth: 84, maxWidth: 110 },
+    { key: 'sync_status', label: '同步', minWidth: 84, maxWidth: 110 },
+    { key: 'created_by', label: '创建人', minWidth: 84, maxWidth: 120, tooltip: true },
+    { key: 'created_at', label: '创建时间', minWidth: 130, maxWidth: 160, tooltip: true },
+  ]
+  const TABLE_VIEW_KEY = 'invoice-manage-table-view'
+  const density = ref('default')
+  const visibleKeys = ref(columnDefs.map(column => column.key))
+  try {
+    const saved = JSON.parse(localStorage.getItem(TABLE_VIEW_KEY) || 'null')
+    if (Array.isArray(saved?.visibleKeys)) {
+      const known = new Set(columnDefs.map(column => column.key))
+      const restored = saved.visibleKeys.filter(key => known.has(key))
+      if (restored.length) visibleKeys.value = restored
+    }
+    if (['compact', 'default', 'comfort'].includes(saved?.density)) density.value = saved.density
+  } catch { /* 本地偏好损坏时忽略，使用默认视图 */ }
+
+  watch([density, visibleKeys], () => {
+    try {
+      localStorage.setItem(TABLE_VIEW_KEY, JSON.stringify({ density: density.value, visibleKeys: visibleKeys.value }))
+    } catch { /* 隐私模式等写入失败时忽略 */ }
+  }, { deep: true })
+
+  const visibleColumns = computed(() => columnDefs.filter(column => visibleKeys.value.includes(column.key)))
   const syncLogsVisible = ref(false)
   const syncLogsLoading = ref(false)
   const syncLogs = ref([])
@@ -150,12 +200,30 @@ export function useInvoiceManagePage() {
   function bindIssueHandler(handler) { showIssues = handler }
   const actionText = action => ({ create: '首次推送', update: '编辑推送', retry: '重试' })[action] || action
   const formatDateTime = formatInvoiceDateTime
-  const money = value => Number(value || 0).toFixed(2)
-  const money4 = value => Number(value || 0).toFixed(4)
-  const statusText = status => ({ cancel_pending: '取消处理中', cancelled: '已取消', draft: '草稿', ready: '可同步', synced: '已同步', sync_failed: '同步失败', sync_uncertain: '同步结果待核对' })[status] || status
-  const statusType = status => ({ draft: 'info', ready: 'success', synced: 'success', sync_failed: 'danger', sync_uncertain: 'warning' })[status] || 'info'
-  const syncText = status => ({ not_synced: '未同步', synced: '已同步', sync_failed: '失败', sync_uncertain: '待核对' })[status] || status
-  const syncType = status => ({ not_synced: 'info', synced: 'success', sync_failed: 'danger', sync_uncertain: 'warning' })[status] || 'info'
+  const money = value => formatMoney(value)
+  const money4 = value => formatMoney(value, 4)
+  // 状态字典：枚举 → { label, tone } 单点维护（DESIGN.md「Status Badge & 状态字典」）
+  const STATUS_DICT = {
+    draft: { label: '草稿', tone: 'info' },
+    cancel_pending: { label: '取消处理中', tone: 'info' },
+    cancelled: { label: '已取消', tone: 'info' },
+    ready: { label: '可同步', tone: 'success' },
+    synced: { label: '已同步', tone: 'success' },
+    sync_failed: { label: '同步失败', tone: 'danger' },
+    sync_uncertain: { label: '同步结果待核对', tone: 'warning' },
+  }
+  const SYNC_DICT = {
+    not_synced: { label: '未同步', tone: 'info' },
+    synced: { label: '已同步', tone: 'success' },
+    sync_failed: { label: '失败', tone: 'danger' },
+    sync_uncertain: { label: '待核对', tone: 'warning' },
+  }
+  const statusOptions = Object.entries(STATUS_DICT).map(([value, meta]) => ({ value, label: meta.label }))
+  const statusText = status => STATUS_DICT[status]?.label || status
+  const statusType = status => STATUS_DICT[status]?.tone || 'info'
+  const syncText = status => SYNC_DICT[status]?.label || status
+  const syncType = status => SYNC_DICT[status]?.tone || 'info'
+  const orderTypeTone = type => (type === 'production' ? 'warning' : 'info')
 
   onMounted(loadInvoices)
   return {
@@ -164,5 +232,7 @@ export function useInvoiceManagePage() {
     summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
     syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
     isInvoiceSyncing, resolveUncertain, validateAndSync,
+    hasActiveFilters, handleSizeChange, orderTypeTone, resetFilters, statusOptions,
+    columnDefs, density, visibleColumns, visibleKeys,
   }
 }

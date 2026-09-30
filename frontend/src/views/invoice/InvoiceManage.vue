@@ -45,76 +45,66 @@
       @range-change="loadSummary"
     />
 
-    <section class="table-card invoice-panel">
+    <section ref="panelRef" class="table-card invoice-panel">
       <div class="toolbar">
         <el-input
           v-model="filters.keyword"
           clearable
           placeholder="搜索发票号/客户"
-          style="width: 260px"
+          class="filter-w-lg"
           @keyup.enter="loadInvoices"
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-input v-model="filters.order_id" clearable placeholder="订单 ID" style="width: 175px" @keyup.enter="loadInvoices" />
-        <el-select v-model="filters.order_type" clearable placeholder="订单类型" style="width: 130px">
+        <el-input v-model="filters.order_id" clearable placeholder="订单 ID" class="filter-w-md" @keyup.enter="loadInvoices" />
+        <el-select v-model="filters.order_type" clearable placeholder="订单类型" class="filter-w-sm">
           <el-option label="库存单" value="stock" />
           <el-option label="生产单" value="production" />
           <el-option label="预售单" value="presale" />
         </el-select>
-        <el-select v-model="filters.status" clearable placeholder="状态" style="width: 150px">
-          <el-option label="草稿" value="draft" />
-          <el-option label="取消处理中" value="cancel_pending" />
-          <el-option label="已取消" value="cancelled" />
-          <el-option label="可同步" value="ready" />
-          <el-option label="已同步" value="synced" />
-          <el-option label="同步失败" value="sync_failed" />
-          <el-option label="同步结果待核对" value="sync_uncertain" />
+        <el-select v-model="filters.status" clearable placeholder="状态" class="filter-w-sm">
+          <el-option v-for="option in statusOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
-        <el-button @click="loadInvoices">
-          <el-icon><Search /></el-icon>
-          筛选
-        </el-button>
+        <GlassButton variant="primary" :left-icon="Search" @click="loadInvoices">查询</GlassButton>
+        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          class="toolbar-tools"
+          @refresh="loadInvoices"
+          @fullscreen="toggleFullscreen"
+        />
       </div>
 
-      <el-table v-loading="loading" :data="invoices" border class="list-table invoice-table">
+      <el-table v-loading="loading" :data="invoices" border class="list-table invoice-table" :class="`density-${density}`" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
-          <div class="empty-state">
-            <strong>暂无发票</strong>
-            <span>新建一张发票后会显示在这里。</span>
-          </div>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的发票' : '暂无发票，新建一张发票后会显示在这里'">
+            <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
         </template>
-        <el-table-column prop="invoice_no" label="发票号" min-width="220" class-name="invoice-number-column">
-          <template #default="{ row }"><span class="invoice-number">{{ row.invoice_no }}</span></template>
-        </el-table-column>
-        <el-table-column prop="customer_name" label="客户" min-width="180" max-width="260" show-overflow-tooltip />
-        <el-table-column label="类型" min-width="76" max-width="96">
+        <el-table-column
+          v-for="column in visibleColumns"
+          :key="column.key"
+          :prop="column.prop"
+          :label="column.label"
+          :min-width="column.minWidth"
+          :max-width="column.maxWidth"
+          :align="column.align"
+          :class-name="column.className"
+          :show-overflow-tooltip="Boolean(column.tooltip)"
+        >
           <template #default="{ row }">
-            <el-tag :type="row.order_type === 'production' ? 'warning' : 'info'" effect="plain">
-              {{ orderTypeLabel(row.order_type) }}
-            </el-tag>
+            <span v-if="column.key === 'invoice_no'" class="invoice-number">{{ row.invoice_no }}</span>
+            <el-tag v-else-if="column.key === 'order_type'" size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</el-tag>
+            <template v-else-if="column.key === 'total_amount'">{{ row.currency === 'USD' ? '' : `${row.currency} ` }}{{ money(row.total_amount) }}</template>
+            <el-tag v-else-if="column.key === 'status'" size="small" :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
+            <el-tag v-else-if="column.key === 'sync_status'" size="small" :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</el-tag>
+            <template v-else-if="column.key === 'created_by'">{{ row.created_by_name || '-' }}</template>
+            <template v-else-if="column.key === 'created_at'">{{ formatDateTime(row.created_at) }}</template>
+            <template v-else>{{ row[column.prop] }}</template>
           </template>
-        </el-table-column>
-        <el-table-column prop="invoice_date" label="日期" min-width="116" />
-        <el-table-column prop="item_count" label="明细" min-width="80" align="right" />
-        <el-table-column label="金额（USD）" min-width="132" max-width="160" align="right">
-          <template #default="{ row }">{{ row.currency === 'USD' ? '' : `${row.currency} ` }}{{ money(row.total_amount) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" min-width="84" max-width="110">
-          <template #default="{ row }">
-            <el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="同步" min-width="84" max-width="110">
-          <template #default="{ row }">
-            <el-tag :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="创建人" min-width="84" max-width="120" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.created_by_name || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="创建时间" min-width="130" max-width="160" show-overflow-tooltip>
-          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="300" max-width="360" fixed="right">
           <template #default="{ row }">
@@ -174,19 +164,18 @@
           </template>
         </el-table-column>
       </el-table>
-    </section>
 
-    <div class="pagination-bar">
       <el-pagination
         v-model:current-page="pagination.page"
         v-model:page-size="pagination.page_size"
         :total="pagination.total"
         :page-sizes="[20, 50, 100]"
-        layout="total,sizes,prev,pager,next,jumper"
-        @size-change="loadInvoices"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @size-change="handleSizeChange"
         @current-change="loadInvoices"
       />
-    </div>
+    </section>
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%"
                body-class="invoice-modern-drawer-body" footer-class="invoice-modern-drawer-footer">
@@ -396,8 +385,8 @@ import ShipmentSettlementDialog from './components/ShipmentSettlementDialog.vue'
 import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShipments'
 import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
-import { computed, nextTick, ref } from 'vue'
-import { ArrowDown, Box, Calendar, Delete, Document, Download, Edit, Refresh, Search, Tools } from '@element-plus/icons-vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { ArrowDown, Box, Calendar, Delete, Document, Download, Edit, Refresh, RefreshLeft, Search, Tools } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { useInvoiceEditor } from './composables/useInvoiceEditor'
 import { useInvoiceManagePage } from './composables/useInvoiceManagePage'
@@ -415,6 +404,7 @@ import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
 import InvoiceOverview from './components/InvoiceOverview.vue'
 import LinkedSyncResult from './components/LinkedSyncResult.vue'
 import InvoiceHairTable from './components/InvoiceHairTable.vue'
+import TableTools from './components/TableTools.vue'
 
 const { shipmentInvoice, shipmentCapabilities } = useInvoiceShipments()
 const page = useInvoiceManagePage()
@@ -424,7 +414,21 @@ const {
   summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
   syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
   isInvoiceSyncing, resolveUncertain, validateAndSync,
+  hasActiveFilters, handleSizeChange, orderTypeTone, resetFilters, statusOptions,
+  columnDefs, density, visibleColumns, visibleKeys,
 } = page
+
+const panelRef = ref(null)
+const isFullscreen = ref(false)
+function onFullscreenChange() {
+  isFullscreen.value = Boolean(document.fullscreenElement)
+}
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen?.()
+  else panelRef.value?.requestFullscreen?.()
+}
+onMounted(() => document.addEventListener('fullscreenchange', onFullscreenChange))
+onUnmounted(() => document.removeEventListener('fullscreenchange', onFullscreenChange))
 const editor = useInvoiceEditor({ onSaved: loadInvoices })
 const {
   drawerVisible, legacyVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,

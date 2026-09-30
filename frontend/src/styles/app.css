@@ -437,6 +437,15 @@ html, body, #app {
   white-space: nowrap !important;
 }
 
+/* 密度三档（List Page Spec 第 9 节试点）：默认密度即上方 10px 12px；compact/comfort 类只改纵向 padding */
+.list-table.density-compact .el-table__body td.el-table__cell {
+  padding: var(--table-cell-padding-compact) var(--table-cell-padding-x);
+}
+
+.list-table.density-comfort .el-table__body td.el-table__cell {
+  padding: var(--table-cell-padding-comfort) var(--table-cell-padding-x);
+}
+
 .list-table .el-table__body tr:last-child td.el-table__cell {
   border-bottom: none !important;
 }
