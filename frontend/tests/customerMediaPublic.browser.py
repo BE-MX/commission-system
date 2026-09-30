@@ -34,9 +34,11 @@ assets = [
      'tags': [{'dimension_id': 1, 'dimension_label': 'Product type', 'tag_value_id': 101, 'value': 'Wig'},
               {'dimension_id': 2, 'dimension_label': 'Purpose', 'tag_value_id': 202, 'value': 'Detail'},
               {'dimension_id': 4, 'dimension_label': 'Textures type', 'tag_value_id': 402, 'value': 'Wavy'}]},
+    {'id': 17, 'file_name': 'cap.png', 'file_size': 1048576, 'media_type': 'image', 'content_url': '/mock/cap.png',
+     'tags': [{'dimension_id': 1, 'dimension_label': 'Product type', 'tag_value_id': 102, 'value': 'Cap'}]},
 ]
 tag_groups = [
-    {'dimension_id': 1, 'name': 'customer_product_type', 'label': 'Product type', 'values': [{'id': 101, 'value': 'Wig', 'count': 6}]},
+    {'dimension_id': 1, 'name': 'customer_product_type', 'label': 'Product type', 'values': [{'id': 101, 'value': 'Wig', 'count': 6}, {'id': 102, 'value': 'Cap', 'count': 1}]},
     {'dimension_id': 2, 'name': 'purpose', 'label': 'Purpose', 'values': [{'id': 201, 'value': 'Front', 'count': 1}, {'id': 202, 'value': 'Detail', 'count': 5}]},
     {'dimension_id': 3, 'name': 'color_names', 'label': 'Color names', 'values': [{'id': 301, 'value': 'Ash', 'count': 4}]},
     {'dimension_id': 4, 'name': 'textures_type', 'label': 'Textures type', 'values': [{'id': 401, 'value': 'Straight', 'count': 2}, {'id': 402, 'value': 'Wavy', 'count': 2}]},
@@ -78,16 +80,24 @@ with sync_playwright() as p:
     page.route('**/mock/*.png', lambda route: route.fulfill(body=PNG, content_type='image/png'))
     page.goto('http://127.0.0.1:3077/customer-media/')
     page.get_by_role('button', name='Enter Library').click()
-    expect(page.locator('.portal-dimension h3')).to_have_text(['Wig 6 / 6 files'])
+    expect(page.locator('.portal-dimension h3')).to_have_text(['Wig 6 / 6 files', 'Cap 1 / 1 files'])
     expect(page.locator('.group-filter-row')).to_have_count(3)
-    expect(page.locator('.portal-tag-group')).to_have_count(5)
+    expect(page.locator('.portal-tag-group')).to_have_count(6)
     expect(page.locator('.portal-tag-group h4')).to_have_count(4)
     assert_row_heading_hierarchy(page)
     expect(page.locator('.portal-tag-group').first.locator('.asset-card')).to_have_count(2)
     expect(page.locator('.portal-tag-group').first.locator('.asset-footer strong')).to_have_text(['front.png', 'side.png'])
     expect(page.locator('.portal-tag-group').nth(2).locator('h4')).to_have_count(0)
-    expect(page.locator('.asset-card')).to_have_count(6)
+    expect(page.locator('.asset-card')).to_have_count(7)
     assert '未设置' not in ' '.join(page.locator('.portal-tag-group h4').all_text_contents())
+    page.locator('#product-filters [data-product="102"]').click()
+    expect(page.locator('.portal-dimension h3')).to_have_text(['Cap 1 / 1 files'])
+    expect(page.locator('.asset-footer strong')).to_have_text(['cap.png'])
+    page.locator('#product-filters [data-product="101"]').click()
+    expect(page.locator('.asset-card')).to_have_count(7)
+    page.locator('#product-filters [data-product="all"]').click()
+    expect(page.locator('.asset-card')).to_have_count(7)
+    page.locator('#product-filters [data-product="101"]').click()
     page.locator('[data-group-tag="201"]').click()
     expect(page.locator('.asset-card')).to_have_count(1)
     expect(page.locator('.asset-footer strong')).to_have_text(['front.png'])
@@ -116,12 +126,14 @@ with sync_playwright() as p:
             'dimensions': [{'id': group['dimension_id'], 'name': group['name'], 'label': group['label']}
                            for group in tag_groups]})
     preview = preview_page.frame_locator('iframe')
-    expect(preview.locator('.asset-card')).to_have_count(6)
-    expect(preview.locator('.portal-tag-group')).to_have_count(5)
+    expect(preview.locator('.asset-card')).to_have_count(7)
+    expect(preview.locator('.portal-tag-group')).to_have_count(6)
     expect(preview.locator('.portal-tag-group h4')).to_have_count(4)
     expect(preview.locator('#portal-customer')).to_have_text('Test Client')
     signed_download = preview.locator('.asset-footer a').first.get_attribute('href')
     assert signed_download.count('?') == 1 and 'token=abc' in signed_download and 'download=true' in signed_download
+    preview.locator('#product-filters [data-product="102"]').click()
+    expect(preview.locator('.asset-footer strong')).to_have_text(['cap.png'])
     assert preview_calls == [], preview_calls
     assert not errors, errors
 
@@ -129,25 +141,38 @@ with sync_playwright() as p:
     internal_page.on('pageerror', lambda error: errors.append(str(error)))
     internal_page.add_init_script('window.customerMediaQaData = ' + json.dumps({
         'customer': {'customer_id': 'C001', 'customer_name': 'Test Client', 'status': 'ready',
-                     'asset_count': 6, 'image_count': 6, 'video_count': 0, 'published_batch_count': 1},
+                     'asset_count': 7, 'image_count': 7, 'video_count': 0, 'published_batch_count': 1},
         'batches': [{**base, 'assets': assets}],
         'tagDimensions': [{'id': group['dimension_id'], 'name': group['name'], 'label': group['label']}
                           for group in tag_groups],
     }))
     internal_page.route('**/mock/*.png', lambda route: route.fulfill(body=PNG, content_type='image/png'))
     internal_page.goto('http://127.0.0.1:3077/tests/fixtures/customer-media-client-library-qa.html')
-    expect(internal_page.locator('.portal-tag-group')).to_have_count(5)
+    expect(internal_page.locator('.portal-tag-group')).to_have_count(6)
     expect(internal_page.locator('.portal-tag-group h4')).to_have_count(4)
     assert_row_heading_hierarchy(internal_page)
     expect(internal_page.locator('.portal-tag-group').first.locator('.asset-card')).to_have_count(2)
     expect(internal_page.locator('.portal-tag-group').first.locator('.asset-footer strong')).to_have_text(['front.png', 'side.png'])
     expect(internal_page.locator('.portal-tag-group').nth(2).locator('h4')).to_have_count(0)
-    expect(internal_page.locator('.asset-card')).to_have_count(6)
+    expect(internal_page.locator('.asset-card')).to_have_count(7)
+    internal_page.get_by_role('group', name='按Product type筛选').get_by_role('button', name='Cap').click()
+    expect(internal_page.locator('.asset-footer strong')).to_have_text(['cap.png'])
+    internal_page.get_by_role('group', name='按Product type筛选').get_by_role('button', name='All').click()
+    expect(internal_page.locator('.asset-card')).to_have_count(7)
+    internal_page.get_by_role('group', name='按Product type筛选').get_by_role('button', name='Wig').click()
     internal_page.get_by_role('button', name='Front', exact=True).click()
     expect(internal_page.locator('.portal-tag-group')).to_have_count(1)
     expect(internal_page.locator('.asset-footer strong')).to_have_text(['front.png'])
     assert not errors, errors
-    print(json.dumps({'passed': ['product grouping', 'color and texture rows in both client views',
+    assets[0]['tags'].append({'dimension_id': 1, 'dimension_label': 'Product type',
+                              'tag_value_id': 102, 'value': 'Cap'})
+    page.reload()
+    page.get_by_role('button', name='Enter Library').click()
+    page.locator('#product-filters [data-product="101"]').click()
+    expect(page.locator('.portal-dimension h3')).to_have_text(['Wig 6 / 6 files'])
+    expect(page.locator('.asset-card')).to_have_count(6)
+
+    print(json.dumps({'passed': ['product grouping', 'top product type filters in signed-in, internal and draft views', 'color and texture rows in both client views',
                                  'group tag filtering', '200px thumbnail and filename',
                                  'same-origin draft preview without portal API'], 'page_errors': errors}))
     browser.close()
