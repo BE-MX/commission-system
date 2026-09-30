@@ -1,0 +1,361 @@
+/* ===================================================
+   提成管理域共享样式（批次/明细/我的提成/我的提成明细）
+   用法：<style scoped src="./commission.css"></style>
+   页面根元素统一挂 .commission-page，内容块挂 .commission-lift。
+
+   颜色集中在 .commission-page 的 --cm-* 变量，.vue 内不写裸 hex；
+   视觉基元（.lg-aurora/.lg-card/玻璃 token）来自 styles/liquid-glass.css
+   与 styles/tokens.css，本文件只做提成域的组合与语义映射。
+
+   指标卡/月度分组行渲染在子组件（CommissionMetricCards /
+   CommissionDetailTable）内部，统一经 .commission-page :deep() 覆盖。
+   =================================================== */
+
+.commission-page {
+  --cm-ease-out: var(--ease-out-strong);
+
+  /* 指标卡五档语义色：图标（淡）/标签（中）/数值（深） */
+  --cm-payment-icon: #2563eb;
+  --cm-payment-label: #3b82f6;
+  --cm-payment-value: #1d4ed8;
+  --cm-sales-icon: #16a34a;
+  --cm-sales-label: #22c55e;
+  --cm-sales-value: #15803d;
+  --cm-supervisor-icon: #ea580c;
+  --cm-supervisor-label: #f97316;
+  --cm-supervisor-value: #c2410c;
+  --cm-second-icon: #7c3aed;
+  --cm-second-label: #8b5cf6;
+  --cm-second-value: #6d28d9;
+  --cm-total-icon: #0891b2;
+  --cm-total-label: #06b6d4;
+  --cm-total-value: #0e7490;
+
+  /* 选中行（批次/月度汇总共用） */
+  --cm-selected-bg: #f0f9ff;
+  --cm-selected-edge: #bae6fd;
+  --cm-selected-bar: #0ea5e9;
+
+  /* 月度分组行（明细树表） */
+  --cm-month-ink: #1f2937;
+  --cm-month-row-a: #eef6ff;
+  --cm-month-row-b: #f0fdf4;
+  --cm-month-hover: #fff7ed;
+
+  /* 玻璃上的不透明磨砂（固定列/吸顶 tabs 头共用，防透底重影） */
+  --cm-frost: rgba(249, 244, 234, 0.97);
+  --cm-frost-header: rgba(246, 239, 226, 0.98);
+  --cm-frost-hover: rgba(245, 236, 220, 0.98);
+
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.commission-page .lg-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块（.commission-lift），不能用
+   > :not(.lg-aurora) 通配——本域页面有就地渲染的 el-dialog，
+   通配会压掉 .el-overlay 的 position: fixed（2026-07-25 实翻车） */
+.commission-page > .commission-lift {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── 玻璃面板：筛选条/表格/分区共用同一款渐变玻璃 ── */
+.commission-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.commission-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.commission-panel :deep(.el-table-fixed-column--right) {
+  background-color: var(--cm-frost);
+}
+.commission-panel :deep(th.el-table-fixed-column--right) {
+  background-color: var(--cm-frost-header);
+}
+.commission-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: var(--cm-frost-hover);
+}
+
+/* ── 筛选条 ── */
+.commission-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+}
+
+.commission-filter-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── 页头 ── */
+.commission-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.commission-page-header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.commission-page-header p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.commission-page-header__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.commission-page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── 指标卡（CommissionMetricCards 渲染在子组件内，经 :deep 覆盖） ── */
+.commission-page :deep(.commission-metrics) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.commission-page :deep(.commission-metric) {
+  position: relative;
+  min-height: 82px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+}
+
+.commission-page :deep(.commission-metric__icon) {
+  position: absolute;
+  right: 14px;
+  bottom: 8px;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 60px;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.14;
+  pointer-events: none;
+}
+
+.commission-page :deep(.commission-metric__icon .el-icon) {
+  width: 1em;
+  height: 1em;
+  font-size: 60px;
+}
+
+.commission-page :deep(.commission-metric span) {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+}
+
+.commission-page :deep(.commission-metric strong) {
+  position: relative;
+  z-index: 1;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.commission-page :deep(.commission-metric--payment .commission-metric__icon) { color: var(--cm-payment-icon); }
+.commission-page :deep(.commission-metric--payment span) { color: var(--cm-payment-label); }
+.commission-page :deep(.commission-metric--payment strong) { color: var(--cm-payment-value); }
+
+.commission-page :deep(.commission-metric--sales .commission-metric__icon) { color: var(--cm-sales-icon); }
+.commission-page :deep(.commission-metric--sales span) { color: var(--cm-sales-label); }
+.commission-page :deep(.commission-metric--sales strong) { color: var(--cm-sales-value); }
+
+.commission-page :deep(.commission-metric--supervisor .commission-metric__icon) { color: var(--cm-supervisor-icon); }
+.commission-page :deep(.commission-metric--supervisor span) { color: var(--cm-supervisor-label); }
+.commission-page :deep(.commission-metric--supervisor strong) { color: var(--cm-supervisor-value); }
+
+.commission-page :deep(.commission-metric--second .commission-metric__icon) { color: var(--cm-second-icon); }
+.commission-page :deep(.commission-metric--second span) { color: var(--cm-second-label); }
+.commission-page :deep(.commission-metric--second strong) { color: var(--cm-second-value); }
+
+.commission-page :deep(.commission-metric--total .commission-metric__icon) { color: var(--cm-total-icon); }
+.commission-page :deep(.commission-metric--total span) { color: var(--cm-total-label); }
+.commission-page :deep(.commission-metric--total strong) { color: var(--cm-total-value); }
+
+/* ── 选中行（批次列表/月度汇总共用） ── */
+.commission-page :deep(.commission-selected-row td) {
+  background: var(--cm-selected-bg) !important;
+  box-shadow: inset 0 1px 0 var(--cm-selected-edge), inset 0 -1px 0 var(--cm-selected-edge);
+}
+
+.commission-page :deep(.commission-selected-row td:first-child) {
+  box-shadow: inset 3px 0 0 var(--cm-selected-bar), inset 0 1px 0 var(--cm-selected-edge), inset 0 -1px 0 var(--cm-selected-edge);
+}
+
+/* 只有绑定了行点击的表格（挂 .cm-row-clickable）行才用手型光标 */
+.commission-page :deep(.cm-row-clickable .el-table__row) {
+  cursor: pointer;
+}
+
+/* ── 明细树表（CommissionDetailTable 渲染在子组件内，经 :deep 覆盖） ── */
+.commission-page :deep(.cm-detail-table .el-table__header th.el-table__cell) {
+  padding: 8px 6px;
+  white-space: normal !important;
+}
+
+.commission-page :deep(.cm-detail-table .el-table__header th.el-table__cell .cell) {
+  white-space: normal !important;
+  word-break: keep-all !important;
+  line-height: 1.25;
+  padding: 0 4px;
+}
+
+.commission-page :deep(.cm-detail-table .el-table__body td.el-table__cell) {
+  padding: 8px 6px;
+  white-space: nowrap !important;
+}
+
+.commission-page :deep(.cm-detail-table .el-table__body td.el-table__cell .cell) {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+}
+
+.commission-page :deep(.cm-month-group-cell) {
+  color: var(--cm-month-ink);
+  font-weight: 700;
+}
+
+.commission-page :deep(.cm-month-group-row-a > td.cm-month-group-cell) {
+  background: var(--cm-month-row-a) !important;
+}
+
+.commission-page :deep(.cm-month-group-row-b > td.cm-month-group-cell) {
+  background: var(--cm-month-row-b) !important;
+}
+
+.commission-page :deep(.cm-month-group-row > td.cm-month-group-cell .cell) {
+  font-weight: 700;
+}
+
+.commission-page :deep(.cm-month-group-row:hover > td.cm-month-group-cell) {
+  background: var(--cm-month-hover) !important;
+}
+
+/* 吸顶 tabs 头：与固定列同款磨砂暖白，玻璃面板上吸顶时不透底 */
+.commission-page :deep(.cm-sticky-tabs > .el-tabs__header) {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  margin: 0;
+  padding-top: 14px;
+  background: var(--cm-frost);
+}
+
+/* ── 分页 ── */
+.commission-pagination {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── 入场动效（Emil 强化曲线；只过渡具体属性） ── */
+.commission-page .cm-enter,
+.commission-page .cm-enter-1,
+.commission-page .cm-enter-2,
+.commission-page .cm-enter-3,
+.commission-page .cm-enter-4 {
+  animation: commission-surface-in 220ms var(--cm-ease-out) both;
+}
+.commission-page .cm-enter-1 { animation-delay: 20ms; }
+.commission-page .cm-enter-2 { animation-delay: 40ms; }
+.commission-page .cm-enter-3 { animation-delay: 80ms; }
+.commission-page .cm-enter-4 { animation-delay: 120ms; }
+
+@keyframes commission-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.commission-page :deep(.el-table .el-table__body td.el-table__cell) {
+  transition: background-color 160ms ease;
+}
+
+@media (max-width: 960px) {
+  .commission-filter-bar {
+    align-items: stretch;
+  }
+
+  .commission-filter-bar__actions,
+  .commission-filter-bar__actions .el-input,
+  .commission-filter-bar__actions .el-select,
+  .commission-filter-bar__actions .el-date-editor {
+    width: 100%;
+  }
+
+  .commission-page-header {
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .commission-page .cm-enter,
+  .commission-page .cm-enter-1,
+  .commission-page .cm-enter-2,
+  .commission-page .cm-enter-3,
+  .commission-page .cm-enter-4 {
+    animation: none;
+  }
+
+  .commission-page :deep(.el-table .el-table__body td.el-table__cell) {
+    transition-duration: 0.01ms;
+  }
+}

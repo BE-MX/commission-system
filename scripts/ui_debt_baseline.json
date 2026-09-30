@@ -79,26 +79,6 @@
     "lines_over_500": 0,
     "transition_all": 0
   },
-  "frontend/src/views/commission/CommissionBatch.vue": {
-    "hex_colors": 1,
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/commission/CommissionDetail.vue": {
-    "hex_colors": 3,
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/commission/SalesCommission.vue": {
-    "hex_colors": 23,
-    "lines_over_500": 108,
-    "transition_all": 0
-  },
-  "frontend/src/views/commission/SalesCommissionDetail.vue": {
-    "hex_colors": 28,
-    "lines_over_500": 258,
-    "transition_all": 0
-  },
   "frontend/src/views/customer-image/CustomerImagePortal.vue": {
     "hex_colors": 5,
     "lines_over_500": 0,
