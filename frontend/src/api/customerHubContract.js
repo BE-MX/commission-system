@@ -39,6 +39,8 @@ export function createCustomerHubApi(client) {
     createEvaluationRun: (payload, idempotencyKey) => client.post('/evaluation-runs', payload, withIdempotency({}, idempotencyKey)),
     createCustomerAction: (customerId, payload, key) => client.post(`/customers/${customerId}/actions`, payload, withIdempotency({}, key)),
     // PCW-02 档案修订与建议
+    getCustomerEnrichment: customerId => client.get(`/customers/${customerId}/enrichment`, { showLoading: false }),
+    requestCustomerEnrichment: customerId => client.post(`/customers/${customerId}/enrichment`, {}, { showLoading: false }),
     listProfileRevisions: (customerId, params) => client.get(`/customers/${customerId}/profile-revisions`, { params, showLoading: false }),
     createProfileRevision: (customerId, payload, key) => client.post(`/customers/${customerId}/profile-revisions`, payload, withIdempotency({}, key)),
     listProfileSuggestions: (customerId, params) => client.get(`/customers/${customerId}/profile-suggestions`, { params, showLoading: false }),

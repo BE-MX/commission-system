@@ -11,10 +11,11 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Callable, Mapping, Protocol
 
-from sqlalchemy import func
+from sqlalchemy import String, cast, func
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
+from app.agent_runtime.models import AgentRun
 from app.customer.models import (
     CustomerAccount,
     CustomerAgentContext,
@@ -33,6 +34,7 @@ from app.customer.models import (
     CustomerOpportunity,
     CustomerAction,
     CustomerProfileVersion,
+    CustomerResearchTask,
     CustomerRelationship,
     CustomerSourceRecord,
     CustomerTargetMatch,
@@ -375,7 +377,18 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
         db, CustomerFact, "fact", customer.id,
     ).all()
     fact_by_id = {row.id: row for row in fact_rows}
+    # Enrichment quality review never authorizes replacing the customer's existing profile.
+    # Join through historical Runs: a task's current agent_run_id changes on retry.
+    review_only_runs = {row[0] for row in db.query(AgentRun.id).join(
+        CustomerResearchTask, AgentRun.business_ref_id == cast(CustomerResearchTask.id, String),
+    ).filter(
+        AgentRun.id.in_({row.agent_run_id for row in fact_rows if row.agent_run_id is not None}),
+        AgentRun.business_ref_type == "research_task",
+        CustomerResearchTask.research_policy_version == "private-enrichment-v1",
+    ).all()}
     for row in fact_rows:
+        if row.agent_run_id in review_only_runs:
+            continue
         fact_section = _section_for_fact_key(row.fact_key)
         if row.verification_status in _TERMINAL_FACT_STATUSES:
             track_lineage(fact_section, row.effective_to, row.reviewed_at)

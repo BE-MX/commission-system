@@ -10,6 +10,7 @@ export const {
   listOpportunities, updateOpportunity, listActions, updateAction,
   getWorkbenchOverview, getEvaluationRun, createEvaluationRun, createCustomerAction,
   listProfileRevisions, createProfileRevision, listProfileSuggestions, decideProfileSuggestion,
+  getCustomerEnrichment, requestCustomerEnrichment,
   listCustomerConversations, listConversationMessages, listPendingBindings, createConversationBinding,
   createAnalysisJob, getAnalysisJob,
   listCustomerOrders, getCustomerOrder, getOrderAnalytics, getReorderWindows,

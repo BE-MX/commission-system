@@ -10,6 +10,9 @@
   cd backend
   python -m scripts.private_customer_research create --owners zhangsan,lisi [--operator admin] [--limit 50] [--dry-run] [--run-tag TAG]
   python -m scripts.private_customer_research report [--run-tag TAG] [--csv out.csv]
+  python -m scripts.private_customer_research create --all-private --enrichment --run-tag TAG --dry-run
+
+私海补全批次须在支持 private-enrichment-v1 候选隔离的后端发布后提交。
 """
 
 import argparse
@@ -51,23 +54,25 @@ CSV_COLUMNS = [
 def cmd_create(args) -> None:
     db = SessionLocal()
     try:
-        owners = private_research_service.resolve_owners(db, args.owners.split(","))
+        owners = None if args.all_private else private_research_service.resolve_owners(db, args.owners.split(","))
         operator_id = None
         if args.operator:
             operator_id = next(iter(private_research_service.resolve_owners(db, [args.operator])))
         run_tag = args.run_tag or f"private-research-{beijing_now():%Y%m%d-%H%M%S}"
         summary = private_research_service.create_private_research_tasks(
             db,
-            owner_ids=list(owners),
+            owner_ids=list(owners) if owners is not None else None,
             run_tag=run_tag,
             operator_id=operator_id,
             limit=args.limit,
             commit=not args.dry_run,
+            enrichment=args.enrichment,
         )
-        summary["owners"] = {str(uid): user.real_name for uid, user in owners.items()}
+        summary["owners"] = {str(uid): user.real_name for uid, user in owners.items()} if owners is not None else "all_private"
         summary["dry_run"] = args.dry_run
         print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
         if args.dry_run:
+            db.rollback()
             print("dry-run：以上任务未写入数据库。", file=sys.stderr)
     finally:
         db.close()
@@ -96,7 +101,10 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     create = subparsers.add_parser("create", help="为指定业务员的私海客户创建背调任务")
-    create.add_argument("--owners", required=True, help="业务员登录用户名或用户ID，逗号分隔")
+    scope = create.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--owners", help="业务员登录用户名或用户ID，逗号分隔")
+    scope.add_argument("--all-private", action="store_true", help="所有有有效主负责人的私海客户")
+    create.add_argument("--enrichment", action="store_true", help="补全官网、公司业务、公开联系方式和主营产品，保留已有内容并回写待审核")
     create.add_argument("--operator", default=None, help="操作人用户名或ID（写入任务 created_by）")
     create.add_argument("--limit", type=int, default=None, help="最多创建的客户数（按有效订单金额降序截取）")
     create.add_argument("--run-tag", default=None, help="批次标签；缺省按当前时间生成，同批任务据此追踪")

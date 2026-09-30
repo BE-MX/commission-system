@@ -7,7 +7,7 @@ from app.auth.dependencies import get_current_user, require_any_permission, requ
 from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.core.time import beijing_now
-from app.customer import evidence_service, proposal_router, pcw_maintenance_router, pcw_router, qualification_service, query_service, workbench_service
+from app.customer import enrichment_router, evidence_service, proposal_router, pcw_maintenance_router, pcw_router, qualification_service, query_service, workbench_service
 from app.customer.access_service import CustomerAccessDenied, require_customer_access
 from app.customer.logical_customer_service import logical_owner_expression
 from app.customer.models import CustomerAction, CustomerOpportunity, CustomerResearchTask
@@ -25,6 +25,7 @@ from app.sales_automation.schemas import (
 
 
 router = APIRouter()
+router.include_router(enrichment_router.router)
 router.include_router(proposal_router.router)
 router.include_router(pcw_router.router)
 router.include_router(pcw_maintenance_router.router)
