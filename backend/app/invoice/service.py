@@ -7,7 +7,7 @@ from app.core.time import beijing_today
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
-from sqlalchemy import and_, exists, func, or_, select, text
+from sqlalchemy import and_, case, exists, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
@@ -47,23 +47,7 @@ def list_invoices(
     created_by: int | None = None,
     viewer_user_id: int | None = None,
 ) -> tuple[list[dict], int]:
-    query = db.query(Invoice)
-    if viewer_user_id is not None:
-        active_grant = exists().where(
-            InvoiceDelegateGrant.delegate_user_id == viewer_user_id,
-            InvoiceDelegateGrant.sales_user_id == Invoice.sales_user_id,
-            ArkUser.id == InvoiceDelegateGrant.sales_user_id,
-            ArkUser.deleted_at.is_(None),
-            ArkUser.is_active.is_(True),
-        )
-        query = query.filter(or_(
-            Invoice.sales_user_id == viewer_user_id,
-            and_(Invoice.created_by == viewer_user_id, active_grant),
-        ))
-    elif created_by is not None:
-        # 数据范围口径（invoice:read_all 缺失时只看自己创建的），
-        # created_by 为 NULL 的历史发票只对全量范围可见
-        query = query.filter(Invoice.created_by == created_by)
+    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id)
     if keyword:
         like = f"%{keyword}%"
         query = query.filter(
@@ -96,6 +80,66 @@ def list_invoices(
         _invoice_list_row(invoice, item_count, creator_names.get(invoice.created_by))
         for invoice, item_count in rows
     ], total
+
+
+def _visible_invoice_query(
+    db: Session,
+    *,
+    created_by: int | None = None,
+    viewer_user_id: int | None = None,
+):
+    query = db.query(Invoice)
+    if viewer_user_id is not None:
+        active_grant = exists().where(
+            InvoiceDelegateGrant.delegate_user_id == viewer_user_id,
+            InvoiceDelegateGrant.sales_user_id == Invoice.sales_user_id,
+            ArkUser.id == InvoiceDelegateGrant.sales_user_id,
+            ArkUser.deleted_at.is_(None),
+            ArkUser.is_active.is_(True),
+        )
+        query = query.filter(or_(
+            Invoice.sales_user_id == viewer_user_id,
+            and_(Invoice.created_by == viewer_user_id, active_grant),
+        ))
+    elif created_by is not None:
+        # 数据范围口径（invoice:read_all 缺失时只看自己创建的），
+        # created_by 为 NULL 的历史发票只对全量范围可见
+        query = query.filter(Invoice.created_by == created_by)
+    return query
+
+
+def summarize_invoices(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    created_by: int | None = None,
+    viewer_user_id: int | None = None,
+) -> dict:
+    """Aggregate synced visible invoices by order date, independent of pagination."""
+    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id).filter(
+        Invoice.invoice_date.between(date_from, date_to),
+        Invoice.sync_status == "synced",
+        Invoice.status.notin_(("cancel_pending", "cancelled")),
+    )
+    is_usd = func.upper(Invoice.currency) == "USD"
+    order_count, new_sign_count, unknown_new_sign_count, gmv, usd_order_count = query.with_entities(
+        func.count(Invoice.id),
+        func.count(func.distinct(case((Invoice.okki_new_deal == 1, Invoice.customer_id)))),
+        func.coalesce(func.sum(case((Invoice.okki_new_deal.is_(None), 1), else_=0)), 0),
+        func.coalesce(func.sum(case((is_usd, Invoice.total_amount), else_=0)), 0),
+        func.coalesce(func.sum(case((is_usd, 1), else_=0)), 0),
+    ).one()
+    gmv = _money(Decimal(gmv or 0))
+    usd_order_count = int(usd_order_count or 0)
+    return {
+        "gmv": gmv,
+        "new_sign_count": int(new_sign_count or 0),
+        "unknown_new_sign_count": int(unknown_new_sign_count or 0),
+        "order_count": int(order_count or 0),
+        "average_order_amount": _money(gmv / usd_order_count) if usd_order_count else Decimal("0.00"),
+        "non_usd_count": int(order_count or 0) - usd_order_count,
+    }
 
 
 def _resolve_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:

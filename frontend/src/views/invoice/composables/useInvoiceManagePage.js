@@ -1,4 +1,4 @@
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import {
@@ -7,15 +7,26 @@ import {
   downloadInvoicePdf,
   fetchInvoicePrintHtml,
   getInvoiceSyncLogs,
+  getInvoiceSummary,
   listInvoices,
   resolveInvoiceSyncUncertain,
 } from '@/api/invoice'
 import { INVOICE_SYNC_OUTCOME, isInvoiceSyncing, validateThenSync } from './invoiceSyncFlow'
 import { formatInvoiceDateTime } from './invoiceDateTime'
+import { currentBeijingDate } from '@/utils/datetime'
 
 export function useInvoiceManagePage() {
   const loading = ref(false)
   const invoices = ref([])
+  const today = currentBeijingDate()
+  const month = today.slice(0, 7)
+  const [yearNumber, monthNumber] = month.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(yearNumber, monthNumber, 0)).getUTCDate()
+  const summaryDateRange = ref([`${month}-01`, `${month}-${lastDay}`])
+  const summary = ref(null)
+  const summaryLoading = ref(false)
+  const summaryError = ref('')
+  let summaryRequestId = 0
   const filters = reactive({ keyword: '', order_id: '', status: '', order_type: '' })
   const pagination = reactive({ page: 1, page_size: 20, total: 0 })
   const syncLogsVisible = ref(false)
@@ -24,15 +35,27 @@ export function useInvoiceManagePage() {
   const syncLogsTitle = ref('')
   let showIssues = () => {}
 
-  const summary = computed(() => invoices.value.reduce((acc, invoice) => {
-    acc.total += 1
-    acc.amount += Number(invoice.total_amount || 0)
-    if (invoice.status === 'ready') acc.ready += 1
-    if (invoice.status === 'draft') acc.draft += 1
-    return acc
-  }, { total: 0, ready: 0, draft: 0, amount: 0 }))
+  async function loadSummary() {
+    const [dateFrom, dateTo] = summaryDateRange.value || []
+    if (!dateFrom || !dateTo) return
+    const requestId = ++summaryRequestId
+    summaryLoading.value = true
+    summaryError.value = ''
+    try {
+      const result = await getInvoiceSummary({ date_from: dateFrom, date_to: dateTo })
+      if (requestId === summaryRequestId) summary.value = result
+    } catch {
+      if (requestId === summaryRequestId) {
+        summary.value = null
+        summaryError.value = '订单概览加载失败，请重试'
+      }
+    } finally {
+      if (requestId === summaryRequestId) summaryLoading.value = false
+    }
+  }
 
   async function loadInvoices() {
+    const summaryRequest = loadSummary()
     loading.value = true
     try {
       const params = { ...filters, page: pagination.page, page_size: pagination.page_size }
@@ -44,6 +67,7 @@ export function useInvoiceManagePage() {
       pagination.total = result.total || 0
     } finally {
       loading.value = false
+      await summaryRequest
     }
   }
 
@@ -137,7 +161,8 @@ export function useInvoiceManagePage() {
   return {
     actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
     loading, money, money4, openSyncLogs, pagination, removeInvoice, statusText, statusType,
-    summary, syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
+    summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
+    syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
     isInvoiceSyncing, resolveUncertain, validateAndSync,
   }
 }

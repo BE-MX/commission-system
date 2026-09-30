@@ -13,13 +13,13 @@
         <p>客户发票、产品明细、价格管控、导出与小满同步集中处理。</p>
       </div>
       <div class="header-actions">
-        <GlassButton v-permission="'invoice:write'" variant="primary" :left-icon="Plus" class="primary-action" @click="openCreate('stock')">
+        <GlassButton v-permission="'invoice:write'" variant="primary" :left-icon="Box" class="primary-action" @click="openCreate('stock')">
           新建库存单
         </GlassButton>
-        <GlassButton v-permission="'invoice:write'" variant="secondary" :left-icon="Plus" @click="openCreate('production')">
+        <GlassButton v-permission="'invoice:write'" variant="secondary" :left-icon="Tools" @click="openCreate('production')">
           新建生产单
         </GlassButton>
-        <GlassButton v-permission="'invoice:write'" :disabled="!shipmentCapabilities.enabled" @click="openCreate('presale')">新建预售单</GlassButton>
+        <GlassButton v-permission="'invoice:write'" :left-icon="Calendar" :disabled="!shipmentCapabilities.enabled" @click="openCreate('presale')">新建预售单</GlassButton>
         <!-- 旧版下单入口（过渡期）：新版为默认，旧版布局给习惯老流程的同事 -->
         <el-dropdown v-permission="'invoice:write'" trigger="click" @command="openLegacyCreate">
           <GlassButton variant="secondary">
@@ -36,24 +36,14 @@
     </div>
 
     <el-alert v-if="!shipmentCapabilities.enabled" :title="shipmentCapabilities.reason || '预售出库暂未启用'" type="info" :closable="false" />
-    <div class="summary-grid">
-      <div class="summary-card lg-card">
-        <span>发票数</span>
-        <strong>{{ summary.total }}</strong>
-      </div>
-      <div class="summary-card lg-card">
-        <span>可同步</span>
-        <strong>{{ summary.ready }}</strong>
-      </div>
-      <div class="summary-card lg-card">
-        <span>草稿</span>
-        <strong>{{ summary.draft }}</strong>
-      </div>
-      <div class="summary-card emphasis lg-card">
-        <span>当前页金额</span>
-        <strong>USD {{ money(summary.amount) }}</strong>
-      </div>
-    </div>
+    <InvoiceOverview
+      v-model:date-range="summaryDateRange"
+      :summary="summary"
+      :loading="summaryLoading"
+      :error="summaryError"
+      :money="money"
+      @range-change="loadSummary"
+    />
 
     <section class="table-card invoice-panel">
       <div class="toolbar">
@@ -94,8 +84,10 @@
             <span>新建一张发票后会显示在这里。</span>
           </div>
         </template>
-        <el-table-column prop="invoice_no" label="发票号" min-width="132" max-width="170" show-overflow-tooltip />
-        <el-table-column prop="xiaoman_order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.xiaoman_order_id || '—' }}</template></el-table-column>
+        <el-table-column prop="invoice_no" label="发票号" min-width="220" class-name="invoice-number-column">
+          <template #default="{ row }"><span class="invoice-number">{{ row.invoice_no }}</span></template>
+        </el-table-column>
+        <el-table-column prop="customer_name" label="客户" min-width="180" max-width="260" show-overflow-tooltip />
         <el-table-column label="类型" min-width="76" max-width="96">
           <template #default="{ row }">
             <el-tag :type="row.order_type === 'production' ? 'warning' : 'info'" effect="plain">
@@ -103,11 +95,10 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="customer_name" label="客户" min-width="150" max-width="260" show-overflow-tooltip />
-        <el-table-column prop="invoice_date" label="日期" min-width="96" max-width="120" show-overflow-tooltip />
-        <el-table-column prop="item_count" label="明细" min-width="56" max-width="76" align="right" />
-        <el-table-column label="金额" min-width="104" max-width="150" align="right">
-          <template #default="{ row }">{{ row.currency }} {{ money(row.total_amount) }}</template>
+        <el-table-column prop="invoice_date" label="日期" min-width="116" />
+        <el-table-column prop="item_count" label="明细" min-width="80" align="right" />
+        <el-table-column label="金额（USD）" min-width="132" max-width="160" align="right">
+          <template #default="{ row }">{{ row.currency === 'USD' ? '' : `${row.currency} ` }}{{ money(row.total_amount) }}</template>
         </el-table-column>
         <el-table-column label="状态" min-width="84" max-width="110">
           <template #default="{ row }">
@@ -406,7 +397,7 @@ import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShi
 import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
 import { computed, nextTick, ref } from 'vue'
-import { ArrowDown, Delete, Document, Download, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowDown, Box, Calendar, Delete, Document, Download, Edit, Refresh, Search, Tools } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { useInvoiceEditor } from './composables/useInvoiceEditor'
 import { useInvoiceManagePage } from './composables/useInvoiceManagePage'
@@ -421,6 +412,7 @@ import InvoiceReceiptFields from './components/InvoiceReceiptFields.vue'
 import InvoiceSettlementFields from './components/InvoiceSettlementFields.vue'
 import InvoiceSummaryCard from './components/InvoiceSummaryCard.vue'
 import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
+import InvoiceOverview from './components/InvoiceOverview.vue'
 import LinkedSyncResult from './components/LinkedSyncResult.vue'
 import InvoiceHairTable from './components/InvoiceHairTable.vue'
 
@@ -429,7 +421,8 @@ const page = useInvoiceManagePage()
 const {
   actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
   loading, money, money4, openSyncLogs, pagination, removeInvoice, statusText, statusType,
-  summary, syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
+  summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
+  syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
   isInvoiceSyncing, resolveUncertain, validateAndSync,
 } = page
 const editor = useInvoiceEditor({ onSaved: loadInvoices })
