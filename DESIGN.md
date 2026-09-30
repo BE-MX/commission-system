@@ -240,6 +240,12 @@
 
 所有列表页（含表格的页面）必须遵循本规范。样式优先通过全局类实现，页面级只做最小化定制。
 
+规范条目用以下标注区分执行方式（2026-09-30 起，适用于 List Page Spec 及其后各组件规范节）：
+
+- **[门禁]**：已由 `scripts/audit_frontend_ui.py` / `check_conventions.py` 机器强制，提交即检查。现有表格门禁：`stripe` / `border` / `list-table` 类 / 固定 `width` / `align="center"` / 按钮 `size="small"`
+- **[可门禁]**：可静态判定的条目，已全部接入 `scripts/audit_frontend_ui.py`（2026-09-30，15 项度量）：存量计数冻结进债务基线、变动即报 stale，白名单项按违例计数冻结；标注保留，用于区分其「冻结存量、渐进消化」与 **[门禁]** 「硬失败」的性质差异
+- **[评审]**：无法静态判定，靠 code review 与 QA 对照本节核查
+
 ### 1. 表格基础
 
 **DOM 结构**
@@ -337,19 +343,138 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 - 主操作：`type="primary"`（金色渐变）
 - 统一高度 36px
 
-### 5. 快速检查清单
+### 5. 筛选区（FilterBar）
+
+职责划分（借鉴 Art Design Pro `ArtSearchBar`）：**页面负责筛选字段与提交逻辑，规范负责布局、展开收起与操作区一致性**。现状各页写法不一（`.toolbar` / `el-row` / 原生 form / 侧栏标签云并存，控件内联宽度，约一半页面无重置），按本节收敛。
+
+**布局**
+
+- 筛选区统一放在全局 `.toolbar`（`app.css`）容器内，flex 横向排列、允许换行；**禁止**另造 `el-row` 分栏或原生 `<form>` 容器 **[评审]**
+- 控件高度统一 36px（与按钮 md 对齐）；**禁止** `el-input` / `el-select` / `el-date-picker` 使用 `size="small"` **[可门禁：`_tags` 扫描这三类标签的 `size="small"`，存量计数进债务基线]**
+- 控件宽度只用三档：`160px`（短文本/状态）/ `200px`（默认）/ `280px`（日期范围）；**禁止**内联 `style="width:…"` 写任意值 **[可门禁：`.toolbar` 区块内控件标签的 `style=` 宽度计数进债务基线]**
+
+**操作区**
+
+- 「查询 + 重置」必须成对出现，固定在筛选区末尾；查询用主按钮（GlassButton `variant="primary"`），重置用次按钮 **[评审]**
+- 筛选字段 > 4 个时，默认只展示首行，其余收进「展开/收起」切换；参考实现 `views/asset/useAssetTagFilters.js` **[评审]**
+- 输入类控件 `@keyup.enter` 触发查询 **[评审]**
+
+### 6. 分页
+
+现状 `el-pagination` layout 有 5 种并存，按本节收敛为唯一形态；存量页面在下次触碰时补齐，不一蹴而就。
+
+- layout 固定为 `total, sizes, prev, pager, next`；`page-sizes` 固定 `[20, 50, 100]`，默认 20 **[可门禁：`_tags("el-pagination")` 的 `layout` 属性白名单比对]**
+- 类名统一 `class="pager"`，置于表格卡片内底部 **[评审]**
+- 分页状态走 `useListPage.js`（新列表页必须使用），不自建分页状态 **[评审]**
+
+### 7. 表格三态（loading / empty / error）
+
+借鉴 Art Design Pro 通用组件状态清单，所有列表表格必须显式处理三种状态：
+
+- **loading**：`v-loading`（全站既有做法，不变）
+- **empty**：统一用 `el-table` 的 `empty` 插槽或 `el-empty`，文案「暂无数据」，有筛选条件时给出「重置筛选」引导；**禁止**新增手写「暂无…」裸 div，`empty-text` 属性不再新增 **[可门禁：`empty-text=` 属性计数进债务基线冻结]**
+- **error**：接口错误提示统一走 `api/request.js` 拦截器 + `utils/feedback.js`，页面 `catch` 里只处理业务回滚，不各自弹裸消息（见 Feedback Spec）**[评审]**
+
+### 8. 快速检查清单
 
 新增/修改列表页时逐项核对：
 
 - [ ] 表格包裹在 `.table-card` 中
-- [ ] 表格有 `class="list-table"` + `border`
-- [ ] 无 `stripe`
-- [ ] 列宽用 `min-width` + `max-width`，无固定 `width`
-- [ ] 无 `align="center"`
+- [ ] 表格有 `class="list-table"` + `border`，无 `stripe` **[门禁]**
+- [ ] 列宽用 `min-width` + `max-width`，无固定 `width`、无 `align="center"` **[门禁]**
 - [ ] 纯文本列有 `show-overflow-tooltip`
-- [ ] 操作按钮无 `size="small"`，带图标
-- [ ] 状态 tag 用 pill 样式（如需）
+- [ ] 操作按钮无 `size="small"`，带图标 **[门禁]**
+- [ ] 筛选区在 `.toolbar` 内，控件无内联宽度、无 `size="small"`
+- [ ] 「查询 + 重置」成对出现；筛选字段 > 4 个时有展开/收起
+- [ ] 分页 layout 为 `total, sizes, prev, pager, next`
+- [ ] 表格有统一 empty 处理，无新增 `empty-text`
+- [ ] 状态 tag 用 pill 样式（如需），状态映射查域字典
 - [ ] 不在 scoped style 里重复写表格样式
+
+## Dialog & Form Spec
+
+弹窗与表单的用途、尺寸与底部操作区统一约定。现状：`el-dialog` 宽度手写值多达 11 档、`el-form` label 对齐两种并存（145 个表单仅 47 个显式 `label-position`）、底部按钮区类名三套并存，按本节收敛。
+
+### 1. 用途边界
+
+| 场景 | 组件 |
+|------|------|
+| 新增 / 编辑 / 短流程操作 | `el-dialog` |
+| 详情 / 预览 / 长内容查看 | `el-drawer`，新页面统一走 `components/DetailDrawer.vue` |
+| 危险确认 | `utils/feedback.js` 的 `confirmDanger`，不自建确认弹窗 |
+
+**[评审]**；存量混用（如 drawer 做编辑器）在下次触碰时归位。
+
+### 2. 宽度档位
+
+- `el-dialog` 宽度只允许三档：`480px`（简单表单/确认）/ `640px`（标准表单）/ `760px`（宽表单、多列栅格）**[可门禁：`_tags("el-dialog")` 的 `width` 值白名单比对，其余值计数进债务基线]**
+- `el-drawer` 默认 `640px`（DetailDrawer 默认值即锚点），宽详情可用 `760px`；**禁止**新增 `94%` 等百分比尺寸 **[可门禁：`_tags("el-drawer")` 的 `size` 值白名单比对]**
+- 仍受「Overlay boundaries」节约束：最大宽度为视口减 24px
+
+### 3. 表单
+
+- 弹窗内表单统一 `label-position="top"`（FilterBar 筛选用行内控件，不用 `el-form-item` 标签）**[评审]**；存量 right 对齐表单在下次触碰时迁移
+- 通用校验规则（手机号、邮箱、金额等）收敛到共享 validators（新建 `utils/validators.js`，参照 `utils/datetime.js` 的收敛路径），新表单不自写正则 **[可门禁：validators.js 落地后，页面内手机号等正则字面量计数冻结]**
+- 必填标记、错误提示位置沿用 Element Plus 默认，不自定义 **[评审]**
+
+### 4. 底部按钮区
+
+- dialog：统一 `#footer` 插槽 + `class="dialog-footer"`，取消在左、主按钮在右 **[评审]**；`form-actions` / `drawer-actions` 别名不再新增 **[可门禁：后两者类名计数进债务基线冻结]**
+- drawer：用 DetailDrawer 内置 footer，不另写按钮区
+- 提交按钮必须带 loading（GlassButton `isLoading` 或 `el-button :loading`），防重复提交 **[评审]**
+
+## Status Badge & 状态字典
+
+状态色的唯一职责是「让状态一眼可辨」，颜色映射必须单点维护。
+
+- **状态字典**：每个业务域在自己的 `use*.js` 或共享字典文件中维护 `状态枚举 → { label, tagType }` 映射；新增状态字段必须先登记字典 **[评审]**。参照 PM 站 `utils/labels.js`（标签 + 语义色单点维护，「状态色仅用于徽标」纪律）
+- **渲染**：表格/详情中状态一律用 pill tag（见 List Page Spec 第 3 节），`type` 从字典取；存量模板里静态 `type="success"` 等裸映射在触碰时迁入字典 **[可门禁：`el-tag` 标签上静态 `type=` 属性计数进债务基线，只许降不许升]**
+- 后续可提取 PM 站 `StatusBadge.vue` 思路做主站统一封装；两站 token 不互通的现状维持不变
+
+## Feedback Spec
+
+消息、确认、加载、空态的统一出口。现状 `utils/feedback.js` 已建成但裸调用过半（约 497 处裸 ElMessage/ElNotification、105 处裸 ElMessageBox.confirm），按本节收敛存量。
+
+- **操作反馈**：成功/失败消息一律 `utils/feedback.js` 的 `msgSuccess` / `msgError`；**禁止**新代码直接 `import { ElMessage } / ElNotification` **[可门禁：`.vue`/`.js` 中两者 import 计数进债务基线，只许降不许升]**
+- **危险确认**：删除、禁用、驳回等必须 `confirmDanger`，不裸调 `ElMessageBox.confirm` **[可门禁：ElMessageBox import 计数冻结，同上]**
+- **接口错误**：统一由 `api/request.js` 拦截器弹出；页面 `catch` 里只处理业务回滚，不重复提示 **[评审]**
+- **加载**：按钮提交带 loading；表格 `v-loading`；首屏大区块可用 `el-skeleton`（适度使用，不为每个列表补骨架）**[评审]**
+- **空状态**：列表/卡片区统一 `el-empty` 或组件 empty 插槽，文案「暂无数据」+ 可选引导操作；手写「暂无…」裸 div 不再新增 **[评审]**
+- PM 站对应纪律：`toast.success/error` + `EmptyState.vue`，维持不变
+
+## Format Spec（金额与数字）
+
+时间是全站规范执行最好的样例（`utils/datetime.js` + 机器检查），金额按同一路径收敛。
+
+- **金额**：收敛到单一格式化出口（新建 `utils/money.js`：统一货币符号、千分位、两位精度）；新代码**禁止**新增 `toLocaleString` / `Intl.NumberFormat` / 裸 `toFixed(2)` 格式化金额 **[可门禁：三者在 `frontend/src` 的出现计数进债务基线冻结；现状 4 份 money 实现并存、24+ 处散写]**。显示约定：列表内默认两位小数 + 千分位；负金额前置 `-`
+- **数字列**：表格数字沿用 DM Sans + tabular-nums（见 Typography）；维持全表左对齐红线，数字列暂不强制右对齐
+- **日期控件**：`el-date-picker` 的 `value-format` 统一 `YYYY-MM-DD`（纯日期）与 `YYYY-MM-DD HH:mm:ss`（日期时间），不新增 ISO `T` 格式 **[可门禁：`_tags("el-date-picker")` 的 `value-format` 白名单比对]**
+
+## Component Adoption（复用与晋升）
+
+借鉴 Art Design Pro / vue-pure-admin 的组件治理方式，解决「基建已建成但采用率低」问题（`useListPage` 仅 27 个文件引用、`DetailDrawer` 仅 22 个）。
+
+### Element Plus 使用三原则
+
+1. 动手前先查项目已有高层封装：`AppUpload`、`DetailDrawer`、`utils/feedback.js`、`useListPage.js`、`GlassButton`；有封装必须用封装 **[评审]**
+2. 相同功能保持一致的尺寸、状态与反馈方式（36px 控件高度、md 按钮、pill tag、feedback.js 消息）**[评审]**
+3. 不在页面 scoped 里大面积覆盖组件库内部选择器；全局视觉调整放 `tokens.css` / 全局样式层 **[可门禁：`:deep(.el-` 计数进债务基线冻结，弱信号]**
+
+### 公共组件晋升流程
+
+新组件先放页面/域目录（`views/<域>/components/`），满足以下条件再晋升到 `components/`：
+
+1. 已在至少两个独立业务域复用
+2. props / emits / slots 脱离原页面可理解，不依赖特定 API、Store 或路由
+3. 覆盖完整状态清单：**loading / empty / disabled / error / readonly / 超长文本 / 小屏布局**
+4. 在真实页面完成至少一次复用验证
+
+**[评审]**；晋升时同步在 DESIGN.md 登记一行。
+
+### 新页面基建采用红线
+
+- 新列表页**必须**基于 `useListPage.js` **[评审]**
+- 新详情抽屉**必须**基于 `DetailDrawer.vue` **[评审]**
 
 ## Login Page — Kimi Design (Dark Theme)
 
@@ -404,6 +529,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 | 2026-05-01 | 中性色从暖灰切换到冷灰（蓝调） | tokens.css 已落地新调色（页底 #f0f2f7、文字 #1a1a2e、表头 #fafbfe），DESIGN.md 同步对齐；列表页规范从 frontend/DESIGN.md 合并为 List Page Spec 节 |
 | 2026-09-29 | 登录页地图去点阵与经纬网，改渐变光效填色 + 等高线，目标市场海岸线柔光 | 点阵与网格显碎，非目标大陆单调偏暗；目标市场要一眼可辨但不抢标题与登录卡。对比过“光墙”竖向挤出方案，因北欧碎海岸线过密、压标语而弃用 |
 | 2026-07-25 | 整页 Liquid Glass 材质体系（.lg-aurora + .lg-card + --dash-glass-* 令牌） | 工作台首发，配方源自赛事大屏、色调保暖金；含命名/层叠/固定列/性能四条红线（均为当日实翻车教训）；同日推广至发票/备货/售后/物流/设计预约模块 |
+| 2026-09-30 | 组件规范扩容：List Page Spec 增补筛选区/分页/三态三节，新增 Dialog & Form / Status Badge / Feedback / Format / Component Adoption 五个规范节 | 参考 Art Design Pro、vue-pure-admin、Soybean Admin、vben5、shadcn-admin 调研结论（表格之外无统一规范：筛选区 6 种写法并存、dialog 宽度 11 档、裸 ElMessage 497 处、money 格式化 4 份并存）；条目按 [门禁]/[可门禁]/[评审] 三级标注，[可门禁] 项同日扩展进 scripts/audit_frontend_ui.py（债务基线 15 项度量 + 白名单比对，新基线随本行文档一并提交后 check_conventions 门禁生效） |
 
 ## 登录页背景与动效（2026-09-06）
 

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Audit list-table invariants and freeze measurable legacy UI debt."""
+"""Audit list-table invariants and freeze measurable legacy UI debt.
+
+Debt metrics cover DESIGN.md 的 [可门禁] 条目（2026-09-30 落地）：
+筛选控件 size/inline 宽度、分页 layout、empty-text、dialog/drawer 宽度白名单、
+底部按钮区别名、el-tag 静态 type、date-picker value-format、:deep(.el-) 覆盖、
+裸 ElMessage/ElNotification/ElMessageBox、金额格式化散写（toLocaleString /
+Intl.NumberFormat / toFixed(2)）。.vue 全量度量；.js 只统计消息与金额两类代码模式。
+"""
 
 import argparse
 import json
@@ -14,6 +21,20 @@ BASELINE = REPO / "scripts/ui_debt_baseline.json"
 VIEW_ROOTS = (REPO / "frontend/src", REPO / "frontend-pm/src")
 HEX = re.compile(r"#[0-9a-fA-F]{6}\b")
 TRANSITION_ALL = re.compile(r"transition(?:-property)?\s*:\s*all\b")
+
+# --- Component-spec debt metrics (DESIGN.md [可门禁] 条目，2026-09-30 落地) ---
+CONTROL_TAGS = ("el-input", "el-select", "el-date-picker")
+CANONICAL_PAGINATION_LAYOUT = "total,sizes,prev,pager,next"
+DIALOG_WIDTH_WHITELIST = {"480", "640", "760"}
+DRAWER_SIZE_WHITELIST = {"640", "760"}
+VALUE_FORMAT_WHITELIST = {"YYYY-MM-DD", "YYYY-MM-DD HH:mm:ss"}
+FOOTER_ALIAS = re.compile(r'\bclass\s*=\s*(["\'])[^"\']*\b(?:form-actions|drawer-actions)\b')
+MESSAGE_CALLS = re.compile(r"\bElMessage(?:Box)?\b|\bElNotification\b")
+MONEY_FORMAT = re.compile(r"\btoLocaleString\s*\(|\bIntl\.NumberFormat\b|\btoFixed\s*\(\s*2\s*\)")
+DEEP_EL_OVERRIDE = re.compile(r":deep\(\s*\.el-")
+EMPTY_TEXT_ATTR = re.compile(r"\bempty-text\s*=")
+SIZE_SMALL = re.compile(r'\bsize\s*=\s*["\']small')
+INLINE_WIDTH = re.compile(r'\bstyle\s*=\s*(["\'])[^"\']*\bwidth\s*:')
 
 
 def _tags(text: str, name: str) -> list[str]:
@@ -51,40 +72,90 @@ def _tags(text: str, name: str) -> list[str]:
             return result
 
 
+def _attr(tag: str, name: str) -> str | None:
+    """Return the static attribute value, or None when absent or dynamically bound (:name)."""
+    match = re.search(rf'(?<![-:\w]){name}\s*=\s*(["\'])(.*?)\1', tag, re.S)
+    return match.group(2) if match else None
+
+
+def _dimension_ok(tag: str, name: str, whitelist: set[str]) -> bool:
+    """Absent/dynamic attributes are unjudged; static ones must be whitelisted pixel sizes."""
+    value = _attr(tag, name)
+    if value is None:
+        return True
+    match = re.fullmatch(r"(\d+)(?:px)?", value.strip())
+    return bool(match) and match.group(1) in whitelist
+
+
+def _value_format_ok(tag: str) -> bool:
+    value = _attr(tag, "value-format")
+    return value is None or value.strip() in VALUE_FORMAT_WHITELIST
+
+
+def _vue_metrics(text: str) -> dict[str, int]:
+    controls = [tag for name in CONTROL_TAGS for tag in _tags(text, name)]
+    return {
+        "hex_colors": len(HEX.findall(text)),
+        "transition_all": len(TRANSITION_ALL.findall(text)),
+        "lines_over_500": max(0, len(text.splitlines()) - 500),
+        "small_controls": sum(1 for tag in controls if SIZE_SMALL.search(tag)),
+        "inline_width": sum(1 for tag in controls if INLINE_WIDTH.search(tag)),
+        "bad_pagination_layout": sum(
+            1
+            for tag in _tags(text, "el-pagination")
+            if re.sub(r"\s+", "", _attr(tag, "layout") or "") != CANONICAL_PAGINATION_LAYOUT
+        ),
+        "empty_text_attr": len(EMPTY_TEXT_ATTR.findall(text)),
+        "bad_dialog_width": sum(1 for tag in _tags(text, "el-dialog") if not _dimension_ok(tag, "width", DIALOG_WIDTH_WHITELIST)),
+        "bad_drawer_size": sum(1 for tag in _tags(text, "el-drawer") if not _dimension_ok(tag, "size", DRAWER_SIZE_WHITELIST)),
+        "footer_alias": len(FOOTER_ALIAS.findall(text)),
+        "static_tag_type": sum(1 for tag in _tags(text, "el-tag") if _attr(tag, "type") is not None),
+        "bad_value_format": sum(1 for tag in _tags(text, "el-date-picker") if not _value_format_ok(tag)),
+        "deep_el_override": len(DEEP_EL_OVERRIDE.findall(text)),
+        "message_calls": len(MESSAGE_CALLS.findall(text)),
+        "money_format": len(MONEY_FORMAT.findall(text)),
+    }
+
+
+def _js_metrics(text: str) -> dict[str, int]:
+    return {
+        "message_calls": len(MESSAGE_CALLS.findall(text)),
+        "money_format": len(MONEY_FORMAT.findall(text)),
+    }
+
+
 def scan() -> tuple[list[str], dict[str, dict[str, int]]]:
     failures: list[str] = []
     debt: dict[str, dict[str, int]] = {}
     for root in VIEW_ROOTS:
         if not root.exists():
             continue
-        for path in root.rglob("*.vue"):
+        for path in list(root.rglob("*.vue")) + list(root.rglob("*.js")):
             text = path.read_text(encoding="utf-8")
             relative = path.relative_to(REPO).as_posix()
-            tables = _tags(text, "el-table")
-            columns = _tags(text, "el-table-column")
-            buttons = _tags(text, "el-button")
-            for index, tag in enumerate(tables, 1):
-                if re.search(r"\s+stripe(?=\s|=|>)", tag):
-                    failures.append(f"{relative}: table {index} uses stripe")
-                if not re.search(r"(?<!:)\bborder(?=\s|=|>)", tag):
-                    failures.append(f"{relative}: table {index} misses border")
-                static_class = re.search(r'\bclass\s*=\s*(["\'])(.*?)\1', tag, re.S)
-                if not static_class or "list-table" not in static_class.group(2).split():
-                    failures.append(f"{relative}: table {index} misses list-table class")
-            for index, tag in enumerate(columns, 1):
-                if re.search(r'(?<![-:])\bwidth\s*=\s*["\']\d+', tag):
-                    failures.append(f"{relative}: column {index} uses fixed width")
-                if re.search(r'\balign\s*=\s*["\']center', tag):
-                    failures.append(f"{relative}: column {index} forces centered content")
-            for index, tag in enumerate(buttons, 1):
-                if re.search(r'\bsize\s*=\s*["\']small', tag):
-                    failures.append(f"{relative}: button {index} uses legacy small size")
-
-            metrics = {
-                "hex_colors": len(HEX.findall(text)),
-                "transition_all": len(TRANSITION_ALL.findall(text)),
-                "lines_over_500": max(0, len(text.splitlines()) - 500),
-            }
+            if path.suffix == ".js":
+                metrics = _js_metrics(text)
+            else:
+                tables = _tags(text, "el-table")
+                columns = _tags(text, "el-table-column")
+                buttons = _tags(text, "el-button")
+                for index, tag in enumerate(tables, 1):
+                    if re.search(r"\s+stripe(?=\s|=|>)", tag):
+                        failures.append(f"{relative}: table {index} uses stripe")
+                    if not re.search(r"(?<!:)\bborder(?=\s|=|>)", tag):
+                        failures.append(f"{relative}: table {index} misses border")
+                    static_class = re.search(r'\bclass\s*=\s*(["\'])(.*?)\1', tag, re.S)
+                    if not static_class or "list-table" not in static_class.group(2).split():
+                        failures.append(f"{relative}: table {index} misses list-table class")
+                for index, tag in enumerate(columns, 1):
+                    if re.search(r'(?<![-:])\bwidth\s*=\s*["\']\d+', tag):
+                        failures.append(f"{relative}: column {index} uses fixed width")
+                    if re.search(r'\balign\s*=\s*["\']center', tag):
+                        failures.append(f"{relative}: column {index} forces centered content")
+                for index, tag in enumerate(buttons, 1):
+                    if re.search(r'\bsize\s*=\s*["\']small', tag):
+                        failures.append(f"{relative}: button {index} uses legacy small size")
+                metrics = _vue_metrics(text)
             if any(metrics.values()):
                 debt[relative] = metrics
     return failures, debt
@@ -111,7 +182,23 @@ def main() -> int:
 
 
     baseline = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
-    metric_names = ("hex_colors", "transition_all", "lines_over_500")
+    metric_names = (
+        "hex_colors",
+        "transition_all",
+        "lines_over_500",
+        "small_controls",
+        "inline_width",
+        "bad_pagination_layout",
+        "empty_text_attr",
+        "bad_dialog_width",
+        "bad_drawer_size",
+        "footer_alias",
+        "static_tag_type",
+        "bad_value_format",
+        "deep_el_override",
+        "message_calls",
+        "money_format",
+    )
     for path in sorted(set(debt) | set(baseline)):
         actual = debt.get(path, {})
         allowed = baseline.get(path, {})
@@ -150,7 +237,7 @@ def main() -> int:
             print(f"[UI] {finding}")
         print(f"audit_frontend_ui: {len(failures)} failure(s)")
         return 1
-    totals = {name: sum(item[name] for item in debt.values()) for name in metric_names}
+    totals = {name: sum(item.get(name, 0) for item in debt.values()) for name in metric_names}
     print(f"audit_frontend_ui: table invariants pass; legacy debt frozen {totals}")
     return 0
 
