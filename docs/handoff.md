@@ -1,5 +1,15 @@
 # 当前交接与待办
 
+## 2026-09-30 私海客户一键补全（Codex，未部署）
+
+- 工作树 `D:/commission-system/tmp/private-customer-enrichment`，分支 `codex/private-customer-enrichment`，基于 `54f77438`；用户已授权增加单客户入口、为全部私海客户创建补全任务，并随后明确授权合并推送；本轮不部署。合并推送完成后清理该临时工作树和任务分支，交付材料保存在主目录 `tmp/private-customer-enrichment-delivery/`。
+- 工作区新增一键补全、15 秒任务状态刷新、研究结果与来源、管理员质量复核；后端 GET/POST `/api/customer-hub/customers/{id}/enrichment`，权限与实时客户范围校验，公海/DNC 拒绝，同客户进行中或待审核任务复用；转属旧任务不复用。
+- `private-enrichment-v1` 沿用 full_research 队列，冻结官网、公司业务、公开商业联系方式、主营产品四项重点、可见既有事实/渠道/当前人工修订和来源。候选事实通过历史 Agent Run 永久隔离于正式档案，质量通过不等于采纳，不新增数据库表或迁移。
+- 批量脚本增加 `--all-private --enrichment`；2026-09-30 16:48 线上只读预览：170 位私海客户，170 位符合范围，DNC/不可解析均 0，既有本策略任务 0。名单回执在主目录 `tmp/private-customer-enrichment-delivery/enrichment-scope-preview.json`，`task_creation_executed=false`。必须先在所有档案编译实例发布候选隔离代码，再创建该批任务；创建授权已具备，无需重问范围。
+- 验证：相关后端 107 passed / 1 skipped（既有环境条件测试）；前端既有工作区 14 项通过，Vite build 通过；Chrome 模拟接口验证单击入队、重复按钮禁用、完成待审、来源链接、质量审核、390px 布局，零页面错误。截图与脚本保存在主目录 `tmp/private-customer-enrichment-delivery/`。截图发现卡片限制抽屉，已加 append-to-body 修复。增量约定检查通过。
+- 独立审查的候选隔离、历史 Run、转属任务、人工修订对照问题已处理并有回归。主目录既有 `.pnpm-store/` 和其他工作树未改动。Git sweep 使用 --no-fetch 本地快照。
+- 尚未发布、尚未批量入队；北京 Agent 实时状态未确认，使用已有 ark_office 密钥探测被 SSH 主机信任校验阻断，当前用户 known_hosts 没有北京 IP/域名记录，未跳过校验。部署前需取得覆盖两地主站的发布授权并恢复可信部署连接。
+
 ## 2026-09-30 出库备注空格误报与单据恢复
 
 - 后续重新同步仍被后端 `outbound_sync_plan.verify` 的严格备注比较卡住（event5152、record93064、sync_uncertain）。按持续数据修复授权，09:34:57备份并核验持久plan、完整invoice edit_version、当前小满订单、出库ID/单号/活动列表、所有明细/成本/其他单头及无验货记录后，仅将event.action/result恢复sync_done及已核验快照；原plan不变、不重发POST。办公室备份 `D:/commission-system/tmp/outbound-recovery-836/20260930-093457-304664-sync5152-before.json`；恢复材料交付保留在主目录 `tmp/outbound-remark-20260930/`；恢复脚本 `repair_outbound_sync_5152.py`。独立审查完成；实际生产 `ensure_printable + apply_header + list_outbound_items` 回滚式调用通过，最新明细10/1/5可打印。

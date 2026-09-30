@@ -13,6 +13,7 @@
       </div>
     </header>
     <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
+    <WorkspaceEnrichment v-if="detail && !detail.is_public_pool" :key="customerId" :customer-id="customerId" />
     <el-tabs v-model="activeTab" class="workspace-tabs">
       <el-tab-pane v-for="tab in WORKSPACE_TABS" :key="tab.key" :name="tab.key" :label="tab.label" lazy>
         <component :is="panelFor(tab.key)" v-if="activeTab === tab.key" :customer-id="customerId" :customer="detail" />
@@ -33,6 +34,7 @@ import WorkspaceConversations from './workspace/WorkspaceConversations.vue'
 import WorkspaceOrders from './workspace/WorkspaceOrders.vue'
 import WorkspaceMonitor from './workspace/WorkspaceMonitor.vue'
 import WorkspaceMaintenance from './workspace/WorkspaceMaintenance.vue'
+import WorkspaceEnrichment from './workspace/WorkspaceEnrichment.vue'
 
 const route = useRoute()
 const router = useRouter()

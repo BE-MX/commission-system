@@ -93,6 +93,7 @@ def _research_context(db: Session, task_id: int) -> dict:
             "industry_gate": "先验证业务相关性；明确无关时停止，不猜联系方式、不生成触达草稿或正向成交分",
             "output_language": "研究摘要、结论与门控理由一律使用简体中文撰写；公司名、产品名等专有名词保留原文",
             "required_evidence": ["source_record", "captured_at", "confidence"],
+            "task_request": input_snapshot.get("research_request"),
             "forbidden": ["猜测邮箱", "个人社会关系调查", "无来源事实", "跨客户读取", "直接触达"],
         },
     }

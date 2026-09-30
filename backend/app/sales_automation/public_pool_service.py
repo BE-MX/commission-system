@@ -169,6 +169,7 @@ def ensure_research_task(
     selection_reason: list[dict],
     tier: str | None,
     created_by: int | None,
+    physical_owner_only: bool = False,
 ) -> tuple[CustomerResearchTask, bool]:
     account = db.query(CustomerAccount).filter(
         CustomerAccount.id == customer_id,
@@ -194,6 +195,7 @@ def ensure_research_task(
         return exact, False
     active = db.query(CustomerResearchTask).filter(
         logical_root_predicate(CustomerResearchTask, "research_task", customer_id),
+        CustomerResearchTask.customer_id == customer_id if physical_owner_only else True,
         CustomerResearchTask.task_type == task_type,
         CustomerResearchTask.research_policy_version == research_policy_version,
         or_(

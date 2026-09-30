@@ -16,6 +16,7 @@
 
 1. 调用 `ark_list_research_tasks` 以 `page_size=100` 列出后端已经完成资格和安全过滤的可领取任务。
 2. 有合格任务时只领取第一条，每轮最多一条；使用 `ark_get_research_task_context` 读取 `customer_id` 与冻结 `input_hash`，再调用 `ark_claim_research_task`。先检索有权访问的已发布企业知识，获取目标产品、客户画像和排除规则，只读有用文档，不做全库扫读。
+3. 若任务含 `input_snapshot.research_request`，按其冻结重点补全；`existing_information` 仅供内部对照。私海补全须核实官网、公司业务、公开商业联系方式和主营产品，保留旧信息；冲突在 `risk` 结论列明原值、新值、双方来源与待确认原因。旧资料不能冒充本次 Run 的 citation；新结论必须引用本次采集回执，回写后等待人工审核。
 4. 先做低成本行业门控并调用 `ark_submit_research_industry_gate`。只有门控状态为 `passed` 才进入后续步骤；无关客户由门控接口直接结束并停止，不再找联系人/社会关系，不研判供应商或深度风险，不生成触达草稿。
 5. 证据不足不等于无关。无官网或官网薄弱时，只核验公开业务账号、企业页面、预约/店铺页的身份互链、业务内容和近期活跃度；禁止调查个人社会关系。
 6. 使用 `ark_append_research_facts` 把原子事实写入同一 `research_task_id`，保留返回的规范 evidence envelope。完成时以 `customer_research_v1` 提交 claims 与同一 Agent Run 的 citation 闭包；不得输出客户等级、成交概率或触达草稿。研究摘要、结论与门控理由一律使用简体中文（公司名、产品名等专有名词保留原文）。

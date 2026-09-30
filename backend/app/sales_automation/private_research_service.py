@@ -163,29 +163,33 @@ def _commerce_snapshot(db: Session, customer_id: int) -> dict:
 def create_private_research_tasks(
     db: Session,
     *,
-    owner_ids: list[int],
+    owner_ids: list[int] | None,
     run_tag: str,
     operator_id: int | None,
     limit: int | None = None,
     customer_ids: list[int] | None = None,
     commit: bool = True,
+    enrichment: bool = False,
 ) -> dict:
     """为指定业务员的有效主负责客户批量创建 full_research 研究任务。
 
     幂等：同一客户同策略版本存在进行中任务时复用原任务；输入快照变化后
     （例如有新订单）允许创建新一轮任务。全局禁止开发（DNC/抑制名单）客户跳过。
     """
-    assignments = (
+    assignments_query = (
         db.query(CustomerAssignment)
         .filter(
-            CustomerAssignment.user_id.in_([int(owner_id) for owner_id in owner_ids]),
             CustomerAssignment.assignment_role == "primary",
             CustomerAssignment.assignment_status == "active",
             CustomerAssignment.effective_to.is_(None),
         )
         .order_by(CustomerAssignment.customer_id)
-        .all()
     )
+    if owner_ids is not None:
+        assignments_query = assignments_query.filter(CustomerAssignment.user_id.in_(owner_ids))
+    if enrichment:
+        assignments_query = assignments_query.filter(CustomerAssignment.effective_from <= beijing_now())
+    assignments = assignments_query.all()
     candidates: list[tuple[int, int]] = []
     seen: set[int] = set()
     unresolvable: list[int] = []
@@ -214,7 +218,7 @@ def create_private_research_tasks(
 
     summary = {
         "run_tag": run_tag,
-        "policy_version": POLICY_VERSION,
+        "policy_version": "private-enrichment-v1" if enrichment else POLICY_VERSION,
         "candidate_count": len(candidates),
         "created": 0,
         "reused": 0,
@@ -244,22 +248,31 @@ def create_private_research_tasks(
             "commerce_snapshot": _commerce_snapshot(db, customer_id),
         }
         try:
-            task, was_created = public_pool_service.ensure_research_task(
-                db,
-                customer_id=customer_id,
-                task_type=TASK_TYPE,
-                source_ref_type=SOURCE_REF_TYPE,
-                source_ref_id=run_tag,
-                research_policy_version=POLICY_VERSION,
-                input_snapshot=input_snapshot,
-                selection_reason=[{
-                    "reason": "manual_private_research",
-                    "owner_user_id": owner_id,
-                    "tier": tier,
-                }],
-                tier=tier,
-                created_by=operator_id,
-            )
+            if enrichment:
+                from app.sales_automation.private_enrichment_service import ensure_enrichment_task
+
+                task, was_created = ensure_enrichment_task(
+                    db, customer_id=customer_id, operator_id=operator_id,
+                    run_tag=run_tag, input_snapshot=input_snapshot, tier=tier,
+                )
+                summary["policy_version"] = task.research_policy_version
+            else:
+                task, was_created = public_pool_service.ensure_research_task(
+                    db,
+                    customer_id=customer_id,
+                    task_type=TASK_TYPE,
+                    source_ref_type=SOURCE_REF_TYPE,
+                    source_ref_id=run_tag,
+                    research_policy_version=POLICY_VERSION,
+                    input_snapshot=input_snapshot,
+                    selection_reason=[{
+                        "reason": "manual_private_research",
+                        "owner_user_id": owner_id,
+                        "tier": tier,
+                    }],
+                    tier=tier,
+                    created_by=operator_id,
+                )
         except (service.ConflictError, service.NotFoundError, ValueError) as exc:
             summary["errors"].append({"customer_id": customer_id, "error": str(exc)})
             continue

@@ -55,6 +55,16 @@ def append_research_facts(
     ).with_for_update().one_or_none()
     if task is None:
         raise service.ConflictError("研究任务不存在或不在执行中")
+    if task.research_policy_version == "private-enrichment-v1":
+        from app.agent_runtime.models import AgentRun
+
+        run = db.query(AgentRun.id).filter(
+            AgentRun.id == agent_run_id,
+            AgentRun.business_ref_type == "research_task",
+            AgentRun.business_ref_id == str(task.id),
+        ).first()
+        if run is None or task.agent_run_id != agent_run_id:
+            raise service.ConflictError("信息补全必须通过本任务当前 Agent Run 回写候选证据")
     source_rows: list[CustomerSourceRecord] = []
     fact_rows: list[CustomerFact] = []
     for position, raw in enumerate(facts, start=1):

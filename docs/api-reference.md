@@ -1587,3 +1587,10 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | POST | `/api/shipping-inspection/outbound-records/{record_id}/invoice-sync` | 请求 `{expected_version, check_only:false}` 执行已预览的同步；`repair:true` 在不确定状态下核验并逐次只补一条安全缺失明细，返回 `repairable:true` 时客户端可继续下一步；`check_only:true` 始终只核对，绝不发送；返回 sync_done / sync_pending / sync_sending / sync_uncertain 或 requires_preview |
 
 两接口均要求 `shipping_inspection:write` + `invoice:sync`，双重数据范围校验。业务冲突返回409。详见[手动同步说明](outbound-invoice-sync.md)。
+
+## 私海客户信息补全
+
+- `GET /api/customer-hub/customers/{customer_id}/enrichment`：读取当前客户最新补全任务、状态、研究结论与证据；无任务返回 `data: null`。权限为 `customer:read/read_all` 或档案维护权限，并实时校验客户范围与资料可见级别。
+- `POST /api/customer-hub/customers/{customer_id}/enrichment`：无请求体，一键发起当前私海客户补全；需要 `customer_profile:write` 或 `customer:admin`。仅处理有有效主负责人的活跃客户，禁止开发客户返回 409；失权返回 404。返回 `{created, task}`，进行中或完成待审核任务复用，客户行锁串行化重复请求。
+- 固定策略 `private-enrichment-v1`，沿用 `full_research` 队列。输入冻结四项重点与既有可见资料及来源；结果经原研究证据闭包回写，质量审核与正式档案采纳分离，历史 Run 的候选事实也不会自动进入档案。
+- 管理员批量入口：在 backend 目录执行 `python -m scripts.private_customer_research create --all-private --enrichment --run-tag <稳定批次标识> --dry-run`，检查范围后去掉 `--dry-run` 创建。`--owners` 与 `--all-private` 互斥。禁止开发、不可解析客户分别计入跳过回执；写入前须确认所有档案编译实例已发布本策略的候选隔离。
