@@ -459,9 +459,10 @@ footer p, footer > span { font-size: 9px; letter-spacing: .08em; }
 .portal-dimension { padding-top: 28px; }
 .portal-dimension h3 { margin: 0 0 14px; font-size: 22px; letter-spacing: -.03em; }
 .portal-tag-group { margin-bottom: 28px; }
-.portal-tag-group h4 { margin: 0; color: var(--ink); font-size: 20px; font-weight: 800; }
-.portal-tag-group h4 span { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; }
-.portal-tag-group h4 span.color-only { margin-left: 0; }
+.portal-tag-group h4 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; margin: 0; color: var(--ink); font-size: 20px; font-weight: 800; }
+.portal-tag-group h4 .row-label { font: inherit; color: inherit; }
+.portal-tag-group h4 .row-divider { font: inherit; color: var(--muted); }
+.portal-tag-group h4 .row-count { color: var(--muted); font-size: 12px; font-weight: 400; }
 .portal-tag-group .asset-gallery { padding-top: 14px; }
 .asset-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; padding-top: 28px; }
 .asset-card { position: relative; min-width: 0; border: 1px solid #dedbd4; border-radius: 12px; background: #f9f8f5; overflow: hidden; box-shadow: 5px 7px 18px rgba(23,22,20,.07); }

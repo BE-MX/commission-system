@@ -98,8 +98,10 @@
               </div>
               <section v-for="row in groupMediaByColorAndTexture(visibleGroupAssets(batch.id, group), tagDimensions)" :key="row.id" class="portal-tag-group">
                 <h4 v-if="row.textureType || row.colorName">
-                  {{ row.textureType }}
-                  <span :class="{ 'color-only': !row.textureType }">{{ row.colorName ? `${row.colorName} · ` : '' }}{{ row.assets.length }} files</span>
+                  <span v-if="row.textureType" class="row-label">{{ row.textureType }}</span>
+                  <span v-if="row.textureType && row.colorName" class="row-divider">·</span>
+                  <span v-if="row.colorName" class="row-label">{{ row.colorName }}</span>
+                  <span class="row-count">{{ row.assets.length }} files</span>
                 </h4>
                 <div class="asset-gallery">
               <article v-for="asset in row.assets" :key="asset.id" class="asset-card">
@@ -219,15 +221,16 @@ watch(() => props.customer?.customer_id, () => {
 
 <style scoped>
 .portal-dimension { margin: 24px 0; }
-.portal-dimension h3 { margin: 0 0 14px; color: var(--text-primary); font-size: 18px; }
+.portal-dimension h3 { margin: 0 0 14px; color: var(--text-primary); font-size: 22px; }
 .portal-dimension h3 span { margin-left: 8px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
 .group-filter-row { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 10px; }
 .group-filter-row strong { min-width: 90px; padding-top: 10px; color: var(--text-secondary); font-size: 12px; }
 .group-empty { color: var(--text-secondary); font-size: 12px; }
 .portal-tag-group { margin-bottom: 24px; }
-.portal-tag-group h4 { margin: 0 0 12px; color: var(--text-primary); font-size: 20px; font-weight: 800; }
-.portal-tag-group h4 span { margin-left: 7px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
-.portal-tag-group h4 span.color-only { margin-left: 0; }
+.portal-tag-group h4 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; margin: 0 0 12px; color: var(--text-primary); font-size: 20px; font-weight: 800; }
+.portal-tag-group h4 .row-label { font: inherit; color: inherit; }
+.portal-tag-group h4 .row-divider { font: inherit; color: var(--text-secondary); }
+.portal-tag-group h4 .row-count { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
 .client-library { min-height: 100%; color: var(--text-primary); background: linear-gradient(145deg, var(--dash-wash-from), var(--dash-wash-mid) 54%, var(--dash-wash-to)); }
 .preview-topbar { display: flex; min-height: 76px; align-items: center; justify-content: space-between; gap: 22px; padding: 12px 30px; border-bottom: 1px solid rgba(61, 51, 35, 0.12); background: rgba(255, 255, 255, 0.72); }
 .brand-lockup { display: flex; align-items: center; gap: 10px; }

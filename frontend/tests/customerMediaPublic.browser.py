@@ -59,6 +59,17 @@ def api(route):
     route.fulfill(json={'code': 200, 'message': 'ok', 'data': data})
 
 
+def assert_row_heading_hierarchy(page):
+    first_row = page.locator('.portal-tag-group').first
+    expect(first_row.locator('.row-label')).to_have_text(['Straight', 'Ash'])
+    product_size = page.locator('.portal-dimension h3').first.evaluate('(el) => parseFloat(getComputedStyle(el).fontSize)')
+    for label in first_row.locator('.row-label').all():
+        style = label.evaluate('(el) => ({size: parseFloat(getComputedStyle(el).fontSize), weight: Number(getComputedStyle(el).fontWeight)})')
+        assert style == {'size': product_size - 2, 'weight': 800}, style
+    count_size = first_row.locator('.row-count').evaluate('(el) => parseFloat(getComputedStyle(el).fontSize)')
+    assert count_size < product_size - 2
+
+
 with sync_playwright() as p:
     browser = p.chromium.launch(channel='chrome', headless=True)
     page = browser.new_page(viewport={'width': 1400, 'height': 900})
@@ -71,6 +82,7 @@ with sync_playwright() as p:
     expect(page.locator('.group-filter-row')).to_have_count(3)
     expect(page.locator('.portal-tag-group')).to_have_count(5)
     expect(page.locator('.portal-tag-group h4')).to_have_count(4)
+    assert_row_heading_hierarchy(page)
     expect(page.locator('.portal-tag-group').first.locator('.asset-card')).to_have_count(2)
     expect(page.locator('.portal-tag-group').first.locator('.asset-footer strong')).to_have_text(['front.png', 'side.png'])
     expect(page.locator('.portal-tag-group').nth(2).locator('h4')).to_have_count(0)
@@ -126,6 +138,7 @@ with sync_playwright() as p:
     internal_page.goto('http://127.0.0.1:3077/tests/fixtures/customer-media-client-library-qa.html')
     expect(internal_page.locator('.portal-tag-group')).to_have_count(5)
     expect(internal_page.locator('.portal-tag-group h4')).to_have_count(4)
+    assert_row_heading_hierarchy(internal_page)
     expect(internal_page.locator('.portal-tag-group').first.locator('.asset-card')).to_have_count(2)
     expect(internal_page.locator('.portal-tag-group').first.locator('.asset-footer strong')).to_have_text(['front.png', 'side.png'])
     expect(internal_page.locator('.portal-tag-group').nth(2).locator('h4')).to_have_count(0)
