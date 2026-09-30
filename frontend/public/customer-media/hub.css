@@ -434,6 +434,7 @@ footer p, footer > span { font-size: 9px; letter-spacing: .08em; }
 .finder-heading h2 { margin: 7px 0 0; font: 600 clamp(21px, 3vw, 31px)/1.1 var(--sans); letter-spacing: -.035em; }
 .finder-heading .search-field { width: min(340px, 42vw); flex: 0 1 340px; }
 .finder-row { display: grid; grid-template-columns: 100px minmax(0, 1fr); align-items: start; gap: 16px; padding: 15px 26px; border-bottom: 1px solid #dedcd6; }
+.finder-row[hidden] { display: none; }
 .finder-row > span { padding-top: 11px; color: #6a665f; font-size: 9px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
 .finder-options { display: flex; gap: 9px; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: thin; }
 .finder-options button { flex: 0 0 auto; min-height: 42px; border: 1px solid #d2cfc8; border-radius: 8px; background: #fff; color: #34312e; padding: 10px 17px; font-size: 12px; font-weight: 600; cursor: pointer; }

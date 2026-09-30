@@ -1,5 +1,10 @@
 # 当前交接与待办
 
+## 2026-09-30 客户素材 Product type 顶部筛选（已实现，待部署）
+
+- “客户拍摄素材”的“本批素材”区域新增 Product type 标签筛选；客户素材门户内部预览与外部站点顶部也可按该维度筛选。支持多选同维度标签，并与文件名、媒体类型和组内其他标签筛选共同生效；无可用 Product type 标签时不显示筛选行。
+- 分组与预览状态单元测试 10 项、拍摄工作区及客户门户浏览器回归、前端构建、增量约定检查通过。生产部署待进行。
+
 ## 2026-09-30 出库备注空格误报与单据恢复
 
 - 后续重新同步仍被后端 `outbound_sync_plan.verify` 的严格备注比较卡住（event5152、record93064、sync_uncertain）。按持续数据修复授权，09:34:57备份并核验持久plan、完整invoice edit_version、当前小满订单、出库ID/单号/活动列表、所有明细/成本/其他单头及无验货记录后，仅将event.action/result恢复sync_done及已核验快照；原plan不变、不重发POST。办公室备份 `D:/commission-system/tmp/outbound-recovery-836/20260930-093457-304664-sync5152-before.json`；恢复材料交付保留在主目录 `tmp/outbound-remark-20260930/`；恢复脚本 `repair_outbound_sync_5152.py`。独立审查完成；实际生产 `ensure_printable + apply_header + list_outbound_items` 回滚式调用通过，最新明细10/1/5可打印。

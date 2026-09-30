@@ -34,6 +34,25 @@ export function groupMediaByTags(assets = [], dimensions = []) {
   return result.sort((a, b) => (a.id === 'unassigned') - (b.id === 'unassigned'))
 }
 
+export function productTypeOptions(assets = [], dimensions = []) {
+  return groupMediaByTags(assets, dimensions)
+    .filter(group => group.id !== 'unassigned')
+    .map(group => ({ id: group.id, value: group.label }))
+}
+
+export function filterProductGroups(groups = [], selectedIds = []) {
+  if (!selectedIds.length) return groups
+  const selected = new Set(selectedIds.map(String))
+  return groups.filter(group => selected.has(String(group.id)))
+}
+
+export function filterMediaByProductTypes(assets = [], selectedIds = [], dimensions = []) {
+  if (!selectedIds.length) return assets
+  const visibleIds = new Set(filterProductGroups(groupMediaByTags(assets, dimensions), selectedIds)
+    .flatMap(group => group.assets.map(asset => asset.id)))
+  return assets.filter(asset => visibleIds.has(asset.id))
+}
+
 export function filterMediaByTags(assets = [], selectedIds = []) {
   if (!selectedIds.length) return assets
   const ids = new Set(selectedIds)

@@ -147,8 +147,9 @@
         </div>
       </div>
 
+      <CustomerMediaProductTypeFilter v-if="assets.length && productTypes.length" v-model="selectedProductTypeIds" :options="productTypes" />
       <div v-if="assets.length" class="dimension-groups">
-        <section v-for="group in assetGroups" :key="group.id" class="asset-dimension">
+        <section v-for="group in visibleAssetGroups" :key="group.id" class="asset-dimension">
           <h4>{{ group.label }} <span>{{ visibleGroupAssets(group).length }} / {{ group.assets.length }} 个文件</span></h4>
           <div v-for="filter in group.filters" :key="filter.id" class="group-filter-row">
             <strong>{{ filter.label }}</strong>
@@ -219,7 +220,8 @@ import {
 import CustomerMediaDirectoryDialog from './customer-media/CustomerMediaDirectoryDialog.vue'
 import CustomerMediaTagPicker from './customer-media/CustomerMediaTagPicker.vue'
 import CustomerTagBoard from './customer-media/CustomerTagBoard.vue'
-import { filterMediaByTags, groupMediaByColorAndTexture, groupMediaByTags } from './customer-media/customerMediaGrouping'
+import { filterMediaByTags, filterProductGroups, groupMediaByColorAndTexture, groupMediaByTags, productTypeOptions } from './customer-media/customerMediaGrouping'
+import CustomerMediaProductTypeFilter from './customer-media/CustomerMediaProductTypeFilter.vue'
 import { createCustomerMediaPreviewPayload } from './customer-media/customerMediaPreviewPayload'
 import { collectDroppedFiles, dropHasDirectory, webkitPathSegments } from './customer-media/droppedFiles'
 import { useCustomerMediaUpload } from './customer-media/composables/useCustomerMediaUpload'
@@ -246,6 +248,10 @@ const directories = computed(() => batch.value?.directories || [])
 const editable = computed(() => ['draft', 'changes_requested'].includes(batch.value?.status))
 const selectedTags = computed(() => customerTags.value.filter(tag => selectedTagIds.value.includes(tag.tag_value_id)))
 const assetGroups = computed(() => groupMediaByTags(assets.value, tagDimensions.value))
+const productTypes = computed(() => productTypeOptions(assets.value, tagDimensions.value))
+const selectedProductTypeIds = ref([])
+const activeProductTypeIds = computed(() => selectedProductTypeIds.value.filter(id => productTypes.value.some(type => type.id === id)))
+const visibleAssetGroups = computed(() => filterProductGroups(assetGroups.value, activeProductTypeIds.value))
 const groupSelections = ref({})
 function toggleGroupTag(groupId, tagId) {
   const selected = groupSelections.value[groupId] || []

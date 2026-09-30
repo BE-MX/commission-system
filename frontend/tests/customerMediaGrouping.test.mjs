@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { filterMediaByTags, groupMediaByColorAndTexture, groupMediaByTags } from '../src/views/design/customer-media/customerMediaGrouping.js'
+import { filterMediaByProductTypes, filterMediaByTags, filterProductGroups, groupMediaByColorAndTexture, groupMediaByTags, productTypeOptions } from '../src/views/design/customer-media/customerMediaGrouping.js'
 
 const dimensions = [
   { id: 1, name: 'customer_product_type', label: '产品类型' },
@@ -40,6 +40,19 @@ test('an image tagged with two products appears once in each product group', () 
   const grouped = groupMediaByTags([asset], dimensions)
   assert.deepEqual(grouped.map(group => group.assets.map(item => item.id)), [[15], [15]])
   assert.equal(grouped[0].assets[0], grouped[1].assets[0])
+})
+
+test('product type filter shows assigned choices and matches any selected type', () => {
+  const multiProduct = { id: 15, tags: [product(101, '发帘'), product(102, '头套')] }
+  const items = [...assets, multiProduct]
+  assert.deepEqual(productTypeOptions(items, dimensions), [
+    { id: 101, value: '发帘' }, { id: 102, value: '头套' },
+  ])
+  assert.deepEqual(filterMediaByProductTypes(items, [102], dimensions).map(asset => asset.id), [13, 15])
+  assert.deepEqual(filterMediaByProductTypes(items, [101, 102], dimensions).map(asset => asset.id), [11, 12, 13, 15])
+  assert.deepEqual(filterMediaByProductTypes(items, [999], dimensions), [])
+  assert.equal(filterMediaByProductTypes(items, [], dimensions), items)
+  assert.deepEqual(filterProductGroups(groupMediaByTags(items, dimensions), [101]).map(group => group.label), ['发帘'])
 })
 
 test('filter combines values within one dimension and intersects dimensions', () => {

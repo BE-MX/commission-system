@@ -28,15 +28,15 @@ export function formatFileSize(bytes) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-export function filterPreviewBatches(batches, { search = '', mediaType = 'all' } = {}) {
+export function filterPreviewBatches(batches, { search = '', mediaType = 'all', productTypeIds = [], tagDimensions = [] } = {}) {
   const query = String(search).trim().toLowerCase()
   return (batches || []).map(batch => ({
     ...batch,
-    assets: (batch.assets || []).filter(asset => {
+    assets: filterMediaByProductTypes((batch.assets || []).filter(asset => {
       const matchesType = mediaType === 'all' || asset.media_type === mediaType
       const matchesSearch = !query || String(asset.file_name || '').toLowerCase().includes(query)
       return matchesType && matchesSearch
-    }),
+    }), productTypeIds, tagDimensions),
   })).filter(batch => batch.assets.length > 0)
 }
 
@@ -45,3 +45,4 @@ export function appendDownload(url) {
   return `${url}${url.includes('?') ? '&' : '?'}download=true`
 }
 import { formatBeijingDate } from '../../../utils/datetime.js'
+import { filterMediaByProductTypes } from './customerMediaGrouping.js'

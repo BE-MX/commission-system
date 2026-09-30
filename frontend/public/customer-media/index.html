@@ -77,6 +77,7 @@
             <label class="search-field"><span>⌕</span><input id="search" aria-label="Search files" placeholder="Search file name" /></label>
           </div>
           <div class="finder-row"><span>Batch</span><div class="finder-options" id="batch-filters" role="tablist" aria-label="Batches"></div></div>
+          <div class="finder-row" id="product-filter-row"><span>Product type</span><div class="finder-options" id="product-filters" role="group" aria-label="Filter by Product type"></div></div>
         </section>
 
         <div class="bulk-download-bar hidden" id="bulk-bar">
@@ -125,6 +126,7 @@
     let previewState = null;     // { batchId, assetId }
     let tagGroups = [];          // [{ dimension_id, name, label, values }]
     let groupSelections = {};    // batch/product group -> selected tag IDs
+    let selectedProductTypes = new Set();
     let libraryRequestVersion = 0;
     let toastTimer = 0;
 
@@ -169,7 +171,7 @@
       const q = $('search').value.trim().toLowerCase();
       return batches
         .filter(b => activeBatch === 'all' || String(b.id) === activeBatch)
-        .map(b => ({ ...b, viewAssets: b.assets.filter(a => a.file_name.toLowerCase().includes(q)) }))
+        .map(b => ({ ...b, viewAssets: filterProductAssets(b.assets.filter(a => a.file_name.toLowerCase().includes(q))) }))
         .filter(b => b.viewAssets.length > 0);
     }
     function allAssets() { return batches.flatMap(b => b.assets); }
@@ -201,6 +203,20 @@
           .map(filter => ({ ...filter, values: [...filter.values.values()] })) };
       }).sort((a, b) => (a.id === 'unassigned') - (b.id === 'unassigned'));
     }
+    function productTypeChoices() {
+      return groupBatchAssets(allAssets()).filter(group => group.id !== 'unassigned');
+    }
+    function filterProductAssets(assets) {
+      if (!selectedProductTypes.size) return assets;
+      const visibleIds = new Set(groupBatchAssets(assets)
+        .filter(group => selectedProductTypes.has(String(group.id)))
+        .flatMap(group => group.assets.map(asset => asset.id)));
+      return assets.filter(asset => visibleIds.has(asset.id));
+    }
+    function visibleProductGroups(assets) {
+      const groups = groupBatchAssets(assets);
+      return selectedProductTypes.size ? groups.filter(group => selectedProductTypes.has(String(group.id))) : groups;
+    }
     function groupByColorAndTexture(assets) {
       const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
       const findDimension = names => tagGroups.find(group =>
@@ -223,7 +239,7 @@
       return [...rows.values()];
     }
     function visibleAssetIds(shown = visibleBatches()) {
-      return [...new Set(shown.flatMap(batch => groupBatchAssets(batch.viewAssets)
+      return [...new Set(shown.flatMap(batch => visibleProductGroups(batch.viewAssets)
         .flatMap(group => visibleGroupAssets(batch.id, group).map(asset => asset.id))))];
     }
     function groupKey(batchId, groupId) { return `${batchId}:${groupId}`; }
@@ -242,6 +258,9 @@
 
     function render() {
       const assets = allAssets();
+      const productChoices = productTypeChoices();
+      const availableProducts = new Set(productChoices.map(group => String(group.id)));
+      selectedProductTypes = new Set([...selectedProductTypes].filter(id => availableProducts.has(id)));
       const photos = assets.filter(a => a.media_type === 'image').length;
       const videos = assets.length - photos;
       $('stat-photos').textContent = photos;
@@ -254,6 +273,10 @@
       $('batch-filters').innerHTML =
         `<button class="${activeBatch === 'all' ? 'active' : ''}" data-batch="all" role="tab">All batches</button>` +
         batches.map(b => `<button class="${activeBatch === String(b.id) ? 'active' : ''}" data-batch="${b.id}" role="tab">Batch ${pad(b.seq)}</button>`).join('');
+      $('product-filter-row').hidden = !productChoices.length;
+      $('product-filters').innerHTML =
+        `<button type="button" data-product="all" aria-pressed="${!selectedProductTypes.size}" class="${!selectedProductTypes.size ? 'active' : ''}">All</button>` +
+        productChoices.map(group => `<button type="button" data-product="${group.id}" aria-pressed="${selectedProductTypes.has(String(group.id))}" class="${selectedProductTypes.has(String(group.id)) ? 'active' : ''}">${escapeHtml(group.label)}</button>`).join('');
 
       // SKU 分区（每批次一节，最新在前）
       const shown = visibleBatches();
@@ -268,7 +291,7 @@
             <h2>${escapeHtml(title)}</h2>
             <p>${fmtDate(b.published_at)} · ${b.viewAssets.length} ${b.viewAssets.length === 1 ? 'asset' : 'assets'} · ${imgs} photos · ${vids} videos${shootType}</p>
           </div></header>
-          ${groupBatchAssets(b.viewAssets).map(group => {
+          ${visibleProductGroups(b.viewAssets).map(group => {
             const visible = visibleGroupAssets(b.id, group);
             return `<div class="portal-dimension">
             <h3>${escapeHtml(group.label)} <span>${visible.length} / ${group.assets.length} files</span></h3>
@@ -413,6 +436,7 @@
       libraryRequestVersion++;
       await request('/logout', { method: 'POST' }).catch(() => {});
       session = null; batches = []; selected = new Set(); previewState = null;
+      selectedProductTypes = new Set();
       tagGroups = []; groupSelections = {};
       showLogin();
     };
@@ -420,6 +444,7 @@
     $('search').oninput = render;
     $('empty-clear').onclick = () => {
       activeBatch = 'all'; $('search').value = '';
+      selectedProductTypes.clear();
       render();
     };
     $('batch-filters').addEventListener('click', e => {
@@ -428,6 +453,15 @@
       activeBatch = btn.dataset.batch;
       render();
       window.setTimeout(() => document.querySelector('.sku-library')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    });
+    $('product-filters').addEventListener('click', e => {
+      const btn = e.target.closest('button[data-product]');
+      if (!btn) return;
+      const id = btn.dataset.product;
+      if (id === 'all') selectedProductTypes.clear();
+      else if (selectedProductTypes.has(id)) selectedProductTypes.delete(id);
+      else selectedProductTypes.add(id);
+      render();
     });
     $('library').addEventListener('click', e => {
       const btn = e.target.closest('button[data-group-tag]');
@@ -498,6 +532,7 @@
         batches = [{ ...batch, seq: 1 }];
         tagGroups = dimensions.map(dim => ({ dimension_id: dim.id, name: dim.name, label: dim.label, values: dim.values || [] }));
         activeBatch = 'all'; selected = new Set(); previewState = null; groupSelections = {};
+        selectedProductTypes = new Set();
         showApp(); render();
       });
     } else {
