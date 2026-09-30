@@ -44,14 +44,16 @@ test('no camera before explicit selection; rapid switching retains only latest i
   s.choose(people[1]); assert.equal(s.selected.value.id, 1)
 })
 
-test('scan freezes server-bound identity; submit uses returned edit version and clears next operator', async () => {
+test('scan freezes server-bound identity; submit retains the operator for the next order', async () => {
   const { s, people, calls } = setup(); await flush()
   s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
   s.choose(people[0]); assert.equal(s.operator.value.id, 2)
   await s.submit()
   assert.equal(calls.find(c => c[0] === 'submit')[1].edit_version, 3)
-  assert.equal(s.selected.value, null); assert.equal(s.view.value, null)
+  assert.equal(s.selected.value.id, 2); assert.equal(s.view.value, null)
   assert.equal(s.receipt.value.operator_name, '李四')
+  assert.equal(s.startScan(), true)
+  assert.equal(s.receipt.value, null)
 })
 
 test('old evidence never satisfies recheck; each current item and whole order needs a fresh photo', async () => {
@@ -237,15 +239,40 @@ test('compression can be retried by a new tap using the captured file and produc
 })
 
 
-test('return home ends the scanned session and requires choosing a person again', async () => {
+test('return home ends the scanned session and keeps its operator for the next scan', async () => {
   const ended = []
-  const { s, people } = setup({ end: async id => { ended.push(id) } })
-  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  const { s, people, calls } = setup({ end: async id => { ended.push(id) } })
+  await flush(); s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
   await s.end()
   assert.deepEqual(ended, ['session-one'])
   assert.equal(s.view.value, null)
+  assert.equal(s.selected.value.id, 2, 'the server-bound operator remains selected')
+  assert.equal(s.prompt.value, '当前操作人')
+  assert.equal(s.startScan(), true)
+  await s.decoded('ARK-I:OB002:signature')
+  assert.equal(calls.at(-1)[1].operator_id, 2)
+})
+
+test('return home drops an operator removed from the refreshed roster', async () => {
+  let loads = 0
+  const { s, people } = setup({ operators: async () => ({ data: ++loads === 1
+    ? [{ id: 1, name: '张三' }, { id: 2, name: '李四' }]
+    : [{ id: 1, name: '张三' }] }) })
+  await flush(); s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  await s.end()
   assert.equal(s.selected.value, null)
   assert.equal(s.startScan(), false)
+})
+
+test('operator can be changed after returning home before the next scan', async () => {
+  const { s, people, calls } = setup()
+  await flush(); s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  await s.end()
+  s.choose(people[0])
+  assert.equal(s.selected.value.id, 1)
+  assert.equal(s.startScan(), true)
+  await s.decoded('ARK-I:OB002:signature')
+  assert.equal(calls.at(-1)[1].operator_id, 1)
 })
 
 test('failed session end preserves the current order and identity for retry', async () => {

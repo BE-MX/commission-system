@@ -5,10 +5,10 @@
     <section ref="identityCard" class="identity-card" :class="{ chosen: operator, expired: invalid }" aria-live="polite" aria-atomic="true">
       <div class="identity-eyebrow"><UserRound :size="16" />{{ invalid ? '操作身份已失效' : view ? '本单操作人' : prompt }}</div>
       <div :key="selectionVersion" class="identity-name" :class="{ 'identity-change': operator && !invalid }">{{ operator?.name || '请先选择姓名' }}<BadgeCheck v-if="operator && !invalid" :size="28" aria-hidden="true" /></div>
-      <div class="identity-caption">{{ view ? '本次上传、删除和提交将记录为以上人员' : '每单开始前，点选本次实际操作人' }}</div>
+      <div class="identity-caption">{{ view ? '本次上传、删除和提交将记录为以上人员' : selected ? '如需更换操作人，请点击下方姓名' : '首次扫描前，点选本次实际操作人' }}</div>
     </section>
 
-    <section v-if="receipt" class="station-success" role="status"><CheckCircle2 :size="24" /><div><strong>{{ receipt.operator_name }}已提交</strong><p>{{ receipt.outbound_no }} · 下一单请重新选择人员</p></div></section>
+    <section v-if="receipt" class="station-success" role="status"><CheckCircle2 :size="24" /><div><strong>{{ receipt.operator_name }}已提交</strong><p>{{ receipt.outbound_no }} · {{ selected && operators.length ? '下一单可直接扫码，换人请重新点选' : '下一单请重新选择人员' }}</p></div></section>
     <section v-if="error" class="station-error" role="alert"><AlertCircle :size="20" /><div>{{ error }}<a v-if="loginRequired" :href="loginUrl">重新登录</a></div></section>
 
     <template v-if="!view">
@@ -33,7 +33,7 @@
       <section v-if="!invalid" class="station-card"><label class="remark-label" for="station-remark">检验备注</label><textarea id="station-remark" v-model="remark" maxlength="500" rows="3" :disabled="!canWrite" placeholder="填写需要说明的情况（选填）" /><p class="station-help">已上传 {{ photos.length }} 张照片、{{ videos.length }} 段视频。至少需要一张照片，视频不进入验货打印。</p></section>
       <div v-if="busy" class="upload-progress" role="status">{{ uploadStage || '正在处理，请勿切换人员' }}<progress v-if="uploadStage" :value="progress" max="100" /><span v-if="uploadStage">{{ progress }}%</span></div>
       <button v-if="pendingUpload && !busy && !invalid" class="station-secondary" @click="retryUpload">重试本次上传（不会重复保存）</button>
-      <footer class="station-actions"><button v-if="!submitted && !invalid" class="submit-button" :disabled="busy || (!pendingSubmit && (!canWrite || !photos.length || missingRecheck.length))" @click="submit"><Check :size="20" />{{ pendingSubmit ? '确认上次提交结果' : `由 ${operator.name} 提交验货` }}</button><button class="station-secondary" :disabled="busy" @click="end">{{ invalid ? '重新选择人员并扫码' : '返回主页 / 重新选择人员' }}</button></footer>
+      <footer class="station-actions"><button v-if="!submitted && !invalid" class="submit-button" :disabled="busy || (!pendingSubmit && (!canWrite || !photos.length || missingRecheck.length))" @click="submit"><Check :size="20" />{{ pendingSubmit ? '确认上次提交结果' : `由 ${operator.name} 提交验货` }}</button><button class="station-secondary" :disabled="busy" @click="end">{{ invalid ? '重新选择人员并扫码' : '返回主页' }}</button></footer>
     </template>
     <StationQuickNav v-if="view && !invalid" :items="view.items || []" :active-index="activeItemIndex" :refresh-disabled="busy || !!pendingSubmit" @top="scrollToTop" @refresh="refreshAtCurrentPosition" @jump="jumpToItem" />
     <div v-if="view && quickNotice" class="station-quick-notice" role="status">{{ quickNotice }}</div>

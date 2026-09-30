@@ -53,7 +53,12 @@ export function useShippingStation(api = stationApi) {
   }
   async function loadOperators() {
     loading.value = true
-    try { operators.value = (await api.operators()).data; error.value = '' }
+    try {
+      operators.value = (await api.operators()).data
+      if (selected.value) selected.value = operators.value.find(person => person.id === selected.value.id) || null
+      if (!selected.value) prompt.value = '请选择本次操作人'
+      error.value = ''
+    }
     catch (e) { operators.value = []; await fail(e) }
     finally { loading.value = false }
   }
@@ -78,6 +83,7 @@ export function useShippingStation(api = stationApi) {
       return false
     }
     error.value = ''
+    receipt.value = null
     scannerOpen.value = true
     return true
   }
@@ -212,8 +218,9 @@ export function useShippingStation(api = stationApi) {
   }
   function clearSession() {
     cancelVideoPreparation()
-    view.value = null; selected.value = null; remark.value = ''; error.value = ''; invalid.value = false
-    pendingUpload.value = null; pendingSubmit.value = null; scanIntent = null; prompt.value = '请选择本次操作人'
+    const previousOperator = invalid.value ? null : (view.value?.operator || selected.value)
+    view.value = null; selected.value = previousOperator; remark.value = ''; error.value = ''; invalid.value = false
+    pendingUpload.value = null; pendingSubmit.value = null; scanIntent = null; prompt.value = previousOperator ? '当前操作人' : '请选择本次操作人'
     pendingCompression.value = null; uploadItemId.value = undefined; uploadError.value = ''
     awaitingVideoActivation.value = false
     clearTimeout(promptTimer)
