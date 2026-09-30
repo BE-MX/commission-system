@@ -1,20 +1,20 @@
 <template>
-  <div class="sales-commission-page">
+  <div class="commission-page">
     <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
-    <div class="sales-commission-aurora lg-aurora" aria-hidden="true">
+    <div class="lg-aurora" aria-hidden="true">
       <div class="lg-aurora__blob lg-aurora__blob--gold" />
       <div class="lg-aurora__blob lg-aurora__blob--amber" />
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <div class="filter-bar">
+    <div class="commission-panel commission-filter-bar commission-lift cm-enter">
       <el-radio-group v-model="filters.status" @change="fetchList">
         <el-radio-button value="">全部</el-radio-button>
         <el-radio-button value="confirming">确认中</el-radio-button>
         <el-radio-button value="confirmed">已确认</el-radio-button>
       </el-radio-group>
 
-      <div class="filter-actions">
+      <div class="commission-filter-bar__actions">
         <el-select v-model="filters.role" placeholder="关联角色" clearable class="role-select" @change="fetchList">
           <el-option label="业务员" value="salesperson" />
           <el-option label="一级主管" value="supervisor" />
@@ -40,45 +40,19 @@
       </div>
     </div>
 
-    <div class="selected-batch-bar">
+    <div class="selected-batch-bar commission-lift cm-enter-1">
       <span>当前批次</span>
       <strong>{{ selectedBatch?.batch_name || '暂无批次' }}</strong>
     </div>
 
-    <div class="summary-grid">
-      <div class="metric-item payment lg-card">
-        <div class="metric-icon"><el-icon><Money /></el-icon></div>
-        <span>回款总额</span>
-        <strong>{{ money(selectedSummary.total_payment_amount) }}</strong>
-      </div>
-      <div class="metric-item sales lg-card">
-        <div class="metric-icon"><el-icon><User /></el-icon></div>
-        <span>业务员提成</span>
-        <strong>{{ money(selectedSummary.total_salesperson_commission) }}</strong>
-      </div>
-      <div class="metric-item supervisor lg-card">
-        <div class="metric-icon"><el-icon><UserFilled /></el-icon></div>
-        <span>一级主管提成</span>
-        <strong>{{ money(selectedSummary.total_supervisor_commission) }}</strong>
-      </div>
-      <div class="metric-item second-supervisor lg-card">
-        <div class="metric-icon"><el-icon><Connection /></el-icon></div>
-        <span>二级主管提成</span>
-        <strong>{{ money(selectedSummary.total_second_supervisor_commission) }}</strong>
-      </div>
-      <div class="metric-item total lg-card">
-        <div class="metric-icon"><el-icon><TrendCharts /></el-icon></div>
-        <span>总提成</span>
-        <strong>{{ money(selectedSummary.total_commission) }}</strong>
-      </div>
-    </div>
+    <CommissionMetricCards class="commission-lift cm-enter-2" :summary="selectedSummary" />
 
-    <div class="table-card">
+    <div class="table-card commission-panel commission-lift cm-enter-3">
       <el-table
         :data="tableData"
         v-loading="loading"
         border
-        class="list-table"
+        class="list-table cm-row-clickable"
         highlight-current-row
         :row-class-name="batchRowClassName"
         @row-click="selectBatch"
@@ -89,14 +63,14 @@
         </el-table-column>
         <el-table-column label="状态" min-width="90" max-width="130">
           <template #default="{ row }">
-            <el-tag :type="statusType(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag>
+            <el-tag :type="batchStatusType(row.status)" size="small" effect="plain">{{ batchStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="我的确认" min-width="100" max-width="150">
           <template #default="{ row }">
-            <el-tag v-if="row.is_confirmed_by_me" type="success" effect="plain">已确认</el-tag>
-            <el-tag v-else-if="row.status === 'confirming'" type="warning" effect="plain">待确认</el-tag>
-            <el-tag v-else type="info" effect="plain">-</el-tag>
+            <el-tag v-if="row.is_confirmed_by_me" type="success" size="small" effect="plain">已确认</el-tag>
+            <el-tag v-else-if="row.status === 'confirming'" type="warning" size="small" effect="plain">待确认</el-tag>
+            <el-tag v-else type="info" size="small" effect="plain">-</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="关联角色" min-width="150" max-width="220">
@@ -109,7 +83,7 @@
           </template>
         </el-table-column>
         <el-table-column label="回款总额" min-width="130" max-width="180" align="right">
-          <template #default="{ row }">{{ money(row.total_payment_amount) }}</template>
+          <template #default="{ row }">{{ usd(row.total_payment_amount) }}</template>
         </el-table-column>
         <el-table-column label="回款单数量" prop="detail_count" min-width="110" max-width="150" align="right" />
         <el-table-column class-name="table-action-column" label="操作" min-width="300" max-width="420" fixed="right">
@@ -126,7 +100,7 @@
     </div>
 
     <el-pagination
-      class="pagination"
+      class="commission-pagination commission-lift cm-enter-4"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
@@ -136,64 +110,33 @@
       @size-change="fetchList"
     />
 
-    <el-dialog v-model="feedbackVisible" title="问题反馈" width="520px">
-      <el-input
-        v-model="feedbackContent"
-        type="textarea"
-        :rows="5"
-        maxlength="2000"
-        show-word-limit
-        placeholder="描述本批次提成数据中的问题"
-      />
-      <template #footer>
-        <GlassButton variant="ghost" @click="feedbackVisible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="submitting" @click="submitFeedback">提交</GlassButton>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="confirmVisible" title="提交确认" width="520px">
-      <el-alert
-        type="warning"
-        :closable="false"
-        show-icon
-        title="一旦提交确认后将不能修改，如确认无误，则在下方输入框中输入‘我已确认’后点击提交。"
-      />
-      <el-input v-model="confirmText" class="confirm-input" placeholder="请输入：我已确认" />
-      <template #footer>
-        <GlassButton variant="ghost" @click="confirmVisible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="submitting" @click="submitConfirm">提交</GlassButton>
-      </template>
-    </el-dialog>
+    <CommissionConfirmDialogs v-if="currentBatchId" ref="dialogsRef" :batch-id="currentBatchId" @confirmed="fetchList" />
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import {
-  confirmMyCommissionBatch,
   exportMyCommissionBatch,
   getMyCommissionBatches,
-  submitMyCommissionFeedback,
 } from '@/api/commission'
 import { downloadBlob } from '@/utils/download'
+import { batchStatusLabel, batchStatusType, roleLabel, usd } from './commissionFormat'
+import CommissionConfirmDialogs from './components/CommissionConfirmDialogs.vue'
+import CommissionMetricCards from './components/CommissionMetricCards.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const loading = ref(false)
-const submitting = ref(false)
 const tableData = ref([])
 const selectedBatch = ref(null)
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
-const currentRow = ref(null)
-const feedbackVisible = ref(false)
-const feedbackContent = ref('')
-const confirmVisible = ref(false)
-const confirmText = ref('')
+const currentBatchId = ref(null)
+const dialogsRef = ref(null)
 let listRequestSeq = 0
 
 const filters = reactive({
@@ -211,26 +154,6 @@ const selectedSummary = computed(() => selectedBatch.value || {
   total_commission: 0,
 })
 const currentUserKey = computed(() => authStore.user?.id || authStore.user?.username || authStore.accessToken || '')
-
-function money(value) {
-  return `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function statusType(status) {
-  return { confirming: 'warning', confirmed: 'success' }[status] || 'info'
-}
-
-function statusLabel(status) {
-  return { confirming: '确认中', confirmed: '已确认' }[status] || status
-}
-
-function roleLabel(role) {
-  return {
-    salesperson: '业务员',
-    supervisor: '一级主管',
-    second_supervisor: '二级主管',
-  }[role] || role
-}
 
 async function fetchList() {
   const requestSeq = ++listRequestSeq
@@ -267,7 +190,7 @@ function selectBatch(row) {
 }
 
 function batchRowClassName({ row }) {
-  return row.id === selectedBatch.value?.id ? 'selected-batch-row' : ''
+  return row.id === selectedBatch.value?.id ? 'commission-selected-row' : ''
 }
 
 function goDetail(row) {
@@ -279,47 +202,18 @@ async function handleExport(row) {
   downloadBlob(res)
 }
 
-function openFeedback(row) {
-  currentRow.value = row
-  feedbackContent.value = ''
-  feedbackVisible.value = true
+async function openFeedback(row) {
+  if (!row?.id) return
+  currentBatchId.value = row.id
+  await nextTick()
+  dialogsRef.value?.openFeedback()
 }
 
-async function submitFeedback() {
-  if (!feedbackContent.value.trim()) {
-    ElMessage.warning('请输入反馈内容')
-    return
-  }
-  submitting.value = true
-  try {
-    await submitMyCommissionFeedback(currentRow.value.id, { content: feedbackContent.value.trim() })
-    ElMessage.success('反馈已提交')
-    feedbackVisible.value = false
-  } finally {
-    submitting.value = false
-  }
-}
-
-function openConfirm(row) {
-  currentRow.value = row
-  confirmText.value = ''
-  confirmVisible.value = true
-}
-
-async function submitConfirm() {
-  if (confirmText.value !== '我已确认') {
-    ElMessage.warning('请输入“我已确认”后再提交')
-    return
-  }
-  submitting.value = true
-  try {
-    await confirmMyCommissionBatch(currentRow.value.id, { confirmation_text: confirmText.value })
-    ElMessage.success('确认成功')
-    confirmVisible.value = false
-    await fetchList()
-  } finally {
-    submitting.value = false
-  }
+async function openConfirm(row) {
+  if (!row?.id) return
+  currentBatchId.value = row.id
+  await nextTick()
+  dialogsRef.value?.openConfirm()
 }
 
 watch(currentUserKey, () => {
@@ -328,47 +222,20 @@ watch(currentUserKey, () => {
 }, { immediate: true })
 </script>
 
+<style scoped src="./commission.css"></style>
+
 <style scoped>
-.sales-commission-page {
-  --commission-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
-  position: relative;
-}
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
-.sales-commission-aurora { inset: -24px -28px; }
-
-/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
-   本页有就地渲染的 el-dialog，通配会压掉 .el-overlay 的 position: fixed */
-.sales-commission-page .filter-bar,
-.sales-commission-page .selected-batch-bar,
-.sales-commission-page .summary-grid,
-.sales-commission-page .table-card,
-.sales-commission-page .pagination { position: relative; z-index: 1; }
-
-.filter-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 14px 16px;
-  /* 筛选条：同款渐变玻璃 */
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  animation: surface-in 220ms var(--commission-ease-out) both;
-}
-
-.filter-actions {
+.selected-batch-bar {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.selected-batch-bar strong {
+  color: var(--text-primary);
+  font-size: 15px;
 }
 
 .role-select {
@@ -383,226 +250,7 @@ watch(currentUserKey, () => {
   width: 220px;
 }
 
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
-  gap: 12px;
-  animation: surface-in 240ms var(--commission-ease-out) 40ms both;
-}
-
-.selected-batch-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #606266;
-  font-size: 13px;
-  animation: surface-in 220ms var(--commission-ease-out) 20ms both;
-}
-
-.selected-batch-bar strong {
-  color: #111827;
-  font-size: 15px;
-}
-
-/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），
-   这里只留布局；各变体的语义色保留在文字/图标上 */
-.metric-item {
-  position: relative;
-  min-height: 82px;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  overflow: hidden;
-}
-
-.metric-icon {
-  position: absolute;
-  right: 14px;
-  bottom: 8px;
-  width: 64px;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 60px;
-  background: transparent;
-  box-shadow: none;
-  opacity: 0.14;
-  pointer-events: none;
-}
-
-.metric-item.payment .metric-icon {
-  color: #2563eb;
-}
-
-.metric-item.payment span {
-  color: #3b82f6;
-}
-
-.metric-item.payment strong {
-  color: #1d4ed8;
-}
-
-.metric-item.sales .metric-icon {
-  color: #16a34a;
-}
-
-.metric-item.sales span {
-  color: #22c55e;
-}
-
-.metric-item.sales strong {
-  color: #15803d;
-}
-
-.metric-item.supervisor .metric-icon {
-  color: #ea580c;
-}
-
-.metric-item.supervisor span {
-  color: #f97316;
-}
-
-.metric-item.supervisor strong {
-  color: #c2410c;
-}
-
-.metric-item.second-supervisor .metric-icon {
-  color: #7c3aed;
-}
-
-.metric-item.second-supervisor span {
-  color: #8b5cf6;
-}
-
-.metric-item.second-supervisor strong {
-  color: #6d28d9;
-}
-
-.metric-item.total .metric-icon {
-  color: #0891b2;
-}
-
-.metric-item.total span {
-  color: #06b6d4;
-}
-
-.metric-item.total strong {
-  color: #0e7490;
-}
-
-.metric-item span {
-  position: relative;
-  z-index: 1;
-  font-size: 13px;
-}
-
-.metric-item strong {
-  position: relative;
-  z-index: 1;
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.table-card {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-  animation: surface-in 260ms var(--commission-ease-out) 80ms both;
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.table-card :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
-   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
-.table-card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-
 .list-table {
   width: 100%;
-}
-
-:deep(.selected-batch-row td) {
-  background: #f0f9ff !important;
-  box-shadow: inset 0 1px 0 #bae6fd, inset 0 -1px 0 #bae6fd;
-}
-
-:deep(.selected-batch-row td:first-child) {
-  box-shadow: inset 3px 0 0 #0ea5e9, inset 0 1px 0 #bae6fd, inset 0 -1px 0 #bae6fd;
-}
-
-:deep(.list-table .el-table__body td.el-table__cell) {
-  transition: background-color 160ms ease;
-}
-
-:deep(.el-table__row) {
-  cursor: pointer;
-}
-
-.pagination {
-  display: flex;
-  justify-content: flex-end;
-  animation: surface-in 220ms var(--commission-ease-out) 120ms both;
-}
-
-.confirm-input {
-  margin-top: 18px;
-}
-
-@keyframes surface-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (max-width: 960px) {
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .filter-bar {
-    align-items: stretch;
-  }
-
-  .filter-actions,
-  .keyword-input,
-  .role-select,
-  .month-picker {
-    width: 100%;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .filter-bar,
-  .selected-batch-bar,
-  .summary-grid,
-  .table-card,
-  .pagination {
-    animation: none;
-  }
-
-  :deep(.list-table .el-table__body td.el-table__cell) {
-    transition-duration: 0.01ms;
-  }
 }
 </style>

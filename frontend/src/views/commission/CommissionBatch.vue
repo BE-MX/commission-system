@@ -1,145 +1,101 @@
 <template>
-  <div class="commission-batch-page">
+  <div class="commission-page">
     <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
-    <div class="batch-aurora lg-aurora" aria-hidden="true">
+    <div class="lg-aurora" aria-hidden="true">
       <div class="lg-aurora__blob lg-aurora__blob--gold" />
       <div class="lg-aurora__blob lg-aurora__blob--amber" />
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 状态Tab + 新建 -->
-    <el-row class="toolbar" justify="space-between" align="middle">
-      <el-col :span="18">
-        <el-radio-group v-model="statusFilter" @change="fetchList">
-          <el-radio-button value="">全部</el-radio-button>
-          <el-radio-button value="draft">草稿</el-radio-button>
-          <el-radio-button value="calculated">已计算</el-radio-button>
-          <el-radio-button value="confirming">确认中</el-radio-button>
-          <el-radio-button value="confirmed">已确认</el-radio-button>
-          <el-radio-button value="voided">已作废</el-radio-button>
-        </el-radio-group>
-      </el-col>
-      <el-col :span="6" style="text-align:right">
+    <!-- 状态筛选 + 新建 -->
+    <div class="commission-panel commission-filter-bar commission-lift cm-enter">
+      <el-radio-group v-model="statusFilter" @change="fetchList">
+        <el-radio-button value="">全部</el-radio-button>
+        <el-radio-button value="draft">草稿</el-radio-button>
+        <el-radio-button value="calculated">已计算</el-radio-button>
+        <el-radio-button value="confirming">确认中</el-radio-button>
+        <el-radio-button value="confirmed">已确认</el-radio-button>
+        <el-radio-button value="voided">已作废</el-radio-button>
+      </el-radio-group>
+      <div class="commission-filter-bar__actions">
         <GlassButton v-permission="'commission:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新建批次</GlassButton>
-      </el-col>
-    </el-row>
+      </div>
+    </div>
 
     <!-- 表格 -->
-    <div class="table-card batch-panel">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
-      <el-table-column prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column label="周期类型" min-width="90" max-width="140">
-        <template #default="{ row }">{{ periodLabel(row.period_type) }}</template>
-      </el-table-column>
-      <el-table-column prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="status" label="状态" min-width="90" max-width="140" sortable="custom">
-        <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="确认进度" min-width="160" max-width="220">
-        <template #default="{ row }">
-          <div class="confirm-progress">
-            <span>{{ row.confirmed_count || 0 }}/{{ row.expected_confirm_count || 0 }}</span>
-            <el-progress
-              :percentage="confirmPercent(row)"
-              :show-text="false"
-              :stroke-width="6"
-              :status="row.confirmation_status === 'all_confirmed' ? 'success' : ''"
-            />
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="确认状态" min-width="110" max-width="160">
-        <template #default="{ row }">
-          <el-tag :type="confirmationStatusType(row.confirmation_status)" size="small" effect="plain">
-            {{ confirmationStatusLabel(row.confirmation_status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="feedback_count" label="反馈数" min-width="80" max-width="120" align="right" />
-      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
-      <el-table-column class-name="table-action-column" label="操作" min-width="280" max-width="420" fixed="right">
-        <template #default="{ row }">
-          <!-- 草稿 -->
-          <template v-if="row.status === 'draft'">
-            <GlassButton v-permission="'commission:write'" variant="link" left-icon="DataAnalysis" @click="handleCalculate(row)">执行计算</GlassButton>
+    <div class="table-card commission-panel commission-lift cm-enter-2">
+      <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
+        <el-table-column prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+        <el-table-column label="周期类型" min-width="90" max-width="140">
+          <template #default="{ row }">{{ periodLabel(row.period_type) }}</template>
+        </el-table-column>
+        <el-table-column prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="status" label="状态" min-width="90" max-width="140" sortable="custom">
+          <template #default="{ row }">
+            <el-tag :type="batchStatusType(row.status)" size="small" effect="plain">{{ batchStatusLabel(row.status) }}</el-tag>
           </template>
-          <!-- 已计算 -->
-          <template v-if="row.status === 'calculated'">
-            <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
-            <GlassButton v-permission="'commission:write'" variant="link" link-tone="warning" left-icon="Promotion" @click="handleSendConfirm(row)">发送确认</GlassButton>
-            <GlassButton v-permission="'commission:write'" variant="link" link-tone="success" left-icon="CircleCheck" @click="handleConfirm(row)">确认</GlassButton>
-            <GlassButton v-permission="'commission:write'" variant="link" link-tone="danger" left-icon="CircleClose" @click="handleVoid(row)">作废</GlassButton>
-            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)">
-              <GlassButton variant="link" left-icon="Download" right-icon="ArrowDown">
-                导出
-              </GlassButton>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="all"><el-icon><Document /></el-icon> 全部明细</el-dropdown-item>
-                  <el-dropdown-item command="salesperson"><el-icon><User /></el-icon> 按业务员</el-dropdown-item>
-                  <el-dropdown-item command="supervisor"><el-icon><UserFilled /></el-icon> 按一级主管</el-dropdown-item>
-                  <el-dropdown-item command="customer"><el-icon><OfficeBuilding /></el-icon> 按客户</el-dropdown-item>
-                  <el-dropdown-item command="sp_summary" divided><el-icon><TrendCharts /></el-icon> 业务员汇总</el-dropdown-item>
-                  <el-dropdown-item command="sv_summary"><el-icon><TrendCharts /></el-icon> 一级主管汇总</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+        </el-table-column>
+        <el-table-column label="确认进度" min-width="160" max-width="220">
+          <template #default="{ row }">
+            <div class="confirm-progress">
+              <span>{{ row.confirmed_count || 0 }}/{{ row.expected_confirm_count || 0 }}</span>
+              <el-progress
+                :percentage="confirmPercent(row)"
+                :show-text="false"
+                :stroke-width="6"
+                :status="row.confirmation_status === 'all_confirmed' ? 'success' : ''"
+              />
+            </div>
           </template>
-          <!-- 确认中 -->
-          <template v-if="row.status === 'confirming'">
-            <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
-            <GlassButton v-permission="'commission:write'" variant="link" link-tone="danger" left-icon="RefreshLeft" @click="handleRevokeConfirm(row)">撤销确认</GlassButton>
-            <GlassButton v-permission="'commission:write'" variant="link" link-tone="success" left-icon="CircleCheck" @click="handleConfirm(row)">确认</GlassButton>
-            <GlassButton v-permission="'commission:write'" variant="link" link-tone="danger" left-icon="CircleClose" @click="handleVoid(row)">作废</GlassButton>
-            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)">
-              <GlassButton variant="link" left-icon="Download" right-icon="ArrowDown">
-                导出
-              </GlassButton>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="all"><el-icon><Document /></el-icon> 全部明细</el-dropdown-item>
-                  <el-dropdown-item command="salesperson"><el-icon><User /></el-icon> 按业务员</el-dropdown-item>
-                  <el-dropdown-item command="supervisor"><el-icon><UserFilled /></el-icon> 按一级主管</el-dropdown-item>
-                  <el-dropdown-item command="customer"><el-icon><OfficeBuilding /></el-icon> 按客户</el-dropdown-item>
-                  <el-dropdown-item command="sp_summary" divided><el-icon><TrendCharts /></el-icon> 业务员汇总</el-dropdown-item>
-                  <el-dropdown-item command="sv_summary"><el-icon><TrendCharts /></el-icon> 一级主管汇总</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+        </el-table-column>
+        <el-table-column label="确认状态" min-width="110" max-width="160">
+          <template #default="{ row }">
+            <el-tag :type="confirmationStatusType(row.confirmation_status)" size="small" effect="plain">
+              {{ confirmationStatusLabel(row.confirmation_status) }}
+            </el-tag>
           </template>
-          <!-- 已确认 -->
-          <template v-if="row.status === 'confirmed'">
-            <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
-            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)">
-              <GlassButton variant="link" left-icon="Download" right-icon="ArrowDown">
-                导出
-              </GlassButton>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="all"><el-icon><Document /></el-icon> 全部明细</el-dropdown-item>
-                  <el-dropdown-item command="salesperson"><el-icon><User /></el-icon> 按业务员</el-dropdown-item>
-                  <el-dropdown-item command="supervisor"><el-icon><UserFilled /></el-icon> 按一级主管</el-dropdown-item>
-                  <el-dropdown-item command="customer"><el-icon><OfficeBuilding /></el-icon> 按客户</el-dropdown-item>
-                  <el-dropdown-item command="sp_summary" divided><el-icon><TrendCharts /></el-icon> 业务员汇总</el-dropdown-item>
-                  <el-dropdown-item command="sv_summary"><el-icon><TrendCharts /></el-icon> 一级主管汇总</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+        </el-table-column>
+        <el-table-column prop="feedback_count" label="反馈数" min-width="80" max-width="120" align="right" />
+        <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
+        <el-table-column class-name="table-action-column" label="操作" min-width="280" max-width="420" fixed="right">
+          <template #default="{ row }">
+            <!-- 草稿 -->
+            <template v-if="row.status === 'draft'">
+              <GlassButton v-permission="'commission:write'" variant="link" left-icon="DataAnalysis" @click="handleCalculate(row)">执行计算</GlassButton>
+            </template>
+            <!-- 已计算 -->
+            <template v-if="row.status === 'calculated'">
+              <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
+              <GlassButton v-permission="'commission:write'" variant="link" link-tone="warning" left-icon="Promotion" @click="handleSendConfirm(row)">发送确认</GlassButton>
+              <GlassButton v-permission="'commission:write'" variant="link" link-tone="success" left-icon="CircleCheck" @click="handleConfirm(row)">确认</GlassButton>
+              <GlassButton v-permission="'commission:write'" variant="link" link-tone="danger" left-icon="CircleClose" @click="handleVoid(row)">作废</GlassButton>
+              <CommissionExportMenu :batch-id="row.id" />
+            </template>
+            <!-- 确认中 -->
+            <template v-if="row.status === 'confirming'">
+              <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
+              <GlassButton v-permission="'commission:write'" variant="link" link-tone="danger" left-icon="RefreshLeft" @click="handleRevokeConfirm(row)">撤销确认</GlassButton>
+              <GlassButton v-permission="'commission:write'" variant="link" link-tone="success" left-icon="CircleCheck" @click="handleConfirm(row)">确认</GlassButton>
+              <GlassButton v-permission="'commission:write'" variant="link" link-tone="danger" left-icon="CircleClose" @click="handleVoid(row)">作废</GlassButton>
+              <CommissionExportMenu :batch-id="row.id" />
+            </template>
+            <!-- 已确认 -->
+            <template v-if="row.status === 'confirmed'">
+              <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
+              <CommissionExportMenu :batch-id="row.id" />
+            </template>
+            <!-- 已作废 -->
+            <template v-if="row.status === 'voided'">
+              <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
+            </template>
           </template>
-          <!-- 已作废 -->
-          <template v-if="row.status === 'voided'">
-            <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
-          </template>
-        </template>
-      </el-table-column>
-    </el-table>
+        </el-table-column>
+      </el-table>
     </div>
 
     <el-pagination
-      class="pagination"
+      class="commission-pagination commission-lift cm-enter-3"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
@@ -185,16 +141,16 @@
     <el-dialog v-model="calcResultVisible" title="计算结果" width="480px">
       <el-descriptions :column="2" border v-if="calcResult">
         <el-descriptions-item label="参与计算回款数">{{ calcResult.total_payments }}</el-descriptions-item>
-        <el-descriptions-item label="业务员提成合计">{{ calcResult.total_salesperson_commission?.toFixed(2) }}</el-descriptions-item>
-        <el-descriptions-item label="一级主管提成合计">{{ calcResult.total_supervisor_commission?.toFixed(2) }}</el-descriptions-item>
-        <el-descriptions-item label="二级主管提成合计">{{ calcResult.total_second_supervisor_commission?.toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="业务员提成合计">{{ usdOrDash(calcResult.total_salesperson_commission) }}</el-descriptions-item>
+        <el-descriptions-item label="一级主管提成合计">{{ usdOrDash(calcResult.total_supervisor_commission) }}</el-descriptions-item>
+        <el-descriptions-item label="二级主管提成合计">{{ usdOrDash(calcResult.total_second_supervisor_commission) }}</el-descriptions-item>
         <el-descriptions-item label="跳过(归属不完整)">{{ calcResult.skipped_incomplete }}</el-descriptions-item>
         <el-descriptions-item label="跳过(无快照)">{{ calcResult.skipped_no_snapshot }}</el-descriptions-item>
       </el-descriptions>
       <el-alert
         v-if="calcResult && (calcResult.skipped_incomplete > 0 || calcResult.skipped_no_snapshot > 0)"
         type="warning"
-        style="margin-top:16px"
+        class="calc-result-alert"
         :closable="false"
         title="部分回款因客户归属不完整而跳过，请补充后重新计算"
       />
@@ -219,10 +175,18 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createBatch, getBatchList, calculateBatch, confirmBatch, voidBatch, sendConfirmBatch, revokeConfirmBatch } from '@/api/commission'
-import { exportCommissionDetails, exportSalespersonSummary, exportSupervisorSummary } from '@/api/report'
-import { downloadBlob } from '@/utils/download'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useTableSort } from '@/composables/useTableSort'
+import {
+  batchStatusLabel,
+  batchStatusType,
+  confirmPercent,
+  confirmationStatusLabel,
+  confirmationStatusType,
+  periodLabel,
+  usdOrDash,
+} from './commissionFormat'
+import CommissionExportMenu from './components/CommissionExportMenu.vue'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
@@ -239,27 +203,6 @@ const sendConfirmVisible = ref(false)
 const sendConfirmLoading = ref(false)
 const sendDingtalkNotify = ref(true)
 const currentSendConfirmRow = ref(null)
-
-function statusType(s) {
-  return { draft: 'info', calculated: '', confirming: 'warning', confirmed: 'success', voided: 'danger' }[s] || 'info'
-}
-function statusLabel(s) {
-  return { draft: '草稿', calculated: '已计算', confirming: '确认中', confirmed: '已确认', voided: '已作废' }[s] || s
-}
-function confirmationStatusType(s) {
-  return { not_required: 'info', not_started: 'info', partial_confirmed: 'warning', all_confirmed: 'success' }[s] || 'info'
-}
-function confirmationStatusLabel(s) {
-  return { not_required: '无需确认', not_started: '未开始', partial_confirmed: '部分确认', all_confirmed: '全部确认' }[s] || s
-}
-function confirmPercent(row) {
-  const expected = Number(row.expected_confirm_count || 0)
-  if (!expected) return 0
-  return Math.min(Math.round((Number(row.confirmed_count || 0) / expected) * 100), 100)
-}
-function periodLabel(p) {
-  return { monthly: '月度', quarterly: '季度', semi_annual: '半年', annual: '年度' }[p] || p
-}
 
 async function fetchList() {
   loading.value = true
@@ -389,20 +332,6 @@ async function handleRevokeConfirm(row) {
   } catch { /* handled by interceptor */ }
 }
 
-// 导出
-async function handleExport(row, cmd) {
-  let res
-  if (cmd === 'sp_summary') {
-    res = await exportSalespersonSummary(row.id)
-  } else if (cmd === 'sv_summary') {
-    res = await exportSupervisorSummary(row.id)
-  } else {
-    const groupBy = cmd === 'all' ? '' : cmd
-    res = await exportCommissionDetails(row.id, groupBy)
-  }
-  downloadBlob(res)
-}
-
 function goDetail(row) {
   router.push(`/commission/batch/${row.id}/details`)
 }
@@ -410,47 +339,27 @@ function goDetail(row) {
 onMounted(fetchList)
 </script>
 
+<style scoped src="./commission.css"></style>
+
 <style scoped>
-.commission-batch-page { position: relative; }
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
-.batch-aurora { inset: -24px -28px; }
-/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
-   本页有 3 个就地渲染的 el-dialog，通配会压掉 .el-overlay 的 position: fixed */
-.commission-batch-page .toolbar,
-.commission-batch-page .batch-panel,
-.commission-batch-page .pagination { position: relative; z-index: 1; }
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.batch-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-}
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.batch-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
-   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
-.batch-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.batch-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.batch-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-.toolbar { margin-bottom: 16px; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
 .confirm-progress {
   display: grid;
   grid-template-columns: 44px 1fr;
   gap: 8px;
   align-items: center;
 }
+
+.calc-result-alert {
+  margin-top: 16px;
+}
+
 .send-confirm-content {
   margin-bottom: 14px;
-  color: #303133;
+  color: var(--text-primary);
   line-height: 1.6;
+}
+
+.list-table {
+  width: 100%;
 }
 </style>

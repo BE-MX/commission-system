@@ -1,101 +1,84 @@
 <template>
-  <div class="commission-detail-page">
+  <div class="commission-page">
     <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
-    <div class="detail-aurora lg-aurora" aria-hidden="true">
+    <div class="lg-aurora" aria-hidden="true">
       <div class="lg-aurora__blob lg-aurora__blob--gold" />
       <div class="lg-aurora__blob lg-aurora__blob--amber" />
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 批次摘要卡片 -->
-    <div v-if="summary" class="summary-banner">
-      <div class="summary-top">
-        <div class="summary-title">{{ summary.batch_name }}</div>
-        <el-tag :type="statusType(summary.status)" effect="dark" round size="small">{{ statusLabel(summary.status) }}</el-tag>
+    <!-- 页头：批次名 + 状态，返回列表 -->
+    <div class="commission-page-header commission-lift cm-enter">
+      <div>
+        <div class="commission-page-header__title">
+          <h2>{{ summary?.batch_name || '提成明细' }}</h2>
+          <el-tag v-if="summary" :type="batchStatusType(summary.status)" size="small" effect="plain">
+            {{ batchStatusLabel(summary.status) }}
+          </el-tag>
+        </div>
+        <p v-if="summary">确认进度 {{ summary.confirmed_count || 0 }}/{{ summary.expected_confirm_count || 0 }} · 反馈 {{ summary.feedback_count || 0 }} 条</p>
       </div>
-      <div class="summary-grid">
-        <div class="summary-item">
-          <div class="summary-label">回款总额</div>
-          <div class="summary-value">{{ summary.total_payment_amount?.toFixed(2) }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">业务员提成</div>
-          <div class="summary-value">{{ summary.total_salesperson_commission?.toFixed(2) }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">一级主管提成</div>
-          <div class="summary-value">{{ summary.total_supervisor_commission?.toFixed(2) }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">二级主管提成</div>
-          <div class="summary-value">{{ summary.total_second_supervisor_commission?.toFixed(2) }}</div>
-        </div>
-        <div class="summary-item highlight">
-          <div class="summary-label">总提成</div>
-          <div class="summary-value">{{ summary.total_commission?.toFixed(2) }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">确认进度</div>
-          <div class="summary-value">{{ summary.confirmed_count || 0 }}/{{ summary.expected_confirm_count || 0 }}</div>
-        </div>
-        <div class="summary-item">
-          <div class="summary-label">反馈数</div>
-          <div class="summary-value">{{ summary.feedback_count || 0 }}</div>
-        </div>
+      <div class="commission-page-header__actions">
+        <GlassButton variant="ghost" left-icon="ArrowLeft" @click="router.push('/commission/batch')">返回列表</GlassButton>
       </div>
     </div>
 
+    <!-- 批次摘要指标卡 -->
+    <CommissionMetricCards v-loading="summaryLoading" class="commission-lift cm-enter-1" :summary="summary || {}" />
+
     <!-- 筛选栏 -->
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="6">
-        <el-input v-model="keyword" placeholder="搜索客户/业务员/主管" clearable @keyup.enter="fetchDetails" @clear="fetchDetails">
-          <template #prefix><el-icon><Search /></el-icon></template>
-        </el-input>
-      </el-col>
-      <el-col :span="2">
-        <GlassButton left-icon="Search" @click="fetchDetails">查询</GlassButton>
-      </el-col>
-      <el-col :span="2">
-        <GlassButton left-icon="ArrowLeft" @click="$router.push('/commission/batch')">返回列表</GlassButton>
-      </el-col>
-    </el-row>
+    <div class="commission-panel commission-filter-bar commission-lift cm-enter-2">
+      <el-input
+        v-model="keyword"
+        placeholder="搜索客户/业务员/主管"
+        clearable
+        class="keyword-input"
+        @keyup.enter="handleSearch"
+        @clear="handleSearch"
+      >
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <div class="commission-filter-bar__actions">
+        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
+      </div>
+    </div>
 
     <!-- 明细表格 -->
-    <div class="table-card detail-panel">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
-      <el-table-column prop="payment_id" label="回款ID" min-width="160" max-width="240" show-overflow-tooltip />
-      <el-table-column prop="order_id" label="订单ID" min-width="160" max-width="240" show-overflow-tooltip />
-      <el-table-column prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="payment_amount" label="回款金额" min-width="110" max-width="170" sortable="custom">
-        <template #default="{ row }">{{ row.payment_amount?.toFixed(2) }}</template>
-      </el-table-column>
-      <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip sortable="custom" />
-      <el-table-column label="业务员比例" min-width="90" max-width="140">
-        <template #default="{ row }">{{ rateStr(row.salesperson_rate) }}</template>
-      </el-table-column>
-      <el-table-column prop="salesperson_commission" label="业务员提成" min-width="100" max-width="150" sortable="custom">
-        <template #default="{ row }">{{ row.salesperson_commission?.toFixed(2) }}</template>
-      </el-table-column>
-      <el-table-column prop="supervisor_name" label="一级主管" min-width="90" max-width="140" show-overflow-tooltip />
-      <el-table-column label="一级主管比例" min-width="100" max-width="150">
-        <template #default="{ row }">{{ rateStr(row.supervisor_rate) }}</template>
-      </el-table-column>
-      <el-table-column label="一级主管提成" min-width="110" max-width="170">
-        <template #default="{ row }">{{ row.supervisor_commission?.toFixed(2) }}</template>
-      </el-table-column>
-      <el-table-column prop="second_supervisor_name" label="二级主管" min-width="90" max-width="140" show-overflow-tooltip />
-      <el-table-column label="二级主管比例" min-width="100" max-width="150">
-        <template #default="{ row }">{{ rateStr(row.second_supervisor_rate) }}</template>
-      </el-table-column>
-      <el-table-column label="二级主管提成" min-width="110" max-width="170">
-        <template #default="{ row }">{{ row.second_supervisor_commission?.toFixed(2) }}</template>
-      </el-table-column>
-      <el-table-column prop="calc_rule_note" label="计算规则" min-width="130" max-width="200" show-overflow-tooltip />
-    </el-table>
+    <div class="table-card commission-panel commission-lift cm-enter-3">
+      <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
+        <el-table-column prop="payment_id" label="回款ID" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column prop="order_id" label="订单ID" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="payment_amount" label="回款金额（美元）" min-width="130" max-width="190" align="right" sortable="custom">
+          <template #default="{ row }">{{ usdOrDash(row.payment_amount) }}</template>
+        </el-table-column>
+        <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip sortable="custom" />
+        <el-table-column label="业务员比例" min-width="100" max-width="150" align="right">
+          <template #default="{ row }">{{ commissionRate(row.salesperson_rate) }}</template>
+        </el-table-column>
+        <el-table-column prop="salesperson_commission" label="业务员提成" min-width="110" max-width="160" align="right" sortable="custom">
+          <template #default="{ row }">{{ usdOrDash(row.salesperson_commission) }}</template>
+        </el-table-column>
+        <el-table-column prop="supervisor_name" label="一级主管" min-width="90" max-width="140" show-overflow-tooltip />
+        <el-table-column label="一级主管比例" min-width="110" max-width="160" align="right">
+          <template #default="{ row }">{{ commissionRate(row.supervisor_rate) }}</template>
+        </el-table-column>
+        <el-table-column label="一级主管提成" min-width="120" max-width="180" align="right">
+          <template #default="{ row }">{{ usdOrDash(row.supervisor_commission) }}</template>
+        </el-table-column>
+        <el-table-column prop="second_supervisor_name" label="二级主管" min-width="90" max-width="140" show-overflow-tooltip />
+        <el-table-column label="二级主管比例" min-width="110" max-width="160" align="right">
+          <template #default="{ row }">{{ commissionRate(row.second_supervisor_rate) }}</template>
+        </el-table-column>
+        <el-table-column label="二级主管提成" min-width="120" max-width="180" align="right">
+          <template #default="{ row }">{{ usdOrDash(row.second_supervisor_commission) }}</template>
+        </el-table-column>
+        <el-table-column prop="calc_rule_note" label="计算规则" min-width="130" max-width="200" show-overflow-tooltip />
+      </el-table>
     </div>
 
     <el-pagination
-      class="pagination"
+      class="commission-pagination commission-lift cm-enter-4"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
@@ -109,18 +92,22 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getBatchDetails, getBatchSummary } from '@/api/commission'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useTableSort } from '@/composables/useTableSort'
+import { batchStatusLabel, batchStatusType, commissionRate, usdOrDash } from './commissionFormat'
+import CommissionMetricCards from './components/CommissionMetricCards.vue'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
 
 const route = useRoute()
+const router = useRouter()
 const batchId = route.params.batchId
 
 const summary = ref(null)
+const summaryLoading = ref(false)
 const keyword = ref('')
 const page = ref(1)
 const pageSize = ref(20)
@@ -128,21 +115,20 @@ const total = ref(0)
 const tableData = ref([])
 const loading = ref(false)
 
-function statusType(s) {
-  return { draft: 'info', calculated: '', confirming: 'warning', confirmed: 'success', voided: 'danger' }[s] || 'info'
-}
-function statusLabel(s) {
-  return { draft: '草稿', calculated: '已计算', confirming: '确认中', confirmed: '已确认', voided: '已作废' }[s] || s
-}
-function rateStr(v) {
-  return v != null ? (v * 100).toFixed(1) + '%' : '-'
-}
-
 async function fetchSummary() {
+  summaryLoading.value = true
   try {
     const res = await getBatchSummary(batchId)
     summary.value = res.data
-  } catch { /* ignore */ }
+  } catch { /* 拦截器已提示，明细表不受影响 */ }
+  finally {
+    summaryLoading.value = false
+  }
+}
+
+function handleSearch() {
+  page.value = 1
+  fetchDetails()
 }
 
 async function fetchDetails() {
@@ -167,85 +153,15 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
-.commission-detail-page { position: relative; }
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
-.detail-aurora { inset: -24px -28px; }
-/* 内容压到极光之上（点名内容块，不用通配）。.summary-banner 是深色 Hero 横幅，
-   属页面强调元素而非独立深色大屏主题，保留原样只补层叠 */
-.commission-detail-page .summary-banner,
-.commission-detail-page .toolbar,
-.commission-detail-page .detail-panel,
-.commission-detail-page .pagination { position: relative; z-index: 1; }
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.detail-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-}
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白（本表无固定列） */
-.detail-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-.toolbar { margin-bottom: 16px; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
+<style scoped src="./commission.css"></style>
 
-.summary-banner {
-  background: linear-gradient(135deg, #141210 0%, #1E1B18 60%, #141210 100%);
-  border-radius: 16px;
-  padding: 28px 32px;
-  margin-bottom: 16px;
-  color: #fff;
-  position: relative;
-  overflow: hidden;
+<style scoped>
+.keyword-input {
+  width: 280px;
+  max-width: 100%;
 }
-.summary-banner::after {
-  content: '';
-  position: absolute;
-  right: -20px;
-  top: -20px;
-  width: 150px;
-  height: 150px;
-  border: 2px solid rgba(245,203,92,0.1);
-  border-radius: 4px;
-  transform: rotate(45deg);
-}
-.summary-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-.summary-title {
-  font-size: 18px;
-  font-weight: 700;
-}
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 16px;
-}
-.summary-item {
-  background: rgba(255,255,255,0.12);
-  border-radius: 8px;
-  padding: 12px 16px;
-}
-.summary-item.highlight {
-  background: rgba(255,255,255,0.2);
-}
-.summary-label {
-  font-size: 12px;
-  color: rgba(255,255,255,0.7);
-  margin-bottom: 4px;
-}
-.summary-value {
-  font-size: 22px;
-  font-weight: 700;
+
+.list-table {
+  width: 100%;
 }
 </style>

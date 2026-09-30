@@ -1,0 +1,48 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>Commission isolated QA</title></head><body>
+<div id="app"></div>
+<script type="module">
+import { createApp } from 'vue/dist/vue.esm-bundler.js'
+import { createPinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import ElementPlus from 'element-plus'
+import '/node_modules/element-plus/dist/index.css'
+import '/src/styles/tokens.css'
+import '/src/styles/liquid-glass.css'
+import '/src/styles/app.css'
+import '/src/styles/table-actions.css'
+import GlassButton from '/src/components/GlassButton.vue'
+import { vPermission, vAnyPermission } from '/src/directives/permission.js'
+import { useAuthStore } from '/src/stores/auth'
+import CommissionBatch from '/src/views/commission/CommissionBatch.vue'
+import CommissionDetail from '/src/views/commission/CommissionDetail.vue'
+import SalesCommission from '/src/views/commission/SalesCommission.vue'
+import SalesCommissionDetail from '/src/views/commission/SalesCommissionDetail.vue'
+
+const router = createRouter({
+  history: createMemoryHistory(),
+  routes: [
+    { path: '/commission/batch', component: CommissionBatch },
+    { path: '/commission/batch/:batchId/details', component: CommissionDetail },
+    { path: '/commission/my', component: SalesCommission },
+    { path: '/commission/my/:batchId/details', component: SalesCommissionDetail },
+    { path: '/:pathMatch(.*)*', redirect: '/commission/batch' },
+  ],
+})
+
+const app = createApp({ template: '<div style="padding:24px 28px"><router-view /></div>' })
+app.use(createPinia())
+app.use(router)
+app.use(ElementPlus)
+app.component('GlassButton', GlassButton)
+app.directive('permission', vPermission)
+app.directive('any-permission', vAnyPermission)
+
+const auth = useAuthStore()
+auth.accessToken = 'qa-token'
+auth.user = { id: 7, username: 'qa', permissions: ['commission:read', 'commission:write', 'commission_my:read'], roles: [] }
+
+const params = new URLSearchParams(location.search)
+router.push(params.get('route') || '/commission/batch')
+app.mount('#app')
+window.__qaReady = true
+</script></body></html>
