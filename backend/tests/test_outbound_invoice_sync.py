@@ -1011,3 +1011,85 @@ def test_print_uses_current_event_after_wait_not_cached_header(db, sync_case):
     current = state.ensure_printable(db, 'OB001')
     assert state.apply_header(db, record, event=current)['remark'] == 'newer verified note'
     assert outbound_service.list_outbound_items(db, 'OB001', sync_event=current)[0]['qty'] == 3
+
+
+@pytest.mark.parametrize('recover', [False, True])
+def test_trimmed_remote_remark_finishes_sync_and_recovery_without_reposting(db, sync_case, monkeypatch, recover):
+    user, inv, item, fake = sync_case
+    inv.remark = '公司黑色logo 5条一包 '
+    db.commit()
+    original_post = sync.okki_client._post_json
+    original_read = sync.remote.read
+    fail_readback = False
+
+    def read_after_save(*args, **kwargs):
+        nonlocal fail_readback
+        if fail_readback and args[1].endswith('/outbound/info'):
+            fail_readback = False
+            raise okki_client.OkkiApiError('readback temporarily unavailable')
+        return original_read(*args, **kwargs)
+
+    monkeypatch.setattr(sync.remote, 'read', read_after_save)
+
+    def trim_after_save(*args, **kwargs):
+        nonlocal fail_readback
+        result = original_post(*args, **kwargs)
+        fake['outbound']['remark'] = fake['outbound']['remark'].strip()
+        if recover:
+            fail_readback = True
+            raise okki_client.OkkiApiError('response lost after save')
+        return result
+
+    monkeypatch.setattr(sync.okki_client, '_post_json', trim_after_save)
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+    preview = sync.preview(db, record, actor)
+    result = sync.synchronize(db, record, actor, preview['version'])
+    if recover:
+        assert result['status'] == 'sync_uncertain'
+        result = sync.synchronize(db, record, actor, preview['version'])
+    assert result['status'] == 'sync_done'
+    assert len(fake['posts']) == 1
+    assert fake['posts'][0]['remark'] == inv.remark
+    event = state.ensure_printable(db, 'OB001', record)
+    assert event.result['verified']['remark'] == inv.remark.strip()
+    assert event.result['required_recheck_ids'] == []
+
+
+def test_remark_edge_whitespace_alone_does_not_sync_or_invalidate_inspection(db, sync_case):
+    user, inv, item, fake = sync_case
+    inv.remark = 'old note \n'
+    db.commit()
+    products = fake['order']['product_list']
+    before = deepcopy(fake['outbound'])
+    aligned = plans.build(before, fake['order'], products, inv.remark)
+    before['record_list'] = deepcopy(aligned['expected'])
+    plan = plans.build(before, fake['order'], products, inv.remark)
+    assert plan['changes'] == []
+    assert not plan['changed'] and not plan['remark_changed']
+    assert not plan['material_changed'] and not plan['requires_whole_recheck']
+    assert plan['payload']['remark'] == inv.remark
+    plans.verify(before, deepcopy(before), plan)
+
+
+@pytest.mark.parametrize('remote', ['公司黑色logo 6条一包', '公司黑色logo5条一包', '', 123])
+def test_remark_content_or_type_difference_still_blocks_sync_verification(db, sync_case, remote):
+    _, _, _, fake = sync_case
+    plan = plans.build(fake['outbound'], fake['order'], fake['order']['product_list'], '公司黑色logo 5条一包 ')
+    after = deepcopy(fake['outbound'])
+    after.update(record_list=deepcopy(plan['expected']), remark=remote)
+    with pytest.raises(ValueError, match='出库备注未同步'):
+        plans.verify(fake['outbound'], after, plan)
+
+
+@pytest.mark.parametrize('original,remote', [('a  b\nc', 'a b\nc'), ('a\nb', 'ab')])
+def test_remark_internal_whitespace_is_still_material(db, sync_case, original, remote):
+    _, _, _, fake = sync_case
+    before = deepcopy(fake['outbound'])
+    before['remark'] = remote
+    plan = plans.build(before, fake['order'], fake['order']['product_list'], original + ' ')
+    assert plan['remark_changed'] and plan['requires_whole_recheck']
+    after = deepcopy(before)
+    after['record_list'] = deepcopy(plan['expected'])
+    with pytest.raises(ValueError, match='出库备注未同步'):
+        plans.verify(before, after, plan)
