@@ -276,7 +276,7 @@
               ${filter.values.map(value => `<button type="button" data-group-tag="${value.id}" data-batch-id="${b.id}" data-group-id="${group.id}" aria-pressed="${selectedGroupTags(b.id, group.id).includes(value.id)}" class="${selectedGroupTags(b.id, group.id).includes(value.id) ? 'active' : ''}">${escapeHtml(value.value)}</button>`).join('')}
             </div></div>`).join('')}
             ${groupByColorAndTexture(visible).map(row => `<section class="portal-tag-group">
-              ${row.textureType || row.colorName ? `<h4>${escapeHtml(row.textureType)}<span class="${row.textureType ? '' : 'color-only'}">${row.colorName ? `${escapeHtml(row.colorName)} · ` : ''}${row.assets.length} files</span></h4>` : ''}
+              ${row.textureType || row.colorName ? `<h4>${row.textureType ? `<span class="row-label">${escapeHtml(row.textureType)}</span>` : ''}${row.textureType && row.colorName ? '<span class="row-divider">·</span>' : ''}${row.colorName ? `<span class="row-label">${escapeHtml(row.colorName)}</span>` : ''}<span class="row-count">${row.assets.length} files</span></h4>` : ''}
               <div class="asset-gallery">${row.assets.map(a => `
             <article class="asset-card ${selected.has(a.id) ? 'selected' : ''}" data-card="${a.id}">
               <label class="asset-select"><input type="checkbox" data-select="${a.id}" ${selected.has(a.id) ? 'checked' : ''} /><span>Select</span></label>
