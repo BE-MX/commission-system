@@ -1,7 +1,7 @@
 <template>
   <section class="operator-picker" :class="{ 'needs-selection': attention && !selectedId }" aria-labelledby="operator-title">
-    <div class="picker-heading"><h2 id="operator-title">第一步 · 选择本次操作人</h2><span>{{ people.length }} 人</span></div>
-    <p>请点击自己的姓名，再开始扫描</p>
+    <div class="picker-heading"><h2 id="operator-title">本次操作人</h2><span>{{ people.length }} 人</span></div>
+    <p>{{ selectedId ? '默认沿用当前操作人；换人请点击姓名' : '请点击自己的姓名，再开始扫描' }}</p>
     <input v-if="people.length > 12" v-model="search" class="operator-search" type="search" placeholder="搜索姓名" aria-label="搜索质检人员" />
     <div v-if="loading" role="status">正在加载质检人员…</div>
     <div v-else-if="!people.length" role="status">暂无可选人员，请重试或联系管理员</div>
