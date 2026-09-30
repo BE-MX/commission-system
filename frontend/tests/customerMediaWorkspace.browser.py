@@ -79,9 +79,28 @@ with sync_playwright() as p, tempfile.TemporaryDirectory() as temp:
     expect(preview.locator('#app')).to_be_visible()
     expect(preview.locator('#login')).to_be_hidden()
     expect(preview.locator('.asset-card')).to_have_count(1)
+    dimensions.append({'id': 4, 'name': 'customer_product_type', 'label': 'Product type',
+                       'values': [{'id': 41, 'value': 'Wig'}, {'id': 42, 'value': 'Cap'}]})
+    batch['assets'] = [
+        {'id': 601, 'file_name': 'wig.png', 'media_type': 'image', 'file_size': 100, 'directory_id': None,
+         'content_url': '/api/customer-media/assets/601/content?expires=100&token=demo',
+         'tags': [{'dimension_id': 4, 'dimension_label': 'Product type', 'tag_value_id': 41, 'value': 'Wig'}]},
+        {'id': 602, 'file_name': 'cap.png', 'media_type': 'image', 'file_size': 100, 'directory_id': None,
+         'content_url': '/api/customer-media/assets/602/content?expires=100&token=demo',
+         'tags': [{'dimension_id': 4, 'dimension_label': 'Product type', 'tag_value_id': 42, 'value': 'Cap'}]},
+    ]
+    page.reload()
+    product_filter = page.get_by_role('group', name='按Product type筛选')
+    expect(product_filter.get_by_role('button', name='Wig')).to_be_visible()
+    expect(page.locator('.asset-dimension')).to_have_count(2)
+    product_filter.get_by_role('button', name='Cap').click()
+    expect(page.locator('.asset-dimension')).to_have_count(1)
+    expect(page.locator('.asset-info strong')).to_have_text(['cap.png'])
+    product_filter.get_by_role('button', name='全部').click()
+    expect(page.locator('.asset-dimension')).to_have_count(2)
     assert not errors, errors
     print(json.dumps({'passed': ['label required', 'folder flattened without name mapping',
                                  'upload tags associated', 'missing row headings hidden',
-                                 'draft preview without portal login'],
+                                 'draft preview without portal login', 'batch product type filter'],
                       'page_errors': errors}, ensure_ascii=False))
     browser.close()

@@ -101,6 +101,10 @@ export function listInvoices(params) {
   return unwrap(request.get('/invoices', { params, showLoading: false }))
 }
 
+export function getInvoiceSummary(params) {
+  return unwrap(request.get('/invoices/summary', { params, showLoading: false }))
+}
+
 export function getInvoice(id) {
   return unwrap(request.get(`/invoices/${id}`))
 }

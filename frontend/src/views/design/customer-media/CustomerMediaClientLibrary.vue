@@ -70,6 +70,13 @@
               <button v-for="option in mediaOptions" :key="option.value" type="button" :class="{ active: mediaType === option.value }" @click="mediaType = option.value">{{ option.label }}</button>
             </div>
           </div>
+          <div v-if="productTypes.length" class="finder-row">
+            <span>Product type</span>
+            <div class="finder-options" role="group" aria-label="按Product type筛选">
+              <button type="button" :aria-pressed="!activeProductTypeIds.length" :class="{ active: !activeProductTypeIds.length }" @click="selectedProductTypeIds = []">All</button>
+              <button v-for="type in productTypes" :key="type.id" type="button" :aria-pressed="activeProductTypeIds.includes(type.id)" :class="{ active: activeProductTypeIds.includes(type.id) }" @click="toggleProductType(type.id)">{{ type.value }}</button>
+            </div>
+          </div>
         </section>
 
         <div v-if="customer.status === 'disabled'" class="empty-state disabled-state">
@@ -88,7 +95,7 @@
               </div>
               <span v-if="batch.shoot_type" class="shoot-tag">{{ batch.shoot_type }}</span>
             </header>
-            <div v-for="group in groupMediaByTags(batch.assets, tagDimensions)" :key="group.id" class="portal-dimension">
+            <div v-for="group in filterProductGroups(groupMediaByTags(batch.assets, tagDimensions), activeProductTypeIds)" :key="group.id" class="portal-dimension">
               <h3>{{ group.label }} <span>{{ visibleGroupAssets(batch.id, group).length }} / {{ group.assets.length }} files</span></h3>
               <div v-for="filter in group.filters" :key="filter.id" class="group-filter-row">
                 <strong>{{ filter.label }}</strong>
@@ -169,7 +176,7 @@ import {
   initials,
   portalStatusMeta,
 } from './portalPreviewState'
-import { filterMediaByTags, groupMediaByColorAndTexture, groupMediaByTags } from './customerMediaGrouping'
+import { filterMediaByTags, filterProductGroups, groupMediaByColorAndTexture, groupMediaByTags, productTypeOptions } from './customerMediaGrouping'
 
 const props = defineProps({
   customer: { type: Object, default: null },
@@ -187,13 +194,22 @@ const mediaOptions = [
 ]
 const search = ref('')
 const mediaType = ref('all')
+const selectedProductTypeIds = ref([])
 const previewAsset = ref(null)
 const groupSelections = ref({})
 const status = computed(() => portalStatusMeta(props.customer?.status))
+const productTypes = computed(() => productTypeOptions(props.batches.flatMap(batch => batch.assets || []), props.tagDimensions))
+const activeProductTypeIds = computed(() => selectedProductTypeIds.value.filter(id => productTypes.value.some(type => type.id === id)))
 const filteredBatches = computed(() => filterPreviewBatches(props.batches, {
   search: search.value,
   mediaType: mediaType.value,
+  productTypeIds: activeProductTypeIds.value,
+  tagDimensions: props.tagDimensions,
 }))
+function toggleProductType(id) {
+  selectedProductTypeIds.value = selectedProductTypeIds.value.includes(id)
+    ? selectedProductTypeIds.value.filter(value => value !== id) : [...selectedProductTypeIds.value, id]
+}
 function groupKey(batchId, groupId) { return `${batchId}:${groupId}` }
 function groupSelected(batchId, groupId) { return groupSelections.value[groupKey(batchId, groupId)] || [] }
 function toggleGroupTag(batchId, groupId, tagId) {
@@ -210,6 +226,7 @@ function batchAssetCount(batch, type) {
 function clearFilters() {
   search.value = ''
   mediaType.value = 'all'
+  selectedProductTypeIds.value = []
 }
 
 watch(() => props.customer?.customer_id, () => {
@@ -271,7 +288,7 @@ watch(() => props.customer?.customer_id, () => {
 .search-field span { color: var(--text-secondary); font-size: 20px; }
 .search-field input { width: 100%; height: 38px; border: 0; outline: 0; color: var(--text-primary); background: transparent; }
 .finder-row { display: flex; align-items: center; gap: 20px; padding-top: 16px; border-top: 1px solid rgba(61, 51, 35, 0.1); }
-.finder-row>span { width: 62px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; }
+.finder-row>span { width: 95px; flex: 0 0 95px; color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; }
 .finder-options { display: flex; flex-wrap: wrap; gap: 7px; }
 .finder-options button { padding: 8px 13px; border: 1px solid rgba(61, 51, 35, 0.14); border-radius: 999px; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 12px; transition: color 180ms ease, background 180ms ease, border-color 180ms ease; }
 .finder-options button.active { border-color: var(--text-primary); color: var(--text-on-dark); background: var(--text-primary); }
