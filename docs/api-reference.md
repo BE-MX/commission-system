@@ -369,6 +369,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET|POST|DELETE /price/color-types` — 色号→色型映射（solid/piano/ombre/balayage）
   - `GET|POST|DELETE /price/customer-rules` — 客户价格规则（fixed/percent 二选一，有符号）；`GET /price/customer-rules/by-customer/{id}` — 单客户规则
   - `GET /invoices` — 发票列表（分页+搜索+状态+order_type；普通用户返回 `sales_user_id=本人`，以及 `created_by=本人` 且代办授权仍有效的订单；不会因获授权而看到归属人的其他历史订单）
+  - `GET /invoices/summary?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` — 订单发票页概览（invoice:read）：按发票日期闭区间汇总当前用户可查看的全部已同步发票，排除取消处理中及已取消单据，不受列表分页与搜索影响；`invoice:read_all`/超管沿用列表的全量范围。返回 `gmv`、`new_sign_count`（`okki_new_deal=1` 的客户去重数）、`unknown_new_sign_count`（历史 NULL 标记单据数，未计入新签）、`order_count`、`average_order_amount`、`non_usd_count`；金额仅汇总 USD 发票的 `total_amount`，平均金额分母仅为 USD 发票数，非 USD 单据仍计入订单数与新签数。开始日期晚于结束日期返回 422。
   - `POST /invoices` — 创建普通发票；请求显式提交 `sales_user_id`，后端校验本人/代办授权并从该用户生成姓名、电话、邮箱快照，忽略客户端伪造文本；保存 `created_by=实际录入人`。截图来源发票必须走 `/import/screenshot/create`；同来源订单或同图唯一约束防并发重复创建。
   - `GET /invoices/{id}` — 发票详情
   - `PUT /invoices/{id}` — 更新发票（`sales_user_id` 与 order_type 创建后不可改；金额与折扣由服务端重算）

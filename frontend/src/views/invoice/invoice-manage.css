@@ -26,7 +26,7 @@
    el-drawer/el-dialog 默认就地渲染（append-to-body=false），通配选择器
    会覆盖 .el-overlay 的 position: fixed，抽屉打开后看不见（2026-07-25 实翻车） */
 .invoice-page .page-header,
-.invoice-page .summary-grid,
+.invoice-page .summary-section,
 .invoice-page .invoice-panel,
 .invoice-page .pagination-bar {
   position: relative;
@@ -66,46 +66,6 @@
 
 .primary-action {
   min-width: 112px;
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-  animation: invoice-enter 220ms var(--invoice-ease-out) 70ms both;
-}
-
-/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），
-   这里只留布局。限定 .summary-grid 前缀：避免与右栏 InvoiceSummaryCard 的
-   .summary-card 同名类串味（2026-09-25 实翻车：KPI 的 justify-content:center
-   把金额汇总行上下裁切） */
-.summary-grid .summary-card {
-  display: flex;
-  min-height: 76px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-  padding: 14px 16px;
-}
-
-.summary-grid .summary-card span {
-  color: var(--invoice-muted);
-  font-size: 13px;
-}
-
-.summary-grid .summary-card strong {
-  font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 强调卡：金调渐变玻璃（scoped 优先级高于全局 .lg-card，可覆盖其背景/描边） */
-.summary-grid .summary-card.emphasis {
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.8) 0%, rgba(245, 203, 92, 0.16) 100%);
-  border-color: rgba(212, 148, 28, 0.4);
 }
 
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
@@ -150,6 +110,19 @@
 
 .invoice-table {
   width: 100%;
+}
+
+.invoice-number {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* 列表全局样式对 .cell 强制单行省略；发票号需要完整换行。 */
+.invoice-panel :deep(.invoice-number-column .cell) {
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .empty-state {
@@ -499,7 +472,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .page-header,
-  .summary-grid,
   .invoice-panel {
     animation: none;
   }
@@ -550,16 +522,10 @@
     grid-column: 1 / -1;
   }
 
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 560px) {
   .invoice-page { padding: 0; }
   .toolbar > :deep(.el-input), .toolbar > :deep(.el-select) { max-width: 100%; }
 
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }

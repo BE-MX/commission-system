@@ -1,7 +1,7 @@
 """FastAPI router for order invoice management."""
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from urllib.parse import quote
 
@@ -771,6 +771,24 @@ def list_invoices(
 
 
 # 固定路径必须注册在 /invoices/{invoice_id} 之前（cerebrum 2026-05-20：路径参数吞噬）
+
+@router.get("/invoices/summary", summary="Invoice order metrics for the visible date range")
+def invoice_summary(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:read")),
+):
+    if date_from > date_to:
+        raise HTTPException(422, "开始日期不能晚于结束日期")
+    can_read_all = _can_read_all(current_user)
+    viewer_user_id = None if can_read_all else _user_id(current_user)
+    if not can_read_all and viewer_user_id is None:
+        raise HTTPException(403, "无法确认用户身份，禁止访问发票统计")
+    return ok(service.summarize_invoices(
+        db, date_from=date_from, date_to=date_to, viewer_user_id=viewer_user_id,
+    ))
+
 
 @router.get("/invoices/suggest-no", summary="Suggested invoice number for a new invoice")
 def suggest_invoice_no(
