@@ -1,10 +1,11 @@
 # 当前交接与待办
 
-## 2026-10-01 任务中心一期（Codex，待合并与部署）
+## 2026-10-01 任务中心一期（Codex，已合并推送并部署）
 
-- 代码在 `D:/MyProgram/commission-system-task-center` 的 `codex/task-center-phase1` 分支；包含个人任务树、看板、模块地图、详情、快速建任务、AI 草稿、构建期导航清单和简版每日简报。二期 git 上报器与三期 MCP 未启动。
-- 部署前经统一发布入口执行 `173_task_center` 迁移；在需要同步导航清单的生产后端配置 `TASK_MODULE_SYNC_ENABLED=true`，并为亮哥角色分配 `task:read`、`task:write`。本地未对共享库执行迁移。
-- 部署后验收：创建任务并在树形出现；抽屉改状态及父任务未结束子项确认；看板拖拽完成确认；模块地图筛选；删除与回收站恢复；AI 草稿和降级；今日简报与钉钉推送。部署前仅能验证不依赖新表的前端入口、离线测试与构建。
+- 一期包含个人任务树、看板、模块地图、详情、快速建任务、AI 草稿、构建期导航清单和简版每日简报；二期 git 上报器与三期 MCP 未启动。分支 `codex/task-center-phase1` 经主目录合并为 `d76d743d0842cc804723bfaab33bda6f3392efaa` 并推送 `origin/main`。
+- 办公室统一入口固定该提交先完成 `--prepare-only`，再完成办公室与云端完整发布；`release_id=0515c105f5624af287ac14c2c17c35cd`，回执 `MANAGED APPLICATION RELEASE COMPLETED`，`deferred=[]`，共享数据库已迁移到 `173_task_center`。办公室和北京后端、两地主站静态资源、色块路由均在完成清单；出库调度保持启用且回执 `verified`。未纳管的独立服务不在本次发布范围。
+- 办公室生产后端已配置 `TASK_MODULE_SYNC_ENABLED=true` 并重启；实查 113 个导航模块处于启用状态，`admin` 角色具有 `task:read`、`task:write`。两站公开 `/health` 均返回 `ok/connected`，匿名请求 `/api/task/modules` 均返回 403。合并后后端定向 86 项、前端 9 项、Vite 生产构建、约定检查与 Alembic 单 head 检查通过；原全量后端基线有独立的 AI Chat 删除失败用例，本次未修改该模块。
+- 仍需亮哥登录验收：创建任务并在树形出现；抽屉改状态及父任务未结束子项确认；看板拖拽完成确认；模块地图筛选；删除与回收站恢复；AI 草稿和降级；今日简报与下一次 08:53 钉钉推送。当前只核实了 `admin` 角色权限，其他实际使用角色按需授权。
 
 
 ## 2026-10-01 Ark 列表页规范推广（Codex，合并推送交付，未部署）
