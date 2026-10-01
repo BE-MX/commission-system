@@ -85,7 +85,7 @@ _MANAGE_PERMISSIONS = frozenset({"customer:read_all", "customer:admin"})
 # 与 pcw_overview_service 同一水位口径：>48h 未推进视为 stale
 _WATERMARK_STALE_AFTER = timedelta(hours=48)
 
-_OPEN_ITEM_STATES = ("open", "awaiting_reply")
+_OPEN_ITEM_STATES = ("open", "in_progress", "waiting", "decision_required", "blocked", "paused")
 
 _BATCH_KEY_PREFIX = "day:"
 
@@ -777,9 +777,8 @@ def _cancel_window_action_and_item(
     if window.work_item_id is not None:
         item = db.get(CustomerWorkItem, int(window.work_item_id))
         if item is not None and item.state in _OPEN_ITEM_STATES:
-            item.state = "cancelled"
-            item.row_version = int(item.row_version) + 1
-            item.updated_at = now
+            from app.customer.work_item_service import apply_source_transition
+            apply_source_transition(db, item, operation="cancelled", reason="superseded_by_order")
 
 
 def _sample_refs(days: list[date]) -> list[dict]:

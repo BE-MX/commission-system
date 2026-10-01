@@ -339,6 +339,11 @@ def create_plan(
 
     def _execute() -> dict:
         now = beijing_now()
+        if plan_type in {"birthday", "shipping"}:
+            from app.customer.maintenance_source_service import validate_plan_sources
+            roles, permissions = get_live_user_authorization(db, actor_user_id)
+            validate_plan_sources(db, {"sub": actor_user_id, "roles": roles, "permissions": permissions},
+                logical_id, plan_type, payload, evidence_refs)
         owner = owner_user_id or _primary_owner(db, logical_id)
         plan = MaintenancePlan(
             customer_id=logical_id,
@@ -423,14 +428,37 @@ def _materialize_occurrence(
     ).one_or_none()
     if existing is not None:
         return existing
+    exception_shipments = []
+    if plan.plan_type == "shipping":
+        from app.tracking.models import TrackingEvent
+        from app.tracking.status import normalize_status
+
+        trigger = db.get(TrackingEvent, payload["shipment_event_id"])
+        linked = db.query(ShipmentOrderLink, ShipmentTracking).join(ShipmentTracking,
+            ShipmentTracking.id == ShipmentOrderLink.shipment_id).filter(
+            ShipmentOrderLink.id.in_(payload["shipment_order_link_ids"]),
+            ShipmentOrderLink.state == "active", ShipmentTracking.deleted_at.is_(None)).all()
+        exception_shipments = sorted({shipment.id for _link, shipment in linked
+            if trigger is not None and trigger.waybill_no == shipment.waybill_no
+            and trigger.carrier == shipment.carrier
+            and trigger.status_code == payload["trigger_event_type"]
+            and normalize_status(shipment.carrier, trigger.status_code) in {"exception", "customs_hold"}
+            and shipment.unified_status in {"exception", "customs_hold"}
+            and db.query(TrackingEvent.id).filter(TrackingEvent.waybill_no == shipment.waybill_no,
+                TrackingEvent.carrier == shipment.carrier).order_by(
+                TrackingEvent.event_time.desc(), TrackingEvent.id.desc()).limit(1).scalar() == trigger.id})
+    is_delivery_exception = bool(exception_shipments)
     item = ensure_work_item(
         db,
         customer_id=plan.customer_id,
         business_key=f"maintenance:plan:{plan.id}",
         business_cycle=occurrence_key,
-        work_type="maintenance",
+        work_type="delivery_exception" if is_delivery_exception else "maintenance",
         title=plan.title,
-        context={"plan_type": plan.plan_type, "plan_id": plan.id},
+        context={"plan_type": plan.plan_type, "plan_id": plan.id,
+            "shipment_ids": exception_shipments,
+            "shipment_event_id": payload["shipment_event_id"]} if is_delivery_exception else
+            {"plan_type": plan.plan_type, "plan_id": plan.id},
     )
     action = create_pcw_action(
         db,
@@ -447,6 +475,20 @@ def _materialize_occurrence(
         source_type="rule",
         policy_version="pcw_maintenance_v1",
     )
+    if is_delivery_exception:
+        from app.customer.workbench_models import WorkItemDependency
+        from app.customer.work_item_source_service import observe_dependency
+
+        action.required_for_resolution = True
+        for shipment_id in exception_shipments:
+            dependency = WorkItemDependency(item_id=item.id, source_domain="shipment",
+                source_id=str(shipment_id), title="确认异常运单的真实履约结果", required=True)
+            status, revision, valid = observe_dependency(db, dependency, item, actor_user_id=actor_user_id)
+            if not valid:
+                raise pcw_errors.conflict("异常运单关联或查看权限已经变化", error_code="SOURCE_REVALIDATION_REQUIRED")
+            dependency.observed_status, dependency.observed_revision = status, revision
+            dependency.source_valid, dependency.observed_at = True, beijing_now()
+            db.add(dependency)
     occurrence = MaintenanceOccurrence(
         plan_id=plan.id,
         occurrence_key=occurrence_key,
@@ -478,7 +520,20 @@ def list_plans(
     if status:
         query = query.filter(MaintenancePlan.status == status)
     rows = query.order_by(MaintenancePlan.id.desc()).all()
-    return {"items": [_plan_dict(row) for row in rows]}
+    items = [_plan_dict(row) for row in rows]
+    from app.customer.models import CustomerAction
+    actions = {row.id: row.row_version for row in db.query(CustomerAction).filter(
+        CustomerAction.id.in_(db.query(MaintenanceOccurrence.current_action_id).filter(
+            MaintenanceOccurrence.plan_id.in_([row.id for row in rows])))).all()}
+    occurrences = {}
+    for occurrence in db.query(MaintenanceOccurrence).filter(MaintenanceOccurrence.plan_id.in_([row.id for row in rows])).order_by(MaintenanceOccurrence.id):
+        value = _occurrence_dict(occurrence)
+        value["occurrence_id"] = occurrence.id
+        value["action_version"] = actions.get(occurrence.current_action_id)
+        occurrences.setdefault(occurrence.plan_id, []).append(value)
+    for item in items:
+        item["occurrences"] = occurrences.get(item["id"], [])
+    return {"items": items}
 
 
 def patch_plan(
@@ -996,6 +1051,17 @@ def patch_sample_case(
         row.sample_version = int(row.sample_version) + 1
         row.updated_at = now
         db.flush()
+        if operation == "record_feedback":
+            from app.customer.fact_service import append_customer_event
+            event = append_customer_event(db, customer_id=row.customer_id,
+                event_type="sample.feedback_received", event_source="manual", event_title="登记样品反馈",
+                event_summary=row.feedback_text, event_payload={"sample_id": row.id,
+                    "feedback_round": row.feedback_round, "feedback_date": _as_date(actual_date).isoformat()},
+                payload_schema_version="customer_event_v1", occurred_at=datetime.combine(_as_date(actual_date), time(9, 0)),
+                source_ref_type="customer", source_ref_id=str(row.customer_id), actor_user_id=actor_user_id,
+                data_classification="personal_contact", classification_reason="客户样品反馈人工登记")
+            from app.customer.work_item_evidence_service import evidence_revision
+            return {"case": _sample_dict(row), "evidence_ref": {"type": "event", "id": event.id, "revision": evidence_revision(event)}}
         return {"case": _sample_dict(row)}
 
     if idempotency_key:
@@ -1078,7 +1144,16 @@ def list_sample_cases(
         query = query.filter(SampleCase.stage == stage)
     total = query.count()
     rows = query.order_by(SampleCase.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": [_sample_dict(row) for row in rows], "total": total, "page": page, "page_size": page_size}
+    items = [_sample_dict(row) for row in rows]
+    from app.customer.models import CustomerAction
+    for item in items:
+        occurrence = db.query(MaintenanceOccurrence).filter(MaintenanceOccurrence.work_item_id == item["work_item_id"],
+            MaintenanceOccurrence.status.in_(("planned", "due"))).order_by(MaintenanceOccurrence.id.desc()).first() if item["work_item_id"] else None
+        action = db.get(CustomerAction, occurrence.current_action_id) if occurrence and occurrence.current_action_id else None
+        item.update({"occurrence_id": occurrence.id if occurrence else None,
+            "occurrence_version": occurrence.occurrence_version if occurrence else None,
+            "action_version": action.row_version if action else None})
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 # ── 物流订单关联 ───────────────────────────────────────────────

@@ -11,7 +11,8 @@
     </section>
     <section class="lg-card panel">
       <h3>复购窗口 <span class="hint">基于商业订单周期 · 非库存预测</span></h3>
-      <el-empty v-if="!windows.length" description="暂无可靠复购窗口" :image-size="60" />
+      <el-alert v-if="error" :title="error" type="error" :closable="false" />
+      <el-empty v-if="!error && !windows.length" description="暂无可靠复购窗口" :image-size="60" />
       <div v-for="item in mappedWindows" :key="item.id" class="window-row">
         <strong>{{ item.productFamily }}</strong>
         <span>中位数 {{ item.medianIntervalDays ?? '—' }} 天</span>
@@ -20,7 +21,7 @@
       </div>
     </section>
     <section class="lg-card panel">
-      <h3>当前待办</h3>
+      <h3>客户事项</h3>
       <WorkbenchList :customer-id="customerId" scope="visible" @open-customer="noop" />
     </section>
   </div>
@@ -34,6 +35,7 @@ import WorkbenchList from '../WorkbenchList.vue'
 
 const props = defineProps({ customerId: { type: Number, required: true }, customer: { type: Object, default: null } })
 const windows = ref([])
+const error = ref('')
 const mappedWindows = computed(() => windows.value.map(mapReorderWindow))
 function noop() {}
 
@@ -42,7 +44,7 @@ onMounted(async () => {
     const response = await getReorderWindows(props.customerId, { state: 'open' })
     windows.value = response.data?.items ?? response.data ?? []
     if (!Array.isArray(windows.value)) windows.value = []
-  } catch { windows.value = [] }
+  } catch { error.value = '复购窗口加载失败，请刷新客户作战卡后重试。' }
 })
 </script>
 

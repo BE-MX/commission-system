@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
 from app.customer import models
+from app.customer.pcw_models import CustomerWorkItem
 from app.customer.contracts import OBJECT_OWNERSHIP_REGISTRY
 from app.customer.ownership_contract_service import (
     OwnershipContractError,
@@ -58,6 +59,7 @@ _OBJECT_ADAPTERS = {
     "search_result": _ObjectAdapter(models.SearchResult),
     "opportunity": _ObjectAdapter(models.CustomerOpportunity),
     "action": _ObjectAdapter(models.CustomerAction),
+    "work_item": _ObjectAdapter(CustomerWorkItem),
     "annotation": _ObjectAdapter(models.CustomerAnnotation),
     "acquisition_attribution": _ObjectAdapter(models.CustomerAcquisitionAttribution),
 }
@@ -301,6 +303,26 @@ def _cas(
         overlay.last_change_proposal_id = change_proposal_id
         overlay.last_action_type = action_type
         overlay.updated_at = beijing_now()
+    if object_type == "work_item" and expected_current_customer_id != current_customer_id:
+        from app.customer.workbench_models import CustomerDelegation
+        from app.agent_runtime.models import AgentRun
+        # Authorization is customer-specific. A transferred item requires fresh
+        # explicit delegation even when its former actor can also see the target.
+        for delegation in db.query(CustomerDelegation).filter(
+            CustomerDelegation.item_id == object_id,
+            CustomerDelegation.status.notin_(("cancelled", "completed")),
+        ).order_by(CustomerDelegation.id).with_for_update().all():
+            delegation.status = "blocked"
+            delegation.generation += 1
+            delegation.row_version += 1
+            delegation.pause_origin = "ownership"
+            delegation.pause_reason = "客户归属已变化，请重新核验权限与委派范围"
+            delegation.updated_at = beijing_now()
+            run = (db.query(AgentRun).filter(AgentRun.id == delegation.last_run_id)
+                   .with_for_update().one_or_none()) if delegation.last_run_id else None
+            if run is not None and run.status not in {"completed", "failed", "cancelled", "ambiguous"}:
+                run.cancel_requested = True
+                delegation.cancel_requested = True
     db.flush()
     return overlay
 

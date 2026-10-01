@@ -106,10 +106,10 @@ export function useOpportunityWorkflow() {
 
 export function useRadarWorkflow() {
   const workflowLoading = ref(false), workflowError = ref(null)
-  async function submit(actionId, payload) {
+  async function submit(actionId, payload, key) {
     if (workflowLoading.value) return false
     workflowLoading.value = true; workflowError.value = null
-    try { await updateAction(actionId, payload); return true }
+    try { await updateAction(actionId, payload, key); return true }
     catch (error) { workflowError.value = error; return false }
     finally { workflowLoading.value = false }
   }

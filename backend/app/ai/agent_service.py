@@ -92,6 +92,10 @@ def _load_run_and_profile(db: Session, claims: dict) -> tuple[AgentRun, AgentPro
     except (KeyError, TypeError, ValueError) as exc:
         raise ForbiddenError("Agent Run 委托令牌缺少必要范围") from exc
 
+    from app.customer.delegation_guard_service import guard_runtime_run
+    candidate = db.get(AgentRun, run_id)
+    if candidate is not None:
+        guard_runtime_run(db, candidate, lock=True)
     run = db.query(AgentRun).filter(AgentRun.id == run_id).with_for_update().one_or_none()
     profile = db.query(AgentProfile).filter(AgentProfile.id == profile_id).one_or_none()
     user = db.query(ArkUser).filter(ArkUser.id == owner_id).one_or_none()

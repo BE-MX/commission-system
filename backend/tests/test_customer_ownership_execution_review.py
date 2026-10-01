@@ -2,6 +2,8 @@ from datetime import timedelta
 
 import pytest
 
+from tests.test_customer_ownership_execution import ownership_clock
+
 from app.auth.models import ArkUser
 from app.customer import models
 from app.customer.ownership_execution_service import (

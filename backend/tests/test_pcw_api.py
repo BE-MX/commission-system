@@ -271,4 +271,4 @@ def test_action_v2_complete_via_put(client, db):
     data = completed.json()["data"]
     assert data["action"]["status"] == "done"
     assert data["followup_action"]["id"] > 0
-    assert data["event_state"] == "awaiting_reply"
+    assert data["event_state"] == "waiting"

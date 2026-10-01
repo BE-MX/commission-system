@@ -26,6 +26,26 @@
 | POST `/shipment-order-links` | 物流-订单显式多对多关联（数量 Decimal 校验，unknown 不猜） |
 | POST/GET `/campaigns`、GET/PATCH `/campaigns/{id}`、POST `.../publications|state-transitions|preview|actions` | 活动管理；preview 给合格/排除原因，actions 名单⊆本次预览，逐客户 created/existing/suppressed/failed 诚实分列 |
 
+## 客户工作台 v2（2026-10-01，本地分支，未部署）
+
+前缀仍为 `/api/customer-hub`，响应为 `ok(data)`。读取基于实时客户归属、授权和证据可见性；失权返回 404。新写入必须带 16–128 字符 `Idempotency-Key` 和各对象当前版本。同键同请求重放首次结果；同键换内容返回 409。下面是已实现的服务端入口；启用和限制见 [实施记录](requirements/customer-workbench-v2-prototype/IMPLEMENTATION.md)。
+
+| 方法与路径 | 关键请求、结果与边界 |
+| --- | --- |
+| GET `/customers` | `customer_scope=primary\|collaborator\|authorized` 开启统一分群投影；`tier`、`sort`、`focus` 均为服务端参数。策略仍为 candidate 时正式 `tier=unknown`；管理员可用 `preview_segments=true` 查看候选与原型窗口对照。覆盖按真实同步资源验：OKKI `orders` 含明细、阿里 `inquiries` 含消息、WhatsApp 按绑定账号同步时间；不相关的联系人游标不能证明订单或互动覆盖，缺口标 `source_coverage=unknown`。人工完成行动不冒充真实客户互动。 |
+| GET `/workbench/items` | `view=need_me\|in_progress\|ended`、客户/行动范围、结果状态、关键词和分页；返回事项行、三视图事项计数、今日完成行动数、承诺逾期数、北京业务日容量和 `data_as_of`。`count_unit=work_item`，行动计数单独命名。 |
+| GET `/work-items/{id}` | 当前事项、行动与维护实例版本、必需来源依赖、委派、准备产物、状态审计、允许操作；读时按当前来源复核，已撤回的解决结果进入待复核。 |
+| POST `/work-items/{id}/transitions` | `expected_item_version`、`operation`、`reason`；等待/暂停需复核时间或恢复条件，`resolve/revalidate/reverify/reopen` 使用 `{type,id,revision}` 当前可见证据，证据可选事实、事件及当前可见的真实消息。`reverify` 将失效的必需行动替换成同类型新行动并转移必需依赖，保留旧行动和审计；已结案必需源任务退回后结果进入待复核。交期异常先用 `record_delivery_plan` 提交 `delivery_decision=alternative\|original_schedule`、`delivery_plan`、`review_at` 及真实出站消息；消息需晚于本次物流异常，重开后还需晚于本轮新事实。`resolve/revalidate` 另需 `customer_decision=accepted`、同会话较晚的客户入站消息、必需行动和实际已签收的运单依赖。旧行动完成接口不能直接解决此目标；方案或异常源事件撤回会使结果待复核。 |
+| POST `/workbench/daily-plan/admissions` | `item_id`、`expected_plan_version`；普通容量已满时只能显式 `allow_one_extra` 加原因。急件单列，完成事项不退回容量。 |
+| POST `/work-items/{id}/dependencies` | 绑定实际 `action/shipment/design` 来源对象、当前事项版本、原因；源模块负责执行，前端不能自报“已完成”。 |
+| POST `/work-items/{id}/delegations`、POST `/delegations/{id}/transitions` | 只读准备型 Agent 委派及 pause/resume/cancel；返回 readiness、Run 真正状态、停止请求/确认和结果不确定标记。失权、来源变更、代次失效阻断工具与采纳；`ambiguous` 不自动重跑。 |
+| POST `/work-items/{id}/feedback`、POST `/actions/{id}/corrections` | 反馈按准确性/适用性/实际采纳分开；纠正或可逆登记的 undo 追加事件和新行动轮次，保留原完成及外部事实。 |
+| GET `/customers/{id}/maintenance-plan-sources` | 返回客户可见的生日联系人、活跃物流关联与真实物流事件的可选来源及不可选原因，创建维护计划仍按源模块版本复验。 |
+| GET/POST `/customers/{id}/service-assets`、POST `/customers/{id}/service-assets/{asset_id}/revoke` | 在客户团队范围登记网站、选品页等入口、用途、负责人和已知问题；撤销要求版本与原因。登记不自动认定客户身份，不生成浏览量或订单效果。 |
+| PUT `/actions/{id}`（已有） | PCW 行动的 complete/snooze/dismiss 现在强制幂等头、行动和事项版本；维护实例关联时也要实例版本。延后时间已到的行动读时呈现 `effective_status=pending`，可继续完成、延后或忽略；业务原状态与原承诺期限仍保留。旧普通行动仍按既有契约。 |
+
+全员摘要只读入口 `GET /api/dashboard/customer-work-summary` 返回本人负责的少量客户事项与待处理总数，按同一事项口径；不将客户具体证据扩大到其他岗位权限。
+
 ## 结汇决策助手（2026-09-24，本地实现）
 
 前缀 `/api/fx-settlement`，需登录，使用标准 `ok(data)` 信封。结果是带时间戳的参考测算，不会下单或保存输入。详见 [功能与口径](requirements/2026-09-24-fx-settlement-advisor.md)。
@@ -167,14 +187,14 @@
 | `GET /workbench` | 今日工作台：服务端完整范围统计、分页待办、客户与负责人名称、可操作状态 | `customer_radar:read` 或 `customer:read_all` |
 | `GET /qualification-queue/{task_id}` | 当前研究对应的开发资格依据、可用证据及上下文版本 | `sales_automation:read` 或 `customer:read_all` |
 | `POST /qualification-queue/{task_id}/decision` | 人工开发决定，自动记录来源、范围及证据快照 | `sales_automation:write/admin`，同时满足研究读取范围 |
-| `GET /customers/{customer_id}/evidence` | 按可见性和有效期展示事实/事件，可为机会阶段标明适用性 | 客户读取、研究或机会相关权限；仍受客户与记录范围限制 |
+| `GET /customers/{customer_id}/evidence` | 按可见性和有效期展示事实、事件或真实消息，可为机会阶段标明适用性 | 客户读取、研究或机会相关权限；仍受客户与记录范围限制 |
 
 第一期每日工作流（2026-09-06，无新增表）：
 
 - `/workbench` 参数：`scope=mine|visible`（默认 mine），`view=focus|first_contact|today|overdue|high_priority|completed|unscheduled|upcoming|snoozed|all`（默认 focus）、`keyword`、`customer_id`、`page/page_size`。`data.summary` 在当前归属/客户搜索范围完整聚合，以行动计数，卡片可能重叠；`total` 是当前 view 数量。返回 `effective_status/effective_due_at`、`can_operate`、`owner_name/customer_name` 和 `data_as_of`。到期延后行动等效待处理，GET 不改存储状态。所有时间口径固定北京时间。
 - `/research-tasks?review_status=pending|accepted|revision_requested|rejected` 只筛选已完成任务；留空列出全部任务。详情增补当前可见证据的标题、内容、来源链接、有效性与分层，质量复核与开发资格判断分开。
 - `/qualification-queue` 支持客户 `keyword`；按逻辑客户和目标作用范围选最新完成、门控通过、质量通过的研究。排除当前有效结论和未到期暂缓，到重评时间重新出现。详情提供 `context_hash/current_review_id/can_review/blocked_reason`。提交字段为 `decision=approve|defer|supplement|reject`、必填 `reason`、`context_hash`、`expected_current_review_id`、`request_key`；defer/supplement 必须提供未来 `review_after`。来源、策略和范围不接收用户手填。冲突返回 409，重试沿用同一请求键；公海脱敏研究不可决定，决定不授予客户归属。
-- `/evidence` 支持 `kind=fact|event`、`keyword` 和分页。事件可传 `opportunity_id/target_status=contacted|replied|quoted`，复用机会状态机标明记录是否能支持本次推进；不可见证据不返回，失效或不适用记录 `selectable=false`。事实同时检查直接来源记录权限，链接仅允许无凭据的 HTTP(S)。机会提交仍重新校验可见性、归属和阶段支撑，选择器不代替服务端校验。
+- `/evidence` 支持 `kind=fact|event|message`、`keyword` 和分页。消息需同时属于当前逻辑客户会话且其来源记录仍在当前权限范围，返回方向、时间及 `{type,id,revision}`；事项目标再次核验真实消息是否匹配会话和发送时序。事件可传 `opportunity_id/target_status=contacted|replied|quoted`，复用机会状态机标明记录是否能支持本次推进；不可见证据不返回，失效或不适用记录 `selectable=false`。事实同时检查直接来源记录权限，链接仅允许无凭据的 HTTP(S)。机会提交仍重新校验可见性、归属和阶段支撑，选择器不代替服务端校验。
 - 完成行动 `PUT /actions/{id}` 可增加 `next_step_due_at`、`followup_action_type=call|email|message|meeting|research|review`、`followup_channel`。只有 complete 可安排后续，要求非空 `next_step` 和未来北京时间；负责人沿用原行动。完成记录、销售活动和新行动同事务；响应包含 `followup_action_id`。相同完成请求不重复生成，改变既有后续参数返回 409。
 
 高影响变更均位于相同前缀：`GET/POST /change-proposals`，以及 `POST /change-proposals/{id}/submit|rebase|approve|reject|execute`。创建、提交、审批要求 `customer:admin`；执行时重新读取实时权限，DNC 操作要求 `customer:manage_dnc`，重大风险确认要求 `customer:confirm_material_risk`。`execute` 必须提供幂等键；版本过期先 `rebase`，不能静默套用旧证据。

@@ -3201,6 +3201,10 @@ def test_unified_workflow_models_match_frozen_126_contract():
             "original_due_at",
             "business_due_at",
             "due_provenance",
+            # Migration 172: execution ownership and required goal acceptance.
+            "execution_mode",
+            "source_task_ref",
+            "required_for_resolution",
         },
     }
     for model in (

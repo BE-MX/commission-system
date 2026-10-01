@@ -43,7 +43,21 @@ class CustomerWorkItem(Base):
     business_key = Column(String(128), nullable=False, comment="稳定业务事件键：来源域持久分配，不含扫描日、负责人或提示词版本")
     business_cycle = Column(String(64), nullable=False, comment="真实业务周期标识；无新周期证据不得更换以绕过去重")
     work_type = Column(String(32), nullable=False, comment="事项类型：inquiry、reorder、sample、monitor、maintenance、campaign或登记值")
-    state = Column(String(24), nullable=False, default="open", index=True, comment="事项状态：open、awaiting_reply、resolved、cancelled")
+    state = Column(String(24), nullable=False, default="open", index=True, comment="事项状态：open/in_progress/waiting/decision_required/blocked/paused/resolved/cancelled")
+    goal_type = Column(String(32), nullable=False, default="followup", comment="结果验收目标类型；历史数据沿用work_type并标记未核实")
+    goal_definition = Column(Text, nullable=True, comment="需要持续达成的目标及约束")
+    resolution_policy_version = Column(String(32), nullable=False, default="workbench_v2", comment="事项结果验收规则版本")
+    owner_user_id = Column(USER_ID, ForeignKey("ark_users.id", name="fk_work_item_owner", ondelete="RESTRICT"), nullable=True, index=True, comment="当前经营负责人；行动执行人独立维护")
+    waiting_kind = Column(String(16), nullable=True, comment="等待对象：customer/colleague/source")
+    review_at = Column(DateTime, nullable=True, index=True, comment="下一次内部核验的北京时间；不等于再次发送")
+    pause_reason = Column(String(1000), nullable=True, comment="人工暂停的具体原因")
+    resume_condition = Column(String(1000), nullable=True, comment="人工恢复条件；满足条件不自动执行")
+    paused_state = Column(String(24), nullable=True, comment="暂停前的业务状态；恢复时需重新核验")
+    source_revision = Column(Integer, nullable=False, default=1, comment="事项相关来源的输入版本，失效或新事实递增")
+    source_valid = Column(Boolean, nullable=False, default=True, comment="当前方案来源是否仍然有效")
+    result_validity = Column(String(24), nullable=False, default="pending", comment="结果有效性：pending/verified/review_required/legacy_unverified")
+    resolution_summary = Column(Text, nullable=True, comment="当前结果摘要；历史结果保留在不可变事件中")
+    resolution_evidence = Column(JSON, nullable=False, default=list, comment="已校验结果证据引用和版本")
     title = Column(String(500), nullable=False, comment="面向业务员的事项标题")
     context_json = Column(JSON, nullable=False, default=dict, comment="pcw_work_item_context_v1：稳定来源引用与最近一次评估上下文快照")
     next_action_round = Column(Integer, nullable=False, default=1, comment="下一行动轮次；完成未解决行动时在事项行锁内递增")
@@ -489,3 +503,6 @@ __all__ = [
     *(model.__name__ for model in PCW_MODELS),
     "PCW_MODELS",
 ]
+
+# Shared metadata registration; dependent objects derive customer scope through item_id.
+from app.customer import workbench_models as _workbench_models  # noqa: E402,F401

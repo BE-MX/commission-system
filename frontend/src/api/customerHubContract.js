@@ -12,6 +12,9 @@ export function createCustomerHubApi(client) {
     listCustomerEvidence: (customerId, params) => client.get(`/customers/${customerId}/evidence`, { params, showLoading: false }),
     listCustomers: params => client.get('/customers', { params, showLoading: false }),
     getCustomer: customerId => client.get(`/customers/${customerId}`),
+    listCustomerServiceAssets: customerId => client.get(`/customers/${customerId}/service-assets`, { showLoading: false }),
+    registerCustomerServiceAsset: (customerId, payload, key) => client.post(`/customers/${customerId}/service-assets`, payload, withIdempotency({}, key)),
+    revokeCustomerServiceAsset: (customerId, assetId, payload, key) => client.post(`/customers/${customerId}/service-assets/${assetId}/revoke`, payload, withIdempotency({}, key)),
     listCustomerTimeline: (customerId, params) => client.get(`/customers/${customerId}/timeline`, { params, showLoading: false }),
     getAcquisitionProfile: () => client.get('/acquisition-profile'),
     saveAcquisitionProfile: payload => client.put('/acquisition-profile', payload),
@@ -30,7 +33,14 @@ export function createCustomerHubApi(client) {
     listOpportunities: params => client.get('/opportunities', { params, showLoading: false }),
     updateOpportunity: (opportunityId, payload) => client.put(`/opportunities/${opportunityId}`, payload),
     listActions: params => client.get('/actions', { params, showLoading: false }),
-    updateAction: (actionId, payload) => client.put(`/actions/${actionId}`, payload),
+    updateAction: (actionId, payload, key) => client.put(`/actions/${actionId}`, payload, withIdempotency({}, key)),
+    listWorkbenchItems: params => client.get('/workbench/items', { params, showLoading: false }),
+    getWorkItem: id => client.get(`/work-items/${id}`, { showLoading: false }),
+    transitionWorkItem: (id, payload, key) => client.post(`/work-items/${id}/transitions`, payload, withIdempotency({}, key)),
+    admitDailyPlanItem: (payload, key) => client.post('/workbench/daily-plan/admissions', payload, withIdempotency({}, key)),
+    submitWorkItemFeedback: (id, payload, key) => client.post(`/work-items/${id}/feedback`, payload, withIdempotency({}, key)),
+    createWorkItemDelegation: (id, payload, key) => client.post(`/work-items/${id}/delegations`, payload, withIdempotency({}, key)),
+    transitionDelegation: (id, payload, key) => client.post(`/delegations/${id}/transitions`, payload, withIdempotency({}, key)),
 
     // ── 私海客户工作台（PCW-01..06，契约见 docs/requirements/private-customer-workbench-prototype/api-contracts.md）──
     // PCW-01 概览与评估
@@ -66,6 +76,7 @@ export function createCustomerHubApi(client) {
     decideMonitorEvent: (id, payload, key) => client.post(`/monitor-events/${id}/decisions`, payload, withIdempotency({}, key)),
     // PCW-06 维护计划、样品与活动
     listMaintenancePlans: (customerId, params) => client.get(`/customers/${customerId}/maintenance-plans`, { params, showLoading: false }),
+    getMaintenancePlanSources: customerId => client.get(`/customers/${customerId}/maintenance-plan-sources`, { showLoading: false }),
     createMaintenancePlan: (customerId, payload, key) => client.post(`/customers/${customerId}/maintenance-plans`, payload, withIdempotency({}, key)),
     patchMaintenancePlan: (id, payload, key) => client.patch(`/maintenance-plans/${id}`, payload, withIdempotency({}, key)),
     // 契约没有独立的 /maintenance-occurrences/{id}/reschedule；改约走 PATCH /maintenance-plans/{id}，

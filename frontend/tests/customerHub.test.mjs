@@ -90,21 +90,21 @@ test('navigation consolidates five customer operations entries under existing pe
   assert.doesNotMatch(research, /sales_automation:(?:write|admin)/)
 })
 
-test('customer detail drawer progressively loads timeline and names all profile sections', () => {
+test('customer drawer and page share a complete battle card with paged timeline', () => {
   const drawer = read('../src/views/customer_hub/CustomerDetailDrawer.vue')
-
-  assert.match(drawer, /overview/)
-  for (const section of ['identity', 'contacts', 'conversations', 'orders', 'evidence', 'opportunities', 'actions', 'annotations', 'version quality']) {
-    assert.match(drawer.toLowerCase(), new RegExp(section.replace(' ', '.{0,3}')))
-  }
-  assert.match(drawer, /@tab-change="handleTabChange"/)
-  assert.match(drawer, /loadTimeline/)
-  assert.match(drawer, /watch\(\(\) => props\.customer\?\.customer_id/)
-  assert.match(drawer, /activeTab\.value = canViewActions\.value \? 'workbench' : 'overview'/)
+  const page = read('../src/views/customer_hub/CustomerWorkspace.vue')
+  const card = read('../src/views/customer_hub/CustomerBattleCard.vue')
+  const profile = read('../src/views/customer_hub/StructuredProfile.vue')
+  const timeline = read('../src/views/customer_hub/workspace/WorkspaceTimeline.vue')
+  assert.match(drawer, /CustomerBattleCard/)
+  assert.match(page, /CustomerBattleCard/)
+  for (const section of ['identity', 'contacts', 'preferences', 'opportunities', 'actions', 'annotations', 'versionQuality', 'profileMetadata']) assert.match(profile, new RegExp(section))
+  for (const panel of ['WorkspaceOrders', 'WorkspaceMonitor', 'WorkspaceMaintenance', 'WorkspaceConversations', 'WorkspaceEnrichment']) assert.match(card, new RegExp(panel))
+  assert.match(card, /expanded\.includes\('orders'\)/)
   assert.match(drawer, /客户详情加载失败/)
-  assert.match(drawer, /时间线加载失败/)
-  assert.match(drawer, /timelineTotal/)
-  assert.match(drawer, /getTimelineLimitNotice/)
-  assert.match(drawer, /StructuredValue/)
-  assert.doesNotMatch(drawer, /JSON\.stringify\(blockProps\.value/)
+  assert.match(timeline, /时间线加载失败/)
+  assert.match(timeline, /el-pagination/)
+  assert.match(timeline, /formatBeijingDateTime/)
+  assert.match(profile, /StructuredValue/)
+  assert.doesNotMatch(profile, /JSON\.stringify/)
 })

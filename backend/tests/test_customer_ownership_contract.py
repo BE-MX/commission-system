@@ -6,11 +6,14 @@ from datetime import datetime, timedelta
 import inspect
 
 import pytest
+
+from tests.test_customer_ownership_execution import ownership_clock
 from sqlalchemy import select
 from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import OperationalError
 
 from app.customer import models, ownership_service
+from app.customer.pcw_models import CustomerWorkItem
 from app.customer.contracts import (
     OBJECT_OWNERSHIP_REGISTRY,
     OBJECT_OWNERSHIP_REGISTRY_VERSION,
@@ -85,7 +88,7 @@ def _proposal(
     db.add(profile)
     db.flush()
     payload = {
-        "ownership_registry_version": "customer_object_ownership_v1",
+        "ownership_registry_version": "customer_object_ownership_v2",
         "source_customer_id": customer.id,
         "target_customer_ids": [target.id],
         "ownership_partitions": [{
@@ -181,7 +184,7 @@ def _rehash(proposal: models.CustomerChangeProposal) -> None:
 
 
 def test_registry_is_versioned_and_contains_every_approved_root_type():
-    assert OBJECT_OWNERSHIP_REGISTRY_VERSION == "customer_object_ownership_v1"
+    assert OBJECT_OWNERSHIP_REGISTRY_VERSION == "customer_object_ownership_v2"
     assert set(OBJECT_OWNERSHIP_REGISTRY) == {
         "name",
         "external_identity",
@@ -194,6 +197,7 @@ def test_registry_is_versioned_and_contains_every_approved_root_type():
         "search_result",
         "opportunity",
         "action",
+        "work_item",
         "annotation",
         "acquisition_attribution",
     }
@@ -212,6 +216,7 @@ def test_registered_root_customer_comments_explain_storage_and_logical_owner():
         "search_result": models.SearchResult,
         "opportunity": models.CustomerOpportunity,
         "action": models.CustomerAction,
+        "work_item": CustomerWorkItem,
         "annotation": models.CustomerAnnotation,
         "acquisition_attribution": models.CustomerAcquisitionAttribution,
     }

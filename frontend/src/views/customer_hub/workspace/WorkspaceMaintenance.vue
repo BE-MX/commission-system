@@ -1,157 +1,37 @@
 <template>
   <div class="workspace-maintenance">
-    <section class="lg-card panel">
-      <h3>维护计划</h3>
-      <div class="toolbar">
-        <el-button type="primary" v-permission="'customer_pcw:write'" @click="dialogVisible = true">新建计划</el-button>
-      </div>
-      <el-empty v-if="!plans.length" description="暂无维护计划" :image-size="60" />
-      <el-table class="list-table" v-else :data="plans" size="small" border>
-        <el-table-column prop="plan_type" label="类型" min-width="90" />
-        <el-table-column prop="title" label="标题" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="status" label="状态" min-width="90" />
-        <el-table-column prop="plan_version" label="版本" min-width="70" />
-        <el-table-column label="操作" min-width="110" class-name="table-action-column" fixed="right">
-          <template #default="{ row }">
-            <GlassButton variant="link" v-permission="'customer_pcw:write'" @click="pauseOrResume(row)">
-              {{ row.status === 'active' ? '暂停' : '恢复' }}
-            </GlassButton>
-          </template>
-        </el-table-column>
-      </el-table>
-    </section>
-
-    <section class="lg-card panel">
-      <h3>样品事项 <span class="hint">签收不自动开始测试</span></h3>
-      <el-empty v-if="!samples.length" description="暂无样品事项" :image-size="60" />
-      <el-steps v-for="item in samples" :key="item.id" :active="stageIndex(item.stage)" size="small" class="sample-steps" align-center>
-        <el-step v-for="stage in SAMPLE_STAGE_FLOW" :key="stage" :title="SAMPLE_STAGE_LABELS[stage]" />
-      </el-steps>
-      <el-table class="list-table" :data="samples" size="small" border>
-        <el-table-column prop="stage" label="阶段" min-width="130" />
-        <el-table-column prop="test_planned_date" label="计划测试" min-width="110" />
-        <el-table-column prop="feedback_text" label="反馈" min-width="140" show-overflow-tooltip />
-        <el-table-column label="操作" min-width="220" class-name="table-action-column" fixed="right">
-          <template #default="{ row }">
-            <GlassButton
-              v-for="operation in sampleCaseOperations(row.stage)"
-              :key="operation"
-              variant="link"
-              v-permission="'customer_pcw:write'"
-              @click="patchSample(row, operation)"
-            >{{ SAMPLE_OPERATION_LABELS[operation] }}</GlassButton>
-          </template>
-        </el-table-column>
-      </el-table>
-    </section>
-
-    <section class="lg-card panel">
-      <h3>改约（实例日期，原期限保留）</h3>
-      <el-form inline size="small" @submit.prevent>
-        <el-form-item label="实例 ID">
-          <el-input-number v-model="rescheduleForm.occurrenceId" :min="1" />
-        </el-form-item>
-        <el-form-item label="新日期">
-          <el-date-picker v-model="rescheduleForm.date" type="date" value-format="YYYY-MM-DD" />
-        </el-form-item>
-        <el-form-item label="原因">
-          <el-input v-model="rescheduleForm.reason" style="width: 180px" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" v-permission="'customer_pcw:write'" @click="submitReschedule">改约</el-button>
-        </el-form-item>
-      </el-form>
-    </section>
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" /><GlassButton variant="secondary" :loading="loading" @click="loadAll">刷新计划与实例（保留输入）</GlassButton>
+    <section class="lg-card panel"><h3>维护计划</h3><GlassButton v-permission="'customer_pcw:write'" variant="primary" @click="openPlan">新建计划</GlassButton><el-table :data="plans" border class="list-table"><el-table-column label="类型" min-width="100"><template #default="{row}">{{ MAINTENANCE_PLAN_TYPE_LABELS[row.plan_type] || row.plan_type }}</template></el-table-column><el-table-column prop="title" label="计划" min-width="180" /><el-table-column prop="status" label="状态" min-width="100" /><el-table-column label="操作" min-width="130" fixed="right" class-name="table-action-column"><template #default="{row}"><GlassButton v-if="['active','paused'].includes(row.status)" v-permission="'customer_pcw:write'" variant="link" :disabled="saving" @click="pauseOrResume(row)">{{ row.status==='active'?'暂停':'恢复' }}</GlassButton></template></el-table-column></el-table><el-empty v-if="!loading && !error && !plans.length" description="暂无维护计划" :image-size="48" /></section>
+    <section class="lg-card panel"><h3>维护实例 · 改约保留原期限</h3><el-table :data="occurrences" border class="list-table"><el-table-column prop="plan_title" label="计划" min-width="180" /><el-table-column prop="occurrence_date" label="日期（北京时间）" min-width="170" /><el-table-column prop="status" label="状态" min-width="110" /><el-table-column label="操作" min-width="110" max-width="150" fixed="right" class-name="table-action-column"><template #default="{row}"><GlassButton v-permission="'customer_pcw:write'" variant="link" :disabled="saving || row.occurrence_version == null || row.plan_version == null" @click="openReschedule(row)">改约</GlassButton></template></el-table-column></el-table><p v-if="!occurrences.length" class="hint">尚无可见实例；不能凭手填编号改约。</p></section>
+    <section class="lg-card panel"><h3>样品事项 · 签收后另行确认测试</h3><el-table :data="samples" border class="list-table"><el-table-column label="样品" min-width="130"><template #default="{row}">订单 #{{ row.sample_order_id }}</template></el-table-column><el-table-column label="阶段" min-width="110"><template #default="{row}">{{ SAMPLE_STAGE_LABELS[row.stage] || row.stage }}</template></el-table-column><el-table-column prop="test_planned_date" label="计划测试" min-width="130" /><el-table-column prop="feedback_text" label="反馈" min-width="180" /><el-table-column label="操作" min-width="240" fixed="right" class-name="table-action-column"><template #default="{row}"><GlassButton v-for="op in sampleCaseOperations(row.stage)" :key="op" v-permission="'customer_pcw:write'" variant="link" :disabled="saving" @click="openSample(row,op)">{{ SAMPLE_OPERATION_LABELS[op] }}</GlassButton></template></el-table-column></el-table><el-empty v-if="!loading && !error && !samples.length" description="暂无样品事项" :image-size="48" /></section>
+    <MaintenancePlanEditor ref="planEditor" :customer-id="customerId" :samples="samples" @saved="loadAll" />
+    <el-dialog v-model="rescheduleVisible" append-to-body title="改约维护实例" width="min(500px, calc(100vw - 24px))"><el-alert v-if="error" :title="error" type="error" :closable="false" /><p>{{ selectedOccurrence?.plan_title }} · 原日期 {{ selectedOccurrence?.occurrence_date }}</p><el-form label-position="top" :disabled="saving"><el-form-item label="新日期（北京时间）"><el-date-picker v-model="rescheduleForm.date" type="date" value-format="YYYY-MM-DD" /></el-form-item><el-form-item label="原因"><el-input v-model="rescheduleForm.reason" type="textarea" /></el-form-item></el-form><template #footer><GlassButton v-permission="'customer_pcw:write'" variant="primary" :loading="saving" :disabled="!rescheduleForm.date || !rescheduleForm.reason.trim()" @click="reschedule">确认改约</GlassButton></template></el-dialog>
+    <el-dialog v-model="sampleVisible" append-to-body :title="SAMPLE_OPERATION_LABELS[sampleOperation]" width="min(640px, calc(100vw - 24px))"><el-alert v-if="error" :title="error" type="error" :closable="false" /><el-form label-position="top" :disabled="saving"><el-form-item v-if="sampleOperation==='reschedule'" label="新计划测试日期"><el-date-picker v-model="sampleForm.test_planned_date" type="date" value-format="YYYY-MM-DD" /></el-form-item><el-form-item v-if="['start_test','record_feedback'].includes(sampleOperation)" label="实际日期（北京时间）"><el-date-picker v-model="sampleForm.actual_date" type="date" value-format="YYYY-MM-DD" /></el-form-item><el-form-item v-if="sampleOperation==='record_feedback'" label="客户反馈"><el-input v-model="sampleForm.feedback" type="textarea" /></el-form-item><el-form-item label="依据 / 原因"><el-input v-model="sampleForm.reason" type="textarea" /></el-form-item><EvidencePicker v-if="sampleOperation==='start_test'" v-model="sampleForm.evidence_refs" :customer-id="customerId" kind="event" references /></el-form><template #footer><GlassButton v-permission="'customer_pcw:write'" variant="primary" :loading="saving" @click="saveSample">保存真实结果</GlassButton></template></el-dialog>
   </div>
 </template>
-
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import {
-  listMaintenancePlans, listSampleCases, patchMaintenancePlan,
-  patchSampleCase, rescheduleOccurrence,
-} from '@/api/customerHub'
+import { listMaintenancePlans, listSampleCases, patchMaintenancePlan, patchSampleCase, rescheduleOccurrence } from '@/api/customerHub'
+import { currentBeijingDate } from '@/utils/datetime'
 import { msgSuccess } from '@/utils/feedback'
-import {
-  SAMPLE_OPERATION_LABELS, SAMPLE_STAGE_FLOW, SAMPLE_STAGE_LABELS,
-  buildSampleCasePayload, sampleCaseOperations,
-} from '../customerWorkspaceController'
-
-const props = defineProps({ customerId: { type: Number, required: true }, customer: { type: Object, default: null } })
-const plans = ref([])
-const samples = ref([])
-const dialogVisible = ref(false)
-const rescheduleForm = reactive({ occurrenceId: 1, date: '', reason: '' })
-
-const stageIndex = stage => Math.max(0, SAMPLE_STAGE_FLOW.indexOf(stage))
-
-async function loadAll() {
-  try {
-    const [planRes, sampleRes] = await Promise.all([
-      listMaintenancePlans(props.customerId, {}),
-      listSampleCases(props.customerId, {}),
-    ])
-    plans.value = planRes.data?.items ?? []
-    samples.value = sampleRes.data?.items ?? []
-  } catch { /* 拦截器已提示 */ }
-}
-
-async function pauseOrResume(row) {
-  try {
-    await patchMaintenancePlan(row.id, {
-      expected_plan_version: row.plan_version,
-      status: row.status === 'active' ? 'paused' : 'active',
-    }, `plan-${row.id}-${Date.now()}`)
-    msgSuccess('计划状态已更新')
-    await loadAll()
-  } catch { /* 拦截器已提示 */ }
-}
-
-async function patchSample(row, operation) {
-  try {
-    const form = {
-      test_planned_date: operation === 'reschedule'
-        ? window.prompt('新计划测试日期 YYYY-MM-DD', row.test_planned_date || '')
-        : undefined,
-      reason: operation === 'reschedule' || operation === 'close'
-        ? window.prompt('原因', '') : undefined,
-      feedback: operation === 'record_feedback' ? window.prompt('客户反馈内容', '') : undefined,
-      feedback_date: operation === 'record_feedback' ? new Date().toISOString().slice(0, 10) : undefined,
-      actual_date: operation === 'start_test'
-        ? new Date().toISOString().slice(0, 10) : undefined,
-      evidence_message_ids: operation === 'start_test' ? [0] : undefined,
-    }
-    const payload = buildSampleCasePayload(operation, form, {
-      expected_sample_version: row.sample_version,
-      expected_occurrence_version: row.occurrence_version,
-      expected_action_version: row.action_version,
-    })
-    await patchSampleCase(row.id, payload, `sample-${row.id}-${Date.now()}`)
-    msgSuccess('样品事项已更新')
-    await loadAll()
-  } catch { /* 拦截器已提示（含阶段/版本错误码） */ }
-}
-
-async function submitReschedule() {
-  try {
-    await rescheduleOccurrence(rescheduleForm.occurrenceId, {
-      occurrence_id: rescheduleForm.occurrenceId,
-      occurrence_date: rescheduleForm.date,
-      reason: rescheduleForm.reason,
-    }, `reschedule-${rescheduleForm.occurrenceId}-${Date.now()}`)
-    msgSuccess('已改约（原期限保留）')
-    await loadAll()
-  } catch { /* 拦截器已提示 */ }
-}
-
+import { MAINTENANCE_PLAN_TYPE_LABELS, SAMPLE_STAGE_LABELS, SAMPLE_OPERATION_LABELS, buildSampleCasePayload, sampleCaseOperations } from '../customerWorkspaceController'
+import { createSubmissionIdentity, errorMessage } from '../workbenchV2Controller'
+import EvidencePicker from '../EvidencePicker.vue'
+import MaintenancePlanEditor from './MaintenancePlanEditor.vue'
+const props=defineProps({customerId:{type:Number,required:true},customer:{type:Object,default:null}})
+const plans=ref([]),samples=ref([]),occurrences=ref([]),loading=ref(false),saving=ref(false),error=ref('')
+const identity=createSubmissionIdentity('maintenance')
+const planEditor=ref(null)
+const sampleVisible=ref(false),sampleOperation=ref(''),selectedSample=ref(null),sampleForm=reactive({reason:'',actual_date:'',feedback:'',test_planned_date:'',evidence_refs:[]})
+const rescheduleVisible=ref(false),selectedOccurrence=ref(null),rescheduleForm=reactive({date:'',reason:''})
+async function loadAll(){loading.value=true;error.value='';try{const [planRes,sampleRes]=await Promise.all([listMaintenancePlans(props.customerId,{}),listSampleCases(props.customerId,{})]);plans.value=planRes.data?.items||[];samples.value=sampleRes.data?.items||[];occurrences.value=plans.value.flatMap(plan=>(plan.occurrences||[]).map(row=>({...row,plan_id:plan.id,plan_version:plan.plan_version,plan_title:plan.title})))}catch(e){error.value=errorMessage(e)}finally{loading.value=false}}
+async function mutate(request,message){if(saving.value)return false;saving.value=true;error.value='';try{await request();msgSuccess(message);await loadAll();return true}catch(e){error.value=errorMessage(e);return false}finally{saving.value=false}}
+function openPlan(){planEditor.value?.open()}
+async function pauseOrResume(row){const payload={expected_plan_version:row.plan_version,status:row.status==='active'?'paused':'active'};await mutate(()=>patchMaintenancePlan(row.id,payload,identity.forPayload({id:row.id,...payload})),'计划状态已保存')}
+function openSample(row,op){selectedSample.value=row;sampleOperation.value=op;Object.assign(sampleForm,{reason:'',actual_date:currentBeijingDate(),feedback:'',test_planned_date:row.test_planned_date||'',evidence_refs:[]});identity.reset();sampleVisible.value=true}
+async function saveSample(){try{const row=selectedSample.value;const payload=buildSampleCasePayload(sampleOperation.value,{...sampleForm,feedback_date:sampleForm.actual_date},{expected_sample_version:row.sample_version,expected_occurrence_version:row.occurrence_version,expected_action_version:row.action_version});if(await mutate(()=>patchSampleCase(row.id,payload,identity.forPayload(payload)),'样品实际结果已保存'))sampleVisible.value=false}catch(e){error.value=errorMessage(e)}}
+function openReschedule(row){selectedOccurrence.value=row;Object.assign(rescheduleForm,{date:row.occurrence_date,reason:''});identity.reset();rescheduleVisible.value=true}
+async function reschedule(){const row=selectedOccurrence.value;const payload={expected_plan_version:row.plan_version,occurrence_id:row.id,expected_occurrence_version:row.occurrence_version,occurrence_date:rescheduleForm.date,reason:rescheduleForm.reason.trim()};if(row.current_action_id!=null){if(row.action_version==null){error.value='缺少关联行动版本，请刷新计划后重试';return}payload.expected_action_version=row.action_version}if(await mutate(()=>rescheduleOccurrence(row.plan_id,payload,identity.forPayload(payload)),'实例已改约，原期限保留'))rescheduleVisible.value=false}
 onMounted(loadAll)
 </script>
-
-<style scoped>
-.workspace-maintenance { display: grid; gap: 14px; }
-.panel { padding: 14px 16px; }
-.panel h3 { margin: 0 0 10px; font-size: 14px; }
-.hint { font-size: 12px; color: var(--text-muted); font-weight: normal; }
-.toolbar { margin-bottom: 10px; }
-.sample-steps { margin-bottom: 12px; }
-</style>
+<style scoped>.workspace-maintenance{display:grid;gap:14px}.panel{padding:14px}h3{font-size:14px;margin:0 0 12px}.hint{color:var(--text-muted);font-size:12px;line-height:1.6}.el-select,.el-date-editor{max-width:100%}</style>

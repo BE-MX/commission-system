@@ -30,6 +30,8 @@ def project_accepted_artifact(
     actor_user_id: int,
 ) -> None:
     """Project supported artifacts; unsupported types intentionally remain audit-only."""
+    from app.customer.delegation_guard_service import guard_runtime_run
+    guard_runtime_run(db, run, lock=True, adoption=True, actor_user_id=actor_user_id)
     if artifact.artifact_type != "repurchase_action_card":
         return
     if run.business_ref_type != "customer_action" or not run.business_ref_id:

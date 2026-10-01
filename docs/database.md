@@ -610,3 +610,20 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 私海客户工作台（PCW-01..06）。新增 19 张表：`ark_customer_work_items`（事项，unique(business_key,business_cycle) 跨日去重）、`ark_customer_evaluation_runs/items`（每日评估批次与逐客户结果，unique(business_date,rule_version,scope_hash,run_kind,attempt) 与 unique(run_id,customer_id)）、`ark_customer_fact_reviews`（AI 建议审核，unique(candidate_fact_id)）、`ark_customer_conversation_bindings/_events`（会话绑定与不可变审计，unique(source_system,account,conversation)）、`ark_customer_conversation_analysis_jobs`（分析任务，unique(conversation,input_hash,binding_version,rule_version)）、`ark_customer_order_batch_map`（商业采购批次映射）、`ark_customer_reorder_windows`（复购窗口，unique(occurrence_key)）、`ark_customer_monitor_subscriptions/_events/_event_sources`（监控订阅/变化事件/多源证据）、`ark_customer_maintenance_plans/_occurrences`（六类维护计划与稳定实例，unique(plan_id,occurrence_key)）、`ark_customer_sample_cases`（样品阶段机，unique(sample_order_id,item_set_hash,feedback_round)）、`ark_customer_shipment_order_links`（物流-订单多对多）、`ark_customer_campaigns`（活动）、`ark_customer_operation_receipts`（幂等回执，unique(actor,scope,key_hash)）、`ark_customer_notification_deliveries`（通知 outbox）。
 
 `ark_customer_actions` 扩展 7 列：work_item_id（FK，存量行为空）、action_round、parent_action_id（自引用行动链）、row_version（server_default 1）、original_due_at（原期限，改约不变）、business_due_at（当前期限）、due_provenance；unique(work_item_id,action_round)（历史 NULL 行不受约束）+ 索引 (owner,status,business_due_at)。126 冻结契约测试以显式 post-126 列登记方式扩展，冻结资源文件不动。
+
+## 172_workbench_lifecycle（父 171_customer_tag_display_value，本地未部署）
+
+客户工作台 v2 在已有 `ark_customer_work_items` 上增补目标类型/定义、负责人、八态等待与暂停字段、结果有效性与来源版本。原 `awaiting_reply` 确定性映射为 `waiting/customer`；旧 `resolved` 保留历史而标记 `legacy_unverified`，不会补造证据或自动纳入当前有效解决数。迁移前须暂停相关写入并按项目发布流程备份；迁移不运行旧事项生成任务，也不自动发送客户消息。迁移设计为前向修复，downgrade 不删除审计/容量账本。
+
+新增七张表：
+
+| 表 | 持久约束与用途 |
+| --- | --- |
+| `ark_customer_work_item_events` | 事项状态、来源失效、归属变更与纠正的不可变事件；保存版本、原因、证据和输入版本。 |
+| `ark_customer_work_item_dependencies` | 事项对行动/物流/设计源任务的有版本观察；`(item_id,source_domain,source_id)` 唯一。源任务仍由原模块执行。 |
+| `ark_customer_delegations` | 准备型委派的代次、来源版本、状态和真实 Agent Run 关联；旧代次不重新激活。 |
+| `ark_customer_daily_plans`、`ark_customer_daily_admissions` | 北京业务日容量快照与每项入选账本；计划按 `(actor_user_id,business_date)` 唯一，入选按 `(plan_id,item_id)` 唯一。 |
+| `ark_customer_work_item_feedback` | 目标修订下按准确性、适用性、采纳分开的反馈，重复提交受唯一键与回执约束。 |
+| `ark_customer_work_item_source_deliveries` | 来源观察的持久去重水位；重复或乱序通知以实时源对象重新观察，不将旧载荷覆盖新状态。 |
+
+网站、选品页等服务入口复用已有 `ark_customer_annotations` 的受治理备注：`content_schema_version=v1`、`content_json.kind=service_asset_v1`，保留登记和撤销记录，不新增网站效果指标表。客户合并/拆分继续由现有 annotation 逻辑归属和隐私裁剪处理。

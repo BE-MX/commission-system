@@ -1,5 +1,14 @@
 <template>
   <div v-if="data.showTodoArea" class="dashboard-todos">
+    <router-link v-if="data.customerWorkSummary?.total > 0" class="todo-alert todo-alert-primary" to="/customer-hub/radar">
+      <span class="todo-text">有 {{ data.customerWorkSummary.total }} 个客户事项待您处理</span>
+      <span class="todo-link">打开客户工作台 <el-icon><ArrowRight /></el-icon></span>
+    </router-link>
+    <router-link v-for="item in data.customerWorkSummary?.items || []" :key="item.responsibility_id" class="todo-alert todo-alert-primary" :to="item.deep_link">
+      <span class="todo-text">{{ item.title }} · {{ item.required_action }}</span>
+      <span class="todo-link">查看同一事项 <el-icon><ArrowRight /></el-icon></span>
+    </router-link>
+    <router-link v-if="data.customerWorkSummaryError" class="todo-alert todo-alert-warning" to="/customer-hub/radar">{{ data.customerWorkSummaryError }}</router-link>
     <!-- 审批待办 -->
     <div
       v-if="authStore.hasAnyPermission(['design:audit']) && data.pendingApprovals > 0"

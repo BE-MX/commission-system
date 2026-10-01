@@ -1,2 +1,2 @@
-<template><CustomerHubWorkspace kind="customers" /></template>
-<script setup>import CustomerHubWorkspace from './CustomerHubWorkspace.vue'</script>
+<template><CustomerWorkbench /></template>
+<script setup>import CustomerWorkbench from './CustomerWorkbench.vue'</script>

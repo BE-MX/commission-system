@@ -148,6 +148,10 @@ def create_artifact(
     content: dict,
     evidence: list[dict],
 ) -> AgentArtifact:
+    from app.customer.delegation_guard_service import guard_runtime_run
+    delegation = guard_runtime_run(db, run, lock=True)
+    if delegation is not None and run.status not in {"running", "waiting_input"}:
+        raise ConflictError("委派运行不处于可交付状态")
     successful_calls, returned_evidence = successful_tool_evidence(db, run.id)
     customer_id, profile_version = customer_evidence_scope(db, run)
     errors = validate_output(
@@ -193,6 +197,11 @@ def create_artifact(
     )
     db.add(artifact)
     db.flush()
+    # Recheck after the persistence statement: SQLite ignores row locks, so a
+    # pause can commit after the initial check but before this write begins.
+    # The write now serializes other writers; a stale output aborts this whole
+    # transaction before it can be adopted or projected.
+    guard_runtime_run(db, run, lock=True)
     append_event(
         db, run,
         event_id=f"artifact-{artifact.id}-created",
@@ -222,22 +231,53 @@ def decide_artifact(
     artifact_ref = db.query(AgentArtifact).filter(AgentArtifact.id == artifact_id).one_or_none()
     if artifact_ref is None:
         raise NotFoundError("Agent 成果不存在")
+    candidate_run = db.get(AgentRun, artifact_ref.run_id)
+    if candidate_run.owner_user_id != user_id and not can_read_all:
+        raise NotFoundError("Agent 成果不存在")
+    if (candidate_run.input_json or {}).get("delegation_id") is not None:
+        from app.customer.delegation_guard_service import live_delegation_user
+        from app.customer.work_item_service import item_access
+        from app.customer import pcw_errors
+        try:
+            item_access(db, live_delegation_user(db, user_id),
+                int(candidate_run.input_json.get("work_item_id") or 0), write=True, lock=True)
+        except pcw_errors.PcwError as exc:
+            raise NotFoundError("Agent 成果不存在") from exc
+    # Customer/item/delegation locks precede the Run lock, matching lifecycle
+    # transitions and Worker completion. A finished Run is eligible for human
+    # adoption only while its delegation still awaits that exact generation.
+    if decision == "accepted":
+        from app.customer.delegation_guard_service import guard_runtime_run
+        guard_runtime_run(db, candidate_run, lock=True, adoption=True, actor_user_id=user_id)
     # Serialize every decision/event append for the Run before locking the
     # individual Artifact. Multiple artifacts can otherwise allocate the same
     # next event sequence concurrently.
-    run = db.query(AgentRun).filter(AgentRun.id == artifact_ref.run_id).with_for_update().one()
-    artifact = db.query(AgentArtifact).filter(AgentArtifact.id == artifact_id).with_for_update().one()
+    run = db.query(AgentRun).filter(AgentRun.id == artifact_ref.run_id).populate_existing().with_for_update().one()
+    artifact = db.query(AgentArtifact).filter(AgentArtifact.id == artifact_id).populate_existing().with_for_update().one()
     if run.owner_user_id != user_id and not can_read_all:
         raise NotFoundError("Agent 成果不存在")
     if artifact.validation_status != "valid":
         raise ConflictError("只有校验通过的成果才能接受或拒绝")
     if artifact.decision_status != "draft" and artifact.decision_status != decision:
         raise ConflictError("Agent 成果已经做出不同决策")
+    if decision == "accepted":
+        profile = db.get(AgentProfile, run.profile_id)
+        if (profile.policy_json or {}).get("claim_evidence_required"):
+            customer_id, profile_version = customer_evidence_scope(db, run)
+            policy = profile.policy_json or {}
+            errors = validate_ark_claim_evidence(db, citations=artifact.evidence_json or [],
+                customer_id=customer_id, profile_version=profile_version,
+                max_classification=policy.get("max_data_classification", "internal_business"),
+                max_visibility=policy.get("max_visibility_scope", "customer_team"))
+            if errors:
+                raise ConflictError("成果证据已变化: " + "; ".join(errors))
     artifact.decision_status = decision
     artifact.decided_by = user_id
     artifact.decided_at = beijing_now()
     artifact.feedback_note = note
+    db.flush()
     if decision == "accepted":
+        guard_runtime_run(db, run, lock=True, adoption=True, actor_user_id=user_id)
         from app.agent_runtime.projection_service import project_accepted_artifact
         project_accepted_artifact(
             db,

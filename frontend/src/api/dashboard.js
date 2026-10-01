@@ -2,6 +2,10 @@
 // 三个请求都 showLoading:false——布局配置是工作台的静默旁路，不该弹全局 loading
 import { dashboardClient } from './clients'
 
+export function getCustomerWorkSummary() {
+  return dashboardClient.get('/customer-work-summary', { showLoading: false })
+}
+
 export function getDashboardPreference() {
   return dashboardClient.get('/preference', { showLoading: false })
 }

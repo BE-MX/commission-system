@@ -138,7 +138,7 @@ class ObjectOwnershipPolicy:
     ]
 
 
-OBJECT_OWNERSHIP_REGISTRY_VERSION = "customer_object_ownership_v1"
+OBJECT_OWNERSHIP_REGISTRY_VERSION = "customer_object_ownership_v2"
 OBJECT_OWNERSHIP_REGISTRY: Mapping[str, ObjectOwnershipPolicy] = MappingProxyType({
     "name": ObjectOwnershipPolicy("direct", "overlay", "always"),
     "external_identity": ObjectOwnershipPolicy("subject", "overlay", "always"),
@@ -155,6 +155,7 @@ OBJECT_OWNERSHIP_REGISTRY: Mapping[str, ObjectOwnershipPolicy] = MappingProxyTyp
     "search_result": ObjectOwnershipPolicy("direct", "overlay", "always"),
     "opportunity": ObjectOwnershipPolicy("direct", "overlay", "always"),
     "action": ObjectOwnershipPolicy("direct", "overlay", "always"),
+    "work_item": ObjectOwnershipPolicy("direct", "overlay", "always"),
     "annotation": ObjectOwnershipPolicy(
         "direct",
         "overlay",
@@ -332,6 +333,15 @@ def _registrations(
 
 
 _fact_registry: dict[str, FactRegistration] = {
+    "contact.birthday": FactRegistration(
+        value_types=frozenset({"object"}),
+        data_classification=DataClassification.PERSONAL_CONTACT,
+        allowed_sources=frozenset({("manual", "contact"), ("okki", "contact")}),
+        ttl_days=None,
+        conflict_key="contact.birthday",
+        allowed_purposes=frozenset({"maintenance"}),
+        supports_high_impact=False,
+    ),
     "business.industry": FactRegistration(
         value_types=_registered_value_types("business.industry"),
         data_classification=DataClassification.PUBLIC_BUSINESS,
@@ -489,7 +499,7 @@ SOURCE_REGISTRY: Mapping[tuple[str, str], SourceRegistration] = MappingProxyType
         authority="transactional",
         publisher_key_rule="internal_source_account",
         source_family_key_rule="external_contact_id",
-        allowed_fact_keys=frozenset(),
+        allowed_fact_keys=frozenset({"contact.birthday"}),
         default_classification=DataClassification.PERSONAL_CONTACT,
         ttl_days=365,
         promotion_ceiling="identified",
@@ -577,6 +587,17 @@ SOURCE_REGISTRY: Mapping[tuple[str, str], SourceRegistration] = MappingProxyType
         ttl_days=90,
         promotion_ceiling="candidate",
         collection_legal_basis="governed research run using registered evidence",
+    ),
+    ("manual", "contact"): SourceRegistration(
+        registry_version=SOURCE_REGISTRY_VERSION,
+        authority="first_party",
+        publisher_key_rule="authorized_ark_user",
+        source_family_key_rule="audited_contact_entry",
+        allowed_fact_keys=frozenset({"contact.birthday"}),
+        default_classification=DataClassification.PERSONAL_CONTACT,
+        ttl_days=None,
+        promotion_ceiling="verified",
+        collection_legal_basis="authorized employee contact input with direct evidence and audit trail",
     ),
     ("manual", "customer"): SourceRegistration(
         registry_version=SOURCE_REGISTRY_VERSION,

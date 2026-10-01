@@ -31,10 +31,10 @@ import {
 } from '../src/views/customer_hub/customerWorkspaceController.js'
 import { createCustomerHubApi, withIdempotency } from '../src/api/customerHubContract.js'
 
-test('WORKSPACE_TABS 覆盖六类能力', () => {
-  assert.equal(WORKSPACE_TABS.length, 6)
+test('WORKSPACE_TABS 统一四页签，订单与监控在既有内容中复用', () => {
+  assert.equal(WORKSPACE_TABS.length, 4)
   assert.deepEqual(WORKSPACE_TABS.map(tab => tab.key), [
-    'overview', 'profile', 'conversations', 'orders', 'monitor', 'maintenance',
+    'overview', 'conversations', 'profile', 'maintenance',
   ])
 })
 

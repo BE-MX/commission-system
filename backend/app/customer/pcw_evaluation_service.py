@@ -95,7 +95,7 @@ PRIORITY_NORMAL = "normal"  # P2
 
 # 行动状态：pending/snoozed 视为"未执行"，评估不重复新建；done/dismissed/cancelled 为终态。
 OPEN_ACTION_STATUSES = ("pending", "snoozed")
-OPEN_ITEM_STATES = ("open", "awaiting_reply")
+OPEN_ITEM_STATES = ("open", "in_progress", "waiting", "decision_required", "blocked")
 CLOSED_ITEM_STATES = ("resolved", "cancelled")
 
 
@@ -360,7 +360,7 @@ def _rule_inquiry_sla(db: Session, ctx: _EvalContext, counters: dict, dry_run: b
         ).order_by(CustomerMessage.sent_at.desc(), CustomerMessage.id.desc()).first()
         if last_in is None:
             continue
-        answered = db.query(CustomerMessage.id).filter(
+        answered = db.query(CustomerMessage).filter(
             CustomerMessage.conversation_id == conv.id,
             CustomerMessage.direction == "out",
             or_(
@@ -370,11 +370,11 @@ def _rule_inquiry_sla(db: Session, ctx: _EvalContext, counters: dict, dry_run: b
                     CustomerMessage.id > last_in.id,
                 ),
             ),
-        ).first() is not None
+        ).order_by(CustomerMessage.sent_at.desc(), CustomerMessage.id.desc()).first()
         key = f"inquiry_sla:conv:{conv.id}"
         if answered:
             # 客户已收到回复（可能直接走原渠道）：遗留周期事项解决，不新建任务。
-            _resolve_answered_inquiry_items(db, ctx, key, counters, dry_run)
+            _resolve_answered_inquiry_items(db, ctx, key, counters, dry_run, answered)
             continue
         age = ctx.now - last_in.sent_at
         if age <= timedelta(hours=INQUIRY_SLA_HOURS):
@@ -409,7 +409,7 @@ def _rule_inquiry_sla(db: Session, ctx: _EvalContext, counters: dict, dry_run: b
 
 
 def _resolve_answered_inquiry_items(
-    db: Session, ctx: _EvalContext, key: str, counters: dict, dry_run: bool
+    db: Session, ctx: _EvalContext, key: str, counters: dict, dry_run: bool, answered=None
 ) -> None:
     """会话已有 outbound 覆盖最后 inbound：该会话所有未关闭周期事项标记解决。
 
@@ -424,20 +424,11 @@ def _resolve_answered_inquiry_items(
         counters["resolved"] += 1
         if dry_run:
             continue
-        actions = db.query(CustomerAction).filter(
-            CustomerAction.work_item_id == item.id,
-            CustomerAction.status.in_(OPEN_ACTION_STATUSES),
-        ).all()
-        for action in actions:
-            action.status = "cancelled"
-            action.dismissal_reason = "answered_off_channel"
-            action.row_version = int(action.row_version) + 1
-            action.updated_at = ctx.now
-        item.state = "resolved"
-        item.resolved_at = ctx.now
-        item.resolved_by = None  # 系统解决允许为空
-        item.row_version = int(item.row_version) + 1
-        item.updated_at = ctx.now
+        if answered is not None:
+            from app.customer.work_item_service import apply_source_transition
+            from app.customer.work_item_evidence_service import evidence_revision
+            apply_source_transition(db, item, operation="resolved", reason="answered_off_channel",
+                evidence=[{"type": "message", "id": answered.id, "revision": evidence_revision(answered)}])
 
 
 def _rule_sample_feedback(db: Session, ctx: _EvalContext, counters: dict, dry_run: bool) -> None:
@@ -536,9 +527,8 @@ def _cancel_covered_window(
         action.dismissal_reason = "window_covered"
         action.row_version = int(action.row_version) + 1
         action.updated_at = ctx.now
-    item.state = "cancelled"
-    item.row_version = int(item.row_version) + 1
-    item.updated_at = ctx.now
+    from app.customer.work_item_service import apply_source_transition
+    apply_source_transition(db, item, operation="cancelled", reason="superseded_by_order")
 
 
 def _rule_maintenance_due(db: Session, ctx: _EvalContext, counters: dict, dry_run: bool) -> None:

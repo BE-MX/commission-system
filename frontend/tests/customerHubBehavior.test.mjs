@@ -43,12 +43,12 @@ test('API maps params and mutation payloads through injected customer hub client
   await api.listCustomers({ page: 2, page_size: 50, keyword: 'ark' })
   await api.getResearchTask(7)
   await api.updateOpportunity(9, { status: 'contacted', reason: 'called' })
-  await api.updateAction(11, { operation: 'feedback', feedback: 'not_useful' })
+  await api.updateAction(11, { operation: 'feedback', feedback: 'not_useful' }, 'action-feedback-key')
   assert.deepEqual(calls, [
     ['get', '/customers', { params: { page: 2, page_size: 50, keyword: 'ark' }, showLoading: false }],
     ['get', '/research-tasks/7'],
     ['put', '/opportunities/9', { status: 'contacted', reason: 'called' }],
-    ['put', '/actions/11', { operation: 'feedback', feedback: 'not_useful' }],
+    ['put', '/actions/11', { operation: 'feedback', feedback: 'not_useful' }, { headers: { 'Idempotency-Key': 'action-feedback-key' } }],
   ])
 })
 

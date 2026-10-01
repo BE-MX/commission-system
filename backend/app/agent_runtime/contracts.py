@@ -65,6 +65,7 @@ STANDARD_EVENT_TYPES = {
     "run.claimed",
     "run.requeued",
     "run.started",
+    "run.waiting_input",
     "model.requested",
     "model.responded",
     "plan.updated",

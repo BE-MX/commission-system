@@ -67,6 +67,8 @@ JOB_BATTLE_POSTERS_AFTERNOON = "battle_posters_afternoon"
 JOB_WHATSAPP_TRANSLATION_PAIRING_CLEANUP = "whatsapp_translation_pairing_cleanup"
 JOB_DOMESTIC_PUBLIC_SEA_DAILY = "domestic_public_sea_daily"
 JOB_PCW_DAILY_EVALUATION = "pcw_daily_evaluation"
+JOB_CUSTOMER_DELEGATION_ENQUEUE = "customer_delegation_enqueue"
+JOB_CUSTOMER_SOURCE_RECONCILE = "customer_source_reconcile"
 JOB_OKKI_OUTBOUND_RECONCILE = "okki_outbound_reconcile"
 JOB_OKKI_OUTBOUND_DELETE_RECONCILE = "okki_outbound_delete_reconcile"
 
@@ -114,6 +116,8 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.whatsapp_translation.pairing_service import prune_unconsumed_pairings
     from app.domestic.customer_service import release_stale_private_customers
     from app.customer.pcw_evaluation_service import run_scheduled_evaluation
+    from app.customer.delegation_service import enqueue_waiting_delegations_job
+    from app.customer.work_item_source_service import reconcile_sources_job
 
     settings = get_settings()
     from app.receipt.scheduler import process_receipts
@@ -229,6 +233,9 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1, coalesce=True, misfire_grace_time=3600,
     )
     if settings.PCW_EVALUATION_ENABLED:
+        scheduler.add_job(reconcile_sources_job, trigger="interval", minutes=5,
+            id=JOB_CUSTOMER_SOURCE_RECONCILE, replace_existing=True, max_instances=1, coalesce=True,
+            misfire_grace_time=300)
         scheduler.add_job(
             run_scheduled_evaluation,
             trigger="cron",
@@ -241,6 +248,10 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
             coalesce=True,
             misfire_grace_time=3600,
         )
+    if settings.AGENT_RUNTIME_ENABLED:
+        scheduler.add_job(enqueue_waiting_delegations_job, trigger="interval", minutes=5,
+            id=JOB_CUSTOMER_DELEGATION_ENQUEUE, replace_existing=True, max_instances=1, coalesce=True,
+            misfire_grace_time=300)
     scheduler.add_job(
         process_customer_image_queue,
         trigger="interval",
