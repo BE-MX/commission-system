@@ -61,6 +61,7 @@
         :modules-by-key="modulesByKey"
         :parent-titles="parentTitleMap"
         :today="today"
+        :can-write="canWrite"
         @open="openTask"
         @move="setStatus"
       />
@@ -84,9 +85,10 @@
 
 <script setup>
 import './task-tags.css'
-import { onActivated, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { useQuickTask } from '@/composables/useQuickTask'
+import { useAuthStore } from '@/stores/auth'
 import TaskBoardView from './components/TaskBoardView.vue'
 import TaskBriefCard from './components/TaskBriefCard.vue'
 import TaskDetailDrawer from './components/TaskDetailDrawer.vue'
@@ -116,6 +118,8 @@ const {
   refresh, loadAll, setStatus, loadTrash, restore, togglePriority, addCustom, removeCustom,
 } = useTaskCenter()
 const { openQuickTask, lastCreatedId } = useQuickTask()
+const authStore = useAuthStore()
+const canWrite = computed(() => authStore.hasPermission('task:write'))
 
 const drawerOpen = ref(false)
 const selectedId = ref(null)

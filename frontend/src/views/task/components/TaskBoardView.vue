@@ -15,8 +15,8 @@
         v-for="task in columns[col]"
         :key="task.id"
         class="tb-card"
-        :class="{ 'is-drag': dragId === task.id }"
-        draggable="true"
+        :class="{ 'is-drag': dragId === task.id, 'is-readonly': !canWrite }"
+        :draggable="canWrite"
         tabindex="0"
         @dragstart="dragId = task.id"
         @dragend="dragId = null; overCol = null"
@@ -41,13 +41,14 @@
 
 <script setup>
 import { ref } from 'vue'
-import { BOARD_COLUMNS, STATUS_META, isOverdue } from '../taskLabels.js'
+import { BOARD_COLUMNS, STATUS_META, isOverdue, userStatusOptions } from '../taskLabels.js'
 
 const props = defineProps({
   columns: { type: Object, required: true },
   modulesByKey: { type: Object, required: true },
   parentTitles: { type: Map, required: true },
   today: { type: String, required: true },
+  canWrite: { type: Boolean, default: false },
 })
 const emit = defineEmits(['open', 'move'])
 
@@ -67,7 +68,7 @@ function onDrop(col) {
   const task = Object.values(props.columns).flat().find(t => t.id === dragId.value)
   dragId.value = null
   overCol.value = null
-  if (!task || task.status === col || col === 'pending_confirm') return
+  if (!props.canWrite || !task || task.status === col || !userStatusOptions(task.status).includes(col)) return
   emit('move', task, col)
 }
 </script>
@@ -90,6 +91,7 @@ function onDrop(col) {
   .tb-card:hover { transform: translateY(-2px); box-shadow: var(--card-shadow-hover); }
 }
 .tb-card.is-drag { opacity: 0.45; }
+.tb-card.is-readonly { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .tb-card { transition: none; } .tb-card:hover { transform: none; } }
 .tb-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .tb-top, .tb-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
