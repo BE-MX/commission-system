@@ -1,5 +1,30 @@
 # 莱莎方舟 API 参考
 
+## 任务中心一期（`/api/task`，迁移 `173_task_center`）
+
+所有接口返回 `ok(data)` 信封，按 JWT 所属用户隔离；读接口允许 `task:read` 或 `task:write`，写接口要求 `task:write`。跨用户任务返回 404，非法状态迁移返回 409。
+
+| 方法 | 路径 | 权限 | 用途 |
+| --- | --- | --- | --- |
+| GET | `/items` | read/write | 获取个人任务树 |
+| POST | `/items` | write | 创建任务 |
+| GET | `/items/{task_id}` | read/write | 查看任务详情与事件 |
+| PATCH | `/items/{task_id}` | write | 修改字段与验收标准 |
+| POST | `/items/{task_id}/status` | write | 按状态机变更状态；完成未结束子树须确认 |
+| POST | `/items/{task_id}/move` | write | 移动父任务，校验成环与层数 |
+| DELETE | `/items/{task_id}` | write | 软删任务及子树 |
+| POST | `/items/{task_id}/restore` | write | 从回收站恢复同批子树 |
+| GET | `/trash` | read/write | 列出个人回收站 |
+| POST | `/items/{task_id}/links` | write | 关联文档、原型或 URL |
+| DELETE | `/links/{link_id}` | write | 移除本人任务关联 |
+| GET | `/stats` | read/write | 获取页头统计 |
+| GET | `/modules` | read/write | 获取导航模块、工程域及本人分类 |
+| POST | `/modules/custom` | write | 新建个人分类 |
+| DELETE | `/modules/custom/{key}` | write | 停用本人分类 |
+| POST | `/ai/draft` | write | 一句话生成可编辑草稿；失败时降级 |
+| GET | `/brief/today` | read/write | 获取或生成今日简报，不发送通知 |
+
+
 ## 私海客户工作台 PCW（2026-09-25 已部署，迁移 169）
 
 统一前缀 `/api/customer-hub`，`ok(data)` 信封；业务写请求携带 `Idempotency-Key`（同键同内容重放原结果、不同内容 409 `IDEMPOTENCY_CONFLICT`）。版本冲突 409 带 `current_*` 详情；失权/不存在统一 404 `CUSTOMER_NOT_FOUND_OR_FORBIDDEN`。契约详见 [PCW 开发规格](requirements/private-customer-workbench-prototype/api-contracts.md)。权限：`customer_pcw:read/write`、`customer_profile:write`、`customer_campaign:admin`。

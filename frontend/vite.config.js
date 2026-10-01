@@ -1,11 +1,13 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { navManifestPlugin } from './scripts/navManifestPlugin.js'
 import path from 'path'
 import fs from 'fs'
 
 export default defineConfig({
   plugins: [
     vue(),
+    navManifestPlugin(),
     {
       // public/<dir>/ 静态页（/m/、/caigoujie/ 等）的目录 URL：Vite dev 不解析
       // 目录 index.html，会回退成 SPA 壳导致白屏。这里对齐生产 Nginx / 8001

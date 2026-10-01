@@ -24,6 +24,7 @@
           </div>
         </div>
         <div class="header-right">
+          <GlassButton v-permission="'task:write'" class="header-quick-task" size="sm" left-icon="EditPen" data-quick-task-trigger @click="openHeaderQuickTask">记任务</GlassButton>
           <div class="header-badge">莱莎发制品</div>
           <el-dropdown trigger="click" @command="handleUserCommand">
             <div class="user-trigger">
@@ -76,6 +77,7 @@
         </div>
       </el-main>
     </el-container>
+    <QuickTaskPopover />
   </el-container>
 </template>
 
@@ -92,6 +94,10 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import GlassButton from '@/components/GlassButton.vue'
+import QuickTaskPopover from '@/components/task/QuickTaskPopover.vue'
+import { useQuickTask } from '@/composables/useQuickTask'
+import { NAV_ENTRIES } from '@/config/navigation'
 import NavigationTabs from './NavigationTabs.vue'
 import SidebarNavigation from './SidebarNavigation.vue'
 import { useNavigationTabs } from './navigationTabs'
@@ -100,6 +106,17 @@ import { getRouteTabKey, getTabButtonId, getTabPanelId } from './navigationTabSt
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const { openQuickTask } = useQuickTask()
+
+// 预填当前页面对应的模块：详情等隐藏页按 activeMenu 找回它所属的导航页；浮层会校验模块是否在注册表里
+function currentModuleKey() {
+  const menuPath = route.meta.activeMenu || route.path
+  return NAV_ENTRIES.find(entry => entry.menu && entry.path === menuPath)?.name ?? route.name ?? null
+}
+
+function openHeaderQuickTask(event) {
+  openQuickTask({ anchorEl: event?.currentTarget, moduleKey: currentModuleKey(), source: 'header_quick' })
+}
 const mobileQuery = globalThis.matchMedia?.('(max-width: 640px)')
 const isNarrow = ref(mobileQuery?.matches ?? false)
 const desktopCollapse = ref(false)
@@ -250,6 +267,7 @@ function handleUserCommand(command) {
   .header { padding: 0 10px; }
   .header-left { gap: 8px; }
   .header-badge { display: none; }
+  .header-quick-task { display: none; }
   .main-content { padding: 12px 10px; }
   .page-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .user-trigger { padding-inline: 6px; }

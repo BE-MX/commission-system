@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "vite build",
+    "test:task-center": "node --test tests/taskCenter.test.mjs",
     "test:invoice-layout": "node --test tests/invoiceLayout.test.mjs",
     "test:customer-workspace": "node --test tests/customerWorkspace.test.mjs",
     "test:invoice-import": "node --test tests/invoicePasteImport.test.mjs",

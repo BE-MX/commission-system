@@ -41,7 +41,19 @@
         :index="item.path"
       >
         <el-icon><component :is="item.icon" /></el-icon>
-        <template #title>{{ item.title }}</template>
+        <template #title>
+          <span>{{ item.title }}</span>
+          <button
+            v-if="!collapsed && item.name"
+            v-permission="'task:write'"
+            type="button"
+            class="nav-add"
+            data-quick-task-trigger
+            :aria-label="`为「${item.title}」记任务`"
+            :title="`为「${item.title}」记任务`"
+            @click.stop.prevent="quickAdd($event, item)"
+          >+</button>
+        </template>
       </el-menu-item>
 
       <el-sub-menu
@@ -75,6 +87,16 @@
                 <span>{{ item.title }}</span>
               </el-badge>
               <span v-else>{{ item.title }}</span>
+              <button
+                v-if="!collapsed && item.name"
+                v-permission="'task:write'"
+                type="button"
+                class="nav-add"
+                data-quick-task-trigger
+                :aria-label="`为「${item.title}」记任务`"
+                :title="`为「${item.title}」记任务`"
+                @click.stop.prevent="quickAdd($event, item)"
+              >+</button>
             </template>
           </el-menu-item>
         </template>
@@ -99,6 +121,7 @@ import { Search, TopRight } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { MENU_GROUPS, NAV_ENTRIES } from '@/config/navigation'
+import { useQuickTask } from '@/composables/useQuickTask'
 import { filterNavigationSections, normalizeNavigationQuery } from './navigationSearch'
 
 const props = defineProps({
@@ -108,6 +131,12 @@ const props = defineProps({
 const pendingReviews = useDomesticReviewBadge()
 const route = useRoute()
 const authStore = useAuthStore()
+const { openQuickTask } = useQuickTask()
+
+function quickAdd(event, item) {
+  openQuickTask({ anchorEl: event.currentTarget, moduleKey: item.name, source: 'nav_quick' })
+}
+
 const searchQuery = ref('')
 const openedGroupKeys = ref([])
 const normalizedQuery = computed(() => normalizeNavigationQuery(searchQuery.value))
@@ -127,7 +156,7 @@ const accessibleTopLevelItems = computed(() => NAV_ENTRIES
   .filter(entry => !entry.hideInMenu && entry.menu && !entry.menu.group && hasAccess(entry.menu))
   .slice()
   .sort((a, b) => (a.menu.order ?? 999) - (b.menu.order ?? 999))
-  .map(entry => ({ path: entry.path, title: entry.menu.title ?? entry.title, icon: entry.menu.icon })))
+  .map(entry => ({ path: entry.path, name: entry.name, title: entry.menu.title ?? entry.title, icon: entry.menu.icon })))
 
 const accessibleGroups = computed(() => Object.entries(MENU_GROUPS)
   .map(([key, group]) => {
@@ -137,6 +166,7 @@ const accessibleGroups = computed(() => Object.entries(MENU_GROUPS)
       .sort((a, b) => (a.menu.order ?? 999) - (b.menu.order ?? 999))
       .map(entry => ({
         path: entry.path,
+        name: entry.name,
         title: entry.menu.title ?? entry.title,
         icon: entry.menu.icon,
         external: entry.external === true,
@@ -378,6 +408,37 @@ function rememberClosedGroup(key) {
   :deep(.el-sub-menu__title),
   .nav-search :deep(.el-input__wrapper) { transition: none; }
 }
+/* 任务中心：导航项悬浮 +（hover 高频出现，只做 120ms opacity + 轻微位移）。
+   scoped 只给选择器最后一段 .nav-add 加作用域属性，祖先写 .el-menu-item 无需 :deep；
+   el-menu-item 本身是 flex，按钮用 margin-left:auto 贴右，不需要改它的定位上下文。 */
+.nav-add {
+  display: grid;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: var(--sidebar-glow-gold);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-gold) 35%, transparent);
+  color: var(--color-gold);
+  font: 600 15px/1 var(--font-display);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(4px);
+  transition: opacity 120ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease;
+}
+.side-menu .el-menu-item:hover .nav-add,
+.side-menu .el-menu-item:focus-within .nav-add,
+.nav-add:focus-visible { opacity: 1; pointer-events: auto; transform: none; }
+.nav-add:hover { background: color-mix(in srgb, var(--color-gold) 26%, transparent); }
+.nav-add:active { transform: scale(0.94); }
+.nav-add:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 1px; }
+.side-menu .el-menu-item.is-active .nav-add { color: var(--card-bg); background: color-mix(in srgb, var(--card-bg) 30%, transparent); box-shadow: none; }
+@media (hover: none) { .nav-add { display: none; } }
+@media (prefers-reduced-motion: reduce) { .nav-add { transition: none; transform: none; } }
 </style>
 
 <style>
