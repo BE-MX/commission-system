@@ -8,14 +8,10 @@
     </header>
 
     <section ref="panelRef" class="surface-card table-card">
-      <div class="toolbar">
-        <el-select v-model="filters.status" clearable placeholder="全部状态" class="filter-w-sm" @change="search">
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="search" @reset="resetFilters"><el-select v-model="filters.status" clearable placeholder="全部状态" class="filter-w-sm" >
           <el-option v-for="item in STATUS_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-        <span v-if="activeCount" class="muted">{{ activeCount }} 个任务等待或执行中，页面每 10 秒自动刷新</span>
-      </div>
+<span v-if="activeCount" class="muted">{{ activeCount }} 个任务等待或执行中，页面每 10 秒自动刷新</span></FilterBar>
       <div class="action-bar">
         <GlassButton
           v-any-permission="['sales_automation:write', 'sales_automation:admin']"
@@ -32,15 +28,16 @@
           @fullscreen="toggleFullscreen"
         />
       </div>
-      <el-table v-loading="loading" :data="jobs" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchJobs" />
+<el-table v-loading="loading" :data="jobs" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchJobs">
           <el-empty :image-size="96" :description="filters.status ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="filters.status" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('task')" prop="name" label="任务" min-width="190" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
-          <template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="light">{{ statusMeta(row.status).label }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :type="statusMeta(row.status).type" effect="light">{{ statusMeta(row.status).label }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('target-result')" label="目标 / 已发现" min-width="130">
           <template #default="{ row }">{{ row.target_count }} / {{ row.result_count }}</template>
@@ -79,7 +76,7 @@
       />
     </section>
 
-    <el-dialog v-model="dialogVisible" title="新建搜索任务" width="min(560px, calc(100vw - 32px))" destroy-on-close @closed="resetDraft">
+    <el-dialog v-model="dialogVisible" title="新建搜索任务" width="640px" destroy-on-close @closed="resetDraft">
       <el-form label-position="top">
         <el-form-item label="任务名称" required>
           <el-input v-model="draft.name" maxlength="255" placeholder="例如：美国假发零售商 8 月第一批" />
@@ -136,14 +133,15 @@ const statusMeta = value => STATUS_OPTIONS.find(item => item.value === value) ||
 const formatTime = value => formatBeijingDateTime(value)
 const resultText = row => row.status === 'completed' ? `新增 ${row.created_count}，去重 ${row.deduplicated_count}（公海 ${row.public_pool_deduplicated_count || 0}）` : '等待结果'
 
+const listPageState = useListPage(async (params, { signal, isCurrent }) => {
+  const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== ''))
+  const res = await getSearchJobs(clean, { signal, suppressToast: true })
+  return res.data || {}
+}, { searchForm: { status: '' } })
 const {
   loading, list: jobs, total, page, pageSize, searchForm: filters,
   fetchList: fetchJobs, handleSearch: search, handleReset: resetFilters, handlePageChange, handleSizeChange,
-} = useListPage(async params => {
-  const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== ''))
-  const res = await getSearchJobs(clean)
-  return res.data || {}
-}, { searchForm: { status: '' } })
+} = listPageState
 
 const activeCount = computed(() => jobs.value.filter(item => ['pending', 'running'].includes(item.status)).length)
 let pollTimer = null
@@ -172,7 +170,7 @@ async function requeue(row) {
   try {
     await requeueSearchJob(row.id)
     msgSuccess('任务已重新排队，等待 Agent 领取')
-    fetchJobs()
+    listPageState.refreshUpdate()
   } finally {
     startingId.value = null
   }
@@ -205,7 +203,7 @@ async function createJob() {
     draftRequestKey.value = ''
     dialogVisible.value = false
     msgSuccess('任务已创建，等待 Agent 领取')
-    fetchJobs()
+    listPageState.refreshCreate()
   } finally {
     creating.value = false
   }

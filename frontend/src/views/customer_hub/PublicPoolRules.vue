@@ -1,13 +1,13 @@
 <template>
-  <el-drawer class="customer-hub-drawer" v-model="visible" title="公海筛选规则" size="min(820px, 100vw)" :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy">
+  <DetailDrawer class="customer-hub-drawer" v-model="visible" title="公海筛选规则" width="760px" :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy">
     <div v-loading="loading" class="rule-panel">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <template v-if="draft">
-        <div class="rule-intro"><el-tag :type="version ? 'success' : 'info'">{{ version ? `已保存 · 版本 ${version}` : '推荐草稿 · 尚未启用' }}</el-tag><span v-if="dirty">有未保存修改</span><el-button link :disabled="busy" @click="load">重新加载已保存规则</el-button></div>
+        <div class="rule-intro"><StatusBadge :type="version ? 'success' : 'info'">{{ version ? `已保存 · 版本 ${version}` : '推荐草稿 · 尚未启用' }}</StatusBadge><span v-if="dirty">有未保存修改</span><el-button link :disabled="busy" @click="load">重新加载已保存规则</el-button></div>
         <p class="hint">保存后用于后续定时批次和新建批次，已有批次保留原规则。仅筛选身份已确认、无主负责人且允许开发的活跃客户。</p>
         <el-radio-group :model-value="mode" :disabled="busy" aria-label="规则编辑方式" @change="switchMode"><el-radio-button value="visual">可视化配置</el-radio-button><el-radio-button value="json">高级 JSON</el-radio-button></el-radio-group>
         <el-input v-if="mode === 'json'" v-model="jsonText" :disabled="busy" type="textarea" :rows="26" aria-label="高级规则 JSON" class="json-editor" />
-        <el-form v-else label-position="top" :disabled="busy" class="rules-form">
+        <el-form label-position="top" v-else :disabled="busy" class="rules-form">
           <section class="rule-section"><h3>成交条件 <small>以下任一成立</small></h3>
             <div class="rule-grid"><el-form-item label="至少成交单数"><el-input-number v-model="draft.rules.commerce.min_orders" :min="1" :max="10000" /></el-form-item><el-form-item label="且累计金额大于（美元）"><el-input-number v-model="draft.rules.commerce.total_usd_gt" :min="0" :max="1000000000" :precision="2" /></el-form-item><el-form-item label="或者，单笔金额大于（美元）"><el-input-number v-model="draft.rules.commerce.single_usd_gt" :min="0" :max="1000000000" :precision="2" /></el-form-item></div>
             <el-checkbox v-model="draft.rules.commerce.allow_sample_only">或者，仅成交过样品订单</el-checkbox>
@@ -42,7 +42,7 @@
       <el-button v-else-if="!loading" @click="load">重新加载规则</el-button>
     </div>
     <template #footer><div class="footer"><GlassButton variant="ghost" :disabled="busy || !draft" @click="runPreview">预览筛选</GlassButton><GlassButton variant="primary" :loading="saving" :disabled="busy || !draft" @click="save">保存规则</GlassButton><GlassButton variant="success" :loading="creating" :disabled="busy || !version || dirty" @click="createBatch">按已保存规则创建批次</GlassButton></div></template>
-  </el-drawer>
+  </DetailDrawer>
 </template>
 
 <script setup>

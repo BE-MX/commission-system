@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="visible" :title="title" width="720px">
+  <el-dialog v-model="visible" :title="title" width="760px">
     <el-table v-loading="loading" :data="rows" border class="list-table" max-height="420">
       <el-table-column label="时间" min-width="150" max-width="170" show-overflow-tooltip>
         <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
@@ -9,9 +9,9 @@
       </el-table-column>
       <el-table-column label="结果" min-width="80" max-width="90">
         <template #default="{ row }">
-          <el-tag :type="row.success ? 'success' : 'danger'" effect="plain">
+          <StatusBadge :type="row.success ? 'success' : 'danger'" effect="plain">
             {{ row.success ? '成功' : '失败' }}
-          </el-tag>
+          </StatusBadge>
         </template>
       </el-table-column>
       <el-table-column label="信息" min-width="240" show-overflow-tooltip>

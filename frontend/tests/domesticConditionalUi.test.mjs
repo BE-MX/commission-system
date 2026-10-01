@@ -9,7 +9,7 @@ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 test('domestic API exposes route-rule and audited skip operations', () => {
   const api = read('../src/api/domestic.js')
 
-  assert.match(api, /export function getDomesticRouteRules\(routeId\)/)
+  assert.match(api, /export function getDomesticRouteRules\(routeId, config = \{\}\)/)
   assert.match(api, /`\/process-routes\/\$\{routeId\}\/rules`/)
   assert.match(api, /export function saveDomesticRouteRules\(routeId, rules\)/)
   assert.match(api, /export function saveDomesticRouteConfiguration\(routeId, steps, rules\)/)
@@ -39,7 +39,7 @@ test('route management separates step and conditional-rule permissions and saves
   assert.match(view, /useAuthStore/)
   assert.match(view, /canEditSteps/)
   assert.match(view, /canEditRules/)
-  assert.match(view, /:disabled="!canEditSteps"/)
+  assert.match(view, /:disabled="!canEditSteps \|\| !editorReady"/)
   assert.match(view, /v-permission="'production:admin'"[\s\S]*?@click="saveSteps"/)
   assert.match(view, /保存路线配置/)
   assert.match(view, /保存路线步骤/)
@@ -53,11 +53,11 @@ test('route management separates step and conditional-rule permissions and saves
   assert.match(view, /useRouteDraftGuard/)
   assert.match(view, /confirmDraftLeave/)
 
-  assert.match(view, /if \(canEditRules\.value\)[\s\S]*?saveDomesticRouteConfiguration/)
+  assert.match(view, /if \(saveConfiguration\)[\s\S]*?saveDomesticRouteConfiguration/)
   assert.match(view, /else \{[\s\S]*?api\.saveRouteSteps/)
   assert.match(view, /rulesDirty\.value = true[\s\S]*?路线配置保存失败/)
   assert.match(view, /canEditSteps\.value/)
-  assert.match(view, /:disabled="stepsDirty \|\| !rulesDirty"/)
+  assert.match(view, /:disabled="!editorReady \|\| !routeRulesLoaded \|\| stepsDirty \|\| !rulesDirty"/)
 })
 
 

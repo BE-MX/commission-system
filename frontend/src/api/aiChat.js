@@ -9,7 +9,7 @@ export const listModes = () => aiChatClient.get('/modes', { showLoading: false, 
 export const getMode = modeId => aiChatClient.get(`/modes/${modeId}`, { showLoading: false, suppressToast: true })
 export const getSessionMode = sessionId => aiChatClient.get(`/sessions/${sessionId}/mode`, { showLoading: false, suppressToast: true })
 export const createSession = (data = {}) => aiChatClient.post('/sessions', data)
-export const listSessions = (params = {}) => aiChatClient.get('/sessions', { params })
+export const listSessions = (params = {}, config = {}) => aiChatClient.get('/sessions', { params, showLoading: false, ...config })
 export const getSession = sessionId => aiChatClient.get(`/sessions/${sessionId}`)
 
 export function uploadAttachment(sessionId, file) {

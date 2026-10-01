@@ -21,7 +21,7 @@ test('usd/cny 千分位且保留两位小数', () => {
   assert.equal(usd(null), '$0.00')
   assert.equal(usd(undefined), '$0.00')
   assert.equal(usd('2560'), '$2,560.00')
-  assert.equal(usd(-25.5), '$-25.50')
+  assert.equal(usd(-25.5), '-$25.50')
   assert.equal(cny(987654.3), '¥987,654.30')
 })
 

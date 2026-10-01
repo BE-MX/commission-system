@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="true" title="新建回款单 · 分配订单" width="860px" append-to-body :before-close="close" :close-on-click-modal="false">
+  <el-dialog :model-value="true" title="新建回款单 · 分配订单" width="760px" append-to-body :before-close="close" :close-on-click-modal="false">
     <el-form label-position="top" :disabled="saving">
       <el-form-item label="选择订单" required>
         <el-select v-model="selectedId" filterable remote :remote-method="search" :loading="searching" placeholder="搜索发票号或客户，首单确定客户和币种" @change="addOrder">
@@ -21,20 +21,21 @@
   </el-dialog>
 </template>
 <script setup>
+import { formatMoney } from '../../utils/money.js'
+import { confirmAction, msgSuccess } from '@/utils/feedback'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessageBox } from 'element-plus'
+
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from './ReceiptFields.vue'
 import { getReceiptOrders, getReceiptBalance, createReceiptBatch } from '@/api/receipt'
 import { currentBeijingDate } from '@/utils/datetime'
-import { msgSuccess } from '@/utils/feedback'
 import { cents, validateAllocations, latestRequest } from './batchReceiptState'
 import { money } from './useReceipts'
 const emit = defineEmits(['close', 'saved'])
 const rows = ref([]), options = ref([]), selectedId = ref(null), searching = ref(false), saving = ref(false), uploading = ref(false), error = ref('')
 const form = reactive({ amount: null, collection_date: currentBeijingDate(), payment_type: '', bank_charge: 0, attachment_ids: [], remark: '' })
 const requestKey = crypto.randomUUID(), searchRequest = latestRequest()
-const allocatedTotal = computed(() => (rows.value.reduce((sum, row) => sum + (cents(row.amount) || 0), 0) / 100).toFixed(2))
+const allocatedTotal = computed(() => formatMoney(rows.value.reduce((sum, row) => sum + (cents(row.amount) || 0), 0) / 100))
 async function search(keyword = '') {
   const sequence = searchRequest.next(); searching.value = true
   try {
@@ -63,7 +64,7 @@ function remove(row) { rows.value = rows.value.filter(r => r.id !== row.id); sea
 async function close(done) {
   if (saving.value || uploading.value) return
   if (rows.value.length || form.amount || form.attachment_ids.length) {
-    try { await ElMessageBox.confirm('尚未提交的回款信息将被丢弃，确定关闭？', '关闭回款单', { type: 'warning' }) } catch { return }
+    try { await confirmAction('尚未提交的回款信息将被丢弃，确定关闭？', '关闭回款单', { type: 'warning' }) } catch { return }
   }
   searchRequest.next(); emit('close'); if (typeof done === 'function') done()
 }

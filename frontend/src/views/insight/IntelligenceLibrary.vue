@@ -16,7 +16,7 @@
 
     <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
     <section ref="panelRef" class="table-card library-panel">
-      <div class="toolbar">
+      <FilterBar :loading="loading" :pending="listState.hasPendingSearch.value" @search="handleFilterChange" @reset="resetFilter">
         <el-date-picker
           v-model="dateRange"
           type="daterange"
@@ -25,29 +25,28 @@
           end-placeholder="结束"
           value-format="YYYY-MM-DD"
           class="filter-w-lg"
-          @change="handleFilterChange"
         />
-        <el-select v-model="filterForm.source_types" multiple collapse-tags placeholder="信源类型" class="filter-w-md" @change="handleFilterChange">
+        <el-select v-model="filterForm.source_types" multiple collapse-tags placeholder="信源类型" class="filter-w-md">
           <el-option label="RSS" value="google_alerts_rss" />
           <el-option label="XPOZ" value="xpoz" />
           <el-option label="竞品监控" value="competitor_monitor" />
           <el-option label="手工" value="manual" />
         </el-select>
-        <el-select v-model="filterForm.credibility_labels" multiple collapse-tags placeholder="可信度" class="filter-w-md" @change="handleFilterChange">
+        <el-select v-model="filterForm.credibility_labels" multiple collapse-tags placeholder="可信度" class="filter-w-md">
           <el-option label="已核实" value="verified" />
           <el-option label="可信" value="plausible" />
           <el-option label="存疑" value="uncertain" />
           <el-option label="无法核实" value="unverifiable" />
         </el-select>
-        <el-select v-model="filterForm.status" placeholder="状态" class="filter-w-sm" @change="handleFilterChange">
+        <el-select v-model="filterForm.status" placeholder="状态" class="filter-w-sm">
           <el-option label="活跃" value="active" />
           <el-option label="已归档" value="archived" />
           <el-option label="已标记" value="flagged" />
         </el-select>
-        <el-input v-model="filterForm.keyword" placeholder="搜索标题/内容" clearable class="filter-w-md" @keyup.enter="handleFilterChange" @clear="handleFilterChange" />
-        <GlassButton variant="primary" :left-icon="Search" @click="handleFilterChange">查询</GlassButton>
-        <GlassButton :left-icon="RefreshLeft" @click="resetFilter">重置</GlassButton>
-      </div>
+        <template #advanced>
+        <el-input v-model="filterForm.keyword" placeholder="搜索标题/内容" clearable class="filter-w-md" />
+        </template>
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标 -->
       <div class="action-bar">
@@ -62,23 +61,27 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
+          :loading="loading"
           @refresh="loadItems"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
-      <el-table :data="items" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="libSort.onSortChange" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="loadItems" />
+      <el-table :data="items" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="handleSortChange" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
+          <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="loadItems">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilter">重置筛选</GlassButton>
           </el-empty>
+        </ListPageStatus>
         </template>
         <el-table-column type="selection" min-width="40" />
         <el-table-column v-if="visibleKeys.includes('credibility')" label="可信度" min-width="90" prop="credibility_label" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="credibilityType(row.credibility_label)" size="small">
+            <StatusBadge :type="credibilityType(row.credibility_label)" size="small">
               {{ credibilityLabel(row.credibility_label) }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('title')" label="标题" min-width="300" prop="title" sortable="custom">
@@ -88,7 +91,7 @@
               <span>{{ row.title || '(无标题)' }}</span>
             </div>
             <div class="item-meta">
-              <el-tag size="small" type="info">{{ row.source_type }}</el-tag>
+              <StatusBadge size="small" type="info">{{ row.source_type }}</StatusBadge>
               <span>{{ formatDate(row.collected_at) }}</span>
               <span v-if="row.related_competitor">{{ row.related_competitor }}</span>
             </div>
@@ -96,12 +99,12 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('item-type')" label="类型" min-width="100">
           <template #default="{ row }">
-            <el-tag size="small">{{ row.item_type || '-' }}</el-tag>
+            <StatusBadge size="small">{{ row.item_type || '-' }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" prop="status" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
+            <StatusBadge :type="statusType(row.status)" size="small">{{ row.status }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="120" fixed="right">
@@ -121,7 +124,7 @@
         layout="total, sizes, prev, pager, next"
         class="pager"
         @size-change="handleSizeChange"
-        @current-change="loadItems"
+        @current-change="handlePageChange"
       />
     </section>
 
@@ -133,8 +136,8 @@
     </div>
 
     <!-- 上传 MD 弹窗 -->
-    <el-dialog v-model="showUploadDialog" title="上传 Markdown" width="500px">
-      <el-form :model="uploadForm" label-width="80px">
+    <el-dialog v-model="showUploadDialog" title="上传 Markdown" width="640px">
+      <el-form label-position="top" :model="uploadForm">
         <el-form-item label="标题">
           <el-input v-model="uploadForm.title" placeholder="留空使用文件名" />
         </el-form-item>
@@ -162,9 +165,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import { useListPage } from '@/composables/useListPage'
+import { msgSuccessText, msgError, msgWarning } from '@/utils/feedback'
+import { ref, reactive, computed, toRef } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { Plus, RefreshLeft, Search, Upload, StarFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { listItems, toggleItemFeature, batchFeature as apiBatchFeature, batchStatus, uploadMd } from '@/api/insight'
@@ -178,11 +185,16 @@ const router = useRouter()
 const libSort = useTableSort()
 
 // 状态
-const loading = ref(false)
-const items = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(50)
+const listState = useListPage(async (params, { signal }) => {
+  const { dateRange, ...query } = params
+  if (dateRange?.length === 2) { query.start_date = dateRange[0]; query.end_date = dateRange[1] }
+  if (query.source_types.length) query.source_types = query.source_types.join(',')
+  if (query.credibility_labels.length) query.credibility_labels = query.credibility_labels.join(',')
+  return (await listItems(query, { signal, suppressToast: true })).data
+}, { searchForm: { dateRange: [], source_types: [], credibility_labels: [], status: '', keyword: '' } })
+const { loading, list: items, total, page, pageSize, searchForm: filterForm, fetchList: loadItems, handleSearch: handleFilterChange, handlePageChange, handleSizeChange } = listState
+const dateRange = toRef(filterForm, 'dateRange')
+
 const selectedItems = ref([])
 
 // 列显隐元数据（TableTools 列面板数据源，模板列保持静态；多选列固定显示）
@@ -194,14 +206,7 @@ const columnDefs = [
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('intelligence-library', columnDefs)
 
-// 筛选
-const dateRange = ref([])
-const filterForm = reactive({
-  source_types: [],
-  credibility_labels: [],
-  status: '',
-  keyword: '',
-})
+
 
 // 上传
 const showUploadDialog = ref(false)
@@ -210,63 +215,17 @@ const uploadRef = ref(null)
 const uploadFile = ref(null)
 const uploading = ref(false)
 
-// 加载数据
-async function loadItems() {
-  loading.value = true
-  try {
-    const params = {
-      page: page.value,
-      page_size: pageSize.value,
-      ...filterForm,
-      ...libSort.sortParams.value,
-    }
-    if (dateRange.value?.length === 2) {
-      params.start_date = dateRange.value[0]
-      params.end_date = dateRange.value[1]
-    }
-    if (filterForm.source_types.length) {
-      params.source_types = filterForm.source_types.join(',')
-    }
-    if (filterForm.credibility_labels.length) {
-      params.credibility_labels = filterForm.credibility_labels.join(',')
-    }
-    const res = await listItems(params)
-    if (res.data?.code === 200) {
-      items.value = res.data.data.items
-      total.value = res.data.data.total
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-function handleFilterChange() {
-  page.value = 1
-  loadItems()
-}
-
-function handleSizeChange() {
-  page.value = 1
-  loadItems()
-}
-
-const hasActiveFilters = computed(() =>
-  Boolean(dateRange.value?.length === 2) ||
-  filterForm.source_types.length > 0 ||
-  filterForm.credibility_labels.length > 0 ||
-  Boolean(filterForm.status) ||
-  Boolean(filterForm.keyword)
-)
-
+const hasActiveFilters = computed(() => {
+  const applied = listState.appliedSearchForm.value
+  return !!(applied.dateRange?.length || applied.source_types.length || applied.credibility_labels.length || applied.status || applied.keyword)
+})
 function resetFilter() {
-  dateRange.value = []
-  filterForm.source_types = []
-  filterForm.credibility_labels = []
-  filterForm.status = ''
-  filterForm.keyword = ''
   libSort.reset()
-  page.value = 1
-  loadItems()
+  return listState.handleReset({ sortParams: libSort.sortParams.value })
+}
+function handleSortChange(sort) {
+  libSort.onSortChange(sort)
+  return listState.handleSortChange(libSort.sortParams.value)
 }
 
 function handleSelectionChange(selection) {
@@ -278,9 +237,9 @@ async function toggleFeature(row) {
   try {
     await toggleItemFeature(row.id)
     row.is_featured = !row.is_featured
-    ElMessage.success('已更新')
-  } catch {
-    ElMessage.error('操作失败')
+    msgSuccessText('已更新')
+  } catch (error) {
+    msgError('操作失败', error)
   }
 }
 
@@ -288,10 +247,10 @@ async function batchFeature(isFeatured) {
   const ids = selectedItems.value.map(i => i.id)
   try {
     await apiBatchFeature(ids, isFeatured)
-    ElMessage.success('批量更新成功')
-    loadItems()
-  } catch {
-    ElMessage.error('批量更新失败')
+    msgSuccessText('批量更新成功')
+    await listState.refreshUpdate()
+  } catch (error) {
+    msgError('批量更新失败', error)
   }
 }
 
@@ -299,10 +258,10 @@ async function batchArchive() {
   const ids = selectedItems.value.map(i => i.id)
   try {
     await batchStatus(ids, 'archived')
-    ElMessage.success('已归档')
-    loadItems()
-  } catch {
-    ElMessage.error('归档失败')
+    msgSuccessText('已归档')
+    await listState.refreshRemove()
+  } catch (error) {
+    msgError('归档失败', error)
   }
 }
 
@@ -313,7 +272,7 @@ function handleFileChange(file) {
 
 async function submitUpload() {
   if (!uploadFile.value) {
-    ElMessage.warning('请选择文件')
+    msgWarning('请选择文件')
     return
   }
   uploading.value = true
@@ -323,15 +282,15 @@ async function submitUpload() {
   if (uploadForm.tags) formData.append('tags', uploadForm.tags)
   try {
     await uploadMd(formData)
-    ElMessage.success('上传成功')
+    msgSuccessText('上传成功')
     showUploadDialog.value = false
     uploadForm.title = ''
     uploadForm.tags = ''
     uploadFile.value = null
     uploadRef.value?.clearFiles()
-    loadItems()
-  } catch {
-    ElMessage.error('上传失败')
+    await listState.refreshCreate()
+  } catch (error) {
+    msgError('上传失败', error)
   } finally {
     uploading.value = false
   }
@@ -354,7 +313,7 @@ function formatDate(dt) {
   return formatBeijingDate(dt)
 }
 
-onMounted(loadItems)
+
 </script>
 
 <style scoped>
@@ -436,13 +395,13 @@ onMounted(loadItems)
   font-weight: 500;
 }
 .featured-star {
-  color: #f59e0b;
+  color: var(--warning);
   font-size: 14px;
 }
 .item-meta {
   margin-top: 4px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   display: flex;
   gap: 8px;
   align-items: center;

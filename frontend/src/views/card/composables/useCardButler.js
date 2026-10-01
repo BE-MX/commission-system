@@ -2,26 +2,24 @@
  * 名片管家页 state + 方法（宪法 12：页面逻辑全量下沉 composable，主文件留薄壳）。
  * 三块：客户档案（口令绑定+纪要）/ 询盘 / 业务员档案。
  */
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import {
   createCustomer, createEntry, deleteCustomer, deleteEntry,
   getCustomers, getEntries, getInquiries, getSalespersons,
   updateCustomer, updateInquiry, upsertSalesperson,
 } from '@/api/card'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgError, msgSuccess } from '@/utils/feedback'
-
 export function useCardButler() {
   // ---------- 业务员档案 ----------
-  const salespersons = ref([])
+  const salespersonsResource = useAsyncResource(async (_, { signal }) => (await getSalespersons({ signal, suppressToast: true })).data || [], { initialData: [] })
+  const salespersons = salespersonsResource.data
   const spDialogVisible = ref(false)
   const spSaving = ref(false)
   const spForm = reactive({ slug: '', name: '', title: 'Sales Manager', email: '', whatsapp: '', intro: '', is_active: 1 })
 
-  async function fetchSalespersons() {
-    const res = await getSalespersons()
-    salespersons.value = res.data ?? res ?? []
-  }
+  const fetchSalespersons = () => salespersonsResource.load()
 
   function openSpDialog(row) {
     Object.assign(spForm, {
@@ -46,12 +44,12 @@ export function useCardButler() {
   }
 
   // ---------- 客户档案 ----------
-  const customerPage = useListPage(async params => {
+  const customerPage = useListPage(async (params, { signal, isCurrent }) => {
     const res = await getCustomers({
       page: params.page, page_size: params.page_size,
       salesperson_id: params.salesperson_id || undefined,
       keyword: params.keyword || undefined,
-    })
+    }, { signal, suppressToast: true })
     const payload = res.data ?? res
     return { items: payload.items, total: payload.total }
   }, { searchForm: { salesperson_id: null, keyword: '' } })
@@ -93,7 +91,7 @@ export function useCardButler() {
       }
       customerDialogVisible.value = false
       msgSuccess('保存')
-      await customerPage.fetchList()
+      await (customerForm.id ? customerPage.refreshUpdate() : customerPage.refreshCreate())
     } finally {
       customerSaving.value = false
     }
@@ -105,19 +103,22 @@ export function useCardButler() {
     } catch { return }
     await deleteCustomer(row.id)
     msgSuccess('删除')
-    await customerPage.fetchList()
+    await customerPage.refreshRemove()
   }
 
   // ---------- 沟通纪要抽屉 ----------
   const entriesVisible = ref(false)
-  const entriesLoading = ref(false)
+  const entriesResource = useAsyncResource(async (id, { signal }) => id ? (await getEntries(id, { signal, suppressToast: true })).data || [] : [], { initialData: [] })
+  const entriesLoading = entriesResource.loading
   const entrySaving = ref(false)
-  const entries = ref([])
+  const entries = entriesResource.data
   const currentCustomer = ref(null)
   const entryForm = reactive({ title: '', content: '' })
+  watch(entriesVisible, visible => { if (!visible) { entriesResource.clear(); currentCustomer.value = null } })
   const entryFiles = ref([]) // AppUpload v-model [{path,url,name}]
 
   async function openEntries(row) {
+    if (currentCustomer.value?.id !== row.id) entriesResource.clear()
     currentCustomer.value = row
     entriesVisible.value = true
     entryForm.title = ''
@@ -126,43 +127,36 @@ export function useCardButler() {
     await refreshEntries()
   }
 
-  async function refreshEntries() {
-    if (!currentCustomer.value) return
-    entriesLoading.value = true
-    try {
-      const res = await getEntries(currentCustomer.value.id)
-      entries.value = res.data ?? res ?? []
-    } finally {
-      entriesLoading.value = false
-    }
-  }
+  function refreshEntries() { return entriesResource.load(currentCustomer.value?.id ?? null) }
 
   async function saveEntry() {
+    if (entrySaving.value || !currentCustomer.value) return
+    const customerId = currentCustomer.value.id, form = { ...entryForm }
     const hasText = entryForm.content.trim()
-    const files = entryFiles.value
+    const files = entryFiles.value.map(file => ({ ...file }))
     if (!hasText && !files.length) { msgError('写点内容或传张图') ; return }
     entrySaving.value = true
     try {
       if (files.length) {
         // 一张图一条纪要；文字内容随第一条走
         for (let i = 0; i < files.length; i++) {
-          await createEntry(currentCustomer.value.id, {
-            title: entryForm.title || null,
-            content: i === 0 ? (entryForm.content || null) : null,
+          await createEntry(customerId, {
+            title: form.title || null,
+            content: i === 0 ? (form.content || null) : null,
             attachment_path: files[i].path,
           })
         }
       } else {
-        await createEntry(currentCustomer.value.id, {
-          title: entryForm.title || null, content: entryForm.content, attachment_path: null,
+        await createEntry(customerId, {
+          title: form.title || null, content: form.content, attachment_path: null,
         })
       }
       msgSuccess('录入')
-      entryForm.title = ''
-      entryForm.content = ''
-      entryFiles.value = []
-      await refreshEntries()
-      await customerPage.fetchList()
+      if (currentCustomer.value?.id === customerId) {
+        entryForm.title = ''; entryForm.content = ''; entryFiles.value = []
+        await refreshEntries()
+      }
+      await customerPage.refreshUpdate()
     } finally {
       entrySaving.value = false
     }
@@ -178,12 +172,12 @@ export function useCardButler() {
   }
 
   // ---------- 询盘 ----------
-  const inquiryPage = useListPage(async params => {
+  const inquiryPage = useListPage(async (params, { signal, isCurrent }) => {
     const res = await getInquiries({
       page: params.page, page_size: params.page_size,
       status: params.status || undefined,
       salesperson_id: params.salesperson_id || undefined,
-    })
+    }, { signal, suppressToast: true })
     const payload = res.data ?? res
     return { items: payload.items, total: payload.total }
   }, { searchForm: { status: 'new', salesperson_id: null } })
@@ -191,17 +185,17 @@ export function useCardButler() {
   async function markHandled(row) {
     await updateInquiry(row.id, { status: row.status === 'new' ? 'handled' : 'new' })
     msgSuccess('更新')
-    await inquiryPage.fetchList()
+    await inquiryPage.refreshUpdate()
   }
 
   onMounted(fetchSalespersons)
 
   return {
-    salespersons, fetchSalespersons,
+    salespersons, salespersonsResource, fetchSalespersons,
     spDialogVisible, spSaving, spForm, openSpDialog, saveSalesperson,
     customerPage, customerDialogVisible, customerSaving, customerForm,
     openCustomerDialog, saveCustomer, removeCustomer,
-    entriesVisible, entriesLoading, entrySaving, entries, currentCustomer,
+    entriesVisible, entriesLoading, entriesResource, refreshEntries, entrySaving, entries, currentCustomer,
     entryForm, entryFiles, openEntries, saveEntry, removeEntry,
     inquiryPage, markHandled,
   }

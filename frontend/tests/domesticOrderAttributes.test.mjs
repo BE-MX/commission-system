@@ -171,7 +171,7 @@ test('下单、列表和产品页保持新属性合约', () => {
   assert.match(createView, /visibleFields\(item\)\.includes\('density'\)/)
   assert.match(createLogic, /buildCreateItems\(form\.items, normalizeItemAttrs\)/)
   assert.match(createLogic, /buildQuoteRequest\(\{ \.\.\.form, items \}, normalizeItemAttrs\)/)
-  assert.match(createLogic, /ElMessage\.info/)
+  assert.match(createLogic, /msgInfo/)
   assert.match(createLogic, /order_type: ''/)
   assert.match(createLogic, /order_channel: ''/)
   assert.doesNotMatch(createLogic, /form\.order_(?:type|channel) \|\|=/)

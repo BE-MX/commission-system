@@ -101,12 +101,12 @@
           <GlassButton variant="secondary" @click="onExportUnmatched">导出无法匹配 Excel</GlassButton>
         </div>
         <div class="reason-tags">
-          <el-tag
+          <StatusBadge
             v-for="(cnt, code) in reasonCounts"
             :key="code"
             type="info"
             effect="plain"
-          >{{ REASON_LABELS[code] || code }}：{{ cnt }}</el-tag>
+          >{{ REASON_LABELS[code] || code }}：{{ cnt }}</StatusBadge>
         </div>
         <el-table :data="plan.unmatched" size="small" max-height="320" border class="list-table">
           <el-table-column prop="company" label="客户名" min-width="150" show-overflow-tooltip />
@@ -121,6 +121,8 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../utils/money.js'
+
 import { computed, ref } from 'vue'
 import { Right } from '@element-plus/icons-vue'
 import AppUpload from '@/components/AppUpload.vue'
@@ -186,7 +188,7 @@ const reasonCounts = computed(() => {
 })
 
 function fmt(v) {
-  return v == null ? '—' : Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return formatMoney(v, { missing: '—' })
 }
 
 async function onApply() {
@@ -202,7 +204,7 @@ async function onApply() {
       msgSuccess(`已修复 ${res.applied} 条`)
     }
   } catch (e) {
-    msgError('写入失败：' + (e?.message || e))
+    msgError('写入失败：' + (e?.message || e), e)
   }
 }
 
@@ -211,7 +213,7 @@ async function onExportUnmatched() {
     const res = await exportReceiptRepairUnmatched({ unmatched: plan.value.unmatched })
     downloadBlob(res)
   } catch (e) {
-    msgError('导出失败：' + (e?.message || e))
+    msgError('导出失败：' + (e?.message || e), e)
   }
 }
 </script>
@@ -245,7 +247,7 @@ async function onExportUnmatched() {
 .stat .num { font-size: 26px; font-weight: 700; color: var(--text-primary); line-height: 1.1; }
 .stat .label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 .stat.change { background: var(--color-primary-light); border-color: var(--color-primary); }
-.stat.change .num { color: var(--color-primary); }
+.stat.change .num { color: var(--color-primary-text); }
 .stat.ok .num { color: var(--color-success-text); }
 .stat.miss .num { color: var(--color-danger-text); }
 
@@ -273,6 +275,6 @@ async function onExportUnmatched() {
 .reason-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 
 .old { color: var(--text-secondary); }
-.arrow { margin: 0 8px; color: var(--color-primary); vertical-align: middle; }
+.arrow { margin: 0 8px; color: var(--color-primary-text); vertical-align: middle; }
 .new { color: var(--color-success-text); font-weight: 600; }
 </style>

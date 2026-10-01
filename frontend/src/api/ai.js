@@ -1,8 +1,8 @@
 import { aiClient as aiApi } from './clients'
 
 // Provider
-export function getProviders(params) {
-  return aiApi.get('/providers', { params, showLoading: false })
+export function getProviders(params, config = {}) {
+  return aiApi.get('/providers', { ...config, params, showLoading: false })
 }
 
 export function createProvider(data) {
@@ -22,8 +22,8 @@ export function testProvider(id) {
 }
 
 // Preset
-export function getPresets(params) {
-  return aiApi.get('/presets', { params, showLoading: false })
+export function getPresets(params, config = {}) {
+  return aiApi.get('/presets', { ...config, params, showLoading: false })
 }
 
 export function createPreset(data) {
@@ -55,8 +55,8 @@ export function testPreset(id, testMessage, imageFile = null, referenceImageFile
 }
 
 // Call Log
-export function getLogs(params) {
-  return aiApi.get('/logs', { params, showLoading: false })
+export function getLogs(params, config = {}) {
+  return aiApi.get('/logs', { ...config, params, showLoading: false })
 }
 
 export function getLogDetail(id) {

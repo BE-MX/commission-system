@@ -1,3 +1,4 @@
+import { formatMoney } from '../../../utils/money.js'
 const CHANGE_REASON_LABELS = {
   membership_changed: '客户会员等级已变化',
   base_price_changed: '产品原始价已调整',
@@ -39,7 +40,7 @@ export function pricingRuleLabelForQuote(quote) {
   if (quote.pricing_rule === 'legacy_manual') return '历史手工价'
   if (quote.pricing_rule === 'member_reduction') {
     const reduction = Number(quote.original_price || 0) - Number(quote.discount_price || 0)
-    return `${member}立减 ¥${reduction.toFixed(2)}`
+    return `${member}立减 ${formatMoney(reduction, { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}`
   }
   return '报价已更新'
 }
@@ -59,8 +60,8 @@ export function quoteChangeRows(detail, itemLabel = key => key || '明细') {
     if (!after) return `${itemLabel(change.client_key, change.item_id)}：${reasons}`
     return [
       `${itemLabel(change.client_key, change.item_id)}：`,
-      `原价 ¥${Number(before?.original_price || 0).toFixed(2)} → ¥${Number(after.original_price || 0).toFixed(2)}`,
-      `优惠价 ¥${Number(before?.discount_price || 0).toFixed(2)} → ¥${Number(after.discount_price || 0).toFixed(2)}`,
+      `原价 ${formatMoney(Number(before?.original_price || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })} → ${formatMoney(Number(after.original_price || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}`,
+      `优惠价 ${formatMoney(Number(before?.discount_price || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })} → ${formatMoney(Number(after.discount_price || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}`,
       `规则 ${pricingRuleLabelForQuote(before)} → ${pricingRuleLabelForQuote(after)}`,
       `原因 ${reasons}`,
     ].join('；')

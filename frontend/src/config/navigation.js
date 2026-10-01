@@ -1431,6 +1431,14 @@ export const NAV_ENTRIES = [
 
   // ── 系统管理 ───────────────────────────────────────────
   {
+    path: '/system/component-showcase',
+    name: 'ComponentShowcase',
+    component: () => import('@/views/system/ComponentShowcase.vue'),
+    title: '组件与交互样例',
+    permission: 'role:read',
+    hideInMenu: true,
+  },
+  {
     path: '/system/users',
     name: 'UserManagement',
     component: () => import('@/views/system/UserManagement.vue'),

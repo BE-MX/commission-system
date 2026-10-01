@@ -1,7 +1,13 @@
+import { feedbackFixture } from './helpers/feedbackFixture.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import test from 'node:test'
+import { TASK_STATUS_LABELS, TASK_STATUS_TYPES } from '../src/views/design/designStatus.js'
+import * as Vue from 'vue'
+import { useListPage } from '../src/composables/useListPage.js'
+import { useAsyncResource } from '../src/composables/useAsyncResource.js'
+import { designActorScope, watchDesignActor } from '../src/views/design/designListScope.js'
 
 function setup() {
   const calls = []
@@ -10,6 +16,9 @@ function setup() {
     .replace(/^import[\s\S]*?from ['"][^'"]+['"]\s*$/gm, '')
     .replace('export function useDesignManage', 'function useDesignManage')
   const context = vm.createContext({
+    ...Vue, useListPage, useAsyncResource, designActorScope, watchDesignActor,
+    useAuthStore: () => ({ user: { id: 1, roles: ['design_staff'], permissions: ['design:manage'] } }),
+    TASK_STATUS_MAP: TASK_STATUS_LABELS, TASK_STATUS_TAG: TASK_STATUS_TYPES,
     ref: value => ({ value }), reactive: value => value, onMounted: () => {},
     computed: getter => ({ get value() { return getter() } }),
     useTableView: () => ({
@@ -23,6 +32,7 @@ function setup() {
     getTaskList: async () => ({ data: { items: [], total: 0 } }),
     getRequests: async () => ({ data: { items: [], total: 0 } }),
   })
+  Object.assign(context, feedbackFixture(context))
   vm.runInContext(source + ';globalThis.page = useDesignManage()', context)
   return { page: context.page, calls, fail: () => { fail = true } }
 }

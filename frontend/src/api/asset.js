@@ -2,12 +2,13 @@ import { assetClient } from './clients'
 
 // ── 标签维度 ────────────────────────────────────────────
 // scope: internal（内部素材库，后端默认）/ customer（客户标签）
-export function getTagDimensions(includeHidden = false, scope) {
+export function getTagDimensions(includeHidden = false, scope, config = {}) {
   const params = {}
   if (includeHidden) params.include_hidden = 1
   if (scope) params.scope = scope
   return assetClient.get('/tags/dimensions', {
     showLoading: false,
+    ...config,
     params: Object.keys(params).length ? params : undefined,
   })
 }
@@ -47,8 +48,8 @@ export function uploadTagImage(file) {
 }
 
 // ── 素材 ────────────────────────────────────────────────
-export function getAssetList(params) {
-  return assetClient.get('/list', { params, showLoading: false })
+export function getAssetList(params, config = {}) {
+  return assetClient.get('/list', { showLoading: false, ...config, params })
 }
 
 export function getAssetDetail(assetId) {
@@ -87,16 +88,17 @@ export function analyzeAsset(assetId) {
   return assetClient.post(`/${assetId}/analyze`, {}, { loadingText: 'AI 分析中...', timeout: 60000 })
 }
 
-export function analyzePreview(fileName, directoryPath) {
+export function analyzePreview(fileName, directoryPath, config = {}) {
   return assetClient.post('/analyze-preview', null, {
-    params: { file_name: fileName, directory_path: directoryPath },
     loadingText: 'AI 分析中...',
     timeout: 60000,
+    ...config,
+    params: { file_name: fileName, directory_path: directoryPath },
   })
 }
 
 // ── 文件夹批量上传 ──────────────────────────────────────
-export function validateFolderUpload({ folderPath, relativePaths = [], includeFilenameTags = false }) {
+export function validateFolderUpload({ folderPath, relativePaths = [], includeFilenameTags = false }, config = {}) {
   return assetClient.post('/folder-upload/validate', {
     folder_path: folderPath || undefined,
     relative_paths: relativePaths,
@@ -104,6 +106,7 @@ export function validateFolderUpload({ folderPath, relativePaths = [], includeFi
   }, {
     loadingText: '正在扫描文件夹...',
     timeout: 30000,
+    ...config,
   })
 }
 
@@ -112,7 +115,7 @@ export function previewFolderUpload({
   relativePaths = [],
   tagMapping,
   includeFilenameTags = false,
-}) {
+}, config = {}) {
   return assetClient.post('/folder-upload/preview', {
     folder_path: folderPath || undefined,
     relative_paths: relativePaths,
@@ -121,6 +124,7 @@ export function previewFolderUpload({
   }, {
     loadingText: '正在生成预览...',
     timeout: 30000,
+    ...config,
   })
 }
 
@@ -215,10 +219,11 @@ export async function uploadFolderDirect({
   }
 }
 
-export function getFolderUploadStatus(jobId) {
+export function getFolderUploadStatus(jobId, config = {}) {
   return assetClient.get(`/folder-upload/status/${jobId}`, {
     showLoading: false,
     suppressToast: true,
+    ...config,
   })
 }
 
@@ -244,8 +249,8 @@ export function downloadAsset(assetId) {
 }
 
 // ── 收藏 ────────────────────────────────────────────────
-export function getFavoriteFolders() {
-  return assetClient.get('/favorites/folders', { showLoading: false })
+export function getFavoriteFolders(config = {}) {
+  return assetClient.get('/favorites/folders', { showLoading: false, ...config })
 }
 
 export function createFavoriteFolder(data) {
@@ -260,8 +265,8 @@ export function deleteFavoriteFolder(folderId) {
   return assetClient.delete(`/favorites/folders/${folderId}`)
 }
 
-export function getFavoriteItems(folderId) {
-  return assetClient.get(`/favorites/folders/${folderId}/items`, { showLoading: false })
+export function getFavoriteItems(folderId, config = {}) {
+  return assetClient.get(`/favorites/folders/${folderId}/items`, { showLoading: false, ...config })
 }
 
 export function addFavoriteItem(folderId, data) {
@@ -283,8 +288,8 @@ export function revokeShare(folderId) {
 }
 
 // ── 统计 ────────────────────────────────────────────────
-export function getDownloadStats() {
-  return assetClient.get('/stats/downloads', { showLoading: false })
+export function getDownloadStats(config = {}) {
+  return assetClient.get('/stats/downloads', { showLoading: false, ...config })
 }
 
 export function getTopDownloaded(limit = 20) {

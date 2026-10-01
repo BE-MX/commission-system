@@ -12,9 +12,9 @@
       <div>
         <div class="commission-page-header__title">
           <h2>{{ summary?.batch_name || '提成明细' }}</h2>
-          <el-tag v-if="summary" :type="batchStatusType(summary.status)" size="small" effect="plain">
+          <StatusBadge v-if="summary" :type="batchStatusType(summary.status)" size="small" effect="plain">
             {{ batchStatusLabel(summary.status) }}
-          </el-tag>
+          </StatusBadge>
         </div>
         <p v-if="summary">确认进度 {{ summary.confirmed_count || 0 }}/{{ summary.expected_confirm_count || 0 }} · 反馈 {{ summary.feedback_count || 0 }} 条</p>
       </div>
@@ -24,28 +24,27 @@
     </div>
 
     <!-- 批次摘要指标卡 -->
-    <CommissionMetricCards v-loading="summaryLoading" class="commission-lift cm-enter-1" :summary="summary || {}" />
+    <ListPageStatus :error="summaryState.errorMessage.value" :loading="summaryLoading" :has-data="Boolean(summary)" @retry="fetchSummary" />
+    <CommissionMetricCards v-if="summary" v-loading="summaryLoading" class="commission-lift cm-enter-1" :summary="summary || {}" />
 
     <!-- 明细表格：筛选区 + 操作行 + 表格 + 分页同在卡片内（List Page Spec） -->
     <div ref="panelRef" class="table-card commission-panel commission-lift cm-enter-2">
-      <div class="toolbar">
+      <FilterBar :loading="loading" :pending="listState.hasPendingSearch.value" @search="handleSearch" @reset="resetFilters">
         <el-input
           v-model="keyword"
           placeholder="搜索客户/业务员/主管"
           clearable
           class="filter-w-lg"
-          @keyup.enter="handleSearch"
-          @clear="handleSearch"
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+
+
+      </FilterBar>
 
       <!-- 操作行：TableTools 四图标（Action Bar Spec；本页无新建类主操作） -->
       <div class="action-bar">
-        <TableTools
+        <TableTools :loading="loading"
           v-model:visible-keys="visibleKeys"
           v-model:density="density"
           :columns="columnDefs"
@@ -55,12 +54,13 @@
         />
       </div>
 
-      <el-table :data="tableData" v-loading="loading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange">
-        <template #empty>
+      <ListPageStatus v-if="listState.hasData.value && listState.errorMessage.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="fetchDetails" />
+<el-table :data="tableData" v-loading="loading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="changeSort">
+        <template #empty><ListPageStatus :error="listState.errorMessage.value" :loading="loading" :has-data="false" @retry="fetchDetails">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('payment-id')" prop="payment_id" label="回款ID" min-width="160" max-width="240" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单ID" min-width="160" max-width="240" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
@@ -98,7 +98,7 @@
         :total="total"
         layout="total, sizes, prev, pager, next"
         :page-sizes="[20, 50, 100]"
-        @current-change="fetchDetails"
+        @current-change="listState.handlePageChange"
         @size-change="handleSizeChange"
       />
     </div>
@@ -106,6 +106,10 @@
 </template>
 
 <script setup>
+import { useListPage } from '@/composables/useListPage'
+import { toRef, watch } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
@@ -120,18 +124,25 @@ const orderSort = useTableSort()
 
 const route = useRoute()
 const router = useRouter()
-const batchId = route.params.batchId
+const batchId = computed(() => route.params.batchId)
 
-const summary = ref(null)
-const summaryLoading = ref(false)
-const keyword = ref('')
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const tableData = ref([])
-const loading = ref(false)
+const summaryState = useAsyncResource(async (id, { signal }) => (await getBatchSummary(id, { signal, suppressToast: true })).data)
+const { data: summary, loading: summaryLoading } = summaryState
+const listState = useListPage(async (params, context) => {
+  return (await getBatchDetails(batchId.value, params, { signal: context.signal, suppressToast: true })).data
+}, { immediate: false, searchForm: { keyword: '' } })
+const { page: page, pageSize: pageSize, total: total, list: tableData, loading: loading } = listState
+const fetchDetails = () => listState.refreshUpdate()
+const handleSearch = () => listState.handleSearch()
+const resetFilters = () => listState.handleReset()
+const handleSizeChange = size => listState.handleSizeChange(size)
+function changeSort(event) { orderSort.onSortChange(event); return listState.handleSortChange(orderSort.sortParams.value) }
 
-const hasActiveFilters = computed(() => Boolean(keyword.value))
+
+
+const keyword = toRef(listState.searchForm, 'keyword')
+
+const hasActiveFilters = computed(() => Boolean(listState.appliedSearchForm.value.keyword))
 
 // 列显隐元数据：TableTools 列设置面板的数据源（模板列保持静态，Action Bar Spec）
 const columnDefs = [
@@ -154,53 +165,13 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('commission-detail', columnDefs)
 
-async function fetchSummary() {
-  summaryLoading.value = true
-  try {
-    const res = await getBatchSummary(batchId)
-    summary.value = res.data
-  } catch { /* 拦截器已提示，明细表不受影响 */ }
-  finally {
-    summaryLoading.value = false
-  }
-}
+const fetchSummary = () => summaryState.load(batchId.value)
 
-function handleSearch() {
-  page.value = 1
+watch(batchId, () => {
+  listState.list.value = []; listState.total.value = 0; listState.hasLoaded.value = false; listState.error.value = null; page.value = 1
+  summaryState.load(batchId.value, { clear: true })
   fetchDetails()
-}
-
-function resetFilters() {
-  keyword.value = ''
-  page.value = 1
-  fetchDetails()
-}
-
-function handleSizeChange() {
-  page.value = 1
-  fetchDetails()
-}
-
-async function fetchDetails() {
-  loading.value = true
-  try {
-    const res = await getBatchDetails(batchId, {
-      keyword: keyword.value,
-      page: page.value,
-      page_size: pageSize.value,
-      ...orderSort.sortParams.value
-    })
-    tableData.value = res.data.items
-    total.value = res.data.total
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(() => {
-  fetchSummary()
-  fetchDetails()
-})
+}, { immediate: true, flush: 'sync' })
 </script>
 
 <style scoped src="./commission.css"></style>

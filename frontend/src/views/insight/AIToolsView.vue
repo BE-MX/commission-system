@@ -8,22 +8,23 @@
     </div>
 
     <div class="tools-toolbar">
-      <div class="search-row">
+      <FilterBar :loading="loading" :pending="pendingFilters" @search="searchTools" @reset="resetFilters">
         <el-input
           v-model="searchQuery"
           placeholder="搜索工具名 / 标签 / 简介..."
           :prefix-icon="Search"
           clearable
-          style="max-width: 300px"
+          class="filter-w-lg"
         />
-        <el-select v-model="tagFilter" placeholder="全部分类" style="width: 180px">
+        <el-select v-model="tagFilter" placeholder="全部分类" class="filter-w-md">
           <el-option label="全部分类" value="all" />
           <el-option v-for="t in tagOptions" :key="t" :label="t" :value="t" />
         </el-select>
-        <el-select v-model="dateFilter" placeholder="全部时间" style="width: 200px">
+        <el-select v-model="dateFilter" placeholder="全部时间" class="filter-w-md">
           <el-option label="全部时间" value="all" />
           <el-option v-for="d in dateOptions" :key="d.value" :label="d.label" :value="d.value" />
         </el-select>
+        <template #summary>
         <span class="result-count">{{ filteredTools.length }} 项</span>
         <GlassButton
           v-if="canAdmin"
@@ -34,14 +35,16 @@
         >
           拉取今日速递
         </GlassButton>
-      </div>
+        </template>
+      </FilterBar>
     </div>
 
+    <ListPageStatus :error="toolsResource.errorMessage.value" :loading="loading" :has-data="toolsResource.hasData.value" @retry="loadAll" />
     <div v-loading="loading" class="tools-grid">
-      <el-empty v-if="!loading && tools.length === 0" description="暂无 AI 工具速递" :image-size="80">
+      <el-empty v-if="!toolsResource.error.value && !loading && tools.length === 0" description="暂无 AI 工具速递" :image-size="80">
         <p class="empty-tip">点击右上角「拉取今日速递」或等待每日 08:35 自动生成</p>
       </el-empty>
-      <el-empty v-else-if="!loading && filteredTools.length === 0" description="未匹配到工具" :image-size="80" />
+      <el-empty v-else-if="!toolsResource.error.value && !loading && filteredTools.length === 0" description="未匹配到工具" :image-size="80" />
 
       <div v-for="grp in groupedFilteredTools" :key="grp.date" class="week-section">
         <div class="week-title">{{ grp.label }}</div>
@@ -79,7 +82,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
+import { ref, reactive, computed, onMounted, toRef } from 'vue'
 import { Search, Link, Star, StarFilled } from '@element-plus/icons-vue'
 import { listReports, getReport, triggerReportGeneration } from '@/api/insight'
 import { useAuthStore } from '@/stores/auth'
@@ -97,13 +104,30 @@ const CATEGORY_LABELS = {
 
 const STAR_KEY = 'insight:ai_tools:starred'
 
-const reports = ref([])
-const tools = ref([]) // 所有报告里展平的工具
-const loading = ref(false)
+const toolsResource = useAsyncResource(async (_, { signal }) => {
+  const config = { signal, suppressToast: true }
+  const reports = (await listReports({ report_type: 'ai_tools', page: 1, page_size: 30 }, config)).data.items || []
+  const flat = []
+  const details = await Promise.all(reports.map(report => getReport(report.id, config)))
+  reports.forEach((report, index) => {
+    const grouped = (details[index].data?.source_data || report.source_data || {}).grouped || {}
+    for (const [category, items] of Object.entries(grouped)) {
+      for (const item of items || []) flat.push({ ...item, _report_date: report.report_date, category, category_label: CATEGORY_LABELS[category] || '其他' })
+    }
+  })
+  return { reports, tools: flat }
+})
+const reports = computed(() => toolsResource.data.value?.reports || [])
+const tools = computed(() => toolsResource.data.value?.tools || [])
+const loading = toolsResource.loading
 const generating = ref(false)
-const searchQuery = ref('')
-const tagFilter = ref('all')
-const dateFilter = ref('all')
+const filterDraft = reactive({ query: '', tag: 'all', date: 'all' })
+const appliedFilters = ref({ ...filterDraft })
+const searchQuery = toRef(filterDraft, 'query'), tagFilter = toRef(filterDraft, 'tag'), dateFilter = toRef(filterDraft, 'date')
+const pendingFilters = computed(() => JSON.stringify(filterDraft) !== JSON.stringify(appliedFilters.value))
+function searchTools() { appliedFilters.value = { ...filterDraft } }
+function resetFilters() { Object.assign(filterDraft, { query: '', tag: 'all', date: 'all' }); searchTools() }
+
 const starredKeys = ref(new Set(JSON.parse(localStorage.getItem(STAR_KEY) || '[]')))
 
 const canAdmin = computed(() => authStore.hasPermission('insight:admin'))
@@ -125,10 +149,10 @@ const dateOptions = computed(() => {
 
 const filteredTools = computed(() => {
   let list = tools.value
-  if (dateFilter.value !== 'all') list = list.filter((t) => t._report_date === dateFilter.value)
-  if (tagFilter.value !== 'all') list = list.filter((t) => (t.tag || t.category_label) === tagFilter.value)
-  if (searchQuery.value) {
-    const q = searchQuery.value.toLowerCase()
+  if (appliedFilters.value.date !== 'all') list = list.filter((t) => t._report_date === appliedFilters.value.date)
+  if (appliedFilters.value.tag !== 'all') list = list.filter((t) => (t.tag || t.category_label) === appliedFilters.value.tag)
+  if (appliedFilters.value.query) {
+    const q = appliedFilters.value.query.toLowerCase()
     list = list.filter((t) =>
       [(t.title || t.name), t.summary, t.description, t.tag, t.category_label]
         .filter(Boolean)
@@ -171,41 +195,7 @@ function toggleStar(t) {
   starredKeys.value = new Set(starredKeys.value)
 }
 
-async function loadAll() {
-  loading.value = true
-  try {
-    const res = await listReports({ report_type: 'ai_tools', page: 1, page_size: 30 })
-    reports.value = res.data.items || []
-    // 拉每一份的 source_data
-    const flat = []
-    for (const r of reports.value) {
-      try {
-        const det = await getReport(r.id)
-        // 后端 GET /reports/{id} 返回 source_data_keys,但没返回完整 source_data。
-        // 这里可以再调用单独的 API 或者改为前端用 iframe HTML — 但更好做法是后端补一个接口。
-        // 本期权宜:重新通过 listReports 时,后端没传 source_data。需要一个全量获取的接口。
-        // 简化:让后端 list_reports 在 ai_tools 类型时把 source_data 也返回。下面直接读 r.source_data。
-        const sd = (det.data && det.data.source_data) || r.source_data || {}
-        const grouped = sd.grouped || {}
-        for (const [catKey, items] of Object.entries(grouped)) {
-          for (const item of items || []) {
-            flat.push({
-              ...item,
-              _report_date: r.report_date,
-              category: catKey,
-              category_label: CATEGORY_LABELS[catKey] || '其他',
-            })
-          }
-        }
-      } catch (e) {
-        // 单个报告读取失败不影响其他
-      }
-    }
-    tools.value = flat
-  } finally {
-    loading.value = false
-  }
-}
+function loadAll() { return toolsResource.load() }
 
 async function generateToday() {
   generating.value = true

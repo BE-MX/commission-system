@@ -78,7 +78,7 @@ onBeforeUnmount(() => { open.value = false })
 .quick-nav-scrim{position:absolute;inset:0;width:100%;border:0;background:color-mix(in srgb,var(--text-primary) 12%,transparent);cursor:default}
 .quick-nav-panel{box-sizing:border-box;position:absolute;right:max(16px,calc((100vw - 580px)/2 + 16px));bottom:calc(104px + env(safe-area-inset-bottom));width:min(350px,calc(100vw - 32px));max-height:calc(100dvh - 165px - env(safe-area-inset-top));overflow-y:auto;padding:20px;border:1px solid var(--card-bg);border-radius:24px;background:color-mix(in srgb,var(--card-bg) 90%,transparent);backdrop-filter:blur(16px);box-shadow:0 16px 45px color-mix(in srgb,var(--text-primary) 16%,transparent);transform-origin:bottom right;transition:transform 180ms cubic-bezier(.23,1,.32,1)}
 .quick-nav-head{display:flex;justify-content:space-between;align-items:center}
-.quick-nav-eyebrow{display:block;margin-bottom:6px;color:var(--color-primary-hover);font-size:10px;font-weight:700;letter-spacing:2px}
+.quick-nav-eyebrow{display:block;margin-bottom:6px;color: var(--color-primary-text);font-size:10px;font-weight:700;letter-spacing:2px}
 .quick-nav-head h2{margin:0;font-size:20px;font-weight:750}
 .quick-nav-head small{margin-left:5px;color:var(--text-secondary);font-size:11px;font-weight:400}
 .quick-nav-close{width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--border-color);border-radius:50%;background:var(--page-bg);color:var(--text-secondary);cursor:pointer}

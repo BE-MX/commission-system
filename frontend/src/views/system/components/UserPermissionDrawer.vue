@@ -1,5 +1,5 @@
 <template>
-  <el-drawer :model-value="modelValue" size="80%" :with-header="false" class="perm-drawer" @update:model-value="v => $emit('update:modelValue', v)">
+  <DetailDrawer :model-value="modelValue" width="760px" :with-header="false" class="perm-drawer" @update:model-value="v => $emit('update:modelValue', v)">
     <div class="drawer-shell">
       <div class="drawer-head">
         <span class="title">有效权限预览</span>
@@ -7,7 +7,7 @@
         <span class="roles-line">
           角色：
           <template v-if="userRoles.length">
-            <el-tag v-for="r in userRoles" :key="r.id" size="small" effect="plain" class="role-item">{{ r.label }}</el-tag>
+            <StatusBadge v-for="r in userRoles" :key="r.id" size="small" effect="plain" class="role-item">{{ r.label }}</StatusBadge>
             <span class="hint">（多角色并集生效 · 共 {{ matrix.selectedCount }} 项权限）</span>
           </template>
           <span v-else class="hint">未分配角色，无任何权限</span>
@@ -18,14 +18,18 @@
         </el-input>
       </div>
       <div class="drawer-body" v-loading="loading || matrix.loading">
+        <ListPageStatus :error="previewResource.errorMessage.value" :loading="loading" @retry="loadPreview" />
         <PermissionMatrixTab :matrix="matrix" />
       </div>
     </div>
-  </el-drawer>
+  </DetailDrawer>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
+import { watch } from 'vue'
 import { getRoleList } from '@/api/userManagement'
 import { usePermissionMatrix } from '../composables/usePermissionMatrix'
 import PermissionMatrixTab from './PermissionMatrixTab.vue'
@@ -38,28 +42,27 @@ const props = defineProps({
 defineEmits(['update:modelValue'])
 
 const matrix = usePermissionMatrix({ readonly: true })
-const loading = ref(false)
-const userRoles = ref([])
+const previewResource = useAsyncResource(async (user, { signal }) => {
+  if (!user) return []
+  if (!matrix.allPerms.length && !await matrix.loadPermissions()) throw matrix.error
+  const roles = (await getRoleList({ signal, suppressToast: true })).data || []
+  const roleIds = (user.role_ids || []).map(Number)
+  return roleIds.length
+    ? roles.filter(role => roleIds.includes(Number(role.id)))
+    : roles.filter(role => (user.roles || []).includes(role.name) || (user.roles || []).includes(role.label))
+}, { initialData: [] })
+const loading = previewResource.loading
+const userRoles = previewResource.data
+async function loadPreview() {
+  matrix.initSelection([])
+  const user = props.modelValue ? props.user : null
+  if (!await previewResource.load(user, { clear: true }) || !props.modelValue) return
+  const union = new Set()
+  userRoles.value.forEach(role => (role.permission_ids || []).forEach(id => union.add(Number(id))))
+  matrix.initSelection([...union])
+}
+watch(() => [props.modelValue, props.user], loadPreview, { deep: true })
 
-watch(() => props.modelValue, async (open) => {
-  if (!open || !props.user) return
-  loading.value = true
-  try {
-    if (!matrix.allPerms.length) await matrix.loadPermissions()
-    const res = await getRoleList()
-    const roles = res.data || []
-    const roleIds = (props.user.role_ids || []).map(Number)
-    userRoles.value = roleIds.length
-      ? roles.filter(r => roleIds.includes(Number(r.id)))
-      : roles.filter(r => (props.user.roles || []).includes(r.name) || (props.user.roles || []).includes(r.label))
-    // 多角色权限并集
-    const union = new Set()
-    userRoles.value.forEach(r => (r.permission_ids || []).forEach(id => union.add(Number(id))))
-    matrix.initSelection([...union])
-  } finally {
-    loading.value = false
-  }
-})
 </script>
 
 <style scoped>

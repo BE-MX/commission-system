@@ -1,3 +1,4 @@
+import { feedbackFixture } from './helpers/feedbackFixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -8,6 +9,7 @@ function setup(api = {}, saved = () => {}) {
     saveInvoiceLinked: async () => ({ invoice: { id: 1 }, operation: { id: 'op', invoice_id: 1 } }),
     getInvoiceLinked: async () => null, runInvoiceLinked: async () => ({ id: 'op', invoice_id: 1, status: 'manual' }),
     closeInvoiceLinked: async () => ({ id: 'op', invoice_id: 1, status: 'manual' }), resolveInvoiceLinked() {}, ...api }
+  Object.assign(mocks, feedbackFixture(mocks))
   return new Function(...Object.keys(mocks), source + '\nreturn useLinkedInvoiceSync')( ...Object.values(mocks))(saved)
 }
 test('409 clears rejected key so corrected payload can save', async () => {

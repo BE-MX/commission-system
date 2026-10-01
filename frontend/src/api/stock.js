@@ -1,23 +1,23 @@
 import { stockClient as stockApi, publicStockClient } from './clients'
 
 // ── 对外库存查询（无登录，全公开；客户查询页 /inventory 用） ──
-export function getPublicInventory(params) {
-  return publicStockClient.get('/products', { params, showLoading: false, suppressToast: true })
+export function getPublicInventory(params, config = {}) {
+  return publicStockClient.get('/products', { showLoading: false, suppressToast: true, ...config, params })
 }
 
 // ── 销量备货一览 ────────────────────────────────────────
-export function getStockOverview(params) {
-  return stockApi.get('/overview', { params, showLoading: false })
+export function getStockOverview(params, config = {}) {
+  return stockApi.get('/overview', { showLoading: false, ...config, params })
 }
 
 // ── 筛选维度可选值(全部产品) ────────────────────────────
-export function getFilterOptions() {
-  return stockApi.get('/filter-options', { showLoading: false })
+export function getFilterOptions(config = {}) {
+  return stockApi.get('/filter-options', { showLoading: false, ...config })
 }
 
 // ── 安全库存列表 ────────────────────────────────────────
-export function getSafetyList(params) {
-  return stockApi.get('/safety', { params, showLoading: false })
+export function getSafetyList(params, config = {}) {
+  return stockApi.get('/safety', { showLoading: false, ...config, params })
 }
 
 // ── 批量保存安全库存 ────────────────────────────────────
@@ -36,12 +36,12 @@ export function tftPredict(payload) {
 }
 
 // ── 日报 ────────────────────────────────────────────────
-export function getLatestDailyReport() {
-  return stockApi.get('/daily-report', { showLoading: false, suppressNotFound: true })
+export function getLatestDailyReport(config = {}) {
+  return stockApi.get('/daily-report', { showLoading: false, suppressNotFound: true, ...config })
 }
 
-export function getDailyReportByDate(date) {
-  return stockApi.get(`/daily-report/${date}`, { showLoading: false, suppressNotFound: true })
+export function getDailyReportByDate(date, config = {}) {
+  return stockApi.get(`/daily-report/${date}`, { showLoading: false, suppressNotFound: true, ...config })
 }
 
 export function triggerDailyReport(params) {
@@ -53,8 +53,8 @@ export function pushDailyReport(params) {
 }
 
 // ── 生产单购物车 ──────────────────────────────────────────
-export function getProductionCart() {
-  return stockApi.get('/production/cart', { showLoading: false })
+export function getProductionCart(config = {}) {
+  return stockApi.get('/production/cart', { showLoading: false, ...config })
 }
 
 export function addToProductionCart(payload) {
@@ -76,13 +76,13 @@ export function deleteProductionCartItems(cartIds) {
 }
 
 // ── 生产在途 ──────────────────────────────────────────────
-export function queryInTransit(productIds) {
-  return stockApi.post('/production/in-transit', { product_ids: productIds }, { showLoading: false })
+export function queryInTransit(productIds, config = {}) {
+  return stockApi.post('/production/in-transit', { product_ids: productIds }, { showLoading: false, ...config })
 }
 
 // ── 备货状态 ──────────────────────────────────────────────
-export function queryStockStatus(productIds) {
-  return stockApi.post('/production/stock-status', { product_ids: productIds }, { showLoading: false })
+export function queryStockStatus(productIds, config = {}) {
+  return stockApi.post('/production/stock-status', { product_ids: productIds }, { showLoading: false, ...config })
 }
 
 // ── 生产订单 ──────────────────────────────────────────────
@@ -90,12 +90,12 @@ export function createProductionOrder(payload) {
   return stockApi.post('/production/orders', payload, { loadingText: '创建订单中...' })
 }
 
-export function getProductionOrders(params) {
-  return stockApi.get('/production/orders', { params, showLoading: false })
+export function getProductionOrders(params, config = {}) {
+  return stockApi.get('/production/orders', { showLoading: false, ...config, params })
 }
 
-export function getProductionOrderDetail(orderId) {
-  return stockApi.get(`/production/orders/${orderId}`, { showLoading: false })
+export function getProductionOrderDetail(orderId, config = {}) {
+  return stockApi.get(`/production/orders/${orderId}`, { showLoading: false, ...config })
 }
 
 export function updateProductionOrder(orderId, payload) {
@@ -106,8 +106,8 @@ export function deleteProductionOrder(orderId) {
   return stockApi.delete(`/production/orders/${orderId}`, { loadingText: '删除中...' })
 }
 
-export function getProductionOrderItems(params) {
-  return stockApi.get('/production/order-items', { params, showLoading: false })
+export function getProductionOrderItems(params, config = {}) {
+  return stockApi.get('/production/order-items', { showLoading: false, ...config, params })
 }
 
 export function updateProductionOrderItem(itemId, payload) {
@@ -132,12 +132,12 @@ export function resetOrderProcess(orderId) {
 
 // ── 生产订单打印工作台 ────────────────────────────────────────
 
-export function getProductionPrintOrders(params) {
-  return stockApi.get('/production/print-orders', { params, showLoading: false })
+export function getProductionPrintOrders(params, config = {}) {
+  return stockApi.get('/production/print-orders', { showLoading: false, ...config, params })
 }
 
-export function getOrderPrintCategories(orderId) {
-  return stockApi.get(`/production/orders/${orderId}/print-categories`, { showLoading: false })
+export function getOrderPrintCategories(orderId, config = {}) {
+  return stockApi.get(`/production/orders/${orderId}/print-categories`, { showLoading: false, ...config })
 }
 
 export function createProductionPrintJob(orderId, payload) {

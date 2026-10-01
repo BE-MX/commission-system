@@ -13,7 +13,7 @@
 .task-prio { display: inline-flex; align-items: center; gap: 6px; font: 700 12px var(--font-display); white-space: nowrap; }
 .task-prio::before { content: ""; width: 8px; height: 8px; border-radius: 3px; background: currentColor; }
 .task-prio.is-P0 { color: var(--color-danger); }
-.task-prio.is-P1 { color: var(--color-primary); }
+.task-prio.is-P1 { color: var(--color-primary-text); }
 .task-prio.is-P2 { color: var(--color-info-text); }
 .task-prio.is-P3 { color: var(--text-muted); }
 .task-due.is-overdue { color: var(--color-danger-text); font-weight: 600; }

@@ -61,11 +61,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgError } from '@/utils/feedback'
 import { ref, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+
 import * as api from '@/api/production'
 
 const route = useRoute()
@@ -74,12 +74,12 @@ const cardData = ref(null)
 async function loadCard() {
   try {
     const id = route.params.id || route.query.id
-    if (!id) { ElMessage.error('缺少订单产品ID'); return }
+    if (!id) { msgError('缺少订单产品ID'); return }
     const res = await api.getPrintCardData(id)
     cardData.value = res
     await nextTick()
   } catch (e) {
-    ElMessage.error('加载打印数据失败')
+    msgError('加载打印数据失败', e)
   }
 }
 

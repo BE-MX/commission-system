@@ -13,7 +13,7 @@ export function createMailOutreachApi(client) {
     getOutreachContext: customerId => client.get(`/context/${customerId}`, { showLoading: false }),
     /** 生成草稿（AI 版本），body 需带 request_key 幂等 */
     createDraft: payload => client.post('/drafts', payload),
-    listDrafts: params => client.get('/drafts', { params, showLoading: false }),
+    listDrafts: (params, config = {}) => client.get('/drafts', { ...config, params, showLoading: false }),
     getDraft: draftId => client.get(`/drafts/${draftId}`, { showLoading: false }),
     /** 编辑 → 新 revision（使旧审批失效） */
     createRevision: (draftId, payload) => client.post(`/drafts/${draftId}/revisions`, payload),
@@ -23,7 +23,7 @@ export function createMailOutreachApi(client) {
     approveDraft: (draftId, payload) => client.post(`/drafts/${draftId}/approve`, payload),
     rejectDraft: (draftId, payload) => client.post(`/drafts/${draftId}/reject`, payload),
     revokeDraft: (draftId, payload) => client.post(`/drafts/${draftId}/revoke`, payload),
-    listJobs: params => client.get('/jobs', { params, showLoading: false }),
+    listJobs: (params, config = {}) => client.get('/jobs', { ...config, params, showLoading: false }),
     cancelJob: (jobId, payload) => client.post(`/jobs/${jobId}/cancel`, payload),
     /** 邮箱绑定列表（不含凭据） */
     listMailboxes: params => client.get('/mailboxes', { params, showLoading: false }),

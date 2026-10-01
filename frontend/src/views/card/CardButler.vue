@@ -11,16 +11,14 @@
       <!-- ── 客户档案 ─────────────────────────── -->
       <el-tab-pane label="客户档案" name="customers">
         <div ref="customerPanelRef" class="table-card">
-          <div class="toolbar">
+          <FilterBar class="toolbar" :loading="customerPage.loading.value" :pending="customerPage.hasPendingSearch.value" @search="customerPage.handleSearch" @reset="customerPage.handleReset">
             <el-input v-model="customerPage.searchForm.keyword" placeholder="称呼 / 邮箱 / WhatsApp"
-                      clearable class="filter-w-md" @keyup.enter="customerPage.handleSearch" />
+                      clearable class="filter-w-md" />
             <el-select v-model="customerPage.searchForm.salesperson_id" clearable placeholder="业务员（全部）"
-                       class="filter-w-sm" @change="customerPage.handleSearch">
+                       class="filter-w-sm">
               <el-option v-for="sp in salespersons" :key="sp.id" :label="sp.name" :value="sp.id" />
             </el-select>
-            <GlassButton variant="primary" left-icon="Search" @click="customerPage.handleSearch">查询</GlassButton>
-            <GlassButton left-icon="RefreshLeft" @click="customerPage.handleReset">重置</GlassButton>
-          </div>
+          </FilterBar>
           <div class="action-bar">
             <GlassButton v-permission="'card:write'" variant="primary" left-icon="Plus" @click="openCustomerDialog(null)">新建客户</GlassButton>
             <TableTools
@@ -28,10 +26,11 @@
               v-model:density="customerDensity"
               :columns="customerColumnDefs"
               :fullscreen="customerIsFullscreen"
-              @refresh="customerPage.handleSearch"
+              @refresh="customerPage.fetchList"
               @fullscreen="toggleCustomerFullscreen"
             />
           </div>
+          <ListPageStatus v-if="customerPage.hasData.value" :error="customerPage.errorMessage.value" :loading="customerPage.loading.value" :has-data="customerPage.hasData.value" :data-page="customerPage.dataPage.value" @retry="customerPage.fetchList" />
           <el-table :data="customerPage.list.value" v-loading="customerPage.loading.value" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640" style="width: 100%">
             <el-table-column v-if="customerVisibleKeys.includes('display-name')" prop="display_name" label="客户称呼" min-width="130" show-overflow-tooltip />
             <el-table-column v-if="customerVisibleKeys.includes('email')" label="口令（邮箱）" min-width="180" show-overflow-tooltip>
@@ -43,7 +42,7 @@
             <el-table-column v-if="customerVisibleKeys.includes('expo-code')" prop="expo_code" label="届次" min-width="100" show-overflow-tooltip />
             <el-table-column v-if="customerVisibleKeys.includes('entries')" label="纪要" min-width="80">
               <template #default="{ row }">
-                <el-tag effect="plain" :type="row.entry_count ? 'success' : 'info'">{{ row.entry_count }} 条</el-tag>
+                <StatusBadge effect="plain" :type="row.entry_count ? 'success' : 'info'">{{ row.entry_count }} 条</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column v-if="customerVisibleKeys.includes('created-at')" prop="created_at" label="建档时间" min-width="140" />
@@ -54,7 +53,7 @@
                 <GlassButton v-permission="'card:write'" variant="link" link-tone="danger" left-icon="Delete" @click="removeCustomer(row)">删除</GlassButton>
               </template>
             </el-table-column>
-          </el-table>
+          <template #empty><ListPageStatus :error="customerPage.errorMessage.value" :loading="customerPage.loading.value" :has-data="false" @retry="customerPage.fetchList"><el-empty description="暂无数据" /></ListPageStatus></template></el-table>
           <el-pagination
             v-model:current-page="customerPage.page.value"
             v-model:page-size="customerPage.pageSize.value"
@@ -71,45 +70,44 @@
       <!-- ── 询盘 ─────────────────────────────── -->
       <el-tab-pane label="客户询盘" name="inquiries">
         <div ref="inquiryPanelRef" class="table-card">
-          <div class="toolbar">
+          <FilterBar class="toolbar" :loading="inquiryPage.loading.value" :pending="inquiryPage.hasPendingSearch.value" @search="inquiryPage.handleSearch" @reset="inquiryPage.handleReset">
             <el-select v-model="inquiryPage.searchForm.status" clearable placeholder="状态（全部）"
-                       class="filter-w-sm" @change="inquiryPage.handleSearch">
+                       class="filter-w-sm">
               <el-option label="未处理" value="new" />
               <el-option label="已处理" value="handled" />
             </el-select>
             <el-select v-model="inquiryPage.searchForm.salesperson_id" clearable placeholder="业务员（全部）"
-                       class="filter-w-sm" @change="inquiryPage.handleSearch">
+                       class="filter-w-sm">
               <el-option v-for="sp in salespersons" :key="sp.id" :label="sp.name" :value="sp.id" />
             </el-select>
-            <GlassButton variant="primary" left-icon="Search" @click="inquiryPage.handleSearch">查询</GlassButton>
-            <GlassButton left-icon="RefreshLeft" @click="inquiryPage.handleReset">重置</GlassButton>
-          </div>
+          </FilterBar>
           <div class="action-bar">
             <TableTools
               v-model:visible-keys="inquiryVisibleKeys"
               v-model:density="inquiryDensity"
               :columns="inquiryColumnDefs"
               :fullscreen="inquiryIsFullscreen"
-              @refresh="inquiryPage.handleSearch"
+              @refresh="inquiryPage.fetchList"
               @fullscreen="toggleInquiryFullscreen"
             />
           </div>
+          <ListPageStatus v-if="inquiryPage.hasData.value" :error="inquiryPage.errorMessage.value" :loading="inquiryPage.loading.value" :has-data="inquiryPage.hasData.value" :data-page="inquiryPage.dataPage.value" @retry="inquiryPage.fetchList" />
           <el-table :data="inquiryPage.list.value" v-loading="inquiryPage.loading.value" border class="list-table" :class="inquiryDensityClass" :max-height="inquiryIsFullscreen ? undefined : 640" style="width: 100%">
             <el-table-column v-if="inquiryVisibleKeys.includes('salesperson')" prop="salesperson" label="业务员" min-width="100" />
             <el-table-column v-if="inquiryVisibleKeys.includes('contact')" prop="contact" label="客户联系方式" min-width="180" show-overflow-tooltip />
             <el-table-column v-if="inquiryVisibleKeys.includes('message')" prop="message" label="内容" min-width="320" show-overflow-tooltip />
             <el-table-column v-if="inquiryVisibleKeys.includes('customer')" label="建档客户" min-width="100">
               <template #default="{ row }">
-                <el-tag v-if="row.customer_id" effect="plain" type="success">已命中</el-tag>
-                <el-tag v-else effect="plain" type="info">未建档</el-tag>
+                <StatusBadge v-if="row.customer_id" effect="plain" type="success">已命中</StatusBadge>
+                <StatusBadge v-else effect="plain" type="info">未建档</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column v-if="inquiryVisibleKeys.includes('created-at')" prop="created_at" label="提交时间" min-width="140" />
             <el-table-column v-if="inquiryVisibleKeys.includes('status')" label="状态" min-width="90">
               <template #default="{ row }">
-                <el-tag effect="plain" :type="row.status === 'new' ? 'warning' : 'success'">
+                <StatusBadge effect="plain" :type="row.status === 'new' ? 'warning' : 'success'">
                   {{ row.status === 'new' ? '未处理' : '已处理' }}
-                </el-tag>
+                </StatusBadge>
               </template>
             </el-table-column>
             <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">
@@ -119,7 +117,7 @@
                 </GlassButton>
               </template>
             </el-table-column>
-          </el-table>
+          <template #empty><ListPageStatus :error="inquiryPage.errorMessage.value" :loading="inquiryPage.loading.value" :has-data="false" @retry="inquiryPage.fetchList"><el-empty description="暂无数据" /></ListPageStatus></template></el-table>
           <el-pagination
             v-model:current-page="inquiryPage.page.value"
             v-model:page-size="inquiryPage.pageSize.value"
@@ -137,9 +135,11 @@
       <el-tab-pane label="业务员档案" name="salespersons">
         <div ref="salespersonPanelRef" class="table-card">
           <div class="action-bar">
-            <TableTools v-model:visible-keys="salespersonVisibleKeys" v-model:density="salespersonDensity" :columns="salespersonColumnDefs" :fullscreen="salespersonIsFullscreen" @refresh="fetchSalespersons" @fullscreen="toggleSalespersonFullscreen" />
+            <TableTools v-model:visible-keys="salespersonVisibleKeys" v-model:density="salespersonDensity" :columns="salespersonColumnDefs" :fullscreen="salespersonIsFullscreen" :loading="salespersonsResource.loading.value" @refresh="fetchSalespersons" @fullscreen="toggleSalespersonFullscreen" />
           </div>
+          <ListPageStatus v-if="salespersonsResource.error.value && salespersons.length" v-bind="resourceStatus(salespersonsResource)" @retry="fetchSalespersons" />
           <el-table :data="salespersons" border class="list-table" :class="salespersonDensityClass" :max-height="salespersonIsFullscreen ? undefined : 640" style="width: 100%">
+            <template #empty><ListPageStatus v-bind="resourceStatus(salespersonsResource)" @retry="fetchSalespersons"><el-empty description="暂无业务员档案" /></ListPageStatus></template>
             <el-table-column v-if="salespersonVisibleKeys.includes('slug')" prop="slug" label="主页地址" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">leshine.work/card/{{ row.slug }}/</template>
             </el-table-column>
@@ -151,7 +151,7 @@
             </el-table-column>
             <el-table-column v-if="salespersonVisibleKeys.includes('status')" label="状态" min-width="80">
               <template #default="{ row }">
-                <el-tag effect="plain" :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '启用' : '停用' }}</el-tag>
+                <StatusBadge effect="plain" :value="row.is_active" :dictionary="ENABLED_STATUS" />
               </template>
             </el-table-column>
             <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
@@ -166,8 +166,8 @@
     </el-tabs>
 
     <!-- 客户档案编辑弹窗 -->
-    <el-dialog v-model="customerDialogVisible" :title="customerForm.id ? '编辑客户' : '新建客户'" width="520px">
-      <el-form label-width="110px">
+    <el-dialog v-model="customerDialogVisible" :title="customerForm.id ? '编辑客户' : '新建客户'" width="640px">
+      <el-form label-position="top">
         <el-form-item v-if="!customerForm.id" label="归属业务员" required>
           <el-select v-model="customerForm.salesperson_id" style="width: 100%">
             <el-option v-for="sp in salespersons" :key="sp.id" :label="sp.name" :value="sp.id" />
@@ -196,8 +196,8 @@
     </el-dialog>
 
     <!-- 业务员档案编辑弹窗 -->
-    <el-dialog v-model="spDialogVisible" title="业务员档案" width="520px">
-      <el-form label-width="100px">
+    <el-dialog v-model="spDialogVisible" title="业务员档案" width="640px">
+      <el-form label-position="top">
         <el-form-item label="slug">
           <el-input v-model="spForm.slug" disabled />
           <div class="field-tip">已印在名片二维码里，不可修改</div>
@@ -218,7 +218,8 @@
     </el-dialog>
 
     <!-- 纪要抽屉 -->
-    <DetailDrawer v-model="entriesVisible" :title="`沟通纪要 · ${currentCustomer?.display_name ?? ''}`" :width="560" :loading="entriesLoading">
+    <DetailDrawer v-model="entriesVisible" :title="`沟通纪要 · ${currentCustomer?.display_name ?? ''}`" :width="640" :loading="entriesLoading">
+      <ListPageStatus v-if="entriesResource.error.value || entriesLoading" v-bind="resourceStatus(entriesResource)" @retry="refreshEntries" />
       <div class="entry-list">
         <div v-for="entry in entries" :key="entry.id" class="entry-item">
           <div class="entry-head">
@@ -229,7 +230,7 @@
           <p v-if="entry.content" class="entry-content">{{ entry.content }}</p>
           <el-image v-if="entry.attachment_url" :src="entry.attachment_url" :preview-src-list="[entry.attachment_url]" fit="cover" class="entry-img" />
         </div>
-        <el-empty v-if="!entries.length" description="还没有纪要——录第一条，客户凭口令即可看到" :image-size="72" />
+        <el-empty v-if="entriesResource.hasLoaded.value && !entriesResource.error.value && !entriesLoading && !entries.length" description="还没有纪要——录第一条，客户凭口令即可看到" :image-size="72" />
       </div>
 
       <div v-permission="'card:write'" class="entry-form">
@@ -244,6 +245,8 @@
 </template>
 
 <script setup>
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import { ENABLED_STATUS } from '@/utils/status'
 import { ref } from 'vue'
 import AppUpload from '@/components/AppUpload.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
@@ -292,14 +295,15 @@ const {
 } = useTableView('card-butler-salespersons', salespersonColumnDefs)
 
 const {
-  salespersons, fetchSalespersons,
+  salespersons, salespersonsResource, fetchSalespersons,
   spDialogVisible, spSaving, spForm, openSpDialog, saveSalesperson,
   customerPage, customerDialogVisible, customerSaving, customerForm,
   openCustomerDialog, saveCustomer, removeCustomer,
-  entriesVisible, entriesLoading, entrySaving, entries, currentCustomer,
+  entriesVisible, entriesLoading, entriesResource, refreshEntries, entrySaving, entries, currentCustomer,
   entryForm, entryFiles, openEntries, saveEntry, removeEntry,
   inquiryPage, markHandled,
 } = useCardButler()
+const resourceStatus = resource => ({ error: resource.errorMessage.value, loading: resource.loading.value, hasData: resource.hasLoaded.value, paged: false })
 </script>
 
 <style scoped>

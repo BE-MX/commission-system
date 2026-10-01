@@ -1,3 +1,4 @@
+import { formatMoney } from '../../../utils/money.js'
 /**
  * 工作台数据 composable — 聚合各业务模块的待办/最近动态/统计
  *
@@ -6,11 +7,12 @@
  *   - computed: subtitleText / showTodoArea / donutTotal / donutSegments / greeting
  *   - methods: pickDailyTip / loadAllData / 状态映射工具函数
  *
- * 全部 fetch 都有权限保护(authStore.hasAnyPermission),失败 try/catch 忽略,
- * 不让单个 API 报错阻塞 Dashboard 渲染。
+ * 可选摘要和最近记录各用独立资源；失败保留同一账号/权限范围内的上次数据，
+ * 单个 API 报错不会阻塞 Dashboard 其他资源。
  */
-import { ref, computed, onMounted, onActivated } from 'vue'
+import { ref, computed, onMounted, onActivated, onUnmounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 
 import { getSnapshotList } from '@/api/customer'
 import { getBatchList } from '@/api/commission'
@@ -22,7 +24,7 @@ import { fetchGreeting, getCustomerWorkSummary } from '@/api/dashboard'
 
 import dailyTipsData from '@/assets/daily-tips.json'
 import { getTodayHolidays, getUpcomingHolidays } from '../holidays'
-import { beijingCalendarDate, currentBeijingDate, currentBeijingHour, formatBeijingDate } from '@/utils/datetime'
+import { beijingCalendarDate, currentBeijingDate, currentBeijingHour, formatBeijingDate, formatCalendarDate } from '@/utils/datetime'
 
 
 // ── 状态映射工具 ─────────────────────────────────────────
@@ -58,23 +60,11 @@ function translateDesignStatus(status) {
   return map[status] || status
 }
 
-function toLocalISODate(date) {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
 function formatDate(date) {
   return formatBeijingDate(date)
 }
 
-function formatMoney(amount) {
-  if (amount === null || amount === undefined) return '-'
-  const num = Number(amount)
-  if (isNaN(num)) return '-'
-  return '¥ ' + num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
+function dashboardMoney(amount) { return formatMoney(amount, { currency: 'CNY', currencyDisplay: 'narrowSymbol', missing: '-' }) }
 
 
 // ── composable ──────────────────────────────────────────
@@ -92,28 +82,108 @@ export function useDashboardData() {
     return '晚上好'
   })
 
-  // 数据状态
+  // 问候、节假日与业务读取各自有独立生命周期。
   const dailyTip = ref('')
-  const incompleteCount = ref(0)
-  const customerWorkSummary = ref({ items: [], total: 0 })
-  const customerWorkSummaryError = ref('')
-  const batchCount = ref(0)
-  const latestBatch = ref(null)
-  const employeeCount = ref(0)
-  const trackingCount = ref(0)
-  const trackingAbnormal = ref(0)
-  const todayShootCount = ref(0)
-  const pendingApprovals = ref(0)
-  const latestPayment = ref(null)
-
-  const recentCommissions = ref([])
-  const recentTrackings = ref([])
-  const recentDesigns = ref([])
-  const recentPayments = ref([])
-  const recentShipments = ref([]) // 在途运单（物流进度卡）
-
-  const donutData = ref([])
-  const donutLabel = ref('')
+  const quiet = signal => ({ signal, showLoading: false, suppressToast: true })
+  function page(res) {
+    if (!Array.isArray(res.data?.items) || !Number.isFinite(res.data?.total)) throw new Error('摘要响应格式不正确')
+    return res.data
+  }
+  function items(res) {
+    if (!Array.isArray(res.data?.items)) throw new Error('最近记录响应格式不正确')
+    return res.data.items
+  }
+  const resources = {
+    customerWork: useAsyncResource(async (_, { signal }) => {
+      const value = (await getCustomerWorkSummary(quiet(signal))).data
+      if (!value || !Array.isArray(value.items) || !Number.isFinite(value.total)) throw new Error('客户事项摘要格式不正确')
+      return value
+    }),
+    incomplete: useAsyncResource(async (_, { signal }) => page(await getSnapshotList({ is_complete: 'false', page_size: 1 }, quiet(signal)))),
+    batches: useAsyncResource(async (_, { signal }) => page(await getBatchList({ page: 1, page_size: 1 }, quiet(signal)))),
+    recentCommissions: useAsyncResource(async (_, { signal }) => items(await getBatchList({ page: 1, page_size: 5 }, quiet(signal))).map((item, idx) => ({
+      id: item.id || idx, name: item.batch_name || '未命名批次', status: normalizeStatus(item.status),
+      statusText: batchStatusLabel(item.status), time: formatDate(item.created_at),
+    }))),
+    employees: useAsyncResource(async (_, { signal }) => page(await getEmployeeList({ page: 1, page_size: 1 }, quiet(signal)))),
+    trackingCount: useAsyncResource(async (_, { signal }) => page(await getShipmentList({ page: 1, page_size: 1 }, quiet(signal)))),
+    trackingStats: useAsyncResource(async (_, { signal }) => {
+      const value = (await getTrackingStats(undefined, quiet(signal))).data
+      if (!value || !['in_transit', 'delivered', 'exception'].every(key => typeof value[key] === 'number' && Number.isFinite(value[key]))) throw new Error('物流统计格式不正确')
+      return value
+    }),
+    recentTrackings: useAsyncResource(async (_, { signal }) => items(await getShipmentList({ page: 1, page_size: 5 }, quiet(signal))).map((item, idx) => ({
+      id: item.id || idx, waybillNo: item.waybill_no || '-', status: normalizeStatus(item.current_status),
+      statusText: item.current_status || '-', time: formatDate(item.last_event_time || item.updated_at),
+    }))),
+    recentShipments: useAsyncResource(async (_, { signal }) => items(await getShipmentList({
+      is_active: '1', page: 1, page_size: 5, sort_field: 'updated_at', sort_order: 'desc',
+    }, quiet(signal)))),
+    designTasks: useAsyncResource(async (_, { signal }) => page(await getTaskList({ page: 1, page_size: 1 }, quiet(signal)))),
+    approvals: useAsyncResource(async (_, { signal }) => page(await getRequests({ status: 'pending_audit', page: 1, page_size: 1 }, quiet(signal)))),
+    designStats: useAsyncResource(async (_, { signal }) => {
+      const [year, month] = currentBeijingDate().split('-').map(Number)
+      const end = formatCalendarDate(new Date(year, month, 0))
+      const summary = (await getDesignStats({ start_date: `${year}-${String(month).padStart(2, '0')}-01`, end_date: end }, quiet(signal))).data?.summary
+      if (!summary || !['total', 'completed', 'in_progress', 'scheduled'].every(key => typeof summary[key] === 'number' && Number.isFinite(summary[key]))) throw new Error('设计统计格式不正确')
+      return summary
+    }),
+    recentDesigns: useAsyncResource(async (_, { signal }) => items(await getRequests({ page: 1, page_size: 5 }, quiet(signal))).map((item, idx) => ({
+      id: item.id || idx, customerName: item.customer_name || '-', status: normalizeStatus(item.status),
+      statusText: translateDesignStatus(item.status),
+      meta: item.expect_start_date ? `期望日期：${item.expect_start_date}${item.expect_end_date && item.expect_end_date !== item.expect_start_date ? ' ~ ' + item.expect_end_date : ''}` : formatDate(item.created_at),
+    }))),
+    latestPayment: useAsyncResource(async (_, { signal }) => items(await getSyncedPayments(paymentParams(1), quiet(signal)))[0] || null),
+    recentPayments: useAsyncResource(async (_, { signal }) => items(await getSyncedPayments(paymentParams(5), quiet(signal))).map((item, idx) => ({
+      id: item.id || idx, customerName: item.customer_name || '-', amount: dashboardMoney(item.payment_amount),
+      time: formatDate(item.payment_date),
+    }))),
+  }
+  function paymentParams(pageSize) {
+    const today = currentBeijingDate()
+    const start = new Date(new Date(`${today}T00:00:00+08:00`).getTime() - 30 * 86400000)
+    return { date_start: formatBeijingDate(start), date_end: today, page: 1, page_size: pageSize }
+  }
+  const access = {
+    customerWork: ['customer_pcw:read', 'customer_radar:read', 'customer:read', 'customer:read_all'],
+    incomplete: ['customer:read'], batches: ['commission:read'], recentCommissions: ['commission:read'],
+    employees: ['employee:read'], trackingCount: ['tracking:read'], trackingStats: ['tracking:read'],
+    recentTrackings: ['tracking:read'], recentShipments: ['tracking:read'],
+    designTasks: ['design:read', 'design:audit', 'design:manage'], approvals: ['design:audit'],
+    designStats: ['design:audit', 'design:manage'], recentDesigns: ['design:read', 'design:audit', 'design:manage'],
+    latestPayment: ['payment:read'], recentPayments: ['payment:read'],
+  }
+  const enabledResources = computed(() => Object.keys(resources).filter(key => authStore.hasAnyPermission(access[key])))
+  const totalOf = key => computed(() => resources[key].data.value?.total ?? null)
+  const incompleteCount = totalOf('incomplete')
+  const batchCount = totalOf('batches')
+  const latestBatch = computed(() => resources.batches.data.value?.items?.[0] ?? null)
+  const employeeCount = totalOf('employees')
+  const trackingCount = totalOf('trackingCount')
+  const trackingAbnormal = computed(() => resources.trackingStats.data.value?.exception ?? null)
+  const todayShootCount = totalOf('designTasks')
+  const pendingApprovals = totalOf('approvals')
+  const latestPayment = computed(() => resources.latestPayment.data.value)
+  const customerWorkSummary = computed(() => resources.customerWork.data.value)
+  const customerWorkSummaryError = computed(() => resources.customerWork.error.value ? '客户事项摘要暂时无法读取，请重试或打开客户工作台核验' : '')
+  const recentCommissions = computed(() => resources.recentCommissions.data.value ?? [])
+  const recentTrackings = computed(() => resources.recentTrackings.data.value ?? [])
+  const recentShipments = computed(() => resources.recentShipments.data.value ?? [])
+  const recentDesigns = computed(() => resources.recentDesigns.data.value ?? [])
+  const recentPayments = computed(() => resources.recentPayments.data.value ?? [])
+  const donutData = computed(() => {
+    const tracking = resources.trackingStats.data.value
+    const design = resources.designStats.data.value
+    const source = tracking && ['in_transit', 'delivered', 'exception'].some(key => Number(tracking[key]))
+      ? [['in_transit', '在途', 'var(--color-blue)'], ['delivered', '已签收', 'var(--color-success)'], ['exception', '异常', 'var(--color-danger)']].map(([key, label, color]) => ({ key, label, color, value: Number(tracking[key] || 0) }))
+      : design ? [['scheduled', '已排期', 'var(--color-blue)'], ['in_progress', '执行中', 'var(--color-gold)'], ['completed', '已完成', 'var(--color-success)'], ['other', '其他', 'var(--text-muted)']].map(([key, label, color]) => ({
+        key, label, color, value: key === 'other' ? Math.max(0, Number(design.total || 0) - Number(design.scheduled || 0) - Number(design.in_progress || 0) - Number(design.completed || 0)) : Number(design[key] || 0),
+      })) : []
+    const nonzero = source.filter(item => item.value > 0)
+    const total = nonzero.reduce((sum, item) => sum + item.value, 0)
+    return nonzero.map(item => ({ ...item, percent: total ? Math.round(item.value / total * 100) : 0 }))
+  })
+  const donutLabel = computed(() => resources.trackingStats.data.value && ['in_transit', 'delivered', 'exception'].some(key => Number(resources.trackingStats.data.value[key])) ? '运单总数' : '任务总数')
 
   // ── 节假日日历（纯前端计算，挂载时算一次） ──────────────
   const todayHolidays = ref([])
@@ -125,6 +195,8 @@ export function useDashboardData() {
   const assistantLine = ref('')
   const assistantSource = ref('tip')
   const assistantLoading = ref(false)
+  let greetingSeq = 0
+  let greetingController
 
   const GREETING_CACHE_KEY = 'ark_ai_greeting_v1'
 
@@ -167,6 +239,10 @@ export function useDashboardData() {
   }
 
   async function loadGreeting(refresh = false) {
+    const id = ++greetingSeq
+    greetingController?.abort()
+    greetingController = new AbortController()
+    const signal = greetingController.signal
     if (!refresh) {
       const cached = readGreetingCache()
       if (cached?.text) {
@@ -177,7 +253,8 @@ export function useDashboardData() {
     }
     assistantLoading.value = true
     try {
-      const res = await fetchGreeting({ refresh, context: buildGreetingContext() })
+      const res = await fetchGreeting({ refresh, context: buildGreetingContext() }, { signal })
+      if (id !== greetingSeq || signal.aborted) return
       const data = res.data || {}
       if (data.text) {
         assistantLine.value = data.text
@@ -195,7 +272,7 @@ export function useDashboardData() {
       // 静默降级（suppressToast 已关掉拦截器弹条）：保留现有文案与徽章——
       // 首次失败时就是本地每日一句 + 'tip'；刷新失败时旧 AI 文案不降级徽章
     } finally {
-      assistantLoading.value = false
+      if (id === greetingSeq && !signal.aborted) assistantLoading.value = false
     }
   }
 
@@ -230,7 +307,7 @@ export function useDashboardData() {
            (authStore.hasAnyPermission(['design:manage']) && todayShootCount.value > 0) ||
            (authStore.hasAnyPermission(['customer:write']) && incompleteCount.value > 0) ||
            (authStore.hasAnyPermission(['tracking:read']) && trackingAbnormal.value > 0) ||
-           customerWorkSummary.value.total > 0 || !!customerWorkSummaryError.value
+           (customerWorkSummary.value?.total ?? 0) > 0 || !!customerWorkSummaryError.value
   })
 
   const donutTotal = computed(() => donutData.value.reduce((s, i) => s + i.value, 0))
@@ -274,178 +351,40 @@ export function useDashboardData() {
     } catch { /* ignore */ }
   }
 
+  // 摘要与最近集合分别请求：某个业务或某个统计失败，不阻断其他已授权资源。
   async function loadAllData() {
-    if (authStore.hasAnyPermission(['customer_pcw:read', 'customer_radar:read', 'customer:read', 'customer:read_all'])) {
-      try {
-        customerWorkSummary.value = (await getCustomerWorkSummary()).data
-        customerWorkSummaryError.value = ''
-      } catch {
-        customerWorkSummary.value = { items: [], total: 0 }
-        customerWorkSummaryError.value = '客户事项摘要暂时无法读取，请打开客户工作台核验'
-      }
-    } else {
-      customerWorkSummary.value = { items: [], total: 0 }
-      customerWorkSummaryError.value = ''
-    }
-    // 归属待补充
-    if (authStore.hasAnyPermission(['customer:read'])) {
-      try {
-        const res = await getSnapshotList({ is_complete: 'false', page_size: 1 })
-        incompleteCount.value = res.data?.total || 0
-      } catch { /* ignore */ }
-    }
-
-    // 提成批次
-    if (authStore.hasAnyPermission(['commission:read'])) {
-      try {
-        const res = await getBatchList({ page: 1, page_size: 1 })
-        batchCount.value = res.data?.total || 0
-        const items = res.data?.items || []
-        if (items.length > 0) latestBatch.value = items[0]
-        const recentRes = await getBatchList({ page: 1, page_size: 5 })
-        const recentItems = recentRes.data?.items || []
-        recentCommissions.value = recentItems.map((item, idx) => ({
-          id: item.id || idx,
-          name: item.batch_name || '未命名批次',
-          status: normalizeStatus(item.status),
-          statusText: batchStatusLabel(item.status),
-          time: formatDate(item.created_at)
-        }))
-      } catch { /* ignore */ }
-    }
-
-    // 员工总数
-    if (authStore.hasAnyPermission(['employee:read'])) {
-      try {
-        const res = await getEmployeeList({ page: 1, page_size: 1 })
-        employeeCount.value = res.data?.total || 0
-      } catch { /* ignore */ }
-    }
-
-    // 运单数据
-    if (authStore.hasAnyPermission(['tracking:read'])) {
-      try {
-        const res = await getShipmentList({ page: 1, page_size: 1 })
-        trackingCount.value = res.data?.total || 0
-        const statsRes = await getTrackingStats()
-        const stats = statsRes.data || {}
-        trackingAbnormal.value = stats.exception || 0
-        const dist = []
-        if (stats.in_transit) dist.push({ key: 'in_transit', label: '在途', value: stats.in_transit, color: '#3B82F6', percent: 0 })
-        if (stats.delivered) dist.push({ key: 'delivered', label: '已签收', value: stats.delivered, color: '#2D9F6F', percent: 0 })
-        if (stats.exception) dist.push({ key: 'exception', label: '异常', value: stats.exception, color: '#DC3545', percent: 0 })
-        const total = dist.reduce((s, i) => s + i.value, 0)
-        dist.forEach(item => { item.percent = total > 0 ? Math.round((item.value / total) * 100) : 0 })
-        donutData.value = dist
-        donutLabel.value = '运单总数'
-        const recentRes = await getShipmentList({ page: 1, page_size: 5 })
-        const recentItems = recentRes.data?.items || []
-        recentTrackings.value = recentItems.map((item, idx) => ({
-          id: item.id || idx,
-          waybillNo: item.waybill_no || '-',
-          status: normalizeStatus(item.current_status),
-          statusText: item.current_status || '-',
-          time: formatDate(item.last_event_time || item.updated_at)
-        }))
-        // 在途运单（物流进度卡）：最近有动态的在途单优先
-        const activeRes = await getShipmentList({
-          is_active: '1', page: 1, page_size: 6,
-          sort_field: 'updated_at', sort_order: 'desc',
-        })
-        recentShipments.value = activeRes.data?.items || []
-      } catch { /* ignore */ }
-    }
-
-    // 设计预约数据
-    if (authStore.hasAnyPermission(['design:read', 'design:audit', 'design:manage'])) {
-      try {
-        const res = await getTaskList({ page: 1, page_size: 1 })
-        todayShootCount.value = res.data?.total || 0
-      } catch { /* ignore */ }
-
-      if (authStore.hasAnyPermission(['design:audit'])) {
-        try {
-          const res = await getRequests({ status: 'pending_audit', page: 1, page_size: 1 })
-          pendingApprovals.value = res.data?.total || 0
-        } catch { /* ignore */ }
-      }
-
-      try {
-        // 设计统计 — 需要 audit/manage 才能看 (任务分布是管理视角,非业务员视角)
-        if (authStore.hasAnyPermission(['design:audit', 'design:manage'])) {
-          const today = beijingCalendarDate()
-          const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-          const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-          const res = await getDesignStats({
-            start_date: toLocalISODate(startOfMonth),
-            end_date: toLocalISODate(endOfMonth)
-          })
-          const summary = res.data?.summary || {}
-          if (donutData.value.length === 0) {
-            const dist = []
-            const sTotal = summary.total || 0
-            const sCompleted = summary.completed || 0
-            const sInProgress = summary.in_progress || 0
-            const sScheduled = summary.scheduled || 0
-            if (sScheduled) dist.push({ key: 'scheduled', label: '已排期', value: sScheduled, color: '#3B82F6', percent: 0 })
-            if (sInProgress) dist.push({ key: 'in_progress', label: '执行中', value: sInProgress, color: '#F5CB5C', percent: 0 })
-            if (sCompleted) dist.push({ key: 'completed', label: '已完成', value: sCompleted, color: '#2D9F6F', percent: 0 })
-            if (sTotal - sScheduled - sInProgress - sCompleted > 0) {
-              dist.push({ key: 'other', label: '其他', value: sTotal - sScheduled - sInProgress - sCompleted, color: '#a0aec0', percent: 0 })
-            }
-            const total = dist.reduce((s, i) => s + i.value, 0)
-            dist.forEach(item => { item.percent = total > 0 ? Math.round((item.value / total) * 100) : 0 })
-            donutData.value = dist
-            donutLabel.value = '任务总数'
-          }
-        }
-        // 最近动态 — 任意 design 权限可看 (service 层按身份过滤"仅本人"或"全部")
-        const recentRes = await getRequests({ page: 1, page_size: 5 })
-        const recentItems = recentRes.data?.items || []
-        recentDesigns.value = recentItems.map((item, idx) => ({
-          id: item.id || idx,
-          customerName: item.customer_name || '-',
-          status: normalizeStatus(item.status),
-          statusText: translateDesignStatus(item.status),
-          meta: item.expect_start_date ? `期望日期：${item.expect_start_date}${item.expect_end_date && item.expect_end_date !== item.expect_start_date ? ' ~ ' + item.expect_end_date : ''}` : formatDate(item.created_at)
-        }))
-      } catch { /* ignore */ }
-    }
-
-    // 回款记录
-    if (authStore.hasAnyPermission(['payment:read'])) {
-      try {
-        const today = beijingCalendarDate()
-        const thirtyDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30)
-        const paymentParams = {
-          date_start: toLocalISODate(thirtyDaysAgo),
-          date_end: toLocalISODate(today),
-          page: 1,
-          page_size: 1,
-        }
-        const res = await getSyncedPayments(paymentParams)
-        const items = res.data?.items || []
-        latestPayment.value = items[0] || null
-        const recentRes = await getSyncedPayments({ ...paymentParams, page_size: 5 })
-        const recentItems = recentRes.data?.items || []
-        recentPayments.value = recentItems.map((item, idx) => ({
-          id: item.id || idx,
-          customerName: item.customer_name || '-',
-          amount: formatMoney(item.payment_amount),
-          time: formatDate(item.payment_date)
-        }))
-      } catch { /* ignore */ }
-    }
+    await Promise.all(enabledResources.value.map(key => resources[key].load()))
   }
 
+  const authKey = computed(() => JSON.stringify({
+    id: authStore.user?.id ?? null,
+    permissions: [...(authStore.permissions || [])].sort(),
+    roles: [...(authStore.roles || [])].sort(),
+  }))
+  let mounted = false
+  watch(authKey, scope => {
+    for (const resource of Object.values(resources)) resource.clear()
+    greetingSeq++
+    greetingController?.abort()
+    assistantLoading.value = false
+    assistantLine.value = dailyTip.value
+    assistantSource.value = 'tip'
+    if (mounted && authStore.user) loadAllData().finally(() => {
+      if (authKey.value === scope) loadGreeting()
+    })
+  }, { immediate: true, flush: 'sync' })
   onMounted(() => {
+    mounted = true
     // 节假日：挂载即算（纯本地，零等待）
     todayHolidays.value = getTodayHolidays()
     upcomingHolidays.value = getUpcomingHolidays({ days: 60 })
     // 首屏 instantly 给一句本地 tip，AI 问候在业务数据就位后再请求（上下文更准）
     pickDailyTip()
     assistantLine.value = dailyTip.value
-    loadAllData().finally(() => loadGreeting())
+    const scope = authKey.value
+    if (authStore.user) loadAllData().finally(() => {
+      if (authKey.value === scope) loadGreeting()
+    })
   })
 
   // Dashboard 被 tab KeepAlive 缓存：回切时重算节假日（本地计算，零成本），
@@ -455,6 +394,7 @@ export function useDashboardData() {
     upcomingHolidays.value = getUpcomingHolidays({ days: 60 })
     if (!readGreetingCache()) loadGreeting()
   })
+  onUnmounted(() => greetingController?.abort())
 
   return {
     // computed
@@ -463,16 +403,17 @@ export function useDashboardData() {
     dailyTip,
     incompleteCount, batchCount, latestBatch, employeeCount,
     customerWorkSummary, customerWorkSummaryError,
+    resources, enabledResources,
     trackingCount, trackingAbnormal, todayShootCount, pendingApprovals, latestPayment,
     recentCommissions, recentTrackings, recentDesigns, recentPayments, recentShipments,
     donutData, donutLabel,
     todayHolidays, upcomingHolidays,
     assistantLine, assistantSource, assistantLoading,
     // methods
-    loadGreeting,
+    loadGreeting, loadAllData,
     // helpers (template 内可能用到)
     batchStatusType, batchStatusLabel,
     normalizeStatus, translateDesignStatus,
-    formatDate, formatMoney,
+    formatDate, formatMoney: dashboardMoney,
   }
 }

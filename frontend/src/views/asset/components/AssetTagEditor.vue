@@ -64,9 +64,9 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText } from '@/utils/feedback'
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { batchAddTags, updateAssetTags } from '@/api/asset'
 
 const props = defineProps({
@@ -119,11 +119,11 @@ async function handleSave() {
         .map(dim => ({ dimension_id: dim.id, tag_value_ids: normalizeSelection(dim) }))
         .filter(item => item.tag_value_ids.length > 0)
       if (!tags.length) {
-        ElMessage.warning('请至少选择一个标签')
+        msgWarning('请至少选择一个标签')
         return
       }
       await batchAddTags(props.assets.map(a => a.id), tags)
-      ElMessage.success('标签已批量添加')
+      msgSuccessText('标签已批量添加')
     } else {
       // 单个编辑：提交全部可见非托管维度（空数组=清空该维度），未列出的维度后端保持原样
       const tags = editableDimensions.value.map(dim => ({
@@ -131,7 +131,7 @@ async function handleSave() {
         tag_value_ids: normalizeSelection(dim),
       }))
       await updateAssetTags(props.assets[0].id, { tags })
-      ElMessage.success('标签已更新')
+      msgSuccessText('标签已更新')
     }
     emit('saved')
     emit('update:visible', false)

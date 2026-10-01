@@ -10,7 +10,7 @@
       <div class="header-left">
         <GlassButton variant="ghost" left-icon="ArrowLeft" @click="$router.push('/aftersales/cases')">返回</GlassButton>
         <div>
-          <div class="title-line"><h1>{{ isNew ? '新建售后单' : caseData.case_no }}</h1><el-tag :type="statusType" effect="plain">{{ STATUS_LABELS[caseData.current_status] || caseData.current_status }}</el-tag></div>
+          <div class="title-line"><h1>{{ isNew ? '新建售后单' : caseData.case_no }}</h1><StatusBadge :value="caseData.current_status" :dictionary="CASE_STATUS" effect="plain" /></div>
           <p>{{ isNew ? '先登记事实和证据，再让 AI 基于 SOP 生成建议' : `${caseData.customer_name_snapshot || '—'} · ${caseData.order_no_snapshot || '—'}` }}</p>
         </div>
       </div>
@@ -67,7 +67,7 @@
       </div>
     </footer>
 
-    <el-drawer v-model="timelineVisible" title="审计记录" size="520px">
+    <DetailDrawer v-model="timelineVisible" title="审计记录" width="640px">
       <el-timeline>
         <el-timeline-item v-for="item in timeline.events" :key="item.id" :timestamp="formatTime(item.created_at)" placement="top">
           <strong>{{ eventLabel(item.event_type) }}</strong><p>{{ item.actor_name || '系统' }}<span v-if="item.detail?.comment">：{{ item.detail.comment }}</span></p>
@@ -77,13 +77,13 @@
       <el-divider content-position="left">钉钉通知</el-divider>
       <div v-for="item in timeline.notifications || []" :key="item.id" class="notification-row">
         <div><strong>{{ notificationLabel(item.template_code) }}</strong><span>尝试 {{ item.attempt_count }} 次 · {{ formatTime(item.sent_at || item.created_at) }}</span><small v-if="item.last_error_summary">{{ item.last_error_summary }}</small></div>
-        <el-tag :type="item.status === 'success' ? 'success' : item.status === 'failed' ? 'danger' : 'warning'" effect="plain">{{ item.status === 'success' ? '已发送' : item.status === 'failed' ? '待重试' : '待发送' }}</el-tag>
+        <StatusBadge :type="item.status === 'success' ? 'success' : item.status === 'failed' ? 'danger' : 'warning'" effect="plain">{{ item.status === 'success' ? '已发送' : item.status === 'failed' ? '待重试' : '待发送' }}</StatusBadge>
         <GlassButton v-if="item.status === 'failed'" v-permission="'aftersales:admin'" variant="link" left-icon="Refresh" @click="retryNotification(item.id)">手动重试</GlassButton>
       </div>
       <el-empty v-if="!timeline.notifications?.length" description="暂无通知记录" />
-    </el-drawer>
+    </DetailDrawer>
 
-    <el-dialog v-model="transferVisible" title="转交当前审批" width="520px">
+    <el-dialog v-model="transferVisible" title="转交当前审批" width="640px">
       <el-form label-position="top">
         <el-form-item label="新审批人" required>
           <el-select v-model="selectedReviewerId" filterable remote :remote-method="searchReviewers" placeholder="输入姓名或账号搜索">
@@ -105,7 +105,7 @@ import AiDecisionPanel from './components/AiDecisionPanel.vue'
 import ApprovalRoute from './components/ApprovalRoute.vue'
 import ReviewActions from './components/ReviewActions.vue'
 import { useAfterSalesWorkspace } from './composables/useAfterSalesWorkspace'
-import { approvalSteps, STATUS_LABELS } from './aftersalesRules'
+import { CASE_STATUS, approvalSteps, STATUS_LABELS } from './aftersalesRules'
 import { formatBeijingDateTime } from '@/utils/datetime'
 
 const timelineVisible = ref(false)
@@ -130,7 +130,6 @@ const canReopen = computed(() => ['closed', 'rejected'].includes(caseData.curren
 const isCreator = computed(() => Number(caseData.creator_user_id) === Number(currentUserId.value))
 const canExecute = computed(() => caseData.current_status === 'approved' && isCreator.value)
 const canClose = computed(() => caseData.current_status === 'processing' && isCreator.value)
-const statusType = computed(() => ['approved', 'closed'].includes(caseData.current_status) ? 'success' : ['rejected', 'ai_failed'].includes(caseData.current_status) ? 'danger' : ['returned', 'awaiting_evidence_waiver', 'awaiting_supervisor', 'awaiting_director'].includes(caseData.current_status) ? 'warning' : 'info')
 const actionHint = computed(() => ({
   draft: '保存草稿后即可上传证据并生成 AI 建议', ai_analyzing: 'AI 正在后台分析，可离开页面后返回',
   awaiting_sales_decision: '确认责任、措施和英文话术后提交主管', returned: '按审批意见补充后可再次提交',

@@ -143,11 +143,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText, msgError } from '@/utils/feedback'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { ElMessage } from 'element-plus'
+
 import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
 import ArkWakeCanvas from '@/components/ArkWakeCanvas.vue'
 import logoGold from '@/assets/leshine-logo-gold.png'
@@ -172,14 +172,14 @@ const loading = ref(false)
 const handleSubmit = async () => {
   if (loading.value) return
   if (!username.value || !password.value) {
-    ElMessage.warning('请输入用户名和密码')
+    msgWarning('请输入用户名和密码')
     return
   }
 
   loading.value = true
   try {
     await authStore.login(username.value, password.value)
-    ElMessage.success('登录成功')
+    msgSuccessText('登录成功')
     // 深链恢复：守卫带来的 redirect 优先（如展位 iPad 打开 /expo/kiosk 被引到登录页）
     const redirect = String(route.query.redirect || '')
     // 移动 UA 默认进移动端，除非用户主动选了「切换到完整版」（ark_desktop_mode=1）
@@ -191,16 +191,16 @@ const handleSubmit = async () => {
       return
     }
     if (redirect === EXPO_KIOSK_PATH && !authStore.hasPermission('expo:write')) {
-      ElMessage.error('当前账号没有展会试戴权限，请更换展会设备账号')
+      msgError('当前账号没有展会试戴权限，请更换展会设备账号')
       return
     }
     if (isFxSettlementPath(redirect) && !authStore.hasPermission('fx_settlement:read')) {
-      ElMessage.error('当前账号没有结汇助手权限，请联系管理员开通或更换账号')
+      msgError('当前账号没有结汇助手权限，请联系管理员开通或更换账号')
       return
     }
     router.push(redirect.startsWith('/') ? redirect : '/')
   } catch (error) {
-    ElMessage.error(error.message || '登录失败，请检查用户名和密码')
+    msgError(error.message || '登录失败，请检查用户名和密码', error)
   } finally {
     loading.value = false
   }

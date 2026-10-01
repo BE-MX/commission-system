@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     title="生成今日公海背调批次"
-    width="min(760px, calc(100vw - 32px))"
+    width="760px"
     destroy-on-close
     @closed="resetDraft"
   >

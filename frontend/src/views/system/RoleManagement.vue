@@ -17,21 +17,22 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
-          @refresh="fetchList"
+          :loading="loading" @refresh="fetchList"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
-    <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-      <template #empty>
+    <ListPageStatus v-if="roleResource.hasData.value" :error="roleResource.errorMessage.value" :loading="roleResource.loading.value" :has-data="roleResource.hasData.value" @retry="reloadRows" />
+      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <template #empty><ListPageStatus :error="roleResource.errorMessage.value" :loading="loading" @retry="reloadRows">
         <el-empty :image-size="96" description="暂无数据" />
-      </template>
+      </ListPageStatus></template>
       <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="角色标识" min-width="140" max-width="210" show-overflow-tooltip sortable />
       <el-table-column v-if="visibleKeys.includes('label')" prop="label" label="角色名称" min-width="140" max-width="210" show-overflow-tooltip sortable />
       <el-table-column v-if="visibleKeys.includes('description')" prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
       <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="100" max-width="150">
         <template #default="{ row }">
-          <el-tag :type="row.is_system ? 'warning' : 'primary'" size="small" effect="plain">{{ row.is_system ? '系统' : '自定义' }}</el-tag>
+          <StatusBadge :type="row.is_system ? 'warning' : 'primary'" size="small" effect="plain">{{ row.is_system ? '系统' : '自定义' }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('user-count')" prop="user_count" label="用户数" min-width="80" max-width="120" show-overflow-tooltip sortable />
@@ -54,8 +55,8 @@
     </div>
 
     <!-- 新增/编辑基本信息 Dialog -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑角色' : '新增角色'" width="560px">
-      <el-form :model="form" label-width="80px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑角色' : '新增角色'" width="640px">
+      <el-form label-position="top" :model="form">
         <el-form-item label="角色标识" required>
           <el-input v-model="form.name" placeholder="英文标识，如 manager" :disabled="isEdit" />
         </el-form-item>
@@ -75,8 +76,8 @@
       </template>
     </el-dialog>
 
-    <!-- 权限矩阵 Drawer（90% 宽） -->
-    <el-drawer v-model="drawerVisible" size="90%" :with-header="false" class="perm-drawer">
+    <!-- 权限矩阵：宽详情抽屉 -->
+    <DetailDrawer v-model="drawerVisible" width="760px" :with-header="false" class="perm-drawer">
       <div class="drawer-shell">
         <div class="drawer-head">
           <span class="title">编辑角色权限</span>
@@ -99,6 +100,7 @@
         </div>
 
         <div class="drawer-body" v-loading="matrix.loading">
+          <ListPageStatus :error="matrix.errorMessage" :loading="matrix.loading" @retry="openPermDrawer(drawerRole)" />
           <PermissionMatrixTab v-show="activeTab === 'matrix'" :matrix="matrix" />
           <PermissionNavTab
             v-if="activeTab === 'nav'"
@@ -114,20 +116,21 @@
           <div class="spacer" />
           <GlassButton v-if="matrix.templateKey" variant="ghost" @click="resetToTemplate">重置为模板</GlassButton>
           <GlassButton variant="ghost" @click="drawerVisible = false">取消</GlassButton>
-          <GlassButton variant="primary" :loading="savingPerms" :disabled="!matrix.hasChanges" @click="savePermissions">
+          <GlassButton variant="primary" :loading="savingPerms" :disabled="matrix.loading || !!matrix.error || !matrix.hasChanges" @click="savePermissions">
             保存（确认变更明细）
           </GlassButton>
         </div>
       </div>
-    </el-drawer>
+    </DetailDrawer>
   </div>
 </template>
 
 <script setup>
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { confirmAction, msgSuccess, msgError, confirmDanger } from '@/utils/feedback'
 import { ref, onMounted } from 'vue'
-import { ElMessageBox } from 'element-plus'
+
 import { getRoleList, createRole, updateRole, deleteRole } from '@/api/userManagement'
-import { msgSuccess, msgError, confirmDanger } from '@/utils/feedback'
 import { useTableView } from '@/composables/useTableView'
 import { ROLE_TEMPLATES } from '@/config/roleTemplates'
 import { usePermissionMatrix } from './composables/usePermissionMatrix'
@@ -147,20 +150,14 @@ const columnDefs = [
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('role-management', columnDefs)
 
-const tableData = ref([])
-const loading = ref(false)
+const roleResource = useAsyncResource(async (_, { signal }) => (await getRoleList({ signal, suppressToast: true })).data || [], { initialData: [] })
+const tableData = roleResource.data
+const loading = roleResource.loading
+const reloadRows = () => roleResource.load()
 const saving = ref(false)
 
 // ── 列表查询 ────────────────────────────────────────
-async function fetchList() {
-  loading.value = true
-  try {
-    const res = await getRoleList()
-    tableData.value = res.data || []
-  } finally {
-    loading.value = false
-  }
-}
+const fetchList = reloadRows
 
 // ── 新增 / 编辑基本信息 ─────────────────────────────
 const dialogVisible = ref(false)
@@ -226,12 +223,17 @@ const drawerRole = ref(null)
 const activeTab = ref('matrix')
 const savingPerms = ref(false)
 
+let permissionDrawerRequest = 0
 async function openPermDrawer(row) {
+  const request = ++permissionDrawerRequest
+  matrix.initSelection([])
   drawerRole.value = row
   activeTab.value = 'matrix'
   drawerVisible.value = true
-  if (!matrix.allPerms.length) await matrix.loadPermissions()
+  if (!matrix.allPerms.length && !await matrix.loadPermissions()) return false
+  if (request !== permissionDrawerRequest || !drawerVisible.value || drawerRole.value?.id !== row.id) return false
   matrix.initSelection(row.permission_ids || [])
+  return true
 }
 
 function onTemplateChange(key) {
@@ -267,8 +269,9 @@ function buildDiffHtml() {
 }
 
 async function savePermissions() {
+  if (matrix.loading || matrix.error) return
   try {
-    await ElMessageBox.confirm(buildDiffHtml(), `确认变更「${drawerRole.value.label}」的权限？`, {
+    await confirmAction(buildDiffHtml(), `确认变更「${drawerRole.value.label}」的权限？`, {
       dangerouslyUseHTMLString: true,
       confirmButtonText: '确认保存',
       cancelButtonText: '再看看',

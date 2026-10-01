@@ -1,6 +1,6 @@
 <template>
   <el-dialog
-    :model-value="visible" :title="title" width="900px"
+    :model-value="visible" :title="title" width="760px"
     top="5vh" destroy-on-close @update:model-value="close"
   >
     <div v-if="loadError" class="state-line">{{ loadError }}</div>

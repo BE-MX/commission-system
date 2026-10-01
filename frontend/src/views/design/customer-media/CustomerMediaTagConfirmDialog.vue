@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="modelValue"
     title="确认文件夹标签"
-    width="min(760px, 94vw)"
+    width="760px"
     :close-on-click-modal="false"
     destroy-on-close
     class="tag-confirm-dialog"
@@ -22,14 +22,14 @@
         <div v-for="row in matchedRows" :key="row.tag_name" class="matched-row">
           <span class="folder-name" :title="row.tag_name">{{ row.tag_name }}</span>
           <el-icon><Right /></el-icon>
-          <el-tag size="small" effect="plain" type="success">{{ row.dimension_label }}：{{ row.original_value }}</el-tag>
+          <StatusBadge size="small" effect="plain" type="success">{{ row.dimension_label }}：{{ row.original_value }}</StatusBadge>
         </div>
       </div>
     </div>
 
     <div v-if="resolutionRows.length" class="resolution-block">
       <div class="block-title">
-        待确认 <el-tag size="small" effect="plain">{{ resolutionRows.length }} 项</el-tag>
+        待确认 <StatusBadge size="small" effect="plain">{{ resolutionRows.length }} 项</StatusBadge>
       </div>
       <div class="resolution-list">
         <div v-for="row in resolutionRows" :key="row.tagName" class="resolution-row">
@@ -86,9 +86,9 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup>import { msgWarning } from '@/utils/feedback'
 import { computed, reactive, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { Right } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 
@@ -159,11 +159,11 @@ function handleConfirm() {
     if (row.kind === 'missing') {
       if (!resolution?.create) continue
       if (row.tagName.length > 128) {
-        ElMessage.warning(`「${row.tagName.slice(0, 20)}…」超过 128 个字符，不能创建为标签`)
+        msgWarning(`「${row.tagName.slice(0, 20)}…」超过 128 个字符，不能创建为标签`)
         return
       }
       if (!resolution.dimensionId) {
-        ElMessage.warning(`请选择「${row.tagName}」要新建到哪个维度`)
+        msgWarning(`请选择「${row.tagName}」要新建到哪个维度`)
         return
       }
       creates[row.tagName] = resolution.dimensionId
@@ -171,7 +171,7 @@ function handleConfirm() {
     }
     const option = row.options.find(item => item.tag_value_id === resolution?.selectedId)
     if (!option) {
-      ElMessage.warning(`请为「${row.tagName}」选择匹配标签`)
+      msgWarning(`请为「${row.tagName}」选择匹配标签`)
       return
     }
     selected[row.tagName] = {
@@ -196,7 +196,7 @@ function handleConfirm() {
 .resolution-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(200px, 260px); align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--card-bg); }
 .resolution-source { display: flex; min-width: 0; align-items: center; gap: 8px; }
 .resolution-source strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-badge { flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; background: var(--color-primary-light); color: var(--color-primary-hover); font-size: 11px; }
+.source-badge { flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; background: var(--color-primary-light); color: var(--color-primary-text); font-size: 11px; }
 .similarity { flex: 0 0 auto; color: var(--text-secondary); font-size: 12px; }
 .create-check { white-space: nowrap; }
 .resolution-select { width: 100%; }

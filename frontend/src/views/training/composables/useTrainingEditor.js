@@ -1,3 +1,4 @@
+import { confirmAction, msgSuccessText, msgSuccess, msgError, confirmDanger } from '@/utils/feedback'
 /**
  * 培训速递编辑器（四步向导）全部 state + 方法（500 行红线：主文件留薄壳）
  * 步骤：① 基本信息 → ② 丢材料 + AI 提炼 → ③ 逐区校对 → ④ 预览发布
@@ -5,12 +6,11 @@
  */
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import {
   createDigest, getDigest, updateDigest, uploadDigestFile, deleteDigestFile,
   updateDigestFileMeta, inferFileType, generateDraft, publishDigest,
 } from '@/api/training'
-import { msgSuccess, msgError, confirmDanger } from '@/utils/feedback'
 import { currentBeijingDate } from '@/utils/datetime'
 
 // 与后端 draft_service.ROLE_OPTIONS / service 校验阈值保持同一口径
@@ -262,7 +262,7 @@ export function useTrainingEditor() {
     }
     if (hasDraftContent.value) {
       try {
-        await ElMessageBox.confirm(
+        await confirmAction(
           'AI 草稿将覆盖已填写的「总结 / 重点 / 亮点 / 可应用点 / 方法」，「参训人点评」不受影响。继续？',
           '覆盖确认',
           { confirmButtonText: '覆盖生成', cancelButtonText: '取消', type: 'warning' },
@@ -311,7 +311,7 @@ export function useTrainingEditor() {
       await ensureCreated()
       const res = await publishDigest(digestId.value)
       // 用后端 message：推送失败时会指路"可在详情页重推"
-      ElMessage.success(res.message || '已发布')
+      msgSuccessText(res.message || '已发布')
       router.replace(`/training/digests/${digestId.value}`)
     } finally {
       publishing.value = false

@@ -49,7 +49,7 @@
         <el-table-column label="标准价" min-width="92" max-width="125" align="right">
           <template #default="{ row }">
             <span v-if="row.standard_price != null" class="std-price">{{ money4(row.standard_price) }}</span>
-            <el-tag v-else-if="accessoryStandardPriceState(row) === 'invalid'" size="small" type="warning" effect="plain">需重新配置</el-tag>
+            <StatusBadge v-else-if="accessoryStandardPriceState(row) === 'invalid'" size="small" type="warning" effect="plain">需重新配置</StatusBadge>
             <span v-else class="std-price">—</span>
           </template>
         </el-table-column>
@@ -68,7 +68,7 @@
                 :disabled="row.standard_price == null"
                 @change="$emit('change', row)"
               />
-              <el-tag v-if="row.price_source === 'manual'" size="small" type="warning" effect="plain">手改</el-tag>
+              <StatusBadge v-if="row.price_source === 'manual'" size="small" type="warning" effect="plain">手改</StatusBadge>
             </div>
           </template>
         </el-table-column>
@@ -96,11 +96,11 @@
     </div>
     <!-- 配件也可能几十行：与产品明细同款窗内分页，行号跨页连续 -->
     <div v-if="items.length" class="line-pagination">
-      <el-pagination
+      <el-pagination class="pager"
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="items.length"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         small
         background
@@ -127,7 +127,7 @@ const emit = defineEmits(['add', 'select', 'change', 'remove'])
 
 // 窗内分页：与产品明细同款；新增行后跳到末页
 const page = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(20)
 const pagedItems = computed(() => props.items.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
 watch(() => props.items.length, (now, before) => {

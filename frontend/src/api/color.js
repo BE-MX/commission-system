@@ -1,8 +1,25 @@
 import { colorClient } from './clients'
 
 // ── 色号 CRUD ───────────────────────────────────────────
-export function getColors(params) {
-  return colorClient.get('/colors', { params, showLoading: false })
+export function getColors(params, config = {}) {
+  return colorClient.get('/colors', { ...config, params, showLoading: false })
+}
+
+// Selectors need the full catalog; the backend accepts at most 200 rows per page.
+export async function getAllColorsForSelection(config = {}) {
+  const items = new Map()
+  let total = 0
+  for (let page = 1; page === 1 || (page - 1) * 200 < total; page++) {
+    config.signal?.throwIfAborted()
+    const response = await getColors({ page, page_size: 200 }, config)
+    const result = response.data
+    const rows = result?.items || []
+    if (page === 1) total = result?.total ?? rows.length
+    if (!rows.length && (page - 1) * 200 < total) throw new Error('色号选项未完整读取，请重试')
+    for (const row of rows) items.set(row.id, row)
+  }
+  if (items.size < total) throw new Error('色号选项未完整读取，请重试')
+  return [...items.values()]
 }
 
 export function getColorDetail(id) {
@@ -21,13 +38,13 @@ export function deleteColor(id) {
   return colorClient.delete(`/colors/${id}`)
 }
 
-export function getColorFilterOptions() {
-  return colorClient.get('/colors/filter-options', { showLoading: false })
+export function getColorFilterOptions(config = {}) {
+  return colorClient.get('/colors/filter-options', { ...config, showLoading: false })
 }
 
 // ── 混合色 CRUD ─────────────────────────────────────────
-export function getBlends(params) {
-  return colorClient.get('/blends', { params, showLoading: false })
+export function getBlends(params, config = {}) {
+  return colorClient.get('/blends', { ...config, params, showLoading: false })
 }
 
 export function getBlendDetail(id) {
@@ -46,8 +63,8 @@ export function deleteBlend(id) {
   return colorClient.delete(`/blends/${id}`)
 }
 
-export function getBlendFilterOptions() {
-  return colorClient.get('/blends/filter-options', { showLoading: false })
+export function getBlendFilterOptions(config = {}) {
+  return colorClient.get('/blends/filter-options', { ...config, showLoading: false })
 }
 
 // ── 色彩计算 ────────────────────────────────────────────
@@ -99,8 +116,8 @@ export function verifySwatch(taskId) {
   return colorClient.post(`/swatch/${taskId}/verify`, {}, { loadingText: '校验中...' })
 }
 
-export function getSwatches(params) {
-  return colorClient.get('/swatches', { params, showLoading: false })
+export function getSwatches(params, config = {}) {
+  return colorClient.get('/swatches', { ...config, params, showLoading: false })
 }
 
 // ── 趋势数据 ────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import { msgSuccessText, msgWarning, msgError } from '@/utils/feedback'
 /**
  * 物流日报页 — 业务逻辑 composable
  *
@@ -9,17 +10,15 @@
  *   - watch selectedDate 自动刷新报告
  */
 import { ref, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { getDailyReport, generateDailyReport, getTrackingStats, getShipmentList } from '@/api/tracking'
 import { beijingCalendarDate, currentBeijingDate } from '@/utils/datetime'
-
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 function formatDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-
 
 export function useShippingDailyReport() {
   const now = beijingCalendarDate()
@@ -128,13 +127,13 @@ export function useShippingDailyReport() {
     try {
       const res = await generateDailyReport(selectedDate.value)
       if (res.code === 200) {
-        ElMessage.success('日报生成成功')
+        msgSuccessText('日报生成成功')
         await fetchReport()
       } else {
-        ElMessage.warning(res.message || '生成失败')
+        msgWarning(res.message || '生成失败')
       }
     } catch (e) {
-      ElMessage.error('生成日报失败')
+      msgError('生成日报失败', e)
     } finally {
       generating.value = false
     }

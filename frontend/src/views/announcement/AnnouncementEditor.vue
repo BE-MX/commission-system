@@ -2,7 +2,7 @@
   <section v-loading="loading" class="announcement-editor">
     <el-alert v-if="document?.status === 'withdrawn'" :title="document.withdrawal_reason" type="warning" :closable="false" />
     <template v-else-if="document">
-      <el-form v-if="document.can_edit" label-position="top" class="meta-form" @change="dirty = true">
+      <el-form label-position="top" v-if="document.can_edit" class="meta-form" @change="dirty = true">
         <el-form-item label="公告类别" required>
           <el-select v-model="meta.category_id" placeholder="选择类别" @change="dirty = true">
             <el-option v-for="c in categories.filter(c => c.active)" :key="c.id" :label="c.title" :value="c.id" />
@@ -14,7 +14,7 @@
         <el-form-item label="更新说明"><el-input v-model="meta.change_note" maxlength="500" @input="dirty = true" /></el-form-item>
       </el-form>
       <div v-else class="read-meta">
-        <el-tag>{{ document.category_name }}</el-tag><el-tag v-if="document.important" type="warning">重要</el-tag>
+        <StatusBadge>{{ document.category_name }}</StatusBadge><StatusBadge v-if="document.important" type="warning">重要</StatusBadge>
         <span>发布：{{ formatBeijingDateTime(document.published_at) }}</span>
         <span v-if="document.effective_at">生效：{{ formatBeijingDateTime(document.effective_at) }}</span>
         <span v-if="document.expires_at">截止：{{ formatBeijingDateTime(document.expires_at) }}</span>
@@ -31,26 +31,24 @@
         </template>
       </div>
     </template>
-    <el-dialog v-model="previewOpen" title="钉钉图文预览（按顺序发送）" width="min(680px, 95vw)" append-to-body>
+    <DetailDrawer v-model="previewOpen" title="钉钉图文预览（按顺序发送）" width="760px" append-to-body>
       <div v-for="(part, index) in parts" :key="index" class="message-part">
         <small>第 {{ index + 1 }} / {{ parts.length }} 条</small>
         <img v-if="part.kind === 'image'" :src="imageUrls[part.asset_id]" :alt="part.alt || '公告图片'" />
         <pre v-else>{{ part.text }}</pre>
       </div>
-    </el-dialog>
+    </DetailDrawer>
   </section>
 </template>
 
-<script setup>
+<script setup>import { promptAction, confirmAction, msgSuccess, msgError } from '@/utils/feedback'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessageBox } from 'element-plus'
+
 import { Check, Promotion, View, Close } from '@element-plus/icons-vue'
 import KnowledgeEditor from '@/views/knowledge/components/KnowledgeEditor.vue'
 import { announcementApi as api } from '@/api/announcement'
 import { getKnowledgeImageBlob } from '@/api/knowledge'
 import { formatBeijingDateTime } from '@/utils/datetime'
-import { msgSuccess, msgError } from '@/utils/feedback'
-
 const props = defineProps({ documentId: [Number, String], edit: Boolean, config: { type: Object, required: true }, categories: { type: Array, default: () => [] } })
 const emit = defineEmits(['saved', 'dirty-change'])
 const document = ref(null)
@@ -83,11 +81,12 @@ async function save({ title, content, done, fail }) {
   saving.value = true
   try {
     const payload = { ...meta, title, content, base_revision_id: document.value.revision_id }
+    const created = !document.value.id
     const result = document.value.id ? await api.put(`/${document.value.id}`, payload) : await api.post('', payload)
     done()
     await load(result.id)
     msgSuccess('保存')
-    emit('saved')
+    emit('saved', { created })
   } catch { fail() } finally { saving.value = false }
 }
 async function submit() {
@@ -99,8 +98,8 @@ async function submit() {
 async function review(approve) {
   let remark = ''
   try {
-    if (!approve) remark = (await ElMessageBox.prompt('请填写驳回原因', '驳回公告', { inputPattern: /\S+/, inputErrorMessage: '原因不能为空' })).value
-    else await ElMessageBox.confirm(`发布后将自动推送至「${props.config.group_name}」。`, '审核并发布', { confirmButtonText: '发布', cancelButtonText: '取消' })
+    if (!approve) remark = (await promptAction('请填写驳回原因', '驳回公告', { inputPattern: /\S+/, inputErrorMessage: '原因不能为空' })).value
+    else await confirmAction(`发布后将自动推送至「${props.config.group_name}」。`, '审核并发布', { confirmButtonText: '发布', cancelButtonText: '取消' })
   } catch { return }
   saving.value = true
   try { await api.post(`/${document.value.id}/review`, { approve, remark }); await load(document.value.id); emit('saved'); msgSuccess(approve ? '发布' : '驳回') }

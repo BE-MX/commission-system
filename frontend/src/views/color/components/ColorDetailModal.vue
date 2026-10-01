@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     :title="title"
-    width="600px"
+    width="640px"
     destroy-on-close
   >
     <div class="color-detail">
@@ -24,27 +24,27 @@
               <span class="dot" :style="{ backgroundColor: c.palette?.hex_code }"></span>
               <span>{{ c.palette?.industry_code }} {{ c.palette?.display_name }}</span>
               <span class="weight">{{ Math.round((c.weight || 0) * 100) }}%</span>
-              <el-tag size="small" class="position-tag">{{ positionLabel(c.position) }}</el-tag>
+              <StatusBadge size="small" class="position-tag">{{ positionLabel(c.position) }}</StatusBadge>
             </div>
           </div>
         </div>
       </div>
 
       <!-- 全格式数值 -->
-      <el-descriptions :column="2" border>
+      <ResponsiveDescriptions :column="2" border>
         <el-descriptions-item label="HEX">{{ hex }}</el-descriptions-item>
         <el-descriptions-item label="RGB">rgb({{ rgb }})</el-descriptions-item>
         <el-descriptions-item label="LAB">L*{{ lab?.[0] }} a*{{ lab?.[1] }} b*{{ lab?.[2] }}</el-descriptions-item>
         <el-descriptions-item label="HSL">H{{ hsl?.[0] }}° S{{ hsl?.[1] }}% L{{ hsl?.[2] }}%</el-descriptions-item>
-      </el-descriptions>
+      </ResponsiveDescriptions>
 
       <!-- 属性标签 -->
       <div class="tag-section">
-        <el-tag v-if="undertone" :type="undertoneTagType">{{ undertoneLabel }}</el-tag>
-        <el-tag>{{ colorFamilyLabel }}</el-tag>
-        <el-tag v-if="luminanceLevel">{{ luminanceLevel }}</el-tag>
-        <el-tag v-if="isLeshineStock" type="success">莱莎库存</el-tag>
-        <el-tag v-if="peakSeason" type="info">{{ peakSeason }}</el-tag>
+        <StatusBadge v-if="undertone" :type="undertoneTagType">{{ undertoneLabel }}</StatusBadge>
+        <StatusBadge>{{ colorFamilyLabel }}</StatusBadge>
+        <StatusBadge v-if="luminanceLevel">{{ luminanceLevel }}</StatusBadge>
+        <StatusBadge v-if="isLeshineStock" type="success">莱莎库存</StatusBadge>
+        <StatusBadge v-if="peakSeason" type="info">{{ peakSeason }}</StatusBadge>
       </div>
 
       <!-- Pantone 匹配 -->
@@ -54,8 +54,8 @@
           <span class="label">最近 Pantone:</span>
           <span class="code">{{ pantoneTcx }}</span>
           <span class="delta">ΔE = {{ pantoneDeltaE }}</span>
-          <el-tag v-if="pantoneDeltaE < 3" type="success" size="small">视觉无差异</el-tag>
-          <el-tag v-else-if="pantoneDeltaE < 5" type="warning" size="small">可接受</el-tag>
+          <StatusBadge v-if="pantoneDeltaE < 3" type="success" size="small">视觉无差异</StatusBadge>
+          <StatusBadge v-else-if="pantoneDeltaE < 5" type="warning" size="small">可接受</StatusBadge>
         </div>
       </div>
 

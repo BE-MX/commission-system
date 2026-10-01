@@ -3,12 +3,19 @@
     <el-alert v-if="selectedLibrary?.managed_by === 'announcement'" type="info" :closable="false" title="公告库由公告管理维护">
       <router-link to="/announcements">前往公告管理进行新建、编辑与审核</router-link>
     </el-alert>
+    <ListPageStatus :paged="false" :error="librariesResource.errorMessage.value" :loading="librariesResource.loading.value" :has-data="librariesResource.hasData.value" @retry="loadLibraries" />
+    <ListPageStatus :paged="false" :error="treeResource.errorMessage.value" :loading="treeResource.loading.value" :has-data="treeResource.hasData.value" @retry="loadTree" />
+    <ListPageStatus :paged="false" :error="documentResource.errorMessage.value" :loading="documentResource.loading.value" :has-data="documentResource.hasData.value" @retry="documentResource.load()" />
     <div class="workspace" :class="{ collapsed: sidebarCollapsed }">
       <KnowledgeSidebar
         :libraries="libraries"
+        :libraries-loading="librariesResource.loading.value"
+        :libraries-error="librariesResource.errorMessage.value"
         :selected-library-id="selectedLibraryId"
         :tree="nestedTree"
+        :tree-loaded="treeResource.hasLoaded.value"
         :search-query="searchQuery"
+        :applied-search-query="appliedSearchQuery"
         :collapsed="sidebarCollapsed"
         :can-write="canWriteLibrary"
         :can-create-library="canCreateLibrary"
@@ -18,6 +25,7 @@
         :can-delete-node="canWriteLibrary && capabilities.deleteNode"
         @update:search-query="searchQuery = $event"
         @search="runSearch"
+        @reset-search="resetSearch"
         @toggle-collapse="toggleSidebar"
         @select-library="selectLibrary"
         @select-document="selectDocument"
@@ -58,7 +66,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="nodeDialog" :title="nodeForm.node_type === 'folder' ? '新建目录' : '新建文档'" width="440px">
+    <el-dialog v-model="nodeDialog" :title="nodeForm.node_type === 'folder' ? '新建目录' : '新建文档'" width="480px">
       <el-form label-position="top">
         <el-form-item label="名称" required><el-input v-model="nodeForm.title" maxlength="256" @keyup.enter="createNode" /></el-form-item>
       </el-form>
@@ -77,6 +85,12 @@
       :invalid-user-ids="invalidMemberIds"
       :protected-user-id="protectedActorUserId"
       :search-loading="memberSearchLoading"
+      :read-loading="membersResource.loading.value"
+      :read-error="membersResource.errorMessage.value"
+      :read-loaded="membersResource.hasLoaded.value"
+      :search-error="candidatesResource.errorMessage.value"
+      @retry="retryMembers"
+      @retry-search="candidatesResource.load()"
       :saving="memberSaving"
       @closed="resetMemberDialog"
       @search="searchMemberCandidates"
@@ -85,8 +99,9 @@
       @save="saveMembers"
     />
 
-    <el-dialog v-model="searchDialog" title="搜索结果" width="680px">
-      <el-empty v-if="!searchResults.length" description="没有找到已发布内容" />
+    <el-dialog v-model="searchDialog" title="搜索结果" width="760px">
+      <ListPageStatus :paged="false" :error="searchResource.errorMessage.value" :loading="searching" :has-data="searchResource.hasData.value" @retry="searchResource.load()" />
+      <el-empty v-if="searchResource.isEmpty.value" description="没有找到已发布内容" />
       <button v-for="item in searchResults" :key="item.document_id" class="search-result" type="button" @click="openSearchResult(item)">
         <strong>{{ item.title }}</strong><span>{{ item.summary }}</span>
       </button>
@@ -95,21 +110,24 @@
     <KnowledgeApprovalDialog
       v-model="reviewDialog"
       :detail="reviewDetail"
+      :read-error="reviewResource.errorMessage.value"
+      :read-loading="reviewResource.loading.value"
+      @retry="reviewResource.load()"
       @approve="approve(reviewDetail, $event)"
       @reject="reject(reviewDetail)"
     />
 
-    <ApprovalQueue v-model="approvalDrawer" :items="approvals" @inspect="inspectApproval" />
+    <ApprovalQueue v-model="approvalDrawer" :items="approvals" :read-error="approvalsResource.errorMessage.value" :read-loading="approvalsResource.loading.value" :read-loaded="approvalsResource.hasLoaded.value" @retry="approvalsResource.load()" @inspect="inspectApproval" />
   </div>
 </template>
 
-<script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+<script setup>import { confirmAction, promptAction, msgError, msgSuccess } from '@/utils/feedback'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { knowledgeClient } from '@/api/clients'
 import { useAuthStore } from '@/stores/auth'
-import { msgError, msgSuccess } from '@/utils/feedback'
 import { capabilitiesFor } from './knowledgeState.js'
 import { LIBRARY_CATEGORIES, isDuplicateMember, readSidebarCollapsed, writeSidebarCollapsed } from './knowledgeUi.js'
 import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
@@ -119,9 +137,16 @@ import KnowledgeMemberDialog from './components/KnowledgeMemberDialog.vue'
 import ApprovalQueue from './components/ApprovalQueue.vue'
 
 const auth = useAuthStore()
-const libraries = ref([])
-const tree = ref([])
-const document = ref(null)
+const readOptions = signal => ({ signal, showLoading: false, suppressToast: true })
+const librariesResource = useAsyncResource(async (_, { signal }) => unwrap(await knowledgeClient.get('/libraries', readOptions(signal))), { initialData: [] })
+const treeResource = useAsyncResource(async (id, { signal }) => id ? unwrap(await knowledgeClient.get(`/libraries/${id}/tree`, readOptions(signal))) : [], { initialData: [] })
+const documentResource = useAsyncResource(async ({ id }, { signal }) => unwrap(await knowledgeClient.get(`/documents/${id}`, readOptions(signal))))
+const approvalsResource = useAsyncResource(async (_, { signal }) => unwrap(await knowledgeClient.get('/approvals', readOptions(signal))), { initialData: [] })
+const reviewResource = useAsyncResource(async (id, { signal }) => unwrap(await knowledgeClient.get(`/approvals/${id}`, readOptions(signal))))
+const membersResource = useAsyncResource(async (id, { signal }) => unwrap(await knowledgeClient.get(`/libraries/${id}/members`, readOptions(signal))), { initialData: [] })
+const candidatesResource = useAsyncResource(async ({ libraryId, query }, { signal }) => unwrap(await knowledgeClient.get(`/libraries/${libraryId}/member-candidates`, { ...readOptions(signal), params: { q: query, limit: 20 } })), { initialData: [] })
+const searchResource = useAsyncResource(async (query, { signal }) => unwrap(await knowledgeClient.get('/search', { ...readOptions(signal), params: { q: query, limit: 20 } })), { initialData: [] })
+const libraries = librariesResource.data, tree = treeResource.data, document = documentResource.data
 const selectedLibraryId = ref(null)
 const dirty = ref(false)
 const saving = ref(false)
@@ -131,20 +156,20 @@ const memberDialog = ref(false)
 const approvalDrawer = ref(false)
 const searchDialog = ref(false)
 const reviewDialog = ref(false)
-const reviewDetail = ref(null)
-const approvals = ref([])
-const members = ref([])
+const reviewDetail = reviewResource.data
+const approvals = approvalsResource.data
+const members = membersResource.data
 const memberLibrary = ref(null)
-const memberCandidates = ref([])
+const memberCandidates = candidatesResource.data
+let candidateScope = null
 const candidateUserId = ref(null)
-const memberSearchLoading = ref(false)
+const memberSearchLoading = candidatesResource.loading
 const memberSaving = ref(false)
 const invalidMemberIds = ref([])
-const memberLoadRequest = ref(0)
-const memberSearchRequest = ref(0)
 const searchQuery = ref('')
-const searchResults = ref([])
-const searching = ref(false)
+const searchResults = searchResource.data
+const searching = searchResource.loading
+const appliedSearchQuery = ref('')
 const sidebarCollapsed = ref(readSidebarCollapsed())
 const libraryForm = reactive({ name: '', description: '', category: 'company' })
 const nodeForm = reactive({ title: '', node_type: 'document' })
@@ -171,33 +196,33 @@ function toggleSidebar() {
   writeSidebarCollapsed(sidebarCollapsed.value)
 }
 async function loadLibraries() {
-  libraries.value = unwrap(await knowledgeClient.get('/libraries'))
+  const success = await librariesResource.load()
+  if (!success) return false
   if (!libraries.value.some(item => item.id === selectedLibraryId.value)) {
+    treeResource.clear(); documentResource.clear(); dirty.value = false
     selectedLibraryId.value = libraries.value[0]?.id || null
   }
   if (selectedLibraryId.value) await loadTree()
+  return true
 }
-async function loadTree() {
-  tree.value = unwrap(await knowledgeClient.get(`/libraries/${selectedLibraryId.value}/tree`))
-}
+function loadTree() { return treeResource.load(selectedLibraryId.value) }
 async function selectLibrary(id) {
   if (selectedLibraryId.value === id) return true
   if (!(await allowDiscard())) return false
+  treeResource.clear(); documentResource.clear(); searchResource.clear()
   selectedLibraryId.value = id
-  document.value = null
   searchQuery.value = ''
-  searchResults.value = []
+  appliedSearchQuery.value = ''
   await loadTree()
   return true
 }
 
-async function reloadDocument(id) {
-  document.value = unwrap(await knowledgeClient.get(`/documents/${id}`))
-}
+function reloadDocument(id) { return documentResource.load({ id, libraryId: selectedLibraryId.value }) }
 
 async function selectDocument(id) {
   if (document.value?.id === id) return
   if (!(await allowDiscard())) return
+  documentResource.clear()
   await reloadDocument(id)
 }
 
@@ -243,7 +268,7 @@ function deletedCountLabel(result) {
 
 async function deleteLibrary(library) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `删除知识库“${library.name}”后，其中全部目录、文档和待审批内容都将移除。`,
       '删除知识库',
       { confirmButtonText: '删除知识库', cancelButtonText: '取消', type: 'warning' },
@@ -263,7 +288,7 @@ async function deleteNode(node) {
   const typeLabel = node.node_type === 'folder' ? '目录' : '文档'
   const cascade = node.node_type === 'folder' ? '，其全部子目录、文档和待审批内容也将移除' : ''
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `删除${typeLabel}“${node.title}”${cascade}。`,
       `删除${typeLabel}`,
       { confirmButtonText: `删除${typeLabel}`, cancelButtonText: '取消', type: 'warning' },
@@ -315,50 +340,25 @@ async function handleAiApplied() {
 }
 
 async function openMembers(library) {
-  const requestId = ++memberLoadRequest.value
-  try {
-    const loadedMembers = unwrap(await knowledgeClient.get(`/libraries/${library.id}/members`, { suppressToast: true }))
-    if (requestId !== memberLoadRequest.value) return
-    members.value = loadedMembers
-    invalidMemberIds.value = []
-    memberLibrary.value = library
-    memberCandidates.value = []
-    candidateUserId.value = null
-    memberDialog.value = true
-  } catch {
-    if (requestId === memberLoadRequest.value) msgError('成员加载失败，请重新点击成员权限')
-  }
+  membersResource.clear(); candidatesResource.clear(); candidateScope = null
+  memberLibrary.value = library
+  invalidMemberIds.value = []; candidateUserId.value = null
+  memberDialog.value = true
+  return membersResource.load(library.id)
 }
-
-async function searchMemberCandidates(query) {
-  const trimmed = query.trim()
-  const targetLibraryId = memberLibrary.value?.id
-  const requestId = ++memberSearchRequest.value
-  if (!trimmed || !targetLibraryId) {
-    memberCandidates.value = []
-    memberSearchLoading.value = false
-    return
-  }
-  memberSearchLoading.value = true
-  try {
-    const results = unwrap(await knowledgeClient.get(
-      `/libraries/${targetLibraryId}/member-candidates`,
-      { params: { q: trimmed, limit: 20 }, showLoading: false, suppressToast: true },
-    ))
-    if (requestId !== memberSearchRequest.value || memberLibrary.value?.id !== targetLibraryId) return
-    memberCandidates.value = results
-  } catch {
-    if (requestId === memberSearchRequest.value && memberLibrary.value?.id === targetLibraryId) {
-      memberCandidates.value = []
-      msgError('成员搜索失败，请重试')
-    }
-  } finally {
-    if (requestId === memberSearchRequest.value) memberSearchLoading.value = false
-  }
+function retryMembers() { return memberLibrary.value ? membersResource.load(memberLibrary.value.id) : false }
+function searchMemberCandidates(query) {
+  const trimmed = query.trim(), libraryId = memberLibrary.value?.id
+  if (!trimmed || !libraryId) { candidatesResource.clear(); candidateScope = null; return false }
+  const nextScope = JSON.stringify([libraryId, trimmed])
+  const clear = candidateScope !== nextScope
+  candidateScope = nextScope
+  return candidatesResource.load({ libraryId, query: trimmed }, { clear })
 }
 
 function addSelectedMember() {
   if (memberSaving.value) return
+  if (membersResource.loading.value || membersResource.error.value || !membersResource.hasLoaded.value) return
   const candidate = memberCandidates.value.find(item => item.user_id === candidateUserId.value)
   if (!candidate) return
   if (isDuplicateMember(members.value, candidate.user_id)) {
@@ -375,12 +375,14 @@ function addSelectedMember() {
 
 function removeMember(index) {
   if (memberSaving.value) return
+  if (membersResource.loading.value || membersResource.error.value) return
   const [removed] = members.value.splice(index, 1)
   invalidMemberIds.value = invalidMemberIds.value.filter(userId => userId !== removed.user_id)
 }
 
 async function saveMembers() {
   if (memberSaving.value) return
+  if (membersResource.loading.value || membersResource.error.value || !membersResource.hasLoaded.value) return
   if (!memberLibrary.value) return msgError('请重新选择知识库')
   const payload = {
     members: members.value.map(member => ({ user_id: member.user_id, role: member.role })),
@@ -396,9 +398,9 @@ async function saveMembers() {
     const invalidUserIds = error.response?.data?.detail?.invalid_user_ids
     if (Array.isArray(invalidUserIds) && invalidUserIds.length) {
       invalidMemberIds.value = invalidUserIds
-      msgError('部分成员账号已失效，请移除后重试')
+      msgError('部分成员账号已失效，请移除后重试', error)
     } else {
-      msgError('成员权限保存失败，请重试')
+      msgError('成员权限保存失败，请重试', error)
     }
   } finally {
     memberSaving.value = false
@@ -406,25 +408,20 @@ async function saveMembers() {
 }
 
 function resetMemberDialog() {
-  memberLoadRequest.value += 1
-  memberSearchRequest.value += 1
+  membersResource.clear(); candidatesResource.clear(); candidateScope = null
   memberLibrary.value = null
   members.value = []
   memberCandidates.value = []
   candidateUserId.value = null
-  memberSearchLoading.value = false
   invalidMemberIds.value = []
 }
 
-async function openApprovals() {
-  approvals.value = unwrap(await knowledgeClient.get('/approvals'))
-  approvalDrawer.value = true
-}
-
-async function inspectApproval(item) {
-  reviewDetail.value = unwrap(await knowledgeClient.get(`/approvals/${item.id}`))
+function openApprovals() { approvalDrawer.value = true; return approvalsResource.load() }
+function inspectApproval(item) {
+  reviewResource.clear()
   approvalDrawer.value = false
   reviewDialog.value = true
+  return reviewResource.load(item.id)
 }
 
 async function approve(item, crossLibraryConfirmed) {
@@ -440,7 +437,7 @@ async function approve(item, crossLibraryConfirmed) {
 }
 
 async function reject(item) {
-  const { value } = await ElMessageBox.prompt('请说明需要补充或修改的内容', '驳回审批', { inputType: 'textarea', inputValidator: value => Boolean(value?.trim()) || '驳回原因不能为空' })
+  const { value } = await promptAction('请说明需要补充或修改的内容', '驳回审批', { inputType: 'textarea', inputValidator: value => Boolean(value?.trim()) || '驳回原因不能为空' })
   await knowledgeClient.post(`/approvals/${item.id}/reject`, { remark: value })
   approvals.value = approvals.value.filter(row => row.id !== item.id)
   reviewDialog.value = false
@@ -448,18 +445,24 @@ async function reject(item) {
   msgSuccess('驳回')
 }
 
-async function runSearch() {
-  if (searching.value) return
+function runSearch() {
   const query = searchQuery.value.trim()
   if (!query) return msgError('请输入搜索关键词')
-  searching.value = true
-  try {
-    searchResults.value = unwrap(await knowledgeClient.get('/search', { params: { q: query, limit: 20 } }))
-    searchDialog.value = true
-  } finally {
-    searching.value = false
-  }
+  appliedSearchQuery.value = query
+  searchDialog.value = true
+  return searchResource.load(query)
 }
+function resetSearch() { searchQuery.value = ''; appliedSearchQuery.value = ''; searchResource.clear(); searchDialog.value = false }
+watch(memberDialog, open => { if (!open) resetMemberDialog() })
+watch(approvalDrawer, open => { if (!open) approvalsResource.clear() })
+watch(reviewDialog, open => { if (!open) reviewResource.clear() })
+watch(searchDialog, open => { if (!open) searchResource.clear() })
+watch(() => JSON.stringify([auth.user?.id, auth.roles, auth.user?.permissions]), () => {
+  for (const resource of [librariesResource, treeResource, documentResource, approvalsResource, reviewResource, membersResource, candidatesResource, searchResource]) resource.clear()
+  selectedLibraryId.value = null; dirty.value = false
+  memberDialog.value = false; approvalDrawer.value = false; reviewDialog.value = false; searchDialog.value = false
+  void loadLibraries()
+})
 async function openSearchResult(item) {
   const library = libraries.value.find(row => row.id === item.library_id)
   if (library && !(await selectLibrary(library.id))) return
@@ -469,7 +472,7 @@ async function openSearchResult(item) {
 async function allowDiscard() {
   if (!dirty.value) return true
   try {
-    await ElMessageBox.confirm('当前修改尚未保存，离开后将丢失。', '未保存的修改', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' })
+    await confirmAction('当前修改尚未保存，离开后将丢失。', '未保存的修改', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' })
     dirty.value = false
     return true
   } catch { return false }

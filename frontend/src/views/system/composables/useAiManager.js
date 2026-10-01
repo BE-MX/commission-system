@@ -1,3 +1,4 @@
+import { msgSuccessText, confirmAction, alertAction, msgError, msgWarning } from '@/utils/feedback'
 /**
  * AI 管理页 — 业务逻辑 composable
  *
@@ -8,13 +9,16 @@
  *
  * Preset 依赖 providerOptions (Provider tab 加载后填充),所以三个 tab 共享一个 composable。
  */
-import { ref, computed, onMounted, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, reactive, computed, onMounted, toRef } from 'vue'
+
 import {
   getProviders, createProvider, updateProvider, deleteProvider, testProvider,
   getPresets, createPreset, updatePreset, deletePreset, testPreset,
   getLogs,
 } from '@/api/ai'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { resolveStatus } from '@/utils/status'
 import { useTableSort } from '@/composables/useTableSort'
 
 const MODULE_LABELS = {
@@ -24,23 +28,18 @@ const MODULE_LABELS = {
   system: '系统管理',
 }
 
-
 // ── 状态/标签 工具函数 ─────────────────────────────────────
-
 
 function moduleLabel(code) {
   return MODULE_LABELS[code] || code
 }
 
-function statusLabel(status) {
-  const map = { success: '成功', error: '错误', timeout: '超时', pending: '进行中' }
-  return map[status] || status
+const CALL_STATUS = {
+  success: { label: '成功', tone: 'success' }, error: { label: '错误', tone: 'danger' },
+  timeout: { label: '超时', tone: 'warning' }, pending: { label: '进行中', tone: 'primary' },
 }
-
-function statusTagType(status) {
-  const map = { success: 'success', error: 'danger', timeout: 'warning', pending: 'primary' }
-  return map[status] || 'info'
-}
+function statusLabel(status) { return resolveStatus(status, CALL_STATUS).label }
+function statusTagType(status) { return resolveStatus(status, CALL_STATUS).tone }
 
 function formatDuration(ms) {
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
@@ -52,19 +51,21 @@ function formatToken(n) {
   return String(n)
 }
 
-
 // ── composable ──────────────────────────────────────────
-
 
 export function useAiManager() {
   const activeTab = ref('providers')
 
   // ── Providers ─────────────────────────────────────────
-  const providers = ref([])
-  const providerLoading = ref(false)
-  const providerSearch = ref('')
-  const providerTypeFilter = ref('')
-  const providerStatusFilter = ref('')
+  const providerResource = useAsyncResource(async (_, { signal }) => (await getProviders(undefined, { signal, suppressToast: true })).data.items || [], { initialData: [] })
+  const { data: providers, loading: providerLoading } = providerResource
+  const providerDraft = reactive({ search: '', type: '', status: '' })
+  const providerApplied = ref({ ...providerDraft })
+  const providerSearch = toRef(providerDraft, 'search'), providerTypeFilter = toRef(providerDraft, 'type'), providerStatusFilter = toRef(providerDraft, 'status')
+  const providerPending = computed(() => JSON.stringify(providerDraft) !== JSON.stringify(providerApplied.value))
+  function searchProviders() { providerApplied.value = { ...providerDraft } }
+  function resetProviders() { Object.assign(providerDraft, { search: '', type: '', status: '' }); searchProviders() }
+
   const showKeyMap = ref({})
   const testingId = ref(null)
   const testResultVisible = ref(false)
@@ -87,11 +88,15 @@ export function useAiManager() {
   }
 
   // ── Presets ───────────────────────────────────────────
-  const presets = ref([])
-  const presetLoading = ref(false)
-  const presetSearch = ref('')
-  const presetProviderFilter = ref('')
-  const providerOptions = ref([])
+  const presetResource = useAsyncResource(async (_, { signal }) => (await getPresets(undefined, { signal, suppressToast: true })).data.items || [], { initialData: [] })
+  const { data: presets, loading: presetLoading } = presetResource
+  const presetDraft = reactive({ search: '', provider: '' })
+  const presetApplied = ref({ ...presetDraft })
+  const presetSearch = toRef(presetDraft, 'search'), presetProviderFilter = toRef(presetDraft, 'provider')
+  const presetPending = computed(() => JSON.stringify(presetDraft) !== JSON.stringify(presetApplied.value))
+  const providerOptions = computed(() => providers.value.map(p => ({ id: p.id, name: p.name, provider_type: p.provider_type })))
+  function searchPresets() { presetApplied.value = { ...presetDraft } }
+  function resetPresets() { Object.assign(presetDraft, { search: '', provider: '' }); searchPresets() }
 
   const presetDialogVisible = ref(false)
   const presetEditId = ref(null)
@@ -126,16 +131,20 @@ export function useAiManager() {
   const isCompositePreset = computed(() => testPresetName.value === 'expo_wig_composite')
 
   // ── Logs ──────────────────────────────────────────────
-  const logsData = ref([])
-  const logsLoading = ref(false)
-  const logModuleFilter = ref('')
-  const logStatusFilter = ref('')
-  const logDateRange = ref([])
-  const logPage = ref(1)
-  const logPageSize = ref(20)
-  const logTotal = ref(0)
   const logSummaryData = ref({ tokens_total: 0, success_count: 0, error_count: 0, timeout_count: 0, avg_duration_ms: 0 })
   const logSort = useTableSort()
+  const logState = useListPage(async ({ module, status, dates, ...params }, { signal, isCurrent }) => {
+    if (module) params.caller_module = module
+    if (status) params.status = status
+    if (dates?.length === 2) { params.date_from = dates[0]; params.date_to = dates[1] }
+    const data = (await getLogs(params, { signal, suppressToast: true })).data
+    if (isCurrent()) logSummaryData.value = data.summary || { tokens_total: 0, success_count: 0, error_count: 0, timeout_count: 0, avg_duration_ms: 0 }
+    return data
+  }, { searchForm: { module: '', status: '', dates: [] }, immediate: false })
+  const { list: logsData, loading: logsLoading, page: logPage, pageSize: logPageSize, total: logTotal,
+    fetchList: fetchLogs, handleSearch: searchLogs, handleReset: resetLogs, handlePageChange: changeLogPage, handleSizeChange: changeLogSize } = logState
+  const logModuleFilter = toRef(logState.searchForm, 'module'), logStatusFilter = toRef(logState.searchForm, 'status'), logDateRange = toRef(logState.searchForm, 'dates')
+  function sortLogs(sort) { logSort.onSortChange(sort); return logState.handleSortChange(logSort.sortParams.value) }
 
   // ── Computed ──────────────────────────────────────────
   const stats = computed(() => {
@@ -152,21 +161,21 @@ export function useAiManager() {
 
   const filteredProviders = computed(() => {
     return providers.value.filter(p => {
-      const matchSearch = !providerSearch.value ||
-        p.name.toLowerCase().includes(providerSearch.value.toLowerCase()) ||
-        p.api_base.toLowerCase().includes(providerSearch.value.toLowerCase())
-      const matchType = !providerTypeFilter.value || p.provider_type === providerTypeFilter.value
-      const matchStatus = providerStatusFilter.value === '' || p.is_enabled === providerStatusFilter.value
+      const matchSearch = !providerApplied.value.search ||
+        p.name.toLowerCase().includes(providerApplied.value.search.toLowerCase()) ||
+        p.api_base.toLowerCase().includes(providerApplied.value.search.toLowerCase())
+      const matchType = !providerApplied.value.type || p.provider_type === providerApplied.value.type
+      const matchStatus = (providerApplied.value.status !== true && providerApplied.value.status !== false) || p.is_enabled === providerApplied.value.status
       return matchSearch && matchType && matchStatus
     })
   })
 
   const filteredPresets = computed(() => {
     return presets.value.filter(p => {
-      const matchSearch = !presetSearch.value ||
-        p.preset_name.toLowerCase().includes(presetSearch.value.toLowerCase()) ||
-        (p.description && p.description.toLowerCase().includes(presetSearch.value.toLowerCase()))
-      const matchProv = !presetProviderFilter.value || p.provider_id === presetProviderFilter.value
+      const matchSearch = !presetApplied.value.search ||
+        p.preset_name.toLowerCase().includes(presetApplied.value.search.toLowerCase()) ||
+        (p.description && p.description.toLowerCase().includes(presetApplied.value.search.toLowerCase()))
+      const matchProv = !presetApplied.value.provider || p.provider_id === presetApplied.value.provider
       return matchSearch && matchProv
     })
   })
@@ -184,15 +193,7 @@ export function useAiManager() {
   })
 
   // ── Provider methods ──────────────────────────────────
-  async function fetchProviders() {
-    providerLoading.value = true
-    try {
-      const res = await getProviders()
-      providers.value = res.data.items || []
-      providerOptions.value = res.data.items.map(p => ({ id: p.id, name: p.name, provider_type: p.provider_type }))
-    } catch (e) { /* ignore */ }
-    providerLoading.value = false
-  }
+  function fetchProviders() { return providerResource.load() }
 
   function openProviderDialog(row = null) {
     providerEditId.value = row?.id || null
@@ -218,10 +219,10 @@ export function useAiManager() {
       if (!payload.api_key) delete payload.api_key
       if (providerEditId.value) {
         await updateProvider(providerEditId.value, payload)
-        ElMessage.success('更新成功')
+        msgSuccessText('更新成功')
       } else {
         await createProvider(payload)
-        ElMessage.success('创建成功')
+        msgSuccessText('创建成功')
       }
       providerDialogVisible.value = false
       fetchProviders()
@@ -232,7 +233,7 @@ export function useAiManager() {
   async function toggleProvider(row) {
     try {
       await updateProvider(row.id, { is_enabled: row.is_enabled })
-      ElMessage.success(row.is_enabled ? '已启用' : '已禁用')
+      msgSuccessText(row.is_enabled ? '已启用' : '已禁用')
     } catch (e) {
       row.is_enabled = !row.is_enabled
     }
@@ -250,17 +251,17 @@ export function useAiManager() {
 
   async function handleDeleteProvider(row) {
     try {
-      await ElMessageBox.confirm(`确定删除提供商「${row.name}」？`, '确认删除', { type: 'warning' })
+      await confirmAction(`确定删除提供商「${row.name}」？`, '确认删除', { type: 'warning' })
       await deleteProvider(row.id)
-      ElMessage.success('删除成功')
+      msgSuccessText('删除成功')
       fetchProviders()
     } catch (e) {
       if (e !== 'cancel') {
         const msg = e.response?.data?.message || e.message
         if (msg?.includes('活跃 Preset')) {
-          ElMessageBox.alert(msg, '无法删除', { type: 'warning' })
+          alertAction(msg, '无法删除', { type: 'warning' })
         } else {
-          ElMessage.error(msg || '删除失败')
+          msgError(msg || '删除失败', e)
         }
       }
     }
@@ -271,14 +272,7 @@ export function useAiManager() {
   }
 
   // ── Preset methods ────────────────────────────────────
-  async function fetchPresets() {
-    presetLoading.value = true
-    try {
-      const res = await getPresets()
-      presets.value = res.data.items || []
-    } catch (e) { /* ignore */ }
-    presetLoading.value = false
-  }
+  function fetchPresets() { return presetResource.load() }
 
   function openPresetDialog(row = null) {
     presetEditId.value = row?.id || null
@@ -307,10 +301,10 @@ export function useAiManager() {
       }
       if (presetEditId.value) {
         await updatePreset(presetEditId.value, payload)
-        ElMessage.success('更新成功')
+        msgSuccessText('更新成功')
       } else {
         await createPreset(payload)
-        ElMessage.success('创建成功')
+        msgSuccessText('创建成功')
       }
       presetDialogVisible.value = false
       fetchPresets()
@@ -320,13 +314,13 @@ export function useAiManager() {
 
   async function handleDeletePreset(row) {
     try {
-      await ElMessageBox.confirm(`确定删除预设「${row.preset_name}」？`, '确认删除', { type: 'warning' })
+      await confirmAction(`确定删除预设「${row.preset_name}」？`, '确认删除', { type: 'warning' })
       await deletePreset(row.id)
-      ElMessage.success('删除成功')
+      msgSuccessText('删除成功')
       fetchPresets()
     } catch (e) {
       if (e !== 'cancel') {
-        ElMessage.error(e.response?.data?.message || e.message || '删除失败')
+        msgError(e.response?.data?.message || e.message || '删除失败', e)
       }
     }
   }
@@ -342,7 +336,7 @@ export function useAiManager() {
         description: row.description ? `${row.description} (复制)` : '',
       }
       await createPreset(payload)
-      ElMessage.success('复制成功')
+      msgSuccessText('复制成功')
       fetchPresets()
     } catch (e) { /* ignore */ }
   }
@@ -369,13 +363,13 @@ export function useAiManager() {
     const file = uploadFile.raw
     if (!file) return
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      ElMessage.error('请选择 JPG / PNG / WEBP 图片')
+      msgError('请选择 JPG / PNG / WEBP 图片')
       target.file.value = null
       target.list.value = []
       return
     }
     if (file.size > 10 * 1024 * 1024) {
-      ElMessage.error('测试图片不能超过 10MB')
+      msgError('测试图片不能超过 10MB')
       target.file.value = null
       target.list.value = []
       return
@@ -422,7 +416,7 @@ export function useAiManager() {
   async function sendTest() {
     if (!testMessage.value.trim()) return
     if (isCompositePreset.value && (!testImageFile.value || !testReferenceImageFile.value)) {
-      ElMessage.warning('请同时上传客户原图和假发参考图')
+      msgWarning('请同时上传客户原图和假发参考图')
       return
     }
     testing.value = true
@@ -440,36 +434,13 @@ export function useAiManager() {
   }
 
   // ── Log methods ───────────────────────────────────────
-  async function fetchLogs() {
-    logsLoading.value = true
-    try {
-      const params = {
-        page: logPage.value,
-        page_size: logPageSize.value,
-        ...logSort.sortParams.value,
-      }
-      if (logModuleFilter.value) params.caller_module = logModuleFilter.value
-      if (logStatusFilter.value) params.status = logStatusFilter.value
-      if (logDateRange.value?.length === 2) {
-        params.date_from = logDateRange.value[0]
-        params.date_to = logDateRange.value[1]
-      }
-      const res = await getLogs(params)
-      logsData.value = res.data.items || []
-      logTotal.value = res.data.total || 0
-      logSummaryData.value = res.data.summary || { tokens_total: 0, success_count: 0, error_count: 0, timeout_count: 0, avg_duration_ms: 0 }
-    } catch (e) { /* ignore */ }
-    logsLoading.value = false
-  }
+
 
   function onLogExpand(/* row, expandedRows */) {
     // 展开时可选加载详情
   }
 
-  // ── Watch ─────────────────────────────────────────────
-  watch([providerSearch, providerTypeFilter, providerStatusFilter], () => { /* client-side filter */ })
-  watch([presetSearch, presetProviderFilter], () => { /* client-side filter */ })
-  watch([logModuleFilter, logStatusFilter, logDateRange, logPage, logPageSize, logSort.sortField, logSort.sortOrder], fetchLogs, { immediate: false })
+
 
   // ── Lifecycle ─────────────────────────────────────────
   onMounted(() => {
@@ -479,7 +450,8 @@ export function useAiManager() {
   })
 
   return {
-    activeTab,
+    providerResource, providerPending, searchProviders, resetProviders, presetResource, presetPending, searchPresets, resetPresets,
+    logState, searchLogs, resetLogs, changeLogPage, changeLogSize, sortLogs, activeTab,
     // Provider
     providers, providerLoading, providerSearch, providerTypeFilter, providerStatusFilter,
     showKeyMap, testingId, testResultVisible, testResultData,

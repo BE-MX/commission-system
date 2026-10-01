@@ -1,10 +1,10 @@
 <template>
   <section v-if="operation" class="linked-result" aria-live="polite">
-    <div class="linked-heading"><strong>关联单据同步结果</strong><el-tag :type="operation.status === 'done' ? 'success' : 'warning'">{{ labels[operation.status] || operation.status }}</el-tag></div>
-    <p>订单金额：{{ operation.before.total_amount }} → {{ operation.after.total_amount }} {{ operation.after.currency }}；手续费：{{ operation.before.surcharge_amount }} → {{ operation.after.surcharge_amount }}</p>
+    <div class="linked-heading"><strong>关联单据同步结果</strong><StatusBadge :type="operation.status === 'done' ? 'success' : 'warning'">{{ labels[operation.status] || operation.status }}</StatusBadge></div>
+    <p>订单金额：{{ formatMoney(operation.before.total_amount, { missing: '—' }) }} → {{ formatMoney(operation.after.total_amount, { missing: '—' }) }} {{ operation.after.currency }}；手续费：{{ formatMoney(operation.before.surcharge_amount, { missing: '—' }) }} → {{ formatMoney(operation.after.surcharge_amount, { missing: '—' }) }}</p>
     <div v-for="(step, key) in operation.steps" :key="key" class="linked-step">
-      <strong>{{ names[key] }}</strong><el-tag size="small" :type="step.status === 'done' ? 'success' : 'info'">{{ labels[step.status] || step.status }}</el-tag><span>{{ step.message }}</span>
-      <p v-if="step.balance">已生效 {{ step.balance.effective_amount }} · 待处理 {{ step.balance.pending_amount }} · 待收 {{ step.unpaid_amount }} · 超收待核对 {{ step.overpaid_amount }}</p>
+      <strong>{{ names[key] }}</strong><StatusBadge size="small" :type="step.status === 'done' ? 'success' : 'info'">{{ labels[step.status] || step.status }}</StatusBadge><span>{{ step.message }}</span>
+      <p v-if="step.balance">已生效 {{ formatMoney(step.balance.effective_amount, { missing: '—' }) }} · 待处理 {{ formatMoney(step.balance.pending_amount, { missing: '—' }) }} · 待收 {{ formatMoney(step.unpaid_amount, { missing: '—' }) }} · 超收待核对 {{ formatMoney(step.overpaid_amount, { missing: '—' }) }}</p>
       <p v-for="doc in step.documents || []" :key="doc.id">小满出库单 {{ doc.number || doc.id }} · {{ String(doc.status) === '2' ? '已出库' : '待核对状态 ' + doc.status }}</p>
       <p v-for="item in step.differences || []" :key="`${item.product_id}-${item.sku_id}`">SKU {{ item.sku_id }}：订单数量 {{ item.ordered }}，出库单数量 {{ item.outbound }}，差额 {{ item.difference }}</p>
     </div>
@@ -19,6 +19,8 @@
   </section>
 </template>
 <script setup>
+import { formatMoney } from '../../../utils/money.js'
+
 defineProps({ operation: { type: Object, default: null }, busy: Boolean })
 defineEmits(['refresh', 'retry', 'recheck', 'close', 'resolve'])
 const names = { order: '小满订单', outbound: '出库单', receipt: '回款单', resolution: '人工核对记录' }

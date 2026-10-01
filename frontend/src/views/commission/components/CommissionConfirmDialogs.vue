@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="feedbackVisible" title="问题反馈" width="520px">
+  <el-dialog v-model="feedbackVisible" title="问题反馈" width="640px">
     <el-input
       v-model="feedbackContent"
       type="textarea"
@@ -14,7 +14,7 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="confirmVisible" title="提交确认" width="520px">
+  <el-dialog v-model="confirmVisible" title="提交确认" width="640px">
     <el-alert
       type="warning"
       :closable="false"
@@ -29,11 +29,11 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText } from '@/utils/feedback'
 // 「我的提成」确认流程对话框：问题反馈 + 输入「我已确认」提交确认。
 // 列表页与明细页共用；确认成功后 emit('confirmed') 由父级刷新数据。
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { confirmMyCommissionBatch, submitMyCommissionFeedback } from '@/api/commission'
 
 const props = defineProps({
@@ -59,13 +59,13 @@ function openConfirm() {
 
 async function submitFeedback() {
   if (!feedbackContent.value.trim()) {
-    ElMessage.warning('请输入反馈内容')
+    msgWarning('请输入反馈内容')
     return
   }
   submitting.value = true
   try {
     await submitMyCommissionFeedback(props.batchId, { content: feedbackContent.value.trim() })
-    ElMessage.success('反馈已提交')
+    msgSuccessText('反馈已提交')
     feedbackVisible.value = false
   } finally {
     submitting.value = false
@@ -74,13 +74,13 @@ async function submitFeedback() {
 
 async function submitConfirm() {
   if (confirmText.value !== '我已确认') {
-    ElMessage.warning('请输入“我已确认”后再提交')
+    msgWarning('请输入“我已确认”后再提交')
     return
   }
   submitting.value = true
   try {
     await confirmMyCommissionBatch(props.batchId, { confirmation_text: confirmText.value })
-    ElMessage.success('确认成功')
+    msgSuccessText('确认成功')
     confirmVisible.value = false
     emit('confirmed')
   } finally {

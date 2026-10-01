@@ -52,7 +52,7 @@ onBeforeUnmount(() => editor.value?.destroy())
 .knowledge-preview :deep(.tiptap td), .knowledge-preview :deep(.tiptap th) { padding: 6px; border: 1px solid var(--border-color); vertical-align: top; }
 .knowledge-preview :deep(.tiptap th) { background: var(--card-bg); }
 .knowledge-preview :deep([data-confirmation='true']) { color: var(--color-danger); font-weight: 700; }
-.knowledge-preview :deep(.knowledge-text-color--gold) { color: var(--color-primary); }
+.knowledge-preview :deep(.knowledge-text-color--gold) { color: var(--color-primary-text); }
 .knowledge-preview :deep(.knowledge-text-color--danger) { color: var(--color-danger-text); }
 .knowledge-preview :deep(.knowledge-text-color--success) { color: var(--color-success-text); }
 .knowledge-preview :deep(.knowledge-text-color--info) { color: var(--color-info-text); }

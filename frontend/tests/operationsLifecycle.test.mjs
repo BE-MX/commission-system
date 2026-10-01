@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
+import { useAsyncResource } from '../src/composables/useAsyncResource.js'
 
 function harness() {
   const hooks = {}
@@ -11,6 +12,7 @@ function harness() {
   const source = fs.readFileSync(new URL('../src/views/system/composables/useOperationsCenter.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '').replace('export function', 'function')
   const context = {
+    useAsyncResource,
     ref: value => ({ value }), computed: read => ({ get value() { return read() } }),
     operationsClient: { get: () => new Promise(resolve => pending.push(resolve)) },
     onMounted: fn => { hooks.mount = fn }, onActivated: fn => { hooks.activate = fn },

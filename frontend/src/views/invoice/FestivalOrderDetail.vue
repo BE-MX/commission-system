@@ -13,18 +13,7 @@
       </div>
     </header>
 
-    <el-alert
-      v-if="error"
-      class="festival-order-error"
-      :title="error"
-      type="error"
-      show-icon
-      :closable="false"
-    >
-      <template #default>
-        <el-button link type="danger" @click="loadPage()">重新加载</el-button>
-      </template>
-    </el-alert>
+    <ListPageStatus :error="summaryResource.errorMessage.value" :loading="summaryResource.loading.value" :has-data="summaryResource.hasLoaded.value" @retry="loadPage()" />
 
     <section class="festival-metrics" aria-label="采购节统计">
       <article class="festival-metric-card festival-metric-card--primary lg-card is-static">
@@ -55,7 +44,7 @@
         <el-tab-pane label="复购订单" name="repurchase" />
       </el-tabs>
 
-      <div class="toolbar">
+      <FilterBar :loading="loading" :pending="listState.hasPendingSearch.value" @search="search" @reset="resetFilters">
         <el-select
           v-if="summary.can_read_all"
           v-model="selectedUserId"
@@ -76,15 +65,11 @@
           clearable
           placeholder="搜索订单号或客户名称"
           class="filter-w-lg"
-          @keyup.enter="search"
-          @clear="search"
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <GlassButton variant="primary" :left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-        <span class="activity-window">{{ windowText }}</span>
-      </div>
+        <template #summary><span class="activity-window">{{ windowText }}</span></template>
+      </FilterBar>
 
       <!-- 操作行：本页无主操作按钮，右侧放 TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -92,17 +77,20 @@
           v-model:visible-keys="visibleKeys"
           v-model:density="density"
           :columns="currentColumnDefs"
-          :fullscreen="isFullscreen"
+          :loading="loading" :fullscreen="isFullscreen"
           @refresh="loadPage()"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus v-if="listState.hasData.value" :error="error" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="loadPage()" />
       <el-table v-loading="loading" :data="orders" border class="list-table festival-order-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
-          <el-empty :image-size="96" :description="filters.keyword ? '没有符合条件的记录' : `当前范围暂无${activeLabel}，可切换标签继续查看`">
-            <GlassButton v-if="filters.keyword" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          <ListPageStatus :error="error" :loading="loading" @retry="loadPage()">
+          <el-empty :image-size="96" :description="listState.appliedSearchForm.value.keyword ? '没有符合条件的记录' : `当前范围暂无${activeLabel}，可切换标签继续查看`">
+            <GlassButton v-if="listState.appliedSearchForm.value.keyword" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
+          </ListPageStatus>
         </template>
         <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no" label="订单号" min-width="150" max-width="190" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('account-date')" prop="account_date" label="记账日期" min-width="108" max-width="128" />
@@ -117,7 +105,7 @@
           <template #default="{ row }">
             <span>{{ number(row.points) }}</span>
             <el-tooltip v-if="row.points_note" :content="row.points_note" placement="top">
-              <el-tag class="points-note" type="info" effect="plain">已计分</el-tag>
+              <StatusBadge class="points-note" type="info" effect="plain">已计分</StatusBadge>
             </el-tooltip>
           </template>
         </el-table-column>
@@ -138,13 +126,18 @@
 </template>
 
 <script setup>
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
+
+import { formatMoney } from '../../utils/money.js'
+
 import { computed } from 'vue'
 import { RefreshLeft, Search } from '@element-plus/icons-vue'
 import TableTools from '@/components/TableTools.vue'
 import { useFestivalOrderDetail } from './composables/useFestivalOrderDetail'
 
 const {
-  activeType, changePage, changeScope, changeType, error, filters, loadPage,
+  listState, summaryResource, activeType, changePage, changeScope, changeType, error, filters, loadPage,
   loading, orders, pagination, search, selectedUserId, summary,
   resetFilters, handleSizeChange,
   columnDefs, currentColumnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen,
@@ -155,8 +148,8 @@ const activeLabel = computed(() => labels[activeType.value])
 const windowText = computed(() => activeType.value === 'new_sign'
   ? '统计周期：8月1日—8月31日'
   : '统计周期：8月1日—9月30日')
-const money = value => Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const number = value => Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: 1 })
+const money = value => formatMoney(value)
+const number = value => formatMoney(value)
 </script>
 
 <style scoped src="./festival-order-detail.css"></style>

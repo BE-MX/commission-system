@@ -1,5 +1,5 @@
 <template>
-  <el-drawer v-model="visible" title="订单取消与异常恢复" size="min(600px, 94vw)" append-to-body :close-on-click-modal="false">
+  <DetailDrawer v-model="visible" title="订单取消与异常恢复" width="640px" append-to-body :close-on-click-modal="false">
     <div v-loading="busy" class="lifecycle-body">
       <template v-if="data">
         <h3>{{ data.invoice_no }}</h3>
@@ -27,11 +27,11 @@
       </template>
       <el-alert v-if="error" :title="error" type="warning" :closable="false" />
     </div>
-  </el-drawer>
+  </DetailDrawer>
 </template>
-<script setup>
+<script setup>import { promptAction } from '@/utils/feedback'
 import { computed, ref } from 'vue'
-import { ElMessageBox } from 'element-plus'
+
 import { getInvoiceLifecycle, applyInvoiceLifecycle } from '@/api/invoice'
 const props = defineProps({ invoiceId: { type: Number, required: true } })
 const emit = defineEmits(['changed'])
@@ -54,7 +54,7 @@ async function act(action) {
   busy.value = true
   let reason = '管理员请求重新核对原订单及关联单据'
   if (action !== 'refresh') {
-    try { reason = (await ElMessageBox.prompt(prompts[action], '确认处理', { inputValidator: v => v?.trim().length >= 10 || '请填写至少10字依据', confirmButtonText: '确认执行' })).value.trim() }
+    try { reason = (await promptAction(prompts[action], '确认处理', { inputValidator: v => v?.trim().length >= 10 || '请填写至少10字依据', confirmButtonText: '确认执行' })).value.trim() }
     catch { busy.value = false; return }
   }
   busy.value = true; error.value = ''

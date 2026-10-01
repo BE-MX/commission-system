@@ -1,8 +1,9 @@
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessageBox } from 'element-plus'
-import { msgSuccess, confirmDanger } from '@/utils/feedback'
+import { promptAction, msgSuccess, confirmDanger } from '@/utils/feedback'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+
 import { formatMoney } from '@/utils/money'
 import { useTableView } from '@/composables/useTableView'
+import { useListPage } from '@/composables/useListPage'
 import {
   deleteInvoice,
   downloadInvoiceExcel,
@@ -18,8 +19,17 @@ import { formatInvoiceDateTime } from './invoiceDateTime'
 import { currentBeijingDate } from '@/utils/datetime'
 
 export function useInvoiceManagePage() {
-  const loading = ref(false)
-  const invoices = ref([])
+  const listPage = useListPage((params, { signal }) => {
+    if (params.order_id) params.order_id = params.order_id.trim()
+    if (!params.order_id) delete params.order_id
+    if (!params.order_type) delete params.order_type
+    return listInvoices(params, { signal, suppressToast: true })
+  }, { searchForm: { keyword: '', order_id: '', status: '', order_type: '' } })
+  const {
+    loading, list: invoices, searchForm: filters, page, pageSize, total,
+    appliedSearchForm, errorMessage: listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch,
+    handleReset: resetFilters, handlePageChange, handleSizeChange,
+  } = listPage
   const today = currentBeijingDate()
   const month = today.slice(0, 7)
   const [yearNumber, monthNumber] = month.split('-').map(Number)
@@ -29,23 +39,8 @@ export function useInvoiceManagePage() {
   const summaryLoading = ref(false)
   const summaryError = ref('')
   let summaryRequestId = 0
-  const filters = reactive({ keyword: '', order_id: '', status: '', order_type: '' })
-  const pagination = reactive({ page: 1, page_size: 20, total: 0 })
-  const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.order_id || filters.status || filters.order_type))
-
-  function resetFilters() {
-    filters.keyword = ''
-    filters.order_id = ''
-    filters.status = ''
-    filters.order_type = ''
-    pagination.page = 1
-    loadInvoices()
-  }
-
-  function handleSizeChange() {
-    pagination.page = 1
-    loadInvoices()
-  }
+  let summaryController
+  const hasActiveFilters = computed(() => Object.values(appliedSearchForm.value).some(Boolean))
 
   // 列配置数组：TableTools 列显隐的数据源 + 表格渲染驱动（Action Bar Spec / List Page Spec 第 9 节）
   const columnDefs = [
@@ -73,10 +68,13 @@ export function useInvoiceManagePage() {
     const [dateFrom, dateTo] = summaryDateRange.value || []
     if (!dateFrom || !dateTo) return
     const requestId = ++summaryRequestId
+    summaryController?.abort()
+    const controller = new AbortController()
+    summaryController = controller
     summaryLoading.value = true
     summaryError.value = ''
     try {
-      const result = await getInvoiceSummary({ date_from: dateFrom, date_to: dateTo })
+      const result = await getInvoiceSummary({ date_from: dateFrom, date_to: dateTo }, { signal: controller.signal, suppressToast: true })
       if (requestId === summaryRequestId) summary.value = result
     } catch {
       if (requestId === summaryRequestId) {
@@ -89,39 +87,42 @@ export function useInvoiceManagePage() {
   }
 
   async function loadInvoices() {
-    const summaryRequest = loadSummary()
-    loading.value = true
-    try {
-      const params = { ...filters, page: pagination.page, page_size: pagination.page_size }
-      if (params.order_id) params.order_id = params.order_id.trim()
-      if (!params.order_id) delete params.order_id
-      if (!params.order_type) delete params.order_type
-      const result = await listInvoices(params)
-      invoices.value = result.items || []
-      pagination.total = result.total || 0
-    } finally {
-      loading.value = false
-      await summaryRequest
-    }
+    const [loaded] = await Promise.all([listPage.fetchList(), loadSummary()])
+    return loaded
+  }
+
+  function handleSearch() {
+    return listPage.handleSearch()
+  }
+
+  async function refreshUpdate() {
+    const [loaded] = await Promise.all([listPage.refreshUpdate(), loadSummary()])
+    return loaded
+  }
+
+  async function handleSaved({ created = false } = {}) {
+    // Invoice lists are sorted by created_at descending; a new invoice belongs on page one.
+    const [loaded] = await Promise.all([created ? listPage.refreshCreate() : listPage.refreshUpdate(), loadSummary()])
+    return loaded
   }
 
   async function validateAndSync(id) {
     const outcome = await validateThenSync(id, showIssues)
-    if (outcome !== INVOICE_SYNC_OUTCOME.DUPLICATE) await loadInvoices()
+    if (outcome !== INVOICE_SYNC_OUTCOME.DUPLICATE) await refreshUpdate()
   }
 
   async function resolveUncertain(row, resolution) {
     try {
       let xiaomanOrderId = null
       if (resolution === 'bind_order') {
-        const result = await ElMessageBox.prompt(
+        const result = await promptAction(
           '请填写已在 OKKI 后台确认的数字订单 ID',
           '绑定已生成订单',
           { inputPattern: /^\d+$/, inputErrorMessage: '请输入有效的数字订单 ID' },
         )
         xiaomanOrderId = result.value.trim()
       }
-      const reasonResult = await ElMessageBox.prompt(
+      const reasonResult = await promptAction(
         resolution === 'confirm_existing' ? '请填写至少10字原订单核对依据；系统将核验数量、价格和金额' : resolution === 'bind_order' ? '请填写绑定依据' : '请填写确认 OKKI 未生成订单的依据',
         '人工核对原因',
         { inputPattern: /\S{2,}/, inputErrorMessage: '请至少填写 2 个非空字符' },
@@ -132,7 +133,7 @@ export function useInvoiceManagePage() {
         xiaoman_order_id: xiaomanOrderId,
       })
       msgSuccess('待核对状态处理')
-      await loadInvoices()
+      await refreshUpdate()
     } catch (error) {
       if (error !== 'cancel' && error !== 'close') throw error
     }
@@ -178,7 +179,7 @@ export function useInvoiceManagePage() {
     await confirmDanger('删除', `发票 ${row.invoice_no}`)
     await deleteInvoice(row.id)
     msgSuccess('删除')
-    loadInvoices()
+    await Promise.all([listPage.refreshRemove(), loadSummary()])
   }
 
   function bindIssueHandler(handler) { showIssues = handler }
@@ -209,10 +210,16 @@ export function useInvoiceManagePage() {
   const syncType = status => SYNC_DICT[status]?.tone || 'info'
   const orderTypeTone = type => (type === 'production' ? 'warning' : 'info')
 
-  onMounted(loadInvoices)
+  onMounted(loadSummary)
+  onUnmounted(() => {
+    summaryRequestId += 1
+    summaryController?.abort()
+  })
   return {
     actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
-    loading, money, money4, openSyncLogs, pagination, removeInvoice, statusText, statusType,
+    loading, money, money4, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
+    listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch,
+    handleSearch, handlePageChange, handleSaved, refreshUpdate,
     summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
     syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
     isInvoiceSyncing, resolveUncertain, validateAndSync,

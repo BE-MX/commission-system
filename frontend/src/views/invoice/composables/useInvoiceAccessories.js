@@ -1,5 +1,6 @@
+import { msgWarning } from '@/utils/feedback'
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { listAccessoryPrices } from '@/api/invoice'
 import {
   accessoryDiscount,
@@ -66,7 +67,7 @@ export function useInvoiceAccessories(form) {
 
   function selectAccessory(row, option) {
     if (!applyAccessorySelection(row, option, form.customer_id, form.currency)) {
-      ElMessage.warning('客户或币种已变化，请重新搜索并选择配件')
+      msgWarning('客户或币种已变化，请重新搜索并选择配件')
     }
   }
 
@@ -113,7 +114,7 @@ export function useInvoiceAccessories(form) {
         updateAccessoryTotal(row)
       }
       if (invalidCount) {
-        ElMessage.warning(`${invalidCount} 条配件价格已失效，请到“价格与产品配置 → 标准价格表”重新配置`)
+        msgWarning(`${invalidCount} 条配件价格已失效，请到“价格与产品配置 → 标准价格表”重新配置`)
       }
     } catch {
       // API interceptor already gives the recovery message; keep the transaction snapshot unchanged.

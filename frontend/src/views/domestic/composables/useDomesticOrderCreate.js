@@ -1,3 +1,5 @@
+import { formatMoney } from '../../../utils/money.js'
+import { msgInfo, msgWarning, alertAction, confirmAction, msgSuccessText, msgError } from '@/utils/feedback'
 /**
  * 内贸下单页逻辑（宪法 12：全部 state + 方法在此，页面只留薄壳）。
  *
@@ -5,11 +7,10 @@
  */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import {
   createOrder, getOptions, listCustomers, quoteDomesticPrices, uploadImage,
 } from '@/api/domestic'
-import { msgError } from '@/utils/feedback'
 import { currentBeijingDate } from '@/utils/datetime'
 import {
   attributeFieldLabel,
@@ -154,7 +155,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       }
     })
     if (removedLabels.size) {
-      ElMessage.info(`已清除非普货标准选项：${[...removedLabels].join('、')}；其余标准值已保留`)
+      msgInfo(`已清除非普货标准选项：${[...removedLabels].join('、')}；其余标准值已保留`)
     }
     form.items.forEach(invalidateItemQuote)
   }
@@ -182,7 +183,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
 
   function removeItem(index) {
     if (form.items.length <= 1) {
-      ElMessage.warning('至少保留一行明细')
+      msgWarning('至少保留一行明细')
       return
     }
     form.items.splice(index, 1)
@@ -251,7 +252,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
     }
     const original = Number(item.quote?.original_price || 0)
     if (manual > original) {
-      ElMessage.warning(`手工优惠价不能高于原价 ¥${original.toFixed(2)}`)
+      msgWarning(`手工优惠价不能高于原价 ${formatMoney(original, { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}`)
       item.manualDiscountPrice = null
       return
     }
@@ -271,7 +272,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       if (sequence !== quoteSequence) return
       const cleared = applyQuoteResult(items, res.data || {})
       if (cleared?.length) {
-        ElMessage.warning(`第 ${cleared.map(key => form.items.findIndex(item => item.key === key) + 1).join('、')} 行的手工价已高于新原价，恢复为系统报价`)
+        msgWarning(`第 ${cleared.map(key => form.items.findIndex(item => item.key === key) + 1).join('、')} 行的手工价已高于新原价，恢复为系统报价`)
       }
     } catch {
       if (sequence !== quoteSequence) return
@@ -362,7 +363,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       const changed = quoteChangedDetail(error)
       if (!changed) {
         const detail = error?.response?.data?.detail
-        msgError(typeof detail === 'string' ? detail : (detail?.message || error.message || '下单失败，请重试'))
+        msgError(typeof detail === 'string' ? detail : (detail?.message || error.message || '下单失败，请重试'), error)
         return null
       }
       const missingChanges = (changed.changes || []).filter(change => change.current_status === 'missing_base_price')
@@ -375,7 +376,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
             item.quote = { status: 'missing_base_price', message: '原始价已删除' }
           }
         })
-        await ElMessageBox.alert(
+        await alertAction(
           '有明细的原始价已删除，本次未提交。请先在产品清单重新维护原始价，再回来重新报价。',
           '缺少原始价',
           { type: 'error', confirmButtonText: '知道了' },
@@ -383,7 +384,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
         return null
       }
       try {
-        await ElMessageBox.confirm(
+        await confirmAction(
           `${changed.message || '价格已更新'}\n\n${quoteChangeMessage(changed)}\n\n确认使用新价格重新提交吗？`,
           '价格变动确认',
           { type: 'warning', confirmButtonText: '使用新价重新提交', cancelButtonText: '返回检查' },
@@ -427,12 +428,12 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       !isProduction && !isDraft && selectedCustomer.value && !isCreditCustomer
       && Number(selectedCustomer.value.balance || 0) < orderTotal.value
     ) {
-      msgError(`客户余额不足：当前 ¥${Number(selectedCustomer.value.balance || 0).toFixed(2)}，订单需 ¥${orderTotal.value.toFixed(2)}`)
+      msgError(`客户余额不足：当前 ${formatMoney(Number(selectedCustomer.value.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}，订单需 ${formatMoney(orderTotal.value, { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}`)
       return
     }
     if (unroutedCount.value && !isDraft) {
       try {
-        await ElMessageBox.confirm(
+        await confirmAction(
           `有 ${unroutedCount.value} 行明细的工艺还没配工艺路线，下单后这些货暂时不能开工（配好映射即可补上）。要继续吗？`,
           '有明细不能开工',
           { type: 'warning', confirmButtonText: '仍然下单', cancelButtonText: '返回修改' },
@@ -448,9 +449,9 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       if (!res) return
       const data = res.data || {}
       if (data.status === 5) {
-        ElMessage.success(`订单已提交，待审核：${data.domestic_no}（成交价与系统默认价不一致，审核通过后才正式生效）`)
+        msgSuccessText(`订单已提交，待审核：${data.domestic_no}（成交价与系统默认价不一致，审核通过后才正式生效）`)
       } else {
-        ElMessage.success(`${isDraft ? '草稿已保存' : '下单成功'}：${data.domestic_no}`)
+        msgSuccessText(`${isDraft ? '草稿已保存' : '下单成功'}：${data.domestic_no}`)
       }
       resetForm()
       router.push({ name: 'DomesticOrders', query: { keyword: data.domestic_no, order_kind: orderKind } })

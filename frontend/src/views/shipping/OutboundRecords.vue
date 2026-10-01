@@ -7,16 +7,13 @@
     </div>
 
     <div ref="panelRef" class="table-card outbound-panel">
-      <div class="toolbar">
-        <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch" />
-        <el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable class="filter-w-md" @keyup.enter="handleSearch" @clear="handleSearch" />
-        <el-date-picker
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="handleReset"><el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" class="filter-w-lg"   />
+<el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable class="filter-w-md"   />
+<el-date-picker
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
-          start-placeholder="出库起" end-placeholder="出库止" class="filter-w-lg" @change="handleSearch"
+          start-placeholder="出库起" end-placeholder="出库止" class="filter-w-lg"
         />
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
-      </div>
+</FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -30,12 +27,13 @@
         />
       </div>
 
-      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的出库单' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
@@ -52,9 +50,9 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('outbound-state')" label="出库单状态" min-width="170">
           <template #default="{ row }">
-            <el-tag :type="OUTBOUND_STATE_TAGS[row.outbound_state] || 'info'">
+            <StatusBadge :type="OUTBOUND_STATE_TAGS[row.outbound_state] || 'info'">
               {{ OUTBOUND_STATE_LABELS[row.outbound_state] || '状态待确认' }}
-            </el-tag>
+            </StatusBadge>
             <el-popover v-if="row.stock_shortages?.length" trigger="click" placement="bottom" :width="360">
               <template #reference><GlassButton variant="link">缺货详情</GlassButton></template>
               <p v-for="item in row.stock_shortages" :key="item.sku_id" class="shortage-item">
@@ -69,10 +67,10 @@
         <el-table-column v-if="visibleKeys.includes('inspection-status')" label="检验状态" min-width="90">
           <template #default="{ row }">
             <span v-if="row.record_source === 'ark_task'" class="queue-note">—</span>
-            <el-tag v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
+            <StatusBadge v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
               {{ INSPECTION_STATUS_LABELS[row.status] || row.status }}
-            </el-tag>
-            <el-tag v-if="row.recheck_status" size="small" type="warning">{{ row.recheck_status === 'pending_sync' ? '待同步重验' : '待补验' }}</el-tag>
+            </StatusBadge>
+            <StatusBadge v-if="row.recheck_status" size="small" type="warning">{{ row.recheck_status === 'pending_sync' ? '待同步重验' : '待补验' }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('photo-count')" label="照片数" min-width="80" align="right">
@@ -136,12 +134,13 @@ import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
 import OutboundSyncDialog from './OutboundSyncDialog.vue'
 import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from './composables/outboundStates'
 
+const listPageState = useOutboundRecords()
 const {
   loading, list, total, page, pageSize, searchForm, fetchList,
   handleSearch, handleReset, handlePageChange, handleSizeChange,
   printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
   allowingPrintId, allowPrintBeforeRecheck,
-} = useOutboundRecords()
+} = listPageState
 const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync } = useOutboundInvoiceSync(fetchList)
 const auth = useAuthStore()
 

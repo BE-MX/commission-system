@@ -1,6 +1,6 @@
 <template>
   <aside class="conversation-sidebar lg-card is-static" aria-label="最近会话">
-    <SidebarContent v-bind="contentProps" @new="emit('new')" @select="select" @more="emit('more')" />
+    <SidebarContent v-bind="contentProps" @new="emit('new')" @select="select" @more="emit('more')" @retry="emit('retry')" />
   </aside>
   <Transition name="drawer">
     <div v-if="drawerOpen" class="drawer-shell" @click.self="emit('update:drawerOpen', false)">
@@ -16,7 +16,7 @@
         <button type="button" class="drawer-close" aria-label="关闭会话列表" @click="emit('update:drawerOpen', false)">
           <el-icon><Close /></el-icon>
         </button>
-        <SidebarContent v-bind="contentProps" @new="emit('new')" @select="select" @more="emit('more')" />
+        <SidebarContent v-bind="contentProps" @new="emit('new')" @select="select" @more="emit('more')" @retry="emit('retry')" />
       </div>
     </div>
   </Transition>
@@ -25,6 +25,7 @@
 <script setup>
 import { computed, defineComponent, h, nextTick, ref, resolveDirective, watch, withDirectives } from 'vue'
 import { Close, Plus } from '@element-plus/icons-vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { focusDialog, groupSessionsByDayHalf, restoreDialogFocus, trapDialogFocus } from '../state'
 
@@ -34,9 +35,12 @@ const props = defineProps({
   activeSessionIds: { type: Array, default: () => [] },
   drawerOpen: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
+  error: { type: String, default: '' },
+  hasLoaded: Boolean,
+  append: Boolean,
   loading: { type: Boolean, default: false },
 })
-const emit = defineEmits(['new', 'select', 'more', 'update:drawerOpen'])
+const emit = defineEmits(['new', 'select', 'more', 'retry', 'update:drawerOpen'])
 const drawerPanel = ref(null)
 let restoreTarget = null
 
@@ -45,7 +49,7 @@ const contentProps = computed(() => ({
   currentSessionId: props.currentSessionId,
   activeSessionIds: props.activeSessionIds,
   hasMore: props.hasMore,
-  loading: props.loading,
+  loading: props.loading, error: props.error, hasLoaded: props.hasLoaded, append: props.append,
 }))
 
 function select(sessionId) {
@@ -80,9 +84,10 @@ const SidebarContent = defineComponent({
     currentSessionId: { type: Number, default: null },
     activeSessionIds: { type: Array, default: () => [] },
     hasMore: { type: Boolean, default: false },
+    error: String, hasLoaded: Boolean, append: Boolean,
     loading: { type: Boolean, default: false },
   },
-  emits: ['new', 'select', 'more'],
+  emits: ['new', 'select', 'more', 'retry'],
   setup(innerProps, { emit: innerEmit }) {
     const permission = resolveDirective('permission')
     return () => {
@@ -103,12 +108,14 @@ const SidebarContent = defineComponent({
       const groups = groupSessionsByDayHalf(innerProps.sessions)
       return h('div', { class: 'sidebar-content' }, [
       withDirectives(newButton, [[permission, 'design_image:write']]),
+      innerProps.error && innerProps.append ? h('p', {role:'status'}, '更多会话加载失败，已加载历史保留。') : null,
+      h(ListPageStatus, { error: innerProps.error, loading: innerProps.loading, hasData: innerProps.sessions.length > 0, paged: false, onRetry: () => innerEmit('retry') }),
       innerProps.sessions.length
         ? h('div', { class: 'session-list' }, groups.map(group => h('div', { class: 'session-group', key: group.key }, [
           h('div', { class: 'session-group-label' }, group.label),
           ...group.items.map(renderSession),
         ])))
-        : h('p', { class: 'empty-copy' }, '还没有会话，点击上方开始创作。'),
+        : innerProps.hasLoaded && !innerProps.error && !innerProps.loading ? h('p', { class: 'empty-copy' }, '还没有会话，点击上方开始创作。') : null,
       innerProps.hasMore ? h('button', {
         type: 'button', class: 'more-button', disabled: innerProps.loading,
         onClick: () => innerEmit('more'),

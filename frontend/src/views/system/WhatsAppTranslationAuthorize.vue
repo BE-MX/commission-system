@@ -11,11 +11,11 @@
       <el-alert v-else-if="state === 'error'" type="error" :closable="false" title="授权失败" description="请稍后重试或联系管理员。" />
 
       <template v-else-if="state === 'ready' && inspection">
-        <el-descriptions :column="1" border>
+        <ResponsiveDescriptions :column="1" border>
           <el-descriptions-item label="状态">{{ inspection.status }}</el-descriptions-item>
           <el-descriptions-item v-if="inspection.expires_at" label="有效期至">{{ inspection.expires_at }}</el-descriptions-item>
           <el-descriptions-item v-if="inspection.device_id" label="设备编号">{{ inspection.device_id }}</el-descriptions-item>
-        </el-descriptions>
+        </ResponsiveDescriptions>
         <p class="privacy">翻译仅处理当前一对一聊天中的可见文字；译文不存储，联系人信息不入库。</p>
         <div class="actions">
           <el-button type="primary" :loading="saving" @click="decide('approve')">批准授权</el-button>
@@ -43,10 +43,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgError, msgSuccessText } from '@/utils/feedback'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { approvePairing, getMyDevices, inspectPairing, rejectPairing, revokeMyDevice } from '@/api/whatsappTranslation'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -73,7 +73,7 @@ function handleError(error) {
     return
   }
   state.value = 'error'
-  ElMessage.error(error?.message || '授权失败')
+  msgError(error?.message || '授权失败')
 }
 
 async function loadDevices() {
@@ -100,7 +100,7 @@ async function decide(action) {
     if (action === 'approve') await approvePairing(code)
     else await rejectPairing(code)
     clearDeviceCode(window.sessionStorage)
-    ElMessage.success(action === 'approve' ? '授权成功，请回到扩展继续' : '已拒绝该设备')
+    msgSuccessText(action === 'approve' ? '授权成功，请回到扩展继续' : '已拒绝该设备')
     inspection.value = null
     state.value = pairingDecisionState(action)
     await loadDevices()

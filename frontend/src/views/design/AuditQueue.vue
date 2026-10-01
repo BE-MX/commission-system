@@ -38,6 +38,8 @@
         @fullscreen="toggleFullscreen"
       />
     </div>
+    <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="fetchList" />
+    <ListPageStatus :error="countsResource.errorMessage.value" :loading="countsResource.loading.value" :has-data="!!countsResource.data.value" @retry="countsResource.load()" />
     <el-table
       :data="tableData"
       v-loading="loading"
@@ -45,10 +47,11 @@
       class="list-table"
       :class="densityClass"
       :max-height="isFullscreen ? undefined : 640"
-      @sort-change="orderSort.onSortChange"
+      @sort-change="handleSortChange"
     >
       <template #empty>
-        <el-empty :image-size="96" description="暂无数据" />
+        <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="fetchList" />
+        <el-empty v-if="listState.isEmpty.value" :image-size="96" description="暂无数据" />
       </template>
       <el-table-column v-if="visibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip />
       <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
@@ -68,9 +71,9 @@
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120" prop="priority" sortable="custom">
         <template #default="{ row }">
-          <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
+          <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
-          </el-tag>
+          </StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
@@ -80,11 +83,11 @@
       <el-table-column v-if="visibleKeys.includes('attachments')" label="附件" min-width="70" max-width="100">
         <template #default="{ row }">
           <GlassButton
-            v-if="row._attachment_count > 0"
+            v-if="attachmentCount(row) > 0"
             variant="link"
             left-icon="Paperclip"
             @click="showAttachments(row)"
-          >{{ row._attachment_count }}</GlassButton>
+          >{{ attachmentCount(row) }}</GlassButton>
           <span v-else class="text-muted">-</span>
         </template>
       </el-table-column>
@@ -98,7 +101,7 @@
             width="260"
           >
             <template #reference>
-              <el-tag type="warning" effect="plain" style="cursor: pointer">有冲突</el-tag>
+              <StatusBadge type="warning" effect="plain" style="cursor: pointer">有冲突</StatusBadge>
             </template>
           </el-popover>
           <span v-else class="text-muted">-</span>
@@ -126,8 +129,8 @@
     </div>
 
     <!-- Approve dialog -->
-    <el-dialog v-model="approveVisible" title="审批通过" width="460px" :close-on-click-modal="false">
-      <el-form label-width="80px">
+    <el-dialog v-model="approveVisible" title="审批通过" width="480px" :close-on-click-modal="false">
+      <el-form label-position="top">
         <el-form-item label="备注">
           <el-input v-model="auditComment" type="textarea" :rows="3" placeholder="选填审批意见" />
         </el-form-item>
@@ -139,8 +142,8 @@
     </el-dialog>
 
     <!-- Reject dialog -->
-    <el-dialog v-model="rejectVisible" title="审批拒绝" width="460px" :close-on-click-modal="false">
-      <el-form label-width="80px">
+    <el-dialog v-model="rejectVisible" title="审批拒绝" width="480px" :close-on-click-modal="false">
+      <el-form label-position="top">
         <el-form-item label="原因" required>
           <el-input v-model="auditComment" type="textarea" :rows="3" placeholder="请填写拒绝原因（必填）" />
         </el-form-item>
@@ -152,7 +155,8 @@
     </el-dialog>
 
     <!-- Attachment dialog -->
-    <el-dialog v-model="attachmentVisible" title="附件列表" width="500px">
+    <el-dialog v-model="attachmentVisible" title="附件列表" width="640px">
+      <ListPageStatus :error="attachmentsResource.errorMessage.value" :loading="attachmentsResource.loading.value" :has-data="attachmentList.length > 0" @retry="attachmentsResource.load()" />
       <div v-if="attachmentList.length" class="attachment-list">
         <div v-for="a in attachmentList" :key="a.id" class="attachment-item">
           <el-icon class="attachment-icon"><Paperclip /></el-icon>
@@ -163,7 +167,7 @@
           </a>
         </div>
       </div>
-      <el-empty v-else description="暂无附件" :image-size="60" />
+      <el-empty v-else-if="!attachmentsResource.loading.value && !attachmentsResource.error.value" description="暂无附件" :image-size="60" />
     </el-dialog>
 
     <!-- 预约详情抽屉 -->
@@ -171,9 +175,14 @@
   </div>
 </template>
 
-<script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+<script setup>import { msgWarning, msgSuccessText } from '@/utils/feedback'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { designActorScope, watchDesignActor } from './designListScope'
+import { useAuthStore } from '@/stores/auth'
+
+
 import { CircleCheck, CircleClose, Paperclip, Download } from '@element-plus/icons-vue'
 import { getRequests, auditRequest, getAttachments, downloadAttachment } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
@@ -183,6 +192,8 @@ import { useTableSort } from '@/composables/useTableSort'
 import { useTableView } from '@/composables/useTableView'
 
 const orderSort = useTableSort()
+const authStore = useAuthStore()
+const readScope = () => designActorScope(authStore)
 
 // 列配置数组：TableTools 列显隐的数据源（操作列不进配置）
 const columnDefs = [
@@ -213,16 +224,20 @@ function customerLevelLabel(code) {
 }
 
 const stats = reactive({ pending: 0, today_approved: 0, today_rejected: 0 })
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const tableData = ref([])
-const loading = ref(false)
-
-function handleSizeChange() {
-  page.value = 1
-  fetchList()
-}
+const listState = useListPage(async (params, { signal, isCurrent }) => {
+  const response = await getRequests({ ...params, status: 'pending_audit', operator_id: 1, operator_role: 'supervisor' }, { signal, suppressToast: true })
+  const data = response.data
+  if (isCurrent()) { stats.pending = data?.stats?.pending ?? data?.total ?? 0; stats.today_approved = data?.stats?.today_approved ?? 0; stats.today_rejected = data?.stats?.today_rejected ?? 0 }
+  return { items: data?.items || data || [], total: data?.total || 0 }
+}, { sortParams: orderSort.sortParams.value })
+const page = listState.page; const pageSize = listState.pageSize; const total = listState.total; const tableData = listState.list; const loading = listState.loading
+const fetchList = listState.fetchList
+const handleSizeChange = listState.handleSizeChange
+function handleSortChange(info) { orderSort.onSortChange(info); return listState.handleSortChange(orderSort.sortParams.value) }
+const countsResource = useAsyncResource(async (ids, { signal }) => Object.fromEntries(await Promise.all((ids || []).map(async id => [id, ((await getAttachments(id, { signal, suppressToast: true })).data || []).length]))))
+watch(tableData, rows => countsResource.load(rows.map(row => row.id), { clear: true }), { flush: 'sync' })
+const attachmentCount = row => countsResource.data.value?.[row.id] ?? null
+watchDesignActor(listState, readScope, () => { Object.assign(stats, { pending: 0, today_approved: 0, today_rejected: 0 }); detailVisible.value = false; attachmentVisible.value = false; attachmentsResource.load(null, { clear: true }) })
 
 const approveVisible = ref(false)
 const rejectVisible = ref(false)
@@ -230,7 +245,8 @@ const auditComment = ref('')
 const auditing = ref(false)
 const currentRow = ref(null)
 const attachmentVisible = ref(false)
-const attachmentList = ref([])
+const attachmentsResource = useAsyncResource(async (id, { signal }) => id ? (await getAttachments(id, { signal, suppressToast: true })).data || [] : [])
+const attachmentList = computed(() => attachmentsResource.data.value || [])
 const detailVisible = ref(false)
 const detailRequestId = ref(null)
 
@@ -246,49 +262,7 @@ function formatFileSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-async function showAttachments(row) {
-  attachmentList.value = []
-  attachmentVisible.value = true
-  try {
-    const res = await getAttachments(row.id)
-    attachmentList.value = res.data || []
-  } catch {
-    attachmentList.value = []
-  }
-}
-
-async function fetchList() {
-  loading.value = true
-  try {
-    const res = await getRequests({
-      status: 'pending_audit',
-      page: page.value,
-      page_size: pageSize.value,
-      operator_id: 1,
-      operator_role: 'supervisor',
-      ...orderSort.sortParams.value,
-    })
-    const data = res.data
-    tableData.value = data?.items || data || []
-    total.value = data?.total || 0
-
-    // 并行获取每个预约单的附件数量
-    const items = tableData.value
-    const countPromises = items.map(row =>
-      getAttachments(row.id)
-        .then(res => { row._attachment_count = (res.data || []).length })
-        .catch(() => { row._attachment_count = 0 })
-    )
-    Promise.all(countPromises)
-
-    // Update stats from response if available, otherwise count from list
-    stats.pending = data?.stats?.pending ?? total.value
-    stats.today_approved = data?.stats?.today_approved ?? 0
-    stats.today_rejected = data?.stats?.today_rejected ?? 0
-  } finally {
-    loading.value = false
-  }
-}
+async function showAttachments(row) { attachmentVisible.value = true; return attachmentsResource.load(row.id, { clear: true }) }
 
 function handleApprove(row) {
   currentRow.value = row
@@ -304,7 +278,7 @@ function handleReject(row) {
 
 async function submitAudit(action) {
   if (action === 'reject' && !auditComment.value.trim()) {
-    ElMessage.warning('请填写拒绝原因')
+    msgWarning('请填写拒绝原因')
     return
   }
   auditing.value = true
@@ -316,10 +290,10 @@ async function submitAudit(action) {
       operator_name: '管理员',
       operator_role: 'supervisor',
     })
-    ElMessage.success(action === 'approve' ? '已通过' : '已拒绝')
+    msgSuccessText(action === 'approve' ? '已通过' : '已拒绝')
     approveVisible.value = false
     rejectVisible.value = false
-    fetchList()
+    listState.refreshUpdate()
   } finally {
     auditing.value = false
   }
@@ -327,7 +301,6 @@ async function submitAudit(action) {
 
 onMounted(() => {
   loadShootTypeDict()
-  fetchList()
 })
 </script>
 
@@ -413,7 +386,7 @@ onMounted(() => {
   flex-shrink: 0;
 }
 .attachment-download {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   flex-shrink: 0;
   cursor: pointer;
   display: flex;

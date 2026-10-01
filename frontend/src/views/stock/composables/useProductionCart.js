@@ -1,5 +1,7 @@
-import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
+import { ref, computed, watch } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
 import {
   getProductionCart,
   addToProductionCart,
@@ -10,9 +12,14 @@ import {
 } from '@/api/stock'
 
 export function useProductionCart() {
-  const cartItems = ref([])
-  const cartCount = ref(0)
-  const cartLoading = ref(false)
+  const cartResource = useAsyncResource(async (_, { signal }) => {
+    const response = await getProductionCart({ signal, suppressToast: true })
+    return response.data ?? response
+  })
+  const cartItems = computed(() => cartResource.data.value?.items || [])
+  const cartCount = computed(() => cartResource.data.value?.count || 0)
+  const cartLoading = cartResource.loading
+  const cartErrorMessage = cartResource.errorMessage
   const selectedCartIds = ref([])
   const drawerVisible = ref(false)
 
@@ -21,30 +28,19 @@ export function useProductionCart() {
     cartItems.value.filter(item => selectedCartIds.value.includes(item.id))
   )
 
-  async function loadCart() {
-    cartLoading.value = true
-    try {
-      const res = await getProductionCart()
-      // 响应拦截器返回 { code, message, data }，取内层 data
-      const payload = res.data ?? res
-      cartItems.value = payload.items || []
-      cartCount.value = payload.count || 0
-    } catch (e) {
-      console.warn('加载购物车失败:', e)
-      ElMessage.error('加载购物车失败: ' + (e?.response?.data?.message || e.message || '未知错误'))
-    } finally {
-      cartLoading.value = false
-    }
-  }
+  const loadCart = () => cartResource.load()
+  watch(cartResource.data, payload => {
+    if (payload) selectedCartIds.value = selectedCartIds.value.filter(id => (payload.items || []).some(item => item.id === id))
+  })
 
   async function addToCart(payload) {
     try {
       const res = await addToProductionCart(payload)
-      ElMessage.success(res.message || '已添加到购物车')
+      msgSuccessText(res.message || '已添加到购物车')
       await loadCart()
       return true
     } catch (e) {
-      ElMessage.error(e?.response?.data?.message || '添加失败')
+      msgError(e?.response?.data?.message || '添加失败', e)
       return false
     }
   }
@@ -52,11 +48,11 @@ export function useProductionCart() {
   async function updateCartItem(cartId, { order_qty, remark }) {
     try {
       await updateProductionCartItem(cartId, { order_qty, remark })
-      ElMessage.success('已更新')
+      msgSuccessText('已更新')
       await loadCart()
       return true
     } catch (e) {
-      ElMessage.error(e?.response?.data?.message || '更新失败')
+      msgError(e?.response?.data?.message || '更新失败', e)
       return false
     }
   }
@@ -68,7 +64,7 @@ export function useProductionCart() {
       await loadCart()
       return true
     } catch (e) {
-      ElMessage.error(e?.response?.data?.message || '删除失败')
+      msgError(e?.response?.data?.message || '删除失败', e)
       return false
     }
   }
@@ -80,14 +76,14 @@ export function useProductionCart() {
       await loadCart()
       return true
     } catch (e) {
-      ElMessage.error(e?.response?.data?.message || '删除失败')
+      msgError(e?.response?.data?.message || '删除失败', e)
       return false
     }
   }
 
   async function generateOrder({ batch_no, remark, is_urgent, expected_delivery_date }) {
     if (selectedCartIds.value.length === 0) {
-      ElMessage.warning('请先选择产品')
+      msgWarning('请先选择产品')
       return false
     }
     try {
@@ -98,12 +94,12 @@ export function useProductionCart() {
         is_urgent,
         expected_delivery_date,
       })
-      ElMessage.success(res.message || '生产订单创建成功')
+      msgSuccessText(res.message || '生产订单创建成功')
       selectedCartIds.value = []
       await loadCart()
       return true
     } catch (e) {
-      ElMessage.error(e?.response?.data?.message || '创建失败')
+      msgError(e?.response?.data?.message || '创建失败', e)
       return false
     }
   }
@@ -116,6 +112,7 @@ export function useProductionCart() {
     cartItems,
     cartCount,
     cartLoading,
+    cartErrorMessage,
     selectedCartIds,
     drawerVisible,
     isCartEmpty,

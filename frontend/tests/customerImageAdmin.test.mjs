@@ -289,7 +289,7 @@ test('invite submission errors are actionable and hide internal HTTP details', (
   )
 
   const dialog = read('../src/views/customer-image/admin/InviteCreateDialog.vue')
-  assert.match(dialog, /ElMessage\.warning\(inviteSubmissionErrorMessage\(error\)\)/)
+  assert.match(dialog, /msgWarning\(inviteSubmissionErrorMessage\(error\)\)/)
   assert.doesNotMatch(dialog, /if \(!error\?\.response\)/)
 })
 
@@ -347,7 +347,9 @@ test('a successful invite remains successful when the independent list refresh f
     expires_at: '2026-08-10T08:00:00.000Z',
   })
   assert.equal(state.oneTimeInviteUrl.value, 'https://example.test/create/keep-me')
-  assert.deepEqual(refreshConfig, { suppressToast: true })
+  assert.equal(refreshConfig.suppressToast, true)
+  assert.ok(refreshConfig.signal instanceof AbortSignal)
+  assert.match(state.invitesResource.errorMessage.value, /refresh unavailable/)
 })
 
 test('admin state uses backend pagination scoped customer search and revoke contracts', async () => {

@@ -16,13 +16,13 @@
           <el-table-column prop="action" label="操作" min-width="68" />
           <el-table-column label="当前出库明细" min-width="240">
             <template #default="{ row: change }">
-              <template v-if="change.before">{{ change.before.name }}<br>{{ change.before.quantity }} {{ change.before.unit }} · 单价 {{ change.before.price }}</template>
+              <template v-if="change.before">{{ change.before.name }}<br>{{ change.before.quantity }} {{ change.before.unit }} · 单价 {{ formatMoney(change.before.price, { missing: '—' }) }}</template>
               <span v-else>—</span>
             </template>
           </el-table-column>
           <el-table-column label="同步后" min-width="240">
             <template #default="{ row: change }">
-              <template v-if="change.after">{{ change.after.name }}<br>{{ change.after.quantity }} {{ change.after.unit }} · 单价 {{ change.after.price }}</template>
+              <template v-if="change.after">{{ change.after.name }}<br>{{ change.after.quantity }} {{ change.after.unit }} · 单价 {{ formatMoney(change.after.price, { missing: '—' }) }}</template>
               <span v-else>删除该明细</span>
             </template>
           </el-table-column>
@@ -45,6 +45,8 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../utils/money.js'
+
 import GlassButton from '@/components/GlassButton.vue'
 defineProps({ visible: Boolean, busy: Boolean, preview: Object, row: Object })
 defineEmits(['update:visible', 'apply'])

@@ -1,11 +1,15 @@
 <template>
   <div class="logistics-card lg-card is-static">
     <div class="card-header">
-      <h3 class="card-title">物流进度</h3>
+      <h3 class="card-title">物流进度 · 最近 5 单</h3>
       <router-link to="/tracking" class="card-link">
         查看全部 <el-icon><ArrowRight /></el-icon>
       </router-link>
     </div>
+    <p v-if="resource.error" class="resource-warning" role="status">
+      {{ resource.hasLoaded ? '在途运单更新失败，显示上次记录' : '在途运单读取失败' }}
+      <button type="button" @click="resource.load()">重试</button>
+    </p>
 
     <ul v-if="shipments.length > 0" class="shipment-list">
       <li
@@ -45,7 +49,8 @@
       </li>
     </ul>
 
-    <div v-else class="empty-state">
+    <div v-else-if="resource.loading && !resource.hasLoaded" class="empty-state" role="status">正在读取在途运单…</div>
+    <div v-else-if="resource.hasLoaded && !resource.error" class="empty-state">
       <el-icon class="empty-icon"><Van /></el-icon>
       <span>当前没有在途运单，一路顺风</span>
     </div>
@@ -67,6 +72,7 @@ const props = defineProps({
 })
 
 const shipments = computed(() => (props.data.recentShipments || []).slice(0, 5))
+const resource = computed(() => props.data.resources.recentShipments)
 
 const STEP_LABELS = ['揽收', '运输', '派送', '签收']
 
@@ -148,6 +154,8 @@ function etaText(s) {
 </script>
 
 <style scoped>
+.resource-warning { margin: 0 0 10px; color: var(--color-warning-text); font-size: 12px; }
+.resource-warning button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
 .logistics-card {
   padding: 18px 20px 14px;
 }
@@ -170,13 +178,13 @@ function etaText(s) {
   align-items: center;
   gap: 3px;
   font-size: 12px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   text-decoration: none;
   transition: color 140ms ease;
 }
 @media (hover: hover) and (pointer: fine) {
   .card-link:hover {
-    color: var(--color-primary-hover);
+    color: var(--color-primary-text);
   }
 }
 

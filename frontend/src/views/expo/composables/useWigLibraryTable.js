@@ -17,13 +17,13 @@ const columnDefs = [
   { key: 'is-active', label: '启用' },
 ]
 
-export function useWigLibraryTable(keyword, reload) {
+export function useWigLibraryTable(keyword, reload, appliedKeyword = keyword) {
   const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
     useTableView('wig-library', columnDefs)
-  const hasActiveFilters = computed(() => Boolean(keyword.value.trim()))
+  const hasActiveFilters = computed(() => Boolean(appliedKeyword.value.trim()))
   function resetFilters() {
     keyword.value = ''
-    reload()
+    return reload()
   }
   return { columnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen, hasActiveFilters, resetFilters }
 }

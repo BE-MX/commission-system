@@ -1,7 +1,7 @@
 import request from './request'
 
-export function getShipmentList(params) {
-  return request.get('/tracking/shipments', { params, showLoading: false })
+export function getShipmentList(params, config = {}) {
+  return request.get('/tracking/shipments', { ...config, params, showLoading: false })
 }
 
 export function uploadOCR(formData) {
@@ -39,8 +39,8 @@ export function deleteShipment(waybillNo) {
   return request.delete(`/tracking/shipments/${waybillNo}`)
 }
 
-export function getTrackingStats(params) {
-  return request.get('/tracking/stats', { params, showLoading: false })
+export function getTrackingStats(params, config = {}) {
+  return request.get('/tracking/stats', { ...config, params, showLoading: false })
 }
 
 export function getSubmitters() {

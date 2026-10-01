@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    width="560px"
+    width="640px"
     :show-close="false"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
@@ -156,9 +156,9 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText, msgError } from '@/utils/feedback'
 import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import {
   Document, Van, User, Location, Calendar,
   Link, CopyDocument, Check, ChatDotRound,
@@ -200,10 +200,10 @@ async function copyLink() {
   const ok = await copyToClipboard(props.resultData.short_link)
   if (ok) {
     copiedLink.value = true
-    ElMessage.success('短链接已复制')
+    msgSuccessText('短链接已复制')
     setTimeout(() => (copiedLink.value = false), 2500)
   } else {
-    ElMessage.error('复制失败')
+    msgError('复制失败')
   }
 }
 
@@ -211,10 +211,10 @@ async function copyTemplate() {
   const ok = await copyToClipboard(props.resultData.notifyTemplate)
   if (ok) {
     copiedTemplate.value = true
-    ElMessage.success('通知模板已复制')
+    msgSuccessText('通知模板已复制')
     setTimeout(() => (copiedTemplate.value = false), 2500)
   } else {
-    ElMessage.error('复制失败')
+    msgError('复制失败')
   }
 }
 

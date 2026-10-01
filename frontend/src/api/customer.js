@@ -1,7 +1,7 @@
 import request from './request'
 
-export function getSnapshotList(params) {
-  return request.get('/customer/snapshot/list', { params, showLoading: false })
+export function getSnapshotList(params, config = {}) {
+  return request.get('/customer/snapshot/list', { ...config, params, showLoading: false })
 }
 
 export function createSnapshot(data) {

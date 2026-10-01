@@ -1,3 +1,4 @@
+import { msgSuccessText, msgWarning, confirmAction } from '@/utils/feedback'
 /**
  * 业务员案例库 — 业务逻辑 composable
  *
@@ -9,15 +10,16 @@
  *   - 点赞 + 删除
  *   - 权限判断 (canEdit: 本人或 admin)
  */
-import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, reactive, computed, toRef } from 'vue'
+
 import {
   listCases, getCaseDetail, manualCreateCase, uploadCase, publishCase,
   updateCase, deleteCase, toggleCaseLike, getCaseImage,
 } from '@/api/insight'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { useAuthStore } from '@/stores/auth'
 import { downloadBlob } from '@/utils/download'
-
 
 export const TAGS = ['开发跟进', '谈判技巧', '定制流程', '物流处理', '纠纷解决', '竞品应对']
 
@@ -58,20 +60,24 @@ export function formatDateOnly(s) {
   return s.slice(0, 10)
 }
 
-
 export function useCaseLibrary() {
   const authStore = useAuthStore()
 
-  const cases = ref([])
-  const loading = ref(false)
-  const search = ref('')
-  const tagFilter = ref('all')
-  const sortBy = ref('date')
+  const listState = useListPage(async ({ search, tag, sort, ...params }, { signal }) => {
+    if (search) params.q = search
+    if (tag !== 'all') params.tag = tag
+    params.sort = sort
+    return (await listCases(params, { signal, suppressToast: true })).data
+  }, { searchForm: { search: '', tag: 'all', sort: 'date' } })
+  const { list: cases, loading, page, pageSize, total, handlePageChange, handleSizeChange, handleSearch: searchCases, handleReset: resetFilters } = listState
+  const search = toRef(listState.searchForm, 'search'), tagFilter = toRef(listState.searchForm, 'tag'), sortBy = toRef(listState.searchForm, 'sort')
+
   const viewMode = ref('grid')
   const localLikes = ref({})
 
   const detailVisible = ref(false)
-  const currentCase = ref(null)
+  const detailResource = useAsyncResource(async (id, { signal }) => (await getCaseDetail(id, { signal, suppressToast: true })).data)
+  const currentCase = detailResource.data
 
   // 表单 Dialog
   const formDialogVisible = ref(false)
@@ -104,26 +110,11 @@ export function useCaseLibrary() {
     return 'AI 整理'
   })
 
-  function reload() {
-    loading.value = true
-    const params = { page: 1, page_size: 60, sort: sortBy.value }
-    if (search.value) params.q = search.value
-    if (tagFilter.value !== 'all') params.tag = tagFilter.value
-    listCases(params).then((res) => {
-      cases.value = res.data.items || []
-    }).finally(() => {
-      loading.value = false
-    })
-  }
-
-  async function openDetail(c) {
+  function reload() { return listState.refreshUpdate() }
+  function retryDetail() { return detailResource.load() }
+  function openDetail(c) {
     detailVisible.value = true
-    try {
-      const res = await getCaseDetail(c.id)
-      currentCase.value = res.data
-    } catch (e) {
-      currentCase.value = c
-    }
+    return detailResource.load(c.id, { clear: true })
   }
 
   function canEdit(c) {
@@ -191,9 +182,9 @@ export function useCaseLibrary() {
         const payload = { ...formData }
         delete payload._editId
         await updateCase(formData._editId, payload)
-        ElMessage.success('案例已更新')
+        msgSuccessText('案例已更新')
         formDialogVisible.value = false
-        reload()
+        await listState.refreshUpdate()
       } finally {
         submitting.value = false
       }
@@ -204,15 +195,15 @@ export function useCaseLibrary() {
       submitting.value = true
       try {
         await manualCreateCase({ ...formData, share_date: formData.share_date || undefined })
-        ElMessage.success('案例已发布')
+        msgSuccessText('案例已发布')
         formDialogVisible.value = false
-        reload()
+        await listState.refreshCreate()
       } finally {
         submitting.value = false
       }
     } else if (addTab.value === 'text') {
       if (!aiText.value || aiText.value.trim().length < 10) {
-        ElMessage.warning('请粘贴至少 10 个字符的原始文本')
+        msgWarning('请粘贴至少 10 个字符的原始文本')
         return
       }
       submitting.value = true
@@ -231,7 +222,7 @@ export function useCaseLibrary() {
       }
     } else if (addTab.value === 'screenshot') {
       if (!aiFile.value) {
-        ElMessage.warning('请先上传图片')
+        msgWarning('请先上传图片')
         return
       }
       submitting.value = true
@@ -295,9 +286,9 @@ export function useCaseLibrary() {
         payload.user_corrections = corrections
       }
       await publishCase(draftCase.value.id, payload)
-      ElMessage.success('已发布')
+      msgSuccessText('已发布')
       draftDialogVisible.value = false
-      reload()
+      await listState.refreshCreate()
     } finally {
       publishing.value = false
     }
@@ -319,14 +310,14 @@ export function useCaseLibrary() {
   }
 
   async function handleDelete(c) {
-    await ElMessageBox.confirm('确认删除此案例?删除后不可恢复。', '请确认', {
+    await confirmAction('确认删除此案例?删除后不可恢复。', '请确认', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
     })
     await deleteCase(c.id)
-    ElMessage.success('已删除')
-    reload()
+    msgSuccessText('已删除')
+    await listState.refreshRemove()
   }
 
   async function deleteCurrentCase() {
@@ -335,7 +326,7 @@ export function useCaseLibrary() {
     detailVisible.value = false
   }
 
-  onMounted(reload)
+
 
   async function downloadScreenshot() {
     if (currentCase.value?.image_path) downloadBlob(await getCaseImage(currentCase.value.id))
@@ -345,7 +336,8 @@ export function useCaseLibrary() {
     TAGS, dimensionMap,
     resultTagType, correctionLabel, formatDateOnly,
     // state
-    cases, loading, search, tagFilter, sortBy, viewMode, localLikes,
+    listState, page, pageSize, total, searchCases, resetFilters, handlePageChange, handleSizeChange,
+    detailResource, retryDetail, cases, loading, search, tagFilter, sortBy, viewMode, localLikes,
     detailVisible, currentCase,
     formDialogVisible, formMode, addTab, submitting,
     formData,

@@ -8,11 +8,9 @@
     </div>
 
     <div ref="panelRef" class="table-card color-panel">
-      <div class="toolbar">
-        <el-input v-model="keyword" placeholder="搜索色号 / 名称" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="fetchColors" />
-        <GlassButton variant="primary" left-icon="Search" @click="fetchColors">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+      <FilterBar :pending="keyword.trim() !== appliedKeyword" @search="applySearch" @reset="resetFilters">
+        <el-input v-model="keyword" placeholder="搜索色号 / 名称" clearable prefix-icon="Search" class="filter-w-lg" />
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -27,9 +25,10 @@
         />
       </div>
 
+      <ListPageStatus :error="listResource.errorMessage.value" :loading="loading" :has-data="colors.length > 0" @retry="fetchColors" />
       <el-table :data="filteredColors" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
         <template #empty>
-          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+          <el-empty v-if="!loading && !listResource.error.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </template>
@@ -63,8 +62,8 @@
       </el-table>
     </div>
 
-    <el-drawer v-model="drawerVisible" :title="isEdit ? '编辑发色' : '新建发色'" :size="520" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="92px">
+    <DetailDrawer v-model="drawerVisible" :title="isEdit ? '编辑发色' : '新建发色'" :width="520" destroy-on-close>
+      <el-form label-position="top" ref="formRef" :model="form" :rules="rules">
         <el-form-item label="色号" prop="code"><el-input v-model="form.code" placeholder="如 1B / 613" /></el-form-item>
         <el-form-item label="名称" prop="name"><el-input v-model="form.name" placeholder="如 自然黑" /></el-form-item>
         <el-form-item label="色板图">
@@ -88,15 +87,16 @@
         <GlassButton variant="ghost" @click="drawerVisible = false">取消</GlassButton>
         <GlassButton variant="primary" :loading="saving" @click="submit">保存</GlassButton>
       </template>
-    </el-drawer>
+    </DetailDrawer>
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText, confirmDanger, msgSuccess } from '@/utils/feedback'
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
+
 import { getHairColors, createHairColor, updateHairColor, deleteHairColor, uploadHairColorSwatch, getHairColorUsage } from '@/api/expo'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
 
@@ -113,18 +113,21 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('hair-color-library', columnDefs)
 
-const colors = ref([])
-const loading = ref(false)
+const listResource = useAsyncResource(async (_, { signal }) => (await getHairColors({ only_active: 0 }, { signal, suppressToast: true })).data || [])
+const colors = computed(() => listResource.data.value || [])
+const loading = listResource.loading
 const keyword = ref('')
+const appliedKeyword = ref('')
+function applySearch() { appliedKeyword.value = keyword.value.trim(); return fetchColors() }
 const filteredColors = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
+  const kw = appliedKeyword.value.toLowerCase()
   if (!kw) return colors.value
   return colors.value.filter((c) => (c.code || '').toLowerCase().includes(kw) || (c.name || '').toLowerCase().includes(kw))
 })
-const hasActiveFilters = computed(() => Boolean(keyword.value.trim()))
+const hasActiveFilters = computed(() => Boolean(appliedKeyword.value))
 function resetFilters() {
   keyword.value = ''
-  fetchColors()
+  return applySearch()
 }
 
 const drawerVisible = ref(false)
@@ -143,15 +146,7 @@ const rules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
 }
 
-async function fetchColors() {
-  loading.value = true
-  try {
-    const res = await getHairColors({ only_active: 0 })
-    colors.value = res.data || []
-  } finally {
-    loading.value = false
-  }
-}
+const fetchColors = () => listResource.load()
 
 function toUpsert(src) {
   return {
@@ -185,7 +180,7 @@ async function uploadSwatch({ file }) {
   form.value.swatch_path = res.data.path
   swatchPreview.value = res.data.url
   if (res.data.hex && !form.value.hex_code) form.value.hex_code = res.data.hex
-  ElMessage.success(res.data.hex ? `色板上传成功，主色 ${res.data.hex}` : '色板上传成功')
+  msgSuccessText(res.data.hex ? `色板上传成功，主色 ${res.data.hex}` : '色板上传成功')
 }
 
 async function submit() {
@@ -196,10 +191,10 @@ async function submit() {
     const body = { ...toUpsert(form.value), is_active: form.value.is_active ? 1 : 0 }
     if (isEdit.value) {
       await updateHairColor(editId.value, body)
-      ElMessage.success('更新成功')
+      msgSuccessText('更新成功')
     } else {
       await createHairColor(body)
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     }
     drawerVisible.value = false
     fetchColors()
@@ -212,7 +207,7 @@ async function toggleActive(row, value) {
   try {
     await updateHairColor(row.id, { ...toUpsert(row), is_active: value ? 1 : 0 })
     row.is_active = value ? 1 : 0
-    ElMessage.success(value ? '已启用' : '已停用')
+    msgSuccessText(value ? '已启用' : '已停用')
   } catch { /* 拦截器已提示 */ }
 }
 
@@ -290,7 +285,7 @@ onMounted(fetchColors)
   display: flex; align-items: center; justify-content: center;
   color: var(--text-muted); font-size: 12px; cursor: pointer; background: var(--toolbar-bg);
 }
-.upload-slot:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.upload-slot:hover { border-color: var(--color-primary); color: var(--color-primary-text); }
 .upload-preview { width: 88px; height: 88px; border-radius: 8px; display: block; }
 .form-hint { color: var(--text-muted); font-size: 12px; line-height: 1.6; }
 </style>

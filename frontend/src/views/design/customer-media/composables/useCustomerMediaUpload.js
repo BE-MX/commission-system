@@ -1,7 +1,8 @@
+import { msgWarning, msgInfo, msgSuccessText } from '@/utils/feedback'
 // One upload flow for loose files and folders. Folder names are display paths
 // only: they never create customer labels or destination directories.
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { uploadMediaAsset } from '@/api/customerMedia'
 import { groupTagsByDimension } from '../customerMediaTags'
 
@@ -20,7 +21,7 @@ export function useCustomerMediaUpload({ getBatch, onBatch, getSelectedTags }) {
   function addFiles(rawItems) {
     if (!rawItems.length) return
     const tags = (getSelectedTags() || []).map(tag => ({ ...tag }))
-    if (!tags.length) { ElMessage.warning('请先选择至少一个客户标签'); return }
+    if (!tags.length) { msgWarning('请先选择至少一个客户标签'); return }
     const seen = new Set(items.value.map(item => `${item.displayPath}:${item.file.size}`))
     let skipped = 0
     for (const raw of rawItems) {
@@ -41,7 +42,7 @@ export function useCustomerMediaUpload({ getBatch, onBatch, getSelectedTags }) {
         error: '',
       })
     }
-    if (skipped) ElMessage.info(`已跳过 ${skipped} 个重复文件`)
+    if (skipped) msgInfo(`已跳过 ${skipped} 个重复文件`)
   }
 
   function removeItem(item) {
@@ -98,8 +99,8 @@ export function useCustomerMediaUpload({ getBatch, onBatch, getSelectedTags }) {
     const done = items.value.filter(item => item.status === 'done')
     done.forEach(release)
     items.value = items.value.filter(item => item.status !== 'done')
-    if (items.value.length) ElMessage.warning(`${done.length} 个已上传，${items.value.length} 个失败，可重试`)
-    else if (done.length) ElMessage.success(`${done.length} 个文件已上传`)
+    if (items.value.length) msgWarning(`${done.length} 个已上传，${items.value.length} 个失败，可重试`)
+    else if (done.length) msgSuccessText(`${done.length} 个文件已上传`)
   }
 
   async function retryItem(item) {

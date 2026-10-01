@@ -6,10 +6,10 @@
         <GlassButton v-any-permission="['mail_outreach:write','mail_outreach:admin']" variant="primary" left-icon="Plus" @click="openCreate">新建开发信</GlassButton>
         <TableTools v-model:visible-keys="draftVisibleKeys" v-model:density="draftDensity" :columns="draftColumnDefs" :fullscreen="draftIsFullscreen" @refresh="fetchDrafts" @fullscreen="toggleDraftFullscreen" />
       </div>
-      <el-alert v-if="draftsError" type="error" title="草稿列表加载失败，请重试。" :closable="false" show-icon />
-      <el-table v-else v-loading="draftsLoading" :data="drafts" border class="list-table" :class="draftDensityClass" :max-height="draftIsFullscreen ? undefined : 640" row-key="id">
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchDrafts" />
+<el-table v-loading="draftsLoading" :data="drafts" border class="list-table" :class="draftDensityClass" :max-height="draftIsFullscreen ? undefined : 640" row-key="id">
         <el-table-column v-if="draftVisibleKeys.includes('status')" label="状态" min-width="100">
-          <template #default="{ row }"><el-tag :type="draftStatusTagType(row.status)">{{ draftStatusLabel(row.status) }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :type="draftStatusTagType(row.status)">{{ draftStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="draftVisibleKeys.includes('language')" label="语言" min-width="90">
           <template #default="{ row }">{{ row.language_tag || row.revision?.language_tag || '-' }}</template>
@@ -26,10 +26,10 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">
           <template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="openReview(row.id)">查看/审核</GlassButton></template>
         </el-table-column>
-        <template #empty>该客户暂无开发信草稿，点击「新建开发信」生成。</template>
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchDrafts">该客户暂无开发信草稿，点击「新建开发信」生成。</ListPageStatus></template>
       </el-table>
       <el-pagination v-model:current-page="draftsPage" v-model:page-size="draftsPageSize" :total="draftsTotal"
-        class="pager" :page-sizes="[20, 50, 100]" layout="total,sizes,prev,pager,next" @current-change="handleDraftsPageChange" @size-change="handleDraftsSizeChange" />
+        class="pager" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handleDraftsPageChange" @size-change="handleDraftsSizeChange" />
     </div>
 
     <h3 class="section-title">发送任务</h3>
@@ -37,10 +37,10 @@
       <div class="action-bar">
         <TableTools v-model:visible-keys="jobVisibleKeys" v-model:density="jobDensity" :columns="jobColumnDefs" :fullscreen="jobIsFullscreen" @refresh="fetchJobs" @fullscreen="toggleJobFullscreen" />
       </div>
-      <el-alert v-if="jobsError" type="error" title="发送任务加载失败，请重试。" :closable="false" show-icon />
-      <el-table v-else v-loading="jobsLoading" :data="jobs" border class="list-table" :class="jobDensityClass" :max-height="jobIsFullscreen ? undefined : 640" row-key="id">
+      <ListPageStatus v-if="listPageState1.hasData.value" :error="listPageState1.errorMessage.value" :loading="listPageState1.loading.value" :has-data="listPageState1.hasData.value" :data-page="listPageState1.dataPage.value" @retry="fetchJobs" />
+<el-table v-loading="jobsLoading" :data="jobs" border class="list-table" :class="jobDensityClass" :max-height="jobIsFullscreen ? undefined : 640" row-key="id">
         <el-table-column v-if="jobVisibleKeys.includes('status')" label="状态" min-width="130">
-          <template #default="{ row }"><el-tag :type="jobStatusTagType(row.status)">{{ jobStatusLabel(row.status) }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :type="jobStatusTagType(row.status)">{{ jobStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="jobVisibleKeys.includes('email')" label="收件邮箱" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.to_email || row.to_email_snapshot || '-' }}</template>
@@ -51,13 +51,13 @@
         <el-table-column v-if="jobVisibleKeys.includes('reschedule')" label="顺延次数" min-width="90">
           <template #default="{ row }">{{ row.reschedule_count ?? 0 }}</template>
         </el-table-column>
-        <template #empty>暂无发送任务；草稿批准并排程后会出现在这里。</template>
+        <template #empty><ListPageStatus :error="listPageState1.errorMessage.value" :loading="listPageState1.loading.value" :has-data="false" @retry="fetchJobs">暂无发送任务；草稿批准并排程后会出现在这里。</ListPageStatus></template>
       </el-table>
       <el-pagination v-model:current-page="jobsPage" v-model:page-size="jobsPageSize" :total="jobsTotal"
-        class="pager" :page-sizes="[20, 50, 100]" layout="total,sizes,prev,pager,next" @current-change="handleJobsPageChange" @size-change="handleJobsSizeChange" />
+        class="pager" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handleJobsPageChange" @size-change="handleJobsSizeChange" />
     </div>
 
-    <el-dialog v-model="createVisible" title="新建开发信" width="min(620px, calc(100vw - 32px))"
+    <el-dialog v-model="createVisible" title="新建开发信" width="640px"
       :close-on-click-modal="!creating" :close-on-press-escape="!creating" :show-close="!creating">
       <div v-loading="context.loading" class="create-body">
         <el-alert v-if="context.error" type="error" title="触达上下文加载失败，请重试。" :closable="false" show-icon>
@@ -143,19 +143,27 @@ const {
   panelRef: jobPanelRef, isFullscreen: jobIsFullscreen, toggleFullscreen: toggleJobFullscreen,
 } = useTableView('mail-outreach-customer-jobs', jobColumnDefs)
 
+const listPageState = useOperationsList((params, config) => listDrafts(params, config), { resourceKeys: ['customer_id'], searchForm: { customer_id: props.customerId } })
 const {
   loading: draftsLoading, list: drafts, total: draftsTotal, page: draftsPage, pageSize: draftsPageSize,
   error: draftsError, fetchList: fetchDrafts, handlePageChange: handleDraftsPageChange, handleSizeChange: handleDraftsSizeChange,
-} = useOperationsList(params => listDrafts({ ...params, customer_id: props.customerId }))
+} = listPageState
 
+const listPageState1 = useOperationsList((params, config) => listJobs(params, config), { resourceKeys: ['customer_id'], searchForm: { customer_id: props.customerId } })
 const {
   loading: jobsLoading, list: jobs, total: jobsTotal, page: jobsPage, pageSize: jobsPageSize,
   error: jobsError, fetchList: fetchJobs, handlePageChange: handleJobsPageChange, handleSizeChange: handleJobsSizeChange,
-} = useOperationsList(params => listJobs({ ...params, customer_id: props.customerId }))
+} = listPageState1
 
 function refreshAll() {
-  return Promise.all([fetchDrafts(), fetchJobs()])
+  return Promise.all([listPageState.refreshUpdate(), listPageState1.refreshUpdate()])
 }
+watch(() => props.customerId, customerId => {
+  listPageState.searchForm.customer_id = customerId
+  listPageState1.searchForm.customer_id = customerId
+  listPageState.handleSearch()
+  listPageState1.handleSearch()
+})
 
 function draftEmail(row) {
   return row.to_email || row.recipient_email || row.email || '-'
@@ -241,7 +249,7 @@ async function submitCreate() {
     })
     createVisible.value = false
     msgSuccess('草稿已生成')
-    await fetchDrafts()
+    await listPageState.refreshCreate()
     const newId = response?.data?.id ?? response?.data?.draft_id
     if (newId) openReview(newId)
   } catch (error) {

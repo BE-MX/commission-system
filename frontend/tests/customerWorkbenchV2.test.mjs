@@ -9,7 +9,7 @@ const ref = { type: 'event', id: 81, revision: 2 }
 test('three exclusive views preserve distinct work item and action count units', () => {
   assert.deepEqual(ITEM_VIEWS.map(row=>row.value), ['need_me','in_progress','ended'])
   const source=read('../src/views/customer_hub/WorkbenchList.vue')
-  assert.match(source,/count_unit!=='work_item'/)
+  assert.match(source,/count_unit\s*!==\s*'work_item'/)
   assert.match(source,/actions_done_today/)
   assert.match(source,/items_resolved \+ summary.items_cancelled/)
   assert.match(source,/完成、终止和延后都不释放当日额度/)

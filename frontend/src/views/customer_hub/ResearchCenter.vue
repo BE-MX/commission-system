@@ -6,7 +6,7 @@
       <el-tab-pane label="研究任务与质量审核" name="research"><CustomerHubWorkspace ref="workspace" kind="research" @inspect-task="inspectTask" /></el-tab-pane>
       <el-tab-pane label="开发资格待审" name="qualification" lazy><QualificationPanel ref="qualification" /></el-tab-pane>
     </el-tabs>
-    <el-drawer class="customer-hub-drawer" v-model="detailVisible" title="背调任务详情" size="min(640px, 100vw)">
+    <DetailDrawer class="customer-hub-drawer" v-model="detailVisible" title="背调任务详情" width="640px">
       <div v-loading="detailLoading" class="detail-body">
         <el-alert v-if="detailError" type="error" title="任务详情加载失败；列表信息不能替代复核依据。" :closable="false" show-icon><template #default><el-button link type="primary" @click="retryTaskDetail">重试</el-button></template></el-alert>
         <template v-else-if="detail?.content_redacted">
@@ -21,8 +21,8 @@
       <template v-if="reviewReady && !detail?.content_redacted" #footer>
         <div class="review-actions"><GlassButton v-permission="'sales_automation:admin'" variant="success" left-icon="Check" :loading="workflowLoading" :disabled="workflowLoading" @click="review('accepted')">通过复核</GlassButton><GlassButton v-permission="'sales_automation:admin'" variant="warning" left-icon="RefreshLeft" :loading="workflowLoading" :disabled="workflowLoading" @click="review('revision_requested')">要求修订</GlassButton><GlassButton v-permission="'sales_automation:admin'" variant="danger" left-icon="Close" :loading="workflowLoading" :disabled="workflowLoading" @click="review('rejected')">驳回结果</GlassButton></div>
       </template>
-    </el-drawer>
-    <PublicPoolRules v-model="batchDialog" @created="workspace?.refresh()" />
+    </DetailDrawer>
+    <PublicPoolRules v-model="batchDialog" @created="workspace?.refreshCreate()" />
   </div>
 </template>
 <script setup>

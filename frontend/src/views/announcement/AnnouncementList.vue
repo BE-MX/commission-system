@@ -16,19 +16,16 @@
 
     <el-alert v-if="!config.initialized" class="page-alert" type="info" title="公告库尚未初始化，请管理员在公告设置中创建。" :closable="false" show-icon />
     <section v-else ref="panelRef" class="table-card announcement-panel">
-      <div class="toolbar">
-        <el-input v-model="searchForm.q" clearable placeholder="搜索标题或正文" class="filter-w-lg" @keyup.enter="search" @clear="search">
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="search" @reset="reset"><el-input v-model="searchForm.q" clearable placeholder="搜索标题或正文" class="filter-w-lg"  >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="searchForm.category_id" clearable placeholder="全部类别" class="filter-w-sm">
+<el-select v-model="searchForm.category_id" clearable placeholder="全部类别" class="filter-w-sm">
           <el-option v-for="c in categories" :key="c.id" :label="c.title" :value="c.id" />
         </el-select>
-        <el-select v-model="searchForm.status" clearable placeholder="全部状态" class="filter-w-sm">
+<el-select v-model="searchForm.status" clearable placeholder="全部状态" class="filter-w-sm">
           <el-option v-for="(label, value) in statuses" :key="value" :label="label" :value="value" />
         </el-select>
-        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="reset">重置</GlassButton>
-      </div>
+</FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -45,12 +42,13 @@
         />
       </div>
 
-      <el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('title')" label="公告标题" min-width="260" show-overflow-tooltip>
           <template #default="{ row }">
             <el-button link type="primary" @click="openEditor(row.id)"><el-icon><Document /></el-icon>{{ row.title }}</el-button>
@@ -58,8 +56,8 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('flags')" label="标记" min-width="130">
           <template #default="{ row }">
-            <el-tag v-if="row.pinned" size="small" effect="plain">置顶</el-tag>
-            <el-tag v-if="row.important" size="small" effect="plain" type="warning">重要</el-tag>
+            <StatusBadge v-if="row.pinned" size="small" effect="plain">置顶</StatusBadge>
+            <StatusBadge v-if="row.important" size="small" effect="plain" type="warning">重要</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('category')" prop="category_name" label="类别" min-width="130" show-overflow-tooltip />
@@ -71,7 +69,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="发布状态" min-width="120">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain">{{ statuses[row.status] || row.status }}</el-tag>
+            <StatusBadge size="small" effect="plain">{{ statuses[row.status] || row.status }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('delivery')" label="群推送" min-width="135">
@@ -96,24 +94,23 @@
       />
     </section>
 
-    <DetailDrawer :model-value="editorOpen" :title="editing ? '编辑与审核公告' : '公告详情'" width="min(1120px, 100vw)" @update:model-value="closeEditor">
-      <AnnouncementEditor v-if="editorOpen" ref="editor" :key="editorKey" :document-id="selectedId" :edit="editing" :config="config" :categories="categories" @saved="fetchList" />
+    <DetailDrawer :model-value="editorOpen" :title="editing ? '编辑与审核公告' : '公告详情'" width="760px" @update:model-value="closeEditor">
+      <AnnouncementEditor v-if="editorOpen" ref="editor" :key="editorKey" :document-id="selectedId" :edit="editing" :config="config" :categories="categories" @saved="handleSaved" />
     </DetailDrawer>
-    <el-drawer v-model="settingsOpen" title="公告设置" size="min(850px, 100vw)" destroy-on-close><AnnouncementSettings @updated="load" /></el-drawer>
-    <el-drawer v-model="weeklyOpen" title="公告周报" size="min(900px, 100vw)" destroy-on-close><AnnouncementWeekly /></el-drawer>
+    <DetailDrawer v-model="settingsOpen" title="公告设置" width="760px" destroy-on-close><AnnouncementSettings @updated="load" /></DetailDrawer>
+    <DetailDrawer v-model="weeklyOpen" title="公告周报" width="760px" destroy-on-close><AnnouncementWeekly /></DetailDrawer>
   </div>
 </template>
 
-<script setup>
+<script setup>import { confirmAction, promptAction, confirmDanger, msgSuccess } from '@/utils/feedback'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+
 import { Document, Search } from '@element-plus/icons-vue'
 import { announcementApi as api } from '@/api/announcement'
 import { useListPage } from '@/composables/useListPage'
 import { useTableView } from '@/composables/useTableView'
 import { formatBeijingDateTime } from '@/utils/datetime'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import TableTools from '@/components/TableTools.vue'
 import AnnouncementEditor from './AnnouncementEditor.vue'
@@ -137,11 +134,13 @@ const columnDefs = [
   { key: 'delivery', label: '群推送' },
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('announcement-list', columnDefs)
-const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch: search, handleReset: reset, handlePageChange, handleSizeChange } = useListPage(
-  params => api.get('', Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== null))),
+const listPageState = useListPage(
+  (params, { signal, isCurrent }) => api.get('', Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== null)), { signal, suppressToast: true }),
   { immediate: false, searchForm: { q: '', category_id: null, status: '' } },
 )
+const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch: search, handleReset: reset, handlePageChange, handleSizeChange } = listPageState
 const hasActiveFilters = computed(() => Boolean(searchForm.q || searchForm.category_id || searchForm.status))
+function handleSaved({ created = false } = {}) { return created ? listPageState.refreshCreate() : listPageState.refreshUpdate() }
 async function load() {
   config.value = await api.get('/config')
   if (config.value.initialized) { categories.value = await api.get('/categories'); await fetchList() }
@@ -149,7 +148,7 @@ async function load() {
 function openEditor(id, edit = false) { selectedId.value = id; editing.value = edit; editorKey.value++; editorOpen.value = true }
 async function mayLeave() {
   if (!editor.value?.hasChanges) return true
-  try { await ElMessageBox.confirm('草稿尚未保存，离开会丢失修改。', '未保存的修改', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }); return true }
+  try { await confirmAction('草稿尚未保存，离开会丢失修改。', '未保存的修改', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }); return true }
   catch { return false }
 }
 async function closeEditor(value) {
@@ -157,14 +156,14 @@ async function closeEditor(value) {
   editorOpen.value = false
   if (route.params.documentId) router.replace('/announcements')
 }
-async function pin(row) { await api.put(`/${row.id}/pin`, { pinned: !row.pinned }); await fetchList() }
+async function pin(row) { await api.put(`/${row.id}/pin`, { pinned: !row.pinned }); await listPageState.refreshUpdate() }
 async function withdraw(row) {
   let reason
-  try { reason = (await ElMessageBox.prompt('撤回后将停止展示，并向公告群发送撤回说明。请填写原因。', '撤回公告', { inputPattern: /\S+/, inputErrorMessage: '请填写原因' })).value }
+  try { reason = (await promptAction('撤回后将停止展示，并向公告群发送撤回说明。请填写原因。', '撤回公告', { inputPattern: /\S+/, inputErrorMessage: '请填写原因' })).value }
   catch { return }
-  await api.post(`/${row.id}/withdraw`, { reason }); await fetchList(); msgSuccess('撤回')
+  await api.post(`/${row.id}/withdraw`, { reason }); await listPageState.refreshUpdate(); msgSuccess('撤回')
 }
-async function remove(row) { try { await confirmDanger('删除', row.title) } catch { return }; await api.delete(`/${row.id}`); await fetchList(); msgSuccess('删除') }
+async function remove(row) { try { await confirmDanger('删除', row.title) } catch { return }; await api.delete(`/${row.id}`); await listPageState.refreshRemove(); msgSuccess('删除') }
 function beforeUnload(event) { if (editor.value?.hasChanges) { event.preventDefault(); event.returnValue = '' } }
 onBeforeRouteLeave(mayLeave)
 onMounted(async () => { window.addEventListener('beforeunload', beforeUnload); await load(); if (route.params.documentId) openEditor(route.params.documentId) })

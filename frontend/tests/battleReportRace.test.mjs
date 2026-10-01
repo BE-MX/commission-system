@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { computed, ref } from 'vue'
+import { watchListResourceScope } from '../src/composables/useListResourceScope.js'
 import { useListPage } from '../src/composables/useListPage.js'
 import { formatCalendarDate } from '../src/utils/datetime.js'
 import { addDays, errorText, money } from '../src/views/battle-report/helpers.js'
@@ -19,7 +20,7 @@ function createHarness() {
   const deps = {
     computed, ref, onMounted: () => {}, onUnmounted: fn => { unmount = fn }, watch: () => {}, defineProps: () => props,
     battleReportApi: { orders: () => new Promise((resolve, reject) => queue.push({ resolve, reject })) },
-    useListPage, currentBeijingDate: () => '2026-09-22', formatCalendarDate, addDays, errorText, money,
+    useListPage, watchListResourceScope, currentBeijingDate: () => '2026-09-22', formatCalendarDate, addDays, errorText, money,
   }
   const state = new Function(...Object.keys(deps), `${source}\nreturn { searchOrders, list, orderMeta, orderError };`)(...Object.values(deps))
   return { state, queue, unmount: () => unmount() }
@@ -35,6 +36,14 @@ test('stale order failures cannot overwrite newer successful results', async () 
   assert.deepEqual(state.list.value, [{ order_no: 'latest' }])
   assert.equal(state.orderMeta.value.gmv, '100.00')
   assert.equal(state.orderError.value, '')
+})
+
+test('current order failure remains visible when the shared controller handles rejection', async () => {
+  const { state, queue } = createHarness()
+  const request = state.searchOrders()
+  queue[0].reject(new Error('current list unavailable'))
+  await request
+  assert.equal(state.orderError.value, 'current list unavailable')
 })
 
 test('stale order successes cannot replace the current filter summary', async () => {

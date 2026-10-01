@@ -29,8 +29,7 @@
       <!-- Provider Tab -->
       <el-tab-pane label="提供商管理" name="providers">
         <div ref="providerPanelRef" class="table-card">
-        <div class="toolbar tab-toolbar">
-          <div class="toolbar-left">
+        <FilterBar :loading="providerLoading" :pending="providerPending" @search="searchProviders" @reset="resetProviders">
             <el-input v-model="providerSearch" placeholder="搜索名称 / API Base" clearable class="filter-w-md" />
             <el-select v-model="providerTypeFilter" placeholder="全部类型" clearable class="filter-w-sm">
               <el-option label="直连大模型" value="direct" />
@@ -40,14 +39,15 @@
               <el-option label="已启用" :value="true" />
               <el-option label="已禁用" :value="false" />
             </el-select>
-          </div>
-        </div>
+        </FilterBar>
         <div class="action-bar">
           <GlassButton variant="primary" left-icon="Plus" @click="openProviderDialog()">新增提供商</GlassButton>
-          <TableTools v-model:visible-keys="providerVisibleKeys" v-model:density="providerDensity" :columns="providerColumnDefs" :fullscreen="providerIsFullscreen" @refresh="fetchProviders" @fullscreen="toggleProviderFullscreen" />
+          <TableTools v-model:visible-keys="providerVisibleKeys" v-model:density="providerDensity" :columns="providerColumnDefs" :loading="providerLoading" :fullscreen="providerIsFullscreen" @refresh="fetchProviders" @fullscreen="toggleProviderFullscreen" />
         </div>
 
+        <ListPageStatus v-if="providerResource.hasData.value" :error="providerResource.errorMessage.value" :loading="providerLoading" :has-data="true" @retry="fetchProviders" />
         <el-table :data="filteredProviders" border class="list-table" :class="providerDensityClass" :max-height="providerIsFullscreen ? undefined : 640" v-loading="providerLoading">
+          <template #empty><ListPageStatus :error="providerResource.errorMessage.value" :loading="providerLoading" @retry="fetchProviders"><el-empty description="暂无数据" :image-size="96" /></ListPageStatus></template>
           <el-table-column v-if="providerVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
           <el-table-column v-if="providerVisibleKeys.includes('name')" label="名称" min-width="160">
             <template #default="{ row }">
@@ -61,16 +61,16 @@
           </el-table-column>
           <el-table-column v-if="providerVisibleKeys.includes('type')" label="类型" min-width="110">
             <template #default="{ row }">
-              <el-tag :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
+              <StatusBadge :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
                 {{ row.provider_type === 'direct' ? '直连' : 'ACCIO' }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="providerVisibleKeys.includes('protocol')" label="协议" min-width="100">
             <template #default="{ row }">
-              <el-tag v-if="row.provider_type === 'direct'" :type="row.api_type === 'anthropic' ? 'warning' : 'info'" size="small" effect="plain">
+              <StatusBadge v-if="row.provider_type === 'direct'" :type="row.api_type === 'anthropic' ? 'warning' : 'info'" size="small" effect="plain">
                 {{ row.api_type === 'anthropic' ? 'Anthropic' : 'OpenAI' }}
-              </el-tag>
+              </StatusBadge>
               <span v-else>-</span>
             </template>
           </el-table-column>
@@ -112,20 +112,20 @@
       <!-- Preset Tab -->
       <el-tab-pane label="预设管理" name="presets">
         <div ref="presetPanelRef" class="table-card">
-        <div class="toolbar tab-toolbar">
-          <div class="toolbar-left">
+        <FilterBar :loading="presetLoading" :pending="presetPending" @search="searchPresets" @reset="resetPresets">
             <el-input v-model="presetSearch" placeholder="搜索预设名称 / 描述" clearable class="filter-w-md" />
             <el-select v-model="presetProviderFilter" placeholder="全部提供商" clearable class="filter-w-sm">
               <el-option v-for="p in providerOptions" :key="p.id" :label="p.name" :value="p.id" />
             </el-select>
-          </div>
-        </div>
+        </FilterBar>
         <div class="action-bar">
           <GlassButton variant="primary" left-icon="Plus" @click="openPresetDialog()">新增预设</GlassButton>
-          <TableTools v-model:visible-keys="presetVisibleKeys" v-model:density="presetDensity" :columns="presetColumnDefs" :fullscreen="presetIsFullscreen" @refresh="fetchPresets" @fullscreen="togglePresetFullscreen" />
+          <TableTools v-model:visible-keys="presetVisibleKeys" v-model:density="presetDensity" :columns="presetColumnDefs" :loading="presetLoading" :fullscreen="presetIsFullscreen" @refresh="fetchPresets" @fullscreen="togglePresetFullscreen" />
         </div>
 
+        <ListPageStatus v-if="presetResource.hasData.value" :error="presetResource.errorMessage.value" :loading="presetLoading" :has-data="true" @retry="fetchPresets" />
         <el-table :data="filteredPresets" border class="list-table" :class="presetDensityClass" :max-height="presetIsFullscreen ? undefined : 640" v-loading="presetLoading">
+          <template #empty><ListPageStatus :error="presetResource.errorMessage.value" :loading="presetLoading" @retry="fetchPresets"><el-empty description="暂无数据" :image-size="96" /></ListPageStatus></template>
           <el-table-column v-if="presetVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
           <el-table-column v-if="presetVisibleKeys.includes('name')" label="预设名称" min-width="180">
             <template #default="{ row }">
@@ -150,9 +150,9 @@
           </el-table-column>
           <el-table-column v-if="presetVisibleKeys.includes('status')" label="状态" min-width="80">
             <template #default="{ row }">
-              <el-tag :type="row.is_enabled ? 'success' : 'info'" size="small" effect="plain">
+              <StatusBadge :type="row.is_enabled ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.is_enabled ? '启用' : '禁用' }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column class-name="table-action-column" label="操作" min-width="240" fixed="right">
@@ -191,8 +191,7 @@
         </el-row>
 
         <div ref="logPanelRef" class="table-card">
-        <div class="toolbar tab-toolbar">
-          <div class="toolbar-left">
+        <FilterBar :loading="logsLoading" :pending="logState.hasPendingSearch.value" @search="searchLogs" @reset="resetLogs">
             <el-select v-model="logModuleFilter" placeholder="全部模块" clearable class="filter-w-sm">
               <el-option label="物流跟踪" value="logistics" />
               <el-option label="设计预约" value="design_booking" />
@@ -205,22 +204,23 @@
               <el-option label="进行中" value="pending" />
             </el-select>
             <el-date-picker v-model="logDateRange" type="daterange" range-separator="~" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD" class="filter-w-lg" />
-          </div>
-        </div>
+        </FilterBar>
         <div class="action-bar">
-          <TableTools v-model:visible-keys="logVisibleKeys" v-model:density="logDensity" :columns="logColumnDefs" :fullscreen="logIsFullscreen" @refresh="fetchLogs" @fullscreen="toggleLogFullscreen" />
+          <TableTools v-model:visible-keys="logVisibleKeys" v-model:density="logDensity" :columns="logColumnDefs" :loading="logsLoading" :fullscreen="logIsFullscreen" @refresh="fetchLogs" @fullscreen="toggleLogFullscreen" />
         </div>
 
-        <el-table :data="logsData" border class="list-table" :class="logDensityClass" :max-height="logIsFullscreen ? undefined : 640" v-loading="logsLoading" @expand-change="onLogExpand" @sort-change="logSort.onSortChange">
+        <ListPageStatus v-if="logState.hasData.value" :error="logState.errorMessage.value" :loading="logsLoading" :has-data="true" @retry="fetchLogs" />
+        <el-table :data="logsData" border class="list-table" :class="logDensityClass" :max-height="logIsFullscreen ? undefined : 640" v-loading="logsLoading" @expand-change="onLogExpand" @sort-change="sortLogs">
+          <template #empty><ListPageStatus :error="logState.errorMessage.value" :loading="logsLoading" @retry="fetchLogs"><el-empty description="暂无数据" :image-size="96" /></ListPageStatus></template>
           <el-table-column type="expand">
             <template #default="{ row }">
               <div class="log-detail">
-                <el-descriptions :column="2" size="small" border>
+                <ResponsiveDescriptions :column="2" size="small" border>
                   <el-descriptions-item label="任务 ID">{{ row.task_id || '-' }}</el-descriptions-item>
                   <el-descriptions-item label="调用用户">{{ row.caller_user_id || '系统' }}</el-descriptions-item>
                   <el-descriptions-item label="输入 Token">{{ row.tokens_prompt || '-' }}</el-descriptions-item>
                   <el-descriptions-item label="输出 Token">{{ row.tokens_completion || '-' }}</el-descriptions-item>
-                </el-descriptions>
+                </ResponsiveDescriptions>
                 <div v-if="row.error_message" class="log-error-box">
                   <p class="log-error-code">{{ row.error_code }}</p>
                   <p class="log-error-msg">{{ row.error_message }}</p>
@@ -239,9 +239,9 @@
           </el-table-column>
           <el-table-column v-if="logVisibleKeys.includes('type')" label="类型" min-width="80">
             <template #default="{ row }">
-              <el-tag :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
+              <StatusBadge :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
                 {{ row.provider_type === 'direct' ? '直连' : 'ACCIO' }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="logVisibleKeys.includes('model')" prop="model" label="模型" min-width="120" sortable="custom">
@@ -259,15 +259,15 @@
           </el-table-column>
           <el-table-column v-if="logVisibleKeys.includes('status')" label="状态" min-width="80">
             <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small" effect="plain">
+              <StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">
                 {{ statusLabel(row.status) }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="logVisibleKeys.includes('created')" prop="created_at" label="时间" min-width="150" sortable="custom" />
         </el-table>
 
-        <el-pagination v-model:current-page="logPage" v-model:page-size="logPageSize" :page-sizes="[20, 50, 100]" :total="logTotal" layout="total, sizes, prev, pager, next" class="pager" />
+        <el-pagination v-model:current-page="logPage" v-model:page-size="logPageSize" :page-sizes="[20, 50, 100]" :total="logTotal" layout="total, sizes, prev, pager, next" class="pager" @current-change="changeLogPage" @size-change="changeLogSize" />
         </div>
       </el-tab-pane>
       <el-tab-pane label="站点应用" name="sites" lazy>
@@ -276,8 +276,8 @@
     </el-tabs>
 
     <!-- Provider Dialog -->
-    <el-dialog v-model="providerDialogVisible" :title="providerEditId ? '编辑提供商' : '新增提供商'" width="520px" destroy-on-close>
-      <el-form ref="providerFormRef" :model="providerForm" :rules="providerRules" label-width="100px">
+    <el-dialog v-model="providerDialogVisible" :title="providerEditId ? '编辑提供商' : '新增提供商'" width="640px" destroy-on-close>
+      <el-form label-position="top" ref="providerFormRef" :model="providerForm" :rules="providerRules">
         <el-form-item label="名称" prop="name">
           <el-input v-model="providerForm.name" placeholder="如 OpenAI-生产" />
         </el-form-item>
@@ -314,8 +314,8 @@
     </el-dialog>
 
     <!-- Preset Dialog -->
-    <el-dialog v-model="presetDialogVisible" :title="presetEditId ? '编辑预设' : '新增预设'" width="560px" destroy-on-close>
-      <el-form ref="presetFormRef" :model="presetForm" :rules="presetRules" label-width="110px">
+    <el-dialog v-model="presetDialogVisible" :title="presetEditId ? '编辑预设' : '新增预设'" width="640px" destroy-on-close>
+      <el-form label-position="top" ref="presetFormRef" :model="presetForm" :rules="presetRules">
         <el-form-item label="预设名称" prop="preset_name">
           <el-input v-model="presetForm.preset_name" placeholder="customer_analysis" />
           <div class="form-hint">只允许字母、数字、下划线</div>
@@ -346,7 +346,7 @@
 
     <!-- Preset Test Dialog -->
     <el-dialog v-model="testDialogVisible" :title="`测试预设：${testPresetName}`" width="640px" destroy-on-close>
-      <el-form>
+      <el-form label-position="top">
         <el-form-item label="发送消息">
           <el-input v-model="testMessage" type="textarea" :rows="4" placeholder="输入测试消息..." />
         </el-form-item>
@@ -416,7 +416,7 @@
     </el-dialog>
 
     <!-- Test Result Popover -->
-    <el-dialog v-model="testResultVisible" title="连通性测试结果" width="360px" :show-close="true">
+    <el-dialog v-model="testResultVisible" title="连通性测试结果" width="480px" :show-close="true">
       <div class="test-popover-body">
         <div class="test-status-row">
           <div class="status-dot" :class="testResultData?.status === 'ok' ? 'ok' : 'error'" />
@@ -430,6 +430,9 @@
 </template>
 
 <script setup>
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
+
 import AiGatewayApps from './components/AiGatewayApps.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
@@ -476,7 +479,8 @@ const {
 } = useTableView('ai-manager-logs', logColumnDefs)
 
 const {
-  activeTab,
+  providerResource, providerPending, searchProviders, resetProviders, presetResource, presetPending, searchPresets, resetPresets,
+  logState, searchLogs, resetLogs, changeLogPage, changeLogSize, sortLogs, activeTab,
   // Provider
   providers, providerLoading, providerSearch, providerTypeFilter, providerStatusFilter,
   showKeyMap, testingId, testResultVisible, testResultData,

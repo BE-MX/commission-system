@@ -38,17 +38,25 @@ export function buildAccessoryEditorState(row) {
   }
 }
 
-export function createLatestAccessorySearch({ request, applyItems, applyLoading, clearOnError = true }) {
+export function createLatestAccessorySearch({ request, applyItems, applyLoading, applyError = () => {}, clearOnError = true }) {
   let latestRequestId = 0
+  let controller
   const search = async params => {
     const requestId = ++latestRequestId
+    controller?.abort()
+    controller = new AbortController()
+    const current = controller
     applyLoading(true)
+    applyError(null)
     try {
-      const result = await request(params)
+      const result = await request(params, { signal: current.signal, suppressToast: true })
       if (requestId === latestRequestId) applyItems(result.items || [])
       return result
     } catch (error) {
-      if (requestId === latestRequestId && clearOnError) applyItems([])
+      if (requestId === latestRequestId) {
+        applyError(error)
+        if (clearOnError) applyItems([])
+      }
       throw error
     } finally {
       if (requestId === latestRequestId) applyLoading(false)
@@ -56,7 +64,9 @@ export function createLatestAccessorySearch({ request, applyItems, applyLoading,
   }
   search.invalidate = () => {
     latestRequestId += 1
+    controller?.abort()
     applyLoading(false)
+    applyError(null)
   }
   return search
 }

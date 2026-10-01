@@ -20,29 +20,31 @@
           <el-tabs v-model="activePriceKind">
             <el-tab-pane label="头发价格" name="hair">
           <div ref="stdPanelRef" class="table-card price-table-panel">
-          <div class="toolbar">
-            <el-select v-model="stdFilter" clearable filterable placeholder="按系列筛选" class="filter-w-md" @change="loadStdPrices">
+          <FilterBar :loading="stdLoading" :pending="stdPending" @search="searchStd" @reset="resetStd">
+            <el-select v-model="stdFilter" clearable filterable placeholder="按系列筛选" class="filter-w-md">
               <el-option v-for="s in stdSeriesOptions" :key="s" :label="s" :value="s" />
             </el-select>
-          </div>
+          </FilterBar>
           <div class="action-bar">
             <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="openStdDialog()">新增价格</GlassButton>
             <el-upload v-permission="'invoice:admin'" :show-file-list="false" accept=".xlsx" :http-request="handleImport">
               <GlassButton variant="secondary" :left-icon="Upload">导入价格表 Excel</GlassButton>
             </el-upload>
-            <TableTools v-model:visible-keys="stdVisibleKeys" v-model:density="stdDensity" :columns="stdColumnDefs" :fullscreen="stdIsFullscreen" @refresh="loadStdPrices" @fullscreen="toggleStdFullscreen" />
+            <TableTools v-model:visible-keys="stdVisibleKeys" v-model:density="stdDensity" :columns="stdColumnDefs" :fullscreen="stdIsFullscreen" :loading="stdLoading" @refresh="loadStdPrices" @fullscreen="toggleStdFullscreen" />
           </div>
+          <ListPageStatus v-if="stdResource.error.value && stdPrices.length" v-bind="resourceStatus(stdResource)" @retry="loadStdPrices" />
           <el-table v-loading="stdLoading" :data="stdPrices" border class="list-table" :class="stdDensityClass" :max-height="stdIsFullscreen ? undefined : 640">
+            <template #empty><ListPageStatus v-bind="resourceStatus(stdResource)" @retry="loadStdPrices"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="stdVisibleKeys.includes('series')" prop="series_grade" label="系列 + 工艺档" min-width="280" show-overflow-tooltip />
             <el-table-column v-if="stdVisibleKeys.includes('length')" prop="length" label="长度" min-width="80" />
             <el-table-column v-if="stdVisibleKeys.includes('weight')" prop="weight_unit" label="克重" min-width="80" />
             <el-table-column v-if="stdVisibleKeys.includes('color-type')" label="色型" min-width="110">
               <template #default="{ row }">
-                <el-tag effect="plain">{{ colorTypeText(row.color_type) }}</el-tag>
+                <StatusBadge effect="plain">{{ colorTypeText(row.color_type) }}</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column v-if="stdVisibleKeys.includes('price')" label="标准价" min-width="120" align="right">
-              <template #default="{ row }">{{ row.currency }} {{ Number(row.price).toFixed(2) }}</template>
+              <template #default="{ row }">{{ row.currency }} {{ formatMoney(row.price) }}</template>
             </el-table-column>
             <el-table-column v-if="stdVisibleKeys.includes('updated')" prop="updated_at" label="更新时间" min-width="170" show-overflow-tooltip />
             <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
@@ -73,13 +75,15 @@
           </div>
           <div class="action-bar">
             <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="colorDialog.visible = true">新增映射</GlassButton>
-            <TableTools v-model:visible-keys="colorVisibleKeys" v-model:density="colorDensity" :columns="colorColumnDefs" :fullscreen="colorIsFullscreen" @refresh="loadColorTypes" @fullscreen="toggleColorFullscreen" />
+            <TableTools v-model:visible-keys="colorVisibleKeys" v-model:density="colorDensity" :columns="colorColumnDefs" :fullscreen="colorIsFullscreen" :loading="colorLoading" @refresh="loadColorTypes" @fullscreen="toggleColorFullscreen" />
           </div>
+          <ListPageStatus v-if="colorResource.error.value && colorTypes.length" v-bind="resourceStatus(colorResource)" @retry="loadColorTypes" />
           <el-table v-loading="colorLoading" :data="colorTypes" border class="list-table" :class="colorDensityClass" :max-height="colorIsFullscreen ? undefined : 640">
+            <template #empty><ListPageStatus v-bind="resourceStatus(colorResource)" @retry="loadColorTypes"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="colorVisibleKeys.includes('code')" prop="color_code" label="色号" min-width="160" />
             <el-table-column v-if="colorVisibleKeys.includes('type')" label="色型" min-width="140">
               <template #default="{ row }">
-                <el-tag effect="plain">{{ colorTypeText(row.color_type) }}</el-tag>
+                <StatusBadge effect="plain">{{ colorTypeText(row.color_type) }}</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
@@ -96,16 +100,16 @@
         <!-- ── 客户价格规则 ── -->
         <el-tab-pane label="客户价格规则" name="rules">
           <div ref="rulePanelRef" class="table-card price-table-panel">
-          <div class="toolbar">
-            <el-input v-model="ruleKeyword" clearable placeholder="搜索客户" class="filter-w-md" @keyup.enter="loadRules" />
-            <GlassButton variant="primary" :left-icon="Search" @click="loadRules">查询</GlassButton>
-            <GlassButton variant="secondary" left-icon="RefreshLeft" @click="resetRuleFilter">重置</GlassButton>
-          </div>
+          <FilterBar :loading="ruleLoading" :pending="rulePending" @search="searchRules" @reset="resetRuleFilter">
+            <el-input v-model="ruleKeyword" clearable placeholder="搜索客户" class="filter-w-md" />
+          </FilterBar>
           <div class="action-bar">
             <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="openRuleDialog()">新增规则</GlassButton>
-            <TableTools v-model:visible-keys="ruleVisibleKeys" v-model:density="ruleDensity" :columns="ruleColumnDefs" :fullscreen="ruleIsFullscreen" @refresh="loadRules" @fullscreen="toggleRuleFullscreen" />
+            <TableTools v-model:visible-keys="ruleVisibleKeys" v-model:density="ruleDensity" :columns="ruleColumnDefs" :fullscreen="ruleIsFullscreen" :loading="ruleLoading" @refresh="loadRules" @fullscreen="toggleRuleFullscreen" />
           </div>
+          <ListPageStatus v-if="ruleResource.error.value && rules.length" v-bind="resourceStatus(ruleResource)" @retry="loadRules" />
           <el-table v-loading="ruleLoading" :data="rules" border class="list-table" :class="ruleDensityClass" :max-height="ruleIsFullscreen ? undefined : 640">
+            <template #empty><ListPageStatus v-bind="resourceStatus(ruleResource)" @retry="loadRules"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="ruleVisibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="220" show-overflow-tooltip />
             <el-table-column v-if="ruleVisibleKeys.includes('customer-id')" prop="customer_id" label="客户 ID" min-width="140" show-overflow-tooltip />
             <el-table-column v-if="ruleVisibleKeys.includes('adjust')" label="调价方式" min-width="200">
@@ -115,7 +119,7 @@
             </el-table-column>
             <el-table-column v-if="ruleVisibleKeys.includes('enabled')" label="启用" min-width="80">
               <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">{{ row.enabled ? '启用' : '停用' }}</el-tag>
+                <StatusBadge :value="row.enabled" :dictionary="ENABLED_STATUS" effect="plain" />
               </template>
             </el-table-column>
             <el-table-column v-if="ruleVisibleKeys.includes('remark')" prop="remark" label="备注" min-width="180" show-overflow-tooltip />
@@ -137,16 +141,17 @@
         <!-- ── 自定义产品 ── -->
         <el-tab-pane label="生产单沉淀产品" name="custom">
           <div ref="customPanelRef" class="table-card price-table-panel">
-          <div class="toolbar">
-            <el-input v-model="customKeyword" clearable placeholder="搜索产品名/型号" class="filter-w-md" @keyup.enter="loadCustom" />
-            <GlassButton variant="primary" :left-icon="Search" @click="loadCustom">查询</GlassButton>
-            <GlassButton variant="secondary" left-icon="RefreshLeft" @click="resetCustomFilter">重置</GlassButton>
-          </div>
+          <FilterBar :loading="customLoading" :pending="customPending" @search="searchCustom" @reset="resetCustomFilter">
+            <el-input v-model="customKeyword" clearable placeholder="搜索产品名/型号" class="filter-w-md" />
+            <template #summary><span>最多显示最近 200 个符合条件的产品，请用搜索缩小范围。</span></template>
+          </FilterBar>
           <div class="action-bar">
             <GlassButton v-permission="'invoice:admin'" variant="secondary" :left-icon="Refresh" @click="runReconcile">与 OKKI 产品库对账回填</GlassButton>
-            <TableTools v-model:visible-keys="customVisibleKeys" v-model:density="customDensity" :columns="customColumnDefs" :fullscreen="customIsFullscreen" @refresh="loadCustom" @fullscreen="toggleCustomFullscreen" />
+            <TableTools v-model:visible-keys="customVisibleKeys" v-model:density="customDensity" :columns="customColumnDefs" :fullscreen="customIsFullscreen" :loading="customLoading" @refresh="loadCustom" @fullscreen="toggleCustomFullscreen" />
           </div>
+          <ListPageStatus v-if="customResource.error.value && customProducts.length" v-bind="resourceStatus(customResource)" @retry="loadCustom" />
           <el-table v-loading="customLoading" :data="customProducts" border class="list-table" :class="customDensityClass" :max-height="customIsFullscreen ? undefined : 640">
+            <template #empty><ListPageStatus v-bind="resourceStatus(customResource)" @retry="loadCustom"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="customVisibleKeys.includes('name')" prop="product_name" label="产品名" min-width="300" show-overflow-tooltip />
             <el-table-column v-if="customVisibleKeys.includes('model')" prop="model" label="Model" min-width="140" show-overflow-tooltip />
             <el-table-column v-if="customVisibleKeys.includes('color')" prop="color" label="Color" min-width="110" />
@@ -155,8 +160,8 @@
             <el-table-column v-if="customVisibleKeys.includes('count')" prop="use_count" label="使用次数" min-width="90" align="right" />
             <el-table-column v-if="customVisibleKeys.includes('okki')" label="OKKI 关联" min-width="150">
               <template #default="{ row }">
-                <el-tag v-if="row.okki_product_id" type="success" effect="plain">已关联 {{ row.okki_product_id }}</el-tag>
-                <el-tag v-else type="info" effect="plain">待 OKKI 建品</el-tag>
+                <StatusBadge v-if="row.okki_product_id" type="success" effect="plain">已关联 {{ row.okki_product_id }}</StatusBadge>
+                <StatusBadge v-else type="info" effect="plain">待 OKKI 建品</StatusBadge>
               </template>
             </el-table-column>
           </el-table>
@@ -165,8 +170,8 @@
       </el-tabs>
     </section>
     <!-- 标准价编辑 -->
-    <el-dialog v-model="stdDialog.visible" :title="stdDialog.form.id ? '编辑标准价' : '新增标准价'" width="520px">
-      <el-form :model="stdDialog.form" label-width="110px">
+    <el-dialog v-model="stdDialog.visible" :title="stdDialog.form.id ? '编辑标准价' : '新增标准价'" width="640px">
+      <el-form label-position="top" :model="stdDialog.form">
         <el-form-item label="系列+工艺档" required>
           <el-select v-model="stdDialog.form.series_grade" filterable allow-create default-first-option style="width: 100%">
             <el-option v-for="s in stdSeriesOptions" :key="s" :label="s" :value="s" />
@@ -193,8 +198,8 @@
       </template>
     </el-dialog>
     <!-- 色型映射新增 -->
-    <el-dialog v-model="colorDialog.visible" title="新增色型映射" width="420px">
-      <el-form :model="colorDialog.form" label-width="90px">
+    <el-dialog v-model="colorDialog.visible" title="新增色型映射" width="480px">
+      <el-form label-position="top" :model="colorDialog.form">
         <el-form-item label="色号" required>
           <el-input v-model="colorDialog.form.color_code" maxlength="32" placeholder="如 #P8/24 或 Cookies Cream" />
         </el-form-item>
@@ -210,8 +215,9 @@
       </template>
     </el-dialog>
     <!-- 客户规则编辑 -->
-    <el-dialog v-model="ruleDialog.visible" :title="ruleDialog.form.id ? '编辑客户价格规则' : '新增客户价格规则'" width="520px">
-      <el-form :model="ruleDialog.form" label-width="110px">
+    <el-dialog v-model="ruleDialog.visible" :title="ruleDialog.form.id ? '编辑客户价格规则' : '新增客户价格规则'" width="640px">
+      <el-form label-position="top" :model="ruleDialog.form">
+        <ListPageStatus v-if="ruleCustomerResource.error.value" v-bind="resourceStatus(ruleCustomerResource)" @retry="ruleCustomerResource.load()" />
         <el-form-item label="客户" required>
           <el-select
             v-model="ruleDialog.customer"
@@ -259,12 +265,17 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ENABLED_STATUS } from '@/utils/status'
+import { formatMoney } from '../../utils/money.js'
+import { msgWarning, msgSuccessText, msgSuccess, confirmDanger } from '@/utils/feedback'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+
 import { Delete, Edit, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
-import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import { customerLabel } from './composables/useInvoiceEditor'
 import AccessoryPriceConfig from './components/AccessoryPriceConfig.vue'
 import { COLOR_TYPE_TEXT, stdColumnDefs, colorColumnDefs, ruleColumnDefs, customColumnDefs, emptyStd, emptyRule, colorTypeText, ruleText } from './invoicePricePresentation'
@@ -303,32 +314,39 @@ const {
   panelRef: customPanelRef, isFullscreen: customIsFullscreen, toggleFullscreen: toggleCustomFullscreen,
 } = useTableView('invoice-custom-products', customColumnDefs)
 
-// 标准价
-const stdLoading = ref(false)
-const stdPrices = ref([])
-const stdFilter = ref('')
+const resourceStatus = resource => ({ error: resource.errorMessage.value, loading: resource.loading.value, hasData: resource.hasLoaded.value, paged: false })
+const readConfig = signal => ({ signal, suppressToast: true })
+const stdResource = useAsyncResource(async (_, { signal }) => (await listStdPrices({}, readConfig(signal))).items || [], { initialData: [] })
+const stdLoading = stdResource.loading
+const stdFilter = ref(''), appliedStdFilter = ref('')
+const stdPrices = computed(() => appliedStdFilter.value ? stdResource.data.value.filter(row => row.series_grade === appliedStdFilter.value) : stdResource.data.value)
 const stdDialog = reactive({ visible: false, form: emptyStd() })
-const stdSeriesOptions = computed(() => [...new Set(stdPrices.value.map(r => r.series_grade))])
+const stdSeriesOptions = computed(() => [...new Set(stdResource.data.value.map(row => row.series_grade))])
+const stdPending = computed(() => stdFilter.value !== appliedStdFilter.value)
+function searchStd() { appliedStdFilter.value = stdFilter.value; return loadStdPrices() }
+function resetStd() { stdFilter.value = ''; return searchStd() }
 
-// 色型
-const colorLoading = ref(false)
-const colorTypes = ref([])
+const colorResource = useAsyncResource(async (_, { signal }) => (await listColorTypes(readConfig(signal))).items || [], { initialData: [] })
+const colorLoading = colorResource.loading, colorTypes = colorResource.data
 const colorDialog = reactive({ visible: false, form: { color_code: '', color_type: 'solid' } })
 
-// 客户规则
-const ruleLoading = ref(false)
-const rules = ref([])
-const ruleKeyword = ref('')
-const ruleCustomerLoading = ref(false)
-const ruleCustomerOptions = ref([])
+const ruleResource = useAsyncResource(async (params, { signal }) => (await listCustomerRules(params, readConfig(signal))).items || [], { initialData: [] })
+const ruleLoading = ruleResource.loading, rules = ruleResource.data
+const ruleKeyword = ref(''), appliedRuleKeyword = ref('')
+const rulePending = computed(() => ruleKeyword.value !== appliedRuleKeyword.value)
+function searchRules() { appliedRuleKeyword.value = ruleKeyword.value; return loadRules() }
+function resetRuleFilter() { ruleKeyword.value = ''; return searchRules() }
+const ruleCustomerResource = useAsyncResource(async (params, { signal }) => (await searchInvoiceCustomers(params, readConfig(signal))).items || [], { initialData: [] })
+const ruleCustomerLoading = ruleCustomerResource.loading, ruleCustomerOptions = ruleCustomerResource.data
 const ruleDialog = reactive({ visible: false, customer: null, form: emptyRule() })
+watch(() => ruleDialog.visible, visible => { if (!visible) ruleCustomerResource.clear() })
 
-// 自定义产品
-const customLoading = ref(false)
-const customProducts = ref([])
-const customKeyword = ref('')
-function resetRuleFilter() { ruleKeyword.value = ''; loadRules() }
-function resetCustomFilter() { customKeyword.value = ''; loadCustom() }
+const customResource = useAsyncResource(async (params, { signal }) => (await listCustomProducts(params, readConfig(signal))).items || [], { initialData: [] })
+const customLoading = customResource.loading, customProducts = customResource.data
+const customKeyword = ref(''), appliedCustomKeyword = ref('')
+const customPending = computed(() => customKeyword.value !== appliedCustomKeyword.value)
+function searchCustom() { appliedCustomKeyword.value = customKeyword.value; return loadCustom() }
+function resetCustomFilter() { customKeyword.value = ''; return searchCustom() }
 
 onMounted(() => {
   loadStdPrices()
@@ -339,15 +357,7 @@ onMounted(() => {
 
 // ── 标准价 ──────────────────────────────────────────
 
-async function loadStdPrices() {
-  stdLoading.value = true
-  try {
-    const res = await listStdPrices(stdFilter.value ? { series_grade: stdFilter.value } : {})
-    stdPrices.value = res.items || []
-  } finally {
-    stdLoading.value = false
-  }
-}
+function loadStdPrices() { return stdResource.load() }
 
 function openStdDialog(row) {
   stdDialog.form = row
@@ -359,7 +369,7 @@ function openStdDialog(row) {
 async function saveStd() {
   const f = stdDialog.form
   if (!f.series_grade || !f.length || !f.weight_unit || f.price == null) {
-    ElMessage.warning('系列、长度、克重、价格均必填')
+    msgWarning('系列、长度、克重、价格均必填')
     return
   }
   await upsertStdPrice(f)
@@ -379,26 +389,18 @@ async function handleImport({ file }) {
   const formData = new FormData()
   formData.append('file', file)
   const result = await importPriceWorkbook(formData)
-  ElMessage.success(`导入完成：标准价格 ${result.prices_imported} 格，已按两位小数四舍五入${result.skipped?.length ? `，跳过 ${result.skipped.length} 行` : ''}`)
+  msgSuccessText(`导入完成：标准价格 ${result.prices_imported} 格，已按两位小数四舍五入${result.skipped?.length ? `，跳过 ${result.skipped.length} 行` : ''}`)
   loadStdPrices()
   loadColorTypes()
 }
 
 // ── 色型 ────────────────────────────────────────────
 
-async function loadColorTypes() {
-  colorLoading.value = true
-  try {
-    const res = await listColorTypes()
-    colorTypes.value = res.items || []
-  } finally {
-    colorLoading.value = false
-  }
-}
+function loadColorTypes() { return colorResource.load() }
 
 async function saveColor() {
   if (!colorDialog.form.color_code) {
-    ElMessage.warning('请输入色号')
+    msgWarning('请输入色号')
     return
   }
   await upsertColorType(colorDialog.form)
@@ -417,25 +419,9 @@ async function removeColor(row) {
 
 // ── 客户规则 ────────────────────────────────────────
 
-async function loadRules() {
-  ruleLoading.value = true
-  try {
-    const res = await listCustomerRules(ruleKeyword.value ? { keyword: ruleKeyword.value } : {})
-    rules.value = res.items || []
-  } finally {
-    ruleLoading.value = false
-  }
-}
+function loadRules() { return ruleResource.load(appliedRuleKeyword.value ? { keyword: appliedRuleKeyword.value } : {}) }
 
-async function searchRuleCustomers(keyword) {
-  ruleCustomerLoading.value = true
-  try {
-    const res = await searchInvoiceCustomers({ keyword })
-    ruleCustomerOptions.value = res.items || []
-  } finally {
-    ruleCustomerLoading.value = false
-  }
-}
+function searchRuleCustomers(keyword) { return ruleCustomerResource.load({ keyword }, { clear: true }) }
 
 function onRuleCustomerChange(customer) {
   ruleDialog.form.customer_id = customer?.company_id == null ? '' : String(customer.company_id)
@@ -454,7 +440,7 @@ function openRuleDialog(row) {
 async function saveRule() {
   const f = ruleDialog.form
   if (!f.customer_id) {
-    ElMessage.warning('请选择客户')
+    msgWarning('请选择客户')
     return
   }
   await upsertCustomerRule(f)
@@ -472,19 +458,11 @@ async function removeRule(row) {
 
 // ── 自定义产品 ──────────────────────────────────────
 
-async function loadCustom() {
-  customLoading.value = true
-  try {
-    const res = await listCustomProducts(customKeyword.value ? { keyword: customKeyword.value } : {})
-    customProducts.value = res.items || []
-  } finally {
-    customLoading.value = false
-  }
-}
+function loadCustom() { return customResource.load(appliedCustomKeyword.value ? { keyword: appliedCustomKeyword.value } : {}) }
 
 async function runReconcile() {
   const result = await reconcileCustomProducts()
-  ElMessage.success(`对账完成：检查 ${result.checked} 条，回填 ${result.linked} 条`)
+  msgSuccessText(`对账完成：检查 ${result.checked} 条，回填 ${result.linked} 条`)
   loadCustom()
 }
 </script>

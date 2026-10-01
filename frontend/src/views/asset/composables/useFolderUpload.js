@@ -1,5 +1,7 @@
+import { msgError, msgWarning } from '@/utils/feedback'
+import { errorMessage } from '../../../utils/errors.js'
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import {
   executeFolderUpload,
   getFolderUploadStatus,
@@ -71,9 +73,21 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
   const uploadProgress = ref(null)
   const pollError = ref('')
   const fatalMessage = ref('')
+  const readError = ref('')
+  let failedRead = 'validation'
+  let readSequence = 0
+  let readController
   const permission = ref({ permission_group: 'all', allow_preview: 1, allow_download: 1 })
   let pollTimer = null
+  let pollSequence = 0
+  let pollController
   let pollFailures = 0
+  function cancelRead() { readSequence++; readController?.abort() }
+  function beginRead() {
+    cancelRead(); readError.value = ''
+    const sequence = readSequence; const controller = new AbortController(); readController = controller
+    return { config: { signal: controller.signal, suppressToast: true, showLoading: false }, isCurrent: () => sequence === readSequence && !controller.signal.aborted }
+  }
 
   const relativePaths = computed(() => selectedEntries.value.map(item => item.relativePath))
   const selectedFiles = computed(() => selectedEntries.value.map(item => item.file))
@@ -108,6 +122,8 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
   ))
 
   function stopPolling() {
+    pollSequence++
+    pollController?.abort()
     if (pollTimer) {
       clearTimeout(pollTimer)
       pollTimer = null
@@ -115,6 +131,7 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
   }
 
   function reset() {
+    cancelRead(); readError.value = ''
     stopPolling()
     step.value = 'input'
     selectedEntries.value = []
@@ -144,6 +161,8 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
   }
 
   function close() {
+    cancelRead()
+    stopPolling()
     visible.value = false
   }
 
@@ -151,22 +170,22 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
     const supported = entries.filter(item => SUPPORTED_EXTENSIONS.has(extensionOf(item.file.name)))
     const oversized = supported.find(item => item.file.size > 500 * 1024 * 1024)
     if (oversized) {
-      ElMessage.error(`${oversized.file.name} 超过 500MB 限制`)
+      msgError(`${oversized.file.name} 超过 500MB 限制`)
       return
     }
     if (supported.length > 2000) {
-      ElMessage.error('单次最多上传 2000 个文件')
+      msgError('单次最多上传 2000 个文件')
       return
     }
     const totalSize = supported.reduce((total, item) => total + item.file.size, 0)
     if (totalSize > 20 * 1024 * 1024 * 1024) {
-      ElMessage.error('单次文件夹上传总大小不能超过 20GB')
+      msgError('单次文件夹上传总大小不能超过 20GB')
       return
     }
     selectedEntries.value = supported.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
     sourceMode.value = 'browser'
     if (!supported.length) {
-      ElMessage.warning('文件夹中没有支持的图片或视频')
+      msgWarning('文件夹中没有支持的图片或视频')
     }
   }
 
@@ -196,7 +215,7 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
       })))
     } catch (error) {
       console.warn('读取拖放文件夹失败:', error)
-      ElMessage.error('无法读取该文件夹，请改用“选择文件夹”')
+      msgError('无法读取该文件夹，请改用“选择文件夹”', error)
     }
   }
 
@@ -227,23 +246,26 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
       : { folderPath: serverPath.value.trim() }
   }
 
-  async function generatePreview(mapping) {
-    const response = await previewFolderUpload({
-      ...sourcePayload(),
-      tagMapping: mapping,
-      includeFilenameTags: includeFilenameTags.value,
-    })
-    previewData.value = response.data || {}
-    step.value = 'preview'
+  async function generatePreview(mapping, context = beginRead()) {
+    try {
+      const response = await previewFolderUpload({ ...sourcePayload(), tagMapping: mapping, includeFilenameTags: includeFilenameTags.value }, context.config)
+      if (!context.isCurrent()) return false
+      previewData.value = response.data || {}; step.value = 'preview'
+      return true
+    } catch (error) {
+      if (!context.isCurrent()) return false
+      readError.value = errorMessage(error); failedRead = 'preview'; step.value = 'resolution'
+      return false
+    }
   }
 
   async function startValidation() {
     if (sourceMode.value === 'browser' && !selectedEntries.value.length) {
-      ElMessage.warning('请选择或拖入一个文件夹')
+      msgWarning('请选择或拖入一个文件夹')
       return
     }
     if (sourceMode.value === 'server' && !serverPath.value.trim()) {
-      ElMessage.warning('请输入服务器文件夹路径')
+      msgWarning('请输入服务器文件夹路径')
       return
     }
 
@@ -251,11 +273,13 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
     fatalMessage.value = ''
     autoCreateTags.value = {}
     tagMapping.value = {}
+    const context = beginRead()
     try {
       const response = await validateFolderUpload({
         ...sourcePayload(),
         includeFilenameTags: includeFilenameTags.value,
-      })
+      }, context.config)
+      if (!context.isCurrent()) return
       const result = response.data || {}
       validationResult.value = result
       if (result.message) {
@@ -276,12 +300,13 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
       tagMapping.value = mapping
       initializeResolutions(result)
       if (result.is_valid) {
-        await generatePreview(mapping)
+        await generatePreview(mapping, context)
       } else {
         step.value = 'resolution'
       }
     } catch (error) {
-      console.warn('文件夹校验失败:', error)
+      if (!context.isCurrent()) return
+      readError.value = errorMessage(error); failedRead = 'validation'
       step.value = 'input'
     }
   }
@@ -298,7 +323,7 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
       if (resolution.mode === 'existing') {
         const option = optionFor(row, resolution.selectedId)
         if (!option) {
-          ElMessage.warning(`请为“${row.tagName}”选择匹配标签`)
+          msgWarning(`请为“${row.tagName}”选择匹配标签`)
           return
         }
         mapping[row.tagName] = {
@@ -309,15 +334,15 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
         }
       } else {
         if (!canAutoCreate.value) {
-          ElMessage.warning(`“${row.tagName}”没有可用匹配，请联系素材管理员创建标签`)
+          msgWarning(`“${row.tagName}”没有可用匹配，请联系素材管理员创建标签`)
           return
         }
         if (row.tagName.length > 128) {
-          ElMessage.warning(`“${row.tagName.slice(0, 20)}…”超过 128 个字符，不能创建为标签`)
+          msgWarning(`“${row.tagName.slice(0, 20)}…”超过 128 个字符，不能创建为标签`)
           return
         }
         if (!resolution.dimensionId) {
-          ElMessage.warning(`请选择“${row.tagName}”要创建到哪个维度`)
+          msgWarning(`请选择“${row.tagName}”要创建到哪个维度`)
           return
         }
         const dim = creatableDimensions.value.find(item => item.id === resolution.dimensionId)
@@ -343,13 +368,18 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
 
   function startPolling(id) {
     stopPolling()
+    const sequence = pollSequence
+    const controller = new AbortController()
+    pollController = controller
+    const isCurrent = () => sequence === pollSequence && !controller.signal.aborted
     pollFailures = 0
     pollError.value = ''
     step.value = 'executing'
 
     const pollOnce = async () => {
       try {
-        const response = await getFolderUploadStatus(id)
+        const response = await getFolderUploadStatus(id, { signal: controller.signal })
+        if (!isCurrent()) return
         pollFailures = 0
         const job = response.data || {}
         if (job.status === 'completed') {
@@ -360,11 +390,12 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
           return
         } else if (job.status === 'failed') {
           stopPolling()
-          ElMessage.error(`后台处理失败：${job.error || '未知错误'}`)
+          msgError(`后台处理失败：${job.error || '未知错误'}`)
           step.value = 'preview'
           return
         }
       } catch (error) {
+        if (!isCurrent()) return
         console.warn('轮询文件夹上传状态失败:', error)
         pollFailures += 1
         if (pollFailures >= 3) {
@@ -374,7 +405,7 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
           return
         }
       }
-      pollTimer = setTimeout(pollOnce, 2000)
+      if (isCurrent()) pollTimer = setTimeout(pollOnce, 2000)
     }
     pollOnce()
   }
@@ -382,6 +413,7 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
   function retryPolling() {
     if (jobId.value) startPolling(jobId.value)
   }
+  function retryRead() { return failedRead === 'preview' ? generatePreview(tagMapping.value) : startValidation() }
 
   const extraTagItems = computed(() => (
     Object.entries(extraTagSelection)
@@ -393,6 +425,7 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
   ))
 
   async function confirmUpload() {
+    const sequence = readSequence
     step.value = 'executing'
     uploadProgress.value = null
     const common = {
@@ -409,10 +442,11 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
             ...common,
             files: selectedFiles.value,
             relativePaths: relativePaths.value,
-            onProgress: progress => { uploadProgress.value = progress },
+            onProgress: progress => { if (sequence === readSequence) uploadProgress.value = progress },
           })
         : await executeFolderUpload({ ...common, folderPath: serverPath.value.trim() })
       const data = response.data || {}
+      if (sequence !== readSequence) return
       if (data.async) {
         jobId.value = data.job_id
         startPolling(data.job_id)
@@ -422,21 +456,22 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
         onUploaded?.()
       }
     } catch (error) {
+      if (sequence !== readSequence) return
       console.warn('文件夹上传失败:', error)
       step.value = 'preview'
     }
   }
 
-  onBeforeUnmount(stopPolling)
+  onBeforeUnmount(() => { stopPolling(); cancelRead() })
 
   return {
     visible, step, selectedEntries, serverPath, sourceMode, includeFilenameTags,
     isDragging, validationResult, previewData, uploadReport, resolutions,
-    updateDuplicates, jobId, fatalMessage, permission, selectedSize, rootNames,
+    updateDuplicates, jobId, fatalMessage, readError, permission, selectedSize, rootNames,
     uploadProgress, pollError, resolutionRows, creatableDimensions,
     extraTagSelection, extraTagItems,
     open, close, reset, onFolderInput,
     onDrop, startValidation, confirmResolutions, confirmUpload,
-    retryPolling,
+    retryPolling, retryRead,
   }
 }

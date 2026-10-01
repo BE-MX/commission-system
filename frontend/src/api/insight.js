@@ -1,16 +1,16 @@
 import { insightClient as insightApi } from './clients'
 
 // ── 报告 ──────────────────────────────────────────────
-export function listReports(params) {
-  return insightApi.get('/reports', { params, showLoading: false })
+export function listReports(params, config = {}) {
+  return insightApi.get('/reports', { ...config, params, showLoading: false })
 }
 
-export function getReport(id) {
-  return insightApi.get(`/reports/${id}`, { showLoading: false })
+export function getReport(id, config = {}) {
+  return insightApi.get(`/reports/${id}`, { ...config, showLoading: false })
 }
 
-export function getReportHtml(id) {
-  return insightApi.get(`/reports/${id}/html`, { showLoading: false, responseType: 'text' })
+export function getReportHtml(id, config = {}) {
+  return insightApi.get(`/reports/${id}/html`, { ...config, showLoading: false, responseType: 'text' })
 }
 
 export function regenerateReport(id) {
@@ -22,8 +22,8 @@ export function triggerReportGeneration(reportType) {
 }
 
 // ── 信源 ──────────────────────────────────────────────
-export function listSources(params) {
-  return insightApi.get('/sources', { params, showLoading: false })
+export function listSources(params, config = {}) {
+  return insightApi.get('/sources', { ...config, params, showLoading: false })
 }
 
 export function getSource(id) {
@@ -51,8 +51,8 @@ export function collectSource(id) {
 }
 
 // ── 情报条目 ──────────────────────────────────────────
-export function listItems(params) {
-  return insightApi.get('/items', { params, showLoading: false })
+export function listItems(params, config = {}) {
+  return insightApi.get('/items', { ...config, params, showLoading: false })
 }
 
 export function getItem(id) {
@@ -83,8 +83,8 @@ export function batchStatus(itemIds, status) {
 }
 
 // ── 情报速览 ──────────────────────────────────────────
-export function listIntelligenceReports(params) {
-  return insightApi.get('/reports/intelligence', { params, showLoading: false })
+export function listIntelligenceReports(params, config = {}) {
+  return insightApi.get('/reports/intelligence', { ...config, params, showLoading: false })
 }
 
 export function getIntelligenceHtml(id) {
@@ -104,8 +104,8 @@ export function pinIntelligenceReport(id, isPinned = true) {
 }
 
 // ── 定时规则 ──────────────────────────────────────────
-export function listScheduleRules(params) {
-  return insightApi.get('/schedule-rules', { params, showLoading: false })
+export function listScheduleRules(params, config = {}) {
+  return insightApi.get('/schedule-rules', { ...config, params, showLoading: false })
 }
 
 export function createScheduleRule(data) {
@@ -121,12 +121,12 @@ export function toggleScheduleRule(id) {
 }
 
 // ── 案例库 ────────────────────────────────────────────
-export function listCases(params) {
-  return insightApi.get('/cases', { params, showLoading: false })
+export function listCases(params, config = {}) {
+  return insightApi.get('/cases', { ...config, params, showLoading: false })
 }
 
-export function getCaseDetail(id) {
-  return insightApi.get(`/cases/${id}`, { showLoading: false })
+export function getCaseDetail(id, config = {}) {
+  return insightApi.get(`/cases/${id}`, { ...config, showLoading: false })
 }
 
 export function getCaseImage(id) {
@@ -172,12 +172,12 @@ export function uploadMinutes(data) {
   return insightApi.post('/minutes/upload', data, { loadingText: 'AI 处理中,请稍候...' })
 }
 
-export function listMinutes(params) {
-  return insightApi.get('/minutes', { params, showLoading: false })
+export function listMinutes(params, config = {}) {
+  return insightApi.get('/minutes', { ...config, params, showLoading: false })
 }
 
-export function getMinutesDetail(id) {
-  return insightApi.get(`/minutes/${id}`, { showLoading: false })
+export function getMinutesDetail(id, config = {}) {
+  return insightApi.get(`/minutes/${id}`, { ...config, showLoading: false })
 }
 
 export function updateTask(taskId, data) {

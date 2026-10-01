@@ -15,7 +15,7 @@
     </div>
 
     <section class="table-card" v-loading="loading">
-      <el-form :model="form" label-width="130px" class="settings-form">
+      <el-form label-position="top" :model="form" class="settings-form">
         <h3 class="section-title">通用产品（生产单自定义产品推单时占位）</h3>
         <el-form-item label="产品编号">
           <div class="inline-row">
@@ -32,13 +32,13 @@
           <div class="field-hint">保存时后端会按产品编号重新解析并校验，留空表示未配置通用产品。</div>
         </el-form-item>
         <el-form-item v-if="resolved" label="解析结果">
-          <el-tag v-if="resolved.found" type="success" effect="plain">
+          <StatusBadge v-if="resolved.found" type="success" effect="plain">
             {{ resolved.product.product_name }}（ID {{ resolved.product.product_id }}）
-          </el-tag>
-          <el-tag v-else type="danger" effect="plain">产品库中未找到该编号</el-tag>
-          <el-tag v-if="resolved.found && !skuOptions.length" type="danger" effect="plain" class="sku-warn">
+          </StatusBadge>
+          <StatusBadge v-else type="danger" effect="plain">产品库中未找到该编号</StatusBadge>
+          <StatusBadge v-if="resolved.found && !skuOptions.length" type="danger" effect="plain" class="sku-warn">
             该产品无启用 SKU，不能作为通用产品推单，请更换为有 SKU 的产品
-          </el-tag>
+          </StatusBadge>
         </el-form-item>
         <el-form-item v-if="skuOptions.length > 1" label="SKU">
           <el-select v-model="form.generic_sku_id" placeholder="该产品有多个 SKU，请选择" style="width: 280px">
@@ -46,13 +46,13 @@
           </el-select>
         </el-form-item>
         <el-form-item v-else-if="current.generic_sku_id" label="SKU">
-          <el-tag effect="plain">SKU {{ current.generic_sku_id }}（已关联）</el-tag>
+          <StatusBadge effect="plain">SKU {{ current.generic_sku_id }}（已关联）</StatusBadge>
         </el-form-item>
         <!-- 已配产品但没落下 SKU 的坏配置，加载时即暴露（否则要等推单才报错） -->
         <el-form-item v-else-if="!resolved && current.generic_product_no" label="SKU 状态">
-          <el-tag type="danger" effect="plain">
+          <StatusBadge type="danger" effect="plain">
             当前通用产品未关联 SKU，生产单产品无法推单，请重新解析并选择有 SKU 的产品
-          </el-tag>
+          </StatusBadge>
         </el-form-item>
 
         <h3 class="section-title">推单默认参数</h3>
@@ -77,19 +77,19 @@
 
         <h3 class="section-title">API 凭证</h3>
         <el-form-item label="服务器凭证">
-          <el-tag :type="current.client_configured ? 'success' : 'danger'" effect="plain">
+          <StatusBadge :type="current.client_configured ? 'success' : 'danger'" effect="plain">
             {{ current.client_configured ? 'OKKI_CLIENT_ID 已配置（backend/.env）' : '未配置 OKKI_CLIENT_ID / SECRET，请先配 backend/.env' }}
-          </el-tag>
+          </StatusBadge>
         </el-form-item>
         <el-form-item label="Access Token">
           <div class="inline-row">
             <GlassButton variant="primary" :left-icon="Refresh" :disabled="!current.client_configured" :loading="fetchingToken" @click="fetchToken">
               {{ current.has_token ? '刷新 Token' : '获取 Token' }}
             </GlassButton>
-            <el-tag v-if="current.has_token" type="success" effect="plain">
+            <StatusBadge v-if="current.has_token" type="success" effect="plain">
               {{ current.access_token_masked }}，{{ tokenExpiryText }}
-            </el-tag>
-            <el-tag v-else type="info" effect="plain">尚未获取</el-tag>
+            </StatusBadge>
+            <StatusBadge v-else type="info" effect="plain">尚未获取</StatusBadge>
             <el-button
               v-if="current.has_token"
               link

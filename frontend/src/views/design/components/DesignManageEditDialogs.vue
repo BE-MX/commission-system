@@ -1,6 +1,6 @@
 <template>
   <el-dialog :model-value="editDateVisible" title="修改期望日期" width="480px" :close-on-click-modal="false" @update:model-value="emit('update:editDateVisible', $event)">
-    <el-form label-width="100px">
+    <el-form label-position="top">
       <el-form-item label="期望日期">
         <DatePeriodPicker
           v-model:start-date="editDateForm.startDate"
@@ -17,7 +17,7 @@
   </el-dialog>
 
   <el-dialog :model-value="remarkVisible" :title="remarkTarget === 'task' ? '修改排期备注' : '修改预约备注'" width="480px" :close-on-click-modal="false" :close-on-press-escape="!remarkSaving" :show-close="!remarkSaving" @update:model-value="emit('update:remarkVisible', $event)">
-    <el-form label-width="80px">
+    <el-form label-position="top">
       <el-form-item label="备注"><el-input v-model="remarkForm.remark" type="textarea" :rows="4" placeholder="请输入备注" /></el-form-item>
     </el-form>
     <template #footer>
@@ -27,7 +27,7 @@
   </el-dialog>
 
   <el-dialog :model-value="editTaskDateVisible" title="修改排期日期" width="480px" :close-on-click-modal="false" @update:model-value="emit('update:editTaskDateVisible', $event)">
-    <el-form label-width="100px">
+    <el-form label-position="top">
       <el-form-item label="排期日期">
         <DatePeriodPicker
           v-model:start-date="editTaskDateForm.startDate"
@@ -45,7 +45,7 @@
   </el-dialog>
 
   <el-dialog :model-value="shootTypeVisible" title="修改拍摄类型" width="480px" :close-on-click-modal="false" @update:model-value="emit('update:shootTypeVisible', $event)">
-    <el-form label-width="90px">
+    <el-form label-position="top">
       <el-form-item label="拍摄类型">
         <el-select v-model="shootTypeForm.shoot_type" multiple placeholder="请选择拍摄类型" class="full-width">
           <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />

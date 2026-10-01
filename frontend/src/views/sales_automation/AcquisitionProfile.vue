@@ -15,7 +15,7 @@
     </header>
 
     <section v-loading="loading" class="surface-card profile-card">
-      <el-form :model="form" label-position="top" :disabled="!canWrite">
+      <el-form label-position="top" :model="form" :disabled="!canWrite">
         <h2 class="section-heading">我们是谁</h2>
         <el-row :gutter="16">
           <el-col :xs="24" :md="12">
@@ -86,7 +86,6 @@ import GlassButton from '@/components/GlassButton.vue'
 import { getAcquisitionProfile, saveAcquisitionProfile } from '@/api/salesAutomation'
 import { useAuthStore } from '@/stores/auth'
 import { msgError, msgSuccess } from '@/utils/feedback'
-
 const TagInput = defineComponent({
   name: 'SalesTagInput',
   props: { modelValue: { type: Array, default: () => [] }, placeholder: { type: String, default: '' } },

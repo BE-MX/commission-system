@@ -1,28 +1,25 @@
 import { onActivated, ref } from 'vue'
 import { useListPage } from '@/composables/useListPage'
+import { watchListResourceScope } from '@/composables/useListResourceScope'
 
 export function useOperationsList(fetcher, options = {}) {
-  const error = ref(null), summary = ref(null), dataAsOf = ref(null)
-  let requestId = 0
-  const state = useListPage(async params => {
-    const request = ++requestId
-    error.value = null
-    try {
-      const response = await fetcher(params)
-      if (request === requestId) {
-        summary.value = response.data?.summary ?? null
-        dataAsOf.value = response.data?.data_as_of ?? null
-      }
-      return response.data
-    } catch (caught) {
-      if (request === requestId) { error.value = caught; summary.value = null }
-      return { items: [], total: 0 }
+  const summary = ref(null), dataAsOf = ref(null)
+  const state = useListPage(async (params, { signal, isCurrent }) => {
+    const response = await fetcher(params, { signal, suppressToast: true })
+    if (isCurrent()) {
+      summary.value = response.data?.summary ?? null
+      dataAsOf.value = response.data?.data_as_of ?? null
     }
+    return response.data
   }, options)
+  watchListResourceScope(state, options.resourceKeys || [], () => {
+    summary.value = null
+    dataAsOf.value = null
+  })
   let activated = false
   onActivated(() => {
     if (activated) state.fetchList()
     activated = true
   })
-  return { ...state, error, summary, dataAsOf }
+  return { ...state, summary, dataAsOf }
 }

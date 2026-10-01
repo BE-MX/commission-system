@@ -7,21 +7,18 @@
     </div>
 
     <div ref="panelRef" class="table-card requests-panel">
-      <div class="toolbar">
-        <el-input
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="handleReset"><el-input
           v-model="searchForm.keyword" placeholder="搜索客户店名" clearable
-          prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch"
+          prefix-icon="Search" class="filter-w-lg"
         />
-        <el-select v-model="searchForm.request_type" placeholder="类型" clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.request_type" placeholder="类型" clearable class="filter-w-sm" >
           <el-option label="充值" value="recharge" />
           <el-option label="调整" value="adjust" />
         </el-select>
-        <el-select v-model="searchForm.status" placeholder="状态" clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.status" placeholder="状态" clearable class="filter-w-sm" >
           <el-option v-for="s in REQUEST_STATUS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
-      </div>
+</FilterBar>
       <!-- 操作行：本页无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
         <TableTools
@@ -30,12 +27,13 @@
           @refresh="fetchList" @fullscreen="toggleFullscreen"
         />
       </div>
-      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasRequestFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasRequestFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('created_at')" prop="created_at" label="申请时间" min-width="150" />
         <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="80">
           <template #default="{ row }">{{ REQUEST_TYPE_LABELS[row.request_type] || row.request_type }}</template>
@@ -59,7 +57,7 @@
         <el-table-column v-if="visibleKeys.includes('created_by')" prop="created_by_name" label="申请人" min-width="100" />
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90">
           <template #default="{ row }">
-            <el-tag size="small" :type="REQUEST_STATUS_MAP[row.status]?.tag">{{ REQUEST_STATUS_MAP[row.status]?.label || row.status }}</el-tag>
+            <StatusBadge size="small" :type="REQUEST_STATUS_MAP[row.status]?.tag">{{ REQUEST_STATUS_MAP[row.status]?.label || row.status }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('review')" label="审核信息" min-width="180" show-overflow-tooltip>
@@ -103,6 +101,7 @@ import { customerRequestsColumnDefs as columnDefs } from './domesticTableColumns
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('domestic-customer-requests', columnDefs)
 
+const listPageState = useDomesticCustomerRequests()
 const {
   loading, list, total, page, pageSize, searchForm,
   fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange,
@@ -110,7 +109,7 @@ const {
   voucherDialog, voucherLoadingId, openVoucher, closeVoucher,
   reviewingIds, handleApprove, handleReject,
   amountText, membershipText,
-} = useDomesticCustomerRequests()
+} = listPageState
 
 // 默认只看「待审核」，偏离默认视图也算有筛选
 const hasRequestFilters = computed(() => Boolean(

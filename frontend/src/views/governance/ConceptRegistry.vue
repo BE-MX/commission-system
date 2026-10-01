@@ -12,6 +12,7 @@
       <h2>数据治理 · 概念注册表</h2>
     </div>
 
+    <ListPageStatus :error="statsResource.errorMessage.value" :loading="statsLoading" :has-data="statsResource.hasLoaded.value" @retry="loadStats" />
     <!-- 进度看板 -->
     <div class="stats-cards" v-loading="statsLoading">
       <div class="stat-card stat-card--active lg-card">
@@ -36,7 +37,7 @@
 
     <!-- 概念表格：筛选区 + 操作行 + 表格 + 分页同在卡片内（List Page Spec） -->
     <div ref="panelRef" class="table-card registry-panel">
-      <div class="toolbar">
+      <FilterBar :loading="loading" :pending="listState.hasPendingSearch.value" @search="searchConcepts" @reset="resetFilters">
         <el-select v-model="filters.layer" placeholder="层级" clearable class="filter-w-sm">
           <el-option label="财务" value="financial" />
           <el-option label="客户" value="customer" />
@@ -54,10 +55,8 @@
           <el-option label="低" value="low" />
         </el-select>
         <el-input v-model="filters.keyword" placeholder="搜索概念ID/名称" clearable :prefix-icon="Search"
-          class="filter-w-md" @keyup.enter="loadConcepts" />
-        <GlassButton variant="primary" :left-icon="Search" @click="loadConcepts">查询</GlassButton>
-        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+          class="filter-w-md" />
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -75,17 +74,21 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
+          :loading="loading"
           @refresh="loadConcepts"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="loadConcepts" />
       <el-table :data="concepts" v-loading="loading" border class="list-table" :class="densityClass"
         :max-height="isFullscreen ? undefined : 640" @sort-change="handleSortChange">
         <template #empty>
+          <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="loadConcepts">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
+        </ListPageStatus>
         </template>
         <el-table-column v-if="visibleKeys.includes('concept-id')" prop="id" label="概念 ID" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">
@@ -101,9 +104,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="120" max-width="180" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small" effect="plain">
-              {{ statusLabels[row.status] || row.status }}
-            </el-tag>
+            <StatusBadge :value="row.status" :dictionary="CONCEPT_STATUS" size="small" effect="plain" />
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('confidence')" prop="confidence" label="置信度" min-width="90" max-width="135">
@@ -132,12 +133,12 @@
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize"
         :total="total" :page-sizes="[20, 50, 100]" class="pager"
         layout="total, sizes, prev, pager, next"
-        @size-change="handleSizeChange" @current-change="loadConcepts" />
+        @size-change="handleSizeChange" @current-change="handlePageChange" />
     </div>
 
     <!-- 新建概念对话框 -->
-    <el-dialog v-model="createDialogVisible" title="新建概念" width="500px">
-      <el-form :model="createForm" label-width="90px">
+    <el-dialog v-model="createDialogVisible" title="新建概念" width="640px">
+      <el-form label-position="top" :model="createForm">
         <el-form-item label="概念 ID" required>
           <el-input v-model="createForm.id" placeholder="snake_case，如 sales_revenue" />
         </el-form-item>
@@ -167,9 +168,16 @@
 </template>
 
 <script setup>
+import { CONCEPT_STATUS, CONCEPT_LABELS as statusLabels } from './governanceStatus.js'
+
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { msgError, msgWarning, msgSuccessText, confirmAction } from '@/utils/feedback'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { Plus, Download, UploadFilled, Search, RefreshLeft } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatBeijingDateTime } from '@/utils/datetime'
@@ -188,33 +196,17 @@ const layerLabels = {
   financial: '财务', customer: '客户', product: '产品',
   production: '生产', sales_process: '销售过程', logistics: '物流',
 }
-const statusLabels = {
-  draft: '草稿', pending: '待补充', in_progress: '填写中',
-  review: '待审批', active: '已完成', deprecated: '已废弃',
-}
 const statusOptions = Object.entries(statusLabels).map(([v, l]) => ({ value: v, label: l }))
 const confidenceLabels = { high: '高', medium: '中', low: '低' }
 
-const statusTagType = (s) => ({
-  draft: 'info', pending: 'warning', in_progress: '',
-  review: 'warning', active: 'success', deprecated: 'danger',
-}[s] || 'info')
 
 // ── 状态 ─────────────────────────────────────────────────
-const loading = ref(false)
-const statsLoading = ref(false)
-const concepts = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
-const sortField = ref('updated_at')
-const sortOrder = ref('desc')
-const stats = ref({})
-
-const filters = reactive({
-  layer: '', status: '', confidence: '', keyword: '',
-})
-const hasActiveFilters = computed(() => Boolean(filters.layer || filters.status || filters.confidence || filters.keyword))
+const listState = useListPage(async (params, { signal }) => (await listConcepts(params, { signal, suppressToast: true })).data,
+  { searchForm: { layer: '', status: '', confidence: '', keyword: '' }, sortParams: { sort_field: 'updated_at', sort_order: 'desc' }, immediate: false })
+const { loading, list: concepts, total, page, pageSize, searchForm: filters, fetchList: loadConcepts, handleSearch: searchConcepts, handlePageChange, handleSizeChange, handleReset: resetFilters } = listState
+const statsResource = useAsyncResource(async (_, { signal }) => (await getGovernanceStats({ signal, suppressToast: true })).data, { initialData: {} })
+const { data: stats, loading: statsLoading } = statsResource
+const hasActiveFilters = computed(() => Object.values(listState.appliedSearchForm.value).some(Boolean))
 
 // 列显隐元数据：TableTools 列设置面板的数据源（模板列保持静态，Action Bar Spec）
 const columnDefs = [
@@ -244,57 +236,9 @@ const activePct = computed(() => {
 })
 
 // ── 加载数据 ─────────────────────────────────────────────
-async function loadConcepts() {
-  loading.value = true
-  try {
-    const { data: res } = await listConcepts({
-      ...filters,
-      page: page.value,
-      page_size: pageSize.value,
-      sort_field: sortField.value,
-      sort_order: sortOrder.value,
-    })
-    const payload = res.data ?? res
-    concepts.value = payload.items || []
-    total.value = payload.total || 0
-  } catch (e) {
-    ElMessage.error('加载概念列表失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadStats() {
-  statsLoading.value = true
-  try {
-    const { data: res } = await getGovernanceStats()
-    stats.value = res.data ?? res
-  } catch (e) {
-    console.error('加载统计失败', e)
-  } finally {
-    statsLoading.value = false
-  }
-}
-
-// ── 事件处理 ─────────────────────────────────────────────
+function loadStats() { return statsResource.load() }
 function handleSortChange({ prop, order }) {
-  sortField.value = prop || 'updated_at'
-  sortOrder.value = order === 'ascending' ? 'asc' : 'desc'
-  loadConcepts()
-}
-
-function resetFilters() {
-  filters.layer = ''
-  filters.status = ''
-  filters.confidence = ''
-  filters.keyword = ''
-  page.value = 1
-  loadConcepts()
-}
-
-function handleSizeChange() {
-  page.value = 1
-  loadConcepts()
+  return listState.handleSortChange({ sort_field: prop || 'updated_at', sort_order: order === 'ascending' ? 'asc' : 'desc' })
 }
 
 function handleCreate() {
@@ -307,18 +251,18 @@ function handleCreate() {
 
 async function submitCreate() {
   if (!createForm.id || !createForm.name_zh || !createForm.name_en || !createForm.layer) {
-    ElMessage.warning('请填写必填字段')
+    msgWarning('请填写必填字段')
     return
   }
   createLoading.value = true
   try {
     await createConcept({ ...createForm })
-    ElMessage.success('概念创建成功')
+    msgSuccessText('概念创建成功')
     createDialogVisible.value = false
-    loadConcepts()
+    await listState.refreshCreate()
     loadStats()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '创建失败')
+    msgError(e.response?.data?.detail || '创建失败', e)
   } finally {
     createLoading.value = false
   }
@@ -327,11 +271,11 @@ async function submitCreate() {
 async function handleClaim(row) {
   try {
     await transitionStatus(row.id, { action: 'claim' })
-    ElMessage.success(`已认领「${row.name_zh}」`)
-    loadConcepts()
+    msgSuccessText(`已认领「${row.name_zh}」`)
+    await listState.refreshUpdate()
     loadStats()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '认领失败')
+    msgError(e.response?.data?.detail || '认领失败', e)
   }
 }
 
@@ -346,19 +290,19 @@ async function handleExport() {
     a.download = `concepts_export_${Date.now()}.json`
     a.click()
     URL.revokeObjectURL(url)
-    ElMessage.success('导出成功')
+    msgSuccessText('导出成功')
   } catch (e) {
-    ElMessage.error('导出失败')
+    msgError('导出失败', e)
   }
 }
 
 async function handleSeed() {
   try {
-    await ElMessageBox.confirm('将导入 15 个已完成概念 + 9 个待补充概念 + 14 条关联关系（幂等操作）', '初始化种子数据')
+    await confirmAction('将导入 15 个已完成概念 + 9 个待补充概念 + 14 条关联关系（幂等操作）', '初始化种子数据')
     const { data: res } = await seedGovernanceData()
     const payload = res.data ?? res
-    ElMessage.success(`导入完成：${payload.concepts_imported} 概念，${payload.relationships_imported} 关联`)
-    loadConcepts()
+    msgSuccessText(`导入完成：${payload.concepts_imported} 概念，${payload.relationships_imported} 关联`)
+    await listState.refreshCreate()
     loadStats()
   } catch {
     // 取消

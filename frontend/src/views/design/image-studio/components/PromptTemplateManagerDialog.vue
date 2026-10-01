@@ -11,12 +11,13 @@
     <!-- ── 列表视图 ── -->
     <div v-if="!editing" v-loading="loading" class="mgr-list">
       <div class="mgr-toolbar">
-        <el-switch v-model="showInactive" inline-prompt active-text="含停用" inactive-text="仅启用" @change="fetchItems" />
+        <FilterBar :pending="showInactive !== appliedInactive" @search="applySearch" @reset="resetFilters"><el-switch v-model="showInactive" inline-prompt active-text="含停用" inactive-text="仅启用" /></FilterBar>
         <GlassButton variant="primary" size="sm" @click="startCreate">
           <template #left-icon><el-icon><Plus /></el-icon></template>
           新增模板
         </GlassButton>
       </div>
+      <ListPageStatus :paged="false" :error="listResource.errorMessage.value" :loading="loading" :has-data="listResource.hasData.value" @retry="fetchItems" />
       <div class="mgr-rows">
         <div v-for="item in items" :key="item.id" class="mgr-row" :class="{ 'is-inactive': !item.is_active }">
           <div class="mgr-row-main">
@@ -34,7 +35,7 @@
             <GlassButton v-else variant="soft" size="sm" @click="enable(item)">启用</GlassButton>
           </div>
         </div>
-        <p v-if="!loading && !items.length" class="mgr-empty">还没有模板，点击右上角新增</p>
+        <p v-if="listResource.isEmpty.value" class="mgr-empty">还没有模板，点击右上角新增</p>
       </div>
     </div>
 
@@ -107,14 +108,16 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Close, Plus } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import {
   createPromptTemplate, deletePromptTemplate, listPromptTemplates, updatePromptTemplate,
 } from '@/api/designImage'
 import { msgError, msgSuccess } from '@/utils/feedback'
-
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useAuthStore } from '@/stores/auth'
+const auth = useAuthStore()
 const props = defineProps({
   visible: { type: Boolean, default: false },
 })
@@ -129,10 +132,11 @@ const CATEGORY_LABELS = {
 }
 const KEY_PATTERN = /^[a-z][a-z0-9_]*$/
 
-const items = ref([])
-const loading = ref(false)
+const listResource = useAsyncResource(async (includeInactive, { signal }) => (await listPromptTemplates({ includeInactive }, { signal, suppressToast: true })).data.items ?? [], { initialData: [] })
+const items = listResource.data, loading = listResource.loading
 const saving = ref(false)
 const showInactive = ref(true)
+const appliedInactive = ref(true)
 const editing = ref(null)
 const form = ref(emptyForm())
 
@@ -178,17 +182,11 @@ const validationMessage = computed(() => {
 
 const canSave = computed(() => !validationMessage.value && !saving.value)
 
-async function fetchItems() {
-  loading.value = true
-  try {
-    const response = await listPromptTemplates({ includeInactive: showInactive.value })
-    items.value = response?.data?.items ?? []
-  } catch {
-    msgError('模板列表读取失败')
-  } finally {
-    loading.value = false
-  }
-}
+function fetchItems() { return props.visible ? listResource.load(appliedInactive.value) : false }
+function applySearch() { appliedInactive.value = showInactive.value; return fetchItems() }
+function resetFilters() { showInactive.value = true; return applySearch() }
+watch(() => props.visible, visible => { if (!visible) listResource.clear() })
+watch(() => JSON.stringify([auth.user?.id, auth.roles, auth.permissions]), () => { listResource.clear(); editing.value = null; if (props.visible) void fetchItems() })
 
 function startCreate() {
   form.value = emptyForm()
@@ -239,7 +237,7 @@ async function save() {
     await fetchItems()
     emit('changed')
   } catch (error) {
-    msgError(error?.response?.data?.message || '保存失败，请检查填写内容')
+    msgError(error?.response?.data?.message || '保存失败，请检查填写内容', error)
   } finally {
     saving.value = false
   }

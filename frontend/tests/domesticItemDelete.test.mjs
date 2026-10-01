@@ -1,3 +1,5 @@
+import { feedbackFixture } from './helpers/feedbackFixture.mjs'
+import { formatMoney } from '../src/utils/money.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -44,6 +46,8 @@ async function mountEditor(t, { status = 0, count = 2, creator = 7, confirm, rem
     '../domesticOrderEditing': editing, '../domesticAttributeRules': attributes,
     '../domesticOrderKinds': kinds, '../composables/latestRequest': latest,
   }
+  modules['@/utils/feedback'] = feedbackFixture(modules['element-plus'])
+  modules['../../../utils/money.js'] = { formatMoney }
   const code = compiled.replace(/import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"];?/g, (_, bindings, path) => {
     const binding = bindings.trim().startsWith('{') ? bindings.replace(/\bas\b/g, ':') : `{ default: ${bindings} }`
     modules[path] ??= { default: path.endsWith('GlassButton.vue') ? button : wrapper }

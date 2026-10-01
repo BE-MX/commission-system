@@ -17,28 +17,22 @@
       </div>
     </header>
 
-    <el-alert v-if="errorGuidance" type="error" :title="errorGuidance" show-icon :closable="false" class="state-alert" />
-    <el-alert v-if="staleGuidance" type="warning" :title="staleGuidance" show-icon :closable="false" class="state-alert" />
-
     <section ref="panelRef" class="hub-table table-card lg-card is-static" :aria-busy="loading">
-      <div class="toolbar hub-toolbar" aria-label="列表筛选">
-        <el-input
+      <FilterBar v-if="hasFilterControls" aria-label="列表筛选" class="toolbar hub-toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="listPageState.handleReset"><el-input
           v-if="kind === 'customers'"
           v-model="searchForm.keyword"
           clearable
           placeholder="按客户编号或名称搜索"
           aria-label="搜索客户"
           class="filter-w-lg"
-          @keyup.enter="handleSearch"
+
         />
-        <el-select v-else-if="kind === 'acquisition'" v-model="searchForm.status" clearable placeholder="全部任务状态" aria-label="筛选任务状态" class="filter-w-sm">
+<el-select v-else-if="kind === 'acquisition'" v-model="searchForm.status" clearable placeholder="全部任务状态" aria-label="筛选任务状态" class="filter-w-sm">
           <el-option v-for="status in ['pending', 'running', 'completed', 'failed']" :key="status" :label="statusLabel(status)" :value="status" />
         </el-select>
-        <el-select v-else-if="kind === 'research'" v-model="searchForm.review_status" clearable placeholder="全部研究任务" aria-label="筛选研究质量" class="filter-w-md"><el-option label="已完成 · 待质量复核" value="pending" /><el-option label="质量已通过" value="accepted" /><el-option label="待修订" value="revision_requested" /><el-option label="已驳回" value="rejected" /></el-select>
-        <div v-else class="toolbar-note">按最近更新时间排序 · 权限范围由方舟统一控制</div>
-        <GlassButton v-if="hasFilterControls" variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton v-if="hasFilterControls" left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
-      </div>
+<el-select v-else-if="kind === 'research'" v-model="searchForm.review_status" clearable placeholder="全部研究任务" aria-label="筛选研究质量" class="filter-w-md"><el-option label="已完成 · 待质量复核" value="pending" /><el-option label="质量已通过" value="accepted" /><el-option label="待修订" value="revision_requested" /><el-option label="已驳回" value="rejected" /></el-select>
+<div v-else class="toolbar-note">按最近更新时间排序 · 权限范围由方舟统一控制</div></FilterBar>
+      <div v-else class="toolbar toolbar-note">按最近更新时间排序 · 权限范围由方舟统一控制</div>
       <!-- 操作行：页面主操作经 actions 插槽注入，右侧 TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
         <slot name="actions" />
@@ -51,12 +45,13 @@
           @fullscreen="toggleFullscreen"
         />
       </div>
-      <el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" :row-key="rowKey">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" :row-key="rowKey">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : config.emptyText">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <template v-if="kind === 'customers'">
           <el-table-column v-if="visibleKeys.includes('customer')" label="客户" min-width="220" max-width="360">
             <template #default="{ row }">
@@ -66,7 +61,7 @@
               </button>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleKeys.includes('identity')" label="身份" min-width="116"><template #default="{ row }"><el-tag :type="row.identity_status === 'verified' ? 'success' : 'warning'" size="small">{{ identityLabel(row.identity_status) }}</el-tag></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('identity')" label="身份" min-width="116"><template #default="{ row }"><StatusBadge :type="row.identity_status === 'verified' ? 'success' : 'warning'" size="small">{{ identityLabel(row.identity_status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('industry')" prop="primary_industry" label="行业" min-width="130" max-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.primary_industry || '待补充' }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('relationship-stage')" prop="relationship_stage" label="关系阶段" min-width="120" max-width="180" show-overflow-tooltip />
           <el-table-column v-if="visibleKeys.includes('ownership')" label="归属" min-width="118"><template #default="{ row }">{{ row.is_public_pool ? '公海' : '已分配' }}</template></el-table-column>
@@ -80,7 +75,7 @@
 
         <template v-else-if="kind === 'acquisition'">
           <el-table-column v-if="visibleKeys.includes('task')" prop="name" label="任务" min-width="220" max-width="360" show-overflow-tooltip />
-          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('target-result')" label="目标 / 结果" min-width="130"><template #default="{ row }">{{ row.target_count ?? 0 }} / {{ row.result_count ?? 0 }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('archived-customers')" label="归档客户" min-width="110"><template #default="{ row }">{{ row.created_customer_count ?? 0 }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('policy-version')" prop="policy_version" label="策略版本" min-width="130" max-width="180" show-overflow-tooltip />
@@ -92,7 +87,7 @@
           <el-table-column v-if="visibleKeys.includes('customer')" label="客户" min-width="130"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" :title="row.customer_name" type="button" @click="openCustomer(row.customer_id)">{{ row.customer_name || `临时客户 #${row.customer_id}` }}</button><span v-else>{{ row.customer_name || `临时客户 #${row.customer_id}` }}</span></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('research-type')" label="背调类型" min-width="150" max-width="240" show-overflow-tooltip><template #default="{ row }">{{ researchTypeLabels[row.task_type] || '客户研究' }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('tier')" prop="tier" label="层级" min-width="90" />
-          <el-table-column v-if="visibleKeys.includes('exec-status')" label="执行状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.task_status)" size="small">{{ statusLabel(row.task_status) }}</el-tag></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('exec-status')" label="执行状态" min-width="110"><template #default="{ row }"><StatusBadge :type="tagType(row.task_status)" size="small">{{ statusLabel(row.task_status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('quality')" label="研究质量" min-width="120"><template #default="{ row }">{{ operationStatusLabel(row.result_review_status) }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('data-classification')" label="数据级别" min-width="150" max-width="220" show-overflow-tooltip><template #default="{ row }">{{ classificationLabels[row.data_classification] || '待确认' }}</template></el-table-column>
           <el-table-column class-name="table-action-column" label="操作" min-width="128" max-width="160" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="$emit('inspect-task', row)">查看详情</GlassButton></template></el-table-column>
@@ -101,7 +96,7 @@
         <template v-else-if="kind === 'opportunities'">
           <el-table-column v-if="visibleKeys.includes('opportunity')" prop="title" label="机会" min-width="240" max-width="380" show-overflow-tooltip />
           <el-table-column v-if="visibleKeys.includes('customer')" label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" :title="row.customer_name" type="button" @click="openCustomer(row.customer_id)">{{ row.customer_name || `临时客户 #${row.customer_id}` }}</button><span v-else>{{ row.customer_name || `临时客户 #${row.customer_id}` }}</span></template></el-table-column>
-          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('priority')" prop="priority_level" label="优先级" min-width="100" />
           <el-table-column v-if="visibleKeys.includes('owner')" prop="owner_name" label="负责人" min-width="100" />
           <el-table-column v-if="visibleKeys.includes('due-at')" label="截止时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
@@ -111,7 +106,7 @@
         <template v-else>
           <el-table-column v-if="visibleKeys.includes('action')" prop="action_type" label="建议动作" min-width="200" max-width="360" show-overflow-tooltip />
           <el-table-column v-if="visibleKeys.includes('customer')" label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" :title="row.customer_name" type="button" @click="openCustomer(row.customer_id)">{{ row.customer_name || `临时客户 #${row.customer_id}` }}</button><span v-else>{{ row.customer_name || `临时客户 #${row.customer_id}` }}</span></template></el-table-column>
-          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="105"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="105"><template #default="{ row }"><StatusBadge :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('priority')" prop="priority" label="优先级" min-width="100" />
           <el-table-column v-if="visibleKeys.includes('due-at')" label="建议完成时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
           <el-table-column class-name="table-action-column" label="操作" min-width="128" max-width="160" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_radar:write', 'customer:admin']" variant="link" left-icon="Operation" :disabled="getRadarOperationOptions(row.status).length === 0" @click="$emit('operate-action', row)">处理</GlassButton></template></el-table-column>
@@ -220,12 +215,13 @@ const columnDefs = COLUMN_DEFS[props.kind] || []
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView(`customer-hub-${props.kind}`, columnDefs)
 const drawerVisible = ref(false)
+const listPageState = useCustomerHub(props.kind)
 const {
   loading, list, total, page, pageSize, searchForm, empty, errorGuidance, staleGuidance,
   fetchList, handleSearch, handlePageChange, handleSizeChange,
   detail, detailLoading, detailError, timeline, timelineTotal, timelineLoading, timelineError, currentCustomerId, loadDetail, loadTimeline,
   mutatingId, requeueJob,
-} = useCustomerHub(props.kind)
+} = listPageState
 const hasFilterControls = computed(() => ['customers', 'acquisition', 'research'].includes(props.kind))
 const hasActiveFilters = computed(() => Object.values(searchForm).some(value => String(value ?? '').trim()))
 function handleReset() {
@@ -253,7 +249,7 @@ async function retryJob(row) {
   await requeueJob(row.job_id)
   msgSuccess('重新入队')
 }
-defineExpose({ refresh: fetchList })
+defineExpose({ refresh: listPageState.refreshUpdate, refreshCreate: listPageState.refreshCreate })
 </script>
 
 <style scoped>
@@ -261,7 +257,7 @@ defineExpose({ refresh: fetchList })
 .hub-aurora { inset: 0 -28px -24px; }
 .hub-header,.state-alert,.hub-table { position: relative; z-index: 1; }
 .hub-header { display: flex; justify-content: space-between; align-items: end; gap: 24px; padding: 8px 4px 0; }
-.hub-kicker { color: var(--color-primary); font-size: 11px; font-weight: 700; letter-spacing: .14em; }
+.hub-kicker { color: var(--color-primary-text); font-size: 11px; font-weight: 700; letter-spacing: .14em; }
 h1 { margin: 4px 0; font-size: 17px; }
 .hub-header p { margin: 0; color: var(--text-secondary); }
 .header-context { min-width: 100px; text-align: right; }
@@ -273,11 +269,11 @@ h1 { margin: 4px 0; font-size: 17px; }
 .state-alert { margin: 0; }
 .hub-table { overflow: hidden; padding: 0; }
 .customer-link { font: inherit; max-width: 100%; overflow: hidden; display: grid; gap: 4px; min-height: 44px; padding: 4px 0; border: 0; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
-.customer-link:hover strong, .customer-link:focus-visible strong { color: var(--color-primary); text-decoration: underline; }
+.customer-link:hover strong, .customer-link:focus-visible strong { color: var(--color-primary-text); text-decoration: underline; }
 .customer-link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 .customer-link strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .customer-link span { color: var(--text-muted); font-size: 12px; }
-.customer-link.compact { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-primary); }
+.customer-link.compact { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-primary-text); }
 .danger { color: var(--color-danger-text); }
 .el-pagination { justify-content: flex-end; padding: 12px 16px; }
 @media (max-width: 768px) { .hub-header { align-items: start; } .header-context { display: none; } .hub-toolbar { align-items: stretch; flex-direction: column; } .hub-toolbar :deep(.el-input), .hub-toolbar :deep(.el-select) { max-width: none; width: 100%; } .el-pagination { justify-content: flex-start; overflow-x: auto; } }

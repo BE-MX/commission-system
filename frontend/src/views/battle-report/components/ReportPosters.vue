@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="modelValue" title="战报海报" width="min(1080px, 96vw)" destroy-on-close @update:model-value="$emit('update:modelValue', $event)">
+  <el-dialog :model-value="modelValue" title="战报海报" width="760px" destroy-on-close @update:model-value="$emit('update:modelValue', $event)">
     <div v-loading="loading" class="poster-settings">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <template v-if="config">
@@ -27,7 +27,7 @@
         <el-empty v-if="!config.history.length" description="暂无推送记录" :image-size="60" />
         <el-table v-else :data="config.history" class="list-table" border>
           <el-table-column label="推送时段" min-width="160"><template #default="{ row }">{{ row.date }} {{ row.slot }}</template></el-table-column>
-          <el-table-column v-for="kind in ['team', 'personal']" :key="kind" :label="kind === 'team' ? '团队海报' : '个人海报'" min-width="180"><template #default="{ row }"><el-tag :type="statusType(row.deliveries[kind].status)">{{ statusLabels[row.deliveries[kind].status] || row.deliveries[kind].status }}</el-tag><p v-if="row.deliveries[kind].error" class="poster-help">{{ row.deliveries[kind].error }}</p></template></el-table-column>
+          <el-table-column v-for="kind in ['team', 'personal']" :key="kind" :label="kind === 'team' ? '团队海报' : '个人海报'" min-width="180"><template #default="{ row }"><StatusBadge :type="statusType(row.deliveries[kind].status)">{{ statusLabels[row.deliveries[kind].status] || row.deliveries[kind].status }}</StatusBadge><p v-if="row.deliveries[kind].error" class="poster-help">{{ row.deliveries[kind].error }}</p></template></el-table-column>
         </el-table>
       </template>
     </div>
@@ -65,5 +65,5 @@ onMounted(load)
 onUnmounted(() => { alive = false })
 </script>
 <style scoped>
-.poster-settings{display:grid;gap:16px}.poster-help,.poster-toolbar>span{color:var(--text-secondary);font-size:13px;line-height:1.6}.poster-switch-label{margin-left:12px}.poster-toolbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.poster-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.poster-grid article{min-width:0}.poster-grid a{color:var(--color-primary);display:block;margin-bottom:12px}.poster-grid .el-image{width:100%;max-height:650px;overflow:auto}.poster-grid h3{margin-top:0}@media(max-width:700px){.poster-grid{grid-template-columns:1fr}}
+.poster-settings{display:grid;gap:16px}.poster-help,.poster-toolbar>span{color:var(--text-secondary);font-size:13px;line-height:1.6}.poster-switch-label{margin-left:12px}.poster-toolbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.poster-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.poster-grid article{min-width:0}.poster-grid a{color: var(--color-primary-text);display:block;margin-bottom:12px}.poster-grid .el-image{width:100%;max-height:650px;overflow:auto}.poster-grid h3{margin-top:0}@media(max-width:700px){.poster-grid{grid-template-columns:1fr}}
 </style>

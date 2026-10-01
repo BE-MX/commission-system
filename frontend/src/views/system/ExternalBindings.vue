@@ -13,16 +13,14 @@
     </div>
 
     <div ref="panelRef" class="table-card bindings-panel">
-      <div class="toolbar">
-        <el-radio-group v-model="statusFilter" @change="loadCandidates">
+      <FilterBar :loading="loading" :pending="hasPendingSearch" @search="handleSearch" @reset="resetFilters">
+        <el-radio-group v-model="statusFilter">
           <el-radio-button label="">全部</el-radio-button>
           <el-radio-button label="pending">待处理</el-radio-button>
           <el-radio-button label="bound">已绑定</el-radio-button>
           <el-radio-button label="ignored">已忽略</el-radio-button>
         </el-radio-group>
-        <GlassButton variant="primary" left-icon="Search" @click="loadCandidates">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+      </FilterBar>
 
       <div class="action-bar">
         <GlassButton v-permission="'external_binding:write'" variant="primary" left-icon="Connection" :loading="syncingOkki" @click="handleSyncOkki">同步 OKKI 用户</GlassButton>
@@ -31,17 +29,18 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
-          @refresh="loadCandidates"
+          :loading="loading" @refresh="reloadRows"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus v-if="hasData && errorMessage" :error="errorMessage" :loading="loading" :has-data="hasData" :data-page="dataPage" @retry="reloadRows" />
       <el-table :data="candidates" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty>
+        <template #empty><ListPageStatus :error="errorMessage" :loading="loading" @retry="reloadRows">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('platform')" label="平台" min-width="120" max-width="180">
           <template #default="{ row }">{{ providerLabel(row.provider) }}</template>
         </el-table-column>
@@ -49,9 +48,9 @@
         <el-table-column v-if="visibleKeys.includes('display-name')" label="显示名" prop="external_display_name" min-width="140" max-width="210" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
           <template #default="{ row }">
-            <el-tag :type="candidateStatusType(row.candidate_status)" size="small" effect="plain">
+            <StatusBadge :type="candidateStatusType(row.candidate_status)" size="small" effect="plain">
               {{ candidateStatusLabel(row.candidate_status) }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('suggested-user')" label="建议用户" min-width="120" max-width="180" show-overflow-tooltip>
@@ -77,7 +76,7 @@
     </div>
 
     <!-- 绑定弹窗 -->
-    <el-dialog v-model="bindDialogVisible" title="绑定到方舟用户" width="460px" :close-on-click-modal="false">
+    <el-dialog v-model="bindDialogVisible" title="绑定到方舟用户" width="480px" :close-on-click-modal="false">
       <p style="margin-top: 0; color: #909399; font-size: 13px">
         将 <strong>{{ currentCandidate?.external_display_name }}</strong>
         ({{ currentCandidate?.external_account_id }}) 绑定到方舟用户：
@@ -86,6 +85,7 @@
         :remote-method="searchUsers" :loading="searchLoading" style="width: 100%">
         <el-option v-for="u in userOptions" :key="u.id" :label="`${u.real_name} (${u.username})`" :value="u.id" />
       </el-select>
+      <ListPageStatus v-if="userResource.error.value" :paged="false" :error="userResource.errorMessage.value" :loading="searchLoading" :has-data="userResource.hasData.value" @retry="searchUsers(userQuery)" />
       <template #footer>
         <GlassButton variant="ghost" @click="bindDialogVisible = false">取消</GlassButton>
         <GlassButton variant="primary" :disabled="!selectedUserId" @click="handleBind">确认绑定</GlassButton>
@@ -95,8 +95,12 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useListPage } from '@/composables/useListPage'
+import { toRef } from 'vue'
+import { msgSuccessText, msgError, confirmAction } from '@/utils/feedback'
+import { computed, ref, watch } from 'vue'
+
 // 统一 client：token 注入 / 401 跳转 / 错误提示由拦截器处理（宪法 11）
 import { adminClient as authApi } from '@/api/clients'
 import { formatBeijingDateTime } from '@/utils/datetime'
@@ -115,27 +119,32 @@ const columnDefs = [
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('external-bindings', columnDefs)
 
-const loading = ref(false)
-const candidates = ref([])
-const statusFilter = ref('')
-const hasActiveFilters = computed(() => Boolean(statusFilter.value))
+const listState = useListPage(async ({ status }, { signal }) => {
+  const response = await authApi.get('/external-binding-candidates', { params: status ? { status } : {}, signal, suppressToast: true })
+  const items = response.data || []
+  return { items, total: items.length }
+}, { searchForm: { status: '' } })
+const { loading, list: candidates, searchForm, appliedSearchForm, errorMessage, hasData, dataPage, hasPendingSearch, handleSearch, handleReset: resetFilters } = listState
+const statusFilter = toRef(searchForm, 'status')
+const loadCandidates = listState.refreshUpdate
+const reloadRows = () => listState.fetchList()
+const hasActiveFilters = computed(() => Boolean(appliedSearchForm.value.status))
 
-function resetFilters() {
-  statusFilter.value = ''
-  loadCandidates()
-}
 const bindDialogVisible = ref(false)
 const currentCandidate = ref(null)
 const selectedUserId = ref(null)
-const userOptions = ref([])
-const searchLoading = ref(false)
+const userResource = useAsyncResource(async (query, { signal }) =>
+  (await authApi.get('/users/list', { params: { keyword: query, page: 1, page_size: 20 }, signal, suppressToast: true, showLoading: false })).data?.items || [], { initialData: [] })
+const userOptions = userResource.data, searchLoading = userResource.loading
+const userQuery = ref('')
+watch(bindDialogVisible, () => { userResource.clear(); userQuery.value = '' }, { flush: 'sync' })
 const syncingOkki = ref(false)
 
 async function handleSyncOkki() {
   syncingOkki.value = true
   try {
     const res = await authApi.post('/external-binding-candidates/sync-okki')
-    ElMessage.success(res.message || '同步完成')
+    msgSuccessText(res.message || '同步完成')
     loadCandidates()
   } catch (e) {
     // 拦截器已统一提示
@@ -144,30 +153,15 @@ async function handleSyncOkki() {
   }
 }
 
-async function loadCandidates() {
-  loading.value = true
-  try {
-    const params = statusFilter.value ? { status: statusFilter.value } : {}
-    const res = await authApi.get('/external-binding-candidates', { params })
-    candidates.value = res.data || []
-  } catch (e) {
-    ElMessage.error('加载候选列表失败')
-  } finally {
-    loading.value = false
-  }
-}
 
-async function searchUsers(query) {
-  if (!query) return
-  searchLoading.value = true
-  try {
-    const res = await authApi.get('/users/list', { params: { keyword: query, page: 1, page_size: 20 } })
-    userOptions.value = res.data?.items || []
-  } catch { userOptions.value = [] }
-  finally { searchLoading.value = false }
+function searchUsers(query = '') {
+  userQuery.value = query
+  if (!query || !bindDialogVisible.value) { userResource.clear(); return Promise.resolve(false) }
+  return userResource.load(query)
 }
 
 function openBindDialog(candidate) {
+  userResource.clear(); bindDialogVisible.value = true
   currentCandidate.value = candidate
   selectedUserId.value = candidate.suggested_user_id || null
   if (candidate.suggested_user_id) {
@@ -177,7 +171,6 @@ function openBindDialog(candidate) {
   } else {
     userOptions.value = []
   }
-  bindDialogVisible.value = true
 }
 
 async function handleBind() {
@@ -186,7 +179,7 @@ async function handleBind() {
     await authApi.post(`/external-binding-candidates/${currentCandidate.value.id}/bind`, null, {
       params: { user_id: selectedUserId.value },
     })
-    ElMessage.success('绑定成功')
+    msgSuccessText('绑定成功')
     bindDialogVisible.value = false
     await loadCandidates()
   } catch { /* 拦截器已统一提示 */ }
@@ -194,9 +187,9 @@ async function handleBind() {
 
 async function handleIgnore(candidate) {
   try {
-    await ElMessageBox.confirm('确认忽略该候选？', '提示', { type: 'warning' })
+    await confirmAction('确认忽略该候选？', '提示', { type: 'warning' })
     await authApi.post(`/external-binding-candidates/${candidate.id}/ignore`)
-    ElMessage.success('已忽略')
+    msgSuccessText('已忽略')
     await loadCandidates()
   } catch { /* cancelled */ }
 }
@@ -214,7 +207,7 @@ function formatTime(t) {
   return formatBeijingDateTime(t)
 }
 
-onMounted(() => loadCandidates())
+
 </script>
 
 <style scoped>

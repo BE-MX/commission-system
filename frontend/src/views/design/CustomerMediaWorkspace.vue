@@ -13,7 +13,7 @@
         <p>{{ batch?.customer_name || '加载中' }} · 客户ID {{ batch?.customer_id || '-' }} · 任务 #{{ taskId }}</p>
       </div>
       <div class="header-actions">
-        <el-tag v-if="batch" :type="statusMeta.type" effect="plain">{{ statusMeta.label }}</el-tag>
+        <StatusBadge v-if="batch" :type="statusMeta.type" effect="plain">{{ statusMeta.label }}</StatusBadge>
         <GlassButton v-if="editable" variant="primary" left-icon="Upload" @click="uploadDialog = true">上传素材</GlassButton>
         <GlassButton v-if="batch?.directories?.length" variant="secondary" left-icon="FolderOpened" @click="showDirectoryDialog = true">管理旧目录</GlassButton>
       </div>
@@ -28,7 +28,7 @@
       class="review-alert"
     />
 
-    <el-dialog v-model="uploadDialog" title="上传客户拍摄素材" width="min(900px, 94vw)" :before-close="beforeUploadClose">
+    <el-dialog v-model="uploadDialog" title="上传客户拍摄素材" width="760px" :before-close="beforeUploadClose">
       <CustomerTagBoard
         :dimensions="tagDimensions"
         :tags="customerTags"
@@ -101,13 +101,13 @@
           <div class="manifest-info">
             <strong :title="item.displayPath">{{ item.displayPath }}</strong>
             <div class="manifest-meta">
-              <el-tag
+              <StatusBadge
                 v-for="tag in item.tags.slice(0, 6)"
                 :key="`${tag.dimension_id}-${tag.tag_value_id}`"
                 size="small"
                 effect="plain"
                 class="tag-chip"
-              >{{ tagLabel(tag) }}</el-tag>
+              >{{ tagLabel(tag) }}</StatusBadge>
               <span v-if="item.tags.length > 6" class="tags-more">+{{ item.tags.length - 6 }}</span>
             </div>
           </div>
@@ -168,7 +168,7 @@
           <div class="asset-info">
             <strong :title="asset.file_name">{{ asset.file_name }}</strong>
             <span>{{ formatSize(asset.file_size) }}</span>
-            <el-tag v-if="asset.directory_id" size="small" effect="plain" type="warning">旧目录：{{ directoryLabel(asset) }}</el-tag>
+            <StatusBadge v-if="asset.directory_id" size="small" effect="plain" type="warning">旧目录：{{ directoryLabel(asset) }}</StatusBadge>
           </div>
           <GlassButton v-if="editable" variant="link" link-tone="danger" left-icon="Delete" @click="removeAsset(asset)">删除</GlassButton>
         </article>
@@ -181,11 +181,11 @@
     </section>
 
     <el-image-viewer v-if="previewUrl" :url-list="[previewUrl]" @close="previewUrl = ''" />
-    <el-dialog v-model="customerPreviewVisible" title="客户效果预览 · 当前批素材" width="min(1280px, 96vw)" class="customer-effect-dialog" destroy-on-close>
+    <DetailDrawer v-model="customerPreviewVisible" title="客户效果预览 · 当前批素材" width="760px" class="customer-effect-dialog" destroy-on-close>
       <p class="preview-hint">按客户外部站点的实际布局预览当前批素材，尚未送审的内容只在此窗口显示。</p>
       <iframe ref="customerPreviewFrame" class="customer-effect-frame" src="/customer-media/?preview=1"
         title="客户素材外部站点效果预览" @load="sendCustomerPreview" />
-    </el-dialog>
+    </DetailDrawer>
     <CustomerMediaDirectoryDialog
       v-model="showDirectoryDialog"
       :batch="batch"
@@ -207,10 +207,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText, confirmAction, msgError } from '@/utils/feedback'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { ArrowLeft, Folder, UploadFilled } from '@element-plus/icons-vue'
 import {
   addTaskCustomerTags, deleteCustomerTagValue, deleteMediaAsset, getCustomerTagDimensions,
@@ -314,13 +314,13 @@ function toggleTag(tag) {
 }
 
 async function saveCustomerTags({ tags, flat }) {
-  if (!tags.some(item => item.tag_value_ids.length)) { ElMessage.warning('请选择至少一个标签'); return }
+  if (!tags.some(item => item.tag_value_ids.length)) { msgWarning('请选择至少一个标签'); return }
   tagSaving.value = true
   try {
     customerTags.value = (await addTaskCustomerTags(taskId, tags)).data || []
     for (const tag of flat) if (!selectedTagIds.value.includes(tag.tag_value_id)) toggleTag(tag)
     tagPickerVisible.value = false
-    ElMessage.success('客户标签已保存')
+    msgSuccessText('客户标签已保存')
   } finally { tagSaving.value = false }
 }
 
@@ -341,7 +341,7 @@ async function removeCustomerTag(tag) {
   const context = { customerId: batch.value.customer_id, taskId }
   try {
     const count = (await getCustomerTagUsage(context, tag.tag_value_id)).data.asset_count
-    await ElMessageBox.confirm(
+    await confirmAction(
       count ? '当前标签已关联部分素材，删除后关联关系将一并删除，是否确认？' : `确认删除标签「${tag.value}」？`,
       '删除客户标签', { type: 'warning', confirmButtonText: '确认删除' },
     )
@@ -349,14 +349,14 @@ async function removeCustomerTag(tag) {
       await deleteCustomerTagValue(context, tag.tag_value_id, Boolean(count))
     } catch (error) {
       if (count || error?.response?.status !== 409) throw error
-      await ElMessageBox.confirm('当前标签已关联部分素材，删除后关联关系将一并删除，是否确认？',
+      await confirmAction('当前标签已关联部分素材，删除后关联关系将一并删除，是否确认？',
         '删除客户标签', { type: 'warning', confirmButtonText: '确认删除' })
       await deleteCustomerTagValue(context, tag.tag_value_id, true)
     }
     selectedTagIds.value = selectedTagIds.value.filter(id => id !== tag.tag_value_id)
     removeTagFromItems(tag.tag_value_id)
     await Promise.all([loadCustomerTags(), loadBatch()])
-    ElMessage.success('客户标签已删除')
+    msgSuccessText('客户标签已删除')
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     // API interceptor displays server errors.
@@ -375,7 +375,7 @@ const FOLDER_ACCEPT_RE = /\.(jpe?g|png|webp|gif|mp4|mov|webm)$/i
 function filterAccepted(files) {
   const accepted = files.filter(({ file }) => FOLDER_ACCEPT_RE.test(file.name))
   const skipped = files.length - accepted.length
-  if (skipped) ElMessage.warning(`已忽略 ${skipped} 个不支持的文件`)
+  if (skipped) msgWarning(`已忽略 ${skipped} 个不支持的文件`)
   return accepted
 }
 function queueFile(uploadFile) {
@@ -390,7 +390,7 @@ async function onDropFolders(event) {
   try {
     const { files } = await collectDroppedFiles(event.dataTransfer)
     addFiles(filterAccepted(files))
-  } catch (error) { ElMessage.error(`读取文件夹失败：${error.message || '请重试'}`) }
+  } catch (error) { msgError(`读取文件夹失败：${error.message || '请重试'}`, error) }
 }
 function onFolderSelected(event) {
   const files = [...event.target.files]
@@ -399,20 +399,20 @@ function onFolderSelected(event) {
   addFiles(filterAccepted(files.map(file => ({ file, pathSegments: webkitPathSegments(file) }))))
 }
 function beforeUploadClose(done) {
-  if (busy.value) { ElMessage.warning('文件上传中，请等待完成'); return }
+  if (busy.value) { msgWarning('文件上传中，请等待完成'); return }
   done()
 }
 
 async function removeAsset(asset) {
-  try { await ElMessageBox.confirm(`删除 ${asset.file_name}？`, '删除素材', { type: 'warning' }) } catch { return }
+  try { await confirmAction(`删除 ${asset.file_name}？`, '删除素材', { type: 'warning' }) } catch { return }
   batch.value = (await deleteMediaAsset(batch.value.id, asset.id)).data
-  ElMessage.success('已删除')
+  msgSuccessText('已删除')
 }
 
 async function submitForReview() {
-  if (incompleteCount.value) { ElMessage.warning('请先上传或移除清单中的未完成文件'); return }
+  if (incompleteCount.value) { msgWarning('请先上传或移除清单中的未完成文件'); return }
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `本次将提交 ${assets.value.length} 个文件审核，并完成拍摄任务。审核通过后客户才能看到素材。`,
       '完成并送审', { type: 'info' },
     )
@@ -420,7 +420,7 @@ async function submitForReview() {
   submitting.value = true
   try {
     batch.value = (await submitMediaBatch(batch.value.id, batch.value.lock_version)).data
-    ElMessage.success('已送审')
+    msgSuccessText('已送审')
   } finally { submitting.value = false }
 }
 
@@ -428,7 +428,6 @@ function preview(asset) { previewUrl.value = asset.content_url }
 onMounted(() => { loadBatch(); loadCustomerTags(); loadTagDimensions() })
 onBeforeUnmount(reset)
 </script>
-
 
 <style scoped>
 .media-workspace { position: relative; min-height: 100%; }
@@ -443,13 +442,13 @@ onBeforeUnmount(reset)
 .upload-panel { padding: 18px; margin-bottom: 24px; }
 .upload-entries { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: stretch; }
 .entry-side { display: grid; gap: 16px; }
-.portal-entry { display: grid; place-content: center; justify-items: center; gap: 6px; border: 1px dashed var(--color-primary); border-radius: 8px; color: var(--color-primary-hover); background: var(--color-primary-light); cursor: pointer; transition: background 180ms ease; }
+.portal-entry { display: grid; place-content: center; justify-items: center; gap: 6px; border: 1px dashed var(--color-primary); border-radius: 8px; color: var(--color-primary-text); background: var(--color-primary-light); cursor: pointer; transition: background 180ms ease; }
 .portal-entry:hover:not(:disabled) { background: rgba(212, 148, 28, 0.18); }
 .portal-entry:disabled { cursor: not-allowed; opacity: 0.55; }
-.portal-entry-icon { font-size: 34px; color: var(--color-primary); }
+.portal-entry-icon { font-size: 34px; color: var(--color-primary-text); }
 .portal-entry span { color: var(--text-secondary); font-size: 12px; }
 @media (max-width: 700px) { .upload-entries { grid-template-columns: minmax(0, 1fr); } }
-.upload-icon { font-size: 42px; color: var(--color-primary); }
+.upload-icon { font-size: 42px; color: var(--color-primary-text); }
 .upload-tip { color: var(--text-secondary); }
 .manifest-section { margin-bottom: 24px; padding: 18px; border: 1px solid var(--dash-glass-border); border-radius: var(--dash-card-radius); background: var(--dash-glass-bg); box-shadow: var(--dash-glass-shadow); }
 .manifest-hint { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
@@ -484,7 +483,7 @@ onBeforeUnmount(reset)
 .group-filter-row strong { min-width: 90px; padding-top: 5px; font-size: 12px; color: var(--text-secondary); }
 .group-filter-values { display: flex; flex-wrap: wrap; gap: 7px; }
 .group-filter-values button { padding: 5px 10px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); background: var(--card-bg); cursor: pointer; }
-.group-filter-values button.active { border-color: var(--color-primary); color: var(--color-primary-hover); background: var(--color-primary-light); }
+.group-filter-values button.active { border-color: var(--color-primary); color: var(--color-primary-text); background: var(--color-primary-light); }
 .group-empty { color: var(--text-secondary); font-size: 13px; }
 .asset-tag-group { margin-bottom: 20px; }
 .asset-tag-group h5 { margin: 0 0 12px; font-size: 20px; font-weight: 800; color: var(--text-primary); }

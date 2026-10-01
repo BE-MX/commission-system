@@ -1,3 +1,4 @@
+import { feedbackFixture } from './helpers/feedbackFixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -27,6 +28,7 @@ function setup(upload = async () => ({ data: { waybill_no: '123456789012', recip
     checkWaybill: async () => ({ exists: false }),
     beijingCalendarDate: () => new Date('2026-09-17T00:00:00+08:00'),
   })
+  Object.assign(context, feedbackFixture(context))
   const state = vm.runInContext(`${source}\nuseWaybillUpload()`, context)
   const paste = (files = [], editable = false) => {
     const event = {

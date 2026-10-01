@@ -5,16 +5,14 @@
     </header>
 
     <section ref="panelRef" class="table-card">
-      <el-tabs v-model="activeTab" class="sf-tabs" @tab-change="loadCurrent">
+      <el-tabs v-model="activeTab" class="sf-tabs" @tab-change="changeTab">
         <el-tab-pane label="半成品" name="materials" />
         <el-tab-pane label="产品关联审核" name="mappings" />
       </el-tabs>
-      <div class="toolbar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索编码、尺寸、颜色或产品" class="filter-w-lg" @keyup.enter="search" />
-        <el-checkbox v-model="filters.review_only" label="仅看待审核" @change="search" />
-        <GlassButton variant="primary" :left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton :left-icon="RefreshLeft" @click="reset">重置</GlassButton>
-      </div>
+      <FilterBar :pending="listState.hasPendingSearch.value" @search="search" @reset="reset">
+        <el-input v-model="filters.keyword" clearable placeholder="搜索编码、尺寸、颜色或产品" class="filter-w-lg" />
+        <el-checkbox v-model="filters.review_only" label="仅看待审核" />
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -31,9 +29,11 @@
         />
       </div>
 
+      <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="load" />
       <el-table v-if="activeTab === 'materials'" v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="selectedMaterials = $event">
         <template #empty>
-          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+          <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
+          <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
           </el-empty>
         </template>
@@ -46,20 +46,21 @@
         <el-table-column v-if="visibleKeys.includes('on-hand')" label="实存(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.on_hand_grams) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('reserved')" label="占用(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.reserved_grams) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('available')" label="可用(g)" min-width="110" align="right"><template #default="{ row }"><strong>{{ grams(row.available_grams) }}</strong></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'" effect="plain">{{ row.status === 'active' ? '启用' : '停用' }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90"><template #default="{ row }"><StatusBadge :value="row.status === 'active'" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
       </el-table>
 
       <el-table v-else v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
-          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+          <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
+          <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
           </el-empty>
         </template>
         <el-table-column v-if="visibleKeys.includes('product')" prop="product_name" label="产品" min-width="300" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('model')" prop="model" label="型号" min-width="170" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('spec')" label="规格" min-width="170"><template #default="{ row }">{{ row.size }}/{{ row.color_expression }}/{{ grams(row.unit_grams) }}g</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('components')" label="半成品组成" min-width="240"><template #default="{ row }"><el-tag v-for="item in row.components" :key="item.material_id" size="small" effect="plain" style="margin: 2px">{{ item.size }}/{{ item.color_code }} · {{ percent(item.ratio) }}</el-tag></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('review')" label="审核" min-width="110"><template #default="{ row }"><el-tag :type="row.parse_status === 'confirmed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status === 'confirmed' ? '已确认' : '待审核' }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('components')" label="半成品组成" min-width="240"><template #default="{ row }"><StatusBadge v-for="item in row.components" :key="item.material_id" size="small" effect="plain" style="margin: 2px">{{ item.size }}/{{ item.color_code }} · {{ percent(item.ratio) }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('review')" label="审核" min-width="110"><template #default="{ row }"><StatusBadge :type="row.parse_status === 'confirmed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status === 'confirmed' ? '已确认' : '待审核' }}</StatusBadge></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('parse-message')" label="说明" min-width="160" prop="parse_message" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="操作" min-width="90" fixed="right"><template #default="{ row }"><el-button v-permission="'semifinished:write'" link type="primary" @click="editMapping(row)">配比</el-button></template></el-table-column>
       </el-table>
@@ -76,7 +77,8 @@
       />
     </section>
 
-    <el-dialog v-model="previewVisible" title="产品解析预览" width="720px">
+    <DetailDrawer v-model="previewVisible" title="产品解析预览" width="760px">
+      <ListPageStatus :error="previewResource.errorMessage.value" :loading="previewResource.loading.value" :has-data="!!preview" @retry="previewResource.load()" />
       <div v-if="preview" class="sf-summary">
         <div class="sf-summary-item"><span>符合产品</span><strong>{{ preview.eligible_products }}</strong></div>
         <div class="sf-summary-item"><span>预计半成品</span><strong>{{ preview.material_count }}</strong></div>
@@ -88,10 +90,11 @@
         <el-table-column label="解析结果" min-width="230"><template #default="{ row }">{{ row.components.map(c => `${row.size}/${c}`).join('、') }}</template></el-table-column>
         <el-table-column prop="message" label="说明" min-width="160" show-overflow-tooltip />
       </el-table>
-    </el-dialog>
+    </DetailDrawer>
 
-    <el-dialog v-model="mappingVisible" title="确认半成品配比" width="620px">
+    <el-dialog v-model="mappingVisible" title="确认半成品配比" width="640px">
       <p class="sf-muted">{{ editingMapping?.product_name }}</p>
+      <ListPageStatus :error="mappingOptionsResource.errorMessage.value" :loading="mappingOptionsResource.loading.value" :has-data="mappingMaterialOptions.length > 0" @retry="mappingOptionsResource.load()" />
       <div class="sf-component-list">
         <div v-for="(item, index) in mappingComponents" :key="`${index}-${item.material_id}`" class="sf-component-row sf-mapping-row">
           <el-select v-model="item.material_id" filterable placeholder="选择半成品">
@@ -107,7 +110,7 @@
       <template #footer><el-button @click="mappingVisible = false">取消</el-button><el-button type="primary" :disabled="!ratioValid" @click="saveMapping">确认配比</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="orderVisible" title="创建半成品订单" width="620px">
+    <el-dialog v-model="orderVisible" title="创建半成品订单" width="640px">
       <div class="sf-component-list">
         <div v-for="item in orderItems" :key="item.material_id" class="sf-component-row">
           <span>{{ item.label }}</span><el-input-number v-model="item.quantity_grams" :min="0.001" :precision="3" /><span>g</span>
@@ -120,25 +123,35 @@
 </template>
 
 <script setup>
+import { ENABLED_STATUS } from '@/utils/status'
+import { confirmAction, msgSuccessText } from '@/utils/feedback'
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { watchListResourceScope } from '@/composables/useListResourceScope'
+import { loadMaterialOptions } from './materialOptions'
+
+
 import { Plus, Refresh, RefreshLeft, Search, View } from '@element-plus/icons-vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
 import { applyMaterialSync, createSemifinishedOrder, getMappings, getMaterials, previewMaterialSync, updateMapping } from '@/api/semifinished'
 
 const activeTab = ref('materials')
-const loading = ref(false)
-const rows = ref([])
 const selectedMaterials = ref([])
-const filters = reactive({ keyword: '', review_only: false })
-const pagination = reactive({ page: 1, page_size: 20, total: 0 })
+const listState = useListPage(({ resource, ...params }, { signal }) => (resource === 'materials' ? getMaterials : getMappings)({ ...params, keyword: params.keyword || undefined }, { signal, suppressToast: true }), { searchForm: { resource: 'materials', keyword: '', review_only: false } })
+const loading = listState.loading; const rows = listState.list; const filters = listState.searchForm
+const pagination = reactive({ page: listState.page, page_size: listState.pageSize, total: listState.total })
+watchListResourceScope(listState, ['resource'], () => { selectedMaterials.value = [] })
+function changeTab() { filters.resource = activeTab.value; return listState.handleSearch() }
 const previewVisible = ref(false)
-const preview = ref(null)
+const previewResource = useAsyncResource((_, { signal }) => previewMaterialSync({ signal, suppressToast: true, showLoading: false }))
+const preview = previewResource.data
 const mappingVisible = ref(false)
 const editingMapping = ref(null)
 const mappingComponents = ref([])
-const mappingMaterialOptions = ref([])
+const mappingOptionsResource = useAsyncResource((_, context) => loadMaterialOptions(context))
+const mappingMaterialOptions = computed(() => mappingOptionsResource.data.value || [])
 const orderVisible = ref(false)
 const orderItems = ref([])
 const orderRemark = ref('')
@@ -183,39 +196,22 @@ watch(currentColumnDefs, columns => {
   }
 }, { immediate: true })
 
-async function loadCurrent() {
-  loading.value = true
-  try {
-    const fn = activeTab.value === 'materials' ? getMaterials : getMappings
-    const data = await fn({ page: pagination.page, page_size: pagination.page_size, keyword: filters.keyword || undefined, review_only: filters.review_only })
-    rows.value = data.items || []
-    pagination.total = data.total || 0
-  } finally { loading.value = false }
-}
-function search() { pagination.page = 1; loadCurrent() }
-function reset() { filters.keyword = ''; filters.review_only = false; search() }
-function handleSizeChange() { pagination.page = 1; loadCurrent() }
-async function previewSync() { preview.value = await previewMaterialSync(); previewVisible.value = true }
+const loadCurrent = listState.fetchList
+const load = loadCurrent
+const search = listState.handleSearch
+function reset() { filters.keyword = ''; filters.review_only = false; return search() }
+const handleSizeChange = listState.handleSizeChange
+async function previewSync() { previewVisible.value = true; return previewResource.load(null, { clear: true }) }
 async function applySync() {
-  await ElMessageBox.confirm('将按当前产品列表新增或更新自动解析结果，人工确认的配比不会被覆盖。', '应用产品同步')
+  await confirmAction('将按当前产品列表新增或更新自动解析结果，人工确认的配比不会被覆盖。', '应用产品同步')
   const result = await applyMaterialSync()
-  ElMessage.success(`已同步 ${result.applied} 个产品，${result.needs_review} 个待审核`)
-  loadCurrent()
+  msgSuccessText(`已同步 ${result.applied} 个产品，${result.needs_review} 个待审核`)
+  listState.refreshUpdate()
 }
-async function loadAllMaterials() {
-  const first = await getMaterials({ page: 1, page_size: 100 })
-  const items = [...(first.items || [])]
-  const pages = Math.ceil(Number(first.total || items.length) / 100)
-  for (let page = 2; page <= pages; page += 1) {
-    const next = await getMaterials({ page, page_size: 100 })
-    items.push(...(next.items || []))
-  }
-  return items
-}
-async function editMapping(row) { editingMapping.value = row; mappingMaterialOptions.value = await loadAllMaterials(); mappingComponents.value = row.components.map(item => ({ ...item, ratio: Number(item.ratio) })); mappingVisible.value = true }
+async function editMapping(row) { editingMapping.value = row; mappingComponents.value = row.components.map(item => ({ ...item, ratio: Number(item.ratio) })); mappingVisible.value = true; return mappingOptionsResource.load(row.id, { clear: true }) }
 async function saveMapping() {
   await updateMapping(editingMapping.value.id, { components: mappingComponents.value.map(item => ({ material_id: item.material_id, ratio: Number(item.ratio) })) })
-  ElMessage.success('配比已确认'); mappingVisible.value = false; loadCurrent()
+  msgSuccessText('配比已确认'); mappingVisible.value = false; listState.refreshUpdate()
 }
 function openOrder() {
   orderItems.value = selectedMaterials.value.map(row => ({ material_id: row.id, label: `${row.size}/${row.color_code}`, quantity_grams: 100 }))
@@ -223,10 +219,9 @@ function openOrder() {
 }
 async function submitOrder() {
   await createSemifinishedOrder({ items: orderItems.value.map(item => ({ material_id: item.material_id, quantity_grams: item.quantity_grams })), remark: orderRemark.value || null })
-  ElMessage.success('半成品订单已创建'); orderVisible.value = false
+  msgSuccessText('半成品订单已创建'); orderVisible.value = false; listState.refreshUpdate()
 }
 
-loadCurrent()
 </script>
 
 <style scoped src="./semifinished.css"></style>

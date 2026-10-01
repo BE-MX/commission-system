@@ -12,6 +12,7 @@
       建议竖版 3:4，支持 jpg / png / webp，上传后自动降采样控体积。未上传的场景在甄选页显示占位卡。
     </div>
 
+    <ListPageStatus :error="listResource.errorMessage.value" :loading="loading" :has-data="scenes.length > 0" @retry="fetchScenes" />
     <div v-loading="loading" class="scene-body">
       <div v-for="cat in groupedScenes" :key="cat.key" class="cat-block">
         <div class="cat-title">{{ cat.label }}<small>{{ cat.scenes.length }} 景 · 已上传 {{ cat.doneCount }}</small></div>
@@ -50,12 +51,12 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText, confirmDanger, msgSuccess } from '@/utils/feedback'
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { getScenes, uploadSceneImage, deleteSceneImage } from '@/api/expo'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 
+
+import { getScenes, uploadSceneImage, deleteSceneImage } from '@/api/expo'
 const CAT_LABELS = { career: '职场专业', life: '长辈生活' }
 const EMOJI = {
   whitecollar: '💼', teacher: '📚', shopowner: '🛍️', civilservant: '🏛️', doctor: '🩺',
@@ -65,8 +66,9 @@ const EMOJI = {
 }
 function emoji(key) { return EMOJI[key] || '✦' }
 
-const scenes = ref([])
-const loading = ref(false)
+const listResource = useAsyncResource(async (_, { signal }) => (await getScenes({ mode: 'tryon' }, { signal, suppressToast: true })).data || [])
+const scenes = computed(() => listResource.data.value || [])
+const loading = listResource.loading
 
 const groupedScenes = computed(() => {
   const order = []
@@ -84,22 +86,14 @@ const groupedScenes = computed(() => {
   }))
 })
 
-async function fetchScenes() {
-  loading.value = true
-  try {
-    const res = await getScenes({ mode: 'tryon' })
-    scenes.value = res.data || []
-  } finally {
-    loading.value = false
-  }
-}
+const fetchScenes = () => listResource.load()
 
 async function doUpload(scene, { file }) {
   try {
     const res = await uploadSceneImage(scene.key, file)
     // 同扩展名替换时 URL 不变，加时间戳强制刷新缓存
     scene.image = `${res.data.url}?t=${Date.now()}`
-    ElMessage.success(`「${scene.label}」示意图已更新`)
+    msgSuccessText(`「${scene.label}」示意图已更新`)
   } catch { /* 拦截器已提示 */ }
 }
 
@@ -136,7 +130,7 @@ onMounted(fetchScenes)
   background: var(--toolbar-bg); border: 1px solid var(--border-color);
   color: var(--text-muted); font-size: 13px; line-height: 1.7;
 }
-.page-hint b { color: var(--color-primary); }
+.page-hint b { color: var(--color-primary-text); }
 .cat-block { margin-bottom: 26px; }
 .cat-title {
   font-size: 14px; font-weight: 600; margin-bottom: 12px;

@@ -4,6 +4,11 @@
     <div class="overview-panel lg-card is-static">
       <div class="panel-header">
         <h3 class="panel-title">最近动态</h3>
+        <span class="panel-boundary">各来源最近 5 条，展示 3 条</span>
+      </div>
+      <div v-for="item in recentErrors" :key="item.key" class="resource-warning" role="status">
+        {{ item.label }}{{ item.resource.hasLoaded ? '更新失败，保留上次记录' : '读取失败' }}
+        <button type="button" @click="item.resource.load()">重试</button>
       </div>
 
       <!-- 提成批次 -->
@@ -63,7 +68,8 @@
       </div>
 
       <!-- 空状态 -->
-      <div v-else class="activity-empty">
+      <div v-else-if="recentLoading" class="activity-empty" role="status">正在读取最近动态…</div>
+      <div v-else-if="!recentErrors.length" class="activity-empty">
         <el-icon class="empty-icon"><Document /></el-icon>
         <span>暂无最近动态</span>
       </div>
@@ -73,6 +79,10 @@
     <div class="overview-panel lg-card is-static">
       <div class="panel-header">
         <h3 class="panel-title">状态分布</h3>
+      </div>
+      <div v-for="item in donutErrors" :key="item.key" class="resource-warning" role="status">
+        {{ item.label }}{{ item.resource.hasLoaded ? '更新失败，保留上次统计' : '读取失败' }}
+        <button type="button" @click="item.resource.load()">重试</button>
       </div>
 
       <div v-if="data.donutData.length > 0" class="chart-section">
@@ -107,7 +117,8 @@
       </div>
 
       <!-- 空状态 -->
-      <div v-else class="chart-empty">
+      <div v-else-if="donutLoading" class="chart-empty" role="status">正在读取状态分布…</div>
+      <div v-else-if="!donutErrors.length" class="chart-empty">
         <el-icon class="empty-icon"><DataAnalysis /></el-icon>
         <span>暂无状态分布数据</span>
       </div>
@@ -116,12 +127,27 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ArrowRight, DataAnalysis, Document } from '@element-plus/icons-vue'
 
 const props = defineProps({
   data: { type: Object, required: true },
 })
+const recentLabels = {
+  recentCommissions: '提成批次', recentTrackings: '物流动态',
+  recentDesigns: '设计预约', recentPayments: '回款记录',
+}
+const recentResources = computed(() => Object.keys(recentLabels)
+  .filter(key => props.data.enabledResources.includes(key))
+  .map(key => ({ key, label: recentLabels[key], resource: props.data.resources[key] })))
+const recentErrors = computed(() => recentResources.value.filter(item => item.resource.error))
+const recentLoading = computed(() => recentResources.value.some(item => item.resource.loading && !item.resource.hasLoaded))
+const donutResources = computed(() => [
+  { key: 'trackingStats', label: '物流统计', resource: props.data.resources.trackingStats },
+  { key: 'designStats', label: '设计统计', resource: props.data.resources.designStats },
+].filter(item => props.data.enabledResources.includes(item.key)))
+const donutErrors = computed(() => donutResources.value.filter(item => item.resource.error))
+const donutLoading = computed(() => donutResources.value.some(item => item.resource.loading && !item.resource.hasLoaded))
 
 // donut 首次出现 draw-in（低频、一次性；数据到达后下一帧从 0 弧过渡到目标弧）
 const drawn = ref(false)
@@ -163,6 +189,9 @@ watch(
   color: var(--text-primary);
   margin: 0;
 }
+.panel-boundary { color: var(--text-muted); font-size: 11px; }
+.resource-warning { margin: 8px 0; color: var(--color-warning-text); font-size: 12px; }
+.resource-warning button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
 
 .panel-link {
   display: inline-flex;
@@ -171,13 +200,13 @@ watch(
   font-family: var(--font-display);
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   text-decoration: none;
   margin-top: 12px;
   transition: color 200ms ease;
 }
 .panel-link:hover {
-  color: var(--color-primary-hover);
+  color: var(--color-primary-text);
 }
 
 /* 最近动态列表 */
@@ -250,7 +279,7 @@ watch(
 .status-warning { background: var(--color-warning-bg); color: var(--color-warning-text); }
 .status-danger  { background: var(--color-danger-bg); color: var(--color-danger); }
 .status-info    { background: var(--table-header-bg); color: var(--text-secondary); }
-.status-primary { background: rgba(59, 130, 246, 0.1); color: var(--color-primary); }
+.status-primary { background: rgba(59, 130, 246, 0.1); color: var(--color-primary-text); }
 .status-muted   { background: var(--table-header-bg); color: var(--text-muted); }
 
 /* 空状态 */

@@ -47,7 +47,7 @@ const emit = defineEmits(['open'])
 }
 .brief__list button:hover { background: color-mix(in srgb, var(--card-bg) 90%, transparent); }
 .brief__list button:active { transform: scale(0.99); }
-.brief__n { font: 800 15px var(--font-display); color: var(--color-primary); }
+.brief__n { font: 800 15px var(--font-display); color: var(--color-primary-text); }
 .brief__body { display: grid; gap: 2px; }
 .brief__title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .brief__why { font-size: 12px; color: var(--text-secondary); }

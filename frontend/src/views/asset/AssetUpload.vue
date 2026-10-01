@@ -9,7 +9,7 @@
 
     <div class="page-header-row">
       <el-page-header content="素材上传" @back="$router.back()" />
-      <GlassButton variant="primary" :left-icon="FolderOpened" @click="folderDialogRef?.open()">文件夹批量上传</GlassButton>
+      <GlassButton variant="primary" :left-icon="FolderOpened" :disabled="dimensionsLoading || !!dimensionsResource.error.value" @click="folderDialogRef?.open()">文件夹批量上传</GlassButton>
     </div>
 
     <div class="upload-layout">
@@ -73,13 +73,14 @@
         <div class="panel-title">素材信息</div>
 
         <!-- AI 建议标签 -->
+        <ListPageStatus v-if="selectedFile" :error="aiResource.errorMessage.value" :loading="aiAnalyzing" :has-data="aiSuggestions.length > 0" @retry="triggerAiAnalysis(selectedFile.name)" />
         <div v-if="aiSuggestions.length > 0" class="form-section ai-section">
           <div class="section-title">
             <el-icon><MagicStick /></el-icon>
             AI 建议标签
-            <el-tag v-if="aiConfidence > 0" size="small" type="info">
+            <StatusBadge v-if="aiConfidence > 0" size="small" type="info">
               置信度 {{ Math.round(aiConfidence * 100) }}%
-            </el-tag>
+            </StatusBadge>
             <el-button link type="primary" @click="acceptAllAiTags">
               一键接受
             </el-button>
@@ -88,7 +89,7 @@
             <div v-for="s in aiSuggestions" :key="s.dimension_id" class="ai-suggestion-item">
               <div class="ai-dim-label">{{ s.dimension_label }}</div>
               <div class="ai-tag-list">
-                <el-tag
+                <StatusBadge
                   v-for="v in s.values"
                   :key="v.tag_value_id"
                   size="small"
@@ -99,7 +100,7 @@
                 >
                   {{ v.value }}
                   <el-icon v-if="isAiTagAccepted(s.dimension_id, v.tag_value_id)" class="check-icon"><Check /></el-icon>
-                </el-tag>
+                </StatusBadge>
               </div>
             </div>
           </div>
@@ -121,10 +122,11 @@
             标签
             <el-text type="info" size="small">（便于检索和分类）</el-text>
           </div>
-          <div v-if="dimensionsLoading" class="dim-loading">
+          <ListPageStatus :error="dimensionsResource.errorMessage.value" :loading="dimensionsLoading" :has-data="dimensions.length > 0" @retry="loadDimensions" />
+          <div v-if="dimensionsLoading && !dimensions.length" class="dim-loading">
             <el-skeleton :rows="3" animated />
           </div>
-          <div v-else-if="dimensions.length === 0" class="dim-empty">
+          <div v-else-if="dimensions.length === 0 && !dimensionsResource.error.value" class="dim-empty">
             <el-text type="info">暂无标签维度</el-text>
           </div>
           <div v-else class="dimension-list">
@@ -211,7 +213,7 @@
         </div>
 
         <!-- 提交 -->
-        <div class="form-actions">
+        <div class="dialog-footer">
           <GlassButton variant="secondary" @click="$router.back()">取消</GlassButton>
           <GlassButton
             variant="primary"
@@ -228,10 +230,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgError, msgWarning, msgSuccessText } from '@/utils/feedback'
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import {
   UploadFilled, Document, CollectionTag, Lock, MagicStick, Check,
   FolderOpened,
@@ -262,7 +265,7 @@ function detectFileType(filename) {
 function handleBeforeUpload(file) {
   const maxSize = 500 * 1024 * 1024
   if (file.size > maxSize) {
-    ElMessage.error('文件大小超过 500MB 限制')
+    msgError('文件大小超过 500MB 限制')
     return false
   }
   return true
@@ -284,6 +287,7 @@ function handleFileChange(file) {
 }
 
 function clearFile() {
+  aiResource.load(null, { clear: true })
   if (previewUrl.value && previewUrl.value.startsWith('blob:')) {
     URL.revokeObjectURL(previewUrl.value)
   }
@@ -297,19 +301,20 @@ function clearFile() {
 }
 
 // ── AI 分析 ─────────────────────────────────────────────
-const aiAnalyzing = ref(false)
+const aiResource = useAsyncResource(async (fileName, { signal }) => fileName ? (await analyzePreview(fileName, undefined, { signal, suppressToast: true })).data || {} : null)
+const aiAnalyzing = aiResource.loading
 const aiSuggestions = ref([])
 const aiConfidence = ref(0)
 const acceptedAiTags = ref({}) // { dimensionId: [tagValueId, ...] }
 
 async function triggerAiAnalysis(fileName) {
-  aiAnalyzing.value = true
+  const file = selectedFile.value
   aiSuggestions.value = []
   acceptedAiTags.value = {}
   aiConfidence.value = 0
-  try {
-    const res = await analyzePreview(fileName)
-    const data = res.data || {}
+  const success = await aiResource.load(fileName, { clear: true })
+  if (success && file && file === selectedFile.value) {
+    const data = aiResource.data.value || {}
     aiConfidence.value = data.confidence || 0
     aiSuggestions.value = data.suggestions || []
 
@@ -317,10 +322,6 @@ async function triggerAiAnalysis(fileName) {
     if (aiConfidence.value >= 0.7) {
       acceptAllAiTags()
     }
-  } catch (e) {
-    console.warn('AI 分析失败:', e)
-  } finally {
-    aiAnalyzing.value = false
   }
 }
 
@@ -366,26 +367,16 @@ function acceptAllAiTags() {
 }
 
 // ── 标签维度 ────────────────────────────────────────────
-const dimensions = ref([])
-const dimensionsLoading = ref(false)
+const dimensionsResource = useAsyncResource(async (_, { signal, isCurrent }) => {
+  const dims = (await getTagDimensions(false, undefined, { signal, suppressToast: true })).data || []
+  if (isCurrent()) dims.forEach(d => { if (!(d.id in selectedTags)) selectedTags[d.id] = d.is_single_select ? null : [] })
+  return dims
+})
+const dimensions = computed(() => dimensionsResource.data.value || [])
+const dimensionsLoading = dimensionsResource.loading
 const selectedTags = reactive({})
 
-async function loadDimensions() {
-  dimensionsLoading.value = true
-  try {
-    const res = await getTagDimensions()
-    dimensions.value = res.data || []
-    dimensions.value.forEach(d => {
-      if (!(d.name in selectedTags)) {
-        selectedTags[d.id] = d.is_single_select ? null : []
-      }
-    })
-  } catch (e) {
-    console.warn('加载标签维度失败:', e)
-  } finally {
-    dimensionsLoading.value = false
-  }
-}
+const loadDimensions = () => dimensionsResource.load()
 
 // ── 权限与备注 ──────────────────────────────────────────
 const permission = reactive({
@@ -399,6 +390,7 @@ const remark = ref('')
 const submitting = ref(false)
 
 const canSubmit = computed(() => {
+  if (dimensionsResource.loading.value || dimensionsResource.error.value) return false
   if (!selectedFile.value) return false
   for (const dim of dimensions.value) {
     if (dim.is_required) {
@@ -413,7 +405,7 @@ const canSubmit = computed(() => {
 
 async function handleSubmit() {
   if (!selectedFile.value) {
-    ElMessage.warning('请先选择文件')
+    msgWarning('请先选择文件')
     return
   }
 
@@ -441,10 +433,10 @@ async function handleSubmit() {
   submitting.value = true
   try {
     await uploadAsset(formData)
-    ElMessage.success('上传成功')
+    msgSuccessText('上传成功')
     router.push('/asset/library')
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '上传失败')
+    msgError(e.response?.data?.message || '上传失败', e)
   } finally {
     submitting.value = false
   }

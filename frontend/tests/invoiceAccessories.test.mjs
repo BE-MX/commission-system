@@ -317,7 +317,7 @@ test('accessory price list separates currency and update time with bounded colum
   assert.doesNotMatch(accessoryConfig, /label="操作"[^>]*\swidth=/)
   assert.match(accessoryConfig, /formatDateTime\(row\.updated_at\)/)
   assert.match(accessoryConfig, /if \(!value\) return '—'/)
-  assert.match(accessoryConfig, /Number\(row\.standard_price\)\.toFixed\(2\)/)
+  assert.match(accessoryConfig, /formatMoney\(row\.standard_price\)/)
   assert.doesNotMatch(accessoryConfig, /row\.currency\s*}}\s*{{\s*formatPrice/)
 })
 
@@ -330,7 +330,7 @@ test('accessory editor selects a real OKKI product and SKU and keeps its snapsho
   assert.match(priceInput, /:min="0\.01"/)
   assert.match(priceInput, /:precision="2"/)
   assert.match(priceInput, /:max="99999999\.99"/)
-  assert.match(accessoryConfig, /Number\(form\.price\) <= 0/)
+  assert.match(accessoryConfig, /isAmount\(form\.price, \{ format: .number. \}\)/)
   assert.match(accessoryConfig, /<el-input[^>]*:model-value="dialog\.form\.accessory_name"[^>]*readonly/s)
   assert.match(accessoryConfig, /<el-input[^>]*:model-value="dialog\.form\.accessory_model"[^>]*readonly/s)
   assert.match(accessoryConfig, /<el-input[^>]*:model-value="dialog\.form\.accessory_color"[^>]*readonly/s)
@@ -375,9 +375,9 @@ test('accessory price screen routes list loading through the latest-request cont
 })
 
 test('invoice API exposes the complete accessory price lifecycle through the existing client', () => {
-  assert.match(api, /export function searchAccessoryCandidates\(params\)/)
+  assert.match(api, /export function searchAccessoryCandidates\(params, config = \{\}\)/)
   assert.match(api, /request\.get\('\/price\/accessory-candidates'/)
-  assert.match(api, /export function listAccessoryPrices\(params\)/)
+  assert.match(api, /export function listAccessoryPrices\(params, config = \{\}\)/)
   assert.match(api, /request\.get\('\/price\/accessories'/)
   assert.match(api, /export function saveAccessoryPrice\(data\)/)
   assert.match(api, /request\.post\('\/price\/accessories'/)

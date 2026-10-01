@@ -1,13 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { reactive } from 'vue'
+import { useListPage } from '../src/composables/useListPage.js'
 import { buildOrderListParams, emptyAdvancedFilters, useDomesticOrderFilters } from '../src/views/domestic/composables/useDomesticOrderFilters.js'
 
 function setup() {
-  const form = reactive({ keyword: 'PO', customer_name: '莱莎', status: 0, order_kind: 'business', ...emptyAdvancedFilters() })
-  let calls = 0
-  const filters = useDomesticOrderFilters(form, () => ({ order_channels: [{ value: 'cash', label: '现金单' }] }), () => { calls++ })
-  return { form, filters, calls: () => calls }
+  const requests = []
+  const state = useListPage(async params => {
+    requests.push(buildOrderListParams(params))
+    return { items: [], total: 100 }
+  }, { immediate: false, searchForm: { keyword: 'PO', customer_name: '莱莎', owner_user_id: '', status: 0, order_kind: 'business', ...emptyAdvancedFilters() } })
+  const filters = useDomesticOrderFilters(state.searchForm, () => ({ order_channels: [{ value: 'cash', label: '现金单' }] }), state.handleSearch, () => state.appliedSearchForm.value)
+  return { form: state.searchForm, state, filters, requests, calls: () => requests.length }
 }
 
 test('customer and order queries combine with draft status, dates and advanced filters', () => {
@@ -20,56 +23,57 @@ test('customer and order queries combine with draft status, dates and advanced f
   assert.deepEqual(buildOrderListParams({ page: 1, page_size: 20, owner_user_id: 7, dateRange: [] }), { page: 1, page_size: 20, owner_user_id: 7 })
 })
 
-test('cancel and clear in advanced dialog do not change current filters; reopening restores them', () => {
-  const { form, filters, calls } = setup()
+test('advanced fields and current-query tags change only after an explicit query', async () => {
+  const { form, state, filters, requests } = setup()
   form.order_channel = 'cash'
   form.dateRange = ['2026-09-01', '2026-09-11']
-  filters.openAdvanced()
-  filters.draft.dateRange[0] = '2026-08-01'
-  filters.clearDraft()
-  filters.advancedVisible.value = false
-  assert.equal(form.order_channel, 'cash')
-  assert.deepEqual(form.dateRange, ['2026-09-01', '2026-09-11'])
-  assert.equal(calls(), 0)
-  filters.openAdvanced()
-  assert.equal(filters.draft.order_channel, 'cash')
-  assert.deepEqual(filters.draft.dateRange, form.dateRange)
+  await state.handlePageChange(2)
+  assert.equal(requests.at(-1).order_channel, undefined)
+  assert.equal(requests.at(-1).date_start, undefined)
+  assert.deepEqual(filters.advancedTags.value, [])
+  await state.handleSearch()
+  assert.equal(requests.at(-1).page, 1)
+  assert.equal(requests.at(-1).order_channel, 'cash')
+  assert.equal(filters.advancedTags.value.length, 2)
+  form.dateRange[0] = '2026-08-01'
+  assert.equal(filters.advancedTags.value[0].label, '下单日期：2026-09-01 至 2026-09-11')
 })
 
-test('apply, tag removal and reset each query once and preserve the current tab', () => {
-  const { form, filters, calls } = setup()
-  filters.openAdvanced()
-  filters.draft.order_channel = 'cash'
-  filters.applyAdvanced()
+test('tag removal and reset query once, clear advanced fields and preserve the current tab', async () => {
+  const { form, state, filters, requests, calls } = setup()
+  form.order_channel = 'cash'
+  await state.handleSearch()
   assert.equal(calls(), 1)
-  assert.equal(filters.advancedVisible.value, false)
   assert.deepEqual(filters.advancedTags.value, [{ key: 'order_channel', label: '订单渠道：现金单' }])
-  filters.removeAdvanced('order_channel')
+  await filters.removeAdvanced('order_channel')
   assert.equal(calls(), 2)
   assert.deepEqual(filters.advancedTags.value, [])
   form.owner_user_id = 7
-  filters.resetFilters()
+  form.dateRange = ['2026-09-01', '2026-09-11']
+  state.page.value = 4
+  await filters.resetFilters()
   assert.equal(calls(), 3)
   assert.equal(form.order_kind, 'business')
   assert.equal(form.customer_name, '')
   assert.equal(form.owner_user_id, '')
   assert.equal(form.keyword, '')
   assert.equal(form.status, '')
+  assert.deepEqual(form.dateRange, [])
+  assert.equal(requests.at(-1).page, 1)
+  assert.equal(state.hasPendingSearch.value, false)
 })
 
-test('production queries exclude business conditions but keep customer and date queries', () => {
-  const { form, filters } = setup()
+test('production queries exclude business conditions but keep customer and date queries', async () => {
+  const { form, state, filters, requests } = setup()
   form.order_kind = 'production'
   form.customer_source = 'referral'
-  filters.openAdvanced()
-  filters.draft.order_channel = 'cash'
-  filters.draft.dateRange = ['2026-09-01', '2026-09-11']
-  filters.applyAdvanced()
-  assert.equal(form.customer_source, '')
-  assert.equal(form.order_channel, '')
+  form.order_channel = 'cash'
+  form.dateRange = ['2026-09-01', '2026-09-11']
+  await state.handleSearch()
   assert.equal(filters.advancedTags.value.length, 1)
-  const params = buildOrderListParams({ ...form, order_type: 'first_order' })
-  assert.equal(params.order_type, undefined)
+  const params = requests.at(-1)
+  assert.equal(params.order_channel, undefined)
+  assert.equal(params.customer_source, undefined)
   assert.equal(params.customer_name, '莱莎')
   assert.equal(params.date_end, '2026-09-11')
 })

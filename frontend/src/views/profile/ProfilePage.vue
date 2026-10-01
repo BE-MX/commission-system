@@ -41,7 +41,7 @@
       <template #header>
         <div class="card-header">基本信息</div>
       </template>
-      <el-form :model="profileForm" label-width="80px" style="max-width: 480px">
+      <el-form label-position="top" :model="profileForm" style="max-width: 480px">
         <el-form-item label="用户名">
           <el-input :model-value="profileForm.username" disabled />
         </el-form-item>
@@ -67,7 +67,7 @@
       <template #header>
         <div class="card-header">修改密码</div>
       </template>
-      <el-form :model="pwdForm" label-width="100px" style="max-width: 480px">
+      <el-form label-position="top" :model="pwdForm" style="max-width: 480px">
         <el-form-item label="当前密码">
           <el-input v-model="pwdForm.old_password" type="password" placeholder="输入当前密码" show-password />
         </el-form-item>
@@ -87,9 +87,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { useAuthStore } from '@/stores/auth'
 import { updateProfile, changePassword, uploadAvatar } from '@/api/userManagement'
 import { Plus } from '@element-plus/icons-vue'
@@ -108,11 +108,11 @@ async function handleAvatarChange(file) {
   const isImage = file.raw.type.startsWith('image/')
   const isLt2M = file.raw.size / 1024 / 1024 < 2
   if (!isImage) {
-    ElMessage.error('请上传图片文件')
+    msgError('请上传图片文件')
     return
   }
   if (!isLt2M) {
-    ElMessage.error('图片大小不能超过 2MB')
+    msgError('图片大小不能超过 2MB')
     return
   }
   avatarLoading.value = true
@@ -121,7 +121,7 @@ async function handleAvatarChange(file) {
     avatarPreview.value = res.data?.avatar_url || ''
     await authStore.fetchMe()
     loadAvatar()
-    ElMessage.success('头像上传成功')
+    msgSuccessText('头像上传成功')
   } catch {
     // handled by interceptor
   } finally {
@@ -146,7 +146,7 @@ function loadProfile() {
 
 async function submitProfile() {
   if (!profileForm.value.real_name) {
-    ElMessage.warning('请填写姓名')
+    msgWarning('请填写姓名')
     return
   }
   savingProfile.value = true
@@ -157,7 +157,7 @@ async function submitProfile() {
       phone: profileForm.value.phone || null,
       avatar_url: avatarPreview.value || null,
     })
-    ElMessage.success('资料已更新')
+    msgSuccessText('资料已更新')
     // 刷新 store 中的用户信息
     await authStore.fetchMe()
     loadProfile()
@@ -174,15 +174,15 @@ const savingPwd = ref(false)
 
 async function submitPassword() {
   if (!pwdForm.value.old_password) {
-    ElMessage.warning('请输入当前密码')
+    msgWarning('请输入当前密码')
     return
   }
   if (!pwdForm.value.new_password || pwdForm.value.new_password.length < 6) {
-    ElMessage.warning('新密码至少 6 位')
+    msgWarning('新密码至少 6 位')
     return
   }
   if (pwdForm.value.new_password !== pwdForm.value.confirm_password) {
-    ElMessage.warning('两次输入的新密码不一致')
+    msgWarning('两次输入的新密码不一致')
     return
   }
   savingPwd.value = true
@@ -191,7 +191,7 @@ async function submitPassword() {
       old_password: pwdForm.value.old_password,
       new_password: pwdForm.value.new_password,
     })
-    ElMessage.success('密码已修改，下次登录请使用新密码')
+    msgSuccessText('密码已修改，下次登录请使用新密码')
     pwdForm.value = { old_password: '', new_password: '', confirm_password: '' }
   } catch {
     // handled by interceptor
@@ -279,7 +279,7 @@ onMounted(() => {
 }
 .avatar-placeholder:hover {
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .avatar-placeholder .el-icon {
   font-size: 24px;
@@ -297,7 +297,7 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.7);
   border-radius: 50%;
   font-size: 24px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .avatar-hint {

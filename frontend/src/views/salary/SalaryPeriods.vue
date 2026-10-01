@@ -12,13 +12,12 @@
 
     <!-- 表格卡片：筛选区 + 操作行 + 表格（List Page Spec / Action Bar Spec） -->
     <div ref="panelRef" class="table-card salary-panel">
-      <div class="toolbar">
-        <el-select v-model="statusFilter" placeholder="全部状态" clearable class="filter-w-sm" @change="fetchList">
+      <FilterBar :loading="loading" :pending="pending" @search="search" @reset="resetFilters">
+        <el-select v-model="statusFilter" placeholder="全部状态" clearable class="filter-w-sm">
           <el-option v-for="s in PERIOD_STATUS_ORDER" :key="s" :label="STATUS_TEXT[s]" :value="s" />
         </el-select>
-        <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+        <template #summary><span>最多显示最近 60 个符合条件的批次。</span></template>
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -28,23 +27,25 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
+          :loading="loading"
           @refresh="fetchList"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus v-if="periodsResource.error.value && list.length" v-bind="resourceStatus(periodsResource)" @retry="fetchList" />
       <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
         <template #empty>
-          <el-empty :image-size="96" :description="statusFilter ? '没有符合条件的记录' : '暂无数据'">
-            <GlassButton v-if="statusFilter" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          <ListPageStatus v-bind="resourceStatus(periodsResource)" @retry="fetchList">
+          <el-empty :image-size="96" :description="appliedStatus ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="appliedStatus" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
+          </ListPageStatus>
         </template>
         <el-table-column v-if="visibleKeys.includes('year-month')" prop="year_month" label="月份" min-width="100" />
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="STATUS_TAG[row.status] || 'info'" effect="plain">
-              {{ row.status_label }}
-            </el-tag>
+            <StatusBadge size="small" :value="row.status" :dictionary="SALARY_STATUS" :label="row.status_label" effect="plain" />
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('workday-count')" label="工作日数" min-width="130" align="right">
@@ -52,7 +53,7 @@
             {{ row.workday_count ?? '-' }}
             <!-- 自动推算只按周一~五数，没扣法定节假日也没加调休。
                  2 月批次的 20 天要是被当成应出基准用，全员缺勤扣款都是错的 -->
-            <el-tag v-if="row.workday_needs_review" size="small" type="warning" effect="plain">待复核</el-tag>
+            <StatusBadge v-if="row.workday_needs_review" size="small" type="warning" effect="plain">待复核</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('natural-days')" label="自然日" prop="natural_days" min-width="80" align="right" />
@@ -62,7 +63,7 @@
             <span v-else class="muted">-</span>
             <!-- 解锁过 = 前次导出已作废（决策 A4），列表就要能看出来，
                  不然财务手上那份旧表看起来跟有效表一模一样 -->
-            <el-tag v-if="row.unlocked_at" size="small" type="danger" effect="plain">解锁过</el-tag>
+            <StatusBadge v-if="row.unlocked_at" size="small" type="danger" effect="plain">解锁过</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" show-overflow-tooltip />
@@ -75,7 +76,7 @@
     </div>
 
     <el-dialog v-model="dialogVisible" title="新建工资批次" width="480px">
-      <el-form ref="formRef" :model="form" :rules="formRules" label-width="100px">
+      <el-form label-position="top" ref="formRef" :model="form" :rules="formRules">
         <el-form-item label="月份" prop="year_month">
           <el-input v-model="form.year_month" placeholder="YYYY-MM，如 2026-03" />
         </el-form-item>
@@ -99,7 +100,10 @@
 </template>
 
 <script setup>
+import { SALARY_STATUS, SALARY_STATUS_LABELS as STATUS_TEXT, SALARY_STATUS_TYPES as STATUS_TAG } from './salaryStatus.js'
 import { PERIOD_STATUS_ORDER } from '@/api/salary'
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
 import { useSalaryPeriods } from './composables/useSalaryPeriods'
@@ -117,34 +121,17 @@ const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullsc
 
 // 筛选下拉的文案。列表行里一律用接口回的 status_label，这份只服务于「还没有数据
 // 时也要能选状态」的下拉——不能靠行数据现推。
-const STATUS_TEXT = {
-  draft: '草稿',
-  attendance_synced: '考勤已同步',
-  imported: '社保已导入',
-  calculated: '已计算',
-  reviewing: '复核中',
-  confirmed: '已锁定',
-}
 
-const STATUS_TAG = {
-  draft: 'info',
-  attendance_synced: '',
-  imported: '',
-  calculated: 'warning',
-  reviewing: 'warning',
-  confirmed: 'success',
-}
+
+
 
 const {
-  loading, list, statusFilter, fetchList,
+  loading, list, statusFilter, appliedStatus, pending, periodsResource, fetchList, search, resetFilters,
   dialogVisible, saving, formRef, form, formRules, openCreate, submit,
   openPeriod,
 } = useSalaryPeriods()
 
-function resetFilters() {
-  statusFilter.value = ''
-  fetchList()
-}
+const resourceStatus = resource => ({ error: resource.errorMessage.value, loading: resource.loading.value, hasData: resource.hasLoaded.value, paged: false })
 </script>
 
 <style scoped>

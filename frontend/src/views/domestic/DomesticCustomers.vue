@@ -9,30 +9,27 @@
     <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级默认按最近一次充值金额核定；管理员可「初始化」期初或「调整」临时覆盖，下一次充值会重新按金额核定。" />
 
     <div ref="panelRef" class="table-card customers-panel">
-      <div ref="filtersRef" class="toolbar">
-        <el-input
+      <FilterBar ref="filtersRef" class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="resetFilters"><el-input
           v-model="searchForm.keyword" placeholder="搜索编码 / 店名 / 联系人 / 电话" clearable
-          prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch"
+          prefix-icon="Search" class="filter-w-lg"
         />
-        <el-select v-model="searchForm.status" placeholder="状态" clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.status" placeholder="状态" clearable class="filter-w-sm" >
           <el-option label="启用" :value="1" />
           <el-option label="停用" :value="0" />
         </el-select>
-        <el-select v-model="searchForm.province" placeholder="省份" filterable clearable class="filter-w-sm" @change="handleProvinceChange">
+<el-select v-model="searchForm.province" placeholder="省份" filterable clearable class="filter-w-sm" @change="handleProvinceChange">
           <el-option v-for="province in options.provinces" :key="province" :label="province" :value="province" />
         </el-select>
-        <el-select v-model="searchForm.city" placeholder="城市" filterable clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.city" placeholder="城市" filterable clearable class="filter-w-sm" >
           <el-option v-for="city in options.cities" :key="city" :label="city" :value="city" />
         </el-select>
-        <el-select v-model="searchForm.customer_level" placeholder="客户等级" clearable class="filter-w-sm" @change="handleSearch">
+<template #advanced><el-select v-model="searchForm.customer_level" placeholder="客户等级" clearable class="filter-w-sm" >
           <el-option v-for="item in options.customer_level" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-select v-model="searchForm.owner_user_id" placeholder="归属销售" filterable clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.owner_user_id" placeholder="归属销售" filterable clearable class="filter-w-sm" >
           <el-option v-for="item in options.owners" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+</template></FilterBar>
       <el-tabs v-model="searchForm.owner_scope" class="customer-tabs" @tab-change="handleSearch">
         <el-tab-pane label="私海客户" name="private" />
         <el-tab-pane label="公海客户" name="public" />
@@ -47,26 +44,27 @@
           @refresh="fetchList" @fullscreen="toggleFullscreen"
         />
       </div>
-      <el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasCustomerFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasCustomerFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column prop="shop_name" label="客户店名" min-width="160" fixed="left" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('custom_code')" prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('customer_level')" label="客户等级" min-width="90">
           <template #default="{ row }">
-            <el-tag v-if="row.customer_level" size="small" effect="plain" type="warning">{{ row.customer_level }}</el-tag>
+            <StatusBadge v-if="row.customer_level" size="small" effect="plain" type="warning">{{ row.customer_level }}</StatusBadge>
             <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('lifecycle_status')" label="客户状态" min-width="90">
           <template #default="{ row }">
-            <el-tag v-if="row.lifecycle_status" size="small" effect="plain"
+            <StatusBadge v-if="row.lifecycle_status" size="small" effect="plain"
               :type="{ 活跃: 'success', 潜在: 'warning', 沉默: 'info', 流失: 'danger' }[row.lifecycle_status] || 'info'">
               {{ row.lifecycle_status }}
-            </el-tag>
+            </StatusBadge>
             <span v-else>-</span>
           </template>
         </el-table-column>
@@ -80,10 +78,10 @@
           <template #default="{ row }">{{ row.store_type || '-' }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="110">
-          <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.membership_label }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge size="small" effect="plain">{{ row.membership_label }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('last_recharge')" label="最近充值" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.last_recharge_amount != null ? `¥${Number(row.last_recharge_amount).toFixed(2)}` : '-' }}</template>
+          <template #default="{ row }">{{ row.last_recharge_amount != null ? `${formatMoney(Number(row.last_recharge_amount), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}` : '-' }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('last_recharged_at')" label="最近充值时间" min-width="170" show-overflow-tooltip>
           <template #default="{ row }">{{ row.last_recharged_at || '-' }}</template>
@@ -96,7 +94,7 @@
         <el-table-column v-if="visibleKeys.includes('totals')" label="累计订单 / 销售额" min-width="150">
           <template #default="{ row }">
             <template v-if="row.total_order_count != null || row.total_sales_amount != null">
-              {{ row.total_order_count ?? '-' }} 单 / ¥{{ Number(row.total_sales_amount || 0).toFixed(2) }}
+              {{ row.total_order_count ?? '-' }} 单 / {{ formatMoney(Number(row.total_sales_amount || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}
             </template>
             <span v-else>-</span>
           </template>
@@ -104,20 +102,20 @@
         <el-table-column v-if="visibleKeys.includes('order_count')" prop="order_count" label="订单数" min-width="90" />
         <el-table-column v-if="visibleKeys.includes('settle_mode')" label="结算方式" min-width="120">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.settle_mode === 'credit' ? 'warning' : 'info'" effect="plain">
+            <StatusBadge size="small" :type="row.settle_mode === 'credit' ? 'warning' : 'info'" effect="plain">
               {{ row.settle_mode_label || '先充值后下单' }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('balance')" label="充值余额" min-width="110" align="right">
           <template #default="{ row }">
-            <span v-if="Number(row.balance || 0) < 0" class="debt-value">欠款 ¥{{ Math.abs(Number(row.balance)).toFixed(2) }}</span>
-            <span v-else class="balance-value">¥{{ Number(row.balance || 0).toFixed(2) }}</span>
+            <span v-if="Number(row.balance || 0) < 0" class="debt-value">欠款 {{ formatMoney(Math.abs(Number(row.balance)), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
+            <span v-else class="balance-value">{{ formatMoney(Number(row.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.status ? 'success' : 'info'" effect="plain">{{ row.status ? '启用' : '停用' }}</el-tag>
+            <StatusBadge size="small" :value="row.status" :dictionary="ENABLED_STATUS" effect="plain" />
           </template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
@@ -161,7 +159,7 @@
     </div>
 
     <el-dialog v-model="dialog.visible" :title="dialog.id ? '编辑客户' : '新增客户'" width="640px">
-      <el-form :model="dialog" label-width="100px">
+      <el-form label-position="top" :model="dialog">
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item label="客户编码" :required="!dialog.id">
@@ -272,7 +270,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importDialog.visible" title="导入客户（莱莎客户信息录入表）" width="560px">
+    <el-dialog v-model="importDialog.visible" title="导入客户（莱莎客户信息录入表）" width="640px">
       <el-alert type="info" show-icon :closable="false" class="tips"
         title="按客户编码更新已有客户；同店名不同编码的只补空档并保留先导入的归属。财务字段（余额/会员等级）导入不改动。" />
       <AppUpload
@@ -302,16 +300,16 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="rechargeDialog.visible" title="客户充值（提交后需审核）" width="440px">
+    <el-dialog v-model="rechargeDialog.visible" title="客户充值（提交后需审核）" width="480px">
       <el-alert type="info" show-icon :closable="false" class="tips" title="充值审核通过后，将按本次充值金额重新核定会员等级，覆盖当前等级（含人工调整）；不足 1 万元会变为非会员。" />
-      <el-form label-width="90px">
+      <el-form label-position="top">
         <el-form-item label="客户"><strong>{{ rechargeDialog.customer?.shop_name }}</strong></el-form-item>
-        <el-form-item label="当前余额">¥{{ Number(rechargeDialog.customer?.balance || 0).toFixed(2) }}</el-form-item>
+        <el-form-item label="当前余额">{{ formatMoney(Number(rechargeDialog.customer?.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</el-form-item>
         <el-form-item label="充值金额" required>
           <el-input-number v-model="rechargeDialog.amount" :min="0.01" :precision="2" :step="100" style="width: 100%" />
         </el-form-item>
         <el-form-item label="充值后会员">
-          <el-tag effect="plain">{{ membershipPreview(rechargeDialog.amount) }}</el-tag>
+          <StatusBadge effect="plain">{{ membershipPreview(rechargeDialog.amount) }}</StatusBadge>
           <span class="preview-hint">仅按本次充值金额计算</span>
         </el-form-item>
         <el-form-item label="转账凭证" required>
@@ -335,9 +333,9 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="initDialog.visible" title="期初初始化（仅一次）" width="440px">
+    <el-dialog v-model="initDialog.visible" title="期初初始化（仅一次）" width="480px">
       <el-alert type="warning" show-icon :closable="false" class="tips" title="只适用于还没有任何资金流水的新建档客户；已有流水请用「调整」。" />
-      <el-form label-width="90px">
+      <el-form label-position="top">
         <el-form-item label="客户"><strong>{{ initDialog.customer?.shop_name }}</strong></el-form-item>
         <el-form-item label="期初余额">
           <el-input-number v-model="initDialog.balance" :min="0" :precision="2" :step="100" style="width: 100%" />
@@ -357,12 +355,12 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="adjustDialog.visible" title="临时调整余额 / 等级（提交后需审核）" width="460px">
+    <el-dialog v-model="adjustDialog.visible" title="临时调整余额 / 等级（提交后需审核）" width="480px">
       <el-alert type="warning" show-icon :closable="false" class="tips" title="余额正数加、负数减；等级覆盖是临时的，下一次充值会按金额重新核定。提交后进入审核，审核通过才生效。" />
-      <el-form label-width="90px">
+      <el-form label-position="top">
         <el-form-item label="客户"><strong>{{ adjustDialog.customer?.shop_name }}</strong></el-form-item>
         <el-form-item label="当前状态">
-          <span>{{ adjustDialog.customer?.membership_label }} · 余额 ¥{{ Number(adjustDialog.customer?.balance || 0).toFixed(2) }}</span>
+          <span>{{ adjustDialog.customer?.membership_label }} · 余额 {{ formatMoney(Number(adjustDialog.customer?.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
         </el-form-item>
         <el-form-item label="余额调整">
           <el-input-number v-model="adjustDialog.amount" :precision="2" :step="50" style="width: 100%" />
@@ -384,31 +382,36 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="ledgerDrawer.visible" :title="`${ledgerDrawer.customer?.shop_name || ''} · 余额流水`" size="720px">
+    <DetailDrawer v-model="ledgerDrawer.visible" :title="`${ledgerDrawer.customer?.shop_name || ''} · 余额流水`" width="760px">
+      <ListPageStatus v-if="ledgerState.hasData.value" :error="ledgerState.errorMessage.value" :loading="ledgerDrawer.loading" :has-data="true" :data-page="ledgerState.dataPage.value" @retry="loadLedger()" />
       <el-table :data="ledgerDrawer.items" v-loading="ledgerDrawer.loading" border size="small" class="list-table">
+        <template #empty><ListPageStatus :error="ledgerState.errorMessage.value" :loading="ledgerDrawer.loading" @retry="loadLedger()"><el-empty description="暂无余额流水" :image-size="96" /></ListPageStatus></template>
         <el-table-column prop="created_at" label="时间" min-width="150" />
         <el-table-column label="类型" min-width="100">
           <template #default="{ row }">{{ ledgerTypeLabel[row.transaction_type] || row.transaction_type }}</template>
         </el-table-column>
         <el-table-column label="变动" min-width="100" align="right">
-          <template #default="{ row }"><span :class="row.amount >= 0 ? 'amount-in' : 'amount-out'">{{ row.amount >= 0 ? '+' : '' }}¥{{ Number(row.amount).toFixed(2) }}</span></template>
+          <template #default="{ row }"><span :class="row.amount >= 0 ? 'amount-in' : 'amount-out'">{{ row.amount >= 0 ? '+' : '' }}{{ formatMoney(Number(row.amount), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span></template>
         </el-table-column>
         <el-table-column label="余额" min-width="100" align="right">
-          <template #default="{ row }">¥{{ Number(row.balance_after).toFixed(2) }}</template>
+          <template #default="{ row }">{{ formatMoney(Number(row.balance_after), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</template>
         </el-table-column>
         <el-table-column prop="domestic_no" label="关联订单" min-width="130" />
         <el-table-column prop="remark" label="说明" min-width="180" show-overflow-tooltip />
         <el-table-column prop="created_by_name" label="操作人" min-width="90" />
       </el-table>
-      <el-pagination
-        v-model:current-page="ledgerDrawer.page" :page-size="20" :total="ledgerDrawer.total"
-        layout="total, prev, pager, next" class="ledger-pager" @current-change="loadLedger"
+      <el-pagination :page-sizes="[20, 50, 100]"
+        v-model:current-page="ledgerDrawer.page" v-model:page-size="ledgerDrawer.pageSize" :total="ledgerDrawer.total"
+        layout="total, sizes, prev, pager, next" class="ledger-pager pager" @current-change="loadLedger" @size-change="changeLedgerSize"
       />
-    </el-drawer>
+    </DetailDrawer>
   </div>
 </template>
 
 <script setup>
+import { ENABLED_STATUS } from '@/utils/status'
+import { formatMoney } from '../../utils/money.js'
+
 /** 内贸客户管理。下单页可就地新建客户，这里做集中维护；逻辑在 composables/useDomesticCustomers.js。 */
 import { computed } from 'vue'
 import { CHINA_REGIONS } from '@/data/chinaRegions'
@@ -426,6 +429,7 @@ const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('domestic-customers', columnDefs)
 
+const listPageState = useDomesticCustomers()
 const {
   loading, list, total, page, pageSize, searchForm,
   fetchList, handleSearch, handlePageChange, handleSizeChange,
@@ -435,15 +439,15 @@ const {
   onRechargeVoucherChange, onRechargeVoucherRemove, onRechargeVoucherExceed,
   initDialog, openInit, confirmInit,
   adjustDialog, openAdjust, confirmAdjust,
-  ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger,
+  ledgerState, ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger, changeLedgerSize,
   importDialog, openImport, doImport,
   toggleStatus, handleDelete, membershipOptions,
   membershipPreview,
-} = useDomesticCustomers()
+} = listPageState
 
 const hasCustomerFilters = computed(() => Boolean(
-  searchForm.keyword || searchForm.status !== '' || searchForm.province || searchForm.city
-  || searchForm.customer_level || searchForm.owner_user_id,
+  listPageState.appliedSearchForm.value.keyword || (listPageState.appliedSearchForm.value.status !== '' && listPageState.appliedSearchForm.value.status != null) || listPageState.appliedSearchForm.value.province || listPageState.appliedSearchForm.value.city
+  || listPageState.appliedSearchForm.value.customer_level || listPageState.appliedSearchForm.value.owner_user_id,
 ))
 </script>
 

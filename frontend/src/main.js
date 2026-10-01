@@ -12,6 +12,12 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import GlassButton from './components/GlassButton.vue'
+import StatusBadge from './components/StatusBadge.vue'
+import ResponsiveDescriptions from './components/ResponsiveDescriptions.vue'
+import EmptyState from './components/EmptyState.vue'
+import FilterBar from './components/FilterBar.vue'
+import ListPageStatus from './components/ListPageStatus.vue'
+import DetailDrawer from './components/DetailDrawer.vue'
 import { registerPermissionDirectives } from './directives/permission'
 
 const app = createApp(App)
@@ -21,6 +27,12 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 }
 
 app.component('GlassButton', GlassButton)
+app.component('StatusBadge', StatusBadge)
+app.component('ResponsiveDescriptions', ResponsiveDescriptions)
+app.component('EmptyState', EmptyState)
+app.component('FilterBar', FilterBar)
+app.component('ListPageStatus', ListPageStatus)
+app.component('DetailDrawer', DetailDrawer)
 registerPermissionDirectives(app)   // v-permission / v-any-permission（按钮级权限）
 
 app.use(createPinia())

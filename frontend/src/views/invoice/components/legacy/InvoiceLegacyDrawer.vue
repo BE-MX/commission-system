@@ -1,7 +1,7 @@
 <template>
   <!-- 旧版下单抽屉（过渡期）：HEAD 版布局原样保留，与新版共享同一编辑器状态。
        新业务请走新版下单页；旧版只提供库存单/生产单新建入口，编辑仍走新版。 -->
-  <el-drawer v-model="legacyVisible" :title="drawerTitle" size="94%" class="legacy-editor-drawer">
+  <el-drawer v-model="legacyVisible" :title="drawerTitle" size="640px" class="legacy-editor-drawer">
     <template #default>
       <div class="legacy-toolbar">
         <el-button v-permission="'invoice:write'" @click="$emit('open-paste')">
@@ -9,7 +9,7 @@
         </el-button>
         <span class="legacy-note">旧版布局 · 过渡期内提供；快递渠道、联系人、客户等级为必填（与新版同口径）</span>
       </div>
-      <el-form :model="form" label-width="80px" class="invoice-form">
+      <el-form label-position="top" :model="form" class="invoice-form">
         <section class="head-section">
           <div class="col-title">客户信息</div>
           <div class="head-grid">
@@ -305,7 +305,7 @@ const drawerTitle = computed(() => {
 
 .field-tip { margin-top: 4px; font-size: 11.5px; line-height: 1.4; color: var(--text-muted); }
 
-.rule-badge { margin-top: 4px; padding: 2px 10px; border-radius: 999px; background: var(--color-primary-light); color: var(--color-primary); font-size: 12px; font-weight: 600; width: fit-content; }
+.rule-badge { margin-top: 4px; padding: 2px 10px; border-radius: 999px; background: var(--color-primary-light); color: var(--color-primary-text); font-size: 12px; font-weight: 600; width: fit-content; }
 .binding-helper { margin-top: 6px; color: var(--color-warning-text); font-size: 12px; line-height: 1.5; }
 
 .customer-filter-row { display: flex; align-items: center; gap: 8px; width: 100%; }

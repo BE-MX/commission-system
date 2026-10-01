@@ -8,7 +8,7 @@
     </div>
 
     <!-- 筛选栏 -->
-    <div class="filter-bar">
+    <FilterBar class="filter-bar" :loading="loading" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="resetFilters">
       <el-select v-model="filters.color_family" placeholder="色族" clearable>
         <el-option v-for="f in filterOptions.color_families" :key="f" :label="familyLabel(f)" :value="f" />
       </el-select>
@@ -19,11 +19,11 @@
         <el-option v-for="l in filterOptions.luminance_levels" :key="l" :label="l" :value="l" />
       </el-select>
       <el-input v-model="filters.keyword" placeholder="搜索色号/名称..." clearable style="width: 200px;" />
-      <GlassButton variant="primary" :left-icon="Search" @click="loadData">查询</GlassButton>
-      <GlassButton variant="secondary" :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
       <GlassButton v-if="canWrite" variant="success" :left-icon="Plus" @click="openCreate">新增色号</GlassButton>
-    </div>
+    </FilterBar>
+    <ListPageStatus v-if="filterResource.error.value" :paged="false" :error="filterResource.errorMessage.value" :loading="filterResource.loading.value" :has-data="filterResource.hasLoaded.value" @retry="loadFilterOptions" />
 
+<ListPageStatus :error="listPageState.errorMessage.value" :loading="loading" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="loadData" />
     <!-- 色块网格 -->
     <div v-loading="loading" class="palette-grid">
       <ColorBlock
@@ -37,22 +37,22 @@
     </div>
 
     <!-- 空状态 -->
-    <el-empty v-if="!loading && !paletteList.length" description="暂无色号数据" />
+    <el-empty v-if="!loading && !listPageState.error.value && !paletteList.length" description="暂无色号数据" />
 
     <!-- 分页 -->
-    <el-pagination
+    <el-pagination class="pager"
       v-if="total > 0"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
       :page-sizes="[20, 50, 100]"
       layout="total, sizes, prev, pager, next"
-      @change="loadData"
+      @current-change="handlePageChange" @size-change="handleSizeChange"
     />
 
     <!-- 新增/编辑弹窗 -->
-    <el-dialog v-model="formVisible" :title="formTitle" width="500px" destroy-on-close>
-      <el-form ref="formRef" :model="formData" :rules="formRules" label-width="100px">
+    <el-dialog v-model="formVisible" :title="formTitle" width="640px" destroy-on-close>
+      <el-form label-position="top" ref="formRef" :model="formData" :rules="formRules">
         <el-form-item label="标准色号" prop="industry_code">
           <el-input v-model="formData.industry_code" placeholder="如 #1, #613" />
         </el-form-item>
@@ -148,9 +148,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText, msgError, confirmAction } from '@/utils/feedback'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { Plus, RefreshLeft, Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -161,29 +161,21 @@ import {
   updateColor,
   generateSwatch as apiGenerateSwatch,
 } from '@/api/color'
-import { useTableSort } from '@/composables/useTableSort'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useListPage } from '@/composables/useListPage'
 import ColorBlock from './components/ColorBlock.vue'
 import ColorDetailModal from './components/ColorDetailModal.vue'
 
 const authStore = useAuthStore()
-const orderSort = useTableSort()
 const canWrite = computed(() => authStore.hasPermission('color:write'))
 const canAdmin = computed(() => authStore.hasPermission('color:admin'))
 
 // 列表状态
-const loading = ref(false)
-const page = ref(1)
-const pageSize = ref(50)
-const total = ref(0)
-const paletteList = ref([])
-const filterOptions = reactive({ color_families: [], sources: [], luminance_levels: [] })
-
-const filters = reactive({
-  color_family: '',
-  source: '',
-  luminance_level: '',
-  keyword: '',
-})
+const listPageState = useListPage(async (params, { signal }) => (await getColors(params, { signal, suppressToast: true })).data, { searchForm: { color_family: '', source: '', luminance_level: '', keyword: '' } })
+const { loading, page, pageSize, total, list: paletteList, searchForm: filters, fetchList: loadData, handleSearch, handleReset: resetFilters, handlePageChange, handleSizeChange } = listPageState
+const filterResource = useAsyncResource(async (_, { signal }) =>
+  (await getColorFilterOptions({ signal, suppressToast: true })).data, { initialData: { color_families: [], sources: [], luminance_levels: [] } })
+const filterOptions = filterResource.data
 
 // 表单状态
 const formVisible = ref(false)
@@ -221,47 +213,11 @@ const detailData = ref({})
 
 onMounted(() => {
   loadFilterOptions()
-  loadData()
 })
 
-async function loadFilterOptions() {
-  try {
-    const res = await getColorFilterOptions()
-    if (res.data?.code === 200) {
-      Object.assign(filterOptions, res.data.data)
-    }
-  } catch {
-    // ignore
-  }
-}
+function loadFilterOptions() { return filterResource.load() }
 
-async function loadData() {
-  loading.value = true
-  try {
-    const res = await getColors({
-      page: page.value,
-      page_size: pageSize.value,
-      ...filters,
-      ...orderSort.sortParams.value,
-    })
-    if (res.data?.code === 200) {
-      paletteList.value = res.data.data.items || []
-      total.value = res.data.data.total || 0
-    }
-  } finally {
-    loading.value = false
-  }
-}
 
-function resetFilters() {
-  filters.color_family = ''
-  filters.source = ''
-  filters.luminance_level = ''
-  filters.keyword = ''
-  page.value = 1
-  orderSort.reset()
-  loadData()
-}
 
 function openCreate() {
   editingId.value = null
@@ -313,15 +269,15 @@ async function submitForm() {
     }
     if (editingId.value) {
       await updateColor(editingId.value, payload)
-      ElMessage.success('更新成功')
+      msgSuccessText('更新成功')
     } else {
       await createColor(payload)
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     }
     formVisible.value = false
-    loadData()
+    await (editingId.value ? listPageState.refreshUpdate() : listPageState.refreshCreate())
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '操作失败')
+    msgError(e.response?.data?.message || '操作失败', e)
   } finally {
     submitting.value = false
   }
@@ -334,14 +290,14 @@ function openDetail(item) {
 
 async function confirmDelete(item) {
   try {
-    await ElMessageBox.confirm(`确定删除色号 ${item.industry_code} 吗？`, '确认删除', { type: 'warning' })
+    await confirmAction(`确定删除色号 ${item.industry_code} 吗？`, '确认删除', { type: 'warning' })
     await deleteColor(item.id)
-    ElMessage.success('删除成功')
+    msgSuccessText('删除成功')
     detailVisible.value = false
-    loadData()
+    await listPageState.refreshRemove()
   } catch (e) {
     if (e !== 'cancel') {
-      ElMessage.error(e.response?.data?.message || '删除失败')
+      msgError(e.response?.data?.message || '删除失败', e)
     }
   }
 }
@@ -349,11 +305,11 @@ async function confirmDelete(item) {
 async function generateSwatch(item) {
   try {
     const res = await apiGenerateSwatch({ color_id: item.id, style: 'swatch_card' })
-    if (res.data?.code === 201) {
-      ElMessage.success(`生成任务已创建 (ID: ${res.data.data.task_id})`)
+    if (res.code === 201) {
+      msgSuccessText(`生成任务已创建 (ID: ${res.data.task_id})`)
     }
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '创建失败')
+    msgError(e.response?.data?.message || '创建失败', e)
   }
 }
 

@@ -2,7 +2,7 @@
   <div class="workspace-profile">
     <section class="lg-card panel">
       <h3>普通字段修订 <span class="hint">治理字段（身份/归属/DNC/风险）走变更提案</span></h3>
-      <el-form label-width="96px" size="small" @submit.prevent>
+      <el-form label-position="top" size="small" @submit.prevent>
         <el-form-item label="字段">
           <el-select v-model="form.field_key" placeholder="选择字段" class="profile-select">
             <el-option v-for="key in PROFILE_FIELD_WHITELIST" :key="key" :value="key" :label="PROFILE_FIELD_LABELS[key]" />
@@ -55,7 +55,7 @@
 
     <section class="lg-card panel">
       <h3>客户服务入口 <span class="hint">登记用途与入口；使用表现仅在有可靠来源后展示</span></h3>
-      <el-form label-width="96px" size="small" @submit.prevent>
+      <el-form label-position="top" size="small" @submit.prevent>
         <el-form-item label="类型">
           <el-select v-model="assetForm.asset_type" class="profile-select">
             <el-option value="customer_website" label="客户网站" />

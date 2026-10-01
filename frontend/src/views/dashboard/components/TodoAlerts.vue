@@ -2,13 +2,17 @@
   <div v-if="data.showTodoArea" class="dashboard-todos">
     <router-link v-if="data.customerWorkSummary?.total > 0" class="todo-alert todo-alert-primary" to="/customer-hub/radar">
       <span class="todo-text">有 {{ data.customerWorkSummary.total }} 个客户事项待您处理</span>
-      <span class="todo-link">打开客户工作台 <el-icon><ArrowRight /></el-icon></span>
+      <span class="todo-link">{{ data.customerWorkSummary.total > data.customerWorkSummary.items.length ? `下面仅展示前 ${data.customerWorkSummary.items.length} 项 · ` : '' }}打开客户工作台 <el-icon><ArrowRight /></el-icon></span>
     </router-link>
     <router-link v-for="item in data.customerWorkSummary?.items || []" :key="item.responsibility_id" class="todo-alert todo-alert-primary" :to="item.deep_link">
       <span class="todo-text">{{ item.title }} · {{ item.required_action }}</span>
       <span class="todo-link">查看同一事项 <el-icon><ArrowRight /></el-icon></span>
     </router-link>
-    <router-link v-if="data.customerWorkSummaryError" class="todo-alert todo-alert-warning" to="/customer-hub/radar">{{ data.customerWorkSummaryError }}</router-link>
+    <div v-if="data.customerWorkSummaryError" class="todo-alert todo-alert-warning" role="status">
+      <span>{{ data.customerWorkSummaryError }}{{ data.resources.customerWork.hasLoaded ? '（上次摘要仍可查看）' : '' }}</span>
+      <button type="button" class="todo-retry" @click="data.resources.customerWork.load()">重试</button>
+      <router-link to="/customer-hub/radar">打开客户工作台</router-link>
+    </div>
     <!-- 审批待办 -->
     <div
       v-if="authStore.hasAnyPermission(['design:audit']) && data.pendingApprovals > 0"
@@ -96,6 +100,7 @@ const authStore = useAuthStore()
   box-shadow: var(--dash-glass-highlight);
   transition: transform 200ms var(--ease-out-strong), box-shadow 200ms var(--ease-out-strong);
 }
+.todo-retry { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
 .todo-alert:active {
   transform: scale(0.99);
 }
@@ -138,15 +143,15 @@ const authStore = useAuthStore()
   color: var(--color-warning-text);
 }
 .todo-alert-warning .todo-link {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .todo-alert-primary {
   background: rgba(212, 148, 28, 0.14);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .todo-alert-primary .todo-link {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .todo-alert-danger {

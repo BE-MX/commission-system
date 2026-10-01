@@ -15,7 +15,7 @@
       <div class="head-left">
         <GlassButton variant="link" left-icon="ArrowLeft" @click="router.back()">返回</GlassButton>
         <span class="head-title">{{ digestId ? '编辑培训速递' : '发布培训速递' }}</span>
-        <el-tag v-if="status === 'published'" size="small" type="success" effect="plain">已发布</el-tag>
+        <StatusBadge v-if="status === 'published'" size="small" type="success" effect="plain">已发布</StatusBadge>
       </div>
       <GlassButton variant="secondary" left-icon="Document" :loading="saving" @click="saveDraft()">保存草稿</GlassButton>
     </div>
@@ -161,7 +161,7 @@
         </ol>
         <div v-for="(a, i) in sections.applications.filter(x => x.point.trim())" :key="'a' + i" class="pv-app">
           <span>{{ a.point }}</span>
-          <el-tag v-for="r in a.roles" :key="r" size="small" type="warning" effect="plain">{{ r }}</el-tag>
+          <StatusBadge v-for="r in a.roles" :key="r" size="small" type="warning" effect="plain">{{ r }}</StatusBadge>
         </div>
         <blockquote v-if="sections.review" class="pv-review">{{ sections.review }}</blockquote>
       </div>

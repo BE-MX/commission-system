@@ -95,9 +95,9 @@ onBeforeUnmount(() => {
 .color-option { display: grid; width: 100%; height: 32px; grid-template-columns: 18px minmax(0, 1fr) 14px; align-items: center; gap: 8px; padding: 0 8px; border: 0; border-radius: 6px; color: var(--text-secondary); background: transparent; cursor: pointer; font: inherit; font-size: 12px; text-align: left; transition: color 120ms ease, background-color 120ms ease, transform 120ms cubic-bezier(.23,1,.32,1); }
 .color-option[aria-checked='true'] { color: var(--text-primary); background: var(--color-primary-light); font-weight: 600; }
 .color-swatch { width: 16px; height: 16px; border: 1px solid var(--border-hover); border-radius: 50%; }
-.selected-check { color: var(--color-primary); text-align: right; }
+.selected-check { color: var(--color-primary-text); text-align: right; }
 @media (hover: hover) and (pointer: fine) {
-  .color-trigger:hover, .color-option:hover { color: var(--color-primary); background: var(--color-primary-light); }
+  .color-trigger:hover, .color-option:hover { color: var(--color-primary-text); background: var(--color-primary-light); }
   .color-trigger:active:not(:focus-visible), .color-option:active:not(:focus-visible) { transform: scale(.97); }
 }
 @media (prefers-reduced-motion: reduce) {

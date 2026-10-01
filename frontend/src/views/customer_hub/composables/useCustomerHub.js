@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { useListPage } from '@/composables/useListPage'
-import { createLatestResource, createMutationController, createPagedResource } from '../customerHubResources'
+import { createLatestResource, createMutationController } from '../customerHubResources'
 import {
   createPublicPoolBatch,
   createSearchJob,
@@ -117,8 +117,6 @@ export function useRadarWorkflow() {
 }
 
 export function useCustomerHub(kind, options = {}) {
-  const error = ref(null)
-  const lastSuccessfulAt = ref(null)
   const detail = ref(null)
   const detailLoading = ref(false)
   const timeline = ref([])
@@ -129,30 +127,21 @@ export function useCustomerHub(kind, options = {}) {
   const detailError = ref(null)
   const timelineError = ref(null)
   const currentCustomerId = ref(null)
-  const loading = ref(false)
-  const listResource = createPagedResource(params => LISTERS[kind](params))
   const detailResource = createLatestResource(getCustomer)
   const timelineResource = createLatestResource(customerId => listCustomerTimeline(customerId, { page: 1, page_size: 50 }))
 
-  const state = useListPage(async params => {
-    loading.value = true
+  const state = useListPage(async (params, { signal }) => {
     const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '' && value != null))
-    await listResource.load(clean)
-    loading.value = listResource.loading
-    error.value = listResource.error
-    if (!listResource.error) {
-      lastSuccessfulAt.value = new Date()
-    }
-    return { items: listResource.items, total: listResource.total }
+    return (await LISTERS[kind](clean, { signal, suppressToast: true })).data
   }, {
     searchForm: kind === 'customers' ? { keyword: '' } : kind === 'acquisition' ? { status: '' } : kind === 'research' ? { review_status: '' } : {},
     ...options,
   })
 
-  const empty = computed(() => !loading.value && !error.value && state.list.value.length === 0)
-  const errorGuidance = computed(() => error.value ? '加载失败。请检查网络或权限后重新加载。' : '')
+  const empty = state.isEmpty
+  const errorGuidance = computed(() => state.error.value ? '加载失败。请检查网络或权限后重新加载。' : '')
   const staleGuidance = computed(() => {
-    if (!error.value || !lastSuccessfulAt.value || state.list.value.length === 0) return ''
+    if (!state.isStale.value || !state.hasData.value) return ''
     return '当前保留上次成功结果，数据可能已过期。'
   })
 
@@ -167,6 +156,7 @@ export function useCustomerHub(kind, options = {}) {
     timelineTotal.value = 0
     timelineLoadedFor.value = null
     await detailResource.load(id)
+    if (currentCustomerId.value !== id) return null
     detail.value = detailResource.data
     detailError.value = detailResource.error
     detailLoading.value = detailResource.loading
@@ -191,10 +181,7 @@ export function useCustomerHub(kind, options = {}) {
     mutatingId.value = jobId
     try {
       await requeueSearchJob(jobId)
-      await state.fetchList()
-    } catch (caught) {
-      error.value = caught
-      throw caught
+      await state.refreshUpdate()
     } finally {
       mutatingId.value = null
     }
@@ -202,9 +189,7 @@ export function useCustomerHub(kind, options = {}) {
 
   return {
     ...state,
-    loading,
     empty,
-    error,
     errorGuidance,
     staleGuidance,
     detail,

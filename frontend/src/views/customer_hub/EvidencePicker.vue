@@ -1,17 +1,17 @@
 <template>
   <section class="evidence-picker" :aria-label="kind === 'fact' ? '事实证据' : kind === 'message' ? '真实消息证据' : '事件证据'">
-    <div class="picker-toolbar"><el-input v-model="searchForm.keyword" clearable :placeholder="kind === 'fact' ? '搜索证据主题' : kind === 'message' ? '搜索消息内容' : '搜索沟通事件'" @keyup.enter="handleSearch" @clear="handleSearch" /><GlassButton variant="secondary" left-icon="Search" :loading="loading" @click="handleSearch">查询</GlassButton></div>
+    <FilterBar class="picker-toolbar" :loading="loading" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="resetFilters"><el-input v-model="searchForm.keyword" clearable :placeholder="kind === 'fact' ? '搜索证据主题' : kind === 'message' ? '搜索消息内容' : '搜索沟通事件'" /></FilterBar>
     <p v-if="!readonly" class="hint">已选 {{ modelValue.length }} 条；切换分页会保留选择。<el-button v-if="modelValue.length" link @click="$emit('update:modelValue', [])">清空</el-button></p>
     <p v-if="opportunityId && kind === 'event'" class="hint">仅可选择与本机会及目标阶段匹配的沟通记录；如没有可选项，请先处理该机会关联的客户待办并登记结果。</p>
-    <el-alert v-if="error" type="error" title="证据加载失败，请重试。" :closable="false" />
-    <div v-else v-loading="loading" class="evidence-list">
+    <ListPageStatus :error="listPageState.errorMessage.value" :loading="loading" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="listPageState.fetchList" />
+    <div v-loading="loading" class="evidence-list">
       <article v-for="item in list" :key="item.id">
         <el-checkbox v-if="!readonly" :model-value="isSelected(item)" :disabled="disabled || !item.selectable || (references && !evidenceReference(item))" :aria-label="`选择${profileFieldLabel(item.title)}`" @change="selected => toggle(item, selected)" />
         <div><strong>{{ profileFieldLabel(item.title) }}</strong><p>{{ item.summary || readableValue(item.value) }}</p><span class="hint">{{ sourceLabels[item.source] || item.source }} · {{ formatBeijingDateTime(item.occurred_at, { seconds: false }) }} · {{ item.selectable ? '可用' : item.unavailable_reason || '已失效，不可选' }}<template v-if="item.fact_layer"> · {{ factLayerLabels[item.fact_layer] }} · {{ verificationLabels[item.verification_status] }}</template></span><a v-if="item.source_url" :href="item.source_url" target="_blank" rel="noopener noreferrer">查看来源</a></div>
       </article>
-      <el-empty v-if="!loading && !list.length" description="没有可见证据" :image-size="50" />
+      <el-empty v-if="!loading && !error && !list.length" description="没有可见证据" :image-size="50" />
     </div>
-    <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="handlePageChange" />
+    <el-pagination class="pager" :page-sizes="[20, 50, 100]" v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="listPageState.handleSizeChange" />
   </section>
 </template>
 <script setup>
@@ -24,8 +24,14 @@ import { profileFieldLabel } from './customerHubPresentation'
 import { evidenceReference } from './workbenchV2Controller'
 const props = defineProps({ customerId: { type: Number, required: true }, kind: { type: String, default: 'fact' }, modelValue: { type: Array, default: () => [] }, references: Boolean, readonly: Boolean, disabled: Boolean, opportunityId: { type: Number, default: null }, targetStatus: { type: String, default: null } })
 const emit = defineEmits(['update:modelValue'])
-const { loading, list, total, page, pageSize, searchForm, error, handleSearch, handlePageChange } = useOperationsList(params => listCustomerEvidence(props.customerId, { ...params, kind: props.kind, ...(props.opportunityId ? { opportunity_id: props.opportunityId, target_status: props.targetStatus } : {}) }), { pageSize: 10, searchForm: { keyword: '' } })
-watch(() => [props.customerId, props.kind, props.opportunityId, props.targetStatus], () => { searchForm.keyword = ''; emit('update:modelValue', []); handleSearch() })
+const listPageState = useOperationsList(({ customer_id, opportunity_id, target_status, ...params }, config) => listCustomerEvidence(customer_id, { ...params, ...(opportunity_id ? { opportunity_id, target_status } : {}) }, config), { pageSize: 20, resourceKeys: ['customer_id', 'kind', 'opportunity_id', 'target_status'], searchForm: { keyword: '', customer_id: props.customerId, kind: props.kind, opportunity_id: props.opportunityId, target_status: props.targetStatus } })
+const { loading, list, total, page, pageSize, searchForm, error, handleSearch, handlePageChange } = listPageState
+function resetFilters() { searchForm.keyword = ''; return handleSearch() }
+watch(() => [props.customerId, props.kind, props.opportunityId, props.targetStatus], () => {
+  Object.assign(searchForm, { keyword: '', customer_id: props.customerId, kind: props.kind, opportunity_id: props.opportunityId, target_status: props.targetStatus })
+  emit('update:modelValue', [])
+  handleSearch()
+})
 watch(list, rows => {
   if (props.readonly || props.disabled || props.references) return
   const unavailable = new Set(rows.filter(item => !item.selectable).map(item => item.id))
@@ -40,4 +46,4 @@ function toggle(item, selected) {
   emit('update:modelValue', selected ? [...remaining, ref] : remaining)
 }
 </script>
-<style scoped>.evidence-picker { display: grid; gap: 10px; width: 100%; }.picker-toolbar { display: flex; gap: 8px; }.evidence-list article { display: flex; align-items: start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border-color); }.evidence-list article > div { min-width: 0; }.evidence-list p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }.hint { font-size: 12px; color: var(--text-muted); margin: 0; }.evidence-list a { margin-left: 8px; color: var(--color-primary); }.el-pagination { overflow-x: auto; }</style>
+<style scoped>.evidence-picker { display: grid; gap: 10px; width: 100%; }.picker-toolbar { display: flex; gap: 8px; }.evidence-list article { display: flex; align-items: start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border-color); }.evidence-list article > div { min-width: 0; }.evidence-list p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }.hint { font-size: 12px; color: var(--text-muted); margin: 0; }.evidence-list a { margin-left: 8px; color: var(--color-primary-text); }.el-pagination { overflow-x: auto; }</style>

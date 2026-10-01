@@ -21,8 +21,9 @@
         />
       </div>
 
+      <ListPageStatus v-if="listResource.hasData.value" :paged="true" :error="listResource.errorMessage.value" :loading="loading" :has-data="true" :data-page="listResource.dataPage.value" @retry="load()" />
       <el-table v-loading="loading" :data="invites" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty><el-empty :image-size="96" description="暂无数据" /></template>
+        <template #empty><ListPageStatus :paged="true" :error="listResource.errorMessage.value" :loading="loading" @retry="load()"><el-empty v-if="listResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <strong>{{ row.customer_name }}</strong>
@@ -40,7 +41,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
           <template #default="{ row }">
-            <el-tag :type="statusOf(row).type" effect="plain">{{ statusOf(row).label }}</el-tag>
+            <StatusBadge :type="statusOf(row).type" effect="plain">{{ statusOf(row).label }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="canWrite" class-name="table-action-column" label="操作" min-width="100" fixed="right">
@@ -70,9 +71,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { confirmAction, msgSuccessText } from '@/utils/feedback'
 import { onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
 import InviteCreateDialog from './InviteCreateDialog.vue'
@@ -83,7 +84,8 @@ const props = defineProps({
   canWrite: { type: Boolean, default: false },
 })
 const { invites, invitePage, invitePageSize, inviteTotal } = props.state
-const loading = ref(false)
+const listResource = props.state.invitesResource
+const loading = listResource.loading
 
 const formatDate = value => formatBeijingDateTime(value, { naiveTimeZone: 'UTC' })
 function statusOf(invite) {
@@ -104,23 +106,16 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('customer-image-invites', columnDefs)
 
-async function load(page = invitePage.value) {
-  loading.value = true
-  try { await props.state.loadInvites(page, invitePageSize.value) } finally { loading.value = false }
-}
-async function changeSize(size) { await loadInvitesPage(1, size) }
-async function loadInvitesPage(page, size) {
-  loading.value = true
-  try { await props.state.loadInvites(page, size) } finally { loading.value = false }
-}
+function load(page = invitePage.value) { return listResource.handlePageChange(page) }
+function changeSize(size) { return listResource.handleSizeChange(size) }
 
 async function revoke(invite) {
   try {
-    await ElMessageBox.confirm(`停用“${invite.customer_name}”的邀请？客户将立即无法继续使用。`, '停用邀请', { type: 'warning' })
+    await confirmAction(`停用“${invite.customer_name}”的邀请？客户将立即无法继续使用。`, '停用邀请', { type: 'warning' })
   } catch { return }
   try {
     await props.state.revokeInvite(invite.id)
-    ElMessage.success('邀请已停用')
+    msgSuccessText('邀请已停用')
   } catch { /* shared interceptor provides request feedback */ }
 }
 

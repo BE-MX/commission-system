@@ -18,7 +18,7 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
     // 窗内分页器
     assert.match(source, /v-model:current-page="page"/)
     assert.match(source, /v-model:page-size="pageSize"/)
-    assert.match(source, /:page-sizes="\[10, 20, 50\]"/)
+    assert.match(source, /:page-sizes="\[20, 50, 100\]"/)
     assert.match(source, /:total="items\.length"/)
     // 页码策略：初次装载回第一页；新增/导入跟到末页；删行后收敛页码
     assert.match(source, /if \(!before\) page\.value = 1/)

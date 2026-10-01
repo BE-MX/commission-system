@@ -1,7 +1,7 @@
 import { whatsappClient } from './clients'
 
-export function listWhatsAppAccounts() {
-  return whatsappClient.get('/accounts')
+export function listWhatsAppAccounts(config = {}) {
+  return whatsappClient.get('/accounts', config)
 }
 
 export function createWhatsAppBindSession(payload = {}) {
@@ -20,10 +20,10 @@ export function pullWhatsAppResource(payload) {
   return whatsappClient.post('/sync/pull', payload)
 }
 
-export function listWhatsAppConversations(params) {
-  return whatsappClient.get('/conversations', { params })
+export function listWhatsAppConversations(params, config = {}) {
+  return whatsappClient.get('/conversations', { params, ...config })
 }
 
-export function listWhatsAppMessages(params) {
-  return whatsappClient.get('/messages', { params })
+export function listWhatsAppMessages(params, config = {}) {
+  return whatsappClient.get('/messages', { params, ...config })
 }

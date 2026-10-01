@@ -2,13 +2,14 @@
   <el-dialog
     :model-value="visible"
     title="提示词库"
-    width="680px"
+    width="760px"
     append-to-body
     class="prompt-library-dialog"
     @update:model-value="emit('update:visible', $event)"
     @open="onOpen"
   >
-    <div v-loading="loading" class="tpl-body">
+    <ListPageStatus :paged="false" :error="listResource.errorMessage.value" :loading="loading" :has-data="listResource.hasData.value" @retry="fetchTemplates" />
+    <div v-loading="loading && !templates.length" class="tpl-body">
       <div v-if="categories.length" class="tpl-categories">
         <button
           v-for="item in categories"
@@ -40,7 +41,7 @@
             <strong>{{ tpl.name }}</strong>
             <p>{{ tpl.content }}</p>
           </button>
-          <p v-if="!loading && !filteredTemplates.length" class="tpl-empty">该类型暂无模板</p>
+          <p v-if="listResource.hasLoaded.value && !listResource.error.value && !loading && !filteredTemplates.length" class="tpl-empty">该类型暂无模板</p>
         </div>
 
         <div v-if="selected" class="tpl-side">
@@ -83,6 +84,7 @@
                 placeholder="搜索色号 / 名称 / HEX"
                 clearable
               />
+              <ListPageStatus :paged="false" :error="pantoneResource.errorMessage.value" :loading="pantoneResource.loading.value" :has-data="pantoneResource.hasData.value" @retry="pantoneResource.load()" />
               <div class="pantone-grid">
                 <button
                   v-for="color in visiblePantone"
@@ -128,11 +130,13 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Brush, Document, Setting } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { listPantoneColors, listPromptTemplates, seedPromptTemplates } from '@/api/designImage'
 import { msgError, msgSuccess } from '@/utils/feedback'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useAuthStore } from '@/stores/auth'
 import { composePrompt, isColorParam, missingPromptParams } from '../state'
 import PromptTemplateManagerDialog from './PromptTemplateManagerDialog.vue'
 
@@ -152,8 +156,9 @@ const CATEGORY_LABELS = {
   restyle: '换款改图',
 }
 
-const templates = ref([])
-const loading = ref(false)
+const auth = useAuthStore()
+const listResource = useAsyncResource(async (_, { signal }) => (await listPromptTemplates({}, { signal, suppressToast: true })).data.items ?? [], { initialData: [] })
+const templates = listResource.data, loading = listResource.loading
 const seeding = ref(false)
 const managerOpen = ref(false)
 const category = ref('')
@@ -161,8 +166,9 @@ const selected = ref(null)
 const selections = ref({})
 
 /* 潘通色卡：模块级缓存一次拉全量，面板内前端过滤（Solid Coated V5 3219 条，上限渲染防爆） */
-const pantoneColors = ref([])
-const pantoneLoaded = ref(false)
+const pantoneResource = useAsyncResource(async (_, { signal }) => (await listPantoneColors({ signal, suppressToast: true })).data.items ?? [], { initialData: [] })
+const pantoneColors = pantoneResource.data
+const pantoneLoaded = pantoneResource.hasLoaded
 const pantonePicks = ref({})
 const pantoneOpen = ref(null)
 const pantoneQuery = ref('')
@@ -181,16 +187,7 @@ const visiblePantone = computed(() => filteredPantone.value.slice(0, PANTONE_REN
 const pantoneTotal = computed(() => filteredPantone.value.length)
 const pantoneCapped = computed(() => filteredPantone.value.length > PANTONE_RENDER_CAP)
 
-async function ensurePantone() {
-  if (pantoneLoaded.value) return
-  try {
-    const response = await listPantoneColors()
-    pantoneColors.value = response?.data?.items ?? []
-    pantoneLoaded.value = true
-  } catch {
-    msgError('潘通色库读取失败，请稍后重试')
-  }
-}
+function ensurePantone() { if (!pantoneLoaded.value) return pantoneResource.load() }
 
 function chooseParam(key, choice) {
   selections.value = { ...selections.value, [key]: choice }
@@ -238,19 +235,17 @@ function select(tpl) {
 }
 
 async function fetchTemplates() {
-  loading.value = true
-  try {
-    const response = await listPromptTemplates()
-    templates.value = response?.data?.items ?? []
-    if (!category.value || !categories.value.some(item => item.key === category.value)) {
-      category.value = categories.value[0]?.key ?? ''
-    }
-  } catch {
-    msgError('提示词库读取失败，请稍后重试')
-  } finally {
-    loading.value = false
+  if (!props.visible) return false
+  const success = await listResource.load()
+  if (success) {
+    if (!categories.value.some(item => item.key === category.value)) category.value = categories.value[0]?.key ?? ''
+    if (selected.value) selected.value = templates.value.find(item => item.id === selected.value.id) ?? null
   }
+  return success
 }
+function clearResources() { listResource.clear(); pantoneResource.clear() }
+watch(() => props.visible, visible => { if (!visible) { clearResources(); managerOpen.value = false } })
+watch(() => JSON.stringify([auth.user?.id, auth.roles, auth.permissions]), () => { clearResources(); selected.value = null; managerOpen.value = false; if (props.visible) void fetchTemplates() })
 
 async function seed() {
   seeding.value = true

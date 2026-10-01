@@ -493,6 +493,7 @@ test('design image studio files keep the phase-four layout and motion contract',
   const files = [
     '../src/views/design/image-studio/ImageStudio.vue',
     '../src/views/design/image-studio/composables/useImageStudio.js',
+    '../src/views/design/image-studio/composables/useImageSessionList.js',
     '../src/views/design/image-studio/composables/useJobPolling.js',
     '../src/views/design/image-studio/composables/useAssetObjectUrls.js',
     '../src/views/design/image-studio/composables/useLibraryObjectUrls.js',

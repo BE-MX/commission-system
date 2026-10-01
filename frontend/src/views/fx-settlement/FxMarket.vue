@@ -86,7 +86,7 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose() })
 <style scoped>
 .market-panel { padding: 22px 24px; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.eyebrow { font: 700 11px var(--font-display); color: var(--color-primary); letter-spacing: .1em; }
+.eyebrow { font: 700 11px var(--font-display); color: var(--color-primary-text); letter-spacing: .1em; }
 h3 { margin: 5px 0 20px; font-size: 17px; }
 .quote-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 24px; }
 .quote-grid span, .quote-grid p, .market-source { font-size: 12px; color: var(--text-secondary); }
@@ -98,6 +98,6 @@ h3 { margin: 5px 0 20px; font-size: 17px; }
 .warning { color: var(--color-warning-text) !important; font-size: 12px; }
 .history-chart { height: 200px; width: 100%; margin-top: 12px; }
 .market-source { display: grid; gap: 4px; line-height: 1.6; }
-a { color: var(--color-primary-hover); text-underline-offset: 3px; }
+a { color: var(--color-primary-text); text-underline-offset: 3px; }
 @media(max-width:650px) { .market-panel { padding: 18px; }.quote-grid { grid-template-columns: 1fr 1fr; gap: 12px; }.current-rate { grid-column: 1/-1; }.history-chart { height: 180px; }.panel-heading { gap: 8px; }.panel-heading h3 { font-size: 15px; }.refresh-button { min-height: 44px; flex-shrink: 0; } }
 </style>

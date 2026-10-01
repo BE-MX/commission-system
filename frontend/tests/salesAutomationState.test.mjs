@@ -46,7 +46,7 @@ test('public-pool renders batch tree, status tabs and atomic bulk review actions
   assert.match(publicPool, /整批通过/)
   assert.match(publicPool, /整批拒绝/)
   assert.match(publicPool, /筛选只影响明细显示，整批操作始终覆盖完整批次/)
-  assert.match(publicPool, /getPublicPoolTasks\(\{ batch_id: batchId, page: 1, page_size: 300 \}\)/)
+  assert.match(publicPool, /getPublicPoolTasks\(\{ batch_id: batchId, page: 1, page_size: 300 \}, \{ signal: controller\.signal, suppressToast: true \}\)/)
   assert.match(publicPool, /Promise\.all\(expandedBatchIds\.value\.map\(loadBatchTasks\)\)/)
   assert.match(publicPool, /scope === 'selected'\) payload\.task_ids = taskIds/)
   assert.match(api, /bulkReviewPublicPoolTasks/)

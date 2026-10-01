@@ -13,7 +13,7 @@
         <div style="display:flex;align-items:center;gap:12px;">
           <el-icon :size="20" color="#d4af6e"><Setting /></el-icon>
           <span style="font-size:17px;font-weight:600;color:#1e1e2d;">全局参数配置</span>
-          <el-tag size="small" type="info" effect="plain">应用于所有 SKU</el-tag>
+          <StatusBadge size="small" type="info" effect="plain">应用于所有 SKU</StatusBadge>
         </div>
       </div>
       <div class="params-row">
@@ -48,7 +48,7 @@
     <div v-if="aiPreviewCount > 0" class="ai-preview-banner">
       <div class="banner-content">
         <el-icon :size="20" color="#d4af6e"><MagicStick /></el-icon>
-        <span>AI 生成结果预览（{{ aiPreviewCount }} 条），来源：<el-tag size="small" type="warning">{{ aiSourceLabel }}</el-tag></span>
+        <span>AI 生成结果预览（{{ aiPreviewCount }} 条），来源：<StatusBadge size="small" type="warning">{{ aiSourceLabel }}</StatusBadge></span>
         <span class="banner-hint">点击下方「保存所有」确认写入</span>
       </div>
       <el-button @click="clearAiPreview">清除预览</el-button>
@@ -56,15 +56,23 @@
 
     <!-- 数据表：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
     <div ref="panelRef" class="table-card safety-panel">
-      <div class="toolbar">
+      <ListPageStatus v-if="optionsResource.error.value" :error="optionsResource.errorMessage.value" :loading="optionsResource.loading.value" :has-data="!!optionsResource.data.value" @retry="loadFilterOptions" />
+      <FilterBar :pending="listState.hasPendingSearch.value" @search="applyFilters" @reset="resetFilters">
         <span class="toolbar-title">SKU 安全库存配置</span>
-        <el-tag size="small" type="info">共 {{ pagination.total }} 条</el-tag>
+        <StatusBadge size="small" type="info">共 {{ pagination.total }} 条</StatusBadge>
         <el-select v-model="filters.model" multiple placeholder="型号" clearable filterable class="filter-w-sm">
           <el-option v-for="m in filterOptions.models" :key="m" :label="m" :value="m" />
         </el-select>
         <el-select v-model="filters.product_type" multiple placeholder="类型" clearable filterable class="filter-w-sm">
           <el-option v-for="t in filterOptions.types" :key="t" :label="t" :value="t" />
         </el-select>
+        <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable class="filter-w-md" />
+        <el-select v-model="filters.stock_status" placeholder="备货状态" clearable class="filter-w-sm">
+          <el-option label="全部状态" value="" />
+          <el-option label="备货中" value="stocking" />
+          <el-option label="加急中" value="urgent" />
+        </el-select>
+        <template #advanced>
         <el-select v-model="filters.size" multiple placeholder="尺寸" clearable filterable class="filter-w-sm">
           <el-option v-for="s in filterOptions.sizes" :key="s" :label="s" :value="s" />
         </el-select>
@@ -74,17 +82,10 @@
         <el-select v-model="filters.weight" multiple placeholder="克重" clearable filterable class="filter-w-sm">
           <el-option v-for="w in filterOptions.weights" :key="w" :label="w" :value="w" />
         </el-select>
-        <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable class="filter-w-md" @input="handleSearch" @keyup.enter="applyFilters" />
-        <el-checkbox v-model="filters.has_in_transit" label="仅看在途" border @change="applyFilters" />
-        <el-checkbox v-model="filters.has_safety_stock" label="仅看已设安全库存" border @change="applyFilters" />
-        <el-select v-model="filters.stock_status" placeholder="备货状态" clearable class="filter-w-sm" @change="applyFilters">
-          <el-option label="全部状态" value="" />
-          <el-option label="备货中" value="stocking" />
-          <el-option label="加急中" value="urgent" />
-        </el-select>
-        <GlassButton variant="primary" :left-icon="Filter" @click="applyFilters">查询</GlassButton>
-        <GlassButton :left-icon="RefreshRight" @click="resetFilters">重置</GlassButton>
-      </div>
+        <el-checkbox v-model="filters.has_in_transit" label="仅看在途" border />
+        <el-checkbox v-model="filters.has_safety_stock" label="仅看已设安全库存" border />
+        </template>
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -102,9 +103,11 @@
           @fullscreen="toggleFullscreen"
         />
       </div>
+      <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="loadData" />
       <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" @sort-change="handleSortChange" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
-          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+          <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="loadData" />
+          <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshRight" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </template>
@@ -159,7 +162,7 @@
             <div class="editable-cell">
               <el-input-number v-model="row.safety_stock" :min="0" :max="10000" :step="1" controls-position="right" style="width:100px" @change="markDirty(row)" />
               <span class="source-badge" v-if="row.source">
-                <el-tag size="small" :type="sourceTagType(row.source)">{{ sourceLabel(row.source) }}</el-tag>
+                <StatusBadge size="small" :type="sourceTagType(row.source)">{{ sourceLabel(row.source) }}</StatusBadge>
               </span>
             </div>
           </template>
@@ -218,9 +221,9 @@
           </div>
         </div>
         <div class="ai-source-row">
-          <el-tag :type="aiSuggestion.source === 'tft' ? 'success' : 'warning'" size="small">
+          <StatusBadge :type="aiSuggestion.source === 'tft' ? 'success' : 'warning'" size="small">
             {{ aiSuggestion.source === 'tft' ? 'TFT 模型预测' : '公式估算' }}
-          </el-tag>
+          </StatusBadge>
           <span v-if="aiSuggestion.source === 'formula'" class="tft-fallback">TFT 未部署，已降级为公式计算</span>
         </div>
       </div>
@@ -237,8 +240,9 @@
     />
 
     <!-- 购物车抽屉 -->
-    <el-drawer v-model="cartDrawerVisible" title="生产单购物车" size="580px">
+    <DetailDrawer v-model="cartDrawerVisible" title="生产单购物车" width="640px">
       <div class="cart-drawer">
+        <ListPageStatus :error="cartErrorMessage" :loading="cartLoading" :has-data="cartItems.length > 0" @retry="loadCart" />
         <el-empty v-if="cartItems.length === 0" description="购物车为空" />
         <template v-else>
           <el-table :data="cartItems" @selection-change="toggleCartSelection" style="width:100%" border class="list-table">
@@ -280,17 +284,17 @@
           </div>
         </template>
       </div>
-    </el-drawer>
+    </DetailDrawer>
 
     <!-- 生成生产订单弹窗 -->
-    <el-dialog v-model="generateOrderDialogVisible" title="生成生产订单" width="520px" align-center>
-      <el-form :model="generateOrderForm" label-width="100px" :rules="orderRules" ref="orderFormRef">
+    <el-dialog v-model="generateOrderDialogVisible" title="生成生产订单" width="640px" align-center>
+      <el-form label-position="top" :model="generateOrderForm" :rules="orderRules" ref="orderFormRef">
         <el-form-item label="选中产品" v-if="selectedCartItems.length > 0">
           <div class="selected-products-preview">
-            <el-tag v-for="item in selectedCartItems.slice(0, 5)" :key="item.id" size="small" style="margin:2px;">
+            <StatusBadge v-for="item in selectedCartItems.slice(0, 5)" :key="item.id" size="small" style="margin:2px;">
               {{ item.product_name }} × {{ item.order_qty }}
-            </el-tag>
-            <el-tag v-if="selectedCartItems.length > 5" size="small" type="info">+{{ selectedCartItems.length - 5 }} 项</el-tag>
+            </StatusBadge>
+            <StatusBadge v-if="selectedCartItems.length > 5" size="small" type="info">+{{ selectedCartItems.length - 5 }} 项</StatusBadge>
           </div>
         </el-form-item>
         <el-form-item label="生产批次号" prop="batch_no" required>
@@ -313,13 +317,13 @@
     </el-dialog>
 
     <!-- 备货状态明细弹窗 -->
-    <el-dialog v-model="stockStatusDialogVisible" title="备货明细" width="700px" align-center>
+    <el-dialog v-model="stockStatusDialogVisible" title="备货明细" width="760px" align-center>
       <div v-if="currentStockStatusRow" class="stock-status-dialog">
         <div class="stock-status-header">
           <span class="stock-status-product">{{ currentStockStatusRow.product_name }}</span>
-          <el-tag :type="currentStockStatusRow.stock_status === '加急中' ? 'danger' : 'success'" size="small">
+          <StatusBadge :type="currentStockStatusRow.stock_status === '加急中' ? 'danger' : 'success'" size="small">
             {{ currentStockStatusRow.stock_status }}
-          </el-tag>
+          </StatusBadge>
         </div>
         <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table">
           <el-table-column class-name="table-action-column" label="操作" min-width="70">
@@ -334,7 +338,7 @@
           <el-table-column label="在途" min-width="70" prop="in_transit_qty" />
           <el-table-column label="加急" min-width="70">
             <template #default="{ row }">
-              <el-tag v-if="row.is_urgent" type="danger" size="small">加急</el-tag>
+              <StatusBadge v-if="row.is_urgent" type="danger" size="small">加急</StatusBadge>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
@@ -348,6 +352,7 @@
 
     <!-- 工序进度弹窗 -->
     <el-dialog v-model="progressDialogVisible" title="工序进度" width="640px">
+      <ListPageStatus :error="progressResource.errorMessage.value" :loading="progressLoading" :has-data="!!progressData" @retry="progressResource.load()" />
       <div v-if="progressLoading" style="text-align:center; padding: 20px;">
         <el-icon class="is-loading" :size="20" style="animation: rotate 1s linear infinite;">⟳</el-icon> 加载中...
       </div>
@@ -371,7 +376,7 @@
           </div>
         </div>
       </template>
-      <div v-else style="text-align: center; padding: 16px;">
+      <div v-else-if="!progressResource.error.value" style="text-align: center; padding: 16px;">
         <span style="color: #909399;">未配置工序路线，请前往产品管理绑定</span>
         <router-link to="/production/products" style="margin-left: 8px;">去绑定 →</router-link>
       </div>
@@ -379,24 +384,27 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText, msgInfo, msgError, confirmAction } from '@/utils/feedback'
 import { ref, reactive, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import {
   Setting, MagicStick, Check, Search, Filter, RefreshRight, QuestionFilled, InfoFilled,
   ShoppingCart, Plus, Delete,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import {
-  getSafetyList, saveSafetyStock, autoGenerateSafety, getFilterOptions,
+  getSafetyList, saveSafetyStock, autoGenerateSafety,
 } from '@/api/stock'
-import { getProgress, initProgress } from '@/api/production'
 import { useProductionCart } from './composables/useProductionCart'
 import { useSafetyConfigTable } from './composables/useSafetyConfigTable'
 import { parseProductName, sourceLabel, sourceTagType, headerStyle, isCurrentProgressStep } from './safetyConfigPresentation'
 import ProductionOrderDialog from './components/ProductionOrderDialog.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { loadStockFilterOptions, loadStockProgress } from './composables/stockResources'
+
 
 const authStore = useAuthStore()
 // 表格视图状态（列显隐/密度/全屏），columnDefs 仅供 TableTools 列显隐面板
@@ -404,18 +412,14 @@ const { columnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, 
 const { sortParams, onSortChange, reset: resetSort } = useTableSort('product_id', 'asc')
 function handleSortChange(sortInfo) {
   onSortChange(sortInfo)
-  pagination.page = 1
-  loadData()
+  return listState.handleSortChange({ sort: sortParams.value.sort_field, order: sortParams.value.sort_order })
 }
 
 // ── 原有安全库存逻辑 ──────────────────────────
-const loading = ref(false)
 const saveLoading = ref(false)
 const aiLoading = ref(false)
-const tableData = ref([])
-const pagination = reactive({ total: 0, page: 1, page_size: 20 })
 
-const filters = reactive({
+const initialFilters = {
   keyword: '',
   model: [],
   product_type: [],
@@ -425,7 +429,11 @@ const filters = reactive({
   has_in_transit: false,
   has_safety_stock: false,
   stock_status: '',
-})
+}
+const listState = useListPage(fetchStockList, { searchForm: initialFilters, sortParams: { sort: 'product_id', order: 'asc' } })
+const filters = listState.searchForm
+const loading = listState.loading; const tableData = listState.list
+const pagination = reactive({ total: listState.total, page: listState.page, page_size: listState.pageSize })
 
 const hasActiveFilters = computed(() => Boolean(
   filters.keyword || filters.model.length || filters.product_type.length ||
@@ -433,7 +441,8 @@ const hasActiveFilters = computed(() => Boolean(
   filters.has_in_transit || filters.has_safety_stock || filters.stock_status
 ))
 
-const allFilterOptions = ref({ models: [], types: [], sizes: [], colors: [], weights: [] })
+const optionsResource = useAsyncResource(loadStockFilterOptions)
+const allFilterOptions = computed(() => optionsResource.data.value || { models: [], types: [], sizes: [], colors: [], weights: [] })
 const filterOptions = computed(() => allFilterOptions.value)
 const aiDialogVisible = ref(false)
 const aiSuggestion = ref(null)
@@ -453,27 +462,16 @@ function markDirty(row) {
   row.source = 'manual'
 }
 
-async function loadData() {
-  loading.value = true
-  try {
-    const res = await getSafetyList({
-      page: pagination.page,
-      page_size: pagination.page_size,
-      keyword: filters.keyword || undefined,
-      model: filters.model.length ? filters.model.join(',') : undefined,
-      product_type: filters.product_type.length ? filters.product_type.join(',') : undefined,
-      size: filters.size.length ? filters.size.join(',') : undefined,
-      color: filters.color.length ? filters.color.join(',') : undefined,
-      weight: filters.weight.length ? filters.weight.join(',') : undefined,
-      sort: sortParams.value.sort_field || 'product_id',
-      order: sortParams.value.sort_order || 'asc',
-      has_in_transit: filters.has_in_transit || undefined,
-      has_safety_stock: filters.has_safety_stock || undefined,
-      stock_status: filters.stock_status || undefined,
-    })
+async function fetchStockList(params, { signal, isCurrent }) {
+    const res = await getSafetyList({ ...params,
+      has_in_transit: params.has_in_transit || undefined,
+      has_safety_stock: params.has_safety_stock || undefined,
+      stock_status: params.stock_status || undefined,
+      keyword: params.keyword || undefined,
+      ...Object.fromEntries(['model', 'product_type', 'size', 'color', 'weight'].map(key => [key, params[key].length ? params[key].join(',') : undefined])),
+    }, { signal, suppressToast: true })
     const d = res.data
-    // 后端已返回 stock_status / stock_items / production_in_transit，无需二次请求
-    tableData.value = (d.items || []).map(i => {
+    const items = (d.items || []).map(i => {
       const effectiveStock = (i.safety_stock || 0) * 2
       const effectiveCount = (i.enable_count || 0) + (i.production_in_transit || 0)
       return {
@@ -486,42 +484,13 @@ async function loadData() {
         suggested_qty: Math.max(0, effectiveStock - effectiveCount),
       }
     })
-    pagination.total = d.total || 0
-  } finally {
-    loading.value = false
-  }
+    return { items, total: d.total || 0 }
 }
 
-let searchTimer = null
-function handleSearch() {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => { pagination.page = 1; loadData() }, 400)
-}
-
-function applyFilters() {
-  pagination.page = 1
-  loadData()
-}
-
-function handleSizeChange() {
-  pagination.page = 1
-  loadData()
-}
-
-function resetFilters() {
-  filters.keyword = ''
-  filters.model = []
-  filters.product_type = []
-  filters.size = []
-  filters.color = []
-  filters.weight = []
-  filters.has_in_transit = false
-  filters.has_safety_stock = false
-  filters.stock_status = ''
-  resetSort()
-  pagination.page = 1
-  loadData()
-}
+const loadData = listState.fetchList
+const applyFilters = listState.handleSearch
+const handleSizeChange = listState.handleSizeChange
+function resetFilters() { resetSort(); return listState.handleReset({ sortParams: { sort: 'product_id', order: 'asc' } }) }
 
 async function aiGenerateSingle(row) {
   row.aiLoading = true
@@ -532,9 +501,10 @@ async function aiGenerateSingle(row) {
       safety_factor: globalParams.safety_factor,
       history_days: 30,
     })
+    if (!tableData.value.includes(row)) return
     const item = res.data?.items?.[0]
     if (!item) {
-      ElMessage.warning('AI 建议生成失败')
+      msgWarning('AI 建议生成失败')
       return
     }
     aiSuggestion.value = {
@@ -557,7 +527,7 @@ function applyAiSuggestion() {
     currentAiRow.value._dirty = true
     currentAiRow.value._aiGenerated = true
   } else {
-    ElMessage.warning('建议值为空，未应用')
+    msgWarning('建议值为空，未应用')
   }
   aiDialogVisible.value = false
 }
@@ -565,13 +535,15 @@ function applyAiSuggestion() {
 async function aiBatchGenerate() {
   aiLoading.value = true
   try {
-    const visibleIds = tableData.value.map(r => r.product_id)
+    const sourceRows = tableData.value
+    const visibleIds = sourceRows.map(r => r.product_id)
     const res = await autoGenerateSafety({
       product_ids: visibleIds,
       lead_time_days: globalParams.lead_time_days,
       safety_factor: globalParams.safety_factor,
       history_days: 30,
     })
+    if (tableData.value !== sourceRows) return
     const items = res.data?.items || []
     const idToSuggestion = {}
     items.forEach(it => { idToSuggestion[it.product_id] = it })
@@ -588,7 +560,7 @@ async function aiBatchGenerate() {
       }
       return row
     })
-    ElMessage.success(`已批量生成 ${items.length} 条安全库存建议`)
+    msgSuccessText(`已批量生成 ${items.length} 条安全库存建议`)
   } finally {
     aiLoading.value = false
   }
@@ -601,7 +573,7 @@ function clearAiPreview() {
 async function saveAll() {
   const dirtyItems = tableData.value.filter(r => r._dirty)
   if (!dirtyItems.length) {
-    ElMessage.info('没有需要保存的更改')
+    msgInfo('没有需要保存的更改')
     return
   }
   saveLoading.value = true
@@ -619,44 +591,25 @@ async function saveAll() {
     const saved = res.data?.saved_count || 0
     const failed = res.data?.failed_items || []
     if (failed.length) {
-      ElMessage.warning(`保存 ${saved} 条，${failed.length} 条失败`)
+      msgWarning(`保存 ${saved} 条，${failed.length} 条失败`)
       console.warn('保存失败项:', failed)
     } else {
-      ElMessage.success(`成功保存 ${saved} 条安全库存配置`)
-      await loadData()
+      msgSuccessText(`成功保存 ${saved} 条安全库存配置`)
+      await listState.refreshUpdate()
     }
   } catch (err) {
-    ElMessage.error(err.message || '保存失败')
+    msgError(err.message || '保存失败', err)
   } finally {
     saveLoading.value = false
   }
 }
 
-async function loadFilterOptions() {
-  try {
-    const res = await getFilterOptions()
-    if (res.data) {
-      allFilterOptions.value = {
-        models: res.data.models || [],
-        types: res.data.types || [],
-        sizes: res.data.sizes || [],
-        colors: res.data.colors || [],
-        weights: res.data.weights || [],
-      }
-    }
-  } catch (e) {
-    console.warn('加载筛选选项失败:', e)
-  }
-}
-
-onMounted(() => {
-  loadData()
-  loadFilterOptions()
-})
+const loadFilterOptions = () => optionsResource.load()
+onMounted(loadFilterOptions)
 
 // ── 生产下单逻辑 ──────────────────────────────
 const {
-  cartItems, cartCount, cartLoading, selectedCartIds,
+  cartItems, cartCount, cartLoading, cartErrorMessage, selectedCartIds,
   loadCart, addToCart, updateCartItem, removeCartItem,
   batchRemoveCartItems, generateOrder, toggleSelection,
 } = useProductionCart()
@@ -701,11 +654,11 @@ function handleCartRemarkChange(row) {
 
 async function batchDeleteCart() {
   if (selectedCartIds.value.length === 0) {
-    ElMessage.warning('请先选择要删除的产品')
+    msgWarning('请先选择要删除的产品')
     return
   }
   try {
-    await ElMessageBox.confirm(`确定删除选中的 ${selectedCartIds.value.length} 项?`, '提示', { type: 'warning' })
+    await confirmAction(`确定删除选中的 ${selectedCartIds.value.length} 项?`, '提示', { type: 'warning' })
     await batchRemoveCartItems(selectedCartIds.value)
   } catch {
     // cancel
@@ -724,7 +677,7 @@ const orderRules = {
 
 function openGenerateOrderDialog() {
   if (selectedCartIds.value.length === 0) {
-    ElMessage.warning('请先选择产品')
+    msgWarning('请先选择产品')
     return
   }
   generateOrderForm.batch_no = ''
@@ -748,6 +701,7 @@ async function confirmGenerateOrder() {
       })
       if (ok) {
         generateOrderDialogVisible.value = false
+        listState.refreshUpdate()
       }
     } finally {
       generatingOrder.value = false
@@ -768,34 +722,19 @@ function openStockStatusDialog(row) {
 // ── 工序进度弹窗 ──────────────────────────
 const progressDialogVisible = ref(false)
 const progressDialogRow = ref(null)
-const progressData = ref(null)
-const progressLoading = ref(false)
+const progressResource = useAsyncResource(loadStockProgress)
+const progressData = progressResource.data
+const progressLoading = progressResource.loading
 
 function isCurrentStep(step) {
   return isCurrentProgressStep(progressData.value, step)
 }
 
 async function openProgressDialog(row) {
-  const itemId = row.item_id
-  if (!itemId) return
+  if (!row.item_id) return
   progressDialogRow.value = row
   progressDialogVisible.value = true
-  progressLoading.value = true
-  progressData.value = null
-  try {
-    const res = await getProgress(itemId)
-    progressData.value = res.data || res
-  } catch {
-    try {
-      await initProgress(itemId)
-      const res2 = await getProgress(itemId)
-      progressData.value = res2.data || res2
-    } catch {
-      progressData.value = null
-    }
-  } finally {
-    progressLoading.value = false
-  }
+  return progressResource.load(row.item_id, { clear: true })
 }
 
 // 页面加载时同步购物车

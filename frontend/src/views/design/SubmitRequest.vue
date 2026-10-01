@@ -17,12 +17,10 @@
         </div>
       </div>
 
-      <el-form
+      <el-form label-position="top"
         ref="formRef"
         :model="form"
         :rules="rules"
-        label-width="110px"
-        label-position="right"
         class="submit-form"
       >
         <el-row :gutter="24">
@@ -181,7 +179,7 @@
             :on-change="handleFileChange"
             :on-remove="handleFileRemove"
             :limit="10"
-            :on-exceed="() => ElMessage.warning('最多上传 10 个附件')"
+            :on-exceed="() => msgWarning('最多上传 10 个附件')"
             multiple
             accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar"
           >
@@ -201,10 +199,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText } from '@/utils/feedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { Camera, Promotion, RefreshLeft, UploadFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { submitRequest, checkConflict, getUnavailableDates, uploadAttachment, getDesigners } from '@/api/design'
@@ -405,7 +403,7 @@ async function doConflictCheck(start, end, startPeriod, endPeriod) {
 
 function handleFileChange(file, uploadFiles) {
   if (file.size > 20 * 1024 * 1024) {
-    ElMessage.warning('文件大小不能超过 20MB')
+    msgWarning('文件大小不能超过 20MB')
     uploadFiles.splice(uploadFiles.indexOf(file), 1)
     return
   }
@@ -422,7 +420,7 @@ async function handleSubmit() {
 
   // 检查日期范围
   if (dateSpanWarning.value) {
-    ElMessage.warning('期望日期范围超过3天限制，请调整')
+    msgWarning('期望日期范围超过3天限制，请调整')
     return
   }
 
@@ -462,15 +460,15 @@ async function handleSubmit() {
         }
       }
       if (uploadOk < fileList.value.length) {
-        ElMessage.warning(`${fileList.value.length - uploadOk} 个附件上传失败，请稍后在详情中补传`)
+        msgWarning(`${fileList.value.length - uploadOk} 个附件上传失败，请稍后在详情中补传`)
       }
     }
 
     const hasConflict = conflictResult.value?.has_conflict
     if (hasConflict) {
-      ElMessage.success('预约提交成功，存在排期冲突，等待审批')
+      msgSuccessText('预约提交成功，存在排期冲突，等待审批')
     } else {
-      ElMessage.success('预约提交成功，已进入排期流程')
+      msgSuccessText('预约提交成功，已进入排期流程')
     }
     router.push('/design/my-requests')
   } finally {

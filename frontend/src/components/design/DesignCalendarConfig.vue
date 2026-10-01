@@ -6,14 +6,14 @@
       <template v-if="batchMode">
         <GlassButton
           variant="primary"
-          size="small"
+          size="md"
           left-icon="Setting"
           :disabled="!batchSelected.length"
           @click="openBatchDialog"
         >
           批量设置 ({{ batchSelected.length }})
         </GlassButton>
-        <GlassButton variant="ghost" size="small" left-icon="Close" @click="batchSelected = []">清除选择</GlassButton>
+        <GlassButton variant="ghost" size="md" left-icon="Close" @click="batchSelected = []">清除选择</GlassButton>
       </template>
     </div>
 
@@ -47,8 +47,8 @@
           <div class="upcoming-info">
             <span class="upcoming-date">{{ item.date }}</span>
             <span class="upcoming-weekday">{{ getWeekday(item.date) }}</span>
-            <el-tag v-if="item.period" size="small" effect="plain" style="margin-left: 4px">{{ item.period === 'am' ? '上午' : '下午' }}</el-tag>
-            <el-tag v-else size="small" type="info" effect="plain" style="margin-left: 4px">全天</el-tag>
+            <StatusBadge v-if="item.period" size="md" effect="plain" style="margin-left: 4px">{{ item.period === 'am' ? '上午' : '下午' }}</StatusBadge>
+            <StatusBadge v-else size="md" type="info" effect="plain" style="margin-left: 4px">全天</StatusBadge>
             <span v-if="item.reason" class="upcoming-reason">{{ item.reason }}</span>
           </div>
           <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="handleRemove(item.date, item.period)">删除</GlassButton>
@@ -57,8 +57,8 @@
     </div>
 
     <!-- Add single date dialog -->
-    <el-dialog v-model="addDialogVisible" title="设置不可用日期" width="400px" :close-on-click-modal="false">
-      <el-form label-width="80px">
+    <el-dialog v-model="addDialogVisible" title="设置不可用日期" width="480px" :close-on-click-modal="false">
+      <el-form label-position="top">
         <el-form-item label="日期">
           <span>{{ addForm.date }}</span>
         </el-form-item>
@@ -80,11 +80,11 @@
     </el-dialog>
 
     <!-- Batch dialog -->
-    <el-dialog v-model="batchDialogVisible" title="批量设置不可用日期" width="400px" :close-on-click-modal="false">
-      <el-form label-width="80px">
+    <el-dialog v-model="batchDialogVisible" title="批量设置不可用日期" width="480px" :close-on-click-modal="false">
+      <el-form label-position="top">
         <el-form-item label="日期">
           <div class="batch-dates">
-            <el-tag v-for="d in batchSelected" :key="d" size="small" style="margin: 2px;">{{ d }}</el-tag>
+            <StatusBadge v-for="d in batchSelected" :key="d" size="md" style="margin: 2px;">{{ d }}</StatusBadge>
           </div>
         </el-form-item>
         <el-form-item label="时段">
@@ -105,7 +105,7 @@
     </el-dialog>
 
     <!-- Remove confirmation dialog -->
-    <el-dialog v-model="removeDialogVisible" title="移除不可用日期" width="360px" :close-on-click-modal="false">
+    <el-dialog v-model="removeDialogVisible" title="移除不可用日期" width="480px" :close-on-click-modal="false">
       <p>确定移除 <strong>{{ removeDate }}</strong> 的不可用标记？</p>
       <template #footer>
         <GlassButton variant="ghost" @click="removeDialogVisible = false">取消</GlassButton>
@@ -115,9 +115,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText } from '@/utils/feedback'
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { Check } from '@element-plus/icons-vue'
 import { getUnavailableDates, createUnavailableDates, deleteUnavailableDate } from '@/api/design'
 import { beijingCalendarDate, currentBeijingDate } from '@/utils/datetime'
@@ -240,7 +240,7 @@ async function fetchDates() {
 
 async function submitAdd() {
   if (!addForm.value.reason.trim()) {
-    ElMessage.warning('请输入不可用原因')
+    msgWarning('请输入不可用原因')
     return
   }
   submitting.value = true
@@ -249,7 +249,7 @@ async function submitAdd() {
       { dates: [addForm.value.date], period: addForm.value.period, reason: addForm.value.reason },
       { params: operatorParams }
     )
-    ElMessage.success('设置成功')
+    msgSuccessText('设置成功')
     addDialogVisible.value = false
     await fetchDates()
   } finally {
@@ -259,7 +259,7 @@ async function submitAdd() {
 
 async function submitBatch() {
   if (!batchForm.value.reason.trim()) {
-    ElMessage.warning('请输入不可用原因')
+    msgWarning('请输入不可用原因')
     return
   }
   submitting.value = true
@@ -268,7 +268,7 @@ async function submitBatch() {
       { dates: [...batchSelected.value], period: batchForm.value.period, reason: batchForm.value.reason },
       { params: operatorParams }
     )
-    ElMessage.success('批量设置成功')
+    msgSuccessText('批量设置成功')
     batchDialogVisible.value = false
     batchSelected.value = []
     await fetchDates()
@@ -283,7 +283,7 @@ async function submitRemove() {
     const delParams = { ...operatorParams }
     if (removePeriod.value) delParams.period = removePeriod.value
     await deleteUnavailableDate(removeDate.value, { params: delParams })
-    ElMessage.success('已移除')
+    msgSuccessText('已移除')
     removeDialogVisible.value = false
     await fetchDates()
   } finally {
@@ -382,7 +382,7 @@ defineExpose({ fetchDates })
   position: absolute;
   top: 2px;
   right: 2px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 /* Upcoming section */

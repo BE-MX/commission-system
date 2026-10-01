@@ -2,7 +2,7 @@
 import { aftersalesClient } from './clients'
 
 export const getAfterSalesOptions = () => aftersalesClient.get('/options')
-export const getAfterSalesCases = params => aftersalesClient.get('/cases', { params })
+export const getAfterSalesCases = (params, config = {}) => aftersalesClient.get('/cases', { ...config, params })
 export const getAfterSalesCase = id => aftersalesClient.get(`/cases/${id}`)
 export const createAfterSalesCase = data => aftersalesClient.post('/cases', data)
 export const updateAfterSalesCase = (id, data) => aftersalesClient.put(`/cases/${id}`, data)
@@ -39,7 +39,7 @@ export const closeAfterSalesCase = (id, data) => aftersalesClient.post(`/cases/$
 export const reopenAfterSalesCase = (id, data) => aftersalesClient.post(`/cases/${id}/reopen`, data)
 export const getAfterSalesTimeline = id => aftersalesClient.get(`/cases/${id}/timeline`)
 
-export const getAfterSalesSopVersions = () => aftersalesClient.get('/sop/versions')
+export const getAfterSalesSopVersions = (config = {}) => aftersalesClient.get('/sop/versions', { showLoading: false, ...config })
 export function uploadAfterSalesSop(file, data) {
   const form = new FormData()
   form.append('file', file)
@@ -50,4 +50,4 @@ export function uploadAfterSalesSop(file, data) {
 }
 export const activateAfterSalesSop = id => aftersalesClient.post(`/sop/versions/${id}/activate`)
 export const retryAfterSalesNotification = id => aftersalesClient.post(`/notifications/${id}/retry`)
-export const getAfterSalesAnalytics = () => aftersalesClient.get('/analytics/summary')
+export const getAfterSalesAnalytics = (config = {}) => aftersalesClient.get('/analytics/summary', { ...config, showLoading: false })

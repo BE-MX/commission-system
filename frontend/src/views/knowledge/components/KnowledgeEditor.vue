@@ -5,7 +5,7 @@
         <el-input v-if="actions.canSave" v-model="title" class="title-input" aria-label="文档标题" placeholder="输入标题" maxlength="256" @input="markDirty" />
         <h1 v-else>{{ document.title }}</h1>
         <div class="document-meta">
-          <el-tag effect="plain" :type="statusType">{{ statusLabel }}</el-tag>
+          <StatusBadge effect="plain" :type="statusType">{{ statusLabel }}</StatusBadge>
           <span>版本 v{{ document.version_no || 1 }}</span>
           <span class="save-status" :class="{ error: saveError }"><i class="save-dot" :class="saveTone" />{{ saveLabel }}</span>
           <span v-if="document.pending_approval_id && !externalControls">审批中仍可编辑，新内容不会改变待审版本</span>
@@ -70,9 +70,9 @@
   </section>
 </template>
 
-<script setup>
+<script setup>import { confirmAction, promptAction, msgError } from '@/utils/feedback'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { ElMessageBox } from 'element-plus'
+
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import StarterKit from '@tiptap/starter-kit'
@@ -91,7 +91,6 @@ import { TextColorMark } from './TextColorMark.js'
 import { KnowledgeImage } from './KnowledgeImage.js'
 import { contentForKnowledgeSave, pendingImageCount } from './knowledgeImageState.js'
 import { deleteTemporaryKnowledgeImage, uploadKnowledgeImage } from '@/api/knowledge'
-import { msgError } from '@/utils/feedback'
 import { useAuthStore } from '@/stores/auth'
 import AiOptimizationDrawer from './AiOptimizationDrawer.vue'
 import { EDITOR_COMMANDS, extractOutline, filterEditorCommands, saveStatusLabel } from './editorConfig.js'
@@ -200,7 +199,7 @@ async function requestSubmit() {
   const missing = missingImageAltCount()
   if (missing) {
     try {
-      await ElMessageBox.confirm(
+      await confirmAction(
         `当前有 ${missing} 张图片未填写替代文本，这会影响检索和无障碍阅读。仍要提交吗？`,
         '图片说明提醒',
         { confirmButtonText: '仍然提交', cancelButtonText: '返回补充', type: 'warning' },
@@ -326,7 +325,7 @@ async function insertImageFiles(files) {
 async function editLink() {
   const current = editor.value.getAttributes('link').href || ''
   try {
-    const { value } = await ElMessageBox.prompt('输入链接地址；留空可取消链接', '编辑链接', {
+    const { value } = await promptAction('输入链接地址；留空可取消链接', '编辑链接', {
       inputValue: current, confirmButtonText: '应用', cancelButtonText: '取消',
     })
     const clean = value.trim()
@@ -471,9 +470,9 @@ onBeforeUnmount(() => editor.value?.destroy())
 .document-canvas :deep(.tiptap h5), .document-canvas :deep(.tiptap h6) { margin: 1.1em 0 .35em; font-size: 15px; }
 .document-canvas :deep(.tiptap blockquote) { margin: .8em 0; padding-left: 12px; border-left: 3px solid var(--color-primary); color: var(--text-secondary); }
 .document-canvas :deep(.tiptap pre) { overflow: auto; padding: 10px 12px; border-radius: 9px; color: var(--card-bg); background: var(--sidebar-bg-to); font-family: Consolas, monospace; line-height: 1.5; }
-.document-canvas :deep(.tiptap code:not(pre code)) { padding: 2px 5px; border-radius: 4px; color: var(--color-primary); background: var(--color-primary-light); }
+.document-canvas :deep(.tiptap code:not(pre code)) { padding: 2px 5px; border-radius: 4px; color: var(--color-primary-text); background: var(--color-primary-light); }
 .document-canvas :deep([data-confirmation='true']) { color: var(--color-danger); font-weight: 700; }
-.document-canvas :deep(.knowledge-text-color--gold) { color: var(--color-primary); }
+.document-canvas :deep(.knowledge-text-color--gold) { color: var(--color-primary-text); }
 .document-canvas :deep(.knowledge-text-color--danger) { color: var(--color-danger-text); }
 .document-canvas :deep(.knowledge-text-color--success) { color: var(--color-success-text); }
 .document-canvas :deep(.knowledge-text-color--info) { color: var(--color-info-text); }
@@ -487,10 +486,10 @@ onBeforeUnmount(() => editor.value?.destroy())
 .bubble-toolbar { display: flex; gap: 2px; padding: 5px; border: 1px solid var(--border-color); border-radius: 9px; background: var(--surface-card, #fff); box-shadow: 0 10px 28px rgba(26, 26, 46, .15); }
 .bubble-toolbar button { min-width: 30px; height: 30px; padding: 0 7px; border: 0; border-radius: 6px; color: var(--text-secondary); background: transparent; cursor: pointer; transition: color .12s ease, background-color .12s ease, transform .12s var(--ease-out-strong, ease-out); }
 .bubble-toolbar button:active { transform: scale(.92); }
-.bubble-toolbar button.active { color: var(--color-primary); background: var(--color-primary-light); }
+.bubble-toolbar button.active { color: var(--color-primary-text); background: var(--color-primary-light); }
 .empty-editor { display: grid; flex: 1; place-items: center; background: var(--surface-card, #fff); }
 @keyframes dot-blink { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-@media (hover: hover) and (pointer: fine) { .bubble-toolbar button:hover { color: var(--color-primary); background: var(--color-primary-light); } }
+@media (hover: hover) and (pointer: fine) { .bubble-toolbar button:hover { color: var(--color-primary-text); background: var(--color-primary-light); } }
 @media (max-width: 1100px) { .editor-body { grid-template-columns: minmax(0, 1fr); } .editor-body :deep(.editor-outline) { display: none; } }
 @media (max-width: 900px) { .editor-header { flex-direction: column; padding: 12px 14px; } .document-canvas { padding: 18px 16px; } }
 @media (prefers-reduced-motion: reduce) {

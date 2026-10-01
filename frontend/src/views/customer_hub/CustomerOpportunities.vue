@@ -2,9 +2,9 @@
   <div class="workflow customer-hub">
     <el-alert v-if="workflowError" type="error" title="机会更新失败，请检查状态、证据、原因或权限后重试。" :closable="false" show-icon />
     <CustomerHubWorkspace ref="workspace" kind="opportunities" @edit-opportunity="open" />
-    <el-dialog class="customer-hub-dialog" :close-on-click-modal="!workflowLoading" :close-on-press-escape="!workflowLoading" :show-close="!workflowLoading" v-model="visible" title="更新客户机会" width="min(620px, calc(100vw - 32px))">
+    <el-dialog class="customer-hub-dialog" :close-on-click-modal="!workflowLoading" :close-on-press-escape="!workflowLoading" :show-close="!workflowLoading" v-model="visible" title="更新客户机会" width="640px">
       <el-alert v-if="workflowError" type="error" title="保存失败，填写内容已保留。请确认所选记录支持当前机会阶段，或刷新后重试。" :closable="false" show-icon />
-      <el-form :disabled="workflowLoading" label-position="top" class="opportunity-form">
+      <el-form label-position="top" :disabled="workflowLoading" class="opportunity-form">
         <el-form-item label="目标状态"><el-select v-model="form.status" @change="resetCloseReason"><el-option v-for="status in transitionOptions" :key="status" :label="statusLabel(status)" :value="status" /></el-select></el-form-item>
         <el-form-item label="更新原因（必填）"><el-input v-model="form.reason" type="textarea" :rows="3" /></el-form-item>
         <el-form-item v-if="needsEventEvidence" label="沟通事件证据（必选）"><EvidencePicker v-if="visible" v-model="form.evidenceEventIds" :disabled="workflowLoading" :customer-id="customerId" :opportunity-id="currentId" :target-status="form.status" kind="event" /></el-form-item>

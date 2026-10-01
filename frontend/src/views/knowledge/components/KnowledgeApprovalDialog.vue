@@ -5,6 +5,7 @@
     width="760px"
     @update:model-value="$emit('update:modelValue', $event)"
   >
+    <ListPageStatus :paged="false" :error="readError" :loading="readLoading" :has-data="!!detail" @retry="$emit('retry')" />
     <div v-if="detail" class="review-detail">
       <div class="review-meta">冻结修订 v{{ detail.version_no }} · 提交人 ID {{ detail.submitted_by }}</div>
       <KnowledgeDocumentPreview :content="detail.content_json" />
@@ -22,10 +23,10 @@
       </section>
     </div>
     <template #footer>
-      <GlassButton variant="ghost" @click="$emit('reject')">驳回</GlassButton>
+      <GlassButton variant="ghost" :disabled="!detail || readLoading || !!readError" @click="$emit('reject')">驳回</GlassButton>
       <GlassButton
         variant="primary"
-        :disabled="detail?.requires_cross_library_confirmation && !crossLibraryConfirmed"
+        :disabled="!detail || readLoading || !!readError || (detail?.requires_cross_library_confirmation && !crossLibraryConfirmed)"
         @click="$emit('approve', crossLibraryConfirmed)"
       >批准并发布此版本</GlassButton>
     </template>
@@ -38,9 +39,11 @@ import KnowledgeDocumentPreview from './KnowledgeDocumentPreview.vue'
 
 const props = defineProps({
   modelValue: Boolean,
+  readError: String,
+  readLoading: Boolean,
   detail: { type: Object, default: null },
 })
-defineEmits(['update:modelValue', 'approve', 'reject'])
+defineEmits(['update:modelValue', 'approve', 'reject', 'retry'])
 const crossLibraryConfirmed = ref(false)
 
 watch(

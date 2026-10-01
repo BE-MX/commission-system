@@ -33,9 +33,10 @@
         />
       </div>
 
+      <ListPageStatus :error="listPageState.errorMessage.value" :loading="loading" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="loadReports" />
       <!-- 报告卡片列表 -->
       <div class="report-cards" v-loading="loading">
-        <el-empty v-if="reports.length === 0" :image-size="96" description="暂无数据" />
+        <el-empty v-if="!loading && !listPageState.error.value && reports.length === 0" :image-size="96" description="暂无数据" />
 
       <div v-for="report in reports" :key="report.id" class="report-card lg-card" :class="{ pinned: report.is_pinned }">
         <div class="card-header">
@@ -43,7 +44,7 @@
             <el-icon v-if="report.is_pinned" class="pin-icon"><Top /></el-icon>
             <span>{{ report.report_title }}</span>
           </div>
-          <el-tag :type="statusType(report.status)" size="small">{{ statusLabel(report.status) }}</el-tag>
+          <StatusBadge :type="statusType(report.status)" size="small">{{ statusLabel(report.status) }}</StatusBadge>
         </div>
         <div class="card-meta">
           <span>日期范围: {{ report.date_range_start || '-' }} ~ {{ report.date_range_end || '-' }}</span>
@@ -78,13 +79,13 @@
         layout="total, sizes, prev, pager, next"
         class="pager"
         @size-change="handleSizeChange"
-        @current-change="loadReports"
+        @current-change="handlePageChange"
       />
     </section>
 
     <!-- 新建速览弹窗 -->
-    <el-dialog v-model="showGenerateDialog" title="新建行业情报速览" width="600px">
-      <el-form :model="generateForm" label-width="100px">
+    <el-dialog v-model="showGenerateDialog" title="新建行业情报速览" width="640px">
+      <el-form label-position="top" :model="generateForm">
         <el-form-item label="标题">
           <el-input v-model="generateForm.report_title" placeholder="行业情报速览 YYYY-MM-DD" />
         </el-form-item>
@@ -130,7 +131,8 @@
     </el-dialog>
 
     <!-- 定时设置弹窗 (简化版) -->
-    <el-dialog v-model="showScheduleDialog" title="定时生成规则" width="700px">
+    <el-dialog v-model="showScheduleDialog" title="定时生成规则" width="760px">
+      <ListPageStatus :error="rulesResource.errorMessage.value" :loading="rulesResource.loading.value" :has-data="rulesResource.hasData.value" @retry="loadScheduleRules" />
       <div class="schedule-header">
         <el-button type="primary" @click="showAddRule = true">+ 新建规则</el-button>
       </div>
@@ -139,7 +141,7 @@
         <el-table-column prop="cron_expression" label="Cron" />
         <el-table-column label="状态" min-width="80">
           <template #default="{ row }">
-            <el-tag :type="row.is_active ? 'success' : 'info'" size="small">{{ row.is_active ? '启用' : '停用' }}</el-tag>
+            <StatusBadge :value="row.is_active" :dictionary="ENABLED_STATUS" size="small" />
           </template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="120">
@@ -153,11 +155,15 @@
 </template>
 
 <script setup>
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
+import { ENABLED_STATUS } from '@/utils/status'
+import { msgWarning, msgSuccessText, msgError, confirmAction } from '@/utils/feedback'
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { Plus, Setting, Top } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
-import { useTableSort } from '@/composables/useTableSort'
+import { useListPage } from '@/composables/useListPage'
 import { useTableView } from '@/composables/useTableView'
 import TableTools from '@/components/TableTools.vue'
 import {
@@ -170,14 +176,10 @@ import {
 } from '@/api/insight'
 
 const authStore = useAuthStore()
-const orderSort = useTableSort()
 
 // 状态
-const loading = ref(false)
-const reports = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
+const listPageState = useListPage(async (params, { signal }) => (await listIntelligenceReports(params, { signal, suppressToast: true })).data)
+const { loading, list: reports, total, page, pageSize, fetchList: loadReports, handlePageChange, handleSizeChange } = listPageState
 const expandedId = ref(null)
 
 // 卡片流列表无可隐藏列，列设置图标不渲染；密度/全屏偏好仍按页面键持久化
@@ -201,31 +203,14 @@ const generateForm = reactive({
 // 定时规则
 const showScheduleDialog = ref(false)
 const showAddRule = ref(false)
-const scheduleRules = ref([])
+const rulesResource = useAsyncResource(async (_, { signal }) => (await listScheduleRules(undefined, { signal, suppressToast: true })).data, { initialData: [] })
+const scheduleRules = rulesResource.data
 
 // 加载报告
-async function loadReports() {
-  loading.value = true
-  try {
-    const res = await listIntelligenceReports({
-      page: page.value,
-      page_size: pageSize.value,
-      ...orderSort.sortParams.value,
-    })
-    if (res.data?.code === 200) {
-      reports.value = res.data.data.items
-      total.value = res.data.data.total
-    }
-  } finally {
-    loading.value = false
-  }
-}
+
 
 // 分页：每页条数变化先回第 1 页
-function handleSizeChange() {
-  page.value = 1
-  loadReports()
-}
+
 
 // 展开/收起
 function toggleExpand(report) {
@@ -240,7 +225,7 @@ function openInNewTab(report) {
 // 生成
 async function submitGenerate() {
   if (generateDateRange.value?.length !== 2) {
-    ElMessage.warning('请选择日期范围')
+    msgWarning('请选择日期范围')
     return
   }
   generating.value = true
@@ -254,13 +239,13 @@ async function submitGenerate() {
       data.report_title = `行业情报速览 ${data.date_range_start}`
     }
     const res = await generateIntelligence(data)
-    if (res.data?.code === 200) {
-      ElMessage.success('报告生成中，请稍后查看')
+    if (res.code === 200) {
+      msgSuccessText('报告生成中，请稍后查看')
       showGenerateDialog.value = false
-      loadReports()
+      await listPageState.refreshCreate()
     }
-  } catch {
-    ElMessage.error('生成失败')
+  } catch (error) {
+    msgError('生成失败', error)
   } finally {
     generating.value = false
   }
@@ -269,10 +254,10 @@ async function submitGenerate() {
 // 删除
 async function deleteReport(id) {
   try {
-    await ElMessageBox.confirm('确定删除此报告？', '确认', { type: 'warning' })
+    await confirmAction('确定删除此报告？', '确认', { type: 'warning' })
     await deleteIntelligenceReport(id)
-    ElMessage.success('已删除')
-    loadReports()
+    msgSuccessText('已删除')
+    await listPageState.refreshRemove()
   } catch {
     // 取消
   }
@@ -282,31 +267,22 @@ async function deleteReport(id) {
 async function pinReport(id, isPinned) {
   try {
     await pinIntelligenceReport(id, isPinned)
-    ElMessage.success(isPinned ? '已置顶' : '已取消置顶')
-    loadReports()
-  } catch {
-    ElMessage.error('操作失败')
+    msgSuccessText(isPinned ? '已置顶' : '已取消置顶')
+    await listPageState.refreshUpdate()
+  } catch (error) {
+    msgError('操作失败', error)
   }
 }
 
 // 定时规则
-async function loadScheduleRules() {
-  try {
-    const res = await listScheduleRules()
-    if (res.data?.code === 200) {
-      scheduleRules.value = res.data.data
-    }
-  } catch {
-    // ignore
-  }
-}
+function loadScheduleRules() { return rulesResource.load() }
 
 async function toggleRule(id) {
   try {
     await toggleScheduleRule(id)
     loadScheduleRules()
-  } catch {
-    ElMessage.error('操作失败')
+  } catch (error) {
+    msgError('操作失败', error)
   }
 }
 
@@ -321,7 +297,6 @@ function statusLabel(status) {
 }
 
 onMounted(() => {
-  loadReports()
   loadScheduleRules()
 })
 </script>

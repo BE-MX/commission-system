@@ -30,7 +30,7 @@
           <h2>已接入站点</h2>
           <p>明文 Token 不可找回；遗失时请轮换，旧 Token 会立即失效。</p>
         </div>
-        <div class="filters">
+        <FilterBar :loading="loading" :pending="hasPendingSearch" @search="searchRows" @reset="resetFilters">
           <el-input
             class="filter-w-md"
             v-model="filters.keyword"
@@ -44,7 +44,7 @@
             <el-option label="已过期" value="expired" />
             <el-option label="已吊销" value="revoked" />
           </el-select>
-        </div>
+        </FilterBar>
       </div>
       <div class="action-bar">
         <GlassButton v-permission="'integration:admin'" variant="primary" left-icon="Plus" @click="openCreateDialog">新建站点凭证</GlassButton>
@@ -53,11 +53,12 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
-          @refresh="loadApps"
+          :loading="loading" @refresh="loadApps"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus :error="appResource.errorMessage.value" :loading="appResource.loading.value" :has-data="appResource.hasData.value" @retry="reloadRows" />
       <el-table
         v-if="filteredRows.length || loading"
         v-loading="loading"
@@ -80,9 +81,9 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('scopes')" label="授权范围" min-width="140">
           <template #default="{ row }">
-            <el-tag v-for="scope in row.scopes" :key="scope" type="info" effect="plain" size="small">
+            <StatusBadge v-for="scope in row.scopes" :key="scope" type="info" effect="plain" size="small">
               {{ scope }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('suffix')" label="Token 尾号" min-width="120">
@@ -96,9 +97,9 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
           <template #default="{ row }">
-            <el-tag :type="statusFor(row).type" effect="plain" size="small">
+            <StatusBadge :type="statusFor(row).type" effect="plain" size="small">
               {{ statusFor(row).label }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="190" fixed="right">
@@ -129,7 +130,7 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-else description="还没有符合条件的站点凭证">
+      <el-empty v-else-if="!appResource.error.value" description="还没有符合条件的站点凭证">
         <GlassButton
           v-if="!rows.length"
           v-permission="'integration:admin'"
@@ -142,7 +143,7 @@
       </el-empty>
     </section>
 
-    <el-dialog v-model="createVisible" title="新建站点接入凭证" width="560px" destroy-on-close>
+    <el-dialog v-model="createVisible" title="新建站点接入凭证" width="640px" destroy-on-close>
       <el-form label-position="top">
         <el-form-item label="站点名称" required>
           <el-input
@@ -173,12 +174,13 @@
             >
               <div class="candidate-option">
                 <span>{{ item.real_name || item.username }} <small>@{{ item.username }}</small></span>
-                <el-tag :type="item.has_invoice_write ? 'success' : 'warning'" size="small" effect="plain">
+                <StatusBadge :type="item.has_invoice_write ? 'success' : 'warning'" size="small" effect="plain">
                   {{ item.has_invoice_write ? '可创建发票' : '缺少 invoice:write' }}
-                </el-tag>
+                </StatusBadge>
               </div>
             </el-option>
           </el-select>
+          <ListPageStatus v-if="candidateResource.error.value" :paged="false" :error="candidateResource.errorMessage.value" :loading="candidateLoading" :has-data="candidateResource.hasData.value" @retry="searchCandidates(candidateQuery)" />
           <div class="field-hint">站点创建的发票将归属这个账号；权限会在每次调用时重新校验。</div>
         </el-form-item>
         <el-form-item label="到期时间（可选）">
@@ -208,7 +210,7 @@
     <el-dialog
       v-model="secretVisible"
       title="站点凭证已生成"
-      width="660px"
+      width="760px"
       :close-on-click-modal="false"
       destroy-on-close
       @closed="clearIssuedSecret"
@@ -246,6 +248,8 @@
 </template>
 
 <script setup>
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { confirmAction, msgSuccessText, msgError } from '@/utils/feedback'
 import {
   computed,
   onActivated,
@@ -254,8 +258,9 @@ import {
   onMounted,
   reactive,
   ref,
+  watch,
 } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { Search, WarningFilled } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -278,8 +283,10 @@ import {
   getIntegrationAppStatus,
 } from './integrationAppManagement'
 
-const loading = ref(false)
-const rows = ref([])
+const appResource = useAsyncResource(async (_, { signal }) => (await listIntegrationApps({ signal, suppressToast: true })).data.items || [], { initialData: [] })
+const loading = appResource.loading
+const rows = appResource.data
+const reloadRows = () => appResource.load()
 const columnDefs = [
   { key: 'name', label: '站点名称' },
   { key: 'owner', label: '绑定账号' },
@@ -292,18 +299,24 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('integration-app-management', columnDefs)
 const filters = reactive({ keyword: '', status: 'all' })
+const appliedFilters = ref({ keyword: '', status: 'all' })
+const hasPendingSearch = computed(() => JSON.stringify(filters) !== JSON.stringify(appliedFilters.value))
+function searchRows() { appliedFilters.value = { ...filters } }
+function resetFilters() { Object.assign(filters, { keyword: '', status: 'all' }); searchRows() }
 const createVisible = ref(false)
 const creating = ref(false)
 const createForm = reactive({ name: '', ownerUserId: null, expiresAt: null })
-const candidates = ref([])
-const candidateLoading = ref(false)
+const candidateResource = useAsyncResource(async (query, { signal }) =>
+  (await searchIntegrationAppCandidates({ q: query, limit: 20 }, { signal, suppressToast: true })).data.items || [], { initialData: [] })
+const candidates = candidateResource.data, candidateLoading = candidateResource.loading
+const candidateQuery = ref('')
 const secretVisible = ref(false)
 const issuedSecret = ref(null)
 const secretState = createOneTimeSecretState((value) => { issuedSecret.value = value })
 const currentNow = ref(new Date())
 let nowTimer = null
 
-const filteredRows = computed(() => filterIntegrationApps(rows.value, filters, currentNow.value))
+const filteredRows = computed(() => filterIntegrationApps(rows.value, appliedFilters.value, currentNow.value))
 const metrics = computed(() => rows.value.reduce((result, row) => {
   result[getIntegrationAppStatus(row, currentNow.value).key] += 1
   return result
@@ -312,29 +325,18 @@ const selectedCandidate = computed(() => candidates.value.find(
   (item) => item.user_id === createForm.ownerUserId,
 ))
 const canCreate = computed(() => (
-  createForm.name.trim().length >= 2
+  !candidateResource.error.value && !candidateLoading.value && createForm.name.trim().length >= 2
   && Boolean(selectedCandidate.value?.has_invoice_write)
 ))
 
-async function loadApps() {
-  loading.value = true
-  try {
-    const response = await listIntegrationApps()
-    rows.value = response.data.items || []
-  } finally {
-    loading.value = false
-  }
-}
+const loadApps = reloadRows
 
-async function searchCandidates(query = '') {
-  candidateLoading.value = true
-  try {
-    const response = await searchIntegrationAppCandidates({ q: query, limit: 20 })
-    candidates.value = response.data.items || []
-  } finally {
-    candidateLoading.value = false
-  }
+function searchCandidates(query = '') {
+  candidateQuery.value = query
+  if (!createVisible.value) return Promise.resolve(false)
+  return candidateResource.load(query)
 }
+watch(createVisible, () => { candidateResource.clear(); candidateQuery.value = '' }, { flush: 'sync' })
 
 function openCreateDialog() {
   createForm.name = ''
@@ -397,7 +399,7 @@ async function submitCreate() {
 
 async function rotateCredential(row) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `轮换“${row.name}”后，当前 Token 会立即失效。`,
       '确认轮换凭证',
       { confirmButtonText: '确认并生成新 Token', cancelButtonText: '取消', type: 'warning' },
@@ -412,7 +414,7 @@ async function rotateCredential(row) {
 
 async function revokeCredential(row) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `吊销“${row.name}”后，该站点会立即无法向方舟发送发票。`,
       '确认吊销凭证',
       { confirmButtonText: '吊销凭证', cancelButtonText: '取消', type: 'warning' },
@@ -421,13 +423,13 @@ async function revokeCredential(row) {
     return
   }
   await revokeIntegrationApp(row.id)
-  ElMessage.success('站点凭证已吊销')
+  msgSuccessText('站点凭证已吊销')
   await loadApps()
 }
 
 async function copyText(value, successMessage) {
-  if (await copyToClipboard(value)) ElMessage.success(successMessage)
-  else ElMessage.error('自动复制失败，请手动选择复制')
+  if (await copyToClipboard(value)) msgSuccessText(successMessage)
+  else msgError('自动复制失败，请手动选择复制')
 }
 
 onMounted(() => {

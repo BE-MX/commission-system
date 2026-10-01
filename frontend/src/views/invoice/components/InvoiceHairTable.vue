@@ -126,7 +126,7 @@
             <div :class="['product-cell', row.product_name ? 'is-matched' : 'is-pending']">
               <span>{{ row.product_name || '待匹配' }}</span>
               <span v-if="row.sku_id" class="stock-count">库存 {{ row.available_stock == null ? '—' : Math.round(row.available_stock) }}</span>
-              <el-tag v-else-if="row.matching" size="small" type="info" effect="plain">匹配中</el-tag>
+              <StatusBadge v-else-if="row.matching" size="small" type="info" effect="plain">匹配中</StatusBadge>
             </div>
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
@@ -143,17 +143,17 @@
             <span v-if="row.standard_price != null" class="std-price">
               {{ money4(row.standard_price) }}
               <el-tooltip v-if="row.color_type_source === 'inferred'" content="该色号未登记色型映射，价格按命名规则推断的色型取得，请人工核对">
-                <el-tag size="small" type="warning" effect="plain">色型推断</el-tag>
+                <StatusBadge size="small" type="warning" effect="plain">色型推断</StatusBadge>
               </el-tooltip>
             </span>
-            <el-tag v-else size="small" type="warning" effect="plain">无标准价</el-tag>
+            <StatusBadge v-else size="small" type="warning" effect="plain">无标准价</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column label="客户价" min-width="140" max-width="180">
           <template #default="{ row }">
             <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
               <el-input-number v-model="row.price_per_piece" :min="0.01" :precision="4" :controls="false" @change="onPriceInput(row)" />
-              <el-tag v-if="row.price_source === 'manual'" size="small" type="warning" effect="plain">手改</el-tag>
+              <StatusBadge v-if="row.price_source === 'manual'" size="small" type="warning" effect="plain">手改</StatusBadge>
             </div>
           </template>
         </el-table-column>
@@ -173,11 +173,11 @@
     </div>
     <!-- 明细可能几十上百行：窗内分页，行号跨页连续；新增/导入后跳到末页 -->
     <div v-if="items.length" class="line-pagination">
-      <el-pagination
+      <el-pagination class="pager"
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="items.length"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         small
         background
@@ -186,9 +186,9 @@
   </section>
 </template>
 
-<script setup>
+<script setup>import { msgWarning } from '@/utils/feedback'
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { ArrowDown, ArrowUp, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue'
 import { CURL_OPTIONS } from '../composables/useInvoiceEditor'
 import { quoteSemifinished } from '@/api/semifinished'
@@ -214,7 +214,7 @@ const collapseSpecs = ref(false)
 
 // 窗内分页：几十上百行时表格窗口高度固定；行号跨页连续
 const page = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(20)
 const pagedItems = computed(() => props.items.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
 watch(() => props.items.length, (now, before) => {
@@ -228,7 +228,7 @@ async function loadSemifinished(row) {
   if (!row.product_id) {
     row.semifinished_enabled = false
     row.semifinished_plan = []
-    ElMessage.warning('该产品尚未绑定 OKKI 产品，不能自动使用半成品')
+    msgWarning('该产品尚未绑定 OKKI 产品，不能自动使用半成品')
     return
   }
   row.semifinished_loading = true
@@ -245,7 +245,7 @@ async function loadSemifinished(row) {
   } catch (error) {
     row.semifinished_enabled = false
     row.semifinished_plan = []
-    ElMessage.warning(error?.response?.data?.detail || error.message || '半成品计划计算失败')
+    msgWarning(error?.response?.data?.detail || error.message || '半成品计划计算失败')
   } finally { row.semifinished_loading = false }
 }
 

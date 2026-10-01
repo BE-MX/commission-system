@@ -20,8 +20,9 @@
         />
       </div>
 
+      <ListPageStatus v-if="listResource.hasData.value" :paged="true" :error="listResource.errorMessage.value" :loading="loading" :has-data="true" :data-page="listResource.dataPage.value" @retry="load()" />
       <el-table v-loading="loading" :data="generations" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty><el-empty :image-size="96" description="暂无数据" /></template>
+        <template #empty><ListPageStatus :paged="true" :error="listResource.errorMessage.value" :loading="loading" @retry="load()"><el-empty v-if="listResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('task')" prop="id" label="任务" min-width="90">
           <template #default="{ row }">#{{ row.id }}</template>
         </el-table-column>
@@ -30,7 +31,7 @@
           <template #default="{ row }">#{{ row.invite_id }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
-          <template #default="{ row }"><el-tag :type="statusType[row.status] || 'info'" effect="plain">{{ statusLabel[row.status] || row.status }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :type="statusType[row.status] || 'info'" effect="plain">{{ statusLabel[row.status] || row.status }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('tokens')" label="Token" min-width="150">
           <template #default="{ row }">{{ formatNumber(row.total_tokens) }} <small>（入 {{ formatNumber(row.input_tokens) }} / 出 {{ formatNumber(row.output_tokens) }}）</small></template>
@@ -61,6 +62,8 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../../utils/money.js'
+
 import { onMounted, ref } from 'vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
@@ -68,12 +71,13 @@ import { formatBeijingDateTime } from '@/utils/datetime'
 
 const props = defineProps({ state: { type: Object, required: true } })
 const { generations, generationPage, generationPageSize, generationTotal } = props.state
-const loading = ref(false)
+const listResource = props.state.generationsResource
+const loading = listResource.loading
 const statusLabel = { queued: '排队中', running: '生成中', succeeded: '已完成', failed: '失败', cancelled: '已取消' }
 const statusType = { queued: 'info', running: 'warning', succeeded: 'success', failed: 'danger', cancelled: 'info' }
 const formatDate = value => formatBeijingDateTime(value)
 const formatNumber = value => Number(value || 0).toLocaleString('zh-CN')
-const formatCost = value => value == null ? '-' : `$${(Number(value) / 1_000_000).toFixed(4)}`
+const formatCost = value => value == null ? '-' : formatMoney(Number(value) / 1_000_000, { precision: 4, currency: 'USD', currencyDisplay: 'narrowSymbol' })
 
 // 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节）
 const columnDefs = [
@@ -89,14 +93,8 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('customer-image-usage', columnDefs)
 
-async function load(page = generationPage.value) {
-  loading.value = true
-  try { await props.state.loadGenerations(page, generationPageSize.value) } finally { loading.value = false }
-}
-async function changeSize(size) {
-  loading.value = true
-  try { await props.state.loadGenerations(1, size) } finally { loading.value = false }
-}
+function load(page = generationPage.value) { return listResource.handlePageChange(page) }
+function changeSize(size) { return listResource.handleSizeChange(size) }
 
 onMounted(load)
 </script>

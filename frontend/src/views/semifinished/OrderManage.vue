@@ -4,14 +4,12 @@
       <div><h2>半成品订单</h2><p>订单以 g 为单位；实际完成或收货时录入增量，自动形成库存入库流水。</p></div>
     </header>
     <section ref="panelRef" class="table-card">
-      <div class="toolbar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索订单号或批次号" class="filter-w-lg" @keyup.enter="search" />
-        <el-select v-model="filters.status" clearable placeholder="订单状态" class="filter-w-sm" @change="search">
+      <FilterBar :pending="listState.hasPendingSearch.value" @search="search" @reset="reset">
+        <el-input v-model="filters.keyword" clearable placeholder="搜索订单号或批次号" class="filter-w-lg" />
+        <el-select v-model="filters.status" clearable placeholder="订单状态" class="filter-w-sm">
           <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <GlassButton variant="primary" :left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton :left-icon="RefreshLeft" @click="reset">重置</GlassButton>
-      </div>
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -26,16 +24,18 @@
         />
       </div>
 
+      <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="load" />
       <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
-          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+          <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
+          <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
           </el-empty>
         </template>
         <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no" label="订单号" min-width="155" />
         <el-table-column v-if="visibleKeys.includes('batch-no')" prop="batch_no" label="批次号" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="120"><template #default="{ row }"><el-tag effect="plain">{{ row.source_type === 'production_sync' ? '产成品联动' : '手工创建' }}</el-tag></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100"><template #default="{ row }"><el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="120"><template #default="{ row }"><StatusBadge effect="plain">{{ row.source_type === 'production_sync' ? '产成品联动' : '手工创建' }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100"><template #default="{ row }"><StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('item-count')" prop="item_count" label="明细" min-width="80" align="right" />
         <el-table-column v-if="visibleKeys.includes('order-qty')" label="下单(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('received-qty')" label="已入库(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>
@@ -61,8 +61,9 @@
       />
     </section>
 
-    <el-dialog v-model="createVisible" title="新建半成品订单" width="700px">
-      <el-form label-width="90px">
+    <el-dialog v-model="createVisible" title="新建半成品订单" width="760px">
+      <ListPageStatus :error="materialResource.errorMessage.value" :loading="materialResource.loading.value" :has-data="materialOptions.length > 0" @retry="materialResource.load()" />
+      <el-form label-position="top">
         <el-form-item label="批次号"><el-input v-model="createForm.batch_no" maxlength="64" /></el-form-item>
         <el-form-item label="预计交期"><el-date-picker v-model="createForm.expected_delivery_date" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="是否加急"><el-switch v-model="createForm.is_urgent" /></el-form-item>
@@ -80,7 +81,8 @@
       <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" :loading="createSubmitting" @click="submitCreate">提交</el-button></template>
     </el-dialog>
 
-    <el-drawer v-model="detailVisible" title="半成品订单详情" size="760px">
+    <DetailDrawer v-model="detailVisible" title="半成品订单详情" width="760px">
+      <ListPageStatus :error="detailResource.errorMessage.value" :loading="detailResource.loading.value" :has-data="!!detail" @retry="detailResource.load()" />
       <div v-if="detail">
         <div class="sf-summary">
           <div class="sf-summary-item"><span>订单号</span><strong style="font-size: 16px">{{ detail.order_no }}</strong></div>
@@ -96,32 +98,40 @@
           <el-table-column class-name="table-action-column" label="操作" min-width="100"><template #default="{ row }"><el-button v-if="Number(row.remaining_qty_grams) > 0 && ['submitted','partial'].includes(detail.status)" v-permission="'semifinished:write'" link type="primary" @click="openReceive(row)">入库</el-button></template></el-table-column>
         </el-table>
       </div>
-    </el-drawer>
+    </DetailDrawer>
 
-    <el-dialog v-model="receiveVisible" title="录入半成品入库" width="460px">
+    <el-dialog v-model="receiveVisible" title="录入半成品入库" width="480px">
       <p>{{ receivingItem?.size }}/{{ receivingItem?.color_code }}，剩余 {{ grams(receivingItem?.remaining_qty_grams) }}g</p>
-      <el-form label-width="90px"><el-form-item label="本次入库"><el-input-number v-model="receiveForm.quantity_grams" :min="0.001" :max="Number(receivingItem?.remaining_qty_grams || 0)" :precision="3" /> g</el-form-item><el-form-item label="备注"><el-input v-model="receiveForm.remark" maxlength="500" /></el-form-item></el-form>
+      <el-form label-position="top"><el-form-item label="本次入库"><el-input-number v-model="receiveForm.quantity_grams" :min="0.001" :max="Number(receivingItem?.remaining_qty_grams || 0)" :precision="3" /> g</el-form-item><el-form-item label="备注"><el-input v-model="receiveForm.remark" maxlength="500" /></el-form-item></el-form>
       <template #footer><el-button @click="receiveVisible = false">取消</el-button><el-button type="primary" :loading="receiveSubmitting" @click="submitReceive">确认入库</el-button></template>
     </el-dialog>
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText, confirmAction } from '@/utils/feedback'
 import { computed, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { loadMaterialOptions } from './materialOptions'
+
+
 import { Plus, RefreshLeft, Search } from '@element-plus/icons-vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
-import { createSemifinishedOrder, getMaterials, getSemifinishedOrder, getSemifinishedOrders, receiveSemifinishedItem, terminateSemifinishedOrder } from '@/api/semifinished'
+import { createSemifinishedOrder, getSemifinishedOrder, getSemifinishedOrders, receiveSemifinishedItem, terminateSemifinishedOrder } from '@/api/semifinished'
 
 const statusOptions = [{ value: 'submitted', label: '已提交' }, { value: 'partial', label: '部分入库' }, { value: 'completed', label: '已完成' }, { value: 'terminated', label: '已终止' }]
-const filters = reactive({ keyword: '', status: '' })
-const pagination = reactive({ page: 1, page_size: 20, total: 0 })
-const rows = ref([]); const loading = ref(false)
-const createVisible = ref(false); const materialOptions = ref([])
+const listState = useListPage((params, { signal }) => getSemifinishedOrders(params, { signal, suppressToast: true }), { searchForm: { keyword: '', status: '' } })
+const filters = listState.searchForm
+const pagination = reactive({ page: listState.page, page_size: listState.pageSize, total: listState.total })
+const rows = listState.list; const loading = listState.loading
+const createVisible = ref(false)
+const materialResource = useAsyncResource((_, context) => loadMaterialOptions(context))
+const materialOptions = computed(() => materialResource.data.value || [])
 const createSubmitting = ref(false)
 const createForm = reactive({ batch_no: '', expected_delivery_date: null, is_urgent: false, remark: '', items: [] })
-const detailVisible = ref(false); const detail = ref(null)
+const detailVisible = ref(false); const detailResource = useAsyncResource((id, { signal }) => getSemifinishedOrder(id, { signal, suppressToast: true })); const detail = detailResource.data
+const detailOrderId = ref(null)
 const receiveVisible = ref(false); const receivingItem = ref(null); const receiveForm = reactive({ quantity_grams: 0, remark: '' })
 const receiveSubmitting = ref(false)
 const receiveIdempotencyKey = ref('')
@@ -146,17 +156,16 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('semifinished-orders', columnDefs)
 
-async function load() { loading.value = true; try { const data = await getSemifinishedOrders({ ...filters, page: pagination.page, page_size: pagination.page_size }); rows.value = data.items || []; pagination.total = data.total || 0 } finally { loading.value = false } }
-function search() { pagination.page = 1; load() }
-function reset() { filters.keyword = ''; filters.status = ''; search() }
-function handleSizeChange() { pagination.page = 1; load() }
-async function openCreate() { const first = await getMaterials({ page: 1, page_size: 100 }); const items = [...(first.items || [])]; const pages = Math.ceil(Number(first.total || items.length) / 100); for (let page = 2; page <= pages; page += 1) { const next = await getMaterials({ page, page_size: 100 }); items.push(...(next.items || [])) } materialOptions.value = items; Object.assign(createForm, { batch_no: '', expected_delivery_date: null, is_urgent: false, remark: '', items: [{ material_id: null, quantity_grams: 100 }] }); createVisible.value = true }
-async function submitCreate() { if (!createForm.items.length || createForm.items.some(item => !item.material_id || Number(item.quantity_grams) <= 0)) return ElMessage.warning('请完整填写订单明细'); createSubmitting.value = true; try { await createSemifinishedOrder({ ...createForm }); ElMessage.success('订单已创建'); createVisible.value = false; load() } finally { createSubmitting.value = false } }
-async function openDetail(row) { detail.value = await getSemifinishedOrder(row.id); detailVisible.value = true }
-async function terminate(row) { await ElMessageBox.confirm(`确认终止订单 ${row.order_no}？已有入库不会撤销。`, '终止订单'); await terminateSemifinishedOrder(row.id); ElMessage.success('订单已终止'); load(); if (detail.value?.id === row.id) detail.value = await getSemifinishedOrder(row.id) }
+const load = listState.fetchList
+const search = listState.handleSearch
+const reset = listState.handleReset
+const handleSizeChange = listState.handleSizeChange
+async function openCreate() { Object.assign(createForm, { batch_no: '', expected_delivery_date: null, is_urgent: false, remark: '', items: [{ material_id: null, quantity_grams: 100 }] }); createVisible.value = true; return materialResource.load(null, { clear: true }) }
+async function submitCreate() { if (!createForm.items.length || createForm.items.some(item => !item.material_id || Number(item.quantity_grams) <= 0)) return msgWarning('请完整填写订单明细'); createSubmitting.value = true; try { await createSemifinishedOrder({ ...createForm }); msgSuccessText('订单已创建'); createVisible.value = false; listState.refreshCreate() } finally { createSubmitting.value = false } }
+async function openDetail(row) { detailOrderId.value = row.id; detailVisible.value = true; return detailResource.load(row.id, { clear: true }) }
+async function terminate(row) { await confirmAction(`确认终止订单 ${row.order_no}？已有入库不会撤销。`, '终止订单'); await terminateSemifinishedOrder(row.id); msgSuccessText('订单已终止'); listState.refreshUpdate(); if (detailOrderId.value === row.id) detailResource.load(row.id) }
 function openReceive(row) { receivingItem.value = row; receiveForm.quantity_grams = Number(row.remaining_qty_grams); receiveForm.remark = ''; receiveIdempotencyKey.value = crypto.randomUUID(); receiveVisible.value = true }
-async function submitReceive() { receiveSubmitting.value = true; try { await receiveSemifinishedItem(receivingItem.value.id, { quantity_grams: receiveForm.quantity_grams, idempotency_key: receiveIdempotencyKey.value, remark: receiveForm.remark || null }); ElMessage.success('入库成功'); receiveVisible.value = false; detail.value = await getSemifinishedOrder(detail.value.id); load() } finally { receiveSubmitting.value = false } }
-load()
+async function submitReceive() { const orderId = detailOrderId.value; receiveSubmitting.value = true; try { await receiveSemifinishedItem(receivingItem.value.id, { quantity_grams: receiveForm.quantity_grams, idempotency_key: receiveIdempotencyKey.value, remark: receiveForm.remark || null }); msgSuccessText('入库成功'); receiveVisible.value = false; if (detailOrderId.value === orderId) detailResource.load(orderId); listState.refreshUpdate() } finally { receiveSubmitting.value = false } }
 </script>
 
 <style scoped src="./semifinished.css"></style>

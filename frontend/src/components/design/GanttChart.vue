@@ -135,9 +135,9 @@
                 <p><strong>优先级：</strong>{{ task.priority === 'urgent' ? '加急' : '普通' }}</p>
                 <p><strong>计划日期：</strong>{{ task.plan_start_date }} {{ periodLabel(task.plan_start_period) }} ~ {{ task.plan_end_date }} {{ periodLabel(task.plan_end_period) }}</p>
                 <p><strong>状态：</strong>
-                  <el-tag :type="statusTagType(task.status)" size="small">
+                  <StatusBadge :type="statusTagType(task.status)" size="small">
                     {{ statusLabel(task.status) }}
-                  </el-tag>
+                  </StatusBadge>
                 </p>
               </div>
             </el-popover>
@@ -191,9 +191,9 @@
                 <p><strong>优先级：</strong>{{ task.priority === 'urgent' ? '加急' : '普通' }}</p>
                 <p><strong>计划日期：</strong>{{ task.plan_start_date }} {{ periodLabel(task.plan_start_period) }} ~ {{ task.plan_end_date }} {{ periodLabel(task.plan_end_period) }}</p>
                 <p><strong>状态：</strong>
-                  <el-tag :type="statusTagType(task.status)" size="small">
+                  <StatusBadge :type="statusTagType(task.status)" size="small">
                     {{ statusLabel(task.status) }}
-                  </el-tag>
+                  </StatusBadge>
                 </p>
               </div>
             </el-popover>
@@ -205,6 +205,8 @@
 </template>
 
 <script setup>
+import { GANTT_STATUS, GANTT_STATUS_LABELS as STATUS_LABELS, GANTT_STATUS_TYPES as STATUS_TAG_TYPES } from '@/views/design/designStatus.js'
+import { resolveStatus } from '@/utils/status'
 import { computed, ref, onBeforeUnmount, h } from 'vue'
 import { Clock, Calendar, VideoPlay, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
@@ -486,28 +488,16 @@ const STATUS_COLORS = {
   cancelled: 'rgba(156,149,144,0.7)',
 }
 
-const STATUS_LABELS = {
-  pending_design: '待设计',
-  scheduled: '已排期',
-  in_progress: '进行中',
-  completed: '已完成',
-  cancelled: '已取消',
-}
 
-const STATUS_TAG_TYPES = {
-  pending_design: 'warning',
-  scheduled: '',
-  in_progress: 'danger',
-  completed: 'success',
-  cancelled: 'info',
-}
+
+
 
 const shootTypeMap = ref({})
 getDictMap('shoot_type').then(map => { shootTypeMap.value = map })
 
 function statusColor(status) { return STATUS_COLORS[status] || '#D4941C' }
-function statusLabel(status) { return STATUS_LABELS[status] || status }
-function statusTagType(status) { return STATUS_TAG_TYPES[status] || '' }
+function statusLabel(status) { return resolveStatus(status, GANTT_STATUS).label }
+function statusTagType(status) { return resolveStatus(status, GANTT_STATUS).type }
 function shootTypeLabel(typeCodes) { return buildDictLabel(typeCodes, shootTypeMap.value) }
 
 function taskDisplayName(task) {

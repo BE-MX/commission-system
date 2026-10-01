@@ -64,7 +64,7 @@
 
 .clickable-date {
   cursor: pointer;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -87,7 +87,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -105,7 +105,7 @@
 
 .clickable-shoot-type {
   cursor: pointer;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -123,7 +123,7 @@
 
 .clickable-cell {
   cursor: pointer;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   display: inline-flex;
   align-items: center;
   gap: 4px;

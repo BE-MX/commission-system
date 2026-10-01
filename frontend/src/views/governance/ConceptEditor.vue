@@ -12,9 +12,7 @@
       <div class="header-left">
         <GlassButton variant="secondary" :left-icon="ArrowLeft" @click="goBack">返回列表</GlassButton>
         <span class="concept-title">{{ concept.name_zh || '新概念' }}</span>
-        <el-tag v-if="concept.status" :type="statusTagType(concept.status)" size="small">
-          {{ statusLabels[concept.status] }}
-        </el-tag>
+        <StatusBadge v-if="concept.status" :value="concept.status" :dictionary="CONCEPT_STATUS" size="small" />
       </div>
       <div class="header-right">
         <!-- 完整度指示器 -->
@@ -64,7 +62,7 @@
         <!-- 1. 基本信息 -->
         <section id="sec-basic" class="form-section lg-card is-static">
           <h3>📋 基本信息</h3>
-          <el-form :model="form" label-width="100px" :disabled="!canEdit">
+          <el-form label-position="top" :model="form" :disabled="!canEdit">
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item label="概念 ID" required>
@@ -108,7 +106,7 @@
         <!-- 2. 定义 -->
         <section id="sec-definition" class="form-section lg-card is-static">
           <h3>📖 定义</h3>
-          <el-form :model="form" label-width="100px" :disabled="!canEdit">
+          <el-form label-position="top" :model="form" :disabled="!canEdit">
             <el-form-item label="一句话定义" required>
               <el-input v-model="form.one_liner" maxlength="60" show-word-limit placeholder="≤30字" />
             </el-form-item>
@@ -121,23 +119,23 @@
         <!-- 3. 边界 -->
         <section id="sec-boundary" class="form-section lg-card is-static">
           <h3>🔲 边界</h3>
-          <el-form :model="form" label-width="100px" :disabled="!canEdit">
+          <el-form label-position="top" :model="form" :disabled="!canEdit">
             <el-form-item label="包含范围" required>
               <div class="tag-input-area">
-                <el-tag v-for="(tag, i) in (form.boundary_includes || [])" :key="i" closable
+                <StatusBadge v-for="(tag, i) in (form.boundary_includes || [])" :key="i" closable
                   :disable-transitions="false" @close="removeTag('boundary_includes', i)" style="margin: 2px 4px">
                   {{ tag }}
-                </el-tag>
+                </StatusBadge>
                 <el-input v-model="tagInput.includes" size="small" style="width: 200px"
                   placeholder="按 Enter 添加" @keyup.enter="addTag('boundary_includes', 'includes')" />
               </div>
             </el-form-item>
             <el-form-item label="排除范围" required>
               <div class="tag-input-area">
-                <el-tag v-for="(tag, i) in (form.boundary_excludes || [])" :key="i" closable type="danger"
+                <StatusBadge v-for="(tag, i) in (form.boundary_excludes || [])" :key="i" closable type="danger"
                   :disable-transitions="false" @close="removeTag('boundary_excludes', i)" style="margin: 2px 4px">
                   {{ tag }}
-                </el-tag>
+                </StatusBadge>
                 <el-input v-model="tagInput.excludes" size="small" style="width: 200px"
                   placeholder="按 Enter 添加" @keyup.enter="addTag('boundary_excludes', 'excludes')" />
               </div>
@@ -148,7 +146,7 @@
         <!-- 4. 计算 -->
         <section id="sec-calculation" class="form-section lg-card is-static">
           <h3>🧮 计算</h3>
-          <el-form :model="form" label-width="100px" :disabled="!canEdit">
+          <el-form label-position="top" :model="form" :disabled="!canEdit">
             <el-form-item label="计算公式">
               <el-input v-model="form.formula" type="textarea" :rows="3" />
             </el-form-item>
@@ -173,7 +171,7 @@
         <!-- 5. 数据源 -->
         <section id="sec-datasource" class="form-section lg-card is-static">
           <h3>🗄 数据源</h3>
-          <el-form :model="form" label-width="100px" :disabled="!canEdit">
+          <el-form label-position="top" :model="form" :disabled="!canEdit">
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item label="主表" required>
@@ -188,20 +186,20 @@
             </el-row>
             <el-form-item label="过滤条件">
               <div class="tag-input-area">
-                <el-tag v-for="(tag, i) in (form.filter_conditions || [])" :key="i" closable
+                <StatusBadge v-for="(tag, i) in (form.filter_conditions || [])" :key="i" closable
                   @close="removeTag('filter_conditions', i)" style="margin: 2px 4px">
                   {{ tag }}
-                </el-tag>
+                </StatusBadge>
                 <el-input v-model="tagInput.filters" size="small" style="width: 300px"
                   placeholder="按 Enter 添加" @keyup.enter="addTag('filter_conditions', 'filters')" />
               </div>
             </el-form-item>
             <el-form-item label="关联表">
               <div class="tag-input-area">
-                <el-tag v-for="(tag, i) in (form.related_tables || [])" :key="i" closable type="info"
+                <StatusBadge v-for="(tag, i) in (form.related_tables || [])" :key="i" closable type="info"
                   @close="removeTag('related_tables', i)" style="margin: 2px 4px">
                   {{ tag }}
-                </el-tag>
+                </StatusBadge>
                 <el-input v-model="tagInput.related" size="small" style="width: 300px"
                   placeholder="按 Enter 添加" @keyup.enter="addTag('related_tables', 'related')" />
               </div>
@@ -212,7 +210,7 @@
         <!-- 6. 维度 -->
         <section id="sec-dimension" class="form-section lg-card is-static">
           <h3>📐 维度</h3>
-          <el-form :model="form" label-width="100px" :disabled="!canEdit">
+          <el-form label-position="top" :model="form" :disabled="!canEdit">
             <el-form-item label="时间粒度" required>
               <el-checkbox-group v-model="form.time_granularity">
                 <el-checkbox label="日" value="day" />
@@ -227,10 +225,10 @@
             </el-form-item>
             <el-form-item label="可切分维度">
               <div class="tag-input-area">
-                <el-tag v-for="(tag, i) in (form.segments || [])" :key="i" closable type="info"
+                <StatusBadge v-for="(tag, i) in (form.segments || [])" :key="i" closable type="info"
                   @close="removeTag('segments', i)" style="margin: 2px 4px">
                   {{ tag }}
-                </el-tag>
+                </StatusBadge>
                 <el-input v-model="tagInput.segments" size="small" style="width: 300px"
                   placeholder='按 Enter 添加，格式："按 XX（字段名）"' @keyup.enter="addTag('segments', 'segments')" />
               </div>
@@ -244,9 +242,9 @@
           <el-table :data="relationships" style="width: 100%" border class="list-table">
             <el-table-column prop="relation_type" label="关系类型" min-width="150">
               <template #default="{ row }">
-                <el-tag size="small" :color="relTypeColor(row.relation_type)" effect="dark" style="border: none">
+                <StatusBadge size="small" :color="relTypeColor(row.relation_type)" effect="dark" style="border: none">
                   {{ row.relation_type }}
-                </el-tag>
+                </StatusBadge>
               </template>
             </el-table-column>
             <el-table-column label="方向" min-width="80">
@@ -270,7 +268,7 @@
         <!-- 8. 元数据 -->
         <section id="sec-metadata" class="form-section lg-card is-static">
           <h3>ℹ️ 元数据</h3>
-          <el-form :model="form" label-width="100px" :disabled="!canEdit">
+          <el-form label-position="top" :model="form" :disabled="!canEdit">
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item label="负责人" required>
@@ -300,8 +298,8 @@
     </div>
 
     <!-- 添加关联抽屉 -->
-    <el-drawer v-model="addRelDrawerVisible" title="添加关联关系" size="400px">
-      <el-form label-width="90px">
+    <DetailDrawer v-model="addRelDrawerVisible" title="添加关联关系" width="640px">
+      <el-form label-position="top">
         <el-form-item label="关系类型">
           <el-select v-model="newRel.relation_type" style="width: 100%">
             <el-option v-for="rt in relTypes" :key="rt.value" :label="rt.label" :value="rt.value" />
@@ -328,14 +326,16 @@
         <el-button @click="addRelDrawerVisible = false">取消</el-button>
         <el-button type="primary" @click="submitAddRel">确认添加</el-button>
       </template>
-    </el-drawer>
+    </DetailDrawer>
   </div>
 </template>
 
 <script setup>
+import { CONCEPT_STATUS, CONCEPT_LABELS as statusLabels } from './governanceStatus.js'
+import { msgError, msgSuccessText, confirmAction, promptAction, msgWarning } from '@/utils/feedback'
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { ArrowLeft, Plus, Warning } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -352,14 +352,6 @@ const layerLabels = {
   financial: '财务', customer: '客户', product: '产品',
   production: '生产', sales_process: '销售过程', logistics: '物流',
 }
-const statusLabels = {
-  draft: '草稿', pending: '待补充', in_progress: '填写中',
-  review: '待审批', active: '已完成', deprecated: '已废弃',
-}
-const statusTagType = (s) => ({
-  draft: 'info', pending: 'warning', in_progress: '',
-  review: 'warning', active: 'success', deprecated: 'danger',
-}[s] || 'info')
 
 const sections = [
   { key: 'basic', icon: '📋', label: '基本信息' },
@@ -462,7 +454,7 @@ async function loadConcept() {
     // 加载关联
     loadRelationships()
   } catch (e) {
-    ElMessage.error('加载概念失败')
+    msgError('加载概念失败', e)
   } finally {
     loading.value = false
   }
@@ -486,15 +478,15 @@ async function handleSave() {
       const { data: res } = await createConcept({ ...form })
       const data = res.data ?? res
       router.replace(`/governance/concepts/${data.id}`)
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     } else {
       const { data: res } = await updateConcept(conceptId.value, { ...form })
       concept.value = (res.data ?? res)
-      ElMessage.success('保存成功')
+      msgSuccessText('保存成功')
     }
     loadConcept()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    msgError(e.response?.data?.detail || '保存失败', e)
   } finally {
     saving.value = false
   }
@@ -503,49 +495,49 @@ async function handleSave() {
 async function handleClaim() {
   try {
     await transitionStatus(conceptId.value, { action: 'claim' })
-    ElMessage.success('已认领')
+    msgSuccessText('已认领')
     loadConcept()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '认领失败')
+    msgError(e.response?.data?.detail || '认领失败', e)
   }
 }
 
 async function handleSubmit() {
   try {
-    await ElMessageBox.confirm('确认提交审批？提交后不可修改直到审批完成。', '提交审批')
+    await confirmAction('确认提交审批？提交后不可修改直到审批完成。', '提交审批')
     await transitionStatus(conceptId.value, { action: 'submit' })
-    ElMessage.success('已提交审批')
+    msgSuccessText('已提交审批')
     loadConcept()
   } catch { /* cancel */ }
 }
 
 async function handleApprove() {
   try {
-    await ElMessageBox.confirm('确认审批通过？', '审批通过')
+    await confirmAction('确认审批通过？', '审批通过')
     await transitionStatus(conceptId.value, { action: 'approve' })
-    ElMessage.success('审批通过')
+    msgSuccessText('审批通过')
     loadConcept()
   } catch { /* cancel */ }
 }
 
 async function handleReject() {
   try {
-    const { value } = await ElMessageBox.prompt('请输入驳回原因', '驳回修改', {
+    const { value } = await promptAction('请输入驳回原因', '驳回修改', {
       inputPlaceholder: '驳回原因',
     })
     await transitionStatus(conceptId.value, { action: 'reject', comment: value })
-    ElMessage.success('已驳回')
+    msgSuccessText('已驳回')
     loadConcept()
   } catch { /* cancel */ }
 }
 
 async function handleDeprecate() {
   try {
-    const { value } = await ElMessageBox.prompt('请输入废弃原因', '废弃概念', {
+    const { value } = await promptAction('请输入废弃原因', '废弃概念', {
       inputPlaceholder: '废弃原因',
     })
     await transitionStatus(conceptId.value, { action: 'deprecate', comment: value })
-    ElMessage.success('已废弃')
+    msgSuccessText('已废弃')
     loadConcept()
   } catch { /* cancel */ }
 }
@@ -578,18 +570,18 @@ async function searchConcepts(query) {
 
 async function submitAddRel() {
   if (!newRel.target_concept_id) {
-    ElMessage.warning('请选择目标概念')
+    msgWarning('请选择目标概念')
     return
   }
   try {
     await createRelationship(conceptId.value, { ...newRel })
-    ElMessage.success('关联已添加')
+    msgSuccessText('关联已添加')
     addRelDrawerVisible.value = false
     newRel.target_concept_id = ''
     newRel.description = ''
     loadRelationships()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '添加失败')
+    msgError(e.response?.data?.detail || '添加失败', e)
   }
 }
 

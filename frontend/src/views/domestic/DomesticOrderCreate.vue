@@ -8,7 +8,7 @@
 
     <div class="panel head-panel">
       <div class="panel-title">{{ isProduction ? '生产订单' : '业务订单' }}</div>
-      <el-form :model="form" label-width="92px" class="head-form">
+      <el-form label-position="top" :model="form" class="head-form">
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="客户店名" :required="!isProduction">
@@ -19,7 +19,7 @@
               >
                 <el-option
                   v-for="c in customers" :key="c.id"
-                  :label="isProduction ? c.shop_name : `${c.shop_name}（${c.settle_mode === 'credit' ? '先下单后付款 · ' : ''}${c.membership_label || '普通客户'} · 余额 ¥${Number(c.balance || 0).toFixed(2)}）`"
+                  :label="isProduction ? c.shop_name : `${c.shop_name}（${c.settle_mode === 'credit' ? '先下单后付款 · ' : ''}${c.membership_label || '普通客户'} · 余额 ${formatMoney(Number(c.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}）`"
                   :value="c.id"
                 />
               </el-select>
@@ -30,10 +30,10 @@
               <div v-if="isProduction" class="balance-hint">可选择已有客户；不选则为公司备货</div>
               <div v-if="!isProduction && selectedCustomer" class="balance-hint">
                 <template v-if="selectedCustomer.settle_mode === 'credit'">
-                  先下单后付款 · 不校验余额，欠款记负余额（当前 ¥{{ Number(selectedCustomer.balance || 0).toFixed(2) }}）
+                  先下单后付款 · 不校验余额，欠款记负余额（当前 {{ formatMoney(Number(selectedCustomer.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}）
                 </template>
                 <template v-else>
-                  {{ selectedCustomer.membership_label || '普通客户' }} · 当前余额 ¥{{ Number(selectedCustomer.balance || 0).toFixed(2) }}
+                  {{ selectedCustomer.membership_label || '普通客户' }} · 当前余额 {{ formatMoney(Number(selectedCustomer.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}
                 </template>
               </div>
             </el-form-item>
@@ -101,7 +101,7 @@
         :closable="false" show-icon title="特单属性可直接输入新选项，保存订单时自动创建"
       />
 
-      <el-form :model="item" label-width="92px">
+      <el-form label-position="top" :model="item">
         <el-form-item v-if="!isProduction" label="顾客名称">
           <el-input v-model="item.guest_name" placeholder="选填，当前产品对应的顾客姓名" maxlength="120" />
         </el-form-item>
@@ -197,10 +197,10 @@
           <el-col :span="6">
             <el-form-item label="工艺路线">
               <!-- 路线不让下单人选：选完工艺就地显示会走哪条，没配的当场提示 -->
-              <el-tag v-if="routeOf(item)" type="success" effect="plain">
+              <StatusBadge v-if="routeOf(item)" type="success" effect="plain">
                 {{ routeOf(item).route_name }}{{ routeOf(item).is_default ? '（默认）' : '' }}
-              </el-tag>
-              <el-tag v-else-if="item.attrs.craft" type="warning" effect="plain">未配路线，下单后不能开工</el-tag>
+              </StatusBadge>
+              <StatusBadge v-else-if="item.attrs.craft" type="warning" effect="plain">未配路线，下单后不能开工</StatusBadge>
               <span v-else class="muted">选完工艺后自动匹配</span>
             </el-form-item>
           </el-col>
@@ -221,7 +221,7 @@
           </el-col>
           <el-col :span="6">
             <el-form-item label="明细总价">
-              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * Number(item.specialPrice || 0)).toFixed(2) }}</span>
+              <span class="amount-value">{{ formatMoney((Number(item.order_qty || 0) * Number(item.specialPrice || 0)), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -235,14 +235,14 @@
         <el-row v-else :gutter="16" class="price-row">
           <el-col :span="4">
             <el-form-item label="报价状态">
-              <el-tag :type="item.quoteStatus === 'missing_base_price' ? 'danger' : (item.quoteStatus === 'priced' ? 'success' : 'warning')" effect="plain">
+              <StatusBadge :type="item.quoteStatus === 'missing_base_price' ? 'danger' : (item.quoteStatus === 'priced' ? 'success' : 'warning')" effect="plain">
                 {{ quoteStatusLabel(item.quoteStatus) }}
-              </el-tag>
+              </StatusBadge>
             </el-form-item>
           </el-col>
           <el-col :span="4">
             <el-form-item label="原始价">
-              <span>{{ item.quoteStatus === 'priced' ? `¥${Number(item.quote.original_price).toFixed(2)}` : '-' }}</span>
+              <span>{{ item.quoteStatus === 'priced' ? `${formatMoney(Number(item.quote.original_price), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}` : '-' }}</span>
             </el-form-item>
           </el-col>
           <el-col :span="4">
@@ -272,12 +272,12 @@
           </el-col>
           <el-col :span="4">
             <el-form-item label="明细单价">
-              <span>{{ item.quoteStatus === 'priced' ? `¥${(effectiveDiscountPrice(item) + Number(item.laborFee || 0)).toFixed(2)}` : '-' }}</span>
+              <span>{{ item.quoteStatus === 'priced' ? `${formatMoney((effectiveDiscountPrice(item) + Number(item.laborFee || 0)), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}` : '-' }}</span>
             </el-form-item>
           </el-col>
           <el-col :span="4">
             <el-form-item label="明细总价">
-              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * (effectiveDiscountPrice(item) + Number(item.laborFee || 0))).toFixed(2) }}</span>
+              <span class="amount-value">{{ formatMoney((Number(item.order_qty || 0) * (effectiveDiscountPrice(item) + Number(item.laborFee || 0))), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
             </el-form-item>
           </el-col>
         </el-row>
@@ -327,7 +327,7 @@
       <GlassButton variant="ghost" left-icon="Plus" @click="addItem">再加一行明细</GlassButton>
       <div class="footer-right">
         <span v-if="unroutedCount" class="warn-text">{{ unroutedCount }} 行明细的工艺未配路线</span>
-        <span v-if="!isProduction" class="order-total">订单总价：¥{{ orderTotal.toFixed(2) }}</span>
+        <span v-if="!isProduction" class="order-total">订单总价：{{ formatMoney(orderTotal, { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
         <GlassButton variant="ghost" left-icon="Document" :loading="submitting" @click="submit(true)">保存草稿</GlassButton>
         <GlassButton variant="primary" left-icon="Check" :loading="submitting" @click="submit(false)">提交订单</GlassButton>
       </div>
@@ -336,6 +336,8 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../utils/money.js'
+
 import { beijingCalendarDate } from '@/utils/datetime'
 /**
  * 内贸下单。逻辑全在 composables/useDomesticOrderCreate.js（宪法 12）。

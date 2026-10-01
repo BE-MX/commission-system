@@ -1,11 +1,11 @@
 <template>
-  <el-drawer
+  <DetailDrawer
     :model-value="modelValue"
     title="AI 优化"
-    size="min(720px, 94vw)"
+    width="760px"
     :close-on-click-modal="!busy"
     @update:model-value="$emit('update:modelValue', $event)"
-    @closed="stopPolling"
+    @closed="handleClosed"
   >
     <div class="optimization-body">
       <el-alert
@@ -15,6 +15,9 @@
         show-icon
       />
 
+      <p class="history-bound">从最近 30 条优化记录中恢复当前任务</p>
+      <ListPageStatus :paged="false" :error="historyResource.errorMessage.value && `任务历史：${historyResource.errorMessage.value}`" :loading="historyResource.loading.value" :has-data="historyResource.hasData.value" @retry="restoreLatestJob" />
+      <ListPageStatus :paged="false" :error="jobResource.errorMessage.value" :loading="jobResource.loading.value" :has-data="!!job" @retry="poll" />
       <section v-if="!job" class="start-panel">
         <el-radio-group v-model="mode">
           <el-radio-button value="format">智能排版</el-radio-button>
@@ -27,7 +30,8 @@
         </p>
         <el-form label-position="top">
           <el-form-item label="优化方案" required>
-            <el-select v-model="profileId" placeholder="选择适用于当前知识库的方案">
+            <ListPageStatus :paged="false" :error="profilesResource.errorMessage.value" :loading="loadingProfiles" :has-data="profilesResource.hasData.value" @retry="loadProfiles" />
+            <el-select :loading="loadingProfiles" v-model="profileId" placeholder="选择适用于当前知识库的方案">
               <el-option
                 v-for="profile in profiles"
                 :key="profile.id"
@@ -37,8 +41,8 @@
             </el-select>
           </el-form-item>
         </el-form>
-        <el-empty v-if="!profiles.length && !loadingProfiles" description="当前知识库暂无已启用的 AI 优化方案" />
-        <GlassButton variant="primary" :disabled="!profileId || dirty" :loading="starting" @click="start">
+        <el-empty v-if="profilesResource.isEmpty.value" description="当前知识库暂无已启用的 AI 优化方案" />
+        <GlassButton variant="primary" :disabled="!profileId || dirty || readBlocked" :loading="starting" @click="start">
           开始优化
         </GlassButton>
         <small v-if="dirty" class="warning">请先保存当前草稿，再执行 AI 优化。</small>
@@ -46,7 +50,7 @@
 
       <section v-else class="job-panel">
         <div class="job-status">
-          <el-tag :type="statusMeta.type" effect="plain">{{ statusMeta.label }}</el-tag>
+          <StatusBadge :type="statusMeta.type" effect="plain">{{ statusMeta.label }}</StatusBadge>
           <span>{{ job.mode === 'format' ? '智能排版' : '知识增强' }}</span>
           <span>基于修订 #{{ job.base_revision_id }}</span>
         </div>
@@ -105,7 +109,7 @@
           </el-tabs>
         </template>
 
-        <div class="drawer-actions">
+        <div class="dialog-footer">
           <GlassButton v-if="active" variant="ghost" @click="cancel">取消任务</GlassButton>
           <GlassButton v-if="job.status === 'failed' || job.status === 'cancelled'" variant="ghost" @click="reset">重新生成</GlassButton>
           <GlassButton v-if="job.status === 'completed'" variant="primary" :loading="applying" @click="apply">应用为新草稿</GlassButton>
@@ -113,11 +117,13 @@
         </div>
       </section>
     </div>
-  </el-drawer>
+  </DetailDrawer>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useAuthStore } from '@/stores/auth'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import KnowledgeDocumentPreview from './KnowledgeDocumentPreview.vue'
 import {
@@ -135,12 +141,34 @@ const props = defineProps({
   dirty: Boolean,
 })
 const emit = defineEmits(['update:modelValue', 'applied'])
+const auth = useAuthStore()
+const readOptions = signal => ({ signal, suppressToast: true, showLoading: false })
+let scopeGeneration = 0
+let jobGeneration = 0
+const profilesResource = useAsyncResource(async (libraryId, { signal, isCurrent }) => {
+  const items = (await listAiProfiles(libraryId, readOptions(signal))).data || []
+  if (isCurrent() && !items.some(item => item.id === profileId.value)) profileId.value = items[0]?.id || null
+  return items
+}, { initialData: [] })
+const historyResource = useAsyncResource(async ({ documentId, scope, jobVersion }, { signal, isCurrent }) => {
+  const items = (await listDocumentAiJobs(documentId, readOptions(signal))).data || []
+  if (isCurrent() && scope === scopeGeneration && jobVersion === jobGeneration && !job.value) {
+    job.value = items.find(item => ['queued', 'running', 'completed'].includes(item.status)) || null
+  }
+  return items
+}, { initialData: [] })
+const jobResource = useAsyncResource(async ({ id, scope, jobVersion }, { signal, isCurrent }) => {
+  const result = (await getDocumentAiJob(id, readOptions(signal))).data
+  if (isCurrent() && scope === scopeGeneration && jobVersion === jobGeneration && job.value?.id === id) job.value = result
+  return result
+})
+const readBlocked = computed(() => [profilesResource, historyResource].some(resource => resource.loading.value || resource.error.value || !resource.hasLoaded.value))
 const mode = ref('format')
 const profileId = ref(null)
-const profiles = ref([])
+const profiles = profilesResource.data
 const job = ref(null)
 const tab = ref('result')
-const loadingProfiles = ref(false)
+const loadingProfiles = profilesResource.loading
 const starting = ref(false)
 const applying = ref(false)
 let pollTimer = null
@@ -166,52 +194,46 @@ const adviceSections = computed(() => {
   ]
 })
 
-async function loadProfiles() {
-  if (!props.document?.library_id) return
-  loadingProfiles.value = true
-  try {
-    profiles.value = (await listAiProfiles(props.document.library_id)).data
-    if (!profiles.value.some(item => item.id === profileId.value)) profileId.value = profiles.value[0]?.id || null
-  } finally { loadingProfiles.value = false }
-}
-
+function loadProfiles() { return props.modelValue && props.document?.library_id ? profilesResource.load(props.document.library_id) : false }
 async function restoreLatestJob() {
-  if (!props.document?.id || job.value) return
-  const jobs = (await listDocumentAiJobs(props.document.id)).data
-  job.value = jobs.find(item => ['queued', 'running', 'completed'].includes(item.status)) || null
+  if (!props.modelValue || !props.document?.id || job.value) return false
+  const scope = scopeGeneration
+  const success = await historyResource.load({ documentId: props.document.id, scope, jobVersion: jobGeneration })
+  if (success && scope === scopeGeneration && active.value) schedulePoll()
+  return success
 }
-
-async function openDrawer() {
-  await Promise.all([loadProfiles(), restoreLatestJob()])
-  if (active.value) schedulePoll()
-}
+function openDrawer() { return Promise.all([loadProfiles(), restoreLatestJob()]) }
 
 async function start() {
   if (props.dirty) return msgError('请先保存草稿')
+  if (readBlocked.value || !profileId.value || starting.value) return
+  const scope = scopeGeneration, documentId = props.document.id
+  jobGeneration++; historyResource.cancel(); jobResource.clear(); stopPolling()
   starting.value = true
   try {
-    job.value = (await createDocumentAiJob(props.document.id, {
+    const response = await createDocumentAiJob(documentId, {
       mode: mode.value,
       profile_id: profileId.value,
       base_revision_id: props.document.revision_id,
       idempotency_key: crypto.randomUUID().replaceAll('-', ''),
-    })).data
+    })
+    if (scope !== scopeGeneration || !props.modelValue) return
+    job.value = response.data
     schedulePoll()
-  } finally { starting.value = false }
+  } finally { if (scope === scopeGeneration) starting.value = false }
 }
 
 async function poll() {
-  if (!job.value?.id || !active.value) return
-  try {
-    job.value = (await getDocumentAiJob(job.value.id)).data
-  } finally {
-    if (active.value) schedulePoll()
-  }
+  if (!props.modelValue || !job.value?.id || !active.value) return false
+  const scope = scopeGeneration, id = job.value.id
+  const success = await jobResource.load({ id, scope, jobVersion: jobGeneration })
+  if (scope === scopeGeneration && job.value?.id === id && active.value) schedulePoll()
+  return success
 }
 
 function schedulePoll() {
   stopPolling()
-  pollTimer = window.setTimeout(poll, 1800)
+  if (props.modelValue && active.value) pollTimer = window.setTimeout(poll, 1800)
 }
 
 function stopPolling() {
@@ -220,25 +242,42 @@ function stopPolling() {
 }
 
 async function cancel() {
-  job.value = (await cancelDocumentAiJob(job.value.id)).data
-  stopPolling()
+  const scope = scopeGeneration, id = job.value.id
+  jobGeneration++; jobResource.clear(); stopPolling()
+  try {
+    const response = await cancelDocumentAiJob(id)
+    if (scope !== scopeGeneration || job.value?.id !== id) return
+    job.value = response.data
+  } finally {
+    if (scope === scopeGeneration && job.value?.id === id && active.value) schedulePoll()
+  }
 }
 
 async function apply() {
+  const scope = scopeGeneration, id = job.value.id
+  jobGeneration++; jobResource.clear(); stopPolling()
   applying.value = true
   try {
-    const result = (await applyDocumentAiJob(job.value.id)).data
+    const result = (await applyDocumentAiJob(id)).data
+    if (scope !== scopeGeneration || job.value?.id !== id) return
     job.value.status = 'applied'
     msgSuccess('AI 优化结果已应用为新草稿')
     emit('applied', result)
-  } finally { applying.value = false }
+  } finally { if (scope === scopeGeneration) applying.value = false }
 }
 
 function reset() {
-  stopPolling()
+  jobGeneration++; historyResource.cancel(); jobResource.clear(); stopPolling()
   job.value = null
   tab.value = 'result'
 }
+function clearScope() {
+  scopeGeneration++; jobGeneration++; stopPolling()
+  for (const resource of [profilesResource, historyResource, jobResource]) resource.clear()
+  profileId.value = null; job.value = null; tab.value = 'result'
+  starting.value = false; applying.value = false
+}
+function handleClosed() { if (!props.modelValue) clearScope() }
 
 async function copyAdvice(section) {
   try {
@@ -247,9 +286,9 @@ async function copyAdvice(section) {
   } catch { msgError('复制失败，请手动选择文本') }
 }
 
-watch(() => props.modelValue, open => { if (open) openDrawer() })
-watch(() => props.document?.id, () => { stopPolling(); job.value = null })
-onBeforeUnmount(stopPolling)
+watch(() => [props.modelValue, props.document?.id, props.document?.library_id, JSON.stringify([auth.user?.id, auth.roles, auth.permissions])], () => { clearScope(); if (props.modelValue) void openDrawer() })
+onMounted(() => { if (props.modelValue) void openDrawer() })
+onBeforeUnmount(clearScope)
 </script>
 
 <style scoped>
@@ -266,6 +305,6 @@ onBeforeUnmount(stopPolling)
 .evidence-card, .source-card, .advice-card { display: grid; gap: 7px; margin-bottom: 10px; padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; }
 .evidence-card p { margin: 0; color: var(--text-secondary); font-size: 13px; }
 .advice-card ul { margin: 0; padding-left: 20px; color: var(--text-secondary); line-height: 1.7; }
-.drawer-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.dialog-footer { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 680px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .comparison-preview { grid-template-columns: 1fr; } }
 </style>

@@ -1,7 +1,7 @@
-import { ref, nextTick, onMounted, onActivated, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onActivated, onUnmounted, watch } from 'vue'
 
 // Keep the horizontal scrollbar above pagination; filters can wrap or disappear.
-export function useOrderTableHeight() {
+export function useOrderTableHeight(listError) {
   const tableRef = ref()
   const filtersRef = ref()
   const tableHeight = ref(400)
@@ -10,6 +10,7 @@ export function useOrderTableHeight() {
     const el = tableRef.value?.$el
     if (el) tableHeight.value = Math.max(200, window.innerHeight - el.getBoundingClientRect().top - 84)
   }
+  if (listError) watch(listError, () => nextTick(update))
   onMounted(() => {
     nextTick(update)
     observer = new ResizeObserver(update)

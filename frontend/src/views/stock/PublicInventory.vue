@@ -30,14 +30,17 @@
             aria-label="Search products"
           />
           <button type="submit">Search</button>
+          <button type="button" @click="reset">Reset</button>
         </form>
         <label class="pi-toggle">
-          <input v-model="inStockOnly" type="checkbox" @change="doSearch" />
+          <input v-model="inStockOnly" type="checkbox" />
           <span class="pi-toggle-track"><span class="pi-toggle-thumb" /></span>
           <span class="pi-toggle-label">In stock only</span>
         </label>
       </section>
 
+      <p v-if="listState.hasPendingSearch.value" role="status">Filters changed. Select Search to apply.</p>
+      <p v-if="errorText" role="alert">{{ errorText }} <span v-if="items.length">Showing previously loaded page {{ listState.dataPage.value }}.</span> <button type="button" @click="fetchData">Retry</button></p>
       <section class="pi-card">
         <table class="pi-table">
           <thead>
@@ -49,7 +52,7 @@
               <th class="avail">Availability</th>
             </tr>
           </thead>
-          <tbody v-if="!loading && items.length">
+          <tbody v-if="items.length">
             <tr v-for="item in items" :key="item.product_id">
               <td data-label="Type" class="type">{{ item.type || '—' }}</td>
               <td data-label="Size">{{ item.size || '—' }}</td>
@@ -81,6 +84,7 @@
         <nav v-if="total > 0" class="pi-paging">
           <span class="pi-paging-info">Showing {{ rangeStart }}–{{ rangeEnd }} of {{ total }} products</span>
           <span class="pi-paging-btns">
+            <select v-model="pageSize" aria-label="Products per page" @change="listState.handleSizeChange(Number(pageSize))"><option v-for="size in [20, 50, 100]" :key="size" :value="size">{{ size }} per page</option></select>
             <button :disabled="page <= 1 || loading" @click="go(page - 1)">‹ Prev</button>
             <button :disabled="page >= totalPages || loading" @click="go(page + 1)">Next ›</button>
           </span>
@@ -96,63 +100,38 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, toRef } from 'vue'
+import { useListPage } from '@/composables/useListPage'
 import { getPublicInventory } from '@/api/stock'
 import { currentBeijingDate } from '@/utils/datetime'
 
-const keyword = ref('')
-const inStockOnly = ref(false)
-const items = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = 50
-const loading = ref(false)
-const errorText = ref('')
+const listState = useListPage(async (params, { signal }) => {
+  const response = await getPublicInventory({ ...params, keyword: params.keyword.trim() || undefined, in_stock_only: params.in_stock_only || undefined }, { signal, suppressToast: true })
+  return response.data
+}, { pageSize: 20, searchForm: { keyword: '', in_stock_only: false } })
+const keyword = toRef(listState.searchForm, 'keyword')
+const inStockOnly = toRef(listState.searchForm, 'in_stock_only')
+const items = listState.list; const total = listState.total; const page = listState.page; const pageSize = listState.pageSize
+const loading = listState.loading
+const errorText = computed(() => listState.error.value ? 'Unable to load inventory right now. Please try again shortly.' : '')
 const year = Number(currentBeijingDate().slice(0, 4))
 
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
-const rangeStart = computed(() => (page.value - 1) * pageSize + 1)
-const rangeEnd = computed(() => Math.min(page.value * pageSize, total.value))
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+const rangeStart = computed(() => (page.value - 1) * pageSize.value + 1)
+const rangeEnd = computed(() => Math.min(page.value * pageSize.value, total.value))
 const emptyText = computed(() =>
-  keyword.value.trim()
-    ? `No products match “${keyword.value.trim()}”.`
+  listState.appliedSearchForm.value.keyword.trim()
+    ? `No products match “${listState.appliedSearchForm.value.keyword.trim()}”.`
     : 'No products available right now.',
 )
 
-async function fetchData() {
-  loading.value = true
-  errorText.value = ''
-  try {
-    const res = await getPublicInventory({
-      page: page.value,
-      page_size: pageSize,
-      keyword: keyword.value.trim() || undefined,
-      in_stock_only: inStockOnly.value || undefined,
-    })
-    items.value = res.data.items || []
-    total.value = res.data.total || 0
-  } catch {
-    errorText.value = 'Unable to load inventory right now. Please try again shortly.'
-    items.value = []
-    total.value = 0
-  } finally {
-    loading.value = false
-  }
-}
-
-function doSearch() {
-  page.value = 1
-  fetchData()
-}
-
-function go(p) {
-  page.value = p
-  fetchData()
-}
+const fetchData = listState.fetchList
+const doSearch = listState.handleSearch
+const reset = listState.handleReset
+const go = listState.handlePageChange
 
 onMounted(() => {
   document.title = 'Stock Availability | lislahair factory store' // 覆盖守卫默认的中文站名后缀
-  fetchData()
 })
 </script>
 

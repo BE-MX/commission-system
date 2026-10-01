@@ -38,7 +38,8 @@ test('table viewport mode keeps dialogs available and restores page scroll', () 
     body: { style: { overflow: 'auto' } },
     addEventListener: (name, listener) => listeners.set(name, listener),
     removeEventListener: name => listeners.delete(name),
-    querySelector: () => dialogOpen ? {} : null,
+    // Element Plus keeps closed dialog overlays mounted with display:none.
+    querySelectorAll: () => [{ getClientRects: () => dialogOpen ? [{}] : [] }],
   }
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true, value: { getItem: () => null, setItem() {} },

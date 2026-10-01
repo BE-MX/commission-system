@@ -65,7 +65,7 @@ const emit = defineEmits(['select'])
 .starter-index {
   grid-column: 2;
   grid-row: 1;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-family: var(--font-display);
   font-size: 11px;
   font-weight: 700;

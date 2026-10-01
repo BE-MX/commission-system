@@ -31,6 +31,7 @@
             @fullscreen="toggleFullscreen"
           />
         </div>
+        <ListPageStatus :error="templatesResource.errorMessage.value" :loading="loading" :has-data="templates.length > 0" @retry="loadTemplates" />
         <el-table
           :data="templates"
           v-loading="loading"
@@ -41,7 +42,7 @@
           style="width: 100%"
         >
           <template #empty>
-            <el-empty :image-size="96" description="暂无数据" />
+            <el-empty v-if="!loading && !templatesResource.error.value" :image-size="96" description="暂无数据" />
           </template>
           <el-table-column v-if="visibleKeys.includes('report-code')" label="报表编码" prop="report_code" min-width="180" max-width="270" show-overflow-tooltip />
           <el-table-column v-if="visibleKeys.includes('name')" label="报表名称" prop="name" min-width="200" max-width="300" show-overflow-tooltip />
@@ -53,9 +54,9 @@
                 :model-value="row.status === 1"
                 @change="(val) => handleToggleStatus(row, val)"
               />
-              <el-tag v-else :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
+              <StatusBadge v-else :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.status === 1 ? '启用' : '禁用' }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="visibleKeys.includes('updated-at')" label="更新时间" min-width="170" max-width="255" show-overflow-tooltip>
@@ -95,6 +96,7 @@
 
     <!-- Stimulsoft Designer 全屏模式 -->
     <div v-if="designerMode" class="designer-page">
+      <ListPageStatus :error="designerResource.errorMessage.value" :loading="designerResource.loading.value" :has-data="!!designerResource.data.value" @retry="retryDesigner" />
       <div class="designer-toolbar">
         <el-button @click="closeDesigner">← 返回列表</el-button>
         <span class="toolbar-info">正在编辑：{{ designerTemplateName }}（v{{ designerTemplateVersion }}）</span>
@@ -107,10 +109,10 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑模板信息' : '新建模板'"
-      width="600px"
+      width="640px"
       destroy-on-close
     >
-      <el-form :model="form" label-width="100px">
+      <el-form label-position="top" :model="form">
         <el-form-item label="报表编码" v-if="!isEdit">
           <el-input v-model="form.report_code" placeholder="如 production_order_print" />
         </el-form-item>
@@ -139,7 +141,7 @@
     <el-dialog
       v-model="previewVisible"
       :title="`报表预览 — ${previewName}`"
-      width="90%"
+      width="480px"
       top="2vh"
       destroy-on-close
     >
@@ -164,9 +166,10 @@
     <el-dialog
       v-model="versionDialogVisible"
       :title="`版本历史 — ${versionTemplateName}`"
-      width="700px"
+      width="760px"
       destroy-on-close
     >
+      <ListPageStatus :error="versionsResource.errorMessage.value" :loading="versionLoading" :has-data="versionList.length > 0" @retry="versionsResource.load()" />
       <el-table :data="versionList" v-loading="versionLoading" border class="list-table">
         <el-table-column label="版本" min-width="80" max-width="120">
           <template #default="{ row }">v{{ row.version }}</template>
@@ -198,9 +201,10 @@
   </div>
 </template>
 
-<script setup>
-import { ref, nextTick, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+<script setup>import { msgWarning, msgSuccessText, msgError, confirmAction } from '@/utils/feedback'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
 import { useAuthStore } from '@/stores/auth'
 import {
   getReportTemplates, createReportTemplate, updateReportTemplate,
@@ -216,8 +220,9 @@ import { formatBeijingDateTime } from '@/utils/datetime'
 const authStore = useAuthStore()
 const { createDesigner } = useStimulsoft()
 
-const loading = ref(false)
-const templates = ref([])
+const templatesResource = useAsyncResource(async (_, { signal }) => (await getReportTemplates({ signal, suppressToast: true })).data || [])
+const loading = templatesResource.loading
+const templates = computed(() => templatesResource.data.value || [])
 
 // 列显隐元数据（TableTools 列设置面板数据源，Action Bar Spec）
 const columnDefs = [
@@ -264,7 +269,7 @@ function editTemplate(row) {
 
 async function saveTemplate() {
   if (!form.value.name) {
-    ElMessage.warning('请输入报表名称')
+    msgWarning('请输入报表名称')
     return
   }
 
@@ -276,20 +281,20 @@ async function saveTemplate() {
         data.template_content = form.value.template_content
       }
       await updateReportTemplate(editingCode.value, data)
-      ElMessage.success('模板已更新')
+      msgSuccessText('模板已更新')
     } else {
       if (!form.value.report_code) {
-        ElMessage.warning('请输入报表编码')
+        msgWarning('请输入报表编码')
         saving.value = false
         return
       }
       await createReportTemplate(form.value)
-      ElMessage.success('模板已创建')
+      msgSuccessText('模板已创建')
     }
     dialogVisible.value = false
     await loadTemplates()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    msgError(e.response?.data?.detail || '保存失败', e)
   } finally {
     saving.value = false
   }
@@ -297,9 +302,9 @@ async function saveTemplate() {
 
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm(`确定删除模板「${row.name}」？`, '确认删除', { type: 'warning' })
+    await confirmAction(`确定删除模板「${row.name}」？`, '确认删除', { type: 'warning' })
     await deleteReportTemplate(row.report_code)
-    ElMessage.success('已删除')
+    msgSuccessText('已删除')
     await loadTemplates()
   } catch {
     // 取消
@@ -310,9 +315,9 @@ async function handleToggleStatus(row, val) {
   try {
     await toggleTemplateStatus(row.report_code, val ? 1 : 0)
     row.status = val ? 1 : 0
-    ElMessage.success(val ? '已启用' : '已禁用')
+    msgSuccessText(val ? '已启用' : '已禁用')
   } catch (e) {
-    ElMessage.error('状态切换失败')
+    msgError('状态切换失败', e)
   }
 }
 
@@ -324,26 +329,30 @@ const designerTemplateName = ref('')
 const designerTemplateVersion = ref(0)
 const savingDesigner = ref(false)
 let designerInstance = null
+let designerSequence = 0
+const designerResource = useAsyncResource(async (code, { signal }) => code ? (await getReportTemplate(code, { signal, suppressToast: true })).data || null : null)
 
 async function openDesigner(row) {
+  const sequence = ++designerSequence
   // 获取模板完整内容
   try {
-    const res = await getReportTemplate(row.report_code)
-    const template = res?.data ?? res
-
     designerTemplateCode.value = row.report_code
     designerTemplateName.value = row.name
     designerTemplateVersion.value = row.version
     designerMode.value = true
-
+    const code = row.report_code
+    const success = await designerResource.load(code, { clear: true })
+    if (!success || sequence !== designerSequence || !designerMode.value || designerTemplateCode.value !== code) return
+    const template = designerResource.data.value
     await nextTick()
+    if (sequence !== designerSequence || !designerMode.value || designerTemplateCode.value !== code) return
 
     // 动态加载 Designer JS
     const { createDesigner: createDesignerFn } = useStimulsoft()
 
     // 传入样例数据参数，让设计器加载字段结构到字典树
     const sampleParams = row.report_code === 'production_order_print' ? { order_no: '' } : {}
-    designerInstance = await createDesignerFn(
+    const instance = await createDesignerFn(
       designerContainer.value,
       template.template_content || null,
       () => {
@@ -353,31 +362,39 @@ async function openDesigner(row) {
       sampleParams,
       row.report_code,
     )
+    if (sequence !== designerSequence || !designerMode.value || designerTemplateCode.value !== code) { instance.dispose(); return }
+    if (designerInstance) designerInstance.dispose()
+    designerInstance = instance
   } catch (e) {
-    ElMessage.error('打开设计器失败: ' + (e.message || '未知错误'))
+    msgError('打开设计器失败: ' + (e.message || '未知错误'), e)
   }
 }
 
 async function handleDesignerSave() {
   if (!designerInstance) return
+  const code = designerTemplateCode.value; const sequence = designerSequence
   savingDesigner.value = true
   try {
     const mrtText = designerInstance.report.saveToJsonString()
-    await updateReportTemplate(designerTemplateCode.value, {
+    await updateReportTemplate(code, {
       template_content: mrtText,
       change_summary: '设计器编辑保存',
     })
-    ElMessage.success('模板已保存')
+    msgSuccessText('模板已保存')
     // 更新版本号
-    designerTemplateVersion.value += 1
+    if (sequence === designerSequence && designerTemplateCode.value === code) designerTemplateVersion.value += 1
   } catch (e) {
-    ElMessage.error('保存失败: ' + (e.response?.data?.detail || e.message))
+    msgError('保存失败: ' + (e.response?.data?.detail || e.message), e)
   } finally {
     savingDesigner.value = false
   }
 }
 
+function retryDesigner() { return openDesigner({ report_code: designerTemplateCode.value, name: designerTemplateName.value, version: designerTemplateVersion.value }) }
+
 function closeDesigner() {
+  designerSequence++
+  designerResource.load(null, { clear: true })
   if (designerInstance) {
     try { designerInstance.dispose() } catch {}
     designerInstance = null
@@ -390,23 +407,16 @@ function closeDesigner() {
 const versionDialogVisible = ref(false)
 const versionTemplateName = ref('')
 const versionTemplateCode = ref('')
-const versionList = ref([])
-const versionLoading = ref(false)
+const versionsResource = useAsyncResource(async (code, { signal }) => code ? (await getTemplateVersions(code, { signal, suppressToast: true })).data || [] : [])
+const versionList = computed(() => versionsResource.data.value || [])
+const versionLoading = versionsResource.loading
+watch(versionDialogVisible, opened => { if (!opened) versionsResource.load(null, { clear: true }) })
 
-async function showVersionHistory(row) {
+function showVersionHistory(row) {
   versionTemplateCode.value = row.report_code
   versionTemplateName.value = row.name
   versionDialogVisible.value = true
-  versionLoading.value = true
-
-  try {
-    const res = await getTemplateVersions(row.report_code)
-    versionList.value = res?.data ?? res ?? []
-  } catch {
-    versionList.value = []
-  } finally {
-    versionLoading.value = false
-  }
+  return versionsResource.load(row.report_code, { clear: true })
 }
 
 function previewVersion(row) {
@@ -423,13 +433,13 @@ function previewVersion(row) {
 
 async function handleRollback(row) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确定回滚到 v${row.version}？当前版本会保存到历史记录。`,
       '确认回滚',
       { type: 'warning' },
     )
     await rollbackTemplate(versionTemplateCode.value, row.version)
-    ElMessage.success(`已回滚到 v${row.version}`)
+    msgSuccessText(`已回滚到 v${row.version}`)
     versionDialogVisible.value = false
     await loadTemplates()
   } catch {
@@ -463,17 +473,7 @@ function formatTime(dt) {
   return formatBeijingDateTime(dt, { fallback: '' })
 }
 
-async function loadTemplates() {
-  loading.value = true
-  try {
-    const res = await getReportTemplates()
-    templates.value = res?.data ?? res ?? []
-  } catch {
-    templates.value = []
-  } finally {
-    loading.value = false
-  }
-}
+const loadTemplates = () => templatesResource.load()
 
 onMounted(() => {
   loadTemplates()

@@ -3,32 +3,35 @@
     <SidebarContent />
   </aside>
 
-  <el-drawer
+  <DetailDrawer
     :model-value="drawerOpen"
     class="chat-session-drawer"
     direction="ltr"
-    size="min(86vw, 320px)"
+    width="640px"
     :show-close="false"
     :with-header="false"
     :append-to-body="false"
     @update:model-value="emit('update:drawerOpen', $event)"
   >
     <SidebarContent />
-  </el-drawer>
+  </DetailDrawer>
 </template>
 
 <script setup>
 import { defineComponent, h } from 'vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 import { ChatLineRound, Plus } from '@element-plus/icons-vue'
 
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
   currentSessionId: { type: Number, default: null },
   drawerOpen: { type: Boolean, default: false },
+  error: { type: String, default: '' },
+  hasLoaded: Boolean,
   loading: { type: Boolean, default: false },
   canWrite: { type: Boolean, default: false },
 })
-const emit = defineEmits(['new', 'select', 'update:drawerOpen'])
+const emit = defineEmits(['new', 'select', 'retry', 'update:drawerOpen'])
 
 function select(sessionId) {
   emit('select', sessionId)
@@ -45,10 +48,9 @@ const SidebarContent = defineComponent({
         disabled: !props.canWrite,
         onClick: () => emit('new'),
       }, [h(Plus, { class: 'sidebar-icon' }), '新对话']),
-      h('div', { class: 'session-heading' }, '最近会话'),
-      props.loading
-        ? h('div', { class: 'session-loading' }, '正在加载…')
-        : props.sessions.length
+      h('div', { class: 'session-heading' }, '最近会话（最多 30 条）'),
+      h(ListPageStatus, {error:props.error,loading:props.loading,hasData:props.sessions.length>0,paged:false,onRetry:()=>emit('retry')}),
+      props.sessions.length
           ? h('div', { class: 'session-list' }, props.sessions.map(session => h('button', {
             type: 'button',
             class: ['session-item', { 'is-active': session.id === props.currentSessionId }],
@@ -58,7 +60,7 @@ const SidebarContent = defineComponent({
             h(ChatLineRound, { class: 'sidebar-icon' }),
             h('span', { class: 'session-title' }, session.title || '新对话'),
           ])))
-          : h('p', { class: 'session-empty' }, '还没有会话。选择一个快捷任务，或直接输入你的问题。'),
+          : props.hasLoaded && !props.loading && !props.error ? h('p', { class: 'session-empty' }, '还没有会话。选择一个快捷任务，或直接输入你的问题。') : null,
     ])
   },
 })

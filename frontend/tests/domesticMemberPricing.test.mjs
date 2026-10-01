@@ -82,7 +82,7 @@ test('409 变化摘要同时展示原价、优惠价和规则，价格相同也�
     current_quote: { ...expected, membership_level: 'supreme', pricing_rule: 'member_fixed_capped' },
   }] }, key => key === 'line-a' ? '第 2 行' : key)
   assert.equal(rows.length, 1)
-  assert.match(rows[0], /原价 ¥1198\.00 → ¥1198\.00/)
+  assert.match(rows[0], /原价 ¥1,198\.00 → ¥1,198\.00/)
   assert.match(rows[0], /优惠价 ¥998\.00 → ¥998\.00/)
   assert.match(rows[0], /规则 黑卡固定会员价 → 命中固定会员价，但原价更低，已按原价/)
   assert.equal(pricingRuleLabelForQuote({ ...expected, pricing_rule: 'member_reduction', discount_price: '1078.00' }), '黑卡立减 ¥120.00')

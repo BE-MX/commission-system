@@ -4,7 +4,7 @@ const quiet = { showLoading: false }
 
 export const getAgentRuntimeConfig = () => agentRuntimeClient.get('/config', quiet)
 export const getAgentProfiles = () => agentRuntimeClient.get('/profiles', quiet)
-export const getAgentTasks = params => agentRuntimeClient.get('/tasks', { params, showLoading: false })
+export const getAgentTasks = (params, config = {}) => agentRuntimeClient.get('/tasks', { ...config, params, showLoading: false })
 export const getAgentEvaluationReadiness = () => agentRuntimeClient.get('/evaluations/readiness', quiet)
 export const getCopilotEvaluationCases = () => agentRuntimeClient.get('/evaluations/copilot/cases', quiet)
 export const searchCopilotEvaluationCustomers = params => (
@@ -13,9 +13,9 @@ export const searchCopilotEvaluationCustomers = params => (
 export const startCopilotEvaluationCase = (caseId, data) => (
   agentRuntimeClient.post(`/evaluations/copilot/cases/${caseId}/runs`, data)
 )
-export const getAgentRun = runId => agentRuntimeClient.get(`/runs/${runId}`, quiet)
-export const getAgentEvents = (runId, params = {}) => (
-  agentRuntimeClient.get(`/runs/${runId}/events`, { params, showLoading: false })
+export const getAgentRun = (runId, config = {}) => agentRuntimeClient.get(`/runs/${runId}`, { ...quiet, ...config })
+export const getAgentEvents = (runId, params = {}, config = {}) => (
+  agentRuntimeClient.get(`/runs/${runId}/events`, { ...config, params, showLoading: false })
 )
 export const createAgentSession = data => agentRuntimeClient.post('/sessions', data)
 export const createAgentRun = (sessionId, data) => (

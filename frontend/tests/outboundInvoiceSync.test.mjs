@@ -5,14 +5,14 @@ import { ref } from 'vue'
 
 const source = readFileSync(new URL('../src/views/shipping/composables/useOutboundInvoiceSync.js', import.meta.url), 'utf8')
   .replace(/^import .*\r?\n/gm, '').replace('export function', 'function')
-const factory = new Function('ref', 'ElMessage', 'previewOutboundInvoiceSync', 'syncOutboundInvoice', `${source}; return useOutboundInvoiceSync`)
+const factory = new Function('ref', 'msgSuccessText', 'previewOutboundInvoiceSync', 'syncOutboundInvoice', `${source}; return useOutboundInvoiceSync`)
 const row = {record_source:'okki', outbound_invoice_id:'77', outbound_record_id:'1'}
 const preview = {version:'a'.repeat(64), changed:true, changes:[]}
 
 test('preview makes no write; apply blocks double clicks and refreshes only on verified success', async () => {
   const calls = []; let release
   const pending = new Promise(resolve => { release = resolve })
-  const api = factory(ref, {success: msg => calls.push(msg)}, async () => ({data:preview}),
+  const api = factory(ref, msg => calls.push(msg), async () => ({data:preview}),
     async (id, version, check, confirm) => { calls.push([id,version,check,confirm]); await pending; return {data:{status:'sync_done',message:'done'}} })(async () => calls.push('refresh'))
   await api.previewSync({...row,record_source:'ark_task'})
   assert.equal(api.syncVisible.value, false)
@@ -51,7 +51,7 @@ test('recovery on row click returns to preview when no accepted operation exists
 
 test('one row click continues verified missing-row repairs until printing is available', async () => {
   const calls = []; let refreshes = 0
-  const api = factory(ref, {success: msg => calls.push(msg)},
+  const api = factory(ref, msg => calls.push(msg),
     async () => ({data:{...preview,recover:true,message:'pending'}}),
     async (id, version, check, confirm, repair) => {
       assert.equal(repair, true)

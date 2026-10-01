@@ -82,7 +82,6 @@ import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import StarterCards from './StarterCards.vue'
 import { msgError, msgSuccess } from '@/utils/feedback'
-
 const props = defineProps({
   modes: { type: Array, default: () => [] },
   selectedModeId: { type: String, default: '' },
@@ -176,7 +175,7 @@ watch(
 }
 
 .welcome-kicker {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-family: var(--font-display);
   font-size: 11px;
   font-weight: 700;
@@ -342,7 +341,7 @@ watch(
   border-radius: 999px;
   background: var(--dash-glass-bg-strong);
   box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   cursor: pointer;
   font-family: var(--font-display);
   font-size: 12px;
@@ -381,14 +380,14 @@ watch(
 .markdown-body :deep(table) { display: block; overflow-x: auto; border-collapse: collapse; }
 .markdown-body :deep(th),
 .markdown-body :deep(td) { padding: 8px 10px; border: 1px solid var(--border-color); text-align: left; }
-.markdown-body :deep(a) { color: var(--color-primary); }
+.markdown-body :deep(a) { color: var(--color-primary-text); }
 
 @media (hover: hover) and (pointer: fine) {
   /* 桌面端操作按钮平时收起，悬停/聚焦时浮现 */
   .message-actions { opacity: 0; }
   .message-row:hover .message-actions,
   .message-row:focus-within .message-actions { opacity: 1; }
-  .message-actions button:hover { background: var(--color-primary-light); color: var(--color-primary); }
+  .message-actions button:hover { background: var(--color-primary-light); color: var(--color-primary-text); }
   .scroll-latest:hover {
     transform: translateY(-2px);
     box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow-hover);

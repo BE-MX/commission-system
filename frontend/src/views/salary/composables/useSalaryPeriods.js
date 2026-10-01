@@ -5,27 +5,23 @@
  * （同步/导入/跃迁/锁定）全在详情页——列表页放动作按钮的话，HR 会在
  * 没看到异常清单的情况下点「下一步」，而异常清单正是该不该往下走的依据。
  */
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { createPeriod, listPeriods } from '@/api/salary'
 import { msgSuccess } from '@/utils/feedback'
 import { beijingCalendarDate } from '@/utils/datetime'
 
 export function useSalaryPeriods() {
   const router = useRouter()
-  const loading = ref(false)
-  const list = ref([])
   const statusFilter = ref('')
-
-  async function fetchList() {
-    loading.value = true
-    try {
-      const res = await listPeriods({ status: statusFilter.value || undefined })
-      list.value = res.data || []
-    } finally {
-      loading.value = false
-    }
-  }
+  const appliedStatus = ref('')
+  const periodsResource = useAsyncResource(async (params, { signal }) => (await listPeriods(params, { signal, suppressToast: true })).data || [], { initialData: [] })
+  const list = periodsResource.data, loading = periodsResource.loading
+  const pending = computed(() => statusFilter.value !== appliedStatus.value)
+  const fetchList = () => periodsResource.load({ status: appliedStatus.value || undefined })
+  function search() { appliedStatus.value = statusFilter.value; return fetchList() }
+  function resetFilters() { statusFilter.value = ''; return search() }
 
   const dialogVisible = ref(false)
   const saving = ref(false)
@@ -76,7 +72,7 @@ export function useSalaryPeriods() {
   onMounted(fetchList)
 
   return {
-    loading, list, statusFilter, fetchList,
+    loading, list, statusFilter, appliedStatus, pending, periodsResource, fetchList, search, resetFilters,
     dialogVisible, saving, formRef, form, formRules, openCreate, submit,
     openPeriod,
   }

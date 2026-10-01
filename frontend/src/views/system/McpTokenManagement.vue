@@ -27,14 +27,14 @@
           <h2>已发放凭证</h2>
           <p>明文不可找回；遗失时请重新发放。</p>
         </div>
-        <div class="filters">
+        <FilterBar :loading="loading" :pending="hasPendingSearch" @search="searchRows" @reset="resetFilters">
           <el-input v-model="filters.keyword" class="filter-w-md" clearable placeholder="搜索账号或 Agent 用途" :prefix-icon="Search" />
           <el-select v-model="filters.status" class="filter-w-sm" aria-label="凭证状态">
             <el-option label="全部状态" value="all" />
             <el-option label="有效" value="active" />
             <el-option label="已吊销" value="revoked" />
           </el-select>
-        </div>
+        </FilterBar>
       </div>
       <div class="action-bar">
         <GlassButton variant="primary" left-icon="Plus" @click="openIssueDialog">发放凭证</GlassButton>
@@ -43,11 +43,12 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
-          @refresh="loadTokens"
+          :loading="loading" @refresh="loadTokens"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus :error="tokenResource.errorMessage.value" :loading="tokenResource.loading.value" :has-data="tokenResource.hasData.value" @retry="reloadRows" />
       <el-table v-if="filteredRows.length || loading" v-loading="loading" :data="filteredRows" class="token-table list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border>
         <el-table-column v-if="visibleKeys.includes('label')" label="Agent 用途" min-width="170">
           <template #default="{ row }"><strong class="purpose">{{ row.label }}</strong></template>
@@ -60,12 +61,12 @@
         <el-table-column v-if="visibleKeys.includes('knowledge')" label="知识库访问" min-width="210">
           <template #default="{ row }">
             <div class="access-tags">
-              <el-tag :type="row.has_knowledge_read ? 'success' : 'danger'" effect="plain" size="small">
+              <StatusBadge :type="row.has_knowledge_read ? 'success' : 'danger'" effect="plain" size="small">
                 {{ row.has_knowledge_read ? '有读取权限' : '缺读取权限' }}
-              </el-tag>
-              <el-tag :type="row.knowledge_library_count ? 'info' : 'warning'" effect="plain" size="small">
+              </StatusBadge>
+              <StatusBadge :type="row.knowledge_library_count ? 'info' : 'warning'" effect="plain" size="small">
                 {{ row.knowledge_library_count }} 个知识库
-              </el-tag>
+              </StatusBadge>
             </div>
           </template>
         </el-table-column>
@@ -93,12 +94,12 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-else description="还没有符合条件的凭证">
+      <el-empty v-else-if="!tokenResource.error.value" description="还没有符合条件的凭证">
         <GlassButton v-if="!rows.length" variant="primary" left-icon="Plus" @click="openIssueDialog">发放首个凭证</GlassButton>
       </el-empty>
     </section>
 
-    <el-dialog v-model="issueVisible" title="发放 Agent 接入凭证" width="560px" destroy-on-close>
+    <el-dialog v-model="issueVisible" title="发放 Agent 接入凭证" width="640px" destroy-on-close>
       <el-form label-position="top">
         <el-form-item label="绑定账号" required>
           <el-select
@@ -113,12 +114,13 @@
             <el-option v-for="item in candidates" :key="item.user_id" :value="item.user_id" :label="`${item.real_name} · @${item.username}`">
               <div class="candidate-option">
                 <span>{{ item.real_name }} <small>@{{ item.username }}</small></span>
-                <el-tag :type="isKnowledgeReady(item) ? 'success' : 'warning'" size="small" effect="plain">
+                <StatusBadge :type="isKnowledgeReady(item) ? 'success' : 'warning'" size="small" effect="plain">
                   {{ isKnowledgeReady(item) ? '知识库可用' : '待配置' }}
-                </el-tag>
+                </StatusBadge>
               </div>
             </el-option>
           </el-select>
+          <ListPageStatus v-if="candidateResource.error.value" :paged="false" :error="candidateResource.errorMessage.value" :loading="candidateLoading" :has-data="candidateResource.hasData.value" @retry="searchCandidates(candidateQuery)" />
         </el-form-item>
 
         <div v-if="selectedCandidate" class="readiness-panel">
@@ -146,7 +148,7 @@
     <el-dialog
       v-model="secretVisible"
       title="凭证已生成"
-      width="620px"
+      width="640px"
       :close-on-click-modal="false"
       class="secret-dialog"
       @closed="clearIssuedSecret"
@@ -170,8 +172,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { confirmAction, msgSuccessText, msgError } from '@/utils/feedback'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+
 import { CircleCheck, Collection, Key, Search, WarningFilled } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -179,8 +183,10 @@ import { useTableView } from '@/composables/useTableView'
 import { issueMcpToken, listMcpTokens, revokeMcpToken, rotateMcpToken, searchMcpTokenCandidates } from '@/api/mcpTokens'
 import { MCP_ENDPOINT, buildAgentConfig, copyToClipboard, filterTokens, formatDateTime, isKnowledgeReady } from './mcpTokenManagement'
 
-const loading = ref(false)
-const rows = ref([])
+const tokenResource = useAsyncResource(async (_, { signal }) => (await listMcpTokens({ signal, suppressToast: true })).data.items || [], { initialData: [] })
+const loading = tokenResource.loading
+const rows = tokenResource.data
+const reloadRows = () => tokenResource.load()
 const columnDefs = [
   { key: 'label', label: 'Agent 用途' },
   { key: 'owner', label: '绑定账号' },
@@ -192,42 +198,37 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('mcp-token-management', columnDefs)
 const filters = reactive({ keyword: '', status: 'all' })
+const appliedFilters = ref({ keyword: '', status: 'all' })
+const hasPendingSearch = computed(() => JSON.stringify(filters) !== JSON.stringify(appliedFilters.value))
+function searchRows() { appliedFilters.value = { ...filters } }
+function resetFilters() { Object.assign(filters, { keyword: '', status: 'all' }); searchRows() }
 const issueVisible = ref(false)
 const issuing = ref(false)
 const issueForm = reactive({ userId: null, label: '' })
-const candidates = ref([])
-const candidateLoading = ref(false)
+const candidateResource = useAsyncResource(async (query, { signal }) =>
+  (await searchMcpTokenCandidates({ q: query, limit: 20 }, { signal, suppressToast: true })).data.items || [], { initialData: [] })
+const candidates = candidateResource.data, candidateLoading = candidateResource.loading
+const candidateQuery = ref('')
 const selectedCandidate = ref(null)
 const secretVisible = ref(false)
 const issuedSecret = ref(null)
 
-const filteredRows = computed(() => filterTokens(rows.value, filters))
+const filteredRows = computed(() => filterTokens(rows.value, appliedFilters.value))
 const metrics = computed(() => ({
   active: rows.value.filter((row) => row.is_active).length,
   revoked: rows.value.filter((row) => !row.is_active).length,
   readyOwners: new Set(rows.value.filter(isKnowledgeReady).map((row) => row.user_id)).size,
 }))
-const canIssue = computed(() => isKnowledgeReady(selectedCandidate.value) && issueForm.label.trim().length >= 2)
+const canIssue = computed(() => !candidateResource.error.value && !candidateLoading.value && isKnowledgeReady(selectedCandidate.value) && issueForm.label.trim().length >= 2)
 
-async function loadTokens() {
-  loading.value = true
-  try {
-    const response = await listMcpTokens()
-    rows.value = response.data.items || []
-  } finally {
-    loading.value = false
-  }
-}
+const loadTokens = reloadRows
 
-async function searchCandidates(query = '') {
-  candidateLoading.value = true
-  try {
-    const response = await searchMcpTokenCandidates({ q: query, limit: 20 })
-    candidates.value = response.data.items || []
-  } finally {
-    candidateLoading.value = false
-  }
+function searchCandidates(query = '') {
+  candidateQuery.value = query
+  if (!issueVisible.value) return Promise.resolve(false)
+  return candidateResource.load(query)
 }
+watch(issueVisible, () => { candidateResource.clear(); candidateQuery.value = '' }, { flush: 'sync' })
 
 function selectCandidate(userId) {
   selectedCandidate.value = candidates.value.find((item) => item.user_id === userId) || null
@@ -256,7 +257,7 @@ async function submitIssue() {
 
 async function rotateToken(row) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `重新发放“${row.label}”后，当前 Token 会立即失效。`,
       '确认重新发放',
       { confirmButtonText: '确认并生成新 Token', cancelButtonText: '取消', type: 'warning' },
@@ -269,14 +270,14 @@ async function rotateToken(row) {
 
 async function revokeToken(row) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `吊销“${row.label}”后，使用该 Token 的 Agent 会立即断开。`,
       '确认吊销',
       { confirmButtonText: '吊销凭证', cancelButtonText: '取消', type: 'warning' },
     )
   } catch { return }
   await revokeMcpToken(row.id)
-  ElMessage.success('凭证已吊销')
+  msgSuccessText('凭证已吊销')
   await loadTokens()
 }
 
@@ -291,9 +292,9 @@ function clearIssuedSecret() {
 
 async function copyText(value, successMessage) {
   if (await copyToClipboard(value)) {
-    ElMessage.success(successMessage)
+    msgSuccessText(successMessage)
   } else {
-    ElMessage.error('自动复制失败，请手动选择复制')
+    msgError('自动复制失败，请手动选择复制')
   }
 }
 

@@ -1,4 +1,4 @@
-import { ElMessage } from 'element-plus'
+import { msgWarning, msgInfo } from '@/utils/feedback'
 import {
   getInvoiceEntryOptions,
   getInvoiceProductOptions,
@@ -60,8 +60,8 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     try {
       const result = await matchInvoiceProduct({ model: row.model, color: row.color, size: row.length, unit: row.net_weight_grams })
       if (!result.is_unique) {
-        if ((result.matches || []).length) ElMessage.warning('当前条件匹配到多个产品，请继续确认规格')
-        else ElMessage.info('该组合暂无产品，请在其余下拉的「全部」分组继续调整颜色/长度/克重')
+        if ((result.matches || []).length) msgWarning('当前条件匹配到多个产品，请继续确认规格')
+        else msgInfo('该组合暂无产品，请在其余下拉的「全部」分组继续调整颜色/长度/克重')
         return
       }
       Object.assign(row, {

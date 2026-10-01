@@ -7,7 +7,7 @@
     </div>
 
     <div ref="panelRef" class="table-card orders-panel">
-      <DomesticOrderFilters ref="filtersRef" :form="searchForm" :options="filterOptions" :loading="loading"
+      <DomesticOrderFilters ref="filtersRef" :form="searchForm" :applied-form="appliedSearchForm" :options="filterOptions" :loading="loading" :pending="hasPendingSearch"
         @search="handleSearch" />
       <el-tabs v-model="searchForm.order_kind" class="order-kind-tabs" @tab-change="handleKindChange">
         <el-tab-pane label="全部订单" name="" />
@@ -23,15 +23,19 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
+          :loading="loading"
           @refresh="fetchList"
           @fullscreen="toggleFullscreen"
         />
       </div>
+      <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
       <el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
         <template #empty>
-          <el-empty :image-size="96" :description="hasOrderFilters ? '没有符合条件的记录' : '暂无数据'">
-            <GlassButton v-if="hasOrderFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
-          </el-empty>
+          <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="fetchList">
+            <el-empty :image-size="96" :description="hasOrderFilters ? '没有符合条件的记录' : '暂无数据'">
+              <GlassButton v-if="hasOrderFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+            </el-empty>
+          </ListPageStatus>
         </template>
         <el-table-column :render-header="renderOrderHeader" prop="domestic_no" label="订单编号" min-width="140" fixed="left" class-name="order-number-column">
           <template #default="{ row }">
@@ -53,7 +57,7 @@
         <el-table-column v-if="visibleKeys.includes('total_qty')" :render-header="renderOrderHeader" prop="total_qty" label="产品总数" min-width="90" align="right" />
         <el-table-column v-if="visibleKeys.includes('status')" :render-header="renderOrderHeader" label="订单状态" min-width="95">
           <template #default="{ row }">
-            <el-tag size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</el-tag>
+            <StatusBadge size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('required_ship_date')" :render-header="renderOrderHeader" label="要求交付日期" min-width="116">
@@ -95,7 +99,7 @@
       />
     </div>
 
-    <DetailDrawer v-model="detailVisible" title="内贸订单详情" :width="880" :loading="detailLoading">
+    <DetailDrawer v-model="detailVisible" title="内贸订单详情" :width="760" :loading="detailLoading">
       <template v-if="detail">
         <div class="info-card">
           <div class="info-name">{{ detail.domestic_no }} · {{ detail.order_kind === 'production' ? `生产订单 · ${detail.customer_name || '公司备货'}` : detail.customer_name }}</div>
@@ -107,7 +111,7 @@
             <span v-if="detail.order_kind !== 'production'">订单类型：{{ detail.order_type_label }}</span>
             <span v-if="detail.order_kind !== 'production'">订单渠道：{{ detail.order_channel_label }}</span>
             <span>状态：{{ detail.status_label }}</span>
-            <span v-if="detail.order_kind !== 'production'"><strong>订单总金额：¥{{ Number(detail.total_amount || 0).toFixed(2) }}</strong></span>
+            <span v-if="detail.order_kind !== 'production'"><strong>订单总金额：{{ formatMoney(Number(detail.total_amount || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</strong></span>
             <span v-if="detail.customer_custom_code">客户编码：{{ detail.customer_custom_code }}</span>
             <span v-if="detail.order_kind !== 'production'">当前会员：{{ membershipLevelLabel(detail.customer_membership_level) }}</span>
             <span v-if="detail.customer_province || detail.customer_city">地区：{{ [detail.customer_province, detail.customer_city].filter(Boolean).join(' / ') }}</span>
@@ -125,7 +129,7 @@
           <div class="item-head">
             <span class="item-name">{{ item.line_code }} · {{ item.product_name }}</span>
             <span class="item-head-right">
-              <el-tag size="small" :type="item.status === 2 ? 'info' : (item.status === 1 ? 'success' : '')">{{ item.status_label }}</el-tag>
+              <StatusBadge size="small" :type="item.status === 2 ? 'info' : (item.status === 1 ? 'success' : '')">{{ item.status_label }}</StatusBadge>
               <span v-if="item.steps.length" class="item-current">当前：{{ item.current_process }}</span>
             </span>
           </div>
@@ -138,11 +142,11 @@
 
           <div v-if="detail.order_kind !== 'production'" class="item-price-summary">
             <span>数量：{{ item.order_qty }}</span>
-            <span>默认优惠价：¥{{ Number(item.default_discount_price).toFixed(2) }}</span>
-            <span :class="{ 'price-review-highlight': detail.status === 5 && item.price_changed }">优惠价：¥{{ (Number(item.unit_price) - Number(item.labor_fee || 0)).toFixed(2) }}</span>
-            <span>手工费：¥{{ Number(item.labor_fee || 0).toFixed(2) }}</span>
-            <strong :class="{ 'price-review-highlight': detail.status === 5 && item.price_changed }">明细金额：¥{{ Number(item.line_amount).toFixed(2) }}</strong>
-            <span v-if="item.price_changed">默认明细金额：¥{{ Number(item.default_line_amount).toFixed(2) }}（成交价已调整）</span>
+            <span>默认优惠价：{{ formatMoney(Number(item.default_discount_price), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
+            <span :class="{ 'price-review-highlight': detail.status === 5 && item.price_changed }">优惠价：{{ formatMoney((Number(item.unit_price) - Number(item.labor_fee || 0)), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
+            <span>手工费：{{ formatMoney(Number(item.labor_fee || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
+            <strong :class="{ 'price-review-highlight': detail.status === 5 && item.price_changed }">明细金额：{{ formatMoney(Number(item.line_amount), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</strong>
+            <span v-if="item.price_changed">默认明细金额：{{ formatMoney(Number(item.default_line_amount), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}（成交价已调整）</span>
           </div>
 
           <div class="item-actions">
@@ -211,8 +215,8 @@
     <DomesticOrderEditDialog v-model="editDialog.visible" :order-id="editDialog.orderId"
       :initial-item-id="editDialog.itemId" @saved="refreshAll" />
 
-    <el-dialog v-model="shipDialog.visible" title="登记发货" width="420px">
-      <el-form label-width="90px">
+    <el-dialog v-model="shipDialog.visible" title="登记发货" width="480px">
+      <el-form label-position="top">
         <el-form-item label="发货时间">
           <el-date-picker v-model="shipDialog.ship_time" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width: 100%" />
         </el-form-item>
@@ -227,8 +231,8 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="reportDialog.visible" title="代车间报工" width="460px">
-      <el-form label-width="100px" v-loading="reportDialog.loading">
+    <el-dialog v-model="reportDialog.visible" title="代车间报工" width="480px">
+      <el-form label-position="top" v-loading="reportDialog.loading">
         <el-form-item label="工序">
           <span>{{ reportDialog.step?.process_name }}</span>
         </el-form-item>
@@ -261,9 +265,9 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="skipDialog.visible" title="异常跳过工序" width="460px">
+    <el-dialog v-model="skipDialog.visible" title="异常跳过工序" width="480px">
       <el-alert type="warning" :closable="false" show-icon title="跳过只放行生产路线，不会记报工数量，也不计工资。" />
-      <el-form label-width="90px" class="skip-form">
+      <el-form label-position="top" class="skip-form">
         <el-form-item label="工序">{{ skipDialog.step?.process_name }}</el-form-item>
         <el-form-item label="跳过数量" required>
           <el-input-number v-model="skipDialog.qty" :min="1" :max="skipDialog.step?.reportable_qty || 1" style="width: 100%" />
@@ -278,7 +282,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="logDialog.visible" title="报工流水" width="680px">
+    <el-dialog v-model="logDialog.visible" title="报工流水" width="760px">
       <el-table :data="logDialog.logs" v-loading="logDialog.loading" size="small" border style="width: 100%" class="list-table">
         <el-table-column prop="process_name" label="工序" min-width="100" />
         <el-table-column prop="report_qty" label="数量" min-width="70" />
@@ -289,8 +293,8 @@
         <el-table-column prop="reported_at" label="时间" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" min-width="80">
           <template #default="{ row }">
-            <el-tag v-if="row.revoked" size="small" type="info" effect="plain">已撤销</el-tag>
-            <el-tag v-else size="small" type="success" effect="plain">有效</el-tag>
+            <StatusBadge v-if="row.revoked" size="small" type="info" effect="plain">已撤销</StatusBadge>
+            <StatusBadge v-else size="small" type="success" effect="plain">有效</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="90">
@@ -319,7 +323,7 @@
       :mode="printDialog.mode" :item-id="printDialog.itemId" :order-id="printDialog.orderId"
     />
 
-    <el-dialog v-model="wxacodeDialog.visible" title="产品进度码" width="420px">
+    <el-dialog v-model="wxacodeDialog.visible" title="产品进度码" width="480px">
       <div v-loading="wxacodeDialog.loading" class="wxacode-body">
         <template v-if="wxacodeDialog.image">
           <img :src="wxacodeDialog.image" class="wxacode-img" alt="产品进度小程序码" />
@@ -338,8 +342,8 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="attachDialog.visible" title="配工艺路线" width="460px">
-      <el-form label-width="90px">
+    <el-dialog v-model="attachDialog.visible" title="配工艺路线" width="480px">
+      <el-form label-position="top">
         <el-form-item label="工艺路线">
           <el-select v-model="attachDialog.route_id" disabled placeholder="对应路线尚未配置或未启用" style="width: 100%">
             <el-option v-for="r in routes" :key="r.id" :label="`${r.name}（${r.step_count} 道）`" :value="r.id" />
@@ -355,6 +359,8 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../utils/money.js'
+
 /**
  * 内贸订单列表 + 详情。逻辑在 composables/useDomesticOrders.js（宪法 12）。
  * 进度按「数量」展示：每道工序看到已完成多少 / 还能接多少，拆批状态一眼可见。
@@ -367,6 +373,7 @@ import { DETAIL_SECTIONS, ORDER_STATUS_TAGS } from '@/api/domestic'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
 import DomesticOrderFilters from './components/DomesticOrderFilters.vue'
@@ -381,6 +388,7 @@ import { membershipLevelLabel } from './composables/domesticMemberPricing'
 const {
   loading, list, total, page, pageSize, searchForm, filterOptions,
   fetchList, handleSearch, handlePageChange, handleSizeChange,
+  errorMessage: listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch, appliedSearchForm,
   detailVisible, detailLoading, detail, routes, openDetail, refreshAll,
   shipDialog, openShip, confirmShip,
   reportDialog, openReport, confirmReport,
@@ -397,16 +405,16 @@ const {
   isShipDateOverdue,
 } = useDomesticOrders()
 
-const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
+const { tableRef, filtersRef, tableHeight } = useOrderTableHeight(listErrorMessage)
 
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('domestic-orders', columnDefs)
 
 const hasOrderFilters = computed(() => Boolean(
-  searchForm.keyword || searchForm.customer_name || searchForm.owner_user_id
-  || (searchForm.status !== '' && searchForm.status != null)
-  || searchForm.dateRange?.length === 2
-  || searchForm.order_category || searchForm.order_type || searchForm.order_channel || searchForm.customer_source,
+  appliedSearchForm.value.keyword || appliedSearchForm.value.customer_name || appliedSearchForm.value.owner_user_id
+  || (appliedSearchForm.value.status !== '' && appliedSearchForm.value.status != null)
+  || appliedSearchForm.value.dateRange?.length === 2
+  || appliedSearchForm.value.order_category || appliedSearchForm.value.order_type || appliedSearchForm.value.order_channel || appliedSearchForm.value.customer_source,
 ))
 
 function resetFilters() {

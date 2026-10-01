@@ -1,5 +1,6 @@
+import { msgSuccessText, msgWarning } from '@/utils/feedback'
 import { reactive } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { syncInvoice, validateInvoice } from '@/api/invoice'
 import { createInvoiceSubmissionGuard } from './invoiceSubmissionGuard'
 
@@ -30,20 +31,20 @@ export async function validateThenSync(id, showIssues) {
     }
     const result = await syncInvoice(id)
     if (result.ok) {
-      ElMessage.success(result.receipt_generation_status === 'ready' ? '订单已同步，已加入自动回款任务' : '已同步到小满')
+      msgSuccessText(result.receipt_generation_status === 'ready' ? '订单已同步，已加入自动回款任务' : '已同步到小满')
       if (result.outbound_sync?.message) {
-        const feedback = result.outbound_sync.status === 'done' ? ElMessage.success : ElMessage.warning
+        const feedback = result.outbound_sync.status === 'done' ? msgSuccessText : msgWarning
         feedback(`出库：${result.outbound_sync.message}`)
       }
       return INVOICE_SYNC_OUTCOME.SUCCESS
     }
     if (result.issues?.length) showIssues(result.issues)
-    else ElMessage.warning(result.message || '小满同步未完成')
+    else msgWarning(result.message || '小满同步未完成')
     return INVOICE_SYNC_OUTCOME.FAILED
   })
 
   if (attempt.duplicate) {
-    ElMessage.warning('该发票正在同步，请勿重复提交')
+    msgWarning('该发票正在同步，请勿重复提交')
     return INVOICE_SYNC_OUTCOME.DUPLICATE
   }
   return attempt.value

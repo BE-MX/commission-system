@@ -6,19 +6,19 @@ customerMediaClient.interceptors.response.use(response => {
   return response
 })
 
-export const searchMediaCustomers = search => customerMediaClient.get('/customers', { params: { search }, showLoading: false })
+export const searchMediaCustomers = (search, config = {}) => customerMediaClient.get('/customers', { showLoading: false, ...config, params: { search } })
 export const getTaskMediaBatch = taskId => customerMediaClient.get(`/tasks/${taskId}/batch`)
 export const getMediaDirectories = batchId => customerMediaClient.get(`/batches/${batchId}/directories`, { showLoading: false })
 export const createMediaDirectory = (batchId, name) => customerMediaClient.post(`/batches/${batchId}/directories`, { name })
 export const renameMediaDirectory = (batchId, directoryId, name) => customerMediaClient.patch(`/batches/${batchId}/directories/${directoryId}`, { name })
 
 // ── 客户标签（tag_scope='customer' 维度） ────────────────
-export const getCustomerTagDimensions = () => customerMediaClient.get('/tags/dimensions', { showLoading: false })
+export const getCustomerTagDimensions = (config = {}) => customerMediaClient.get('/tags/dimensions', { showLoading: false, ...config })
 export const getCustomerTags = customerId => customerMediaClient.get(`/customers/${encodeURIComponent(customerId)}/tags`, { showLoading: false })
 export const addCustomerTags = (customerId, tags) => customerMediaClient.post(`/customers/${encodeURIComponent(customerId)}/tags`, { tags })
 export const getTaskCustomerTags = taskId => customerMediaClient.get(`/tasks/${taskId}/customer-tags`, { showLoading: false })
 export const addTaskCustomerTags = (taskId, tags) => customerMediaClient.post(`/tasks/${taskId}/customer-tags`, { tags })
-export const getBatchCustomerTags = batchId => customerMediaClient.get(`/batches/${batchId}/customer-tags`, { showLoading: false })
+export const getBatchCustomerTags = (batchId, config = {}) => customerMediaClient.get(`/batches/${batchId}/customer-tags`, { showLoading: false, ...config })
 const customerTagPath = customerId => `/customers/${encodeURIComponent(customerId)}/tag-values`
 const tagContextParams = context => ({ task_id: context?.taskId, batch_id: context?.batchId })
 export const createCustomerTagValue = (context, dimensionId, value) => customerMediaClient.post(
@@ -53,10 +53,10 @@ export const uploadMediaAsset = (batchId, file, onUploadProgress, { directoryId,
 export const deleteMediaAsset = (batchId, assetId) => customerMediaClient.delete(`/batches/${batchId}/assets/${assetId}`)
 export const deleteMediaDirectory = (batchId, directoryId) => customerMediaClient.delete(`/batches/${batchId}/directories/${directoryId}`)
 export const submitMediaBatch = (batchId, lockVersion) => customerMediaClient.post(`/batches/${batchId}/submit`, { lock_version: lockVersion })
-export const getMediaReviews = (status = 'pending_review') => customerMediaClient.get('/reviews', { params: { status }, showLoading: false })
+export const getMediaReviews = (status = 'pending_review', config = {}) => customerMediaClient.get('/reviews', { showLoading: false, ...config, params: { status } })
 export const reviewMediaBatch = (batchId, data) => customerMediaClient.post(`/batches/${batchId}/review`, data)
 export const unpublishMediaBatch = (batchId, comment) => customerMediaClient.post(`/batches/${batchId}/unpublish`, null, { params: { comment } })
-export const getPortalAccounts = search => customerMediaClient.get('/portal-accounts', { params: { search }, showLoading: false })
+export const getPortalAccounts = (search, config = {}) => customerMediaClient.get('/portal-accounts', { showLoading: false, ...config, params: { search } })
 export const createPortalAccount = data => customerMediaClient.post('/portal-accounts', data)
 export const updatePortalAccount = (id, data) => customerMediaClient.patch(`/portal-accounts/${id}`, data)
 export const getSalesPortalCustomers = (search = '') => customerMediaClient.get('/sales-portal/customers', {

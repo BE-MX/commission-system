@@ -1,8 +1,10 @@
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   createSession, createTurn, deleteAsset, getActiveJobs, getConfig, getJob, getSession,
   listSessions, resolveMessageAction, retryJob, uploadAsset,
 } from '@/api/designImage'
+import { useImageSessionList } from './useImageSessionList'
+import { useAuthStore } from '@/stores/auth'
 import { msgError } from '@/utils/feedback'
 import {
   acceptConversationResponse, advanceJob, canStartSend, createSessionSingleFlight, nextConversationGeneration,
@@ -35,8 +37,8 @@ export async function refreshConflictSession(error, sessionId, refreshSession) {
   return true
 }
 export function useImageStudio() {
-  const sessions = ref([])
-  const nextCursor = ref(null)
+  const auth = useAuthStore()
+  const { sessions, nextCursor, sessionsAppend, sessionsResource, sessionsLoading, mergeSession, loadSessions, retrySessions, clearSessions } = useImageSessionList(listSessions)
   const currentSessionId = ref(null)
   const currentSession = ref(null)
   const messages = ref([])
@@ -53,7 +55,6 @@ export function useImageStudio() {
   const newSessionInFlight = ref(false)
   const uploadInFlight = ref(0)
   const initializing = ref(true)
-  const sessionsLoading = ref(false)
   const drawerOpen = ref(false)
   const lightboxAsset = ref(null)
   const lightboxUrl = ref(null)
@@ -64,6 +65,7 @@ export function useImageStudio() {
   const polling = useJobPolling()
   const sessionCreation = createSessionSingleFlight()
   let conversationGeneration = 0
+  let actorGeneration = 0
   const activeJob = computed(() => [...activeJobs.values()].find(job => ACTIVE_STATUSES.has(job.status)) ?? null)
   const sessionActiveJob = computed(() => selectSessionActiveJob(activeJobs, currentSessionId.value))
   const activeSessionIds = computed(() => [...activeJobs.values()]
@@ -75,31 +77,6 @@ export function useImageStudio() {
     uploadInFlight: uploadInFlight.value > 0,
     activeJob: sessionActiveJob.value,
   }) && prompt.value.trim().length > 0 && selectedModelAvailable.value && config.value.remaining_today > 0)
-  function mergeSession(session) {
-    if (!session) return
-    const index = sessions.value.findIndex(item => item.id === session.id)
-    sessions.value = index === -1
-      ? [session, ...sessions.value]
-      : sessions.value.map(item => item.id === session.id ? { ...item, ...session } : item)
-  }
-  function mergeSessionPage(items, append) {
-    const incomingIds = new Set(items.map(item => item.id))
-    const existingById = new Map(sessions.value.map(item => [item.id, item]))
-    const incoming = items.map(item => ({ ...existingById.get(item.id), ...item }))
-    if (append) {
-      const additions = incoming.filter(item => !existingById.has(item.id))
-      sessions.value = [
-        ...sessions.value.map(item => incomingIds.has(item.id)
-          ? incoming.find(candidate => candidate.id === item.id)
-          : item),
-        ...additions,
-      ]
-      return
-    }
-    const locallyCreated = sessions.value.filter(item => !incomingIds.has(item.id))
-    sessions.value = [...locallyCreated, ...incoming]
-  }
-
   function mergeJob(job) {
     const merged = advanceJob(jobSnapshots.get(job.id), job)
     jobSnapshots.set(merged.id, merged)
@@ -139,8 +116,10 @@ export function useImageStudio() {
   function startActivePolling(job) {
     if (job && ACTIVE_STATUSES.has(job.status)) activeJobs.set(job.id, job)
     if (![...activeJobs.values()].some(item => ACTIVE_STATUSES.has(item.status))) return
+    const actor = actorGeneration
     polling.startPolling({
       onTick: async (incoming) => {
+        if (actor !== actorGeneration) return false
         const seen = new Set(incoming.map(item => item.id))
         for (const item of incoming) mergeJob(item)
         // 从活跃列表消失的任务已进终态：逐个拉取终态驱动结果卡片、侧栏状态与额度刷新
@@ -149,6 +128,7 @@ export function useImageStudio() {
           let merged = null
           try {
             const response = await getJob(id)
+            if (actor !== actorGeneration) return false
             if (response?.data) merged = mergeJob(response.data)
           } catch {
             activeJobs.delete(id)
@@ -157,35 +137,33 @@ export function useImageStudio() {
             await refreshCurrentSession(merged.session_id)
           }
         }
-        if (finished.length) void loadConfig().catch(error => msgError(safeRequestMessage(error)))
+        if (finished.length) void loadConfig().catch(error => msgError(safeRequestMessage(error), error))
         return activeJobs.size > 0
       },
     })
   }
 
   async function loadConfig() {
+    const actor = actorGeneration
     const response = await getConfig()
+    if (actor !== actorGeneration) return
     config.value = response?.data ?? config.value
     model.value = resolveImageModelSelection(config.value.models, model.value, config.value.default_model)
     size.value = size.value || config.value.default_size
     quality.value = quality.value || config.value.default_quality
   }
 
-  async function loadSessions({ append = false, requestGeneration = conversationGeneration } = {}) {
-    if (sessionsLoading.value) return
-    sessionsLoading.value = true
-    try {
-      const response = await listSessions(append && nextCursor.value ? { cursor: nextCursor.value } : {})
-      const page = response?.data ?? { items: [], next_cursor: null }
-      const requestIsCurrent = acceptConversationResponse(requestGeneration, conversationGeneration)
-      mergeSessionPage(page.items || [], append)
-      if (append || requestIsCurrent) nextCursor.value = page.next_cursor ?? null
-    } catch (error) {
-      msgError(safeRequestMessage(error))
-    } finally {
-      sessionsLoading.value = false
-    }
-  }
+  watch(() => JSON.stringify([auth.user?.id, auth.roles, auth.permissions]), () => {
+    actorGeneration++
+    clearSessions()
+    conversationGeneration = nextConversationGeneration(conversationGeneration)
+    polling.stopPolling(); assetUrls.cleanup(); activeJobs.clear(); jobSnapshots.clear()
+    currentSessionId.value = null; currentSession.value = null; messages.value = []; assets.value = []; jobs.value = []
+    draftAttachments.value = []; baseAsset.value = null; prompt.value = ''; drawerOpen.value = false
+    lightboxAsset.value = null; lightboxUrl.value = null
+    config.value = { ...config.value, remaining_today: 0, daily_limit: 0 }
+    void initialize()
+  })
 
   async function selectSession(sessionId, { internalRefresh = false } = {}) {
     conversationGeneration = nextConversationGeneration(conversationGeneration, { internalRefresh })
@@ -221,7 +199,7 @@ export function useImageStudio() {
       if (tracked) startActivePolling(tracked)
       void hydrateThumbnails(assets.value, token).catch(() => {})
     } catch (error) {
-      if (responseGeneration === conversationGeneration) msgError(safeRequestMessage(error))
+      if (responseGeneration === conversationGeneration) msgError(safeRequestMessage(error), error)
     }
   }
 
@@ -231,6 +209,7 @@ export function useImageStudio() {
   }
 
   async function newConversation() {
+    const actor = actorGeneration
     if (sessionCreation.pending) return sessionCreation.pending
     newSessionInFlight.value = true
     conversationGeneration = nextConversationGeneration(conversationGeneration)
@@ -240,11 +219,12 @@ export function useImageStudio() {
       try {
         const response = await createSession({ title: '新对话' })
         const session = response?.data
+        if (actor !== actorGeneration) return null
         mergeSession(session)
         if (responseGeneration === conversationGeneration) await selectSession(session.id)
         return session
       } catch (error) {
-        msgError(safeRequestMessage(error))
+        msgError(safeRequestMessage(error), error)
         return null
       } finally {
         newSessionInFlight.value = false
@@ -253,16 +233,18 @@ export function useImageStudio() {
   }
 
   async function ensureSession() {
+    const actor = actorGeneration
     if (currentSessionId.value) return currentSession.value
     return sessionCreation.run('implicit', async () => {
       try {
         const response = await createSession({ title: '新对话' })
         const session = response?.data
+        if (actor !== actorGeneration) return null
         mergeSession(session)
         await selectSession(session.id)
         return session
       } catch (error) {
-        msgError(safeRequestMessage(error))
+        msgError(safeRequestMessage(error), error)
         return null
       }
     })
@@ -306,7 +288,7 @@ export function useImageStudio() {
       draftAttachments.value = draftAttachments.value.filter(item => item.uploadId !== uploadId)
       if (error?.message !== 'upload context changed' && (uploadGeneration === null || (
         uploadGeneration === conversationGeneration && currentSessionId.value === sessionIdSnapshot
-      ))) msgError(safeRequestMessage(error))
+      ))) msgError(safeRequestMessage(error), error)
       throw error
     } finally {
       uploadInFlight.value -= 1
@@ -319,7 +301,7 @@ export function useImageStudio() {
       try {
         await deleteAsset(item.asset.id)
       } catch (error) {
-        msgError(safeRequestMessage(error))
+        msgError(safeRequestMessage(error), error)
         return
       }
     }
@@ -327,6 +309,7 @@ export function useImageStudio() {
   }
 
   async function submit() {
+    const actor = actorGeneration
     if (!canSend.value) return
     const sentPrompt = prompt.value
     const sentAttachments = draftAttachments.value.filter(item => item.status === 'ready')
@@ -352,6 +335,7 @@ export function useImageStudio() {
       }
       const response = await createTurn(session.id, body)
       const result = response?.data
+      if (actor !== actorGeneration) return
       reconcileMutationResult(result)
       // 首轮发送后后端会用首条消息重命名会话，同步到页头标题
       if (currentSessionId.value === result.session.id && currentSession.value) {
@@ -370,22 +354,24 @@ export function useImageStudio() {
     } catch (error) {
       if (responseGeneration === null || (
         responseGeneration === conversationGeneration && currentSessionId.value === sessionIdSnapshot
-      )) msgError(safeRequestMessage(error))
+      )) msgError(safeRequestMessage(error), error)
     } finally {
       sendInFlight.value = false
     }
   }
 
   async function retry(job) {
+    const actor = actorGeneration
     if (selectSessionActiveJob(activeJobs, job.session_id) || sendInFlight.value) return
     sendInFlight.value = true
     try {
       const response = await retryJob(job.id, { request_id: requestId('retry') })
       const result = response?.data
+      if (actor !== actorGeneration) return
       reconcileMutationResult(result)
     } catch (error) {
       await refreshConflictSession(error, job.session_id, refreshCurrentSession)
-      msgError(safeRequestMessage(error))
+      msgError(safeRequestMessage(error), error)
     } finally {
       sendInFlight.value = false
     }
@@ -395,6 +381,7 @@ export function useImageStudio() {
     return confirmationRequests.has(messageId)
   }
   async function chooseOutputMode({ message, mode }) {
+    const actor = actorGeneration
     const sessionId = message?.session_id
     const messageId = message?.id
     if (!sessionId || !messageId || confirmationRequests.has(messageId)) return
@@ -405,11 +392,12 @@ export function useImageStudio() {
         action: 'choose_output_mode',
         mode,
       })
+      if (actor !== actorGeneration) return
       reconcileMutationResult(response?.data)
-      void loadConfig().catch(error => msgError(safeRequestMessage(error)))
+      void loadConfig().catch(error => msgError(safeRequestMessage(error), error))
     } catch (error) {
       if (error?.response?.status === 409) await refreshCurrentSession(sessionId)
-      msgError(safeRequestMessage(error))
+      msgError(safeRequestMessage(error), error)
     } finally {
       confirmationRequests.delete(messageId)
     }
@@ -457,16 +445,18 @@ export function useImageStudio() {
       anchor.download = `design-image-${asset.id}.png`
       anchor.click()
     } catch (error) {
-      msgError(safeRequestMessage(error))
+      msgError(safeRequestMessage(error), error)
     }
   }
 
   async function initialize() {
     initializing.value = true
     const initializeGeneration = conversationGeneration
+    const actor = actorGeneration
     try {
       await Promise.all([loadConfig(), loadSessions({ requestGeneration: initializeGeneration })])
       const activeResponse = await getActiveJobs()
+      if (actor !== actorGeneration) return
       const restored = restoreActiveJobs(activeResponse?.data?.jobs)
       for (const job of restored) {
         jobSnapshots.set(job.id, job)
@@ -477,7 +467,7 @@ export function useImageStudio() {
       const targetId = sessions.value[0]?.id
       if (targetId) await selectSession(targetId)
     } catch (error) {
-      msgError(safeRequestMessage(error))
+      msgError(safeRequestMessage(error), error)
     } finally {
       initializing.value = false
     }
@@ -492,6 +482,7 @@ export function useImageStudio() {
     activeJob, activeSessionIds, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset, chooseOutputMode,
     clearBaseAsset, closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
     drawerOpen, ensureSession, initializing, jobs, lightboxAsset, lightboxUrl, loadMoreSessions: () => loadSessions({ append: true }),
+    sessionsResource, sessionsAppend, retrySessions, loadSessions,
     isConfirmationSubmitting, messages, model, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
     retry, selectLibraryBaseAsset, selectSession, sendInFlight, sessionActiveJob, sessions, sessionsLoading, size, submit, uploadInFlight, uploadReference,
   }

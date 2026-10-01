@@ -8,29 +8,22 @@
     </div>
 
     <div ref="panelRef" class="table-card accessory-table-card">
-    <div class="toolbar">
-      <el-input
-        v-model="keyword"
-        clearable
-        class="filter-w-md"
-        placeholder="搜索 Name / Model / Color"
-        @keyup.enter="loadRows"
-        @clear="loadRows"
-      />
-      <GlassButton variant="primary" left-icon="Search" @click="loadRows">查询</GlassButton>
-      <GlassButton variant="secondary" left-icon="RefreshLeft" @click="resetFilter">重置</GlassButton>
-    </div>
+    <FilterBar :loading="loading" :pending="pending" @search="searchRows" @reset="resetFilter">
+      <el-input v-model="keyword" clearable class="filter-w-md" placeholder="搜索 Name / Model / Color" />
+    </FilterBar>
     <div class="action-bar">
       <GlassButton v-permission="'invoice_price:write'" variant="primary" left-icon="Plus" @click="openDialog()">新增配件价格</GlassButton>
-      <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="loadRows" @fullscreen="toggleFullscreen" />
+      <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" :loading="loading" @refresh="loadRows" @fullscreen="toggleFullscreen" />
     </div>
+      <ListPageStatus v-if="listError && rows.length" :error="listErrorMessage" :loading="loading" :has-data="hasLoaded" :paged="false" @retry="loadRows" />
       <el-table v-loading="loading" :data="rows" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border>
+        <template #empty><ListPageStatus :error="listErrorMessage" :loading="loading" :paged="false" @retry="loadRows"><el-empty description="暂无配件价格" /></ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="accessory_name" label="Name" min-width="180" max-width="320" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('model')" prop="accessory_model" label="Model" min-width="150" max-width="240" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('color')" prop="accessory_color" label="Color" min-width="150" max-width="240" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('price')" label="标准价" min-width="110" max-width="150">
           <template #default="{ row }">
-            {{ Number(row.standard_price).toFixed(2) }}
+            {{ formatMoney(row.standard_price) }}
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('currency')" prop="currency" label="币种" min-width="90" max-width="110" />
@@ -55,11 +48,12 @@
     <el-dialog
       v-model="dialog.visible"
       :title="dialog.form.id ? '编辑配件标准价' : '新增配件标准价'"
-      width="560px"
+      width="640px"
       destroy-on-close
       @close="invalidateCandidateSearch"
     >
-      <el-form :model="dialog.form" label-width="92px">
+      <el-form label-position="top" :model="dialog.form">
+        <ListPageStatus v-if="candidateError" :error="candidateErrorMessage" :loading="candidateLoading" :paged="false" @retry="searchCandidates(candidateQuery)" />
         <el-form-item label="OKKI SKU" required>
           <el-select
             v-model="dialog.candidate"
@@ -120,12 +114,17 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { formatMoney } from '../../../utils/money.js'
+import { msgWarning, msgError, confirmDanger, msgSuccess } from '@/utils/feedback'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+
 import { Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import { errorMessage } from '@/utils/errors'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
+import { isAmount } from '@/utils/validators'
 import {
   buildAccessoryEditorState,
   createLatestAccessorySearch,
@@ -143,7 +142,9 @@ import {
 
 const loading = ref(false)
 const saving = ref(false)
-const keyword = ref('')
+const keyword = ref(''), appliedKeyword = ref(''), listError = ref(null), hasLoaded = ref(false)
+const listErrorMessage = computed(() => listError.value ? errorMessage(listError.value) : '')
+const pending = computed(() => keyword.value !== appliedKeyword.value)
 const rows = ref([])
 const columnDefs = [
   { key: 'name', label: 'Name' }, { key: 'model', label: 'Model' },
@@ -153,21 +154,26 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('invoice-accessory-prices', columnDefs)
 const candidateLoading = ref(false)
-const candidates = ref([])
+const candidates = ref([]), candidateError = ref(null)
+const candidateErrorMessage = computed(() => candidateError.value ? errorMessage(candidateError.value) : '')
+const candidateQuery = ref('')
 const dialog = reactive({ visible: false, candidate: null, form: emptyAccessoryPriceForm() })
 const runCandidateSearch = createLatestAccessorySearch({
   request: searchAccessoryCandidates,
   applyItems: items => { candidates.value = items },
   applyLoading: value => { candidateLoading.value = value },
+  applyError: error => { candidateError.value = error },
 })
 const runPriceList = createLatestAccessorySearch({
   request: listAccessoryPrices,
-  applyItems: items => { rows.value = items },
+  applyItems: items => { rows.value = items; hasLoaded.value = true },
   applyLoading: value => { loading.value = value },
+  applyError: error => { listError.value = error },
   clearOnError: false,
 })
 
 onMounted(loadRows)
+onUnmounted(() => { runPriceList.invalidate(); runCandidateSearch.invalidate() })
 
 function candidateLabel(row) {
   return `${row.accessory_name} / ${row.accessory_model} / ${row.accessory_color} · SKU ${row.sku_id}`
@@ -180,19 +186,23 @@ function formatDateTime(value) {
 
 async function loadRows() {
   try {
-    await runPriceList(keyword.value.trim() ? { keyword: keyword.value.trim() } : {})
+    await runPriceList(appliedKeyword.value.trim() ? { keyword: appliedKeyword.value.trim() } : {})
+    return true
   } catch {
-    // 保留已显示数据；请求拦截器已给出失败反馈。
+    // The current read error is rendered inline; successful rows are retained.
+    return false
   }
 }
 
-function resetFilter() { keyword.value = ''; loadRows() }
+function searchRows() { appliedKeyword.value = keyword.value; return loadRows() }
+function resetFilter() { keyword.value = ''; return searchRows() }
 
 async function searchCandidates(query) {
+  candidateQuery.value = query || ''
   try {
     await runCandidateSearch(query?.trim() ? { keyword: query.trim() } : {})
   } catch {
-    // latest-request 控制器负责最新失败清空；拦截器负责可行动提示。
+    // The candidate query has its own latest error and retry control.
   }
 }
 
@@ -221,15 +231,15 @@ function setCurrency(value) {
 async function saveRow() {
   const form = dialog.form
   if (!dialog.candidate || !form.product_id || !form.sku_id) {
-    ElMessage.warning('请搜索并选择真实的 OKKI 产品/SKU')
+    msgWarning('请搜索并选择真实的 OKKI 产品/SKU')
     return
   }
-  if (form.price == null || Number(form.price) <= 0) {
-    ElMessage.warning('请输入有效的标准价')
+  if (!isAmount(form.price, { format: 'number' })) {
+    msgWarning('请输入有效的标准价')
     return
   }
   if (!/^[A-Z]{3}$/.test(form.currency)) {
-    ElMessage.warning('请输入 3 位大写币种代码，如 USD')
+    msgWarning('请输入 3 位大写币种代码，如 USD')
     return
   }
   saving.value = true
@@ -244,7 +254,7 @@ async function saveRow() {
       },
     })
   } catch (error) {
-    if (shouldShowAccessoryLocalError(error)) ElMessage.error(`保存失败：${error?.message || error}`)
+    if (shouldShowAccessoryLocalError(error)) msgError(`保存失败：${error?.message || error}`, error)
   } finally {
     saving.value = false
   }
@@ -262,7 +272,7 @@ async function removeRow(row) {
       },
     })
   } catch (error) {
-    if (shouldShowAccessoryLocalError(error)) ElMessage.error(`删除失败：${error?.message || error}`)
+    if (shouldShowAccessoryLocalError(error)) msgError(`删除失败：${error?.message || error}`, error)
   }
 }
 </script>

@@ -1,3 +1,4 @@
+import { msgSuccessText } from '@/utils/feedback'
 /**
  * 员工薪资档案页编排（宪法 12：state + 方法全在这里，.vue 留薄壳）。
  *
@@ -5,8 +6,8 @@
  * - dept_group / base_salary_effective 都由后端推导后下发
  * - 身份证/银行卡只有脱敏串，编辑时留空 = 不改，填了才覆盖
  */
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+
 import {
   createProfile,
   listDeptMappings,
@@ -30,14 +31,14 @@ const EMPTY_FORM = {
 }
 
 export function useSalaryProfiles() {
-  const { sortField, sortOrder, onSortChange, sortParams } = useTableSort('emp_no', 'asc')
+  const { sortField, sortOrder, onSortChange } = useTableSort('emp_no', 'asc')
 
   const page = useListPage(
-    async params => {
-      const res = await listProfiles({ ...params, ...sortParams.value })
+    async (params, { signal, isCurrent }) => {
+      const res = await listProfiles(params, { signal, suppressToast: true })
       return res.data
     },
-    { pageSize: 20, searchForm: { keyword: '', dept_detail: '', status: '' } },
+    { pageSize: 20, sortParams: { sort_field: 'emp_no', sort_order: 'asc' }, searchForm: { keyword: '', dept_detail: '', status: '' } },
   )
 
   // 职级下拉按赛道分组：选了赛道才给对应职级，避免把 P1 填进跟单岗
@@ -140,13 +141,13 @@ export function useSalaryProfiles() {
     try {
       if (isEdit.value) {
         await updateProfile(editId.value, buildPayload())
-        ElMessage.success('已保存')
+        msgSuccessText('已保存')
       } else {
         await createProfile(buildPayload())
-        ElMessage.success('已创建')
+        msgSuccessText('已创建')
       }
       dialogVisible.value = false
-      page.fetchList()
+      await (isEdit.value ? page.refreshUpdate() : page.refreshCreate())
     } catch {
       // 409 唯一性冲突的中文提示由后端给，拦截器已弹
     } finally {
@@ -156,8 +157,10 @@ export function useSalaryProfiles() {
 
   function handleSortChange(evt) {
     onSortChange(evt)
-    page.fetchList()
+    return page.handleSortChange({ sort_field: sortField.value, sort_order: sortOrder.value })
   }
+
+  watch(() => [page.appliedSort.value.sort_field, page.appliedSort.value.sort_order], ([field, order]) => { sortField.value = field; sortOrder.value = order }, { flush: 'sync' })
 
   onMounted(loadOptions)
 

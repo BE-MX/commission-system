@@ -9,28 +9,28 @@
 
     <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec） -->
     <div ref="panelRef" class="table-card">
-    <div class="toolbar">
-      <el-input v-model="keyword" placeholder="搜索客户名/ID" clearable class="filter-w-md" @keyup.enter="searchList" @clear="searchList">
+    <FilterBar :loading="loading" :pending="listState.hasPendingSearch.value" @search="searchList" @reset="resetFilters">
+      <el-input v-model="keyword" placeholder="搜索客户名/ID" clearable class="filter-w-md">
         <template #prefix><el-icon><Search /></el-icon></template>
       </el-input>
-      <el-input v-model="salespersonKeyword" placeholder="业务员姓名/ID" clearable class="filter-w-md" @keyup.enter="searchList" @clear="searchList">
+      <el-input v-model="salespersonKeyword" placeholder="业务员姓名/ID" clearable class="filter-w-md">
         <template #prefix><el-icon><User /></el-icon></template>
       </el-input>
-      <el-select v-model="isComplete" class="filter-w-sm" @change="searchList">
+      <el-select v-model="isComplete" class="filter-w-sm">
         <el-option label="全部" value="all" />
         <el-option label="已完整" value="true" />
         <el-option label="待补充" value="false" />
       </el-select>
-      <GlassButton variant="primary" left-icon="Search" @click="searchList">查询</GlassButton>
-      <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-    </div>
+
+
+    </FilterBar>
 
     <div class="action-bar">
       <GlassButton v-permission="'customer:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">手工新增</GlassButton>
       <GlassButton v-permission="'customer:write'" variant="secondary" :loading="autoMatching" @click="handleAutoMatch" left-icon="MagicStick">自动匹配</GlassButton>
       <GlassButton v-permission="'customer:write'" left-icon="Upload" @click="importDialogVisible = true">Excel导入</GlassButton>
       <GlassButton left-icon="Download" @click="downloadTpl">下载模板</GlassButton>
-      <TableTools
+      <TableTools :loading="loading"
         v-model:visible-keys="visibleKeys"
         v-model:density="density"
         :columns="columnDefs"
@@ -40,7 +40,8 @@
       />
     </div>
 
-    <el-table
+    <ListPageStatus v-if="listState.hasData.value && listState.errorMessage.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="fetchList" />
+<el-table
       :data="tableData"
       v-loading="loading"
       border
@@ -49,13 +50,13 @@
       style="width: 100%"
       :row-class-name="rowClassName"
       :max-height="isFullscreen ? undefined : 640"
-      @sort-change="handleSortChange"
+      @sort-change="changeSort"
     >
-      <template #empty>
+      <template #empty><ListPageStatus :error="listState.errorMessage.value" :loading="loading" :has-data="false" @retry="fetchList">
         <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
           <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
         </el-empty>
-      </template>
+      </ListPageStatus></template>
       <el-table-column v-if="visibleKeys.includes('customer-id')" prop="customer_id" label="客户ID" min-width="160" max-width="240" show-overflow-tooltip />
       <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
       <el-table-column v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="100" max-width="150" show-overflow-tooltip sortable="custom" />
@@ -84,8 +85,8 @@
       <el-table-column v-if="visibleKeys.includes('first-receipt-date')" prop="first_receipt_date" label="首次成交日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
       <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90" max-width="140">
         <template #default="{ row }">
-          <el-tag v-if="row.is_complete" type="success" size="small" effect="plain">已完整</el-tag>
-          <el-tag v-else type="warning" size="small" effect="plain">待补充</el-tag>
+          <StatusBadge v-if="row.is_complete" type="success" size="small" effect="plain">已完整</StatusBadge>
+          <StatusBadge v-else type="warning" size="small" effect="plain">待补充</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="70" max-width="110">
@@ -106,14 +107,14 @@
       :total="total"
       layout="total, sizes, prev, pager, next"
       :page-sizes="[20, 50, 100]"
-      @current-change="fetchList"
+      @current-change="listState.handlePageChange"
       @size-change="handleSizeChange"
     />
     </div>
 
     <!-- 手工新增 Dialog -->
-    <el-dialog v-model="createDialogVisible" title="手工新增客户归属" width="500px">
-      <el-form :model="createForm" label-width="100px">
+    <el-dialog v-model="createDialogVisible" title="手工新增客户归属" width="640px">
+      <el-form label-position="top" :model="createForm">
         <el-form-item label="客户ID" required>
           <el-input v-model="createForm.customer_id" />
         </el-form-item>
@@ -149,8 +150,8 @@
     </el-dialog>
 
     <!-- 补充信息 Dialog -->
-    <el-dialog v-model="completeDialogVisible" title="补充归属信息" width="500px">
-      <el-form :model="completeForm" label-width="110px">
+    <el-dialog v-model="completeDialogVisible" title="补充归属信息" width="640px">
+      <el-form label-position="top" :model="completeForm">
         <el-form-item label="业务员">
           <span>{{ currentRow?.salesperson_name || currentRow?.salesperson_id }}</span>
         </el-form-item>
@@ -192,8 +193,8 @@
     </el-dialog>
 
     <!-- 重置归属 Dialog -->
-    <el-dialog v-model="resetDialogVisible" title="重置客户归属" width="500px">
-      <el-form :model="resetForm" label-width="100px">
+    <el-dialog v-model="resetDialogVisible" title="重置客户归属" width="640px">
+      <el-form label-position="top" :model="resetForm">
         <el-form-item label="客户">
           <span>{{ currentRow?.customer_name || currentRow?.customer_id }}</span>
         </el-form-item>
@@ -241,11 +242,11 @@
         <div class="el-upload__text">拖拽或 <em>点击上传</em></div>
       </el-upload>
       <div v-if="importResult" style="margin-top:16px">
-        <el-descriptions :column="3" border size="small">
+        <ResponsiveDescriptions :column="3" border size="small">
           <el-descriptions-item label="总行数">{{ importResult.total_rows }}</el-descriptions-item>
           <el-descriptions-item label="成功">{{ importResult.success }}</el-descriptions-item>
           <el-descriptions-item label="失败">{{ importResult.failed }}</el-descriptions-item>
-        </el-descriptions>
+        </ResponsiveDescriptions>
         <div v-if="importResult.failures?.length" style="margin-top:8px">
           <el-text type="danger" v-for="f in importResult.failures" :key="f" tag="div" size="small">{{ f }}</el-text>
         </div>
@@ -259,8 +260,11 @@
 </template>
 
 <script setup>
+import { useListPage } from '@/composables/useListPage'
+import { toRef } from 'vue'
+import { msgWarning, msgSuccessText } from '@/utils/feedback'
 import { computed, ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { getSnapshotList, createSnapshot, completeSnapshot, resetSnapshot, importSnapshots, downloadTemplate, autoMatchSnapshots } from '@/api/customer'
 import { downloadUrl } from '@/utils/download'
 import { useTableSort } from '@/composables/useTableSort'
@@ -280,31 +284,26 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('customer-snapshot', columnDefs)
 
-const keyword = ref('')
-const salespersonKeyword = ref('')
-const isComplete = ref('all')
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const tableData = ref([])
-const loading = ref(false)
+const listState = useListPage(async (params, context) => {
+  return (await getSnapshotList(params, { signal: context.signal, suppressToast: true })).data
+}, { immediate: false, searchForm: { keyword: '', salesperson_keyword: '', is_complete: 'all' } })
+const { page: page, pageSize: pageSize, total: total, list: tableData, loading: loading } = listState
+const fetchList = () => listState.refreshUpdate()
+const searchList = () => listState.handleSearch()
+const resetFilters = () => listState.handleReset()
+const handleSizeChange = size => listState.handleSizeChange(size)
+function changeSort(event) { orderSort.onSortChange(event); return listState.handleSortChange(orderSort.sortParams.value) }
+
+
+
+const keyword = toRef(listState.searchForm, 'keyword')
+const salespersonKeyword = toRef(listState.searchForm, 'salesperson_keyword')
+const isComplete = toRef(listState.searchForm, 'is_complete')
 const saving = ref(false)
 const currentRow = ref(null)
-const hasActiveFilters = computed(() => Boolean(keyword.value || salespersonKeyword.value || isComplete.value !== 'all'))
+const hasActiveFilters = computed(() => Boolean(listState.appliedSearchForm.value.keyword || listState.appliedSearchForm.value.salesperson_keyword || listState.appliedSearchForm.value.is_complete !== 'all'))
 
-function searchList() { page.value = 1; fetchList() }
-function resetFilters() {
-  keyword.value = ''
-  salespersonKeyword.value = ''
-  isComplete.value = 'all'
-  searchList()
-}
-function handleSizeChange() { page.value = 1; fetchList() }
-function handleSortChange(event) { orderSort.onSortChange(event); searchList() }
-
-function attrLabel(v) {
-  return { develop: '开发', distribute: '分配' }[v] || '-'
-}
+function attrLabel(v) { return { develop: '开发', distribute: '分配' }[v] || '-' }
 function rateStr(v) {
   return v != null ? (v * 100).toFixed(1) + '%' : '-'
 }
@@ -313,23 +312,6 @@ function sourceLabel(v) {
 }
 function rowClassName({ row }) {
   return row.is_complete ? '' : 'incomplete-row'
-}
-
-async function fetchList() {
-  loading.value = true
-  try {
-    const res = await getSnapshotList({
-      keyword: keyword.value,
-      salesperson_keyword: salespersonKeyword.value,
-      is_complete: isComplete.value,
-      page: page.value, page_size: pageSize.value,
-      ...orderSort.sortParams.value
-    })
-    tableData.value = res.data.items
-    total.value = res.data.total
-  } finally {
-    loading.value = false
-  }
 }
 
 // 手工新增
@@ -344,7 +326,7 @@ function openCreateDialog() {
 async function submitCreate() {
   const f = createForm.value
   if (!f.customer_id || !f.salesperson_id || !f.salesperson_attribute) {
-    ElMessage.warning('请填写必填项')
+    msgWarning('请填写必填项')
     return
   }
   saving.value = true
@@ -354,9 +336,9 @@ async function submitCreate() {
     if (!payload.second_supervisor_id) { payload.second_supervisor_id = null }
     if (!payload.remark) { payload.remark = null }
     await createSnapshot(payload)
-    ElMessage.success('新增成功')
+    msgSuccessText('新增成功')
     createDialogVisible.value = false
-    fetchList()
+    listState.refreshCreate()
   } finally {
     saving.value = false
   }
@@ -380,7 +362,7 @@ function openCompleteDialog(row) {
 
 async function submitComplete() {
   if (!completeForm.value.salesperson_attribute) {
-    ElMessage.warning('请选择业务员属性')
+    msgWarning('请选择业务员属性')
     return
   }
   saving.value = true
@@ -393,7 +375,7 @@ async function submitComplete() {
       supervisor_rate: f.supervisor_rate / 100,
       second_supervisor_rate: f.second_supervisor_rate / 100,
     })
-    ElMessage.success('补全成功')
+    msgSuccessText('补全成功')
     completeDialogVisible.value = false
     fetchList()
   } finally {
@@ -422,7 +404,7 @@ function openResetDialog(row) {
 async function submitReset() {
   const f = resetForm.value
   if (!f.salesperson_id || !f.salesperson_attribute || !f.reset_reason) {
-    ElMessage.warning('请填写必填项')
+    msgWarning('请填写必填项')
     return
   }
   saving.value = true
@@ -432,7 +414,7 @@ async function submitReset() {
     if (!payload.second_supervisor_id) { payload.second_supervisor_id = null }
     if (!payload.remark) { payload.remark = null }
     await resetSnapshot(currentRow.value.id, payload)
-    ElMessage.success('重置成功')
+    msgSuccessText('重置成功')
     resetDialogVisible.value = false
     fetchList()
   } finally {
@@ -455,7 +437,7 @@ async function submitImport() {
   try {
     const res = await importSnapshots(importFile.value)
     importResult.value = res.data
-    ElMessage.success(`导入完成：成功 ${res.data.success} 条`)
+    msgSuccessText(`导入完成：成功 ${res.data.success} 条`)
     fetchList()
   } finally {
     importing.value = false
@@ -469,7 +451,7 @@ async function handleAutoMatch() {
   autoMatching.value = true
   try {
     const res = await autoMatchSnapshots()
-    ElMessage.success(`本次成功匹配${res.data.matched}条，当前还剩${res.data.remaining}条未匹配成功。`)
+    msgSuccessText(`本次成功匹配${res.data.matched}条，当前还剩${res.data.remaining}条未匹配成功。`)
     fetchList()
   } finally {
     autoMatching.value = false

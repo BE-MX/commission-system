@@ -1,3 +1,4 @@
+import { msgWarning, alertAction, msgSuccess } from '@/utils/feedback'
 /**
  * 工资明细（M3-f）——计算结果表格的数据拉取、整批计算、行内人工改数的编排。
  *
@@ -11,46 +12,48 @@
  *    传上去就是「撤掉人工值、回落引擎值」；真要发 0 元奖金得在框里敲 0。
  *    这条语义在表格组件的 placeholder 里也写给了用户，两头不一致就会误清。
  */
-import { computed, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, ref, unref, watch } from 'vue'
+
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { calculatePeriod, editRecordManual, listRecords, money } from '@/api/salary'
 import { useAuthStore } from '@/stores/auth'
-import { msgSuccess } from '@/utils/feedback'
-
 // 可算薪的三个状态：imported 首算；calculated / reviewing 是改完考勤、导入后重算
 const CALCULABLE = ['imported', 'calculated', 'reviewing']
 // 手动列只在算完之后有意义：没算过的行连引擎值都没有，人工覆盖无处附着
 const EDITABLE = ['calculated', 'reviewing']
 
-export function useSalaryRecords({ periodId, period, activeTab, refreshAll }) {
+export function useSalaryRecords({ periodId, period, activeTab, refreshAll, writable }) {
   const auth = useAuthStore()
 
-  const records = ref({ items: [], total: 0, totals: null, truncated: false })
-  const recordsKeyword = ref('')
-  const recordsLoading = ref(false)
+  const recordsKeyword = ref(''), appliedKeyword = ref(''), silentRead = ref(false)
+  const recordsResource = useAsyncResource(async ({ id, keyword }, { signal }) =>
+    (await listRecords(id, { keyword: keyword || undefined }, { signal, suppressToast: true })).data,
+    { initialData: { items: [], total: 0, totals: null, truncated: false } })
+  const records = recordsResource.data
+  const recordsLoading = computed(() => recordsResource.loading.value && !silentRead.value)
+  const recordsPending = computed(() => recordsKeyword.value !== appliedKeyword.value)
   const calculating = ref(false)
 
   const canCalculate = computed(() =>
-    !!period.value?.writable && CALCULABLE.includes(period.value?.status))
+    !!(writable ? writable.value : period.value?.writable) && CALCULABLE.includes(period.value?.status))
 
   // v-permission 只能整块摘掉元素，管不到「只读但可见」，所以权限在这里并进
   // editable：没 salary:write 的人看到的是只读表，而不是被挖掉五列的表
   const recordsEditable = computed(() =>
-    !!period.value?.writable && EDITABLE.includes(period.value?.status)
+    !!(writable ? writable.value : period.value?.writable) && EDITABLE.includes(period.value?.status)
     && auth.hasPermission('salary:write'))
 
   // silent：行内保存成功后只要刷合计行，不想让整表转圈（HR 会逐行连改）
-  async function fetchRecords({ silent = false } = {}) {
-    if (!silent) recordsLoading.value = true
-    try {
-      const res = await listRecords(periodId, {
-        keyword: recordsKeyword.value || undefined,
-      })
-      records.value = res.data || { items: [], total: 0, totals: null, truncated: false }
-    } finally {
-      if (!silent) recordsLoading.value = false
-    }
+  function fetchRecords({ silent = false } = {}) {
+    silentRead.value = silent
+    return recordsResource.load({ id: unref(periodId), keyword: appliedKeyword.value })
   }
+  function searchRecords() { appliedKeyword.value = recordsKeyword.value; return fetchRecords() }
+  function resetRecords() { recordsKeyword.value = ''; return searchRecords() }
+  watch(() => unref(periodId), () => {
+    recordsResource.clear()
+    if (activeTab.value === 'records') fetchRecords()
+  })
 
   // 明细不在 refreshAll 里（没算过的批次拉它也是空的），切到 tab 才拉；
   // 每次切过来都重拉——中间可能有人在别的页改了考勤又重算过
@@ -61,7 +64,7 @@ export function useSalaryRecords({ periodId, period, activeTab, refreshAll }) {
   async function doCalculate() {
     calculating.value = true
     try {
-      const res = await calculatePeriod(periodId, {
+      const res = await calculatePeriod(unref(periodId), {
         expected_version: period.value?.status_version ?? 0,
       })
       await refreshAll()   // 状态、异常清单、时间线全变了
@@ -70,7 +73,7 @@ export function useSalaryRecords({ periodId, period, activeTab, refreshAll }) {
     } catch (err) {
       if (err?.response?.status === 409) {
         await refreshAll()
-        ElMessage.warning('这个批次刚被其他人改过，页面已刷新，请确认后重试')
+        msgWarning('这个批次刚被其他人改过，页面已刷新，请确认后重试')
       }
       // 400（还有 blocking 异常 / 状态不对）的 detail 拦截器已原样弹出，不追加
     } finally {
@@ -116,7 +119,7 @@ export function useSalaryRecords({ periodId, period, activeTab, refreshAll }) {
         + '属规则内调整，明细表可逐行查看。',
       )
     }
-    ElMessageBox.alert(lines.join('\n'), '计算完成', {
+    alertAction(lines.join('\n'), '计算完成', {
       type: s.negative_net?.length ? 'warning' : 'success',
       confirmButtonText: '知道了',
     })
@@ -128,11 +131,13 @@ export function useSalaryRecords({ periodId, period, activeTab, refreshAll }) {
    * 只刷新明细（行级冲突，别动批次）。返回成功与否，供表格决定关不关输入框。
    */
   async function saveManual(row, field, value) {
+    const savedPeriodId = unref(periodId)
     try {
-      const res = await editRecordManual(periodId, row.employee_id, {
+      const res = await editRecordManual(unref(periodId), row.employee_id, {
         [field]: value,
         expected_row_version: row.row_version,
       })
+      if (savedPeriodId !== unref(periodId)) { msgSuccess('保存'); return true }
       const idx = records.value.items.findIndex(i => i.id === res.data.id)
       if (idx !== -1) records.value.items.splice(idx, 1, res.data)
       msgSuccess('保存')
@@ -140,7 +145,7 @@ export function useSalaryRecords({ periodId, period, activeTab, refreshAll }) {
       return true
     } catch (err) {
       if (err?.response?.status === 409) {
-        ElMessage.warning('该行已被他人修改，已刷新为最新数据')
+        msgWarning('该行已被他人修改，已刷新为最新数据')
         await fetchRecords({ silent: true })
       }
       return false
@@ -148,7 +153,7 @@ export function useSalaryRecords({ periodId, period, activeTab, refreshAll }) {
   }
 
   return {
-    records, recordsKeyword, recordsLoading, fetchRecords,
+    records, recordsKeyword, recordsLoading, recordsResource, recordsPending, fetchRecords, searchRecords, resetRecords,
     canCalculate, calculating, doCalculate,
     recordsEditable, saveManual,
   }

@@ -1,4 +1,5 @@
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { useAuthStore } from '@/stores/auth'
 import {
   createSession,
@@ -14,7 +15,6 @@ import { requestId, modeCanSubmit } from '../state'
 import { useChatModes } from './useChatModes'
 import { useChatDrafts } from './useChatDrafts'
 import { msgError } from '@/utils/feedback'
-
 function dataOf(response) {
   return response?.data ?? response
 }
@@ -39,7 +39,11 @@ function attachFiles(messages, attachments) {
 export function useAiChat() {
   const auth = useAuthStore()
   const config = ref({ configured: true, message: '' })
-  const sessions = ref([])
+  const sessionsResource = useAsyncResource(async (_, { signal }) => {
+    const response = dataOf(await listSessions({ limit: 30 }, { signal, suppressToast: true })) || {}
+    return response.items || []
+  }, { initialData: [] })
+  const sessions = sessionsResource.data
   const currentSessionId = ref(null)
   const messages = ref([])
   const draftAttachments = ref([])
@@ -53,7 +57,7 @@ export function useAiChat() {
   const error = ref(null)
   const modes = useChatModes({ messages, streaming: busy, currentSessionId })
   const drafts = useChatDrafts({ prompt, attachments: draftAttachments, modes, sessionId: currentSessionId })
-  const activeKey = `ai-chat-session:${auth.user?.id}`
+  const activeKey = computed(() => `ai-chat-session:${auth.user?.id}`)
 
   let workspaceGeneration = 0
   let streamGeneration = 0
@@ -87,10 +91,14 @@ export function useAiChat() {
     streamAssistantId = null
   }
 
-  async function loadSessions() {
-    const response = dataOf(await listSessions({ limit: 30 })) || {}
-    sessions.value = response.items || []
-  }
+  function loadSessions() { return sessionsResource.load() }
+  watch(() => JSON.stringify([auth.user?.id, auth.roles, auth.permissions]), () => {
+    sessionsResource.clear(); abortActive(); workspaceGeneration++
+    currentSessionId.value = null; messages.value = []; draftAttachments.value = []; prompt.value = ''; drawerOpen.value = false
+    error.value = null; sessionLoading.value = false
+    drafts.clear(); modes.restore()
+    void loadSessions()
+  })
 
   async function loadDetail(
     sessionId,
@@ -131,7 +139,7 @@ export function useAiChat() {
       if (expectedWorkspace !== workspaceGeneration) throw new Error('会话已切换，请重试')
       currentSessionId.value = session.id
       drafts.materialize(session.id)
-      sessionStorage.setItem(activeKey, String(session.id))
+      sessionStorage.setItem(activeKey.value, String(session.id))
       sessions.value = [session, ...sessions.value.filter(item => item.id !== session.id)]
       return session.id
     }).finally(() => { sessionPromise = null })
@@ -351,7 +359,7 @@ export function useAiChat() {
     try {
       await runStream()
     } catch (sendError) {
-      msgError(errorMessage(sendError))
+      msgError(errorMessage(sendError), sendError)
     }
   }
 
@@ -392,7 +400,7 @@ export function useAiChat() {
     error.value = null
     drawerOpen.value = false
     modes.restore()
-    sessionStorage.removeItem(activeKey)
+    sessionStorage.removeItem(activeKey.value)
     drafts.restore()
   }
 
@@ -411,7 +419,7 @@ export function useAiChat() {
     error.value = null
     drawerOpen.value = false
     modes.restore()
-    sessionStorage.setItem(activeKey, String(sessionId))
+    sessionStorage.setItem(activeKey.value, String(sessionId))
     const expectedWorkspace = workspaceGeneration
     await loadDetail(sessionId)
     if (expectedWorkspace !== workspaceGeneration || currentSessionId.value !== sessionId) return
@@ -426,10 +434,12 @@ export function useAiChat() {
 
   async function initialize() {
     initializing.value = true
+    const actor = auth.user?.id
     try {
       const [configResponse] = await Promise.all([getConfig(), loadSessions()])
+      if (actor !== auth.user?.id) return
       config.value = dataOf(configResponse) || config.value
-      const savedId = Number(sessionStorage.getItem(activeKey))
+      const savedId = Number(sessionStorage.getItem(activeKey.value))
       if (savedId && sessions.value.some(session => session.id === savedId)) await selectSession(savedId)
     } catch (initError) {
       error.value = { message: errorMessage(initError) }
@@ -446,6 +456,7 @@ export function useAiChat() {
 
   return {
     config,
+    sessionsResource, loadSessions,
     sessions,
     currentSessionId,
     currentSession,

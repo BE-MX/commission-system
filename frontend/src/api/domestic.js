@@ -37,8 +37,8 @@ export function getProcessRoutes() {
   return domesticClient.get('/process-routes')
 }
 
-export function getDomesticRouteRules(routeId) {
-  return domesticClient.get(`/process-routes/${routeId}/rules`)
+export function getDomesticRouteRules(routeId, config = {}) {
+  return domesticClient.get(`/process-routes/${routeId}/rules`, { ...config, showLoading: false })
 }
 
 export function saveDomesticRouteRules(routeId, rules) {
@@ -60,8 +60,8 @@ export function newRequestId() {
 }
 
 // ── 客户 ──
-export function listCustomers(params) {
-  return domesticClient.get('/customers', { params })
+export function listCustomers(params, config = {}) {
+  return domesticClient.get('/customers', { ...config, params })
 }
 
 // 客户表单下拉值域（来源/门店类型/等级/客户状态字典 + 归属销售用户）
@@ -110,8 +110,8 @@ export function adjustCustomer(id, data) {
 }
 
 // ── 充值/调整申请审核 ──
-export function listCustomerRequests(params) {
-  return domesticClient.get('/customer-requests', { params })
+export function listCustomerRequests(params, config = {}) {
+  return domesticClient.get('/customer-requests', { ...config, params })
 }
 
 export function approveCustomerRequest(id, remark) {
@@ -128,13 +128,13 @@ export async function fetchVoucherBlob(requestId) {
   return { url: URL.createObjectURL(res.data), isImage: (res.data.type || '').startsWith('image/') }
 }
 
-export function listCustomerBalanceLedger(id, params) {
-  return domesticClient.get(`/customers/${id}/balance-ledger`, { params })
+export function listCustomerBalanceLedger(id, params, config = {}) {
+  return domesticClient.get(`/customers/${id}/balance-ledger`, { ...config, params, showLoading: false })
 }
 
 // ── 产品与工艺映射 ──
-export function listProducts(params) {
-  return domesticClient.get('/products', { params })
+export function listProducts(params, config = {}) {
+  return domesticClient.get('/products', { ...config, params })
 }
 
 export function updateProductBasePrice(productId, originalPrice) {
@@ -174,8 +174,8 @@ export function createOrder(data, config) {
   return domesticClient.post('/orders', data, config)
 }
 
-export function listOrders(params) {
-  return domesticClient.get('/orders', { params })
+export function listOrders(params, config = {}) {
+  return domesticClient.get('/orders', { ...config, params, showLoading: false })
 }
 
 export function getOrder(id) {

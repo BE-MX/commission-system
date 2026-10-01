@@ -15,6 +15,7 @@
     </div>
 
     <div ref="panelRef" class="table-card dict-panel">
+      <ListPageStatus :error="typesResource.errorMessage.value" :loading="typesResource.loading.value" :has-data="typesResource.hasData.value" @retry="fetchTypes" />
       <div class="toolbar">
         <el-select v-model="currentType" placeholder="选择字典类型" class="filter-w-lg" @change="onTypeChange">
           <el-option
@@ -35,21 +36,22 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
-          @refresh="fetchItems"
+          :loading="loading" @refresh="fetchItems"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus v-if="itemsResource.hasData.value" :error="itemsResource.errorMessage.value" :loading="itemsResource.loading.value" :has-data="itemsResource.hasData.value" @retry="reloadRows" />
       <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty>
+        <template #empty><ListPageStatus :error="itemsResource.errorMessage.value" :loading="loading" @retry="reloadRows">
           <el-empty :image-size="96" description="暂无数据" />
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('code')" prop="code" label="字典编码" min-width="140" max-width="210" show-overflow-tooltip sortable />
         <el-table-column v-if="visibleKeys.includes('label')" prop="label" label="显示名" min-width="140" max-width="210" show-overflow-tooltip sortable />
         <el-table-column v-if="visibleKeys.includes('sort')" prop="sort" label="排序" min-width="80" max-width="120" sortable />
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" max-width="120">
           <template #default="{ row }">
-            <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</el-tag>
+            <StatusBadge :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" max-width="210" show-overflow-tooltip />
@@ -67,7 +69,7 @@
 
     <!-- 新增/编辑 Dialog -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑字典项' : '新增字典项'" width="480px">
-      <el-form ref="formRef" :model="form" :rules="formRules" label-width="80px">
+      <el-form label-position="top" ref="formRef" :model="form" :rules="formRules">
         <el-form-item label="字典类型" prop="type" v-if="!isEdit">
           <el-select v-model="form.type" placeholder="选择字典类型" style="width: 100%">
             <el-option v-for="t in typeOptions" :key="t.type" :label="t.type" :value="t.type" />
@@ -95,8 +97,10 @@
 </template>
 
 <script setup>
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { msgSuccessText, confirmAction } from '@/utils/feedback'
 import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { getDictTypes, getDictItems, createDictItem, updateDictItem, deleteDictItem } from '@/api/system'
 import { useTableView } from '@/composables/useTableView'
 import TableTools from '@/components/TableTools.vue'
@@ -111,10 +115,17 @@ const columnDefs = [
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('dict-management', columnDefs)
 
-const typeOptions = ref([])
+const typesResource = useAsyncResource(async (_, { signal }) => (await getDictTypes({ signal, suppressToast: true })).data || [], { initialData: [] })
+const typeOptions = typesResource.data
 const currentType = ref('')
-const tableData = ref([])
-const loading = ref(false)
+const itemsResource = useAsyncResource(async ({ type }, { signal }) => {
+  if (!type) return []
+  return (await getDictItems(type, false, { signal, suppressToast: true })).data || []
+}, { initialData: [] })
+const tableData = itemsResource.data
+const loading = itemsResource.loading
+let loadedType = ''
+const reloadRows = () => fetchItems()
 const saving = ref(false)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
@@ -129,27 +140,18 @@ const formRules = {
 }
 
 async function fetchTypes() {
-  try {
-    const res = await getDictTypes()
-    typeOptions.value = res.data || []
-    if (typeOptions.value.length && !currentType.value) {
-      currentType.value = typeOptions.value[0].type
-      fetchItems()
-    }
-  } catch {
-    typeOptions.value = []
+  const success = await typesResource.load()
+  if (success && typeOptions.value.length && !currentType.value) {
+    currentType.value = typeOptions.value[0].type
+    await fetchItems()
   }
 }
 
-async function fetchItems() {
-  if (!currentType.value) return
-  loading.value = true
-  try {
-    const res = await getDictItems(currentType.value, false)
-    tableData.value = res.data || []
-  } finally {
-    loading.value = false
-  }
+function fetchItems() {
+  const type = currentType.value
+  const clear = loadedType !== type
+  loadedType = type
+  return itemsResource.load({ type }, { clear })
 }
 
 function onTypeChange() {
@@ -183,10 +185,10 @@ async function submitForm() {
   try {
     if (isEdit.value) {
       await updateDictItem(editId.value, { label: form.value.label, sort: form.value.sort, remark: form.value.remark })
-      ElMessage.success('更新成功')
+      msgSuccessText('更新成功')
     } else {
       await createDictItem({ type: form.value.type, code: form.value.code, label: form.value.label, sort: form.value.sort, remark: form.value.remark })
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     }
     dialogVisible.value = false
     fetchItems()
@@ -200,22 +202,22 @@ async function submitForm() {
 async function handleToggleActive(row) {
   const action = row.is_active ? '禁用' : '启用'
   try {
-    await ElMessageBox.confirm(`确认${action}字典项「${row.label}」？`, '确认', { type: 'warning' })
+    await confirmAction(`确认${action}字典项「${row.label}」？`, '确认', { type: 'warning' })
   } catch { return }
   try {
     await updateDictItem(row.id, { is_active: !row.is_active })
-    ElMessage.success(`已${action}`)
+    msgSuccessText(`已${action}`)
     fetchItems()
   } catch { /* handled by interceptor */ }
 }
 
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm(`确认删除字典项「${row.label}」？此操作不可恢复。`, '删除确认', { type: 'warning' })
+    await confirmAction(`确认删除字典项「${row.label}」？此操作不可恢复。`, '删除确认', { type: 'warning' })
   } catch { return }
   try {
     await deleteDictItem(row.id)
-    ElMessage.success('删除成功')
+    msgSuccessText('删除成功')
     fetchItems()
   } catch { /* handled by interceptor */ }
 }

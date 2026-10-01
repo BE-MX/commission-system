@@ -103,12 +103,12 @@ export function generateResults(sessionId, { wigIds = null, batch = 0, hairColor
 
 // 发色/场景列表被 kiosk 与 PC 管理页（HairColorLibrary/SceneImages）共用：
 // 仅 kiosk 调用传 { kiosk: true } 抑制 toast，PC 侧保留拦截器统一报错
-export function getHairColors(params, { kiosk = false } = {}) {
-  return expoClient.get('/hair-colors', { params, ...(kiosk ? KIOSK : { showLoading: false }) })
+export function getHairColors(params, { kiosk = false, ...config } = {}) {
+  return expoClient.get('/hair-colors', { ...(kiosk ? KIOSK : { showLoading: false }), ...config, params })
 }
 
-export function getScenes(params, { kiosk = false } = {}) {
-  return expoClient.get('/scenes', { params, ...(kiosk ? KIOSK : { showLoading: false }) })
+export function getScenes(params, { kiosk = false, ...config } = {}) {
+  return expoClient.get('/scenes', { ...(kiosk ? KIOSK : { showLoading: false }), ...config, params })
 }
 
 // kiosk「从发型库选择」：启用发型轻量列表（id/name/series/cover_url）
@@ -143,8 +143,8 @@ export function submitFeedback(customerId, data) {
 }
 
 // ── 线索台（PC） ──
-export function getLeads(params) {
-  return expoClient.get('/leads', { params })
+export function getLeads(params, config = {}) {
+  return expoClient.get('/leads', { ...config, params })
 }
 
 export function getLeadDetail(customerId, { silent = false } = {}) {
@@ -157,8 +157,8 @@ export function deleteCustomer(customerId) {
 }
 
 // ── 发型库（PC） ──
-export function getWigs(params) {
-  return expoClient.get('/wigs', { params })
+export function getWigs(params, config = {}) {
+  return expoClient.get('/wigs', { showLoading: false, ...config, params })
 }
 
 export function createWig(data) {
@@ -182,8 +182,8 @@ export function uploadWigPhoto(file) {
 }
 
 // ── 发型×发色组合参考图（PC 管理端） ──
-export function getWigColorImages(wigId) {
-  return expoClient.get(`/wigs/${wigId}/color-images`)
+export function getWigColorImages(wigId, config = {}) {
+  return expoClient.get(`/wigs/${wigId}/color-images`, { showLoading: false, ...config })
 }
 
 export function saveWigColorImages(wigId, colorId, data) {
@@ -235,8 +235,8 @@ export function getStoreOptions() {
 }
 
 // ── 门店管理（PC，expo_store:admin/recharge） ──
-export function getStores(params) {
-  return expoClient.get('/stores', { params })
+export function getStores(params, config = {}) {
+  return expoClient.get('/stores', { ...config, params })
 }
 
 export function createStore(data) {
@@ -251,8 +251,8 @@ export function toggleStore(id) {
   return expoClient.post(`/stores/${id}/toggle`)
 }
 
-export function getStoreUsers(id) {
-  return expoClient.get(`/stores/${id}/users`)
+export function getStoreUsers(id, config = {}) {
+  return expoClient.get(`/stores/${id}/users`, { ...config, showLoading: false })
 }
 
 export function bindStoreUser(id, data) {
@@ -263,21 +263,21 @@ export function unbindStoreUser(id, userId) {
   return expoClient.delete(`/stores/${id}/users/${userId}`)
 }
 
-export function getStoreQuota(id) {
-  return expoClient.get(`/stores/${id}/quota`)
+export function getStoreQuota(id, config = {}) {
+  return expoClient.get(`/stores/${id}/quota`, { ...config, showLoading: false })
 }
 
 export function rechargeQuota(id, data) {
   return expoClient.post(`/stores/${id}/quota/recharge`, data)
 }
 
-export function listQuotaRecords(id, params) {
-  return expoClient.get(`/stores/${id}/quota/records`, { params })
+export function listQuotaRecords(id, params, config = {}) {
+  return expoClient.get(`/stores/${id}/quota/records`, { ...config, params, showLoading: false })
 }
 
 // ── 话术卡库（PC） ──
-export function getScripts(params) {
-  return expoClient.get('/scripts', { params })
+export function getScripts(params, config = {}) {
+  return expoClient.get('/scripts', { showLoading: false, ...config, params })
 }
 
 export function createScript(data) {
@@ -293,14 +293,14 @@ export function seedScripts() {
 }
 
 // 生图与美颜提示词版本：完整配置限 expo:admin，客户流程不读取版本列表。
-export const getPromptVersions = params => expoClient.get('/prompt-versions', { params, showLoading: false })
+export const getPromptVersions = (params, config = {}) => expoClient.get('/prompt-versions', { ...config, params, showLoading: false })
 export const getPromptEditor = () => expoClient.get('/prompt-versions/editor', { showLoading: false })
 export const getPromptVersion = id => expoClient.get(`/prompt-versions/${id}`, { showLoading: false })
 export const createPromptVersion = data => expoClient.post('/prompt-versions', data, { suppressToast: true, showLoading: false })
 export const updatePromptVersion = (id, data) => expoClient.put(`/prompt-versions/${id}`, data, { suppressToast: true, showLoading: false })
 export const setDefaultPromptVersion = (id, revision) => expoClient.post(`/prompt-versions/${id}/default`, { expected_revision: revision }, { showLoading: false })
 export const previewPromptVersion = data => expoClient.post('/prompt-versions/preview', data, { suppressToast: true, showLoading: false })
-export const getBeautifyPromptVersions = params => expoClient.get('/beautify-prompt-versions', { params, showLoading: false })
+export const getBeautifyPromptVersions = (params, config = {}) => expoClient.get('/beautify-prompt-versions', { ...config, params, showLoading: false })
 export const getBeautifyPromptVersion = id => expoClient.get(`/beautify-prompt-versions/${id}`, { showLoading: false })
 export const createBeautifyPromptVersion = data => expoClient.post('/beautify-prompt-versions', data, { suppressToast: true, showLoading: false })
 export const updateBeautifyPromptVersion = (id, data) => expoClient.put(`/beautify-prompt-versions/${id}`, data, { suppressToast: true, showLoading: false })

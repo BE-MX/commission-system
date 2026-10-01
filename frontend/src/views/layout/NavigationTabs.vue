@@ -119,7 +119,7 @@ watch(() => props.activeKey, async key => {
 }
 .page-tab:hover { color: var(--text-primary); background: var(--color-primary-light); }
 .page-tab.is-active {
-  color: var(--color-primary-hover);
+  color: var(--color-primary-text);
   border-color: var(--border-color);
   background: var(--card-bg);
   box-shadow: inset 0 2px 0 var(--color-primary);

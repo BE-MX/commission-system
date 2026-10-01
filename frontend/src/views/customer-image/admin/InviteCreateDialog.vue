@@ -2,7 +2,7 @@
   <div v-permission="'customer_image:write'">
     <GlassButton variant="primary" left-icon="Link" @click="open">创建邀请链接</GlassButton>
 
-    <el-dialog v-model="visible" title="创建客户专属邀请" width="min(620px, 92vw)" destroy-on-close>
+    <el-dialog v-model="visible" title="创建客户专属邀请" width="640px" destroy-on-close>
       <div class="invite-form">
         <label>
           客户
@@ -22,11 +22,13 @@
               :value="customer.id"
             />
           </el-select>
+          <ListPageStatus :paged="false" :error="state.customersResource.errorMessage.value" :has-data="state.customersResource.hasData.value" @retry="state.customersResource.load()" />
           <small>搜索结果仅包含当前账号有权服务的客户。</small>
         </label>
 
         <div class="product-field">
           <span class="field-label">可生成产品</span>
+          <ListPageStatus :paged="false" :error="state.productsResource.errorMessage.value" :loading="state.productsResource.loading.value" :has-data="state.productsResource.hasData.value" @retry="state.loadProducts()" />
           <el-checkbox-group v-if="publishedProducts.length" v-model="draft.product_ids" class="product-choices">
             <el-checkbox v-for="product in publishedProducts" :key="product.id" :value="product.id" class="product-choice">
               <img v-if="productCoverUrls[product.id]" :src="productCoverUrls[product.id]" :alt="product.name">
@@ -35,7 +37,7 @@
               <small>{{ product.category }}</small>
             </el-checkbox>
           </el-checkbox-group>
-          <el-empty v-else :image-size="64" description="暂无已发布产品，请联系模板管理员" />
+          <el-empty v-if="state.productsResource.hasLoaded.value && !state.productsResource.loading.value && !state.productsResource.error.value && !publishedProducts.length" :image-size="64" description="暂无已发布产品，请联系模板管理员" />
         </div>
 
         <div class="form-grid">
@@ -65,7 +67,7 @@
     <el-dialog
       :model-value="Boolean(oneTimeInviteUrl)"
       title="邀请链接已生成"
-      width="min(560px, 92vw)"
+      width="640px"
       :close-on-click-modal="false"
       @closed="clearOneTimeInviteUrl"
       @update:model-value="closeResult"
@@ -84,9 +86,9 @@
   </div>
 </template>
 
-<script setup>
-import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+<script setup>import { msgWarning, msgSuccessText } from '@/utils/feedback'
+import { computed, ref, watch } from 'vue'
+
 import { customerOptionLabel, inviteSubmissionErrorMessage, validateInviteDraft } from './composables/useCustomerImageAdmin'
 import { beijingStartOfToday } from '@/utils/datetime'
 
@@ -94,7 +96,7 @@ const props = defineProps({ state: { type: Object, required: true } })
 const { customers, oneTimeInviteUrl, productCoverUrls, products } = props.state
 const visible = ref(false)
 const submitting = ref(false)
-const customerLoading = ref(false)
+const customerLoading = props.state.customersResource.loading
 const draft = ref(emptyDraft())
 const publishedProducts = computed(() => products.value.filter(product => product.is_published))
 
@@ -107,30 +109,29 @@ function open() {
   visible.value = true
 }
 
-async function searchCustomers(query) {
-  customerLoading.value = true
-  try { await props.state.searchScopedCustomers(query) } finally { customerLoading.value = false }
-}
+function searchCustomers(query) { return props.state.searchScopedCustomers(query) }
+watch(visible, open => { if (!open) props.state.customersResource.clear() })
+watch(() => props.state.scopeVersion.value, () => { visible.value = false; draft.value = emptyDraft() })
 
 const disablePastDate = date => date < beijingStartOfToday()
 
 async function submit() {
   const error = validateInviteDraft(draft.value)
-  if (error) { ElMessage.warning(error); return }
+  if (error) { msgWarning(error); return }
   submitting.value = true
   try {
     await props.state.submitInvite(draft.value)
     visible.value = false
   } catch (error) {
-    ElMessage.warning(inviteSubmissionErrorMessage(error))
+    msgWarning(inviteSubmissionErrorMessage(error))
   } finally { submitting.value = false }
 }
 
 async function copyLink() {
   if (await props.state.copyOneTimeInviteUrl()) {
-    ElMessage.success('链接已复制')
+    msgSuccessText('链接已复制')
   } else {
-    ElMessage.warning('自动复制失败，请手动选择上方链接复制')
+    msgWarning('自动复制失败，请手动选择上方链接复制')
   }
 }
 

@@ -1,5 +1,5 @@
+import { confirmAction, msgWarning, msgSuccessText } from '@/utils/feedback'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 
 import {
   getGmvDailyConfig,
@@ -8,11 +8,9 @@ import {
   sendGmvDailyReport,
 } from '@/api/dingtalk'
 
-
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
 }
-
 
 export function useGmvDailyConfig() {
   const loading = ref(false)
@@ -96,7 +94,7 @@ export function useGmvDailyConfig() {
   }
 
   async function removeTeam(team) {
-    await ElMessageBox.confirm(`确认移除队伍“${team.name}”的日报配置？`, '移除队伍', { type: 'warning' })
+    await confirmAction(`确认移除队伍“${team.name}”的日报配置？`, '移除队伍', { type: 'warning' })
     const index = config.teams.indexOf(team)
     if (index >= 0) config.teams.splice(index, 1)
   }
@@ -138,7 +136,7 @@ export function useGmvDailyConfig() {
   async function save() {
     const error = validate()
     if (error) {
-      ElMessage.warning(error)
+      msgWarning(error)
       return
     }
     saving.value = true
@@ -146,7 +144,7 @@ export function useGmvDailyConfig() {
       const response = await saveGmvDailyConfig(buildPayload())
       replaceReactive(config, response.data)
       lastSavedFingerprint.value = JSON.stringify(buildPayload())
-      ElMessage.success(response.message || '日报配置已保存')
+      msgSuccessText(response.message || '日报配置已保存')
     } finally {
       saving.value = false
     }
@@ -154,7 +152,7 @@ export function useGmvDailyConfig() {
 
   async function showPreview() {
     if (hasUnsavedChanges.value) {
-      ElMessage.warning('当前配置有未保存修改，请先保存后再预览')
+      msgWarning('当前配置有未保存修改，请先保存后再预览')
       return
     }
     const response = await previewGmvDailyReport(reportDate.value)
@@ -165,15 +163,15 @@ export function useGmvDailyConfig() {
 
   async function sendNow() {
     if (!config.persisted) {
-      ElMessage.warning('请先核对名单、选择管理员接收人并保存配置')
+      msgWarning('请先核对名单、选择管理员接收人并保存配置')
       return
     }
     if (hasUnsavedChanges.value) {
-      ElMessage.warning('当前配置有未保存修改，请先保存后再发送')
+      msgWarning('当前配置有未保存修改，请先保存后再发送')
       return
     }
     const dateLabel = reportDate.value || '昨天'
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认发送${dateLabel}的 GMV 日报？已成功发送的接收人会自动跳过。`,
       '发送钉钉日报',
       { type: 'warning', confirmButtonText: '确认发送' },
@@ -183,15 +181,15 @@ export function useGmvDailyConfig() {
       const response = await sendGmvDailyReport(reportDate.value)
       const deliveries = response.data.deliveries || []
       if (response.data.status === 'skipped') {
-        ElMessage.warning('同一日期已有发送任务正在执行，本次未重复发送')
+        msgWarning('同一日期已有发送任务正在执行，本次未重复发送')
         return
       }
       const success = deliveries.filter(item => item.status === 'success').length
       const skipped = deliveries.filter(item => item.status === 'skipped').length
       const failed = deliveries.filter(item => item.status === 'failed').length
       const summary = `发送完成：成功 ${success}，已发送跳过 ${skipped}，失败 ${failed}`
-      if (response.data.status === 'partial_failure' || failed) ElMessage.warning(summary)
-      else ElMessage.success(summary)
+      if (response.data.status === 'partial_failure' || failed) msgWarning(summary)
+      else msgSuccessText(summary)
     } finally {
       sending.value = false
     }

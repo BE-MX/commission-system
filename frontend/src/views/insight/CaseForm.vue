@@ -1,5 +1,5 @@
 <template>
-  <el-form :model="modelValue" label-width="100px">
+  <el-form label-position="top" :model="modelValue">
     <!-- 基本信息 -->
     <div class="form-section">
       <h4>基本信息</h4>

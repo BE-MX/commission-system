@@ -12,6 +12,7 @@
  *   matrix.initSelection(role.permission_ids)
  */
 import { computed, reactive, ref } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { adminClient } from '@/api/clients'
 import { ROLE_TEMPLATES } from '@/config/roleTemplates'
 
@@ -198,8 +199,12 @@ function columnOf(perm) {
 }
 
 export function usePermissionMatrix({ readonly = false } = {}) {
-  const loading = ref(false)
-  const allPerms = ref([])           // 扁平权限列表 [{id, code, label, action, kind, sort}]
+  const permissionsResource = useAsyncResource(async (_, { signal }) => {
+    const res = await adminClient.get('/permissions/list', { signal, suppressToast: true })
+    return (res.data || []).flatMap(group => group.permissions || [])
+  }, { initialData: [] })
+  const loading = permissionsResource.loading
+  const allPerms = permissionsResource.data           // 扁平权限列表 [{id, code, label, action, kind, sort}]
   const selectedIds = ref(new Set()) // 当前勾选集合（每次变更整体替换以触发响应）
   const initialIds = ref(new Set())  // 打开时的初始集合（差异条基准）
   const legacySelectedCount = ref(0) // 角色已勾选但已下架的权限数（保存时自动移除）
@@ -223,15 +228,7 @@ export function usePermissionMatrix({ readonly = false } = {}) {
     return m
   })
 
-  async function loadPermissions() {
-    loading.value = true
-    try {
-      const res = await adminClient.get('/permissions/list')
-      allPerms.value = (res.data || []).flatMap(g => g.permissions || [])
-    } finally {
-      loading.value = false
-    }
-  }
+  function loadPermissions() { return permissionsResource.load() }
 
   /** 用角色/用户的 permission_ids 初始化勾选集合；不在列表内的 id 视为 legacy */
   function initSelection(permissionIds = []) {
@@ -389,6 +386,7 @@ export function usePermissionMatrix({ readonly = false } = {}) {
   const selectedIdList = computed(() => [...selectedIds.value])
 
   return reactive({
+    error: permissionsResource.error, errorMessage: permissionsResource.errorMessage, hasLoaded: permissionsResource.hasLoaded,
     readonly, loading, allPerms, selectedIds, legacySelectedCount, searchText, templateKey,
     codeLabelMap, filteredGroups, allState,
     loadPermissions, initSelection,

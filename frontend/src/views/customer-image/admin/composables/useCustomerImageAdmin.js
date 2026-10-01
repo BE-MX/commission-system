@@ -1,4 +1,7 @@
 import { ref } from 'vue'
+import { useAsyncResource } from '../../../../composables/useAsyncResource.js'
+import { useListPage } from '../../../../composables/useListPage.js'
+import { clearListResource } from '../../../../composables/useListResourceScope.js'
 import { parseApiDateTime } from '../../../../utils/datetime.js'
 
 export function customerOptionLabel(customer) {
@@ -123,7 +126,7 @@ export function moveReferenceIds(references, index, offset) {
 }
 
 export function createProductCoverController({ fetchCover, urlApi = URL } = {}) {
-  const urls = ref({})
+  const urls = ref({}), errors = ref({}), loading = ref({})
   const entries = new Map()
   const desired = new Map()
   const versions = new Map()
@@ -143,7 +146,9 @@ export function createProductCoverController({ fetchCover, urlApi = URL } = {}) 
 
   function invalidate(productId) {
     versions.set(productId, (versions.get(productId) || 0) + 1)
+    pending.get(productId)?.controller?.abort()
     pending.delete(productId)
+    delete errors.value[productId]; delete loading.value[productId]
   }
 
   async function sync(products) {
@@ -172,14 +177,21 @@ export function createProductCoverController({ fetchCover, urlApi = URL } = {}) 
       }
       const version = (versions.get(productId) || 0) + 1
       versions.set(productId, version)
+      const controller = new AbortController()
+      const isCurrent = () => !disposed && !controller.signal.aborted && versions.get(productId) === version && desired.get(productId) === assetId
+      delete errors.value[productId]; loading.value[productId] = true
       const request = (async () => {
-        const response = await fetchCover(productId)
-        if (disposed || versions.get(productId) !== version || desired.get(productId) !== assetId) return
-        const url = urlApi.createObjectURL(response.data)
-        entries.set(productId, { assetId, url })
-        urls.value = { ...urls.value, [productId]: url }
+        try {
+          const response = await fetchCover(productId, { signal: controller.signal, suppressToast: true })
+          if (!isCurrent()) return
+          const url = urlApi.createObjectURL(response.data)
+          entries.set(productId, { assetId, url })
+          urls.value = { ...urls.value, [productId]: url }
+        } catch (error) {
+          if (isCurrent()) errors.value[productId] = '封面读取失败，请重试'
+        } finally { if (isCurrent()) loading.value[productId] = false }
       })()
-      const activeRequest = { assetId, promise: request }
+      const activeRequest = { assetId, promise: request, controller }
       pending.set(productId, activeRequest)
       requests.push(request.finally(() => {
         if (pending.get(productId) === activeRequest) pending.delete(productId)
@@ -188,8 +200,7 @@ export function createProductCoverController({ fetchCover, urlApi = URL } = {}) 
     await Promise.all(requests)
   }
 
-  function dispose() {
-    disposed = true
+  function clear() {
     for (const productId of new Set([...desired.keys(), ...entries.keys(), ...pending.keys()])) {
       invalidate(productId)
       release(productId)
@@ -197,7 +208,8 @@ export function createProductCoverController({ fetchCover, urlApi = URL } = {}) 
     desired.clear()
   }
 
-  return { urls, sync, dispose }
+  function dispose() { disposed = true; clear() }
+  return { urls, errors, loading, sync, clear, dispose }
 }
 
 export function createAssetBlobController({ fetchBlob, urlApi = URL } = {}) {
@@ -305,64 +317,42 @@ export function createCustomerImageAdminState({
   documentRef = globalThis.document,
   now = () => new Date(),
 } = {}) {
-  const products = ref([])
-  const customers = ref([])
-  const invites = ref([])
-  const generations = ref([])
-  const invitePage = ref(1)
-  const invitePageSize = ref(20)
-  const inviteTotal = ref(0)
-  const generationPage = ref(1)
-  const generationPageSize = ref(20)
-  const generationTotal = ref(0)
+  const productsResource = useAsyncResource(async (_, { signal }) => (await api.listProducts({}, { signal, suppressToast: true })).data || [], { initialData: [] })
+  const customersResource = useAsyncResource(async (term, { signal }) => term ? (await api.searchCustomers({ search: term }, { signal, suppressToast: true })).data || [] : [], { initialData: [] })
+  const invitesResource = useListPage(async (params, { signal }) => (await api.listInvites(params, { signal, suppressToast: true })).data || {}, { immediate: false })
+  const generationsResource = useListPage(async (params, { signal }) => (await api.listGenerations(params, { signal, suppressToast: true })).data || {}, { immediate: false })
+  const products = productsResource.data, customers = customersResource.data
+  const invites = invitesResource.list, generations = generationsResource.list
+  const invitePage = invitesResource.page, invitePageSize = invitesResource.pageSize, inviteTotal = invitesResource.total
+  const generationPage = generationsResource.page, generationPageSize = generationsResource.pageSize, generationTotal = generationsResource.total
   const oneTimeInviteUrl = ref('')
   const productCovers = createProductCoverController({ fetchCover: api.getProductCoverBlob })
-  const requestVersions = { customers: 0, products: 0, invites: 0, generations: 0 }
-
+  const scopeVersion = ref(0)
+  let customerScope = null
   async function loadProducts() {
-    const version = ++requestVersions.products
-    const response = await api.listProducts()
-    if (version !== requestVersions.products) return products.value
-    products.value = response.data || []
-    await productCovers.sync(products.value)
-    return products.value
+    const success = await productsResource.load()
+    if (success) await productCovers.sync(products.value)
+    return success
   }
-
-  async function searchScopedCustomers(search) {
-    const version = ++requestVersions.customers
-    const term = String(search || '').trim()
-    if (!term) {
-      customers.value = []
-      return []
-    }
-    const response = await api.searchCustomers({ search: term })
-    if (version !== requestVersions.customers) return customers.value
-    customers.value = response.data || []
-    return customers.value
+  function searchScopedCustomers(search) {
+    const term = String(search || '').trim(), clear = term !== customerScope
+    customerScope = term
+    if (!term) { customersResource.clear(); return false }
+    return customersResource.load(term, { clear })
   }
-
-  async function loadInvites(page = invitePage.value, pageSize = invitePageSize.value, requestConfig = {}) {
-    const version = ++requestVersions.invites
-    const response = await api.listInvites({ page, page_size: pageSize }, requestConfig)
-    if (version !== requestVersions.invites) return invites.value
-    const data = response.data || {}
-    invites.value = data.items || []
-    invitePage.value = data.page || page
-    invitePageSize.value = data.page_size || pageSize
-    inviteTotal.value = data.total || 0
-    return invites.value
+  function loadInvites(page = invitePage.value, pageSize = invitePageSize.value) {
+    invitePage.value = page; invitePageSize.value = pageSize
+    return invitesResource.fetchList()
   }
-
-  async function loadGenerations(page = generationPage.value, pageSize = generationPageSize.value) {
-    const version = ++requestVersions.generations
-    const response = await api.listGenerations({ page, page_size: pageSize })
-    if (version !== requestVersions.generations) return generations.value
-    const data = response.data || {}
-    generations.value = data.items || []
-    generationPage.value = data.page || page
-    generationPageSize.value = data.page_size || pageSize
-    generationTotal.value = data.total || 0
-    return generations.value
+  function loadGenerations(page = generationPage.value, pageSize = generationPageSize.value) {
+    generationPage.value = page; generationPageSize.value = pageSize
+    return generationsResource.fetchList()
+  }
+  function clearScope() {
+    scopeVersion.value++
+    productsResource.clear(); customersResource.clear()
+    clearListResource(invitesResource); clearListResource(generationsResource)
+    productCovers.clear(); oneTimeInviteUrl.value = ''; customerScope = null
   }
 
   async function submitInvite(draft) {
@@ -374,11 +364,11 @@ export function createCustomerImageAdminState({
       expires_at: parseApiDateTime(draft.expires_at).toISOString(),
       quota_total: Number(draft.quota_total),
     }
+    const scope = scopeVersion.value
     const response = await api.createInvite(payload)
+    if (scope !== scopeVersion.value) return response.data
     oneTimeInviteUrl.value = response.data?.invite_url || ''
-    try {
-      await loadInvites(1, invitePageSize.value, { suppressToast: true })
-    } catch { /* The plaintext result must survive an independent list refresh failure. */ }
+    await invitesResource.refreshCreate()
     return response.data
   }
 
@@ -422,13 +412,17 @@ export function createCustomerImageAdminState({
   }
 
   async function revokeInvite(inviteId) {
+    const scope = scopeVersion.value
     const response = await api.revokeInvite(inviteId)
+    if (scope !== scopeVersion.value) return response.data
     const index = invites.value.findIndex(item => item.id === inviteId)
+    invitesResource.cancel()
     if (index >= 0) invites.value[index] = response.data
     return response.data
   }
 
   async function saveProduct(product) {
+    const scope = scopeVersion.value
     const draft = cloneProduct(product)
     const error = validateProductDraft(draft)
     if (error) throw new Error(error)
@@ -436,30 +430,39 @@ export function createCustomerImageAdminState({
     const response = draft.id
       ? await api.updateProduct(draft.id, payload)
       : await api.createProduct(payload)
+    if (scope !== scopeVersion.value) return response.data
     const index = products.value.findIndex(item => item.id === response.data.id)
     if (index >= 0) products.value[index] = response.data
     else products.value = [...products.value, response.data]
     await productCovers.sync(products.value)
+    await loadProducts()
     return response.data
   }
 
   async function removeProduct(productId) {
+    const scope = scopeVersion.value
     await api.deleteProduct(productId)
+    if (scope !== scopeVersion.value) return
     products.value = products.value.filter(item => item.id !== productId)
     await productCovers.sync(products.value)
+    await loadProducts()
   }
 
   async function setProductPublished(productId, published) {
+    const scope = scopeVersion.value
     const response = published
       ? await api.publishProduct(productId)
       : await api.unpublishProduct(productId)
+    if (scope !== scopeVersion.value) return response.data
     const index = products.value.findIndex(item => item.id === productId)
     if (index >= 0) products.value[index] = response.data
     await productCovers.sync(products.value)
+    await loadProducts()
     return response.data
   }
 
   return {
+    productsResource, customersResource, invitesResource, generationsResource, scopeVersion, clearScope,
     products,
     customers,
     invites,
@@ -471,6 +474,9 @@ export function createCustomerImageAdminState({
     generationPageSize,
     generationTotal,
     productCoverUrls: productCovers.urls,
+    productCoverErrors: productCovers.errors,
+    productCoverLoading: productCovers.loading,
+    retryProductCovers: () => productCovers.sync(products.value),
     oneTimeInviteUrl,
     loadProducts,
     searchScopedCustomers,
@@ -483,6 +489,6 @@ export function createCustomerImageAdminState({
     saveProduct,
     removeProduct,
     setProductPublished,
-    dispose: productCovers.dispose,
+    dispose: () => { clearScope(); productCovers.dispose() },
   }
 }

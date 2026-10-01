@@ -133,3 +133,5 @@
   .db-main { padding: 12px; }
   .db-card-header { flex-wrap: wrap; gap: 8px; }
 }
+
+.db-read-status { padding: 12px 24px; display: grid; gap: 8px; }

@@ -3,8 +3,8 @@ import { cardClient } from './clients'
 import { compressImage } from '@/utils/compressImage'
 
 // ---------- 业务员档案 ----------
-export function getSalespersons() {
-  return cardClient.get('/admin/salespersons')
+export function getSalespersons(config = {}) {
+  return cardClient.get('/admin/salespersons', { ...config, showLoading: false })
 }
 
 export function upsertSalesperson(data) {
@@ -12,8 +12,8 @@ export function upsertSalesperson(data) {
 }
 
 // ---------- 客户档案 ----------
-export function getCustomers(params) {
-  return cardClient.get('/admin/customers', { params })
+export function getCustomers(params, config = {}) {
+  return cardClient.get('/admin/customers', { ...config, params })
 }
 
 export function createCustomer(data) {
@@ -29,8 +29,8 @@ export function deleteCustomer(id) {
 }
 
 // ---------- 沟通纪要 ----------
-export function getEntries(customerId) {
-  return cardClient.get(`/admin/customers/${customerId}/entries`)
+export function getEntries(customerId, config = {}) {
+  return cardClient.get(`/admin/customers/${customerId}/entries`, { ...config, showLoading: false })
 }
 
 export function createEntry(customerId, data) {
@@ -59,8 +59,8 @@ export async function uploadAttachment(file, onProgress) {
 }
 
 // ---------- 询盘 ----------
-export function getInquiries(params) {
-  return cardClient.get('/admin/inquiries', { params })
+export function getInquiries(params, config = {}) {
+  return cardClient.get('/admin/inquiries', { ...config, params })
 }
 
 export function updateInquiry(id, data) {

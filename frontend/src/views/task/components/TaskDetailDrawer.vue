@@ -6,6 +6,7 @@
     :loading="loading"
     @update:model-value="v => emit('update:modelValue', v)"
   >
+    <ListPageStatus :paged="false" :error="detailResource.errorMessage.value" :loading="loading" :has-data="detailResource.hasData.value" @retry="load" />
     <template v-if="detail">
       <p v-if="detail.path.length" class="td-path">{{ detail.path.map(p => `${p.code} ${p.title}`).join(' › ') }}</p>
       <el-input v-model="form.title" maxlength="200" :input-style="TITLE_STYLE" :disabled="!canWrite" @change="save('title')" />
@@ -109,7 +110,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { addTaskLink, deleteTask, getTask, moveTask, removeTaskLink, updateTask } from '@/api/task'
@@ -119,6 +120,7 @@ import { confirmDanger, msgError, msgSuccess } from '@/utils/feedback'
 import {
   ACTOR_LABELS, EVENT_LABELS, LINK_KIND_META, PRIORITIES, PRIORITY_META, STATUS_META, userStatusOptions,
 } from '../taskLabels.js'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { flattenForSelect } from '../taskTree.js'
 
 const props = defineProps({
@@ -135,8 +137,15 @@ const FIELD_LABELS = { title: '标题', description: '描述', acceptance: '验�
 
 const authStore = useAuthStore()
 const canWrite = computed(() => authStore.hasPermission('task:write'))
-const detail = ref(null)
-const loading = ref(false)
+const detailResource = useAsyncResource(async (id, { signal, isCurrent }) => {
+  const data = (await getTask(id, { signal, suppressToast: true })).data
+  if (isCurrent()) Object.assign(form, {
+    title: data.title, priority: data.priority, module_key: data.module_key, parent_id: data.parent_id,
+    due_date: data.due_date, acceptanceText: (data.acceptance || []).join('\n'), description: data.description || '',
+  })
+  return data
+})
+const detail = detailResource.data, loading = detailResource.loading
 const form = reactive({ title: '', priority: 'P2', module_key: null, parent_id: null, due_date: null, acceptanceText: '', description: '' })
 // 可选父任务：未结束任务，自己禁选；成环与层数超限由后端校验并提示
 const parentOptions = computed(() => flattenForSelect(props.tree))
@@ -152,30 +161,13 @@ const moduleGroups = computed(() => {
   return [...groups.values()]
 })
 
-async function load() {
-  if (!props.modelValue || !props.taskId) return
-  loading.value = true
-  try {
-    const data = (await getTask(props.taskId)).data
-    detail.value = data
-    Object.assign(form, {
-      title: data.title,
-      priority: data.priority,
-      module_key: data.module_key,
-      parent_id: data.parent_id,
-      due_date: data.due_date,
-      acceptanceText: (data.acceptance || []).join('\n'),
-      description: data.description || '',
-    })
-  } catch {
-    detail.value = null
-    emit('update:modelValue', false)
-  } finally {
-    loading.value = false
-  }
+function load() {
+  if (!props.modelValue || !props.taskId) return false
+  return detailResource.load(props.taskId)
 }
-
-watch(() => [props.modelValue, props.taskId, props.refreshKey], load)
+watch(() => [props.modelValue, props.taskId], () => { detailResource.clear(); if (props.modelValue) void load() })
+watch(() => props.refreshKey, load)
+watch(() => authStore.user?.id, () => { detailResource.clear(); emit('update:modelValue', false) })
 
 async function save(field) {
   const value = field === 'acceptance'

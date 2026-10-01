@@ -11,15 +11,13 @@
       <!-- Tab 1: 待确认任务 -->
       <el-tab-pane label="待确认任务" name="pending">
         <div ref="pendingPanelRef" class="table-card design-manage-panel">
-        <div class="toolbar">
-          <el-input v-model="pendingFilters.salesperson_name" placeholder="业务员" clearable class="filter-w-sm" @clear="searchPending" @keyup.enter="searchPending" />
-          <el-select v-model="pendingFilters.shoot_type" placeholder="拍摄类型" clearable class="filter-w-sm" @change="searchPending">
+        <FilterBar :pending="pendingState.hasPendingSearch.value" @search="searchPending" @reset="resetPendingFilters">
+          <el-input v-model="pendingFilters.salesperson_name" placeholder="业务员" clearable class="filter-w-sm" />
+          <el-select v-model="pendingFilters.shoot_type" placeholder="拍摄类型" clearable class="filter-w-sm">
             <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
           </el-select>
-          <el-date-picker v-model="pendingFilters.expectDateRange" type="daterange" start-placeholder="期望开始" end-placeholder="期望结束" value-format="YYYY-MM-DD" class="filter-w-lg" @change="searchPending" />
-          <GlassButton variant="primary" left-icon="Search" @click="searchPending">查询</GlassButton>
-          <GlassButton left-icon="RefreshLeft" @click="resetPendingFilters">重置</GlassButton>
-        </div>
+          <el-date-picker v-model="pendingFilters.expectDateRange" type="daterange" start-placeholder="期望开始" end-placeholder="期望结束" value-format="YYYY-MM-DD" class="filter-w-lg" />
+        </FilterBar>
         <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
         <div class="action-bar">
           <GlassButton variant="secondary" left-icon="Bell" @click="handleScanShootReminders">
@@ -34,6 +32,7 @@
             @fullscreen="pendingToggleFullscreen"
           />
         </div>
+        <ListPageStatus v-if="pendingState.hasData.value" :error="pendingState.errorMessage.value" :loading="pendingLoading" :has-data="true" :data-page="pendingState.dataPage.value" @retry="fetchPending" />
         <el-table
           ref="pendingTableRef"
           :data="pendingData"
@@ -42,10 +41,11 @@
           :class="pendingDensityClass"
           border
           :max-height="pendingIsFullscreen ? undefined : tabMaxHeight"
-          @sort-change="pendingSort.onSortChange"
+          @sort-change="handlePendingSortChange"
         >
           <template #empty>
-            <el-empty :image-size="96" :description="pendingHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <ListPageStatus :error="pendingState.errorMessage.value" :loading="pendingLoading" @retry="fetchPending" />
+            <el-empty v-if="pendingState.isEmpty.value" :image-size="96" :description="pendingHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
               <GlassButton v-if="pendingHasActiveFilters" left-icon="RefreshLeft" @click="resetPendingFilters">重置筛选</GlassButton>
             </el-empty>
           </template>
@@ -73,9 +73,9 @@
           </el-table-column>
           <el-table-column v-if="pendingVisibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120" prop="priority" sortable="custom">
             <template #default="{ row }">
-              <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
+              <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="pendingVisibleKeys.includes('remark')" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
@@ -111,18 +111,16 @@
       <!-- Tab 2: 排期任务 -->
       <el-tab-pane label="排期任务" name="scheduled">
         <div ref="scheduledPanelRef" class="table-card design-manage-panel">
-        <div class="toolbar">
-          <el-input v-model="scheduledFilters.salesperson_name" placeholder="业务员" clearable class="filter-w-sm" @clear="searchScheduled" @keyup.enter="searchScheduled" />
-          <el-select v-model="scheduledFilters.shoot_type" placeholder="拍摄类型" clearable class="filter-w-sm" @change="searchScheduled">
+        <FilterBar :pending="scheduledState.hasPendingSearch.value" @search="searchScheduled" @reset="resetScheduledFilters">
+          <el-input v-model="scheduledFilters.salesperson_name" placeholder="业务员" clearable class="filter-w-sm" />
+          <el-select v-model="scheduledFilters.shoot_type" placeholder="拍摄类型" clearable class="filter-w-sm">
             <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
           </el-select>
-          <el-select v-model="scheduledFilters.designer_id" placeholder="设计师" clearable class="filter-w-sm" @change="searchScheduled">
+          <el-select v-model="scheduledFilters.designer_id" placeholder="设计师" clearable class="filter-w-sm">
             <el-option v-for="d in designerData" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
-          <el-date-picker v-model="scheduledFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" class="filter-w-lg" @change="searchScheduled" />
-          <GlassButton variant="primary" left-icon="Search" @click="searchScheduled">查询</GlassButton>
-          <GlassButton left-icon="RefreshLeft" @click="resetScheduledFilters">重置</GlassButton>
-        </div>
+          <el-date-picker v-model="scheduledFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" class="filter-w-lg" />
+        </FilterBar>
         <!-- 操作行：本 tab 无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
         <div class="action-bar">
           <TableTools
@@ -134,6 +132,7 @@
             @fullscreen="scheduledToggleFullscreen"
           />
         </div>
+        <ListPageStatus v-if="scheduledState.hasData.value" :error="scheduledState.errorMessage.value" :loading="scheduledLoading" :has-data="true" :data-page="scheduledState.dataPage.value" @retry="fetchScheduled" />
         <el-table
           ref="scheduledTableRef"
           :data="scheduledData"
@@ -142,10 +141,11 @@
           :class="scheduledDensityClass"
           border
           :max-height="scheduledIsFullscreen ? undefined : tabMaxHeight"
-          @sort-change="scheduledSort.onSortChange"
+          @sort-change="handleScheduledSortChange"
         >
           <template #empty>
-            <el-empty :image-size="96" :description="scheduledHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <ListPageStatus :error="scheduledState.errorMessage.value" :loading="scheduledLoading" @retry="fetchScheduled" />
+            <el-empty v-if="scheduledState.isEmpty.value" :image-size="96" :description="scheduledHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
               <GlassButton v-if="scheduledHasActiveFilters" left-icon="RefreshLeft" @click="resetScheduledFilters">重置筛选</GlassButton>
             </el-empty>
           </template>
@@ -183,9 +183,9 @@
           </el-table-column>
           <el-table-column v-if="scheduledVisibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120">
             <template #default="{ row }">
-              <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
+              <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="scheduledVisibleKeys.includes('remark')" label="备注" min-width="180" max-width="300" show-overflow-tooltip>
@@ -208,9 +208,9 @@
           </el-table-column>
           <el-table-column v-if="scheduledVisibleKeys.includes('status')" label="状态" min-width="100" max-width="150" prop="status" sortable="custom">
             <template #default="{ row }">
-              <el-tag :type="TASK_STATUS_TAG[row.status]" effect="plain">
+              <StatusBadge :type="TASK_STATUS_TAG[row.status]" effect="plain">
                 {{ TASK_STATUS_MAP[row.status] || row.status }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="scheduledVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
@@ -253,18 +253,16 @@
       <!-- Tab 3: 已完成任务 -->
       <el-tab-pane label="已完成任务" name="completed">
         <div ref="completedPanelRef" class="table-card design-manage-panel">
-        <div class="toolbar">
-          <el-input v-model="completedFilters.salesperson_name" placeholder="业务员" clearable class="filter-w-sm" @clear="searchCompleted" @keyup.enter="searchCompleted" />
-          <el-select v-model="completedFilters.shoot_type" placeholder="拍摄类型" clearable class="filter-w-sm" @change="searchCompleted">
+        <FilterBar :pending="completedState.hasPendingSearch.value" @search="searchCompleted" @reset="resetCompletedFilters">
+          <el-input v-model="completedFilters.salesperson_name" placeholder="业务员" clearable class="filter-w-sm" />
+          <el-select v-model="completedFilters.shoot_type" placeholder="拍摄类型" clearable class="filter-w-sm">
             <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
           </el-select>
-          <el-select v-model="completedFilters.designer_id" placeholder="设计师" clearable class="filter-w-sm" @change="searchCompleted">
+          <el-select v-model="completedFilters.designer_id" placeholder="设计师" clearable class="filter-w-sm">
             <el-option v-for="d in designerData" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
-          <el-date-picker v-model="completedFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" class="filter-w-lg" @change="searchCompleted" />
-          <GlassButton variant="primary" left-icon="Search" @click="searchCompleted">查询</GlassButton>
-          <GlassButton left-icon="RefreshLeft" @click="resetCompletedFilters">重置</GlassButton>
-        </div>
+          <el-date-picker v-model="completedFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" class="filter-w-lg" />
+        </FilterBar>
         <!-- 操作行：本 tab 无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
         <div class="action-bar">
           <TableTools
@@ -276,6 +274,7 @@
             @fullscreen="completedToggleFullscreen"
           />
         </div>
+        <ListPageStatus v-if="completedState.hasData.value" :error="completedState.errorMessage.value" :loading="completedLoading" :has-data="true" :data-page="completedState.dataPage.value" @retry="fetchCompleted" />
         <el-table
           ref="completedTableRef"
           :data="completedData"
@@ -284,10 +283,11 @@
           :class="completedDensityClass"
           border
           :max-height="completedIsFullscreen ? undefined : tabMaxHeight"
-          @sort-change="completedSort.onSortChange"
+          @sort-change="handleCompletedSortChange"
         >
           <template #empty>
-            <el-empty :image-size="96" :description="completedHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <ListPageStatus :error="completedState.errorMessage.value" :loading="completedLoading" @retry="fetchCompleted" />
+            <el-empty v-if="completedState.isEmpty.value" :image-size="96" :description="completedHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
               <GlassButton v-if="completedHasActiveFilters" left-icon="RefreshLeft" @click="resetCompletedFilters">重置筛选</GlassButton>
             </el-empty>
           </template>
@@ -307,14 +307,14 @@
           </el-table-column>
           <el-table-column v-if="completedVisibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120">
             <template #default="{ row }">
-              <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
+              <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="completedVisibleKeys.includes('status')" label="状态" min-width="80" max-width="120" prop="status" sortable="custom">
             <template #default="{ row }">
-              <el-tag type="success" effect="plain">已完成</el-tag>
+              <StatusBadge type="success" effect="plain">已完成</StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="completedVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
@@ -353,6 +353,7 @@
             @fullscreen="designerToggleFullscreen"
           />
         </div>
+        <ListPageStatus :error="designerResource.errorMessage.value" :loading="designerLoading" :has-data="designerData.length > 0" @retry="fetchDesigners" />
         <el-table
           :data="designerData"
           v-loading="designerLoading"
@@ -362,7 +363,7 @@
           :max-height="designerIsFullscreen ? undefined : tabMaxHeight"
         >
           <template #empty>
-            <el-empty :image-size="96" description="暂无数据" />
+            <el-empty v-if="!designerLoading && !designerResource.error.value" :image-size="96" description="暂无数据" />
           </template>
           <el-table-column v-if="designerVisibleKeys.includes('id')" prop="id" label="ID" min-width="80" max-width="120" show-overflow-tooltip />
           <el-table-column v-if="designerVisibleKeys.includes('name')" prop="name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip />
@@ -370,9 +371,9 @@
           <el-table-column v-if="designerVisibleKeys.includes('dingtalk-id')" prop="dingtalk_id" label="钉钉ID" min-width="140" max-width="210" show-overflow-tooltip />
           <el-table-column v-if="designerVisibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
-              <el-tag :type="row.is_active ? 'success' : 'info'" effect="plain">
+              <StatusBadge :type="row.is_active ? 'success' : 'info'" effect="plain">
                 {{ row.is_active ? '在职' : '停用' }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="designerVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
@@ -442,17 +443,17 @@
         </div>
 
         <!-- Import results dialog -->
-        <el-dialog v-model="importResultVisible" title="导入结果" width="560px">
+        <el-dialog v-model="importResultVisible" title="导入结果" width="640px">
           <div v-if="importResult">
-            <el-descriptions :column="3" border size="small" style="margin-bottom: 16px">
+            <ResponsiveDescriptions :column="3" border size="small" style="margin-bottom: 16px">
               <el-descriptions-item label="总行数">{{ importResult.total }}</el-descriptions-item>
               <el-descriptions-item label="成功">
-                <el-tag type="success" size="small">{{ importResult.success }}</el-tag>
+                <StatusBadge type="success" size="small">{{ importResult.success }}</StatusBadge>
               </el-descriptions-item>
               <el-descriptions-item label="失败">
-                <el-tag type="danger" size="small">{{ importResult.failed }}</el-tag>
+                <StatusBadge type="danger" size="small">{{ importResult.failed }}</StatusBadge>
               </el-descriptions-item>
-            </el-descriptions>
+            </ResponsiveDescriptions>
             <el-table v-if="importResult.errors?.length" :data="importResult.errors" border size="small" max-height="300" class="list-table">
               <el-table-column prop="row" label="行号" min-width="80" />
               <el-table-column prop="reason" label="失败原因" />
@@ -472,10 +473,10 @@
     <el-dialog
       v-model="designerDialogVisible"
       :title="designerForm.id ? '编辑设计师' : '新建设计师'"
-      width="460px"
+      width="480px"
       :close-on-click-modal="false"
     >
-      <el-form :model="designerForm" label-width="80px">
+      <el-form label-position="top" :model="designerForm">
         <el-form-item label="姓名" required>
           <el-input v-model="designerForm.name" placeholder="请输入设计师姓名" />
         </el-form-item>
@@ -539,26 +540,26 @@ const {
   // Pending
   pendingTableRef, pendingData, pendingLoading,
   pendingPage, pendingPageSize, pendingTotal, pendingFilters,
-  fetchPending, handleScanShootReminders, pendingSort,
+  pendingState, fetchPending, handleScanShootReminders, pendingSort, handlePendingSortChange,
   pendingHasActiveFilters, searchPending, resetPendingFilters, handlePendingSizeChange,
   pendingColumnDefs, pendingDensity, pendingDensityClass, pendingVisibleKeys,
   pendingPanelRef, pendingIsFullscreen, pendingToggleFullscreen,
   // Scheduled
   scheduledTableRef, scheduledData, scheduledLoading,
   scheduledPage, scheduledPageSize, scheduledTotal, scheduledFilters,
-  fetchScheduled, scheduledSort,
+  scheduledState, fetchScheduled, scheduledSort, handleScheduledSortChange,
   scheduledHasActiveFilters, searchScheduled, resetScheduledFilters, handleScheduledSizeChange,
   scheduledColumnDefs, scheduledDensity, scheduledDensityClass, scheduledVisibleKeys,
   scheduledPanelRef, scheduledIsFullscreen, scheduledToggleFullscreen,
   // Completed
   completedTableRef, completedData, completedLoading,
   completedPage, completedPageSize, completedTotal, completedFilters,
-  fetchCompleted, completedSort,
+  completedState, fetchCompleted, completedSort, handleCompletedSortChange,
   completedHasActiveFilters, searchCompleted, resetCompletedFilters, handleCompletedSizeChange,
   completedColumnDefs, completedDensity, completedDensityClass, completedVisibleKeys,
   completedPanelRef, completedIsFullscreen, completedToggleFullscreen,
   // Designers
-  designerData, designerLoading, fetchDesigners,
+  designerResource, designerData, designerLoading, fetchDesigners,
   designerColumnDefs, designerDensity, designerDensityClass, designerVisibleKeys,
   designerPanelRef, designerIsFullscreen, designerToggleFullscreen,
   designerDialogVisible, designerSaving, designerForm,

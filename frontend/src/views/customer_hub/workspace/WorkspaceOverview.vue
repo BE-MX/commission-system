@@ -2,12 +2,12 @@
   <div class="workspace-overview">
     <section class="lg-card panel">
       <h3>客户概要</h3>
-      <el-descriptions v-if="customer" :column="2" size="small" border>
+      <ResponsiveDescriptions v-if="customer" :column="2" size="small" border>
         <el-descriptions-item label="公司名">{{ customer.canonical_company_name || '—' }}</el-descriptions-item>
         <el-descriptions-item label="关系阶段">{{ customer.relationship_stage || '—' }}</el-descriptions-item>
         <el-descriptions-item label="档案完整度">{{ customer.profile_completeness ?? '—' }}%</el-descriptions-item>
         <el-descriptions-item label="客户编号">{{ customer.customer_code || '—' }}</el-descriptions-item>
-      </el-descriptions>
+      </ResponsiveDescriptions>
     </section>
     <section class="lg-card panel">
       <h3>复购窗口 <span class="hint">基于商业订单周期 · 非库存预测</span></h3>
@@ -17,7 +17,7 @@
         <strong>{{ item.productFamily }}</strong>
         <span>中位数 {{ item.medianIntervalDays ?? '—' }} 天</span>
         <span>{{ item.windowFrom }} ~ {{ item.windowTo }}</span>
-        <el-tag size="small" :type="item.degraded ? 'warning' : 'success'">{{ item.confidenceLabel }}</el-tag>
+        <StatusBadge size="small" :type="item.degraded ? 'warning' : 'success'">{{ item.confidenceLabel }}</StatusBadge>
       </div>
     </section>
     <section class="lg-card panel">

@@ -11,6 +11,7 @@
 
     <el-row :gutter="16" class="toolbar">
       <el-col :span="14">
+        <FilterBar :pending="typeFilter !== appliedType" @search="applySearch" @reset="resetFilters">
         <el-radio-group v-model="typeFilter">
           <el-radio-button value="">全部</el-radio-button>
           <el-radio-button value="opener">开场</el-radio-button>
@@ -18,6 +19,7 @@
           <el-radio-button value="closer">逼单</el-radio-button>
           <el-radio-button value="faq">应对</el-radio-button>
         </el-radio-group>
+        </FilterBar>
       </el-col>
       <el-col :span="10" class="toolbar-right">
         <GlassButton v-permission="'expo:admin'" variant="ghost" left-icon="Download" :loading="seeding" @click="handleSeed">导入种子话术</GlassButton>
@@ -25,24 +27,25 @@
       </el-col>
     </el-row>
 
+    <ListPageStatus :error="listResource.errorMessage.value" :loading="loading" :has-data="scripts.length > 0" @retry="fetchScripts" />
     <div v-loading="loading" class="card-grid">
       <div v-for="card in filteredScripts" :key="card.id" class="script-card lg-card" @click="openEdit(card)">
         <div class="card-head">
-          <el-tag size="small" :class="'track-' + (card.track || 'rational')">{{ trackLabel(card.track) }}</el-tag>
-          <el-tag size="small" effect="plain">{{ typeLabel(card.script_type) }}</el-tag>
+          <StatusBadge size="small" :class="'track-' + (card.track || 'rational')">{{ trackLabel(card.track) }}</StatusBadge>
+          <StatusBadge size="small" effect="plain">{{ typeLabel(card.script_type) }}</StatusBadge>
           <el-switch v-permission="'expo:admin'" :model-value="!!card.is_active" size="small" class="card-switch" @click.stop @change="(v) => toggleActive(card, v)" />
         </div>
         <div class="card-title">{{ card.title }}</div>
         <div class="card-content">{{ card.content }}</div>
         <div v-if="card.audience_tags?.length" class="card-tags">
-          <el-tag v-for="t in card.audience_tags" :key="t" size="small" effect="plain" type="info" class="aud-tag">{{ t }}</el-tag>
+          <StatusBadge v-for="t in card.audience_tags" :key="t" size="small" effect="plain" type="info" class="aud-tag">{{ t }}</StatusBadge>
         </div>
       </div>
-      <el-empty v-if="!loading && !filteredScripts.length" description="暂无话术卡" class="grid-empty" />
+      <el-empty v-if="!loading && !listResource.error.value && !filteredScripts.length" description="暂无话术卡" class="grid-empty" />
     </div>
 
-    <el-drawer v-model="drawerVisible" :title="isEdit ? '编辑话术卡' : '新建话术卡'" :size="560" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="92px">
+    <DetailDrawer v-model="drawerVisible" :title="isEdit ? '编辑话术卡' : '新建话术卡'" :width="560" destroy-on-close>
+      <el-form label-position="top" ref="formRef" :model="form" :rules="rules">
         <el-form-item label="话术类型" prop="script_type">
           <el-select v-model="form.script_type" style="width: 100%">
             <el-option v-for="o in TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
@@ -72,13 +75,15 @@
         <GlassButton variant="ghost" @click="drawerVisible = false">取消</GlassButton>
         <GlassButton v-permission="'expo:admin'" variant="primary" :loading="saving" @click="submit">保存</GlassButton>
       </template>
-    </el-drawer>
+    </DetailDrawer>
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText } from '@/utils/feedback'
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
+
 import { getScripts, createScript, updateScript, seedScripts } from '@/api/expo'
 
 const TYPE_OPTIONS = [
@@ -97,12 +102,16 @@ function trackLabel(v) {
   return TRACK_LABELS[v] || v || '理性线'
 }
 
-const scripts = ref([])
-const loading = ref(false)
+const listResource = useAsyncResource(async (_, { signal }) => (await getScripts(undefined, { signal, suppressToast: true })).data || [])
+const scripts = computed(() => listResource.data.value || [])
+const loading = listResource.loading
 const seeding = ref(false)
 const typeFilter = ref('')
+const appliedType = ref('')
+function applySearch() { appliedType.value = typeFilter.value; return fetchScripts() }
+function resetFilters() { typeFilter.value = ''; return applySearch() }
 const filteredScripts = computed(() =>
-  typeFilter.value ? scripts.value.filter((s) => s.script_type === typeFilter.value) : scripts.value
+  appliedType.value ? scripts.value.filter((s) => s.script_type === appliedType.value) : scripts.value
 )
 
 const drawerVisible = ref(false)
@@ -122,15 +131,7 @@ const rules = {
   content: [{ required: true, message: '请输入正文', trigger: 'blur' }],
 }
 
-async function fetchScripts() {
-  loading.value = true
-  try {
-    const res = await getScripts()
-    scripts.value = res.data || []
-  } finally {
-    loading.value = false
-  }
-}
+const fetchScripts = () => listResource.load()
 
 function openCreate() {
   isEdit.value = false
@@ -158,10 +159,10 @@ async function submit() {
   try {
     if (isEdit.value) {
       await updateScript(editId.value, form.value)
-      ElMessage.success('更新成功')
+      msgSuccessText('更新成功')
     } else {
       await createScript(form.value)
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     }
     drawerVisible.value = false
     fetchScripts()
@@ -179,7 +180,7 @@ async function toggleActive(card, value) {
       is_active: value,
     })
     card.is_active = value
-    ElMessage.success(value ? '已启用' : '已停用')
+    msgSuccessText(value ? '已启用' : '已停用')
   } catch { /* 拦截器已提示 */ }
 }
 
@@ -187,7 +188,7 @@ async function handleSeed() {
   seeding.value = true
   try {
     const res = await seedScripts()
-    ElMessage.success(`导入完成，新增 ${res.data?.created ?? 0} 条话术卡`)
+    msgSuccessText(`导入完成，新增 ${res.data?.created ?? 0} 条话术卡`)
     fetchScripts()
   } catch { /* 拦截器已提示 */ } finally {
     seeding.value = false

@@ -63,7 +63,6 @@
 import { computed, reactive, ref } from 'vue'
 import { Close } from '@element-plus/icons-vue'
 import { msgError } from '@/utils/feedback'
-
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },   // [{ path, url, name }]
   uploadFn: { type: Function, required: true },
@@ -133,7 +132,7 @@ async function uploadFiles(files) {
     if (!beforeUpload(file)) return
     try { await doUpload({ file }) }
     catch (error) {
-      if (!error?.isAxiosError) msgError('截图上传失败，请重试')
+      if (!error?.isAxiosError) msgError('截图上传失败，请重试', error)
     }
   }))
 }

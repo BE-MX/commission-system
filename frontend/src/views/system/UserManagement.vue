@@ -9,13 +9,11 @@
 
     <!-- 表格卡片：筛选区 / 操作行 / 表格 / 分页（List Page Spec / Action Bar Spec） -->
     <div ref="panelRef" class="table-card user-panel">
-      <div class="toolbar">
-        <el-input v-model="keyword" clearable placeholder="搜索用户名/姓名" class="filter-w-md" @keyup.enter="fetchList" @clear="fetchList">
+      <FilterBar :loading="loading" :pending="hasPendingSearch" @search="searchList" @reset="resetFilters">
+        <el-input v-model="keyword" clearable placeholder="搜索用户名/姓名" class="filter-w-md">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+      </FilterBar>
 
       <div class="action-bar">
         <GlassButton v-permission="'user:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增用户</GlassButton>
@@ -25,36 +23,37 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
-          @refresh="fetchList"
+          :loading="loading" @refresh="fetchList"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
-    <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange">
-      <template #empty>
+    <ListPageStatus v-if="hasData && errorMessage" :error="errorMessage" :loading="loading" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
+      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="changeSort">
+      <template #empty><ListPageStatus :error="errorMessage" :loading="loading" @retry="fetchList">
         <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
           <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
         </el-empty>
-      </template>
+      </ListPageStatus></template>
       <el-table-column v-if="visibleKeys.includes('username')" prop="username" label="用户名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
       <el-table-column v-if="visibleKeys.includes('real-name')" prop="real_name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
       <el-table-column v-if="visibleKeys.includes('email')" prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip sortable="custom" />
       <el-table-column v-if="visibleKeys.includes('phone')" prop="phone" label="手机号" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
       <el-table-column v-if="visibleKeys.includes('dingtalk-bind')" label="钉钉绑定" min-width="120" max-width="180">
         <template #default="{ row }">
-          <el-tag v-if="row.dingtalk_id" type="success" size="small" effect="plain">已绑定</el-tag>
-          <el-tag v-else type="info" size="small" effect="plain">未绑定</el-tag>
+          <StatusBadge v-if="row.dingtalk_id" type="success" size="small" effect="plain">已绑定</StatusBadge>
+          <StatusBadge v-else type="info" size="small" effect="plain">未绑定</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('roles')" label="角色" min-width="160" max-width="240">
         <template #default="{ row }">
-          <el-tag v-for="r in row.roles" :key="r" size="small" effect="plain" style="margin-right: 4px">{{ r }}</el-tag>
+          <StatusBadge v-for="r in row.roles" :key="r" size="small" effect="plain" style="margin-right: 4px">{{ r }}</StatusBadge>
           <span v-if="!row.roles?.length" style="color: var(--text-muted)">未分配</span>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" max-width="120">
         <template #default="{ row }">
-          <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '正常' : '禁用' }}</el-tag>
+          <StatusBadge :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '正常' : '禁用' }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('last-login')" prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
@@ -79,14 +78,14 @@
       :page-sizes="[20, 50, 100]"
       layout="total, sizes, prev, pager, next"
       class="pager"
-      @current-change="fetchList"
+      @current-change="handlePageChange"
       @size-change="handleSizeChange"
     />
     </div>
 
     <!-- 新增/编辑用户 Dialog -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="560px">
-      <el-form ref="formRef" :model="form" label-width="80px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="640px">
+      <el-form label-position="top" ref="formRef" :model="form">
         <el-form-item label="用户名" required>
           <el-input v-model="form.username" placeholder="2-50 个字符" :disabled="isEdit" />
         </el-form-item>
@@ -163,8 +162,8 @@
     </el-dialog>
 
     <!-- 重置密码 Dialog -->
-    <el-dialog v-model="resetPwdVisible" title="重置密码" width="420px">
-      <el-form :model="resetPwdForm" label-width="100px">
+    <el-dialog v-model="resetPwdVisible" title="重置密码" width="480px">
+      <el-form label-position="top" :model="resetPwdForm">
         <el-form-item label="用户">
           <span>{{ resetPwdRow?.real_name }}（{{ resetPwdRow?.username }}）</span>
         </el-form-item>
@@ -187,8 +186,11 @@
 </template>
 
 <script setup>
+import { useListPage } from '@/composables/useListPage'
+import { toRef } from 'vue'
+import { msgWarning, msgSuccessText, confirmAction, msgError } from '@/utils/feedback'
 import { computed, ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import {
   getUserList, createUser, updateUser, deleteUser,
   resetUserPassword, toggleUserActive, getRoleList,
@@ -215,37 +217,20 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('user-management', columnDefs)
 const orderSort = useTableSort()
 
-const keyword = ref('')
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const tableData = ref([])
-const loading = ref(false)
+const listState = useListPage(async (params, { signal }) => {
+  const response = await getUserList(params, { signal, suppressToast: true })
+  return { items: response.data.items || [], total: response.data.total || 0 }
+}, { searchForm: { keyword: '' } })
+const { loading, list: tableData, total, page, pageSize, searchForm, appliedSearchForm, errorMessage, hasData, dataPage, hasPendingSearch, fetchList, handleSearch, handleReset: resetFilters, handlePageChange, handleSizeChange, refreshCreate, refreshUpdate, refreshRemove } = listState
+const keyword = toRef(searchForm, 'keyword')
+const searchList = handleSearch
+function changeSort(event) { orderSort.onSortChange(event); return listState.handleSortChange(orderSort.sortParams.value) }
 const saving = ref(false)
-const hasActiveFilters = computed(() => Boolean(keyword.value))
+const hasActiveFilters = computed(() => Boolean(appliedSearchForm.value.keyword))
 
-function resetFilters() {
-  keyword.value = ''
-  page.value = 1
-  fetchList()
-}
 
-function handleSizeChange() {
-  page.value = 1
-  fetchList()
-}
 
 // ── 列表查询 ────────────────────────────────────────
-async function fetchList() {
-  loading.value = true
-  try {
-    const res = await getUserList({ keyword: keyword.value, page: page.value, page_size: pageSize.value, ...orderSort.sortParams.value })
-    tableData.value = res.data.items
-    total.value = res.data.total
-  } finally {
-    loading.value = false
-  }
-}
 
 // ── 角色选项 ────────────────────────────────────────
 const roleOptions = ref([])
@@ -327,16 +312,16 @@ async function loadInvoiceDelegateGrants(userId) {
 
 async function submitForm() {
   if (!form.value.real_name) {
-    ElMessage.warning('请填写姓名')
+    msgWarning('请填写姓名')
     return
   }
   if (!isEdit.value) {
     if (!form.value.username || form.value.username.length < 2) {
-      ElMessage.warning('用户名至少 2 个字符')
+      msgWarning('用户名至少 2 个字符')
       return
     }
     if (!form.value.password || form.value.password.length < 6) {
-      ElMessage.warning('密码至少 6 位')
+      msgWarning('密码至少 6 位')
       return
     }
   }
@@ -358,7 +343,7 @@ async function submitForm() {
         role_ids: form.value.role_ids,
       })
       await updateInvoiceDelegateGrants(editUserId.value, form.value.invoice_delegate_sales_user_ids)
-      ElMessage.success('更新成功')
+      msgSuccessText('更新成功')
     } else {
       await createUser({
         username: form.value.username,
@@ -370,10 +355,10 @@ async function submitForm() {
         okki_department_name: deptName,
         role_ids: form.value.role_ids,
       })
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     }
     dialogVisible.value = false
-    fetchList()
+    await (isEdit.value ? refreshUpdate() : refreshCreate())
   } catch {
     // handled by interceptor
   } finally {
@@ -394,17 +379,17 @@ function openResetPwdDialog(row) {
 
 async function submitResetPwd() {
   if (!resetPwdForm.value.new_password || resetPwdForm.value.new_password.length < 6) {
-    ElMessage.warning('密码至少 6 位')
+    msgWarning('密码至少 6 位')
     return
   }
   if (resetPwdForm.value.new_password !== resetPwdForm.value.confirm_password) {
-    ElMessage.warning('两次输入的密码不一致')
+    msgWarning('两次输入的密码不一致')
     return
   }
   saving.value = true
   try {
     await resetUserPassword(resetPwdRow.value.id, { new_password: resetPwdForm.value.new_password })
-    ElMessage.success('密码已重置')
+    msgSuccessText('密码已重置')
     resetPwdVisible.value = false
   } catch {
     // handled by interceptor
@@ -417,13 +402,13 @@ async function submitResetPwd() {
 async function handleToggleActive(row) {
   const action = row.is_active ? '禁用' : '启用'
   try {
-    await ElMessageBox.confirm(`确认${action}用户「${row.real_name}」？`, '确认', { type: 'warning' })
+    await confirmAction(`确认${action}用户「${row.real_name}」？`, '确认', { type: 'warning' })
   } catch { return }
 
   try {
     const res = await toggleUserActive(row.id)
     row.is_active = res.data.is_active
-    ElMessage.success(`已${action}`)
+    msgSuccessText(`已${action}`)
   } catch {
     // handled by interceptor
   }
@@ -432,7 +417,7 @@ async function handleToggleActive(row) {
 // ── 删除 ────────────────────────────────────────────
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认删除用户「${row.real_name}」？此操作不可恢复。`,
       '删除确认',
       { type: 'warning' },
@@ -441,14 +426,14 @@ async function handleDelete(row) {
 
   try {
     await deleteUser(row.id)
-    ElMessage.success('删除成功')
-    fetchList()
+    msgSuccessText('删除成功')
+    refreshRemove()
   } catch {
     // handled by interceptor
   }
 }
 
-onMounted(fetchList)
+
 
 // ── 有效权限预览 ────────────────────────────────────
 const permPreviewVisible = ref(false)
@@ -492,9 +477,9 @@ async function saveBindings() {
   savingBindings.value = true
   try {
     await updateUserProcessBindings(editUserId.value, bindingForm.process_ids)
-    ElMessage.success(`已绑定 ${bindingForm.process_ids.length} 个工序`)
+    msgSuccessText(`已绑定 ${bindingForm.process_ids.length} 个工序`)
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    msgError(e.response?.data?.detail || '保存失败', e)
   } finally {
     savingBindings.value = false
   }
@@ -504,10 +489,10 @@ async function saveWxId() {
   savingWxId.value = true
   try {
     await updateUserWxId(editUserId.value, wxIdForm.wx_id || null)
-    ElMessage.success('微信ID已保存')
-    fetchList()
+    msgSuccessText('微信ID已保存')
+    refreshUpdate()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    msgError(e.response?.data?.detail || '保存失败', e)
   } finally {
     savingWxId.value = false
   }
@@ -520,10 +505,10 @@ async function handleSyncDingtalk(row) {
   try {
     const res = await syncUserDingtalk(row.id)
     if (res.code === 200) {
-      ElMessage.success(res.message)
+      msgSuccessText(res.message)
       row.dingtalk_id = res.data.dingtalk_id
     } else {
-      ElMessage.warning(res.message)
+      msgWarning(res.message)
     }
   } catch {
     // handled by interceptor
@@ -535,10 +520,10 @@ async function handleSyncAll() {
   try {
     const res = await syncAllUsersDingtalk()
     if (res.code === 200) {
-      ElMessage.success(res.message)
-      fetchList()
+      msgSuccessText(res.message)
+      refreshUpdate()
     } else {
-      ElMessage.warning(res.message)
+      msgWarning(res.message)
     }
   } catch {
     // handled by interceptor

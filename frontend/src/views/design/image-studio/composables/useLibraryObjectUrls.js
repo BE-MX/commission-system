@@ -8,21 +8,29 @@ export function useLibraryObjectUrls({ fetchAsset = getLibraryAssetBlob, urlApi 
   const registry = createObjectUrlRegistry(urlApi)
   const objectUrls = reactive({})
   const pending = new Map()
+  let generation = 0
+  const controllers = new Set()
 
   async function load(assetId) {
     if (objectUrls[assetId]) return objectUrls[assetId]
     if (pending.has(assetId)) return pending.get(assetId)
-    const request = fetchAsset(assetId, { thumbnail: true })
+    const currentGeneration = generation
+    const controller = new AbortController()
+    controllers.add(controller)
+    const request = fetchAsset(assetId, { thumbnail: true, signal: controller.signal, suppressToast: true })
       .then(response => {
+        if (currentGeneration !== generation || controller.signal.aborted) return null
         const url = registry.create(assetId, response.data)
         objectUrls[assetId] = url
         pending.delete(assetId)
         return url
       })
       .catch(error => {
+        if (currentGeneration !== generation) return null
         pending.delete(assetId)
         throw error
       })
+      .finally(() => controllers.delete(controller))
     pending.set(assetId, request)
     return request
   }
@@ -32,6 +40,9 @@ export function useLibraryObjectUrls({ fetchAsset = getLibraryAssetBlob, urlApi 
   }
 
   function revokeAll() {
+    generation++
+    for (const controller of controllers) controller.abort()
+    controllers.clear(); pending.clear()
     registry.revokeAll()
     for (const key of Object.keys(objectUrls)) delete objectUrls[key]
   }

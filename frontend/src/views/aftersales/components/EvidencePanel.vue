@@ -72,7 +72,7 @@ const upload = file => props.uploadFn(file, evidenceType.value)
 .missing-box { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--color-warning-text); background: var(--color-warning-bg); }.missing-box :deep(button) { margin-left: auto; }.complete-box { display: flex; align-items: center; gap: 6px; color: var(--color-success-text); background: var(--color-success-bg); }
 .waiver-box { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 12px; }.waiver-box.pending { color: var(--color-warning-text); background: var(--color-warning-bg); }.waiver-box.approved { color: var(--color-success-text); background: var(--color-success-bg); }.waiver-box span { color: var(--text-secondary); }
 .upload-row { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: start; margin-top: 16px; }
-.locked-files { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; }.locked-files a { color: var(--color-primary); font-size: 13px; }
+.locked-files { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; }.locked-files a { color: var(--color-primary-text); font-size: 13px; }
 .confirm-form { margin-top: 16px; }.confirm-form :deep(.el-form-item:last-child) { margin-bottom: 0; }
 @media (max-width: 760px) { .upload-row { grid-template-columns: 1fr; } }
 </style>

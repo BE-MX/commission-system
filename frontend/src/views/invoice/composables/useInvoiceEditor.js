@@ -1,6 +1,7 @@
+import { msgWarning, msgSuccessText, alertAction } from '@/utils/feedback'
 import { computed, reactive, ref, watch } from 'vue'
 import { useLinkedInvoiceSync } from './useLinkedInvoiceSync'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import {
   checkInvoiceNo,
   createInvoice,
@@ -93,7 +94,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   function applyTotalDiscount(value) {
     const count = applyTotalDiscountToRows(accessories.hairItems.value, value)
     if (!count) {
-      ElMessage.warning('没有可分摊折扣的产品行')
+      msgWarning('没有可分摊折扣的产品行')
     }
     return count
   }
@@ -259,7 +260,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     await searchCustomers(String(res.company_id))
     const found = customerSearch.findCustomer(res.company_id)
     if (!found) {
-      ElMessage.warning('该客户已同步，但不在当前私海范围内（负责人见同步结果），无法选用')
+      msgWarning('该客户已同步，但不在当前私海范围内（负责人见同步结果），无法选用')
       return false
     }
     selectedCustomer.value = found
@@ -330,8 +331,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
         skipped.push('折扣总价：暂无产品行可分摊，请录入产品后在折扣框填写')
       }
     }
-    if (applied.length) ElMessage.success(`整单粘贴已填入：${applied.join('、')}`)
-    if (skipped.length) ElMessage.warning(skipped.join('；'))
+    if (applied.length) msgSuccessText(`整单粘贴已填入：${applied.join('、')}`)
+    if (skipped.length) msgWarning(skipped.join('；'))
   }
 
   async function onCustomerChange(customer) {
@@ -461,7 +462,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   async function applyScreenshotPreview(preview) {
     const patch = preview?.invoice_patch
     if (!preview?.ready || !patch) {
-      ElMessage.warning('识别结果仍有待处理项，暂不能创建发票')
+      msgWarning('识别结果仍有待处理项，暂不能创建发票')
       return
     }
     const recognizedOrderName = screenshotOrderName(preview)
@@ -487,7 +488,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     else if (recognizedOrderName.length > INVOICE_NO_MAX_LENGTH) {
       successMessage = `订单名称超过 ${INVOICE_NO_MAX_LENGTH} 个字符，已截取后填入发票号，请确认后保存`
     }
-    ElMessage.success(successMessage)
+    msgSuccessText(successMessage)
   }
 
   async function loadSalesUsers() {
@@ -579,7 +580,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       const res = await checkInvoiceNo({ invoice_no: no, exclude_id: form.id || undefined })
       if (seq !== invoiceNoSeq || (form.invoice_no || '').trim() !== no) return
       invoiceNoTaken.value = !res.available
-      if (!res.available) ElMessage.warning(`发票号 ${no} 已存在，请更换`)
+      if (!res.available) msgWarning(`发票号 ${no} 已存在，请更换`)
     } catch {
       // 拦截器已统一提示；保存时后端还有唯一校验兜底
     }
@@ -591,23 +592,23 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const contextSeq = customerContextSeq
     await customerDefaultsPromise
     if (contextSeq !== customerContextSeq) return null
-    if (form.receipt_uploading) { ElMessage.warning("请等待回款截图上传完成"); return null }
-    if (form.receipt_proof_dirty) { ElMessage.warning("请先保存回款截图变更"); return null }
+    if (form.receipt_uploading) { msgWarning("请等待回款截图上传完成"); return null }
+    if (form.receipt_proof_dirty) { msgWarning("请先保存回款截图变更"); return null }
     if (form.items.some(line => Number(line.total_price || 0) < 0)) {
-      ElMessage.warning('产品行折扣不能超过该行金额')
+      msgWarning('产品行折扣不能超过该行金额')
       return null
     }
     if (formTotal.value < 0) {
-      ElMessage.warning('折扣金额不能超过订单中可抵扣的金额')
+      msgWarning('折扣金额不能超过订单中可抵扣的金额')
       return null
     }
     if (settlementError.value) {
-      ElMessage.warning(settlementError.value)
+      msgWarning(settlementError.value)
       return null
     }
     // 客户等级必填（2026-09 下单页改版）：等级决定价格规则，缺等级不允许保存
     if (!form.customer_grade) {
-      ElMessage.warning('请选择客户等级')
+      msgWarning('请选择客户等级')
       return null
     }
     // 联系信息与快递渠道必填（2026-09-23 下单页改版）
@@ -618,12 +619,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
     if (!String(form.delivery_address || '').trim()) missingRequired.push('收货地址')
     if (!form.express_channel) missingRequired.push('快递渠道')
     if (missingRequired.length) {
-      ElMessage.warning(`请完善必填项：${missingRequired.join('、')}`)
+      msgWarning(`请完善必填项：${missingRequired.join('、')}`)
       return null
     }
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
     // A failed defaults request must not erase an existing customer grade.
     if (!customerGradeReady) delete payload.customer_grade
+    const created = !form.id
     const saved = options.linked
       ? await linked.save(form.id, payload, loadedUpdatedAt.value)
       : form.id
@@ -633,15 +635,15 @@ export function useInvoiceEditor({ onSaved } = {}) {
         : await createInvoice(payload)
     if (!saved) return null
     resetForm(saved)
-    ElMessage.success('发票已保存')
-    onSaved?.()
+    msgSuccessText('发票已保存')
+    onSaved?.({ created, invoice: saved })
     return saved
   }
 
   // 保存 → 校验 → 推送小满一步到位；校验/推送失败留在抽屉里让用户就地修，成功才收工关闭
   async function saveAndSync() {
     if (saveAndSyncSubmitting.value) {
-      ElMessage.warning('发票正在保存并同步，请勿重复提交')
+      msgWarning('发票正在保存并同步，请勿重复提交')
       return
     }
 
@@ -673,7 +675,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const html = issues
       .map(i => `<p>${escapeHtml(i.field)}: ${escapeHtml(i.message)}</p>`)
       .join('') || '校验未通过'
-    ElMessageBox.alert(html, '同步前校验', { dangerouslyUseHTMLString: true, confirmButtonText: '知道了' })
+    alertAction(html, '同步前校验', { dangerouslyUseHTMLString: true, confirmButtonText: '知道了' })
   }
 
   return {

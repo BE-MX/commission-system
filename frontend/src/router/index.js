@@ -1,3 +1,4 @@
+import { msgError } from '@/utils/feedback'
 import { createRouter, createWebHistory } from 'vue-router'
 import { NAV_ENTRIES } from '@/config/navigation'
 import { recordRecentNav } from '@/utils/recentNav'
@@ -132,8 +133,7 @@ router.beforeEach(async (to, from, next) => {
 
   // 权限检查 — 支持 permission(单权限) 与 anyPermission(任一即可)
   if (to.meta.permission && !auth.hasPermission(to.meta.permission)) {
-    const { ElMessage } = await import('element-plus')
-    ElMessage.error('权限不足')
+    msgError('权限不足')
     if (isShippingStationPath(to.path)) return next(shippingStationLogin())
     if (isFxSettlementPath(to.path)) return next(fxSettlementLogin())
     // 首次打开 kiosk 时 from.fullPath 是 '/'；沿用通用兜底会把展会设备送进后台。
@@ -144,8 +144,7 @@ router.beforeEach(async (to, from, next) => {
     return next(from.fullPath || '/dashboard')
   }
   if (to.meta.anyPermission && !auth.hasAnyPermission(to.meta.anyPermission)) {
-    const { ElMessage } = await import('element-plus')
-    ElMessage.error('权限不足')
+    msgError('权限不足')
     return next(from.fullPath || '/dashboard')
   }
 

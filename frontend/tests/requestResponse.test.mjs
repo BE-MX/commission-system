@@ -29,7 +29,7 @@ function loadResponseHandlers(axiosOverride) {
   }
   const createApiClient = new Function(
     'axios',
-    'ElMessage',
+    'msgError',
     'useLoading',
     'getAccessToken',
     'clearAuthState',
@@ -37,7 +37,7 @@ function loadResponseHandlers(axiosOverride) {
     `${body}; return createApiClient`,
   )(
     axiosOverride || axios,
-    { error(message) { messages.push(typeof message === 'string' ? message : message.message) } },
+    message => messages.push(typeof message === 'string' ? message : message.message),
     () => ({ show() {}, hide() {} }),
     () => null,
     () => {},

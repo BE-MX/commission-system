@@ -74,42 +74,45 @@
     <el-empty v-else-if="!loading" description="暂无排期数据" />
 
     <!-- Task detail dialog -->
-    <el-dialog
+    <DetailDrawer
       v-model="detailVisible"
       title="任务详情"
       width="480px"
       :close-on-click-modal="true"
     >
       <template v-if="selectedTask">
-        <el-descriptions :column="1" border>
+        <ResponsiveDescriptions :column="1" border>
           <el-descriptions-item label="任务编号">{{ selectedTask.task_no }}</el-descriptions-item>
           <el-descriptions-item label="任务名称">{{ selectedTask.task_name }}</el-descriptions-item>
           <el-descriptions-item label="客户">{{ selectedTask.customer_name }}</el-descriptions-item>
           <el-descriptions-item label="业务员">{{ selectedTask.salesperson_name }}</el-descriptions-item>
           <el-descriptions-item label="拍摄类型">{{ shootTypeLabel(selectedTask.shoot_type) }}</el-descriptions-item>
           <el-descriptions-item label="优先级">
-            <el-tag :type="selectedTask.priority === 'urgent' ? 'danger' : ''">
+            <StatusBadge :type="selectedTask.priority === 'urgent' ? 'danger' : ''">
               {{ selectedTask.priority === 'urgent' ? '加急' : '普通' }}
-            </el-tag>
+            </StatusBadge>
           </el-descriptions-item>
           <el-descriptions-item label="计划开始">{{ selectedTask.plan_start_date }} {{ periodLabel(selectedTask.plan_start_period) }}</el-descriptions-item>
           <el-descriptions-item label="计划结束">{{ selectedTask.plan_end_date }} {{ periodLabel(selectedTask.plan_end_period) }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="statusTagType(selectedTask.status)" size="small">
+            <StatusBadge :type="statusTagType(selectedTask.status)" size="small">
               {{ statusLabel(selectedTask.status) }}
-            </el-tag>
+            </StatusBadge>
           </el-descriptions-item>
           <el-descriptions-item v-if="selectedTask.remark" label="备注">{{ selectedTask.remark }}</el-descriptions-item>
-        </el-descriptions>
+        </ResponsiveDescriptions>
       </template>
-    </el-dialog>
+    </DetailDrawer>
   </div>
 </template>
 
 <script setup>
+import { GANTT_STATUS, GANTT_STATUS_LABELS as STATUS_LABELS, GANTT_STATUS_TYPES as STATUS_TAG_TYPES } from '@/views/design/designStatus.js'
+import { resolveStatus } from '@/utils/status'
+import { msgSuccessText, msgError } from '@/utils/feedback'
 import { ref, onMounted } from 'vue'
 import { Refresh, Download, Clock, Calendar, VideoPlay, CircleCheck, CircleClose } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+
 import { getGanttData, getDesigners } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 import GanttChart from '@/components/design/GanttChart.vue'
@@ -162,28 +165,16 @@ const legendItems = [
 ]
 
 // --- Status helpers ---
-const STATUS_LABELS = {
-  pending_design: '待设计',
-  scheduled: '已排期',
-  in_progress: '进行中',
-  completed: '已完成',
-  cancelled: '已取消',
-}
 
-const STATUS_TAG_TYPES = {
-  pending_design: 'warning',
-  scheduled: '',
-  in_progress: 'danger',
-  completed: 'success',
-  cancelled: 'info',
-}
+
+
 
 function statusLabel(status) {
-  return STATUS_LABELS[status] || status
+  return resolveStatus(status, GANTT_STATUS).label
 }
 
 function statusTagType(status) {
-  return STATUS_TAG_TYPES[status] || ''
+  return resolveStatus(status, GANTT_STATUS).type
 }
 
 const PERIOD_LABELS = { am: '上午', pm: '下午' }
@@ -255,9 +246,9 @@ async function handleExport() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(a.href)
-    ElMessage.success('导出成功')
+    msgSuccessText('导出成功')
   } catch {
-    ElMessage.error('导出失败')
+    msgError('导出失败')
   } finally {
     exporting.value = false
   }

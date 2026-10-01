@@ -13,7 +13,10 @@
         v-model:drawer-open="chat.drawerOpen.value"
         :sessions="chat.sessions.value"
         :current-session-id="chat.currentSessionId.value"
-        :loading="chat.initializing.value"
+        :loading="chat.sessionsResource.loading.value"
+        :error="chat.sessionsResource.errorMessage.value"
+        :has-loaded="chat.sessionsResource.hasLoaded.value"
+        @retry="chat.loadSessions"
         :can-write="chat.canWrite.value"
         @new="startConversation"
         @select="chat.selectSession"
@@ -121,7 +124,7 @@ async function startConversation() {
 <style scoped>
 :global(.main-content:has(.ai-chat-page) > .page-wrapper) { height: 100%; }
 .header-mode-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; margin-top: -8px; font-size: 12px; }
-.header-mode { padding: 0 8px 0 0; min-height: 44px; border: 0; background: transparent; color: var(--color-primary); cursor: pointer; font: inherit; }
+.header-mode { padding: 0 8px 0 0; min-height: 44px; border: 0; background: transparent; color: var(--color-primary-text); cursor: pointer; font: inherit; }
 .header-mode:focus-visible { outline: 2px solid var(--color-primary); }
 .header-mode:disabled { opacity: .55; cursor: not-allowed; }
 .ai-chat-page {

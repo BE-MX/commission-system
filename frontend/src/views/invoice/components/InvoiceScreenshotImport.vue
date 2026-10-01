@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     title="AI 识别 OKKI 订单截图"
-    width="min(1120px, 94vw)"
+    width="760px"
     destroy-on-close
     class="screenshot-import-dialog"
   >
@@ -51,12 +51,12 @@
           <p>
             {{ preview.extraction.order_date || '日期未知' }} ·
             {{ preview.extraction.currency || '币种未知' }}
-            {{ preview.extraction.order_amount ?? '金额未知' }}
+            {{ formatMoney(preview.extraction.order_amount, { missing: '金额未知' }) }}
           </p>
         </div>
-        <el-tag :type="preview.ready ? 'success' : 'warning'" effect="plain">
+        <StatusBadge :type="preview.ready ? 'success' : 'warning'" effect="plain">
           {{ preview.ready ? '可以填入发票' : '需要处理' }}
-        </el-tag>
+        </StatusBadge>
       </div>
 
       <div class="match-grid">
@@ -153,7 +153,7 @@
           </el-table-column>
           <el-table-column label="状态" min-width="86" max-width="110">
             <template #default="{ row }">
-              <el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
+              <StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
             </template>
           </el-table-column>
         </el-table>
@@ -204,8 +204,10 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../../utils/money.js'
+import { msgWarning, msgInfo } from '@/utils/feedback'
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { DocumentCopy, Picture } from '@element-plus/icons-vue'
 import { previewInvoiceScreenshot, resolveInvoiceScreenshot } from '@/api/invoice'
 
@@ -235,11 +237,11 @@ watch(() => props.modelValue, open => { if (open) resetAll() })
 
 function setImage(file) {
   if (!file?.type?.startsWith('image/')) {
-    ElMessage.warning('请选择 PNG、JPG 或 WebP 图片')
+    msgWarning('请选择 PNG、JPG 或 WebP 图片')
     return
   }
   if (file.size > 10 * 1024 * 1024) {
-    ElMessage.warning('截图不能超过 10MB')
+    msgWarning('截图不能超过 10MB')
     return
   }
   if (imagePreviewUrl.value) URL.revokeObjectURL(imagePreviewUrl.value)
@@ -256,7 +258,7 @@ function onPaste(event) {
 
 async function readClipboard() {
   if (!navigator.clipboard?.read) {
-    ElMessage.info('当前浏览器不支持直接读取图片，请使用 Ctrl/Cmd + V')
+    msgInfo('当前浏览器不支持直接读取图片，请使用 Ctrl/Cmd + V')
     return
   }
   try {
@@ -268,9 +270,9 @@ async function readClipboard() {
       setImage(new File([blob], 'okki-screenshot.png', { type }))
       return
     }
-    ElMessage.info('剪贴板中没有图片')
+    msgInfo('剪贴板中没有图片')
   } catch {
-    ElMessage.warning('无法读取剪贴板，请允许权限或使用 Ctrl/Cmd + V')
+    msgWarning('无法读取剪贴板，请允许权限或使用 Ctrl/Cmd + V')
   }
 }
 
@@ -350,8 +352,8 @@ const candidateKey = candidate => `${candidate.product_id}:${candidate.sku_id ||
 const candidateLabel = candidate => `${candidate.product_name} · SKU ${candidate.sku_id || '不可用'}`
 const statusType = status => ({ passed: 'success', warning: 'warning', blocked: 'danger' })[status] || 'info'
 const statusText = status => ({ passed: '通过', warning: '提醒', blocked: '待处理' })[status] || status
-const money = value => value == null ? '—' : Number(value).toFixed(2)
-const money4 = value => value == null ? '—' : Number(value).toFixed(4)
+const money = value => formatMoney(value, { missing: '—' })
+const money4 = value => formatMoney(value, { precision: 4, missing: '—' })
 onUnmounted(() => { if (imagePreviewUrl.value) URL.revokeObjectURL(imagePreviewUrl.value) })
 </script>
 
@@ -359,7 +361,7 @@ onUnmounted(() => { if (imagePreviewUrl.value) URL.revokeObjectURL(imagePreviewU
 .upload-stage, .preview-stage { display: grid; gap: 16px; }
 .order-type-row, .clipboard-row, .preview-heading, .totals-bar, .dialog-footer { display: flex; align-items: center; gap: 12px; }
 .order-type-row { justify-content: space-between; }
-.upload-icon { font-size: 42px; color: var(--color-primary); }
+.upload-icon { font-size: 42px; color: var(--color-primary-text); }
 .clipboard-row { justify-content: center; color: var(--text-secondary); font-size: 12px; }
 .image-preview { display: grid; justify-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; }
 .image-preview img { max-width: 100%; max-height: 260px; border: 1px solid var(--border-color); border-radius: 8px; object-fit: contain; }

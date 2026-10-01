@@ -8,6 +8,7 @@
     </div>
 
     <!-- 看板：运单状态概览 -->
+    <ListPageStatus :paged="false" :error="statsResource.errorMessage.value" :loading="statsResource.loading.value" :has-data="statsResource.hasLoaded.value" @retry="fetchStats" />
     <section class="kanban" v-if="stats">
       <div class="kanban-header">
         <div class="kanban-title">
@@ -64,11 +65,11 @@
 
     <!-- 筛选栏 + 操作行 + 表格 + 分页统一收进表格卡片（List Page Spec / Action Bar Spec） -->
     <div ref="panelRef" class="table-card tracking-panel">
-    <div class="toolbar">
-      <el-input v-model="keyword" placeholder="运单号 / 收件人" clearable class="filter-w-md" @keyup.enter="fetchList" @clear="fetchList">
+    <FilterBar :loading="loading" :pending="hasPendingSearch" @search="searchList" @reset="resetFilters">
+      <el-input v-model="keyword" placeholder="运单号 / 收件人" clearable class="filter-w-md">
         <template #prefix><el-icon><Search /></el-icon></template>
       </el-input>
-      <el-select v-model="statusFilter" placeholder="状态" clearable class="filter-w-sm" @change="handleStatusFilterChange">
+      <el-select v-model="statusFilter" placeholder="状态" clearable class="filter-w-sm">
         <el-option label="待查询" value="pending" />
         <el-option label="运输中" value="in_transit" />
         <el-option label="清关中" value="customs" />
@@ -77,19 +78,17 @@
         <el-option label="异常" value="exception" />
         <el-option label="已退回" value="returned" />
       </el-select>
-      <el-select v-model="carrierFilter" placeholder="物流商" clearable class="filter-w-sm" @change="fetchList">
+      <el-select v-model="carrierFilter" placeholder="物流商" clearable class="filter-w-sm">
         <el-option label="DHL" value="DHL" />
         <el-option label="FedEx" value="FEDEX" />
         <el-option label="UPS" value="UPS" />
         <el-option label="TNT" value="TNT" />
       </el-select>
-      <el-select v-model="activeFilter" placeholder="跟踪状态" clearable class="filter-w-sm" @change="fetchList">
+      <el-select v-model="activeFilter" placeholder="跟踪状态" clearable class="filter-w-sm">
         <el-option label="跟踪中" value="1" />
         <el-option label="已结束" value="0" />
       </el-select>
-      <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
-      <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-    </div>
+    </FilterBar>
 
     <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
     <div class="action-bar">
@@ -100,26 +99,27 @@
         v-model:density="density"
         :columns="columnDefs"
         :fullscreen="isFullscreen"
-        @refresh="fetchList"
+        :loading="loading" @refresh="fetchList"
         @fullscreen="toggleFullscreen"
       />
     </div>
 
-    <el-table
+    <ListPageStatus v-if="hasData && errorMessage" :error="errorMessage" :loading="loading" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
+      <el-table
       ref="tableRef"
       :data="tableData"
       v-loading="loading"
       :max-height="isFullscreen ? undefined : 640"
-      @sort-change="orderSort.onSortChange"
+      @sort-change="changeSort"
       class="list-table"
       :class="densityClass"
       border
     >
-      <template #empty>
+      <template #empty><ListPageStatus :error="errorMessage" :loading="loading" @retry="fetchList">
         <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的运单' : '暂无数据'">
           <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
         </el-empty>
-      </template>
+      </ListPageStatus></template>
       <el-table-column v-if="visibleKeys.includes('waybill-no')" prop="waybill_no" label="运单号" min-width="140" max-width="200" show-overflow-tooltip sortable="custom">
         <template #default="{ row }">
           <GlassButton variant="link" class="primary-link" @click="goDetail(row)">{{ row.waybill_no }}</GlassButton>
@@ -130,9 +130,9 @@
       <el-table-column v-if="visibleKeys.includes('receiver-country')" prop="receiver_country" label="国家" min-width="90" max-width="130" show-overflow-tooltip />
       <el-table-column v-if="visibleKeys.includes('current-status')" prop="current_status" label="状态" min-width="110" max-width="150" sortable="custom">
         <template #default="{ row }">
-          <el-tag :type="statusTagType(row.current_status)" size="small" effect="plain">
+          <StatusBadge :type="statusTagType(row.current_status)" size="small" effect="plain">
             {{ statusText(row.current_status) }}
-          </el-tag>
+          </StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('current-status-text')" prop="current_status_text" label="最新动态" min-width="190" max-width="340" show-overflow-tooltip />
@@ -156,9 +156,9 @@
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('tracking-active')" label="跟踪" min-width="110" max-width="150">
         <template #default="{ row }">
-          <el-tag :type="row.is_active ? 'success' : 'info'" size="small" effect="plain">
+          <StatusBadge :type="row.is_active ? 'success' : 'info'" size="small" effect="plain">
             {{ row.is_active ? '进行中' : '已结束' }}
-          </el-tag>
+          </StatusBadge>
         </template>
       </el-table-column>
       <el-table-column class-name="table-action-column" label="操作" min-width="130" max-width="180" fixed="right">
@@ -186,7 +186,7 @@
       :total="total"
       layout="total, sizes, prev, pager, next"
       :page-sizes="[20, 50, 100]"
-      @current-change="fetchList"
+      @current-change="handlePageChange"
       @size-change="handleSizeChange"
     />
     </div>
@@ -194,9 +194,16 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { toRef } from 'vue'
+
+import { TRACKING_STATUS, TRACKING_STATUS_LABELS as STATUS_MAP, TRACKING_STATUS_TYPES as STATUS_TAG } from './trackingStatus.js'
+import { resolveStatus } from '@/utils/status'
+import { msgSuccessText, confirmAction } from '@/utils/feedback'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { getShipmentList, getTrackingStats, refreshShipment, deleteShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
@@ -213,18 +220,23 @@ const { columnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, 
 
 const tableRef = ref()
 
-const stats = ref(null)
-const lastUpdated = ref('')
+const statsResource = useAsyncResource(async (_, { signal }) => {
+  const response = await getTrackingStats(undefined, { signal, suppressToast: true })
+  return { stats: response.data, updatedAt: formatUpdatedAt() }
+})
+const stats = computed(() => statsResource.data.value?.stats || null)
+const lastUpdated = computed(() => statsResource.data.value?.updatedAt || '')
 const activeKanban = ref('')
-const keyword = ref('')
-const statusFilter = ref('')
-const carrierFilter = ref('')
-const activeFilter = ref('')
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const tableData = ref([])
-const loading = ref(false)
+const listState = useListPage(async (params, { signal }) => {
+  const response = await getShipmentList(params, { signal, suppressToast: true })
+  return { items: response.data.items || [], total: response.data.total || 0 }
+}, { searchForm: { keyword: '', status: '', carrier: '', is_active: '' } })
+const { loading, list: tableData, total, page, pageSize, searchForm, appliedSearchForm, errorMessage, hasData, dataPage, hasPendingSearch, fetchList, handleSearch, handleReset: handleReset, handlePageChange, handleSizeChange, refreshCreate, refreshUpdate, refreshRemove } = listState
+const keyword = toRef(searchForm, 'keyword')
+const statusFilter = toRef(searchForm, 'status')
+const carrierFilter = toRef(searchForm, 'carrier')
+const activeFilter = toRef(searchForm, 'is_active')
+function changeSort(event) { orderSort.onSortChange(event); return listState.handleSortChange(orderSort.sortParams.value) }
 
 const kanbanItems = [
   {
@@ -271,23 +283,11 @@ function getProgress(key) {
   return Math.min(Math.round((v / totalCount) * 100), 100)
 }
 
-const hasActiveFilters = computed(() => Boolean(keyword.value || statusFilter.value || carrierFilter.value || activeFilter.value))
+const hasActiveFilters = computed(() => Boolean(appliedSearchForm.value.keyword || appliedSearchForm.value.status || appliedSearchForm.value.carrier || appliedSearchForm.value.is_active))
 
 // 重置 = 清空筛选（含看板高亮）+ 回第 1 页 + 重新加载
-function resetFilters() {
-  keyword.value = ''
-  statusFilter.value = ''
-  carrierFilter.value = ''
-  activeFilter.value = ''
-  activeKanban.value = ''
-  page.value = 1
-  fetchList()
-}
+function resetFilters() { activeKanban.value = ''; return handleReset() }
 
-function handleSizeChange() {
-  page.value = 1
-  fetchList()
-}
 
 function handleKanbanClick(item) {
   if (activeKanban.value === item.key) {
@@ -297,42 +297,21 @@ function handleKanbanClick(item) {
     activeKanban.value = item.key
     statusFilter.value = item.statusValue
   }
-  page.value = 1
-  fetchList()
+  return handleSearch()
 }
 
 function formatUpdatedAt(d = new Date()) {
   return formatBeijingDateTime(d, { seconds: false })
 }
 
-const STATUS_MAP = {
-  pending: '待查询',
-  picked_up: '已揽收',
-  in_transit: '运输中',
-  out_for_delivery: '派送中',
-  customs: '清关中',
-  customs_hold: '海关扣留',
-  delivered: '已签收',
-  returned: '已退回',
-  exception: '异常',
-}
-const STATUS_TAG = {
-  pending: 'info',
-  picked_up: '',
-  in_transit: '',
-  out_for_delivery: 'warning',
-  customs: 'warning',
-  customs_hold: 'danger',
-  delivered: 'success',
-  returned: 'danger',
-  exception: 'danger',
-}
 
-function statusText(s) { return STATUS_MAP[s] || s }
-function statusTagType(s) { return STATUS_TAG[s] || 'info' }
+
+
+function statusText(s) { return resolveStatus(s, TRACKING_STATUS).label }
+function statusTagType(s) { return resolveStatus(s, TRACKING_STATUS).type }
 
 // 状态下拉变更时，同步看板高亮（'total' 卡仅由点击触发，不随空筛选自动激活）
-function handleStatusFilterChange() {
+function searchList() {
   const val = statusFilter.value
   if (!val) {
     activeKanban.value = ''
@@ -340,56 +319,34 @@ function handleStatusFilterChange() {
     const hit = kanbanItems.find((it) => it.statusValue === val)
     activeKanban.value = hit ? hit.key : ''
   }
-  page.value = 1
-  fetchList()
+  return handleSearch()
 }
 
-async function fetchStats() {
-  try {
-    const res = await getTrackingStats()
-    stats.value = res.data
-    lastUpdated.value = formatUpdatedAt()
-  } catch { /* ignore */ }
-}
+const fetchStats = () => statsResource.load()
+watch(() => JSON.stringify([authStore.user?.id, authStore.roles, authStore.permissions]), () => {
+  statsResource.clear(); fetchStats()
+})
 
-async function fetchList() {
-  loading.value = true
-  try {
-    const res = await getShipmentList({
-      keyword: keyword.value,
-      status: statusFilter.value,
-      carrier: carrierFilter.value,
-      is_active: activeFilter.value,
-      page: page.value,
-      page_size: pageSize.value,
-      ...orderSort.sortParams.value,
-    })
-    tableData.value = res.data.items
-    total.value = res.data.total
-  } finally {
-    loading.value = false
-  }
-}
 
 async function handleRefresh(row) {
   try {
     await refreshShipment(row.waybill_no)
-    ElMessage.success('刷新完成')
-    fetchList()
+    msgSuccessText('刷新完成')
+    refreshUpdate()
     fetchStats()
   } catch { /* handled by interceptor */ }
 }
 
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm(`确定删除运单 ${row.waybill_no}？`, '删除确认', {
+    await confirmAction(`确定删除运单 ${row.waybill_no}？`, '删除确认', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
     })
     await deleteShipment(row.waybill_no)
-    ElMessage.success('已删除')
-    fetchList()
+    msgSuccessText('已删除')
+    refreshRemove()
     fetchStats()
   } catch { /* cancelled or handled by interceptor */ }
 }
@@ -398,8 +355,8 @@ async function handleScanStaging() {
   try {
     const res = await triggerScanStaging()
     const d = res.data
-    ElMessage.success(`扫描完成：${d.success} 新增，${d.reactivated} 恢复，${d.duplicate} 重复，${d.error} 异常`)
-    fetchList()
+    msgSuccessText(`扫描完成：${d.success} 新增，${d.reactivated} 恢复，${d.duplicate} 重复，${d.error} 异常`)
+    refreshCreate()
     fetchStats()
   } catch { /* handled by interceptor */ }
 }
@@ -408,8 +365,8 @@ async function handlePoll() {
   try {
     const res = await triggerPoll()
     const d = res.data
-    ElMessage.success(`轮询完成：${d.total} 条，成功 ${d.ok}，失败 ${d.error}`)
-    fetchList()
+    msgSuccessText(`轮询完成：${d.total} 条，成功 ${d.ok}，失败 ${d.error}`)
+    refreshUpdate()
     fetchStats()
   } catch { /* handled by interceptor */ }
 }
@@ -420,7 +377,7 @@ function goDetail(row) {
 
 function copyLink(link) {
   navigator.clipboard.writeText(link).then(() => {
-    ElMessage.success('短链接已复制')
+    msgSuccessText('短链接已复制')
   })
 }
 
@@ -431,19 +388,7 @@ function fmtDateShort(dateStr) {
   return `${Number(month)}/${Number(day)}`
 }
 
-onMounted(() => {
-  fetchStats()
-  fetchList()
-  nextTick(() => {
-    updateTableHeight()
-    resizeObserver = new ResizeObserver(updateTableHeight)
-    if (tableCardRef.value) resizeObserver.observe(tableCardRef.value)
-  })
-})
-
-onUnmounted(() => {
-  if (resizeObserver) resizeObserver.disconnect()
-})
+onMounted(fetchStats)
 </script>
 
 <style scoped src="./tracking-list.css"></style>

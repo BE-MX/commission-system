@@ -22,8 +22,8 @@
       <el-table-column prop="created_at" label="时间" min-width="150" show-overflow-tooltip />
       <el-table-column label="状态" min-width="80">
         <template #default="{ row: audit }">
-          <el-tag v-if="audit.revoked" size="small" type="info" effect="plain">已撤销</el-tag>
-          <el-tag v-else size="small" type="warning" effect="plain">有效</el-tag>
+          <StatusBadge v-if="audit.revoked" size="small" type="info" effect="plain">已撤销</StatusBadge>
+          <StatusBadge v-else size="small" type="warning" effect="plain">有效</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column class-name="table-action-column" label="操作" min-width="90">

@@ -14,11 +14,12 @@
       </h2>
     </div>
 
-    <div v-if="loading" class="loading-wrap">
+    <ListPageStatus :error="statsResource.errorMessage.value" :loading="loading" :has-data="!!statsResource.data.value" @retry="loadStats" />
+    <div v-if="loading && !statsResource.data.value" class="loading-wrap">
       <el-skeleton :rows="5" animated />
     </div>
 
-    <template v-else>
+    <template v-else-if="statsResource.data.value">
       <!-- 概览卡片 -->
       <div class="stats-cards">
         <div class="stat-card emphasis lg-card">
@@ -47,9 +48,9 @@
             <el-table-column label="文件名" prop="file_name" show-overflow-tooltip sortable />
             <el-table-column label="类型" min-width="70">
               <template #default="{ row }">
-                <el-tag size="small" :type="fileTypeTag(row.file_type)">
+                <StatusBadge size="small" :type="fileTypeTag(row.file_type)">
                   {{ fileTypeLabel(row.file_type) }}
-                </el-tag>
+                </StatusBadge>
               </template>
             </el-table-column>
             <el-table-column label="下载量" min-width="80" prop="download_count" sortable />
@@ -91,45 +92,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
 import { TrendCharts, Trophy } from '@element-plus/icons-vue'
 import { getDownloadStats } from '@/api/asset'
 import { formatBeijingDate } from '@/utils/datetime'
 
-const loading = ref(false)
-const stats = ref({
-  total_downloads: 0,
-  total_assets: 0,
-  today_downloads: 0,
-  top_assets: [],
-  trend: [],
-})
-
-const maxTrendCount = ref(1)
-
-async function loadStats() {
-  loading.value = true
-  try {
-    const res = await getDownloadStats()
-    const data = res.data || {}
-    stats.value = {
-      total_downloads: data.total_downloads || 0,
-      total_assets: data.total_assets || 0,
-      today_downloads: data.today_downloads || 0,
-      top_assets: data.top_assets || [],
-      trend: data.trend || [],
-    }
-    maxTrendCount.value = Math.max(
-      1,
-      ...(data.trend || []).map(t => t.count)
-    )
-  } catch (e) {
-    ElMessage.error('加载统计数据失败')
-  } finally {
-    loading.value = false
-  }
-}
+const statsResource = useAsyncResource(async (_, { signal }) => (await getDownloadStats({ signal, suppressToast: true })).data || {})
+const loading = statsResource.loading
+const stats = computed(() => ({ total_downloads: 0, total_assets: 0, today_downloads: 0, top_assets: [], trend: [], ...statsResource.data.value }))
+const maxTrendCount = computed(() => Math.max(1, ...stats.value.trend.map(t => t.count)))
+const loadStats = () => statsResource.load()
 
 function getBarHeight(count) {
   if (!count) return 0

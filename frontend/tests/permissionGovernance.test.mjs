@@ -48,9 +48,9 @@ test('every scheduler mutation requires confirmation and locks concurrent action
   assert.match(operations, /Boolean\(actionJobId\)/)
   assert.match(operations, /operateJob\(row, 'pause'\)/)
   assert.match(operations, /operateJob\(row, 'resume'\)/)
-  assert.match(composable, /await ElMessageBox\.confirm/)
+  assert.match(composable, /await confirmAction/)
   assert.match(composable, /暂停后将不再按计划执行/)
-  assert.match(composable, /sequence === requestSequence/)
+  assert.match(composable, /actionJobId\.value \|\| overviewResource\.error\.value \|\| !overviewResource\.hasLoaded\.value/)
 })
 
 test('global table and button baselines follow DESIGN.md', () => {

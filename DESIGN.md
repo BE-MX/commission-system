@@ -348,7 +348,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 ### 5. 筛选区（FilterBar）
 
-职责划分（借鉴 Art Design Pro `ArtSearchBar`）：**页面负责筛选字段与提交逻辑，规范负责布局、展开收起与操作区一致性**。现状各页写法不一（`.toolbar` / `el-row` / 原生 form / 侧栏标签云并存，控件内联宽度，约一半页面无重置），按本节收敛。
+职责划分（借鉴 Art Design Pro `ArtSearchBar`）：**页面负责筛选字段与业务逻辑，`components/FilterBar.vue` 负责布局、展开收起与查询/重置操作区**。发票、回款、内销订单已接入；存量页面按业务域逐批迁移。
 
 **布局**
 
@@ -359,8 +359,10 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 **操作区**
 
 - 「查询 + 重置」必须成对出现，固定在筛选区末尾；查询用主按钮（GlassButton `variant="primary"`），重置用次按钮 **[评审]**
-- 筛选字段 > 4 个时，默认只展示首行，其余收进「展开/收起」切换；参考实现 `views/asset/useAssetTagFilters.js` **[评审]**
-- 输入类控件 `@keyup.enter` 触发查询 **[评审]**
+- 默认插槽放最多 4 个常用字段，其余放 `#advanced`，默认收起；收起保留输入，不自动查询；窄屏宽度不超过可用空间 **[评审]**
+- 文本输入 Enter 由 FilterBar 统一触发一次查询；输入法确认、下拉/日期选项的 Enter 不提交查询，字段不重复绑定 Enter **[评审]**
+- `useListPage.searchForm` 是编辑中的条件，`appliedSearchForm` 是已提交快照（日期也包含在内）。只有查询、Enter 或重置提交条件并回到第一页；翻页、切换每页条数、刷新均读取已提交条件。`hasPendingSearch` 驱动“查询后生效”提示 **[评审]**
+- FilterBar 通过 `@search` / `@reset` 调用页面方法；`loading` 禁用查询，重置仍可取消旧查询；`advancedCount` 表达已提交高级条件数。内销重置保留当前订单大类标签 **[评审]**
 
 ### 6. 分页
 
@@ -369,6 +371,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 - layout 固定为 `total, sizes, prev, pager, next`；`page-sizes` 固定 `[20, 50, 100]`，默认 20 **[可门禁：`_tags("el-pagination")` 的 `layout` 属性白名单比对]**
 - 类名统一 `class="pager"`，置于表格卡片内底部 **[评审]**
 - 分页状态走 `useListPage.js`（新列表页必须使用），不自建分页状态 **[评审]**
+- 成功编辑使用 `refreshUpdate()` 保留有效页；删除使用 `refreshRemove()`，根据服务端 total 修正失效末页并重读；新增使用 `refreshCreate({ firstPage })`，依据业务排序定位。发票（created_at 倒序）、回款（id 倒序）新增回第一页；内销新增通过带新单号的返回路由查询定位，缓存实例也接收该查询 **[评审]**
 
 ### 7. 表格三态（loading / empty / error）
 
@@ -376,7 +379,9 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 - **loading**：`v-loading`（全站既有做法，不变）
 - **empty**：统一用 `el-table` 的 `empty` 插槽或 `el-empty`，文案「暂无数据」，有筛选条件时给出「重置筛选」引导；**禁止**新增手写「暂无…」裸 div，`empty-text` 属性不再新增 **[可门禁：`empty-text=` 属性计数进债务基线冻结]**
-- **error**：接口错误提示统一走 `api/request.js` 拦截器 + `utils/feedback.js`，页面 `catch` 里只处理业务回滚，不各自弹裸消息（见 Feedback Spec）**[评审]**
+- **error**：列表用 `components/ListPageStatus.vue` 展示首次失败与重试；已有行时保留上次成功结果，提示结果所在页码和可能过期。列表请求传 `suppressToast: true` 避免重复消息；401 仍由拦截器处理，写入失败沿用域内反馈。首次失败不得展示为无数据 **[评审]**
+- `fetchList()` / 查询 / 刷新成功返回 `true`，读取失败保存 `error` / `errorMessage` 并返回 `false`；写入成功后的读取失败不能反向报告为写入失败。调用方若原本依赖列表异常抛出，须改读共享错误状态 **[评审]**
+- 请求带 `signal` 和 `isCurrent()`；仅最新请求可更新行、total、loading、错误及域元数据；卸载取消请求。发票概览有独立请求序号，回款同步开关须在 `isCurrent()` 后更新 **[评审]**
 
 ### 8. 快速检查清单
 
@@ -437,7 +442,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 ## Dialog & Form Spec
 
-弹窗与表单的用途、尺寸与底部操作区统一约定。现状：`el-dialog` 宽度手写值多达 11 档、`el-form` label 对齐两种并存（145 个表单仅 47 个显式 `label-position`）、底部按钮区类名三套并存，按本节收敛。
+弹窗与表单的用途、尺寸与底部操作区统一约定。主站已按三档宽度、顶部标签和标准footer收敛，具体实现与专业场景边界见下文「规范实现与验收索引」。
 
 ### 1. 用途边界
 
@@ -457,8 +462,8 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 ### 3. 表单
 
-- 弹窗内表单统一 `label-position="top"`（FilterBar 筛选用行内控件，不用 `el-form-item` 标签）**[评审]**；存量 right 对齐表单在下次触碰时迁移
-- 通用校验规则（手机号、邮箱、金额等）收敛到共享 validators（新建 `utils/validators.js`，参照 `utils/datetime.js` 的收敛路径），新表单不自写正则 **[可门禁：validators.js 落地后，页面内手机号等正则字面量计数冻结]**
+- 弹窗内表单统一 `label-position="top"`（FilterBar 筛选用行内控件，不用 `el-form-item` 标签）**[门禁：主站 form_label_position]**
+- 通用校验使用已落地 `utils/validators.js`，新表单不自写手机号/邮箱正则；国际号码、展会号码及金额精度由业务明确选择策略，不能扩大原校验范围 **[门禁：inline_public_validator]**
 - 必填标记、错误提示位置沿用 Element Plus 默认，不自定义 **[评审]**
 
 ### 4. 底部按钮区
@@ -473,30 +478,30 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 - **状态字典**：每个业务域在自己的 `use*.js` 或共享字典文件中维护 `状态枚举 → { label, tagType }` 映射；新增状态字段必须先登记字典 **[评审]**。参照 PM 站 `utils/labels.js`（标签 + 语义色单点维护，「状态色仅用于徽标」纪律）
 - **渲染**：表格/详情中状态一律用 pill tag（见 List Page Spec 第 3 节），`type` 从字典取；存量模板里静态 `type="success"` 等裸映射在触碰时迁入字典 **[可门禁：`el-tag` 标签上静态 `type=` 属性计数进债务基线，只许降不许升]**
-- 后续可提取 PM 站 `StatusBadge.vue` 思路做主站统一封装；两站 token 不互通的现状维持不变
+- 主站已落地 `components/StatusBadge.vue` 与 `utils/status.js`，支持域字典和未知值可读兜底。PM 站继续使用自己的组件、token与反馈规范。
 
 ## Feedback Spec
 
-消息、确认、加载、空态的统一出口。现状 `utils/feedback.js` 已建成但裸调用过半（约 497 处裸 ElMessage/ElNotification、105 处裸 ElMessageBox.confirm），按本节收敛存量。
+消息、确认、加载、空态的统一出口。主站裸消息/确认已收敛到 `utils/feedback.js`；原动作、标题、校验条件与精确成功文案必须保留。
 
 - **操作反馈**：成功/失败消息一律 `utils/feedback.js` 的 `msgSuccess` / `msgError`；**禁止**新代码直接 `import { ElMessage } / ElNotification` **[可门禁：`.vue`/`.js` 中两者 import 计数进债务基线，只许降不许升]**
 - **危险确认**：删除、禁用、驳回等必须 `confirmDanger`，不裸调 `ElMessageBox.confirm` **[可门禁：ElMessageBox import 计数冻结，同上]**
-- **接口错误**：统一由 `api/request.js` 拦截器弹出；页面 `catch` 里只处理业务回滚，不重复提示 **[评审]**
+- **接口错误**：普通请求由 `api/request.js` 拦截器提示；具有行内错误/重试的读取传 `suppressToast: true` 和 AbortSignal，页面负责展示。`msgError(text, error)`识别已提示错误，避免重复消息。取消确认正常退出 **[评审]**
 - **加载**：按钮提交带 loading；表格 `v-loading`；首屏大区块可用 `el-skeleton`（适度使用，不为每个列表补骨架）**[评审]**
-- **空状态**：列表/卡片区统一 `el-empty` 或组件 empty 插槽，文案「暂无数据」+ 可选引导操作；手写「暂无…」裸 div 不再新增 **[评审]**
+- **空状态**：使用 `EmptyState` 或组件 empty 插槽，按已应用条件提供清筛选/创建等恢复动作。读取失败由 `ListPageStatus` 展示，首次失败不能显示成功空态；刷新失败保留旧数据并说明过期 **[评审]**
 - PM 站对应纪律：`toast.success/error` + `EmptyState.vue`，维持不变
 
 ## Format Spec（金额与数字）
 
 时间是全站规范执行最好的样例（`utils/datetime.js` + 机器检查），金额按同一路径收敛。
 
-- **金额**：收敛到单一格式化出口（新建 `utils/money.js`：统一货币符号、千分位、两位精度）；新代码**禁止**新增 `toLocaleString` / `Intl.NumberFormat` / 裸 `toFixed(2)` 格式化金额 **[可门禁：三者在 `frontend/src` 的出现计数进债务基线冻结；现状 4 份 money 实现并存、24+ 处散写]**。显示约定：列表内默认两位小数 + 千分位；负金额前置 `-`
+- **金额**：使用已有 `utils/money.js` 的 `formatMoney`；按币种、精度、缺失值、正负号明确配置。金额计算、cents解析、序列化不交给显示函数；百分比/重量/数量不改成金额。新代码禁止新增散写金额格式化 **[门禁：money_format 计数冻结，共享实现自身有精确路径豁免]**。列表默认两位小数 + 千分位；负金额前置 `-`。
 - **数字列**：表格数字沿用 DM Sans + tabular-nums（见 Typography）；维持全表左对齐红线，数字列暂不强制右对齐
 - **日期控件**：`el-date-picker` 的 `value-format` 统一 `YYYY-MM-DD`（纯日期）与 `YYYY-MM-DD HH:mm:ss`（日期时间），不新增 ISO `T` 格式 **[可门禁：`_tags("el-date-picker")` 的 `value-format` 白名单比对]**
 
 ## Component Adoption（复用与晋升）
 
-借鉴 Art Design Pro / vue-pure-admin 的组件治理方式，解决「基建已建成但采用率低」问题（`useListPage` 仅 27 个文件引用、`DetailDrawer` 仅 22 个）。
+共享能力按真实资源契约采用；分页、全量树、限量历史、游标事件与辅助详情分别处理，覆盖证据见资源账本。引用数量不能证明采用完成。
 
 ### Element Plus 使用三原则
 
@@ -517,9 +522,30 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 ### 新页面基建采用红线
 
-- 新列表页**必须**基于 `useListPage.js` **[评审]**
+- 新服务端分页列表基于 `useListPage.js`；完整数组/树用 `useAsyncResource.js`，游标历史用 `useCursorResource.js` 或经验证的等价控制器，不为无分页接口制造分页 **[评审]**
 - 新详情抽屉**必须**基于 `DetailDrawer.vue` **[评审]**
 - 已晋升公共组件登记：`components/TableTools.vue`（2026-10-01，发票页首发后晋升，全站列表页推广）
+- 已晋升公共组件登记：`components/FilterBar.vue`、`components/ListPageStatus.vue`（2026-10-01，发票/回款/内销三试点）。验证入口为 `tests/useListPage.test.mjs`、`tests/listPagePilots.test.mjs`、`tests/listPageComponents.test.mjs`；完整验收记录见 `docs/requirements/2026-10-01-list-filter-phase-one.md`。
+
+## 规范实现与验收索引（2026-10-02）
+
+本轮四阶段本地实现以 [最终验收](docs/requirements/2026-10-02-ui-convergence-acceptance.md) 和 [资源账本](docs/requirements/2026-10-02-list-resource-coverage.md) 为证据。主站为采用范围；PM、外部客户门户和登录展示页按各自界面纪律保留边界。
+
+| 清单 | 实现入口 | 验证入口 |
+| --- | --- | --- |
+| 1–4 列表、查询、CRUD、筛选 | useListPage / useAsyncResource / useCursorResource / FilterBar / ListPageStatus | useListPage、listPagePilots、各域 *Resources / *ListAdoption 回归；逐项资源账本 |
+| 5 弹窗/表单 | 三档 el-dialog、DetailDrawer、顶部标签与共享footer；专业长编辑器登记用途 | UI audit 尺寸/表单门禁；样例窄屏与实际 mounted 验证 |
+| 6 状态 | StatusBadge、utils/status.js、域内字典 | status、badge及领域枚举边界回归 |
+| 7 反馈/空态 | utils/feedback.js、EmptyState、ListPageStatus | feedback、组件及写成功读失败回归 |
+| 8–9 金额/校验 | utils/money.js、utils/validators.js | money、validators及财务边界回归；精度/国际号码策略 |
+| 10 分页/详情 | 真实P列表默认20/档位20、50、100；ResponsiveDescriptions观察容器宽度 | audit分页门禁；响应式列数、390px长详情验证 |
+| 11 表格偏好 | useTableView、TableTools恢复默认，版本化持久化、列集交集、至少一列 | tableView、tablePreferences；浏览器显隐/密度/刷新/恢复默认 |
+| 12 颜色/尺寸 | tokens.css、app.css、语义色映射、md按钮和36px筛选 | token对比度回归、控件尺寸门禁；精确例外登记 |
+| 13 样例 | system/ComponentShowcase.vue，navigation.js注册；本地无业务API夹具 | 桌面/390px、Enter/Escape、焦点、失败恢复、减少动态验证 |
+
+门禁位于 `scripts/audit_frontend_ui.py`，负例位于 `scripts/test_audit_frontend_ui.py`。分页档位/默认20、顶部标签、GlassButton合法尺寸与md、公共校验规则已受控；`scripts/ui_component_exceptions.json` 按路径、精确数量与业务理由登记紧凑按钮，数量变化即失败。`--write-baseline` 也禁止提高既有度量预算。旧债务只许下降；剩余 specialized/PM 计数须按最终报告解释，不能宣称全站零债务。
+
+文件超过500行只作职责复核线索，不作为UI正确性指标，不为达行数机械拆分；本轮移除该UI债务度量。专业看板、任务树、打印/导入预览与完整选项集合保留各自布局和真实边界，明确限量及错误恢复；数据结构、业务计算和危险确认条件仍按领域约束。
 
 ## Login Page — Kimi Design (Dark Theme)
 

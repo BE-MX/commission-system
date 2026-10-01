@@ -1,5 +1,6 @@
+import { msgSuccessText, msgError, msgWarning, promptAction } from '@/utils/feedback'
 import { ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { resolveInvoiceLinked, closeInvoiceLinked, getInvoiceLinked, runInvoiceLinked, saveInvoiceLinked } from '@/api/invoice'
 
 export function useLinkedInvoiceSync(onSaved) {
@@ -25,7 +26,7 @@ export function useLinkedInvoiceSync(onSaved) {
     } catch (error) {
       if (sequence !== loadSequence) return
       if (sameInvoice) {
-        ElMessage.error('关联同步结果刷新失败，请重试')
+        msgError('关联同步结果刷新失败，请重试', error)
         return
       }
       throw error
@@ -44,7 +45,7 @@ export function useLinkedInvoiceSync(onSaved) {
       }
       requests.delete(id)
       operation.value = recovered.operation
-      ElMessage.warning('上次提交结果尚待核对，请先刷新订单后再修改')
+      msgWarning('上次提交结果尚待核对，请先刷新订单后再修改')
       return null
     }
     if (!pending) pending = { signature, body: { invoice, expected_version: updatedAt, request_key: crypto.randomUUID() } }
@@ -69,7 +70,7 @@ export function useLinkedInvoiceSync(onSaved) {
       if (activeId === id) operation.value = result
       const outbound = result.steps?.outbound
       if (outbound?.message && result.steps?.order?.status === 'done') {
-        const feedback = outbound.status === 'done' ? ElMessage.success : ElMessage.warning
+        const feedback = outbound.status === 'done' ? msgSuccessText : msgWarning
         feedback(`出库：${outbound.message}`)
       }
       await onSaved?.(id)
@@ -78,7 +79,7 @@ export function useLinkedInvoiceSync(onSaved) {
       const result = await getInvoiceLinked(id).catch(() => null)
       if (result && activeId === id) operation.value = result
       if (['done', 'manual'].includes(result?.status)) await onSaved?.(id)
-      ElMessage.warning('同步结果尚未确认，请刷新结果；不要重复保存')
+      msgWarning('同步结果尚未确认，请刷新结果；不要重复保存')
     } finally { busy.value = false }
   }
   async function close() {
@@ -94,7 +95,7 @@ export function useLinkedInvoiceSync(onSaved) {
     if (!operation.value || busy.value) return
     let answer
     try {
-      answer = await ElMessageBox.prompt('确认已人工核对小满订单、出库、回款和库存，并记录处理结果。本操作仅结束任务，不标记同步成功、不重发。', '人工核对后结束', {
+      answer = await promptAction('确认已人工核对小满订单、出库、回款和库存，并记录处理结果。本操作仅结束任务，不标记同步成功、不重发。', '人工核对后结束', {
         inputValidator: value => value?.trim().length >= 10 || '请至少填写10字核对依据', confirmButtonText: '确认已核对并结束',
       })
     } catch { return }

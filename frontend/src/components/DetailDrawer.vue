@@ -34,11 +34,11 @@ defineEmits(['update:modelValue', 'closed'])
 </script>
 
 <style scoped>
-.detail-drawer-body { min-height: 120px; }
+.detail-drawer-body { min-height: 120px; height: 100%; display: flex; flex-direction: column; }
 .detail-drawer-footer { display: flex; justify-content: flex-end; gap: 10px; }
 .detail-drawer-footer { flex-wrap: wrap; }
 </style>
 
 <style>
-.el-drawer.detail-drawer { max-width: 100vw; }
+.el-drawer.detail-drawer { max-width: calc(100vw - 24px); }
 </style>

@@ -1,19 +1,19 @@
 <template>
-  <el-dialog v-model="visible" title="生产下单" width="520px" align-center>
+  <el-dialog v-model="visible" title="生产下单" width="640px" align-center>
     <div v-if="row" class="production-dialog-content">
       <div v-for="item in summary" :key="item.label" class="prod-info-row">
         <span class="prod-label">{{ item.label }}</span>
         <span class="prod-value" :class="item.className">{{ item.value }}</span>
       </div>
       <el-divider />
-      <el-form :model="form" label-width="100px">
+      <el-form label-position="top" :model="form">
         <el-form-item label="生产下单数量" required>
           <el-input-number v-model="form.order_qty" :min="1" :max="999999" :step="1" controls-position="right" @change="onQtyChange" />
         </el-form-item>
         <el-form-item label-width="0">
           <el-checkbox v-model="form.semifinished_enabled" :disabled="loading" @change="toggleSemifinished">同步下单半成品熟料</el-checkbox>
         </el-form-item>
-        <el-alert v-if="error" :title="error" type="warning" :closable="false" show-icon class="plan-alert" />
+        <el-alert v-if="error" :title="error" type="warning" :closable="false" show-icon class="plan-alert"><el-button :loading="loading" @click="loadQuote">重试加载</el-button></el-alert>
         <div v-if="form.semifinished_enabled && form.semifinished_items.length" class="semifinished-plan">
           <div v-for="item in form.semifinished_items" :key="item.material_id" class="semifinished-plan__row">
             <div><strong>{{ item.size }}/{{ item.color_code }}</strong><small>可用 {{ item.available_grams }}g</small></div>
@@ -28,14 +28,14 @@
     </div>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submit">确认加入购物车</el-button>
+      <el-button type="primary" :loading="submitting" :disabled="loading" @click="submit">确认加入购物车</el-button>
     </template>
   </el-dialog>
 </template>
 
-<script setup>
-import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+<script setup>import { msgWarning } from '@/utils/feedback'
+import { computed, reactive, ref, watch, onUnmounted } from 'vue'
+
 import { quoteSemifinished } from '@/api/semifinished'
 
 const visible = defineModel({ type: Boolean, default: false })
@@ -46,6 +46,9 @@ const error = ref('')
 const submitting = ref(false)
 let quoteTimer = null
 let quoteSerial = 0
+let quoteController
+function invalidateQuote() { quoteSerial += 1; quoteController?.abort(); loading.value = false }
+onUnmounted(() => { clearTimeout(quoteTimer); invalidateQuote() })
 
 const suggestedQty = computed(() => Math.max(0,
   (props.row?.safety_stock || 0) * 2 - (props.row?.enable_count || 0) - (props.row?.production_in_transit || 0),
@@ -60,10 +63,11 @@ const summary = computed(() => props.row ? [
   { label: '差值', value: suggestedQty.value, className: suggestedQty.value > 0 ? 'value-danger' : '' },
 ] : [])
 
-watch(visible, opened => {
+watch([visible, () => props.row?.product_id], ([opened]) => {
+  clearTimeout(quoteTimer)
+  invalidateQuote()
   if (!opened) {
     if (quoteTimer) clearTimeout(quoteTimer)
-    quoteSerial += 1
     return
   }
   if (!props.row) return
@@ -73,30 +77,36 @@ watch(visible, opened => {
 
 async function loadQuote() {
   if (!visible.value || !props.row || !form.semifinished_enabled) return
+  quoteController?.abort()
+  quoteController = new AbortController()
   const serial = ++quoteSerial
+  const productId = props.row.product_id; const quantity = form.order_qty
+  const current = () => serial === quoteSerial && visible.value && form.semifinished_enabled && props.row?.product_id === productId && form.order_qty === quantity
   loading.value = true
   error.value = ''
   try {
-    const quote = await quoteSemifinished({ product_id: props.row.product_id, finished_qty: form.order_qty })
-    if (serial === quoteSerial) {
+    const quote = await quoteSemifinished({ product_id: productId, finished_qty: quantity }, { signal: quoteController.signal, suppressToast: true })
+    if (current()) {
       form.semifinished_items = (quote.items || []).map(item => ({ ...item, quantity_grams: Number(item.suggested_qty_grams) }))
     }
   } catch (caught) {
-    if (serial === quoteSerial) {
+    if (current()) {
       form.semifinished_items = []
       error.value = caught?.response?.data?.detail || caught.message || '半成品关联加载失败'
     }
   } finally {
-    if (serial === quoteSerial) loading.value = false
+    if (current()) loading.value = false
   }
 }
 function toggleSemifinished(enabled) {
   if (enabled) loadQuote()
-  else { form.semifinished_items = []; error.value = '' }
+  else { clearTimeout(quoteTimer); invalidateQuote(); form.semifinished_items = []; error.value = '' }
 }
 function onQtyChange() {
   if (!form.semifinished_enabled) return
   if (quoteTimer) clearTimeout(quoteTimer)
+  invalidateQuote()
+  loading.value = true
   quoteTimer = setTimeout(loadQuote, 250)
 }
 function parseSpec(name) {
@@ -105,7 +115,7 @@ function parseSpec(name) {
 }
 async function submit() {
   if (!props.row) return
-  if (form.semifinished_enabled && !form.semifinished_items.length) return ElMessage.warning(error.value || '未取得可下单的半成品计划')
+  if (form.semifinished_enabled && !form.semifinished_items.length) return msgWarning(error.value || '未取得可下单的半成品计划')
   submitting.value = true
   try {
     const ok = await props.addToCart({

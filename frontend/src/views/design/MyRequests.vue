@@ -10,24 +10,22 @@
     <!-- 表格 -->
     <div ref="panelRef" class="table-card my-requests-panel">
     <!-- 筛选区（List Page Spec 第 5 节） -->
-    <div class="toolbar">
+    <FilterBar :pending="listState.hasPendingSearch.value" @search="doSearch" @reset="resetFilters">
       <el-input
         v-model="keyword"
         placeholder="预约编号 / 客户名"
         clearable
         class="filter-w-md"
-        @keyup.enter="doSearch"
-        @clear="doSearch"
       >
         <template #prefix><el-icon><Search /></el-icon></template>
       </el-input>
       <el-select
         v-model="salespersonFilter"
+        :disabled="isSelfOnly"
         placeholder="业务员"
         clearable
         filterable
         class="filter-w-sm"
-        @change="doSearch"
       >
         <el-option
           v-for="item in salespersonOptions"
@@ -43,7 +41,6 @@
         multiple
         collapse-tags
         class="filter-w-md"
-        @change="doSearch"
       >
         <el-option
           v-for="item in STATUS_OPTIONS"
@@ -61,15 +58,8 @@
         value-format="YYYY-MM-DD"
         clearable
         class="filter-w-lg"
-        @change="doSearch"
       />
-      <GlassButton variant="primary" left-icon="Search" @click="doSearch">
-        查询
-      </GlassButton>
-      <GlassButton left-icon="RefreshLeft" @click="resetFilters">
-        重置
-      </GlassButton>
-    </div>
+    </FilterBar>
 
     <!-- 操作行：TableTools 四图标（Action Bar Spec；本页无主操作按钮，刷新走工具图标） -->
     <div class="action-bar">
@@ -83,6 +73,7 @@
       />
     </div>
 
+    <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="fetchList" />
     <el-table
       :data="tableData"
       v-loading="loading"
@@ -90,10 +81,11 @@
       :class="densityClass"
       border
       :max-height="isFullscreen ? undefined : 640"
-      @sort-change="orderSort.onSortChange"
+      @sort-change="handleSortChange"
     >
       <template #empty>
-        <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+        <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="fetchList" />
+        <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
           <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
         </el-empty>
       </template>
@@ -121,16 +113,14 @@
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120">
         <template #default="{ row }">
-          <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
+          <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
-          </el-tag>
+          </StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" max-width="170" prop="status" sortable="custom">
         <template #default="{ row }">
-          <el-tag :type="STATUS_TAG[row.status]" effect="plain">
-            {{ STATUS_MAP[row.status] || row.status }}
-          </el-tag>
+          <StatusBadge :value="row.status" :dictionary="REQUEST_STATUS" effect="plain" />
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
@@ -164,9 +154,9 @@
     </div>
 
     <!-- Detail drawer -->
-    <el-drawer v-model="detailVisible" title="预约详情" size="480px" direction="rtl">
+    <DetailDrawer v-model="detailVisible" title="预约详情" width="640px" direction="rtl">
       <template v-if="currentDetail">
-        <el-descriptions :column="1" border size="small">
+        <ResponsiveDescriptions :column="1" border size="small">
           <el-descriptions-item label="预约编号">{{ currentDetail.request_no }}</el-descriptions-item>
           <el-descriptions-item label="业务员">{{ currentDetail.salesperson_name }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">{{ currentDetail.customer_name }}</el-descriptions-item>
@@ -178,21 +168,20 @@
             {{ formatDatePeriod(currentDetail.expect_end_date, currentDetail.expect_end_period) }}
           </el-descriptions-item>
           <el-descriptions-item label="优先级">
-            <el-tag :type="currentDetail.priority === 'urgent' ? 'danger' : 'info'" size="small">
+            <StatusBadge :type="currentDetail.priority === 'urgent' ? 'danger' : 'info'" size="small">
               {{ currentDetail.priority === 'urgent' ? '加急' : '普通' }}
-            </el-tag>
+            </StatusBadge>
           </el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="STATUS_TAG[currentDetail.status]" size="small">
-              {{ STATUS_MAP[currentDetail.status] || currentDetail.status }}
-            </el-tag>
+            <StatusBadge :value="currentDetail.status" :dictionary="REQUEST_STATUS" size="small" />
           </el-descriptions-item>
           <el-descriptions-item label="备注">{{ currentDetail.remark || '-' }}</el-descriptions-item>
-        </el-descriptions>
+        </ResponsiveDescriptions>
 
         <!-- 附件列表 -->
         <div class="attachment-section">
           <h4>附件</h4>
+          <ListPageStatus :error="attachmentsResource.errorMessage.value" :loading="attachmentsResource.loading.value" :has-data="attachmentList.length > 0" @retry="attachmentsResource.load()" />
           <div v-if="attachmentList.length" class="attachment-list">
             <div v-for="a in attachmentList" :key="a.id" class="attachment-item">
               <el-icon class="attachment-icon"><Paperclip /></el-icon>
@@ -203,11 +192,12 @@
               </a>
             </div>
           </div>
-          <el-empty v-else description="暂无附件" :image-size="40" />
+          <el-empty v-else-if="!attachmentsResource.loading.value && !attachmentsResource.error.value" description="暂无附件" :image-size="40" />
         </div>
 
         <div class="timeline-section">
           <h4>审批记录</h4>
+          <ListPageStatus :error="logsResource.errorMessage.value" :loading="logsResource.loading.value" :has-data="auditLogs.length > 0" @retry="logsResource.load()" />
           <el-timeline v-if="auditLogs.length">
             <el-timeline-item
               v-for="log in auditLogs"
@@ -224,16 +214,22 @@
               <p class="log-comment" v-if="log.comment">{{ log.comment }}</p>
             </el-timeline-item>
           </el-timeline>
-          <el-empty v-else description="暂无审批记录" :image-size="60" />
+          <el-empty v-else-if="!logsResource.loading.value && !logsResource.error.value" description="暂无审批记录" :image-size="60" />
         </div>
       </template>
-    </el-drawer>
+    </DetailDrawer>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { REQUEST_STATUS, REQUEST_STATUS_LABELS as STATUS_MAP, REQUEST_STATUS_TYPES as STATUS_TAG } from '@/views/design/designStatus.js'
+import { confirmAction, msgSuccessText } from '@/utils/feedback'
+import { ref, computed, onMounted, toRef } from 'vue'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { designActorScope, watchDesignActor } from './designListScope'
+
+
 import { Paperclip, Download, Search } from '@element-plus/icons-vue'
 import { getRequests, actionRequest, getAuditLogs, getAttachments, downloadAttachment } from '@/api/design'
 import { useAuthStore } from '@/stores/auth'
@@ -261,25 +257,27 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('my-requests', columnDefs)
 
-const keyword = ref('')
-const salespersonFilter = ref(null)
-const statusFilter = ref([])
-const expectDateRange = ref(null)
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const tableData = ref([])
-const loading = ref(false)
-
-const detailVisible = ref(false)
-const currentDetail = ref(null)
-const auditLogs = ref([])
-const attachmentList = ref([])
-
-// ── 权限：只看自己还是看全部 ─────────────────────────────
-const isSelfOnly = computed(() =>
-  authStore.hasPermission('design:write') && !authStore.hasAnyPermission(['design:audit', 'design:manage'])
-)
+const isSelfOnly = computed(() => authStore.hasPermission('design:write') && !authStore.hasAnyPermission(['design:audit', 'design:manage']))
+const readScope = () => designActorScope(authStore)
+const listState = useListPage(async (params, { signal, isCurrent }) => {
+  const scope = readScope()
+  const query = { ...params, keyword: params.keyword || undefined, status: params.status.length ? params.status.join(',') : undefined, salesperson_id: isSelfOnly.value ? authStore.user?.id : params.salesperson_id || undefined }
+  delete query.expectDateRange
+  if (params.expectDateRange?.[0]) query.expect_start_date = params.expectDateRange[0]
+  if (params.expectDateRange?.[1]) query.expect_end_date = params.expectDateRange[1]
+  const response = await getRequests(query, { signal, suppressToast: true })
+  const data = response.data
+  const items = data?.items || data || []
+  if (isCurrent() && readScope() === scope) buildSalespersonOptions(items)
+  return { items, total: data?.total || 0 }
+}, { searchForm: { keyword: '', salesperson_id: null, status: [], expectDateRange: null }, sortParams: orderSort.sortParams.value })
+const keyword = toRef(listState.searchForm, 'keyword'); const salespersonFilter = toRef(listState.searchForm, 'salesperson_id'); const statusFilter = toRef(listState.searchForm, 'status'); const expectDateRange = toRef(listState.searchForm, 'expectDateRange')
+const page = listState.page; const pageSize = listState.pageSize; const total = listState.total; const tableData = listState.list; const loading = listState.loading
+const detailVisible = ref(false); const currentDetail = ref(null)
+const logsResource = useAsyncResource(async (id, { signal }) => id ? (await getAuditLogs(id, { signal, suppressToast: true })).data || [] : [])
+const attachmentsResource = useAsyncResource(async (id, { signal }) => id ? (await getAttachments(id, { signal, suppressToast: true })).data || [] : [])
+const auditLogs = computed(() => logsResource.data.value || []); const attachmentList = computed(() => attachmentsResource.data.value || [])
+watchDesignActor(listState, readScope, () => { salespersonOptions.value = []; detailVisible.value = false; currentDetail.value = null; logsResource.load(null, { clear: true }); attachmentsResource.load(null, { clear: true }) })
 
 // ── 业务员下拉选项：从已有数据中动态收集 ─────────────────
 const salespersonOptions = ref([])
@@ -307,24 +305,8 @@ function formatDatePeriod(d, period) {
   return period ? `${d} ${PERIOD_MAP[period] || period}` : d
 }
 
-const STATUS_MAP = {
-  pending_audit: '待审批',
-  pending_design: '待排期',
-  scheduled: '已排期',
-  in_progress: '进行中',
-  completed: '已完成',
-  rejected: '已拒绝',
-  cancelled: '已取消',
-}
-const STATUS_TAG = {
-  pending_audit: 'warning',
-  pending_design: 'warning',
-  scheduled: '',
-  in_progress: '',
-  completed: 'success',
-  rejected: 'danger',
-  cancelled: 'info',
-}
+
+
 const STATUS_OPTIONS = Object.entries(STATUS_MAP).map(([value, label]) => ({ value, label }))
 
 const shootTypeMap = ref({})
@@ -374,62 +356,16 @@ function canCancel(status) {
   return ['pending_audit', 'pending_design', 'scheduled'].includes(status)
 }
 
-function doSearch() {
-  page.value = 1
-  orderSort.reset()
-  fetchList()
-}
-
-const hasActiveFilters = computed(() =>
-  Boolean(keyword.value || salespersonFilter.value || statusFilter.value.length || expectDateRange.value?.length)
-)
-
-function resetFilters() {
-  keyword.value = ''
-  salespersonFilter.value = null
-  statusFilter.value = []
-  expectDateRange.value = null
-  doSearch()
-}
-
-function handleSizeChange() {
-  page.value = 1
-  fetchList()
-}
-
-async function fetchList() {
-  loading.value = true
-  try {
-    const params = {
-      keyword: keyword.value || undefined,
-      status: statusFilter.value.length ? statusFilter.value.join(',') : undefined,
-      page: page.value,
-      page_size: pageSize.value,
-      ...orderSort.sortParams.value,
-    }
-    // 权限控制：只有 design:write 且没有 audit/manage 权限的人只能看自己
-    if (isSelfOnly.value) {
-      params.salesperson_id = authStore.user?.id
-    } else if (salespersonFilter.value) {
-      params.salesperson_id = salespersonFilter.value
-    }
-    // 期望日期范围
-    if (expectDateRange.value?.[0]) params.expect_start_date = expectDateRange.value[0]
-    if (expectDateRange.value?.[1]) params.expect_end_date = expectDateRange.value[1]
-
-    const res = await getRequests(params)
-    const items = res.data?.items || res.data || []
-    tableData.value = items
-    total.value = res.data?.total || 0
-    buildSalespersonOptions(items)
-  } finally {
-    loading.value = false
-  }
-}
+const doSearch = listState.handleSearch
+function resetFilters() { orderSort.reset(); return listState.handleReset({ sortParams: orderSort.sortParams.value }) }
+const handleSizeChange = listState.handleSizeChange
+const fetchList = listState.fetchList
+function handleSortChange(info) { orderSort.onSortChange(info); return listState.handleSortChange(orderSort.sortParams.value) }
+const hasActiveFilters = computed(() => Boolean(keyword.value || salespersonFilter.value || statusFilter.value.length || expectDateRange.value?.length))
 
 async function handleCancel(row) {
   try {
-    await ElMessageBox.confirm('确定取消该预约？取消后不可恢复。', '确认取消', { type: 'warning' })
+    await confirmAction('确定取消该预约？取消后不可恢复。', '确认取消', { type: 'warning' })
   } catch { return }
 
   try {
@@ -439,8 +375,8 @@ async function handleCancel(row) {
       operator_name: authStore.user?.real_name || row.salesperson_name,
       operator_role: 'salesperson',
     })
-    ElMessage.success('已取消')
-    fetchList()
+    msgSuccessText('已取消')
+    listState.refreshUpdate()
   } catch { /* handled by interceptor */ }
 }
 
@@ -452,25 +388,12 @@ function formatFileSize(bytes) {
 }
 
 async function toggleDetail(row) {
-  currentDetail.value = row
-  detailVisible.value = true
-  attachmentList.value = []
-  try {
-    const [logRes, attRes] = await Promise.all([
-      getAuditLogs(row.id),
-      getAttachments(row.id),
-    ])
-    auditLogs.value = logRes.data || []
-    attachmentList.value = attRes.data || []
-  } catch {
-    auditLogs.value = []
-    attachmentList.value = []
-  }
+  currentDetail.value = row; detailVisible.value = true
+  return Promise.all([logsResource.load(row.id, { clear: true }), attachmentsResource.load(row.id, { clear: true })])
 }
 
 onMounted(() => {
   loadShootTypeDict()
-  fetchList()
 })
 </script>
 

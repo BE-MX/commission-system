@@ -38,6 +38,24 @@ html, body, #app {
 
 /* ===== Element Plus Overrides ===== */
 
+/* Element Plus declares root defaults after tokens.css; body supplies the inherited workspace palette. */
+body {
+  --el-color-primary: var(--color-primary-text);
+  --el-color-primary-light-9: var(--color-gold-soft);
+  --el-color-success: var(--color-success-text);
+  --el-color-success-light-9: var(--color-success-bg);
+  --el-color-warning: var(--color-warning-text);
+  --el-color-warning-light-9: var(--color-warning-bg);
+  --el-color-danger: var(--color-danger-text);
+  --el-color-danger-light-9: var(--color-danger-bg);
+  --el-color-info: var(--color-info-text);
+  --el-color-info-light-9: var(--color-info-bg);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-muted);
+  --el-text-color-placeholder: var(--text-placeholder);
+}
+
 /* Tables */
 .el-table {
   border-radius: var(--card-radius);
@@ -179,12 +197,12 @@ html, body, #app {
 /* Link buttons — brand palette */
 .el-button.is-link { font-weight: 500; }
 .el-button.is-link.el-button--primary {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: transparent;
   border-color: transparent;
 }
 .el-button.is-link.el-button--primary:hover {
-  color: var(--color-primary-hover);
+  color: var(--color-primary-text);
   background: var(--color-primary-light);
 }
 .el-button.is-link.el-button--success {
@@ -202,10 +220,10 @@ html, body, #app {
   background: var(--color-danger-bg);
 }
 .el-button.is-link.el-button--warning {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .el-button.is-link.el-button--warning:hover {
-  color: var(--color-primary-hover);
+  color: var(--color-primary-text);
   background: var(--color-primary-light);
 }
 
@@ -267,7 +285,7 @@ html, body, #app {
   transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
 }
 .el-radio-button__inner:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .el-radio-button.is-active .el-radio-button__inner {
   background: var(--color-primary) !important;
@@ -289,7 +307,7 @@ html, body, #app {
 }
 .el-dropdown-menu__item:hover {
   background: var(--color-primary-light) !important;
-  color: var(--color-primary) !important;
+  color: var(--color-primary-text) !important;
 }
 
 /* Inputs */
@@ -327,10 +345,13 @@ html, body, #app {
   color: var(--text-primary);
 }
 .el-dialog__body { padding: 20px 24px; }
-.el-dialog__footer { padding: 12px 24px 20px; }
+.el-dialog__footer { padding: 12px 24px 20px; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.dialog-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 
 /* Pagination */
 .el-pagination {
+  flex-wrap: wrap;
+  row-gap: 8px;
   justify-content: flex-end;
   margin-top: 16px;
   padding: 4px 0;
@@ -354,7 +375,7 @@ html, body, #app {
 /* Drawer */
 .el-drawer {
   border-radius: 16px 0 0 16px !important;
-  max-width: 100vw;
+  max-width: calc(100vw - 24px);
 }
 .el-drawer__header {
   margin-bottom: 0;
@@ -373,6 +394,10 @@ html, body, #app {
   overflow: hidden;
   font-family: var(--font-body);
 }
+
+/* A finished table read must not leave a transparent mask over retry actions. */
+.el-table .el-loading-mask.el-loading-fade-leave-active,
+.el-table .el-loading-mask.el-loading-fade-leave-to { pointer-events: none; }
 
 /* Alert */
 .el-alert { border-radius: 10px; }
@@ -519,6 +544,14 @@ html, body, #app {
 .table-card > .toolbar .filter-w-md { width: 200px; }
 .table-card > .toolbar .filter-w-lg { width: 280px; }
 
+/* Shared FilterBar: Element Plus select uses a fixed 32px minimum internally. */
+.toolbar.filter-bar .el-input__wrapper, .toolbar.filter-bar .el-select__wrapper {
+  box-sizing: border-box;
+  min-height: var(--el-component-size);
+  height: var(--el-component-size);
+}
+.toolbar.filter-bar .el-input__inner { height: 100%; }
+
 /* 操作行：筛选区与表格之间，左侧主操作按钮组，右侧 TableTools 四图标 */
 .table-card > .action-bar {
   display: flex;
@@ -541,6 +574,7 @@ html, body, #app {
 }
 
 .table-card--fullscreen {
+  box-sizing: border-box;
   position: fixed !important;
   inset: 0 !important;
   z-index: 1900 !important;

@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     :title="step === 'report' ? '文件夹上传完成' : '文件夹批量上传'"
-    width="min(860px, 94vw)"
+    width="760px"
     class="folder-upload-dialog"
     :close-on-click-modal="false"
     :close-on-press-escape="step !== 'executing'"
@@ -10,6 +10,7 @@
     destroy-on-close
     @closed="reset"
   >
+    <ListPageStatus :error="readError" :has-data="!!previewData" @retry="retryRead" />
     <div v-if="step === 'input'" class="upload-input">
       <input
         ref="folderInput"
@@ -86,7 +87,7 @@
             <strong>确认标签匹配</strong>
             <p>精确命中的标签已自动采用；请处理下面的推荐或新标签。</p>
           </div>
-          <el-tag effect="plain">{{ resolutionRows.length }} 项待确认</el-tag>
+          <StatusBadge effect="plain">{{ resolutionRows.length }} 项待确认</StatusBadge>
         </div>
 
         <div class="resolution-list">
@@ -159,7 +160,7 @@
         <el-table-column label="相对路径" prop="file_path" min-width="220" show-overflow-tooltip />
         <el-table-column label="匹配标签" min-width="280">
           <template #default="{ row }">
-            <el-tag
+            <StatusBadge
               v-for="tag in row.tags"
               :key="`${tag.dimension_id}-${tag.tag_value}`"
               size="small"
@@ -167,7 +168,7 @@
               class="tag-chip"
             >
               {{ tag.dimension_name }}：{{ tag.tag_value }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
       </el-table>
@@ -181,7 +182,7 @@
         </div>
         <p class="option-hint">可选；所选标签将应用到本次上传的全部文件。</p>
         <div v-if="extraTagChips.length" class="extra-tag-chips">
-          <el-tag
+          <StatusBadge
             v-for="chip in extraTagChips"
             :key="`${chip.dimensionId}-${chip.valueId}`"
             size="small"
@@ -191,7 +192,7 @@
             @close="removeExtraTag(chip)"
           >
             {{ chip.dimensionLabel }}：{{ chip.valueLabel }}
-          </el-tag>
+          </StatusBadge>
         </div>
       </div>
       <div class="duplicate-policy">
@@ -268,7 +269,7 @@
   <el-dialog
     v-model="extraTagPickerVisible"
     title="批量赋标签"
-    width="min(640px, 90vw)"
+    width="640px"
     append-to-body
     class="extra-tag-picker-dialog"
   >
@@ -336,12 +337,12 @@ const canAutoCreate = computed(() => authStore.hasPermission('asset:admin'))
 const {
   visible, step, selectedEntries, serverPath, sourceMode, includeFilenameTags,
   isDragging, validationResult, previewData, uploadReport, resolutions,
-  updateDuplicates, jobId, fatalMessage, selectedSize, rootNames,
+  updateDuplicates, jobId, fatalMessage, readError, selectedSize, rootNames,
   uploadProgress, pollError, resolutionRows, creatableDimensions,
   extraTagSelection,
   open, close, reset, onFolderInput,
   onDrop, startValidation, confirmResolutions, confirmUpload,
-  retryPolling,
+  retryPolling, retryRead,
 } = useFolderUpload({
   dimensions: dimensionsRef,
   canAutoCreate,

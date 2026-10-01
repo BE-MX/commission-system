@@ -6,7 +6,7 @@
         <h1>客户产品效果图</h1>
         <p>维护客户可选产品、发放专属邀请，并追踪生成额度与结果状态。</p>
       </div>
-      <el-tag v-if="canAdmin" effect="plain" type="warning">模板管理员</el-tag>
+      <StatusBadge v-if="canAdmin" effect="plain" type="warning">模板管理员</StatusBadge>
     </header>
 
     <section class="admin-surface">
@@ -26,7 +26,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import * as customerImageApi from '@/api/customerImage'
 import ProductTemplateList from './ProductTemplateList.vue'
@@ -44,6 +44,12 @@ const canAdmin = computed(() => access.value.canAdmin)
 const canRead = computed(() => access.value.canRead)
 const canWrite = computed(() => access.value.canWrite)
 const state = createCustomerImageAdminState({ api: customerImageApi })
+watch(() => JSON.stringify([auth.user?.id, auth.roles, auth.permissions]), () => {
+  state.clearScope()
+  void state.loadProducts()
+  if (activeTab.value === 'invites') void state.loadInvites()
+  if (activeTab.value === 'usage') void state.loadGenerations()
+})
 onBeforeUnmount(state.dispose)
 </script>
 

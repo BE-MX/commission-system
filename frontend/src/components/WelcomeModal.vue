@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="visible" class="welcome-dialog" width="420px" align-center
+  <el-dialog v-model="visible" class="welcome-dialog" width="480px" align-center
     :show-close="false" append-to-body aria-label="欢迎回来" @close="handleClose">
           <div class="welcome-modal-card">
             <!-- 发光背景 -->

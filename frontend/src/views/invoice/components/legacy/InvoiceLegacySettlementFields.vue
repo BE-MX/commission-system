@@ -60,6 +60,8 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../../../utils/money.js'
+
 import { computed } from 'vue'
 import { computeHandlingFee, handlingFeeRate } from '../../composables/invoiceSettlement'
 
@@ -90,7 +92,7 @@ const handlingHint = computed(() => {
   const base = Number(props.total || 0) - Number(props.form.surcharge_amount || 0)
   const expected = computeHandlingFee(rate, base)
   if (Math.abs(Number(props.form.surcharge_amount || 0) - expected) > 0.005) {
-    return `与 ${pct}（应 ${expected.toFixed(2)}）不符，重选付款方式可重算`
+    return `与 ${pct}（应 ${formatMoney(expected)}）不符，重选付款方式可重算`
   }
   return `${method} ${pct} 自动（可手改）`
 })

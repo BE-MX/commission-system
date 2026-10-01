@@ -19,8 +19,8 @@
       <!-- 元信息头 -->
       <header class="digest-header">
         <div class="header-top">
-          <el-tag size="small" effect="plain" type="warning">培训速递</el-tag>
-          <el-tag v-if="detail.status === 'draft'" size="small" type="info" effect="plain">草稿 · 未发布</el-tag>
+          <StatusBadge size="small" effect="plain" type="warning">培训速递</StatusBadge>
+          <StatusBadge v-if="detail.status === 'draft'" size="small" type="info" effect="plain">草稿 · 未发布</StatusBadge>
         </div>
         <h1 class="digest-title">{{ detail.title }}</h1>
         <div class="meta-row">
@@ -32,7 +32,7 @@
           <span class="muted">阅 {{ detail.view_count }}</span>
         </div>
         <div v-if="detail.tags.length" class="tags-row">
-          <el-tag v-for="t in detail.tags" :key="t" size="small" effect="plain">{{ t }}</el-tag>
+          <StatusBadge v-for="t in detail.tags" :key="t" size="small" effect="plain">{{ t }}</StatusBadge>
         </div>
         <div class="action-row">
           <GlassButton
@@ -90,7 +90,7 @@
         <div v-for="(a, i) in sections.applications" :key="i" class="app-card">
           <div class="app-point">{{ a.point }}</div>
           <div class="app-meta">
-            <el-tag v-for="r in a.roles" :key="r" size="small" type="warning" effect="plain">{{ r }}</el-tag>
+            <StatusBadge v-for="r in a.roles" :key="r" size="small" type="warning" effect="plain">{{ r }}</StatusBadge>
           </div>
           <div v-if="a.first_step" class="app-step">第一步：{{ a.first_step }}</div>
         </div>
@@ -116,7 +116,7 @@
       <section v-if="detail.files.length" class="section" id="sec-files">
         <h2 class="section-title">原始资料</h2>
         <div v-for="f in detail.files" :key="f.id" class="file-row">
-          <el-tag size="small" effect="plain" class="file-type-tag">{{ FILE_TYPE_LABELS[f.file_type] || '未分类' }}</el-tag>
+          <StatusBadge size="small" effect="plain" class="file-type-tag">{{ FILE_TYPE_LABELS[f.file_type] || '未分类' }}</StatusBadge>
           <span class="file-name">{{ f.file_name }}</span>
           <span v-if="f.remark" class="file-remark" :title="f.remark">{{ f.remark }}</span>
           <span class="file-size">{{ formatSize(f.file_size) }}</span>
@@ -202,7 +202,7 @@ async function onDownload(f) {
     URL.revokeObjectURL(url)
   } catch (err) {
     // blob 错误响应体是 Blob，拦截器读不出中文 detail；404 已 suppress，由这里给唯一提示
-    if (err?.response?.status === 404) msgError('附件文件缺失，请联系发布人重新上传')
+    if (err?.response?.status === 404) msgError('附件文件缺失，请联系发布人重新上传', err)
   } finally {
     downloadingId.value = null
   }
@@ -311,11 +311,11 @@ onMounted(fetchDetail)
 }
 
 .toc-item:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .toc-num {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-weight: 600;
   margin-right: 4px;
 }
@@ -426,7 +426,7 @@ onMounted(fetchDetail)
 .app-step {
   margin-top: 8px;
   font-size: 13px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .method-item {

@@ -35,8 +35,8 @@ test('monthly charts separate new-sign/first-return from repeat orders/amount', 
 
 test('AI brief generation includes the active multidimensional filters', () => {
   const composable = read('../src/views/order_intelligence/composables/useOrderIntelligence.js')
-  for (const field of ['countries: selectedCountries.value', 'models: filters.models', 'colors: filters.colors', 'sources: filters.sources']) {
-    assert.match(composable, new RegExp(field.replace(/[.]/g, '\\.')))
+  for (const field of ['countries: selectedCountries.value', 'models: [...appliedFilters.value.models]', 'colors: [...appliedFilters.value.colors]', 'sources: [...appliedFilters.value.sources]']) {
+    assert.ok(composable.includes(field))
   }
   assert.match(composable, /generateOrderAiBrief\(\{ \.\.\.baseParams\(\), focus \}\)/)
 })
@@ -59,7 +59,7 @@ test('country opportunity list shows first-return customers right after new-sign
 
 test('metrics board adds first-return card after new-sign and hides risk/forecast cards', () => {
   const page = read('../src/views/order_intelligence/OrderIntelligence.vue')
-  const metrics = page.match(/<section class="oi-metrics"[\s\S]*?<\/section>/)[0]
+  const metrics = page.match(/<section[^>]*class="oi-metrics"[\s\S]*?<\/section>/)[0]
   assert.ok(metrics.includes('首返客户'))
   assert.ok(metrics.indexOf('新签客户') < metrics.indexOf('首返客户'))
   assert.doesNotMatch(metrics, /需行动客户|GMV 预测/)

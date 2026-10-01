@@ -20,7 +20,6 @@
 import { Rank } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { confirmDanger } from '@/utils/feedback'
-
 defineProps({
   editing: { type: Boolean, default: false },
   saving: { type: Boolean, default: false },

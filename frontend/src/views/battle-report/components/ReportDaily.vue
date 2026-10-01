@@ -11,18 +11,17 @@
     </section>
     <section class="table-card battle-panel">
       <div class="battle-section-title"><h3>订单复盘</h3><span v-if="!report.can_admin">明细只包含本人或组长授权范围</span></div>
-      <div class="battle-actions">
-        <el-date-picker v-model="selectedDay" type="date" value-format="YYYY-MM-DD" placeholder="整个周期" aria-label="复盘日期" :disabled-date="disabledDay" @change="searchOrders" />
-        <el-select v-model="memberId" clearable placeholder="全部可查看业务员" aria-label="复盘业务员" @change="searchOrders"><el-option v-for="m in detailMembers" :key="m.id" :label="m.user_name" :value="m.id" /></el-select>
-        <el-input v-model="searchForm.keyword" clearable placeholder="订单号 / 客户" aria-label="搜索订单" @keyup.enter="searchOrders" @clear="searchOrders" />
-        <el-select v-model="searchForm.sort" aria-label="订单排序" @change="searchOrders"><el-option label="按核算日期" value="date" /><el-option label="按订单金额" value="amount" /></el-select>
-        <GlassButton left-icon="Search" @click="searchOrders">查询</GlassButton>
-      </div>
-      <el-alert v-if="orderError" type="error" :title="orderError" :closable="false" />
+      <FilterBar class="battle-actions" :loading="loading" :pending="listPageState.hasPendingSearch.value" @search="searchOrders" @reset="resetOrderFilters">
+        <el-date-picker v-model="selectedDay" type="date" value-format="YYYY-MM-DD" placeholder="整个周期" aria-label="复盘日期" :disabled-date="disabledDay" />
+        <el-select v-model="memberId" clearable placeholder="全部可查看业务员" aria-label="复盘业务员"><el-option v-for="m in detailMembers" :key="m.id" :label="m.user_name" :value="m.id" /></el-select>
+        <el-input v-model="searchForm.keyword" clearable placeholder="订单号 / 客户" aria-label="搜索订单" />
+        <el-select v-model="searchForm.sort" aria-label="订单排序"><el-option label="按核算日期" value="date" /><el-option label="按订单金额" value="amount" /></el-select>
+      </FilterBar>
       <div class="battle-order-summary"><b>所选范围 GMV：${{ money(orderMeta.gmv) }}</b><span>{{ total }} 单 · 完整筛选合计，不受分页影响</span></div>
       <el-alert v-if="orderMeta.issues?.length" type="warning" :closable="false" :title="`${orderMeta.issues.length} 条异常记录未计入`"><template #default><p v-for="(issue, index) in orderMeta.issues" :key="index">{{ issue.order_no || '无订单号' }}：{{ issue.reason }}</p></template></el-alert>
-      <el-table v-loading="loading" :data="list" border class="list-table">
-        <template #empty>{{ detailMembers.length ? '当前筛选范围暂无订单' : '当前组没有可查看的订单明细' }}</template>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="listPageState.fetchList" />
+<el-table v-loading="loading" :data="list" border class="list-table">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="listPageState.fetchList">{{ detailMembers.length ? '当前筛选范围暂无订单' : '当前组没有可查看的订单明细' }}</ListPageStatus></template>
         <el-table-column label="订单号" min-width="170" max-width="220"><template #default="{ row }"><el-button link type="primary" @click="openOrder(row)"><el-icon><View /></el-icon>{{ row.order_no }}</el-button></template></el-table-column>
         <el-table-column prop="account_date" label="核算日" min-width="120" max-width="160" />
         <el-table-column prop="user_name" label="业务员" min-width="110" max-width="150" show-overflow-tooltip />
@@ -32,11 +31,11 @@
         <el-table-column label="订单金额 / USD" min-width="160" max-width="200"><template #default="{ row }">{{ money(row.amount_usd) }}</template></el-table-column>
         <el-table-column label="计入 GMV / USD" min-width="170" max-width="210"><template #default="{ row }">{{ money(row.included_usd) }}</template></el-table-column>
       </el-table>
-      <el-pagination :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" />
+      <el-pagination class="pager" :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" />
     </section>
     <DetailDrawer v-model="drawer" title="战报订单明细" :loading="detailLoading">
       <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" />
-      <el-descriptions v-if="order" :column="1" border><el-descriptions-item label="订单号">{{ order.order_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ order.company_name }}</el-descriptions-item><el-descriptions-item label="业务员 / 组">{{ order.user_name }} / {{ order.team }}</el-descriptions-item><el-descriptions-item label="核算日期">{{ order.account_date }}</el-descriptions-item><el-descriptions-item label="订单金额">USD {{ money(order.amount_usd) }}</el-descriptions-item><el-descriptions-item label="计入本战报">USD {{ money(order.included_usd) }} · {{ order.included_percent }}%</el-descriptions-item><el-descriptions-item label="计入原因">{{ order.reason }}</el-descriptions-item></el-descriptions>
+      <ResponsiveDescriptions v-if="order" :column="1" border><el-descriptions-item label="订单号">{{ order.order_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ order.company_name }}</el-descriptions-item><el-descriptions-item label="业务员 / 组">{{ order.user_name }} / {{ order.team }}</el-descriptions-item><el-descriptions-item label="核算日期">{{ order.account_date }}</el-descriptions-item><el-descriptions-item label="订单金额">USD {{ money(order.amount_usd) }}</el-descriptions-item><el-descriptions-item label="计入本战报">USD {{ money(order.included_usd) }} · {{ order.included_percent }}%</el-descriptions-item><el-descriptions-item label="计入原因">{{ order.reason }}</el-descriptions-item></ResponsiveDescriptions>
     </DetailDrawer>
   </div>
 </template>
@@ -45,6 +44,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowRight, View } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import { watchListResourceScope } from '@/composables/useListResourceScope'
 import { useListPage } from '@/composables/useListPage'
 import { battleReportApi } from '@/api/battleReport'
 import { currentBeijingDate, formatCalendarDate } from '@/utils/datetime'
@@ -57,21 +57,30 @@ const orderMeta = ref({ gmv: '0', issues: [] }), orderError = ref('')
 const drawer = ref(false), order = ref(null), detailLoading = ref(false), detailError = ref('')
 let matrixRequest = 0, orderRequest = 0, detailRequest = 0, orderUiRequest = 0
 const detailMembers = computed(() => props.report.members.filter(m => props.report.detail_member_ids.includes(m.id) && (!props.team || m.team === props.team)))
-const { list, total, page, pageSize, searchForm, loading, handleSearch, handlePageChange, handleSizeChange } = useListPage(async params => {
+const listPageState = useListPage(async ({ report_id, has_details, ...params }, { signal, isCurrent }) => {
   const token = ++orderRequest
-  if (!detailMembers.value.length) { orderMeta.value = { gmv: '0', issues: [] }; return { items: [], total: 0 } }
-  const result = await battleReportApi.orders(props.report.id, { ...params, team: props.team || undefined, member_id: memberId.value || undefined, day: selectedDay.value || undefined })
-  if (token === orderRequest) { orderMeta.value = result; orderError.value = '' }
+  if (!has_details) { orderMeta.value = { gmv: '0', issues: [] }; return { items: [], total: 0 } }
+  const result = await battleReportApi.orders(report_id, params, { signal, suppressToast: true })
+  if (isCurrent() && token === orderRequest) { orderMeta.value = result; orderError.value = '' }
   return result
-}, { immediate: false, searchForm: { keyword: '', sort: 'date' } })
+}, { immediate: false, searchForm: { keyword: '', sort: 'date', report_id: props.report.id, team: props.team, member_id: memberId.value, day: selectedDay.value, has_details: !!detailMembers.value.length } })
+const { list, total, page, pageSize, searchForm, loading, error: listError, handleSearch, handlePageChange, handleSizeChange } = listPageState
 async function loadMatrix() {
   const token = ++matrixRequest; matrixLoading.value = true
   try { const data = await battleReportApi.daily(props.report.id, { team: props.team || undefined, start: start.value || undefined }); if (token === matrixRequest) { matrix.value = data; error.value = '' } }
   catch (e) { if (token === matrixRequest) error.value = errorText(e) }
   finally { if (token === matrixRequest) matrixLoading.value = false }
 }
-async function runOrders(fn) { const token = ++orderUiRequest; try { await fn() } catch (e) { if (token === orderUiRequest) orderError.value = errorText(e) } }
-function searchOrders() { orderRequest++; list.value = []; total.value = 0; orderMeta.value = { gmv: null, issues: [] }; return runOrders(handleSearch) }
+async function runOrders(fn) {
+  const token = ++orderUiRequest
+  try {
+    const loaded = await fn()
+    if (token === orderUiRequest && loaded === false && listError.value) orderError.value = errorText(listError.value)
+  } catch (e) { if (token === orderUiRequest) orderError.value = errorText(e) }
+}
+watchListResourceScope(listPageState, ['report_id', 'team', 'member_id'], () => { orderMeta.value = { gmv: null, issues: [] }; orderError.value = '' })
+function searchOrders() { Object.assign(searchForm, { report_id: props.report.id, team: props.team || undefined, member_id: memberId.value || undefined, day: selectedDay.value || undefined, has_details: !!detailMembers.value.length }); return runOrders(handleSearch) }
+function resetOrderFilters() { searchForm.keyword = ''; searchForm.sort = 'date'; memberId.value = ''; selectedDay.value = ''; return searchOrders() }
 function changePage(value) { return runOrders(() => handlePageChange(value)) }
 function changeSize(value) { return runOrders(() => handleSizeChange(value)) }
 function select(id, day) { memberId.value = id; selectedDay.value = day; searchOrders() }
@@ -83,6 +92,7 @@ async function openOrder(row) {
   catch (e) { if (token === detailRequest) detailError.value = errorText(e) }
   finally { if (token === detailRequest) detailLoading.value = false }
 }
+watch(() => [props.report.id, props.team], () => { matrixRequest++; matrix.value = null; start.value = ''; memberId.value = ''; selectedDay.value = ''; loadMatrix(); searchOrders() })
 watch(() => props.selection, value => { memberId.value = value.memberId || ''; selectedDay.value = value.day || ''; searchOrders() })
 onMounted(() => { loadMatrix(); searchOrders() })
 onUnmounted(() => { matrixRequest++; orderRequest++; detailRequest++; orderUiRequest++ })

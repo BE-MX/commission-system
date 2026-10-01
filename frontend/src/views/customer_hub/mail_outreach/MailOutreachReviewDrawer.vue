@@ -1,6 +1,6 @@
 <template>
-  <el-drawer class="customer-hub-drawer" :model-value="modelValue" title="开发信逐封审核"
-    size="min(760px, 100vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving"
+  <DetailDrawer class="customer-hub-drawer" :model-value="modelValue" title="开发信逐封审核"
+    width="760px" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving"
     @update:model-value="$emit('update:modelValue', $event)">
     <div v-loading="loading" class="review-body">
       <el-alert v-if="loadError" type="error" title="草稿详情加载失败，请重新加载后再审核。" :closable="false" show-icon>
@@ -10,7 +10,7 @@
         <header class="review-header">
           <h2>{{ detail.customer_name || `客户 #${detail.customer_id}` }}</h2>
           <p>
-            状态：<el-tag :type="draftStatusTagType(detail.status)">{{ draftStatusLabel(detail.status) }}</el-tag>
+            状态：<StatusBadge :type="draftStatusTagType(detail.status)">{{ draftStatusLabel(detail.status) }}</StatusBadge>
             · 关系目标：{{ relationshipGoalLabel(detail.relationship_goal) }}
             <template v-if="revision"> · 版本 #{{ revision.revision_no ?? '-' }}</template>
           </p>
@@ -24,9 +24,9 @@
               <dt>收件邮箱</dt>
               <dd>
                 {{ recipientEmail || '未提供' }}
-                <el-tag v-if="verificationStatus" :type="verificationStatusTagType(verificationStatus)" size="small">
+                <StatusBadge v-if="verificationStatus" :type="verificationStatusTagType(verificationStatus)" size="small">
                   验证：{{ verificationStatusLabel(verificationStatus) }}
-                </el-tag>
+                </StatusBadge>
               </dd>
             </div>
           </dl>
@@ -133,17 +133,16 @@
       <GlassButton v-any-permission="['mail_outreach:write','mail_outreach:admin']" variant="primary" left-icon="Promotion"
         :loading="saving" :disabled="!canApprove || saving" @click="approve">批准并排程</GlassButton>
     </template>
-  </el-drawer>
+  </DetailDrawer>
 </template>
 
-<script setup>
+<script setup>import { promptAction, msgSuccess } from '@/utils/feedback'
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessageBox } from 'element-plus'
+
 import {
   getDraft, createRevision, previewSchedule, approveDraft, rejectDraft, revokeDraft, listMailboxes,
 } from '@/api/mailOutreach'
 import { formatBeijingDateTime, formatInTimeZone, parseApiDateTime } from '@/utils/datetime'
-import { msgSuccess } from '@/utils/feedback'
 import GlassButton from '@/components/GlassButton.vue'
 import { createSearchJobIdempotencyKey } from '../customerHubController'
 import {
@@ -327,7 +326,7 @@ async function reject() {
   if (saving.value || !props.draftId) return
   let reason
   try {
-    const result = await ElMessageBox.prompt('请填写拒绝理由（必填）。', '拒绝开发信', {
+    const result = await promptAction('请填写拒绝理由（必填）。', '拒绝开发信', {
       confirmButtonText: '确定拒绝',
       cancelButtonText: '取消',
       inputType: 'textarea',
@@ -353,7 +352,7 @@ async function revoke() {
   if (saving.value || !props.draftId) return
   let reason
   try {
-    const result = await ElMessageBox.prompt('请填写撤销理由（必填），未开始发送的任务将一并撤销。', '撤销已批准任务', {
+    const result = await promptAction('请填写撤销理由（必填），未开始发送的任务将一并撤销。', '撤销已批准任务', {
       confirmButtonText: '确定撤销',
       cancelButtonText: '取消',
       inputType: 'textarea',

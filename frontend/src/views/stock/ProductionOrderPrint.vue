@@ -8,30 +8,30 @@
     </div>
 
     <!-- 工具栏 -->
-    <div class="toolbar">
+    <FilterBar :pending="listState.hasPendingSearch.value" @search="search" @reset="reset">
       <el-input
         v-model="keyword"
         placeholder="搜索单号 / 批次号"
         clearable
         :prefix-icon="Search"
         style="width: 260px"
-        @input="debounceSearch"
+
       />
-      <el-select v-model="statusFilter" placeholder="订单状态" clearable style="width: 130px" @change="loadOrders">
+      <el-select v-model="statusFilter" placeholder="订单状态" clearable style="width: 130px">
         <el-option label="已提交" :value="0" />
         <el-option label="已终止" :value="1" />
         <el-option label="已完成" :value="2" />
       </el-select>
-      <el-select v-model="printState" placeholder="打印状态" clearable style="width: 140px" @change="loadOrders">
+      <el-select v-model="printState" placeholder="打印状态" clearable style="width: 140px">
         <el-option label="未打印" value="unprinted" />
         <el-option label="今日已打印" value="today" />
         <el-option label="近7天已打印" value="week" />
       </el-select>
-      <GlassButton variant="secondary" :left-icon="Refresh" @click="loadOrders">刷新</GlassButton>
-    </div>
+    </FilterBar>
 
     <!-- 订单表格 -->
     <div class="print-ws-panel">
+    <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="loadOrders" />
     <el-table
       :data="orders"
       v-loading="loading"
@@ -41,9 +41,11 @@
       @expand-change="handleExpand"
       class="order-table list-table"
     >
+      <template #empty><ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="loadOrders" /></template>
       <el-table-column type="expand">
         <template #default="{ row }">
           <div class="categories-panel" v-loading="row._categoriesLoading">
+            <ListPageStatus :error="row._categoriesError" :loading="row._categoriesLoading" :has-data="!!row._categories?.length" @retry="loadCategories(row)" />
             <div class="category-grid" v-if="row._categories && row._categories.length">
               <div
                 v-for="cat in row._categories"
@@ -52,8 +54,8 @@
               >
                 <div class="card-top">
                   <div class="card-label">{{ formatLabel(cat.category_label) }}</div>
-                  <el-tag v-if="!cat.last_printed_at" type="warning" size="small" effect="light">未打印</el-tag>
-                  <el-tag v-else-if="isStale(cat.last_printed_at)" type="info" size="small" effect="light">超7天</el-tag>
+                  <StatusBadge v-if="!cat.last_printed_at" type="warning" size="small" effect="light">未打印</StatusBadge>
+                  <StatusBadge v-else-if="isStale(cat.last_printed_at)" type="info" size="small" effect="light">超7天</StatusBadge>
                 </div>
                 <div class="card-meta">
                   <span v-if="cat.colors.length" class="meta-item">
@@ -82,7 +84,7 @@
                 </div>
               </div>
             </div>
-            <el-empty v-else-if="!row._categoriesLoading" description="暂无明细数据" :image-size="60" />
+            <el-empty v-else-if="!row._categoriesLoading && !row._categoriesError" description="暂无明细数据" :image-size="60" />
           </div>
         </template>
       </el-table-column>
@@ -95,7 +97,7 @@
       <el-table-column label="批次号" prop="batch_no" min-width="150" />
       <el-table-column label="状态" prop="status_label" min-width="80">
         <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" size="small" effect="light">{{ row.status_label }}</el-tag>
+          <StatusBadge :type="statusType(row.status)" size="small" effect="light">{{ row.status_label }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column label="明细数" prop="item_count" min-width="80" />
@@ -112,7 +114,7 @@
           <template v-if="row.last_order_printed_at">
             <span :class="{ 'stale-time': isStale(row.last_order_printed_at) }">{{ formatTime(row.last_order_printed_at) }}</span>
           </template>
-          <el-tag v-else type="warning" size="small" effect="light">未打印</el-tag>
+          <StatusBadge v-else type="warning" size="small" effect="light">未打印</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column class-name="table-action-column" label="操作" min-width="130" fixed="right">
@@ -129,101 +131,81 @@
 
     <!-- 分页 -->
     <div class="pagination-bar" v-if="total > 0">
-      <el-pagination
+      <el-pagination class="pager"
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
         :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
-        @size-change="loadOrders"
+        @size-change="listState.handleSizeChange"
         @current-change="loadOrders"
       />
     </div>
 
     <!-- Stimulsoft 工序卡片打印弹窗 -->
-    <el-dialog v-model="printDialogVisible" title="工序卡片打印预览" width="90%" top="2vh" destroy-on-close>
+    <DetailDrawer v-model="printDialogVisible" title="工序卡片打印预览" width="480px" top="2vh" destroy-on-close>
       <StimulsoftViewer
         :report-code="'process_card_print'"
         :params="printParams"
         height="80vh"
       />
-    </el-dialog>
+    </DetailDrawer>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { Search, Refresh, Printer } from '@element-plus/icons-vue'
+import { ref, onUnmounted, toRef, watch } from 'vue'
+import { useListPage } from '@/composables/useListPage'
+import { Search, Printer } from '@element-plus/icons-vue'
 import { getProductionPrintOrders, getOrderPrintCategories, createProductionPrintJob } from '@/api/stock'
 import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
 import { formatBeijingDateTime, parseApiDateTime } from '@/utils/datetime'
 
-const keyword = ref('')
-const statusFilter = ref(null)
-const printState = ref(null)
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const orders = ref([])
-const loading = ref(false)
+const listState = useListPage(async (params, { signal }) => {
+  const response = await getProductionPrintOrders({ ...params, keyword: params.keyword || undefined, status: params.status ?? undefined, print_state: params.print_state || undefined, sort_field: 'created_at', sort_order: 'desc' }, { signal, suppressToast: true })
+  const payload = response.data ?? response
+  return { items: (payload.items || []).map(item => ({ ...item, _categories: null, _categoriesLoading: false, _categoriesError: '' })), total: payload.total || 0 }
+}, { searchForm: { keyword: '', status: null, print_state: null } })
+const keyword = toRef(listState.searchForm, 'keyword'); const statusFilter = toRef(listState.searchForm, 'status'); const printState = toRef(listState.searchForm, 'print_state')
+const page = listState.page; const pageSize = listState.pageSize; const total = listState.total; const orders = listState.list; const loading = listState.loading
 const expandedRows = ref([])
 
 // 打印弹窗状态
 const printDialogVisible = ref(false)
 const printParams = ref({})
 
-let searchTimer = null
-
-function debounceSearch() {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    page.value = 1
-    loadOrders()
-  }, 300)
-}
-
-async function loadOrders() {
-  loading.value = true
+const loadOrders = listState.fetchList
+const search = listState.handleSearch
+const reset = listState.handleReset
+const categoryControllers = new Map()
+onUnmounted(() => { categoryControllers.forEach(controller => controller.abort()); categoryControllers.clear() })
+watch(orders, () => {
+  categoryControllers.forEach(controller => controller.abort())
+  categoryControllers.clear()
+  expandedRows.value = []
+}, { flush: 'sync' })
+async function loadCategories(row) {
+  categoryControllers.get(row.id)?.abort()
+  const controller = new AbortController()
+  categoryControllers.set(row.id, controller)
+  const current = () => !controller.signal.aborted && categoryControllers.get(row.id) === controller && orders.value.includes(row)
+  row._categoriesLoading = true; row._categoriesError = ''
   try {
-    const params = {
-      page: page.value,
-      page_size: pageSize.value,
-      sort_field: 'created_at',
-      sort_order: 'desc',
-    }
-    if (keyword.value) params.keyword = keyword.value
-    if (statusFilter.value !== null) params.status = statusFilter.value
-    if (printState.value) params.print_state = printState.value
-
-    const res = await getProductionPrintOrders(params)
-    const payload = res.data || res
-    orders.value = (payload.items || []).map(item => ({
-      ...item,
-      _categories: null,
-      _categoriesLoading: false,
-    }))
-    total.value = payload.total || 0
-  } finally {
-    loading.value = false
-  }
-}
-
-async function handleExpand(row, expandedList) {
-  expandedRows.value = expandedList.map(r => r.id)
-  if (!expandedList.includes(row)) return
-  if (row._categories) return
-
-  row._categoriesLoading = true
-  try {
-    const res = await getOrderPrintCategories(row.id)
-    const payload = res.data || res
+    const response = await getOrderPrintCategories(row.id, { signal: controller.signal, suppressToast: true })
+    if (!current()) return
+    const payload = response.data ?? response
     row._categories = (payload.categories || []).map(cat => ({ ...cat, _printing: false }))
-    if (payload.last_order_printed_at) {
-      row.last_order_printed_at = payload.last_order_printed_at
-    }
+    if (payload.last_order_printed_at) row.last_order_printed_at = payload.last_order_printed_at
+  } catch (error) {
+    if (current()) row._categoriesError = error.message || '加载打印分类失败'
   } finally {
-    row._categoriesLoading = false
+    if (current()) row._categoriesLoading = false
   }
+}
+async function handleExpand(row, expandedList) {
+  expandedRows.value = expandedList.map(item => item.id)
+  if (!expandedList.includes(row) || row._categories) return
+  return loadCategories(row)
 }
 
 function handlePrintOrder(row) {
@@ -259,6 +241,7 @@ async function recordPrintLog(row, scope, cat = null) {
     } else if (cat) {
       cat.last_printed_at = data.printed_at
     }
+    await listState.refreshUpdate()
   } catch {
     // 打印日志记录失败不影响打印本身
   }
@@ -287,9 +270,7 @@ function statusType(status) {
   return 'info'
 }
 
-onMounted(() => {
-  loadOrders()
-})
+
 </script>
 
 <style scoped>

@@ -7,7 +7,6 @@ import { downloadBlob } from '@/utils/download'
 import { getInspectionRecord, listInspectionRecords, recallInspectionRecord, downloadInspectionPdf } from '@/api/shipping'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
-
 export function useInspectionRecords() {
   const route = useRoute()
   const router = useRouter()
@@ -34,9 +33,8 @@ export function useInspectionRecords() {
     } finally { downloading.value = false }
   }
 
-
   const listApi = useListPage(
-    async ({ page, page_size, ...form }) => {
+    async ({ page, page_size, ...form }, { signal, isCurrent }) => {
       const params = { page, page_size }
       if (form.keyword) params.keyword = form.keyword
       if (form.orderId?.trim()) params.order_id = form.orderId.trim()
@@ -44,7 +42,7 @@ export function useInspectionRecords() {
       if (form.salespersonName?.trim()) params.salesperson_name = form.salespersonName.trim()
       if (form.dateFrom) params.date_from = form.dateFrom
       if (form.dateTo) params.date_to = form.dateTo
-      const res = await listInspectionRecords(params)
+      const res = await listInspectionRecords(params, { signal, suppressToast: true })
       return res.data || {}
     },
     {
@@ -88,7 +86,7 @@ export function useInspectionRecords() {
       detailVisible.value = false
       printDialog.visible = false
       msgSuccess('撤回')
-      await listApi.handleSearch()
+      await listApi.refreshUpdate()
     } finally {
       recallingId.value = null
     }

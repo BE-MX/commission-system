@@ -1,5 +1,5 @@
 <template>
-  <el-drawer :model-value="open" class="chat-mode-drawer" modal-class="chat-mode-overlay" :title="mode?.title || '对话方式说明'" size="min(560px, 100vw)" append-to-body :destroy-on-close="true" @update:model-value="$emit('update:open', $event)">
+  <DetailDrawer :model-value="open" class="chat-mode-drawer" modal-class="chat-mode-overlay" :title="mode?.title || '对话方式说明'" width="640px" append-to-body :destroy-on-close="true" @update:model-value="$emit('update:open', $event)">
     <template v-if="mode">
       <p class="mode-description">{{ mode.description }}</p>
       <dl class="mode-facts">
@@ -16,7 +16,7 @@
       <summary>展开规则原文</summary>
       <div class="markdown-body" v-html="rendered" />
     </details>
-  </el-drawer>
+  </DetailDrawer>
 </template>
 
 <script setup>
@@ -36,7 +36,7 @@ const rendered = computed(() => DOMPurify.sanitize(marked.parse(props.content ||
 .mode-facts dd { margin: 0; overflow-wrap: anywhere; }
 .mode-note { padding: 12px; border-radius: 10px; background: var(--color-gold-soft); color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .mode-content { margin-top: 24px; }
-.mode-content summary { min-height: 44px; cursor: pointer; color: var(--color-primary); }
+.mode-content summary { min-height: 44px; cursor: pointer; color: var(--color-primary-text); }
 .markdown-body { overflow-wrap: anywhere; line-height: 1.8; font-size: 14px; }
 .markdown-body :deep(pre) { overflow-x: auto; }
 .markdown-body :deep(table) { display: block; overflow-x: auto; }

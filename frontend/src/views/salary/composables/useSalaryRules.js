@@ -1,3 +1,4 @@
+import { confirmAction, msgSuccessText } from '@/utils/feedback'
 /**
  * 薪资规则配置页编排（职级表 / 规则参数 / 部门映射三块）。
  *
@@ -5,7 +6,7 @@
  * 弹窗里 effective_from 可改，upsert 按 (scheme, grade_code, effective_from) 落。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import {
   STD_SALARY_SCHEMES,
   listDeptMappings,
@@ -93,7 +94,7 @@ export function useSalaryRules() {
     // 同 (赛道,职级,生效日) 是 upsert 键：生效日没变 = 直接改写现行底薪，
     // 影响的是这条职级下所有人的下个月工资，不能静默发生。
     if (gradeOriginFrom.value && gradeForm.effective_from === gradeOriginFrom.value) {
-      const goOn = await ElMessageBox.confirm(
+      const goOn = await confirmAction(
         `生效日未变，将直接覆盖 ${gradeForm.effective_from} 起生效的现行版本，`
         + '该职级下所有人的底薪口径立即改变。若只是调整新一轮标准，请把生效日改成新的日期。',
         '确认覆盖现行版本',
@@ -104,7 +105,7 @@ export function useSalaryRules() {
     gradeSaving.value = true
     try {
       await upsertGrade({ ...gradeForm })
-      ElMessage.success('已保存')
+      msgSuccessText('已保存')
       gradeDialog.value = false
       fetchAll()
     } catch {
@@ -131,7 +132,7 @@ export function useSalaryRules() {
   async function saveParam(row) {
     try {
       await updateParam(row.id, { ...paramDraft })
-      ElMessage.success('已保存')
+      msgSuccessText('已保存')
       editingParamId.value = null
       fetchAll()
     } catch {
@@ -163,7 +164,7 @@ export function useSalaryRules() {
     deptSaving.value = true
     try {
       await upsertDeptMapping({ ...deptForm })
-      ElMessage.success('已保存')
+      msgSuccessText('已保存')
       deptDialog.value = false
       fetchAll()
     } catch {

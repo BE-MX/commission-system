@@ -28,6 +28,7 @@
         </el-input>
       </div>
 
+      <ListPageStatus :error="dimensionsResource.errorMessage.value" :loading="dimensionsResource.loading.value" :has-data="dimensions.length > 0" @retry="loadDimensions" />
       <div class="filter-groups">
         <div
           v-for="dim in commonDimensions"
@@ -105,18 +106,16 @@
 
       <!-- 顶部工具栏 -->
       <div class="toolbar">
-        <div class="toolbar-left">
+        <FilterBar class="toolbar-left" :pending="keyword.trim() !== committedKeyword" @search="onKeywordSearch" @reset="resetFilters">
           <el-input
             v-model="keyword"
             placeholder="搜索文件名或备注"
             clearable
             class="keyword-input"
-            @keyup.enter="onKeywordSearch"
-            @clear="onKeywordSearch"
           >
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
-        </div>
+        </FilterBar>
         <div class="toolbar-right">
           <el-radio-group v-model="viewMode">
             <el-radio-button label="grid"><el-icon><Grid /></el-icon></el-radio-button>
@@ -136,6 +135,7 @@
       </div>
 
       <!-- 内容区（可滚动） -->
+      <ListPageStatus v-if="hasSearchIntent" :error="listState.errorMessage.value" :loading="loading" :has-data="assets.length > 0" :data-page="listState.dataPage.value" @retry="loadData" />
       <div class="content-wrapper">
         <!-- 引导态：未产生检索意图（未选标签、未输关键词）前不展示素材，先指路 -->
         <div v-if="!hasSearchIntent" class="guide-wrap">
@@ -168,11 +168,11 @@
             </p>
           </div>
         </div>
-        <div v-else-if="loading" class="loading-wrap">
+        <div v-else-if="loading && !assets.length" class="loading-wrap">
           <el-skeleton :rows="5" animated />
         </div>
         <div v-else-if="assets.length === 0" class="empty-wrap">
-          <el-empty description="未找到匹配的素材" />
+          <el-empty v-if="listState.isEmpty.value" description="未找到匹配的素材" />
         </div>
 
         <!-- 网格视图 -->
@@ -207,9 +207,9 @@
             <div class="card-tags">
               <div v-for="tag in asset.tags.slice(0, 3)" :key="tag.id" class="tag-with-thumb">
                 <img v-if="tag.image_path" :src="getTagImageUrl(tag.image_path)" class="tag-thumb" />
-                <el-tag size="small" effect="plain">
+                <StatusBadge size="small" effect="plain">
                   {{ tag.value }}
-                </el-tag>
+                </StatusBadge>
               </div>
             </div>
           </div>
@@ -257,7 +257,7 @@
         <el-table-column v-if="visibleKeys.includes('file-name')" label="文件名" prop="file_name" min-width="200" show-overflow-tooltip sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="80">
           <template #default="{ row }">
-            <el-tag size="small" :type="fileTypeTag(row.file_type)">{{ fileTypeLabel(row.file_type) }}</el-tag>
+            <StatusBadge size="small" :type="fileTypeTag(row.file_type)">{{ fileTypeLabel(row.file_type) }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('size')" label="大小" min-width="100">
@@ -267,9 +267,9 @@
           <template #default="{ row }">
             <div v-for="tag in row.tags" :key="tag.id" class="tag-with-thumb mr-4">
               <img v-if="tag.image_path" :src="getTagImageUrl(tag.image_path)" class="tag-thumb" />
-              <el-tag size="small" effect="plain">
+              <StatusBadge size="small" effect="plain">
                 {{ tag.value }}
-              </el-tag>
+              </StatusBadge>
             </div>
           </template>
         </el-table-column>
@@ -301,7 +301,7 @@
 
       <!-- 分页 -->
       <div v-if="hasSearchIntent && assets.length" class="pagination-bar">
-        <el-pagination
+        <el-pagination class="pager"
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :total="total"
@@ -314,7 +314,7 @@
     </div>
 
     <!-- 预览弹窗 -->
-    <el-dialog v-model="previewVisible" width="80%" :title="previewAsset?.file_name" destroy-on-close>
+    <el-dialog v-model="previewVisible" width="480px" :title="previewAsset?.file_name" destroy-on-close>
       <div class="preview-body">
         <div class="preview-media">
           <img v-if="previewAsset?.file_type === 'image'" :src="getFileUrl(previewAsset.storage_path)" class="preview-img" />
@@ -333,11 +333,11 @@
           <p><label>下载次数:</label> {{ previewAsset?.download_count }}</p>
           <div v-if="previewAsset?.tags?.length" class="preview-tags">
             <label>标签:</label>
-            <el-tag v-for="tag in previewAsset.tags" :key="tag.id" size="small">{{ tag.value }}</el-tag>
+            <StatusBadge v-for="tag in previewAsset.tags" :key="tag.id" size="small">{{ tag.value }}</StatusBadge>
           </div>
           <div v-if="previewAiTags.length" class="preview-ai-tags">
             <label>AI 建议:</label>
-            <el-tag v-for="tag in previewAiTags" :key="tag.id" size="small" type="warning" effect="plain">{{ tag.value }}</el-tag>
+            <StatusBadge v-for="tag in previewAiTags" :key="tag.id" size="small" type="warning" effect="plain">{{ tag.value }}</StatusBadge>
           </div>
           <div class="preview-actions">
             <GlassButton variant="primary" :left-icon="Download" @click="handleDownload(previewAsset)">下载</GlassButton>
@@ -351,7 +351,8 @@
     </el-dialog>
 
     <!-- 收藏夹选择 -->
-    <el-dialog v-model="favoriteDialogVisible" title="收藏到" width="360px">
+    <el-dialog v-model="favoriteDialogVisible" title="收藏到" width="480px">
+      <ListPageStatus :error="foldersResource.errorMessage.value" :loading="foldersResource.loading.value" :has-data="folders.length > 0" @retry="foldersResource.load()" />
       <div v-if="folders.length" class="folder-list">
         <div
           v-for="folder in folders"
@@ -364,7 +365,7 @@
           <span>{{ folder.name }}</span>
         </div>
       </div>
-      <el-empty v-else description="暂无收藏夹，请先创建" />
+      <el-empty v-else-if="!foldersResource.loading.value && !foldersResource.error.value" description="暂无收藏夹，请先创建" />
       <template #footer>
         <GlassButton variant="ghost" @click="favoriteDialogVisible = false">取消</GlassButton>
         <GlassButton variant="primary" :disabled="!selectedFolderId" @click="confirmFavorite">确定</GlassButton>
@@ -384,8 +385,12 @@
 </template>
 
 <script setup>
+import { notifyFeedback, confirmAction, msgError, msgSuccessText } from '@/utils/feedback'
 import { ref, reactive, watch, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { clearListResource } from '@/composables/useListResourceScope'
+
 import {
   Search, Grid, List, Download, Star, Picture,
   VideoPlay, Document, Folder, MagicStick, ArrowDown,
@@ -418,32 +423,36 @@ const authStore = useAuthStore()
 const canWrite = computed(() => authStore.hasPermission('asset:write'))
 const canDelete = computed(() => authStore.hasPermission('asset:delete'))
 
-const loading = ref(false)
-const assets = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
+const availableTagIds = ref(new Set())
+const listState = useListPage(async (params, { signal, isCurrent }) => {
+  const { tagFilters, keyword: submittedKeyword, sort_field, ...query } = params
+  if (!submittedKeyword && !Object.values(tagFilters).some(ids => ids.length)) { if (isCurrent()) availableTagIds.value = new Set(); return { items: [], total: 0 } }
+  const response = await getAssetList({ ...query, keyword: submittedKeyword || undefined, sort_by: sort_field || undefined, tag_filters: Object.keys(tagFilters).length ? JSON.stringify(tagFilters) : undefined }, { signal, suppressToast: true })
+  if (isCurrent()) availableTagIds.value = new Set(response.data?.available_tag_ids || [])
+  return { items: response.data?.items || [], total: response.data?.total || 0 }
+}, { immediate: false, searchForm: { keyword: '', tagFilters: {} }, sortParams: orderSort.sortParams.value })
+const loading = listState.loading; const assets = listState.list; const total = listState.total; const page = listState.page; const pageSize = listState.pageSize
 const keyword = ref('')
 const viewMode = ref('grid')
 const sidebarCollapsed = ref(false)
-const dimensions = ref([])
+const dimensionsResource = useAsyncResource(async (_, { signal }) => (await getTagDimensions(false, undefined, { signal, suppressToast: true })).data || [])
+const dimensions = computed(() => dimensionsResource.data.value || [])
 const activeFilters = reactive({})
 // 标签关键字筛选
 const filterKeyword = ref('')
 
-// 当前已加载素材拥有的标签 ID 集合（用于联动筛选）
-const availableTagIds = ref(new Set())
+// Facet IDs belong to the currently committed server response.
 
 // 是否已选中任一标签
 const hasActiveTagFilter = computed(() =>
   Object.values(activeFilters).some(arr => arr && arr.length > 0)
 )
 // 已提交的文件名关键词（回车/清空时更新，非实时输入）——避免边打字边闪「未找到」
-const committedKeyword = ref('')
+const committedKeyword = computed(() => listState.appliedSearchForm.value.keyword)
 // 是否产生了检索意图：选了标签 或 已提交文件名关键词。
 // 无意图时右侧只展示引导插画，不拉全量素材（避免一进来就把整库倾倒出来）
 const hasSearchIntent = computed(() =>
-  hasActiveTagFilter.value || !!committedKeyword.value.trim()
+  Object.values(listState.appliedSearchForm.value.tagFilters).some(ids => ids.length > 0) || !!committedKeyword.value.trim()
 )
 
 const {
@@ -454,7 +463,8 @@ const {
 const previewVisible = ref(false)
 const previewAsset = ref(null)
 const favoriteDialogVisible = ref(false)
-const folders = ref([])
+const foldersResource = useAsyncResource(async (_, { signal }) => (await getFavoriteFolders({ signal, suppressToast: true })).data || [])
+const folders = computed(() => foldersResource.data.value || [])
 const selectedFolderId = ref(null)
 const favoriteTargetAsset = ref(null)
 const aiAnalyzing = ref(false)
@@ -484,18 +494,19 @@ function openBatchTagEditor() {
 }
 
 async function onTagsSaved() {
-  await loadData()
+  const previewId = previewAsset.value?.id
+  const success = await listState.refreshUpdate()
   // 预览弹窗还开着时同步刷新其中的标签展示
-  if (previewVisible.value && previewAsset.value) {
+  if (success && previewVisible.value && previewAsset.value?.id === previewId) {
     const fresh = assets.value.find(a => a.id === previewAsset.value.id)
     if (fresh) previewAsset.value = fresh
   }
 }
 
 const { handleDelete, handleBatchDelete } = useAssetDeletion({
-  selectedAssets, previewAsset, previewVisible, loadData, clearSelection,
-  confirm: (...args) => ElMessageBox.confirm(...args),
-  notify: (type, message) => ElMessage[type](message),
+  selectedAssets, previewAsset, previewVisible, loadData: listState.refreshRemove, clearSelection,
+  confirm: (...args) => confirmAction(...args),
+  notify: notifyFeedback,
 })
 
 // 初始化维度筛选状态
@@ -507,118 +518,76 @@ watch(dimensions, (dims) => {
   })
 }, { immediate: true })
 
-// 标签筛选变化时自动加载；取消全部选择后回到引导态
-watch(activeFilters, () => {
-  page.value = 1
-  if (hasSearchIntent.value) {
-    loadData()
-  } else {
-    resetResults()
-  }
-}, { deep: true })
+// Facet clicks commit tags immediately while keeping an unsubmitted keyword draft.
+function selectedTagFilters() { return Object.fromEntries(Object.entries(activeFilters).filter(([, ids]) => ids?.length).map(([name, ids]) => [name, [...ids]])) }
+watch(() => JSON.stringify(selectedTagFilters()), () => {
+  const tags = selectedTagFilters()
+  if (JSON.stringify(tags) === JSON.stringify(listState.appliedSearchForm.value.tagFilters)) return
+  listState.searchForm.keyword = committedKeyword.value
+  listState.searchForm.tagFilters = tags
+  listState.handleSearch()
+})
 
-// 顶部关键词检索：回车或清空时提交关键词，有意图则检索，否则回到引导态
 function onKeywordSearch() {
-  committedKeyword.value = keyword.value.trim()
-  page.value = 1
-  if (hasSearchIntent.value) {
-    loadData()
-  } else {
-    resetResults()
-  }
+  listState.searchForm.keyword = keyword.value.trim()
+  listState.searchForm.tagFilters = selectedTagFilters()
+  return listState.handleSearch()
 }
 
-// 清空右侧结果，回到引导插画
 function resetResults() {
-  assets.value = []
-  total.value = 0
+  clearListResource(listState)
   availableTagIds.value = new Set()
+  return listState.handleSearch()
 }
 
+let analysisSequence = 0
 async function handleAiAnalyze(asset) {
   if (!asset) return
+  const sequence = ++analysisSequence
   aiAnalyzing.value = true
   previewAiTags.value = []
   try {
     const res = await analyzeAsset(asset.id)
+    if (sequence !== analysisSequence || !previewVisible.value || previewAsset.value?.id !== asset.id) return
     const data = res.data || {}
     const suggestions = data.suggestions || []
     previewAiTags.value = suggestions.flatMap(s => s.values.map(v => ({ id: v.tag_value_id, value: v.value })))
   } catch (e) {
-    ElMessage.error('AI 分析失败')
+    msgError('AI 分析失败', e)
   } finally {
-    aiAnalyzing.value = false
+    if (sequence === analysisSequence) aiAnalyzing.value = false
   }
 }
 
-async function loadDimensions() {
-  try {
-    const res = await getTagDimensions()
-    dimensions.value = res.data || []
-  } catch (e) {
-    console.warn('加载标签维度失败:', e)
-  }
-}
+const loadDimensions = () => dimensionsResource.load()
 
-async function loadData() {
-  loading.value = true
-  try {
-    // 构造 tag_filters 参数
-    const tagFilters = {}
-    for (const [dimName, ids] of Object.entries(activeFilters)) {
-      if (ids && ids.length) {
-        tagFilters[dimName] = ids
-      }
-    }
-
-    const res = await getAssetList({
-      keyword: keyword.value || undefined,
-      sort_by: orderSort.sortField.value || undefined,
-      sort_order: orderSort.sortOrder.value || undefined,
-      page: page.value,
-      page_size: pageSize.value,
-      tag_filters: Object.keys(tagFilters).length ? JSON.stringify(tagFilters) : undefined,
-    })
-    assets.value = res.data?.items || []
-    total.value = res.data?.total || 0
-
-    // 更新可用标签 ID 集合（基于全量检索结果，非当前页）
-    availableTagIds.value = new Set(res.data?.available_tag_ids || [])
-  } catch (e) {
-    ElMessage.error('加载素材失败')
-  } finally {
-    loading.value = false
-  }
-}
+const loadData = () => listState.fetchList()
 
 async function onToolsRefresh() {
   await loadDimensions()
   if (hasSearchIntent.value) await loadData()
 }
 
-function handleSizeChange() {
-  page.value = 1
-  if (hasSearchIntent.value) loadData()
-}
+const handleSizeChange = listState.handleSizeChange
 
 function handleSortChange(event) {
   orderSort.onSortChange(event)
-  page.value = 1
-  if (hasSearchIntent.value) loadData()
+  return listState.handleSortChange(orderSort.sortParams.value)
 }
 
 function resetFilters() {
   keyword.value = ''
-  committedKeyword.value = ''
   filterKeyword.value = ''
   for (const key in activeFilters) {
     activeFilters[key] = []
   }
-  page.value = 1
-  resetResults()
+  listState.searchForm.keyword = ''
+  listState.searchForm.tagFilters = {}
+  return resetResults()
 }
 
 function openPreview(asset) {
+  analysisSequence++; aiAnalyzing.value = false; previewAiTags.value = []
   previewAsset.value = asset
   previewVisible.value = true
 }
@@ -633,32 +602,27 @@ async function handleDownload(asset) {
     a.download = asset.file_name
     a.click()
     window.URL.revokeObjectURL(url)
-    ElMessage.success('下载开始')
+    msgSuccessText('下载开始')
   } catch (e) {
-    ElMessage.error('下载失败')
+    msgError('下载失败', e)
   }
 }
 
-async function handleFavorite(asset) {
+function handleFavorite(asset) {
   favoriteTargetAsset.value = asset
   selectedFolderId.value = null
-  try {
-    const res = await getFavoriteFolders()
-    folders.value = res.data || []
-    favoriteDialogVisible.value = true
-  } catch (e) {
-    ElMessage.error('加载收藏夹失败')
-  }
+  favoriteDialogVisible.value = true
+  return foldersResource.load(null, { clear: true })
 }
 
 async function confirmFavorite() {
   if (!selectedFolderId.value || !favoriteTargetAsset.value) return
   try {
     await addFavoriteItem(selectedFolderId.value, { asset_id: favoriteTargetAsset.value.id })
-    ElMessage.success('已收藏')
+    msgSuccessText('已收藏')
     favoriteDialogVisible.value = false
   } catch (e) {
-    ElMessage.error('收藏失败')
+    msgError('收藏失败', e)
   }
 }
 
@@ -693,12 +657,19 @@ async function handleBatchDownload() {
     a.download = `leshine_assets_${currentBeijingDate().replace(/-/g, '')}.zip`
     a.click()
     window.URL.revokeObjectURL(url)
-    ElMessage.success('下载开始')
+    msgSuccessText('下载开始')
     clearSelection()
   } catch (e) {
-    ElMessage.error('批量下载失败')
+    msgError('批量下载失败', e)
   }
 }
+
+watch(() => JSON.stringify([authStore.user?.id, authStore.user?.roles, authStore.user?.permissions]), () => {
+  clearSelection(); previewVisible.value = false; favoriteDialogVisible.value = false; tagEditorVisible.value = false
+  analysisSequence++; aiAnalyzing.value = false; previewAiTags.value = []
+  clearListResource(listState); availableTagIds.value = new Set()
+  listState.fetchList(); foldersResource.load(null, { clear: true }); dimensionsResource.load(null, { clear: true })
+}, { flush: 'sync' })
 
 onMounted(async () => {
   // 移动端检测已移至路由守卫，此处仅加载标签维度。

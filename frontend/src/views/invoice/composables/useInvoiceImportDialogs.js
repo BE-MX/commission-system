@@ -1,5 +1,5 @@
+import { msgWarning, msgSuccessText } from '@/utils/feedback'
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
 
 export function useInvoiceImportDialogs(form, appendImportedLines) {
   const pasteImportVisible = ref(false)
@@ -14,10 +14,10 @@ export function useInvoiceImportDialogs(form, appendImportedLines) {
   })
   function appendPastedLines({ rows, fingerprint }) {
     if (!appendImportedLines(rows, fingerprint)) {
-      ElMessage.warning('这批数据已经加入当前发票')
+      msgWarning('这批数据已经加入当前发票')
       return
     }
-    ElMessage.success(`已加入 ${rows.length} 条产品明细，发票尚未保存`)
+    msgSuccessText(`已加入 ${rows.length} 条产品明细，发票尚未保存`)
   }
   return { pasteImportVisible, screenshotImportVisible, canPasteImport, pasteImportDisabledReason, appendPastedLines }
 }

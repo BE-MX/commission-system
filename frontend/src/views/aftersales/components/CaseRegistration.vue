@@ -1,7 +1,7 @@
 <template>
   <section class="surface-section">
     <div class="section-title"><el-icon><Document /></el-icon><span>客户与订单</span></div>
-    <el-form :model="form" label-position="top" :disabled="locked" class="form-grid">
+    <el-form label-position="top" :model="form" :disabled="locked" class="form-grid">
       <el-form-item label="客户名称" required>
         <el-select v-model="form.customer_id" filterable remote reserve-keyword :remote-method="keyword => $emit('search-customer', keyword)" placeholder="输入客户名称搜索" @change="value => $emit('customer-change', value)">
           <el-option v-for="item in customers" :key="item.customer_id" :label="item.customer_name" :value="item.customer_id" />
@@ -12,7 +12,7 @@
       </el-form-item>
       <el-form-item label="订单号" required>
         <el-select v-model="form.order_id" filterable remote :disabled="locked || !form.customer_id" :remote-method="keyword => $emit('search-order', keyword)" placeholder="先选择客户，再搜索订单" @change="value => $emit('order-change', value)">
-          <el-option v-for="item in orders" :key="item.order_id" :label="`${item.order_no} · USD ${item.amount_usd || '—'}`" :value="item.order_id" />
+          <el-option v-for="item in orders" :key="item.order_id" :label="`${item.order_no} · USD ${formatMoney(item.amount_usd, { missing: '—' })}`" :value="item.order_id" />
         </el-select>
       </el-form-item>
       <el-form-item label="反馈渠道">
@@ -32,7 +32,7 @@
 
   <section class="surface-section">
     <div class="section-title"><el-icon><Goods /></el-icon><span>产品与问题</span></div>
-    <el-form :model="form" label-position="top" :disabled="locked" class="form-grid">
+    <el-form label-position="top" :model="form" :disabled="locked" class="form-grid">
       <el-form-item label="产品类型" class="span-2">
         <el-radio-group v-model="form.is_custom_product" @change="$emit('product-mode-change')">
           <el-radio-button :value="false">标准产品</el-radio-button><el-radio-button :value="true">定制产品</el-radio-button>
@@ -68,6 +68,8 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../../utils/money.js'
+
 import { computed } from 'vue'
 
 const props = defineProps({

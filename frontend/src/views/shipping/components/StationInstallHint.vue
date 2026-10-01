@@ -38,7 +38,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .install-hint{border:1px solid var(--border-color);border-radius:12px;background:var(--card-bg);margin-bottom:16px}
 summary{display:flex;align-items:center;gap:8px;min-height:48px;padding:4px 10px;cursor:pointer;list-style:none;font-size:12px;font-weight:650}
-summary::-webkit-details-marker{display:none}summary img{border-radius:7px;flex-shrink:0}.install-action{margin-left:auto;color:var(--color-primary-hover);white-space:nowrap;font-size:11px}
+summary::-webkit-details-marker{display:none}summary img{border-radius:7px;flex-shrink:0}.install-action{margin-left:auto;color: var(--color-primary-text);white-space:nowrap;font-size:11px}
 .install-body{border-top:1px solid var(--border-color);padding:0 14px 8px;font-size:13px;line-height:1.8;color:var(--text-secondary)}ol{padding-left:20px}li{margin:8px 0}strong{color:var(--text-primary)}
 summary:focus-visible{outline:3px solid var(--color-primary);outline-offset:3px;border-radius:12px}
 </style>

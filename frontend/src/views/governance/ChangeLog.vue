@@ -11,21 +11,22 @@
       <h2>数据治理 · 变更历史</h2>
     </div>
 
-    <div class="filter-bar">
-      <el-input v-model="filters.concept_id" placeholder="概念ID" clearable style="width: 200px" />
-      <el-select v-model="filters.action" placeholder="操作类型" clearable style="width: 140px">
+    <FilterBar :loading="loading" :pending="listState.hasPendingSearch.value" @search="searchLogs" @reset="resetFilters">
+      <el-input v-model="filters.concept_id" placeholder="概念ID" clearable class="filter-w-md" />
+      <el-select v-model="filters.action" placeholder="操作类型" clearable class="filter-w-sm">
         <el-option v-for="a in actionOptions" :key="a.value" :label="a.label" :value="a.value" />
       </el-select>
-      <GlassButton variant="primary" :left-icon="Search" @click="loadLogs">搜索</GlassButton>
-    </div>
+    </FilterBar>
 
-    <el-timeline class="log-timeline">
+    <ListPageStatus :error="listState.errorMessage.value" :loading="loading" :has-data="listState.hasData.value" :data-page="listState.dataPage.value" @retry="loadLogs" />
+    <el-empty v-if="listState.isEmpty.value" description="暂无变更记录" />
+    <el-timeline v-loading="loading" class="log-timeline">
       <el-timeline-item v-for="log in logs" :key="log.id"
         :timestamp="formatDate(log.timestamp)" placement="top"
         :type="actionColor(log.action)">
         <el-card shadow="never" class="log-card lg-card">
           <div class="log-header">
-            <el-tag :type="actionTagType(log.action)" size="small">{{ actionLabels[log.action] }}</el-tag>
+            <StatusBadge :type="actionTagType(log.action)" size="small">{{ actionLabels[log.action] }}</StatusBadge>
             <span v-if="log.concept_name_zh" class="log-concept">
               <router-link :to="`/governance/concepts/${log.concept_id}`">
                 {{ log.concept_name_zh }}
@@ -52,15 +53,19 @@
     </el-timeline>
 
     <div class="pagination-wrap">
-      <el-pagination v-model:current-page="page" v-model:page-size="pageSize"
-        :total="total" layout="total, prev, pager, next" @change="loadLogs" />
+      <el-pagination class="pager" :page-sizes="[20, 50, 100]" v-model:current-page="page" v-model:page-size="pageSize"
+        :total="total" layout="total, sizes, prev, pager, next" @size-change="handleSizeChange" @current-change="handlePageChange" />
     </div>
   </div>
 </template>
 
 <script setup>
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import { useListPage } from '@/composables/useListPage'
+import { msgError, confirmAction, msgSuccessText } from '@/utils/feedback'
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { listChangeLogs, rollbackToVersion } from '@/api/governance'
@@ -90,34 +95,16 @@ const fieldLabels = {
   boundary_includes: '包含范围', boundary_excludes: '排除范围',
 }
 
-const logs = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(30)
-
-const filters = reactive({ concept_id: '', action: '' })
-
-async function loadLogs() {
-  try {
-    const { data: res } = await listChangeLogs({
-      ...filters,
-      page: page.value,
-      page_size: pageSize.value,
-    })
-    const payload = res.data ?? res
-    logs.value = payload.items || []
-    total.value = payload.total || 0
-  } catch (e) {
-    ElMessage.error('加载变更历史失败')
-  }
-}
+const listState = useListPage(async (params, { signal }) => (await listChangeLogs(params, { signal, suppressToast: true })).data,
+  { searchForm: { concept_id: '', action: '' } })
+const { list: logs, loading, total, page, pageSize, searchForm: filters, fetchList: loadLogs, handleSearch: searchLogs, handleReset: resetFilters, handlePageChange, handleSizeChange } = listState
 
 async function handleRollback(log) {
   try {
-    await ElMessageBox.confirm(`确认回滚到 ${formatDate(log.timestamp)} 的版本？`, '回滚确认')
+    await confirmAction(`确认回滚到 ${formatDate(log.timestamp)} 的版本？`, '回滚确认')
     await rollbackToVersion(log.id)
-    ElMessage.success('已回滚')
-    loadLogs()
+    msgSuccessText('已回滚')
+    await listState.refreshUpdate()
   } catch { /* cancel */ }
 }
 
@@ -131,7 +118,7 @@ function formatVal(v) {
   return String(v)
 }
 
-onMounted(() => loadLogs())
+
 </script>
 
 <style scoped>

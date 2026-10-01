@@ -54,7 +54,7 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .dash-eye-btn:hover {
-    color: var(--color-primary);
+    color: var(--color-primary-text);
   }
 }
 

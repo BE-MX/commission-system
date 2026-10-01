@@ -1,6 +1,6 @@
 <template>
   <aside class="knowledge-sidebar" :class="{ collapsed }">
-    <div v-if="!collapsed" class="search-box">
+    <FilterBar v-if="!collapsed" class="search-box" :pending="searchQuery.trim() !== appliedSearchQuery" @search="$emit('search')" @reset="$emit('reset-search')">
       <el-input
         ref="searchInput"
         :model-value="searchQuery"
@@ -8,14 +8,10 @@
         placeholder="搜索已发布知识"
         aria-label="搜索已发布知识"
         @update:model-value="$emit('update:search-query', $event)"
-        @keyup.enter="$emit('search')"
       >
         <template #prefix><el-icon><Search /></el-icon></template>
       </el-input>
-      <button class="search-submit" type="button" aria-label="搜索已发布知识" @click="$emit('search')">
-        <el-icon><Search /></el-icon>
-      </button>
-    </div>
+    </FilterBar>
 
     <header v-if="!collapsed" class="sidebar-header">
       <div class="sidebar-title">
@@ -82,7 +78,7 @@
               @click.stop="$emit('open-members', library)"
             ><el-icon><User /></el-icon></button>
           </el-tooltip>
-          <el-tag class="role-tag" size="small" effect="plain">{{ roleLabel(library.role) }}</el-tag>
+          <StatusBadge class="role-tag" size="small" effect="plain">{{ roleLabel(library.role) }}</StatusBadge>
           <el-tooltip v-if="canDeleteLibrary && library.role === 'admin'" content="删除知识库" placement="top">
             <button class="row-delete" type="button" :aria-label="`删除知识库 ${library.name}`" @click.stop="$emit('delete-library', library)">
               <el-icon><Delete /></el-icon>
@@ -90,7 +86,7 @@
           </el-tooltip>
         </div>
       </div>
-      <el-empty v-else-if="!libraries.length && !collapsed" description="还没有可访问的知识库" :image-size="72" />
+      <el-empty v-else-if="!libraries.length && !collapsed && !librariesLoading && !librariesError" description="还没有可访问的知识库" :image-size="72" />
 
       <div v-if="libraries.length && collapsed" class="collapsed-libraries" aria-label="知识库列表">
         <el-tooltip
@@ -130,7 +126,7 @@
             </el-tooltip>
           </div>
         </div>
-        <el-tree
+        <el-tree v-if="treeLoaded || tree.length"
           :data="tree"
           node-key="id"
           default-expand-all
@@ -177,10 +173,14 @@ import { LIBRARY_CATEGORIES } from '../knowledgeUi.js'
 import OverflowTooltip from './OverflowTooltip.vue'
 
 const props = defineProps({
+  librariesLoading: Boolean,
+  librariesError: String,
   libraries: { type: Array, default: () => [] },
   selectedLibraryId: { type: Number, default: null },
+  treeLoaded: Boolean,
   tree: { type: Array, default: () => [] },
   searchQuery: { type: String, default: '' },
+  appliedSearchQuery: { type: String, default: '' },
   collapsed: Boolean,
   canWrite: Boolean,
   canCreateLibrary: Boolean,
@@ -192,7 +192,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   'update:search-query',
-  'search',
+  'search', 'reset-search',
   'toggle-collapse',
   'select-library',
   'select-document',
@@ -228,16 +228,15 @@ watch(() => props.collapsed, collapsed => {
 <style scoped>
 .knowledge-sidebar { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border-color); background: var(--surface-card, var(--card-bg)); }
 .knowledge-sidebar.collapsed { align-items: center; }
-.search-box { display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border-color); }
-.search-submit, .sidebar-action, .compact-action, .row-action, .row-delete, .create-node, .collapse-toggle, .library-item { border: 0; cursor: pointer; }
-.search-submit, .sidebar-action, .collapsed-actions .compact-action, .row-action, .row-delete, .create-node { transition: transform 120ms cubic-bezier(.23, 1, .32, 1), color 120ms ease, background-color 120ms ease, opacity 120ms ease; }
+.search-box { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border-color); }
+.sidebar-action, .compact-action, .row-action, .row-delete, .create-node, .collapse-toggle, .library-item { border: 0; cursor: pointer; }
+.sidebar-action, .collapsed-actions .compact-action, .row-action, .row-delete, .create-node { transition: transform 120ms cubic-bezier(.23, 1, .32, 1), color 120ms ease, background-color 120ms ease, opacity 120ms ease; }
 .library-item, .library-compact, .collapse-toggle { transition: color 120ms ease, background-color 120ms ease, opacity 120ms ease; }
-.search-submit, .compact-action, .row-action, .row-delete, .create-node { display: grid; place-items: center; }
-.search-submit { width: 36px; height: 32px; border-radius: 8px; color: var(--card-bg); background: var(--color-primary); }
+.compact-action, .row-action, .row-delete, .create-node { display: grid; place-items: center; }
 .sidebar-header { display: grid; gap: 12px; padding: 14px 12px 12px; border-bottom: 1px solid var(--border-color); }
 .sidebar-title { min-width: 0; }
 .sidebar-header h2 { margin: 3px 0 0; color: var(--text-primary); font-size: 17px; }
-.eyebrow { color: var(--color-primary); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.eyebrow { color: var(--color-primary-text); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
 .sidebar-actions { display: flex; gap: 6px; }
 .sidebar-action { display: inline-flex; min-width: 0; height: 32px; flex: 1; align-items: center; justify-content: center; gap: 5px; padding: 0 8px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-secondary); background: var(--surface-card, var(--card-bg)); font-size: 12px; white-space: nowrap; }
 .sidebar-body { display: flex; width: 100%; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
@@ -252,13 +251,13 @@ watch(() => props.collapsed, collapsed => {
 .library-item { display: grid; min-width: 0; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 7px; padding: 7px 5px 7px 7px; border-radius: inherit; color: var(--text-secondary); background: transparent; text-align: left; }
 .library-row.active .library-item { color: var(--text-primary); }
 .category-icon { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 7px; }
-.category-icon.company { color: var(--color-primary); background: var(--color-primary-light); }
+.category-icon.company { color: var(--color-primary-text); background: var(--color-primary-light); }
 .category-icon.department { color: var(--color-info-text); background: var(--color-info-bg); }
 .category-icon.personal { color: var(--color-success-text); background: var(--color-success-bg); }
 .library-compact.active { box-shadow: inset 0 0 0 1px var(--color-primary); background: var(--color-primary-light); }
 .role-tag { flex: 0 0 auto; }
 .row-action, .row-delete, .create-node { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 6px; background: transparent; }
-.member-action { color: var(--color-primary); }
+.member-action { color: var(--color-primary-text); }
 .row-delete { color: var(--color-danger); }
 .tree-section { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; padding: 8px 12px 10px; }
 .tree-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px; color: var(--text-muted-blue); font-size: 12px; font-weight: 700; letter-spacing: .06em; }
@@ -273,9 +272,9 @@ watch(() => props.collapsed, collapsed => {
 .status-dot.published { background: var(--color-success); }
 .collapse-footer { width: 100%; flex: 0 0 auto; padding: 8px; border-top: 1px solid var(--border-color); }
 .collapse-toggle { display: flex; width: 100%; height: 34px; align-items: center; justify-content: center; gap: 7px; border-radius: 8px; color: var(--text-secondary); background: transparent; font-size: 12px; }
-.search-submit:focus-visible, .sidebar-action:focus-visible, .compact-action:focus-visible, .row-action:focus-visible, .row-delete:focus-visible, .create-node:focus-visible, .collapse-toggle:focus-visible, .library-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.sidebar-action:focus-visible, .compact-action:focus-visible, .row-action:focus-visible, .row-delete:focus-visible, .create-node:focus-visible, .collapse-toggle:focus-visible, .library-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) {
-  .search-submit:active:not(:focus-visible), .sidebar-action:active:not(:focus-visible), .collapsed-actions .compact-action:active:not(:focus-visible), .row-action:active:not(:focus-visible), .row-delete:active:not(:focus-visible), .create-node:active:not(:focus-visible) { transform: scale(.97); }
+  .sidebar-action:active:not(:focus-visible), .collapsed-actions .compact-action:active:not(:focus-visible), .row-action:active:not(:focus-visible), .row-delete:active:not(:focus-visible), .create-node:active:not(:focus-visible) { transform: scale(.97); }
   .row-delete { opacity: 0; }
   .library-row:hover .row-delete, .tree-node:hover .row-delete, .row-delete:focus-visible { opacity: 1; }
   .sidebar-action:hover, .compact-action:hover, .library-item:hover, .collapse-toggle:hover { color: var(--text-primary); background: var(--color-primary-light); }
@@ -283,10 +282,9 @@ watch(() => props.collapsed, collapsed => {
   .row-delete:hover { background: var(--color-danger-bg); }
   .create-folder:hover { color: var(--card-bg); background: var(--color-info-text); opacity: .88; }
   .create-document:hover { color: var(--card-bg); background: var(--color-primary-hover); }
-  .search-submit:hover { background: var(--color-primary-hover); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .search-submit, .sidebar-action, .compact-action, .row-action, .row-delete, .create-node, .collapse-toggle, .library-item { transition-property: color, background-color, opacity; }
-  .search-submit:active:not(:focus-visible), .sidebar-action:active:not(:focus-visible), .collapsed-actions .compact-action:active:not(:focus-visible), .row-action:active:not(:focus-visible), .row-delete:active:not(:focus-visible), .create-node:active:not(:focus-visible) { transform: none; }
+  .sidebar-action, .compact-action, .row-action, .row-delete, .create-node, .collapse-toggle, .library-item { transition-property: color, background-color, opacity; }
+  .sidebar-action:active:not(:focus-visible), .collapsed-actions .compact-action:active:not(:focus-visible), .row-action:active:not(:focus-visible), .row-delete:active:not(:focus-visible), .create-node:active:not(:focus-visible) { transform: none; }
 }
 </style>

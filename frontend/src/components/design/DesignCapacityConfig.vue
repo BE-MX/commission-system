@@ -88,9 +88,9 @@
         <el-table-column prop="config_date" label="日期" min-width="160" sortable />
         <el-table-column label="时段" min-width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.period === 'am'" size="small" effect="plain">上午</el-tag>
-            <el-tag v-else-if="row.period === 'pm'" size="small" effect="plain">下午</el-tag>
-            <el-tag v-else size="small" type="info" effect="plain">全天</el-tag>
+            <StatusBadge v-if="row.period === 'am'" size="small" effect="plain">上午</StatusBadge>
+            <StatusBadge v-else-if="row.period === 'pm'" size="small" effect="plain">下午</StatusBadge>
+            <StatusBadge v-else size="small" type="info" effect="plain">全天</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column label="星期" min-width="100">
@@ -101,14 +101,14 @@
         <el-table-column prop="max_parallel_tasks" label="最大并行任务" min-width="140" />
         <el-table-column label="与默认值差异" min-width="140">
           <template #default="{ row }">
-            <el-tag
+            <StatusBadge
               v-if="row.max_parallel_tasks !== globalCapacity"
               :type="row.max_parallel_tasks > globalCapacity ? 'success' : 'warning'"
               size="small"
               effect="plain"
             >
               {{ row.max_parallel_tasks > globalCapacity ? '+' : '' }}{{ row.max_parallel_tasks - globalCapacity }}
-            </el-tag>
+            </StatusBadge>
             <span v-else class="text-muted">同默认</span>
           </template>
         </el-table-column>
@@ -122,9 +122,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText, msgWarning, confirmAction } from '@/utils/feedback'
 import { ref, computed, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { getCapacity, updateCapacity, getSchedulingMode, updateSchedulingMode } from '@/api/design'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -199,7 +199,7 @@ async function saveGlobalCapacity() {
       { entries: [{ config_date: null, designer_id: null, max_parallel_tasks: globalCapacity.value }] },
       { params: operatorParams }
     )
-    ElMessage.success('全局容量已更新')
+    msgSuccessText('全局容量已更新')
   } finally {
     saving.value = false
   }
@@ -211,7 +211,7 @@ async function saveSchedulingMode(mode) {
       { scheduling_mode: mode },
       { params: operatorParams }
     )
-    ElMessage.success('排期模式已切换为' + (mode === 'pool' ? '团队模式' : '个人模式'))
+    msgSuccessText('排期模式已切换为' + (mode === 'pool' ? '团队模式' : '个人模式'))
   } catch {
     // Revert on failure
     schedulingMode.value = mode === 'pool' ? 'individual' : 'pool'
@@ -220,7 +220,7 @@ async function saveSchedulingMode(mode) {
 
 async function addSpecificDate() {
   if (!newEntry.date) {
-    ElMessage.warning('请选择日期')
+    msgWarning('请选择日期')
     return
   }
   saving.value = true
@@ -229,7 +229,7 @@ async function addSpecificDate() {
       { entries: [{ config_date: newEntry.date, designer_id: null, period: newEntry.period, max_parallel_tasks: newEntry.capacity }] },
       { params: operatorParams }
     )
-    ElMessage.success('已添加特定日期容量')
+    msgSuccessText('已添加特定日期容量')
     newEntry.date = ''
     newEntry.period = null
     newEntry.capacity = globalCapacity.value
@@ -241,7 +241,7 @@ async function addSpecificDate() {
 
 async function removeSpecificDate(row) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确定删除 ${row.config_date} 的容量配置？删除后将使用全局默认值。`,
       '确认删除',
       { type: 'warning' }
@@ -255,7 +255,7 @@ async function removeSpecificDate(row) {
       { entries: [{ config_date: row.config_date, designer_id: null, max_parallel_tasks: globalCapacity.value, delete: true }] },
       { params: operatorParams }
     )
-    ElMessage.success('已删除')
+    msgSuccessText('已删除')
     await fetchAll()
   } finally {
     saving.value = false

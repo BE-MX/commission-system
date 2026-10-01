@@ -13,15 +13,18 @@
       </div>
       <div class="tc-stats">
         <div v-for="s in statCards" :key="s.key" class="tc-stat" :class="s.tone">
-          <b>{{ stats[s.key] }}</b><span>{{ s.label }}</span>
+          <b>{{ stats[s.key] ?? '—' }}</b><span>{{ s.label }}</span>
         </div>
       </div>
     </header>
 
+    <ListPageStatus :paged="false" :error="statsResource.errorMessage.value" :loading="statsResource.loading.value" :has-data="statsResource.hasData.value" @retry="statsResource.load()" />
+    <ListPageStatus :paged="false" :error="briefResource.errorMessage.value" :has-data="briefResource.hasData.value" @retry="briefResource.load()" />
     <TaskBriefCard class="tc-block" :brief="brief" :loading="briefLoading" @open="openTask" />
 
     <section class="tc-toolbar tc-block lg-card is-static">
       <el-segmented v-model="view" :options="VIEW_OPTIONS" />
+      <FilterBar :pending="JSON.stringify(filters) !== JSON.stringify(appliedFilters)" @search="applyFilters" @reset="resetFilters">
       <el-input v-model="filters.q" clearable placeholder="搜索标题 / T-编号" class="tc-search" />
       <el-select v-model="filters.moduleKey" clearable filterable placeholder="全部模块" class="tc-module">
         <el-option-group v-for="g in heat" :key="g.group_key" :label="g.group_title">
@@ -32,11 +35,14 @@
         <el-check-tag v-for="p in PRIORITIES" :key="p" :checked="filters.priorities.includes(p)" @change="togglePriority(p)">{{ p }}</el-check-tag>
       </div>
       <el-checkbox v-model="filters.hideClosed">隐藏已结束</el-checkbox>
+      </FilterBar>
+      <ListPageStatus :paged="false" :error="modulesResource.errorMessage.value" :has-data="modulesResource.hasData.value" @retry="loadModules" />
       <span class="tc-spacer" />
       <el-popover trigger="click" :width="380" placement="bottom-end" @show="loadTrash">
         <template #reference><GlassButton>回收站</GlassButton></template>
-        <p v-if="!trash.length" class="tc-trash-empty">回收站是空的</p>
-        <ul v-else class="tc-trash">
+        <ListPageStatus :paged="false" :error="trashResource.errorMessage.value" :loading="trashResource.loading.value" :has-data="trashResource.hasData.value" @retry="loadTrash" />
+        <p v-if="trashResource.isEmpty.value" class="tc-trash-empty">回收站是空的</p>
+        <ul v-if="trash.length" class="tc-trash">
           <li v-for="item in trash" :key="item.id">
             <span class="task-code">T-{{ item.id }}</span><span class="tc-trash-title">{{ item.title }}</span>
             <el-button v-permission="'task:write'" link type="primary" @click="restore(item)">恢复</el-button>
@@ -46,7 +52,8 @@
       <GlassButton v-permission="'task:write'" variant="primary" left-icon="Plus" data-quick-task-trigger @click="newTask">新建任务</GlassButton>
     </section>
 
-    <section v-loading="loading && !tree.length" class="tc-block">
+    <ListPageStatus :paged="false" :error="treeResource.errorMessage.value" :loading="loading" :has-data="treeResource.hasData.value" @retry="refresh" />
+    <section v-if="treeResource.hasLoaded.value || (view === 'map' && modulesResource.hasLoaded.value)" v-loading="loading && !tree.length" class="tc-block">
       <TaskTreeView
         v-if="view === 'tree'"
         :nodes="filteredTree"
@@ -115,6 +122,7 @@ const statCards = [
 const {
   tree, modules, stats, brief, trash, loading, briefLoading, version, today, view, filters,
   modulesByKey, filteredTree, columns, heat, parentTitleMap,
+  treeResource, modulesResource, statsResource, briefResource, trashResource, appliedFilters, applyFilters, resetFilters, loadModules,
   refresh, loadAll, setStatus, loadTrash, restore, togglePriority, addCustom, removeCustom,
 } = useTaskCenter()
 const { openQuickTask, lastCreatedId } = useQuickTask()
@@ -139,9 +147,11 @@ function addChild(task, event) {
 
 function pickModule(key) {
   filters.moduleKey = key
+  applyFilters()
   view.value = 'tree'
 }
 
+watch(() => authStore.user?.id, () => { drawerOpen.value = false; selectedId.value = null })
 watch(lastCreatedId, refresh)
 onMounted(loadAll)
 // 页面被多标签缓存（keep-alive）时，切回来刷新一次，吃到在别的页面用悬浮 + 建的任务；
@@ -167,7 +177,7 @@ onActivated(() => {
 }
 .tc-stat b { display: block; font: 800 22px var(--font-display); font-variant-numeric: tabular-nums; }
 .tc-stat span { font-size: 11.5px; color: var(--text-secondary); }
-.tc-stat.is-gold b { color: var(--color-primary); }
+.tc-stat.is-gold b { color: var(--color-primary-text); }
 .tc-stat.is-red b { color: var(--color-danger); }
 .tc-block { margin-bottom: 14px; }
 .tc-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 12px; }

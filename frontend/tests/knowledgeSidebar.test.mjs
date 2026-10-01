@@ -145,8 +145,8 @@ test('balanced sidebar owns search and keeps primary actions together', () => {
 
   assert.ok(sidebar.indexOf('class="search-box"') < sidebar.indexOf('class="sidebar-header"'))
   assert.match(sidebar, /placeholder="搜索已发布知识"/)
-  assert.match(sidebar, /@keyup\.enter="\$emit\('search'\)"/)
-  assert.match(sidebar, /<button class="search-submit"[^>]*@click="\$emit\('search'\)"/)
+  assert.match(sidebar, /<FilterBar[^>]*:pending="searchQuery\.trim\(\) !== appliedSearchQuery"/)
+  assert.match(sidebar, /<FilterBar[^>]*@search="\$emit\('search'\)"[^>]*@reset="\$emit\('reset-search'\)"/)
   assert.match(sidebar, /@update:model-value="\$emit\('update:search-query', \$event\)"/)
   assert.match(sidebar, /<div class="sidebar-actions">\s*<button v-if="canCreateLibrary"[^>]*\$emit\('create-library'\)[\s\S]*?新建知识库[\s\S]*?<\/button>\s*<button v-if="canReview"[^>]*\$emit\('open-approvals'\)[\s\S]*?审批队列[\s\S]*?<\/button>\s*<\/div>/)
   assert.doesNotMatch(workbench, /class="page-bar"/)
@@ -230,11 +230,11 @@ test('icon controls and motion rules remain accessible and bounded', () => {
     'utf8',
   )
 
-  for (const className of ['search-submit', 'compact-action', 'row-action member-action', 'row-delete', 'create-node create-folder', 'create-node create-document', 'compact-action library-compact', 'collapse-toggle']) {
+  for (const className of ['compact-action', 'row-action member-action', 'row-delete', 'create-node create-folder', 'create-node create-document', 'compact-action library-compact', 'collapse-toggle']) {
     const escapedClass = className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     assert.match(sidebar, new RegExp(`<button[\\s\\S]{0,180}?class="${escapedClass}"[\\s\\S]{0,220}?:aria-label=|<button[\\s\\S]{0,180}?class="${escapedClass}"[\\s\\S]{0,220}?aria-label=`), `${className} needs an aria-label`)
   }
-  for (const className of ['search-submit', 'sidebar-action', 'compact-action', 'row-action', 'row-delete', 'create-node', 'collapse-toggle', 'library-item']) {
+  for (const className of ['sidebar-action', 'compact-action', 'row-action', 'row-delete', 'create-node', 'collapse-toggle', 'library-item']) {
     assert.match(sidebar, new RegExp(`\\.${className}:focus-visible`), `${className} needs focus-visible styling`)
   }
 
@@ -268,8 +268,8 @@ test('workbench passes review permissions and opens members for the clicked libr
   assert.match(workbench, /:can-manage-members="canCreateLibrary && !selectedLibrary\?\.managed_by"/)
   assert.match(workbench, /:can-review="canReviewApprovals"/)
   assert.match(workbench, /@open-members="openMembers"/)
-  assert.match(workbench, /async function openMembers\(library\)[\s\S]*?`\/libraries\/\$\{library\.id\}\/members`/)
-  const saveMembers = workbench.slice(workbench.indexOf('async function saveMembers'), workbench.indexOf('async function openApprovals'))
+  assert.match(workbench, /async function openMembers\(library\)[\s\S]*?membersResource\.load\(library\.id\)/)
+  const saveMembers = workbench.slice(workbench.indexOf('async function saveMembers'), workbench.indexOf('function openApprovals'))
   assert.match(saveMembers, /`\/libraries\/\$\{memberLibrary\.value\.id\}\/members`/)
   assert.doesNotMatch(saveMembers, /selectedLibraryId\.value/)
 })
@@ -304,17 +304,16 @@ test('member permissions use Ark usernames, remote candidates, and an explicit a
   assert.match(memberDialogSource, /<el-select[\s\S]*?:model-value="candidateUserId"[\s\S]*?filterable[\s\S]*?remote[\s\S]*?:remote-method="query => \$emit\('search', query\)"[\s\S]*?:loading="searchLoading"[\s\S]*?placeholder="输入方舟用户名或姓名搜索"/)
   assert.match(memberDialogSource, /<el-select[\s\S]*?:model-value="candidateUserId"[\s\S]*?reserve-keyword[\s\S]*?:remote-method="query => \$emit\('search', query\)"/)
   assert.match(memberDialogSource, /v-for="candidate in candidates"[\s\S]*?:value="candidate\.user_id"[\s\S]*?candidate\.username[\s\S]*?candidate\.real_name/)
-  assert.match(memberDialogSource, /<GlassButton[^>]*:disabled="!candidateUserId \|\| saving"[^>]*@click="\$emit\('add'\)"[^>]*>添加成员<\/GlassButton>/)
+  assert.match(memberDialogSource, /<GlassButton[^>]*:disabled="!candidateUserId \|\| saving \|\| readLoading \|\| !!readError"[^>]*@click="\$emit\('add'\)"[^>]*>添加成员<\/GlassButton>/)
   assert.doesNotMatch(workbench, /@change="addSelectedMember"/)
 
-  const searchMembers = workbench.slice(workbench.indexOf('async function searchMemberCandidates'), workbench.indexOf('function addSelectedMember'))
-  assert.match(searchMembers, /`\/libraries\/\$\{targetLibraryId\}\/member-candidates`/)
-  assert.match(searchMembers, /params:\s*\{ q:\s*trimmed,\s*limit:\s*20 \}/)
-  assert.match(searchMembers, /memberSearchLoading\.value = true/)
+  const searchMembers = workbench.slice(workbench.indexOf('function searchMemberCandidates'), workbench.indexOf('function addSelectedMember'))
+  assert.match(workbench, /member-candidates`, \{ \.\.\.readOptions\(signal\), params: \{ q: query, limit: 20 \} \}/)
+  assert.match(searchMembers, /candidatesResource\.load\(\{ libraryId, query: trimmed \}, \{ clear \}\)/)
+  assert.match(searchMembers, /const clear = candidateScope !== nextScope/);
   assert.doesNotMatch(searchMembers, /members\.value\s*=/)
   assert.doesNotMatch(searchMembers, /memberDialog\.value\s*=/)
-  assert.match(searchMembers, /catch[\s\S]*?memberCandidates\.value = \[\][\s\S]*?msgError\('成员搜索失败，请重试'\)/)
-  assert.match(searchMembers, /msgError\('成员搜索失败，请重试'\)/)
+  assert.match(memberDialogSource, /:search-error="|:error="searchError"/)
 
   const addMember = workbench.slice(workbench.indexOf('function addSelectedMember'), workbench.indexOf('async function saveMembers'))
   assert.match(addMember, /isDuplicateMember\(members\.value, candidate\.user_id\)/)
@@ -329,15 +328,12 @@ test('member loading is race-safe, failure-safe, and save uses the loaded librar
     'utf8',
   )
 
-  assert.match(workbench, /const memberLoadRequest = ref\(0\)/)
-  const openMembers = workbench.slice(workbench.indexOf('async function openMembers'), workbench.indexOf('async function searchMemberCandidates'))
-  assert.match(openMembers, /const requestId = \+\+memberLoadRequest\.value/)
-  assert.match(openMembers, /const loadedMembers = unwrap\(await knowledgeClient\.get\(`\/libraries\/\$\{library\.id\}\/members`,\s*\{ suppressToast: true \}\)\)/)
-  assert.doesNotMatch(openMembers.slice(0, openMembers.indexOf('const loadedMembers')), /members\.value\s*=|memberLibrary\.value\s*=|memberDialog\.value\s*=/)
-  assert.match(openMembers, /if \(requestId !== memberLoadRequest\.value\) return/)
-  assert.ok(openMembers.indexOf('members.value = loadedMembers') < openMembers.indexOf('memberLibrary.value = library'))
+  assert.match(workbench, /const membersResource = useAsyncResource/)
+  const openMembers = workbench.slice(workbench.indexOf('async function openMembers'), workbench.indexOf('function searchMemberCandidates'))
+  assert.match(openMembers, /membersResource\.clear\(\); candidatesResource\.clear\(\)/)
   assert.ok(openMembers.indexOf('memberLibrary.value = library') < openMembers.indexOf('memberDialog.value = true'))
-  assert.match(openMembers, /catch[\s\S]*?if \(requestId === memberLoadRequest\.value\) msgError\('成员加载失败，请重新点击成员权限'\)/)
+  assert.ok(openMembers.indexOf('memberDialog.value = true') < openMembers.indexOf('membersResource.load(library.id)'))
+  assert.match(workbench, /:read-error="membersResource\.errorMessage\.value"[\s\S]*?@retry="retryMembers"/)
 
   const saveMembers = workbench.slice(workbench.indexOf('async function saveMembers'), workbench.indexOf('function resetMemberDialog'))
   assert.match(saveMembers, /if \(!memberLibrary\.value\) return msgError\('请重新选择知识库'\)/)
@@ -346,13 +342,13 @@ test('member loading is race-safe, failure-safe, and save uses the loaded librar
   assert.match(saveMembers, /catch\s*\(error\)/)
   assert.match(saveMembers, /error\.response\?\.data\?\.detail\?\.invalid_user_ids/)
   assert.match(saveMembers, /invalidMemberIds\.value = invalidUserIds/)
-  assert.match(saveMembers, /msgError\('部分成员账号已失效，请移除后重试'\)/)
+  assert.match(saveMembers, /msgError\('部分成员账号已失效，请移除后重试', error\)/)
   assert.ok(saveMembers.indexOf('await knowledgeClient.put') < saveMembers.indexOf('memberDialog.value = false'))
 
-  const resetMemberDialog = workbench.slice(workbench.indexOf('function resetMemberDialog'), workbench.indexOf('async function openApprovals'))
+  const resetMemberDialog = workbench.slice(workbench.indexOf('function resetMemberDialog'), workbench.indexOf('function openApprovals'))
   assert.match(workbench, /<KnowledgeMemberDialog[^>]*v-model="memberDialog"[^>]*@closed="resetMemberDialog"/)
   assert.match(resetMemberDialog, /memberLibrary\.value = null/)
-  assert.match(resetMemberDialog, /memberLoadRequest\.value \+= 1/)
+  assert.match(resetMemberDialog, /membersResource\.clear\(\); candidatesResource\.clear\(\)/)
   assert.match(resetMemberDialog, /memberCandidates\.value = \[\]/)
   assert.match(resetMemberDialog, /candidateUserId\.value = null/)
 })
@@ -364,12 +360,11 @@ test('member requests use local feedback without global loading or duplicate err
     'utf8',
   )
 
-  const openMembers = workbench.slice(workbench.indexOf('async function openMembers'), workbench.indexOf('async function searchMemberCandidates'))
-  assert.match(openMembers, /knowledgeClient\.get\(`\/libraries\/\$\{library\.id\}\/members`,\s*\{ suppressToast: true \}\)/)
+  assert.match(workbench, /const readOptions = signal => \(\{ signal, showLoading: false, suppressToast: true \}\)/)
+  assert.match(workbench, /members`, readOptions\(signal\)\)/)
+  assert.match(workbench, /member-candidates`, \{ \.\.\.readOptions\(signal\), params: \{ q: query, limit: 20 \} \}/)
+  assert.match(memberDialogSource, /:error="searchError"[\s\S]*?@retry="\$emit\('retry-search'\)"/)
 
-  const searchMembers = workbench.slice(workbench.indexOf('async function searchMemberCandidates'), workbench.indexOf('function addSelectedMember'))
-  assert.match(searchMembers, /\{\s*params:\s*\{ q:\s*trimmed,\s*limit:\s*20 \},\s*showLoading:\s*false,\s*suppressToast:\s*true,?\s*\}/)
-  assert.match(searchMembers, /msgError\('成员搜索失败，请重试'\)/)
 })
 
 
@@ -381,10 +376,10 @@ test('member replacement is single-flight and locks every draft-changing control
 
   assert.match(workbench, /const memberSaving = ref\(false\)/)
   assert.match(memberDialogSource, /<el-dialog[\s\S]*?:close-on-click-modal="!saving"[\s\S]*?:close-on-press-escape="!saving"[\s\S]*?:show-close="!saving"/)
-  assert.match(memberDialogSource, /<el-select[\s\S]*?:model-value="candidateUserId"[\s\S]*?:disabled="saving"/)
-  assert.match(memberDialogSource, /<GlassButton[^>]*:disabled="!candidateUserId \|\| saving"[^>]*@click="\$emit\('add'\)"/)
-  assert.match(memberDialogSource, /<el-select\s+v-model="member\.role"[^>]*:disabled="saving \|\| isProtected\(member\) \|\| invalidUserIds\.includes\(member\.user_id\)"/)
-  assert.match(memberDialogSource, /<GlassButton[^>]*v-else[^>]*:disabled="saving"[^>]*@click="\$emit\('remove', index\)"[^>]*>移除<\/GlassButton>/)
+  assert.match(memberDialogSource, /<el-select[\s\S]*?:model-value="candidateUserId"[\s\S]*?:disabled="saving \|\| readLoading \|\| !!readError"/)
+  assert.match(memberDialogSource, /<GlassButton[^>]*:disabled="!candidateUserId \|\| saving \|\| readLoading \|\| !!readError"[^>]*@click="\$emit\('add'\)"/)
+  assert.match(memberDialogSource, /<el-select\s+v-model="member\.role"[^>]*:disabled="saving \|\| readLoading \|\| !!readError \|\| isProtected\(member\) \|\| invalidUserIds\.includes\(member\.user_id\)"/)
+  assert.match(memberDialogSource, /<GlassButton[^>]*v-else[^>]*:disabled="saving \|\| readLoading \|\| !!readError"[^>]*@click="\$emit\('remove', index\)"[^>]*>移除<\/GlassButton>/)
   assert.match(memberDialogSource, /<GlassButton[^>]*:disabled="saving"[^>]*@click="\$emit\('update:modelValue', false\)">取消<\/GlassButton>/)
   assert.match(memberDialogSource, /<GlassButton[^>]*:loading="saving"[^>]*@click="\$emit\('save'\)">保存权限<\/GlassButton>/)
 
@@ -413,7 +408,7 @@ test('invalid members stay visible and are marked for removal after save validat
   assert.match(memberDialogSource, /v-if="invalidUserIds\.includes\(member\.user_id\)"[^>]*>账号已停用或删除，请移除后重试<\/span>/)
   const removeMember = workbench.slice(workbench.indexOf('function removeMember'), workbench.indexOf('async function saveMembers'))
   assert.match(removeMember, /invalidMemberIds\.value = invalidMemberIds\.value\.filter\(userId => userId !== removed\.user_id\)/)
-  const reset = workbench.slice(workbench.indexOf('function resetMemberDialog'), workbench.indexOf('async function openApprovals'))
+  const reset = workbench.slice(workbench.indexOf('function resetMemberDialog'), workbench.indexOf('function openApprovals'))
   assert.match(reset, /invalidMemberIds\.value = \[\]/)
 })
 
@@ -437,7 +432,7 @@ test('member dialog has accessible selects and a single-column small-screen layo
     'utf8',
   )
 
-  assert.match(memberDialogSource, /:title="`成员权限 · \$\{library\?\.name \|\| ''\}`"[\s\S]*?width="min\(620px, calc\(100vw - 32px\)\)"/)
+  assert.match(memberDialogSource, /:title="`成员权限 · \$\{library\?\.name \|\| ''\}`"[\s\S]*?width="640px"/)
   assert.match(memberDialogSource, /:model-value="candidateUserId"[\s\S]*?aria-label="搜索并选择方舟成员"/)
   assert.match(memberDialogSource, /<el-select\s+v-model="member\.role"[^>]*:aria-label="`设置 \$\{member\.username\} 的权限`"/)
   const mobileStyles = memberDialogSource.slice(memberDialogSource.indexOf('@media (max-width: 640px)'))

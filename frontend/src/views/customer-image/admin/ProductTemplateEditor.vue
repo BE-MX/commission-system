@@ -2,12 +2,13 @@
   <el-dialog
     :model-value="modelValue"
     :title="draft.id ? '编辑产品模板' : '新建产品模板'"
-    width="min(960px, 94vw)"
+    width="760px"
     destroy-on-close
     @open="resetDraft"
     @closed="handleClosed"
     @update:model-value="emit('update:modelValue', $event)"
   >
+    <ListPageStatus :paged="false" :error="assetsResource.errorMessage.value" :loading="assetsResource.loading.value" :has-data="assetsResource.hasData.value" @retry="loadAssets" />
     <div class="editor-scroll">
       <section class="form-section metadata-section">
         <h3>客户可见信息</h3>
@@ -146,22 +147,25 @@
       <GlassButton v-permission="'customer_image:admin'" variant="primary" :loading="saving" @click="save">保存模板</GlassButton>
     </template>
 
-    <el-dialog v-model="libraryVisible" title="从内部图库复制" width="min(760px, 90vw)" append-to-body @closed="closeLibrary">
-      <div v-loading="libraryLoading" class="library-grid">
+    <el-dialog v-model="libraryVisible" title="从内部图库复制" width="760px" append-to-body @closed="closeLibrary">
+      <ListPageStatus :paged="false" :error="libraryResource.errorMessage.value" :loading="libraryLoading" :has-data="libraryResource.hasData.value" @retry="loadLibrary" />
+      <GlassButton v-if="Object.keys(libraryErrors).length" variant="link" @click="retryLibraryPreviews">重试失败的图片预览</GlassButton>
+      <div v-loading="libraryLoading && !libraryAssets.length" class="library-grid">
         <button v-for="asset in libraryAssets" :key="asset.id" type="button" class="library-item" @click="copyFromLibrary(asset)">
           <img v-if="libraryUrls[asset.id]" :src="libraryUrls[asset.id]" :alt="asset.title || '图库图片'">
-          <span v-else>{{ libraryErrors[asset.id] ? '预览失败，请重新打开图库重试' : '图片加载中…' }}</span>
+          <span v-else>{{ libraryErrors[asset.id] ? '预览失败' : '图片加载中…' }}</span>
           <span>{{ asset.title || `素材 #${asset.id}` }}</span>
         </button>
-        <el-empty v-if="!libraryLoading && !libraryAssets.length" description="图库暂无可复制图片" />
+        <el-empty v-if="libraryResource.isEmpty.value" description="图库暂无可复制图片" />
       </div>
     </el-dialog>
   </el-dialog>
 </template>
 
-<script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+<script setup>import { msgWarning, msgSuccessText, confirmAction } from '@/utils/feedback'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import * as api from '@/api/customerImage'
 import {
   createEmptyOption,
@@ -180,16 +184,15 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'saved'])
 const CONTROL_LABELS = { single_choice: '单选', color: '颜色', boolean: '是否' }
 const draft = ref(createEmptyProductDraft())
-const assets = ref([])
-const libraryAssets = ref([])
+const assetsResource = useAsyncResource(async (id, { signal }) => id ? (await api.listProductAssets(id, { signal, suppressToast: true })).data || [] : [], { initialData: [] })
+const libraryResource = useAsyncResource(async (_, { signal }) => (await api.listLibraryAssets({ signal, suppressToast: true })).data?.items || [], { initialData: [] })
+const assets = assetsResource.data, libraryAssets = libraryResource.data
 const libraryVisible = ref(false)
-const libraryLoading = ref(false)
+const libraryLoading = libraryResource.loading
 const targetRole = ref('cover')
 const targetPosition = ref(0)
 const targetAppend = ref(false)
 const saving = ref(false)
-let assetEpoch = 0
-let libraryEpoch = 0
 
 const assetBlobs = createAssetBlobController({
   fetchBlob: (asset, config) => api.getProductAssetBlob(asset.productId, asset.id, config),
@@ -210,17 +213,14 @@ const referenceAssets = computed(() => assets.value
 const activeValues = option => option.values.filter(value => value.is_active !== false)
 
 async function loadAssets() {
-  const epoch = ++assetEpoch
-  assetBlobs.invalidate()
-  if (!draft.value.id) { assets.value = []; return }
   const productId = draft.value.id
-  const response = await api.listProductAssets(productId)
-  if (epoch !== assetEpoch) return
-  assets.value = response.data || []
-  await assetBlobs.load(assets.value.map(asset => ({ ...asset, productId })))
+  const success = await assetsResource.load(productId)
+  if (success) await assetBlobs.load(assets.value.map(asset => ({ ...asset, productId })))
+  return success
 }
 
 async function resetDraft() {
+  assetsResource.clear(); assetBlobs.invalidate()
   draft.value = props.product ? JSON.parse(JSON.stringify(props.product)) : createEmptyProductDraft()
   await loadAssets()
 }
@@ -235,16 +235,16 @@ function move(items, index, offset) {
 
 async function save() {
   const error = validateProductDraft(draft.value)
-  if (error) { ElMessage.warning(error); return }
+  if (error) { msgWarning(error); return }
   saving.value = true
   try {
     const saved = await props.adminState.saveProduct(draft.value)
     draft.value = JSON.parse(JSON.stringify(saved))
     await loadAssets()
     emit('saved', saved)
-    ElMessage.success('模板已保存')
+    msgSuccessText('模板已保存')
   } catch (error) {
-    if (!error?.response) ElMessage.warning(error.message)
+    if (!error?.response) msgWarning(error.message)
   } finally { saving.value = false }
 }
 
@@ -256,7 +256,7 @@ async function uploadAsset(role, event, position) {
     await api.uploadProductAsset(draft.value.id, role, position, file)
     await loadAssets()
     await props.adminState.loadProducts()
-    ElMessage.success('素材已替换')
+    msgSuccessText('素材已替换')
   } catch { /* shared interceptor provides request feedback */ }
 }
 
@@ -268,7 +268,7 @@ async function appendReference(event) {
     await api.appendProductReference(draft.value.id, file)
     await loadAssets()
     await props.adminState.loadProducts()
-    ElMessage.success('参考图已添加')
+    msgSuccessText('参考图已添加')
   } catch { /* shared interceptor provides request feedback */ }
 }
 
@@ -277,17 +277,19 @@ async function openLibrary(role, position, append = false) {
   targetPosition.value = position
   targetAppend.value = append
   libraryVisible.value = true
-  libraryLoading.value = true
-  const epoch = ++libraryEpoch
-  libraryBlobs.invalidate()
-  try {
-    const response = await api.listLibraryAssets()
-    if (epoch !== libraryEpoch) return
-    libraryAssets.value = response.data?.items || []
-    await libraryBlobs.load(libraryAssets.value)
-  } finally {
-    if (epoch === libraryEpoch) libraryLoading.value = false
-  }
+  libraryResource.clear(); libraryBlobs.invalidate()
+  await loadLibrary()
+
+}
+
+async function loadLibrary() {
+  const success = await libraryResource.load()
+  if (success) await libraryBlobs.load(libraryAssets.value)
+  return success
+}
+
+function retryLibraryPreviews() {
+  return Promise.all(libraryAssets.value.filter(asset => libraryErrors.value[asset.id]).map(asset => libraryBlobs.retry(asset.id)))
 }
 
 async function copyFromLibrary(asset) {
@@ -303,7 +305,7 @@ async function copyFromLibrary(asset) {
     closeLibrary()
     await loadAssets()
     await props.adminState.loadProducts()
-    ElMessage.success('已复制到产品模板')
+    msgSuccessText('已复制到产品模板')
   } catch { /* shared interceptor provides request feedback */ }
 }
 
@@ -319,35 +321,33 @@ async function moveReference(index, offset) {
 
 async function removeReference(asset) {
   try {
-    await ElMessageBox.confirm('删除后历史生成仍保留该参考图，是否继续？', '删除参考图', {
+    await confirmAction('删除后历史生成仍保留该参考图，是否继续？', '删除参考图', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
     })
     await api.retireProductReference(draft.value.id, asset.id)
     await loadAssets()
     await props.adminState.loadProducts()
-    ElMessage.success('参考图已删除')
+    msgSuccessText('参考图已删除')
   } catch (error) {
     if (error !== 'cancel' && error !== 'close' && !error?.response) throw error
   }
 }
 
 function closeLibrary() {
-  libraryEpoch += 1
-  libraryBlobs.invalidate()
-  libraryAssets.value = []
+  libraryResource.clear(); libraryBlobs.invalidate()
 }
 
 function handleClosed() {
-  assetEpoch += 1
-  assetBlobs.invalidate()
+  assetsResource.clear(); assetBlobs.invalidate()
   closeLibrary()
   libraryAssets.value = []
   emit('update:modelValue', false)
 }
 
+watch(() => props.adminState.scopeVersion.value, () => { handleClosed(); draft.value = createEmptyProductDraft() })
+watch(() => props.modelValue, open => { if (!open) handleClosed() })
 onBeforeUnmount(() => {
-  assetEpoch += 1
-  libraryEpoch += 1
+  assetsResource.clear(); libraryResource.clear()
   assetBlobs.dispose()
   libraryBlobs.dispose()
 })

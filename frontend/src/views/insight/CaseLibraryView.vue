@@ -7,20 +7,19 @@
     </div>
     <!-- 工具栏 -->
     <div class="toolbar-card">
-      <div class="toolbar-left">
+      <FilterBar :loading="loading" :pending="listState.hasPendingSearch.value" @search="searchCases" @reset="resetFilters">
         <el-input
           v-model="search"
           placeholder="搜索标题 / 客户 / 分享人..."
           :prefix-icon="Search"
           clearable
-          @keyup.enter="reload"
-          style="width: 240px"
+          class="filter-w-lg"
         />
-        <el-select v-model="tagFilter" placeholder="全部标签" style="width: 140px">
+        <el-select v-model="tagFilter" placeholder="全部标签" class="filter-w-sm">
           <el-option label="全部标签" value="all" />
           <el-option v-for="t in TAGS" :key="t" :label="t" :value="t" />
         </el-select>
-        <el-select v-model="sortBy" style="width: 130px">
+        <el-select v-model="sortBy" class="filter-w-sm">
           <el-option label="最新分享" value="date" />
           <el-option label="最多认可" value="likes" />
         </el-select>
@@ -28,14 +27,15 @@
           <el-button :type="viewMode === 'grid' ? 'primary' : ''" @click="viewMode = 'grid'">卡片</el-button>
           <el-button :type="viewMode === 'list' ? 'primary' : ''" @click="viewMode = 'list'">列表</el-button>
         </el-button-group>
-      </div>
+      </FilterBar>
       <div class="toolbar-right">
         <GlassButton v-any-permission="['insight_case:write', 'insight:admin']" variant="primary" left-icon="Plus" @click="openAddDialog">添加案例</GlassButton>
       </div>
     </div>
 
+    <ListPageStatus :error="listState.errorMessage.value" :loading="loading" :has-data="listState.hasData.value" :data-page="listState.dataPage.value" @retry="reload" />
     <div v-loading="loading" class="cases-area">
-      <el-empty v-if="!loading && cases.length === 0" description="暂无案例" :image-size="80">
+      <el-empty v-if="!listState.error.value && !loading && cases.length === 0" description="暂无案例" :image-size="80">
         <p class="empty-tip">业务员可分享谈判技巧、客户开发、纠纷处理等成功经验</p>
         <GlassButton v-any-permission="['insight_case:write', 'insight:admin']" variant="primary" left-icon="Plus" @click="openAddDialog">添加第一个案例</GlassButton>
       </el-empty>
@@ -50,7 +50,7 @@
         >
           <div class="card-head-row">
             <div class="card-tags">
-              <el-tag v-for="t in (c.tags || []).slice(0, 3)" :key="t" size="small" effect="light" type="info">{{ t }}</el-tag>
+              <StatusBadge v-for="t in (c.tags || []).slice(0, 3)" :key="t" size="small" effect="light" type="info">{{ t }}</StatusBadge>
             </div>
             <span class="card-date">{{ c.share_date || formatDateOnly(c.created_at) }}</span>
           </div>
@@ -86,7 +86,7 @@
         >
           <div class="list-meta">
             <div class="card-tags">
-              <el-tag v-for="t in (c.tags || []).slice(0, 3)" :key="t" size="small" effect="light" type="info">{{ t }}</el-tag>
+              <StatusBadge v-for="t in (c.tags || []).slice(0, 3)" :key="t" size="small" effect="light" type="info">{{ t }}</StatusBadge>
             </div>
             <span class="card-date">{{ c.share_date || formatDateOnly(c.created_at) }}</span>
           </div>
@@ -100,12 +100,15 @@
       </div>
     </div>
 
+    <el-pagination class="pager" v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
+
     <!-- 详情 Drawer -->
-    <el-drawer v-model="detailVisible" :size="720" direction="rtl" :with-header="false">
+    <DetailDrawer v-model="detailVisible" :width="760" direction="rtl" :with-header="false">
+      <ListPageStatus :error="detailResource.errorMessage.value" :loading="detailResource.loading.value" :has-data="detailResource.hasData.value" @retry="retryDetail" />
       <div v-if="currentCase" class="case-detail">
         <div class="detail-header">
           <div class="detail-tags">
-            <el-tag v-for="t in (currentCase.tags || [])" :key="t" size="small" effect="light" type="info">{{ t }}</el-tag>
+            <StatusBadge v-for="t in (currentCase.tags || [])" :key="t" size="small" effect="light" type="info">{{ t }}</StatusBadge>
           </div>
           <div class="detail-actions">
             <button class="like-btn" :class="{ liked: localLikes[currentCase.id] }" @click="toggleLike(currentCase)">
@@ -129,7 +132,7 @@
             <tr><td>客户</td><td>{{ currentCase.customer_name || '—' }}</td><td>国家</td><td>{{ currentCase.customer_country || '—' }}</td></tr>
             <tr><td>客户类型</td><td>{{ currentCase.customer_type || '—' }}</td><td>沟通渠道</td><td>{{ currentCase.communication_channel || '—' }}</td></tr>
             <tr><td>沟通时段</td><td>{{ currentCase.communication_period || '—' }}</td><td>总回合</td><td>{{ currentCase.total_rounds || '—' }}</td></tr>
-            <tr><td>最终结果</td><td><el-tag :type="resultTagType(currentCase.final_result)" size="small">{{ currentCase.final_result || '—' }}</el-tag></td><td>背调</td><td>{{ currentCase.background_check_status || '—' }}</td></tr>
+            <tr><td>最终结果</td><td><StatusBadge :type="resultTagType(currentCase.final_result)" size="small">{{ currentCase.final_result || '—' }}</StatusBadge></td><td>背调</td><td>{{ currentCase.background_check_status || '—' }}</td></tr>
           </table>
         </div>
 
@@ -173,7 +176,7 @@
               <div class="round-head">
                 <span class="round-no">{{ r.round_no }}</span>
                 <span class="round-time">{{ r.time }}</span>
-                <el-tag size="small" type="info">{{ r.customer_action }}</el-tag>
+                <StatusBadge size="small" type="info">{{ r.customer_action }}</StatusBadge>
                 <el-rate :model-value="r.score" disabled :max="5" />
               </div>
               <p class="round-summary">{{ r.summary }}</p>
@@ -272,16 +275,17 @@
           <pre class="raw-text">{{ currentCase.original_content }}</pre>
         </div>
       </div>
-    </el-drawer>
+      <template #footer><GlassButton @click="detailVisible = false">关闭</GlassButton></template>
+    </DetailDrawer>
 
     <!-- 添加/编辑 Dialog -->
-    <el-dialog v-model="formDialogVisible" :title="formMode === 'edit' ? '编辑案例' : '添加案例'" width="720px" :close-on-click-modal="false" destroy-on-close>
+    <el-dialog v-model="formDialogVisible" :title="formMode === 'edit' ? '编辑案例' : '添加案例'" width="760px" :close-on-click-modal="false" destroy-on-close>
       <el-tabs v-if="formMode === 'add'" v-model="addTab">
         <el-tab-pane label="表单填写" name="manual">
           <CaseForm v-model="formData" :is-edit="false" />
         </el-tab-pane>
         <el-tab-pane label="文本粘贴(AI 整理)" name="text">
-          <el-form>
+          <el-form label-position="top">
             <el-form-item label="原始文本">
               <el-input v-model="aiText" type="textarea" :rows="10" placeholder="粘贴聊天记录 / 邮件往来 / 电话纪要等。AI 将自动整理为案例字段,你确认后发布。" />
             </el-form-item>
@@ -299,7 +303,7 @@
             <div class="el-upload__text">将图片拖拽到此处,或<em>点击上传</em></div>
             <template #tip><div class="el-upload__tip">支持 PNG / JPG / WEBP / GIF,最大 5MB</div></template>
           </el-upload>
-          <el-form style="margin-top: 16px">
+          <el-form label-position="top" style="margin-top: 16px">
             <el-form-item label="分享人"><el-input v-model="aiSharePerson" placeholder="留空将使用当前用户" /></el-form-item>
             <el-form-item label="分享日期"><el-date-picker v-model="aiShareDate" type="date" value-format="YYYY-MM-DD" placeholder="默认今日" /></el-form-item>
           </el-form>
@@ -314,7 +318,7 @@
     </el-dialog>
 
     <!-- AI 草稿确认 Dialog -->
-    <el-dialog v-model="draftDialogVisible" title="AI 整理结果 - 请确认并评价修正" width="780px" :close-on-click-modal="false" class="draft-dialog">
+    <el-dialog v-model="draftDialogVisible" title="AI 整理结果 - 请确认并评价修正" width="760px" :close-on-click-modal="false" class="draft-dialog">
       <el-alert v-if="draftCase && draftCase.error_msg" :title="draftCase.error_msg" type="warning" show-icon :closable="false" style="margin-bottom: 12px" />
 
       <div v-if="draftCase" class="draft-form">
@@ -370,6 +374,9 @@
 </template>
 
 <script setup>
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
+
 import {
   Search, Plus, Star, StarFilled, Paperclip, Comment, Operation,
   CircleCheck, MagicStick, ChatLineRound, ChatDotRound, PictureFilled, Document,
@@ -382,7 +389,8 @@ import DraftField from './DraftField.vue'
 import { useCaseLibrary, TAGS, dimensionMap, resultTagType, correctionLabel, formatDateOnly } from './composables/useCaseLibrary'
 
 const {
-  cases, loading, search, tagFilter, sortBy, viewMode, localLikes,
+  listState, page, pageSize, total, searchCases, resetFilters, handlePageChange, handleSizeChange,
+  detailResource, retryDetail, cases, loading, search, tagFilter, sortBy, viewMode, localLikes,
   detailVisible, currentCase,
   formDialogVisible, formMode, addTab, submitting,
   formData,

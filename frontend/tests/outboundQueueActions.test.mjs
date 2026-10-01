@@ -1,18 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { useListPage } from '../src/composables/useListPage.js'
 import { ref } from 'vue'
 import { OUTBOUND_STATE_LABELS } from '../src/views/shipping/composables/outboundStates.js'
 
 const source = readFileSync(new URL('../src/views/shipping/composables/useOutboundRecords.js', import.meta.url), 'utf8')
   .replace(/^import .*\r?\n/gm, '').replace('export function', 'function')
 const factory = new Function('ref', 'useRoute', 'useListPage', 'getOutboundPrintData', 'downloadOutboundWord',
-  'buildOutboundDoc', 'printDocHtml', 'downloadBlob', 'ElMessage', 'deleteOutboundRecord', 'confirmDanger', 'msgSuccess', `${source}; return useOutboundRecords`)
+  'buildOutboundDoc', 'printDocHtml', 'downloadBlob', 'msgError', 'deleteOutboundRecord', 'confirmDanger', 'msgSuccess', `${source}; return useOutboundRecords`)
 
 test('local shortage and sync-wait records never invoke export APIs', async () => {
   let calls = 0
   const api = factory(ref, () => ({query:{}}), () => ({}), async () => { calls++; return {data:{}} },
-    async () => { calls++; return {} }, () => '', () => {}, () => {}, {error:()=>{}})()
+    async () => { calls++; return {} }, () => '', () => {}, () => {}, ()=>{})()
   for (const outbound_state of ['waiting_stock','running','awaiting_sync','uncertain']) {
     const row = {outbound_record_id:'task:1',outbound_state,can_print:false}
     await api.openPrint(row)
@@ -27,8 +28,9 @@ test('local shortage and sync-wait records never invoke export APIs', async () =
 
 function deletionApi({confirm = async () => {}, remove = async () => {}} = {}) {
   const events = []
-  const list = {list: ref([{}]), page: ref(2), fetchList: async () => events.push('refresh')}
-  const api = factory(ref, () => ({query:{}}), () => list, null, null, null, null, null, {},
+  const list = useListPage(async () => { events.push('refresh'); return { items: [], total: 0 } }, { immediate: false })
+  list.list.value = [{}]; list.page.value = 2
+  const api = factory(ref, () => ({query:{}}), () => list, null, null, null, null, null, ()=>{},
     async id => { events.push(`delete:${id}`); return remove() },
     async (...args) => { events.push('confirm'); return confirm(...args) }, () => events.push('success'))()
   return {api, list, events}
@@ -40,7 +42,7 @@ test('delete confirms remote scope and refreshes previous page only after succes
     assert.equal(name, 'TEST'); assert.match(text, /小满/); assert.match(text, /整张/)
   }})
   await api.deleteRecord(row)
-  assert.deepEqual(events, ['confirm','delete:123','success','refresh'])
+  assert.deepEqual(events, ['confirm','delete:123','success','refresh','refresh'])
   assert.equal(list.page.value, 1)
   assert.equal(api.deletingId.value, null)
 })

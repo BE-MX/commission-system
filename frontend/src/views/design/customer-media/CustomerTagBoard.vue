@@ -68,8 +68,8 @@ const groups = computed(() => {
 .dimension-empty { padding: 6px 0; color: var(--text-muted); font-size: 12px; }
 .customer-tag { padding: 6px 11px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); background: var(--card-bg); font-size: 12px; }
 .customer-tag:enabled { cursor: pointer; }
-.customer-tag:enabled:hover { border-color: var(--color-primary); color: var(--color-primary-hover); }
-.customer-tag.selected { border-color: var(--color-primary); color: var(--color-primary-hover); background: var(--color-primary-light); font-weight: 600; }
+.customer-tag:enabled:hover { border-color: var(--color-primary); color: var(--color-primary-text); }
+.customer-tag.selected { border-color: var(--color-primary); color: var(--color-primary-text); background: var(--color-primary-light); font-weight: 600; }
 .customer-tag-wrap { position: relative; display: inline-flex; }
 .customer-tag-wrap .customer-tag { padding-right: 22px; }
 .customer-tag-delete { position: absolute; top: -8px; right: -8px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--border-color); border-radius: 50%; background: var(--card-bg); color: var(--color-danger); cursor: pointer; font-size: 17px; line-height: 1; }

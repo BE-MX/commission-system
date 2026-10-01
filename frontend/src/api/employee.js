@@ -1,15 +1,15 @@
 import request from './request'
 
-export function getEmployeeList(params) {
-  return request.get('/employee/list', { params, showLoading: false })
+export function getEmployeeList(params, config = {}) {
+  return request.get('/employee/list', { ...config, params, showLoading: false })
 }
 
 export function setEmployeeAttribute(data) {
   return request.post('/employee/attribute', data, { loadingText: '正在保存...' })
 }
 
-export function getAttributeHistory(params) {
-  return request.get('/employee/attribute/history', { params, showLoading: false })
+export function getAttributeHistory(params, config = {}) {
+  return request.get('/employee/attribute/history', { ...config, params, showLoading: false })
 }
 
 export function importEmployeeAttributes(file) {

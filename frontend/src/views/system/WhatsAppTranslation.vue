@@ -47,9 +47,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText, msgWarning } from '@/utils/feedback'
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { getAdminDevices, getAdminHealth, revokeAdminDevice } from '@/api/whatsappTranslation'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
@@ -81,7 +81,7 @@ const visibleDevices = computed(() => {
 
 async function revoke(deviceId) {
   await revokeAdminDevice(deviceId)
-  ElMessage.success('设备已撤销')
+  msgSuccessText('设备已撤销')
   await load()
 }
 
@@ -107,7 +107,7 @@ onMounted(async () => {
   try {
     await loadRelease()
   } catch {
-    ElMessage.warning('扩展发布清单暂不可用')
+    msgWarning('扩展发布清单暂不可用')
   }
 })
 </script>

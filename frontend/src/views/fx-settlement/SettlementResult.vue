@@ -42,16 +42,18 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../utils/money.js'
+
 import { computed } from 'vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
 const props = defineProps({ result: Object, stale: Boolean })
 const selected = computed(() => props.result?.candidates.find(row => row.id === props.result.selected_id))
-const money = value => Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const money = value => formatMoney(value)
 </script>
 
 <style scoped>
 .result-panel { padding: 24px; min-width: 0; align-self: start; }
-.eyebrow { color: var(--color-primary-hover); font: 700 11px var(--font-display); letter-spacing: .08em; }
+.eyebrow { color: var(--color-primary-text); font: 700 11px var(--font-display); letter-spacing: .08em; }
 h3 { margin: 8px 0 12px; font-size: 23px; }h4 { font-size: 14px; margin: 24px 0 10px; }
 p,li { font-size: 13px; line-height: 1.7; }ul,ol { padding-left: 20px; }li+li { margin-top: 7px; }
 .empty-result { padding: 28px 10px; }.empty-result ol { margin: 28px 0; }.empty-result li { padding: 6px 0; }
@@ -71,7 +73,7 @@ details { margin-top: 24px; border-top: 1px solid var(--border-color); padding-t
   .scenario-cards .selected { border-color: var(--color-primary); }
   .candidate-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .candidate-heading h4 { margin: 0; }
-  .candidate-heading span { font-size: 11px; color: var(--color-primary-hover); }
+  .candidate-heading span { font-size: 11px; color: var(--color-primary-text); }
   .scenario-cards dl { display: grid; gap: 10px; margin: 0; font-size: 13px; }
   .scenario-cards dl>div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
   .scenario-cards dt { color: var(--text-secondary); }

@@ -1,3 +1,4 @@
+import { msgInfo, msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
 /**
  * 运单上传 — 业务逻辑 composable
  *
@@ -12,10 +13,9 @@
  * 返回的 ref 直接绑定到 template 即可,主页面只负责布局。
  */
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { uploadOCR, checkWaybill, createWaybill } from '@/api/tracking'
 import { beijingCalendarDate } from '@/utils/datetime'
-
 
 // 物流商运单号格式识别
 function detectCarrier(waybillNo) {
@@ -31,7 +31,6 @@ function detectCarrier(waybillNo) {
   if (DHL_REGEX.test(no)) return 'DHL'
   return '未知'
 }
-
 
 export function useWaybillUpload() {
   // ── State ──────────────────────────────────────────
@@ -125,7 +124,7 @@ export function useWaybillUpload() {
     if (!images.length) return
 
     event.preventDefault()
-    if (images.length > 1) ElMessage.info('每次识别一张运单图片，已选择第一张')
+    if (images.length > 1) msgInfo('每次识别一张运单图片，已选择第一张')
     return handleFileChange({ raw: images[0] })
   }
 
@@ -138,11 +137,11 @@ export function useWaybillUpload() {
   function handleBeforeUpload(file) {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
     if (!allowedTypes.includes(file.type)) {
-      ElMessage.error('格式不支持，仅接受 JPG / PNG / WEBP')
+      msgError('格式不支持，仅接受 JPG / PNG / WEBP')
       return false
     }
     if (file.size > 10 * 1024 * 1024) {
-      ElMessage.error('文件不能超过 10MB')
+      msgError('文件不能超过 10MB')
       return false
     }
     return true
@@ -299,23 +298,23 @@ export function useWaybillUpload() {
         `Hi ${resultData.recipient_name}, great news! Your order has been picked up by ${resultData.carrier}. Tracking#: ${resultData.waybill_no}. Expected delivery: ${estText}. I'll keep an eye on it for you!`
 
       successVisible.value = true
-      ElMessage.success('运单录入成功')
+      msgSuccessText('运单录入成功')
     } catch (err) {
       const status = err.response?.status
       const detail = err.response?.data?.detail
 
       if (status === 409) {
         duplicateInfo.value = detail?.data || null
-        ElMessage.warning('运单号已存在，不允许重复录入')
+        msgWarning('运单号已存在，不允许重复录入')
       } else if (status === 422) {
         const errors = detail?.data?.errors || []
         if (errors.length > 0) {
-          ElMessage.error(errors.map(e => e.message).join('；'))
+          msgError(errors.map(e => e.message).join('；'), err)
         } else {
-          ElMessage.error('字段校验失败，请检查输入内容')
+          msgError('字段校验失败，请检查输入内容', err)
         }
       } else {
-        ElMessage.error('提交失败，请稍后重试')
+        msgError('提交失败，请稍后重试', err)
       }
     } finally {
       submitting.value = false

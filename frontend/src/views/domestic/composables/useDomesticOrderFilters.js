@@ -1,4 +1,4 @@
-import { computed, reactive, ref } from 'vue'
+import { computed } from 'vue'
 
 export const BUSINESS_FILTERS = [
   { key: 'order_category', label: '订单类别', options: 'order_categories' },
@@ -25,37 +25,22 @@ export function buildOrderListParams({ page, page_size, ...form }) {
   return params
 }
 
-export function useDomesticOrderFilters(form, getOptions, search) {
-  const advancedVisible = ref(false)
-  const draft = reactive(emptyAdvancedFilters())
+export function useDomesticOrderFilters(form, getOptions, search, getAppliedForm) {
   const advancedTags = computed(() => {
+    const applied = getAppliedForm()
     const tags = []
-    if (form.dateRange?.length === 2) {
-      tags.push({ key: 'dateRange', label: `下单日期：${form.dateRange.join(' 至 ')}` })
+    if (applied.dateRange?.length === 2) {
+      tags.push({ key: 'dateRange', label: `下单日期：${applied.dateRange.join(' 至 ')}` })
     }
-    if (form.order_kind !== 'production') {
+    if (applied.order_kind !== 'production') {
       for (const field of BUSINESS_FILTERS) {
-        if (!form[field.key]) continue
-        const label = getOptions()[field.options]?.find(o => o.value === form[field.key])?.label || form[field.key]
+        if (!applied[field.key]) continue
+        const label = getOptions()[field.options]?.find(o => o.value === applied[field.key])?.label || applied[field.key]
         tags.push({ key: field.key, label: `${field.label}：${label}` })
       }
     }
     return tags
   })
-  function openAdvanced() {
-    Object.assign(draft, emptyAdvancedFilters(), ...BUSINESS_FILTERS.map(({ key }) => ({ [key]: form[key] || '' })))
-    draft.dateRange = [...(form.dateRange || [])]
-    advancedVisible.value = true
-  }
-  function clearDraft() {
-    Object.assign(draft, emptyAdvancedFilters())
-  }
-  function applyAdvanced() {
-    Object.assign(form, draft, { dateRange: [...(draft.dateRange || [])] })
-    if (form.order_kind === 'production') BUSINESS_FILTERS.forEach(({ key }) => { form[key] = '' })
-    advancedVisible.value = false
-    return search()
-  }
   function removeAdvanced(key) {
     form[key] = key === 'dateRange' ? [] : ''
     return search()
@@ -64,5 +49,5 @@ export function useDomesticOrderFilters(form, getOptions, search) {
     Object.assign(form, emptyAdvancedFilters(), { keyword: '', customer_name: '', owner_user_id: '', status: '' })
     return search()
   }
-  return { advancedVisible, draft, advancedTags, openAdvanced, clearDraft, applyAdvanced, removeAdvanced, resetFilters }
+  return { advancedTags, removeAdvanced, resetFilters }
 }

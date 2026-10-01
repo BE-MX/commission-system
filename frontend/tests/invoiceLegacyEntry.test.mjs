@@ -31,7 +31,7 @@ test('editor shares one form state between new and legacy drawers', () => {
 })
 
 test('legacy drawer restores the HEAD-era layout with legacy companions', () => {
-  assert.match(legacyDrawer, /label-width="80px"/)
+  assert.match(legacyDrawer, /label-position="top"/)
   assert.match(legacyDrawer, /业务员信息/)
   assert.match(legacyDrawer, /<InvoiceLegacySettlementFields/)
   assert.match(legacyDrawer, /<InvoiceLegacyReceiptFields/)

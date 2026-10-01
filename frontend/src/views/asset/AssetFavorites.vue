@@ -23,6 +23,7 @@
     <div class="favorites-layout">
       <!-- 左侧：收藏夹列表 -->
       <aside class="folder-sidebar">
+        <ListPageStatus :error="foldersResource.errorMessage.value" :loading="foldersResource.loading.value" :has-data="folders.length > 0" @retry="loadFolders" />
         <div
           v-for="folder in folders"
           :key="folder.id"
@@ -44,19 +45,20 @@
             </template>
           </el-dropdown>
         </div>
-        <el-empty v-if="folders.length === 0" description="暂无收藏夹" />
+        <el-empty v-if="!foldersResource.loading.value && !foldersResource.error.value && folders.length === 0" description="暂无收藏夹" />
       </aside>
 
       <!-- 右侧：素材列表 -->
       <div class="content-area">
+        <ListPageStatus :error="itemsResource.errorMessage.value" :loading="loading" :has-data="items.length > 0" @retry="itemsResource.load()" />
         <div v-if="!currentFolderId" class="empty-select">
           <el-empty description="请选择一个收藏夹" />
         </div>
-        <div v-else-if="loading" class="loading-wrap">
+        <div v-else-if="loading && !items.length" class="loading-wrap">
           <el-skeleton :rows="5" animated />
         </div>
         <div v-else-if="items.length === 0" class="empty-wrap">
-          <el-empty description="该收藏夹暂无素材">
+          <el-empty v-if="!itemsResource.error.value" description="该收藏夹暂无素材">
             <GlassButton variant="primary" @click="$router.push('/asset/library')">去素材库逛逛</GlassButton>
           </el-empty>
         </div>
@@ -101,7 +103,7 @@
     </div>
 
     <!-- 新建收藏夹弹窗 -->
-    <el-dialog v-model="showCreateFolder" title="新建收藏夹" width="360px">
+    <el-dialog v-model="showCreateFolder" title="新建收藏夹" width="480px">
       <el-input
         v-model="newFolderName"
         placeholder="收藏夹名称"
@@ -116,7 +118,7 @@
     </el-dialog>
 
     <!-- 重命名弹窗 -->
-    <el-dialog v-model="showRenameFolder" title="重命名收藏夹" width="360px">
+    <el-dialog v-model="showRenameFolder" title="重命名收藏夹" width="480px">
       <el-input
         v-model="renameFolderName"
         placeholder="收藏夹名称"
@@ -146,7 +148,7 @@
     </el-dialog>
 
     <!-- 预览弹窗 -->
-    <el-dialog v-model="previewVisible" width="80%" :title="previewAsset?.file_name" destroy-on-close>
+    <el-dialog v-model="previewVisible" width="480px" :title="previewAsset?.file_name" destroy-on-close>
       <div class="preview-body">
         <div class="preview-media">
           <img
@@ -177,9 +179,11 @@
   </div>
 </template>
 
-<script setup>
-import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+<script setup>import { msgError, msgSuccessText, confirmAction } from '@/utils/feedback'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useAuthStore } from '@/stores/auth'
+
 import {
   Collection, FolderAdd, Folder, MoreFilled,
   VideoPlay, Document, Picture, Delete, Share,
@@ -191,37 +195,26 @@ import {
 } from '@/api/asset'
 
 // ── 收藏夹 ──────────────────────────────────────────────
-const folders = ref([])
+const foldersResource = useAsyncResource(async (_, { signal }) => (await getFavoriteFolders({ signal, suppressToast: true })).data || [])
+const folders = computed(() => foldersResource.data.value || [])
 const currentFolderId = ref(null)
-const loading = ref(false)
-const items = ref([])
-
-async function loadFolders() {
-  try {
-    const res = await getFavoriteFolders()
-    folders.value = res.data || []
-    // 默认选中第一个
-    if (folders.value.length > 0 && !currentFolderId.value) {
-      selectFolder(folders.value[0].id)
-    }
-  } catch (e) {
-    ElMessage.error('加载收藏夹失败')
-  }
-}
-
-async function selectFolder(folderId) {
+const itemsResource = useAsyncResource(async (folderId, { signal }) => folderId ? (await getFavoriteItems(folderId, { signal, suppressToast: true })).data || [] : [])
+const loading = itemsResource.loading
+const items = computed(() => itemsResource.data.value || [])
+const loadFolders = () => foldersResource.load()
+function selectFolder(folderId) {
+  const changed = currentFolderId.value !== folderId
   currentFolderId.value = folderId
-  loading.value = true
-  try {
-    const res = await getFavoriteItems(folderId)
-    items.value = res.data || []
-  } catch (e) {
-    ElMessage.error('加载收藏内容失败')
-    items.value = []
-  } finally {
-    loading.value = false
-  }
+  return itemsResource.load(folderId, { clear: changed })
 }
+watch(folders, next => {
+  if (!next.some(folder => folder.id === currentFolderId.value)) selectFolder(next[0]?.id || null)
+}, { flush: 'sync' })
+const authStore = useAuthStore()
+watch(() => JSON.stringify([authStore.user?.id, authStore.user?.roles, authStore.user?.permissions]), () => {
+  currentFolderId.value = null; itemsResource.load(null, { clear: true }); foldersResource.load(null, { clear: true })
+  previewVisible.value = false; showShareDialog.value = false; showRenameFolder.value = false
+}, { flush: 'sync' })
 
 // ── 新建收藏夹 ──────────────────────────────────────────
 const showCreateFolder = ref(false)
@@ -232,12 +225,12 @@ async function createFolder() {
   if (!name) return
   try {
     await createFavoriteFolder({ name })
-    ElMessage.success('创建成功')
+    msgSuccessText('创建成功')
     showCreateFolder.value = false
     newFolderName.value = ''
     await loadFolders()
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '创建失败')
+    msgError(e.response?.data?.message || '创建失败', e)
   }
 }
 
@@ -256,7 +249,7 @@ function handleFolderCommand(command, folder) {
   } else if (command === 'revoke') {
     handleRevokeShare(folder)
   } else if (command === 'delete') {
-    ElMessageBox.confirm(
+    confirmAction(
       `确定删除收藏夹「${folder.name}」？收藏夹内的素材不会被删除。`,
       '确认删除',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
@@ -269,27 +262,27 @@ async function confirmRename() {
   if (!name || !renamingFolder.value) return
   try {
     await updateFavoriteFolder(renamingFolder.value.id, { name })
-    ElMessage.success('重命名成功')
+    msgSuccessText('重命名成功')
     showRenameFolder.value = false
     renamingFolder.value = null
     renameFolderName.value = ''
     await loadFolders()
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '重命名失败')
+    msgError(e.response?.data?.message || '重命名失败', e)
   }
 }
 
 async function confirmDelete(folderId) {
   try {
     await deleteFavoriteFolder(folderId)
-    ElMessage.success('删除成功')
+    msgSuccessText('删除成功')
     if (currentFolderId.value === folderId) {
       currentFolderId.value = null
-      items.value = []
+      itemsResource.load(null, { clear: true })
     }
     await loadFolders()
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '删除失败')
+    msgError(e.response?.data?.message || '删除失败', e)
   }
 }
 
@@ -304,40 +297,42 @@ async function handleShare(folder) {
     showShareDialog.value = true
     await loadFolders()
   } catch (e) {
-    ElMessage.error('生成分享链接失败')
+    msgError('生成分享链接失败', e)
   }
 }
 
 async function handleRevokeShare(folder) {
   try {
     await revokeShare(folder.id)
-    ElMessage.success('已取消分享')
+    msgSuccessText('已取消分享')
     await loadFolders()
   } catch (e) {
-    ElMessage.error('取消分享失败')
+    msgError('取消分享失败', e)
   }
 }
 
 function copyShareUrl() {
   navigator.clipboard.writeText(shareUrl.value).then(() => {
-    ElMessage.success('链接已复制')
+    msgSuccessText('链接已复制')
   })
 }
 
 // ── 移除收藏 ────────────────────────────────────────────
 async function handleRemove(item) {
+  const folderId = currentFolderId.value
   try {
-    await ElMessageBox.confirm('确定取消收藏该素材？', '提示', {
+    await confirmAction('确定取消收藏该素材？', '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning',
     })
-    await removeFavoriteItem(currentFolderId.value, item.id)
-    ElMessage.success('已取消收藏')
-    items.value = items.value.filter(i => i.id !== item.id)
+    if (currentFolderId.value !== folderId) return
+    await removeFavoriteItem(folderId, item.id)
+    msgSuccessText('已取消收藏')
+    if (currentFolderId.value === folderId) await itemsResource.load()
   } catch (e) {
     if (e !== 'cancel') {
-      ElMessage.error('操作失败')
+      msgError('操作失败', e)
     }
   }
 }

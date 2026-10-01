@@ -22,27 +22,29 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
+          :loading="loading"
           @refresh="refresh"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus v-if="sourceResource.hasData.value" :error="sourceResource.errorMessage.value" :loading="loading" :has-data="true" @retry="refresh" />
       <el-table :data="sources" v-loading="loading" border class="source-table list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
       <template #empty>
-        <el-empty :image-size="96" description="暂无数据" />
+        <ListPageStatus :error="sourceResource.errorMessage.value" :loading="loading" @retry="refresh"><el-empty :image-size="96" description="暂无数据" /></ListPageStatus>
       </template>
       <el-table-column v-if="visibleKeys.includes('id')" prop="id" label="ID" min-width="60" sortable />
       <el-table-column v-if="visibleKeys.includes('sort-order')" prop="sort_order" label="排序" min-width="80" sortable />
       <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="名称" min-width="160" show-overflow-tooltip sortable />
       <el-table-column v-if="visibleKeys.includes('source-type')" prop="source_type" label="类型" min-width="140" sortable>
         <template #default="{ row }">
-          <el-tag size="small" effect="light">{{ TYPE_LABELS[row.source_type] || row.source_type }}</el-tag>
+          <StatusBadge size="small" effect="light">{{ TYPE_LABELS[row.source_type] || row.source_type }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('url')" prop="url" label="URL" min-width="240" show-overflow-tooltip />
       <el-table-column v-if="visibleKeys.includes('pipeline')" label="管线" min-width="80">
         <template #default="{ row }">
-          <el-tag size="small" :type="row.pipeline === 'external' ? 'info' : 'success'">{{ row.pipeline === 'external' ? '外部' : '内部' }}</el-tag>
+          <StatusBadge size="small" :type="row.pipeline === 'external' ? 'info' : 'success'">{{ row.pipeline === 'external' ? '外部' : '内部' }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('fetch-interval')" label="抓取间隔" min-width="100">
@@ -50,7 +52,7 @@
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('is-active')" prop="is_active" label="状态" min-width="80" sortable>
         <template #default="{ row }">
-          <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</el-tag>
+          <StatusBadge :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('health')" label="健康度" min-width="120">
@@ -78,8 +80,8 @@
     </section>
 
     <!-- 新增/编辑 -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑信源' : '新增信源'" width="600px" :close-on-click-modal="false">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑信源' : '新增信源'" width="640px" :close-on-click-modal="false">
+      <el-form label-position="top" ref="formRef" :model="form" :rules="rules">
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" placeholder="如: Google Alerts - hair extensions" />
         </el-form-item>
@@ -132,7 +134,7 @@
     </el-dialog>
 
     <!-- 测试结果 -->
-    <el-dialog v-model="testResultVisible" title="连通性测试结果" width="500px">
+    <el-dialog v-model="testResultVisible" title="连通性测试结果" width="640px">
       <div v-if="testResult" class="test-result">
         <el-result
           :icon="testResult.success ? 'success' : 'error'"
@@ -155,9 +157,13 @@
 </template>
 
 <script setup>
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { msgError, msgSuccessText, confirmAction } from '@/utils/feedback'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import {
   listSources, createSource, updateSource, deleteSource, testSource,
 } from '@/api/insight'
@@ -180,8 +186,8 @@ const TYPE_LABELS = {
   aihot_api: 'AIHot API',
 }
 
-const sources = ref([])
-const loading = ref(false)
+const sourceResource = useAsyncResource(async (_, { signal }) => (await listSources({}, { signal, suppressToast: true })).data, { initialData: [] })
+const { data: sources, loading } = sourceResource
 const columnDefs = [
   { key: 'id', label: 'ID' }, { key: 'sort-order', label: '排序' },
   { key: 'name', label: '名称' }, { key: 'source-type', label: '类型' },
@@ -221,15 +227,7 @@ const rules = {
 const testResultVisible = ref(false)
 const testResult = ref(null)
 
-async function refresh() {
-  loading.value = true
-  try {
-    const res = await listSources({})
-    sources.value = res.data || []
-  } finally {
-    loading.value = false
-  }
-}
+function refresh() { return sourceResource.load() }
 
 function openCreate() {
   isEdit.value = false
@@ -285,7 +283,7 @@ async function submitForm() {
   try {
     if (headersText.value.trim()) headers = JSON.parse(headersText.value)
   } catch (e) {
-    ElMessage.error('请求头 JSON 格式错误')
+    msgError('请求头 JSON 格式错误', e)
     return
   }
   const payload = { ...form, keywords, exclude_keywords: excludeKeywords, request_headers: headers }
@@ -297,10 +295,10 @@ async function submitForm() {
   try {
     if (isEdit.value) {
       await updateSource(editId.value, payload)
-      ElMessage.success('已更新')
+      msgSuccessText('已更新')
     } else {
       await createSource(payload)
-      ElMessage.success('已创建')
+      msgSuccessText('已创建')
     }
     dialogVisible.value = false
     refresh()
@@ -310,13 +308,13 @@ async function submitForm() {
 }
 
 async function disable(row) {
-  await ElMessageBox.confirm(`确定要禁用「${row.name}」?`, '请确认', {
+  await confirmAction(`确定要禁用「${row.name}」?`, '请确认', {
     type: 'warning',
     confirmButtonText: '禁用',
     cancelButtonText: '取消',
   })
   await deleteSource(row.id)
-  ElMessage.success('已禁用')
+  msgSuccessText('已禁用')
   refresh()
 }
 

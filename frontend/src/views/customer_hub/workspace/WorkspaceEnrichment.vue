@@ -5,14 +5,14 @@
       <p>核实官网、公司业务、公开联系方式和主营产品。保留已有内容，冲突列出来源，结果回写后供审核。</p>
     </div>
     <div class="enrichment-actions">
-      <el-tag v-if="task" :type="task.task_status === 'failed' ? 'danger' : 'info'">{{ statusText }}</el-tag>
+      <StatusBadge v-if="task" :type="task.task_status === 'failed' ? 'danger' : 'info'">{{ statusText }}</StatusBadge>
       <GlassButton v-any-permission="['customer_profile:write', 'customer:admin']" variant="primary" left-icon="MagicStick"
         :loading="submitting" :disabled="loading || Boolean(error) || awaitingResult" @click="request">一键补全</GlassButton>
       <GlassButton v-if="task" variant="secondary" left-icon="View" @click="detailVisible = true">查看任务与结果</GlassButton>
       <GlassButton variant="ghost" left-icon="Refresh" :loading="loading" @click="load">刷新状态</GlassButton>
     </div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
-    <el-drawer v-model="detailVisible" append-to-body title="客户信息补全" size="min(720px, 100vw)">
+    <DetailDrawer v-model="detailVisible" append-to-body title="客户信息补全" width="760px">
       <template v-if="task">
         <p>任务 #{{ task.research_task_id }} · {{ statusText }}</p>
         <el-alert v-if="task.task_status === 'pending'" title="已入队，等待研究 Agent 领取；刷新状态可查看进展。" type="info" :closable="false" />
@@ -24,7 +24,7 @@
         <GlassButton v-permission="'sales_automation:admin'" variant="success" :loading="reviewing" @click="review('accepted')">通过质量复核</GlassButton>
         <GlassButton v-permission="'sales_automation:admin'" variant="danger" :loading="reviewing" @click="review('rejected')">驳回结果</GlassButton>
       </template>
-    </el-drawer>
+    </DetailDrawer>
   </section>
 </template>
 

@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="dialog.open" :title="dialog.title" width="480" append-to-body @update:model-value="onToggle">
+  <el-dialog :model-value="dialog.open" :title="dialog.title" width="480px" append-to-body @update:model-value="onToggle">
     <p v-if="dialog.message" class="tpd-message">{{ dialog.message }}</p>
     <el-input
       v-if="dialog.input"

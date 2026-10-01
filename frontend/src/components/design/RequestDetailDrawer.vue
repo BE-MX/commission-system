@@ -1,7 +1,9 @@
 <template>
-  <el-drawer v-model="visible" title="预约详情" size="480px" direction="rtl" @close="$emit('update:modelValue', false)">
+  <DetailDrawer v-model="visible" title="预约详情" width="640px" direction="rtl" @close="$emit('update:modelValue', false)">
+    <ListPageStatus :error="detailResource.errorMessage.value" :loading="detailResource.loading.value" :has-data="!!detail" @retry="detailResource.load()" />
+    <ListPageStatus :error="dictsResource.errorMessage.value" :loading="dictsResource.loading.value" :has-data="!!dictsResource.data.value" @retry="loadDicts" />
     <template v-if="detail">
-      <el-descriptions :column="1" border size="small">
+      <ResponsiveDescriptions :column="1" border size="small">
         <el-descriptions-item label="预约编号">{{ detail.request_no }}</el-descriptions-item>
         <el-descriptions-item label="业务员">{{ detail.salesperson_name }}</el-descriptions-item>
         <el-descriptions-item label="客户名称">{{ detail.customer_name }}</el-descriptions-item>
@@ -14,22 +16,21 @@
           {{ formatDatePeriod(detail.expect_end_date, detail.expect_end_period) }}
         </el-descriptions-item>
         <el-descriptions-item label="优先级">
-          <el-tag :type="detail.priority === 'urgent' ? 'danger' : 'info'" size="small">
+          <StatusBadge :type="detail.priority === 'urgent' ? 'danger' : 'info'" size="small">
             {{ detail.priority === 'urgent' ? '加急' : '普通' }}
-          </el-tag>
+          </StatusBadge>
         </el-descriptions-item>
         <el-descriptions-item label="状态">
-          <el-tag :type="STATUS_TAG[detail.status]" size="small">
-            {{ STATUS_MAP[detail.status] || detail.status }}
-          </el-tag>
+          <StatusBadge :value="detail.status" :dictionary="REQUEST_STATUS" size="small" />
         </el-descriptions-item>
         <el-descriptions-item label="备注">{{ detail.remark || '-' }}</el-descriptions-item>
         <el-descriptions-item label="期望设计师">{{ preferredDesignerLabel }}</el-descriptions-item>
-      </el-descriptions>
+      </ResponsiveDescriptions>
 
       <!-- 附件列表 -->
       <div class="attachment-section">
         <h4>附件</h4>
+        <ListPageStatus :error="attachmentsResource.errorMessage.value" :loading="attachmentsResource.loading.value" :has-data="attachments.length > 0" @retry="attachmentsResource.load()" />
         <div v-if="attachments.length" class="attachment-list">
           <div v-for="a in attachments" :key="a.id" class="attachment-item">
             <el-icon class="attachment-icon"><Paperclip /></el-icon>
@@ -40,12 +41,13 @@
             </a>
           </div>
         </div>
-        <el-empty v-else description="暂无附件" :image-size="40" />
+        <el-empty v-else-if="!attachmentsResource.loading.value && !attachmentsResource.error.value" description="暂无附件" :image-size="40" />
       </div>
 
       <!-- 审批记录 -->
       <div class="timeline-section">
         <h4>审批记录</h4>
+        <ListPageStatus :error="logsResource.errorMessage.value" :loading="logsResource.loading.value" :has-data="auditLogs.length > 0" @retry="logsResource.load()" />
         <el-timeline v-if="auditLogs.length">
           <el-timeline-item
             v-for="log in auditLogs"
@@ -62,14 +64,16 @@
             <p class="log-comment" v-if="log.comment">{{ log.comment }}</p>
           </el-timeline-item>
         </el-timeline>
-        <el-empty v-else description="暂无审批记录" :image-size="60" />
+        <el-empty v-else-if="!logsResource.loading.value && !logsResource.error.value" description="暂无审批记录" :image-size="60" />
       </div>
     </template>
-  </el-drawer>
+  </DetailDrawer>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { REQUEST_STATUS, REQUEST_STATUS_LABELS as STATUS_MAP, REQUEST_STATUS_TYPES as STATUS_TAG } from '@/views/design/designStatus.js'
+import { ref, watch, computed } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { Paperclip, Download } from '@element-plus/icons-vue'
 import { getRequestDetail, getAuditLogs, getAttachments, downloadAttachment, getDesigners } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
@@ -82,34 +86,26 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const visible = ref(false)
-const detail = ref(null)
-const attachments = ref([])
-const auditLogs = ref([])
+const detailResource = useAsyncResource(async (id, { signal }) => id ? (await getRequestDetail(id, { signal, suppressToast: true })).data || null : null)
+const attachmentsResource = useAsyncResource(async (id, { signal }) => id ? (await getAttachments(id, { signal, suppressToast: true })).data || [] : [])
+const logsResource = useAsyncResource(async (id, { signal }) => id ? (await getAuditLogs(id, { signal, suppressToast: true })).data || [] : [])
+const detail = detailResource.data
+const attachments = computed(() => attachmentsResource.data.value || [])
+const auditLogs = computed(() => logsResource.data.value || [])
 
-const shootTypeMap = ref({})
-const customerLevelMap = ref({})
-const propsMap = ref({})
-const designerList = ref([])
+const dictsResource = useAsyncResource(async (active, { signal }) => {
+  if (!active) return null
+  const [shootType, customerLevel, propsRequirement, designers] = await Promise.all([getDictMap('shoot_type'), getDictMap('customer_level'), getDictMap('props_requirement'), getDesigners({ signal, suppressToast: true })])
+  return { shootType, customerLevel, propsRequirement, designers: designers.data || [] }
+})
+const shootTypeMap = computed(() => dictsResource.data.value?.shootType || {})
+const customerLevelMap = computed(() => dictsResource.data.value?.customerLevel || {})
+const propsMap = computed(() => dictsResource.data.value?.propsRequirement || {})
+const designerList = computed(() => dictsResource.data.value?.designers || [])
 
 const PERIOD_MAP = { am: '上午', pm: '下午' }
-const STATUS_MAP = {
-  pending_audit: '待审批',
-  pending_design: '待排期',
-  scheduled: '已排期',
-  in_progress: '进行中',
-  completed: '已完成',
-  rejected: '已拒绝',
-  cancelled: '已取消',
-}
-const STATUS_TAG = {
-  pending_audit: 'warning',
-  pending_design: 'warning',
-  scheduled: '',
-  in_progress: '',
-  completed: 'success',
-  rejected: 'danger',
-  cancelled: 'info',
-}
+
+
 const LOG_ACTION_MAP = {
   submit: '提交申请',
   approve: '审批通过',
@@ -143,7 +139,6 @@ function customerLevelLabel(code) {
   return customerLevelMap.value[code] || code
 }
 
-import { computed } from 'vue'
 const preferredDesignerLabel = computed(() => {
   if (!detail.value) return '-'
   const id = detail.value.preferred_designer_id
@@ -168,43 +163,15 @@ function timelineType(action) {
   return map[action] || 'primary'
 }
 
-async function loadDicts() {
-  shootTypeMap.value = await getDictMap('shoot_type')
-  customerLevelMap.value = await getDictMap('customer_level')
-  propsMap.value = await getDictMap('props_requirement')
-  try {
-    const res = await getDesigners()
-    designerList.value = res.data || []
-  } catch { designerList.value = [] }
+const loadDicts = () => dictsResource.load(true)
+function loadDetail(requestId) {
+  return Promise.all([detailResource.load(requestId, { clear: true }), attachmentsResource.load(requestId, { clear: true }), logsResource.load(requestId, { clear: true })])
 }
-
-async function loadDetail(requestId) {
-  detail.value = null
-  attachments.value = []
-  auditLogs.value = []
-  if (!requestId) return
-
-  try {
-    const [detailRes, attRes, logRes] = await Promise.all([
-      getRequestDetail(requestId),
-      getAttachments(requestId),
-      getAuditLogs(requestId),
-    ])
-    detail.value = detailRes.data || null
-    attachments.value = attRes.data || []
-    auditLogs.value = logRes.data || []
-  } catch {
-    detail.value = null
-  }
-}
-
-watch(() => props.modelValue, (val) => {
-  visible.value = val
-  if (val && props.requestId) {
-    loadDicts()
-    loadDetail(props.requestId)
-  }
-})
+watch([() => props.modelValue, () => props.requestId], ([opened, requestId]) => {
+  visible.value = opened
+  if (opened && requestId) { loadDicts(); loadDetail(requestId) }
+  else { dictsResource.load(false, { clear: true }); loadDetail(null) }
+}, { immediate: true })
 
 watch(visible, (val) => {
   if (!val) emit('update:modelValue', false)
@@ -252,7 +219,7 @@ watch(visible, (val) => {
   flex-shrink: 0;
 }
 .attachment-download {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   flex-shrink: 0;
   cursor: pointer;
   display: flex;
@@ -279,7 +246,7 @@ watch(visible, (val) => {
 }
 .log-transition {
   font-size: 12px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   margin: 0 0 2px;
 }
 .log-comment {

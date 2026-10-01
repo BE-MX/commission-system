@@ -16,21 +16,24 @@
           @fullscreen="toggleFullscreen"
         />
       </div>
+      <ListPageStatus :error="reviewsResource.errorMessage.value" :loading="loading" :has-data="rows.length > 0" @retry="load" />
       <el-table :data="rows" v-loading="loading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
         <template #empty>
-          <el-empty :image-size="96" description="暂无数据" />
+          <el-empty v-if="!loading && !reviewsResource.error.value" :image-size="96" description="暂无数据" />
         </template>
         <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="180" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('customer-id')" prop="customer_id" label="客户ID" min-width="130" />
         <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="80"><template #default="{ row }">R{{ row.revision }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('assets')" label="素材" min-width="110"><template #default="{ row }">{{ row.assets.length }} 个</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="送审时间" min-width="180" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default><el-tag type="warning" effect="plain">待审核</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default><StatusBadge type="warning" effect="plain">待审核</StatusBadge></template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="120" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="open(row)">审核</GlassButton></template></el-table-column>
       </el-table>
     </div>
 
-    <el-drawer v-model="drawer" title="审核客户素材" size="72%">
+    <DetailDrawer v-model="drawer" title="审核客户素材" width="640px">
+      <ListPageStatus :error="dimensionsResource.errorMessage.value" :loading="dimensionsResource.loading.value" :has-data="tagDimensions.length > 0" @retry="loadTagDimensions" />
+      <ListPageStatus :error="customerTagsResource.errorMessage.value" :loading="customerTagsResource.loading.value" :has-data="customerTags.length > 0" @retry="customerTagsResource.load()" />
       <template v-if="current">
         <div class="drawer-summary"><strong>{{ current.customer_name }}</strong><span>ID {{ current.customer_id }} · R{{ current.revision }} · {{ current.assets.length }} 个文件</span></div>
         <div v-for="group in reviewGroups" :key="group.id" class="review-dimension">
@@ -48,13 +51,13 @@
             <div>
               <strong>{{ asset.file_name }}</strong><span>{{ formatSize(asset.file_size) }}</span>
               <div class="asset-tags">
-                <el-tag
+                <StatusBadge
                   v-for="tag in (asset.tags || [])"
                   :key="`${tag.dimension_id}-${tag.tag_value_id}`"
                   size="small"
                   effect="plain"
                   class="tag-chip"
-                >{{ tagLabel(tag) }}</el-tag>
+                >{{ tagLabel(tag) }}</StatusBadge>
                 <span v-if="!(asset.tags || []).length" class="no-tag">未打标签</span>
                 <el-button link type="primary" class="tag-edit" @click="openTagPicker(asset)">编辑标签</el-button>
               </div>
@@ -71,7 +74,7 @@
         <GlassButton variant="danger" :loading="saving" @click="decide('request_changes')">退回修改</GlassButton>
         <GlassButton variant="success" :loading="saving" @click="decide('approve')">通过并发布</GlassButton>
       </template>
-    </el-drawer>
+    </DetailDrawer>
     <el-image-viewer v-if="previewUrl" :url-list="[previewUrl]" @close="previewUrl = ''" />
     <CustomerMediaTagPicker
       v-model="tagPickerVisible"
@@ -89,9 +92,12 @@
   </div>
 </template>
 
-<script setup>
-import { computed, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+<script setup>import { msgSuccessText, msgWarning, confirmAction } from '@/utils/feedback'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useAuthStore } from '@/stores/auth'
+import { designActorScope } from './designListScope'
+
 import {
   getCustomerTagDimensions,
   getBatchCustomerTags,
@@ -116,9 +122,14 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('customer-media-review', columnDefs)
 
-const rows = ref([]); const loading = ref(false); const saving = ref(false); const drawer = ref(false); const current = ref(null); const comment = ref(''); const previewUrl = ref('')
-const tagDimensions = ref([])
-const customerTags = ref([])
+const reviewsResource = useAsyncResource(async (_, { signal }) => (await getMediaReviews(undefined, { signal, suppressToast: true })).data || [])
+const rows = computed(() => reviewsResource.data.value || []); const loading = reviewsResource.loading; const saving = ref(false); const drawer = ref(false); const current = ref(null); const comment = ref(''); const previewUrl = ref('')
+const dimensionsResource = useAsyncResource(async (_, { signal }) => (await getCustomerTagDimensions({ signal, suppressToast: true })).data || [])
+const tagDimensions = computed(() => dimensionsResource.data.value || [])
+const customerTagsResource = useAsyncResource(async (id, { signal }) => id ? (await getBatchCustomerTags(id, { signal, suppressToast: true })).data || [] : [])
+const customerTags = computed({ get: () => customerTagsResource.data.value || [], set: value => { customerTagsResource.data.value = value } })
+const authStore = useAuthStore()
+watch(() => designActorScope(authStore), () => { current.value = null; drawer.value = false; tagPickerVisible.value = false; reviewsResource.load(null, { clear: true }); dimensionsResource.load(null, { clear: true }); customerTagsResource.load(null, { clear: true }) }, { flush: 'sync' })
 const tagPickerVisible = ref(false)
 const tagSaving = ref(false)
 const tagTarget = ref(null)
@@ -133,11 +144,11 @@ function visibleGroupAssets(group) {
   return filterMediaByTags(group.assets, (groupSelections.value[group.id] || []).filter(id => available.has(id)))
 }
 
-async function load() { loading.value = true; try { rows.value = (await getMediaReviews()).data || [] } finally { loading.value = false } }
-async function loadTagDimensions() { try { tagDimensions.value = (await getCustomerTagDimensions()).data || [] } catch { /* 标签编辑不可用不阻断审核 */ } }
+const load = () => reviewsResource.load()
+const loadTagDimensions = () => dimensionsResource.load()
 async function open(row) {
-  current.value = row; comment.value = ''; groupSelections.value = {}; customerTags.value = []; drawer.value = true
-  try { customerTags.value = (await getBatchCustomerTags(row.id)).data || [] } catch { /* API interceptor reports errors */ }
+  current.value = row; comment.value = ''; groupSelections.value = {}; tagPickerVisible.value = false; tagTarget.value = null; drawer.value = true
+  return customerTagsResource.load(row.id, { clear: true })
 }
 function formatSize(bytes) { return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB` }
 function tagLabel(tag) { return tag.dimension_label ? `${tag.dimension_label}：${tag.value}` : tag.value }
@@ -146,18 +157,21 @@ function openTagPicker(asset) { tagTarget.value = asset; tagPickerVisible.value 
 
 async function saveTags({ tags }) {
   if (!current.value || !tagTarget.value) return
+  const batchId = current.value.id; const assetId = tagTarget.value.id; const actorScope = designActorScope(authStore)
   tagSaving.value = true
   try {
     const selectedDimensions = new Set(tags.map(item => item.dimension_id))
     const cleared = [...new Set((tagTarget.value.tags || []).map(item => item.dimension_id))]
       .filter(id => !selectedDimensions.has(id))
       .map(dimension_id => ({ dimension_id, tag_value_ids: [] }))
-    const response = await updateMediaAssetTags(current.value.id, tagTarget.value.id, [...tags, ...cleared])
+    const response = await updateMediaAssetTags(batchId, assetId, [...tags, ...cleared])
+    if (designActorScope(authStore) !== actorScope || current.value?.id !== batchId || tagTarget.value?.id !== assetId) return
     current.value.assets = response.data.assets
     tagTarget.value = current.value.assets.find(asset => asset.id === tagTarget.value.id) || null
     for (const groupId of Object.keys(groupSelections.value)) groupSelections.value[groupId] = groupSelections.value[groupId].filter(id => current.value.assets.some(asset =>
       (asset.tags || []).some(tag => tag.tag_value_id === id)))
-    ElMessage.success('标签已更新')
+    await load()
+    msgSuccessText('标签已更新')
     tagPickerVisible.value = false
   } catch { /* 拦截器已提示 */ } finally { tagSaving.value = false }
 }
@@ -179,13 +193,19 @@ function onTagRenamed({ id, value }) {
 }
 
 async function decide(action) {
-  if (action === 'request_changes' && !comment.value.trim()) { ElMessage.warning('退回时必须填写修改原因'); return }
-  try { await ElMessageBox.confirm(action === 'approve' ? '审核通过后将立即发布给客户。' : '确认退回设计师修改？', '确认审核', { type: action === 'approve' ? 'success' : 'warning' }) } catch { return }
+  if (action === 'request_changes' && !comment.value.trim()) { msgWarning('退回时必须填写修改原因'); return }
+  const row = current.value
+  if (!row) return
+  const batchId = row.id; const actorScope = designActorScope(authStore)
+  const submittedComment = comment.value || undefined
+  try { await confirmAction(action === 'approve' ? '审核通过后将立即发布给客户。' : '确认退回设计师修改？', '确认审核', { type: action === 'approve' ? 'success' : 'warning' }) } catch { return }
+  if (designActorScope(authStore) !== actorScope || current.value?.id !== batchId) return
   saving.value = true
   try {
-    await reviewMediaBatch(current.value.id, { action, comment: comment.value || undefined, lock_version: current.value.lock_version })
-    ElMessage.success(action === 'approve' ? '已发布' : '已退回')
-    drawer.value = false; await load()
+    await reviewMediaBatch(batchId, { action, comment: submittedComment, lock_version: row.lock_version })
+    msgSuccessText(action === 'approve' ? '已发布' : '已退回')
+    if (designActorScope(authStore) !== actorScope) return
+    if (current.value?.id === batchId) drawer.value = false; await load()
   } finally { saving.value = false }
 }
 onMounted(() => { load(); loadTagDimensions() })
@@ -204,6 +224,6 @@ onMounted(() => { load(); loadTagDimensions() })
 .review-dimension h3 span { margin-left: 8px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
 .group-empty { color: var(--text-secondary); font-size: 13px; }
 .review-tag-group { margin: 0 0 20px; }
-.review-tag-group h4 { margin: 0 0 10px; color: var(--color-primary-hover); }
+.review-tag-group h4 { margin: 0 0 10px; color: var(--color-primary-text); }
 .review-tag-group h4 span { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
 </style>

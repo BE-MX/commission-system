@@ -1,8 +1,9 @@
+import { formatMoney } from '../../utils/money.js'
 import { formatBeijingDate, parseApiDateTime } from '../../utils/datetime.js'
+import { isAmount } from '../../utils/validators.js'
 
 export const stageLabels = { draft: '草稿', upcoming: '待开始', running: '进行中', ended: '已结束', archived: '已归档' }
-const moneyFormatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-export const money = value => value == null ? '—' : moneyFormatter.format(String(value))
+export const money = value => formatMoney(value, { missing: '—' })
 export const rate = value => value == null ? '待补全' : `${value.toFixed(1)}%`
 export const errorText = error => {
   const detail = error?.response?.data?.detail
@@ -33,7 +34,7 @@ export function targetChanges(members, values) {
   for (const member of members.filter(m => m.can_edit)) {
     const value = String(values[member.id] ?? '').trim()
     if (!value && member.target_usd == null) continue
-    if (!/^\d{1,14}(\.\d{1,2})?$/.test(value) || Number(value) <= 0) throw new Error(`${member.user_name}：目标须为正数，最多两位小数`)
+    if (!isAmount(value, { maxIntegerDigits: 14, precision: 2 })) throw new Error(`${member.user_name}：目标须为正数，最多两位小数`)
     if (member.target_usd == null || cents(value) !== cents(member.target_usd)) changes.push({ member_id: member.id, version: member.version, target_usd: value })
   }
   return changes

@@ -1,6 +1,6 @@
 <template>
   <el-dialog :model-value="visible" title="确认排期" width="640px" :close-on-click-modal="false" @update:model-value="emit('update:visible', $event)">
-    <el-form :model="form" label-width="90px" class="confirm-form">
+    <el-form label-position="top" :model="form" class="confirm-form">
       <el-form-item label="客户"><span>{{ row?.customer_name }}</span></el-form-item>
       <el-form-item label="设计师" required>
         <el-select v-model="form.designer_id" placeholder="请选择设计师" class="full-width">

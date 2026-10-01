@@ -1,9 +1,11 @@
+import { formatMoney } from '../../../utils/money.js'
+import { confirmAction, promptAction, msgWarning, msgSuccessText, alertAction, confirmDanger, msgSuccess } from '@/utils/feedback'
 /**
  * 内贸订单列表 + 详情抽屉逻辑（宪法 12/14：useListPage + feedback + DetailDrawer）。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { useAuthStore } from '@/stores/auth'
 import {
   attachItemRoute, deleteOrder, exportOrder, getCustomerOptions, getItemWxacode, getOptions, getOrder, getProcessRoutes,
@@ -12,9 +14,8 @@ import {
   revokeDomesticSkip, revokeReport, shipItem, skipDomesticStep,
   submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
-import { buildOrderListParams } from './useDomesticOrderFilters'
+import { buildOrderListParams, emptyAdvancedFilters } from './useDomesticOrderFilters'
 import { useListPage } from '@/composables/useListPage'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { downloadBlob } from '@/utils/download'
 import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
 import { normalizeOutcomeAllocation } from '@/views/domestic/conditionalRouting'
@@ -29,9 +30,9 @@ export function useDomesticOrders() {
   const filterOptions = ref({ order_categories: [], order_types: [], order_channels: [], customer_sources: [], owners: [] })
 
   const listApi = useListPage(
-    async (form) => {
+    async (form, { signal }) => {
       const params = buildOrderListParams(form)
-      const res = await listOrders(params)
+      const res = await listOrders(params, { signal, suppressToast: true })
       return res.data || {}
     },
     {
@@ -41,14 +42,24 @@ export function useDomesticOrders() {
         owner_user_id: '',
         order_kind: route.query.order_kind || '',
         status: '',
-        order_category: '',
-        order_type: '',
-        order_channel: '',
-        customer_source: '',
-        dateRange: [],
+        ...emptyAdvancedFilters(),
       },
     },
   )
+
+  // The list is cached by route name. Creation returns with the new order number;
+  // a changed route query must locate that order even when this instance is reused.
+  const routeQueryKey = () => JSON.stringify([route.query.keyword || '', route.query.customer_name || '', route.query.order_kind || ''])
+  let appliedRouteKey = routeQueryKey()
+  watch(() => [route.name, routeQueryKey()], ([name, key]) => {
+    if (name !== 'DomesticOrders' || key === appliedRouteKey) return
+    appliedRouteKey = key
+    Object.assign(listApi.searchForm, {
+      keyword: route.query.keyword || '', customer_name: route.query.customer_name || '',
+      owner_user_id: '', order_kind: route.query.order_kind || '', status: '', ...emptyAdvancedFilters(),
+    })
+    listApi.handleSearch()
+  })
 
   // ── 详情抽屉 ──
   const detailVisible = ref(false)
@@ -74,8 +85,8 @@ export function useDomesticOrders() {
 
   async function handleReviewApprove(row) {
     try {
-      await ElMessageBox.confirm(
-        `通过后订单正式生效，并从客户余额扣款 ¥${Number(row.total_amount || 0).toFixed(2)}。`,
+      await confirmAction(
+        `通过后订单正式生效，并从客户余额扣款 ${formatMoney(Number(row.total_amount || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}。`,
         `审核订单 ${row.domestic_no}`,
         { type: 'warning', confirmButtonText: '通过并扣款', cancelButtonText: '再想想' },
       )
@@ -93,7 +104,7 @@ export function useDomesticOrders() {
   async function handleReviewReject(row) {
     let value
     try {
-      ({ value } = await ElMessageBox.prompt('填个驳回原因（至少 2 个字）：', `驳回订单 ${row.domestic_no}`, {
+      ({ value } = await promptAction('填个驳回原因（至少 2 个字）：', `驳回订单 ${row.domestic_no}`, {
         type: 'warning',
         inputPlaceholder: '如：优惠价未经同意',
         inputValidator: v => (v && v.trim().length >= 2) || '驳回原因至少 2 个字',
@@ -132,8 +143,12 @@ export function useDomesticOrders() {
   }
 
   async function refreshAll() {
-    if (detail.value) await loadDetail(detail.value.id)
-    await listApi.fetchList()
+    // A failed detail read must not block the list or reject an already successful mutation.
+    const detailRefresh = detail.value
+      ? loadDetail(detail.value.id).catch(() => { /* 拦截器已提示详情读取失败 */ })
+      : Promise.resolve()
+    const [loaded] = await Promise.all([listApi.refreshUpdate(), detailRefresh])
+    return loaded
   }
 
   // ── 发货登记 ──
@@ -148,8 +163,8 @@ export function useDomesticOrders() {
   }
 
   async function confirmShip() {
-    if (!shipDialog.ship_time) return ElMessage.warning('请填发货时间')
-    if (!(shipDialog.ship_weight > 0)) return ElMessage.warning('请填发货克重')
+    if (!shipDialog.ship_time) return msgWarning('请填发货时间')
+    if (!(shipDialog.ship_weight > 0)) return msgWarning('请填发货克重')
     try {
       await shipItem(shipDialog.item.id, {
         ship_time: shipDialog.ship_time,
@@ -184,7 +199,7 @@ export function useDomesticOrders() {
   }
 
   async function confirmReport() {
-    if (!reportDialog.workerId) return ElMessage.warning('请选择实际做活的工人')
+    if (!reportDialog.workerId) return msgWarning('请选择实际做活的工人')
     let allocation = { qty: reportDialog.qty, outcomes: undefined }
     if (reportDialog.step.rule_type === 'decision') {
       try {
@@ -194,10 +209,10 @@ export function useDomesticOrders() {
           reportDialog.step.reportable_qty,
         )
       } catch (error) {
-        return ElMessage.warning(error.message)
+        return msgWarning(error.message)
       }
     } else if (!(reportDialog.qty > 0)) {
-      return ElMessage.warning('请填报工数量')
+      return msgWarning('请填报工数量')
     }
     try {
       await submitReport({
@@ -247,8 +262,8 @@ export function useDomesticOrders() {
 
   async function confirmSkip() {
     const reason = skipDialog.reason.trim()
-    if (!(skipDialog.qty > 0)) return ElMessage.warning('请填跳过数量')
-    if (reason.length < 5) return ElMessage.warning('请填写至少 5 个字的异常原因')
+    if (!(skipDialog.qty > 0)) return msgWarning('请填跳过数量')
+    if (reason.length < 5) return msgWarning('请填写至少 5 个字的异常原因')
     const item = skipDialog.item
     skipDialog.submitting = true
     try {
@@ -327,13 +342,13 @@ export function useDomesticOrders() {
   }
 
   async function confirmAttachRoute() {
-    if (!attachDialog.route_id) return ElMessage.warning('请选择工艺路线')
+    if (!attachDialog.route_id) return msgWarning('请选择工艺路线')
     let res
     try {
       res = await attachItemRoute(attachDialog.item.id, attachDialog.route_id)
     } catch { return }
     attachDialog.visible = false
-    ElMessage.success(res.message || '已配好工艺路线')
+    msgSuccessText(res.message || '已配好工艺路线')
     await refreshAll()
   }
 
@@ -361,9 +376,9 @@ export function useDomesticOrders() {
   async function handleSubmitDraft(row) {
     if (submittingOrderIds.has(row.id)) return
     try {
-      await ElMessageBox.confirm(
+      await confirmAction(
         row.order_kind === 'production' ? '提交后开始毛坯生产，工艺路线截止入库。'
-          : `提交后将从客户充值余额扣除 ¥${Number(row.total_amount || 0).toFixed(2)}，确认继续？`,
+          : `提交后将从客户充值余额扣除 ${formatMoney(Number(row.total_amount || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}，确认继续？`,
         '提交草稿',
         { type: 'warning', confirmButtonText: row.order_kind === 'production' ? '提交生产' : '提交并扣款' },
       )
@@ -381,7 +396,7 @@ export function useDomesticOrders() {
         const changed = quoteChangedDetail(error)
         if (!changed) throw error
         if ((changed.changes || []).some(change => change.current_status === 'missing_base_price')) {
-          await ElMessageBox.alert(
+          await alertAction(
             '有明细的原始价已删除，本次未提交。请先在产品清单重新维护原始价。',
             '缺少原始价',
             { type: 'error', confirmButtonText: '知道了' },
@@ -390,13 +405,13 @@ export function useDomesticOrders() {
         }
         const lineCodeById = new Map((current.items || []).map(item => [item.id, item.line_code]))
         const lines = (changed.changes || []).map(change => {
-          const before = Number(change.previous_quote?.discount_price || 0).toFixed(2)
-          const after = Number(change.current_quote?.discount_price || 0).toFixed(2)
+          const before = formatMoney(Number(change.previous_quote?.discount_price || 0))
+          const after = formatMoney(Number(change.current_quote?.discount_price || 0))
           const reasons = (change.reasons || []).map(quoteChangeReasonLabel).join('、')
           return `明细 ${lineCodeById.get(change.item_id) || change.item_id}：¥${before} → ¥${after}（${reasons || '报价已变化'}）`
         }).join('\n')
         try {
-          await ElMessageBox.confirm(
+          await confirmAction(
             `${changed.message || '价格已更新'}\n\n${lines}\n\n确认使用新价格提交并扣款吗？`,
             '价格变动确认',
             { type: 'warning', confirmButtonText: '使用新价提交', cancelButtonText: '暂不提交' },
@@ -411,7 +426,7 @@ export function useDomesticOrders() {
       }
       draftSubmitRequestIds.delete(row.id)
       if (submitRes.data?.status === 5) {
-        ElMessage.success('订单已提交，待审核：成交价与系统默认价不一致，审核通过后正式生效并扣款')
+        msgSuccessText('订单已提交，待审核：成交价与系统默认价不一致，审核通过后正式生效并扣款')
       } else {
         msgSuccess('提交订单')
       }
@@ -424,7 +439,7 @@ export function useDomesticOrders() {
   async function handleTerminate(row) {
     let value
     try {
-      ({ value } = await ElMessageBox.prompt('终止后这张单不能再报工。填个原因：', '终止订单', {
+      ({ value } = await promptAction('终止后这张单不能再报工。填个原因：', '终止订单', {
         type: 'warning', inputPlaceholder: '如：客户取消',
       }))
     } catch { return }  // 用户点了取消
@@ -440,7 +455,7 @@ export function useDomesticOrders() {
     await deleteOrder(row.id)
     msgSuccess('删除')
     detailVisible.value = false
-    await listApi.fetchList()
+    await listApi.refreshRemove()
   }
 
   // 打印弹框：内容渲染在 iframe 里的独立文档中，打印只出那份文档，
@@ -493,7 +508,6 @@ export function useDomesticOrders() {
   function goCreate(kind = 'business') {
     router.push({ name: kind === 'production' ? 'DomesticProductionOrderCreate' : 'DomesticOrderCreate' })
   }
-
 
   onMounted(async () => {
     try {

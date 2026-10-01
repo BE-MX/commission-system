@@ -25,12 +25,12 @@
         <div class="info-top">
           <div class="info-title">
             <span class="waybill-no">{{ shipment.waybill_no }}</span>
-            <el-tag size="small" effect="dark" style="margin-left:8px">{{ shipment.carrier_name }}</el-tag>
+            <StatusBadge size="small" effect="dark" style="margin-left:8px">{{ shipment.carrier_name }}</StatusBadge>
           </div>
           <div class="info-status">
-            <el-tag :type="statusTagType(shipment.current_status)" size="large" effect="dark" round>
+            <StatusBadge :type="statusTagType(shipment.current_status)" size="large" effect="dark" round>
               {{ statusText(shipment.current_status) }}
-            </el-tag>
+            </StatusBadge>
           </div>
         </div>
         <div class="info-grid">
@@ -96,11 +96,11 @@
       <!-- 轮询信息 -->
       <div class="poll-section" v-if="shipment">
         <h3 class="section-title">轮询信息</h3>
-        <el-descriptions :column="3" border size="small">
+        <ResponsiveDescriptions :column="3" border size="small">
           <el-descriptions-item label="跟踪状态">
-            <el-tag :type="shipment.is_active ? 'success' : 'info'" size="small">
+            <StatusBadge :type="shipment.is_active ? 'success' : 'info'" size="small">
               {{ shipment.is_active ? '进行中' : '已结束' }}
-            </el-tag>
+            </StatusBadge>
           </el-descriptions-item>
           <el-descriptions-item label="轮询次数">{{ shipment.poll_count }}</el-descriptions-item>
           <el-descriptions-item label="上次轮询">{{ shipment.last_polled_at || '-' }}</el-descriptions-item>
@@ -109,16 +109,19 @@
           <el-descriptions-item label="轮询错误" v-if="shipment.poll_error">
             <el-text type="danger" size="small">{{ shipment.poll_error }}</el-text>
           </el-descriptions-item>
-        </el-descriptions>
+        </ResponsiveDescriptions>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { TRACKING_STATUS, TRACKING_STATUS_LABELS as STATUS_MAP, TRACKING_STATUS_TYPES as STATUS_TAG } from './trackingStatus.js'
+import { resolveStatus } from '@/utils/status'
+import { msgSuccessText } from '@/utils/feedback'
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { getShipmentDetail, refreshShipment } from '@/api/tracking'
 
 const route = useRoute()
@@ -130,35 +133,15 @@ const refreshing = ref(false)
 
 function copyLink(link) {
   navigator.clipboard.writeText(link).then(() => {
-    ElMessage.success('短链接已复制')
+    msgSuccessText('短链接已复制')
   })
 }
 
-const STATUS_MAP = {
-  pending: '待查询',
-  picked_up: '已揽收',
-  in_transit: '运输中',
-  out_for_delivery: '派送中',
-  customs: '清关中',
-  customs_hold: '海关扣留',
-  delivered: '已签收',
-  returned: '已退回',
-  exception: '异常',
-}
-const STATUS_TAG = {
-  pending: 'info',
-  picked_up: '',
-  in_transit: '',
-  out_for_delivery: 'warning',
-  customs: 'warning',
-  customs_hold: 'danger',
-  delivered: 'success',
-  returned: 'danger',
-  exception: 'danger',
-}
 
-function statusText(s) { return STATUS_MAP[s] || s }
-function statusTagType(s) { return STATUS_TAG[s] || 'info' }
+
+
+function statusText(s) { return resolveStatus(s, TRACKING_STATUS).label }
+function statusTagType(s) { return resolveStatus(s, TRACKING_STATUS).type }
 
 async function fetchDetail() {
   loading.value = true
@@ -174,7 +157,7 @@ async function handleRefresh() {
   refreshing.value = true
   try {
     await refreshShipment(waybillNo)
-    ElMessage.success('刷新完成')
+    msgSuccessText('刷新完成')
     await fetchDetail()
   } catch { /* handled by interceptor */ }
   finally {
@@ -260,7 +243,7 @@ onMounted(fetchDetail)
 }
 .event-card.latest .event-desc {
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .event-desc {
   font-size: 14px;

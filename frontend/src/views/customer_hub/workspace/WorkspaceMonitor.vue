@@ -13,9 +13,9 @@
         <el-table-column prop="url" label="URL" min-width="180" show-overflow-tooltip />
         <el-table-column label="采集状态" min-width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="statusTagType(row.collection_status)">
+            <StatusBadge size="small" :type="statusTagType(row.collection_status)">
               {{ MONITOR_COLLECTION_STATUS_LABELS[row.collection_status] || row.collection_status }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column label="最近成功（北京时间）" min-width="170"><template #default="{row}">{{ date(row.last_success_at) }}</template></el-table-column>
@@ -40,7 +40,7 @@
         <el-table-column label="发现时间（北京时间）" min-width="170"><template #default="{row}">{{ date(row.discovered_at) }}</template></el-table-column>
         <el-table-column label="状态" min-width="100">
           <template #default="{ row }">
-            <el-tag size="small">{{ MONITOR_EVENT_STATUS_LABELS[row.status] || row.status }}</el-tag>
+            <StatusBadge size="small">{{ MONITOR_EVENT_STATUS_LABELS[row.status] || row.status }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column label="操作" min-width="150" class-name="table-action-column" fixed="right">
@@ -57,7 +57,7 @@
 
     <el-dialog v-model="dialogVisible" append-to-body title="新增监控订阅" width="480px" class="customer-hub-dialog">
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
-      <el-form label-width="72px" size="small">
+      <el-form label-position="top" size="small">
         <el-form-item label="渠道">
           <el-select v-model="form.channel" style="width: 100%">
             <el-option value="website" label="官网" />

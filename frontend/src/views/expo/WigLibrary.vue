@@ -8,11 +8,9 @@
     </div>
 
     <div ref="panelRef" class="table-card wig-panel">
-      <div class="toolbar">
-        <el-input v-model="keyword" placeholder="搜索型号 / 名称" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="fetchWigs" />
-        <GlassButton variant="primary" left-icon="Search" @click="fetchWigs">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+      <FilterBar :pending="keyword.trim() !== appliedKeyword" @search="applySearch" @reset="resetFilters">
+        <el-input v-model="keyword" placeholder="搜索型号 / 名称" clearable prefix-icon="Search" class="filter-w-lg" />
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -27,9 +25,10 @@
         />
       </div>
 
+      <ListPageStatus :error="listResource.errorMessage.value" :loading="loading" :has-data="wigs.length > 0" @retry="fetchWigs" />
       <el-table :data="filteredWigs" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
         <template #empty>
-          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+          <el-empty v-if="!loading && !listResource.error.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </template>
@@ -43,25 +42,25 @@
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="名称" min-width="130" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('series')" label="系列" min-width="90">
           <template #default="{ row }">
-            <el-tag v-if="row.series === 'zhizhen'" size="small" class="tag-zhizhen">至臻</el-tag>
-            <el-tag v-else size="small" effect="plain">经典</el-tag>
+            <StatusBadge v-if="row.series === 'zhizhen'" size="small" class="tag-zhizhen">至臻</StatusBadge>
+            <StatusBadge v-else size="small" effect="plain">经典</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('fit-tags')" label="适配标签" min-width="220">
           <template #default="{ row }">
-            <el-tag v-for="f in row.fit_tags?.face_shapes || []" :key="'f-' + f" size="small" effect="plain" class="fit-tag">{{ labelOf(FACE_SHAPES, f) }}</el-tag>
-            <el-tag v-for="n in row.fit_tags?.needs || []" :key="'n-' + n" size="small" effect="plain" type="warning" class="fit-tag">{{ labelOf(NEEDS, n) }}</el-tag>
+            <StatusBadge v-for="f in row.fit_tags?.face_shapes || []" :key="'f-' + f" size="small" effect="plain" class="fit-tag">{{ labelOf(FACE_SHAPES, f) }}</StatusBadge>
+            <StatusBadge v-for="n in row.fit_tags?.needs || []" :key="'n-' + n" size="small" effect="plain" type="warning" class="fit-tag">{{ labelOf(NEEDS, n) }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('sell-positions')" label="销售定位" min-width="160">
           <template #default="{ row }">
-            <el-tag v-for="p in row.fit_tags?.sell_positions || []" :key="'p-' + p" size="small" effect="plain" type="success" class="fit-tag">{{ p }}</el-tag>
+            <StatusBadge v-for="p in row.fit_tags?.sell_positions || []" :key="'p-' + p" size="small" effect="plain" type="success" class="fit-tag">{{ p }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('priority')" prop="priority" label="优先级" min-width="80" sortable />
         <el-table-column v-if="visibleKeys.includes('must-recommend')" label="主推" min-width="70">
           <template #default="{ row }">
-            <el-tag v-if="row.must_recommend" type="danger" effect="plain" size="small">主推</el-tag>
+            <StatusBadge v-if="row.must_recommend" type="danger" effect="plain" size="small">主推</StatusBadge>
             <span v-else style="color: var(--text-muted)">—</span>
           </template>
         </el-table-column>
@@ -79,8 +78,8 @@
       </el-table>
     </div>
 
-    <el-drawer v-model="drawerVisible" :title="isEdit ? '编辑发型' : '新建发型'" :size="560" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="92px">
+    <DetailDrawer v-model="drawerVisible" :title="isEdit ? '编辑发型' : '新建发型'" :width="560" destroy-on-close>
+      <el-form label-position="top" ref="formRef" :model="form" :rules="rules">
         <el-form-item label="型号" prop="model_no"><el-input v-model="form.model_no" placeholder="如 LS-101" /></el-form-item>
         <el-form-item label="名称" prop="name"><el-input v-model="form.name" placeholder="发型名称" /></el-form-item>
         <el-form-item label="系列" prop="series">
@@ -190,6 +189,7 @@
             为各发色上传三角度实拍图，合成时直接照搬（含颜色）。<b>上传后点最底部「保存」一并生效</b>；
             某发色不备图则客户端走「原色」（发型自身多角度图）。
           </p>
+          <ListPageStatus :error="matrixResource.errorMessage.value" :loading="colorMatrixLoading" :has-data="colorMatrix.length > 0" @retry="matrixResource.load()" />
           <div v-loading="colorMatrixLoading" class="cm-list">
             <div v-for="c in colorMatrix" :key="c.hair_color_id" class="cm-row" :class="{ dirty: c.dirty }">
               <div class="cm-color">
@@ -211,7 +211,7 @@
                 </el-upload>
               </div>
             </div>
-            <div v-if="!colorMatrixLoading && !colorMatrix.length" class="cm-empty">
+            <div v-if="!colorMatrixLoading && !matrixResource.error.value && !colorMatrix.length" class="cm-empty">
               发色库暂无启用发色，请先到发色库添加发色
             </div>
           </div>
@@ -221,18 +221,19 @@
         <GlassButton variant="ghost" @click="drawerVisible = false">取消</GlassButton>
         <GlassButton variant="primary" :loading="saving" @click="submit">保存</GlassButton>
       </template>
-    </el-drawer>
+    </DetailDrawer>
   </div>
 </template>
 
-<script setup>
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+<script setup>import { msgWarning, msgSuccessText, confirmDanger, msgSuccess } from '@/utils/feedback'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
+
 import {
   getWigs, createWig, updateWig, deleteWig, uploadWigPhoto,
   getWigColorImages, saveWigColorImages, deleteWigColorImages,
 } from '@/api/expo'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import TableTools from '@/components/TableTools.vue'
 import { useWigLibraryTable } from './composables/useWigLibraryTable'
 
@@ -272,11 +273,14 @@ function labelOf(options, value) {
   return options.find((o) => o.value === value)?.label || value
 }
 
-const wigs = ref([])
-const loading = ref(false)
+const listResource = useAsyncResource(async (_, { signal }) => (await getWigs(undefined, { signal, suppressToast: true })).data || [])
+const wigs = computed(() => listResource.data.value || [])
+const loading = listResource.loading
 const keyword = ref('')
+const appliedKeyword = ref('')
+function applySearch() { appliedKeyword.value = keyword.value.trim(); return fetchWigs() }
 const filteredWigs = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
+  const kw = appliedKeyword.value.toLowerCase()
   if (!kw) return wigs.value
   return wigs.value.filter((w) => (w.model_no || '').toLowerCase().includes(kw) || (w.name || '').toLowerCase().includes(kw))
 })
@@ -289,8 +293,14 @@ const formRef = ref()
 const coverPreview = ref('')
 const anglePhotos = ref([]) // [{path, url}]
 // 发色矩阵：每项 {hair_color_id, code, name, hex, swatch_url, has_images, saving, photos:[{path,url}]}
-const colorMatrix = ref([])
-const colorMatrixLoading = ref(false)
+const matrixResource = useAsyncResource(async (wigId, { signal }) => wigId ? ((await getWigColorImages(wigId, { signal, suppressToast: true })).data || []).map(c => ({
+  hair_color_id: c.hair_color_id, code: c.code, name: c.name,
+  hex: c.hex, swatch_url: c.swatch_url, has_images: c.has_images, dirty: false,
+  photos: (c.angle_photos || []).map((p, i) => ({ path: p, url: (c.angle_urls || [])[i] || `/${p}` })),
+})) : [])
+const colorMatrix = computed({ get: () => matrixResource.data.value || [], set: value => { matrixResource.data.value = value } })
+const colorMatrixLoading = matrixResource.loading
+watch(drawerVisible, opened => { if (!opened) matrixResource.load(null, { clear: true }) })
 
 function emptyForm() {
   return {
@@ -310,20 +320,12 @@ const rules = {
   series: [{ required: true, message: '请选择系列', trigger: 'change' }],
 }
 
-async function fetchWigs() {
-  loading.value = true
-  try {
-    const res = await getWigs()
-    wigs.value = res.data || []
-  } finally {
-    loading.value = false
-  }
-}
+const fetchWigs = () => listResource.load()
 
 const {
   columnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen,
   hasActiveFilters, resetFilters,
-} = useWigLibraryTable(keyword, fetchWigs)
+} = useWigLibraryTable(keyword, applySearch, appliedKeyword)
 
 function toUpsert(src) {
   return {
@@ -344,7 +346,7 @@ function openCreate() {
   form.value = emptyForm()
   coverPreview.value = ''
   anglePhotos.value = []
-  colorMatrix.value = [] // 新建态无 wig id，发色矩阵在首次保存后再编辑
+  matrixResource.load(null, { clear: true }) // 新建态无 wig id，发色矩阵在首次保存后再编辑
   drawerVisible.value = true
 }
 
@@ -370,26 +372,13 @@ function openEdit(row) {
   loadColorMatrix(row.id)
 }
 
-async function loadColorMatrix(wigId) {
-  colorMatrix.value = []
-  colorMatrixLoading.value = true
-  try {
-    const res = await getWigColorImages(wigId)
-    colorMatrix.value = (res.data || []).map((c) => ({
-      hair_color_id: c.hair_color_id, code: c.code, name: c.name,
-      hex: c.hex, swatch_url: c.swatch_url, has_images: c.has_images, dirty: false,
-      photos: (c.angle_photos || []).map((p, i) => ({ path: p, url: (c.angle_urls || [])[i] || `/${p}` })),
-    }))
-  } catch { /* 拦截器已提示，矩阵留空 */ } finally {
-    colorMatrixLoading.value = false
-  }
-}
+const loadColorMatrix = wigId => matrixResource.load(wigId, { clear: true })
 
 // 支持一次多选：多张文件的回调near-同步触发,await 前 photos.length 还没涨,
 // 光靠它判上限会全部放行→超 3 张。用 reserving 同步占坑,保证并发上传也卡在三张
 async function uploadColorAngle(item, { file }) {
   if (item.photos.length + (item.reserving || 0) >= 3) {
-    if (!item._warnedFull) { ElMessage.warning('每个发色最多三张，多余的已忽略'); item._warnedFull = true }
+    if (!item._warnedFull) { msgWarning('每个发色最多三张，多余的已忽略'); item._warnedFull = true }
     return
   }
   item.reserving = (item.reserving || 0) + 1
@@ -428,7 +417,7 @@ async function uploadCover({ file }) {
   const res = await uploadWigPhoto(file)
   form.value.cover_path = res.data.path
   coverPreview.value = res.data.url
-  ElMessage.success('封面上传成功')
+  msgSuccessText('封面上传成功')
 }
 
 // 支持一次多选：el-upload 逐文件回调本函数，缩略图逐张出现即反馈，不再逐张弹 toast（多选会刷屏）
@@ -446,10 +435,10 @@ async function submit() {
     if (isEdit.value) {
       await updateWig(editId.value, body)
       await reconcileColorMatrix() // 发色三角度图随本次「保存」一并落库（去掉了逐行保存按钮）
-      ElMessage.success('更新成功')
+      msgSuccessText('更新成功')
     } else {
       await createWig(body)
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     }
     drawerVisible.value = false
     fetchWigs()
@@ -462,7 +451,7 @@ async function toggleActive(row, value) {
   try {
     await updateWig(row.id, { ...toUpsert(row), is_active: value })
     row.is_active = value
-    ElMessage.success(value ? '已启用' : '已停用')
+    msgSuccessText(value ? '已启用' : '已停用')
   } catch { /* 拦截器已提示 */ }
 }
 

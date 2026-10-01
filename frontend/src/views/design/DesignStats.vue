@@ -80,12 +80,12 @@
       <el-table-column v-if="visibleKeys.includes('total')" prop="total" label="总任务数" min-width="100" max-width="150" sortable />
       <el-table-column v-if="visibleKeys.includes('completed')" prop="completed" label="已完成" min-width="100" max-width="150" sortable>
         <template #default="{ row }">
-          <el-tag type="success" size="small" effect="plain">{{ row.completed }}</el-tag>
+          <StatusBadge type="success" size="small" effect="plain">{{ row.completed }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('in-progress')" prop="in_progress" label="进行中" min-width="100" max-width="150" sortable>
         <template #default="{ row }">
-          <el-tag type="warning" size="small" effect="plain">{{ row.in_progress }}</el-tag>
+          <StatusBadge type="warning" size="small" effect="plain">{{ row.in_progress }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('avg-duration')" prop="avg_duration_days" label="平均任务时长(天)" min-width="160" max-width="240" show-overflow-tooltip sortable>

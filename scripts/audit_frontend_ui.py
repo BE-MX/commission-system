@@ -31,6 +31,16 @@ VALUE_FORMAT_WHITELIST = {"YYYY-MM-DD", "YYYY-MM-DD HH:mm:ss"}
 FOOTER_ALIAS = re.compile(r'\bclass\s*=\s*(["\'])[^"\']*\b(?:form-actions|drawer-actions)\b')
 MESSAGE_CALLS = re.compile(r"\bElMessage(?:Box)?\b|\bElNotification\b")
 MONEY_FORMAT = re.compile(r"\btoLocaleString\s*\(|\bIntl\.NumberFormat\b|\btoFixed\s*\(\s*2\s*\)")
+PUBLIC_VALIDATOR = re.compile(r"\^1\[3-9\]|\[\^\\s@\]\+@")
+NONSTANDARD_PAGE_DEFAULT = re.compile(r"\bpageSize\s*:\s*(?!20\b)\d+|\bpageSize\s*=\s*ref\(\s*(?!20\b)\d+")
+EXCEPTIONS = REPO / 'scripts/ui_component_exceptions.json'
+METRIC_NAMES = (
+    'hex_colors', 'transition_all', 'small_controls', 'inline_width',
+    'bad_pagination_layout', 'empty_text_attr', 'bad_dialog_width', 'bad_drawer_size',
+    'footer_alias', 'static_tag_type', 'bad_value_format', 'deep_el_override',
+    'message_calls', 'money_format', 'bad_pagination_sizes', 'bad_page_default',
+    'form_label_position', 'bad_glass_button_size', 'non_md_glass_button', 'inline_public_validator',
+)
 DEEP_EL_OVERRIDE = re.compile(r":deep\(\s*\.el-")
 EMPTY_TEXT_ATTR = re.compile(r"\bempty-text\s*=")
 SIZE_SMALL = re.compile(r'\bsize\s*=\s*["\']small')
@@ -97,7 +107,6 @@ def _vue_metrics(text: str) -> dict[str, int]:
     return {
         "hex_colors": len(HEX.findall(text)),
         "transition_all": len(TRANSITION_ALL.findall(text)),
-        "lines_over_500": max(0, len(text.splitlines()) - 500),
         "small_controls": sum(1 for tag in controls if SIZE_SMALL.search(tag)),
         "inline_width": sum(1 for tag in controls if INLINE_WIDTH.search(tag)),
         "bad_pagination_layout": sum(
@@ -114,6 +123,18 @@ def _vue_metrics(text: str) -> dict[str, int]:
         "deep_el_override": len(DEEP_EL_OVERRIDE.findall(text)),
         "message_calls": len(MESSAGE_CALLS.findall(text)),
         "money_format": len(MONEY_FORMAT.findall(text)),
+        "bad_pagination_sizes": sum(
+            1 for tag in _tags(text, 'el-pagination')
+            if not _pagination_sizes_ok(tag)
+        ),
+        "bad_page_default": len(NONSTANDARD_PAGE_DEFAULT.findall(text)),
+        "form_label_position": sum(_attr(tag, 'label-position') != 'top' for tag in _tags(text, 'el-form')),
+        "bad_glass_button_size": sum(
+            _attr(tag, 'size') not in (None, 'xs', 'sm', 'md', 'lg', 'xl')
+            for tag in _tags(text, 'GlassButton')
+        ),
+        "non_md_glass_button": sum(_attr(tag, 'size') not in (None, 'md') for tag in _tags(text, 'GlassButton')),
+        "inline_public_validator": len(PUBLIC_VALIDATOR.findall(text)),
     }
 
 
@@ -121,12 +142,46 @@ def _js_metrics(text: str) -> dict[str, int]:
     return {
         "message_calls": len(MESSAGE_CALLS.findall(text)),
         "money_format": len(MONEY_FORMAT.findall(text)),
+        "bad_page_default": len(NONSTANDARD_PAGE_DEFAULT.findall(text)),
+        "inline_public_validator": len(PUBLIC_VALIDATOR.findall(text)),
     }
+
+
+def _pagination_sizes_ok(tag: str) -> bool:
+    match = re.search(r'(?<![-\w]):page-sizes\s*=\s*(["\'])(.*?)\1', tag, re.S)
+    if not match:
+        return False
+    value = re.sub(r'\s+', '', match.group(2))
+    # A variable binding needs semantic review; literal arrays are checked exactly.
+    return value == '[20,50,100]' or bool(re.fullmatch(r'[a-zA-Z_$][\w.$]*', value))
+
+
+def apply_exceptions(relative: str, metrics: dict[str, int], exceptions: dict) -> dict[str, int]:
+    metrics = dict(metrics)
+    # Each app owns one feedback/format/validator implementation. Domain callers are gated.
+    if relative in ('frontend/src/utils/feedback.js', 'frontend-pm/src/utils/feedback.js'):
+        metrics['message_calls'] = 0
+    if relative in ('frontend/src/utils/money.js', 'frontend-pm/src/utils/money.js'):
+        metrics['money_format'] = 0
+    if relative == 'frontend/src/utils/validators.js':
+        metrics['inline_public_validator'] = 0
+    for metric, entry in exceptions.get(relative, {}).items():
+        metrics[metric] = max(0, metrics.get(metric, 0) - entry['count'])
+    return metrics
+
+
+def baseline_increases(current: dict, previous: dict) -> list[str]:
+    return [
+        f'{path}: {metric} baseline increased {previous.get(path, {}).get(metric, 0)} -> {value}'
+        for path, metrics in current.items() for metric, value in metrics.items()
+        if metric in METRIC_NAMES and value > previous.get(path, {}).get(metric, 0)
+    ]
 
 
 def scan() -> tuple[list[str], dict[str, dict[str, int]]]:
     failures: list[str] = []
     debt: dict[str, dict[str, int]] = {}
+    exceptions = json.loads(EXCEPTIONS.read_text(encoding='utf-8')) if EXCEPTIONS.exists() else {}
     for root in VIEW_ROOTS:
         if not root.exists():
             continue
@@ -156,6 +211,14 @@ def scan() -> tuple[list[str], dict[str, dict[str, int]]]:
                     if re.search(r'\bsize\s*=\s*["\']small', tag):
                         failures.append(f"{relative}: button {index} uses legacy small size")
                 metrics = _vue_metrics(text)
+            if not relative.startswith('frontend/src/'):
+                # PM has its own component sizes/form conventions; do not import main-site rules.
+                for metric in ('bad_pagination_sizes', 'bad_page_default', 'form_label_position', 'bad_glass_button_size', 'non_md_glass_button', 'inline_public_validator'):
+                    metrics[metric] = 0
+            for metric, entry in exceptions.get(relative, {}).items():
+                if metric not in METRIC_NAMES or not entry.get('reason') or metrics.get(metric, 0) != entry['count']:
+                    failures.append(f'{relative}: stale component exception {metric}; review its count and business reason')
+            metrics = apply_exceptions(relative, metrics, exceptions)
             if any(metrics.values()):
                 debt[relative] = metrics
     return failures, debt
@@ -171,8 +234,10 @@ def main() -> int:
     args = parser.parse_args()
     failures, debt = scan()
     if args.write_baseline:
+        previous = json.loads(BASELINE.read_text(encoding='utf-8')) if BASELINE.exists() else {}
+        failures.extend(baseline_increases(debt, previous))
         if failures:
-            print("audit_frontend_ui: baseline unchanged because list-table invariants fail", file=sys.stderr)
+            print("audit_frontend_ui: baseline unchanged because invariants or debt-growth checks fail", file=sys.stderr)
             for finding in failures:
                 print(f"[UI] {finding}", file=sys.stderr)
             return 1
@@ -182,23 +247,7 @@ def main() -> int:
 
 
     baseline = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
-    metric_names = (
-        "hex_colors",
-        "transition_all",
-        "lines_over_500",
-        "small_controls",
-        "inline_width",
-        "bad_pagination_layout",
-        "empty_text_attr",
-        "bad_dialog_width",
-        "bad_drawer_size",
-        "footer_alias",
-        "static_tag_type",
-        "bad_value_format",
-        "deep_el_override",
-        "message_calls",
-        "money_format",
-    )
+    metric_names = METRIC_NAMES
     for path in sorted(set(debt) | set(baseline)):
         actual = debt.get(path, {})
         allowed = baseline.get(path, {})

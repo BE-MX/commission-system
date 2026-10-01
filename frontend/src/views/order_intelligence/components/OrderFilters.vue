@@ -1,5 +1,5 @@
 <template>
-  <section class="oi-toolbar lg-card is-static">
+  <FilterBar class="oi-toolbar lg-card is-static" :loading="loading" :pending="pending" :advanced-count="advancedCount" @search="$emit('apply')" @reset="$emit('reset')">
     <div class="oi-filter oi-filter--date">
       <span>分析周期</span>
       <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" />
@@ -18,7 +18,7 @@
         </el-select>
       </div>
     </template>
-    <el-tag v-if="!options.can_read_all" class="oi-scope-tag" size="small" effect="plain" type="info">数据范围：仅本人</el-tag>
+    <StatusBadge v-if="!options.can_read_all" class="oi-scope-tag" size="small" effect="plain" type="info">数据范围：仅本人</StatusBadge>
     <div class="oi-filter">
       <span>国家（大洲 / 国家）</span>
       <el-cascader
@@ -32,6 +32,7 @@
         placeholder="全部国家"
       />
     </div>
+    <template #advanced>
     <div class="oi-filter">
       <span>产品型号</span>
       <el-select v-model="filters.models" multiple clearable collapse-tags collapse-tags-tooltip filterable placeholder="全部型号">
@@ -50,21 +51,24 @@
         <el-option v-for="source in options.source_categories" :key="source.code" :label="source.label" :value="source.code" />
       </el-select>
     </div>
-    <GlassButton variant="secondary" @click="$emit('apply')"><el-icon><Refresh /></el-icon> 更新分析</GlassButton>
-    <small>有效订单口径 · 截至 {{ filters.dateRange?.[1] }}</small>
-  </section>
+    </template>
+    <template #summary><small>有效订单口径 · 截至 {{ appliedFilters.dateRange?.[1] }}</small></template>
+  </FilterBar>
 </template>
 
 <script setup>
-import { Refresh } from '@element-plus/icons-vue'
-import GlassButton from '@/components/GlassButton.vue'
+import { computed } from 'vue'
+import FilterBar from '@/components/FilterBar.vue'
 
-defineProps({
+const props = defineProps({
   filters: { type: Object, required: true },
   options: { type: Object, required: true },
+  appliedFilters: { type: Object, required: true },
+  loading: Boolean, pending: Boolean,
   scopedUsers: { type: Array, default: () => [] },
 })
-defineEmits(['apply', 'team-change'])
+defineEmits(['apply', 'reset', 'team-change'])
+const advancedCount = computed(() => ['models', 'colors', 'sources'].filter(key => props.appliedFilters[key]?.length).length)
 
 const countryProps = {
   multiple: true,
@@ -81,8 +85,8 @@ const countryProps = {
 .oi-toolbar small { margin-left: auto; align-self: center; color: var(--text-muted-blue); }
 .oi-filter { display: grid; gap: 6px; }
 .oi-filter > span { color: var(--text-secondary); font-size: 11px; font-weight: 700; }
-.oi-filter :deep(.el-select), .oi-filter :deep(.el-cascader) { width: 190px; }
-.oi-filter--date :deep(.el-date-editor) { width: 270px; }
+.oi-filter :deep(.el-select), .oi-filter :deep(.el-cascader) { width: 200px; }
+.oi-filter--date :deep(.el-date-editor) { width: 280px; }
 .oi-scope-tag { align-self: center; }
 @media (max-width: 1250px) { .oi-toolbar small { width: 100%; margin-left: 0; } }
 @media (max-width: 820px) {

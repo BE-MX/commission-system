@@ -1,8 +1,9 @@
+import { formatMoney } from '../../../utils/money.js'
+import { promptAction, confirmAction, msgError, msgSuccess } from '@/utils/feedback'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+
 import { useAuthStore } from '@/stores/auth'
-import { msgError, msgSuccess } from '@/utils/feedback'
 import {
   analyzeAfterSalesCase,
   closeAfterSalesCase,
@@ -52,6 +53,8 @@ function blankForm() {
 function uniqueActions(items = []) {
   return [...new Map(items.map(item => [item.code, { ...item }])).values()]
 }
+
+function validationFailure(message) { const failure = new Error(message); msgError(message, failure); return failure }
 
 export function useAfterSalesWorkspace() {
   const route = useRoute()
@@ -194,7 +197,7 @@ export function useAfterSalesWorkspace() {
 
   async function saveDraft({ silent = false } = {}) {
     const error = validateRegistration()
-    if (error) { msgError(error); throw new Error(error) }
+    if (error) throw validationFailure(error)
     saving.value = true
     try {
       const response = isNew.value
@@ -312,15 +315,15 @@ export function useAfterSalesWorkspace() {
 
   async function saveDecision({ silent = false, validateForSubmit = false } = {}) {
     calculateDecision()
-    if (!responsibilityClass.value) throw new Error('请选择责任判定')
-    if (!actions.value.length) throw new Error('至少选择一项处理措施')
+    if (!responsibilityClass.value) throw validationFailure('请选择责任判定')
+    if (!actions.value.length) throw validationFailure('至少选择一项处理措施')
     if (validateForSubmit) {
       const actionError = validateActionDetails(actions.value)
-      if (actionError) throw new Error(actionError)
+      if (actionError) throw validationFailure(actionError)
     }
     const replyError = validateEnglishReply(caseData.has_compensation, replyDraft.value)
-    if (replyError) throw new Error(replyError)
-    if (latestAi.value && responsibilityClass.value !== latestAi.value.responsibility?.class && !overrideReason.value.trim()) throw new Error('修改 AI 责任判定时必须填写原因')
+    if (replyError) throw validationFailure(replyError)
+    if (latestAi.value && responsibilityClass.value !== latestAi.value.responsibility?.class && !overrideReason.value.trim()) throw validationFailure('修改 AI 责任判定时必须填写原因')
     const response = await saveAfterSalesDecision(caseData.id, {
       responsibility_class: responsibilityClass.value,
       responsibility_reason: responsibilityReason.value,
@@ -338,7 +341,7 @@ export function useAfterSalesWorkspace() {
     try {
       if (registrationDirty.value) await saveDraft({ silent: true })
       await saveDecision({ silent: true, validateForSubmit: true })
-    } catch (error) { msgError(error.message); return }
+    } catch (error) { msgError(error.message, error); return }
     const response = await submitAfterSalesCase(caseData.id, { version: caseData.version, idempotency_key: crypto.randomUUID() })
     Object.assign(caseData, response.data); dirty.value = false
     msgSuccess(`提交审核，下一节点：${caseData.current_status === 'awaiting_supervisor' ? '直属主管' : '销售总监'}`)
@@ -349,16 +352,16 @@ export function useAfterSalesWorkspace() {
     let comment = '同意'
     if (decision !== 'approve') {
       try {
-        const result = await ElMessageBox.prompt(decision === 'return' ? '请填写需要补充的内容' : '请填写拒绝原因', decision === 'return' ? '退回补充' : '拒绝售后方案', { inputValidator: value => Boolean(value?.trim()) || '原因不能为空' })
+        const result = await promptAction(decision === 'return' ? '请填写需要补充的内容' : '请填写拒绝原因', decision === 'return' ? '退回补充' : '拒绝售后方案', { inputValidator: value => Boolean(value?.trim()) || '原因不能为空' })
         comment = result.value
       } catch { return }
     } else if (caseData.has_compensation) {
       const title = caseData.current_status === 'awaiting_director' ? '赔偿终审确认' : '赔偿方案初审确认'
-      try { await ElMessageBox.confirm(`确认批准预计赔偿 USD ${caseData.estimated_compensation_usd}？`, title, { type: 'warning' }) } catch { return }
+      try { await confirmAction(`确认批准预计赔偿 USD ${formatMoney(caseData.estimated_compensation_usd)}？`, title, { type: 'warning' }) } catch { return }
     }
     let proxyReason = null
     if (isProxyReview.value) {
-      const result = await ElMessageBox.prompt('请说明指定审批人无法处理的原因', '管理员代理审核', { inputValidator: value => Boolean(value?.trim()) || '代理原因不能为空' }).catch(() => null)
+      const result = await promptAction('请说明指定审批人无法处理的原因', '管理员代理审核', { inputValidator: value => Boolean(value?.trim()) || '代理原因不能为空' }).catch(() => null)
       if (!result) return
       proxyReason = result.value
     }
@@ -368,7 +371,7 @@ export function useAfterSalesWorkspace() {
 
   async function requestEvidenceWaiver() {
     if (registrationDirty.value) await saveDraft({ silent: true })
-    const result = await ElMessageBox.prompt('说明客户无法补充证据的原因，以及已完成的核实动作', '申请证据豁免', {
+    const result = await promptAction('说明客户无法补充证据的原因，以及已完成的核实动作', '申请证据豁免', {
       inputType: 'textarea',
       inputValidator: value => (value?.trim().length >= 10) || '原因至少填写 10 个字',
     }).catch(() => null)
@@ -385,7 +388,7 @@ export function useAfterSalesWorkspace() {
 
   async function reviewEvidenceWaiver(decision) {
     const title = decision === 'approve' ? '同意证据豁免' : '拒绝证据豁免'
-    const result = await ElMessageBox.prompt('填写审核意见', title, {
+    const result = await promptAction('填写审核意见', title, {
       inputType: 'textarea',
       inputValidator: value => Boolean(value?.trim()) || '审核意见不能为空',
     }).catch(() => null)
@@ -423,19 +426,19 @@ export function useAfterSalesWorkspace() {
     Object.assign(caseData, response.data); msgSuccess('撤回'); await loadCase()
   }
   async function execute() {
-    const result = await ElMessageBox.prompt('填写已经执行的措施、数量、交期或物流信息', '登记执行结果', { inputType: 'textarea', inputValidator: value => Boolean(value?.trim()) || '执行结果不能为空' }).catch(() => null)
+    const result = await promptAction('填写已经执行的措施、数量、交期或物流信息', '登记执行结果', { inputType: 'textarea', inputValidator: value => Boolean(value?.trim()) || '执行结果不能为空' }).catch(() => null)
     if (!result) return
     const response = await executeAfterSalesCase(caseData.id, { execution_result: result.value, customer_feedback: caseData.customer_feedback || null })
     Object.assign(caseData, response.data); msgSuccess('登记执行结果')
   }
   async function close() {
-    const result = await ElMessageBox.prompt('记录客户确认或最终反馈', '关闭售后单', { inputType: 'textarea', inputValidator: value => Boolean(value?.trim()) || '客户反馈不能为空' }).catch(() => null)
+    const result = await promptAction('记录客户确认或最终反馈', '关闭售后单', { inputType: 'textarea', inputValidator: value => Boolean(value?.trim()) || '客户反馈不能为空' }).catch(() => null)
     if (!result) return
     const response = await closeAfterSalesCase(caseData.id, { customer_feedback: result.value })
     Object.assign(caseData, response.data); msgSuccess('关闭售后单')
   }
   async function reopen() {
-    const result = await ElMessageBox.prompt('说明重新打开原因', '重新打开售后单', {
+    const result = await promptAction('说明重新打开原因', '重新打开售后单', {
       inputType: 'textarea', inputValidator: value => Boolean(value?.trim()) || '原因不能为空',
     }).catch(() => null)
     if (!result) return
@@ -457,7 +460,7 @@ export function useAfterSalesWorkspace() {
   onBeforeRouteLeave(async () => {
     if (allowRouteLeave) return true
     if (!dirty.value || locked.value) return true
-    try { await ElMessageBox.confirm('当前有未保存修改，仍要离开吗？', '未保存修改', { type: 'warning' }); return true } catch { return false }
+    try { await confirmAction('当前有未保存修改，仍要离开吗？', '未保存修改', { type: 'warning' }); return true } catch { return false }
   })
   onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); evidenceFiles.value.forEach(item => { if (item.url?.startsWith('blob:')) URL.revokeObjectURL(item.url) }) })
 

@@ -17,10 +17,11 @@ test('customer hub API uses only the registered customer hub client', () => {
 test('customer hub list state exposes loading empty error and stale guidance', () => {
   const composable = read('../src/views/customer_hub/composables/useCustomerHub.js')
   const workspace = read('../src/views/customer_hub/CustomerHubWorkspace.vue')
+  const sharedList = read('../src/composables/useListPage.js')
 
   assert.match(composable, /useListPage/)
-  assert.match(composable, /loading\s*=\s*ref\(false\)/)
-  assert.match(composable, /empty\s*=\s*computed/)
+  assert.match(sharedList, /loading\s*=\s*ref\(false\)/)
+  assert.match(composable, /empty\s*=\s*state\.isEmpty/)
   assert.match(composable, /errorGuidance\s*=\s*computed/)
   assert.match(composable, /staleGuidance\s*=\s*computed/)
   assert.match(composable, /重新加载/)
@@ -102,7 +103,8 @@ test('customer drawer and page share a complete battle card with paged timeline'
   for (const panel of ['WorkspaceOrders', 'WorkspaceMonitor', 'WorkspaceMaintenance', 'WorkspaceConversations', 'WorkspaceEnrichment']) assert.match(card, new RegExp(panel))
   assert.match(card, /expanded\.includes\('orders'\)/)
   assert.match(drawer, /客户详情加载失败/)
-  assert.match(timeline, /时间线加载失败/)
+  assert.match(timeline, /ListPageStatus[^>]*:error="errorMessage"[^>]*@retry="fetchList"/)
+  assert.match(read('../src/components/ListPageStatus.vue'), /列表加载失败/)
   assert.match(timeline, /el-pagination/)
   assert.match(timeline, /formatBeijingDateTime/)
   assert.match(profile, /StructuredValue/)

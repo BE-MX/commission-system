@@ -6,33 +6,39 @@
       <div class="lg-aurora__blob lg-aurora__blob--amber" />
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
-    <div class="page-heading"><div><h1>售后分析</h1><p>从问题、状态和赔偿成本识别需要优先复盘的产品与流程。</p></div><GlassButton variant="secondary" left-icon="Refresh" @click="fetchData">刷新</GlassButton></div>
-    <div class="metric-grid">
+    <div class="page-heading"><div><h1>售后分析</h1><p>从问题、状态和赔偿成本识别需要优先复盘的产品与流程。</p></div><GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="fetchData">刷新</GlassButton></div>
+    <ListPageStatus :paged="false" :error="summaryResource.errorMessage.value" :loading="loading" :has-data="summaryResource.hasData.value" @retry="fetchData"><el-empty v-if="!data" description="暂无售后分析数据" :image-size="96" /></ListPageStatus>
+    <div v-if="data" class="metric-grid">
       <article class="lg-card"><span>售后单总量</span><strong>{{ data.total || 0 }}</strong><small>当前授权范围</small></article>
-      <article class="lg-card"><span>累计赔偿成本</span><strong>USD {{ data.compensation_total_usd || '0.00' }}</strong><small>按估算成本统一口径</small></article>
+      <article class="lg-card"><span>累计赔偿成本</span><strong>USD {{ formatMoney(data.compensation_total_usd || '0.00', { missing: '—' }) }}</strong><small>按估算成本统一口径</small></article>
       <article class="lg-card"><span>高频问题类型</span><strong>{{ topIssue?.name || '—' }}</strong><small>{{ topIssue ? `${topIssue.count} 单` : '暂无数据' }}</small></article>
       <article class="lg-card"><span>平均闭环时长</span><strong>{{ data.average_resolution_hours == null ? '—' : `${data.average_resolution_hours}h` }}</strong><small>从登记到关闭</small></article>
     </div>
-    <div class="analysis-grid">
+    <div v-if="data" class="analysis-grid">
       <section class="chart-card lg-card"><h2>问题类型分布</h2><div v-for="item in data.by_issue || []" :key="item.name" class="bar-row"><span>{{ item.name }}</span><div><i :style="{ transform: `scaleX(${barScale(item.count, maxIssue)})` }"></i></div><strong>{{ item.count }}</strong></div><el-empty v-if="!data.by_issue?.length" description="暂无问题数据" /></section>
-      <section class="chart-card lg-card"><h2>流程状态</h2><div class="status-list"><div v-for="item in data.by_status || []" :key="item.name"><el-tag effect="plain">{{ STATUS_LABELS[item.name] || item.name }}</el-tag><strong>{{ item.count }}</strong></div></div><el-empty v-if="!data.by_status?.length" description="暂无状态数据" /></section>
+      <section class="chart-card lg-card"><h2>流程状态</h2><div class="status-list"><div v-for="item in data.by_status || []" :key="item.name"><StatusBadge :value="item.name" :dictionary="CASE_STATUS" effect="plain" /><strong>{{ item.count }}</strong></div></div><el-empty v-if="!data.by_status?.length" description="暂无状态数据" /></section>
       <section class="chart-card lg-card"><h2>高频产品</h2><div class="rank-list"><div v-for="item in data.by_product || []" :key="item.name"><span>{{ item.name }}</span><strong>{{ item.count }} 单</strong></div></div><el-empty v-if="!data.by_product?.length" description="暂无产品数据" /></section>
       <section class="chart-card lg-card"><h2>批次风险</h2><div class="rank-list"><div v-for="item in data.by_batch || []" :key="item.name"><span>{{ item.name }}</span><strong>{{ item.count }} 单</strong></div></div><el-empty v-if="!data.by_batch?.length" description="暂无批次数据" /></section>
-      <section class="chart-card lg-card"><h2>客户等级 / 责任分类</h2><div class="split-summary"><div><span>客户等级</span><el-tag v-for="item in data.by_customer_grade || []" :key="item.name" effect="plain">{{ item.name }} · {{ item.count }}</el-tag></div><div><span>责任分类</span><el-tag v-for="item in data.by_responsibility || []" :key="item.name" effect="plain">{{ item.name }}类 · {{ item.count }}</el-tag></div></div></section>
-      <section class="chart-card lg-card"><h2>售后量与赔偿趋势</h2><div class="rank-list"><div v-for="item in data.trend || []" :key="item.date"><span>{{ item.date }} · {{ item.count }} 单</span><strong>USD {{ item.compensation_usd }}</strong></div></div><el-empty v-if="!data.trend?.length" description="暂无趋势数据" /></section>
+      <section class="chart-card lg-card"><h2>客户等级 / 责任分类</h2><div class="split-summary"><div><span>客户等级</span><StatusBadge v-for="item in data.by_customer_grade || []" :key="item.name" effect="plain">{{ item.name }} · {{ item.count }}</StatusBadge></div><div><span>责任分类</span><StatusBadge v-for="item in data.by_responsibility || []" :key="item.name" effect="plain">{{ item.name }}类 · {{ item.count }}</StatusBadge></div></div></section>
+      <section class="chart-card lg-card"><h2>售后量与赔偿趋势</h2><div class="rank-list"><div v-for="item in data.trend || []" :key="item.date"><span>{{ item.date }} · {{ item.count }} 单</span><strong>USD {{ formatMoney(item.compensation_usd, { missing: '—' }) }}</strong></div></div><el-empty v-if="!data.trend?.length" description="暂无趋势数据" /></section>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { formatMoney } from '../../utils/money.js'
+
+import { computed, onMounted } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 import { getAfterSalesAnalytics } from '@/api/aftersales'
-import { STATUS_LABELS } from './aftersalesRules'
-const loading = ref(false); const data = ref({ total: 0, by_issue: [], by_status: [], by_product: [], by_batch: [], by_customer_grade: [], by_responsibility: [], trend: [] })
-const topIssue = computed(() => [...(data.value.by_issue || [])].sort((a, b) => b.count - a.count)[0])
-const maxIssue = computed(() => Math.max(1, ...(data.value.by_issue || []).map(item => item.count)))
-function barScale(count, maxRef) { return Math.max(0, Math.min(1, count / maxRef.value)) }
-async function fetchData() { loading.value = true; try { const response = await getAfterSalesAnalytics(); data.value = response.data || data.value } finally { loading.value = false } }
+import { CASE_STATUS } from './aftersalesRules'
+const summaryResource = useAsyncResource(async (_, { signal }) => (await getAfterSalesAnalytics({ signal, suppressToast: true })).data)
+const loading = summaryResource.loading, data = summaryResource.data
+const topIssue = computed(() => [...(data.value?.by_issue || [])].sort((a, b) => b.count - a.count)[0])
+const maxIssue = computed(() => Math.max(1, ...(data.value?.by_issue || []).map(item => item.count)))
+function barScale(count, maximum) { return Math.max(0, Math.min(1, count / maximum)) }
+function fetchData() { return summaryResource.load() }
 onMounted(fetchData)
 </script>
 

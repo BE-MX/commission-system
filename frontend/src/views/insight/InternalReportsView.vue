@@ -13,7 +13,9 @@
           <span class="tree-count">{{ totalCount }}</span>
         </div>
         <div class="tree-content">
-          <el-empty v-if="!loading && reports.length === 0" description="暂无内部报告" :image-size="64">
+          <ListPageStatus :error="reportResource.errorMessage.value" :loading="loading" :has-data="reportResource.hasData.value" @retry="refreshAll" />
+          <p v-if="totalCount > reports.length" class="text-secondary">当前展示最近 200 份报告。</p>
+          <el-empty v-if="!reportResource.error.value && !loading && reports.length === 0" description="暂无内部报告" :image-size="64">
             <p class="empty-tip">由 ACCIO WORK 自动推送或管理员导入</p>
           </el-empty>
           <div v-for="grp in groupedReports" :key="grp.label" class="type-group">
@@ -45,7 +47,8 @@
       </aside>
 
       <section class="report-content">
-        <div v-if="htmlLoading" class="content-loading">
+        <ListPageStatus v-if="htmlResource.error.value" :error="htmlResource.errorMessage.value" :loading="htmlLoading" :has-data="htmlResource.hasData.value" @retry="loadHtml" />
+        <div v-if="htmlLoading && !htmlContent" class="content-loading">
           <el-icon class="is-loading"><Loading /></el-icon>
           <span>加载中...</span>
         </div>
@@ -55,7 +58,7 @@
           class="report-html"
           v-html="htmlContent"
         />
-        <div v-else class="content-empty">
+        <div v-else-if="!htmlResource.error.value" class="content-empty">
           <el-icon size="40"><DataAnalysis /></el-icon>
           <p>选择左侧报告查看</p>
           <p class="empty-tip-small">含店铺经营、竞品分析、询盘分析三类</p>
@@ -66,6 +69,9 @@
 </template>
 
 <script setup>
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
 import { ref, computed, onMounted } from 'vue'
 import { DataAnalysis, ArrowRight, Document, Loading } from '@element-plus/icons-vue'
 import { listReports, getReportHtml } from '@/api/insight'
@@ -76,13 +82,16 @@ const TYPE_LABELS = {
   inquiry_analysis: '询盘分析报告',
 }
 
-const reports = ref([])
-const totalCount = ref(0)
-const loading = ref(false)
+const reportResource = useAsyncResource(async (_, { signal }) => (await listReports({ report_type: 'shop_analysis,competitor_analysis,inquiry_analysis', page: 1, page_size: 200 }, { signal, suppressToast: true })).data)
+const reports = computed(() => reportResource.data.value?.items || [])
+const totalCount = computed(() => reportResource.data.value?.total || 0)
+const loading = reportResource.loading
+
 const selectedId = ref(null)
 const expandedTypes = ref({})
-const htmlContent = ref('')
-const htmlLoading = ref(false)
+const htmlResource = useAsyncResource(async (id, { signal }) => id ? await getReportHtml(id, { signal, suppressToast: true }) : null)
+const htmlContent = htmlResource.data
+const htmlLoading = htmlResource.loading
 
 const groupedReports = computed(() => {
   const byType = new Map()
@@ -108,41 +117,20 @@ const groupedReports = computed(() => {
   })
 })
 
-async function loadHtml() {
-  if (!selectedId.value) {
-    htmlContent.value = ''
-    return
-  }
-  htmlLoading.value = true
-  try {
-    const res = await getReportHtml(selectedId.value)
-    htmlContent.value = res || ''
-  } catch (e) {
-    htmlContent.value = `<p style="color:#999;padding:20px;">加载失败: ${e.message || '未知错误'}</p>`
-  } finally {
-    htmlLoading.value = false
-  }
+let htmlScope = null
+function loadHtml() {
+  const id = selectedId.value
+  const clear = id !== htmlScope
+  htmlScope = id
+  return htmlResource.load(id, { clear })
 }
-
 async function refreshAll() {
-  loading.value = true
-  try {
-    const res = await listReports({
-      report_type: 'shop_analysis,competitor_analysis,inquiry_analysis',
-      page: 1,
-      page_size: 200,
-    })
-    reports.value = res.data.items || []
-    totalCount.value = res.data.total || 0
-    // 默认展开所有类型
-    for (const t of Object.keys(TYPE_LABELS)) expandedTypes.value[t] = true
-    if (reports.value.length > 0 && !selectedId.value) {
-      selectedId.value = reports.value[0].id
-      await loadHtml()
-    }
-  } finally {
-    loading.value = false
-  }
+  if (!await reportResource.load()) return false
+  if (!reports.value.some(row => row.id === selectedId.value)) selectedId.value = reports.value[0]?.id ?? null
+  for (const t of Object.keys(TYPE_LABELS)) expandedTypes.value[t] = true
+  if (selectedId.value) await loadHtml()
+  else await htmlResource.load(null, { clear: true })
+  return true
 }
 
 function toggleType(key) {

@@ -2,13 +2,15 @@
   <el-dialog
     :model-value="modelValue"
     :title="`成员权限 · ${library?.name || ''}`"
-    width="min(620px, calc(100vw - 32px))"
+    width="640px"
     :close-on-click-modal="!saving"
     :close-on-press-escape="!saving"
     :show-close="!saving"
     @update:model-value="$emit('update:modelValue', $event)"
     @closed="$emit('closed')"
   >
+    <ListPageStatus :paged="false" :error="readError" :loading="readLoading" :has-data="members.length > 0" @retry="$emit('retry')" />
+    <ListPageStatus :paged="false" :error="searchError" :has-data="candidates.length > 0" @retry="$emit('retry-search')" />
     <div class="member-add">
       <el-select
         :key="library?.id || 'closed'"
@@ -17,7 +19,7 @@
         filterable remote clearable reserve-keyword
         :remote-method="query => $emit('search', query)"
         :loading="searchLoading"
-        :disabled="saving"
+        :disabled="saving || readLoading || !!readError"
         placeholder="输入方舟用户名或姓名搜索"
         @update:model-value="$emit('update:candidateUserId', $event)"
       >
@@ -31,10 +33,10 @@
           <span v-if="candidate.real_name" class="candidate-real-name">{{ candidate.real_name }}</span>
         </el-option>
       </el-select>
-      <GlassButton variant="ghost" :disabled="!candidateUserId || saving" @click="$emit('add')">添加成员</GlassButton>
+      <GlassButton variant="ghost" :disabled="!candidateUserId || saving || readLoading || !!readError" @click="$emit('add')">添加成员</GlassButton>
     </div>
     <div class="member-table">
-      <el-empty v-if="!members.length" description="暂无已配置成员" :image-size="72" />
+      <el-empty v-if="readLoaded && !readLoading && !readError && !members.length" description="暂无已配置成员" :image-size="72" />
       <div
         v-for="(member, index) in members"
         :key="member.user_id"
@@ -49,18 +51,18 @@
         <el-select
           v-model="member.role"
           :aria-label="`设置 ${member.username} 的权限`"
-          :disabled="saving || isProtected(member) || invalidUserIds.includes(member.user_id)"
+          :disabled="saving || readLoading || !!readError || isProtected(member) || invalidUserIds.includes(member.user_id)"
         >
           <el-option label="只读" value="viewer" /><el-option label="编辑" value="editor" />
           <el-option label="审核" value="reviewer" /><el-option label="管理" value="admin" />
         </el-select>
         <span v-if="isProtected(member)" class="actor-lock">当前账号，管理员权限不可移除</span>
-        <GlassButton v-else variant="link" link-tone="danger" :disabled="saving" @click="$emit('remove', index)">移除</GlassButton>
+        <GlassButton v-else variant="link" link-tone="danger" :disabled="saving || readLoading || !!readError" @click="$emit('remove', index)">移除</GlassButton>
       </div>
     </div>
     <template #footer>
       <GlassButton variant="ghost" :disabled="saving" @click="$emit('update:modelValue', false)">取消</GlassButton>
-      <GlassButton variant="primary" :loading="saving" @click="$emit('save')">保存权限</GlassButton>
+      <GlassButton variant="primary" :loading="saving" :disabled="!readLoaded || readLoading || !!readError" @click="$emit('save')">保存权限</GlassButton>
     </template>
   </el-dialog>
 </template>
@@ -74,10 +76,14 @@ const props = defineProps({
   candidateUserId: { type: Number, default: null },
   invalidUserIds: { type: Array, default: () => [] },
   protectedUserId: { type: Number, default: null },
+  readLoading: Boolean,
+  readError: String,
+  readLoaded: Boolean,
+  searchError: String,
   searchLoading: Boolean,
   saving: Boolean,
 })
-defineEmits(['update:modelValue', 'update:candidateUserId', 'closed', 'search', 'add', 'remove', 'save'])
+defineEmits(['update:modelValue', 'update:candidateUserId', 'closed', 'search', 'retry', 'retry-search', 'add', 'remove', 'save'])
 
 function isProtected(member) {
   return member.role === 'admin' && props.protectedUserId === Number(member.user_id)

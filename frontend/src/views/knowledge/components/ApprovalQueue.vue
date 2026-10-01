@@ -1,7 +1,8 @@
 <template>
-  <el-drawer :model-value="modelValue" title="待审批文档" size="420px" @update:model-value="$emit('update:modelValue', $event)">
-    <el-empty v-if="!items.length" description="当前没有待审批文档" />
-    <div v-else class="approval-list">
+  <DetailDrawer :model-value="modelValue" title="待审批文档" width="640px" @update:model-value="$emit('update:modelValue', $event)">
+    <ListPageStatus :paged="false" :error="readError" :loading="readLoading" :has-data="items.length > 0" @retry="$emit('retry')" />
+    <el-empty v-if="readLoaded && !readLoading && !readError && !items.length" description="当前没有待审批文档" />
+    <div v-if="items.length" class="approval-list">
       <article v-for="(item, index) in items" :key="item.id" class="approval-card" :style="{ '--stagger': Math.min(index, 6) }">
         <div>
           <h3>{{ item.title }}</h3>
@@ -12,12 +13,12 @@
         </div>
       </article>
     </div>
-  </el-drawer>
+  </DetailDrawer>
 </template>
 
 <script setup>
-defineProps({ modelValue: Boolean, items: { type: Array, default: () => [] } })
-defineEmits(['update:modelValue', 'inspect'])
+defineProps({ modelValue: Boolean, readError: String, readLoading: Boolean, readLoaded: Boolean, items: { type: Array, default: () => [] } })
+defineEmits(['update:modelValue', 'inspect', 'retry'])
 </script>
 
 <style scoped>

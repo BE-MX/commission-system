@@ -2,7 +2,6 @@ import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { stationApi } from '@/api/shippingStation'
 import { compressInspectionVideo, prepareInspectionVideo } from './compressInspectionVideo'
 import { confirmDanger } from '@/utils/feedback'
-
 const requestId = () => crypto.randomUUID()
 export function useShippingStation(api = stationApi) {
   const operators = ref([]), selected = ref(null), view = ref(null), remark = ref('')

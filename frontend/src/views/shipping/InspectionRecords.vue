@@ -32,7 +32,7 @@
         <dl><dt>提交人</dt><dd>{{ row.submitted_by_name || '—' }}</dd><dt>提交日期</dt><dd>{{ row.submitted_at || '—' }}</dd><dt>业务员</dt><dd>{{ row.salesperson_name || '未匹配' }}</dd><dt>照片</dt><dd>{{ row.photo_count }} 张</dd></dl>
         <div class="result-actions"><GlassButton variant="primary" @click="openDetail(row)">查看验货单</GlassButton><GlassButton :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton></div>
       </article>
-      <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total" layout="prev, pager, next" :pager-count="5" @current-change="handlePageChange" />
+      <el-pagination class="pager" :page-sizes="[20, 50, 100]" v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, sizes, prev, pager, next" :pager-count="5" @current-change="handlePageChange" />
     </section>
 
     <div ref="panelRef" class="table-card inspection-panel inspection-desktop-list">
@@ -49,12 +49,13 @@
         />
       </div>
 
-      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="listPageState.fetchList" />
+<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="listPageState.fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的验货单' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="验货单号" min-width="140" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
@@ -85,16 +86,16 @@
       />
     </div>
 
-    <DetailDrawer v-model="detailVisible" title="验货单详情" :width="880" :loading="detailLoading">
+    <DetailDrawer v-model="detailVisible" title="验货单详情" :width="760" :loading="detailLoading">
       <template v-if="detail">
-        <el-descriptions :column="2" border class="detail-descriptions">
+        <ResponsiveDescriptions :column="2" border class="detail-descriptions">
           <el-descriptions-item label="出库单号">{{ detail.outbound_no }}</el-descriptions-item>
           <el-descriptions-item label="订单 ID">{{ detail.order_id || '—' }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">{{ detail.customer_name }}</el-descriptions-item>
           <el-descriptions-item label="提交人">{{ detail.submitted_by_name }}</el-descriptions-item>
           <el-descriptions-item label="提交时间">{{ detail.submitted_at }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
-        </el-descriptions>
+        </ResponsiveDescriptions>
 
         <InspectionEvents :events="detail.events || []" />
         <div class="section-title">出库明细</div>
@@ -139,13 +140,14 @@ import { useInspectionRecords } from './composables/useInspectionRecords'
 import { useTableView } from '@/composables/useTableView'
 
 const route = useRoute()
+const listPageState = useInspectionRecords()
 const {
   noticePdf, downloading, pdfError, downloadPdf,
   loading, list, total, page, pageSize, searchForm,
   handleSearch, handleReset, handlePageChange, handleSizeChange,
   detailVisible, detailLoading, detail, openDetail,
   printDialog, openPrint, recallingId, recallForEdit,
-} = useInspectionRecords()
+} = listPageState
 
 // 列配置数组：TableTools 列显隐的数据源；模板列保持静态 + v-if（推广期约定，不做配置化渲染）
 const columnDefs = [
@@ -186,7 +188,7 @@ const disableToDate = d => Boolean(searchForm.dateFrom) && d.getTime() < new Dat
 .page-alert { margin-bottom: 16px; }
 
 .inspection-return { margin-bottom: 16px; }
-.inspection-return a { color: var(--color-primary-hover); display: inline-flex; align-items: center; min-height: 44px; }
+.inspection-return a { color: var(--color-primary-text); display: inline-flex; align-items: center; min-height: 44px; }
 
 /* 筛选卡与通知卡：同款渐变玻璃（与表格面板一致，无 backdrop-filter，移动端滚动不掉帧） */
 .inspection-filters,

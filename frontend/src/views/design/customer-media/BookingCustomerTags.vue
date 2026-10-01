@@ -21,9 +21,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText } from '@/utils/feedback'
 import { onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { addCustomerTags, getCustomerTagDimensions, getCustomerTags } from '@/api/customerMedia'
 import CustomerTagBoard from './CustomerTagBoard.vue'
 import CustomerMediaTagPicker from './CustomerMediaTagPicker.vue'
@@ -52,7 +52,7 @@ watch(() => props.customerId, async customerId => {
 
 async function save({ tags }) {
   if (!props.customerId || !tags.some(item => item.tag_value_ids.length)) {
-    ElMessage.warning('请先选择至少一个客户标签')
+    msgWarning('请先选择至少一个客户标签')
     return
   }
   const customerId = props.customerId
@@ -63,7 +63,7 @@ async function save({ tags }) {
       customerTags.value = response.data || []
       pickerVisible.value = false
     }
-    ElMessage.success('客户标签已保存')
+    msgSuccessText('客户标签已保存')
   } finally { saving.value = false }
 }
 

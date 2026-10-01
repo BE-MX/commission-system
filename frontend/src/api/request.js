@@ -1,5 +1,6 @@
+import { msgError } from '@/utils/feedback'
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+
 import { useLoading } from '@/composables/useLoading'
 import { getAccessToken, clearAuthState } from '@/stores/auth'
 import { isFxSettlementPath } from '@/router/fxSettlementRoute'
@@ -81,15 +82,24 @@ export function createApiClient({
       // 业务码校验: text response (string) 跳过, JSON 才进入此分支
       if (res && typeof res === 'object' && res.code !== undefined
           && (typeof res.code !== 'number' || res.code < 200 || res.code >= 300)) {
-        if (!response.config.suppressToast) ElMessage.error({ message: res.message || '请求失败', grouping: true })
-        return Promise.reject(new Error(res.message || '请求失败'))
+        const failure = new Error(res.message || '请求失败')
+        failure.config = response.config
+        failure.response = response
+        if (!response.config.suppressToast) {
+          msgError({ message: failure.message, grouping: true })
+          failure._arkFeedbackHandled = true
+        }
+        return Promise.reject(failure)
       }
       return res
     },
     error => {
       releaseLoading(error.config)
       // Changing filters or leaving a page can intentionally cancel a request.
-      if (axios.isCancel(error)) return Promise.reject(error)
+      if (axios.isCancel(error)) {
+        error._arkFeedbackHandled = true
+        return Promise.reject(error)
+      }
       // 调用方主动 suppress 404 (例如"暂无日报"页)
       if (error.response?.status === 404 && error.config?.suppressNotFound) {
         return Promise.reject(error)
@@ -115,7 +125,8 @@ export function createApiClient({
       if (typeof msg === 'object' && msg !== null) {
         msg = msg.message || JSON.stringify(msg)
       }
-      ElMessage.error({ message: msg, grouping: true })
+      msgError({ message: msg, grouping: true })
+      error._arkFeedbackHandled = true
       return Promise.reject(error)
     }
   )

@@ -3,8 +3,12 @@
     <!-- 顶栏 -->
     <DashboardTopbar />
 
+    <div class="db-read-status">
+      <GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="refresh">刷新生产数据</GlassButton>
+      <ListPageStatus :paged="false" :error="dashboardResource.errorMessage.value" :loading="!hasLoaded && dashboardResource.loading.value" :has-data="hasLoaded" @retry="refresh"><el-empty v-if="!hasLoaded" description="暂无生产看板数据" :image-size="96" /></ListPageStatus>
+    </div>
     <!-- 主体 -->
-    <main class="db-main">
+    <main v-if="hasLoaded" class="db-main">
 
       <!-- ① KPI 行 -->
       <div class="db-kpi-row">
@@ -281,6 +285,8 @@
 </template>
 
 <script setup>
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import GlassButton from '@/components/GlassButton.vue'
 import { ref, computed } from 'vue'
 import { useDashboardTheme }  from './composables/useDashboardTheme'
 import { useDashboardData }   from './composables/useDashboardData'
@@ -306,7 +312,7 @@ const echartsTheme = computed(() => theme.value === 'dark' ? 'dark' : '')
 // ── 数据 ──────────────────────────────────────────
 const {
   orders, allProducts, inTransit, urgent, wip,
-  completedToday, processStats, kpiStats, timelineGroups
+  completedToday, processStats, kpiStats, timelineGroups, dashboardResource, hasLoaded, loading, refresh
 } = useDashboardData()
 
 // ── 衍生数据 ──────────────────────────────────────

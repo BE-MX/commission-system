@@ -1,4 +1,5 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { getDashboardData } from '@/api/production'
 import { currentBeijingDate, formatBeijingDate } from '@/utils/datetime'
 
@@ -9,33 +10,19 @@ import { currentBeijingDate, formatBeijingDate } from '@/utils/datetime'
  * 自动 60 秒刷新（静默，不弹 loading）。
  */
 export function useDashboardData() {
-  const rawOrders = ref([])
-  const kpi = ref({})
-  const processStats = ref([])
-  const todayCompletions = ref([])
-  const loading = ref(true)
-  const error = ref(null)
-
-  let timer = null
-
+  const dashboardResource = useAsyncResource(async (_, { signal }) => getDashboardData({ signal, suppressToast: true }))
+  const rawOrders = computed(() => dashboardResource.data.value?.orders || [])
+  const kpi = computed(() => dashboardResource.data.value?.kpi || {})
+  const processStats = computed(() => dashboardResource.data.value?.process_stats || [])
+  const todayCompletions = computed(() => dashboardResource.data.value?.today_completions || [])
+  const loading = ref(false)
+  const error = dashboardResource.errorMessage
+  let timer = null, interactiveRequests = 0
   async function fetch(silent = false) {
-    try {
-      if (!silent) loading.value = true
-      const res = await getDashboardData()
-      // axios 拦截器已解包 response.data
-      const data = res.data ?? res
-      rawOrders.value = data.orders || []
-      kpi.value = data.kpi || {}
-      processStats.value = data.process_stats || []
-      todayCompletions.value = data.today_completions || []
-      error.value = null
-    } catch (e) {
-      error.value = e.message || '获取看板数据失败'
-    } finally {
-      loading.value = false
-    }
+    if (!silent) { interactiveRequests++; loading.value = true }
+    try { return await dashboardResource.load() }
+    finally { if (!silent) loading.value = --interactiveRequests > 0 }
   }
-
   onMounted(() => {
     fetch(false)
     timer = setInterval(() => fetch(true), 60000)
@@ -43,6 +30,7 @@ export function useDashboardData() {
 
   onUnmounted(() => {
     if (timer) clearInterval(timer)
+    dashboardResource.cancel()
   })
 
   // ── 衍生数据（与 ProductionDashboard.vue 原有解构对齐）──────────
@@ -117,7 +105,7 @@ export function useDashboardData() {
     kpiStats,
     timelineGroups,
     loading,
-    error,
+    error, dashboardResource, hasLoaded: dashboardResource.hasLoaded,
     refresh: () => fetch(false),
   }
 }

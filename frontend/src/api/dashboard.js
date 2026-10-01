@@ -2,8 +2,8 @@
 // 三个请求都 showLoading:false——布局配置是工作台的静默旁路，不该弹全局 loading
 import { dashboardClient } from './clients'
 
-export function getCustomerWorkSummary() {
-  return dashboardClient.get('/customer-work-summary', { showLoading: false })
+export function getCustomerWorkSummary(config = {}) {
+  return dashboardClient.get('/customer-work-summary', { showLoading: false, ...config })
 }
 
 export function getDashboardPreference() {
@@ -20,10 +20,11 @@ export function resetDashboardPreference() {
 
 // AI 每日问候：模型调用可能较慢，单请求放宽超时；suppressToast——开屏第一句问候
 // 不该弹错误条，失败由调用方静默降级本地文案
-export function fetchGreeting(payload) {
+export function fetchGreeting(payload, config = {}) {
   return dashboardClient.post('/greeting', payload, {
     showLoading: false,
     timeout: 45000,
     suppressToast: true,
+    ...config,
   })
 }

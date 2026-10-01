@@ -12,27 +12,23 @@
     </div>
 
     <div ref="panelRef" class="table-card training-panel">
-      <div class="toolbar">
-        <el-input
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="search" @reset="handleReset"><el-input
           v-model="filters.keyword"
           placeholder="搜标题 / 机构 / 讲师 / 总结"
           clearable
           class="filter-w-lg"
-          @keyup.enter="search"
-          @clear="search"
+
+
         />
-        <el-tag
+<StatusBadge
           v-if="filters.tag"
           closable
           effect="plain"
           type="warning"
           class="tag-filter-chip"
           @close="clearTag"
-        >标签：{{ filters.tag }}</el-tag>
-        <el-checkbox v-model="mineOnly" v-permission="'training:write'" @change="search">只看我发布的</el-checkbox>
-        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+        >标签：{{ filters.tag }}</StatusBadge><el-checkbox v-model="filters.mine" v-permission="'training:write'" >只看我发布的</el-checkbox>
+</FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -52,7 +48,8 @@
         />
       </div>
 
-      <el-table
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table
         :data="list"
         v-loading="loading"
         border
@@ -61,30 +58,30 @@
         :max-height="isFullscreen ? undefined : 640"
         @row-click="openDetail"
       >
-        <template #empty>
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('title')" prop="title" label="培训主题" min-width="240" max-width="380">
           <template #default="{ row }">
             <div class="title-cell">
               <span class="title-text">{{ row.title }}</span>
-              <el-tag v-if="row.status === 'draft'" size="small" type="info" effect="plain">草稿</el-tag>
+              <StatusBadge v-if="row.status === 'draft'" size="small" type="info" effect="plain">草稿</StatusBadge>
             </div>
             <div v-if="row.summary" class="summary-text">{{ row.summary }}</div>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('tags')" label="标签" min-width="140" max-width="220">
           <template #default="{ row }">
-            <el-tag
+            <StatusBadge
               v-for="t in row.tags"
               :key="t"
               size="small"
               effect="plain"
               class="row-tag"
               @click.stop="filterByTag(t)"
-            >{{ t }}</el-tag>
+            >{{ t }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('trained-at')" prop="trained_at" label="培训日期" min-width="110" max-width="130" sortable show-overflow-tooltip />
@@ -136,7 +133,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { listDigests, deleteDigest } from '@/api/training'
 import { useListPage } from '@/composables/useListPage'
@@ -147,7 +144,7 @@ import TableTools from '@/components/TableTools.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
-const mineOnly = ref(false)
+
 
 // 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
 const columnDefs = [
@@ -172,25 +169,25 @@ function canDeleteRow(row) {
   return row.status !== 'published' || auth.hasPermission('training:admin')
 }
 
-const {
-  loading, list, total, page, pageSize, searchForm: filters,
-  fetchList, handleSearch: search, handleReset, handlePageChange, handleSizeChange,
-} = useListPage(
-  async ({ page, page_size, ...form }) => {
+const listPageState = useListPage(
+  async ({ page, page_size, ...form }, { signal, isCurrent }) => {
     const params = { page, page_size }
     if (form.keyword) params.keyword = form.keyword
     if (form.tag) params.tag = form.tag
-    if (mineOnly.value) params.mine = true
-    const res = await listDigests(params)
+    if (form.mine) params.mine = true
+    const res = await listDigests(params, { signal, suppressToast: true })
     return res.data || {}
   },
-  { searchForm: { keyword: '', tag: '' } },
+  { searchForm: { keyword: '', tag: '', mine: false } },
 )
+const {
+  loading, list, total, page, pageSize, searchForm: filters,
+  fetchList, handleSearch: search, handleReset, handlePageChange, handleSizeChange,
+} = listPageState
 
-const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.tag || mineOnly.value))
+const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.tag || filters.mine))
 
 function resetFilters() {
-  mineOnly.value = false
   handleReset()
 }
 
@@ -216,9 +213,7 @@ async function handleDelete(row) {
   }
   await deleteDigest(row.id)
   msgSuccess('删除')
-  // 删掉当前页最后一条时回退一页，否则停在空页上
-  if (list.value.length === 1 && page.value > 1) await handlePageChange(page.value - 1)
-  else await fetchList()
+  await listPageState.refreshRemove()
 }
 </script>
 

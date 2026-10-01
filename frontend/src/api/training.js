@@ -26,8 +26,8 @@ export function inferFileType(fileName) {
   return EXT_TYPE_MAP[ext] || 'other'
 }
 
-export function listDigests(params) {
-  return trainingClient.get('', { params })
+export function listDigests(params, config = {}) {
+  return trainingClient.get('', { ...config, params })
 }
 
 export function createDigest(data) {

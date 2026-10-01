@@ -44,9 +44,10 @@
           />
         </div>
 
+        <ListPageStatus v-if="accountsResource.hasData.value" :paged="false" :error="accountsResource.errorMessage.value" :loading="loading" :has-data="true" @retry="loadAccounts" />
         <el-table :data="accounts" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
           <template #empty>
-            <el-empty :image-size="96" description="暂无数据" />
+            <ListPageStatus :paged="false" :error="accountsResource.errorMessage.value" :loading="loading" @retry="loadAccounts"><el-empty v-if="accountsResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus>
           </template>
           <el-table-column v-if="visibleKeys.includes('account')" label="账号" min-width="180" max-width="270" show-overflow-tooltip>
             <template #default="{ row }">
@@ -66,7 +67,7 @@
           </el-table-column>
           <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
-              <el-tag :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
+              <StatusBadge :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</StatusBadge>
             </template>
           </el-table-column>
           <el-table-column v-if="visibleKeys.includes('connector')" label="Connector" min-width="150" max-width="220">
@@ -76,9 +77,9 @@
                 :content="row.last_error"
                 placement="top"
               >
-                <el-tag :type="connectorStatusType(row.connector_status)" size="small" effect="plain">
+                <StatusBadge :type="connectorStatusType(row.connector_status)" size="small" effect="plain">
                   {{ connectorStatusLabel(row.connector_status) }}
-                </el-tag>
+                </StatusBadge>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -108,9 +109,11 @@
         </div>
         <el-empty v-if="!selectedAccount" description="选择一个账号查看记录" />
         <div v-else class="conversation-workspace">
-          <div class="conversation-list" v-loading="conversationLoading">
-            <el-empty v-if="!conversations.length" description="暂无会话" />
-            <template v-else>
+          <div class="conversation-list" v-loading="conversationLoading && !conversations.length">
+            <ListPageStatus :paged="false" :error="conversationsResource.errorMessage.value" :loading="conversationLoading" :has-data="conversationsResource.hasData.value" @retry="loadConversations" />
+            <small v-if="conversationsResource.hasLoaded.value">显示前 {{ conversations.length }} 条会话（共 {{ conversationTotal }} 条）</small>
+            <el-empty v-if="conversationsResource.isEmpty.value" description="暂无会话" />
+            <template v-if="conversations.length">
               <button
                 v-for="item in conversations"
                 :key="item.conversation_uid"
@@ -134,10 +137,12 @@
                   <strong>{{ conversationTitle(selectedConversation) }}</strong>
                   <span>{{ selectedConversation.contact_phone || selectedConversation.chat_id }}</span>
                 </div>
-                <el-tag v-if="selectedConversation.is_group" size="small" effect="plain">群聊</el-tag>
+                <StatusBadge v-if="selectedConversation.is_group" size="small" effect="plain">群聊</StatusBadge>
               </div>
-              <el-empty v-if="!orderedMessages.length" description="暂无消息" />
-              <div v-else class="message-list">
+              <ListPageStatus :paged="false" :error="messagesResource.errorMessage.value" :loading="messageLoading" :has-data="messagesResource.hasData.value" @retry="loadMessages" />
+              <small v-if="messagesResource.hasLoaded.value">显示最近 {{ messages.length }} 条消息（共 {{ messageTotal }} 条）</small>
+              <el-empty v-if="messagesResource.isEmpty.value" description="暂无消息" />
+              <div v-if="orderedMessages.length" class="message-list">
                 <div
                   v-for="item in orderedMessages"
                   :key="item.message_uid"
@@ -159,10 +164,10 @@
       </div>
     </div>
 
-    <el-dialog v-model="bindDialogVisible" title="扫码绑定 WhatsApp" width="520px" :close-on-click-modal="false">
+    <el-dialog v-model="bindDialogVisible" title="扫码绑定 WhatsApp" width="640px" :close-on-click-modal="false">
       <div v-if="bindSession?.qr_code_url" class="qr-box">
         <img :src="bindSession.qr_code_url" alt="WhatsApp QR Code">
-        <el-tag :type="statusType(bindSession.status)" effect="plain">{{ statusLabel(bindSession.status) }}</el-tag>
+        <StatusBadge :type="statusType(bindSession.status)" effect="plain">{{ statusLabel(bindSession.status) }}</StatusBadge>
       </div>
       <el-empty v-else description="等待 Connector 返回二维码" />
       <template #footer>
@@ -173,10 +178,10 @@
   </div>
 </template>
 
-<script setup>
-import { computed, onMounted, ref } from 'vue'
+<script setup>import { msgSuccessText, confirmAction } from '@/utils/feedback'
+import { computed, onMounted, ref, watch } from 'vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import {
   createWhatsAppBindSession,
   getWhatsAppBindSession,
@@ -186,6 +191,8 @@ import {
   pullWhatsAppResource,
   revokeWhatsAppAccount,
 } from '@/api/whatsapp'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useAuthStore } from '@/stores/auth'
 import { useTableView } from '@/composables/useTableView'
 import TableTools from '@/components/TableTools.vue'
 
@@ -199,12 +206,22 @@ const columnDefs = [
   { key: 'last-message-pull-at', label: '消息拉取' },
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('whatsapp-connector', columnDefs)
-const accounts = ref([])
-const conversations = ref([])
-const messages = ref([])
-const loading = ref(false)
-const conversationLoading = ref(false)
-const messageLoading = ref(false)
+const auth = useAuthStore()
+const conversationTotal = ref(0), messageTotal = ref(0)
+const readOptions = signal => ({ signal, suppressToast: true, showLoading: false })
+const accountsResource = useAsyncResource(async (_, { signal }) => (await listWhatsAppAccounts(readOptions(signal))).data || [], { initialData: [] })
+const conversationsResource = useAsyncResource(async (accountUid, { signal, isCurrent }) => {
+  const data = (await listWhatsAppConversations({ account_uid: accountUid, page: 1, page_size: 50 }, readOptions(signal))).data || {}
+  if (isCurrent()) conversationTotal.value = data.total ?? (data.items || []).length
+  return data.items || []
+}, { initialData: [] })
+const messagesResource = useAsyncResource(async (params, { signal, isCurrent }) => {
+  const data = (await listWhatsAppMessages({ ...params, page: 1, page_size: 50 }, readOptions(signal))).data || {}
+  if (isCurrent()) messageTotal.value = data.total ?? (data.items || []).length
+  return data.items || []
+}, { initialData: [] })
+const accounts = accountsResource.data, conversations = conversationsResource.data, messages = messagesResource.data
+const loading = accountsResource.loading, conversationLoading = conversationsResource.loading, messageLoading = messagesResource.loading
 const bindDialogVisible = ref(false)
 const bindSession = ref(null)
 const selectedAccount = ref(null)
@@ -227,14 +244,21 @@ const selectedAccountTitle = computed(() => {
 const orderedMessages = computed(() => [...messages.value].reverse())
 
 async function loadAccounts() {
-  loading.value = true
-  try {
-    const res = await listWhatsAppAccounts()
-    accounts.value = res.data || []
-  } finally {
-    loading.value = false
+  const success = await accountsResource.load()
+  if (success && selectedAccount.value) {
+    const current = accounts.value.find(item => item.account_uid === selectedAccount.value.account_uid)
+    if (current) selectedAccount.value = current
+    else { selectedAccount.value = null; clearConversations() }
   }
+  return success
 }
+function clearMessages() { messagesResource.clear(); messageTotal.value = 0 }
+function clearConversations() { conversationsResource.clear(); conversationTotal.value = 0; selectedConversation.value = null; clearMessages() }
+watch(() => JSON.stringify([auth.user?.id, auth.roles, auth.permissions]), () => {
+  accountsResource.clear(); selectedAccount.value = null; clearConversations()
+  bindDialogVisible.value = false; bindSession.value = null
+  void loadAccounts()
+})
 
 async function handleCreateBindSession() {
   const res = await createWhatsAppBindSession({})
@@ -247,14 +271,14 @@ async function refreshBindSession() {
   const res = await getWhatsAppBindSession(bindSession.value.bind_session_uid)
   bindSession.value = res.data
   if (bindSession.value?.status === 'active') {
-    ElMessage.success('绑定成功')
+    msgSuccessText('绑定成功')
     await loadAccounts()
   }
 }
 
 async function handlePull(account, resource) {
   const res = await pullWhatsAppResource({ account_uid: account.account_uid, resource, limit: 100 })
-  ElMessage.success(`同步完成：${res.data?.pulled || 0} 条`)
+  msgSuccessText(`同步完成：${res.data?.pulled || 0} 条`)
   await loadAccounts()
   if (selectedAccount.value?.account_uid === account.account_uid) {
     await loadConversations()
@@ -262,68 +286,41 @@ async function handlePull(account, resource) {
 }
 
 async function selectAccount(account) {
+  if (selectedAccount.value?.account_uid !== account.account_uid) clearConversations()
   selectedAccount.value = account
-  selectedConversation.value = null
-  messages.value = []
-  await loadConversations()
+  return loadConversations()
 }
-
 async function loadConversations() {
-  if (!selectedAccount.value) return
-  conversationLoading.value = true
-  try {
-    const currentConversationUid = selectedConversation.value?.conversation_uid
-    const res = await listWhatsAppConversations({
-      account_uid: selectedAccount.value.account_uid,
-      page: 1,
-      page_size: 50,
-    })
-    conversations.value = res.data?.items || []
-    selectedConversation.value = conversations.value.find(item => item.conversation_uid === currentConversationUid) || conversations.value[0] || null
-    if (selectedConversation.value) {
-      await loadMessages()
-    } else {
-      messages.value = []
-    }
-  } finally {
-    conversationLoading.value = false
-  }
+  if (!selectedAccount.value) return false
+  const success = await conversationsResource.load(selectedAccount.value.account_uid)
+  if (!success) return false
+  const current = selectedConversation.value?.conversation_uid
+  const next = conversations.value.find(item => item.conversation_uid === current) || conversations.value[0] || null
+  if (next) await selectConversation(next)
+  else { selectedConversation.value = null; clearMessages() }
+  return true
 }
-
 async function selectConversation(conversation) {
+  if (selectedConversation.value?.conversation_uid !== conversation.conversation_uid) clearMessages()
   selectedConversation.value = conversation
-  await loadMessages()
+  return loadMessages()
 }
-
-async function loadMessages() {
-  if (!selectedAccount.value || !selectedConversation.value) return
-  messageLoading.value = true
-  try {
-    const res = await listWhatsAppMessages({
-      account_uid: selectedAccount.value.account_uid,
-      conversation_uid: selectedConversation.value.conversation_uid,
-      page: 1,
-      page_size: 50,
-    })
-    messages.value = res.data?.items || []
-  } finally {
-    messageLoading.value = false
-  }
+function loadMessages() {
+  if (!selectedAccount.value || !selectedConversation.value) return false
+  return messagesResource.load({ account_uid: selectedAccount.value.account_uid, conversation_uid: selectedConversation.value.conversation_uid })
 }
 
 async function handleRevoke(account) {
   try {
-    await ElMessageBox.confirm(`确认解绑 ${account.display_name || account.phone_number || account.account_uid}？`, '解绑确认', { type: 'warning' })
+    await confirmAction(`确认解绑 ${account.display_name || account.phone_number || account.account_uid}？`, '解绑确认', { type: 'warning' })
   } catch {
     return
   }
   await revokeWhatsAppAccount(account.account_uid)
-  ElMessage.success('已解绑')
+  msgSuccessText('已解绑')
   if (selectedAccount.value?.account_uid === account.account_uid) {
     selectedAccount.value = null
-    selectedConversation.value = null
-    conversations.value = []
-    messages.value = []
+    clearConversations()
   }
   await loadAccounts()
 }

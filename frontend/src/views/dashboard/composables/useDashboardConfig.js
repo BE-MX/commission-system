@@ -13,7 +13,6 @@ import {
   saveDashboardPreference,
 } from '@/api/dashboard'
 import { msgSuccess } from '@/utils/feedback'
-
 const STORAGE_PREFIX = 'ark_dashboard_prefs_'
 
 function emptySection() {

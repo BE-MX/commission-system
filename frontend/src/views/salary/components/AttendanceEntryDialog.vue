@@ -9,9 +9,9 @@
   整行 spread 会把未编辑的 null 变成显式清空，把刚录的病假抹掉。
 -->
 <template>
-  <el-dialog :model-value="!!row" :title="`录入考勤 — ${row?.name || ''}`" width="520px"
+  <el-dialog :model-value="!!row" :title="`录入考勤 — ${row?.name || ''}`" width="640px"
              @update:model-value="v => !v && emit('close')">
-    <el-form label-width="110px">
+    <el-form label-position="top">
       <el-form-item label="事假(小时)">
         <el-input-number v-model="draft.personal_leave_hours" :min="0" :precision="2"
                          controls-position="right" style="width: 100%" />

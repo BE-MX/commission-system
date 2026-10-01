@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useAsyncResource } from '../src/composables/useAsyncResource.js'
 import { useChatDrafts } from '../src/views/design/ai-chat/composables/useChatDrafts.js'
 
 import {
@@ -89,7 +90,7 @@ function loadChat(api = {}) {
   const modeFactory = new Function('computed', 'ref', 'onMounted', 'getMode', 'getSessionMode', 'listModes', `${modesCode}; return useChatModes`)(
     computed, ref, () => {}, api.getMode, api.getSessionMode, async () => ({ data: { items: [] } }),
   )
-  const bindings = { computed, ref, onMounted() {}, onBeforeUnmount() {},
+  const bindings = { computed, ref, watch, useAsyncResource, onMounted() {}, onBeforeUnmount() {},
     useAuthStore: () => ({ user: { id: 1 }, hasPermission: () => true }),
     createSession: async () => ({ data: { id: 99 } }), deleteAttachment: async () => {},
     getConfig: async () => ({ data: { configured: true } }),

@@ -83,7 +83,7 @@ function open(name) {
 
 .workspace-tab.is-active {
   background: var(--dash-glass-bg-strong);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   box-shadow: var(--dash-glass-highlight), var(--card-shadow);
 }
 

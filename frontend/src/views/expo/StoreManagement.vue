@@ -8,15 +8,12 @@
     </div>
 
     <div ref="panelRef" class="table-card stores-panel">
-      <div class="toolbar">
-        <el-input v-model="filters.keyword" placeholder="搜索门店名称 / 编码" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="search" @clear="search" />
-        <el-select v-model="filters.status" placeholder="状态" clearable class="filter-w-sm" @change="search">
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="search" @reset="resetFilters"><el-input v-model="filters.keyword" placeholder="搜索门店名称 / 编码" clearable prefix-icon="Search" class="filter-w-lg"   />
+<el-select v-model="filters.status" placeholder="状态" clearable class="filter-w-sm" >
           <el-option label="启用" :value="1" />
           <el-option label="停用" :value="0" />
         </el-select>
-        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+</FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -31,17 +28,18 @@
         />
       </div>
 
-      <el-table :data="stores" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchStores" />
+<el-table :data="stores" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchStores">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="门店名称" min-width="140" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('code')" prop="code" label="编码" min-width="100" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
+            <StatusBadge size="small" :value="row.status" :dictionary="ENABLED_STATUS" />
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('remaining')" label="剩余额度" min-width="110" align="right">
@@ -79,7 +77,7 @@
 
     <!-- 新增 / 编辑门店 -->
     <DetailDrawer v-model="editVisible" :title="editForm.id ? '编辑门店' : '新增门店'" :width="480">
-      <el-form :model="editForm" label-width="80px">
+      <el-form label-position="top" :model="editForm">
         <el-form-item label="名称" required>
           <el-input v-model="editForm.name" maxlength="128" placeholder="如：广州美博城店" />
         </el-form-item>
@@ -100,8 +98,8 @@
     </DetailDrawer>
 
     <!-- 人员绑定 -->
-    <DetailDrawer v-model="usersVisible" :title="`绑定人员 · ${activeStore?.name || ''}`" :width="560">
-      <el-form inline class="bind-form" @submit.prevent>
+    <DetailDrawer v-model="usersVisible" :title="`绑定人员 · ${usersStore?.name || ''}`" :width="560">
+      <el-form label-position="top" inline class="bind-form" @submit.prevent>
         <el-form-item label="系统账号">
           <el-select
             v-model="bindForm.user_id" filterable remote clearable :remote-method="searchUsers"
@@ -117,12 +115,15 @@
           <GlassButton variant="primary" :loading="binding" :disabled="!bindForm.user_id" @click="handleBind">绑定</GlassButton>
         </el-form-item>
       </el-form>
+      <ListPageStatus :paged="false" :error="userResource.errorMessage.value" :loading="userSearching" :has-data="userResource.hasLoaded.value" @retry="searchUsers(userQuery)" />
+      <ListPageStatus v-if="usersResource.hasLoaded.value" :paged="false" :error="usersResource.errorMessage.value" :loading="usersLoading" :has-data="usersResource.hasLoaded.value" @retry="fetchStoreUsers" />
       <el-table :data="storeUsers" v-loading="usersLoading" size="small" border style="width: 100%" class="list-table">
+        <template #empty><ListPageStatus :paged="false" :error="usersResource.errorMessage.value" :loading="usersLoading" @retry="fetchStoreUsers"><el-empty v-if="usersResource.isEmpty.value" description="暂无绑定人员" /></ListPageStatus></template>
         <el-table-column prop="username" label="账号" min-width="100" show-overflow-tooltip />
         <el-table-column prop="real_name" label="姓名" min-width="100" show-overflow-tooltip />
         <el-table-column label="角色" min-width="80">
           <template #default="{ row }">
-            <el-tag v-if="row.is_primary" size="small" type="warning">店长</el-tag>
+            <StatusBadge v-if="row.is_primary" size="small" type="warning">店长</StatusBadge>
             <span v-else class="muted">导购</span>
           </template>
         </el-table-column>
@@ -143,12 +144,14 @@
 </template>
 
 <script setup>
+import { ENABLED_STATUS } from '@/utils/status'
 /**
  * 门店管理页（2026-08-06）：门店 CRUD + 启停 + 人员绑定 + 额度入口。
  * 结构照线索台标杆（ExpoLeads.vue）：useListPage + DetailDrawer + feedback.js。
  * 运营（expo_store:admin）管门店与人员；财务（expo_store:recharge）只进额度抽屉。
  */
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import {
   getStores, createStore, updateStore, toggleStore,
   getStoreUsers, bindStoreUser, unbindStoreUser,
@@ -161,21 +164,22 @@ import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
 import StoreQuotaDrawer from './StoreQuotaDrawer.vue'
 
-const {
-  loading, list: stores, total, page, pageSize, searchForm: filters,
-  fetchList: fetchStores, handleSearch: search, handleReset: resetFilters, handlePageChange, handleSizeChange,
-} = useListPage(
-  async ({ page, page_size, ...form }) => {
+const listPageState = useListPage(
+  async ({ page, page_size, ...form }, { signal, isCurrent }) => {
     const params = { offset: (page - 1) * page_size, limit: page_size }
     if (form.keyword) params.keyword = form.keyword
     if (form.status !== '' && form.status !== null && form.status !== undefined) params.status = form.status
-    const res = await getStores(params)
+    const res = await getStores(params, { signal, suppressToast: true })
     const data = res.data || {}
     // useListPage 期望 page 语义，后端门店列表是 offset 语义，这里回填对齐
     return { items: data.items || [], total: data.total || 0, page, page_size }
   },
   { searchForm: { keyword: '', status: '' } },
 )
+const {
+  loading, list: stores, total, page, pageSize, searchForm: filters,
+  fetchList: fetchStores, handleSearch: search, handleReset: resetFilters, handlePageChange, handleSizeChange,
+} = listPageState
 
 // columnDefs 只供 TableTools 列显隐面板，模板列保持静态（推广期不配置化渲染）
 const columnDefs = [
@@ -222,7 +226,7 @@ async function submitEdit() {
     else await createStore(payload)
     msgSuccess('保存')
     editVisible.value = false
-    fetchStores()
+    await (editForm.id ? listPageState.refreshUpdate() : listPageState.refreshCreate())
   } catch { /* 拦截器已提示 */ } finally {
     saving.value = false
   }
@@ -236,73 +240,93 @@ async function handleToggle(row) {
   try {
     await toggleStore(row.id)
     msgSuccess(action)
-    fetchStores()
+    listPageState.refreshUpdate()
   } catch { /* 拦截器已提示 */ }
 }
 
 // ── 人员绑定 ──
 const activeStore = ref(null)
 const usersVisible = ref(false)
-const usersLoading = ref(false)
-const storeUsers = ref([])
+const usersStore = ref(null)
+let usersScopeVersion = 0
+const usersResource = useAsyncResource(async (storeId, { signal }) => {
+  const response = await getStoreUsers(storeId, { signal, suppressToast: true })
+  return response.data || []
+}, { initialData: [] })
+const usersLoading = usersResource.loading
+const storeUsers = usersResource.data
 const bindForm = reactive({ user_id: null, is_primary: false })
-const userOptions = ref([])
-const userSearching = ref(false)
+const userQuery = ref('')
+const userResource = useAsyncResource(async (keyword, { signal }) => {
+  const response = await getUserList({ keyword, page: 1, page_size: 20 }, { signal, suppressToast: true })
+  return response.data?.items || []
+}, { initialData: [] })
+const userOptions = userResource.data
+const userSearching = userResource.loading
 const binding = ref(false)
 
 function openUsers(row) {
+  if (usersStore.value?.id !== row.id) clearUsersScope()
   activeStore.value = row
+  usersStore.value = row
   bindForm.user_id = null
   bindForm.is_primary = false
-  userOptions.value = []
+  userQuery.value = ''; userResource.clear()
   usersVisible.value = true
-  fetchStoreUsers()
+  return fetchStoreUsers()
 }
 
-async function fetchStoreUsers() {
-  usersLoading.value = true
-  try {
-    const res = await getStoreUsers(activeStore.value.id)
-    storeUsers.value = res.data || []
-  } finally {
-    usersLoading.value = false
-  }
+function clearUsersScope() {
+  usersScopeVersion += 1
+  usersResource.clear(); userResource.clear(); usersStore.value = null
+  userQuery.value = ''; bindForm.user_id = null; bindForm.is_primary = false
+}
+watch(usersVisible, visible => { if (!visible) clearUsersScope() }, { flush: 'sync' })
+
+function fetchStoreUsers() {
+  if (!usersVisible.value || !usersStore.value) return Promise.resolve(false)
+  return usersResource.load(usersStore.value.id)
 }
 
-async function searchUsers(keyword) {
-  userSearching.value = true
-  try {
-    const res = await getUserList({ keyword: keyword || '', page: 1, page_size: 20 })
-    userOptions.value = res.data?.items || []
-  } finally {
-    userSearching.value = false
-  }
+function searchUsers(keyword) {
+  if (!usersVisible.value || !usersStore.value) return Promise.resolve(false)
+  userQuery.value = keyword || ''
+  return userResource.load(userQuery.value)
+}
+function matchesUsersScope(storeId, version) {
+  return usersVisible.value && usersStore.value?.id === storeId && usersScopeVersion === version
 }
 
 async function handleBind() {
+  if (!usersVisible.value || !usersStore.value || !bindForm.user_id || binding.value) return
+  const storeId = usersStore.value.id, scopeVersion = usersScopeVersion
   binding.value = true
   try {
-    await bindStoreUser(activeStore.value.id, {
+    await bindStoreUser(storeId, {
       user_id: bindForm.user_id,
       is_primary: bindForm.is_primary,
     })
     msgSuccess('绑定')
+    if (!matchesUsersScope(storeId, scopeVersion)) return
     bindForm.user_id = null
     bindForm.is_primary = false
-    fetchStoreUsers()
+    await fetchStoreUsers()
   } catch { /* 拦截器已提示 */ } finally {
     binding.value = false
   }
 }
 
 async function handleUnbind(row) {
+  if (!usersVisible.value || !usersStore.value) return
+  const storeId = usersStore.value.id, scopeVersion = usersScopeVersion
   try {
     await confirmDanger('解绑', `账号 ${row.real_name || row.username}`, '解绑后该账号将不能再看本店线索与额度。')
   } catch { return }
+  if (!matchesUsersScope(storeId, scopeVersion)) return
   try {
-    await unbindStoreUser(activeStore.value.id, row.user_id)
+    await unbindStoreUser(storeId, row.user_id)
     msgSuccess('解绑')
-    fetchStoreUsers()
+    if (matchesUsersScope(storeId, scopeVersion)) await fetchStoreUsers()
   } catch { /* 拦截器已提示 */ }
 }
 

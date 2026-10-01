@@ -24,10 +24,11 @@ export function deleteTemporaryKnowledgeImage(assetId) {
   return knowledgeClient.delete(`/assets/${assetId}`, SILENT)
 }
 
-export function listAiProfiles(targetLibraryId = null) {
+export function listAiProfiles(targetLibraryId = null, config = {}) {
   return knowledgeClient.get('/ai-profiles', {
     params: targetLibraryId ? { target_library_id: targetLibraryId } : {},
     showLoading: false,
+    ...config,
   })
 }
 
@@ -43,16 +44,16 @@ export function deleteAiProfile(profileId) {
   return knowledgeClient.delete(`/ai-profiles/${profileId}`)
 }
 
-export function listAiPresetCandidates() {
-  return knowledgeClient.get('/ai-profiles/preset-candidates', { showLoading: false })
+export function listAiPresetCandidates(config = {}) {
+  return knowledgeClient.get('/ai-profiles/preset-candidates', { showLoading: false, ...config })
 }
 
-export function listAiLibraryCandidates() {
-  return knowledgeClient.get('/ai-profiles/library-candidates', { showLoading: false })
+export function listAiLibraryCandidates(config = {}) {
+  return knowledgeClient.get('/ai-profiles/library-candidates', { showLoading: false, ...config })
 }
 
-export function listAiProfileLogs(profileId) {
-  return knowledgeClient.get(`/ai-profiles/${profileId}/logs`, { showLoading: false })
+export function listAiProfileLogs(profileId, config = {}) {
+  return knowledgeClient.get(`/ai-profiles/${profileId}/logs`, { showLoading: false, ...config })
 }
 
 export function previewAiRetrieval(profileId, data) {
@@ -67,12 +68,12 @@ export function createDocumentAiJob(documentId, data) {
   return knowledgeClient.post(`/documents/${documentId}/ai-jobs`, data, SILENT)
 }
 
-export function listDocumentAiJobs(documentId) {
-  return knowledgeClient.get(`/documents/${documentId}/ai-jobs`, SILENT)
+export function listDocumentAiJobs(documentId, config = {}) {
+  return knowledgeClient.get(`/documents/${documentId}/ai-jobs`, { ...SILENT, ...config })
 }
 
-export function getDocumentAiJob(jobId) {
-  return knowledgeClient.get(`/ai-jobs/${jobId}`, SILENT)
+export function getDocumentAiJob(jobId, config = {}) {
+  return knowledgeClient.get(`/ai-jobs/${jobId}`, { ...SILENT, ...config })
 }
 
 export function cancelDocumentAiJob(jobId) {

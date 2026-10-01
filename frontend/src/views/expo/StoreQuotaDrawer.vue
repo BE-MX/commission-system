@@ -1,8 +1,9 @@
 <template>
   <DetailDrawer
-    :model-value="modelValue" :title="`额度管理 · ${storeName || ''}`" :width="680"
+    :model-value="modelValue" :title="`额度管理 · ${storeName || ''}`" :width="760"
     @update:model-value="v => $emit('update:modelValue', v)"
   >
+    <ListPageStatus :error="quotaResource.errorMessage.value" :loading="quotaLoading" :has-data="quotaResource.hasData.value" @retry="fetchQuota" />
     <div v-loading="quotaLoading" class="quota-cards">
       <div class="quota-card">
         <div class="quota-num">{{ quota?.total_quota ?? '-' }}</div>
@@ -20,7 +21,7 @@
 
     <div v-permission="'expo_store:recharge'" class="recharge-card">
       <div class="block-title">充值</div>
-      <el-form inline @submit.prevent>
+      <el-form label-position="top" inline @submit.prevent>
         <el-form-item label="张数">
           <el-input-number v-model="rechargeForm.amount" :min="1" :max="100000" controls-position="right" style="width: 130px" />
         </el-form-item>
@@ -34,13 +35,15 @@
     </div>
 
     <div class="block-title">变动记录</div>
+    <ListPageStatus v-if="recordsState.hasData.value" :error="recordsState.errorMessage.value" :loading="recordsLoading" :has-data="true" :data-page="recordsState.dataPage.value" @retry="fetchRecords" />
     <el-table :data="records" v-loading="recordsLoading" size="small" border style="width: 100%" class="list-table">
+      <template #empty><ListPageStatus :error="recordsState.errorMessage.value" :loading="recordsLoading" @retry="fetchRecords"><el-empty description="暂无变动记录" :image-size="96" /></ListPageStatus></template>
       <el-table-column prop="created_at" label="时间" min-width="150" show-overflow-tooltip />
       <el-table-column label="类型" min-width="76">
         <template #default="{ row }">
-          <el-tag size="small" :type="row.type === 'recharge' ? 'success' : 'warning'">
+          <StatusBadge size="small" :type="row.type === 'recharge' ? 'success' : 'warning'">
             {{ row.type === 'recharge' ? '充值' : '消耗' }}
-          </el-tag>
+          </StatusBadge>
         </template>
       </el-table-column>
       <el-table-column label="张数" min-width="80" align="right">
@@ -58,15 +61,20 @@
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
     </el-table>
-    <el-pagination
+    <el-pagination :page-sizes="[20, 50, 100]"
       v-model:current-page="page" v-model:page-size="pageSize" :total="total"
-      layout="total, prev, pager, next" class="pager"
-      @current-change="fetchRecords"
+      layout="total, sizes, prev, pager, next" class="pager"
+      @current-change="handlePageChange" @size-change="handleSizeChange"
     />
   </DetailDrawer>
 </template>
 
 <script setup>
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { watchListResourceScope } from '@/composables/useListResourceScope'
+
 /**
  * 门店额度抽屉：余额三卡 + 充值表单（expo_store:recharge）+ 变动流水。
  * 由 StoreManagement 以 storeId/storeName 驱动，打开时拉取快照与第一页流水。
@@ -83,57 +91,38 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'changed'])
 
-const quota = ref(null)
-const quotaLoading = ref(false)
-const records = ref([])
-const recordsLoading = ref(false)
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
+const quotaResource = useAsyncResource(async (id, { signal }) => id ? (await getStoreQuota(id, { signal, suppressToast: true })).data : null)
+const quota = quotaResource.data, quotaLoading = quotaResource.loading
+const recordsState = useListPage(async ({ storeId, page, page_size }, { signal }) => storeId ? (await listQuotaRecords(storeId, { offset: (page - 1) * page_size, limit: page_size }, { signal, suppressToast: true })).data : { items: [], total: 0 },
+  { searchForm: { storeId: null }, immediate: false })
+const { list: records, loading: recordsLoading, total, page, pageSize, handlePageChange, handleSizeChange } = recordsState
+watchListResourceScope(recordsState, ['storeId'])
 
 const rechargeForm = reactive({ amount: 100, remark: '' })
 const recharging = ref(false)
 
-async function fetchQuota() {
-  quotaLoading.value = true
-  try {
-    const res = await getStoreQuota(props.storeId)
-    quota.value = res.data
-  } finally {
-    quotaLoading.value = false
-  }
-}
-
-async function fetchRecords() {
-  recordsLoading.value = true
-  try {
-    const res = await listQuotaRecords(props.storeId, {
-      offset: (page.value - 1) * pageSize.value,
-      limit: pageSize.value,
-    })
-    const data = res.data || {}
-    records.value = data.items || []
-    total.value = data.total || 0
-  } finally {
-    recordsLoading.value = false
-  }
-}
+function fetchQuota() { return quotaResource.load(props.modelValue ? props.storeId : null) }
+function fetchRecords() { return recordsState.fetchList() }
 
 async function handleRecharge() {
   if (!rechargeForm.amount || rechargeForm.amount < 1) {
     msgError('充值张数必须大于 0')
     return
   }
+  if (recharging.value) return
+  const storeId = props.storeId
   recharging.value = true
   try {
-    await rechargeQuota(props.storeId, {
+    await rechargeQuota(storeId, {
       amount: rechargeForm.amount,
       remark: rechargeForm.remark || null,
     })
     msgSuccess('充值')
-    rechargeForm.remark = ''
-    await Promise.all([fetchQuota(), fetchRecords()])
     emit('changed')
+    if (props.modelValue && props.storeId === storeId) {
+      rechargeForm.remark = ''
+      await Promise.all([fetchQuota(), recordsState.refreshCreate()])
+    }
   } catch { /* 拦截器已提示 */ } finally {
     recharging.value = false
   }
@@ -141,11 +130,11 @@ async function handleRecharge() {
 
 // 每次打开（或换门店）重置分页并重新拉取；destroy-on-close 由 DetailDrawer 保证内容不残留
 watch(() => [props.modelValue, props.storeId], ([visible, id]) => {
-  if (!visible || !id) return
-  page.value = 1
-  fetchQuota()
-  fetchRecords()
+  recordsState.searchForm.storeId = visible ? id : null
+  recordsState.handleSearch()
+  quotaResource.load(visible ? id : null, { clear: true })
 }, { immediate: true })
+
 </script>
 
 <style scoped>

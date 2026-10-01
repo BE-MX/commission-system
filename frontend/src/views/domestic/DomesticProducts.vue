@@ -41,26 +41,23 @@
             title="产品不用手工建"
             description="下单选完属性后系统自动沉淀产品；同一组属性永远只对应一个产品。这里只做查看和个别产品的路线改绑。"
           />
-          <div class="toolbar">
-            <el-input
+          <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="listPageState.handleReset"><el-input
               v-model="searchForm.keyword" placeholder="搜索产品名" clearable
-              prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch"
+              prefix-icon="Search" class="filter-w-lg"
             />
-            <el-select v-model="searchForm.product_type" placeholder="产品类型" clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.product_type" placeholder="产品类型" clearable class="filter-w-sm" >
               <el-option label="头套" value="cap" />
               <el-option label="发片" value="piece" />
             </el-select>
-            <el-select v-model="searchForm.route_bound" placeholder="路线绑定" clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.route_bound" placeholder="路线绑定" clearable class="filter-w-sm" >
               <el-option label="已绑路线" value="bound" />
               <el-option label="未绑路线" value="unbound" />
             </el-select>
-            <el-select v-model="searchForm.price_status" placeholder="原始价状态" clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.price_status" placeholder="原始价状态" clearable class="filter-w-sm" >
               <el-option label="已配置" value="configured" />
               <el-option label="缺原价" value="missing" />
             </el-select>
-            <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-            <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-          </div>
+</FilterBar>
 
           <!-- 操作行：产品由下单自动沉淀、无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
           <div class="action-bar">
@@ -71,12 +68,13 @@
             />
           </div>
 
-          <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
-            <template #empty>
+          <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+            <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
               <el-empty :image-size="96" :description="hasProductFilters ? '没有符合条件的记录' : '暂无数据'">
                 <GlassButton v-if="hasProductFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
               </el-empty>
-            </template>
+            </ListPageStatus></template>
             <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品" min-width="240" show-overflow-tooltip />
             <el-table-column v-if="visibleKeys.includes('product_type')" prop="product_type_label" label="类型" min-width="80" />
             <el-table-column v-if="visibleKeys.includes('craft')" prop="craft" label="工艺/尺寸" min-width="130" show-overflow-tooltip />
@@ -95,8 +93,8 @@
             </el-table-column>
             <el-table-column v-if="visibleKeys.includes('original_price')" label="原始价" min-width="110" align="right">
               <template #default="{ row }">
-                <strong v-if="row.price_status === 'configured'">¥{{ Number(row.original_price).toFixed(2) }}</strong>
-                <el-tag v-else size="small" type="danger" effect="plain">缺原价</el-tag>
+                <strong v-if="row.price_status === 'configured'">{{ formatMoney(Number(row.original_price), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</strong>
+                <StatusBadge v-else size="small" type="danger" effect="plain">缺原价</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column v-if="visibleKeys.includes('price_status')" label="价格状态" min-width="100">
@@ -108,7 +106,7 @@
             <el-table-column v-if="visibleKeys.includes('route')" label="工艺路线" min-width="150">
               <template #default="{ row }">
                 <span v-if="row.route_name">{{ row.route_name }}</span>
-                <el-tag v-else size="small" type="warning" effect="plain">未绑路线</el-tag>
+                <StatusBadge v-else size="small" type="warning" effect="plain">未绑路线</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column v-if="visibleKeys.includes('use_count')" prop="use_count" label="下单次数" min-width="100" sortable />
@@ -129,8 +127,8 @@
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog v-model="mappingDialog.visible" :title="mappingDialog.isEdit ? '修改映射' : '新增映射'" width="460px">
-      <el-form label-width="90px">
+    <el-dialog v-model="mappingDialog.visible" :title="mappingDialog.isEdit ? '修改映射' : '新增映射'" width="480px">
+      <el-form label-position="top">
         <el-form-item label="产品类型">
           <el-radio-group v-model="mappingDialog.product_type" :disabled="mappingDialog.isEdit" @change="mappingDialog.craft = ''">
             <el-radio-button value="cap">头套</el-radio-button>
@@ -154,10 +152,10 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="rebindDialog.visible" title="改绑产品工艺路线" width="460px">
+    <el-dialog v-model="rebindDialog.visible" title="改绑产品工艺路线" width="480px">
       <el-alert type="warning" show-icon :closable="false" class="tips"
         title="只对之后的新明细生效" description="在制明细用的是下单时快照的路线，改绑不会打乱正在做的货。" />
-      <el-form label-width="90px">
+      <el-form label-position="top">
         <el-form-item label="产品">
           <span>{{ rebindDialog.product?.name }}</span>
         </el-form-item>
@@ -173,9 +171,9 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="priceDialog.visible" title="维护共享原始价" width="460px">
+    <el-dialog v-model="priceDialog.visible" title="维护共享原始价" width="480px">
       <el-alert type="warning" show-icon :closable="false" class="tips" title="相同价格键的 SKU 共用这个价格" description="保存后同产品类型、工艺/尺寸、发长的所有 SKU 一起生效。" />
-      <el-form v-loading="priceDialog.loading" label-width="90px">
+      <el-form label-position="top" v-loading="priceDialog.loading">
         <el-form-item label="产品">{{ priceDialog.product?.name }}</el-form-item>
         <el-form-item label="影响范围">
           <strong v-if="priceDialog.impact">{{ priceImpactLabel(priceDialog.impact) }}</strong>
@@ -194,23 +192,25 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../utils/money.js'
+import { msgWarning, msgSuccessText, confirmAction, confirmDanger, msgSuccess } from '@/utils/feedback'
 /**
  * 内贸产品与工艺路线映射。映射是「下单人零操作」的支点：
  * 配好一次，之后所有同工艺的新产品都自动带路线。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import {
   deleteCraftRoute, deleteProductBasePrice, getOptions, getProcessRoutes, getProductBasePriceImpact, listCraftRoutes,
   listProducts, rebindProductRoute, updateProductBasePrice, upsertCraftRoute,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
 import { priceImpactLabel } from './composables/domesticMemberPricing'
+import { isAmount } from '@/utils/validators'
 import { productsColumnDefs as columnDefs } from './domesticTableColumns'
 
 const activeTab = ref('mapping')
@@ -224,20 +224,21 @@ const route = useRoute()
 // 下单页「去产品清单维护」带 price_status=missing 直达缺价列表
 const initialPriceStatus = ['configured', 'missing'].includes(route.query.price_status) ? route.query.price_status : ''
 
-const {
-  loading, list, total, page, pageSize, searchForm,
-  fetchList, handleSearch, handlePageChange, handleSizeChange,
-} = useListPage(
-  async ({ page, page_size, ...form }) => {
+const listPageState = useListPage(
+  async ({ page, page_size, ...form }, { signal, isCurrent }) => {
     const params = { page, page_size }
     for (const key of ['keyword', 'product_type', 'route_bound', 'price_status']) {
       if (form[key]) params[key] = form[key]
     }
-    const res = await listProducts(params)
+    const res = await listProducts(params, { signal, suppressToast: true })
     return res.data || {}
   },
   { searchForm: { keyword: '', product_type: '', route_bound: '', price_status: initialPriceStatus } },
 )
+const {
+  loading, list, total, page, pageSize, searchForm,
+  fetchList, handleSearch, handlePageChange, handleSizeChange,
+} = listPageState
 
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('domestic-products', columnDefs)
@@ -282,8 +283,8 @@ function openMapping(row) {
 }
 
 async function saveMapping() {
-  if (!mappingDialog.craft) return ElMessage.warning('请选择工艺')
-  if (!mappingDialog.route_id) return ElMessage.warning('请选择工艺路线')
+  if (!mappingDialog.craft) return msgWarning('请选择工艺')
+  if (!mappingDialog.route_id) return msgWarning('请选择工艺路线')
   saving.value = true
   try {
     const res = await upsertCraftRoute({
@@ -292,8 +293,8 @@ async function saveMapping() {
       route_id: mappingDialog.route_id,
     })
     mappingDialog.visible = false
-    ElMessage.success(res.message || '已保存')
-    await Promise.all([loadMappings(), fetchList()])
+    msgSuccessText(res.message || '已保存')
+    await Promise.all([loadMappings(), listPageState.refreshUpdate()])
   } catch { /* 拦截器已提示 */ } finally {
     saving.value = false
   }
@@ -315,8 +316,8 @@ async function saveRebind() {
   try {
     const res = await rebindProductRoute(rebindDialog.product.id, rebindDialog.route_id || null)
     rebindDialog.visible = false
-    ElMessage.success(res.message || '已保存')
-    await fetchList()
+    msgSuccessText(res.message || '已保存')
+    await listPageState.refreshUpdate()
   } catch { /* 拦截器已提示 */ } finally {
     saving.value = false
   }
@@ -341,10 +342,10 @@ async function openPrice(row) {
 }
 
 async function savePrice() {
-  if (!(priceDialog.originalPrice > 0)) return ElMessage.warning('请填写大于 0 的原始价')
-  if (!priceDialog.impact) return ElMessage.warning('价格影响范围预检失败，请重新打开后再试')
+  if (!isAmount(priceDialog.originalPrice, { format: 'number' })) return msgWarning('请填写大于 0 的原始价')
+  if (!priceDialog.impact) return msgWarning('价格影响范围预检失败，请重新打开后再试')
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认保存？${priceImpactLabel(priceDialog.impact)} 将一起生效。`,
       '确认共享原始价',
       { type: 'warning', confirmButtonText: '确认保存', cancelButtonText: '返回检查' },
@@ -355,8 +356,8 @@ async function savePrice() {
     const res = await updateProductBasePrice(priceDialog.product.id, priceDialog.originalPrice)
     const count = Number(res.data?.affected_sku_count || 0)
     priceDialog.visible = false
-    ElMessage.success(`原始价已保存，同价格键的 ${count} 个 SKU 已一起生效`)
-    await fetchList()
+    msgSuccessText(`原始价已保存，同价格键的 ${count} 个 SKU 已一起生效`)
+    await listPageState.refreshUpdate()
   } catch { /* 拦截器已提示 */ } finally {
     saving.value = false
   }
@@ -371,8 +372,8 @@ async function removePrice(row) {
     await confirmDanger('删除', `「${row.name}」共享的原始价`, `实际影响：${priceImpactLabel(impact)}。删除后这些 SKU 都将缺价，无法下单。`)
   } catch { return }
   const res = await deleteProductBasePrice(row.id)
-  ElMessage.success(`原始价已删除，同价格键的 ${Number(res.data?.affected_sku_count || 0)} 个 SKU 现为缺价`)
-  await fetchList()
+  msgSuccessText(`原始价已删除，同价格键的 ${Number(res.data?.affected_sku_count || 0)} 个 SKU 现为缺价`)
+  await listPageState.refreshUpdate()
 }
 
 onMounted(async () => {

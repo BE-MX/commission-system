@@ -1,9 +1,11 @@
+import { feedbackFixture } from './helpers/feedbackFixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 function setup(file, names, api) {
   const source = readFileSync(new URL(file, import.meta.url), 'utf8').match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
   const mocks = { ref: value => ({ value }), computed: fn => ({ get value() { return fn() } }), defineProps: () => ({ invoiceId: 42, receiptId: 7 }), defineEmits: () => () => {}, defineExpose: () => {}, ...api }
+  Object.assign(mocks, feedbackFixture(mocks))
   return new Function(...Object.keys(mocks), source + `\nreturn {${names}}`)(...Object.values(mocks))
 }
 const invoice = '../src/views/invoice/components/InvoiceLifecycle.vue'

@@ -1,15 +1,18 @@
+import { formatMoney } from '../../../utils/money.js'
+import { msgWarning, msgSuccessText, confirmDanger, msgSuccess } from '@/utils/feedback'
 /** 内贸客户管理页逻辑：列表/档案表单/充值/初始化/调整/流水/Excel 导入。 */
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { useAuthStore } from '@/stores/auth'
 import {
   adjustCustomer, createCustomer, deleteCustomer, getCustomerOptions,
   importCustomers, initializeCustomer, listCustomerBalanceLedger, listCustomers,
   newRequestId, rechargeCustomer, updateCustomer,
 } from '@/api/domestic'
+import { watchListResourceScope } from '@/composables/useListResourceScope'
 import { useListPage } from '@/composables/useListPage'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { membershipChangeLabel, membershipPreview } from './domesticMemberPricing'
+import { isAmount } from '@/utils/validators'
 
 export const membershipOptions = [
   { label: '普通客户', value: null },
@@ -45,11 +48,8 @@ export function useDomesticCustomers() {
     owners: [], provinces: [], cities: [],
   })
 
-  const {
-    loading, list, total, page, pageSize, searchForm,
-    fetchList, handleSearch, handlePageChange, handleSizeChange,
-  } = useListPage(
-    async ({ page, page_size, ...form }) => {
+  const listPageState = useListPage(
+    async ({ page, page_size, ...form }, { signal, isCurrent }) => {
       const params = { page, page_size }
       if (form.keyword) params.keyword = form.keyword
       if (form.status !== '' && form.status !== null) params.status = form.status
@@ -58,7 +58,7 @@ export function useDomesticCustomers() {
       if (form.city) params.city = form.city
       if (form.customer_level) params.customer_level = form.customer_level
       if (form.owner_user_id) params.owner_user_id = form.owner_user_id
-      const res = await listCustomers(params)
+      const res = await listCustomers(params, { signal, suppressToast: true })
       return res.data || {}
     },
     {
@@ -67,6 +67,12 @@ export function useDomesticCustomers() {
       },
     },
   )
+const {
+    loading, list, total, page, pageSize, searchForm,
+    fetchList, handleSearch, handlePageChange, handleSizeChange,
+  } = listPageState
+
+  watchListResourceScope(listPageState, ['owner_scope'])
 
   function canOperateCustomer(row) {
     return auth.hasPermission('domestic_customer:admin') || auth.user?.id === row.owner_user_id
@@ -74,7 +80,6 @@ export function useDomesticCustomers() {
 
   function handleProvinceChange() {
     searchForm.city = ''
-    handleSearch()
   }
 
   // 重置只清筛选条件，不动私海/公海 tab（owner_scope）
@@ -112,16 +117,16 @@ export function useDomesticCustomers() {
   }
 
   async function save() {
-    if (!dialog.shop_name.trim()) return ElMessage.warning('请填写客户店名')
+    if (!dialog.shop_name.trim()) return msgWarning('请填写客户店名')
     const [province, city] = dialog.region || []
     if (!dialog.id) {
       for (const [field, label] of REQUIRED_CREATE_FIELDS) {
         const value = dialog[field]
         if (value == null || (typeof value === 'string' && !value.trim())) {
-          return ElMessage.warning(`请填写${label}`)
+          return msgWarning(`请填写${label}`)
         }
       }
-      if (!province || !city) return ElMessage.warning('请选择省份 / 城市')
+      if (!province || !city) return msgWarning('请选择省份 / 城市')
     }
     const payload = {
       custom_code: dialog.custom_code.trim() || null,
@@ -150,7 +155,7 @@ export function useDomesticCustomers() {
       else await createCustomer(payload)
       dialog.visible = false
       msgSuccess('保存')
-      await fetchList()
+      await (dialog.id ? listPageState.refreshUpdate() : listPageState.refreshCreate())
     } catch { /* 拦截器已提示 */ } finally {
       saving.value = false
     }
@@ -187,8 +192,8 @@ export function useDomesticCustomers() {
   }
 
   async function confirmRecharge() {
-    if (!(rechargeDialog.amount > 0)) return ElMessage.warning('请输入充值金额')
-    if (!rechargeDialog.voucherFile) return ElMessage.warning('请上传银行流水或转账截图')
+    if (!isAmount(rechargeDialog.amount, { format: 'number' })) return msgWarning('请输入充值金额')
+    if (!rechargeDialog.voucherFile) return msgWarning('请上传银行流水或转账截图')
     rechargeDialog.saving = true
     try {
       const res = await rechargeCustomer(rechargeDialog.customer.id, {
@@ -200,8 +205,8 @@ export function useDomesticCustomers() {
       })
       const data = res.data || {}
       rechargeDialog.visible = false
-      ElMessage.success(res.message || (data.replayed ? '该笔充值申请已提交过' : '充值申请已提交，审核通过后生效'))
-      await fetchList()
+      msgSuccessText(res.message || (data.replayed ? '该笔充值申请已提交过' : '充值申请已提交，审核通过后生效'))
+      await listPageState.refreshUpdate()
     } catch { /* 拦截器已提示 */ } finally {
       rechargeDialog.saving = false
     }
@@ -222,7 +227,7 @@ export function useDomesticCustomers() {
   }
 
   async function confirmInit() {
-    if (!(initDialog.balance >= 0)) return ElMessage.warning('期初余额不能为负')
+    if (!(initDialog.balance >= 0)) return msgWarning('期初余额不能为负')
     initDialog.saving = true
     try {
       const res = await initializeCustomer(initDialog.customer.id, {
@@ -232,10 +237,10 @@ export function useDomesticCustomers() {
       })
       const data = res.data || {}
       initDialog.visible = false
-      ElMessage.success(data.replayed
-        ? `该客户已初始化过；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`
-        : `初始化完成；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
-      await fetchList()
+      msgSuccessText(data.replayed
+        ? `该客户已初始化过；当前${data.membership_label}，余额 ${formatMoney(Number(data.current_balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}`
+        : `初始化完成；当前${data.membership_label}，余额 ${formatMoney(Number(data.current_balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}`)
+      await listPageState.refreshUpdate()
     } catch { /* 拦截器已提示 */ } finally {
       initDialog.saving = false
     }
@@ -250,9 +255,9 @@ export function useDomesticCustomers() {
 
   async function confirmAdjust() {
     const changeLevel = adjustDialog.membership_level !== '__keep__'
-    if (!adjustDialog.amount && !changeLevel) return ElMessage.warning('请填余额调整额或选择会员等级')
+    if (!adjustDialog.amount && !changeLevel) return msgWarning('请填余额调整额或选择会员等级')
     if (!adjustDialog.remark.trim() || adjustDialog.remark.trim().length < 2) {
-      return ElMessage.warning('请填写调整原因（至少 2 个字）')
+      return msgWarning('请填写调整原因（至少 2 个字）')
     }
     adjustDialog.saving = true
     try {
@@ -265,39 +270,31 @@ export function useDomesticCustomers() {
       if (changeLevel) payload.membership_level = adjustDialog.membership_level
       const res = await adjustCustomer(adjustDialog.customer.id, payload)
       adjustDialog.visible = false
-      ElMessage.success(res.message || '调整申请已提交，审核通过后生效')
-      await fetchList()
+      msgSuccessText(res.message || '调整申请已提交，审核通过后生效')
+      await listPageState.refreshUpdate()
     } catch { /* 拦截器已提示 */ } finally {
       adjustDialog.saving = false
     }
   }
 
-  const ledgerDrawer = reactive({
-    visible: false, customer: null, items: [], loading: false, page: 1, total: 0,
-  })
+  const ledgerState = useListPage(async ({ customerId, ...params }, { signal }) => customerId ? (await listCustomerBalanceLedger(customerId, params, { signal, suppressToast: true })).data : { items: [], total: 0 },
+    { searchForm: { customerId: null }, immediate: false })
+  watchListResourceScope(ledgerState, ['customerId'])
+  const ledgerDrawer = reactive({ visible: false, customer: null, items: ledgerState.list, loading: ledgerState.loading,
+    page: ledgerState.page, pageSize: ledgerState.pageSize, total: ledgerState.total })
   const ledgerTypeLabel = {
     recharge: '充值', order_charge: '订单扣款', order_adjustment: '订单差额', order_refund: '订单退款',
     init: '期初初始化', adjust: '手工调整', level_adjust: '等级调整',
   }
 
-  async function openLedger(customer) {
-    Object.assign(ledgerDrawer, { visible: true, customer, items: [], page: 1, total: 0 })
-    await loadLedger(1)
+  function openLedger(customer) {
+    ledgerDrawer.customer = customer
+    ledgerDrawer.visible = true
+    ledgerState.searchForm.customerId = customer.id
+    return ledgerState.handleSearch()
   }
-
-  async function loadLedger(page = ledgerDrawer.page) {
-    ledgerDrawer.page = page
-    ledgerDrawer.loading = true
-    try {
-      const res = await listCustomerBalanceLedger(
-        ledgerDrawer.customer.id, { page: ledgerDrawer.page, page_size: 20 },
-      )
-      ledgerDrawer.items = res.data?.items || []
-      ledgerDrawer.total = res.data?.total || 0
-    } catch { /* 拦截器已提示 */ } finally {
-      ledgerDrawer.loading = false
-    }
-  }
+  function loadLedger(page = ledgerDrawer.page) { return ledgerState.handlePageChange(page) }
+  function changeLedgerSize(size) { return ledgerState.handleSizeChange(size) }
 
   const importDialog = reactive({
     visible: false, files: [], result: null,
@@ -313,8 +310,8 @@ export function useDomesticCustomers() {
       const res = await importCustomers(file)
       importDialog.result = res.data || {}
       importDialog.files = [] // 清掉占用 limit 的记录，允许不关闭弹窗继续导入
-      ElMessage.success(res.message || '导入完成')
-      await fetchList()
+      msgSuccessText(res.message || '导入完成')
+      await listPageState.refreshCreate()
     } catch (err) {
       importDialog.result = null
       throw err // AppUpload 需要 reject 来收尾 inflight；拦截器已提示
@@ -325,14 +322,14 @@ export function useDomesticCustomers() {
   async function toggleStatus(row) {
     await updateCustomer(row.id, { status: row.status ? 0 : 1 })
     msgSuccess(row.status ? '停用' : '启用')
-    await fetchList()
+    await listPageState.refreshUpdate()
   }
 
   async function handleDelete(row) {
     await confirmDanger('删除', `客户「${row.shop_name}」`)
     await deleteCustomer(row.id)
     msgSuccess('删除')
-    await fetchList()
+    await listPageState.refreshRemove()
   }
 
   async function loadOptions() {
@@ -345,6 +342,8 @@ export function useDomesticCustomers() {
   onMounted(loadOptions)
 
   return {
+    ...listPageState,
+    ...listPageState,
     loading, list, total, page, pageSize, searchForm,
     fetchList, handleSearch, handlePageChange, handleSizeChange,
     canOperateCustomer, handleProvinceChange, resetFilters,
@@ -353,7 +352,7 @@ export function useDomesticCustomers() {
     onRechargeVoucherChange, onRechargeVoucherRemove, onRechargeVoucherExceed,
     initDialog, openInit, confirmInit,
     adjustDialog, openAdjust, confirmAdjust,
-    ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger,
+    ledgerState, ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger, changeLedgerSize,
     importDialog, openImport, doImport,
     toggleStatus, handleDelete, membershipOptions,
     membershipPreview, membershipChangeLabel,

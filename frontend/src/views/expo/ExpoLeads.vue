@@ -8,21 +8,17 @@
     </div>
 
     <div ref="panelRef" class="table-card leads-panel">
-      <div class="toolbar">
-        <el-input v-model="filters.keyword" placeholder="搜索姓名 / 电话 / 微信" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="search" @clear="search" />
-        <el-select v-model="filters.intent_level" placeholder="意向等级" clearable class="filter-w-sm" @change="search">
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="search" @reset="resetFilters"><el-input v-model="filters.keyword" placeholder="搜索姓名 / 电话 / 微信" clearable prefix-icon="Search" class="filter-w-lg"   />
+<el-select v-model="filters.intent_level" placeholder="意向等级" clearable class="filter-w-sm" >
           <el-option v-for="l in ['A', 'B', 'C', 'D']" :key="l" :label="`${l} 级`" :value="l" />
         </el-select>
-        <el-input v-model="filters.expo_code" placeholder="展会编码" clearable class="filter-w-sm" @keyup.enter="search" @clear="search" />
-        <el-select v-if="canReadAll" v-model="filters.store_id" placeholder="全部门店" clearable class="filter-w-sm" @change="search">
+<el-input v-model="filters.expo_code" placeholder="展会编码" clearable class="filter-w-sm"   />
+<el-select v-if="canReadAll" v-model="filters.store_id" placeholder="全部门店" clearable class="filter-w-sm" >
           <el-option v-for="s in storeOptions" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
-        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-        <el-tag v-if="quota?.bound" class="quota-badge" :type="quotaTagType" effect="light">
+<StatusBadge v-if="quota?.bound" class="quota-badge" :type="quotaTagType" effect="light">
           剩余 {{ quota.remaining }} 张
-        </el-tag>
-      </div>
+        </StatusBadge></FilterBar>
 
       <!-- 操作行：本页无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -36,12 +32,13 @@
         />
       </div>
 
-      <el-table :data="leads" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchLeads" />
+<el-table :data="leads" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchLeads">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="姓名" min-width="100" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('phone')" prop="phone" label="电话" min-width="120" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('primary-need')" label="核心需求" min-width="100">
@@ -52,7 +49,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('intent-level')" label="意向等级" min-width="90">
           <template #default="{ row }">
-            <el-tag v-if="row.intent_level" size="small" :class="'intent-' + row.intent_level">{{ row.intent_level }} 级</el-tag>
+            <StatusBadge v-if="row.intent_level" size="small" :class="'intent-' + row.intent_level">{{ row.intent_level }} 级</StatusBadge>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
@@ -86,20 +83,20 @@
           </div>
 
           <div v-for="(s, si) in detail.sessions || []" :key="s.id" class="session-block">
-            <div class="session-head">第 {{ si + 1 }} 次试戴 <el-tag size="small" effect="plain">{{ s.status }}</el-tag></div>
+            <div class="session-head">第 {{ si + 1 }} 次试戴 <StatusBadge size="small" effect="plain">{{ s.status }}</StatusBadge></div>
             <div v-if="s.analysis" class="tag-row">
-              <el-tag v-if="s.analysis.face_shape" size="small" effect="plain">脸型：{{ FACE_LABELS[s.analysis.face_shape] || s.analysis.face_shape }}</el-tag>
-              <el-tag v-if="s.analysis.skin_tone" size="small" effect="plain">
+              <StatusBadge v-if="s.analysis.face_shape" size="small" effect="plain">脸型：{{ FACE_LABELS[s.analysis.face_shape] || s.analysis.face_shape }}</StatusBadge>
+              <StatusBadge v-if="s.analysis.skin_tone" size="small" effect="plain">
                 肤色：{{ DEPTH_LABELS[s.analysis.skin_tone.depth] || s.analysis.skin_tone.depth }} · {{ TONE_LABELS[s.analysis.skin_tone.undertone] || s.analysis.skin_tone.undertone }}
-              </el-tag>
-              <el-tag v-if="s.analysis.temperament" size="small" effect="plain">气质：{{ s.analysis.temperament }}</el-tag>
-              <el-tag v-if="s.analysis.suit_length" size="small" effect="plain">适合长度：{{ LENGTH_LABELS[s.analysis.suit_length] || s.analysis.suit_length }}</el-tag>
+              </StatusBadge>
+              <StatusBadge v-if="s.analysis.temperament" size="small" effect="plain">气质：{{ s.analysis.temperament }}</StatusBadge>
+              <StatusBadge v-if="s.analysis.suit_length" size="small" effect="plain">适合长度：{{ LENGTH_LABELS[s.analysis.suit_length] || s.analysis.suit_length }}</StatusBadge>
             </div>
             <div v-if="s.analysis?.display_notes" class="notes-line">{{ s.analysis.display_notes }}</div>
             <div v-if="s.analysis_internal" class="tag-row internal-row">
-              <el-tag size="small" type="warning">仅内部</el-tag>
-              <el-tag v-if="s.analysis_internal.hair_condition" size="small" type="warning" effect="plain">发况：{{ s.analysis_internal.hair_condition }}</el-tag>
-              <el-tag v-if="s.analysis_internal.sales_note" size="small" type="warning" effect="plain">销售备注：{{ s.analysis_internal.sales_note }}</el-tag>
+              <StatusBadge size="small" type="warning">仅内部</StatusBadge>
+              <StatusBadge v-if="s.analysis_internal.hair_condition" size="small" type="warning" effect="plain">发况：{{ s.analysis_internal.hair_condition }}</StatusBadge>
+              <StatusBadge v-if="s.analysis_internal.sales_note" size="small" type="warning" effect="plain">销售备注：{{ s.analysis_internal.sales_note }}</StatusBadge>
             </div>
 
             <div v-if="s.results?.length" class="result-grid">
@@ -126,7 +123,7 @@
             <div class="session-head">跟进反馈</div>
             <el-timeline>
               <el-timeline-item v-for="(f, fi) in detail.feedbacks" :key="fi" :timestamp="f.created_at" placement="top">
-                <el-tag v-if="f.intent_level" size="small" :class="'intent-' + f.intent_level">{{ f.intent_level }} 级</el-tag>
+                <StatusBadge v-if="f.intent_level" size="small" :class="'intent-' + f.intent_level">{{ f.intent_level }} 级</StatusBadge>
                 <div v-if="f.notes" class="notes-line">{{ f.notes }}</div>
                 <div v-if="f.next_action" class="notes-line">下一步：{{ f.next_action }}</div>
               </el-timeline-item>
@@ -179,20 +176,21 @@ onMounted(async () => {
   } catch { /* 筛选项加载失败不阻断列表主流程 */ }
 })
 
-const {
-  loading, list: leads, total, page, pageSize, searchForm: filters,
-  fetchList: fetchLeads, handleSearch: search, handleReset: resetFilters, handlePageChange, handleSizeChange,
-} = useListPage(
-  async ({ page, page_size, ...form }) => {
+const listPageState = useListPage(
+  async ({ page, page_size, ...form }, { signal, isCurrent }) => {
     const params = { page, page_size }
     for (const key of ['keyword', 'intent_level', 'expo_code', 'store_id']) {
       if (form[key]) params[key] = form[key]
     }
-    const res = await getLeads(params)
+    const res = await getLeads(params, { signal, suppressToast: true })
     return res.data || {}
   },
   { searchForm: { keyword: '', intent_level: '', expo_code: '', store_id: '' } },
 )
+const {
+  loading, list: leads, total, page, pageSize, searchForm: filters,
+  fetchList: fetchLeads, handleSearch: search, handleReset: resetFilters, handlePageChange, handleSizeChange,
+} = listPageState
 
 // columnDefs 只供 TableTools 列显隐面板，模板列保持静态（推广期不配置化渲染）
 const columnDefs = [
@@ -274,7 +272,7 @@ async function handleDelete(row) {
   try {
     await deleteCustomer(row.id)
     msgSuccess('删除')
-    fetchLeads()
+    listPageState.refreshRemove()
   } catch { /* 拦截器已提示 */ }
 }
 </script>

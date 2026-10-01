@@ -1,5 +1,27 @@
 # 当前交接与待办
 
+## 2026-10-02 设计规范合并发布（Codex，执行中）
+
+- 亮哥已授权本任务合并、推送和部署。将在主worktree合并，保留主目录其他任务未提交文档；候选固定本次完整提交，通过 `deploy/deploy.bat` 完成办公室及已登记云目标准备、激活与后检。发布回执和目标摘要验证完成后再记为已部署。
+
+## 2026-10-02 设计规范剩余四阶段（Codex，本地完成，未提交/发布）
+
+- 分支 `codex/list-filter-behavior`，工作树 `C:/Users/windb/.codex/worktrees/list-filter-behavior/commission-system`。第1–13项与主站资源采用、门禁和规范索引已完成本地落地；包括弹窗/表单、状态字典、反馈/空态、金额/校验、分页/响应式详情、表格偏好恢复、语义色/尺寸和可运行组件样例。下方一期的“其余未启动”为当时历史快照，当前以本条为准。
+- 远端读取按P/F/B/C/S真实语义分别接入共享或经验证的等价控制器：草稿与应用快照、首次错误/重试、旧数据过期说明、作用域清空/取消、过期响应拒绝；独立辅助资源不被主列表成功掩盖。限量历史明确标注，完整Color选项按合法200页读取且校验总量。保留任务树/生产看板/导入预览布局与原领域计算、权限、确认依据。
+- 最后独立审查的生产raw响应假零、战报目录恢复旧选择、旧保存关闭新弹窗三项均已修复并按真实反例复核。相关回归6/6，主仪表盘15资源在非东八区5/5验证。各域报告已晋升到 `docs/requirements/ui-convergence-evidence/`。
+- 最终前端全量1185项：1179通过、6项既有登录Canvas mock失败；隔离HEAD同样6失败，源码/测试/地图均未改。构建通过，113导航项；UI门禁、5项门禁负例、严格约定增量、diff检查通过；Git巡检为 `--no-fetch` 本地快照。没有宣称全量绿或所有业务页面生产验收通过。
+- 实际组件样例桌面/390px验证了Enter/查询快照/重试/旧数据、列和密度持久化与恢复、视口铺满/Escape、长详情/表单可达和减少动态；修复隐藏overlay阻Escape与全屏边框2px溢出。截图已保留。真实写入型验证均是隔离夹具，没有生产数据库变更。
+- [最终验收](requirements/2026-10-02-ui-convergence-acceptance.md)、[资源账本](requirements/2026-10-02-list-resource-coverage.md)、[浏览器证据](requirements/ui-convergence-evidence/browser-showcase.md)。`DESIGN.md`已给第1–13项实现/验收索引；新门禁禁止抬高旧预算，非md按钮19个路径按精确数量登记，PM/专业视图历史弱信号仍冻结。
+- 未提交、推送、合并或部署；工作树和依赖链接保留供审阅。后续集成需核对最新main和本任务diff；生产发布另需授权。本轮一次性codemod已清理，交付、截图、stdout、隔离基线与恢复材料保留；其他代理成果未处理。
+
+## 2026-10-01 列表交互优化一期（Codex，本地完成，未提交/发布）
+
+- 仅执行优化清单第 1–4 项，试点为发票、回款、内销订单。分支 `codex/list-filter-behavior`；工作树 `C:/Users/windb/.codex/worktrees/list-filter-behavior/commission-system`。共享 useListPage 增加首次失败/重试、刷新失败保留旧行与页码、过期请求隔离、草稿与已提交条件、增删改刷新策略；共享 FilterBar 与 ListPageStatus 已接入三页。日期也进入提交快照；Enter 排除输入法/下拉/日期确认；高级收起保留输入。
+- 发票/回款新增按倒序排序回第一页，编辑保留有效页，删除末页按服务端 total 修正并重读。内销详情读取失败不再阻断列表刷新；缓存列表收到新单号返回路由后清理旧筛选并定位第一页，普通切回保留页码。错误横幅变化后重新计算内销表格高度。战报适配共享列表读取失败返回 false 的契约。
+- 定向 Node 回归 **186/186 通过**（所有 `invoice*.test.mjs`，以及 `listPageComponents`、`listPagePilots`、`useListPage`、`domesticOrderFilters`、`battleReportRace`、`domesticCustomerControls`、`customerWorkspace`、`vueTemplateBindings`）。三个真实控制器集成 6 项、共享组件渲染 3 项包含金融保存成功后读取失败、缓存新单定位、日期/元数据竞争、折叠/Enter/卸载等边界。最终 `npm run build` 通过（3340 modules，113 导航项）；既有大 chunk 与 auth 混合导入警告仍存在。`check_conventions.py --strict`、UI 门禁通过；债务基线仅删除内销筛选器已消除的内联宽度 1 处和深层覆盖 3 处。
+- 浏览器挂载三个真实页面，API 使用本地隔离夹具、写方法全部拒绝；核验一次 Enter 查询、草稿翻页仍用提交条件、首次失败与重试、旧行过期提示/恢复、高级折叠保留、生产单条件与标签重置。1280px 桌面三档宽度 160/200/280px；390px 回款六字段均 318×36、页面宽 385px；内销错误后分页仍在 900px 视口。截图与复现夹具保留于 `frontend/tmp/list-filter-verification/`，验收明细见 `docs/requirements/2026-10-01-list-filter-phase-one.md`。
+- 独立审查发现的详情刷新阻断、缓存新单无法定位均已修复并复核。`git_sweep.py --no-fetch` 为本地快照：本任务修改未提交，main 另有他人修改，旧分支/stash 均未处理。第 5 项之后及其余旧页面逐批推广未启动；真实生产登录/单据写入验收待以后发布。
+
 ## 2026-10-01 任务中心一期（Codex，已合并推送并部署）
 
 - 一期包含个人任务树、看板、模块地图、详情、快速建任务、AI 草稿、构建期导航清单和简版每日简报；二期 git 上报器与三期 MCP 未启动。分支 `codex/task-center-phase1` 经主目录合并为 `d76d743d0842cc804723bfaab33bda6f3392efaa` 并推送 `origin/main`。

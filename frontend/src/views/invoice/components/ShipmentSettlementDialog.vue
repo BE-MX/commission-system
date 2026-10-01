@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="true" :title="`生成出库单 · ${invoice.invoice_no}`" width="960px" append-to-body :before-close="close" :close-on-click-modal="false">
+  <el-dialog :model-value="true" :title="`生成出库单 · ${invoice.invoice_no}`" width="760px" append-to-body :before-close="close" :close-on-click-modal="false">
     <div v-loading="loading">
       <el-alert title="首笔定金保留至最后一批抵扣。提交生成本地结算单，实际出库以同步结果为准。" type="info" :closable="false" />
       <el-alert v-if="activeShipment" title="当前已有未完成的出库结算，请先处理下方记录后再创建下一批。" type="warning" :closable="false" />
@@ -12,15 +12,15 @@
         <el-form-item label="本批运费"><el-input-number v-model="freight" :precision="2" :min="0" controls-position="right" /></el-form-item>
         <el-alert v-if="freight > 0" title="本批运费将在小满生成独立销售订单并单独回款。小满原生销售报表会计入这张运费订单；方舟商品 GMV、订单数和提成统计会排除它。" type="info" :closable="false" />
         <GlassButton :loading="quoting" :disabled="saving || loading || activeShipment" @click="preview">核算本批金额</GlassButton>
-        <el-descriptions v-if="quote" :column="2" border class="quote-summary">
+        <ResponsiveDescriptions v-if="quote" :column="2" border class="quote-summary">
           <el-descriptions-item v-for="field in quoteFields" :key="field[0]" :label="field[1]">{{ invoice.currency }} {{ money(quote[field[0]]) }}</el-descriptions-item>
           <el-descriptions-item label="出库批次">{{ quote.is_final ? '最后一批，抵扣定金' : '部分出库，定金保留' }}</el-descriptions-item>
-        </el-descriptions>
+        </ResponsiveDescriptions>
         <el-checkbox v-permission="'receipt:write'" v-model="registerPayment">同时登记本次实际回款</el-checkbox>
         <ReceiptFields v-if="registerPayment" :form="payment" :currency="invoice.currency" :readonly="saving" @uploading="v => uploading = v" />
       </el-form>
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
-      <el-descriptions v-if="selectedSettlement" :column="2" border class="quote-summary">
+      <ResponsiveDescriptions v-if="selectedSettlement" :column="2" border class="quote-summary">
         <el-descriptions-item label="结算单">{{ selectedSettlement.settlement_no }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ stateLabel(selectedSettlement.state) }}</el-descriptions-item>
         <el-descriptions-item label="待登记货款">{{ money(selectedSettlement.balance?.goods_remaining) }}</el-descriptions-item>
@@ -28,7 +28,7 @@
         <el-descriptions-item v-if="selectedSettlement.outbound" label="小满出库单">{{ selectedSettlement.outbound.number }} · {{ selectedSettlement.outbound.remote_id || '待同步' }}</el-descriptions-item>
         <el-descriptions-item v-if="selectedSettlement.outbound" label="出库状态">{{ stateLabel(selectedSettlement.outbound.status) }}</el-descriptions-item>
         <el-descriptions-item v-if="selectedSettlement.freight_target" label="运费订单">{{ selectedSettlement.freight_target.remote_order_id || '待核对' }} · {{ stateLabel(selectedSettlement.freight_target.status) }}</el-descriptions-item>
-      </el-descriptions>
+      </ResponsiveDescriptions>
       <el-alert v-if="selectedSettlement?.outbound?.last_error" :title="selectedSettlement.outbound.last_error" type="error" :closable="false" />
       <h3>出库结算记录</h3>
       <el-table class="list-table" :data="settlements" border empty-text="暂无出库结算记录">
@@ -48,9 +48,9 @@
     <template #footer><GlassButton :disabled="saving || uploading" @click="close()">关闭</GlassButton><GlassButton v-permission="'shipment:write'" variant="primary" :loading="saving" :disabled="!quote || quoting || uploading" @click="submit">生成本批结算单</GlassButton></template>
   </el-dialog>
 </template>
-<script setup>
+<script setup>import { confirmAction, promptAction, msgSuccess } from '@/utils/feedback'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessageBox } from 'element-plus'
+
 import { getInvoice } from '@/api/invoice'
 import { quoteShipment, createShipment, listShipments, getShipment, changeShipment, confirmShipmentOutbound, reconcileShipmentTarget, retryShipmentTarget } from '@/api/shipment'
 import { useAuthStore } from '@/stores/auth'
@@ -60,7 +60,6 @@ import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment } from 
 import { cents, latestRequest } from '@/views/receipt/batchReceiptState'
 import { money } from '@/views/receipt/useReceipts'
 import { currentBeijingDate } from '@/utils/datetime'
-import { msgSuccess } from '@/utils/feedback'
 const props = defineProps({ invoice: { type: Object, required: true } })
 const emit = defineEmits(['close', 'saved']), auth = useAuthStore()
 const lines = ref([]), freight = ref(0), quote = ref(null), settlements = ref([]), loading = ref(true), quoting = ref(false), saving = ref(false), uploading = ref(false), error = ref(''), registerPayment = ref(false)
@@ -94,7 +93,7 @@ async function preview() {
 async function close(done) {
   if (saving.value || uploading.value) return
   if (lines.value.some(row => row.requested > 0) || payment.attachment_ids.length) {
-    try { await ElMessageBox.confirm('尚未提交的出库信息将被丢弃，确定关闭？', '关闭出库结算', { type: 'warning' }) } catch { return }
+    try { await confirmAction('尚未提交的出库信息将被丢弃，确定关闭？', '关闭出库结算', { type: 'warning' }) } catch { return }
   }
   quoteRequest.next(); emit('close'); if (typeof done === 'function') done()
 }
@@ -114,7 +113,7 @@ async function submit() {
 async function change(row, action) {
   if (saving.value) return
   let reason
-  try { reason = (await ElMessageBox.prompt('请填写操作原因', '更新出库结算', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符' })).value } catch { return }
+  try { reason = (await promptAction('请填写操作原因', '更新出库结算', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符' })).value } catch { return }
   saving.value = true
   try { await changeShipment(row.id, action, { version: row.version, reason }); await reload(); quote.value = null; emit('saved') }
   catch (e) { error.value = e.response?.data?.detail || e.message || '操作失败，请刷新后重试' }
@@ -123,7 +122,7 @@ async function change(row, action) {
 async function confirmOutbound(row) {
   if (saving.value) return
   let reason
-  try { reason = (await ElMessageBox.prompt('将把这张小满待出库单确认为实际出库，并影响库存。请核对本批回款、数量和仓库，填写操作原因。', '确认实际出库', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符', confirmButtonText: '确认实际出库', type: 'warning' })).value } catch { return }
+  try { reason = (await promptAction('将把这张小满待出库单确认为实际出库，并影响库存。请核对本批回款、数量和仓库，填写操作原因。', '确认实际出库', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符', confirmButtonText: '确认实际出库', type: 'warning' })).value } catch { return }
   saving.value = true; error.value = ''
   try { const result = await confirmShipmentOutbound(row.id, { version: row.version, reason }); await reload(); selectedSettlement.value = result; emit('saved') }
   catch (e) { error.value = e.response?.data?.detail || e.message || '实际出库确认失败，请核对原单' }
@@ -135,8 +134,8 @@ async function reconcileTarget(row, kind) {
   const knownId = kind === 'freight' ? target?.remote_order_id : target?.remote_id
   let remoteId = null, reason
   try {
-    if (!knownId) remoteId = (await ElMessageBox.prompt('请先在小满核对原单，再输入精确 ID。该操作只绑定已有单据，不会重新创建。', '绑定小满单据', { inputPattern: /^[1-9][0-9]*$/, inputErrorMessage: '请输入有效的小满单据 ID' })).value
-    reason = (await ElMessageBox.prompt('请填写核对依据', '核对小满结果', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符' })).value
+    if (!knownId) remoteId = (await promptAction('请先在小满核对原单，再输入精确 ID。该操作只绑定已有单据，不会重新创建。', '绑定小满单据', { inputPattern: /^[1-9][0-9]*$/, inputErrorMessage: '请输入有效的小满单据 ID' })).value
+    reason = (await promptAction('请填写核对依据', '核对小满结果', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符' })).value
   } catch { return }
   saving.value = true; error.value = ''
   try {
@@ -148,7 +147,7 @@ async function reconcileTarget(row, kind) {
 async function retryTarget(row, kind) {
   if (saving.value) return
   let reason
-  try { reason = (await ElMessageBox.prompt('仅明确未在小满创建的失败任务可以重试。请先核对原单并填写原因。', '重试同步', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符', type: 'warning' })).value } catch { return }
+  try { reason = (await promptAction('仅明确未在小满创建的失败任务可以重试。请先核对原单并填写原因。', '重试同步', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符', type: 'warning' })).value } catch { return }
   saving.value = true; error.value = ''
   try {
     const result = await retryShipmentTarget(row.id, kind, { version: row.version, reason })

@@ -9,8 +9,8 @@ import {
 
 // ── 用户管理 ──────────────────────────────────────────
 
-export function getUserList(params) {
-  return authRequest.get('/users/list', { params }).then(r => r.data)
+export function getUserList(params, config = {}) {
+  return authRequest.get('/users/list', { ...config, params, showLoading: false }).then(r => r.data)
 }
 
 export function createUser(data) {
@@ -55,8 +55,8 @@ export function updateInvoiceDelegateGrants(userId, salesUserIds) {
 
 // ── 角色管理 ──────────────────────────────────────────
 
-export function getRoleList() {
-  return authRequest.get('/roles/list').then(r => r.data)
+export function getRoleList(config = {}) {
+  return authRequest.get('/roles/list', { ...config, showLoading: false }).then(r => r.data)
 }
 
 export function createRole(data) {

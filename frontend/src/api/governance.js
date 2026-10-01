@@ -5,8 +5,8 @@ import { governanceClient } from './clients'
 
 // ── 概念 CRUD ────────────────────────────────────────────
 
-export function listConcepts(params) {
-  return governanceClient.get('/concepts', { params })
+export function listConcepts(params, config = {}) {
+  return governanceClient.get('/concepts', { ...config, params })
 }
 
 export function getConcept(conceptId) {
@@ -25,8 +25,8 @@ export function transitionStatus(conceptId, payload) {
   return governanceClient.patch(`/concepts/${conceptId}/status`, payload)
 }
 
-export function getGovernanceStats() {
-  return governanceClient.get('/stats')
+export function getGovernanceStats(config = {}) {
+  return governanceClient.get('/stats', { ...config, showLoading: false })
 }
 
 // ── 关联关系 ──────────────────────────────────────────────
@@ -45,14 +45,14 @@ export function deleteRelationship(conceptId, relId) {
 
 // ── 图谱 ──────────────────────────────────────────────────
 
-export function getConceptGraph() {
-  return governanceClient.get('/graph')
+export function getConceptGraph(config = {}) {
+  return governanceClient.get('/graph', { ...config, showLoading: false })
 }
 
 // ── 变更记录 ──────────────────────────────────────────────
 
-export function listChangeLogs(params) {
-  return governanceClient.get('/change-logs', { params })
+export function listChangeLogs(params, config = {}) {
+  return governanceClient.get('/change-logs', { ...config, params })
 }
 
 export function getChangeDiff(logId) {

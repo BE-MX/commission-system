@@ -9,13 +9,11 @@
 
     <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
     <div ref="panelRef" class="table-card">
-      <div class="toolbar">
-        <el-input v-model="keyword" placeholder="搜索业务员姓名/ID" clearable class="filter-w-md" @keyup.enter="search" @clear="search">
+      <FilterBar :loading="loading" :pending="hasPendingSearch" @search="search" @reset="resetFilters">
+        <el-input v-model="keyword" placeholder="搜索业务员姓名/ID" clearable class="filter-w-md">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+      </FilterBar>
 
       <div class="action-bar">
         <GlassButton v-permission="'supervisor:write'" variant="primary" left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
@@ -24,17 +22,18 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
-          @refresh="fetchList"
+          :loading="loading" @refresh="fetchList"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
-      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange">
-        <template #empty>
+      <ListPageStatus v-if="hasData && errorMessage" :error="errorMessage" :loading="loading" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
+      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="changeSort">
+        <template #empty><ListPageStatus :error="errorMessage" :loading="loading" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('salesperson-id')" prop="salesperson_id" label="业务员ID" min-width="200" max-width="300" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('supervisor-id')" prop="supervisor_id" label="一级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
@@ -57,14 +56,14 @@
         :total="total"
         layout="total, sizes, prev, pager, next"
         :page-sizes="[20, 50, 100]"
-        @current-change="fetchList"
+        @current-change="handlePageChange"
         @size-change="handleSizeChange"
       />
     </div>
 
     <!-- 变更主管 Dialog -->
-    <el-dialog v-model="setDialogVisible" title="变更主管" width="420px">
-      <el-form label-width="100px">
+    <el-dialog v-model="setDialogVisible" title="变更主管" width="480px">
+      <el-form label-position="top">
         <el-form-item label="业务员">
           <span>{{ currentRow?.salesperson_name || currentRow?.salesperson_id }}</span>
         </el-form-item>
@@ -82,7 +81,8 @@
     </el-dialog>
 
     <!-- 历史 Drawer -->
-    <el-drawer v-model="historyVisible" :title="`${currentRow?.salesperson_name || ''} 主管变更历史`" size="500px">
+    <DetailDrawer v-model="historyVisible" :title="`${historyRow?.salesperson_name || ''} 主管变更历史`" width="640px">
+      <ListPageStatus :paged="false" :error="historyResource.errorMessage.value" :loading="historyResource.loading.value" :has-data="historyResource.hasLoaded.value" @retry="fetchHistory" />
       <el-timeline v-if="historyList.length">
         <el-timeline-item
           v-for="item in historyList"
@@ -94,12 +94,12 @@
             <div>一级主管：{{ item.supervisor_id }}</div>
             <div v-if="item.second_supervisor_id">二级主管：{{ item.second_supervisor_id }}</div>
             <span v-if="item.effective_end" class="history-range">截至 {{ item.effective_end }}</span>
-            <el-tag v-if="item.is_current" type="primary" size="small" style="margin-left:8px">当前</el-tag>
+            <StatusBadge v-if="item.is_current" type="primary" size="small" style="margin-left:8px">当前</StatusBadge>
           </el-card>
         </el-timeline-item>
       </el-timeline>
-      <el-empty v-else description="暂无历史记录" />
-    </el-drawer>
+      <el-empty v-else-if="historyResource.isEmpty.value" description="暂无历史记录" />
+    </DetailDrawer>
 
     <!-- 批量导入 Dialog -->
     <el-dialog v-model="importDialogVisible" title="批量导入主管关系" width="480px">
@@ -118,11 +118,11 @@
         <div class="el-upload__text">拖拽或 <em>点击上传</em></div>
       </el-upload>
       <div v-if="importResult" style="margin-top:16px">
-        <el-descriptions :column="3" border size="small">
+        <ResponsiveDescriptions :column="3" border size="small">
           <el-descriptions-item label="总行数">{{ importResult.total_rows }}</el-descriptions-item>
           <el-descriptions-item label="成功">{{ importResult.success }}</el-descriptions-item>
           <el-descriptions-item label="失败">{{ importResult.failed }}</el-descriptions-item>
-        </el-descriptions>
+        </ResponsiveDescriptions>
         <div v-if="importResult.failures?.length" style="margin-top:8px">
           <el-text type="danger" v-for="f in importResult.failures" :key="f" tag="div" size="small">{{ f }}</el-text>
         </div>
@@ -138,8 +138,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { toRef } from 'vue'
+import { msgWarning, msgSuccessText } from '@/utils/feedback'
+import { computed, onMounted, ref, watch } from 'vue'
+
 import { Search } from '@element-plus/icons-vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
@@ -148,12 +152,14 @@ import { getSupervisorList, setSupervisorRelation, getSupervisorHistory, importS
 
 const orderSort = useTableSort()
 
-const keyword = ref('')
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const tableData = ref([])
-const loading = ref(false)
+const listState = useListPage(async (params, { signal }) => {
+  const response = await getSupervisorList(params, { signal, suppressToast: true })
+  return { items: response.data.items || [], total: response.data.total || 0 }
+}, { searchForm: { keyword: '' } })
+const { loading, list: tableData, total, page, pageSize, searchForm, appliedSearchForm, errorMessage, hasData, dataPage, hasPendingSearch, fetchList, handleSearch, handleReset: resetFilters, handlePageChange, handleSizeChange, refreshCreate, refreshUpdate, refreshRemove } = listState
+const keyword = toRef(searchForm, 'keyword')
+const search = handleSearch
+function changeSort(event) { orderSort.onSortChange(event); return listState.handleSortChange(orderSort.sortParams.value) }
 
 // 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
 const columnDefs = [
@@ -167,21 +173,8 @@ const columnDefs = [
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('supervisor-relation', columnDefs)
 
-const hasActiveFilters = computed(() => Boolean(keyword.value))
-function search() { page.value = 1; fetchList() }
-function resetFilters() { keyword.value = ''; search() }
-function handleSizeChange() { page.value = 1; fetchList() }
+const hasActiveFilters = computed(() => Boolean(appliedSearchForm.value.keyword))
 
-async function fetchList() {
-  loading.value = true
-  try {
-    const res = await getSupervisorList({ keyword: keyword.value, page: page.value, page_size: pageSize.value, ...orderSort.sortParams.value })
-    tableData.value = res.data.items
-    total.value = res.data.total
-  } finally {
-    loading.value = false
-  }
-}
 
 // 变更主管
 const setDialogVisible = ref(false)
@@ -197,7 +190,7 @@ function openSetDialog(row) {
 
 async function submitRelation() {
   if (!relForm.value.supervisor_id) {
-    ElMessage.warning('请输入一级主管ID')
+    msgWarning('请输入一级主管ID')
     return
   }
   saving.value = true
@@ -210,9 +203,9 @@ async function submitRelation() {
       payload.second_supervisor_id = relForm.value.second_supervisor_id
     }
     await setSupervisorRelation(payload)
-    ElMessage.success('设置成功')
+    msgSuccessText('设置成功')
     setDialogVisible.value = false
-    fetchList()
+    refreshUpdate()
   } finally {
     saving.value = false
   }
@@ -220,18 +213,26 @@ async function submitRelation() {
 
 // 查看历史
 const historyVisible = ref(false)
-const historyList = ref([])
+const historyRow = ref(null)
+const historyResource = useAsyncResource(async (salespersonId, { signal }) => {
+  const response = await getSupervisorHistory({ salesperson_id: salespersonId }, { signal, suppressToast: true })
+  return response.data || []
+}, { initialData: [] })
+const historyList = historyResource.data
 
-async function openHistory(row) {
-  currentRow.value = row
+function openHistory(row) {
+  if (historyRow.value?.salesperson_id !== row.salesperson_id) historyResource.clear()
+  historyRow.value = row
   historyVisible.value = true
-  try {
-    const res = await getSupervisorHistory({ salesperson_id: row.salesperson_id })
-    historyList.value = res.data || []
-  } catch {
-    historyList.value = []
-  }
+  return fetchHistory()
 }
+function fetchHistory() {
+  if (!historyVisible.value || !historyRow.value) return Promise.resolve(false)
+  return historyResource.load(historyRow.value.salesperson_id)
+}
+watch(historyVisible, visible => {
+  if (!visible) { historyResource.clear(); historyRow.value = null }
+}, { flush: 'sync' })
 
 // 批量导入
 const importDialogVisible = ref(false)
@@ -251,14 +252,14 @@ async function submitImport() {
   try {
     const res = await importSupervisorRelations(importFile.value)
     importResult.value = res.data
-    ElMessage.success(`导入完成：成功 ${res.data.success} 条`)
-    fetchList()
+    msgSuccessText(`导入完成：成功 ${res.data.success} 条`)
+    refreshUpdate()
   } finally {
     importing.value = false
   }
 }
 
-onMounted(fetchList)
+
 </script>
 
 <style scoped>

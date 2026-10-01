@@ -83,8 +83,8 @@
       <div class="right-panel lg-card is-static">
         <div class="right-panel-title">
           <span>{{ mode === 'ocr' ? 'AI 识别结果' : '运单信息' }}</span>
-          <el-tag v-if="mode === 'ocr'" type="success" size="small">图片模式</el-tag>
-          <el-tag v-if="mode === 'manual'" type="info" size="small">手录模式</el-tag>
+          <StatusBadge v-if="mode === 'ocr'" type="success" size="small">图片模式</StatusBadge>
+          <StatusBadge v-if="mode === 'manual'" type="info" size="small">手录模式</StatusBadge>
         </div>
 
         <!-- OCR loading 骨架屏 -->
@@ -133,11 +133,10 @@
           />
 
           <!-- 字段表单 -->
-          <el-form
+          <el-form label-position="top"
             ref="formRef"
             :model="form"
             :rules="formRules"
-            label-width="90px"
             :disabled="!!duplicateInfo"
           >
             <el-form-item label="运单号" prop="waybill_no">

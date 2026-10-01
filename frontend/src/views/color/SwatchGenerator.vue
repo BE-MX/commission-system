@@ -11,9 +11,11 @@
       <!-- 左侧：选择色号 -->
       <div class="selector-panel lg-card is-static">
         <h3>选择色号</h3>
+        <ListPageStatus :paged="false" :error="colorResource.errorMessage.value" :loading="colorResource.loading.value" :has-data="colorResource.hasData.value" @retry="loadColorOptions"><el-empty v-if="!colorOptions.length" description="暂无可选色号，可手动输入 HEX" :image-size="96" /></ListPageStatus>
         <el-select-v2
           v-model="selectedColorId"
           :options="colorOptions"
+          :loading="colorResource.loading.value"
           placeholder="搜索色号..."
           filterable
           clearable
@@ -27,7 +29,7 @@
         </el-input>
 
         <h3 style="margin-top: 24px;">生成设置</h3>
-        <el-form label-width="80px">
+        <el-form label-position="top">
           <el-form-item label="风格">
             <el-radio-group v-model="style">
               <el-radio-button label="swatch_card">色块卡片</el-radio-button>
@@ -75,9 +77,9 @@
             <div class="verify-info">
               <span>目标色: {{ currentTask.target_hex }}</span>
               <span>实际色: {{ currentTask.actual_hex }}</span>
-              <el-tag :type="currentTask.pass_check ? 'success' : 'warning'">
+              <StatusBadge :type="currentTask.pass_check ? 'success' : 'warning'">
                 ΔE = {{ currentTask.delta_e }} {{ currentTask.pass_check ? '✅ 通过' : '⚠️ 偏差' }}
-              </el-tag>
+              </StatusBadge>
             </div>
             <div class="preview-actions">
               <GlassButton variant="primary" :left-icon="Download">下载</GlassButton>
@@ -99,6 +101,7 @@
         <h3>历史生成记录</h3>
         <TableTools v-model:visible-keys="historyVisibleKeys" v-model:density="historyDensity" :columns="historyColumnDefs" :fullscreen="historyIsFullscreen" @refresh="loadHistory" @fullscreen="toggleHistoryFullscreen" />
       </div>
+      <ListPageStatus v-if="historyState.hasData.value" :error="historyState.errorMessage.value" :loading="historyLoading" :has-data="true" :data-page="historyState.dataPage.value" @retry="loadHistory" />
       <el-table :data="historyList" v-loading="historyLoading" @sort-change="handleHistorySort" border class="list-table" :class="historyDensityClass" :max-height="historyIsFullscreen ? undefined : 640">
         <el-table-column v-if="historyVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
         <el-table-column v-if="historyVisibleKeys.includes('color')" label="色号" min-width="100">
@@ -111,19 +114,19 @@
         <el-table-column v-if="historyVisibleKeys.includes('model')" prop="model_used" label="模型" min-width="120" />
         <el-table-column v-if="historyVisibleKeys.includes('delta')" label="ΔE" min-width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.delta_e !== null" :type="row.pass_check ? 'success' : 'warning'" size="small">
+            <StatusBadge v-if="row.delta_e !== null" :type="row.pass_check ? 'success' : 'warning'" size="small">
               {{ row.delta_e }}
-            </el-tag>
+            </StatusBadge>
             <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column v-if="historyVisibleKeys.includes('status')" prop="status" label="状态" min-width="100">
           <template #default="{ row }">
-            <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+            <StatusBadge :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="historyVisibleKeys.includes('created')" prop="created_at" label="创建时间" min-width="160" sortable="custom" />
-        <template #empty><el-empty description="暂无数据" /></template>
+        <template #empty><ListPageStatus :error="historyState.errorMessage.value" :loading="historyLoading" :has-data="false" @retry="loadHistory"><el-empty description="暂无数据" /></ListPageStatus></template>
       </el-table>
       <el-pagination
         v-if="historyTotal > 0"
@@ -133,23 +136,27 @@
         :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         class="pager"
-        @current-change="loadHistory"
+        @current-change="historyState.handlePageChange"
         @size-change="handleHistorySizeChange"
       />
     </div>
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, msgSuccessText, msgError } from '@/utils/feedback'
 import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { Download, MagicStick, Picture } from '@element-plus/icons-vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useListPage } from '@/composables/useListPage'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTableView } from '@/composables/useTableView'
 import TableTools from '@/components/TableTools.vue'
-import { generateSwatch, getColors, getSwatches, getSwatchStatus } from '@/api/color'
+import { generateSwatch, getAllColorsForSelection, getSwatches, getSwatchStatus } from '@/api/color'
 
-const colorOptions = ref([])
+const colorResource = useAsyncResource(async (_, { signal }) =>
+  (await getAllColorsForSelection({ signal, suppressToast: true })).map(p => ({ value: p.id, label: `${p.industry_code} ${p.display_name}` })), { initialData: [] })
+const colorOptions = colorResource.data
 const selectedColorId = ref(null)
 const manualHex = ref('')
 const style = ref('swatch_card')
@@ -158,11 +165,8 @@ const generating = ref(false)
 const orderSort = useTableSort()
 const currentTask = ref(null)
 
-const historyList = ref([])
-const historyLoading = ref(false)
-const historyPage = ref(1)
-const historyPageSize = ref(20)
-const historyTotal = ref(0)
+const historyState = useListPage(async (params, { signal }) => (await getSwatches(params, { signal, suppressToast: true })).data, { searchForm: { sort_field: '', sort_order: '' } })
+const { list: historyList, loading: historyLoading, page: historyPage, pageSize: historyPageSize, total: historyTotal, fetchList: loadHistory, handleSizeChange: handleHistorySizeChange } = historyState
 const historyColumnDefs = [
   { key: 'id', label: 'ID' }, { key: 'color', label: '色号' },
   { key: 'target', label: '目标色' }, { key: 'model', label: '模型' },
@@ -177,46 +181,22 @@ const {
 
 function handleHistorySort(event) {
   orderSort.onSortChange(event)
-  historyPage.value = 1
-  loadHistory()
+  return historyState.handleSortChange({ sort_field: orderSort.sortField.value, sort_order: orderSort.sortOrder.value })
 }
 
-function handleHistorySizeChange() {
-  historyPage.value = 1
-  loadHistory()
-}
+
 
 onMounted(() => {
   loadColorOptions()
-  loadHistory()
 })
 
-async function loadColorOptions() {
-  try {
-    const res = await getColors({ page_size: 1000 })
-    if (res.data?.code === 200) {
-      colorOptions.value = (res.data.data.items || []).map(p => ({
-        value: p.id,
-        label: `${p.industry_code} ${p.display_name}`,
-      }))
-    }
-  } catch { /* ignore */ }
-}
+function loadColorOptions() { return colorResource.load() }
 
-async function loadHistory() {
-  historyLoading.value = true
-  try {
-    const res = await getSwatches({ page: historyPage.value, page_size: historyPageSize.value, ...orderSort.sortParams.value })
-    if (res.data?.code === 200) {
-      historyList.value = res.data.data.items || []
-      historyTotal.value = res.data.data.total || 0
-    }
-  } finally { historyLoading.value = false }
-}
+
 
 async function generate() {
   if (!selectedColorId.value && !manualHex.value) {
-    ElMessage.warning('请选择色号或输入 HEX')
+    msgWarning('请选择色号或输入 HEX')
     return
   }
 
@@ -227,13 +207,13 @@ async function generate() {
       data.color_id = selectedColorId.value
     }
     const res = await generateSwatch(data)
-    if (res.data?.code === 201) {
-      ElMessage.success('生成任务已创建')
+    if (res.code === 201) {
+      msgSuccessText('生成任务已创建')
       // 轮询状态
-      pollStatus(res.data.data.task_id)
+      pollStatus(res.data.task_id)
     }
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '创建失败')
+    msgError(e.response?.data?.message || '创建失败', e)
   } finally {
     generating.value = false
   }
@@ -243,11 +223,11 @@ async function pollStatus(taskId) {
   const interval = setInterval(async () => {
     try {
       const res = await getSwatchStatus(taskId)
-      if (res.data?.code === 200) {
-        currentTask.value = res.data.data
+      if (res.code === 200) {
+        currentTask.value = res.data
         if (['completed', 'failed', 'rejected'].includes(currentTask.value.status)) {
           clearInterval(interval)
-          loadHistory()
+          historyState.refreshCreate()
         }
       }
     } catch {

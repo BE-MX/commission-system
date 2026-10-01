@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="modelValue" title="编辑订单" width="860px" append-to-body destroy-on-close
+  <el-dialog :model-value="modelValue" title="编辑订单" width="760px" append-to-body destroy-on-close
     :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" :before-close="closeOrder">
     <div v-loading="loading" class="order-edit-body">
       <template v-if="detail">
@@ -37,7 +37,7 @@
         <p class="order-edit-hint">每条明细独立保存。改规格不重新报价，产品类型与工艺路线不可改；数量不能少于已完成报工的件数。</p>
         <p class="order-edit-hint">删除立即生效，订单至少保留一条明细；已有报工或跳过记录的明细不能删除。待审核、已驳回、已发货或已终止的订单不能删除明细。</p>
         <div v-for="item in detail.items" :key="item.id" class="order-edit-item">
-          <div><strong>{{ item.line_code }} · {{ item.product_name }}</strong><div class="order-edit-hint">{{ item.order_qty }} 件<span v-if="!production"> · 成交单价 ¥{{ Number(item.unit_price).toFixed(2) }}</span></div></div>
+          <div><strong>{{ item.line_code }} · {{ item.product_name }}</strong><div class="order-edit-hint">{{ item.order_qty }} 件<span v-if="!production"> · 成交单价 {{ formatMoney(Number(item.unit_price), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span></div></div>
           <div class="order-edit-item-actions">
             <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="EditPen" :disabled="busy || !editable || item.status === 2" @click="openItem(item)">编辑明细</GlassButton>
             <GlassButton v-permission="'domestic:write'" variant="link" link-tone="danger" left-icon="Delete" :loading="deletingItemId === item.id" :disabled="busy || !canDeleteItem" @click="removeItem(item)">删除明细</GlassButton>
@@ -48,7 +48,7 @@
     <template #footer><GlassButton variant="ghost" :disabled="busy" @click="closeOrder()">关闭</GlassButton></template>
   </el-dialog>
 
-  <el-dialog :model-value="itemDialog.visible" :title="`编辑明细 ${itemDialog.item?.line_code || ''}`" width="720px"
+  <el-dialog :model-value="itemDialog.visible" :title="`编辑明细 ${itemDialog.item?.line_code || ''}`" width="760px"
     append-to-body destroy-on-close :close-on-click-modal="false" :close-on-press-escape="!itemBusy" :show-close="!itemBusy" :before-close="closeItem">
     <template v-if="itemDialog.item">
       <p class="order-edit-hint">{{ itemDialog.item.product_name }}</p>
@@ -62,11 +62,11 @@
           <el-form-item v-if="!production" label="成交单价（含手工费）" required>
             <el-input-number v-if="Number(itemDialog.item.original_price) > 0" v-model="itemDialog.form.unit_price" :min="Number(itemDialog.item.labor_fee || 0) + (detail.order_type === 'sample' ? 0 : 0.01)"
               :max="Number(itemDialog.item.original_price || 0) + Number(itemDialog.item.labor_fee || 0)" :precision="2" :controls="false" />
-            <el-input v-else :model-value="Number(itemDialog.item.unit_price || 0).toFixed(2)" disabled />
+            <el-input v-else :model-value="formatMoney(Number(itemDialog.item.unit_price || 0))" disabled />
             <span v-if="!Number(itemDialog.item.original_price)" class="order-edit-hint">历史明细尚无原价，完成报价后才能改价。</span>
           </el-form-item>
         </div>
-        <p v-if="!production" class="order-edit-hint">原价 ¥{{ Number(itemDialog.item.original_price).toFixed(2) }}，手工费 ¥{{ Number(itemDialog.item.labor_fee || 0).toFixed(2) }}。优惠后商品单价 ¥{{ (Number(itemDialog.form.unit_price || 0) - Number(itemDialog.item.labor_fee || 0)).toFixed(2) }}。</p>
+        <p v-if="!production" class="order-edit-hint">原价 {{ formatMoney(Number(itemDialog.item.original_price), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}，手工费 {{ formatMoney(Number(itemDialog.item.labor_fee || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}。优惠后商品单价 {{ formatMoney((Number(itemDialog.form.unit_price || 0) - Number(itemDialog.item.labor_fee || 0)), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}。</p>
         <div class="order-edit-grid">
           <el-form-item label="产品类型">
             <el-input :model-value="PRODUCT_TYPE_LABELS[itemDialog.form.attrs?.product_type] || '未设置'" disabled />
@@ -95,7 +95,7 @@
         </div>
       </el-form>
       <p v-if="!production && detail.status !== 0 && amountDelta" class="order-edit-hint">
-        保存后将{{ amountDelta > 0 ? '补扣' : '退回' }}客户余额 ¥{{ Math.abs(amountDelta).toFixed(2) }}。
+        保存后将{{ amountDelta > 0 ? '补扣' : '退回' }}客户余额 {{ formatMoney(Math.abs(amountDelta), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}。
       </p>
     </template>
     <template #footer>
@@ -107,9 +107,11 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../../utils/money.js'
+import { confirmAction, msgWarning, msgSuccessText } from '@/utils/feedback'
 import { beijingCalendarDate } from '@/utils/datetime'
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { DETAIL_SECTIONS, PRODUCT_TYPE_LABELS, getOptions, getOrder, listCustomers, updateOrder, updateOrderItem, deleteOrderItem, uploadImage } from '@/api/domestic'
 import { useAuthStore } from '@/stores/auth'
 import AppUpload from '@/components/AppUpload.vue'
@@ -182,7 +184,7 @@ watch(() => [props.modelValue, props.orderId], async ([visible, id]) => {
 async function canDiscard(dirty) {
   if (!dirty) return true
   try {
-    await ElMessageBox.confirm('未保存的修改将丢失，确认关闭？', '放弃修改', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' })
+    await confirmAction('未保存的修改将丢失，确认关闭？', '放弃修改', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' })
     return true
   } catch { return false }
 }
@@ -208,7 +210,7 @@ async function reloadAfterAppend() {
 async function saveHeader() {
   if (!editable.value || busy.value) return
   if (!header.order_date || (!production.value && (!header.required_ship_date || !header.order_type || !header.order_channel))) {
-    return ElMessage.warning('请补齐日期、订单类型和渠道等必填项')
+    return msgWarning('请补齐日期、订单类型和渠道等必填项')
   }
   const patch = buildHeaderPatch(detail.value, header)
   if (!Object.keys(patch).length) return
@@ -220,7 +222,7 @@ async function saveHeader() {
       detail.value.customer_id = patch.production_customer_id
       detail.value.customer_name = customerChoices.value.find(row => row.id === patch.production_customer_id)?.shop_name || null
     }
-    ElMessage.success('订单信息已保存')
+    msgSuccessText('订单信息已保存')
     emit('saved')
   } catch { /* API interceptor reports the save failure. */ } finally { headerSaving.value = false }
 }
@@ -237,14 +239,14 @@ async function removeItem(item) {
   try {
     const settlement = !production.value && order.status !== 0 ? '删除后将重新计算订单金额，并按实际差额退回客户余额。' : ''
     try {
-      await ElMessageBox.confirm(`确定删除明细「${item.line_code} · ${item.product_name}」？此操作立即生效且不可恢复。${settlement}`, '删除明细确认', {
+      await confirmAction(`确定删除明细「${item.line_code} · ${item.product_name}」？此操作立即生效且不可恢复。${settlement}`, '删除明细确认', {
         type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger',
       })
     } catch { return }
     if (sequence !== loadSequence) return
     await deleteOrderItem(item.id)
     order.items = order.items.filter(row => row.id !== item.id)
-    ElMessage.success('明细已删除')
+    msgSuccessText('明细已删除')
     emit('saved')
     const res = await getOrder(order.id)
     if (sequence === loadSequence) detail.value = res.data
@@ -264,25 +266,25 @@ async function uploadReference(key, file) {
 async function saveItem() {
   if (!editable.value || itemBusy.value || !itemDialog.item) return
   const form = itemDialog.form, item = itemDialog.item
-  if (!Number.isInteger(form.order_qty) || form.order_qty < 1) return ElMessage.warning('数量必须为正整数')
+  if (!Number.isInteger(form.order_qty) || form.order_qty < 1) return msgWarning('数量必须为正整数')
   const patch = buildItemPatch(detail.value, item, form)
   if (Object.hasOwn(patch, 'attrs')) {
     const attrError = validateItemAttributes({ ...patch.attrs }, detail.value.order_kind)
-    if (attrError) return ElMessage.warning(attrError)
+    if (attrError) return msgWarning(attrError)
   }
   const priceError = itemPriceError(item, patch, detail.value.order_type)
-  if (priceError) return ElMessage.warning(priceError)
+  if (priceError) return msgWarning(priceError)
   if (!Object.keys(patch).length) return
   itemDialog.saving = true
   try {
     if (!production.value && detail.value.status !== 0 && amountDelta.value) {
       try {
-        await ElMessageBox.confirm(`本次修改将${amountDelta.value > 0 ? '补扣' : '退回'}客户余额 ¥${Math.abs(amountDelta.value).toFixed(2)}，确认保存？`, '确认金额变动', { confirmButtonText: '确认保存', cancelButtonText: '继续编辑' })
+        await confirmAction(`本次修改将${amountDelta.value > 0 ? '补扣' : '退回'}客户余额 ${formatMoney(Math.abs(amountDelta.value), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}，确认保存？`, '确认金额变动', { confirmButtonText: '确认保存', cancelButtonText: '继续编辑' })
       } catch { return }
     }
     await updateOrderItem(item.id, patch)
     itemDialog.visible = false
-    ElMessage.success('明细已保存')
+    msgSuccessText('明细已保存')
     emit('saved')
     const res = await getOrder(detail.value.id)
     detail.value = res.data

@@ -150,7 +150,7 @@
       <GlassButton variant="ghost" left-icon="Plus" :disabled="!newDepartmentId" @click="addTeam">新增队伍</GlassButton>
     </section>
 
-    <el-dialog v-model="previewVisible" title="GMV 日报预览" width="760px" destroy-on-close>
+    <DetailDrawer v-model="previewVisible" title="GMV 日报预览" width="760px" destroy-on-close>
       <el-tabs v-if="preview" v-model="activePreview">
         <el-tab-pane label="管理员日报" name="admin">
           <pre class="markdown-preview">{{ preview.admin_markdown }}</pre>
@@ -164,7 +164,7 @@
           <pre class="markdown-preview">{{ message.markdown }}</pre>
         </el-tab-pane>
       </el-tabs>
-    </el-dialog>
+    </DetailDrawer>
   </div>
 </template>
 

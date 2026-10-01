@@ -25,28 +25,26 @@
     />
 
     <section ref="panelRef" class="table-card invoice-panel">
-      <div class="toolbar">
+      <FilterBar label="发票筛选" :loading="loading" :pending="hasPendingSearch" @search="handleSearch" @reset="resetFilters">
         <el-input
           v-model="filters.keyword"
           clearable
           placeholder="搜索发票号/客户"
           class="filter-w-lg"
-          @keyup.enter="loadInvoices"
+          aria-label="搜索发票"
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-input v-model="filters.order_id" clearable placeholder="订单 ID" class="filter-w-md" @keyup.enter="loadInvoices" />
-        <el-select v-model="filters.order_type" clearable placeholder="订单类型" class="filter-w-sm">
+        <el-input v-model="filters.order_id" clearable placeholder="订单 ID" aria-label="订单 ID" class="filter-w-md" />
+        <el-select v-model="filters.order_type" clearable placeholder="订单类型" aria-label="订单类型" class="filter-w-sm">
           <el-option label="库存单" value="stock" />
           <el-option label="生产单" value="production" />
           <el-option label="预售单" value="presale" />
         </el-select>
-        <el-select v-model="filters.status" clearable placeholder="状态" class="filter-w-sm">
+        <el-select v-model="filters.status" clearable placeholder="状态" aria-label="发票状态" class="filter-w-sm">
           <el-option v-for="option in statusOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
-        <GlassButton variant="primary" :left-icon="Search" @click="loadInvoices">查询</GlassButton>
-        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -70,16 +68,20 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
+          :loading="loading"
           @refresh="loadInvoices"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="loadInvoices" />
       <el-table v-loading="loading" :data="invoices" border class="list-table invoice-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
-          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的发票' : '暂无发票，新建一张发票后会显示在这里'">
-            <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
-          </el-empty>
+          <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="loadInvoices">
+            <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的发票' : '暂无发票，新建一张发票后会显示在这里'">
+              <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+            </el-empty>
+          </ListPageStatus>
         </template>
         <el-table-column
           v-for="column in visibleColumns"
@@ -94,10 +96,10 @@
         >
           <template #default="{ row }">
             <span v-if="column.key === 'invoice_no'" class="invoice-number">{{ row.invoice_no }}</span>
-            <el-tag v-else-if="column.key === 'order_type'" size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</el-tag>
+            <StatusBadge v-else-if="column.key === 'order_type'" size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</StatusBadge>
             <template v-else-if="column.key === 'total_amount'">{{ row.currency === 'USD' ? '' : `${row.currency} ` }}{{ money(row.total_amount) }}</template>
-            <el-tag v-else-if="column.key === 'status'" size="small" :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
-            <el-tag v-else-if="column.key === 'sync_status'" size="small" :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</el-tag>
+            <StatusBadge v-else-if="column.key === 'status'" size="small" :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
+            <StatusBadge v-else-if="column.key === 'sync_status'" size="small" :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</StatusBadge>
             <template v-else-if="column.key === 'created_by'">{{ row.created_by_name || '-' }}</template>
             <template v-else-if="column.key === 'created_at'">{{ formatDateTime(row.created_at) }}</template>
             <template v-else>{{ row[column.prop] }}</template>
@@ -163,21 +165,21 @@
       </el-table>
 
       <el-pagination
-        v-model:current-page="pagination.page"
-        v-model:page-size="pagination.page_size"
-        :total="pagination.total"
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
         :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         class="pager"
         @size-change="handleSizeChange"
-        @current-change="loadInvoices"
+        @current-change="handlePageChange"
       />
     </section>
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%"
                body-class="invoice-modern-drawer-body" footer-class="invoice-modern-drawer-footer">
       <template #default>
-        <el-form ref="formRef" :model="form" label-position="top" class="invoice-form">
+        <el-form label-position="top" ref="formRef" :model="form" class="invoice-form">
           <div class="drawer-panes">
             <!-- 左窗格：录入主流（客户/订单 → 产品明细 → 配件明细），独立滚动 -->
             <main class="pane pane-main">
@@ -338,7 +340,7 @@
       @append="appendPastedLines"
     />
 
-    <ShipmentSettlementDialog v-if="shipmentInvoice" :invoice="shipmentInvoice" @close="shipmentInvoice = null" @saved="loadInvoices" />
+    <ShipmentSettlementDialog v-if="shipmentInvoice" :invoice="shipmentInvoice" @close="shipmentInvoice = null" @saved="refreshUpdate" />
     <InvoiceScreenshotImport
       :presale-enabled="shipmentCapabilities.enabled"
       v-model="screenshotImportVisible"
@@ -364,7 +366,7 @@
       @open-legacy-paste="pasteImportVisible = true"
     />
 
-    <InvoiceLifecycle v-if="lifecycleInvoiceId !== null" :key="lifecycleInvoiceId" ref="lifecycleRef" :invoice-id="lifecycleInvoiceId" @changed="loadInvoices" />
+    <InvoiceLifecycle v-if="lifecycleInvoiceId !== null" :key="lifecycleInvoiceId" ref="lifecycleRef" :invoice-id="lifecycleInvoiceId" @changed="refreshUpdate" />
 
     <InvoiceSyncLogsDialog
       v-model="syncLogsVisible"
@@ -402,19 +404,22 @@ import InvoiceOverview from './components/InvoiceOverview.vue'
 import LinkedSyncResult from './components/LinkedSyncResult.vue'
 import InvoiceHairTable from './components/InvoiceHairTable.vue'
 import TableTools from '@/components/TableTools.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 
 const { shipmentInvoice, shipmentCapabilities } = useInvoiceShipments()
-const page = useInvoiceManagePage()
+const listPage = useInvoiceManagePage()
 const {
   actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
-  loading, money, money4, openSyncLogs, pagination, removeInvoice, statusText, statusType,
+  loading, money, money4, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
+  listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch, handleSearch, handlePageChange, handleSaved, refreshUpdate,
   summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
   syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
   isInvoiceSyncing, resolveUncertain, validateAndSync,
   hasActiveFilters, handleSizeChange, orderTypeTone, resetFilters, statusOptions,
   columnDefs, density, densityClass, isFullscreen, panelRef, toggleFullscreen, visibleColumns, visibleKeys,
-} = page
-const editor = useInvoiceEditor({ onSaved: loadInvoices })
+} = listPage
+const editor = useInvoiceEditor({ onSaved: handleSaved })
 const {
   drawerVisible, legacyVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
   customerTotal, customerHasMore, loadMoreCustomers, privateOnlyCompany,

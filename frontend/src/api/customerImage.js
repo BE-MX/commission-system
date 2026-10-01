@@ -2,12 +2,12 @@ import { customerImageClient } from './clients'
 
 const SILENT_REQUEST = { showLoading: false, suppressToast: true }
 
-export function searchCustomers(params = {}) {
-  return customerImageClient.get('/customers', { params, showLoading: false })
+export function searchCustomers(params = {}, requestConfig = {}) {
+  return customerImageClient.get('/customers', { params, showLoading: false, ...requestConfig })
 }
 
-export function listProducts(params = {}) {
-  return customerImageClient.get('/products', { params, showLoading: false })
+export function listProducts(params = {}, requestConfig = {}) {
+  return customerImageClient.get('/products', { params, showLoading: false, ...requestConfig })
 }
 
 export function createProduct(data) {
@@ -30,9 +30,9 @@ export function unpublishProduct(productId) {
   return customerImageClient.post(`/products/${productId}/unpublish`, {}, { ...SILENT_REQUEST })
 }
 
-export function listProductAssets(productId) {
+export function listProductAssets(productId, requestConfig = {}) {
   return customerImageClient.get(`/products/${productId}/assets`, {
-    showLoading: false,
+    showLoading: false, ...requestConfig,
   })
 }
 
@@ -96,15 +96,15 @@ export function getProductAssetBlob(productId, assetId, requestConfig = {}) {
   )
 }
 
-export function getProductCoverBlob(productId) {
+export function getProductCoverBlob(productId, requestConfig = {}) {
   return customerImageClient.get(`/products/${productId}/cover`, {
-    ...SILENT_REQUEST,
+    ...SILENT_REQUEST, ...requestConfig,
     responseType: 'blob',
   })
 }
 
-export function listLibraryAssets() {
-  return customerImageClient.get('/library-assets', { showLoading: false })
+export function listLibraryAssets(requestConfig = {}) {
+  return customerImageClient.get('/library-assets', { showLoading: false, ...requestConfig })
 }
 
 export function getLibraryAssetBlob(assetId, { thumbnail = false, ...requestConfig } = {}) {
@@ -128,6 +128,6 @@ export function revokeInvite(inviteId) {
   return customerImageClient.post(`/invites/${inviteId}/revoke`, {}, { ...SILENT_REQUEST })
 }
 
-export function listGenerations(params = {}) {
-  return customerImageClient.get('/generations', { params, showLoading: false })
+export function listGenerations(params = {}, requestConfig = {}) {
+  return customerImageClient.get('/generations', { params, showLoading: false, ...requestConfig })
 }

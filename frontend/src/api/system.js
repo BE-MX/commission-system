@@ -1,11 +1,11 @@
 import { systemClient as sysApi } from './clients'
 
-export function getDictTypes() {
-  return sysApi.get('/dict-types', { showLoading: false })
+export function getDictTypes(config = {}) {
+  return sysApi.get('/dict-types', { ...config, showLoading: false })
 }
 
-export function getDictItems(type, onlyActive = false) {
-  return sysApi.get('/dicts', { params: { type, only_active: onlyActive }, showLoading: false })
+export function getDictItems(type, onlyActive = false, config = {}) {
+  return sysApi.get('/dicts', { ...config, params: { type, only_active: onlyActive }, showLoading: false })
 }
 
 export function createDictItem(data) {

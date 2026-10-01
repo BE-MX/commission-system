@@ -1,6 +1,6 @@
 import { receiptClient as request } from './clients'
 const unwrap = promise => promise.then(res => res.data ?? res)
-export const listReceipts = params => unwrap(request.get('', { params, showLoading: false }))
+export const listReceipts = (params, config = {}) => unwrap(request.get('', { ...config, params, showLoading: false }))
 export const getReceipt = id => unwrap(request.get(`/${id}`, { showLoading: false }))
 export const getReceiptOrders = params => unwrap(request.get('/order-options', { params, showLoading: false }))
 export const getReceiptBalance = id => unwrap(request.get(`/order-balance/${id}`, { showLoading: false }))

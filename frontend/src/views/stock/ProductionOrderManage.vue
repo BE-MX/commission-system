@@ -43,16 +43,14 @@
       <!-- 标签页一：按生产单维度 -->
       <el-tab-pane label="按生产单维度" name="order">
         <div ref="orderPanelRef" class="table-card">
-          <div class="toolbar">
+          <FilterBar :pending="orderState.hasPendingSearch.value" @search="handleOrderSearch" @reset="resetOrderFilters">
             <el-select v-model="orderFilters.status" placeholder="状态" clearable class="filter-w-sm">
               <el-option label="已提交" :value="0" />
               <el-option label="已终止" :value="1" />
               <el-option label="已完成" :value="2" />
             </el-select>
-            <el-input v-model="orderFilters.keyword" placeholder="搜索单号/批次号" clearable class="filter-w-md" @input="handleOrderSearch" @keyup.enter="loadOrderList" />
-            <GlassButton variant="primary" :left-icon="Filter" @click="loadOrderList">查询</GlassButton>
-            <GlassButton :left-icon="RefreshRight" @click="resetOrderFilters">重置</GlassButton>
-          </div>
+            <el-input v-model="orderFilters.keyword" placeholder="搜索单号/批次号" clearable class="filter-w-md" />
+          </FilterBar>
           <!-- 操作行：本页无页面级主操作，右侧 TableTools 四图标（Action Bar Spec） -->
           <div class="action-bar">
             <TableTools
@@ -64,9 +62,11 @@
               @fullscreen="orderToggleFullscreen"
             />
           </div>
+          <ListPageStatus v-if="orderState.hasData.value" :error="orderState.errorMessage.value" :loading="orderLoading" :has-data="true" :data-page="orderState.dataPage.value" @retry="loadOrderList" />
           <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" border class="list-table" :class="orderDensityClass" :max-height="orderIsFullscreen ? undefined : 640" @sort-change="handleOrderSortChange">
             <template #empty>
-              <el-empty :image-size="96" :description="hasActiveOrderFilters ? '没有符合条件的记录' : '暂无数据'">
+              <ListPageStatus :error="orderState.errorMessage.value" :loading="orderLoading" @retry="loadOrderList" />
+              <el-empty v-if="orderState.isEmpty.value" :image-size="96" :description="hasActiveOrderFilters ? '没有符合条件的记录' : '暂无数据'">
                 <GlassButton v-if="hasActiveOrderFilters" :left-icon="RefreshRight" @click="resetOrderFilters">重置筛选</GlassButton>
               </el-empty>
             </template>
@@ -88,7 +88,7 @@
             </el-table-column>
             <el-table-column v-if="orderVisibleKeys.includes('status')" label="状态" prop="status" min-width="90" max-width="135" sortable="custom">
               <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
+                <StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
@@ -121,16 +121,14 @@
       <!-- 标签页二：按明细维度 -->
       <el-tab-pane label="按生产单产品明细维度" name="item">
         <div ref="itemPanelRef" class="table-card">
-          <div class="toolbar">
+          <FilterBar :pending="itemState.hasPendingSearch.value" @search="handleItemSearch" @reset="resetItemFilters">
             <el-select v-model="itemFilters.status" placeholder="明细状态" clearable class="filter-w-sm">
               <el-option label="已提交" :value="0" />
               <el-option label="已终止" :value="1" />
               <el-option label="已完成" :value="2" />
             </el-select>
-            <el-input v-model="itemFilters.keyword" placeholder="搜索产品/单号/批次号" clearable class="filter-w-md" @input="handleItemSearch" @keyup.enter="loadItemList" />
-            <GlassButton variant="primary" :left-icon="Filter" @click="loadItemList">查询</GlassButton>
-            <GlassButton :left-icon="RefreshRight" @click="resetItemFilters">重置</GlassButton>
-          </div>
+            <el-input v-model="itemFilters.keyword" placeholder="搜索产品/单号/批次号" clearable class="filter-w-md" />
+          </FilterBar>
           <!-- 操作行：本页无页面级主操作，右侧 TableTools 四图标（Action Bar Spec） -->
           <div class="action-bar">
             <TableTools
@@ -142,9 +140,11 @@
               @fullscreen="itemToggleFullscreen"
             />
           </div>
+          <ListPageStatus v-if="itemState.hasData.value" :error="itemState.errorMessage.value" :loading="itemLoading" :has-data="true" :data-page="itemState.dataPage.value" @retry="loadItemList" />
           <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" border class="list-table" :class="itemDensityClass" :max-height="itemIsFullscreen ? undefined : 640" @sort-change="handleItemSortChange">
             <template #empty>
-              <el-empty :image-size="96" :description="hasActiveItemFilters ? '没有符合条件的记录' : '暂无数据'">
+              <ListPageStatus :error="itemState.errorMessage.value" :loading="itemLoading" @retry="loadItemList" />
+              <el-empty v-if="itemState.isEmpty.value" :image-size="96" :description="hasActiveItemFilters ? '没有符合条件的记录' : '暂无数据'">
                 <GlassButton v-if="hasActiveItemFilters" :left-icon="RefreshRight" @click="resetItemFilters">重置筛选</GlassButton>
               </el-empty>
             </template>
@@ -161,17 +161,17 @@
             </el-table-column>
             <el-table-column v-if="itemVisibleKeys.includes('item-status')" label="明细状态" min-width="90" max-width="135">
               <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
+                <StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column v-if="itemVisibleKeys.includes('order-status')" label="订单状态" min-width="90" max-width="135">
               <template #default="{ row }">
-                <el-tag :type="statusTagType(row.order_status)" size="small" effect="plain">{{ row.order_status_label }}</el-tag>
+                <StatusBadge :type="statusTagType(row.order_status)" size="small" effect="plain">{{ row.order_status_label }}</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column v-if="itemVisibleKeys.includes('urgent')" label="加急" min-width="70" max-width="105">
               <template #default="{ row }">
-                <el-tag v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</el-tag>
+                <StatusBadge v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</StatusBadge>
                 <span v-else class="text-muted">—</span>
               </template>
             </el-table-column>
@@ -196,12 +196,13 @@
     </el-tabs>
 
     <!-- 订单详情弹窗 -->
-    <el-dialog v-model="detailDialogVisible" title="生产订单详情" width="960px">
+    <DetailDrawer v-model="detailDialogVisible" title="生产订单详情" width="760px">
+      <ListPageStatus :error="orderDetailResource.errorMessage.value" :loading="orderDetailResource.loading.value" :has-data="!!currentOrder" @retry="orderDetailResource.load()" />
       <div v-if="currentOrder" class="order-detail">
         <div class="detail-header">
           <div class="detail-row"><span class="detail-label">生产单号</span><span class="detail-value">{{ currentOrder.order_no }}</span></div>
           <div class="detail-row"><span class="detail-label">批次号</span><span class="detail-value">{{ currentOrder.batch_no }}</span></div>
-          <div class="detail-row"><span class="detail-label">状态</span><el-tag :type="statusTagType(currentOrder.status)">{{ currentOrder.status_label }}</el-tag></div>
+          <div class="detail-row"><span class="detail-label">状态</span><StatusBadge :type="statusTagType(currentOrder.status)">{{ currentOrder.status_label }}</StatusBadge></div>
           <div class="detail-row"><span class="detail-label">创建人</span><span class="detail-value">{{ currentOrder.created_by_name || '-' }}</span></div>
           <div class="detail-row"><span class="detail-label">创建时间</span><span class="detail-value">{{ formatDate(currentOrder.created_at) }}</span></div>
           <div class="detail-row"><span class="detail-label">备注</span><span class="detail-value">{{ currentOrder.remark || '-' }}</span></div>
@@ -224,7 +225,7 @@
           </el-table-column>
           <el-table-column label="加急" min-width="70" max-width="105">
             <template #default="{ row }">
-              <el-tag v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</el-tag>
+              <StatusBadge v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</StatusBadge>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
@@ -232,7 +233,7 @@
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
           <el-table-column label="状态" min-width="80" max-width="120">
-            <template #default="{ row }"><el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag></template>
+            <template #default="{ row }"><StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</StatusBadge></template>
           </el-table-column>
         </el-table>
 
@@ -246,7 +247,8 @@
                 <el-button link @click="expandedProgressId = null">收起</el-button>
               </div>
             </div>
-            <div v-if="progressLoading" style="text-align:center; padding: 20px;">
+            <ListPageStatus :error="progressResource.errorMessage.value" :loading="progressLoading" :has-data="!!progressResource.data.value?.progress" @retry="progressResource.load()" />
+      <div v-if="progressLoading" style="text-align:center; padding: 20px;">
               <el-icon class="is-loading" :size="20"><Loading /></el-icon> 加载中...
             </div>
             <div v-else-if="progressData[item.id]" class="progress-content">
@@ -289,11 +291,11 @@
           </div>
         </template>
       </div>
-    </el-dialog>
+    </DetailDrawer>
 
     <!-- 编辑订单弹窗 -->
     <el-dialog v-model="editOrderDialogVisible" title="编辑生产订单" width="480px">
-      <el-form :model="editOrderForm" label-width="100px">
+      <el-form label-position="top" :model="editOrderForm">
         <el-form-item label="生产批次号">
           <el-input v-model="editOrderForm.batch_no" placeholder="批次号" maxlength="64" />
         </el-form-item>
@@ -316,7 +318,7 @@
 
     <!-- 编辑明细弹窗 -->
     <el-dialog v-model="editItemDialogVisible" title="编辑明细" width="480px">
-      <el-form :model="editItemForm" label-width="100px">
+      <el-form label-position="top" :model="editItemForm">
         <el-form-item label="产品"><span>{{ currentItem?.product_name }}</span></el-form-item>
         <el-form-item label="生产下单数量">
           <el-input-number v-model="editItemForm.order_qty" :min="1" :max="999999" :step="1" controls-position="right" />
@@ -338,10 +340,10 @@
     </el-dialog>
 
     <!-- 修改状态弹窗 -->
-    <el-dialog v-model="statusDialogVisible" title="修改状态" width="400px">
+    <el-dialog v-model="statusDialogVisible" title="修改状态" width="480px">
       <div v-if="currentItem" class="status-dialog-content">
         <p style="margin-bottom:16px;">产品：{{ currentItem.product_name }}</p>
-        <p style="margin-bottom:16px;">当前状态：<el-tag :type="statusTagType(currentItem.status)">{{ currentItem.status_label }}</el-tag></p>
+        <p style="margin-bottom:16px;">当前状态：<StatusBadge :type="statusTagType(currentItem.status)">{{ currentItem.status_label }}</StatusBadge></p>
         <el-radio-group v-model="newStatus">
           <el-radio :label="0">已提交</el-radio>
           <el-radio :label="1">已终止</el-radio>
@@ -355,12 +357,12 @@
     </el-dialog>
 
     <!-- 入库录入弹窗 -->
-    <el-dialog v-model="receivedDialogVisible" title="录入已入库数量" width="400px">
+    <el-dialog v-model="receivedDialogVisible" title="录入已入库数量" width="480px">
       <div v-if="currentItem" class="received-dialog-content">
         <p style="margin-bottom:8px;">产品：{{ currentItem.product_name }}</p>
         <p style="margin-bottom:8px;">生产下单数量：{{ currentItem.order_qty }}</p>
         <p style="margin-bottom:16px;">当前已入库：{{ currentItem.received_qty }}</p>
-        <el-form :model="receivedForm" label-width="120px">
+        <el-form label-position="top" :model="receivedForm">
           <el-form-item label="已入库数量">
             <el-input-number v-model="receivedForm.received_qty" :min="0" :max="currentItem.order_qty" :step="1" controls-position="right" />
           </el-form-item>
@@ -374,6 +376,7 @@
 
     <!-- 工序进度弹窗（明细维度 + 备货弹窗共用） -->
     <el-dialog v-model="progressDialogVisible" title="工序进度" width="640px" @close="expandedProgressId = null">
+      <ListPageStatus :error="progressResource.errorMessage.value" :loading="progressLoading" :has-data="!!progressResource.data.value?.progress" @retry="progressResource.load()" />
       <div v-if="progressLoading" style="text-align:center; padding: 20px;">
         <el-icon class="is-loading" :size="20"><Loading /></el-icon> 加载中...
       </div>
@@ -416,7 +419,7 @@
     </el-dialog>
 
     <!-- 报表打印预览弹窗 -->
-    <el-dialog v-model="printDialogVisible" :title="printDialogTitle" width="90%" top="2vh" destroy-on-close>
+    <el-dialog v-model="printDialogVisible" :title="printDialogTitle" width="480px" top="2vh" destroy-on-close>
       <StimulsoftViewer
         :report-code="currentReportCode"
         :params="{ order_no: currentPrintOrderNo }"
@@ -426,10 +429,13 @@
   </div>
 </template>
 
-<script setup>
-import { computed, ref, reactive, onMounted, watch } from 'vue'
+<script setup>import { msgSuccessText, msgError, confirmAction, msgWarning } from '@/utils/feedback'
+import { computed, ref, reactive, watch } from 'vue'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { loadStockProgress } from './composables/stockResources'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { Document, CircleClose, CircleCheck, Filter, Loading, RefreshRight } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
@@ -437,7 +443,6 @@ import { formatBeijingDateTime, formatBeijingShortDateTime } from '@/utils/datet
 import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useProductionOrderTables } from './composables/useProductionOrderTables'
-import { getProgress, initProgress, getPrintCardData } from '@/api/production'
 import {
   getProductionOrders, getProductionOrderDetail, updateProductionOrder,
   deleteProductionOrder, getProductionOrderItems, updateProductionOrderItem,
@@ -458,13 +463,11 @@ const orderSort = useTableSort()
 const itemSort = useTableSort()
 function handleOrderSortChange(sortInfo) {
   orderSort.onSortChange(sortInfo)
-  orderPagination.page = 1
-  loadOrderList()
+  return orderState.handleSortChange(orderSort.sortParams.value)
 }
 function handleItemSortChange(sortInfo) {
   itemSort.onSortChange(sortInfo)
-  itemPagination.page = 1
-  loadItemList()
+  return itemState.handleSortChange(itemSort.sortParams.value)
 }
 
 const activeTab = ref('order')
@@ -479,105 +482,39 @@ function formatDate(iso) {
 }
 
 // ── 订单维度 ────────────────────────────
-const orderLoading = ref(false)
-const orderList = ref([])
-const orderPagination = reactive({ total: 0, page: 1, page_size: 20 })
-const orderFilters = reactive({ status: null, keyword: '' })
-const hasActiveOrderFilters = computed(() =>
-  Boolean(orderFilters.keyword) || (orderFilters.status !== null && orderFilters.status !== undefined))
-
-async function loadOrderList() {
-  orderLoading.value = true
-  try {
-    const params = {
-      page: orderPagination.page,
-      page_size: orderPagination.page_size,
-      status: orderFilters.status,
-      keyword: orderFilters.keyword || undefined,
-      ...orderSort.sortParams.value,
-    }
-    const res = await getProductionOrders(params)
-    const d = res.data
-    orderList.value = d.items || []
-    orderPagination.total = d.total || 0
-
-    // 统计
-    statusCount.submitted = orderList.value.filter(i => i.status === 0).length
-    statusCount.terminated = orderList.value.filter(i => i.status === 1).length
-    statusCount.completed = orderList.value.filter(i => i.status === 2).length
-  } catch (e) {
-    console.warn('加载订单列表失败:', e)
-  } finally {
-    orderLoading.value = false
+const orderState = useListPage(async (params, { signal, isCurrent }) => {
+  const response = await getProductionOrders({ ...params, keyword: params.keyword || undefined }, { signal, suppressToast: true })
+  const data = response.data
+  if (isCurrent()) {
+    statusCount.submitted = (data.items || []).filter(item => item.status === 0).length
+    statusCount.terminated = (data.items || []).filter(item => item.status === 1).length
+    statusCount.completed = (data.items || []).filter(item => item.status === 2).length
   }
-}
-
-let orderSearchTimer = null
-function handleOrderSearch() {
-  if (orderSearchTimer) clearTimeout(orderSearchTimer)
-  orderSearchTimer = setTimeout(() => { orderPagination.page = 1; loadOrderList() }, 400)
-}
-
-function resetOrderFilters() {
-  orderFilters.status = null
-  orderFilters.keyword = ''
-  orderPagination.page = 1
-  orderSort.reset()
-  loadOrderList()
-}
-
-function handleOrderSizeChange() {
-  orderPagination.page = 1
-  loadOrderList()
-}
+  return { items: data.items || [], total: data.total || 0 }
+}, { searchForm: { status: null, keyword: '' }, sortParams: orderSort.sortParams.value })
+const orderLoading = orderState.loading; const orderList = orderState.list
+const orderPagination = reactive({ total: orderState.total, page: orderState.page, page_size: orderState.pageSize })
+const orderFilters = orderState.searchForm
+const hasActiveOrderFilters = computed(() => Boolean(orderFilters.keyword) || (orderFilters.status !== null && orderFilters.status !== undefined))
+const loadOrderList = orderState.fetchList
+const handleOrderSearch = orderState.handleSearch
+function resetOrderFilters() { orderSort.reset(); return orderState.handleReset({ sortParams: orderSort.sortParams.value }) }
+const handleOrderSizeChange = orderState.handleSizeChange
 
 // ── 明细维度 ────────────────────────────
-const itemLoading = ref(false)
-const itemList = ref([])
-const itemPagination = reactive({ total: 0, page: 1, page_size: 20 })
-const itemFilters = reactive({ status: null, keyword: '' })
-const hasActiveItemFilters = computed(() =>
-  Boolean(itemFilters.keyword) || (itemFilters.status !== null && itemFilters.status !== undefined))
-
-async function loadItemList() {
-  itemLoading.value = true
-  try {
-    const params = {
-      page: itemPagination.page,
-      page_size: itemPagination.page_size,
-      status: itemFilters.status,
-      keyword: itemFilters.keyword || undefined,
-      ...itemSort.sortParams.value,
-    }
-    const res = await getProductionOrderItems(params)
-    const d = res.data
-    itemList.value = d.items || []
-    itemPagination.total = d.total || 0
-  } catch (e) {
-    console.warn('加载明细列表失败:', e)
-  } finally {
-    itemLoading.value = false
-  }
-}
-
-let itemSearchTimer = null
-function handleItemSearch() {
-  if (itemSearchTimer) clearTimeout(itemSearchTimer)
-  itemSearchTimer = setTimeout(() => { itemPagination.page = 1; loadItemList() }, 400)
-}
-
-function resetItemFilters() {
-  itemFilters.status = null
-  itemFilters.keyword = ''
-  itemPagination.page = 1
-  itemSort.reset()
-  loadItemList()
-}
-
-function handleItemSizeChange() {
-  itemPagination.page = 1
-  loadItemList()
-}
+const itemState = useListPage(async (params, { signal, isCurrent }) => {
+  const response = await getProductionOrderItems({ ...params, keyword: params.keyword || undefined }, { signal, suppressToast: true })
+  const data = response.data
+  return { items: data.items || [], total: data.total || 0 }
+}, { immediate: false, searchForm: { status: null, keyword: '' }, sortParams: itemSort.sortParams.value })
+const itemLoading = itemState.loading; const itemList = itemState.list
+const itemPagination = reactive({ total: itemState.total, page: itemState.page, page_size: itemState.pageSize })
+const itemFilters = itemState.searchForm
+const hasActiveItemFilters = computed(() => Boolean(itemFilters.keyword) || (itemFilters.status !== null && itemFilters.status !== undefined))
+const loadItemList = itemState.fetchList
+const handleItemSearch = itemState.handleSearch
+function resetItemFilters() { itemSort.reset(); return itemState.handleReset({ sortParams: itemSort.sortParams.value }) }
+const handleItemSizeChange = itemState.handleSizeChange
 
 watch(activeTab, (tab) => {
   if (tab === 'order') loadOrderList()
@@ -586,12 +523,16 @@ watch(activeTab, (tab) => {
 
 // ── 订单详情 ────────────────────────────
 const detailDialogVisible = ref(false)
-const currentOrder = ref(null)
+const orderDetailResource = useAsyncResource(async (id, { signal }) => {
+  const response = await getProductionOrderDetail(id, { signal, suppressToast: true })
+  return response.data
+})
+const currentOrder = orderDetailResource.data
 
 async function viewOrderDetail(row) {
-  const res = await getProductionOrderDetail(row.id)
-  currentOrder.value = res.data
   detailDialogVisible.value = true
+  expandedProgressId.value = null
+  return orderDetailResource.load(row.id, { clear: true })
 }
 
 // ── 编辑订单 ────────────────────────────
@@ -615,11 +556,11 @@ async function confirmEditOrder() {
       remark: editOrderForm.remark,
       status: editOrderForm.status,
     })
-    ElMessage.success('已更新')
+    msgSuccessText('已更新')
     editOrderDialogVisible.value = false
-    loadOrderList()
+    orderState.refreshUpdate()
   } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '更新失败')
+    msgError(e?.response?.data?.message || '更新失败', e)
   } finally {
     editOrderLoading.value = false
   }
@@ -628,10 +569,10 @@ async function confirmEditOrder() {
 // ── 删除订单 ────────────────────────────
 async function deleteOrder(row) {
   try {
-    await ElMessageBox.confirm(`确定删除生产订单 ${row.order_no}?`, '删除确认', { type: 'warning' })
+    await confirmAction(`确定删除生产订单 ${row.order_no}?`, '删除确认', { type: 'warning' })
     await deleteProductionOrder(row.id)
-    ElMessage.success('已删除')
-    loadOrderList()
+    msgSuccessText('已删除')
+    orderState.refreshRemove()
   } catch {
     // cancel
   }
@@ -639,17 +580,23 @@ async function deleteOrder(row) {
 
 async function handleResetProcess(row) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `将删除订单 ${row.order_no} 下所有产品的工序进度，按最新工艺路线重新生成。确定继续？`,
       '重置工艺确认', { type: 'warning' }
     )
     const res = await resetOrderProcess(row.id)
     const data = res.data || res
     if (data.errors && data.errors.length > 0) {
-      ElMessage.warning(`重置完成：成功 ${data.success}/${data.total}，${data.errors.length} 个产品未绑定路线`)
+      msgWarning(`重置完成：成功 ${data.success}/${data.total}，${data.errors.length} 个产品未绑定路线`)
     } else {
-      ElMessage.success(`工艺重置完成，共 ${data.success} 个产品`)
+      msgSuccessText(`工艺重置完成，共 ${data.success} 个产品`)
     }
+    progressData.value = {}
+    if (currentOrder.value?.id === row.id) {
+      orderDetailResource.load(row.id)
+      if (expandedProgressId.value) loadProgress(expandedProgressId.value)
+    }
+    if (progressDialogVisible.value && progressDialogItem.value?.order_id === row.id) loadProgress(progressDialogItem.value.id)
   } catch {
     // cancel
   }
@@ -680,11 +627,11 @@ async function confirmEditItem() {
       is_urgent: editItemForm.is_urgent,
       expected_delivery_date: editItemForm.expected_delivery_date || undefined,
     })
-    ElMessage.success('已更新')
+    msgSuccessText('已更新')
     editItemDialogVisible.value = false
-    loadItemList()
+    itemState.refreshUpdate(); orderState.refreshUpdate()
   } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '更新失败')
+    msgError(e?.response?.data?.message || '更新失败', e)
   } finally {
     editItemLoading.value = false
   }
@@ -705,11 +652,11 @@ async function confirmChangeStatus() {
   statusLoading.value = true
   try {
     await updateProductionItemStatus(currentItem.value.id, { status: newStatus.value })
-    ElMessage.success('状态已更新')
+    msgSuccessText('状态已更新')
     statusDialogVisible.value = false
-    loadItemList()
+    itemState.refreshUpdate(); orderState.refreshUpdate()
   } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '更新失败')
+    msgError(e?.response?.data?.message || '更新失败', e)
   } finally {
     statusLoading.value = false
   }
@@ -730,11 +677,11 @@ async function confirmReceived() {
   receivedLoading.value = true
   try {
     await updateProductionItemReceived(currentItem.value.id, { received_qty: receivedForm.received_qty })
-    ElMessage.success('入库数量已更新')
+    msgSuccessText('入库数量已更新')
     receivedDialogVisible.value = false
-    loadItemList()
+    itemState.refreshUpdate(); orderState.refreshUpdate()
   } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '更新失败')
+    msgError(e?.response?.data?.message || '更新失败', e)
   } finally {
     receivedLoading.value = false
   }
@@ -743,23 +690,23 @@ async function confirmReceived() {
 // ── 删除明细 ────────────────────────────
 async function deleteItem(row) {
   try {
-    await ElMessageBox.confirm(`确定删除明细 ${row.product_name}?`, '删除确认', { type: 'warning' })
+    await confirmAction(`确定删除明细 ${row.product_name}?`, '删除确认', { type: 'warning' })
     await deleteProductionOrderItem(row.id)
-    ElMessage.success('已删除')
-    loadItemList()
+    msgSuccessText('已删除')
+    itemState.refreshRemove(); orderState.refreshUpdate()
   } catch {
     // cancel
   }
 }
 
-onMounted(() => {
-  loadOrderList()
-})
+
 
 // ── 工序进度看板 ──────────────────────────
 const expandedProgressId = ref(null)
 const progressData = ref({})
-const progressLoading = ref(false)
+const progressResource = useAsyncResource(async (itemId, context) => ({ itemId, progress: await loadStockProgress(itemId, context) }))
+const progressLoading = progressResource.loading
+watch(progressResource.data, result => { if (result) progressData.value[result.itemId] = result.progress })
 const progressDialogVisible = ref(false)
 const progressDialogItem = ref(null)
 
@@ -796,25 +743,7 @@ async function toggleItemProgress(item) {
   await loadProgress(item.id)
 }
 
-async function loadProgress(itemId) {
-  progressLoading.value = true
-  try {
-    const res = await getProgress(itemId)
-    // 后端直接返回进度对象（无 {code,data} 包装），axios 拦截器已解包 response.data
-    progressData.value[itemId] = res.data || res
-  } catch {
-    // 404 = 尚未初始化进度，尝试自动初始化后再拉取
-    try {
-      await initProgress(itemId)
-      const res2 = await getProgress(itemId)
-      progressData.value[itemId] = res2.data || res2
-    } catch {
-      progressData.value[itemId] = null
-    }
-  } finally {
-    progressLoading.value = false
-  }
-}
+function loadProgress(itemId) { progressData.value[itemId] = null; return progressResource.load(itemId, { clear: true }) }
 
 async function refreshProgress(itemId) {
   await loadProgress(itemId)

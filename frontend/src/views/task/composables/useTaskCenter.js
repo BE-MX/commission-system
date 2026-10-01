@@ -8,6 +8,8 @@ import { currentBeijingDate } from '@/utils/datetime'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import { STATUS_META } from '../taskLabels.js'
 import { boardColumns, filterTree, moduleHeat, openDescendantCount, parentTitles } from '../taskTree.js'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useAuthStore } from '@/stores/auth'
 import { useTaskDialog } from './useTaskDialog'
 
 const VIEW_KEY = 'ark.task.view'
@@ -30,59 +32,48 @@ export function errorMessage(err, fallback = '操作失败') {
 
 export function useTaskCenter() {
   const { ask } = useTaskDialog()
-  const tree = ref([])
-  const modules = ref([])
-  const stats = ref({ in_progress: 0, pending_confirm: 0, p0_open: 0, overdue: 0 })
-  const brief = ref(null)
-  const trash = ref([])
-  const loading = ref(false)
-  const briefLoading = ref(false)
+  const authStore = useAuthStore()
+  const readOptions = signal => ({ signal, suppressToast: true })
+  const treeResource = useAsyncResource(async (_, { signal, isCurrent }) => {
+    const result = (await listTasks(readOptions(signal))).data
+    if (isCurrent()) { today.value = currentBeijingDate(); version.value += 1 }
+    return result
+  }, { initialData: [] })
+  const modulesResource = useAsyncResource(async (_, { signal }) => (await listTaskModules(readOptions(signal))).data, { initialData: [] })
+  const statsResource = useAsyncResource(async (_, { signal }) => (await getTaskStats(readOptions(signal))).data)
+  const briefResource = useAsyncResource(async (_, { signal }) => (await getTodayBrief(readOptions(signal))).data)
+  const trashResource = useAsyncResource(async (_, { signal }) => (await listTrash(readOptions(signal))).data, { initialData: [] })
+  const tree = treeResource.data, modules = modulesResource.data, trash = trashResource.data
+  const stats = computed(() => statsResource.data.value || {})
+  const brief = briefResource.data, loading = treeResource.loading, briefLoading = briefResource.loading
   const version = ref(0)
   const today = ref(currentBeijingDate())
   const view = ref(readView())
-  const filters = reactive({ q: '', moduleKey: '', priorities: [], hideClosed: true })
+  const defaultFilters = () => ({ q: '', moduleKey: '', priorities: [], hideClosed: true })
+  const filters = reactive(defaultFilters())
+  const appliedFilters = ref(defaultFilters())
+  function applyFilters() { appliedFilters.value = JSON.parse(JSON.stringify(filters)) }
+  function resetFilters() { Object.assign(filters, defaultFilters()); applyFilters() }
 
   watch(view, value => {
     try { localStorage.setItem(VIEW_KEY, value) } catch { /* 隐私模式不记忆，不影响使用 */ }
   })
 
   const modulesByKey = computed(() => Object.fromEntries(modules.value.map(m => [m.key, m])))
-  const filteredTree = computed(() => filterTree(tree.value, filters))
-  const columns = computed(() => boardColumns(tree.value, filters))
+  const filteredTree = computed(() => filterTree(tree.value, appliedFilters.value))
+  const columns = computed(() => boardColumns(tree.value, appliedFilters.value))
   const heat = computed(() => moduleHeat(tree.value, modules.value))
   const parentTitleMap = computed(() => parentTitles(tree.value))
 
-  async function refresh() {
-    loading.value = true
-    try {
-      const [t, s] = await Promise.all([listTasks(), getTaskStats()])
-      tree.value = t.data
-      stats.value = s.data
-      today.value = currentBeijingDate()
-      version.value += 1
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function loadModules() {
-    modules.value = (await listTaskModules()).data
-  }
-
-  async function loadBrief() {
-    briefLoading.value = true
-    try {
-      brief.value = (await getTodayBrief()).data
-    } catch {
-      brief.value = null
-    } finally {
-      briefLoading.value = false
-    }
-  }
-
-  async function loadAll() {
-    await Promise.all([refresh(), loadModules(), loadBrief()])
-  }
+  async function refresh() { return Promise.all([treeResource.load(), statsResource.load()]) }
+  function loadModules() { return modulesResource.load() }
+  function loadBrief() { return briefResource.load() }
+  async function loadAll() { return Promise.all([refresh(), loadModules(), loadBrief()]) }
+  watch(() => authStore.user?.id, () => {
+    for (const resource of [treeResource, modulesResource, statsResource, briefResource, trashResource]) resource.clear()
+    resetFilters()
+    void loadAll()
+  })
 
   // 设计文档第 3 节：任何未结束任务标记完成都要人确认；有未结束子任务时文案里说明
   async function confirmDone(task) {
@@ -128,16 +119,14 @@ export function useTaskCenter() {
     try {
       await changeTaskStatus(task.id, payload)
     } catch (err) {
-      msgError(errorMessage(err))
+      msgError(errorMessage(err), err)
       return
     }
     msgSuccess(`T-${task.id} 改为「${STATUS_META[to].label}」`)
     await refresh()
   }
 
-  async function loadTrash() {
-    trash.value = (await listTrash()).data
-  }
+  function loadTrash() { return trashResource.load() }
 
   async function restore(item) {
     await restoreTask(item.id)
@@ -178,7 +167,8 @@ export function useTaskCenter() {
 
   return {
     tree, modules, stats, brief, trash, loading, briefLoading, version, today, view, filters,
-    modulesByKey, filteredTree, columns, heat, parentTitleMap,
+    modulesByKey, filteredTree, columns, heat, parentTitleMap, appliedFilters, applyFilters, resetFilters,
+    treeResource, modulesResource, statsResource, briefResource, trashResource, loadModules,
     refresh, loadAll, loadBrief, setStatus, loadTrash, restore, togglePriority, addCustom, removeCustom,
   }
 }

@@ -12,12 +12,12 @@
         <p>统一查看 DSH 等受控运行时的任务、过程、成本、证据与人工决策。</p>
       </div>
       <div class="runtime-state">
-        <el-tag :type="config?.enabled ? 'success' : 'info'" effect="plain">
+        <StatusBadge :type="config?.enabled ? 'success' : 'info'" effect="plain">
           控制面 {{ config?.enabled ? '已启用' : '未启用' }}
-        </el-tag>
-        <el-tag :type="config?.dsh_enabled ? 'success' : 'info'" effect="plain">
+        </StatusBadge>
+        <StatusBadge :type="config?.dsh_enabled ? 'success' : 'info'" effect="plain">
           DSH {{ config?.dsh_enabled ? '已启用' : '未启用' }}
-        </el-tag>
+        </StatusBadge>
       </div>
     </header>
 
@@ -28,12 +28,12 @@
           <p>30 个标准问题、200 张复购卡和 50 组同输入 Shadow 对照全部达标后，才进入人工晋级评审。</p>
         </div>
         <div class="evaluation-actions">
-          <el-tag v-if="caseCatalog" type="info" effect="plain">
+          <StatusBadge v-if="caseCatalog" type="info" effect="plain">
             Profile v{{ caseCatalog.profile_version }} · {{ caseCatalog.model || '模型未配置' }} · {{ caseCatalog.cohort_id?.split(':').at(-1) }}
-          </el-tag>
-          <el-tag :type="readiness?.business_validation_complete ? 'success' : 'warning'" effect="plain">
+          </StatusBadge>
+          <StatusBadge :type="readiness?.business_validation_complete ? 'success' : 'warning'" effect="plain">
             {{ readiness?.business_validation_complete ? '已满足晋级门槛' : '保持 Shadow' }}
-          </el-tag>
+          </StatusBadge>
           <GlassButton
             v-permission="'agent_runtime:admin'" variant="secondary" left-icon="DataAnalysis"
             :loading="evaluationLoading" @click="openEvaluation"
@@ -61,22 +61,20 @@
     </section>
 
     <div ref="panelRef" class="table-card task-panel">
-      <div class="toolbar">
-        <el-select v-model="filters.status" class="filter-w-sm" placeholder="全部状态" clearable>
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="search" @reset="listPageState.handleReset"><el-select v-model="filters.status" class="filter-w-sm" placeholder="全部状态" clearable>
           <el-option v-for="(meta, key) in STATUS_META" :key="key" :label="meta.label" :value="key" />
         </el-select>
-        <el-select v-model="filters.runtime" class="filter-w-sm" placeholder="全部运行时" clearable>
+<el-select v-model="filters.runtime" class="filter-w-sm" placeholder="全部运行时" clearable>
           <el-option label="DSH" value="dsh" />
           <el-option label="OpenClaw" value="openclaw" />
           <el-option label="方舟原生" value="native" />
         </el-select>
-        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton variant="secondary" left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+</FilterBar>
       <div class="action-bar">
         <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="fetchTasks" @fullscreen="toggleFullscreen" />
       </div>
-      <el-table :data="tasks" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchTasks" />
+<el-table :data="tasks" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <el-table-column v-if="visibleKeys.includes('task')" label="任务" min-width="250" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="task-title">{{ taskTitle(row) }}</div>
@@ -85,9 +83,9 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
           <template #default="{ row }">
-            <el-tag :type="statusMeta(row.status).type" effect="plain" size="small">
+            <StatusBadge :type="statusMeta(row.status).type" effect="plain" size="small">
               {{ statusMeta(row.status).label }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('runtime')" label="运行时" min-width="95">
@@ -107,7 +105,7 @@
             <GlassButton variant="link" left-icon="View" @click="openRun(row.id)">详情</GlassButton>
           </template>
         </el-table-column>
-        <template #empty><el-empty description="暂无数据" /></template>
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchTasks"><el-empty description="暂无数据" /></ListPageStatus></template>
       </el-table>
       <el-pagination
         v-model:current-page="page" v-model:page-size="pageSize" :total="total"
@@ -116,7 +114,7 @@
       />
     </div>
 
-    <el-dialog v-model="evaluationDialog" title="客户与订单副驾驶 · 标准评测" width="min(980px, calc(100vw - 32px))">
+    <el-dialog v-model="evaluationDialog" title="客户与订单副驾驶 · 标准评测" width="760px">
       <el-alert
         title="这是正式灰度样本。每题应选择具备相应数据的真实内部客户；完成后必须在任务详情提交有帮助、无帮助或已修正反馈。"
         type="info" show-icon :closable="false" class="evaluation-notice"
@@ -138,7 +136,7 @@
       <el-table :data="filteredEvaluationCases" border max-height="520" class="list-table" empty-text="暂无标准评测题">
         <el-table-column label="题目" min-width="300">
           <template #default="{ row }">
-            <div class="case-title"><el-tag size="small" effect="plain">{{ row.case_id }}</el-tag><strong>{{ row.title }}</strong></div>
+            <div class="case-title"><StatusBadge size="small" effect="plain">{{ row.case_id }}</StatusBadge><strong>{{ row.title }}</strong></div>
             <div class="case-question">{{ row.question }}</div>
           </template>
         </el-table-column>
@@ -146,7 +144,7 @@
           <template #default="{ row }"><span class="case-requires">{{ row.requires.join(' · ') }}</span></template>
         </el-table-column>
         <el-table-column label="状态" min-width="105">
-          <template #default="{ row }"><el-tag :type="evaluationCaseMeta(row).type" effect="plain" size="small">{{ evaluationCaseMeta(row).label }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :type="evaluationCaseMeta(row).type" effect="plain" size="small">{{ evaluationCaseMeta(row).label }}</StatusBadge></template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="105" max-width="130" fixed="right">
           <template #default="{ row }">
@@ -165,9 +163,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgWarning, confirmAction, msgSuccessText } from '@/utils/feedback'
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { useRouter } from 'vue-router'
 import {
   getAgentEvaluationReadiness, getAgentProfiles, getAgentRuntimeConfig, getAgentTasks,
@@ -215,14 +213,15 @@ const filteredEvaluationCases = computed(() => (
     !evaluationCategory.value || item.category === evaluationCategory.value
   ))
 ))
+const listPageState = useListPage(async (params, { signal, isCurrent }) => {
+  const cleaned = Object.fromEntries(Object.entries(params).filter(([, value]) => value))
+  const response = await getAgentTasks(cleaned, { signal, suppressToast: true })
+  return response.data || {}
+}, { searchForm: { status: '', runtime: '' } })
 const {
   loading, list: tasks, total, page, pageSize, searchForm: filters,
   fetchList: fetchTasks, handleSearch: search, handlePageChange, handleSizeChange,
-} = useListPage(async params => {
-  const cleaned = Object.fromEntries(Object.entries(params).filter(([, value]) => value))
-  const response = await getAgentTasks(cleaned)
-  return response.data || {}
-}, { searchForm: { status: '', runtime: '' } })
+} = listPageState
 
 function resetFilters() {
   filters.status = ''
@@ -268,10 +267,10 @@ async function searchCustomers(keyword) {
 }
 
 async function startEvaluation(item) {
-  if (!selectedCustomerId.value) return ElMessage.warning('请先选择具备本题所需数据的客户')
+  if (!selectedCustomerId.value) return msgWarning('请先选择具备本题所需数据的客户')
   const customer = evaluationCustomers.value.find(row => row.id === selectedCustomerId.value)
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认用“${customerLabel(customer)}”执行 ${item.case_id}「${item.title}」？该结果会进入正式 30 题验收统计。`,
       '启动标准评测',
       { type: 'warning', confirmButtonText: '启动评测', cancelButtonText: '取消' },
@@ -292,7 +291,7 @@ async function startEvaluation(item) {
       idempotency_key: evaluationRequestKeys.get(requestKey),
     })
     evaluationRequestKeys.delete(requestKey)
-    ElMessage.success('标准评测任务已创建')
+    msgSuccessText('标准评测任务已创建')
     await loadEvaluation()
     openRun(response.data.id)
   } finally { startingCaseId.value = null }

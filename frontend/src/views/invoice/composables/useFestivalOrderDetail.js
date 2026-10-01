@@ -1,5 +1,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { getFestivalOrderSummary, listFestivalOrders } from '@/api/festivalOrder'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { clearListResource } from '@/composables/useListResourceScope'
 import { useTableView } from '@/composables/useTableView'
 
 const emptySummary = () => ({
@@ -15,80 +18,23 @@ const emptySummary = () => ({
 export function useFestivalOrderDetail() {
   const activeType = ref('new_sign')
   const selectedUserId = ref('')
-  const summary = ref(emptySummary())
-  const orders = ref([])
-  const loading = ref(false)
-  const error = ref('')
-  const filters = reactive({ keyword: '' })
-  const pagination = reactive({ page: 1, page_size: 20, total: 0 })
-  let latestRequest = 0
-
   const scopeParams = () => selectedUserId.value ? { user_id: selectedUserId.value } : {}
-
-  function orderParams() {
-    return {
-      type: activeType.value,
-      keyword: filters.keyword || undefined,
-      page: pagination.page,
-      page_size: pagination.page_size,
-      ...scopeParams(),
-    }
+  const summaryResource = useAsyncResource(async (params, { signal }) => await getFestivalOrderSummary(params, { signal, suppressToast: true }), { initialData: emptySummary() })
+  const summary = summaryResource.data
+  const listState = useListPage(async (params, { signal }) => await listFestivalOrders({ ...params, type: activeType.value, ...scopeParams() }, { signal, suppressToast: true }),
+    { searchForm: { keyword: '' }, immediate: false })
+  const { list: orders, loading, errorMessage: error, searchForm: filters, handleSearch: search, handleReset: resetFilters } = listState
+  const pagination = reactive({ page: listState.page, page_size: listState.pageSize, total: listState.total })
+  function loadPage({ refreshSummary = true } = {}) {
+    return refreshSummary ? Promise.all([summaryResource.load(scopeParams()), listState.fetchList()]) : listState.fetchList()
   }
-
-  async function loadPage({ refreshSummary = true } = {}) {
-    const requestId = ++latestRequest
-    loading.value = true
-    error.value = ''
-    try {
-      if (refreshSummary) {
-        const [nextSummary, nextPage] = await Promise.all([getFestivalOrderSummary(scopeParams()), listFestivalOrders(orderParams())])
-        if (requestId !== latestRequest) return
-        summary.value = nextSummary
-        orders.value = nextPage.items || []
-        pagination.total = nextPage.total || 0
-      } else {
-        const nextPage = await listFestivalOrders(orderParams())
-        if (requestId !== latestRequest) return
-        orders.value = nextPage.items || []
-        pagination.total = nextPage.total || 0
-      }
-    } catch (cause) {
-      if (requestId !== latestRequest) return
-      error.value = cause?.response?.data?.detail || cause?.message || '加载失败，请稍后重试'
-    } finally {
-      if (requestId === latestRequest) loading.value = false
-    }
-  }
-
   function changeScope() {
-    pagination.page = 1
-    loadPage()
+    clearListResource(listState)
+    return Promise.all([summaryResource.load(scopeParams(), { clear: true }), listState.fetchList()])
   }
-
-  function changeType() {
-    pagination.page = 1
-    loadPage({ refreshSummary: false })
-  }
-
-  function search() {
-    pagination.page = 1
-    loadPage({ refreshSummary: false })
-  }
-
-  function resetFilters() {
-    filters.keyword = ''
-    pagination.page = 1
-    loadPage({ refreshSummary: false })
-  }
-
-  function handleSizeChange() {
-    pagination.page = 1
-    loadPage({ refreshSummary: false })
-  }
-
-  function changePage() {
-    loadPage({ refreshSummary: false })
-  }
+  function changeType() { clearListResource(listState); return listState.fetchList() }
+  function handleSizeChange(size) { return listState.handleSizeChange(size) }
+  function changePage(page) { return listState.handlePageChange(page) }
 
   // 列配置元数据：TableTools 列显隐面板的数据源（推广期模板列保持静态，不改 v-for 渲染）
   const columnDefs = [
@@ -114,7 +60,7 @@ export function useFestivalOrderDetail() {
 
   onMounted(loadPage)
   return {
-    activeType, changePage, changeScope, changeType, error, filters, loadPage,
+    listState, summaryResource, activeType, changePage, changeScope, changeType, error, filters, loadPage,
     loading, orders, pagination, search, selectedUserId, summary,
     resetFilters, handleSizeChange,
     columnDefs, currentColumnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen,

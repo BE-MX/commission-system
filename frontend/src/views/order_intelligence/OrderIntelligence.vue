@@ -17,14 +17,14 @@
       </GlassButton>
     </header>
 
-    <el-alert v-if="error" class="oi-error" type="error" :title="error" show-icon :closable="false">
-      <template #default><el-button link type="danger" @click="loadPage">重新加载</el-button></template>
-    </el-alert>
+    <OrderFilters :filters="filters" :applied-filters="appliedFilters" :options="options" :scoped-users="scopedUsers"
+      :loading="loading" :pending="hasPendingAnalysis" @team-change="changeTeam" @apply="applyAnalysis" @reset="resetAnalysis" />
+    <ListPageStatus v-if="optionsResource.error.value" :error="optionsResource.errorMessage.value" :loading="optionsResource.loading.value"
+      :has-data="optionsResource.hasLoaded.value" :paged="false" @retry="optionsResource.load()" />
+    <ListPageStatus v-if="overviewResource.error.value || !overview" :error="overviewResource.errorMessage.value" :loading="overviewResource.loading.value"
+      :has-data="Boolean(overview)" :paged="false" @retry="overviewResource.load()" />
 
-    <OrderFilters :filters="filters" :options="options" :scoped-users="scopedUsers" @team-change="changeTeam" @apply="loadPage" />
-
-    <template v-if="overview">
-      <section class="oi-metrics" aria-label="经营摘要">
+      <section v-if="overview" class="oi-metrics" aria-label="经营摘要">
         <article class="oi-metric lg-card is-static">
           <span>有效订单 GMV</span>
           <strong>${{ compactMoney(overview.metrics.amount_usd) }}</strong>
@@ -61,7 +61,7 @@
           <el-tab-pane label="客户行动清单" name="customers" />
         </el-tabs>
 
-        <div v-if="activeTab === 'overview'" class="oi-overview-grid">
+        <div v-if="activeTab === 'overview' && overview" class="oi-overview-grid">
           <article class="oi-panel oi-panel--wide">
             <div class="oi-panel-title">
               <div><h3>月度经营趋势</h3><p>GMV、新签/首返客户与有效订单数分开观察</p></div>
@@ -118,7 +118,10 @@
 
         <div v-else-if="activeTab === 'countries'" v-loading="detailLoading" class="oi-table-wrap">
           <div class="oi-section-note"><b>国家机会评分</b><span>{{ countries.score_definition }}</span></div>
+          <ListPageStatus v-if="countriesResource.error.value && countries.items.length" :error="countriesResource.errorMessage.value"
+            :loading="countriesResource.loading.value" :has-data="true" :paged="false" @retry="countriesResource.load()" />
           <el-table :data="countries.items" border class="list-table">
+            <template #empty><ListPageStatus :error="countriesResource.errorMessage.value" :loading="countriesResource.loading.value" :paged="false" @retry="countriesResource.load()"><el-empty description="暂无分析结果" /></ListPageStatus></template>
             <el-table-column type="expand" min-width="48">
               <template #default="{ row }">
                 <div class="oi-row-evidence">
@@ -129,7 +132,7 @@
             </el-table-column>
             <el-table-column label="国家" prop="country" min-width="100" fixed />
             <el-table-column label="机会分" prop="opportunity_score" min-width="92">
-              <template #default="{ row }"><el-tag effect="plain" :type="scoreType(row.opportunity_score)">{{ row.opportunity_score }}</el-tag></template>
+              <template #default="{ row }"><StatusBadge effect="plain" :type="scoreType(row.opportunity_score)">{{ row.opportunity_score }}</StatusBadge></template>
             </el-table-column>
             <el-table-column label="新签客户" prop="new_sign_customers" min-width="104" />
             <el-table-column label="首返客户" prop="first_return_customers" min-width="104" />
@@ -151,10 +154,13 @@
 
         <div v-else-if="activeTab === 'people'" v-loading="detailLoading" class="oi-table-wrap">
           <div class="oi-section-note"><b>能力评估</b><span>{{ people.evaluation_note }}</span><el-radio-group v-model="peopleDimension" size="small" @change="changePeopleDimension"><el-radio-button label="user">个人</el-radio-button><el-radio-button label="team">团队</el-radio-button></el-radio-group></div>
+          <ListPageStatus v-if="peopleResource.error.value && people.items.length" :error="peopleResource.errorMessage.value"
+            :loading="peopleResource.loading.value" :has-data="true" :paged="false" @retry="peopleResource.load()" />
           <el-table :data="people.items" border class="list-table">
+            <template #empty><ListPageStatus :error="peopleResource.errorMessage.value" :loading="peopleResource.loading.value" :paged="false" @retry="peopleResource.load()"><el-empty description="暂无分析结果" /></ListPageStatus></template>
             <el-table-column :label="peopleDimension === 'team' ? '团队' : '业务员'" prop="name" min-width="120" fixed />
             <el-table-column v-if="peopleDimension === 'user'" label="所属团队" prop="team" min-width="110" />
-            <el-table-column label="能力标签" min-width="210"><template #default="{ row }"><div class="oi-tags"><el-tag v-for="tag in row.capability_labels" :key="tag" effect="plain">{{ tag }}</el-tag></div></template></el-table-column>
+            <el-table-column label="能力标签" min-width="210"><template #default="{ row }"><div class="oi-tags"><StatusBadge v-for="tag in row.capability_labels" :key="tag" effect="plain">{{ tag }}</StatusBadge></div></template></el-table-column>
             <el-table-column label="新签" prop="new_sign_customers" min-width="76" />
             <el-table-column label="新客均单" min-width="110"><template #default="{ row }">${{ money(row.new_avg_amount) }}</template></el-table-column>
             <el-table-column label="首返" prop="first_return_customers" min-width="76" />
@@ -181,7 +187,10 @@
             <div><span>B1/B3 新签覆盖</span><b>{{ profiles.summary?.new_sign_b1_b3_coverage || 0 }}%</b></div>
             <div><span>复购周期覆盖</span><b>{{ profiles.summary?.repeat_cycle_coverage || 0 }}%</b></div>
           </div>
+          <ListPageStatus v-if="profilesResource.error.value && profiles.items.length" :error="profilesResource.errorMessage.value"
+            :loading="profilesResource.loading.value" :has-data="true" :paged="false" @retry="profilesResource.load()" />
           <el-table :data="profiles.items" border class="list-table">
+            <template #empty><ListPageStatus :error="profilesResource.errorMessage.value" :loading="profilesResource.loading.value" :paged="false" @retry="profilesResource.load()"><el-empty description="暂无分析结果" /></ListPageStatus></template>
             <el-table-column type="expand" min-width="48">
               <template #default="{ row }">
                 <div class="oi-profile-evidence">
@@ -211,20 +220,23 @@
           </el-table>
         </div>
 
-        <div v-else ref="customerPanelRef" v-loading="detailLoading" class="oi-table-wrap table-card">
-          <div class="oi-section-note oi-customer-filters">
-            <div><b>客户行动清单</b><span>{{ customers.risk_definition }}</span></div>
-            <el-select v-model="customerFilters.risk_status" clearable placeholder="全部风险" @change="changeCustomerPage"><el-option label="到期提醒" value="due" /><el-option label="周期异常" value="abnormal" /><el-option label="样本不足" value="insufficient_data" /></el-select>
-            <el-select v-model="customerFilters.country" clearable filterable placeholder="全部国家" @change="changeCustomerPage"><el-option v-for="country in options.countries" :key="country" :label="country" :value="country" /></el-select>
-          </div>
+        <div v-else-if="activeTab === 'customers'" ref="customerPanelRef" v-loading="detailLoading" class="oi-table-wrap table-card">
+          <div class="oi-section-note"><b>客户行动清单</b><span>{{ customers.risk_definition }}</span></div>
+          <FilterBar :loading="customerState.loading.value" :pending="customerState.hasPendingSearch.value" @search="customerState.handleSearch" @reset="customerState.handleReset">
+            <el-select v-model="customerFilters.risk_status" class="filter-w-md" clearable placeholder="全部风险"><el-option label="到期提醒" value="due" /><el-option label="周期异常" value="abnormal" /><el-option label="样本不足" value="insufficient_data" /></el-select>
+            <el-select v-model="customerFilters.country" class="filter-w-md" clearable filterable placeholder="全部国家"><el-option v-for="country in options.countries" :key="country" :label="country" :value="country" /></el-select>
+          </FilterBar>
+          <ListPageStatus v-if="customerState.error.value && customerState.hasData.value" :error="customerState.errorMessage.value" :loading="customerState.loading.value"
+            :has-data="true" :data-page="customerState.dataPage.value" @retry="customerState.fetchList" />
           <div class="action-bar">
-            <TableTools v-model:visible-keys="customerVisibleKeys" v-model:density="customerDensity" :columns="customerColumnDefs" :fullscreen="customerIsFullscreen" @refresh="changeCustomerPage" @fullscreen="toggleCustomerFullscreen" />
+            <TableTools v-model:visible-keys="customerVisibleKeys" v-model:density="customerDensity" :columns="customerColumnDefs" :fullscreen="customerIsFullscreen"  :loading="customerState.loading.value" @refresh="customerState.fetchList" @fullscreen="toggleCustomerFullscreen" />
           </div>
           <el-table :data="customers.items" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640">
+            <template #empty><ListPageStatus :error="customerState.errorMessage.value" :loading="customerState.loading.value" @retry="customerState.fetchList"><el-empty description="暂无客户行动" /></ListPageStatus></template>
             <el-table-column v-if="customerVisibleKeys.includes('company')" label="客户" prop="company_name" min-width="190" show-overflow-tooltip fixed />
             <el-table-column v-if="customerVisibleKeys.includes('country')" label="国家" prop="country" min-width="94" />
             <el-table-column v-if="customerVisibleKeys.includes('owner')" label="负责人" prop="user_name" min-width="96" />
-            <el-table-column v-if="customerVisibleKeys.includes('risk')" label="风险" min-width="108"><template #default="{ row }"><el-tag effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</el-tag></template></el-table-column>
+            <el-table-column v-if="customerVisibleKeys.includes('risk')" label="风险" min-width="108"><template #default="{ row }"><StatusBadge effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</StatusBadge></template></el-table-column>
             <el-table-column v-if="customerVisibleKeys.includes('profile')" label="所属画像" prop="profile_label" min-width="280" show-overflow-tooltip />
             <el-table-column v-if="customerVisibleKeys.includes('cycle')" label="典型周期" min-width="158"><template #default="{ row }">{{ row.typical_cycle_days ? `${row.typical_cycle_days} 天` : '样本不足' }} · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
             <el-table-column v-if="customerVisibleKeys.includes('last-order')" label="上次下单" prop="last_order_date" min-width="108" />
@@ -235,26 +247,29 @@
             <el-table-column v-if="customerVisibleKeys.includes('preference')" label="偏好" min-width="190"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
             <el-table-column v-if="customerVisibleKeys.includes('action')" label="建议动作" prop="recommended_action" min-width="300" />
           </el-table>
-          <div class="oi-pagination pager"><el-pagination v-model:current-page="customers.page" v-model:page-size="customers.page_size" :total="customers.total" :page-sizes="[20, 50, 100]" layout="total,sizes,prev,pager,next" @size-change="changeCustomerPage" @current-change="changeCustomerPage" /></div>
+          <div class="oi-pagination pager"><el-pagination class="pager" v-model:current-page="customers.page" v-model:page-size="customers.page_size" :total="customers.total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="changeCustomerSize" @current-change="changeCustomerPage" /></div>
         </div>
       </section>
-    </template>
 
-    <el-drawer v-model="aiBrief.visible" title="AI 经营简报" size="min(680px, 92vw)">
+    <DetailDrawer v-model="aiBrief.visible" title="AI 经营简报" width="760px">
       <div class="oi-ai-brief">
         <el-alert :type="briefAlert.type" :title="briefAlert.title" :closable="false" show-icon />
         <pre>{{ briefDisplayContent }}</pre>
       </div>
       <template #footer><GlassButton v-if="['succeeded', 'failed'].includes(aiBrief.status)" variant="secondary" @click="generateBrief()">重新生成</GlassButton></template>
-    </el-drawer>
+    </DetailDrawer>
   </div>
 </template>
 
 <script setup>
+import { formatMoney } from '../../utils/money.js'
+
 import { computed, ref } from 'vue'
 import { DataAnalysis, MagicStick } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 import { useTableView } from '@/composables/useTableView'
 import OrderFilters from './components/OrderFilters.vue'
 import OrderTrendChart from './components/OrderTrendChart.vue'
@@ -262,9 +277,10 @@ import RepeatPurchaseTrendChart from './components/RepeatPurchaseTrendChart.vue'
 import { useOrderIntelligence } from './composables/useOrderIntelligence'
 
 const {
-  activeTab, aiBrief, aiLoading, briefMatchesFilters, changeCustomerPage, changePeopleDimension,
-  changeTab, changeTeam, countries, customerFilters, customers, detailLoading,
-  error, filters, generateBrief, handleBriefAction, loadPage, loading, options, overview,
+  activeTab, aiBrief, aiLoading, briefMatchesFilters, changeCustomerPage, changeCustomerSize, changePeopleDimension,
+  changeTab, changeTeam, countries, customerFilters, customers, customerState, detailLoading,
+  filters, appliedFilters, hasPendingAnalysis, applyAnalysis, resetAnalysis, generateBrief, handleBriefAction, loading, options, overview,
+  optionsResource, overviewResource, countriesResource, peopleResource, profilesResource,
   people, peopleDimension, profiles, scopedUsers,
 } = useOrderIntelligence()
 
@@ -300,8 +316,8 @@ const briefDisplayContent = computed(() => {
   return aiBrief.value.error_message || '暂无简报内容'
 })
 const number = value => Number(value || 0).toLocaleString('zh-CN')
-const money = value => Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-const compactMoney = value => Number(value || 0).toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })
+const money = value => formatMoney(value, 0)
+const compactMoney = value => formatMoney(value, { notation: 'compact', precision: 1 })
 const changeText = value => value == null ? '—' : `${value > 0 ? '+' : ''}${value}%`
 const changeClass = value => value > 0 ? 'is-up' : (value < 0 ? 'is-down' : '')
 const evidenceLabel = value => ({ high: '高证据', medium: '中证据', low: '小样本' }[value] || '待评估')

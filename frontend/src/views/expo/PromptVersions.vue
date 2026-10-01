@@ -2,11 +2,8 @@
   <div class="prompt-page">
     <p class="page-note">客户生成统一使用当前默认版本。保存默认版本后影响下一次生成；非默认版本需“设为默认”后生效。进行中任务和历史图片保留各自快照。</p>
     <div ref="panelRef" class="table-card">
-      <div class="toolbar">
-        <el-input v-model="searchForm.keyword" placeholder="搜索版本名称" clearable class="filter-w-md" @keyup.enter="handleSearch" @clear="handleSearch" />
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
-      </div>
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="handleReset"><el-input v-model="searchForm.keyword" placeholder="搜索版本名称" clearable class="filter-w-md"   />
+</FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -21,16 +18,17 @@
         />
       </div>
 
-      <el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="版本名称" min-width="150" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('hint')" prop="hint" label="客户可见说明" min-width="220" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="130"><template #default="{ row }">
-          <el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_default ? '默认 · 启用' : row.is_active ? '启用' : '停用' }}</el-tag>
+          <StatusBadge :type="row.is_active ? 'success' : 'info'">{{ row.is_default ? '默认 · 启用' : row.is_active ? '启用' : '停用' }}</StatusBadge>
         </template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="75" />
         <el-table-column v-if="visibleKeys.includes('updated-at')" label="最后更新" min-width="165"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>
@@ -45,7 +43,7 @@
         @current-change="handlePageChange" @size-change="handleSizeChange" />
     </div>
 
-    <DetailDrawer :model-value="visible" :title="editId ? '编辑提示词版本' : '新建提示词版本'" width="min(900px, 100vw)" :loading="opening" :before-close="beforeClose" @update:model-value="visible = $event">
+    <DetailDrawer :model-value="visible" :title="editId ? '编辑提示词版本' : '新建提示词版本'" width="760px" :loading="opening" :before-close="beforeClose" @update:model-value="visible = $event">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="editor-alert" />
       <template v-if="form">
         <el-form label-position="top">
@@ -93,21 +91,20 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { confirmAction, msgSuccess } from '@/utils/feedback'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useListPage } from '@/composables/useListPage'
 import { useTableView } from '@/composables/useTableView'
-import { msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { getPromptVersions, getPromptEditor, getPromptVersion, createPromptVersion, updatePromptVersion,
   setDefaultPromptVersion, previewPromptVersion, getWigPicker, getHairColors } from '@/api/expo'
 
-const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange } =
-  useListPage(async params => (await getPromptVersions(params)).data, { searchForm: { keyword: '' } })
+const listPageState = useListPage(async (params, { signal, isCurrent }) => (await getPromptVersions(params, { signal, suppressToast: true })).data, { searchForm: { keyword: '' } })
+const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange } = listPageState
 // columnDefs 只供 TableTools 列显隐面板，模板列保持静态（推广期不配置化渲染）
 const columnDefs = [
   { key: 'name', label: '版本名称' },
@@ -156,7 +153,7 @@ let discardPending = null
 async function discardChanges() {
   if (!dirty.value) return true
   if (discardPending) return discardPending
-  discardPending = ElMessageBox.confirm('尚有未保存的修改，确定放弃？', '离开编辑', {
+  discardPending = confirmAction('尚有未保存的修改，确定放弃？', '离开编辑', {
     confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning',
   }).then(() => true, () => false)
   try { return await discardPending } finally { discardPending = null }
@@ -176,12 +173,12 @@ async function save() {
     if (editId.value) await updatePromptVersion(editId.value, form.value)
     else await createPromptVersion(form.value)
     baseline.value = JSON.stringify(form.value); visible.value = false
-    msgSuccess('保存'); await fetchList()
+    msgSuccess('保存'); await (editId.value ? listPageState.refreshUpdate() : listPageState.refreshCreate())
   } catch (exc) { error.value = message(exc) } finally { saving.value = false }
 }
 async function makeDefault(row) {
   defaultBusy.value = true
-  try { await setDefaultPromptVersion(row.id, row.revision); msgSuccess('设置默认版本'); await fetchList() }
+  try { await setDefaultPromptVersion(row.id, row.revision); msgSuccess('设置默认版本'); await listPageState.refreshUpdate() }
   finally { defaultBusy.value = false }
 }
 async function renderPreview() {

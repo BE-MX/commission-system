@@ -11,13 +11,13 @@
       <template #title>所选时段包含不可用日期，将转主管审核</template>
       <template #default>
         <div class="conflict-date-list">
-          <el-tag
+          <StatusBadge
             v-for="(d, idx) in conflictResult.conflicting_unavailable_slots"
             :key="idx"
             type="danger"
             size="small"
             effect="plain"
-          >{{ d.date }}{{ d.period === 'am' ? ' 上午' : d.period === 'pm' ? ' 下午' : '' }}</el-tag>
+          >{{ d.date }}{{ d.period === 'am' ? ' 上午' : d.period === 'pm' ? ' 下午' : '' }}</StatusBadge>
         </div>
       </template>
     </el-alert>
@@ -100,7 +100,7 @@ const noConflict = computed(() => {
   color: var(--text-secondary);
 }
 .overload-detail {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-weight: 600;
 }
 </style>

@@ -83,8 +83,8 @@
       </div>
 
       <div v-if="caseData.has_compensation" class="compensation-summary">
-        <span>预计赔偿总成本</span><strong>USD {{ caseData.estimated_compensation_usd || '0.00' }}</strong>
-        <span>问题货值 USD {{ caseData.affected_goods_value }} · 占比 {{ ratio }}</span>
+        <span>预计赔偿总成本</span><strong>USD {{ formatMoney(caseData.estimated_compensation_usd || '0.00', { missing: '—' }) }}</strong>
+        <span>问题货值 USD {{ formatMoney(caseData.affected_goods_value, { missing: '—' }) }} · 占比 {{ ratio }}</span>
       </div>
 
       <div class="result-block reply-block">
@@ -99,6 +99,8 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../../utils/money.js'
+
 import { computed } from 'vue'
 import { canCopyReply, compensationRatio, validateEnglishReply } from '../aftersalesRules'
 

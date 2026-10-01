@@ -47,7 +47,9 @@
       </div>
     </div>
 
-    <div v-loading="loading" class="lib-grid">
+    <ListPageStatus :paged="false" :error="listResource.errorMessage.value" :loading="loading" :has-data="listResource.hasData.value" @retry="fetchItems" />
+    <ListPageStatus :paged="false" :error="thumbnailResource.errorMessage.value" :has-data="thumbnailResource.hasData.value" @retry="thumbnailResource.load()" />
+    <div v-loading="loading && !items.length" class="lib-grid">
       <div
         v-for="item in items"
         :key="item.id"
@@ -69,7 +71,7 @@
           @click.stop="remove(item)"
         ><el-icon><Delete /></el-icon></button>
       </div>
-      <p v-if="!loading && !items.length" class="lib-empty">
+      <p v-if="listResource.isEmpty.value" class="lib-empty">
         {{ scope === 'private' ? '私库还没有图片，点击右上角上传' : '公库还没有图片' }}
       </p>
     </div>
@@ -83,13 +85,14 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Delete, Loading, Upload } from '@element-plus/icons-vue'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { deleteLibraryAsset, listLibraryAssets, uploadLibraryAsset } from '@/api/designImage'
 import { useAuthStore } from '@/stores/auth'
 import { msgError, msgSuccess } from '@/utils/feedback'
+import { useAsyncResource } from '@/composables/useAsyncResource'
 import { useLibraryObjectUrls } from '../composables/useLibraryObjectUrls'
 
 const props = defineProps({
@@ -102,9 +105,11 @@ const auth = useAuthStore()
 const libraryUrls = useLibraryObjectUrls()
 
 const scope = ref('public')
-const items = ref([])
+const listResource = useAsyncResource(async (currentScope, { signal }) => (await listLibraryAssets(currentScope, { signal, suppressToast: true })).data.items ?? [], { initialData: [] })
+const items = listResource.data
+const thumbnailResource = useAsyncResource(async ids => { await Promise.all(ids.map(id => libraryUrls.load(id))); return ids }, { initialData: [] })
 const selected = ref(null)
-const loading = ref(false)
+const loading = listResource.loading
 const uploading = ref(false)
 const uploadModel = ref([])
 
@@ -120,41 +125,39 @@ function canDelete(item) {
 }
 
 async function fetchItems() {
-  loading.value = true
-  selected.value = null
-  try {
-    const response = await listLibraryAssets(scope.value)
-    items.value = response?.data?.items ?? []
-    for (const item of items.value) {
-      libraryUrls.load(item.id).catch(() => {})
-    }
-  } catch {
-    msgError('参考图库读取失败，请稍后重试')
-  } finally {
-    loading.value = false
+  const success = await listResource.load(scope.value)
+  if (success) {
+    if (selected.value && !items.value.some(item => item.id === selected.value.id)) selected.value = null
+    void thumbnailResource.load(items.value.map(item => item.id))
   }
+  return success
 }
+function clearLibrary() {
+  listResource.clear(); thumbnailResource.clear(); libraryUrls.revokeAll(); selected.value = null
+}
+watch(() => props.visible, visible => { if (!visible) clearLibrary() })
+watch(() => JSON.stringify([auth.user?.id, auth.roles, auth.permissions]), () => { clearLibrary(); if (props.visible) void fetchItems() })
 
 function switchScope(next) {
   if (scope.value === next) return
   scope.value = next
-  libraryUrls.revokeAll()
+  clearLibrary()
   void fetchItems()
 }
 
 async function doUpload(file) {
+  const targetScope = scope.value, actorId = auth.user?.id
   uploading.value = true
   try {
-    const response = await uploadLibraryAsset(scope.value, file.name.replace(/\.[^.]+$/, ''), file)
+    const response = await uploadLibraryAsset(targetScope, file.name.replace(/\.[^.]+$/, ''), file)
     const row = response?.data
     if (row) {
-      items.value = [row, ...items.value]
-      libraryUrls.load(row.id).catch(() => {})
       msgSuccess('上传')
+      if (props.visible && scope.value === targetScope && auth.user?.id === actorId) await fetchItems()
     }
     return row
   } catch (error) {
-    msgError(error?.response?.status === 403 ? '公库图片仅管理员可以上传' : '上传失败，请重试')
+    msgError(error?.response?.status === 403 ? '公库图片仅管理员可以上传' : '上传失败，请重试', error)
     throw error
   } finally {
     uploading.value = false
@@ -162,21 +165,23 @@ async function doUpload(file) {
 }
 
 async function remove(item) {
+  const targetScope = scope.value, actorId = auth.user?.id
   try {
     await deleteLibraryAsset(item.id)
-    items.value = items.value.filter(candidate => candidate.id !== item.id)
-    if (selected.value?.id === item.id) selected.value = null
     msgSuccess('删除')
+    if (props.visible && scope.value === targetScope && auth.user?.id === actorId) await fetchItems()
   } catch {
     msgError('删除失败，请稍后重试')
   }
 }
 
 function onOpen() {
+  selected.value = null
   void fetchItems()
 }
 
 function close() {
+  clearLibrary()
   emit('update:visible', false)
 }
 

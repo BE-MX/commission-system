@@ -43,7 +43,7 @@
             <el-table-column v-if="gradeVisibleKeys.includes('expires')" label="失效日" min-width="110">
               <template #default="{ row }">
                 <span v-if="row.effective_to">{{ row.effective_to }}</span>
-                <el-tag v-else size="small" type="success" effect="plain">现行</el-tag>
+                <StatusBadge v-else size="small" type="success" effect="plain">现行</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
@@ -106,7 +106,7 @@
           <el-table :data="deptMappings" v-loading="loading" border class="list-table" :class="deptDensityClass" :max-height="deptIsFullscreen ? undefined : 640">
             <el-table-column v-if="deptVisibleKeys.includes('detail')" prop="dept_detail" label="明细部门" min-width="160" sortable />
             <el-table-column v-if="deptVisibleKeys.includes('group')" label="汇总大部门" min-width="160">
-              <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.dept_group }}</el-tag></template>
+              <template #default="{ row }"><StatusBadge size="small" effect="plain">{{ row.dept_group }}</StatusBadge></template>
             </el-table-column>
             <el-table-column v-if="deptVisibleKeys.includes('sort')" prop="sort_order" label="排序" min-width="80" sortable />
             <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
@@ -125,8 +125,8 @@
     </el-tabs>
 
     <!-- 职级行编辑 -->
-    <el-dialog v-model="gradeDialog" title="职级薪级行" width="620px">
-      <el-form ref="gradeFormRef" :model="gradeForm" :rules="gradeRules" label-width="120px">
+    <el-dialog v-model="gradeDialog" title="职级薪级行" width="640px">
+      <el-form label-position="top" ref="gradeFormRef" :model="gradeForm" :rules="gradeRules">
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="赛道" prop="scheme">
@@ -193,8 +193,8 @@
     </el-dialog>
 
     <!-- 部门映射编辑 -->
-    <el-dialog v-model="deptDialog" title="部门映射" width="460px">
-      <el-form ref="deptFormRef" :model="deptForm" :rules="deptRules" label-width="110px">
+    <el-dialog v-model="deptDialog" title="部门映射" width="480px">
+      <el-form label-position="top" ref="deptFormRef" :model="deptForm" :rules="deptRules">
         <el-form-item label="明细部门" prop="dept_detail"><el-input v-model="deptForm.dept_detail" /></el-form-item>
         <el-form-item label="汇总大部门" prop="dept_group"><el-input v-model="deptForm.dept_group" placeholder="如 业务部 / 后综部" /></el-form-item>
         <el-form-item label="排序">

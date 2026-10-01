@@ -8,7 +8,7 @@
     <header class="run-header">
       <div class="title-row">
         <GlassButton variant="link" left-icon="ArrowLeft" @click="router.push('/agent-runtime/tasks')">返回任务中心</GlassButton>
-        <el-tag v-if="run" :type="statusMeta(run.status).type" effect="plain">{{ statusMeta(run.status).label }}</el-tag>
+        <StatusBadge v-if="run" :type="statusMeta(run.status).type" effect="plain">{{ statusMeta(run.status).label }}</StatusBadge>
       </div>
       <div v-if="run" class="run-heading">
         <div>
@@ -22,6 +22,7 @@
       </div>
     </header>
 
+    <ListPageStatus :paged="false" :error="runResource.errorMessage.value" :loading="loading" :has-data="!!run" @retry="refreshAll"><el-empty v-if="!run" description="暂无任务详情" :image-size="96" /></ListPageStatus>
     <el-alert v-if="run?.error_message" :title="run.error_code || '执行失败'" :description="run.error_message" type="error" show-icon :closable="false" />
     <el-alert v-if="run?.status === 'ambiguous'" title="任务结果状态不确定，请人工核查后再决定是否重试。" type="warning" show-icon :closable="false" />
 
@@ -29,7 +30,7 @@
       <div class="metric-card"><span>执行步数</span><strong>{{ run.steps_used }}</strong></div>
       <div class="metric-card"><span>输入 Token</span><strong>{{ number(run.prompt_tokens) }}</strong></div>
       <div class="metric-card"><span>输出 Token</span><strong>{{ number(run.completion_tokens) }}</strong></div>
-      <div class="metric-card"><span>成本</span><strong>{{ run.cost_status === 'unpriced' ? '未计价' : `$${run.cost_usd}` }}</strong></div>
+      <div class="metric-card"><span>成本</span><strong>{{ run.cost_status === 'unpriced' ? '未计价' : formatMoney(run.cost_usd, { precision: 4, currency: 'USD', currencyDisplay: 'narrowSymbol', missing: '—' }) }}</strong></div>
     </section>
 
     <section v-if="artifacts.length" class="content-card">
@@ -38,8 +39,8 @@
         <div class="artifact-head">
           <div><h3>{{ artifact.title || artifact.artifact_type }}</h3><span>成果 #{{ artifact.id }}</span></div>
           <div class="artifact-tags">
-            <el-tag :type="artifact.validation_status === 'valid' ? 'success' : 'danger'" effect="plain" size="small">{{ artifact.validation_status }}</el-tag>
-            <el-tag :type="decisionType(artifact.decision_status)" effect="plain" size="small">{{ decisionLabel(artifact.decision_status) }}</el-tag>
+            <StatusBadge :type="artifact.validation_status === 'valid' ? 'success' : 'danger'" effect="plain" size="small">{{ artifact.validation_status }}</StatusBadge>
+            <StatusBadge :type="decisionType(artifact.decision_status)" effect="plain" size="small">{{ decisionLabel(artifact.decision_status) }}</StatusBadge>
           </div>
         </div>
         <div v-for="(value, key) in artifact.content" :key="key" class="artifact-field">
@@ -67,15 +68,16 @@
         <div><h2>运行时间线</h2><p>仅展示可见的脱敏事件；原始提示词、工具参数与凭证不会进入页面。</p></div>
         <GlassButton variant="secondary" left-icon="Refresh" :loading="eventsLoading" @click="refreshAll">刷新</GlassButton>
       </div>
+      <ListPageStatus :paged="false" :error="eventResource.errorMessage.value" :loading="eventsLoading" :has-data="eventResource.hasData.value" @retry="loadEvents"><el-empty v-if="!events.length" description="暂无运行事件" :image-size="96" /></ListPageStatus>
       <el-timeline v-if="events.length" class="event-timeline">
         <el-timeline-item v-for="event in events" :key="event.id" :timestamp="formatTime(event.created_at)" placement="top">
           <div class="event-card">
-            <div class="event-title"><strong>#{{ event.sequence_no }} {{ event.event_type }}</strong><el-tag size="small" effect="plain">{{ event.actor_type }}</el-tag></div>
+            <div class="event-title"><strong>#{{ event.sequence_no }} {{ event.event_type }}</strong><StatusBadge size="small" effect="plain">{{ event.actor_type }}</StatusBadge></div>
             <pre v-if="Object.keys(event.payload || {}).length">{{ formatPayload(event.payload) }}</pre>
           </div>
         </el-timeline-item>
       </el-timeline>
-      <el-empty v-else-if="!eventsLoading" description="暂无运行事件" />
+      <GlassButton v-if="eventResource.hasLoaded.value && eventResource.hasMore.value" variant="secondary" :loading="eventsLoading" @click="loadEvents">加载更多事件</GlassButton>
     </section>
 
     <section v-if="run && isTerminal" class="content-card feedback-card">
@@ -90,8 +92,13 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { formatMoney } from '../../utils/money.js'
+import { confirmAction, msgSuccessText, promptAction } from '@/utils/feedback'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useCursorResource } from '@/composables/useCursorResource'
+import ListPageStatus from '@/components/ListPageStatus.vue'
+
 import { useRoute, useRouter } from 'vue-router'
 import {
   acceptAgentArtifact, cancelAgentRun, getAgentEvents, getAgentRun,
@@ -103,76 +110,79 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const runId = Number(route.params.runId)
-const loading = ref(true)
-const eventsLoading = ref(false)
+const runId = computed(() => Number(route.params.runId))
 const cancelling = ref(false)
-const run = ref(null)
-const artifacts = ref([])
-const events = ref([])
-let pollTimer = null
+const runResource = useAsyncResource(async (id, { signal }) =>
+  (await getAgentRun(id, { signal, suppressToast: true })).data)
+const run = computed(() => runResource.data.value?.run ?? null)
+const artifacts = computed(() => runResource.data.value?.artifacts ?? [])
+const loading = runResource.loading
+const eventResource = useCursorResource(async (id, afterSequence, { signal }) => {
+  const response = await getAgentEvents(id, { after_sequence: afterSequence, limit: 500 }, { signal, suppressToast: true })
+  const items = response.data || []
+  return { items, nextCursor: items.reduce((max, event) => Math.max(max, event.sequence_no), afterSequence), hasMore: items.length === 500 }
+}, { initialCursor: 0, key: event => event.sequence_no })
+const events = computed(() => [...eventResource.items.value].sort((a, b) => a.sequence_no - b.sequence_no))
+const eventsLoading = eventResource.loading
+let pollTimer = null, scopeVersion = 0, refreshVersion = 0, disposed = false
 const isTerminal = computed(() => TERMINAL_STATUSES.has(run.value?.status))
-
-async function loadRun() {
-  const response = await getAgentRun(runId)
-  run.value = response.data?.run
-  artifacts.value = response.data?.artifacts || []
-}
-
-async function loadEvents() {
-  eventsLoading.value = true
-  try {
-    const response = await getAgentEvents(runId, { after_sequence: 0, limit: 500 })
-    events.value = response.data || []
-  } finally { eventsLoading.value = false }
-}
-
+function loadRun() { return runResource.load(runId.value) }
+function loadEvents() { return eventResource.load(runId.value) }
 async function refreshAll() {
-  await Promise.all([loadRun(), loadEvents()])
-  armPolling()
-}
-
-function armPolling() {
-  if (pollTimer) clearInterval(pollTimer)
+  const version = scopeVersion, refreshId = ++refreshVersion
+  if (pollTimer) clearTimeout(pollTimer)
   pollTimer = null
-  if (!run.value || isTerminal.value) return
-  pollTimer = setInterval(async () => {
-    try { await Promise.all([loadRun(), loadEvents()]) } catch { /* 下一轮继续 */ }
-    if (isTerminal.value && pollTimer) { clearInterval(pollTimer); pollTimer = null }
-  }, 3000)
+  await Promise.all([loadRun(), loadEvents()])
+  if (version === scopeVersion && refreshId === refreshVersion) armPolling()
+}
+function armPolling() {
+  if (pollTimer) clearTimeout(pollTimer)
+  pollTimer = null
+  // Failed initial detail reads still retry; terminal runs stop background polling.
+  if (disposed || isTerminal.value) return
+  pollTimer = setTimeout(() => { pollTimer = null; void refreshAll() }, 3000)
 }
 
 async function cancelRun() {
-  try { await ElMessageBox.confirm('确认取消这个 Agent 任务？正在执行的任务会在安全检查点停止。', '取消任务', { type: 'warning' }) } catch { return }
+  const id = runId.value, version = scopeVersion
+  if (cancelling.value || !run.value || runResource.error.value) return
+  try { await confirmAction('确认取消这个 Agent 任务？正在执行的任务会在安全检查点停止。', '取消任务', { type: 'warning' }) } catch { return }
+  if (version !== scopeVersion) return
   cancelling.value = true
-  try { await cancelAgentRun(runId); ElMessage.success('取消请求已记录'); await refreshAll() } finally { cancelling.value = false }
+  try { await cancelAgentRun(id); msgSuccessText('取消请求已记录'); if (version === scopeVersion) await refreshAll() } finally { cancelling.value = false }
 }
 
 async function decideArtifact(artifact, decision) {
+  if (runResource.loading.value || runResource.error.value) return
+  const version = scopeVersion
   let note = null
   try {
-    const result = await ElMessageBox.prompt('可填写判断依据，方便后续评测与复盘。', decision === 'accept' ? '接受成果' : '拒绝成果', {
+    const result = await promptAction('可填写判断依据，方便后续评测与复盘。', decision === 'accept' ? '接受成果' : '拒绝成果', {
       inputType: 'textarea', inputPlaceholder: '选填，最多 1000 字', inputValidator: value => !value || value.length <= 1000 || '最多 1000 字',
     })
     note = result.value || null
   } catch { return }
+  if (version !== scopeVersion) return
   if (decision === 'accept') await acceptAgentArtifact(artifact.id, note)
   else await rejectAgentArtifact(artifact.id, note)
-  ElMessage.success(decision === 'accept' ? '成果已接受' : '成果已拒绝')
-  await refreshAll()
+  msgSuccessText(decision === 'accept' ? '成果已接受' : '成果已拒绝')
+  if (version === scopeVersion) await refreshAll()
 }
 
 async function feedback(rating) {
+  if (runResource.loading.value || runResource.error.value) return
+  const id = runId.value, version = scopeVersion
   let note = null
   try {
-    const result = await ElMessageBox.prompt('这条反馈会进入 Agent 离线评测。', '提交效果反馈', {
+    const result = await promptAction('这条反馈会进入 Agent 离线评测。', '提交效果反馈', {
       inputType: 'textarea', inputPlaceholder: '选填：哪里有帮助，或哪里需要改进？', inputValidator: value => !value || value.length <= 1000 || '最多 1000 字',
     })
     note = result.value || null
   } catch { return }
-  await submitAgentFeedback(runId, { rating, note })
-  ElMessage.success('反馈已记录')
-  await loadRun()
+  if (version !== scopeVersion) return
+  await submitAgentFeedback(id, { rating, note })
+  msgSuccessText('反馈已记录')
+  if (version === scopeVersion) await loadRun()
 }
 
 const number = value => Number(value || 0).toLocaleString('zh-CN')
@@ -180,10 +190,15 @@ const runtimeLabel = value => ({ dsh: 'DSH', openclaw: 'OpenClaw', native: '方�
 const decisionLabel = value => ({ draft: '待决策', accepted: '已接受', rejected: '已拒绝' }[value] || value)
 const decisionType = value => ({ accepted: 'success', rejected: 'danger', draft: 'warning' }[value] || 'info')
 
-onMounted(async () => {
-  try { await refreshAll() } finally { loading.value = false }
-})
-onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
+watch(runId, () => {
+  scopeVersion++; runResource.clear(); eventResource.clear()
+  void refreshAll()
+}, { immediate: true, flush: 'sync' })
+function stopPolling() {
+  disposed = true; scopeVersion++; if (pollTimer) clearTimeout(pollTimer)
+  runResource.cancel(); eventResource.cancel()
+}
+onBeforeUnmount(stopPolling)
 </script>
 
 <style scoped>

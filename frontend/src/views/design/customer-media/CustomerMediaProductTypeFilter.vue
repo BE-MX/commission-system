@@ -28,5 +28,5 @@ function toggle(id) {
 .product-type-filter strong { min-width: 90px; padding-top: 5px; color: var(--text-secondary); font-size: 12px; }
 .filter-values { display: flex; flex-wrap: wrap; gap: 7px; }
 .filter-values button { padding: 5px 10px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); background: var(--card-bg); cursor: pointer; }
-.filter-values button.active { border-color: var(--color-primary); color: var(--color-primary-hover); background: var(--color-primary-light); }
+.filter-values button.active { border-color: var(--color-primary); color: var(--color-primary-text); background: var(--color-primary-light); }
 </style>

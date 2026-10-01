@@ -29,10 +29,12 @@ test('page exposes confirmed metrics, three tabs, and required order columns', (
 
 test('data loader keeps successful data when a later request fails', () => {
   const composable = read('../src/views/invoice/composables/useFestivalOrderDetail.js')
-  assert.match(composable, /Promise\.all\(\[getFestivalOrderSummary/)
-  assert.match(composable, /summary\.value = nextSummary/)
-  assert.match(composable, /orders\.value = nextPage\.items \|\| \[\]/)
-  assert.match(composable, /if \(requestId !== latestRequest\) return/)
+  assert.match(composable, /summaryResource = useAsyncResource/)
+  assert.match(composable, /listState = useListPage/)
+  assert.match(composable, /await listFestivalOrders/)
+  assert.match(composable, /clearListResource\(listState\)/)
+  // Behavioral retention, independent summary failure and scope races are
+  // executed against this controller in scopedLedgerResources.test.mjs.
   assert.doesNotMatch(composable, /catch[\s\S]{0,180}(summary\.value\s*=|orders\.value\s*=\s*\[\])/)
 })
 

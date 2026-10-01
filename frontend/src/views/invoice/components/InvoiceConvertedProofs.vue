@@ -10,9 +10,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText } from '@/utils/feedback'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { getReceipt, updateReceiptProofs } from '@/api/receipt'
 import ReceiptProofs from '@/views/receipt/ReceiptProofs.vue'
 
@@ -71,7 +71,7 @@ async function save() {
     attachmentIds.value = [...savedIds.value]
     version.value = row.version
     emit('saved', receiptId, [...savedIds.value])
-    ElMessage.success('回款截图已更新')
+    msgSuccessText('回款截图已更新')
   } catch (e) {
     if (!disposed && receiptId === props.receiptId) error.value = e.response?.data?.detail || '截图保存失败，请重试'
   } finally {

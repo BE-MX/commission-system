@@ -1,6 +1,6 @@
 <template>
   <section v-if="['stock', 'presale'].includes(form.order_type)" class="receipt-card">
-    <div class="card-title">{{ form.order_type === 'presale' ? '首笔定金' : '本次回款' }} <el-tag effect="plain" type="warning" size="small">同步前必填</el-tag></div>
+    <div class="card-title">{{ form.order_type === 'presale' ? '首笔定金' : '本次回款' }} <StatusBadge effect="plain" type="warning" size="small">同步前必填</StatusBadge></div>
     <p class="receipt-hint">{{ form.receipt_draft?.status === 'converted' ? '本次回款已生成，订单重新同步不会重复建款。' : '上传实际到账截图；订单完整同步后自动生成回款单。回款金额默认随预付款填入，可手改；可先保存草稿。' }}</p>
     <!-- 小满回款方式在其接口中非必填，且口径与内部付款方式不同；自动回款单统一按 Other 提交 -->
     <p class="method-note">小满回款方式默认按 Other 提交（小满侧非必填），无需选择。</p>

@@ -23,7 +23,9 @@
           <span class="tree-count">{{ totalCount }}</span>
         </div>
         <div class="tree-content">
-          <el-empty v-if="!loading && monthGroups.length === 0" description="暂无日报" :image-size="64" />
+          <ListPageStatus :error="reportResource.errorMessage.value" :loading="loading" :has-data="reportResource.hasData.value" @retry="refreshAll" />
+          <p v-if="totalCount > reports.length" class="text-secondary">当前展示最近 200 份报告。</p>
+          <el-empty v-if="!reportResource.error.value && !loading && monthGroups.length === 0" description="暂无日报" :image-size="64" />
           <div v-for="grp in monthGroups" :key="grp.label" class="month-group">
             <button class="month-toggle" @click="toggleMonth(grp.label)">
               <el-icon class="month-arrow" :class="{ open: expandedMonths[grp.label] }"><ArrowRight /></el-icon>
@@ -40,7 +42,7 @@
               >
                 <el-icon><Document /></el-icon>
                 <span>{{ d.label }}</span>
-                <el-tag v-if="d.is_today" type="warning" size="small" effect="light">今日</el-tag>
+                <StatusBadge v-if="d.is_today" type="warning" size="small" effect="light">今日</StatusBadge>
               </button>
             </div>
           </div>
@@ -48,7 +50,8 @@
       </aside>
 
       <section class="report-content">
-        <div v-if="htmlLoading" class="content-loading">
+        <ListPageStatus v-if="htmlResource.error.value" :error="htmlResource.errorMessage.value" :loading="htmlLoading" :has-data="htmlResource.hasData.value" @retry="loadHtml" />
+        <div v-if="htmlLoading && !htmlContent" class="content-loading">
           <el-icon class="is-loading"><Loading /></el-icon>
           <span>加载中...</span>
         </div>
@@ -58,7 +61,7 @@
           class="report-html"
           v-html="htmlContent"
         />
-        <div v-else class="content-empty">
+        <div v-else-if="!htmlResource.error.value" class="content-empty">
           <el-icon size="40"><Document /></el-icon>
           <p>选择左侧日期查看日报</p>
         </div>
@@ -68,6 +71,9 @@
 </template>
 
 <script setup>
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Calendar, ArrowRight, Document, Loading } from '@element-plus/icons-vue'
@@ -79,14 +85,17 @@ import { currentBeijingDate } from '@/utils/datetime'
 const authStore = useAuthStore()
 const router = useRouter()
 
-const reports = ref([])
-const totalCount = ref(0)
-const loading = ref(false)
+const reportResource = useAsyncResource(async (_, { signal }) => (await listReports({ report_type: 'industry_daily', page: 1, page_size: 200 }, { signal, suppressToast: true })).data)
+const reports = computed(() => reportResource.data.value?.items || [])
+const totalCount = computed(() => reportResource.data.value?.total || 0)
+const loading = reportResource.loading
+
 const selectedId = ref(null)
 const expandedMonths = ref({})
 const generating = ref(false)
-const htmlContent = ref('')
-const htmlLoading = ref(false)
+const htmlResource = useAsyncResource(async (id, { signal }) => id ? await getReportHtml(id, { signal, suppressToast: true }) : null)
+const htmlContent = htmlResource.data
+const htmlLoading = htmlResource.loading
 
 const canAdmin = computed(() => authStore.hasPermission('insight:admin'))
 
@@ -108,40 +117,20 @@ const monthGroups = computed(() => {
   return Array.from(groups.entries()).map(([label, children]) => ({ label, children }))
 })
 
-async function loadHtml() {
-  if (!selectedId.value) {
-    htmlContent.value = ''
-    return
-  }
-  htmlLoading.value = true
-  try {
-    const res = await getReportHtml(selectedId.value)
-    htmlContent.value = res || ''
-  } catch (e) {
-    htmlContent.value = `<p style="color:#999;padding:20px;">加载失败: ${e.message || '未知错误'}</p>`
-  } finally {
-    htmlLoading.value = false
-  }
+let htmlScope = null
+function loadHtml() {
+  const id = selectedId.value
+  const clear = id !== htmlScope
+  htmlScope = id
+  return htmlResource.load(id, { clear })
 }
-
 async function refreshAll() {
-  loading.value = true
-  try {
-    const res = await listReports({ report_type: 'industry_daily', page: 1, page_size: 200 })
-    reports.value = res.data.items || []
-    totalCount.value = res.data.total || 0
-    if (monthGroups.value.length > 0) {
-      const firstMonth = monthGroups.value[0].label
-      expandedMonths.value[firstMonth] = true
-      const firstReport = monthGroups.value[0].children[0]
-      if (firstReport) {
-        selectedId.value = firstReport.id
-        await loadHtml()
-      }
-    }
-  } finally {
-    loading.value = false
-  }
+  if (!await reportResource.load()) return false
+  if (!reports.value.some(row => row.id === selectedId.value)) selectedId.value = reports.value[0]?.id ?? null
+  if (monthGroups.value.length) expandedMonths.value[monthGroups.value[0].label] = true
+  if (selectedId.value) await loadHtml()
+  else await htmlResource.load(null, { clear: true })
+  return true
 }
 
 function toggleMonth(label) {

@@ -1,5 +1,5 @@
 <template>
-  <el-dialog class="customer-hub-dialog" v-model="visible" append-to-body title="处理客户待办" width="min(620px, calc(100vw - 24px))" :close-on-click-modal="!workflowLoading" :close-on-press-escape="!workflowLoading" :show-close="!workflowLoading">
+  <el-dialog class="customer-hub-dialog" v-model="visible" append-to-body title="处理客户待办" width="640px" :close-on-click-modal="!workflowLoading" :close-on-press-escape="!workflowLoading" :show-close="!workflowLoading">
     <p>{{ current?.customer_name }} · {{ current?.next_action || actionLabels[current?.action_type] || current?.action_type }}</p>
     <el-alert v-if="workflowError" type="error" :title="errorMessage(workflowError)" :closable="false" show-icon />
     <GlassButton v-if="workflowError" variant="secondary" :loading="workflowLoading" @click="refreshCurrent">刷新待办状态（保留输入）</GlassButton>

@@ -26,7 +26,7 @@
           <el-form-item label="销售价" required><el-input-number v-model="item.specialPrice" :min="0.01" :precision="2" :controls="false" /></el-form-item>
         </div>
         <template v-else>
-          <p class="draft-item-hint">{{ quoteStatusLabel(item.quoteStatus) }}<template v-if="item.quoteStatus === 'priced'"> · 原始价 ¥{{ Number(item.quote.original_price).toFixed(2) }}</template></p>
+          <p class="draft-item-hint">{{ quoteStatusLabel(item.quoteStatus) }}<template v-if="item.quoteStatus === 'priced'"> · 原始价 {{ formatMoney(Number(item.quote.original_price), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</template></p>
           <GlassButton v-if="item.quoteStatus !== 'priced'" variant="link" :disabled="saving || quoteLoading" @click="refreshQuote">重新报价</GlassButton>
           <div class="draft-item-grid">
             <el-form-item label="优惠价" required>
@@ -57,15 +57,18 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../../utils/money.js'
+import { confirmAction, msgWarning, msgSuccessText } from '@/utils/feedback'
 import { beijingCalendarDate } from '@/utils/datetime'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { addDraftOrderItem, DETAIL_SECTIONS, quoteDomesticPrices, uploadImage } from '@/api/domestic'
 import GlassButton from '@/components/GlassButton.vue'
 import AppUpload from '@/components/AppUpload.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import { attributeFieldLabel, attributeOptions, normalizeItemAttrs, requiredAttributeFields, validateItemAttributes, visibleAttributeFields } from '../domesticAttributeRules'
 import { buildProductionPayload, detailSectionsForKind, routeForOrder } from '../domesticOrderKinds'
+import { isAmount } from '@/utils/validators'
 import { applyQuoteChange, applyQuoteResult, buildCreateItems, buildQuoteRequest, effectiveDiscountPrice, ensureRequestIdentity, invalidateItemQuote, quoteChangedDetail, quoteStatusLabel } from '../composables/domesticMemberPricing'
 
 const props = defineProps({ order: { type: Object, required: true }, options: { type: Object, required: true } })
@@ -118,31 +121,31 @@ async function uploadReference(key, file) {
 async function close() {
   if (busy.value) return
   if (JSON.stringify(content()) !== initialContent) {
-    try { await ElMessageBox.confirm('新增明细尚未保存，确认放弃？', '放弃新增明细', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }) } catch { return }
+    try { await confirmAction('新增明细尚未保存，确认放弃？', '放弃新增明细', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }) } catch { return }
   }
   emit('close')
 }
 async function save() {
   if (busy.value || quoteLoading.value) return
   const error = validateItemAttributes({ ...item.attrs }, props.order.order_kind)
-  if (error) return ElMessage.warning(error)
-  if (!Number.isInteger(item.order_qty) || item.order_qty < 1) return ElMessage.warning('数量必须为正整数')
-  if (special.value && !(item.specialPrice > 0)) return ElMessage.warning('请填写销售价')
-  if (!production.value && !special.value && !item.expectedQuote) return ElMessage.warning('请先完成报价')
+  if (error) return msgWarning(error)
+  if (!Number.isInteger(item.order_qty) || item.order_qty < 1) return msgWarning('数量必须为正整数')
+  if (special.value && !isAmount(item.specialPrice, { format: 'number' })) return msgWarning('请填写销售价')
+  if (!production.value && !special.value && !item.expectedQuote) return msgWarning('请先完成报价')
   const payload = content()
   requestIdentity = ensureRequestIdentity(requestIdentity, payload, () => makeRequestId())
   saving.value = true
   try {
     const res = await addDraftOrderItem(props.order.id, { ...payload, request_id: requestIdentity.requestId })
-    if (res.data.warning) ElMessage.warning(res.data.warning)
-    else ElMessage.success('明细已添加')
+    if (res.data.warning) msgWarning(res.data.warning)
+    else msgSuccessText('明细已添加')
     emit('saved')
     emit('close')
   } catch (error) {
     const changed = quoteChangedDetail(error)
     if (changed) {
       applyQuoteChange([item], changed.current_expected_quotes, () => makeRequestId())
-      ElMessage.warning('报价已变化，请核对最新价格后重新保存')
+      msgWarning('报价已变化，请核对最新价格后重新保存')
     }
   } finally { saving.value = false }
 }

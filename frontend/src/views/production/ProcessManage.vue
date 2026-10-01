@@ -9,17 +9,15 @@
 
     <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
     <div ref="panelRef" class="table-card">
-      <div class="toolbar">
-        <el-input v-model="searchName" placeholder="搜索工序名称" clearable class="filter-w-md" @clear="search" @keyup.enter="search">
+      <FilterBar :loading="loading" :pending="hasPendingSearch" @search="search" @reset="resetFilters">
+        <el-input v-model="searchName" placeholder="搜索工序名称" clearable class="filter-w-md">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="filterStatus" placeholder="状态" clearable class="filter-w-sm" @change="search">
+        <el-select v-model="filterStatus" placeholder="状态" clearable class="filter-w-sm">
           <el-option label="启用" :value="1" />
           <el-option label="禁用" :value="0" />
         </el-select>
-        <GlassButton variant="primary" :left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标 -->
       <div class="action-bar">
@@ -29,16 +27,19 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
-          @refresh="loadData"
+          :loading="loading" @refresh="fetchList"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus v-if="hasData && errorMessage" :error="errorMessage" :loading="loading" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
       <el-table :data="items" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
+          <ListPageStatus :error="errorMessage" :loading="loading" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
+          </ListPageStatus>
         </template>
         <el-table-column v-if="visibleKeys.includes('id')" prop="id" label="ID" min-width="70" max-width="100" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="工序名称" min-width="140" max-width="210" show-overflow-tooltip />
@@ -46,16 +47,16 @@
         <el-table-column v-if="visibleKeys.includes('sort-order')" prop="sort_order" label="排序" min-width="80" max-width="120" />
         <el-table-column v-if="visibleKeys.includes('customer-track')" label="客户进度页" min-width="110" max-width="140">
           <template #default="{ row }">
-            <el-tag :type="row.show_in_domestic_track ? 'success' : 'info'" size="small" effect="plain">
+            <StatusBadge :type="row.show_in_domestic_track ? 'success' : 'info'" size="small" effect="plain">
               {{ row.show_in_domestic_track ? '显示' : '隐藏' }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" max-width="120">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
+            <StatusBadge :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
               {{ row.status === 1 ? '启用' : '禁用' }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="160" max-width="240">
@@ -80,13 +81,13 @@
         layout="total, sizes, prev, pager, next"
         class="pager"
         @size-change="handleSizeChange"
-        @current-change="loadData"
+        @current-change="handlePageChange"
       />
     </div>
 
     <!-- 新增/编辑弹窗 -->
-    <el-dialog v-model="formVisible" :title="form.id ? '编辑工序' : '新增工序'" width="480" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="formRules" label-width="80px">
+    <el-dialog v-model="formVisible" :title="form.id ? '编辑工序' : '新增工序'" width="480px" destroy-on-close>
+      <el-form label-position="top" ref="formRef" :model="form" :rules="formRules">
         <el-form-item label="工序名称" prop="name">
           <el-input v-model="form.name" maxlength="100" placeholder="2-100字" />
         </el-form-item>
@@ -109,21 +110,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useListPage } from '@/composables/useListPage'
+import { msgSuccessText, msgError, confirmAction } from '@/utils/feedback'
+import { ref, computed, toRef, onMounted } from 'vue'
+
 import { Plus, RefreshLeft, Search } from '@element-plus/icons-vue'
 import * as api from '@/api/production'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { useTableView } from '@/composables/useTableView'
 import TableTools from '@/components/TableTools.vue'
 
-const loading = ref(false)
-const items = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
-const searchName = ref('')
-const filterStatus = ref(null)
+const listState = useListPage(async (params, { signal }) => {
+  const response = await api.getProcesses({ ...params, name: params.name || undefined, status: params.status ?? undefined }, { signal, suppressToast: true })
+  return { items: response.items || [], total: response.total || 0 }
+}, { searchForm: { name: '', status: null } })
+const { loading, list: items, total, page, pageSize, searchForm, appliedSearchForm, hasPendingSearch, errorMessage, hasData, dataPage, fetchList, handleSearch: search, handleReset: resetFilters, handlePageChange, handleSizeChange, refreshCreate, refreshUpdate, refreshRemove } = listState
+const loadData = refreshUpdate
+const searchName = toRef(searchForm, 'name')
+const filterStatus = toRef(searchForm, 'status')
 
 // 列显隐元数据（TableTools 列面板数据源，模板列保持静态）
 const columnDefs = [
@@ -137,23 +141,10 @@ const columnDefs = [
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('process-manage', columnDefs)
 
-const hasActiveFilters = computed(() => Boolean(searchName.value) || filterStatus.value !== null)
+const hasActiveFilters = computed(() => Boolean(appliedSearchForm.value.name) || appliedSearchForm.value.status !== null)
 
-function search() {
-  page.value = 1
-  loadData()
-}
 
-function resetFilters() {
-  searchName.value = ''
-  filterStatus.value = null
-  search()
-}
 
-function handleSizeChange() {
-  page.value = 1
-  loadData()
-}
 
 const formVisible = ref(false)
 const submitting = ref(false)
@@ -167,16 +158,6 @@ function formatTime(dt) {
   return formatBeijingDateTime(dt, { seconds: false, fallback: '' })
 }
 
-async function loadData() {
-  loading.value = true
-  try {
-    const res = await api.getProcesses({ page: page.value, page_size: pageSize.value, name: searchName.value || undefined, status: filterStatus.value ?? undefined })
-    items.value = res.items || []
-    total.value = res.total || 0
-  } finally {
-    loading.value = false
-  }
-}
 
 function openForm(row) {
   if (row) {
@@ -199,11 +180,11 @@ async function handleSubmit() {
     } else {
       await api.createProcess(form.value)
     }
-    ElMessage.success(form.value.id ? '已更新' : '已创建')
+    msgSuccessText(form.value.id ? '已更新' : '已创建')
     formVisible.value = false
-    loadData()
+    await (form.value.id ? refreshUpdate() : refreshCreate())
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '操作失败')
+    msgError(e.response?.data?.detail || '操作失败', e)
   } finally {
     submitting.value = false
   }
@@ -214,25 +195,25 @@ async function toggleStatus(row) {
   const label = newStatus === 0 ? '禁用' : '启用'
   try {
     await api.updateProcess(row.id, { status: newStatus })
-    ElMessage.success(`已${label}`)
+    msgSuccessText(`已${label}`)
     loadData()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '操作失败')
+    msgError(e.response?.data?.detail || '操作失败', e)
   }
 }
 
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm('删除后不可恢复，确认删除？', '提示', { type: 'warning' })
+    await confirmAction('删除后不可恢复，确认删除？', '提示', { type: 'warning' })
     await api.deleteProcess(row.id)
-    ElMessage.success('已删除')
-    loadData()
+    msgSuccessText('已删除')
+    await refreshRemove()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败')
+    if (e !== 'cancel') msgError(e.response?.data?.detail || '删除失败', e)
   }
 }
 
-onMounted(loadData)
+
 </script>
 
 <style scoped>

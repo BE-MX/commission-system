@@ -6,12 +6,12 @@ export function submitRequest(data) {
   return designApi.post('/requests', data, { loadingText: '正在提交...' })
 }
 
-export function getRequests(params) {
-  return designApi.get('/requests', { params, showLoading: false })
+export function getRequests(params, config = {}) {
+  return designApi.get('/requests', { showLoading: false, ...config, params })
 }
 
-export function getRequestDetail(id) {
-  return designApi.get(`/requests/${id}`, { showLoading: false })
+export function getRequestDetail(id, config = {}) {
+  return designApi.get(`/requests/${id}`, { showLoading: false, ...config })
 }
 
 export function auditRequest(id, data) {
@@ -28,8 +28,8 @@ export function getGanttData(params) {
   return designApi.get('/gantt', { params, showLoading: false })
 }
 
-export function getTaskList(params) {
-  return designApi.get('/tasks', { params, showLoading: false })
+export function getTaskList(params, config = {}) {
+  return designApi.get('/tasks', { showLoading: false, ...config, params })
 }
 
 export function rescheduleTask(taskId, data) {
@@ -76,8 +76,8 @@ export function checkConflict(params) {
 
 // --- Designers ---
 
-export function getDesigners() {
-  return designApi.get('/designers', { showLoading: false })
+export function getDesigners(config = {}) {
+  return designApi.get('/designers', { showLoading: false, ...config })
 }
 
 export function createDesigner(data) {
@@ -90,8 +90,8 @@ export function updateDesigner(id, data) {
 
 // --- Audit Logs ---
 
-export function getAuditLogs(requestId) {
-  return designApi.get(`/audit-logs/${requestId}`, { showLoading: false })
+export function getAuditLogs(requestId, config = {}) {
+  return designApi.get(`/audit-logs/${requestId}`, { showLoading: false, ...config })
 }
 
 // --- Export ---
@@ -106,8 +106,8 @@ export function exportTasksExcel(params) {
 
 // --- Stats ---
 
-export function getDesignStats(params) {
-  return designApi.get('/stats', { params, showLoading: false })
+export function getDesignStats(params, config = {}) {
+  return designApi.get('/stats', { params, showLoading: false, ...config })
 }
 
 // --- Import ---
@@ -131,8 +131,8 @@ export function uploadAttachment(requestId, file) {
   })
 }
 
-export function getAttachments(requestId) {
-  return designApi.get(`/requests/${requestId}/attachments`, { showLoading: false })
+export function getAttachments(requestId, config = {}) {
+  return designApi.get(`/requests/${requestId}/attachments`, { showLoading: false, ...config })
 }
 
 export function deleteAttachment(attachmentId) {

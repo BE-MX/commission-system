@@ -20,22 +20,23 @@
           @fullscreen="toggleFullscreen"
         />
       </div>
+      <ListPageStatus :error="listResource.errorMessage.value" :loading="loading" :has-data="versions.length > 0" @retry="fetchVersions" />
       <el-table :data="versions" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty><el-empty :image-size="96" description="暂无数据" /></template>
+        <template #empty><el-empty v-if="!loading && !listResource.error.value" :image-size="96" description="暂无数据" /></template>
         <el-table-column v-if="visibleKeys.includes('version-no')" prop="version_no" label="版本号" min-width="130" max-width="190" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('filename')" prop="original_filename" label="文件名" min-width="190" max-width="320" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('clause-count')" prop="clause_count" label="条款数" min-width="90" max-width="120" />
         <el-table-column v-if="visibleKeys.includes('uploaded-by')" prop="uploaded_by_name" label="上传人" min-width="100" max-width="150" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('reference-count')" prop="reference_count" label="引用单据" min-width="90" max-width="120" />
         <el-table-column v-if="visibleKeys.includes('issue-mapping')" label="问题映射" min-width="110" max-width="160"><template #default="{ row }">{{ Object.keys(row.issue_mapping || {}).length }} / 11</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('parse-status')" label="解析状态" min-width="100" max-width="140"><template #default="{ row }"><el-tag :type="row.parse_status === 'parsed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status }}</el-tag></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('active-status')" label="生效状态" min-width="100" max-width="140"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'" effect="plain">{{ row.is_active ? '当前生效' : '未生效' }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('parse-status')" label="解析状态" min-width="100" max-width="140"><template #default="{ row }"><StatusBadge :type="row.parse_status === 'parsed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('active-status')" label="生效状态" min-width="100" max-width="140"><template #default="{ row }"><StatusBadge :type="row.is_active ? 'success' : 'info'" effect="plain">{{ row.is_active ? '当前生效' : '未生效' }}</StatusBadge></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('effective-date')" prop="effective_date" label="生效日期" min-width="120" max-width="160" />
         <el-table-column class-name="table-action-column" label="操作" min-width="180" max-width="240" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="preview(row)">查看解析</GlassButton><GlassButton v-if="!row.is_active" v-permission="'aftersales:admin'" variant="link" link-tone="success" left-icon="CircleCheck" @click="activate(row)">启用</GlassButton></template></el-table-column>
       </el-table>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="上传售后 SOP" width="520px">
+    <el-dialog v-model="dialogVisible" title="上传售后 SOP" width="640px">
       <el-form label-position="top">
         <el-form-item label="版本号" required><el-input v-model="form.version_no" placeholder="如 2026.07.10-v2" /></el-form-item>
         <el-form-item label="生效日期" required><el-date-picker v-model="form.effective_date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
@@ -45,24 +46,26 @@
       <template #footer><GlassButton variant="ghost" @click="dialogVisible = false">取消</GlassButton><GlassButton variant="primary" :loading="saving" @click="upload">上传并解析</GlassButton></template>
     </el-dialog>
 
-    <el-drawer v-model="previewVisible" title="SOP 解析预览" size="620px">
+    <DetailDrawer v-model="previewVisible" title="SOP 解析预览" width="640px">
       <div v-if="selectedVersion" class="preview-body">
         <div class="preview-summary"><strong>{{ selectedVersion.version_no }}</strong><span>{{ selectedVersion.clause_count }} 条 · 映射 {{ Object.keys(selectedVersion.issue_mapping || {}).length }}/11 类问题</span></div>
         <section v-for="(section, index) in selectedVersion.structured_content?.sections || []" :key="index"><h3>{{ section.title }}</h3><p v-for="(paragraph, pIndex) in section.paragraphs" :key="pIndex">{{ paragraph }}</p></section>
         <el-empty v-if="!selectedVersion.structured_content?.sections?.length" description="该文档没有可预览的标题章节" />
       </div>
-    </el-drawer>
+    </DetailDrawer>
   </div>
 </template>
 
-<script setup>
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessageBox } from 'element-plus'
+<script setup>import { confirmAction, msgError, msgSuccess } from '@/utils/feedback'
+import { onMounted, reactive, ref, computed } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
+
 import { activateAfterSalesSop, getAfterSalesSopVersions, uploadAfterSalesSop } from '@/api/aftersales'
 import { useTableView } from '@/composables/useTableView'
 import TableTools from '@/components/TableTools.vue'
-import { msgError, msgSuccess } from '@/utils/feedback'
-const loading = ref(false); const saving = ref(false); const versions = ref([]); const dialogVisible = ref(false); const previewVisible = ref(false); const selectedVersion = ref(null); const selectedFile = ref(null)
+const listResource = useAsyncResource(async (_, { signal }) => (await getAfterSalesSopVersions({ signal, suppressToast: true })).data?.items || [])
+const loading = listResource.loading; const versions = computed(() => listResource.data.value || []); const saving = ref(false); const dialogVisible = ref(false); const previewVisible = ref(false); const selectedVersion = ref(null); const selectedFile = ref(null)
 const form = reactive({ version_no: '', effective_date: '', change_summary: '' })
 // 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
 const columnDefs = [
@@ -77,7 +80,7 @@ const columnDefs = [
   { key: 'effective-date', label: '生效日期' },
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('aftersales-sop', columnDefs)
-async function fetchVersions() { loading.value = true; try { const response = await getAfterSalesSopVersions(); versions.value = response.data?.items || [] } finally { loading.value = false } }
+const fetchVersions = () => listResource.load()
 function preview(row) { selectedVersion.value = row; previewVisible.value = true }
 async function upload() {
   if (!selectedFile.value || !form.version_no || !form.effective_date || !form.change_summary.trim()) { msgError('请完整填写版本、日期、变更说明并选择文件'); return }
@@ -87,7 +90,7 @@ async function upload() {
 async function activate(row) {
   const mapped = Object.keys(row.issue_mapping || {}).length
   if (!row.clause_count || mapped < 11) { msgError(`解析结果不完整：${row.clause_count || 0} 条，映射 ${mapped}/11；请修正文档后重新上传`); return }
-  try { await ElMessageBox.confirm(`已确认 ${row.clause_count} 条内容和 ${mapped}/11 类问题映射。启用 ${row.version_no} 后，后续 AI 分析将引用此版本。`, '启用 SOP 确认', { type: 'warning' }) } catch { return }
+  try { await confirmAction(`已确认 ${row.clause_count} 条内容和 ${mapped}/11 类问题映射。启用 ${row.version_no} 后，后续 AI 分析将引用此版本。`, '启用 SOP 确认', { type: 'warning' }) } catch { return }
   await activateAfterSalesSop(row.id); msgSuccess('启用 SOP'); await fetchVersions()
 }
 onMounted(fetchVersions)

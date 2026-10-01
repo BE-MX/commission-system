@@ -10,8 +10,8 @@ export const INSPECTION_STATUS_LABELS = { none: '未检验', draft: '检验中',
 export const INSPECTION_STATUS_TAGS = { none: 'info', draft: 'warning', submitted: 'success' }
 
 // ── OKKI 出库单 ──
-export function listOutboundRecords(params) {
-  return shippingClient.get('/outbound-records', { params })
+export function listOutboundRecords(params, config = {}) {
+  return shippingClient.get('/outbound-records', { ...config, params })
 }
 
 export function deleteOutboundRecord(id) {
@@ -31,8 +31,8 @@ export function recallInspectionRecord(id, editVersion) {
 }
 
 // ── 验货单（已提交的发货检验单）──
-export function listInspectionRecords(params) {
-  return shippingClient.get('/records', { params })
+export function listInspectionRecords(params, config = {}) {
+  return shippingClient.get('/records', { ...config, params })
 }
 
 export function getInspectionRecord(id) {

@@ -22,41 +22,41 @@ import {
 //   { kind: 'status', text }          → 弱化文字
 export const METRIC_CARDS = [
   {
-    key: 'incomplete', label: '待补充归属', perms: ['customer:read'], dot: 'amber',
-    value: d => d.incompleteCount,
+    key: 'incomplete', label: '待补充归属', perms: ['customer:read'], dot: 'amber', resource: 'incomplete',
+    value: d => d.incompleteCount ?? '—',
     highlight: d => d.incompleteCount > 0,
-    footer: d => (d.incompleteCount > 0 ? { kind: 'pill', text: '待处理' } : { kind: 'status', text: '已全部补充' }),
+    footer: d => (d.incompleteCount == null ? { kind: 'status', text: '等待数据' } : d.incompleteCount > 0 ? { kind: 'pill', text: '待处理' } : { kind: 'status', text: '已全部补充' }),
   },
   {
-    key: 'batch', label: '本月提成批次', perms: ['commission:read'], dot: 'blue',
-    value: d => d.batchCount,
+    key: 'batch', label: '本月提成批次', perms: ['commission:read'], dot: 'blue', resource: 'batches',
+    value: d => d.batchCount ?? '—',
     footer: d => (d.latestBatch
       ? { kind: 'tag', text: d.batchStatusLabel(d.latestBatch.status), elType: d.batchStatusType(d.latestBatch.status) }
-      : { kind: 'status', text: '暂无批次' }),
+      : { kind: 'status', text: d.batchCount == null ? '等待数据' : '暂无批次' }),
   },
   {
-    key: 'employee_total', label: '员工总数', perms: ['employee:read'], dot: 'gray',
-    value: d => d.employeeCount,
+    key: 'employee_total', label: '员工总数', perms: ['employee:read'], dot: 'gray', resource: 'employees',
+    value: d => d.employeeCount ?? '—',
     footer: () => ({ kind: 'status', text: '在职人员' }),
   },
   {
-    key: 'tracking', label: '在途运单', perms: ['tracking:read'], dot: 'cyan',
-    value: d => d.trackingCount,
+    key: 'tracking', label: '在途运单', perms: ['tracking:read'], dot: 'cyan', resource: 'trackingCount',
+    value: d => d.trackingCount ?? '—',
     footer: () => ({ kind: 'status', text: '实时跟踪中' }),
   },
   {
-    key: 'today_shoot', label: '今日拍摄', perms: ['design:read'], dot: 'green',
-    value: d => d.todayShootCount,
+    key: 'today_shoot', label: '今日拍摄', perms: ['design:read'], dot: 'green', resource: 'designTasks',
+    value: d => d.todayShootCount ?? '—',
     footer: () => ({ kind: 'status', text: '已排期' }),
   },
   {
-    key: 'pending_approvals', label: '待审批预约', perms: ['design:audit'], dot: 'amber',
-    value: d => d.pendingApprovals,
+    key: 'pending_approvals', label: '待审批预约', perms: ['design:audit'], dot: 'amber', resource: 'approvals',
+    value: d => d.pendingApprovals ?? '—',
     highlight: d => d.pendingApprovals > 0,
-    footer: d => (d.pendingApprovals > 0 ? { kind: 'pill', text: '待审批' } : { kind: 'status', text: '暂无待审' }),
+    footer: d => (d.pendingApprovals == null ? { kind: 'status', text: '等待数据' } : d.pendingApprovals > 0 ? { kind: 'pill', text: '待审批' } : { kind: 'status', text: '暂无待审' }),
   },
   {
-    key: 'latest_payment', label: '最近回款', perms: ['payment:read'], dot: 'gold',
+    key: 'latest_payment', label: '最近回款', perms: ['payment:read'], dot: 'gold', resource: 'latestPayment',
     // 接口字段是 payment_amount（旧模板取 amount 恒为 '-'，2026-07-25 注册表化时修正）
     value: d => d.formatMoney(d.latestPayment?.payment_amount ?? d.latestPayment?.amount),
     footer: d => ({ kind: 'status', text: d.formatDate(d.latestPayment?.payment_date || d.latestPayment?.synced_at || d.latestPayment?.paid_at) }),

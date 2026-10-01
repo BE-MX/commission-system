@@ -1,3 +1,4 @@
+import { formatMoney } from '../utils/money.js'
 // 薪资计算 API（响应拦截器已解包信封，调用方取数用 res.data）
 import { salaryClient } from './clients'
 
@@ -19,7 +20,7 @@ export const STD_SALARY_SCHEMES = ['manage']
 export function money(v) {
   if (v === null || v === undefined || v === '') return '-'
   const n = Number(v)
-  return Number.isFinite(n) ? n.toFixed(2) : String(v)
+  return Number.isFinite(n) ? formatMoney(n) : String(v)
 }
 
 export const PROFILE_STATUS_OPTIONS = [
@@ -29,8 +30,8 @@ export const PROFILE_STATUS_OPTIONS = [
 
 // --- 员工档案 ---
 
-export function listProfiles(params) {
-  return salaryClient.get('/profiles', { params })
+export function listProfiles(params, config = {}) {
+  return salaryClient.get('/profiles', { ...config, params })
 }
 
 export function getProfile(id) {
@@ -79,16 +80,16 @@ export const PERIOD_STATUS_ORDER = [
   'draft', 'attendance_synced', 'imported', 'calculated', 'reviewing', 'confirmed',
 ]
 
-export function listPeriods(params) {
-  return salaryClient.get('/periods', { params })
+export function listPeriods(params, config = {}) {
+  return salaryClient.get('/periods', { ...config, params, showLoading: false })
 }
 
-export function getPeriod(id) {
-  return salaryClient.get(`/periods/${id}`)
+export function getPeriod(id, config = {}) {
+  return salaryClient.get(`/periods/${id}`, { ...config, showLoading: false })
 }
 
-export function listPeriodEvents(id) {
-  return salaryClient.get(`/periods/${id}/events`)
+export function listPeriodEvents(id, config = {}) {
+  return salaryClient.get(`/periods/${id}/events`, { ...config, showLoading: false })
 }
 
 export function createPeriod(data) {
@@ -123,8 +124,8 @@ export function calculatePeriod(id, data) {
 
 // 金额可能是 null（批次还没算过）；社保/公积金/缺勤/减项小计是**负数**，
 // 与 HR 手头的工资表同构，展示层直接照显，不要取绝对值。
-export function listRecords(id, params) {
-  return salaryClient.get(`/periods/${id}/records`, { params })
+export function listRecords(id, params, config = {}) {
+  return salaryClient.get(`/periods/${id}/records`, { ...config, params, showLoading: false })
 }
 
 // 人工改 5 个值列。body 只放真正要改的列：不传 = 不动，传 null = 清除人工覆盖
@@ -143,8 +144,8 @@ export function importPeriodFile(id, kind, file) {
   return salaryClient.post(`/periods/${id}/imports/${kind}`, fd)
 }
 
-export function listImportRows(id, kind, params) {
-  return salaryClient.get(`/periods/${id}/imports/${kind}`, { params })
+export function listImportRows(id, kind, params, config = {}) {
+  return salaryClient.get(`/periods/${id}/imports/${kind}`, { ...config, params, showLoading: false })
 }
 
 // --- 考勤 ---
@@ -156,8 +157,8 @@ export function syncAttendance(id, data) {
   return salaryClient.post(`/periods/${id}/attendance/sync`, data, { timeout: 300000 })
 }
 
-export function listAttendance(id, params) {
-  return salaryClient.get(`/periods/${id}/attendance`, { params })
+export function listAttendance(id, params, config = {}) {
+  return salaryClient.get(`/periods/${id}/attendance`, { ...config, params, showLoading: false })
 }
 
 // data 只放**真正要改的字段**：漏传 = 不动，传 null = 清空。
@@ -169,6 +170,6 @@ export function upsertAttendance(id, employeeId, data) {
 
 // --- 异常面板 ---
 
-export function listAnomalies(id) {
-  return salaryClient.get(`/periods/${id}/anomalies`)
+export function listAnomalies(id, config = {}) {
+  return salaryClient.get(`/periods/${id}/anomalies`, { ...config, showLoading: false })
 }

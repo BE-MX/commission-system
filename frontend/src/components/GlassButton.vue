@@ -207,7 +207,7 @@ function handleClick(e) {
 .gb-variant--outline:hover:not(.gb-disabled) {
   background: rgba(255,255,255,0.6);
   border-color: rgba(212,148,28,0.5);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .gb-variant--outline:active:not(.gb-disabled):not(:focus-visible) {
   transform: scale(0.98);
@@ -245,7 +245,7 @@ function handleClick(e) {
 /* link */
 .gb-variant--link {
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border: none;
   font-weight: 500;
   text-decoration: none;
@@ -255,7 +255,7 @@ function handleClick(e) {
 .gb-variant--link:hover:not(.gb-disabled) {
   text-decoration: underline;
   text-underline-offset: 4px;
-  color: var(--color-primary-hover);
+  color: var(--color-primary-text);
   background: var(--color-primary-light);
 }
 .gb-variant--link:active:not(.gb-disabled):not(:focus-visible) {

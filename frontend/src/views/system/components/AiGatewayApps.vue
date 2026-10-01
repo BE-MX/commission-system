@@ -1,24 +1,21 @@
 <template>
   <section class="gateway-apps">
     <p class="intro">每个站点使用独立密钥。已占用次数包含准入后的失败调用，未知用量单独统计。</p>
-    <div class="toolbar">
-      <el-input v-model="searchForm.search" placeholder="搜索应用名称" clearable aria-label="搜索应用名称" @keyup.enter="handleSearch" @clear="handleSearch" />
-      <GlassButton @click="handleSearch">搜索</GlassButton>
-      <GlassButton @click="fetchList">刷新</GlassButton>
-      <GlassButton v-permission="'ai:admin'" variant="primary" left-icon="Plus" @click="openEditor()">创建站点应用</GlassButton>
-    </div>
+    <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="listPageState.handleReset"><el-input v-model="searchForm.search" placeholder="搜索应用名称" clearable aria-label="搜索应用名称"   />
+<GlassButton @click="fetchList">刷新</GlassButton><GlassButton v-permission="'ai:admin'" variant="primary" left-icon="Plus" @click="openEditor()">创建站点应用</GlassButton></FilterBar>
     <div class="table-card">
-      <el-table :data="list" v-loading="loading" border class="list-table">
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table :data="list" v-loading="loading" border class="list-table"><template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
         <el-table-column prop="name" label="应用名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="owner_name" label="负责人" min-width="100" />
         <el-table-column label="状态" min-width="95">
-          <template #default="{ row }"><el-tag :type="row.is_enabled ? 'success' : 'info'" effect="plain">{{ row.is_enabled ? '启用' : '停用' }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :value="row.is_enabled" :dictionary="ENABLED_STATUS" effect="plain" /></template>
         </el-table-column>
         <el-table-column label="今日已占用" min-width="125"><template #default="{ row }">{{ row.today_calls }} / {{ row.daily_limit }}</template></el-table-column>
         <el-table-column label="已知输入 / 输出 token" min-width="185"><template #default="{ row }">{{ row.tokens_prompt }} / {{ row.tokens_completion }}</template></el-table-column>
         <el-table-column prop="unknown_usage" label="用量未完整返回" min-width="140" />
         <el-table-column prop="failures" label="失败 / 未知" min-width="110" />
-        <el-table-column label="并发占用" min-width="160"><template #default="{ row }">{{ row.occupied }} / {{ row.concurrency_limit }}<el-tag v-if="row.needs_review" type="warning" effect="plain">{{ row.needs_review }} 条待核查</el-tag></template></el-table-column>
+        <el-table-column label="并发占用" min-width="160"><template #default="{ row }">{{ row.occupied }} / {{ row.concurrency_limit }}<StatusBadge v-if="row.needs_review" type="warning" effect="plain">{{ row.needs_review }} 条待核查</StatusBadge></template></el-table-column>
         <el-table-column label="最近调用" min-width="170"><template #default="{ row }">{{ formatDateTime(row.last_used_at) || '尚未调用' }}</template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="300" :fixed="isNarrow ? false : 'right'">
           <template #default="{ row }">
@@ -29,11 +26,11 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination :current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="handlePageChange" />
+      <el-pagination class="pager" :page-sizes="[20, 50, 100]" :current-page="page" :page-size="pageSize" :total="total" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
     </div>
 
-    <el-dialog v-model="editorVisible" :title="editId ? '编辑站点应用' : '创建站点应用'" width="620px" destroy-on-close append-to-body>
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" v-loading="optionsLoading">
+    <el-dialog v-model="editorVisible" :title="editId ? '编辑站点应用' : '创建站点应用'" width="640px" destroy-on-close append-to-body>
+      <el-form label-position="top" ref="formRef" :model="form" :rules="rules" v-loading="optionsLoading">
         <el-form-item label="应用名称" prop="name"><el-input v-model="form.name" maxlength="100" /></el-form-item>
         <el-form-item label="负责人" prop="owner_user_id"><el-select v-model="form.owner_user_id" filterable placeholder="选择负责人"><el-option v-for="owner in options.owners" :key="owner.id" :label="owner.name" :value="owner.id" /></el-select></el-form-item>
         <el-form-item label="站点地址（备注）"><el-input v-model="form.site_url" maxlength="512" /></el-form-item>
@@ -54,24 +51,23 @@
       <template #footer><GlassButton @click="editorVisible = false">取消</GlassButton><GlassButton v-permission="'ai:admin'" variant="primary" :loading="busy" :disabled="optionsLoading" @click="save">保存</GlassButton></template>
     </el-dialog>
 
-    <el-dialog v-model="keyVisible" title="保存站点密钥" width="620px" :close-on-click-modal="false" append-to-body @closed="issuedKey = ''">
+    <el-dialog v-model="keyVisible" title="保存站点密钥" width="640px" :close-on-click-modal="false" append-to-body @closed="issuedKey = ''">
       <el-alert title="密钥只显示这一次，请保存到站点服务端的密钥配置中。关闭后无法找回，可通过重置生成新密钥。" type="warning" :closable="false" />
       <textarea ref="configField" class="key-config" :value="keyConfig" readonly rows="4" aria-label="站点服务端配置" spellcheck="false" />
       <p>让 Codex 编写后端调用代码，密钥由你填入服务端配置。不要把这段密钥粘贴进网页源码或公开文档。</p>
       <template #footer><GlassButton @click="copyKey">复制配置</GlassButton><GlassButton variant="primary" @click="keyVisible = false">已保存，关闭</GlassButton></template>
     </el-dialog>
 
-    <DetailDrawer v-model="requestsVisible" :title="`${selected?.name || ''} · 调用记录`" width="1000px">
-      <div class="toolbar">
-        <el-select v-model="requests.searchForm.status" placeholder="全部状态" clearable @change="requests.handleSearch">
+    <DetailDrawer v-model="requestsVisible" :title="`${selected?.name || ''} · 调用记录`" width="760px">
+      <FilterBar  class="toolbar" :loading="requests.loading.value" :pending="requests.hasPendingSearch.value" @search="requests.handleSearch" @reset="resetRequestFilters"><el-select v-model="requests.searchForm.status" placeholder="全部状态" clearable >
           <el-option v-for="(label, value) in statusNames" :key="value" :label="label" :value="value" />
         </el-select>
-        <el-date-picker v-model="requests.searchForm.date_from" type="date" value-format="YYYY-MM-DD" placeholder="开始日期" @change="requests.handleSearch" />
-        <el-date-picker v-model="requests.searchForm.date_to" type="date" value-format="YYYY-MM-DD" placeholder="结束日期" @change="requests.handleSearch" />
-        <GlassButton @click="requests.fetchList">刷新</GlassButton>
-      </div>
+<el-date-picker v-model="requests.searchForm.date_from" type="date" value-format="YYYY-MM-DD" placeholder="开始日期"  />
+<el-date-picker v-model="requests.searchForm.date_to" type="date" value-format="YYYY-MM-DD" placeholder="结束日期"  />
+<GlassButton @click="requests.fetchList">刷新</GlassButton></FilterBar>
       <p class="hint">待核查请求继续占用并发。解除前请确认本地执行已结束并核查供应商结果；解除不退还次数，也不会重发请求。</p>
-      <el-table :data="requests.list.value" v-loading="requests.loading.value" border class="list-table">
+      <ListPageStatus v-if="requests.hasData.value" :error="requests.errorMessage.value" :loading="requests.loading.value" :has-data="requests.hasData.value" :data-page="requests.dataPage.value" @retry="requests.fetchList" />
+<el-table :data="requests.list.value" v-loading="requests.loading.value" border class="list-table"><template #empty><ListPageStatus :error="requests.errorMessage.value" :loading="requests.loading.value" :has-data="false" @retry="requests.fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
         <el-table-column prop="request_id" label="Request ID" min-width="200" show-overflow-tooltip />
         <el-table-column prop="preset_name" label="能力" min-width="130" />
         <el-table-column label="时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
@@ -81,9 +77,9 @@
         <el-table-column prop="resolution_reason" label="核查结论" min-width="180" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="处理" min-width="130" :fixed="isNarrow ? false : 'right'"><template #default="{ row }"><GlassButton v-if="row.can_resolve" v-permission="'ai:admin'" variant="link" @click="openResolution(row)">解除占用</GlassButton></template></el-table-column>
       </el-table>
-      <el-pagination :current-page="requests.page.value" :page-size="requests.pageSize.value" :total="requests.total.value" layout="total, prev, pager, next" @current-change="requests.handlePageChange" />
+      <el-pagination class="pager" :page-sizes="[20, 50, 100]" :current-page="requests.page.value" :page-size="requests.pageSize.value" :total="requests.total.value" layout="total, sizes, prev, pager, next" @current-change="requests.handlePageChange" @size-change="requests.handleSizeChange" />
     </DetailDrawer>
-    <el-dialog v-model="resolveVisible" title="核查后解除并发占用" width="520px" append-to-body>
+    <el-dialog v-model="resolveVisible" title="核查后解除并发占用" width="640px" append-to-body>
       <el-input v-model="resolutionReason" type="textarea" :rows="4" maxlength="1000" placeholder="填写执行状态、上游核查结果（至少 5 个字，不含客户正文或密钥）" aria-label="核查结论" />
       <el-checkbox v-model="resolutionConfirmed">已确认本地执行结束，并完成上游结果核查</el-checkbox>
       <template #footer><GlassButton @click="resolveVisible = false">取消</GlassButton><GlassButton v-permission="'ai:admin'" variant="primary" :loading="busy" :disabled="!resolutionConfirmed || resolutionReason.trim().length < 5" @click="resolve">解除占用</GlassButton></template>
@@ -92,17 +88,20 @@
 </template>
 
 <script setup>
+import { ENABLED_STATUS } from '@/utils/status'
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import { watchListResourceScope } from '@/composables/useListResourceScope'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess, msgError, confirmDanger } from '@/utils/feedback'
 import { formatBeijingDateTime as formatDateTime } from '@/utils/datetime'
 import { gatewayOptions, listGatewayApps, createGatewayApp, updateGatewayApp, rotateGatewayKey, listGatewayRequests, resolveGatewayRequest } from '@/api/aiGateway'
 
-const { list, loading, page, pageSize, total, searchForm, fetchList, handleSearch, handlePageChange } = useListPage(
-  async params => (await listGatewayApps(params)).data, { searchForm: { search: '' } },
+const listPageState = useListPage(
+  async (params, { signal, isCurrent }) => (await listGatewayApps(params, { signal, suppressToast: true })).data, { searchForm: { search: '' } },
 )
+const { list, loading, page, pageSize, total, searchForm, fetchList, handleSearch, handlePageChange, handleSizeChange } = listPageState
 const options = ref({ owners: [], presets: [] })
 const optionsLoading = ref(false)
 const busy = ref(false)
@@ -126,10 +125,12 @@ const keyConfig = computed(() => `ARK_AI_BASE_URL=${gatewayBase}\nARK_AI_KEY=${i
 const requestsVisible = ref(false)
 const selected = ref(null)
 const statusNames = { pending: '执行中 / 待核查', success: '成功', error: '失败', timeout: '已核查超时', unknown: '结果未知' }
-const requests = useListPage(async params => {
+const requests = useListPage(async ({ app_id, ...params }, { signal, isCurrent }) => {
   const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v != null))
-  return (await listGatewayRequests(selected.value.id, clean)).data
-}, { immediate: false, searchForm: { status: '', date_from: '', date_to: '' } })
+  return (await listGatewayRequests(app_id, clean, { signal, suppressToast: true })).data
+}, { immediate: false, searchForm: { app_id: null, status: '', date_from: '', date_to: '' } })
+watchListResourceScope(requests, ['app_id'])
+function resetRequestFilters() { Object.assign(requests.searchForm, { status: '', date_from: '', date_to: '' }); return requests.handleSearch() }
 const resolveVisible = ref(false)
 const resolvingRow = ref(null)
 const resolutionReason = ref('')
@@ -155,18 +156,18 @@ async function save() {
     if (!editId.value) revealKey(result.data, form.preset_ids)
     editorVisible.value = false
     msgSuccess('保存')
-    await fetchList()
+    await (editId.value ? listPageState.refreshUpdate() : listPageState.refreshCreate())
   } finally { busy.value = false }
 }
 async function rotate(row) {
   if (!await confirmDanger('重置密钥', row.name, '旧密钥立即失效，需要更新站点的服务端配置。').then(() => true).catch(() => false)) return
   busy.value = true
-  try { revealKey({ ...(await rotateGatewayKey(row.id)).data, preset_names: row.preset_names }, row.preset_ids); await fetchList() } finally { busy.value = false }
+  try { revealKey({ ...(await rotateGatewayKey(row.id)).data, preset_names: row.preset_names }, row.preset_ids); await listPageState.refreshUpdate() } finally { busy.value = false }
 }
 async function toggle(row) {
   if (row.is_enabled && !await confirmDanger('停用', row.name, '新的请求会被拒绝，已准入请求仍可能完成并计费。').then(() => true).catch(() => false)) return
   busy.value = true
-  try { await updateGatewayApp(row.id, { is_enabled: !row.is_enabled }); msgSuccess(row.is_enabled ? '停用' : '启用'); await fetchList() } finally { busy.value = false }
+  try { await updateGatewayApp(row.id, { is_enabled: !row.is_enabled }); msgSuccess(row.is_enabled ? '停用' : '启用'); await listPageState.refreshUpdate() } finally { busy.value = false }
 }
 async function copyKey() {
   if (navigator.clipboard?.writeText) {
@@ -185,8 +186,9 @@ async function copyKey() {
 }
 async function showRequests(row) {
   selected.value = row
+  requests.searchForm.app_id = row.id
   requestsVisible.value = true
-  await requests.handleReset()
+  await resetRequestFilters()
 }
 function openResolution(row) {
   resolvingRow.value = row
@@ -201,7 +203,7 @@ async function resolve() {
     await resolveGatewayRequest(selected.value.id, resolvingRow.value.request_id, resolutionReason.value.trim())
     resolveVisible.value = false
     msgSuccess('解除占用')
-    await Promise.all([requests.fetchList(), fetchList()])
+    await Promise.all([requests.refreshUpdate(), listPageState.refreshUpdate()])
   } finally { busy.value = false }
 }
 onBeforeUnmount(() => { issuedKey.value = ''; narrowQuery.removeEventListener('change', updateNarrow) })

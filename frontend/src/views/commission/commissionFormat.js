@@ -1,3 +1,4 @@
+import { formatMoney } from '../../utils/money.js'
 /**
  * 提成管理域呈现格式化（纯函数，Node 可直接测试）。
  * 批次状态/角色/金额/比例的展示口径在这里统一，四个提成页面共用。
@@ -5,7 +6,7 @@
 
 /** 美元金额：1234.5 → $1,234.50 */
 export function usd(value) {
-  return `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return formatMoney(value, { currency: 'USD', currencyDisplay: 'narrowSymbol' })
 }
 
 /** 美元金额（可缺省）：null/undefined → '-'，与“真 0”区分（管理端明细未计算字段） */
@@ -16,7 +17,7 @@ export function usdOrDash(value) {
 
 /** 人民币金额：1234.5 → ¥1,234.50 */
 export function cny(value) {
-  return `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return formatMoney(value, { currency: 'CNY', currencyDisplay: 'narrowSymbol' })
 }
 
 /** 月平均汇率：7.12345 → 7.123450 */

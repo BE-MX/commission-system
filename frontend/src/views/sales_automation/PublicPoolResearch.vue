@@ -14,15 +14,14 @@
     </section>
 
     <section ref="panelRef" v-loading="batchListLoading" class="batch-tree table-card" aria-label="公海背调批次列表">
-    <div class="toolbar batch-filter-toolbar">
-      <el-input v-model="filters.keyword" clearable placeholder="筛选批次内客户 / OKKI ID" class="keyword-filter" @keyup.enter="search" @clear="search" />
-      <el-select v-model="filters.tier" clearable placeholder="全部分档" style="width: 130px" @change="search">
+    <FilterBar class="toolbar batch-filter-toolbar" :loading="batchListLoading" :pending="JSON.stringify(filters) !== JSON.stringify(appliedTaskFilters)" @search="search" @reset="resetTaskFilters">
+      <el-input v-model="filters.keyword" clearable placeholder="筛选批次内客户 / OKKI ID" class="keyword-filter" />
+      <el-select v-model="filters.tier" clearable placeholder="全部分档" style="width: 130px">
         <el-option label="T1 历史订单" value="T1" /><el-option label="T2 身份完善" value="T2" /><el-option label="T3 低信息量" value="T3" />
       </el-select>
-      <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
       <GlassButton variant="secondary" left-icon="Refresh" :loading="batchListLoading" @click="refreshBatchTree">刷新</GlassButton>
       <span class="toolbar-hint">筛选只影响明细显示，整批操作始终覆盖完整批次</span>
-    </div>
+    </FilterBar>
 
     <div class="action-bar">
       <GlassButton v-permission="'sales_automation:admin'" variant="secondary" left-icon="Refresh" :loading="auditLoading" @click="refreshAudit">重新审计</GlassButton>
@@ -30,6 +29,7 @@
       <span v-if="activeBatch" class="batch-state">批次 #{{ activeBatch.id }} 后台生成中</span>
       <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="refreshBatchTree" @fullscreen="toggleFullscreen" />
     </div>
+      <ListPageStatus :error="listPageState.errorMessage.value" :loading="batchListLoading" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchBatches" />
       <article v-for="batch in batches" :key="batch.id" class="surface-card batch-node">
         <button class="batch-toggle" type="button" :aria-expanded="isBatchExpanded(batch.id)" @click="toggleBatch(batch)">
           <span class="batch-chevron" :class="{ 'is-expanded': isBatchExpanded(batch.id) }" aria-hidden="true">›</span>
@@ -40,10 +40,11 @@
           <span class="batch-tier-summary">
             <span>T1 {{ batch.result_counts?.selected?.T1 ?? 0 }}</span><span>T2 {{ batch.result_counts?.selected?.T2 ?? 0 }}</span><span>T3 {{ batch.result_counts?.selected?.T3 ?? 0 }}</span>
           </span>
-          <el-tag :type="batchStatusMeta(batch.status).type" effect="plain">{{ batchStatusMeta(batch.status).label }}</el-tag>
+          <StatusBadge :type="batchStatusMeta(batch.status).type" effect="plain">{{ batchStatusMeta(batch.status).label }}</StatusBadge>
         </button>
 
         <div v-if="isBatchExpanded(batch.id)" class="batch-children">
+          <ListPageStatus :error="batchTasksErrors[batch.id]" :loading="batchTasksLoading[batch.id]" :has-data="Boolean(batchTasks[batch.id]?.length)" @retry="loadBatchTasks(batch.id)" />
           <el-tabs v-model="activeStatusByBatch[batch.id]" class="batch-status-tabs" @tab-change="clearBatchSelection(batch.id)">
             <el-tab-pane v-for="tab in statusTabs" :key="tab.key" :name="tab.key">
               <template #label><span class="status-tab-label">{{ tab.label }}<b>{{ batchCounts(batch.id)[tab.key] }}</b></span></template>
@@ -65,13 +66,13 @@
               <el-table-column v-if="visibleKeys.includes('company')" label="客户" min-width="210" show-overflow-tooltip>
                 <template #default="{ row }"><div class="company-cell"><strong>{{ row.subject.display_name }}</strong><span>{{ row.subject.country || '地区未知' }} · {{ sourceLabel(row.subject) }}</span></div></template>
               </el-table-column>
-              <el-table-column v-if="visibleKeys.includes('tier')" label="档位" min-width="105"><template #default="{ row }"><el-tag :type="tierMeta(row.tier).type">{{ tierMeta(row.tier).label }}</el-tag></template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('tier')" label="档位" min-width="105"><template #default="{ row }"><StatusBadge :type="tierMeta(row.tier).type">{{ tierMeta(row.tier).label }}</StatusBadge></template></el-table-column>
               <el-table-column v-if="visibleKeys.includes('orders')" label="订单 / 完整度" min-width="145"><template #default="{ row }">{{ row.subject.order_count }} 单 / {{ row.subject.completeness_score }}%</template></el-table-column>
-              <el-table-column v-if="visibleKeys.includes('progress')" label="背调进度" min-width="105"><template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="plain">{{ statusMeta(row.status).label }}</el-tag></template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('progress')" label="背调进度" min-width="105"><template #default="{ row }"><StatusBadge :type="statusMeta(row.status).type" effect="plain">{{ statusMeta(row.status).label }}</StatusBadge></template></el-table-column>
               <el-table-column v-if="visibleKeys.includes('grade')" label="成交等级" min-width="110"><template #default="{ row }"><span v-if="row.assessment" class="grade" :data-grade="row.assessment.grade">{{ row.assessment.grade }}</span><span v-else>-</span></template></el-table-column>
-              <el-table-column v-if="visibleKeys.includes('industry')" label="行业判定" min-width="115"><template #default="{ row }"><el-tag v-if="row.assessment" :type="relevanceMeta(row.assessment.industry_relevance).type" effect="plain">{{ relevanceMeta(row.assessment.industry_relevance).label }}</el-tag><span v-else>-</span></template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('industry')" label="行业判定" min-width="115"><template #default="{ row }"><StatusBadge v-if="row.assessment" :type="relevanceMeta(row.assessment.industry_relevance).type" effect="plain">{{ relevanceMeta(row.assessment.industry_relevance).label }}</StatusBadge><span v-else>-</span></template></el-table-column>
               <el-table-column v-if="visibleKeys.includes('confidence')" label="证据置信度" min-width="115"><template #default="{ row }">{{ confidenceLabel(row.assessment?.evidence_confidence) }}</template></el-table-column>
-              <el-table-column v-if="visibleKeys.includes('allocation')" label="团队分配" min-width="125"><template #default="{ row }"><el-tag :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</el-tag></template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('allocation')" label="团队分配" min-width="125"><template #default="{ row }"><StatusBadge :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</StatusBadge></template></el-table-column>
               <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
                 <template #default="{ row }">
                   <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
@@ -86,26 +87,26 @@
           </div>
         </div>
       </article>
-      <el-empty v-if="!batchListLoading && !batches.length" description="暂无背调批次" />
-      <el-pagination v-if="batchTotal" v-model:current-page="batchPage" v-model:page-size="batchPageSize" :total="batchTotal" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" class="pager" @current-change="handleBatchPageChange" @size-change="handleBatchSizeChange" />
+      <el-empty v-if="!batchListLoading && !listPageState.error.value && !batches.length" description="暂无背调批次" />
+      <el-pagination v-if="batchTotal" v-model:current-page="batchPage" v-model:page-size="batchPageSize" :total="batchTotal" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager" @current-change="handleBatchPageChange" @size-change="handleBatchSizeChange" />
     </section>
 
     <PublicPoolBatchDialog v-model="batchDialogVisible" :loading="batchLoading" @submit="generateBatch" />
 
-    <DetailDrawer v-model="detailVisible" :title="detail ? `公海背调 · ${detail.subject.display_name}` : '公海背调'" width="min(820px, 94vw)" :loading="detailLoading">
+    <DetailDrawer v-model="detailVisible" :title="detail ? `公海背调 · ${detail.subject.display_name}` : '公海背调'" width="760px" :loading="detailLoading">
       <template v-if="detail">
         <div class="detail-summary">
-          <div><el-tag :type="tierMeta(detail.tier).type">{{ tierMeta(detail.tier).label }}</el-tag><h2>{{ detail.subject.display_name }}</h2><p>{{ detail.selection_reason?.join('；') }}</p></div>
+          <div><StatusBadge :type="tierMeta(detail.tier).type">{{ tierMeta(detail.tier).label }}</StatusBadge><h2>{{ detail.subject.display_name }}</h2><p>{{ detail.selection_reason?.join('；') }}</p></div>
           <div v-if="detail.assessment" class="score-stack"><strong>{{ detail.assessment.grade }}</strong><span>优先分 {{ detail.assessment.priority_score }}</span></div>
         </div>
         <el-tabs v-model="activeTab">
           <el-tab-pane :label="detail.subject.source_system === 'okki' ? 'OKKI 原始线索' : '智能获客线索'" name="seed">
-            <el-descriptions :column="2" border>
+            <ResponsiveDescriptions :column="2" border>
               <el-descriptions-item label="企业邮箱">{{ detail.subject.primary_email || '-' }}</el-descriptions-item><el-descriptions-item label="独立站"><a v-if="detail.subject.website" :href="detail.subject.website" target="_blank" rel="noopener noreferrer">打开官网</a><span v-else>-</span></el-descriptions-item>
-              <el-descriptions-item label="历史订单">{{ detail.subject.order_count }} 单</el-descriptions-item><el-descriptions-item label="历史金额">USD {{ number(detail.subject.order_amount_usd) }}</el-descriptions-item>
+              <el-descriptions-item label="历史订单">{{ detail.subject.order_count }} 单</el-descriptions-item><el-descriptions-item label="历史金额">USD {{ formatMoney(detail.subject.order_amount_usd, { missing: '—' }) }}</el-descriptions-item>
               <el-descriptions-item label="最近订单">{{ formatTime(detail.subject.last_order_at) }}</el-descriptions-item><el-descriptions-item label="电话">{{ detail.subject.primary_phone || '-' }}</el-descriptions-item>
               <el-descriptions-item v-if="detail.subject.source_system === 'ark_lead'" label="画像匹配分">{{ detail.subject.source_snapshot?.match_score ?? '-' }}</el-descriptions-item><el-descriptions-item v-if="detail.subject.source_system === 'ark_lead'" label="来源任务">#{{ detail.subject.source_snapshot?.search_job_id || '-' }}</el-descriptions-item>
-            </el-descriptions>
+            </ResponsiveDescriptions>
           </el-tab-pane>
           <el-tab-pane label="公开证据" name="evidence">
             <p class="summary-text">{{ detail.research?.summary || 'Agent 尚未提交研究。' }}</p>
@@ -114,14 +115,14 @@
           </el-tab-pane>
           <el-tab-pane label="成交研判" name="assessment">
             <template v-if="detail.assessment">
-              <el-descriptions :column="2" border><el-descriptions-item label="等级 / 可能性">{{ detail.assessment.grade }} / {{ likelihoodLabel(detail.assessment.deal_likelihood) }}</el-descriptions-item><el-descriptions-item label="身份判断">{{ identityLabel(detail.assessment.identity_decision) }}</el-descriptions-item><el-descriptions-item label="行业相关性">{{ relevanceMeta(detail.assessment.industry_relevance).label }}</el-descriptions-item><el-descriptions-item label="调研深度">{{ depthLabel(detail.assessment.research_depth) }}</el-descriptions-item><el-descriptions-item label="业务质量分">{{ detail.assessment.business_quality_score }}</el-descriptions-item><el-descriptions-item label="成交分">{{ detail.assessment.deal_score }}</el-descriptions-item><el-descriptions-item label="供应商状态">{{ supplierLabel(detail.assessment.supplier_status) }}</el-descriptions-item><el-descriptions-item label="证据置信度">{{ confidenceLabel(detail.assessment.evidence_confidence) }}</el-descriptions-item></el-descriptions>
+              <ResponsiveDescriptions :column="2" border><el-descriptions-item label="等级 / 可能性">{{ detail.assessment.grade }} / {{ likelihoodLabel(detail.assessment.deal_likelihood) }}</el-descriptions-item><el-descriptions-item label="身份判断">{{ identityLabel(detail.assessment.identity_decision) }}</el-descriptions-item><el-descriptions-item label="行业相关性">{{ relevanceMeta(detail.assessment.industry_relevance).label }}</el-descriptions-item><el-descriptions-item label="调研深度">{{ depthLabel(detail.assessment.research_depth) }}</el-descriptions-item><el-descriptions-item label="业务质量分">{{ detail.assessment.business_quality_score }}</el-descriptions-item><el-descriptions-item label="成交分">{{ detail.assessment.deal_score }}</el-descriptions-item><el-descriptions-item label="供应商状态">{{ supplierLabel(detail.assessment.supplier_status) }}</el-descriptions-item><el-descriptions-item label="证据置信度">{{ confidenceLabel(detail.assessment.evidence_confidence) }}</el-descriptions-item></ResponsiveDescriptions>
               <h3>行业门控</h3><p class="summary-text">{{ detail.assessment.industry_relevance_reason }}</p><el-alert v-if="detail.assessment.stop_reason" :title="detail.assessment.stop_reason" type="info" :closable="false" show-icon />
-              <template v-if="detail.assessment.social_profiles?.length"><h3>社媒活跃与业务信号</h3><article v-for="profile in detail.assessment.social_profiles" :key="profile.profile_url" class="evidence-card"><p><strong>{{ profile.platform }}</strong> · {{ activityLabel(profile.activity_level) }}<span v-if="profile.account_name"> · {{ profile.account_name }}</span></p><div class="tag-list"><el-tag v-for="signal in profile.business_signals || []" :key="signal" effect="plain">{{ signal }}</el-tag></div><div class="evidence-meta"><span>最新活动 {{ formatTime(profile.latest_activity_at) }}</span><span>置信度 {{ Math.round(profile.confidence * 100) }}%</span><a :href="profile.profile_url" target="_blank" rel="noopener noreferrer">打开社媒</a></div></article></template>
-              <template v-if="detail.assessment.commercial_profile"><h3>客户画像与成交信号</h3><el-descriptions :column="2" border><el-descriptions-item label="客户类型">{{ customerTypeLabel(detail.assessment.commercial_profile.customer_type) }}</el-descriptions-item><el-descriptions-item label="采购阶段">{{ purchaseStageLabel(detail.assessment.commercial_profile.purchase_stage) }}</el-descriptions-item><el-descriptions-item label="经营规模">{{ scaleStageLabel(detail.assessment.commercial_profile.scale_stage) }}</el-descriptions-item><el-descriptions-item label="预估体量">{{ volumeLabel(detail.assessment.commercial_profile.volume_band) }}</el-descriptions-item><el-descriptions-item label="资格分 / 覆盖率">{{ detail.assessment.commercial_profile.qualification_score ?? '证据不足' }} / {{ detail.assessment.commercial_profile.qualification_coverage ?? 0 }}%</el-descriptions-item><el-descriptions-item label="开发难度">{{ detail.assessment.commercial_profile.development_difficulty || '-' }} / 5</el-descriptions-item></el-descriptions><div class="signal-groups"><div><strong>积极信号</strong><p v-for="item in detail.assessment.commercial_profile.positive_signals || []" :key="item">+ {{ item }}</p></div><div><strong>不利信号</strong><p v-for="item in detail.assessment.commercial_profile.negative_signals || []" :key="item">- {{ item }}</p></div><div><strong>待验证</strong><p v-for="item in detail.assessment.commercial_profile.unknowns || []" :key="item">? {{ item }}</p></div></div></template>
+              <template v-if="detail.assessment.social_profiles?.length"><h3>社媒活跃与业务信号</h3><article v-for="profile in detail.assessment.social_profiles" :key="profile.profile_url" class="evidence-card"><p><strong>{{ profile.platform }}</strong> · {{ activityLabel(profile.activity_level) }}<span v-if="profile.account_name"> · {{ profile.account_name }}</span></p><div class="tag-list"><StatusBadge v-for="signal in profile.business_signals || []" :key="signal" effect="plain">{{ signal }}</StatusBadge></div><div class="evidence-meta"><span>最新活动 {{ formatTime(profile.latest_activity_at) }}</span><span>置信度 {{ Math.round(profile.confidence * 100) }}%</span><a :href="profile.profile_url" target="_blank" rel="noopener noreferrer">打开社媒</a></div></article></template>
+              <template v-if="detail.assessment.commercial_profile"><h3>客户画像与成交信号</h3><ResponsiveDescriptions :column="2" border><el-descriptions-item label="客户类型">{{ customerTypeLabel(detail.assessment.commercial_profile.customer_type) }}</el-descriptions-item><el-descriptions-item label="采购阶段">{{ purchaseStageLabel(detail.assessment.commercial_profile.purchase_stage) }}</el-descriptions-item><el-descriptions-item label="经营规模">{{ scaleStageLabel(detail.assessment.commercial_profile.scale_stage) }}</el-descriptions-item><el-descriptions-item label="预估体量">{{ volumeLabel(detail.assessment.commercial_profile.volume_band) }}</el-descriptions-item><el-descriptions-item label="资格分 / 覆盖率">{{ detail.assessment.commercial_profile.qualification_score ?? '证据不足' }} / {{ detail.assessment.commercial_profile.qualification_coverage ?? 0 }}%</el-descriptions-item><el-descriptions-item label="开发难度">{{ detail.assessment.commercial_profile.development_difficulty || '-' }} / 5</el-descriptions-item></ResponsiveDescriptions><div class="signal-groups"><div><strong>积极信号</strong><p v-for="item in detail.assessment.commercial_profile.positive_signals || []" :key="item">+ {{ item }}</p></div><div><strong>不利信号</strong><p v-for="item in detail.assessment.commercial_profile.negative_signals || []" :key="item">- {{ item }}</p></div><div><strong>待验证</strong><p v-for="item in detail.assessment.commercial_profile.unknowns || []" :key="item">? {{ item }}</p></div></div></template>
               <template v-if="detail.assessment.knowledge_references?.length"><h3>企业知识库判断依据（内部）</h3><article v-for="item in detail.assessment.knowledge_references" :key="`${item.document_id}-${item.revision_id}`" class="knowledge-ref"><strong>文档 #{{ item.document_id }} · 修订 #{{ item.revision_id }} · v{{ item.version_no }}</strong></article></template>
               <h3>建议策略</h3><p class="summary-text">{{ detail.assessment.recommended_strategy }}</p>
               <h3>英文开场草稿（未发送）</h3><p class="draft-text">{{ detail.assessment.opening_message_en || '未生成' }}</p>
-              <h3>痛点 / 匹配 / 风险</h3><div class="tag-list"><el-tag v-for="item in detail.assessment.pain_points" :key="`p-${item}`" type="warning" effect="plain">{{ item }}</el-tag><el-tag v-for="item in detail.assessment.product_fit" :key="`f-${item}`" type="success" effect="plain">{{ item }}</el-tag><el-tag v-for="item in detail.assessment.risks" :key="`r-${item}`" type="danger" effect="plain">{{ item }}</el-tag></div>
+              <h3>痛点 / 匹配 / 风险</h3><div class="tag-list"><StatusBadge v-for="item in detail.assessment.pain_points" :key="`p-${item}`" type="warning" effect="plain">{{ item }}</StatusBadge><StatusBadge v-for="item in detail.assessment.product_fit" :key="`f-${item}`" type="success" effect="plain">{{ item }}</StatusBadge><StatusBadge v-for="item in detail.assessment.risks" :key="`r-${item}`" type="danger" effect="plain">{{ item }}</StatusBadge></div>
             </template><div v-else class="empty-hint">等待 Agent 背调与成交研判。</div>
           </el-tab-pane>
         </el-tabs>
@@ -131,8 +132,10 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../utils/money.js'
+import { promptAction, confirmAction, msgSuccess } from '@/utils/feedback'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { ElMessageBox } from 'element-plus'
+
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -140,7 +143,6 @@ import { useTableView } from '@/composables/useTableView'
 import PublicPoolBatchDialog from './components/PublicPoolBatchDialog.vue'
 import { approvePublicPoolTask, bulkReviewPublicPoolTasks, claimPublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolBatches, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
-import { msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { PUBLIC_POOL_STATUS_TABS, defaultBatchTab, taskStatusBucket, taskStatusCounts } from './publicPoolBatchState'
 
@@ -185,14 +187,20 @@ const number = v => Number(v || 0).toLocaleString('zh-CN'); const formatTime = v
 const sourceLabel = subject => subject.source_system === 'ark_lead' ? `智能获客 #${subject.linked_company_id || subject.source_customer_id}` : `OKKI ${subject.source_customer_id}`
 const batchStatusMeta = v => ({ pending: { label: '等待生成', type: 'info' }, running: { label: '生成中', type: 'warning' }, completed: { label: '已完成', type: 'success' }, failed: { label: '生成失败', type: 'danger' } }[v] || { label: v || '-', type: 'info' })
 
-const { loading: batchListLoading, list: batches, total: batchTotal, page: batchPage, pageSize: batchPageSize, fetchList: fetchBatches, handlePageChange: handleBatchPageChange, handleSizeChange: handleBatchSizeChange } = useListPage(async params => {
-  const res = await getPublicPoolBatches(params); return res.data || {}
-}, { pageSize: 10 })
+const listPageState = useListPage(async (params, { signal, isCurrent }) => {
+  const res = await getPublicPoolBatches(params, { signal, suppressToast: true }); return res.data || {}
+}, { pageSize: 20 })
+const { loading: batchListLoading, list: batches, total: batchTotal, page: batchPage, pageSize: batchPageSize, fetchList: fetchBatches, handlePageChange: handleBatchPageChange, handleSizeChange: handleBatchSizeChange } = listPageState
 const isBatchExpanded = batchId => expandedBatchIds.value.includes(batchId)
 const batchCounts = batchId => taskStatusCounts(batchTasks.value[batchId] || [])
+const appliedTaskFilters = ref({ keyword: '', tier: '' })
+const batchTasksErrors = ref({})
+const batchTaskRequests = new Map()
+const batchTaskControllers = new Map()
+function resetTaskFilters() { Object.assign(filters, { keyword: '', tier: '' }); return search() }
 function matchesTaskFilters(task) {
-  if (filters.tier && task.tier !== filters.tier) return false
-  const keyword = filters.keyword.trim().toLocaleLowerCase()
+  if (appliedTaskFilters.value.tier && task.tier !== appliedTaskFilters.value.tier) return false
+  const keyword = appliedTaskFilters.value.keyword.trim().toLocaleLowerCase()
   if (!keyword) return true
   return [task.subject?.display_name, task.subject?.source_customer_id]
     .some(value => String(value || '').toLocaleLowerCase().includes(keyword))
@@ -205,16 +213,25 @@ const selectedTaskIds = batchId => batchSelections.value[batchId] || []
 function setBatchSelection(batchId, rows) { batchSelections.value = { ...batchSelections.value, [batchId]: rows.map(row => row.id) } }
 function clearBatchSelection(batchId) { batchSelections.value = { ...batchSelections.value, [batchId]: [] } }
 async function loadBatchTasks(batchId) {
+  const token = (batchTaskRequests.get(batchId) || 0) + 1
+  batchTaskRequests.set(batchId, token)
+  batchTaskControllers.get(batchId)?.abort()
+  const controller = new AbortController()
+  batchTaskControllers.set(batchId, controller)
+  batchTasksErrors.value = { ...batchTasksErrors.value, [batchId]: '' }
   batchTasksLoading.value = { ...batchTasksLoading.value, [batchId]: true }
   try {
-    const data = (await getPublicPoolTasks({ batch_id: batchId, page: 1, page_size: 300 })).data || {}
+    const data = (await getPublicPoolTasks({ batch_id: batchId, page: 1, page_size: 300 }, { signal: controller.signal, suppressToast: true })).data || {}
+    if (batchTaskRequests.get(batchId) !== token) return
     batchTasks.value = { ...batchTasks.value, [batchId]: data.items || [] }
     if (!activeStatusByBatch.value[batchId] || !taskStatusCounts(data.items || [])[activeStatusByBatch.value[batchId]]) {
       activeStatusByBatch.value = { ...activeStatusByBatch.value, [batchId]: defaultBatchTab(data.items || []) }
     }
     clearBatchSelection(batchId)
+  } catch (failure) {
+    if (batchTaskRequests.get(batchId) === token) batchTasksErrors.value = { ...batchTasksErrors.value, [batchId]: failure.response?.data?.detail || failure.message || '批次明细加载失败，请重试' }
   } finally {
-    batchTasksLoading.value = { ...batchTasksLoading.value, [batchId]: false }
+    if (batchTaskRequests.get(batchId) === token) batchTasksLoading.value = { ...batchTasksLoading.value, [batchId]: false }
   }
 }
 async function toggleBatch(batch) {
@@ -226,7 +243,7 @@ async function toggleBatch(batch) {
   expandedBatchIds.value = [...expandedBatchIds.value, batch.id]
   await loadBatchTasks(batch.id)
 }
-async function search() { expandedBatchIds.value.forEach(clearBatchSelection) }
+async function search() { appliedTaskFilters.value = { ...filters }; expandedBatchIds.value.forEach(clearBatchSelection) }
 async function refreshBatchTree() {
   await fetchBatches()
   const visibleBatchIds = new Set(batches.value.map(batch => batch.id))
@@ -254,12 +271,13 @@ async function generateBatch(payload) {
     batchDialogVisible.value = false
     if (['pending', 'running'].includes(row.status)) { activeBatch.value = row; msgSuccess(row.enqueued ? '批次已进入后台生成' : '该批次正在生成，请勿重复提交'); scheduleBatchPoll() }
     else msgSuccess('今日批次已生成')
+    await listPageState.refreshCreate()
   } finally { batchLoading.value = false }
 }
 async function openDetail(row) { detailVisible.value = true; detailLoading.value = true; activeTab.value = 'seed'; try { detail.value = (await getPublicPoolTask(row.id)).data } finally { detailLoading.value = false } }
 async function approve(row) { await approvePublicPoolTask(row.id); msgSuccess('审核通过，已进入团队待领取公海'); await loadBatchTasks(row.batch_id); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
 async function claim(row) { await claimPublicPoolTask(row.id); msgSuccess('领取成功，客户已进入我的机会'); await loadBatchTasks(row.batch_id); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
-async function reject(row) { try { const { value } = await ElMessageBox.prompt('请填写拒绝原因，便于后续调整筛选和背调策略。', '拒绝公海客户', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' }); await rejectPublicPoolTask(row.id, value.trim()); msgSuccess('拒绝'); await loadBatchTasks(row.batch_id) } catch (error) { if (error !== 'cancel' && error !== 'close') throw error } }
+async function reject(row) { try { const { value } = await promptAction('请填写拒绝原因，便于后续调整筛选和背调策略。', '拒绝公海客户', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' }); await rejectPublicPoolTask(row.id, value.trim()); msgSuccess('拒绝'); await loadBatchTasks(row.batch_id) } catch (error) { if (error !== 'cancel' && error !== 'close') throw error } }
 async function reviewTasks(batch, action, scope) {
   const taskIds = scope === 'all' ? reviewableTasks(batch.id).map(task => task.id) : selectedTaskIds(batch.id)
   if (!taskIds.length) return
@@ -269,12 +287,12 @@ async function reviewTasks(batch, action, scope) {
       const message = scope === 'all'
         ? `确认通过批次 #${batch.id} 当前全部待审核客户？通过后将进入团队待领取公海。`
         : `确认通过批次 #${batch.id} 中选中的 ${taskIds.length} 位客户？通过后将进入团队待领取公海。`
-      await ElMessageBox.confirm(message, scope === 'all' ? '整批审核通过' : '批量审核通过', { type: 'success' })
+      await confirmAction(message, scope === 'all' ? '整批审核通过' : '批量审核通过', { type: 'success' })
     } else {
       const message = scope === 'all'
         ? `将拒绝批次 #${batch.id} 当前全部待审核客户，请填写统一拒绝原因。`
         : `将拒绝批次 #${batch.id} 中选中的 ${taskIds.length} 位客户，请填写统一拒绝原因。`
-      const result = await ElMessageBox.prompt(message, scope === 'all' ? '整批拒绝' : '批量拒绝', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' })
+      const result = await promptAction(message, scope === 'all' ? '整批拒绝' : '批量拒绝', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' })
       reason = result.value.trim()
     }
   } catch (error) {
@@ -288,7 +306,7 @@ async function reviewTasks(batch, action, scope) {
   await loadBatchTasks(batch.id)
 }
 onMounted(async () => { await syncBatchState(); if (!activeBatch.value) await loadAudit() })
-onBeforeUnmount(() => { if (batchPollTimer) clearTimeout(batchPollTimer) })
+onBeforeUnmount(() => { if (batchPollTimer) clearTimeout(batchPollTimer); batchTaskRequests.clear(); for (const controller of batchTaskControllers.values()) controller.abort(); batchTaskControllers.clear() })
 </script>
 
 <style scoped>
@@ -355,7 +373,7 @@ onBeforeUnmount(() => { if (batchPollTimer) clearTimeout(batchPollTimer) })
 .batch-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 .batch-chevron {
   display: inline-block;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 28px;
   line-height: 1;
   transform: rotate(0deg);
@@ -393,7 +411,7 @@ onBeforeUnmount(() => { if (batchPollTimer) clearTimeout(batchPollTimer) })
 .batch-table-card { border-radius: 0; box-shadow: none; }
 .company-cell { display: grid; gap: 4px; }
 .company-cell strong { color: var(--text-primary); }
-.grade { color: var(--color-primary); font-size: 20px; font-weight: 800; }
+.grade { color: var(--color-primary-text); font-size: 20px; font-weight: 800; }
 .detail-summary {
   display: flex;
   justify-content: space-between;
@@ -407,7 +425,7 @@ onBeforeUnmount(() => { if (batchPollTimer) clearTimeout(batchPollTimer) })
 .detail-summary h2 { margin: 8px 0 4px; color: var(--text-primary); font-size: 18px; }
 .detail-summary p { margin: 0; }
 .score-stack { display: grid; align-content: center; min-width: 80px; text-align: center; }
-.score-stack strong { color: var(--color-primary); font-size: 30px; }
+.score-stack strong { color: var(--color-primary-text); font-size: 30px; }
 .summary-text,
 .draft-text { color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; }
 .draft-text,
@@ -418,7 +436,7 @@ onBeforeUnmount(() => { if (batchPollTimer) clearTimeout(batchPollTimer) })
 .signal-groups > div { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; }
 .signal-groups p { margin: 6px 0 0; color: var(--text-secondary); }
 h3 { margin: 20px 0 8px; color: var(--text-primary); font-size: 14px; }
-a { color: var(--color-primary); text-decoration: none; }
+a { color: var(--color-primary-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
 @media (hover: hover) and (pointer: fine) {
   .batch-toggle:hover { background: var(--toolbar-bg); }

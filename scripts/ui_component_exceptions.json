@@ -1,0 +1,116 @@
+{
+  "frontend/src/components/task/QuickTaskPopover.vue": {
+    "non_md_glass_button": {
+      "count": 4,
+      "reason": "紧凑快捷任务浮层，正文编辑仍使用常规表单"
+    }
+  },
+  "frontend/src/views/asset/AssetUpload.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "上传卡片内的文件移除操作"
+    }
+  },
+  "frontend/src/views/color/SwatchGenerator.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "色卡生成工作台的单一主操作"
+    }
+  },
+  "frontend/src/views/dashboard/Dashboard.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "仪表盘标题内操作"
+    }
+  },
+  "frontend/src/views/layout/MainLayout.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "全局顶栏快捷任务入口"
+    }
+  },
+  "frontend/src/views/production/ProcessRouteManage.vue": {
+    "non_md_glass_button": {
+      "count": 5,
+      "reason": "步骤卡片内编辑与条件操作"
+    }
+  },
+  "frontend/src/views/stock/DailyReport.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "实时库存报表内辅助操作"
+    }
+  },
+  "frontend/src/views/tracking/ShippingDailyReport.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "实时物流报表内辅助操作"
+    }
+  },
+  "frontend/src/views/tracking/TrackingDetail.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "只读详情内复制链接"
+    }
+  },
+  "frontend/src/views/asset/components/FolderUploadDialog.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "批量上传标签编辑器内辅助选择"
+    }
+  },
+  "frontend/src/views/dashboard/components/CustomizeBar.vue": {
+    "non_md_glass_button": {
+      "count": 3,
+      "reason": "仪表盘布局定制的紧凑工具条"
+    }
+  },
+  "frontend/src/views/design/image-studio/ImageStudio.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "图像工作台会话区域内辅助操作"
+    }
+  },
+  "frontend/src/views/design/image-studio/components/GenerationCard.vue": {
+    "non_md_glass_button": {
+      "count": 3,
+      "reason": "生成图卡片内操作"
+    }
+  },
+  "frontend/src/views/design/image-studio/components/PromptComposer.vue": {
+    "non_md_glass_button": {
+      "count": 3,
+      "reason": "多模态提示编辑器内操作"
+    }
+  },
+  "frontend/src/views/design/image-studio/components/PromptLibraryDialog.vue": {
+    "non_md_glass_button": {
+      "count": 2,
+      "reason": "提示模板选择卡片内操作"
+    }
+  },
+  "frontend/src/views/design/image-studio/components/PromptTemplateManagerDialog.vue": {
+    "non_md_glass_button": {
+      "count": 5,
+      "reason": "提示模板列表内操作"
+    }
+  },
+  "frontend/src/views/design/image-studio/components/ReferenceLibraryDialog.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "参考图选择卡片内操作"
+    }
+  },
+  "frontend/src/views/task/components/TaskDetailDrawer.vue": {
+    "non_md_glass_button": {
+      "count": 1,
+      "reason": "任务详情内辅助操作"
+    }
+  },
+  "frontend/src/views/tracking/components/WaybillSuccessDialog.vue": {
+    "non_md_glass_button": {
+      "count": 3,
+      "reason": "上传成果卡片复制和继续上传主操作"
+    }
+  }
+}

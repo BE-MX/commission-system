@@ -9,7 +9,7 @@
 
     <!-- 混合色表格：筛选区 + 操作行 + 表格 + 分页同在卡片内（List Page Spec） -->
     <section ref="panelRef" class="table-card blend-panel">
-      <div class="toolbar">
+      <FilterBar class="toolbar" :loading="loading" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="resetFilters">
         <el-select v-model="filters.blend_type" placeholder="混合类型" clearable class="filter-w-sm">
           <el-option label="钢琴色 (Piano)" value="piano" />
           <el-option label="渐变 (Ombre)" value="ombre" />
@@ -21,10 +21,9 @@
         <el-select v-model="filters.source" placeholder="来源" clearable class="filter-w-sm">
           <el-option v-for="s in filterOptions.sources" :key="s" :label="sourceLabel(s)" :value="s" />
         </el-select>
-        <el-input v-model="filters.keyword" placeholder="搜索编码/名称..." clearable class="filter-w-md" @keyup.enter="loadData" />
-        <GlassButton variant="primary" :left-icon="Search" @click="loadData">查询</GlassButton>
-        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      </div>
+        <el-input v-model="filters.keyword" placeholder="搜索编码/名称..." clearable class="filter-w-md" />
+      </FilterBar>
+    <ListPageStatus v-if="filterResource.error.value" :paged="false" :error="filterResource.errorMessage.value" :loading="filterResource.loading.value" :has-data="filterResource.hasLoaded.value" @retry="loadFilterOptions" />
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -39,12 +38,13 @@
         />
       </div>
 
-      <el-table v-loading="loading" :data="blendList" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange" border>
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="loading" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="loadData" />
+      <el-table v-loading="loading" :data="blendList" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="handleSortChange" border>
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="loading" :has-data="false" @retry="loadData">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
       <el-table-column v-if="visibleKeys.includes('preview')" label="综合色" min-width="80">
         <template #default="{ row }">
           <div class="blend-preview" :style="{ backgroundColor: row.computed_hex }"></div>
@@ -54,20 +54,20 @@
       <el-table-column v-if="visibleKeys.includes('display-name')" prop="display_name" label="名称" sortable="custom" />
       <el-table-column v-if="visibleKeys.includes('blend-type')" prop="blend_type" label="类型" min-width="120" sortable="custom">
         <template #default="{ row }">
-          <el-tag size="small">{{ blendTypeLabel(row.blend_type) }}</el-tag>
+          <StatusBadge size="small">{{ blendTypeLabel(row.blend_type) }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('components')" label="成分" min-width="200">
         <template #default="{ row }">
           <div class="component-tags">
-            <el-tag
+            <StatusBadge
               v-for="c in row.components"
               :key="c.id"
               size="small"
               :style="{ borderColor: c.palette?.hex_code }"
             >
               {{ c.palette?.industry_code }} {{ Math.round((c.weight || 0) * 100) }}%
-            </el-tag>
+            </StatusBadge>
           </div>
         </template>
       </el-table-column>
@@ -99,13 +99,13 @@
         layout="total, sizes, prev, pager, next"
         class="pager"
         @size-change="handleSizeChange"
-        @current-change="loadData"
+        @current-change="handlePageChange"
       />
     </section>
 
     <!-- 新增/编辑弹窗 -->
-    <el-dialog v-model="formVisible" :title="formTitle" width="700px" destroy-on-close>
-      <el-form ref="formRef" :model="formData" :rules="formRules" label-width="100px">
+    <el-dialog v-model="formVisible" :title="formTitle" width="760px" destroy-on-close>
+      <el-form label-position="top" ref="formRef" :model="formData" :rules="formRules">
         <el-form-item label="混合编码" prop="blend_code">
           <el-input v-model="formData.blend_code" placeholder="如 #8/60, #1C/18" />
         </el-form-item>
@@ -141,9 +141,10 @@
 
         <!-- 成分配置 -->
         <el-divider>成分配置</el-divider>
+        <ListPageStatus :paged="false" :error="paletteResource.errorMessage.value" :loading="paletteResource.loading.value" :has-data="paletteResource.hasData.value" @retry="loadPaletteOptions"><el-empty v-if="!paletteOptions.length" description="暂无可选基础色" :image-size="96" /></ListPageStatus>
         <div class="components-section">
           <div v-for="(comp, idx) in formData.components" :key="idx" class="component-row">
-            <el-select v-model="comp.palette_id" placeholder="选择基础色" style="width: 200px;" filterable>
+            <el-select v-model="comp.palette_id" :loading="paletteResource.loading.value" placeholder="选择基础色" style="width: 200px;" filterable>
               <el-option
                 v-for="p in paletteOptions"
                 :key="p.id"
@@ -168,7 +169,7 @@
           </div>
           <el-button type="primary" plain @click="addComponent">+ 添加成分</el-button>
           <div class="weight-summary">
-            权重总和: <el-tag :type="weightTotalValid ? 'success' : 'danger'">{{ weightTotal.toFixed(2) }}</el-tag>
+            权重总和: <StatusBadge :type="weightTotalValid ? 'success' : 'danger'">{{ weightTotal.toFixed(2) }}</StatusBadge>
           </div>
         </div>
       </el-form>
@@ -179,15 +180,15 @@
     </el-dialog>
 
     <!-- 详情弹窗 -->
-    <el-dialog v-model="detailVisible" title="混合色详情" width="600px" destroy-on-close>
+    <DetailDrawer v-model="detailVisible" title="混合色详情" width="640px" destroy-on-close>
       <div v-if="detailData" class="blend-detail">
         <div class="detail-header">
           <div class="big-preview" :style="{ backgroundColor: detailData.computed_hex }"></div>
           <div class="detail-info">
             <h3>{{ detailData.display_name }}</h3>
             <p>{{ detailData.blend_code }}</p>
-            <el-tag>{{ blendTypeLabel(detailData.blend_type) }}</el-tag>
-            <el-tag type="info">{{ sourceLabel(detailData.source) }}</el-tag>
+            <StatusBadge>{{ blendTypeLabel(detailData.blend_type) }}</StatusBadge>
+            <StatusBadge type="info">{{ sourceLabel(detailData.source) }}</StatusBadge>
           </div>
         </div>
         <div class="blend-bar-section">
@@ -215,13 +216,13 @@
           </el-table>
         </div>
       </div>
-    </el-dialog>
+    </DetailDrawer>
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgError, msgSuccessText, confirmAction } from '@/utils/feedback'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { Delete, Edit, Plus, RefreshLeft, Search, View } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -229,9 +230,11 @@ import {
   deleteBlend,
   getBlendFilterOptions,
   getBlends,
-  getColors,
+  getAllColorsForSelection,
   updateBlend,
 } from '@/api/color'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useListPage } from '@/composables/useListPage'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTableView } from '@/composables/useTableView'
 import TableTools from '@/components/TableTools.vue'
@@ -239,19 +242,22 @@ import GradientBar from './components/GradientBar.vue'
 
 const authStore = useAuthStore()
 const orderSort = useTableSort()
+function handleSortChange(event) { orderSort.onSortChange(event); return listPageState.handleSortChange({ sort_field: orderSort.sortField.value, sort_order: orderSort.sortOrder.value }) }
 const canWrite = computed(() => authStore.hasPermission('color:write'))
 const canAdmin = computed(() => authStore.hasPermission('color:admin'))
 
-const loading = ref(false)
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-const blendList = ref([])
-const filterOptions = reactive({ blend_types: [], sources: [] })
-const paletteOptions = ref([])
+const listPageState = useListPage(async (params, { signal }) => (await getBlends(params, { signal, suppressToast: true })).data, { searchForm: { blend_type: '', source: '', keyword: '', sort_field: '', sort_order: '' } })
+const { loading, page, pageSize, total, list: blendList, searchForm: filters, fetchList: loadData, handleSearch, handleReset: resetFilters, handlePageChange, handleSizeChange } = listPageState
+const filterResource = useAsyncResource(async (_, { signal }) =>
+  (await getBlendFilterOptions({ signal, suppressToast: true })).data, { initialData: { blend_types: [], sources: [] } })
+const filterOptions = filterResource.data
+const paletteResource = useAsyncResource(async (_, { signal }) => getAllColorsForSelection({ signal, suppressToast: true }), { initialData: [] })
+const paletteOptions = paletteResource.data
 
-const filters = reactive({ blend_type: '', source: '', keyword: '' })
-const hasActiveFilters = computed(() => Boolean(filters.blend_type || filters.source || filters.keyword))
+const hasActiveFilters = computed(() => {
+  const applied = listPageState.appliedSearchForm.value
+  return Boolean(applied.blend_type || applied.source || applied.keyword)
+})
 
 // 列显隐元数据：TableTools 列设置面板的数据源（模板列保持静态，操作列不进配置）
 const columnDefs = [
@@ -300,54 +306,15 @@ const detailData = ref(null)
 onMounted(() => {
   loadFilterOptions()
   loadPaletteOptions()
-  loadData()
 })
 
-async function loadFilterOptions() {
-  try {
-    const res = await getBlendFilterOptions()
-    if (res.data?.code === 200) Object.assign(filterOptions, res.data.data)
-  } catch { /* ignore */ }
-}
+function loadFilterOptions() { return filterResource.load() }
 
-async function loadPaletteOptions() {
-  try {
-    const res = await getColors({ page_size: 1000 })
-    if (res.data?.code === 200) {
-      paletteOptions.value = res.data.data.items || []
-    }
-  } catch { /* ignore */ }
-}
+function loadPaletteOptions() { return paletteResource.load() }
 
-async function loadData() {
-  loading.value = true
-  try {
-    const res = await getBlends({
-      page: page.value,
-      page_size: pageSize.value,
-      ...filters,
-      ...orderSort.sortParams.value,
-    })
-    if (res.data?.code === 200) {
-      blendList.value = res.data.data.items || []
-      total.value = res.data.data.total || 0
-    }
-  } finally {
-    loading.value = false
-  }
-}
 
-function resetFilters() {
-  Object.keys(filters).forEach(k => filters[k] = '')
-  page.value = 1
-  orderSort.reset()
-  loadData()
-}
 
-function handleSizeChange() {
-  page.value = 1
-  loadData()
-}
+
 
 function addComponent() {
   formData.components.push({
@@ -401,11 +368,11 @@ async function submitForm() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
   if (!weightTotalValid.value) {
-    ElMessage.error('成分权重总和必须等于1')
+    msgError('成分权重总和必须等于1')
     return
   }
   if (formData.components.length < 2) {
-    ElMessage.error('混合色至少需要2个成分')
+    msgError('混合色至少需要2个成分')
     return
   }
 
@@ -422,15 +389,15 @@ async function submitForm() {
     }
     if (editingId.value) {
       await updateBlend(editingId.value, payload)
-      ElMessage.success('更新成功')
+      msgSuccessText('更新成功')
     } else {
       await createBlend(payload)
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     }
     formVisible.value = false
-    loadData()
+    await (editingId.value ? listPageState.refreshUpdate() : listPageState.refreshCreate())
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '操作失败')
+    msgError(e.response?.data?.message || '操作失败', e)
   } finally {
     submitting.value = false
   }
@@ -443,12 +410,12 @@ function openDetail(row) {
 
 async function confirmDelete(row) {
   try {
-    await ElMessageBox.confirm(`确定删除混合色 ${row.blend_code} 吗？`, '确认删除', { type: 'warning' })
+    await confirmAction(`确定删除混合色 ${row.blend_code} 吗？`, '确认删除', { type: 'warning' })
     await deleteBlend(row.id)
-    ElMessage.success('删除成功')
-    loadData()
+    msgSuccessText('删除成功')
+    await listPageState.refreshRemove()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.message || '删除失败')
+    if (e !== 'cancel') msgError(e.response?.data?.message || '删除失败', e)
   }
 }
 

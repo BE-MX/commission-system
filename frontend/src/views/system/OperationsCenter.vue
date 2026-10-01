@@ -14,7 +14,8 @@
       </div>
     </header>
 
-    <section class="metric-grid" aria-label="运行摘要">
+    <ListPageStatus v-if="overviewResource.error.value || !overview" v-bind="resourceStatus(overviewResource)" @retry="loadOverview" />
+    <section v-if="overview" class="metric-grid" aria-label="运行摘要">
       <article class="metric-card lg-card is-static">
         <span>健康服务</span><strong>{{ summary.healthy_services ?? '—' }}</strong><small>当前检查通过</small>
       </article>
@@ -38,12 +39,13 @@
     <section ref="runtimePanelRef" class="section-card lg-card is-static table-card">
       <div class="section-heading">
         <div><h2>跨服务器运行实例</h2><p>Shopify、OpenClaw、MCP 及云端任务使用实例级机器凭证主动上报</p></div>
-        <el-tag effect="plain" round>{{ runtimeInstances.length ? `${runtimeInstances.length} 个实例` : '待接入' }}</el-tag>
+        <StatusBadge v-if="overview" effect="plain" round>{{ runtimeInstances.length ? `${runtimeInstances.length} 个实例` : '待接入' }}</StatusBadge>
       </div>
       <div class="action-bar">
         <TableTools v-model:visible-keys="runtimeVisibleKeys" v-model:density="runtimeDensity" :columns="runtimeColumnDefs" :fullscreen="runtimeIsFullscreen" @refresh="loadDashboard" @fullscreen="toggleRuntimeFullscreen" />
       </div>
       <el-table :data="runtimeInstances" class="list-table" :class="runtimeDensityClass" :max-height="runtimeIsFullscreen ? undefined : 640" border>
+        <template #empty><ListPageStatus v-bind="resourceStatus(overviewResource)" @retry="loadOverview"><el-empty description="暂无记录" /></ListPageStatus></template>
         <el-table-column v-if="runtimeVisibleKeys.includes('service')" label="服务 / 实例" min-width="220" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.service_name }}</strong><small class="job-id">{{ row.service_id }} · {{ row.instance_id }}</small></template>
         </el-table-column>
@@ -52,7 +54,7 @@
           <template #default="{ row }">{{ row.version || '—' }}</template>
         </el-table-column>
         <el-table-column v-if="runtimeVisibleKeys.includes('status')" label="状态" min-width="100">
-          <template #default="{ row }"><el-tag :type="statusType(row.status)" effect="plain" round>{{ statusLabel(row.status) }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :type="statusType(row.status)" effect="plain" round>{{ statusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="runtimeVisibleKeys.includes('heartbeat')" label="最近心跳" min-width="180">
           <template #default="{ row }">{{ formatTime(row.last_heartbeat_at) }}<small class="job-id">{{ ageLabel(row.heartbeat_age_seconds) }}</small></template>
@@ -63,21 +65,20 @@
         <el-table-column v-if="runtimeVisibleKeys.includes('dependencies')" label="依赖" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.dependencies?.join('、') || '无' }}</template>
         </el-table-column>
-        <template #empty><el-empty description="尚无云端实例上报；按部署文档配置心跳令牌后自动出现" /></template>
       </el-table>
     </section>
 
     <section class="section-card lg-card is-static">
       <div class="section-heading">
         <div><h2>运行服务</h2><p>当前实例与跨服务器运行单元的集中清单</p></div>
-        <el-tag v-if="overview?.instance" effect="plain" round>{{ overview.instance.hostname }} · {{ roleLabel(overview.instance.role) }}</el-tag>
+        <StatusBadge v-if="overview?.instance" effect="plain" round>{{ overview.instance.hostname }} · {{ roleLabel(overview.instance.role) }}</StatusBadge>
       </div>
       <div class="service-grid">
         <article v-for="service in services" :key="service.id" class="service-card">
           <div class="service-top">
             <span class="status-dot" :class="service.status" />
             <div><h3>{{ service.name }}</h3><p>{{ service.category }} · {{ service.environment }}</p></div>
-            <el-tag :type="statusType(service.status)" effect="plain" round>{{ statusLabel(service.status) }}</el-tag>
+            <StatusBadge :type="statusType(service.status)" effect="plain" round>{{ statusLabel(service.status) }}</StatusBadge>
           </div>
           <p class="service-detail">{{ service.detail }}</p>
           <dl>
@@ -93,7 +94,10 @@
     <section ref="runsPanelRef" class="section-card lg-card is-static table-card">
       <div class="section-heading run-history-heading">
         <div><h2>最近运行记录</h2><p>按部署保留策略落库；此处展示最新 30 次，可按状态筛选</p></div>
-        <el-select v-model="runStatus" class="status-filter" aria-label="运行状态筛选" @change="loadJobRuns">
+
+      </div>
+      <FilterBar :loading="runsResource.loading.value" :pending="runsPending" @search="searchRuns" @reset="resetRuns">
+        <el-select v-model="runStatus" class="filter-w-md" aria-label="运行状态筛选">
           <el-option label="全部状态" value="" />
           <el-option label="执行失败" value="failed" />
           <el-option label="错过执行" value="missed" />
@@ -101,16 +105,18 @@
           <el-option label="执行中" value="running" />
           <el-option label="执行成功" value="success" />
         </el-select>
-      </div>
+      </FilterBar>
+      <ListPageStatus v-if="runsResource.error.value && jobRuns.length" v-bind="resourceStatus(runsResource)" @retry="loadJobRuns" />
       <div class="action-bar">
-        <TableTools v-model:visible-keys="runsVisibleKeys" v-model:density="runsDensity" :columns="runsColumnDefs" :fullscreen="runsIsFullscreen" @refresh="loadJobRuns" @fullscreen="toggleRunsFullscreen" />
+        <TableTools v-model:visible-keys="runsVisibleKeys" v-model:density="runsDensity" :columns="runsColumnDefs" :fullscreen="runsIsFullscreen" :loading="runsResource.loading.value" @refresh="loadJobRuns" @fullscreen="toggleRunsFullscreen" />
       </div>
       <el-table :data="jobRuns" class="list-table" :class="runsDensityClass" :max-height="runsIsFullscreen ? undefined : 640" border>
+        <template #empty><ListPageStatus v-bind="resourceStatus(runsResource)" @retry="loadJobRuns"><el-empty description="暂无记录" /></ListPageStatus></template>
         <el-table-column v-if="runsVisibleKeys.includes('job')" label="任务" min-width="200" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.job_name }}</strong><small class="job-id">{{ row.domain }} · {{ row.job_id }}</small></template>
         </el-table-column>
         <el-table-column v-if="runsVisibleKeys.includes('status')" label="状态" min-width="105">
-          <template #default="{ row }"><el-tag :type="jobStatusType(row.status)" effect="plain" round>{{ jobStatusLabel(row.status) }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :type="jobStatusType(row.status)" effect="plain" round>{{ jobStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="runsVisibleKeys.includes('planned')" label="计划时间" min-width="175"><template #default="{ row }">{{ formatTime(row.planned_at) }}</template></el-table-column>
         <el-table-column v-if="runsVisibleKeys.includes('duration')" label="耗时" min-width="100"><template #default="{ row }">{{ durationLabel(row.duration_ms) }}</template></el-table-column>
@@ -119,19 +125,19 @@
         <el-table-column v-if="runsVisibleKeys.includes('result')" prop="error_digest" label="结果摘要" min-width="210" show-overflow-tooltip>
           <template #default="{ row }">{{ row.error_digest || '—' }}</template>
         </el-table-column>
-        <template #empty><el-empty description="当前筛选条件下暂无运行记录" /></template>
       </el-table>
     </section>
 
     <section ref="schedulerPanelRef" class="section-card lg-card is-static table-card">
       <div class="section-heading">
         <div><h2>定时任务</h2><p>{{ scheduler.timezone || '—' }} · {{ scheduler.running ? '调度器运行中' : '当前实例未启用调度器' }}</p></div>
-        <el-tag :type="scheduler.running ? 'success' : 'info'" effect="plain" round>{{ scheduler.running ? '运行中' : '未启用' }}</el-tag>
+        <StatusBadge :type="scheduler.running ? 'success' : 'info'" effect="plain" round>{{ scheduler.running ? '运行中' : '未启用' }}</StatusBadge>
       </div>
       <div class="action-bar">
         <TableTools v-model:visible-keys="schedulerVisibleKeys" v-model:density="schedulerDensity" :columns="schedulerColumnDefs" :fullscreen="schedulerIsFullscreen" @refresh="loadDashboard" @fullscreen="toggleSchedulerFullscreen" />
       </div>
       <el-table :data="scheduler.jobs || []" class="list-table" :class="schedulerDensityClass" :max-height="schedulerIsFullscreen ? undefined : 640" border>
+        <template #empty><ListPageStatus v-bind="resourceStatus(overviewResource)" @retry="loadOverview"><el-empty description="暂无记录" /></ListPageStatus></template>
         <el-table-column v-if="schedulerVisibleKeys.includes('job')" label="任务" min-width="190" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.name }}</strong><small class="job-id">{{ row.id }}</small></template>
         </el-table-column>
@@ -142,7 +148,7 @@
           <template #default="{ row }">{{ formatTime(row.next_run_at) }}</template>
         </el-table-column>
         <el-table-column v-if="schedulerVisibleKeys.includes('status')" label="最近状态" min-width="115">
-          <template #default="{ row }"><el-tag :type="jobStatusType(row.last_status)" effect="plain" round>{{ jobStatusLabel(row.last_status) }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :type="jobStatusType(row.last_status)" effect="plain" round>{{ jobStatusLabel(row.last_status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
@@ -154,14 +160,17 @@
             <span v-else class="disabled-hint">当前实例未启用</span>
           </template>
         </el-table-column>
-        <template #empty><el-empty description="当前实例未注册定时任务" /></template>
       </el-table>
     </section>
   </div>
 </template>
 
 <script setup>
+import { statusDictionary, statusLabels, statusTypes, resolveStatus } from '@/utils/status'
+
 import { RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
 import { useOperationsCenter } from './composables/useOperationsCenter'
@@ -169,8 +178,9 @@ import { formatBeijingDateTime } from '@/utils/datetime'
 
 const {
   loading, actionJobId, overview, scheduler, services, runtimeInstances, summary,
-  jobRuns, runStatus, loadDashboard, loadJobRuns, operateJob,
+  jobRuns, runStatus, runsPending, searchRuns, resetRuns, overviewResource, runsResource, loadOverview, loadDashboard, loadJobRuns, operateJob,
 } = useOperationsCenter()
+const resourceStatus = resource => ({ error: resource.errorMessage.value, loading: resource.loading.value, hasData: resource.hasLoaded.value, paged: false })
 
 const runtimeColumnDefs = [
   { key: 'service', label: '服务 / 实例' }, { key: 'environment', label: '环境' },
@@ -202,15 +212,31 @@ const {
   panelRef: schedulerPanelRef, isFullscreen: schedulerIsFullscreen, toggleFullscreen: toggleSchedulerFullscreen,
 } = useTableView('operations-scheduler', schedulerColumnDefs)
 
-const STATUS_LABELS = { healthy: '健康', degraded: '异常', unconfigured: '未配置', unmanaged: '未纳管', unknown: '未知' }
-const STATUS_TYPES = { healthy: 'success', degraded: 'danger', unconfigured: 'warning', unmanaged: 'info', unknown: 'info' }
-const JOB_STATUS_LABELS = { disabled: '未注册', never: '未执行', running: '执行中', success: '成功', failed: '失败', missed: '已错过', skipped: '并发跳过' }
-const JOB_STATUS_TYPES = { disabled: 'info', never: 'info', running: 'primary', success: 'success', failed: 'danger', missed: 'warning', skipped: 'warning' }
+const COMPONENT_STATUS = statusDictionary([
+  ['healthy', '健康', 'success'],
+  ['degraded', '异常', 'danger'],
+  ['unconfigured', '未配置', 'warning'],
+  ['unmanaged', '未纳管', 'info'],
+  ['unknown', '未知', 'info'],
+])
+const STATUS_LABELS = statusLabels(COMPONENT_STATUS)
+const STATUS_TYPES = statusTypes(COMPONENT_STATUS)
+const SCHEDULER_STATUS = statusDictionary([
+  ['disabled', '未注册', 'info'],
+  ['never', '未执行', 'info'],
+  ['running', '执行中', 'primary'],
+  ['success', '成功', 'success'],
+  ['failed', '失败', 'danger'],
+  ['missed', '已错过', 'warning'],
+  ['skipped', '并发跳过', 'warning'],
+])
+const JOB_STATUS_LABELS = statusLabels(SCHEDULER_STATUS)
+const JOB_STATUS_TYPES = statusTypes(SCHEDULER_STATUS)
 
-function statusLabel(value) { return STATUS_LABELS[value] || '未知' }
-function statusType(value) { return STATUS_TYPES[value] || 'info' }
-function jobStatusLabel(value) { return JOB_STATUS_LABELS[value] || '未知' }
-function jobStatusType(value) { return JOB_STATUS_TYPES[value] || 'info' }
+function statusLabel(value) { return resolveStatus(value, COMPONENT_STATUS).label }
+function statusType(value) { return resolveStatus(value, COMPONENT_STATUS).type }
+function jobStatusLabel(value) { return resolveStatus(value, SCHEDULER_STATUS).label }
+function jobStatusType(value) { return resolveStatus(value, SCHEDULER_STATUS).type }
 function managementLabel(value) { return ({ managed: '平台管理', observed: '状态监测', unmanaged: '待接入' })[value] || '待接入' }
 function roleLabel(value) { return value === 'scheduler-primary' ? '调度主实例' : '应用副本' }
 function formatTime(value) { return formatBeijingDateTime(value, { naiveTimeZone: 'UTC', fallback: '已暂停 / 无计划' }) }
@@ -231,7 +257,7 @@ function durationLabel(value) {
 .operations-aurora { inset: -24px -28px; }
 .page-header, .metric-grid, .section-card { position: relative; z-index: 1; }
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
-.eyebrow { margin: 0 0 4px; color: var(--color-primary); font: 700 11px/1.4 var(--font-display); letter-spacing: .16em; }
+.eyebrow { margin: 0 0 4px; color: var(--color-primary-text); font: 700 11px/1.4 var(--font-display); letter-spacing: .16em; }
 h1 { margin: 0; color: var(--text-primary); font: 800 28px/1.25 var(--font-display); }
 .subtitle { max-width: 760px; margin: 7px 0 0; color: var(--text-secondary); font-size: 13px; }
 .metric-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }

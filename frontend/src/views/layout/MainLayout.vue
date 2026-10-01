@@ -208,7 +208,7 @@ function handleUserCommand(command) {
 }
 .collapse-toggle:hover {
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: var(--color-primary-light);
 }
 .collapse-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }

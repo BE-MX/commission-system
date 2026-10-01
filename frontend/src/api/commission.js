@@ -19,8 +19,8 @@ export function createBatch(data) {
   return request.post('/commission/batch', data, { loadingText: '正在创建...' })
 }
 
-export function getBatchList(params) {
-  return request.get('/commission/batch/list', { params, showLoading: false })
+export function getBatchList(params, config = {}) {
+  return request.get('/commission/batch/list', { ...config, params, showLoading: false })
 }
 
 export function calculateBatch(batchId) {
@@ -30,8 +30,8 @@ export function calculateBatch(batchId) {
   })
 }
 
-export function getBatchDetails(batchId, params) {
-  return request.get(`/commission/batch/${batchId}/details`, { params, showLoading: false })
+export function getBatchDetails(batchId, params, config = {}) {
+  return request.get(`/commission/batch/${batchId}/details`, { ...config, params, showLoading: false })
 }
 
 export function confirmBatch(batchId, data) {
@@ -50,12 +50,12 @@ export function revokeConfirmBatch(batchId) {
   return request.post(`/commission/batch/${batchId}/revoke-confirm`, null, { loadingText: '正在撤销...' })
 }
 
-export function getBatchSummary(batchId) {
-  return request.get(`/commission/batch/${batchId}/summary`, { showLoading: false })
+export function getBatchSummary(batchId, config = {}) {
+  return request.get(`/commission/batch/${batchId}/summary`, { ...config, showLoading: false })
 }
 
-export function getMyCommissionBatches(params) {
-  return request.get('/commission/self/batch/list', noCacheConfig({ params, showLoading: false }))
+export function getMyCommissionBatches(params, config = {}) {
+  return request.get('/commission/self/batch/list', noCacheConfig({ ...config, params, showLoading: false }))
 }
 
 export function getMyCommissionBatchDetail(batchId) {

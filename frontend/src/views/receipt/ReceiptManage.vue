@@ -18,25 +18,25 @@
     <el-alert v-if="deliveryEnabled === false" class="page-alert" :title="presaleDeliveryEnabled ? '普通订单回款同步暂未启用；预售回款按预售开关独立同步。' : '小满回款同步暂未启用。已创建的回款保留在方舟，启用后自动处理。'" type="warning" :closable="false" show-icon />
 
     <section ref="panelRef" class="table-card receipt-panel">
-      <div class="toolbar">
-        <el-input v-model="searchForm.keyword" clearable placeholder="回款单号 / 发票号 / 客户" class="filter-w-lg" @keyup.enter="handleSearch" />
-        <el-input v-model="searchForm.order_id" clearable placeholder="订单 ID" class="filter-w-md" @keyup.enter="handleSearch" />
-        <el-select v-model="searchForm.sync_status" clearable placeholder="同步状态" class="filter-w-sm">
+      <FilterBar label="回款单筛选" :loading="loading" :pending="hasPendingSearch" :advanced-count="advancedCount" @search="handleSearch" @reset="reset">
+        <el-input v-model="searchForm.keyword" clearable placeholder="回款单号 / 发票号 / 客户" aria-label="搜索回款单" class="filter-w-lg" />
+        <el-input v-model="searchForm.order_id" clearable placeholder="订单 ID" aria-label="订单 ID" class="filter-w-md" />
+        <el-select v-model="searchForm.sync_status" clearable placeholder="同步状态" aria-label="同步状态" class="filter-w-sm">
           <el-option v-for="s in states" :key="s" :value="s" :label="statusLabel(s)" />
         </el-select>
-        <el-select v-model="searchForm.source" clearable placeholder="来源" class="filter-w-sm">
+        <el-select v-model="searchForm.source" clearable placeholder="来源" aria-label="回款来源" class="filter-w-sm">
           <el-option label="库存单自动" value="auto" />
           <el-option label="手工登记" value="manual" />
         </el-select>
-        <el-select v-model="searchForm.status" clearable placeholder="单据状态" class="filter-w-sm">
+        <template #advanced>
+        <el-select v-model="searchForm.status" clearable placeholder="单据状态" aria-label="单据状态" class="filter-w-sm">
           <el-option label="有效" value="active" />
           <el-option label="已作废" value="voided" />
           <el-option label="远端删除已核实" value="remote_deleted" />
         </el-select>
         <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="回款开始日期" end-placeholder="结束日期" class="filter-w-lg" />
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="reset">重置</GlassButton>
-      </div>
+        </template>
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -46,16 +46,20 @@
           v-model:density="density"
           :columns="columnDefs"
           :fullscreen="isFullscreen"
+          :loading="loading"
           @refresh="fetchList"
           @fullscreen="toggleFullscreen"
         />
       </div>
 
+      <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
       <el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
         <template #empty>
-          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
-            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
-          </el-empty>
+          <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="fetchList">
+            <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+              <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
+            </el-empty>
+          </ListPageStatus>
         </template>
         <el-table-column v-if="visibleKeys.includes('receipt-no')" label="回款单号" min-width="240" max-width="340" show-overflow-tooltip>
           <template #default="{ row }">
@@ -68,7 +72,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('sync-status')" label="同步状态" min-width="120" max-width="170">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain" :type="statusTone(row.sync_status)">{{ row.status === 'remote_deleted' ? '远端删除已核实' : row.status === 'voided' ? '已作废' : statusLabel(row.sync_status) }}</el-tag>
+            <StatusBadge size="small" effect="plain" :type="statusTone(row.sync_status)">{{ row.status === 'remote_deleted' ? '远端删除已核实' : row.status === 'voided' ? '已作废' : statusLabel(row.sync_status) }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('invoice-no')" prop="invoice_no" label="订单发票" min-width="150" max-width="210" show-overflow-tooltip />
@@ -100,8 +104,8 @@
       />
     </section>
 
-    <el-drawer v-model="editorVisible" :title="editing ? '修正回款资料' : '新建回款单'" size="640px" append-to-body destroy-on-close class="receipt-editor" :before-close="closeEditor">
-      <el-form :model="form" label-position="top">
+    <DetailDrawer v-model="editorVisible" :title="editing ? '修正回款资料' : '新建回款单'" width="640px" append-to-body destroy-on-close class="receipt-editor" :before-close="closeEditor">
+      <el-form label-position="top" :model="form">
         <el-form-item v-if="!editing" label="对应订单发票" required><el-select v-model="form.invoice_id" filterable remote :remote-method="searchOrders" :loading="ordersLoading" :disabled="saving || uploading" placeholder="搜索发票号或客户" @change="selectOrder"><el-option v-for="o in orders" :key="o.id" :value="o.id" :disabled="o.sync_status !== 'synced'" :label="`${o.invoice_no} · ${o.customer_name}${o.sync_status !== 'synced' ? '（请先同步订单）' : ''}`" /></el-select></el-form-item>
         <div v-if="!editing" v-loading="balanceLoading" class="balance-card"><div>订单金额<b>{{ balance?.currency }} {{ money(balance?.total_amount) }}</b></div><div>已登记回款<b>{{ money(balance?.registered_amount) }}</b></div><div>可登记余额<b>{{ money(balance?.remaining_amount) }}</b></div></div>
         <p v-if="!editing && balance" class="balance-hint">已生效 {{ money(balance.effective_amount) }} · 登记中 {{ money(balance.pending_amount) }}；本次登记后剩余 {{ money(remainingAfter) }}</p>
@@ -109,29 +113,29 @@
         <ReceiptFields :form="form" :readonly="saving" :currency="editing ? detail.currency : balance?.currency" show-charge @uploading="v => uploading = v" />
         <p v-if="error" class="receipt-error" role="alert">{{ error }}</p>
       </el-form>
-      <template #footer><div class="drawer-actions"><GlassButton :disabled="saving || uploading" @click="closeEditor()">取消</GlassButton><GlassButton v-permission="'receipt:write'" variant="primary" :loading="saving" :disabled="uploading || (!editing && !balance)" @click="submit">{{ editing ? '保存修正' : '创建回款单' }}</GlassButton></div></template>
-    </el-drawer>
+      <template #footer><div class="dialog-footer"><GlassButton :disabled="saving || uploading" @click="closeEditor()">取消</GlassButton><GlassButton v-permission="'receipt:write'" variant="primary" :loading="saving" :disabled="uploading || (!editing && !balance)" @click="submit">{{ editing ? '保存修正' : '创建回款单' }}</GlassButton></div></template>
+    </DetailDrawer>
 
-    <BatchReceiptDialog v-if="batchVisible" @close="batchVisible = false" @saved="handleSearch" />
+    <BatchReceiptDialog v-if="batchVisible" @close="batchVisible = false" @saved="refreshCreate" />
     <DetailDrawer v-model="batchDetailVisible" title="整笔回款" :loading="batchLoading">
       <el-alert v-if="batchError" :title="batchError" type="error" :closable="false" />
       <template v-if="batchDetail">
         <h2>{{ batchDetail.currency }} {{ money(batchDetail.amount) }}</h2>
         <p>{{ batchDetail.collection_date }} · {{ batchDetail.payment_type }}</p>
-        <el-table class="list-table" :data="batchDetail.items || batchDetail.receipts || batchDetail.allocations || []" border><el-table-column prop="invoice_no" label="订单发票" /><el-table-column prop="amount" label="分配金额" /><el-table-column label="同步状态"><template #default="{ row }">{{ statusLabel(row.sync_status) }}</template></el-table-column></el-table>
+        <el-table class="list-table" :data="batchDetail.items || batchDetail.receipts || batchDetail.allocations || []" border><el-table-column prop="invoice_no" label="订单发票" /><el-table-column label="分配金额"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column><el-table-column label="同步状态"><template #default="{ row }">{{ statusLabel(row.sync_status) }}</template></el-table-column></el-table>
         <ReceiptProofs :model-value="batchDetail.attachments?.map(a => a.id) || batchDetail.attachment_ids || []" readonly />
       </template>
     </DetailDrawer>
     <DetailDrawer v-model="detailVisible" :title="detail?.receipt_no || '回款单详情'" :loading="!detail">
-      <template v-if="detail"><div class="detail-status"><el-tag size="small" effect="plain" :type="statusTone(detail.sync_status)">{{ detail.status === 'voided' ? '已作废' : statusLabel(detail.sync_status) }}</el-tag><el-tag size="small" effect="plain">财务：{{ financeLabel(detail.collect_status) }}</el-tag></div>
+      <template v-if="detail"><div class="detail-status"><StatusBadge size="small" effect="plain" :type="statusTone(detail.sync_status)">{{ detail.status === 'voided' ? '已作废' : statusLabel(detail.sync_status) }}</StatusBadge><StatusBadge size="small" effect="plain">财务：{{ financeLabel(detail.collect_status) }}</StatusBadge></div>
         <h1 class="detail-amount">{{ detail.currency }} {{ money(detail.amount) }}</h1>
         <el-alert v-if="detail.last_error" :title="detail.last_error" type="warning" :closable="false" />
-        <el-descriptions :column="1" border class="receipt-descriptions"><el-descriptions-item label="订单发票">{{ detail.invoice_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item><el-descriptions-item label="回款日期">{{ detail.collection_date }}</el-descriptions-item><el-descriptions-item label="回款方式">{{ detail.payment_type }}</el-descriptions-item><el-descriptions-item label="银行手续费">{{ money(detail.bank_charge) }}</el-descriptions-item><el-descriptions-item label="小满回款编号">{{ detail.xiaoman_receipt_no || '尚未取得' }}</el-descriptions-item><el-descriptions-item label="截图传输">仅方舟留存</el-descriptions-item><el-descriptions-item label="备注">{{ detail.remark || '—' }}</el-descriptions-item></el-descriptions>
+        <ResponsiveDescriptions :column="1" border class="receipt-descriptions"><el-descriptions-item label="订单发票">{{ detail.invoice_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item><el-descriptions-item label="回款日期">{{ detail.collection_date }}</el-descriptions-item><el-descriptions-item label="回款方式">{{ detail.payment_type }}</el-descriptions-item><el-descriptions-item label="银行手续费">{{ money(detail.bank_charge) }}</el-descriptions-item><el-descriptions-item label="小满回款编号">{{ detail.xiaoman_receipt_no || '尚未取得' }}</el-descriptions-item><el-descriptions-item label="截图传输">仅方舟留存</el-descriptions-item><el-descriptions-item label="备注">{{ detail.remark || '—' }}</el-descriptions-item></ResponsiveDescriptions>
         <h3>回款凭证</h3><ReceiptProofs :key="detail.id" :model-value="detail.attachments?.map(a => a.id) || []" readonly />
         <h3>同步记录</h3><el-timeline><el-timeline-item v-for="(log,i) in detail.logs" :key="i" :timestamp="formatBeijingDateTime(log.created_at)">{{ log.message }}</el-timeline-item></el-timeline>
         <el-alert v-if="candidates.length" title="以下仅为候选，管理员需核对真实凭证后绑定。" type="warning" :closable="false" /><p v-for="c in candidates" :key="c.xiaoman_receipt_id">小满 ID {{ c.xiaoman_receipt_id }} · {{ c.xiaoman_receipt_no }} · {{ money(c.amount) }}</p>
       </template>
-      <template #footer><template v-if="detail"><ReceiptRemoteChange v-if="detail.status === 'active' && detail.xiaoman_receipt_id" :receipt-id="detail.id" @updated="row => { detail = row; handleSearch() }" /><GlassButton v-if="editable" v-permission="'receipt:write'" @click="editCurrent">修正资料</GlassButton><GlassButton v-if="editable" v-permission="'receipt:write'" @click="voidCurrent">作废</GlassButton><GlassButton v-if="detail.sync_status === 'failed' && detail.status === 'active'" v-permission="'receipt:write'" variant="primary" :loading="saving" @click="retry(detail)">重试同步</GlassButton><GlassButton v-if="['synced','uncertain'].includes(detail.sync_status)" v-any-permission="['receipt:write','receipt:admin']" :loading="saving" @click="reconcile">刷新小满结果</GlassButton><template v-if="detail.sync_status === 'uncertain' && !detail.xiaoman_receipt_id"><GlassButton v-permission="'receipt:admin'" @click="resolve('bind_receipt')">绑定已生成回款</GlassButton><GlassButton v-permission="'receipt:admin'" @click="resolve('confirm_not_created')">确认未创建</GlassButton></template></template></template>
+      <template #footer><template v-if="detail"><ReceiptRemoteChange v-if="detail.status === 'active' && detail.xiaoman_receipt_id" :receipt-id="detail.id" @updated="row => { detail = row; refreshUpdate() }" /><GlassButton v-if="editable" v-permission="'receipt:write'" @click="editCurrent">修正资料</GlassButton><GlassButton v-if="editable" v-permission="'receipt:write'" @click="voidCurrent">作废</GlassButton><GlassButton v-if="detail.sync_status === 'failed' && detail.status === 'active'" v-permission="'receipt:write'" variant="primary" :loading="saving" @click="retry(detail)">重试同步</GlassButton><GlassButton v-if="['synced','uncertain'].includes(detail.sync_status)" v-any-permission="['receipt:write','receipt:admin']" :loading="saving" @click="reconcile">刷新小满结果</GlassButton><template v-if="detail.sync_status === 'uncertain' && !detail.xiaoman_receipt_id"><GlassButton v-permission="'receipt:admin'" @click="resolve('bind_receipt')">绑定已生成回款</GlassButton><GlassButton v-permission="'receipt:admin'" @click="resolve('confirm_not_created')">确认未创建</GlassButton></template></template></template>
     </DetailDrawer>
   </div>
 </template>
@@ -143,6 +147,8 @@ import { Document, Refresh, View } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import TableTools from '@/components/TableTools.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
 import ReceiptFields from './ReceiptFields.vue'
 import ReceiptRemoteChange from './ReceiptRemoteChange.vue'
 import ReceiptProofs from './ReceiptProofs.vue'
@@ -159,10 +165,12 @@ async function showBatch(id) {
 }
 const states = ['pending','syncing','synced','failed','uncertain']
 const { loading,list,total,page,pageSize,searchForm,dates,fetchList,handleSearch,handlePageChange,handleSizeChange,reset,
+  listErrorMessage,hasLoaded,hasData,dataPage,hasPendingSearch,appliedSearchForm,refreshCreate,refreshUpdate,
   editorVisible,detailVisible,detail,saving,uploading,orders,ordersLoading,balance,balanceLoading,error,candidates,
   form,editing,selectedOrder,remainingAfter,editable,searchOrders,selectOrder,openCreate,showDetail,editCurrent,
   closeEditor,submit,retry,voidCurrent,reconcile,resolve,refreshBalance,deliveryEnabled,presaleDeliveryEnabled } = useReceipts()
-const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.order_id || searchForm.sync_status || searchForm.source || searchForm.status || dates.value?.length))
+const hasActiveFilters = computed(() => Object.values(appliedSearchForm.value).some(value => Array.isArray(value) ? value.length > 0 : Boolean(value)))
+const advancedCount = computed(() => Number(Boolean(appliedSearchForm.value.status)) + Number(appliedSearchForm.value.dateRange?.length === 2))
 
 // 列显隐面板数据源（TableTools；渲染保持静态模板列，v-if 按 key 控制）
 const columnDefs = [
@@ -229,8 +237,8 @@ const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullsc
 .balance-card { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; background: var(--color-gold-soft); padding: 16px; border-radius: 12px; margin: 12px 0 20px; font-size: 12px; color: var(--text-secondary); }
 .balance-card b { display: block; margin-top: 8px; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .balance-hint { color: var(--text-secondary); font-size: 12px; line-height: 1.8; }
-.drawer-actions, .detail-status { display: flex; gap: 10px; flex-wrap: wrap; }
-.drawer-actions { justify-content: flex-end; }
+.dialog-footer, .detail-status { display: flex; gap: 10px; flex-wrap: wrap; }
+.dialog-footer { justify-content: flex-end; }
 .receipt-error { color: var(--color-danger-text) !important; }
 .receipt-descriptions { margin: 20px 0; }
 .detail-amount { font-variant-numeric: tabular-nums; font-size: 28px; margin: 8px 0 12px; }

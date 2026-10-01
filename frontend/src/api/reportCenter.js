@@ -7,10 +7,10 @@
 import { reportClient } from './clients'
 
 /** 模板列表 */
-export const getReportTemplates = () => reportClient.get('/templates')
+export const getReportTemplates = (config = {}) => reportClient.get('/templates', { showLoading: false, ...config })
 
 /** 模板详情（含 .mrt 内容） */
-export const getReportTemplate = (code) => reportClient.get(`/templates/${code}`)
+export const getReportTemplate = (code, config = {}) => reportClient.get(`/templates/${code}`, { showLoading: false, ...config })
 
 /** 创建模板 */
 export const createReportTemplate = (data) => reportClient.post('/templates', data)
@@ -25,7 +25,7 @@ export const deleteReportTemplate = (code) => reportClient.delete(`/templates/${
 export const getReportData = (code, params) => reportClient.get(`/data/${code}`, { params })
 
 /** 模板版本历史列表 */
-export const getTemplateVersions = (code) => reportClient.get(`/templates/${code}/versions`)
+export const getTemplateVersions = (code, config = {}) => reportClient.get(`/templates/${code}/versions`, { showLoading: false, ...config })
 
 /** 获取指定版本内容 */
 export const getTemplateVersion = (code, version) => reportClient.get(`/templates/${code}/versions/${version}`)

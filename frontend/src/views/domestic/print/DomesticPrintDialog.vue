@@ -19,14 +19,14 @@
       <div class="footer-bar">
         <div v-if="mode === 'label'" class="copies unit-range">
           <span class="copies-label">单件范围</span>
-          <el-input-number v-model="rangeStart" :min="1" :max="rangeEnd" size="small" controls-position="right" />
+          <el-input-number v-model="rangeStart" :min="1" :max="rangeEnd" size="md" controls-position="right" />
           <span>至</span>
-          <el-input-number v-model="rangeEnd" :min="rangeStart" :max="Math.min(unitTotal, rangeStart + 199)" size="small" controls-position="right" />
-          <GlassButton variant="ghost" size="small" :disabled="loading" @click="loadUnitLabels()">更新预览</GlassButton>
+          <el-input-number v-model="rangeEnd" :min="rangeStart" :max="Math.min(unitTotal, rangeStart + 199)" size="md" controls-position="right" />
+          <GlassButton variant="ghost" size="md" :disabled="loading" @click="loadUnitLabels()">更新预览</GlassButton>
         </div>
         <div v-else-if="mode === 'wxacode'" class="copies">
           <span class="copies-label">份数</span>
-          <el-input-number v-model="copies" :min="1" :max="50" size="small" />
+          <el-input-number v-model="copies" :min="1" :max="50" size="md" />
         </div>
         <span v-if="mode === 'wxacode' && card && card.env_version !== 'release'" class="tip tip--warn">
           体验版码：只有小程序体验成员能扫开，别贴给客户看的单据

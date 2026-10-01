@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     title="从 Excel 粘贴产品明细"
-    width="min(1180px, 94vw)"
+    width="760px"
     destroy-on-close
     class="invoice-paste-dialog"
   >
@@ -24,7 +24,7 @@
           <h3>复制 Excel 中的产品明细，粘贴到下方</h3>
           <p>支持 Product、Length、Color、Weight、Quantity、Unit Price 六列；多余列会自动忽略。</p>
         </div>
-        <el-tag effect="plain">最多 200 行</el-tag>
+        <StatusBadge effect="plain">最多 200 行</StatusBadge>
       </div>
       <el-input
         v-model="pasteText"
@@ -41,13 +41,13 @@
       <div class="result-summary">
         <span>共 <strong>{{ resultCounts.total }}</strong> 行</span>
         <el-button link @click="locateStatus('passed')">
-          <el-tag type="success" effect="plain">通过 {{ resultCounts.passed }}</el-tag>
+          <StatusBadge type="success" effect="plain">通过 {{ resultCounts.passed }}</StatusBadge>
         </el-button>
         <el-button link @click="locateStatus('warning')">
-          <el-tag type="warning" effect="plain">提醒 {{ resultCounts.warning }}</el-tag>
+          <StatusBadge type="warning" effect="plain">提醒 {{ resultCounts.warning }}</StatusBadge>
         </el-button>
         <el-button link @click="locateStatus('blocked')">
-          <el-tag type="danger" effect="plain">待处理 {{ resultCounts.blocked }}</el-tag>
+          <StatusBadge type="danger" effect="plain">待处理 {{ resultCounts.blocked }}</StatusBadge>
         </el-button>
       </div>
 
@@ -72,7 +72,7 @@
           <el-table-column prop="source_row" label="Excel 行" min-width="78" fixed />
           <el-table-column label="状态" min-width="88" fixed>
             <template #default="{ row }">
-              <el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
+              <StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
             </template>
           </el-table-column>
           <el-table-column label="Product" min-width="220" show-overflow-tooltip>
@@ -173,8 +173,10 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../../utils/money.js'
+import { msgWarning, msgInfo } from '@/utils/feedback'
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { previewInvoiceImport } from '@/api/invoice'
 import { hasImportedBatch, parseInvoiceClipboard } from '../composables/useInvoicePasteImport'
 
@@ -219,7 +221,7 @@ watch(
     if (!props.modelValue || !previous || current.every((value, index) => value === previous[index])) return
     visible.value = false
     resetImport()
-    ElMessage.warning('客户、订单类型或币种已变化，请重新打开并校验导入数据')
+    msgWarning('客户、订单类型或币种已变化，请重新打开并校验导入数据')
   },
 )
 
@@ -294,7 +296,7 @@ function confirmCustom(row) {
 function locateStatus(status) {
   const index = previewRows.value.findIndex(row => row.status === status)
   if (index < 0) {
-    ElMessage.info('当前没有该状态的明细')
+    msgInfo('当前没有该状态的明细')
     return
   }
   const row = previewRows.value[index]
@@ -305,7 +307,7 @@ function locateStatus(status) {
 function appendToInvoice() {
   if (hasBlockedRows.value || !preview.value) return
   if (hasImportedBatch(props.existingItems, preview.value.batch_fingerprint)) {
-    ElMessage.warning('这批数据已经加入当前发票')
+    msgWarning('这批数据已经加入当前发票')
     return
   }
   appending.value = true
@@ -327,7 +329,7 @@ function statusText(status) {
 }
 
 function money(value) {
-  return Number(value || 0).toFixed(2)
+  return formatMoney(value)
 }
 
 function nullableMoney(value) {
@@ -336,7 +338,7 @@ function nullableMoney(value) {
 
 function displayUnitPrice(value) {
   const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed.toFixed(2) : String(value || '—')
+  return Number.isFinite(parsed) ? formatMoney(parsed) : String(value || '—')
 }
 </script>
 

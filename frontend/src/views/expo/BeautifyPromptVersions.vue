@@ -2,11 +2,8 @@
   <div class="beautify-page">
     <el-alert title="仅用于“美颜生成”的照片预处理。发布新版本只影响之后确认照片的新会话；最终生图不会再执行面部与皮肤处理。" type="info" :closable="false" show-icon />
     <div ref="panelRef" class="table-card">
-      <div class="toolbar">
-        <el-input v-model="searchForm.keyword" placeholder="搜索版本名称" clearable class="filter-w-md" @keyup.enter="handleSearch" @clear="handleSearch" />
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
-      </div>
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="handleReset"><el-input v-model="searchForm.keyword" placeholder="搜索版本名称" clearable class="filter-w-md"   />
+</FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -21,14 +18,15 @@
         />
       </div>
 
-      <el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty>
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="版本名称" min-width="190" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :type="statusType(row.status)">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="80" />
         <el-table-column v-if="visibleKeys.includes('published-at')" label="发布时间" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.published_at) || '—' }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('updated-at')" label="最后更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>
@@ -42,9 +40,9 @@
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager" @current-change="handlePageChange" @size-change="handleSizeChange" />
     </div>
 
-    <DetailDrawer :model-value="visible" :title="editId ? (readOnly ? '查看美颜提示词版本' : '编辑美颜提示词草稿') : '新建美颜提示词草稿'" width="min(900px, 100vw)" :loading="opening" :before-close="beforeClose" @update:model-value="visible = $event">
+    <DetailDrawer :model-value="visible" :title="editId ? (readOnly ? '查看美颜提示词版本' : '编辑美颜提示词草稿') : '新建美颜提示词草稿'" width="760px" :loading="opening" :before-close="beforeClose" @update:model-value="visible = $event">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="drawer-alert" />
-      <el-form v-if="form" label-position="top">
+      <el-form label-position="top" v-if="form">
         <el-form-item label="版本名称" required><el-input v-model="form.name" maxlength="80" show-word-limit :disabled="readOnly" /></el-form-item>
         <el-form-item label="使用范围"><el-input model-value="仅用于美颜生成的照片预处理" disabled /></el-form-item>
         <el-form-item label="提示词正文" required>
@@ -65,15 +63,14 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { confirmAction, msgError, msgSuccess } from '@/utils/feedback'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useListPage } from '@/composables/useListPage'
 import { useTableView } from '@/composables/useTableView'
-import { msgError, msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import {
   archiveBeautifyPromptVersion, createBeautifyPromptVersion, getBeautifyPromptVersion,
@@ -81,8 +78,8 @@ import {
   updateBeautifyPromptVersion,
 } from '@/api/expo'
 
-const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange } =
-  useListPage(async params => (await getBeautifyPromptVersions(params)).data, { searchForm: { keyword: '' } })
+const listPageState = useListPage(async (params, { signal, isCurrent }) => (await getBeautifyPromptVersions(params, { signal, suppressToast: true })).data, { searchForm: { keyword: '' } })
+const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange } = listPageState
 // columnDefs 只供 TableTools 列显隐面板，模板列保持静态（推广期不配置化渲染）
 const columnDefs = [
   { key: 'name', label: '版本名称' },
@@ -123,23 +120,23 @@ async function save() {
   try {
     if (editId.value) await updateBeautifyPromptVersion(editId.value, form.value)
     else await createBeautifyPromptVersion(form.value)
-    baseline.value = JSON.stringify(form.value); visible.value = false; msgSuccess('草稿已保存'); await fetchList()
+    baseline.value = JSON.stringify(form.value); visible.value = false; msgSuccess('草稿已保存'); await (editId.value ? listPageState.refreshUpdate() : listPageState.refreshCreate())
   } catch (exc) { error.value = message(exc) } finally { saving.value = false }
 }
 async function publish(row) {
-  try { await ElMessageBox.confirm('发布后，新确认照片的美颜会话将使用此版本。确定发布？', '发布美颜提示词', { type: 'warning' }) }
+  try { await confirmAction('发布后，新确认照片的美颜会话将使用此版本。确定发布？', '发布美颜提示词', { type: 'warning' }) }
   catch { return }
   busy.value = true
-  try { await publishBeautifyPromptVersion(row.id, row.revision); msgSuccess('发布'); await fetchList() }
-  catch (exc) { msgError(message(exc)) }
+  try { await publishBeautifyPromptVersion(row.id, row.revision); msgSuccess('发布'); await listPageState.refreshUpdate() }
+  catch (exc) { msgError(message(exc), exc) }
   finally { busy.value = false }
 }
 async function archive(row) {
-  try { await ElMessageBox.confirm('归档后此草稿不能继续编辑，确定归档？', '归档美颜提示词', { type: 'warning' }) }
+  try { await confirmAction('归档后此草稿不能继续编辑，确定归档？', '归档美颜提示词', { type: 'warning' }) }
   catch { return }
   busy.value = true
-  try { await archiveBeautifyPromptVersion(row.id, row.revision); msgSuccess('归档'); await fetchList() }
-  catch (exc) { msgError(message(exc)) }
+  try { await archiveBeautifyPromptVersion(row.id, row.revision); msgSuccess('归档'); await listPageState.refreshUpdate() }
+  catch (exc) { msgError(message(exc), exc) }
   finally { busy.value = false }
 }
 async function runPreview(event) {
@@ -151,7 +148,7 @@ async function runPreview(event) {
 }
 async function discardChanges() {
   if (!dirty.value) return true
-  try { await ElMessageBox.confirm('尚有未保存的修改，确定放弃？', '离开编辑', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' }); return true }
+  try { await confirmAction('尚有未保存的修改，确定放弃？', '离开编辑', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' }); return true }
   catch { return false }
 }
 async function beforeClose(done) { if (!saving.value && await discardChanges()) done() }

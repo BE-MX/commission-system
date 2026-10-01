@@ -19,5 +19,5 @@ export function useChatDrafts({ prompt, attachments, modes, sessionId }) {
     drafts.delete('new')
     drafts.delete(id)
   }
-  return { save, restore, materialize }
+  return { save, restore, materialize, clear: () => drafts.clear() }
 }

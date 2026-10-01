@@ -1,3 +1,5 @@
+import { TASK_STATUS_LABELS as TASK_STATUS_MAP, TASK_STATUS_TYPES as TASK_STATUS_TAG } from '../designStatus.js'
+import { msgWarning, msgSuccessText, confirmAction } from '@/utils/feedback'
 /**
  * 设计管理页 — 业务逻辑 composable
  *
@@ -13,8 +15,12 @@
  *
  * 主文件保留 template + style + composable destructure + 子组件 import。
  */
-import { computed, ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, ref, reactive, onMounted, watch } from 'vue'
+import { useListPage } from '@/composables/useListPage'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { useAuthStore } from '@/stores/auth'
+import { designActorScope, watchDesignActor } from '../designListScope'
+
 import {
   getRequests, getTaskList, getDesigners, createDesigner, updateDesigner,
   actionRequest, rescheduleTask, importRequests,
@@ -25,20 +31,9 @@ import { getDictMap } from '@/utils/dict'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTableView } from '@/composables/useTableView'
 
-
 const PERIOD_LABELS = { am: '上午', pm: '下午' }
-const TASK_STATUS_MAP = {
-  scheduled: '已排期',
-  in_progress: '进行中',
-  completed: '已完成',
-  cancelled: '已取消',
-}
-const TASK_STATUS_TAG = {
-  scheduled: '',
-  in_progress: '',
-  completed: 'success',
-  cancelled: 'info',
-}
+
+
 
 // 列配置数组：TableTools 列显隐的数据源（Action Bar Spec；操作列不进配置，列保持模板静态渲染）
 const PENDING_COLUMNS = [
@@ -94,8 +89,9 @@ function useTabTableView(tab, columns) {
   return { columnDefs: columns, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen }
 }
 
-
 export function useDesignManage() {
+  const authStore = useAuthStore()
+  const readScope = () => designActorScope(authStore)
   // ── 排序 ──────────────────────────────────────────────
   const pendingSort = useTableSort()
   const scheduledSort = useTableSort()
@@ -129,6 +125,7 @@ export function useDesignManage() {
   const calendarConfigRef = ref() // 不可用日期 tab 的 DesignCalendarConfig 实例
   const detailVisible = ref(false)
   const detailRequestId = ref(null)
+  watch(readScope, () => { detailVisible.value = false; detailRequestId.value = null }, { flush: 'sync' })
 
   function openDetail(requestId) {
     detailRequestId.value = requestId
@@ -152,7 +149,7 @@ export function useDesignManage() {
 
   async function submitEditDate() {
     if (!editDateForm.startDate || !editDateForm.endDate) {
-      ElMessage.warning('请选择日期')
+      msgWarning('请选择日期')
       return
     }
     editDateSaving.value = true
@@ -163,9 +160,9 @@ export function useDesignManage() {
         expect_end_date: editDateForm.endDate,
         expect_end_period: editDateForm.endPeriod,
       })
-      ElMessage.success('期望日期已更新')
+      msgSuccessText('期望日期已更新')
       editDateVisible.value = false
-      fetchPending()
+      pendingState.refreshUpdate()
     } finally {
       editDateSaving.value = false
     }
@@ -199,10 +196,10 @@ export function useDesignManage() {
         if (row.request_id) row.request_remark = remark
         else row.remark = remark
       }
-      ElMessage.success('备注已更新')
+      msgSuccessText('备注已更新')
       remarkVisible.value = false
-      if (activeTab.value === 'scheduled') fetchScheduled()
-      else fetchPending()
+      if (activeTab.value === 'scheduled') scheduledState.refreshUpdate()
+      else pendingState.refreshUpdate()
     } catch {
       // API interceptor displays the error; keep the draft open for retry.
     } finally {
@@ -226,7 +223,7 @@ export function useDesignManage() {
 
   async function submitShootType() {
     if (!shootTypeForm.shoot_type || shootTypeForm.shoot_type.length === 0) {
-      ElMessage.warning('请选择拍摄类型')
+      msgWarning('请选择拍摄类型')
       return
     }
     shootTypeSaving.value = true
@@ -238,16 +235,16 @@ export function useDesignManage() {
           operator_id: 1,
           operator_name: '管理员',
         })
-        fetchPending()
+        pendingState.refreshUpdate()
       } else {
         await updateTaskShootType(shootTypeRow.value.id, {
           shoot_type: shootTypeStr,
           operator_id: 1,
           operator_name: '管理员',
         })
-        fetchScheduled()
+        scheduledState.refreshUpdate()
       }
-      ElMessage.success('拍摄类型已更新')
+      msgSuccessText('拍摄类型已更新')
       shootTypeVisible.value = false
     } finally {
       shootTypeSaving.value = false
@@ -284,8 +281,8 @@ export function useDesignManage() {
         operator_name: '管理员',
         operator_role: 'design_staff',
       })
-      ElMessage.success('设计师已更新')
-      fetchScheduled()
+      msgSuccessText('设计师已更新')
+      scheduledState.refreshUpdate()
     } catch { /* handled by interceptor */ }
     editingDesignerId.value = null
   }
@@ -310,7 +307,7 @@ export function useDesignManage() {
 
   async function submitEditTaskDate() {
     if (!editTaskDateForm.startDate || !editTaskDateForm.endDate) {
-      ElMessage.warning('请选择日期')
+      msgWarning('请选择日期')
       return
     }
     editTaskDateSaving.value = true
@@ -325,9 +322,9 @@ export function useDesignManage() {
         operator_name: '管理员',
         operator_role: 'design_staff',
       })
-      ElMessage.success('排期日期已更新')
+      msgSuccessText('排期日期已更新')
       editTaskDateVisible.value = false
-      fetchScheduled()
+      scheduledState.refreshUpdate()
     } finally {
       editTaskDateSaving.value = false
     }
@@ -335,59 +332,32 @@ export function useDesignManage() {
 
   // ── Pending tab ───────────────────────────────────────
   const pendingTableRef = ref()
-  const pendingData = ref([])
-  const pendingLoading = ref(false)
-  const pendingPage = ref(1)
-  const pendingPageSize = ref(50)
-  const pendingTotal = ref(0)
-  const pendingFilters = reactive({ salesperson_name: '', shoot_type: '', expectDateRange: null })
-
-  const pendingHasActiveFilters = computed(() =>
-    Boolean(pendingFilters.salesperson_name || pendingFilters.shoot_type || pendingFilters.expectDateRange?.length))
-  function searchPending() {
-    pendingPage.value = 1
-    fetchPending()
-  }
-  function resetPendingFilters() {
-    pendingFilters.salesperson_name = ''
-    pendingFilters.shoot_type = ''
-    pendingFilters.expectDateRange = null
-    searchPending()
-  }
-  function handlePendingSizeChange() {
-    pendingPage.value = 1
-    fetchPending()
-  }
-
-  async function fetchPending() {
-    pendingLoading.value = true
-    try {
-      const params = {
-        status: 'pending_design',
-        page: pendingPage.value,
-        page_size: pendingPageSize.value,
-        operator_id: 1,
-        operator_role: 'design_staff',
-        ...pendingSort.sortParams.value,
-      }
-      if (pendingFilters.salesperson_name) params.salesperson_name = pendingFilters.salesperson_name
-      if (pendingFilters.shoot_type) params.shoot_type = pendingFilters.shoot_type
-      if (pendingFilters.expectDateRange?.length === 2) {
-        params.expect_start_date = pendingFilters.expectDateRange[0]
-        params.expect_end_date = pendingFilters.expectDateRange[1]
-      }
-      const res = await getRequests(params)
-      const data = res.data
-      pendingData.value = data?.items || data || []
-      pendingTotal.value = data?.total || 0
-    } finally {
-      pendingLoading.value = false
-    }
-  }
+  const pendingState = useListPage(async (params, { signal }) => {
+    const { expectDateRange, ...query } = params
+    if (expectDateRange?.length === 2) { query.expect_start_date = expectDateRange[0]; query.expect_end_date = expectDateRange[1] }
+    query.status = 'pending_design'
+    query.operator_id = 1; query.operator_role = 'design_staff'
+    if (!query.salesperson_name) delete query.salesperson_name
+    if (!query.shoot_type) delete query.shoot_type
+    if (!query.designer_id) delete query.designer_id
+    const response = await getRequests(query, { signal, suppressToast: true })
+    const data = response.data
+    return { items: data?.items || data || [], total: data?.total || 0 }
+  }, { immediate: false, pageSize: 20, searchForm: { salesperson_name: '', shoot_type: '', expectDateRange: null }, sortParams: pendingSort.sortParams.value })
+  watchDesignActor(pendingState, readScope)
+  const pendingData = pendingState.list; const pendingLoading = pendingState.loading
+  const pendingPage = pendingState.page; const pendingPageSize = pendingState.pageSize; const pendingTotal = pendingState.total
+  const pendingFilters = pendingState.searchForm
+  const pendingHasActiveFilters = computed(() => Boolean(pendingFilters.salesperson_name || pendingFilters.shoot_type || pendingFilters.expectDateRange?.length))
+  const searchPending = pendingState.handleSearch
+  const resetPendingFilters = pendingState.handleReset
+  const handlePendingSizeChange = pendingState.handleSizeChange
+  const fetchPending = pendingState.fetchList
+  function handlePendingSortChange(info) { pendingSort.onSortChange(info); return pendingState.handleSortChange(pendingSort.sortParams.value) }
 
   async function handleScanShootReminders() {
     try {
-      await ElMessageBox.confirm(
+      await confirmAction(
         '将立即扫描今日待确认和已排期任务并向相关人员推送钉钉拍摄提醒，是否继续？',
         '预约任务扫描',
         { type: 'info', confirmButtonText: '开始扫描', cancelButtonText: '取消' },
@@ -395,131 +365,66 @@ export function useDesignManage() {
     } catch { return }
     try {
       await triggerShootReminderScan()
-      ElMessage.success('扫描已完成，相关提醒已推送')
+      msgSuccessText('扫描已完成，相关提醒已推送')
     } catch { /* handled by interceptor */ }
   }
 
   // ── Scheduled tab ─────────────────────────────────────
   const scheduledTableRef = ref()
-  const scheduledData = ref([])
-  const scheduledLoading = ref(false)
-  const scheduledPage = ref(1)
-  const scheduledPageSize = ref(50)
-  const scheduledTotal = ref(0)
-  const scheduledFilters = reactive({ salesperson_name: '', shoot_type: '', designer_id: null, planDateRange: null })
-
-  const scheduledHasActiveFilters = computed(() =>
-    Boolean(scheduledFilters.salesperson_name || scheduledFilters.shoot_type || scheduledFilters.designer_id || scheduledFilters.planDateRange?.length))
-  function searchScheduled() {
-    scheduledPage.value = 1
-    fetchScheduled()
-  }
-  function resetScheduledFilters() {
-    scheduledFilters.salesperson_name = ''
-    scheduledFilters.shoot_type = ''
-    scheduledFilters.designer_id = null
-    scheduledFilters.planDateRange = null
-    searchScheduled()
-  }
-  function handleScheduledSizeChange() {
-    scheduledPage.value = 1
-    fetchScheduled()
-  }
-
-  async function fetchScheduled() {
-    scheduledLoading.value = true
-    try {
-      const params = {
-        status: 'scheduled,in_progress',
-        page: scheduledPage.value,
-        page_size: scheduledPageSize.value,
-        operator_id: 1,
-        operator_role: 'design_staff',
-        ...scheduledSort.sortParams.value,
-      }
-      if (scheduledFilters.salesperson_name) params.salesperson_name = scheduledFilters.salesperson_name
-      if (scheduledFilters.shoot_type) params.shoot_type = scheduledFilters.shoot_type
-      if (scheduledFilters.designer_id) params.designer_id = scheduledFilters.designer_id
-      if (scheduledFilters.planDateRange?.length === 2) {
-        params.plan_start_date = scheduledFilters.planDateRange[0]
-        params.plan_end_date = scheduledFilters.planDateRange[1]
-      }
-      const res = await getTaskList(params)
-      const data = res.data
-      scheduledData.value = data?.items || data || []
-      scheduledTotal.value = data?.total || 0
-    } finally {
-      scheduledLoading.value = false
-    }
-  }
+  const scheduledState = useListPage(async (params, { signal }) => {
+    const { planDateRange, ...query } = params
+    if (planDateRange?.length === 2) { query.plan_start_date = planDateRange[0]; query.plan_end_date = planDateRange[1] }
+    query.status = 'scheduled,in_progress'
+    query.operator_id = 1; query.operator_role = 'design_staff'
+    if (!query.salesperson_name) delete query.salesperson_name
+    if (!query.shoot_type) delete query.shoot_type
+    if (!query.designer_id) delete query.designer_id
+    const response = await getTaskList(query, { signal, suppressToast: true })
+    const data = response.data
+    return { items: data?.items || data || [], total: data?.total || 0 }
+  }, { immediate: false, pageSize: 20, searchForm: { salesperson_name: '', shoot_type: '', designer_id: null, planDateRange: null }, sortParams: scheduledSort.sortParams.value })
+  watchDesignActor(scheduledState, readScope)
+  const scheduledData = scheduledState.list; const scheduledLoading = scheduledState.loading
+  const scheduledPage = scheduledState.page; const scheduledPageSize = scheduledState.pageSize; const scheduledTotal = scheduledState.total
+  const scheduledFilters = scheduledState.searchForm
+  const scheduledHasActiveFilters = computed(() => Boolean(scheduledFilters.salesperson_name || scheduledFilters.shoot_type || scheduledFilters.designer_id || scheduledFilters.planDateRange?.length))
+  const searchScheduled = scheduledState.handleSearch
+  const resetScheduledFilters = scheduledState.handleReset
+  const handleScheduledSizeChange = scheduledState.handleSizeChange
+  const fetchScheduled = scheduledState.fetchList
+  function handleScheduledSortChange(info) { scheduledSort.onSortChange(info); return scheduledState.handleSortChange(scheduledSort.sortParams.value) }
 
   // ── Completed tab ─────────────────────────────────────
   const completedTableRef = ref()
-  const completedData = ref([])
-  const completedLoading = ref(false)
-  const completedPage = ref(1)
-  const completedPageSize = ref(50)
-  const completedTotal = ref(0)
-  const completedFilters = reactive({ salesperson_name: '', shoot_type: '', designer_id: null, planDateRange: null })
-
-  const completedHasActiveFilters = computed(() =>
-    Boolean(completedFilters.salesperson_name || completedFilters.shoot_type || completedFilters.designer_id || completedFilters.planDateRange?.length))
-  function searchCompleted() {
-    completedPage.value = 1
-    fetchCompleted()
-  }
-  function resetCompletedFilters() {
-    completedFilters.salesperson_name = ''
-    completedFilters.shoot_type = ''
-    completedFilters.designer_id = null
-    completedFilters.planDateRange = null
-    searchCompleted()
-  }
-  function handleCompletedSizeChange() {
-    completedPage.value = 1
-    fetchCompleted()
-  }
-
-  async function fetchCompleted() {
-    completedLoading.value = true
-    try {
-      const params = {
-        status: 'completed',
-        page: completedPage.value,
-        page_size: completedPageSize.value,
-        operator_id: 1,
-        operator_role: 'design_staff',
-        ...completedSort.sortParams.value,
-      }
-      if (completedFilters.salesperson_name) params.salesperson_name = completedFilters.salesperson_name
-      if (completedFilters.shoot_type) params.shoot_type = completedFilters.shoot_type
-      if (completedFilters.designer_id) params.designer_id = completedFilters.designer_id
-      if (completedFilters.planDateRange?.length === 2) {
-        params.plan_start_date = completedFilters.planDateRange[0]
-        params.plan_end_date = completedFilters.planDateRange[1]
-      }
-      const res = await getTaskList(params)
-      const data = res.data
-      completedData.value = data?.items || data || []
-      completedTotal.value = data?.total || 0
-    } finally {
-      completedLoading.value = false
-    }
-  }
+  const completedState = useListPage(async (params, { signal }) => {
+    const { planDateRange, ...query } = params
+    if (planDateRange?.length === 2) { query.plan_start_date = planDateRange[0]; query.plan_end_date = planDateRange[1] }
+    query.status = 'completed'
+    query.operator_id = 1; query.operator_role = 'design_staff'
+    if (!query.salesperson_name) delete query.salesperson_name
+    if (!query.shoot_type) delete query.shoot_type
+    if (!query.designer_id) delete query.designer_id
+    const response = await getTaskList(query, { signal, suppressToast: true })
+    const data = response.data
+    return { items: data?.items || data || [], total: data?.total || 0 }
+  }, { immediate: false, pageSize: 20, searchForm: { salesperson_name: '', shoot_type: '', designer_id: null, planDateRange: null }, sortParams: completedSort.sortParams.value })
+  watchDesignActor(completedState, readScope)
+  const completedData = completedState.list; const completedLoading = completedState.loading
+  const completedPage = completedState.page; const completedPageSize = completedState.pageSize; const completedTotal = completedState.total
+  const completedFilters = completedState.searchForm
+  const completedHasActiveFilters = computed(() => Boolean(completedFilters.salesperson_name || completedFilters.shoot_type || completedFilters.designer_id || completedFilters.planDateRange?.length))
+  const searchCompleted = completedState.handleSearch
+  const resetCompletedFilters = completedState.handleReset
+  const handleCompletedSizeChange = completedState.handleSizeChange
+  const fetchCompleted = completedState.fetchList
+  function handleCompletedSortChange(info) { completedSort.onSortChange(info); return completedState.handleSortChange(completedSort.sortParams.value) }
 
   // ── Designers tab ─────────────────────────────────────
-  const designerData = ref([])
-  const designerLoading = ref(false)
-
-  async function fetchDesigners() {
-    designerLoading.value = true
-    try {
-      const res = await getDesigners()
-      designerData.value = res.data || []
-    } finally {
-      designerLoading.value = false
-    }
-  }
+  const designerResource = useAsyncResource(async (_, { signal }) => (await getDesigners({ signal, suppressToast: true })).data || [])
+  const designerData = computed(() => designerResource.data.value || [])
+  const designerLoading = designerResource.loading
+  const fetchDesigners = () => designerResource.load()
+  watch(readScope, () => designerResource.load(null, { clear: true }), { flush: 'sync' })
 
   // ── Tab change ────────────────────────────────────────
   function onTabChange(tab) {
@@ -558,7 +463,7 @@ export function useDesignManage() {
 
   async function submitDesigner() {
     if (!designerForm.name.trim()) {
-      ElMessage.warning('请输入设计师姓名')
+      msgWarning('请输入设计师姓名')
       return
     }
     designerSaving.value = true
@@ -574,7 +479,7 @@ export function useDesignManage() {
       } else {
         await createDesigner(payload)
       }
-      ElMessage.success('保存成功')
+      msgSuccessText('保存成功')
       designerDialogVisible.value = false
       fetchDesigners()
     } finally {
@@ -585,12 +490,12 @@ export function useDesignManage() {
   async function toggleDesignerActive(row) {
     const action = row.is_active ? '停用' : '启用'
     try {
-      await ElMessageBox.confirm(`确定${action}设计师「${row.name}」？`, '确认', { type: 'warning' })
+      await confirmAction(`确定${action}设计师「${row.name}」？`, '确认', { type: 'warning' })
     } catch { return }
 
     try {
       await updateDesigner(row.id, { is_active: !row.is_active })
-      ElMessage.success(`${action}成功`)
+      msgSuccessText(`${action}成功`)
       fetchDesigners()
     } catch { /* handled */ }
   }
@@ -621,11 +526,11 @@ export function useDesignManage() {
 
   async function submitConfirm() {
     if (!confirmForm.designer_id) {
-      ElMessage.warning('请选择设计师')
+      msgWarning('请选择设计师')
       return
     }
     if (!confirmForm.startDate || !confirmForm.endDate) {
-      ElMessage.warning('请选择排期日期')
+      msgWarning('请选择排期日期')
       return
     }
     confirming.value = true
@@ -643,9 +548,9 @@ export function useDesignManage() {
         operator_name: '管理员',
         operator_role: 'design_staff',
       })
-      ElMessage.success('排期确认成功')
+      msgSuccessText('排期确认成功')
       confirmVisible.value = false
-      fetchPending()
+      pendingState.refreshRemove(); scheduledState.refreshCreate()
     } finally {
       confirming.value = false
     }
@@ -655,7 +560,7 @@ export function useDesignManage() {
   async function handleTaskAction(row, action) {
     const labels = { start: '开始执行', complete: '标记完成', cancel: '取消任务' }
     try {
-      await ElMessageBox.confirm(`确定${labels[action]}？`, '确认', {
+      await confirmAction(`确定${labels[action]}？`, '确认', {
         type: action === 'cancel' ? 'warning' : 'info',
       })
     } catch { return }
@@ -667,8 +572,10 @@ export function useDesignManage() {
         operator_name: '管理员',
         operator_role: 'design_staff',
       })
-      ElMessage.success('操作成功')
-      fetchScheduled()
+      msgSuccessText('操作成功')
+      if (action === 'complete' || action === 'cancel') scheduledState.refreshRemove()
+      else scheduledState.refreshUpdate()
+      if (action === 'complete') completedState.refreshCreate()
     } catch { /* handled by interceptor */ }
   }
 
@@ -676,7 +583,7 @@ export function useDesignManage() {
   async function handleReschedule({ taskId, planStartDate, planStartPeriod, planEndDate, planEndPeriod, task }) {
     const pLabels = { am: '上午', pm: '下午' }
     try {
-      await ElMessageBox.confirm(
+      await confirmAction(
         `确定将任务 "${task.task_name || task.task_no}" 的排期调整为 ${planStartDate} ${pLabels[planStartPeriod] || ''} ~ ${planEndDate} ${pLabels[planEndPeriod] || ''}？`,
         '调整排期',
         { type: 'warning' },
@@ -693,8 +600,8 @@ export function useDesignManage() {
         operator_name: '管理员',
         operator_role: 'design_staff',
       })
-      ElMessage.success('排期已调整')
-      fetchScheduled()
+      msgSuccessText('排期已调整')
+      scheduledState.refreshUpdate()
     } catch { /* handled by interceptor */ }
   }
 
@@ -729,7 +636,7 @@ export function useDesignManage() {
       importResultVisible.value = true
       importFile.value = null
       if (uploadRef.value) uploadRef.value.clearFiles()
-      if (activeTab.value === 'pending') fetchPending()
+      pendingState.refreshCreate()
     } catch {
       // handled by interceptor
     } finally {
@@ -765,7 +672,7 @@ export function useDesignManage() {
     // Pending tab
     pendingTableRef, pendingData, pendingLoading,
     pendingPage, pendingPageSize, pendingTotal, pendingFilters,
-    fetchPending, handleScanShootReminders, pendingSort,
+    pendingState, fetchPending, handleScanShootReminders, pendingSort, handlePendingSortChange,
     pendingHasActiveFilters, searchPending, resetPendingFilters, handlePendingSizeChange,
     pendingColumnDefs: pendingView.columnDefs,
     pendingDensity: pendingView.density,
@@ -777,7 +684,7 @@ export function useDesignManage() {
     // Scheduled tab
     scheduledTableRef, scheduledData, scheduledLoading,
     scheduledPage, scheduledPageSize, scheduledTotal, scheduledFilters,
-    fetchScheduled, scheduledSort,
+    scheduledState, fetchScheduled, scheduledSort, handleScheduledSortChange,
     scheduledHasActiveFilters, searchScheduled, resetScheduledFilters, handleScheduledSizeChange,
     scheduledColumnDefs: scheduledView.columnDefs,
     scheduledDensity: scheduledView.density,
@@ -789,7 +696,7 @@ export function useDesignManage() {
     // Completed tab
     completedTableRef, completedData, completedLoading,
     completedPage, completedPageSize, completedTotal, completedFilters,
-    fetchCompleted, completedSort,
+    completedState, fetchCompleted, completedSort, handleCompletedSortChange,
     completedHasActiveFilters, searchCompleted, resetCompletedFilters, handleCompletedSizeChange,
     completedColumnDefs: completedView.columnDefs,
     completedDensity: completedView.density,
@@ -799,7 +706,7 @@ export function useDesignManage() {
     completedIsFullscreen: completedView.isFullscreen,
     completedToggleFullscreen: completedView.toggleFullscreen,
     // Designers tab
-    designerData, designerLoading, fetchDesigners,
+    designerResource, designerData, designerLoading, fetchDesigners,
     designerColumnDefs: designerView.columnDefs,
     designerDensity: designerView.density,
     designerDensityClass: designerView.densityClass,

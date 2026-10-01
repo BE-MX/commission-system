@@ -16,7 +16,7 @@
   --button-warning-from: #f59e0b;
   --button-warning-to: #d97706;
   --button-warning-hover: #b45309;
-  --button-info-from: #3b82f6;
+  --button-info-from: #2563eb;
   --button-info-hover: #1d4ed8;
 
   /* Login: quiet dark-gold scene, separate from the light workspace surfaces. */
@@ -33,6 +33,7 @@
 
   /* ── Primary: LeShine Gold ── */
   --color-primary:        #D4941C;
+  --color-primary-text:   #895B0C;
   --color-primary-hover:  #BB8218;
   --color-primary-light:  rgba(212, 148, 28, 0.08);
   --color-primary-glow:   rgba(212, 148, 28, 0.25);
@@ -55,8 +56,8 @@
   --sidebar-glow-slate:   rgba(107, 140, 186, 0.12);
 
   /* ── Semantic Colors ── */
-  --color-success:        #2D9F6F;
-  --color-success-hover:  #248A5E;
+  --color-success:        #237E57;
+  --color-success-hover:  #1E704C;
   --color-success-text:   #1E7D50;
   --color-success-bg:     rgba(45, 159, 111, 0.08);
   --color-success-bg-strong: rgba(103, 194, 58, 0.2);
@@ -73,7 +74,23 @@
   --color-warning-text:   #8B6914;
 
   --color-info-bg:        rgba(107, 140, 186, 0.08);
-  --color-info-text:      #6B8CBA;
+  --color-info-text:      #45648C;
+
+  /* Element Plus semantic colors share the workspace palette. */
+  --el-color-primary: var(--color-primary-text);
+  --el-color-primary-light-9: var(--color-gold-soft);
+  --el-color-success: var(--color-success-text);
+  --el-color-success-light-9: var(--color-success-bg);
+  --el-color-warning: var(--color-warning-text);
+  --el-color-warning-light-9: var(--color-warning-bg);
+  --el-color-danger: var(--color-danger-text);
+  --el-color-danger-light-9: var(--color-danger-bg);
+  --el-color-info: var(--color-info-text);
+  --el-color-info-light-9: var(--color-info-bg);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-muted);
+  --el-text-color-placeholder: var(--text-placeholder);
 
   /* ── Invoice amount-summary chips ── */
   --invoice-summary-hair-fg: #2563eb;
@@ -96,8 +113,8 @@
   /* ── Text ── */
   --text-primary:         #1a1a2e;
   --text-secondary:       #4a5568;
-  --text-muted:           #a0aec0;
-  --text-placeholder:     #a0aec0;
+  --text-muted:           #5B6678;
+  --text-placeholder:     #5B6678;
 
   /* ── Borders ── */
   --border-color:         #e2e5ef;
@@ -122,7 +139,7 @@
   --badge-dev-color:      #2563eb;
   --badge-dev-border:     #bfdbfe;
   --badge-assign-bg:      #fef9f0;
-  --badge-assign-color:   #b08d4f;
+  --badge-assign-color:   #8B6914;
   --badge-assign-border:  #f5e0b5;
 
   /* ── Shadows ── */
@@ -176,9 +193,9 @@
   --scrollbar-thumb-hover:#94a3b8;
 
   /* ── 扩展色板（2026-07-03 治理 F-3：从 views 高频硬编码色提炼，新代码用变量不用裸 hex） ── */
-  --text-muted-blue:      #8b95a5;   /* 出现 56 次：弱化说明文字 */
+  --text-muted-blue:      #5B6678;   /* 弱化说明文字仍保持可读对比度 */
   --color-gold-soft-2:    #d4af6e;   /* 出现 48 次：柔金装饰/图表 */
-  --text-tertiary:        #909399;   /* 出现 29 次：Element 灰文字 */
+  --text-tertiary:        #606771;   /* 出现 29 次：Element 灰文字 */
   --border-warm:          #e5dfd6;   /* 出现 27 次：暖色分隔线 */
   --ink-dark:             #1e1e2d;   /* 出现 27 次：深色标题/暗面板 */
   --color-blue:           #2563eb;   /* 蓝色强调（同 badge-dev-color） */

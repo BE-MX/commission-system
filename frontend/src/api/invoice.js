@@ -17,8 +17,8 @@ export function updateInvoiceDelegateGrants(userId, salesUserIds) {
   }, { loadingText: '正在保存代创建授权...' }))
 }
 
-export function searchInvoiceCustomers(params) {
-  return unwrap(request.get('/customers/search', { params, showLoading: false }))
+export function searchInvoiceCustomers(params, config = {}) {
+  return unwrap(request.get('/customers/search', { ...config, params, showLoading: false }))
 }
 
 export function searchInvoiceCustomerOptions(params) {
@@ -97,12 +97,12 @@ export function createInvoiceFromScreenshot(data) {
   }))
 }
 
-export function listInvoices(params) {
-  return unwrap(request.get('/invoices', { params, showLoading: false }))
+export function listInvoices(params, config = {}) {
+  return unwrap(request.get('/invoices', { ...config, params, showLoading: false }))
 }
 
-export function getInvoiceSummary(params) {
-  return unwrap(request.get('/invoices/summary', { params, showLoading: false }))
+export function getInvoiceSummary(params, config = {}) {
+  return unwrap(request.get('/invoices/summary', { ...config, params, showLoading: false }))
 }
 
 export function getInvoice(id) {
@@ -145,8 +145,8 @@ export function resolveInvoicePrice(params) {
   return unwrap(request.get('/price/resolve', { params, showLoading: false }))
 }
 
-export function listStdPrices(params) {
-  return unwrap(request.get('/price/std', { params, showLoading: false }))
+export function listStdPrices(params, config = {}) {
+  return unwrap(request.get('/price/std', { ...config, params, showLoading: false }))
 }
 
 export function upsertStdPrice(data) {
@@ -157,12 +157,12 @@ export function deleteStdPrice(id) {
   return unwrap(request.delete(`/price/std/${id}`))
 }
 
-export function searchAccessoryCandidates(params) {
-  return unwrap(request.get('/price/accessory-candidates', { params, showLoading: false }))
+export function searchAccessoryCandidates(params, config = {}) {
+  return unwrap(request.get('/price/accessory-candidates', { ...config, params, showLoading: false }))
 }
 
-export function listAccessoryPrices(params) {
-  return unwrap(request.get('/price/accessories', { params, showLoading: false }))
+export function listAccessoryPrices(params, config = {}) {
+  return unwrap(request.get('/price/accessories', { ...config, params, showLoading: false }))
 }
 
 export function saveAccessoryPrice(data) {
@@ -180,8 +180,8 @@ export function importPriceWorkbook(formData) {
   }))
 }
 
-export function listColorTypes() {
-  return unwrap(request.get('/price/color-types', { showLoading: false }))
+export function listColorTypes(config = {}) {
+  return unwrap(request.get('/price/color-types', { ...config, showLoading: false }))
 }
 
 export function upsertColorType(data) {
@@ -192,8 +192,8 @@ export function deleteColorType(id) {
   return unwrap(request.delete(`/price/color-types/${id}`))
 }
 
-export function listCustomerRules(params) {
-  return unwrap(request.get('/price/customer-rules', { params, showLoading: false }))
+export function listCustomerRules(params, config = {}) {
+  return unwrap(request.get('/price/customer-rules', { ...config, params, showLoading: false }))
 }
 
 export function getCustomerRule(customerId) {
@@ -210,8 +210,8 @@ export function deleteCustomerRule(id) {
 
 // ── 自定义产品 ────────────────────────────────────────
 
-export function listCustomProducts(params) {
-  return unwrap(request.get('/custom-products', { params, showLoading: false }))
+export function listCustomProducts(params, config = {}) {
+  return unwrap(request.get('/custom-products', { ...config, params, showLoading: false }))
 }
 
 export function reconcileCustomProducts() {

@@ -27,12 +27,14 @@
         />
       </div>
 
+      <ListPageStatus v-if="listResource.hasData.value" :paged="false" :error="listResource.errorMessage.value" :loading="loading" :has-data="true" @retry="load()" />
       <el-table v-loading="loading" :data="products" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <template #empty><el-empty :image-size="96" description="暂无数据" /></template>
+        <template #empty><ListPageStatus :paged="false" :error="listResource.errorMessage.value" :loading="loading" @retry="load()"><el-empty v-if="listResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('cover')" label="封面" min-width="86">
           <template #default="{ row }">
             <img v-if="productCoverUrls[row.id]" :src="productCoverUrls[row.id]" :alt="row.name" class="product-cover">
-            <span v-else class="cover-empty">暂无</span>
+            <GlassButton v-else-if="productCoverErrors[row.id]" variant="link" :loading="productCoverLoading[row.id]" @click="state.retryProductCovers()">封面失败，重试</GlassButton>
+            <span v-else class="cover-empty">{{ row.cover ? '加载中…' : '暂无' }}</span>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品" min-width="180" show-overflow-tooltip />
@@ -45,9 +47,9 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
           <template #default="{ row }">
-            <el-tag :type="row.is_published ? 'success' : 'info'" effect="plain">
+            <StatusBadge :type="row.is_published ? 'success' : 'info'" effect="plain">
               {{ row.is_published ? '已发布' : '草稿' }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="canAdmin" class-name="table-action-column" label="操作" min-width="250" fixed="right">
@@ -80,9 +82,9 @@
   </div>
 </template>
 
-<script setup>
-import { onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+<script setup>import { msgWarning, msgSuccessText, confirmAction } from '@/utils/feedback'
+import { onMounted, ref, watch } from 'vue'
+
 import { listProductAssets } from '@/api/customerImage'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
@@ -94,8 +96,9 @@ const props = defineProps({
   canAdmin: { type: Boolean, default: false },
 })
 
-const { productCoverUrls, products } = props.state
-const loading = ref(false)
+const { productCoverUrls, productCoverErrors, productCoverLoading, products } = props.state
+const listResource = props.state.productsResource
+const loading = listResource.loading
 const editorVisible = ref(false)
 const editingProduct = ref(null)
 
@@ -111,10 +114,7 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('customer-image-products', columnDefs)
 
-async function load() {
-  loading.value = true
-  try { await props.state.loadProducts() } finally { loading.value = false }
-}
+function load() { return props.state.loadProducts() }
 
 function openEditor(product = null) {
   editingProduct.value = product
@@ -128,26 +128,27 @@ async function togglePublish(product) {
     const response = await listProductAssets(product.id)
     const error = validateProductForPublish(product, response.data || [])
     if (error) {
-      ElMessage.warning(error)
+      msgWarning(error)
       return
     }
   }
   try {
     await props.state.setProductPublished(product.id, !product.is_published)
-    ElMessage.success(product.is_published ? '已取消发布' : '产品已发布')
+    msgSuccessText(product.is_published ? '已取消发布' : '产品已发布')
   } catch { /* shared interceptor provides request feedback */ }
 }
 
 async function remove(product) {
   try {
-    await ElMessageBox.confirm(`删除产品“${product.name}”？`, '删除产品', { type: 'warning' })
+    await confirmAction(`删除产品“${product.name}”？`, '删除产品', { type: 'warning' })
   } catch { return }
   try {
     await props.state.removeProduct(product.id)
-    ElMessage.success('产品已删除')
+    msgSuccessText('产品已删除')
   } catch { /* shared interceptor provides request feedback */ }
 }
 
+watch(() => props.state.scopeVersion.value, () => { editorVisible.value = false; editingProduct.value = null })
 onMounted(load)
 </script>
 

@@ -13,6 +13,8 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
+    <ListPageStatus v-if="periodResource.error.value || !period" v-bind="resourceStatus(periodResource)" @retry="fetchPeriod" />
+
     <!-- 批次头：月份 / 状态 / 关键基数。基数放在最显眼处是因为 due_days
          是所有缺勤扣款的分母，错了整批都错，而它错的时候看不出来 -->
     <div class="salary-panel head" v-if="period">
@@ -21,12 +23,10 @@
           批次列表
         </GlassButton>
         <h2>{{ period.year_month }} 工资批次</h2>
-        <el-tag :type="STATUS_TAG[period.status] || 'info'" effect="plain">
-          {{ period.status_label }}
-        </el-tag>
-        <el-tag v-if="period.unlocked_at" type="danger" effect="plain">
+        <StatusBadge :value="period.status" :dictionary="SALARY_STATUS" :label="period.status_label" effect="plain" />
+        <StatusBadge v-if="period.unlocked_at" type="danger" effect="plain">
           解锁过，前次导出已作废
-        </el-tag>
+        </StatusBadge>
       </div>
 
       <div class="head-facts">
@@ -34,9 +34,9 @@
           <span class="fact-label">工作日数</span>
           <span class="fact-value">
             {{ period.workday_count ?? '未设置' }}
-            <el-tag v-if="period.workday_needs_review" size="small" type="warning" effect="plain">
+            <StatusBadge v-if="period.workday_needs_review" size="small" type="warning" effect="plain">
               待复核
-            </el-tag>
+            </StatusBadge>
             <el-button v-if="writable" v-permission="'salary:write'" link type="primary"
                        @click="openWorkdayEdit">改</el-button>
           </span>
@@ -57,16 +57,17 @@
       </div>
     </div>
 
+    <ListPageStatus v-if="anomaliesResource.error.value || anomaliesResource.loading.value" v-bind="resourceStatus(anomaliesResource)" @retry="fetchAnomalies" />
     <!-- 异常清单。ready_to_calculate 由后端算，前端不自己数 blocking_count -->
     <div class="salary-panel section" v-if="anomalies">
       <div class="section-head">
         <h3>异常清单</h3>
-        <el-tag v-if="anomalies.ready_to_calculate" type="success" effect="dark">
+        <StatusBadge v-if="anomalies.ready_to_calculate" type="success" effect="dark">
           可以计算
-        </el-tag>
-        <el-tag v-else type="danger" effect="dark">
+        </StatusBadge>
+        <StatusBadge v-else type="danger" effect="dark">
           还有 {{ anomalies.blocking_count }} 项必须处理
-        </el-tag>
+        </StatusBadge>
         <span class="section-hint" v-if="anomalies.info_count">
           另有 {{ anomalies.info_count }} 项提示，核对无误可忽略
         </span>
@@ -77,12 +78,12 @@
       </div>
       <template v-else>
         <div class="kind-chips">
-          <el-tag v-for="k in anomalies.by_kind" :key="k.kind"
+          <StatusBadge v-for="k in anomalies.by_kind" :key="k.kind"
                   :type="k.severity === 'blocking' ? 'danger' : 'info'"
                   effect="plain" class="kind-chip"
                   @click="kindFilter = kindFilter === k.kind ? '' : k.kind">
             {{ k.kind_label }} {{ k.count }}
-          </el-tag>
+          </StatusBadge>
           <el-button v-if="kindFilter" link type="primary" @click="kindFilter = ''">
             显示全部
           </el-button>
@@ -90,10 +91,10 @@
         <el-table :data="filteredAnomalies" border class="list-table" max-height="380">
           <el-table-column label="严重度" min-width="90">
             <template #default="{ row }">
-              <el-tag size="small" effect="dark"
+              <StatusBadge size="small" effect="dark"
                       :type="row.severity === 'blocking' ? 'danger' : 'info'">
                 {{ row.severity === 'blocking' ? '必须处理' : '提示' }}
-              </el-tag>
+              </StatusBadge>
             </template>
           </el-table-column>
           <el-table-column prop="kind_label" label="类型" min-width="140" />
@@ -118,39 +119,25 @@
       <el-tabs v-model="activeTab">
         <!-- 明细放最前：算完薪之后 HR 的活儿都在这张表上 -->
         <el-tab-pane label="工资明细" name="records">
-          <div class="tab-toolbar">
-            <el-input v-model="recordsKeyword" placeholder="按姓名/工号搜索" clearable
-                      style="width: 200px" @change="fetchRecords()" />
-            <span v-if="records.truncated" class="section-hint">
-              结果过多只显示了前一部分，请用搜索缩小范围
-            </span>
-            <span class="grow" />
-            <GlassButton v-if="canCalculate" v-permission="'salary:write'" variant="primary"
-                         left-icon="Cpu" :loading="calculating" @click="doCalculate">
-              计算工资
-            </GlassButton>
-          </div>
-          <SalaryRecordsGrid :records="records" :loading="recordsLoading"
+          <FilterBar :loading="recordsLoading" :pending="recordsPending" @search="searchRecords" @reset="resetRecords">
+            <el-input v-model="recordsKeyword" placeholder="按姓名/工号搜索" clearable class="filter-w-md" />
+            <template #summary><span v-if="records.truncated" class="section-hint">结果过多只显示了前一部分，请用搜索缩小范围</span></template>
+          </FilterBar>
+          <div class="action-bar"><GlassButton v-if="canCalculate" v-permission="'salary:write'" variant="primary" left-icon="Cpu" :loading="calculating" @click="doCalculate">计算工资</GlassButton></div>
+          <ListPageStatus v-if="recordsResource.error.value || !recordsResource.hasLoaded.value" v-bind="resourceStatus(recordsResource)" @retry="fetchRecords()" />
+          <SalaryRecordsGrid v-if="recordsResource.hasLoaded.value" :records="records" :loading="recordsLoading"
                              :status="period?.status || ''" :editable="recordsEditable"
                              :save-manual="saveManual" />
         </el-tab-pane>
 
         <el-tab-pane label="考勤" name="attendance">
-          <div class="tab-toolbar">
-            <el-input v-model="attendanceKeyword" placeholder="按姓名搜索" clearable
-                      style="width: 200px" @change="fetchAttendance" />
-            <el-checkbox v-model="attendanceOnlyPending" @change="fetchAttendance">
-              只看请假小时没录的
-            </el-checkbox>
-            <span class="grow" />
-            <span class="section-hint" v-if="attendance.pending_manual_count">
-              {{ attendance.pending_manual_count }} 人的事假/病假还没录
-            </span>
-            <GlassButton v-if="writable" v-permission="'salary:write'" variant="primary"
-                         left-icon="Refresh" :loading="syncing" @click="doSync">
-              从钉钉同步
-            </GlassButton>
-          </div>
+          <FilterBar :loading="attendanceResource.loading.value" :pending="attendancePending" @search="searchAttendance" @reset="resetAttendance">
+            <el-input v-model="attendanceKeyword" placeholder="按姓名搜索" clearable class="filter-w-md" />
+            <el-checkbox v-model="attendanceOnlyPending">只看请假小时没录的</el-checkbox>
+            <template #summary><span class="section-hint" v-if="attendance.pending_manual_count">{{ attendance.pending_manual_count }} 人的事假/病假还没录</span><span v-if="attendance.truncated" class="section-hint">仅显示前 {{ attendance.items.length }} 条考勤，请用姓名筛选缩小范围。</span></template>
+          </FilterBar>
+          <div class="action-bar"><GlassButton v-if="writable" v-permission="'salary:write'" variant="primary" left-icon="Refresh" :loading="syncing" @click="doSync">从钉钉同步</GlassButton></div>
+          <ListPageStatus v-if="attendanceResource.error.value && attendance.items.length" v-bind="resourceStatus(attendanceResource)" @retry="fetchAttendance" />
 
           <!-- 请假数据的两种来源状态：自动拉取生效时请假小时已落库，
                这里只剩「人工让路」和「降级原因」需要明说 -->
@@ -226,9 +213,9 @@
             </el-table-column>
             <el-table-column label="全勤" min-width="70">
               <template #default="{ row }">
-                <el-tag size="small" :type="row.full_attendance ? 'success' : 'info'" effect="plain">
+                <StatusBadge size="small" :type="row.full_attendance ? 'success' : 'info'" effect="plain">
                   {{ row.full_attendance ? '是' : '否' }}
-                </el-tag>
+                </StatusBadge>
               </template>
             </el-table-column>
             <el-table-column class-name="table-action-column" label="操作" min-width="80" fixed="right">
@@ -238,7 +225,9 @@
               </template>
             </el-table-column>
             <template #empty>
+              <ListPageStatus v-bind="resourceStatus(attendanceResource)" @retry="fetchAttendance">
               <div class="empty-hint">还没有考勤数据。点「从钉钉同步」开始。</div>
+              </ListPageStatus>
             </template>
           </el-table>
 
@@ -268,6 +257,7 @@
                   </GlassButton>
                 </AppUpload>
               </div>
+              <ListPageStatus v-if="importResources[kind.value].error.value || importResources[kind.value].loading.value" v-bind="resourceStatus(importResources[kind.value])" @retry="importResources[kind.value].load()" />
               <div v-if="imports[kind.value]?.total" class="import-stats">
                 <div><span>行数</span><b>{{ imports[kind.value].total }}</b></div>
                 <div><span>已匹配</span><b>{{ imports[kind.value].match_counts?.matched ?? 0 }}</b></div>
@@ -288,7 +278,7 @@
                   <b>{{ money(imports[kind.value].personal_total_all) }}</b>
                 </div>
               </div>
-              <div v-else class="empty-hint small">还没导入。</div>
+              <div v-else-if="importResources[kind.value].hasLoaded.value && !importResources[kind.value].error.value && !importResources[kind.value].loading.value" class="empty-hint small">还没导入。</div>
             </div>
           </div>
           <el-alert type="info" :closable="false" class="tab-alert">
@@ -299,6 +289,8 @@
         </el-tab-pane>
 
         <el-tab-pane label="操作记录" name="events">
+          <p class="section-hint">显示最近 200 条操作记录。</p>
+          <ListPageStatus v-if="eventsResource.error.value || eventsResource.loading.value" v-bind="resourceStatus(eventsResource)" @retry="fetchEvents" />
           <el-timeline v-if="events.length" class="events">
             <el-timeline-item v-for="e in events" :key="e.id"
                               :timestamp="e.created_at?.slice(0, 19).replace('T', ' ')"
@@ -313,7 +305,7 @@
               <div v-if="e.reason" class="event-reason">原因：{{ e.reason }}</div>
             </el-timeline-item>
           </el-timeline>
-          <div v-else class="empty-hint">还没有操作记录。</div>
+          <div v-else-if="eventsResource.hasLoaded.value && !eventsResource.error.value && !eventsResource.loading.value" class="empty-hint">还没有操作记录。</div>
         </el-tab-pane>
       </el-tabs>
     </div>
@@ -325,11 +317,12 @@
           <GlassButton
             :variant="step.endpoint === 'confirm' ? 'primary' : 'ghost'"
             :loading="stepping === step.status"
+            :disabled="!periodReady || Boolean(stepping)"
             @click="doStep(step)"
           >{{ step.label }}</GlassButton>
         </template>
         <GlassButton v-if="period.status === 'confirmed'" v-permission="'salary:admin'"
-                     variant="ghost" left-icon="Unlock" @click="unlockVisible = true">
+                     variant="ghost" left-icon="Unlock" :disabled="!periodReady" @click="unlockVisible = true">
           解锁批次
         </GlassButton>
         <span v-if="!period.next_steps?.length && period.status !== 'confirmed'" class="muted">
@@ -343,8 +336,8 @@
     </div>
 
     <!-- 工作日数 -->
-    <el-dialog v-model="workdayEditing" title="修改工作日数" width="420px">
-      <el-form label-width="100px">
+    <el-dialog v-model="workdayEditing" title="修改工作日数" width="480px">
+      <el-form label-position="top">
         <el-form-item label="工作日数">
           <el-input-number v-model="workdayDraft" :min="1" :max="31"
                            controls-position="right" style="width: 100%" />
@@ -372,7 +365,7 @@
         解锁后<b>前次导出的工资表作废</b>，重新导出会打作废水印。
         财务手上那份旧表和新表长得一样，所以原因必须写清楚，供事后对账。
       </el-alert>
-      <el-form label-width="80px">
+      <el-form label-position="top">
         <el-form-item label="原因" required>
           <el-input v-model="unlockReason" type="textarea" :rows="3"
                     placeholder="例：3 月社保基数导错，需重算 12 人" />
@@ -380,7 +373,7 @@
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="unlockVisible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="unlocking" @click="doUnlock">
+        <GlassButton variant="primary" :loading="unlocking" :disabled="!periodReady" @click="doUnlock">
           确认解锁
         </GlassButton>
       </template>
@@ -389,6 +382,10 @@
 </template>
 
 <script setup>
+import FilterBar from '@/components/FilterBar.vue'
+import ListPageStatus from '@/components/ListPageStatus.vue'
+const resourceStatus = resource => ({ error: resource.errorMessage.value, loading: resource.loading.value, hasData: resource.hasLoaded.value, paged: false })
+import { SALARY_STATUS, SALARY_STATUS_TYPES as STATUS_TAG } from './salaryStatus.js'
 import AppUpload from '@/components/AppUpload.vue'
 import { money } from '@/api/salary'
 import AttendanceEntryDialog from './components/AttendanceEntryDialog.vue'
@@ -396,14 +393,7 @@ import SalaryRecordsGrid from './components/SalaryRecordsGrid.vue'
 import { RECORD_LEVEL_KINDS, useSalaryWorkbench } from './composables/useSalaryWorkbench'
 import { useSalaryRecords } from './composables/useSalaryRecords'
 
-const STATUS_TAG = {
-  draft: 'info',
-  attendance_synced: '',
-  imported: '',
-  calculated: 'warning',
-  reviewing: 'warning',
-  confirmed: 'success',
-}
+
 
 const IMPORT_KINDS = [
   { value: 'insurance', label: '社保' },
@@ -418,10 +408,11 @@ function hours(v) {
 }
 
 const {
-  periodId, loading, period, writable, activeTab, refreshAll,
+  periodId, loading, period, periodReady, writable, activeTab, refreshAll,
+  periodResource, anomaliesResource, eventsResource, attendanceResource, importResources, fetchPeriod, fetchAnomalies, fetchEvents,
   anomalies, events, kindFilter, filteredAnomalies, jumpToAnomaly,
   workdayEditing, workdayDraft, openWorkdayEdit, saveWorkday,
-  attendance, attendanceKeyword, attendanceOnlyPending, fetchAttendance,
+  attendance, attendanceKeyword, attendanceOnlyPending, attendancePending, fetchAttendance, searchAttendance, resetAttendance,
   syncing, lastSync, doSync,
   editRow, editDraft, editSaving, openEditAttendance, saveAttendance,
   imports, importing, doImport,
@@ -430,12 +421,12 @@ const {
 } = useSalaryWorkbench()
 
 // 工资明细（M3-f）：计算按钮 + 22 列明细表。逻辑全在 composable / 表格组件里，
-// 这里只做装配，本文件行数有 500 的硬上限
+// 这里只负责装配明细表与批次资源
 const {
-  records, recordsKeyword, recordsLoading, fetchRecords,
+  records, recordsKeyword, recordsLoading, recordsResource, recordsPending, fetchRecords, searchRecords, resetRecords,
   canCalculate, calculating, doCalculate,
   recordsEditable, saveManual,
-} = useSalaryRecords({ periodId, period, activeTab, refreshAll })
+} = useSalaryRecords({ periodId, period, activeTab, refreshAll, writable })
 
 // AppUpload 会把 uploadFn 的返回值展开进 modelValue，而导入没有落盘产物、
 // 整个响应体展开进去毫无意义。这里吞掉返回值——show-list=false，那份列表不渲染，

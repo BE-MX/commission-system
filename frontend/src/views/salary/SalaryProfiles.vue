@@ -13,21 +13,18 @@
 
     <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
     <div ref="panelRef" class="table-card salary-panel">
-      <div class="toolbar">
-        <el-input
+      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="handleReset"><el-input
           v-model="searchForm.keyword" placeholder="搜索姓名 / 工号 / 岗位" clearable
-          prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch"
+          prefix-icon="Search" class="filter-w-lg"
         />
-        <el-select v-model="searchForm.dept_detail" placeholder="明细部门" clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.dept_detail" placeholder="明细部门" clearable class="filter-w-sm" >
           <el-option v-for="d in deptOptions" :key="d.id" :label="d.dept_detail" :value="d.dept_detail" />
         </el-select>
-        <el-select v-model="searchForm.status" placeholder="在职状态" clearable class="filter-w-sm" @change="handleSearch">
+<el-select v-model="searchForm.status" placeholder="在职状态" clearable class="filter-w-sm" >
           <el-option label="在职" value="active" />
           <el-option label="离职" value="left" />
         </el-select>
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
-      </div>
+</FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -42,22 +39,23 @@
         />
       </div>
 
-      <el-table
+      <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
+<el-table
         :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%"
         :default-sort="{ prop: sortField, order: sortOrder === 'desc' ? 'descending' : 'ascending' }"
         @sort-change="handleSortChange"
       >
-        <template #empty>
+        <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('emp-no')" prop="emp_no" label="工号" min-width="80" sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="姓名" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('dept-detail')" prop="dept_detail" label="明细部门" min-width="110" show-overflow-tooltip sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('dept-group')" label="汇总大部门" min-width="110">
           <template #default="{ row }">
-            <el-tag v-if="row.dept_group" size="small" effect="plain">{{ row.dept_group }}</el-tag>
+            <StatusBadge v-if="row.dept_group" size="small" effect="plain">{{ row.dept_group }}</StatusBadge>
             <span v-else class="muted">未映射</span>
           </template>
         </el-table-column>
@@ -73,10 +71,10 @@
             <span v-if="row.base_salary_effective !== null && row.base_salary_effective !== undefined">
               <!-- 后端 Decimal 经 JSON 变 float，3500.00 会显示成 3500；工资域分位必须留住 -->
               {{ money(row.base_salary_effective) }}
-              <el-tag v-if="row.base_salary_override !== null && row.base_salary_override !== undefined" size="small" type="warning" effect="plain">定薪</el-tag>
+              <StatusBadge v-if="row.base_salary_override !== null && row.base_salary_override !== undefined" size="small" type="warning" effect="plain">定薪</StatusBadge>
             </span>
             <!-- 底薪推不出来 = 算薪时会报异常，这里就要红着提醒 HR 去补 -->
-            <el-tag v-else size="small" type="danger" effect="plain">待补</el-tag>
+            <StatusBadge v-else size="small" type="danger" effect="plain">待补</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('hire-date')" prop="hire_date" label="入职日期" min-width="110" sortable="custom" />
@@ -85,10 +83,10 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small" effect="plain">
+            <StatusBadge :type="row.status === 'active' ? 'success' : 'info'" size="small" effect="plain">
               {{ row.status === 'active' ? '在职' : '离职' }}
-            </el-tag>
-            <el-tag v-if="!row.payroll_included" size="small" type="info" effect="plain">不参与工资表</el-tag>
+            </StatusBadge>
+            <StatusBadge v-if="!row.payroll_included" size="small" type="info" effect="plain">不参与工资表</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
@@ -105,7 +103,7 @@
     </div>
 
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑员工档案' : '新增员工档案'" width="760px" top="6vh">
-      <el-form ref="formRef" :model="form" :rules="formRules" label-width="110px">
+      <el-form label-position="top" ref="formRef" :model="form" :rules="formRules">
         <el-divider content-position="left">基本信息</el-divider>
         <el-row :gutter="16">
           <el-col :span="12">
@@ -281,6 +279,7 @@ const columnDefs = [
 ]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('salary-profiles', columnDefs)
 
+const listPageState = useSalaryProfiles()
 const {
   loading, list, total, page, pageSize, searchForm, fetchList,
   handleSearch, handleReset, handlePageChange, handleSizeChange,
@@ -289,7 +288,7 @@ const {
   clearIdCard, clearBankCard,
   dialogVisible, saving, isEdit, formRef, form, formRules,
   openCreate, openEdit, submit,
-} = useSalaryProfiles()
+} = listPageState
 
 const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.dept_detail || searchForm.status))
 </script>

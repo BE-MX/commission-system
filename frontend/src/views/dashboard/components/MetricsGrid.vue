@@ -24,14 +24,19 @@
           <span class="metric-dot" :class="`dot-${card.dot}`" />
         </div>
         <div class="metric-value">{{ card.value(data) }}</div>
+        <div v-if="resourceOf(card)?.error" class="metric-resource-note" role="status">
+          {{ resourceOf(card).hasLoaded ? '更新失败，显示上次数据' : '读取失败' }}
+          <button type="button" @click="resourceOf(card).load()">重试</button>
+        </div>
+        <div v-else-if="resourceOf(card)?.loading && !resourceOf(card)?.hasLoaded" class="metric-resource-note" role="status">正在读取…</div>
         <div class="metric-footer">
           <template v-if="footerOf(card).kind === 'pill'">
             <span class="metric-tag tag-pending">{{ footerOf(card).text }}</span>
           </template>
           <template v-else-if="footerOf(card).kind === 'tag'">
-            <el-tag :type="footerOf(card).elType" size="small" effect="plain">
+            <StatusBadge :type="footerOf(card).elType" size="small" effect="plain">
               {{ footerOf(card).text }}
-            </el-tag>
+            </StatusBadge>
           </template>
           <template v-else>
             <span class="metric-status">{{ footerOf(card).text }}</span>
@@ -80,6 +85,7 @@ function emitReorder() {
 function footerOf(card) {
   return card.footer?.(props.data) || { kind: 'status', text: '' }
 }
+function resourceOf(card) { return props.data.resources?.[card.resource] }
 </script>
 
 <style scoped>
@@ -141,6 +147,8 @@ function footerOf(card) {
 .metric-footer {
   min-height: 22px;
 }
+.metric-resource-note { margin: -2px 0 8px; color: var(--text-secondary); font-size: 12px; }
+.metric-resource-note button { border: 0; background: none; color: var(--color-primary-text); cursor: pointer; text-decoration: underline; }
 
 .metric-tag {
   display: inline-flex;

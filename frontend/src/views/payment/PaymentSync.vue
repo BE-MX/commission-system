@@ -73,16 +73,16 @@
     <!-- 已同步回款列表 -->
     <el-card shadow="never" class="payment-panel">
       <div ref="panelRef" class="table-card">
-      <div class="toolbar">
-        <el-input v-model="listKeyword" placeholder="搜索" clearable class="filter-w-md" @keyup.enter="searchPayments" @clear="searchPayments">
+      <FilterBar :loading="listLoading" :pending="listState.hasPendingSearch.value" @search="searchPayments" @reset="resetListFilter">
+        <el-input v-model="listKeyword" placeholder="搜索" clearable class="filter-w-md">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <GlassButton variant="primary" left-icon="Search" @click="searchPayments">查询</GlassButton>
-        <GlassButton left-icon="RefreshLeft" @click="resetListFilter">重置</GlassButton>
-      </div>
+
+
+      </FilterBar>
 
       <div class="action-bar">
-        <TableTools
+        <TableTools :loading="listLoading"
           v-model:visible-keys="visibleKeys"
           v-model:density="density"
           :columns="columnDefs"
@@ -92,12 +92,13 @@
         />
       </div>
 
-      <el-table :data="paymentList" v-loading="listLoading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange">
-        <template #empty>
-          <el-empty :image-size="96" :description="listKeyword ? '没有符合条件的记录' : '暂无数据'">
-            <GlassButton v-if="listKeyword" left-icon="RefreshLeft" @click="resetListFilter">重置筛选</GlassButton>
+      <ListPageStatus v-if="listState.hasData.value && listState.errorMessage.value" :error="listState.errorMessage.value" :loading="listLoading" :has-data="true" :data-page="listState.dataPage.value" @retry="fetchPayments" />
+<el-table :data="paymentList" v-loading="listLoading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="changeSort">
+        <template #empty><ListPageStatus :error="listState.errorMessage.value" :loading="listLoading" :has-data="false" @retry="fetchPayments">
+          <el-empty :image-size="96" :description="listState.appliedSearchForm.value.keyword ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="listState.appliedSearchForm.value.keyword" left-icon="RefreshLeft" @click="resetListFilter">重置筛选</GlassButton>
           </el-empty>
-        </template>
+        </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('payment-id')" prop="payment_id" label="回款ID" min-width="180" max-width="270" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单ID" min-width="180" max-width="270" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
@@ -109,16 +110,16 @@
           <template #default="{ row }">{{ formatAmount(row.service_fee) }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('exchange-rate')" prop="exchange_rate" label="汇率" min-width="90" max-width="140">
-          <template #default="{ row }">{{ formatAmount(row.exchange_rate, 4) }}</template>
+          <template #default="{ row }">{{ formatExchangeRate(row.exchange_rate) }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('real-amount-rmb')" prop="real_amount_rmb" label="回款金额(RMB)" min-width="140" max-width="210">
           <template #default="{ row }">{{ formatAmount(row.real_amount_rmb) }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('is-calculated')" label="是否已计算" min-width="100" max-width="150">
           <template #default="{ row }">
-            <el-tag :type="row.is_calculated ? 'success' : 'info'" size="small" effect="plain">
+            <StatusBadge :type="row.is_calculated ? 'success' : 'info'" size="small" effect="plain">
               {{ row.is_calculated ? '是' : '否' }}
-            </el-tag>
+            </StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('batch-id')" label="所属批次" min-width="120" max-width="180" show-overflow-tooltip>
@@ -133,7 +134,7 @@
         :total="listTotal"
         layout="total, sizes, prev, pager, next"
         :page-sizes="[20, 50, 100]"
-        @current-change="fetchPayments"
+        @current-change="listState.handlePageChange"
         @size-change="handleSizeChange"
       />
       </div>
@@ -142,8 +143,13 @@
 </template>
 
 <script setup>
+import { useListPage } from '@/composables/useListPage'
+import { toRef } from 'vue'
+
+import { formatMoney } from '../../utils/money.js'
+import { confirmAction, msgSuccessText } from '@/utils/feedback'
 import { ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+
 import { syncPayments, getSyncedPayments } from '@/api/payment'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTableView } from '@/composables/useTableView'
@@ -167,15 +173,28 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('payment-sync', columnDefs)
 
+const listState = useListPage(async (params, context) => {
+  const { dateRange, ...query } = params
+  if (!dateRange?.length) return { items: [], total: 0 }
+  return (await getSyncedPayments({ ...query, date_start: dateRange[0], date_end: dateRange[1] }, { signal: context.signal, suppressToast: true })).data
+}, { immediate: false, searchForm: { keyword: '', dateRange: null } })
+const { page: listPage, pageSize: listPageSize, total: listTotal, list: paymentList, loading: listLoading } = listState
+const fetchPayments = () => listState.refreshUpdate()
+const searchPayments = () => listState.handleSearch()
+const resetListFilter = () => { listState.searchForm.keyword = ''; return listState.handleSearch() }
+const handleSizeChange = size => listState.handleSizeChange(size)
+function changeSort(event) { orderSort.onSortChange(event); return listState.handleSortChange(orderSort.sortParams.value) }
+
+
 // 同步操作
-const dateRange = ref(null)
+const dateRange = toRef(listState.searchForm, 'dateRange')
 const syncing = ref(false)
 const syncResult = ref(null)
 
 async function handleSync() {
   if (!dateRange.value) return
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认同步 ${dateRange.value[0]} 至 ${dateRange.value[1]} 的回款数据？`,
       '确认同步'
     )
@@ -188,60 +207,20 @@ async function handleSync() {
       date_end: dateRange.value[1]
     })
     syncResult.value = res.data
-    ElMessage.success(`同步完成：新增 ${res.data.new_synced} 条`)
-    fetchPayments()
+    msgSuccessText(`同步完成：新增 ${res.data.new_synced} 条`)
+    await searchPayments()
   } finally {
     syncing.value = false
   }
 }
 
 // 已同步回款列表
-const listKeyword = ref('')
-const listPage = ref(1)
-const listPageSize = ref(20)
-const listTotal = ref(0)
-const paymentList = ref([])
-const listLoading = ref(false)
+const listKeyword = toRef(listState.searchForm, 'keyword')
 
-function formatAmount(value, digits = 2) {
-  return value == null ? '-' : Number(value).toFixed(digits)
-}
+function formatAmount(value) { return formatMoney(value, { missing: '-' }) }
+function formatExchangeRate(value) { return value == null ? '-' : Number(value).toFixed(4) }
 
 // 查询/重置成对（List Page Spec 第 5 节）：回第 1 页再加载；dateRange 是同步上下文，不属于列表筛选，重置不动它
-function searchPayments() {
-  listPage.value = 1
-  fetchPayments()
-}
-
-function resetListFilter() {
-  listKeyword.value = ''
-  listPage.value = 1
-  fetchPayments()
-}
-
-function handleSizeChange() {
-  listPage.value = 1
-  fetchPayments()
-}
-
-async function fetchPayments() {
-  if (!dateRange.value) return
-  listLoading.value = true
-  try {
-    const res = await getSyncedPayments({
-      date_start: dateRange.value[0],
-      date_end: dateRange.value[1],
-      keyword: listKeyword.value,
-      page: listPage.value,
-      page_size: listPageSize.value,
-      ...orderSort.sortParams.value
-    })
-    paymentList.value = res.data.items
-    listTotal.value = res.data.total
-  } finally {
-    listLoading.value = false
-  }
-}
 </script>
 
 <style scoped>

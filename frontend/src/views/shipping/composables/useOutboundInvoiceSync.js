@@ -1,5 +1,6 @@
+import { msgSuccessText } from '@/utils/feedback'
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { previewOutboundInvoiceSync, syncOutboundInvoice } from '@/api/shipping'
 
 export function useOutboundInvoiceSync(refresh) {
@@ -13,7 +14,7 @@ export function useOutboundInvoiceSync(refresh) {
       syncPreview.value = (await previewOutboundInvoiceSync(syncRow.value.outbound_record_id)).data
     } else if (data.status === 'sync_done') {
       syncVisible.value = false
-      ElMessage.success(data.message)
+      msgSuccessText(data.message)
       await refresh()
     } else {
       syncPreview.value = { ...syncPreview.value, ...data }

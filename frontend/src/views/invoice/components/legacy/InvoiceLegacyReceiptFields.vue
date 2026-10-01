@@ -1,6 +1,6 @@
 <template>
   <section v-if="form.order_type === 'stock'" class="head-section receipt-section">
-    <div class="col-title">本次回款 <el-tag effect="plain" type="warning">同步前必填</el-tag></div>
+    <div class="col-title">本次回款 <StatusBadge effect="plain" type="warning">同步前必填</StatusBadge></div>
     <p>{{ form.receipt_draft?.status === 'converted' ? '本次回款已生成，订单重新同步不会重复建款。' : '上传实际到账截图；订单完整同步后自动生成回款单。可先保存草稿。' }}</p>
     <ReceiptFields v-if="form.receipt_draft" :form="form.receipt_draft" :currency="form.currency"
       :readonly="frozen" :hide-proofs="canEditProofs" @uploading="v => form.receipt_uploading = v" />

@@ -14,7 +14,7 @@
         标签维度管理
       </h2>
       <div class="toolbar-right">
-        <el-radio-group v-model="activeScope" size="small" @change="loadData">
+        <el-radio-group v-model="activeScope" size="small">
           <el-radio-button value="internal">内部标签</el-radio-button>
           <el-radio-button value="customer">客户标签</el-radio-button>
         </el-radio-group>
@@ -23,11 +23,12 @@
     </div>
 
     <!-- 维度列表 -->
-    <div v-if="loading" class="loading-wrap">
+    <ListPageStatus :error="dimensionsResource.errorMessage.value" :loading="loading" :has-data="dimensions.length > 0" @retry="loadData" />
+    <div v-if="loading && !dimensions.length" class="loading-wrap">
       <el-skeleton :rows="5" animated />
     </div>
     <div v-else-if="dimensions.length === 0" class="empty-wrap">
-      <el-empty description="暂无标签维度" />
+      <el-empty v-if="!dimensionsResource.error.value" description="暂无标签维度" />
     </div>
     <div v-else class="dimension-list">
       <div
@@ -40,15 +41,15 @@
           <div class="dim-info">
             <span class="dim-name">{{ dim.label }}</span>
             <span class="dim-meta">{{ dim.name }}</span>
-            <el-tag size="small" :type="dim.tag_scope === 'customer' ? 'warning' : 'info'" effect="plain">
+            <StatusBadge size="small" :type="dim.tag_scope === 'customer' ? 'warning' : 'info'" effect="plain">
               {{ dim.tag_scope === 'customer' ? '客户标签' : '内部标签' }}
-            </el-tag>
-            <el-tag v-if="dim.is_system" size="small" type="info">系统内置</el-tag>
-            <el-tag v-if="dim.is_single_select" size="small" type="warning">单选</el-tag>
-            <el-tag v-else size="small" type="success">多选</el-tag>
-            <el-tag v-if="dim.is_required" size="small" type="danger">必填</el-tag>
-            <el-tag v-if="!dim.is_visible" size="small" type="info" effect="plain">未启用</el-tag>
-            <el-tag v-if="dim.is_managed" size="small" type="warning" effect="plain">系统托管</el-tag>
+            </StatusBadge>
+            <StatusBadge v-if="dim.is_system" size="small" type="info">系统内置</StatusBadge>
+            <StatusBadge v-if="dim.is_single_select" size="small" type="warning">单选</StatusBadge>
+            <StatusBadge v-else size="small" type="success">多选</StatusBadge>
+            <StatusBadge v-if="dim.is_required" size="small" type="danger">必填</StatusBadge>
+            <StatusBadge v-if="!dim.is_visible" size="small" type="info" effect="plain">未启用</StatusBadge>
+            <StatusBadge v-if="dim.is_managed" size="small" type="warning" effect="plain">系统托管</StatusBadge>
           </div>
           <div class="dim-actions">
             <el-button link type="primary" @click="toggleDimVisible(dim)">
@@ -99,13 +100,13 @@
               :src="getTagImageUrl(val.image_path)"
               class="value-tag-thumb"
             />
-            <el-tag
+            <StatusBadge
               size="small"
               :color="val.color_hex || undefined"
               :style="val.color_hex ? 'color: #fff; border: none;' : ''"
             >
               {{ val.value }}
-            </el-tag>
+            </StatusBadge>
           </div>
             <span v-if="val.name_en" class="value-name-en">{{ val.name_en }}</span>
             <span v-if="!val.is_active" class="value-inactive">(已禁用)</span>
@@ -134,7 +135,7 @@
       :title="isEditDim ? '编辑维度' : '新建维度'"
       width="480px"
     >
-      <el-form :model="dimForm" label-width="100px">
+      <el-form label-position="top" :model="dimForm">
         <el-form-item label="标识名" required>
           <el-input v-model="dimForm.name" placeholder="英文标识，如 color" :disabled="isEditDim" />
         </el-form-item>
@@ -171,9 +172,9 @@
     <el-dialog
       v-model="showValueDialog"
       :title="isEditValue ? '编辑标签值' : '新建标签值'"
-      width="420px"
+      width="480px"
     >
-      <el-form :model="valueForm" label-width="80px">
+      <el-form label-position="top" :model="valueForm">
         <el-form-item label="所属维度">
           <el-input :model-value="currentDim?.label" disabled />
         </el-form-item>
@@ -222,9 +223,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup>import { msgError, confirmAction, msgSuccessText, msgWarning } from '@/utils/feedback'
 import { ref, computed, watch, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
 import {
   CollectionTag, Plus, Edit, Delete, CircleClose, Search,
 } from '@element-plus/icons-vue'
@@ -233,24 +235,19 @@ import {
   createTagValue, updateTagValue, deleteTagValue, uploadTagImage,
 } from '@/api/asset'
 
-const loading = ref(false)
-const dimensions = ref([])
+const dimensionsResource = useAsyncResource(async (scope, { signal }) => (await getTagDimensions(true, scope, { signal, suppressToast: true })).data || [])
+const loading = dimensionsResource.loading
+const dimensions = computed(() => dimensionsResource.data.value || [])
 const valueSearchQuery = ref({})
 // 列表按标签属性筛选：internal 内部标签（素材库）/ customer 客户标签（客户素材门户）
 const activeScope = ref('internal')
 
-async function loadData() {
-  loading.value = true
-  try {
-    // 管理页需要看到未启用（并存期隐藏）的维度，并按当前 scope 过滤
-    const res = await getTagDimensions(true, activeScope.value)
-    dimensions.value = res.data || []
-  } catch (e) {
-    ElMessage.error('加载标签维度失败')
-  } finally {
-    loading.value = false
-  }
-}
+const loadData = () => dimensionsResource.load()
+watch(activeScope, scope => {
+  valueSearchQuery.value = {}; showDimDialog.value = false; showValueDialog.value = false
+  currentDim.value = null; currentValue.value = null
+  dimensionsResource.load(scope, { clear: true })
+}, { flush: 'sync' })
 
 function filteredValues(dim) {
   const q = (valueSearchQuery.value[dim.id] || '').trim().toLowerCase()
@@ -279,18 +276,18 @@ async function toggleDimVisible(dim) {
   const next = dim.is_visible ? 0 : 1
   try {
     if (next === 0) {
-      await ElMessageBox.confirm(
+      await confirmAction(
         `停用后「${dim.label}」将不在筛选、上传和文件夹匹配中出现（已打的标签保留）。确定停用？`,
         '确认停用',
         { type: 'warning' },
       )
     }
     await updateDimension(dim.id, { is_visible: next })
-    ElMessage.success(next ? '已启用' : '已停用')
+    msgSuccessText(next ? '已启用' : '已停用')
     await loadData()
   } catch (e) {
     if (e !== 'cancel') {
-      ElMessage.error(e.response?.data?.message || '操作失败')
+      msgError(e.response?.data?.message || '操作失败', e)
     }
   }
 }
@@ -342,7 +339,7 @@ watch(showCreateDim, (v) => {
 async function submitDim() {
   const data = { ...dimForm.value }
   if (!data.name.trim() || !data.label.trim()) {
-    ElMessage.warning('请填写完整信息')
+    msgWarning('请填写完整信息')
     return
   }
   dimSubmitting.value = true
@@ -350,15 +347,15 @@ async function submitDim() {
     if (isEditDim.value) {
       const dim = dimensions.value.find(d => d.name === data.name)
       await updateDimension(dim.id, data)
-      ElMessage.success('更新成功')
+      msgSuccessText('更新成功')
     } else {
       await createDimension(data)
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     }
     showDimDialog.value = false
     await loadData()
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '操作失败')
+    msgError(e.response?.data?.message || '操作失败', e)
   } finally {
     dimSubmitting.value = false
   }
@@ -366,17 +363,17 @@ async function submitDim() {
 
 async function handleDeleteDim(dim) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确定删除维度「${dim.label}」？其下所有标签值也将被删除。`,
       '确认删除',
       { type: 'warning' },
     )
     await deleteDimension(dim.id)
-    ElMessage.success('删除成功')
+    msgSuccessText('删除成功')
     await loadData()
   } catch (e) {
     if (e !== 'cancel') {
-      ElMessage.error(e.response?.data?.message || '删除失败')
+      msgError(e.response?.data?.message || '删除失败', e)
     }
   }
 }
@@ -431,7 +428,7 @@ function openEditValue(dim, val) {
 
 async function submitValue() {
   if (!valueForm.value.value.trim()) {
-    ElMessage.warning('请填写标签值')
+    msgWarning('请填写标签值')
     return
   }
   valueSubmitting.value = true
@@ -449,15 +446,15 @@ async function submitValue() {
     }
     if (isEditValue.value && currentValue.value) {
       await updateTagValue(currentValue.value.id, payload)
-      ElMessage.success('更新成功')
+      msgSuccessText('更新成功')
     } else {
       await createTagValue(currentDim.value.id, payload)
-      ElMessage.success('创建成功')
+      msgSuccessText('创建成功')
     }
     showValueDialog.value = false
     await loadData()
   } catch (e) {
-    ElMessage.error(e.response?.data?.message || '操作失败')
+    msgError(e.response?.data?.message || '操作失败', e)
   } finally {
     valueSubmitting.value = false
   }
@@ -468,7 +465,7 @@ async function handleTagImageUpload(options) {
     const res = await uploadTagImage(options.file)
     valueForm.value.image_path = res.data?.image_path || null
   } catch (e) {
-    ElMessage.error('图片上传失败')
+    msgError('图片上传失败', e)
   }
 }
 
@@ -479,23 +476,23 @@ function getTagImageUrl(path) {
 
 async function handleDeleteValue(val) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确定删除标签值「${val.value}」？`,
       '确认删除',
       { type: 'warning' },
     )
     await deleteTagValue(val.id)
-    ElMessage.success('删除成功')
+    msgSuccessText('删除成功')
     await loadData()
   } catch (e) {
     if (e !== 'cancel') {
-      ElMessage.error(e.response?.data?.message || '删除失败')
+      msgError(e.response?.data?.message || '删除失败', e)
     }
   }
 }
 
 onMounted(() => {
-  loadData()
+  dimensionsResource.load(activeScope.value)
 })
 </script>
 

@@ -27,7 +27,7 @@
           <div class="calendar-header">
             <div class="calendar-title">
               <span class="year-month">{{ calendarYear }} 年 {{ calendarMonth + 1 }} 月</span>
-              <el-tag size="small" class="realtime-tag">实时</el-tag>
+              <StatusBadge size="small" class="realtime-tag">实时</StatusBadge>
             </div>
             <div class="calendar-nav">
               <button class="nav-btn" @click="goPrevMonth">
@@ -152,8 +152,8 @@
               >
                 生成日报
               </GlassButton>
-              <el-tag v-if="reportData?.is_pushed" type="success" size="small">已推送</el-tag>
-              <el-tag v-else type="info" size="small">未推送</el-tag>
+              <StatusBadge v-if="reportData?.is_pushed" type="success" size="small">已推送</StatusBadge>
+              <StatusBadge v-else type="info" size="small">未推送</StatusBadge>
             </div>
           </div>
 

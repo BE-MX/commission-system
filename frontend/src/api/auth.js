@@ -1,8 +1,8 @@
+import { msgError } from '@/utils/feedback'
 /**
  * Auth API — 登录、刷新、获取用户信息
  */
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
 
 // 独立的 axios 实例，不走业务 request.js 的拦截器
 const authRequest = axios.create({
@@ -32,8 +32,10 @@ authRequest.interceptors.response.use(
       const msg = error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK'
         ? '网络超时，请检查后端服务是否启动'
         : '网络错误，请检查网络连接或后端服务'
-      ElMessage.error(msg)
-      return Promise.reject(new Error(msg))
+      msgError(msg)
+      error.message = msg
+      error._arkFeedbackHandled = true
+      return Promise.reject(error)
     }
 
     const status = error.response.status
@@ -45,30 +47,38 @@ authRequest.interceptors.response.use(
       // /refresh 的 401 是匿名访客与会话过期的常态（App.vue 初始化会触达，公开页
       // /inventory 的外部客户也会命中），调用方自有回退逻辑——不弹全局中文 toast
       if (!String(error.config?.url || '').includes('/refresh')) {
-        ElMessage.error(msg)
+        msgError(msg)
       }
-      return Promise.reject(new Error(msg))
+      error.message = msg
+      error._arkFeedbackHandled = true
+      return Promise.reject(error)
     }
 
     // 403 — 账号被禁用
     if (status === 403) {
       const msg = data.detail || data.message || '账号已被禁用，请联系管理员'
-      ElMessage.error(msg)
-      return Promise.reject(new Error(msg))
+      msgError(msg)
+      error.message = msg
+      error._arkFeedbackHandled = true
+      return Promise.reject(error)
     }
 
     // 423 — 账号被锁定
     if (status === 423) {
       const msg = data.detail || data.message || '账号已锁定，请稍后再试'
-      ElMessage.error(msg)
-      return Promise.reject(new Error(msg))
+      msgError(msg)
+      error.message = msg
+      error._arkFeedbackHandled = true
+      return Promise.reject(error)
     }
 
     // 500 — 服务器内部错误
     if (status === 500) {
       const msg = data.detail || data.message || '服务器内部错误，请稍后重试'
-      ElMessage.error(msg)
-      return Promise.reject(new Error(msg))
+      msgError(msg)
+      error.message = msg
+      error._arkFeedbackHandled = true
+      return Promise.reject(error)
     }
 
     // 422 — 请求参数校验失败
@@ -79,14 +89,18 @@ authRequest.interceptors.response.use(
       } else if (typeof data.detail === 'string') {
         msg = data.detail
       }
-      ElMessage.error(msg)
-      return Promise.reject(new Error(msg))
+      msgError(msg)
+      error.message = msg
+      error._arkFeedbackHandled = true
+      return Promise.reject(error)
     }
 
     // 其他状态码
     const msg = data.detail || data.message || `请求失败 (${status})`
-    ElMessage.error(msg)
-    return Promise.reject(new Error(msg))
+    msgError(msg)
+    error.message = msg
+      error._arkFeedbackHandled = true
+      return Promise.reject(error)
   }
 )
 

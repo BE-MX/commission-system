@@ -11,14 +11,22 @@
         </el-select>
       </div>
     </div>
+    <ListPageStatus :error="graphResource.errorMessage.value" :loading="loading" :has-data="graphResource.hasData.value" @retry="loadData" />
+    <el-empty v-if="graphResource.hasLoaded.value && !graphResource.error.value && !rawData.nodes.length" description="暂无概念关系" />
     <div ref="chartRef" class="graph-container" v-loading="loading"></div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { CONCEPT_STATUS } from './governanceStatus.js'
+import { resolveStatus } from '@/utils/status'
+
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { msgError } from '@/utils/feedback'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import * as echarts from 'echarts'
 import { getConceptGraph } from '@/api/governance'
 
@@ -45,35 +53,29 @@ const relColors = {
   leads: '#00BCD4', lags: '#00BCD4',
 }
 
-const loading = ref(false)
+const graphResource = useAsyncResource(async (_, { signal }) => (await getConceptGraph({ signal, suppressToast: true })).data)
+const loading = graphResource.loading
 const chartRef = ref(null)
 const layerFilter = ref([])
 const relTypeFilter = ref([])
 let chart = null
-let rawData = { nodes: [], edges: [] }
+const rawData = computed(() => graphResource.data.value || { nodes: [], edges: [] })
 
 async function loadData() {
-  loading.value = true
-  try {
-    const { data: res } = await getConceptGraph()
-    rawData = res.data ?? res
-    renderChart()
-  } catch (e) {
-    ElMessage.error('加载图谱数据失败')
-  } finally {
-    loading.value = false
-  }
+  const loaded = await graphResource.load()
+  if (loaded) renderChart()
+  return loaded
 }
 
 function renderChart() {
   if (!chart) return
 
-  const filteredNodes = rawData.nodes.filter(n =>
+  const filteredNodes = rawData.value.nodes.filter(n =>
     !layerFilter.value.length || layerFilter.value.includes(n.layer),
   )
   const nodeIds = new Set(filteredNodes.map(n => n.node_id))
 
-  const filteredEdges = rawData.edges.filter(e =>
+  const filteredEdges = rawData.value.edges.filter(e =>
     nodeIds.has(e.source) && nodeIds.has(e.target) &&
     (!relTypeFilter.value.length || relTypeFilter.value.includes(e.relation_type)),
   )
@@ -113,7 +115,7 @@ function renderChart() {
       formatter(params) {
         if (params.dataType === 'node') {
           const v = params.data.value
-          return `<b>${v.label}</b> (${v.label_en})<br/>层级: ${layerLabels[v.layer]}<br/>状态: ${v.status}`
+          return `<b>${v.label}</b> (${v.label_en})<br/>层级: ${layerLabels[v.layer]}<br/>状态: ${resolveStatus(v.status, CONCEPT_STATUS).label}`
         }
         if (params.dataType === 'edge') {
           const v = params.data.value
@@ -136,6 +138,7 @@ function renderChart() {
     }],
   }, true)
 
+  chart.off('click')
   chart.on('click', (params) => {
     if (params.dataType === 'node') {
       router.push(`/governance/concepts/${params.data.id}`)
@@ -150,10 +153,12 @@ onMounted(() => {
     chart = echarts.init(chartRef.value)
     loadData()
   }
-  window.addEventListener('resize', () => chart?.resize())
+  window.addEventListener('resize', resizeChart)
 })
 
+function resizeChart() { chart?.resize() }
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', resizeChart)
   chart?.dispose()
 })
 </script>

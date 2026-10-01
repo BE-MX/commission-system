@@ -42,7 +42,7 @@
 .folder-dropzone.has-files {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .folder-dropzone:focus-visible {
@@ -81,7 +81,7 @@
 }
 
 .loading-icon {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   animation: folder-spin 900ms linear infinite;
 }
 
@@ -149,7 +149,7 @@
 .source-badge {
   padding: 2px 7px;
   border-radius: 999px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: var(--color-primary-light);
   font-size: 11px;
 }

@@ -1,6 +1,6 @@
 <template>
   <el-button v-permission="'receipt:admin'" @click="open">核实远端删改</el-button>
-  <el-dialog v-model="visible" title="核实小满回款变更" width="min(600px, 94vw)" append-to-body :close-on-click-modal="false">
+  <el-dialog v-model="visible" title="核实小满回款变更" width="640px" append-to-body :close-on-click-modal="false">
     <div v-loading="busy">
       <el-alert title="此操作只登记已核实的小满变更，不执行退款。按小满净额加本地分摊费用登记，保留原小满ID、凭证和变更前记录。" type="warning" :closable="false" />
       <template v-if="proof">

@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="modelValue"
     :title="title"
-    width="min(640px, 92vw)"
+    width="640px"
     destroy-on-close
     class="customer-tag-picker"
     @update:model-value="emit('update:modelValue', $event)"
@@ -72,9 +72,9 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText } from '@/utils/feedback'
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import GlassButton from '@/components/GlassButton.vue'
 import { createCustomerTagValue, renameCustomerTagValue } from '@/api/customerMedia'
 import { flattenSelection, groupTagsByDimension, selectionFromTags } from './customerMediaTags'
@@ -142,7 +142,7 @@ async function submitCreate(dim) {
     if (dim.is_single_select) selection.value[dim.id] = created.id
     else selection.value[dim.id] = [...(selection.value[dim.id] || []), created.id]
     emit('created', { dimension_id: dim.id, value: created })
-    ElMessage.success(`标签「${created.value ?? value}」已就绪`)
+    msgSuccessText(`标签「${created.value ?? value}」已就绪`)
     cancelCreate()
   } catch {
     // 拦截器已弹出后端错误提示
@@ -165,7 +165,7 @@ async function submitRename() {
     if (target) target.value = response.data.value
     emit('renamed', { dimension_id: dimensionId, id: valueId, value: response.data.value })
     renaming.value = null
-    ElMessage.success('标签名称已更新')
+    msgSuccessText('标签名称已更新')
   } catch { /* API interceptor displays the error */ }
   finally { renamingSaving.value = false }
 }

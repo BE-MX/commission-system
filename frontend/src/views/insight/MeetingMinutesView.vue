@@ -19,7 +19,9 @@
           <span class="count-pill">{{ minutes.length }}</span>
         </div>
         <div class="timeline-content">
-          <el-empty v-if="!loading && minutes.length === 0" description="暂无纪要" :image-size="60" />
+          <ListPageStatus :error="minutesResource.errorMessage.value" :loading="loading" :has-data="minutesResource.hasData.value" @retry="refreshList" />
+          <p v-if="minutesResource.data.value?.total > minutes.length" class="text-secondary">当前展示最近 50 份纪要。</p>
+          <el-empty v-if="!minutesResource.error.value && !loading && minutes.length === 0" description="暂无纪要" :image-size="60" />
           <div class="timeline-line" v-else>
             <div
               v-for="(m, idx) in minutes"
@@ -32,9 +34,9 @@
               <div class="item-content">
                 <div class="item-date">
                   {{ m.meeting_date }}
-                  <el-tag v-if="idx === 0" type="warning" size="small" effect="light">最新</el-tag>
-                  <el-tag v-if="m.status === 'processing'" type="info" size="small">处理中</el-tag>
-                  <el-tag v-if="m.status === 'failed'" type="danger" size="small">失败</el-tag>
+                  <StatusBadge v-if="idx === 0" type="warning" size="small" effect="light">最新</StatusBadge>
+                  <StatusBadge v-if="m.status === 'processing'" type="info" size="small">处理中</StatusBadge>
+                  <StatusBadge v-if="m.status === 'failed'" type="danger" size="small">失败</StatusBadge>
                 </div>
                 <div class="item-title">{{ m.title }}</div>
                 <div class="item-meta">
@@ -49,15 +51,16 @@
 
       <!-- 详情 -->
       <section class="detail-panel">
-        <div v-if="loadingDetail" class="detail-loading">
+        <ListPageStatus v-if="detailResource.error.value" :error="detailResource.errorMessage.value" :loading="loadingDetail" :has-data="detailResource.hasData.value" @retry="selectMinutes(selectedId)" />
+        <div v-if="loadingDetail && !current" class="detail-loading">
           <el-icon class="is-loading"><Loading /></el-icon>
           <span>加载中...</span>
         </div>
-        <div v-else-if="!current" class="detail-empty">
+        <div v-else-if="!current && !detailResource.error.value" class="detail-empty">
           <el-icon size="40"><Calendar /></el-icon>
           <p>选择左侧纪要查看详情</p>
         </div>
-        <div v-else class="detail-content">
+        <div v-else-if="current" class="detail-content">
           <header class="detail-header">
             <div>
               <h2>{{ current.title || '会议纪要' }}</h2>
@@ -162,7 +165,7 @@
 
     <!-- 上传 Dialog -->
     <el-dialog v-model="uploadVisible" title="上传周会纪要" width="640px" :close-on-click-modal="false" destroy-on-close>
-      <el-form ref="uploadFormRef" :model="uploadForm" :rules="uploadRules" label-width="100px">
+      <el-form label-position="top" ref="uploadFormRef" :model="uploadForm" :rules="uploadRules">
         <el-form-item label="会议日期" prop="meeting_date">
           <el-date-picker v-model="uploadForm.meeting_date" type="date" value-format="YYYY-MM-DD" placeholder="选择会议日期" style="width: 100%" />
         </el-form-item>
@@ -191,8 +194,11 @@
 </template>
 
 <script setup>
+import ListPageStatus from '@/components/ListPageStatus.vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+import { msgSuccessText, msgError } from '@/utils/feedback'
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import {
   Calendar, Loading, Plus, Link, Download, ChatLineRound, Aim,
   CircleCheckFilled, List,
@@ -207,11 +213,13 @@ import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
 const authStore = useAuthStore()
 const canWrite = computed(() => authStore.hasAnyPermission(['insight_minutes:write', 'insight:admin']))
 
-const minutes = ref([])
-const loading = ref(false)
+const minutesResource = useAsyncResource(async (_, { signal }) => (await listMinutes({ page: 1, page_size: 50 }, { signal, suppressToast: true })).data)
+const minutes = computed(() => minutesResource.data.value?.items || [])
+const loading = minutesResource.loading
 const selectedId = ref(null)
-const current = ref(null)
-const loadingDetail = ref(false)
+const detailResource = useAsyncResource(async (id, { signal }) => id ? (await getMinutesDetail(id, { signal, suppressToast: true })).data : null)
+const current = detailResource.data
+const loadingDetail = detailResource.loading
 
 const uploadVisible = ref(false)
 const uploading = ref(false)
@@ -237,27 +245,18 @@ const decisions = computed(() => current.value?.structured_summary?.decisions ||
 const tasks = computed(() => current.value?.tasks || [])
 
 async function refreshList() {
-  loading.value = true
-  try {
-    const res = await listMinutes({ page: 1, page_size: 50 })
-    minutes.value = res.data.items || []
-    if (minutes.value.length > 0 && !selectedId.value) {
-      await selectMinutes(minutes.value[0].id)
-    }
-  } finally {
-    loading.value = false
+  if (!await minutesResource.load()) return false
+  if (!minutes.value.some(row => row.id === selectedId.value)) {
+    await selectMinutes(minutes.value[0]?.id ?? null)
   }
+  return true
 }
-
-async function selectMinutes(id) {
+let detailScope = null
+function selectMinutes(id) {
   selectedId.value = id
-  loadingDetail.value = true
-  try {
-    const res = await getMinutesDetail(id)
-    current.value = res.data
-  } finally {
-    loadingDetail.value = false
-  }
+  const clear = id !== detailScope
+  detailScope = id
+  return detailResource.load(id, { clear })
 }
 
 function openUpload() {
@@ -279,7 +278,7 @@ async function submitUpload() {
   uploading.value = true
   try {
     const res = await uploadMinutes(uploadForm.value)
-    ElMessage.success('上传成功,AI 已处理完毕')
+    msgSuccessText('上传成功,AI 已处理完毕')
     uploadVisible.value = false
     await refreshList()
     if (res.data?.id) await selectMinutes(res.data.id)
@@ -300,7 +299,7 @@ async function onTaskCheck(task, isChecked) {
       task.notes = ''
     }
   } catch (e) {
-    ElMessage.error('更新任务状态失败')
+    msgError('更新任务状态失败', e)
   }
 }
 

@@ -27,9 +27,9 @@
       <div class="watermark-row">
         <span v-for="item in mapped.watermarks" :key="item.source" class="watermark-item">
           {{ item.source }}
-          <el-tag size="small" :type="item.status === 'fresh' ? 'success' : 'warning'">
+          <StatusBadge size="small" :type="item.status === 'fresh' ? 'success' : 'warning'">
             {{ WATERMARK_STATUS_LABELS[item.status] || item.status }}
-          </el-tag>
+          </StatusBadge>
           <span v-if="item.syncedThrough" class="watermark-time">{{ item.syncedThrough }}</span>
         </span>
         <span v-if="!mapped.watermarks.length" class="watermark-empty">暂无来源同步水位</span>

@@ -11,8 +11,9 @@ import { useCustomerHub } from './composables/useCustomerHub'
 const route=useRoute(),mode=ref(route.query.mode==='customers' && !route.query.item_id?'customers':'items'),drawerVisible=ref(false),workbench=ref(null)
 const auth=useAuthStore(),canReadCustomers=computed(()=>auth.hasPermission('customer:read'))
 if(!canReadCustomers.value)mode.value='items'
-const {detail,detailLoading,detailError,currentCustomerId,loadDetail}=useCustomerHub('customers',{immediate:false})
+const listPageState = useCustomerHub('customers',{immediate:false})
+const {detail,detailLoading,detailError,currentCustomerId,loadDetail} = listPageState
 async function openCustomer(id){drawerVisible.value=true;await loadDetail(id)}
 if(route.query.customer_id && !route.query.item_id)openCustomer(Number(route.query.customer_id))
 </script>
-<style scoped>.customer-workbench{display:grid;gap:16px;min-width:0;color:var(--text-primary)}h1{font-size:17px;margin:6px 0}header p{margin:0;color:var(--text-secondary);line-height:1.6}.kicker{font-size:11px;letter-spacing:.12em;color:var(--color-primary)}</style>
+<style scoped>.customer-workbench{display:grid;gap:16px;min-width:0;color:var(--text-primary)}h1{font-size:17px;margin:6px 0}header p{margin:0;color:var(--text-secondary);line-height:1.6}.kicker{font-size:11px;letter-spacing:.12em;color: var(--color-primary-text)}</style>

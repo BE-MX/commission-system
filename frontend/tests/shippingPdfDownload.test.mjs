@@ -13,7 +13,7 @@ function setup(downloadInspectionPdf, listInspectionRecords = async () => ({ dat
     downloadInspectionPdf, downloadBlob: value=>downloads.push(value), Blob,
   })
   vm.runInContext(source+';this.s=useInspectionRecords()',ctx)
-  return {s:ctx.s,pushes,downloads,route, fetchPage: params=>fetchPage(params)}
+  return {s:ctx.s,pushes,downloads,route, fetchPage: params=>fetchPage(params,{signal:new AbortController().signal,isCurrent:()=>true})}
 }
 test('notification route match is exact and never accepts external URLs',()=>{
   assert.equal(isShippingInspectionPath('/shipping/inspections?pdf=42&version=3'),true)

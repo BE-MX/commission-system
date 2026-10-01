@@ -1,3 +1,5 @@
+import { formatMoney } from '../src/utils/money.js'
+import { feedbackFixture } from './helpers/feedbackFixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -39,6 +41,7 @@ function harness(t, kind = 'business', overrides = {}) {
       })) } }
     },
   }
+  Object.assign(env, feedbackFixture(env), { formatMoney })
   Object.assign(env, overrides)
   const factory = new Function(...Object.keys(env), `${source}; return useDomesticOrderCreate`)(...Object.values(env))
   const page = scope.run(() => factory(kind))

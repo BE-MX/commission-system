@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     title="从 Excel 整单粘贴"
-    width="min(1180px, 94vw)"
+    width="760px"
     destroy-on-close
     class="whole-order-paste-dialog"
   >
@@ -32,7 +32,7 @@
           <template #default="{ row }"><span class="value-cell">{{ row.value || '—' }}</span></template>
         </el-table-column>
         <el-table-column label="状态" min-width="130">
-          <template #default="{ row }"><el-tag :type="row.statusType" effect="plain">{{ row.statusText }}</el-tag></template>
+          <template #default="{ row }"><StatusBadge :type="row.statusType" effect="plain">{{ row.statusText }}</StatusBadge></template>
         </el-table-column>
       </el-table>
       <el-alert
@@ -47,9 +47,9 @@
         <div class="section-heading product-heading">
           <h4>产品明细（{{ previewRows.length }} 行）</h4>
           <div class="result-summary">
-            <el-button link @click="locateStatus('passed')"><el-tag type="success" effect="plain">通过 {{ resultCounts.passed }}</el-tag></el-button>
-            <el-button link @click="locateStatus('warning')"><el-tag type="warning" effect="plain">提醒 {{ resultCounts.warning }}</el-tag></el-button>
-            <el-button link @click="locateStatus('blocked')"><el-tag type="danger" effect="plain">待处理 {{ resultCounts.blocked }}</el-tag></el-button>
+            <el-button link @click="locateStatus('passed')"><StatusBadge type="success" effect="plain">通过 {{ resultCounts.passed }}</StatusBadge></el-button>
+            <el-button link @click="locateStatus('warning')"><StatusBadge type="warning" effect="plain">提醒 {{ resultCounts.warning }}</StatusBadge></el-button>
+            <el-button link @click="locateStatus('blocked')"><StatusBadge type="danger" effect="plain">待处理 {{ resultCounts.blocked }}</StatusBadge></el-button>
           </div>
         </div>
         <!-- 与「从 Excel 粘贴」同款的校验/修正表：候选选择、定制产品确认、行内提示 -->
@@ -65,7 +65,7 @@
             <el-table-column prop="source_row" label="行" min-width="56" fixed />
             <el-table-column label="状态" min-width="82" fixed>
               <template #default="{ row }">
-                <el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
+                <StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column label="Product" min-width="200" show-overflow-tooltip>
@@ -153,8 +153,10 @@
 </template>
 
 <script setup>
+import { formatMoney } from '../../../utils/money.js'
+import { msgInfo } from '@/utils/feedback'
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { previewInvoiceImport } from '@/api/invoice'
 import { parseWholeOrderClipboard } from '../composables/useInvoiceWholeOrderPaste'
 
@@ -295,7 +297,7 @@ function confirmCustom(row) {
 function locateStatus(status) {
   const index = previewRows.value.findIndex(row => row.status === status)
   if (index < 0) {
-    ElMessage.info('当前没有该状态的明细')
+    msgInfo('当前没有该状态的明细')
     return
   }
   const row = previewRows.value[index]
@@ -312,7 +314,7 @@ function statusText(status) {
 }
 
 function money(value) {
-  return Number(value || 0).toFixed(2)
+  return formatMoney(value)
 }
 
 function nullableMoney(value) {
@@ -321,7 +323,7 @@ function nullableMoney(value) {
 
 function displayUnitPrice(value) {
   const number = Number(value)
-  return Number.isFinite(number) ? number.toFixed(2) : String(value || '—')
+  return Number.isFinite(number) ? formatMoney(number) : String(value || '—')
 }
 
 function apply() {

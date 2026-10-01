@@ -1,5 +1,6 @@
+import { msgError } from '@/utils/feedback'
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import * as customerMediaApi from '@/api/customerMedia'
 
 export function useCustomerMediaPortalPreview({
@@ -60,7 +61,7 @@ export function useCustomerMediaPortalPreview({
         detail.value = null
         detailError.value = error?.response?.data?.detail
           || error?.message || '客户视图加载失败'
-        ElMessage.error(detailError.value)
+        msgError(detailError.value, error)
       }
       return false
     } finally {
@@ -79,7 +80,7 @@ export function useCustomerMediaPortalPreview({
         customers.value = []
         detail.value = null
         detailError.value = ''
-        ElMessage.error(error?.response?.data?.detail || error?.message || '客户素材门户加载失败')
+        msgError(error?.response?.data?.detail || error?.message || '客户素材门户加载失败', error)
       }
     } finally {
       if (requestVersion === customerRequestVersion) loadingCustomers.value = false

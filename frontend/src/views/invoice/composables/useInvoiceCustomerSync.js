@@ -1,5 +1,6 @@
+import { msgWarning, msgSuccessText } from '@/utils/feedback'
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { syncInvoiceCustomerFromOkki } from '@/api/invoice'
 
 // OKKI 客户手动同步弹框（镜像同步延迟时的自助入口）：
@@ -19,7 +20,7 @@ export function useInvoiceCustomerSync() {
   async function submit() {
     const name = companyName.value.trim()
     if (!name) {
-      ElMessage.warning('请输入客户公司名称')
+      msgWarning('请输入客户公司名称')
       return
     }
     loading.value = true
@@ -27,7 +28,7 @@ export function useInvoiceCustomerSync() {
     try {
       const res = await syncInvoiceCustomerFromOkki({ company_name: name })
       result.value = res
-      ElMessage.success(res.message || '客户信息已同步')
+      msgSuccessText(res.message || '客户信息已同步')
     } catch {
       // 拦截器已统一弹出后端 detail（未找到/多候选/OKKI 失败），留在弹框里改名重试
     } finally {

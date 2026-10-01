@@ -5,17 +5,27 @@
  */
 const formatters = new Map()
 
-function formatter(precision) {
-  if (!formatters.has(precision)) {
-    formatters.set(precision, new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: precision,
-      maximumFractionDigits: precision,
+function formatter({ precision, minimumPrecision, notation, currency, currencyDisplay, locale }) {
+  const key = JSON.stringify([precision, minimumPrecision, notation, currency, currencyDisplay, locale])
+  if (!formatters.has(key)) {
+    formatters.set(key, new Intl.NumberFormat(locale, {
+      minimumFractionDigits: minimumPrecision, maximumFractionDigits: precision, notation,
+      ...(currency ? { style: 'currency', currency, currencyDisplay } : {}),
     }))
   }
-  return formatters.get(precision)
+  return formatters.get(key)
 }
 
-export function formatMoney(value, precision = 2) {
+/** Display only; never use grouped strings for calculations or API payloads. */
+export function formatMoney(value, precisionOrOptions = 2) {
+  const options = typeof precisionOrOptions === 'number' ? { precision: precisionOrOptions } : precisionOrOptions || {}
+  const precision = Number.isInteger(options.precision) && options.precision >= 0 && options.precision <= 20 ? options.precision : 2
+  const missing = options.missing ?? 0
+  const notation = options.notation === 'compact' ? 'compact' : 'standard'
+  const minimumPrecision = notation === 'compact' ? 0 : precision
+  const absent = value == null || value === '' || !Number.isFinite(Number(value))
+  if (absent && typeof missing === 'string') return missing
   const number = Number(value)
-  return formatter(precision).format(Number.isFinite(number) ? number : 0)
+  return formatter({ precision, minimumPrecision, notation, currency: options.currency, currencyDisplay: options.currencyDisplay || 'code', locale: options.locale || 'en-US' })
+    .format(absent ? missing : number)
 }

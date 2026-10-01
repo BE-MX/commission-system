@@ -11,8 +11,8 @@ export function createSession(data = {}) {
   return designImageClient.post('/sessions', data)
 }
 
-export function listSessions(params = {}) {
-  return designImageClient.get('/sessions', { params, showLoading: false })
+export function listSessions(params = {}, config = {}) {
+  return designImageClient.get('/sessions', { params, showLoading: false, ...config })
 }
 
 export function getSession(sessionId) {
@@ -79,11 +79,11 @@ export function getUsage(params = {}) {
   return designImageClient.get('/usage', { params, showLoading: false })
 }
 
-export function listPromptTemplates(options = {}) {
+export function listPromptTemplates(options = {}, config = {}) {
   const { includeInactive = false } = options
   return designImageClient.get('/prompt-templates', {
     params: { include_inactive: includeInactive },
-    showLoading: false,
+    showLoading: false, ...config,
   })
 }
 
@@ -103,12 +103,12 @@ export function deletePromptTemplate(templateId) {
   return designImageClient.delete(`/prompt-templates/${templateId}`, { showLoading: false })
 }
 
-export function listPantoneColors() {
-  return designImageClient.get('/pantone-colors', { showLoading: false })
+export function listPantoneColors(config = {}) {
+  return designImageClient.get('/pantone-colors', { showLoading: false, ...config })
 }
 
-export function listLibraryAssets(scope = 'public') {
-  return designImageClient.get('/library-assets', { params: { scope }, showLoading: false })
+export function listLibraryAssets(scope = 'public', config = {}) {
+  return designImageClient.get('/library-assets', { params: { scope }, showLoading: false, ...config })
 }
 
 export function uploadLibraryAsset(scope, title, file) {
@@ -132,10 +132,10 @@ export function cloneLibraryAsset(assetId, sessionId) {
 }
 
 export function getLibraryAssetBlob(assetId, options = {}) {
-  const { thumbnail = false } = options
+  const { thumbnail = false, ...config } = options
   return designImageClient.get(`/library-assets/${assetId}/content`, {
     ...SILENT_REQUEST,
     params: { thumbnail },
-    responseType: 'blob',
+    responseType: 'blob', ...config,
   })
 }

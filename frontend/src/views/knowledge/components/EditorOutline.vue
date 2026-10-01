@@ -23,6 +23,6 @@ defineEmits(['navigate'])
 button { display: block; width: 100%; overflow: hidden; padding-block: 4px; border: 0; border-radius: 6px; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 11.5px; line-height: 1.4; text-align: left; text-overflow: ellipsis; white-space: nowrap; transition: color .15s ease, background-color .15s ease; }
 p { color: var(--text-muted-blue); font-size: 11.5px; line-height: 1.5; }
 button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
-@media (hover: hover) and (pointer: fine) { button:hover { color: var(--color-primary); background: var(--color-primary-light); } }
+@media (hover: hover) and (pointer: fine) { button:hover { color: var(--color-primary-text); background: var(--color-primary-light); } }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } }
 </style>

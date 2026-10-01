@@ -19,19 +19,19 @@
             <div class="header-subtitle">每日 08:30 自动生成 · 库存状态总览</div>
           </div>
         </div>
-        <div>
+        <FilterBar :pending="pendingDate" @search="loadData" @reset="resetDate">
           <el-date-picker v-model="selectedDate" type="date" placeholder="选择日期" format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD" :clearable="false" style="width:160px" @change="loadData" />
-        </div>
+            value-format="YYYY-MM-DD" :clearable="false" style="width:160px" />
+        </FilterBar>
         <div v-if="reportData" class="dingtalk-area">
           <div class="dingtalk-status">
             <el-icon :size="16" :color="reportData.dingtalk_sent ? '#27ae60' : '#ccc'">
               <component :is="reportData.dingtalk_sent ? 'CircleCheckFilled' : 'WarningFilled'" />
             </el-icon>
             <span class="ding-label">钉钉推送</span>
-            <el-tag :type="reportData.dingtalk_sent ? 'success' : 'info'" size="small" effect="dark">
+            <StatusBadge :type="reportData.dingtalk_sent ? 'success' : 'info'" size="small" effect="dark">
               {{ reportData.dingtalk_sent ? '已发送' : '未发送' }}
-            </el-tag>
+            </StatusBadge>
             <span v-if="reportData.dingtalk_sent && reportData.sent_at" class="ding-time">
               {{ formatTime(reportData.sent_at) }}
             </span>
@@ -48,12 +48,14 @@
       </div>
     </div>
 
+    <ListPageStatus :error="reportResource.errorMessage.value" :loading="loading" :has-data="!!reportData" @retry="reportResource.load()" />
+
     <!-- 统计卡 -->
     <div v-if="reportData" class="stats-row">
       <div class="stat-card lg-card shortage">
         <div class="stat-bg-icon"><el-icon :size="60" color="rgba(231,76,60,0.06)"><WarningFilled /></el-icon></div>
         <div class="stat-inner">
-          <div style="margin-bottom:8px;"><el-tag size="small" type="danger" effect="dark">● 紧缺</el-tag></div>
+          <div style="margin-bottom:8px;"><StatusBadge size="small" type="danger" effect="dark">● 紧缺</StatusBadge></div>
           <div class="stat-value">{{ reportData.shortage_count }}</div>
           <div class="stat-unit">个 SKU 低于安全库存</div>
         </div>
@@ -61,7 +63,7 @@
       <div class="stat-card lg-card warning">
         <div class="stat-bg-icon"><el-icon :size="60" color="rgba(243,156,18,0.06)"><Timer /></el-icon></div>
         <div class="stat-inner">
-          <div style="margin-bottom:8px;"><el-tag size="small" type="warning" effect="dark">● 预警</el-tag></div>
+          <div style="margin-bottom:8px;"><StatusBadge size="small" type="warning" effect="dark">● 预警</StatusBadge></div>
           <div class="stat-value">{{ reportData.warning_count }}</div>
           <div class="stat-unit">个 SKU 低于安全库存 × 1.5</div>
         </div>
@@ -69,7 +71,7 @@
       <div class="stat-card lg-card sufficient">
         <div class="stat-bg-icon"><el-icon :size="60" color="rgba(39,174,96,0.06)"><CircleCheckFilled /></el-icon></div>
         <div class="stat-inner">
-          <div style="margin-bottom:8px;"><el-tag size="small" type="success" effect="dark">● 充足</el-tag></div>
+          <div style="margin-bottom:8px;"><StatusBadge size="small" type="success" effect="dark">● 充足</StatusBadge></div>
           <div class="stat-value">{{ reportData.sufficient_count }}</div>
           <div class="stat-unit">个 SKU 库存安全</div>
         </div>
@@ -77,7 +79,7 @@
     </div>
 
     <!-- 空数据 -->
-    <div v-else-if="!loading" class="no-data-card lg-card">
+    <div v-else-if="!loading && !reportResource.error.value" class="no-data-card lg-card">
       <el-empty description="该日期暂无日报数据">
         <GlassButton v-if="authStore.hasPermission('stock:admin')" variant="primary" @click="generateToday">
           手动生成日报
@@ -91,7 +93,7 @@
         <div class="section-title">
           <el-icon :size="18" color="#e74c3c"><WarningFilled /></el-icon>
           <span>紧缺 SKU 列表</span>
-          <el-tag size="small" type="danger">{{ reportData.shortage_skus.length }} 条</el-tag>
+          <StatusBadge size="small" type="danger">{{ reportData.shortage_skus.length }} 条</StatusBadge>
         </div>
       </div>
       <div class="card" style="border-radius:0 0 16px 16px;">
@@ -120,7 +122,7 @@
           </el-table-column>
           <el-table-column label="缺口" min-width="90" sortable>
             <template #default="{ row }">
-              <el-tag size="small" type="danger" effect="dark">-{{ row.safety_stock - row.enable_count }}</el-tag>
+              <StatusBadge size="small" type="danger" effect="dark">-{{ row.safety_stock - row.enable_count }}</StatusBadge>
             </template>
           </el-table-column>
         </el-table>
@@ -133,7 +135,7 @@
         <div class="section-title">
           <el-icon :size="18" color="#f39c12"><Timer /></el-icon>
           <span>预警 SKU 列表</span>
-          <el-tag size="small" type="warning">{{ reportData.warning_skus.length }} 条</el-tag>
+          <StatusBadge size="small" type="warning">{{ reportData.warning_skus.length }} 条</StatusBadge>
         </div>
       </div>
       <div class="card" style="border-radius:0 0 16px 16px;">
@@ -162,7 +164,7 @@
           </el-table-column>
           <el-table-column label="余量" min-width="90" sortable>
             <template #default="{ row }">
-              <el-tag size="small" type="warning">{{ Math.round(row.enable_count - row.safety_stock) }}</el-tag>
+              <StatusBadge size="small" type="warning">{{ Math.round(row.enable_count - row.safety_stock) }}</StatusBadge>
             </template>
           </el-table-column>
         </el-table>
@@ -171,19 +173,32 @@
   </div>
 </template>
 
-<script setup>
-import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+<script setup>import { msgError, msgSuccessText } from '@/utils/feedback'
+import { ref, onMounted, computed } from 'vue'
+import { useAsyncResource } from '@/composables/useAsyncResource'
+
 import { Document, WarningFilled, Timer, CircleCheckFilled, Promotion } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { getLatestDailyReport, getDailyReportByDate, triggerDailyReport, pushDailyReport } from '@/api/stock'
 import { currentBeijingDate, formatBeijingTime } from '@/utils/datetime'
 
 const authStore = useAuthStore()
-const loading = ref(false)
 const pushLoading = ref(false)
-const selectedDate = ref('')
-const reportData = ref(null)
+const selectedDate = ref(currentBeijingDate())
+const appliedDate = ref(selectedDate.value)
+const reportResource = useAsyncResource(async (date, { signal }) => {
+  try {
+    const config = { signal, suppressToast: true }
+    const response = date ? await getDailyReportByDate(date, config) : await getLatestDailyReport(config)
+    return response.data
+  } catch (error) {
+    if (error.response?.status === 404) return null
+    throw error
+  }
+})
+const loading = reportResource.loading
+const reportData = reportResource.data
+const pendingDate = computed(() => selectedDate.value !== appliedDate.value)
 
 function formatTime(iso) {
   return formatBeijingTime(iso, { fallback: iso || '' })
@@ -196,39 +211,24 @@ function warningHeaderStyle() {
   return { background: '#fefcf5', fontWeight: 600, color: '#5a3a10' }
 }
 
-async function loadData() {
-  loading.value = true
-  try {
-    let res
-    if (selectedDate.value) {
-      res = await getDailyReportByDate(selectedDate.value)
-    } else {
-      res = await getLatestDailyReport()
-    }
-    reportData.value = res.data
-  } catch (err) {
-    // 404 为正常情况
-    if (err.response?.status === 404) {
-      reportData.value = null
-    } else {
-      ElMessage.error(err.message || '加载日报失败')
-      reportData.value = null
-    }
-  } finally {
-    loading.value = false
-  }
+function loadData() {
+  const clear = appliedDate.value !== selectedDate.value
+  appliedDate.value = selectedDate.value
+  return reportResource.load(appliedDate.value, { clear })
 }
+function resetDate() { selectedDate.value = currentBeijingDate(); return loadData() }
 
 async function generateToday() {
+  const date = appliedDate.value
   try {
     const res = await triggerDailyReport({
-      report_date: selectedDate.value || undefined,
+      report_date: appliedDate.value || undefined,
       push_dingtalk: false,
     })
-    ElMessage.success('日报已生成')
-    reportData.value = res.data
+    msgSuccessText('日报已生成')
+    if (appliedDate.value === date) await reportResource.load(date)
   } catch (err) {
-    ElMessage.error(err.message || '生成失败')
+    msgError(err.message || '生成失败', err)
   }
 }
 
@@ -238,18 +238,17 @@ async function pushDingTalk() {
     const res = await pushDailyReport({
       report_date: selectedDate.value || undefined,
     })
-    ElMessage.success(res.message || '钉钉推送已发送')
+    msgSuccessText(res.message || '钉钉推送已发送')
     // 刷新状态
-    await loadData()
+    await reportResource.load()
   } catch (err) {
-    ElMessage.error(err.message || '推送失败')
+    msgError(err.message || '推送失败', err)
   } finally {
     pushLoading.value = false
   }
 }
 
 onMounted(() => {
-  selectedDate.value = currentBeijingDate()
   loadData()
 })
 </script>

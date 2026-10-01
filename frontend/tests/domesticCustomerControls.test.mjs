@@ -1,8 +1,12 @@
+import { formatMoney } from '../src/utils/money.js'
+import { feedbackFixture } from './helpers/feedbackFixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { reactive, ref } from 'vue'
+import { watchListResourceScope } from '../src/composables/useListResourceScope.js'
+import { isAmount } from '../src/utils/validators.js'
 import { useListPage } from '../src/composables/useListPage.js'
 
 const source = readFileSync(new URL('../src/views/domestic/composables/useDomesticCustomers.js', import.meta.url), 'utf8')
@@ -14,7 +18,7 @@ function createState({ permissions = [], roles = [] } = {}) {
   const creates = []
   const updates = []
   const context = {
-    reactive, ref, onMounted: () => {},
+    reactive, ref, watchListResourceScope, isAmount, onMounted: () => {},
     ElMessage: { warning: message => warnings.push(message) },
     createCustomer: async payload => creates.push(payload),
     updateCustomer: async (id, payload) => updates.push({ id, payload }),
@@ -31,6 +35,7 @@ function createState({ permissions = [], roles = [] } = {}) {
     },
   }
   const executable = source.replace(/^import\s[\s\S]*?from\s+['"][^'"]+['"]\s*$/gm, '').replace(/^export /gm, '')
+  Object.assign(context, feedbackFixture(context), { formatMoney })
   vm.runInNewContext(`${executable}\nthis.state = useDomesticCustomers()`, context)
   return { state: context.state, requests, warnings, creates, updates }
 }

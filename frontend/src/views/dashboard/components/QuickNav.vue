@@ -153,7 +153,7 @@ onActivated(refresh)
 
 .chip-arrow {
   font-size: 12px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   opacity: 0;
   transform: translate(-3px, 3px);
   transition: opacity 140ms ease, transform 160ms var(--ease-out-strong);

@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="modelValue"
     title="历史目录管理"
-    width="1080px"
+    width="760px"
     top="6vh"
     @update:model-value="$emit('update:modelValue', $event)"
   >
@@ -65,9 +65,9 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup>import { msgSuccessText, confirmAction } from '@/utils/feedback'
 import { computed, ref, watch } from 'vue'
-import { ElImageViewer, ElMessage, ElMessageBox } from 'element-plus'
+import { ElImageViewer } from 'element-plus'
 import { Delete, Edit } from '@element-plus/icons-vue'
 import {
   createMediaDirectory, deleteMediaAsset, deleteMediaDirectory, getTaskMediaBatch,
@@ -134,7 +134,7 @@ async function createDir() {
     await createMediaDirectory(props.batch.id, name)
     newDirName.value = ''
     await refreshBatch()
-    ElMessage.success('目录已就绪')
+    msgSuccessText('目录已就绪')
   } finally { creating.value = false }
 }
 
@@ -151,7 +151,7 @@ async function confirmRename() {
     await renameMediaDirectory(props.batch.id, renamingId.value, name)
     renamingId.value = null
     await refreshBatch()
-    ElMessage.success('目录已重命名')
+    msgSuccessText('目录已重命名')
   } finally { renaming.value = false }
 }
 
@@ -160,7 +160,7 @@ async function removeDirectory(dir) {
   deleting.value = true
   try {
     try {
-      await ElMessageBox.confirm(
+      await confirmAction(
         `删除「${dir.name}」及其中全部 ${dir.total_asset_count ?? dir.asset_count} 个素材（图片和视频）？该目录由此客户的多个交付批次共享，删除不可恢复。`,
         '删除目录及素材', { type: 'warning', confirmButtonText: '删除目录及素材' },
       )
@@ -169,15 +169,15 @@ async function removeDirectory(dir) {
     if (selected.value === dir.id) selected.value = ALL
     previewUrl.value = ''
     emit('update:batch', res.data)
-    ElMessage.success('目录及素材已删除')
+    msgSuccessText('目录及素材已删除')
   } finally { deleting.value = false }
 }
 
 async function removeAsset(asset) {
-  try { await ElMessageBox.confirm(`删除 ${asset.file_name}？`, '删除素材', { type: 'warning' }) } catch { return }
+  try { await confirmAction(`删除 ${asset.file_name}？`, '删除素材', { type: 'warning' }) } catch { return }
   const res = await deleteMediaAsset(props.batch.id, asset.id)
   emit('update:batch', res.data)
-  ElMessage.success('已删除')
+  msgSuccessText('已删除')
 }
 </script>
 
@@ -191,11 +191,11 @@ async function removeAsset(asset) {
 .dir-actions .el-button { flex: 0 0 auto; margin-left: 0; }
 .dir-row { display: flex; width: 100%; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: 8px; color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; font-size: 13px; }
 .dir-row:hover { background: var(--color-primary-light); }
-.dir-row.active { background: var(--color-primary-light); color: var(--color-primary-hover); font-weight: 600; }
+.dir-row.active { background: var(--color-primary-light); color: var(--color-primary-text); font-weight: 600; }
 .dir-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dir-count { color: var(--text-secondary); font-size: 12px; }
 .dir-edit { flex: 0 0 auto; color: var(--text-secondary); }
-.dir-edit:hover { color: var(--color-primary); }
+.dir-edit:hover { color: var(--color-primary-text); }
 .dir-rename { display: flex; align-items: center; gap: 4px; padding: 2px 0; }
 .dir-empty { padding: 18px 8px; color: var(--text-secondary); font-size: 12px; text-align: center; }
 .dir-content { min-width: 0; overflow-y: auto; padding-right: 4px; }
