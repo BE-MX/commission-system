@@ -1,11 +1,11 @@
 <template>
-  <el-dialog v-model="visible" append-to-body title="新建维护计划" width="min(660px, calc(100vw - 24px))" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+  <el-dialog class="customer-hub-dialog" v-model="visible" append-to-body title="新建维护计划" width="640px" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
     <el-form label-position="top" :disabled="saving">
       <el-form-item label="计划类型"><el-select v-model="planType"><el-option v-for="type in MAINTENANCE_PLAN_TYPES" :key="type" :value="type" :label="MAINTENANCE_PLAN_TYPE_LABELS[type]" /></el-select></el-form-item>
       <el-form-item label="计划名称"><el-input v-model="form.title" placeholder="要在什么时候、依据什么推进客户" /></el-form-item>
       <template v-if="planType==='manual'">
-        <el-form-item label="计划时间（北京时间）"><el-date-picker v-model="form.scheduled_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
+        <el-form-item label="计划时间（北京时间）"><el-date-picker v-model="form.scheduled_at" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" /></el-form-item>
         <el-form-item label="联系目的"><el-input v-model="form.purpose" /></el-form-item>
         <el-form-item label="渠道"><ChannelSelect v-model="form.channel" /></el-form-item>
       </template>
@@ -43,7 +43,7 @@
         <el-form-item label="关联样品事项"><el-select v-model="form.sample_case_id"><el-option v-for="sample in samples" :key="sample.id" :value="sample.id" :label="`样品订单 #${sample.sample_order_id} · ${SAMPLE_STAGE_LABELS[sample.stage]}`" /></el-select></el-form-item>
         <el-form-item label="计划目标"><el-radio-group v-model="samplePurpose"><el-radio value="test">安排测试</el-radio><el-radio value="feedback">收集反馈</el-radio></el-radio-group></el-form-item>
         <el-form-item v-if="samplePurpose==='test'" label="计划测试日期"><el-date-picker v-model="form.test_planned_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
-        <el-form-item v-else label="反馈期限（北京时间）"><el-date-picker v-model="form.feedback_due_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
+        <el-form-item v-else label="反馈期限（北京时间）"><el-date-picker v-model="form.feedback_due_at" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" /></el-form-item>
       </template>
       <template v-if="planType!=='campaign'"><p v-if="planType==='shipping'" class="hint">事件关联依据 {{ form.evidence_refs.length }} 条，保存原始来源版本。</p><EvidencePicker v-else v-model="form.evidence_refs" :customer-id="customerId" references kind="fact" /></template>
     </el-form>

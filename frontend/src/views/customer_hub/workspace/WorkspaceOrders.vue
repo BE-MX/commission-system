@@ -15,7 +15,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="orderPage" :page-size="20" :total="orderTotal" layout="total, prev, pager, next" @current-change="loadOrders" />
+      <el-pagination v-model:current-page="orderPage" v-model:page-size="orderPageSize" :page-sizes="[20,50,100]" :total="orderTotal" layout="total, sizes, prev, pager, next" @current-change="loadOrders" @size-change="orderPage=1;loadOrders()" />
     </section>
 
     <section class="lg-card panel">
@@ -72,7 +72,7 @@ import {
 
 const props = defineProps({ customerId: { type: Number, required: true }, customer: { type: Object, default: null } })
 const orders = ref([])
-const orderPage = ref(1), orderTotal = ref(0), error = ref('')
+const orderPage = ref(1), orderPageSize = ref(20), orderTotal = ref(0), error = ref('')
 const windows = ref([])
 const dimension = ref('product_family')
 const measure = ref('amount')
@@ -92,7 +92,7 @@ async function loadAll() {
   } catch (caught) { error.value = errorMessage(caught) }
 }
 async function loadOrders() {
-  try { const response = await listCustomerOrders(props.customerId, { page: orderPage.value, page_size: 20 }); orders.value=response.data?.items ?? []; orderTotal.value=response.data?.total ?? 0 }
+  try { const response = await listCustomerOrders(props.customerId, { page: orderPage.value, page_size: orderPageSize.value }); orders.value=response.data?.items ?? []; orderTotal.value=response.data?.total ?? 0 }
   catch (caught) { error.value=errorMessage(caught) }
 }
 

@@ -45,7 +45,7 @@
         </el-table-column>
       </el-table>
     </section>
-    <el-dialog v-model="bindingVisible" append-to-body title="核验会话归属" width="min(620px, calc(100vw - 24px))"><el-alert v-if="error" :title="error" type="error" :closable="false" /><p>请确认来源账号与会话确实属于这个客户；相似名称或号码不作为自动绑定依据。</p><p>{{ selectedBinding?.source_system }} · {{ selectedBinding?.source_account_key }} · {{ selectedBinding?.source_conversation_id }}</p><EvidencePicker v-model="bindingEvidence" :customer-id="customerId" references /><template #footer><GlassButton v-permission="'customer_pcw:write'" variant="primary" :loading="bindingSaving" :disabled="!bindingEvidence.length" @click="bind">确认归属并绑定</GlassButton></template></el-dialog>
+    <el-dialog class="customer-hub-dialog" v-model="bindingVisible" append-to-body title="核验会话归属" width="640px"><el-alert v-if="error" :title="error" type="error" :closable="false" /><p>请确认来源账号与会话确实属于这个客户；相似名称或号码不作为自动绑定依据。</p><p>{{ selectedBinding?.source_system }} · {{ selectedBinding?.source_account_key }} · {{ selectedBinding?.source_conversation_id }}</p><EvidencePicker v-model="bindingEvidence" :customer-id="customerId" references /><template #footer><GlassButton v-permission="'customer_pcw:write'" variant="primary" :loading="bindingSaving" :disabled="!bindingEvidence.length" @click="bind">确认归属并绑定</GlassButton></template></el-dialog>
   </div>
 </template>
 

@@ -38,4 +38,4 @@ watch(()=>props.initialTab,value=>{activeTab.value=normalizeWorkspaceTab(value);
 watch(()=>props.customerId,()=>{activeTab.value=normalizeWorkspaceTab(props.initialTab);expanded.value=props.initialTab==='orders'?['orders']:[]})
 function changedTab(value){emit('tab-change',value)}
 </script>
-<style scoped>.battle-card{color:var(--text-primary);min-width:0}h2{font-size:17px;margin:0 0 8px}header p{color:var(--text-secondary);line-height:1.6}.tab-content{display:grid;gap:14px}.battle-card :deep(.el-tabs__nav-wrap){overflow:auto}.battle-card :deep(.el-collapse){border-color:var(--border-color)}</style>
+<style scoped>.battle-card{color:var(--text-primary);min-width:0;--el-border-color:var(--border-color)}h2{font-size:17px;margin:0 0 8px}header p{color:var(--text-secondary);line-height:1.6}.tab-content{display:grid;gap:14px}</style>
