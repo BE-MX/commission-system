@@ -1,5 +1,6 @@
 <template>
   <div class="workspace-orders">
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
     <section class="lg-card panel">
       <h3>订单明细（只读）</h3>
       <el-table class="list-table" :data="orders" size="small" border>
@@ -14,6 +15,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination v-model:current-page="orderPage" :page-size="20" :total="orderTotal" layout="total, prev, pager, next" @current-change="loadOrders" />
     </section>
 
     <section class="lg-card panel">
@@ -47,7 +49,7 @@
 
     <section class="lg-card panel">
       <h3>复购窗口</h3>
-      <el-empty v-if="!windows.length" description="暂无可靠窗口（至少 4 个商业批次）" :image-size="60" />
+      <el-empty v-if="!error && !windows.length" description="暂无可靠窗口，样本门槛与口径以当前策略为准" :image-size="60" />
       <div v-for="item in mappedWindows" :key="item.id" class="window-row">
         <strong>{{ item.productFamily }}</strong>
         <span>中位数 {{ item.medianIntervalDays ?? '—' }} 天</span>
@@ -60,7 +62,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { errorMessage } from '../workbenchV2Controller'
 import { getOrderAnalytics, getReorderWindows, listCustomerOrders } from '@/api/customerHub'
 import {
   ORDER_ANALYTICS_DIMENSIONS, ORDER_ANALYTICS_MEASURES,
@@ -69,6 +72,7 @@ import {
 
 const props = defineProps({ customerId: { type: Number, required: true }, customer: { type: Object, default: null } })
 const orders = ref([])
+const orderPage = ref(1), orderTotal = ref(0), error = ref('')
 const windows = ref([])
 const dimension = ref('product_family')
 const measure = ref('amount')
@@ -77,15 +81,19 @@ const analytics = computed(() => mapOrderAnalyticsBuckets(raw.value))
 const mappedWindows = computed(() => windows.value.map(mapReorderWindow))
 
 async function loadAll() {
+  error.value = ''
   try {
-    const [orderRes, windowRes] = await Promise.all([
-      listCustomerOrders(props.customerId, { page: 1, page_size: 20 }),
+    const [, windowRes] = await Promise.all([
+      loadOrders(),
       getReorderWindows(props.customerId, {}),
     ])
-    orders.value = orderRes.data?.items ?? []
     windows.value = windowRes.data?.items ?? (Array.isArray(windowRes.data) ? windowRes.data : [])
     if (!Array.isArray(windows.value)) windows.value = []
-  } catch { /* 拦截器已提示 */ }
+  } catch (caught) { error.value = errorMessage(caught) }
+}
+async function loadOrders() {
+  try { const response = await listCustomerOrders(props.customerId, { page: orderPage.value, page_size: 20 }); orders.value=response.data?.items ?? []; orderTotal.value=response.data?.total ?? 0 }
+  catch (caught) { error.value=errorMessage(caught) }
 }
 
 async function loadAnalytics() {
@@ -94,7 +102,7 @@ async function loadAnalytics() {
       dimension: dimension.value, measure: measure.value,
     })
     raw.value = response.data ?? {}
-  } catch { raw.value = {} }
+  } catch (caught) { error.value = errorMessage(caught) }
 }
 
 onMounted(() => { loadAll(); loadAnalytics() })

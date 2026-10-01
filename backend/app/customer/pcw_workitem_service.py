@@ -39,7 +39,7 @@ from app.customer.workflow_service import (
 
 logger = logging.getLogger(__name__)
 
-WORK_ITEM_STATES = frozenset({"open", "awaiting_reply", "resolved", "cancelled"})
+WORK_ITEM_STATES = frozenset({"open", "in_progress", "waiting", "decision_required", "blocked", "paused", "resolved", "cancelled"})
 WORK_ITEM_TRANSITIONS = frozenset({"await_reply", "keep_open", "resolve"})
 PCW_ACTION_POLICY_VERSION = "pcw_rules_v1"
 
@@ -60,12 +60,15 @@ def ensure_work_item(
         CustomerWorkItem.business_cycle == business_cycle,
     ).one_or_none()
     if existing is not None:
+        _check_item_identity(db, existing, customer_id, work_type)
         return existing
     row = CustomerWorkItem(
         customer_id=customer_id,
         business_key=business_key,
         business_cycle=business_cycle,
         work_type=work_type,
+        goal_type=work_type,
+        goal_definition=title[:1000],
         state="open",
         title=title[:500],
         context_json={"schema_version": "pcw_work_item_context_v1", **dict(context or {})},
@@ -83,10 +86,21 @@ def ensure_work_item(
             CustomerWorkItem.business_cycle == business_cycle,
         ).one_or_none()
         if winner is not None:
+            _check_item_identity(db, winner, customer_id, work_type)
             return winner
         raise pcw_errors.conflict(
             "并发写入冲突，请在新事务中重试", error_code="RETRY_NEW_TRANSACTION"
         ) from exc
+
+
+def _check_item_identity(db: Session, item: CustomerWorkItem, customer_id: int, work_type: str) -> None:
+    from app.customer.logical_customer_service import logical_owner_expression
+
+    logical_id = db.query(logical_owner_expression(CustomerWorkItem, "work_item")).filter(
+        CustomerWorkItem.id == item.id,
+    ).scalar()
+    if int(logical_id) != int(customer_id) or item.work_type != work_type:
+        raise pcw_errors.conflict("业务标识已属于其他客户或目标", error_code="WORK_ITEM_IDENTITY_CONFLICT")
 
 
 def _event_ids_for_customer(
@@ -131,23 +145,34 @@ def create_pcw_action(
     policy_version: str = PCW_ACTION_POLICY_VERSION,
     source_type: str = "rule",
     parent_action: CustomerAction | None = None,
+    allow_paused_replacement: bool = False,
 ) -> CustomerAction:
     """在事项行锁内分配行动轮次并创建 PCW 行动；按 (work_item_id, action_round) 幂等。
 
     指纹为 pcw_action_v1:事项:轮次，不含扫描日期，跨日重复评估复用同一行动。
     """
+    from app.customer.logical_customer_service import logical_owner_expression
+    logical_id = db.query(logical_owner_expression(CustomerWorkItem, "work_item")).filter(CustomerWorkItem.id == work_item.id).scalar()
+    if logical_id is None:
+        raise pcw_errors.customer_not_found()
+    account = _account_for_update(db, int(logical_id))
     item = db.query(CustomerWorkItem).filter(
         CustomerWorkItem.id == work_item.id,
     ).populate_existing().with_for_update().one_or_none()
     if item is None:
         raise pcw_errors.not_found("经营事项不存在", error_code="WORK_ITEM_NOT_FOUND")
+    if item.state == "paused" and not (allow_paused_replacement and source_type == "human_reverify"
+            and parent_action is not None and parent_action.status == "cancelled"
+            and parent_action.dismissal_reason == "source_changed"):
+        raise pcw_errors.conflict("事项已暂停，请人工恢复后继续", error_code="WORK_ITEM_PAUSED")
+    if not item.source_valid:
+        raise pcw_errors.conflict("事项来源需要重新核验", error_code="WORK_ITEM_SOURCE_INVALID")
     if item.state in {"resolved", "cancelled"}:
         raise pcw_errors.conflict(
             "经营事项已结束，不能在其下新建行动；新的业务周期应建立新事项",
             error_code="WORK_ITEM_CLOSED",
         )
-    customer_id = int(item.customer_id)
-    account = _account_for_update(db, customer_id)
+    customer_id = int(logical_id)
     profile_version_id = account.current_profile_version_id
     if profile_version_id is None:
         raise pcw_errors.conflict(
@@ -161,8 +186,17 @@ def create_pcw_action(
             )
     else:
         _active_user(db, owner_user_id)
+    if item.owner_user_id is None and owner_user_id is not None:
+        item.owner_user_id = owner_user_id
     facts = _fact_ids(db, customer_id=customer_id, values=evidence_fact_ids)
     events = _event_ids_for_customer(db, customer_id=customer_id, values=source_event_ids)
+    from app.customer.models import CustomerFact
+    from app.customer.work_item_evidence_service import evidence_revision
+
+    source_revisions = {
+        "fact": {str(row.id): evidence_revision(row) for row in db.query(CustomerFact).filter(CustomerFact.id.in_(facts))},
+        "event": {str(row.id): evidence_revision(row) for row in db.query(CustomerEvent).filter(CustomerEvent.id.in_(events))},
+    }
     round_no = int(item.next_action_round)
     if parent_action is None and round_no > 1:
         parent_action = db.query(CustomerAction).filter(
@@ -193,7 +227,7 @@ def create_pcw_action(
         due_at=due,
         action_date=(due or now).date(),
         status="pending",
-        feedback_json={"schema_version": "action_feedback_v1"},
+        feedback_json={"schema_version": "action_feedback_v1", "source_revisions": source_revisions},
         source_event_ids=events,
         evidence_fact_ids=facts,
         profile_version_id=int(profile_version_id),
@@ -252,6 +286,8 @@ def _lock_action_for_actor(
     _, logical_customer_id = candidate
     logical_customer_id = int(logical_customer_id)
     _account_for_update(db, logical_customer_id)
+    if candidate[0].work_item_id is not None:
+        db.query(CustomerWorkItem).filter(CustomerWorkItem.id == candidate[0].work_item_id).populate_existing().with_for_update().one()
     action = db.query(CustomerAction).filter(
         CustomerAction.id == action_id,
         logical_root_predicate(CustomerAction, "action", logical_customer_id),
@@ -377,6 +413,7 @@ def complete_action_v2(
     followup_action_type: str = "message",
     followup_channel: str | None = None,
     idempotency_key: str | None = None,
+    evidence_access=None,
 ) -> dict:
     """完成行动并按事项/维护实例原子安排后续（api-contracts 4.1）。
 
@@ -431,6 +468,10 @@ def complete_action_v2(
             if expected_work_item_version is not None:
                 _require_version(work_item.row_version, expected_work_item_version,
                                  "WORK_ITEM_VERSION_CONFLICT", "current_work_item_version")
+            if work_item.state == "paused":
+                raise pcw_errors.conflict("事项已暂停，请人工恢复", error_code="WORK_ITEM_PAUSED")
+            if not work_item.source_valid:
+                raise pcw_errors.conflict("事项来源需要核验", error_code="SOURCE_REVALIDATION_REQUIRED")
             if work_item.state in {"resolved", "cancelled"}:
                 raise pcw_errors.conflict(
                     "经营事项已结束，不能重复完成", error_code="WORK_ITEM_CLOSED"
@@ -497,6 +538,29 @@ def complete_action_v2(
             raise pcw_errors.conflict("行动不在可完成状态", error_code="ACTION_NOT_PENDING")
 
         _check_contact_restricted(db, customer_id=logical_customer_id, channel=channel)
+
+        from app.customer.access_service import CustomerAccess, CLASSIFICATION_ORDER, VISIBILITY_ORDER
+        from app.customer.work_item_evidence_service import evidence_revision, validate_evidence, visible_message
+        # The HTTP caller checks live classification/source access first. Internal deterministic callers
+        # still must prove customer ownership and message provenance before recording any completion.
+        access = evidence_access or CustomerAccess(logical_customer_id, actor_user_id, can_manage,
+            "personal_contact", "customer_team", None)
+        message_refs = []
+        for message_id in evidence_message_ids:
+            message = visible_message(db, access, message_id)
+            if message is None:
+                raise pcw_errors.conflict("结果消息不属于当前客户或来源不可用", error_code="EVIDENCE_NOT_AVAILABLE")
+            message_refs.append({"type": "customer_message", "id": int(message_id), "revision": evidence_revision(message)})
+        if work_item is not None and work_item_transition == "resolve":
+            if work_item.goal_type == "delivery_exception":
+                raise pcw_errors.conflict("交期异常须先完成行动，再在事项入口核对客户接受与源模块履约后结案",
+                                          error_code="GOAL_REQUIRES_ITEM_TRANSITION")
+            validate_evidence(db, access, message_refs, item=work_item)
+            from app.customer.work_item_service import require_dependencies
+            require_dependencies(db, work_item, actor_user_id=actor_user_id, completing_action_id=action.id)
+            if db.query(CustomerAction.id).filter(CustomerAction.work_item_id == work_item.id,
+                CustomerAction.id != action.id, CustomerAction.status.in_(("pending", "snoozed"))).first():
+                raise pcw_errors.conflict("仍有其他行动未处理", error_code="OPEN_ACTIONS_REQUIRE_DECISION")
 
         from app.customer.fact_service import append_customer_event
 
@@ -566,16 +630,29 @@ def complete_action_v2(
         action.feedback_json = {**dict(action.feedback_json or {}), "completion": completion}
 
         if work_item is not None:
+            previous = work_item.state
             if work_item_transition == "resolve":
                 work_item.state = "resolved"
                 work_item.resolved_at = now
                 work_item.resolved_by = actor_user_id
+                work_item.result_validity = "verified"
+                work_item.resolution_summary = normalized_summary
+                work_item.resolution_evidence = message_refs
             elif work_item_transition == "await_reply":
-                work_item.state = "awaiting_reply"
+                work_item.state = "waiting"
+                work_item.waiting_kind = "customer"
+                work_item.review_at = to_beijing_naive(next_step_due_at)
             elif work_item_transition == "keep_open":
                 work_item.state = "open"
-            work_item.row_version = int(work_item.row_version) + 1
-            work_item.updated_at = now
+            else:
+                work_item.state = "waiting" if followup is not None else "open"
+                work_item.waiting_kind = "source" if followup_channel == "internal" else "customer"
+                work_item.review_at = to_beijing_naive(next_step_due_at) if next_step_due_at else None
+            from app.customer.work_item_service import freeze_delegations, record_event
+            if work_item.state == "resolved":
+                freeze_delegations(db, work_item, terminal=True, actor=actor_user_id, reason=normalized_summary)
+            record_event(db, work_item, actor=actor_user_id, operation="action_completed", previous=previous,
+                reason=normalized_summary, evidence=message_refs, payload={"action_id": action.id, "followup_action_id": followup.id if followup else None})
 
         if occurrence is not None:
             if followup is not None:
@@ -596,6 +673,7 @@ def complete_action_v2(
         }
 
     if idempotency_key:
+        _lock_action_for_actor(db, action_id=action_id, actor_user_id=actor_user_id, can_manage=can_manage)
         result, _replayed = run_with_receipt(
             db,
             actor_user_id=actor_user_id,
@@ -615,25 +693,43 @@ def snooze_action_v2(
     actor_user_id: int,
     can_manage: bool = False,
     expected_action_version: int,
+    expected_work_item_version: int,
+    expected_occurrence_version: int | None = None,
     snoozed_until: datetime,
+    idempotency_key: str,
 ) -> dict:
     """个人延后：只改 snoozed_until，保留 original_due_at 衡量逾期。"""
     action, _logical_customer_id = _lock_action_for_actor(
         db, action_id=action_id, actor_user_id=actor_user_id, can_manage=can_manage
     )
-    _require_version(action.row_version, expected_action_version,
-                     "ACTION_VERSION_CONFLICT", "current_action_version")
-    if action.status != "pending":
-        raise pcw_errors.conflict("只有待执行行动可以延后", error_code="ACTION_NOT_PENDING")
-    until = to_beijing_naive(snoozed_until)
-    if until <= beijing_now():
-        raise pcw_errors.bad_request("延后时间必须晚于当前时间", error_code="SNOOZE_TIME_MUST_BE_FUTURE")
-    action.status = "snoozed"
-    action.snoozed_until = until
-    action.row_version = int(action.row_version) + 1
-    action.updated_at = beijing_now()
-    db.flush()
-    return {"id": action.id, "status": action.status, "version": action.row_version}
+    item = db.query(CustomerWorkItem).filter(CustomerWorkItem.id == action.work_item_id).one()
+    request = {"action_id": action_id, "expected_action_version": expected_action_version,
+        "expected_work_item_version": expected_work_item_version, "expected_occurrence_version": expected_occurrence_version,
+        "snoozed_until": to_beijing_naive(snoozed_until).isoformat()}
+    def execute():
+        _require_version(action.row_version, expected_action_version, "ACTION_VERSION_CONFLICT", "current_action_version")
+        _require_version(item.row_version, expected_work_item_version, "WORK_ITEM_VERSION_CONFLICT", "current_item_version")
+        _check_occurrence_version(db, action, expected_occurrence_version)
+        if item.state in {"paused", "resolved", "cancelled"} or not item.source_valid:
+            raise pcw_errors.conflict("事项当前不可延后行动", error_code="WORK_ITEM_TRANSITION_INVALID")
+        if action.status != "pending" and not (action.status == "snoozed" and action.snoozed_until
+                and action.snoozed_until <= beijing_now()):
+            raise pcw_errors.conflict("只有待执行行动可以延后", error_code="ACTION_NOT_PENDING")
+        until = to_beijing_naive(snoozed_until)
+        if until <= beijing_now():
+            raise pcw_errors.bad_request("延后时间必须晚于当前时间", error_code="SNOOZE_TIME_MUST_BE_FUTURE")
+        action.status = "snoozed"
+        action.snoozed_until = until
+        action.row_version = int(action.row_version) + 1
+        action.updated_at = beijing_now()
+        from app.customer.work_item_service import record_event
+        record_event(db, item, actor=actor_user_id, operation="action_snoozed", previous=item.state,
+            reason="个人延后，不改变原承诺期限", payload={"action_id": action.id, "snoozed_until": until.isoformat()})
+        return {"id": action.id, "status": action.status, "version": action.row_version,
+            "work_item_version": item.row_version}
+    result, _ = run_with_receipt(db, actor_user_id=actor_user_id, operation_scope=f"action_snooze:{action_id}",
+        idempotency_key=idempotency_key, request_payload=request, execute=execute)
+    return result
 
 
 def dismiss_action_v2(
@@ -643,7 +739,10 @@ def dismiss_action_v2(
     actor_user_id: int,
     can_manage: bool = False,
     expected_action_version: int,
+    expected_work_item_version: int,
+    expected_occurrence_version: int | None = None,
     dismissal_reason: str,
+    idempotency_key: str,
 ) -> dict:
     """有理由忽略：原因必填，进入反馈与规则复盘。"""
     reason = (dismissal_reason or "").strip()
@@ -652,17 +751,38 @@ def dismiss_action_v2(
     action, _logical_customer_id = _lock_action_for_actor(
         db, action_id=action_id, actor_user_id=actor_user_id, can_manage=can_manage
     )
-    _require_version(action.row_version, expected_action_version,
-                     "ACTION_VERSION_CONFLICT", "current_action_version")
-    if action.status != "pending":
-        raise pcw_errors.conflict("只有待执行行动可以忽略", error_code="ACTION_NOT_PENDING")
-    action.status = "dismissed"
-    action.dismissal_reason = reason[:32]
-    action.feedback_json = {
-        **dict(action.feedback_json or {}),
-        "dismiss": {"reason": reason, "at": beijing_now().isoformat()},
-    }
-    action.row_version = int(action.row_version) + 1
-    action.updated_at = beijing_now()
-    db.flush()
-    return {"id": action.id, "status": action.status, "version": action.row_version}
+    item = db.query(CustomerWorkItem).filter(CustomerWorkItem.id == action.work_item_id).one()
+    request = {"action_id": action_id, "expected_action_version": expected_action_version,
+        "expected_work_item_version": expected_work_item_version, "expected_occurrence_version": expected_occurrence_version,
+        "dismissal_reason": reason}
+    def execute():
+        _require_version(action.row_version, expected_action_version, "ACTION_VERSION_CONFLICT", "current_action_version")
+        _require_version(item.row_version, expected_work_item_version, "WORK_ITEM_VERSION_CONFLICT", "current_item_version")
+        _check_occurrence_version(db, action, expected_occurrence_version)
+        if action.status != "pending" and not (action.status == "snoozed" and action.snoozed_until
+                and action.snoozed_until <= beijing_now()):
+            raise pcw_errors.conflict("只有待执行行动可以忽略", error_code="ACTION_NOT_PENDING")
+        action.status = "dismissed"
+        action.dismissal_reason = reason[:32]
+        action.feedback_json = {**dict(action.feedback_json or {}),
+            "dismiss": {"reason": reason, "at": beijing_now().isoformat()}}
+        action.row_version = int(action.row_version) + 1
+        action.updated_at = beijing_now()
+        from app.customer.work_item_service import record_event
+        record_event(db, item, actor=actor_user_id, operation="action_dismissed", previous=item.state,
+            reason=reason, payload={"action_id": action.id})
+        return {"id": action.id, "status": action.status, "version": action.row_version,
+            "work_item_version": item.row_version}
+    result, _ = run_with_receipt(db, actor_user_id=actor_user_id, operation_scope=f"action_dismiss:{action_id}",
+        idempotency_key=idempotency_key, request_payload=request, execute=execute)
+    return result
+
+
+def _check_occurrence_version(db, action, expected):
+    occurrence = db.query(MaintenanceOccurrence).filter(MaintenanceOccurrence.current_action_id == action.id).with_for_update().one_or_none()
+    if occurrence is not None:
+        if expected is None:
+            raise pcw_errors.bad_request("维护实例版本必填", error_code="OCCURRENCE_VERSION_REQUIRED")
+        _require_version(occurrence.occurrence_version, expected, "OCCURRENCE_VERSION_CONFLICT", "current_occurrence_version")
+    elif expected is not None:
+        raise pcw_errors.conflict("行动未关联维护实例", error_code="OCCURRENCE_NOT_FOUND")

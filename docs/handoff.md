@@ -1910,3 +1910,10 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 - 私海客户工作台功能已在主线；补入 `backend/scripts/sync_okki_private_pool.py`，从 OKKI 业务镜像按业务员归属回填客户、订单与归属，可先用 `--dry-run` 查看范围。订单来源沿用经营分析字段口径，明细按完整快照重放；`--create-research-tasks` 只覆盖本次成功回填的客户。未运行生产回填。
 - 发票关联订单同步前，回款金额、日期、付款方式缺失时提示编辑订单并补填；在同步意图变更前阻断，历史无需回款的订单仍按原条件跳过。
 - 相关后端回归 154 项通过；`check_conventions.py` 仍被 13 项既有前端 UI 基线错误阻断，本次未修改这些文件。未部署、未执行生产数据写入。
+
+## 2026-10-01 客户工作台 v2（Codex，隔离 worktree 本地开发）
+
+- 分支 `codex/customer-workbench-v2`，工作树 `C:/Users/windb/.codex/worktrees/customer-workbench-v2/commission-system`。依据 [开发契约](requirements/customer-workbench-v2-prototype/DEVELOPMENT.md) 与原型，新增统一客户目录、三视图事项、共享四页签作战卡、来源选择、容量账本、结果证据、行动纠正、受控 Agent 委派、基础反馈、全员最小摘要和客户服务入口登记。旧私海客户能力继续提供真实源数据；具体完成证据及限制见 [实施记录](requirements/customer-workbench-v2-prototype/IMPLEMENTATION.md)。
+- 迁移 `172_workbench_lifecycle` 父版本为 171；保留旧事项/行动，旧 resolved 结果按未核验处理。来源事实变更、客户归属变化与委派失效均保留审计；不自动发送、下单或修改源模块专业任务。统一分群规则仍是 candidate，正式 tier 输出 unknown；未对生产历史样本回放定版。普通容量默认 22 为候选值。
+- 本地隔离 SQLite 与静态 MySQL DDL 验证；未连接共享/生产 MySQL，未执行生产迁移、提交、推送、合并或部署。代码就绪不代表已有真实 Worker 凭证或长期运行：Agent readiness 缺条件时 blocked；外部副作用 ambiguous 缺原运行回执查询适配器，不自动重试。启用需按项目发布入口核对目标环境、单活调度、迁移与来源覆盖，并完成单人真实闭环/业务口径回放。
+- 最终本地验证：后端受影响回归 327 项、前端 67 项通过，生产构建及严格约定检查通过；独立复核交期异常/来源/维护专项 31 项通过。隔离浏览器模拟授权和客户 API 验证事项详情与消息选择，1440px/390px 均无横向溢出或页面异常；`git diff --check` 通过，`git_sweep.py --no-fetch` 通过但仅为本地快照。真实 MySQL、DSH Worker、历史业务回放和单人试点未验证，不能据此启用生产。具体边界见实施记录。

@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
+
+from tests.test_customer_ownership_execution import ownership_clock
 from sqlalchemy import event
 
 from app.customer import models
@@ -75,7 +77,7 @@ def _proposal(
     db.add(profile)
     db.flush()
     payload = {
-        "ownership_registry_version": "customer_object_ownership_v1",
+        "ownership_registry_version": "customer_object_ownership_v2",
         "source_customer_id": customer.id,
         "target_customer_ids": [target.id],
         "ownership_partitions": [{

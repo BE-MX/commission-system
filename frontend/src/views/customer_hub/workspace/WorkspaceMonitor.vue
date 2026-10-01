@@ -1,5 +1,7 @@
 <template>
   <div class="workspace-monitor">
+    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
+    <GlassButton variant="secondary" :loading="saving" @click="loadAll">刷新监控状态</GlassButton>
     <section class="lg-card panel">
       <h3>监控订阅 <span class="hint">调度开关与采集状态分列；暂停不清历史</span></h3>
       <div class="toolbar">
@@ -16,7 +18,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="last_success_at" label="最近成功" min-width="160" />
+        <el-table-column label="最近成功（北京时间）" min-width="170"><template #default="{row}">{{ date(row.last_success_at) }}</template></el-table-column>
         <el-table-column prop="last_error" label="最近失败" min-width="120" show-overflow-tooltip />
         <el-table-column label="操作" min-width="170" class-name="table-action-column" fixed="right">
           <template #default="{ row }">
@@ -35,7 +37,7 @@
       <el-table class="list-table" v-else :data="events" size="small" border>
         <el-table-column prop="event_type" label="类型" min-width="110" />
         <el-table-column prop="title" label="标题" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="discovered_at" label="发现时间" min-width="160" />
+        <el-table-column label="发现时间（北京时间）" min-width="170"><template #default="{row}">{{ date(row.discovered_at) }}</template></el-table-column>
         <el-table-column label="状态" min-width="100">
           <template #default="{ row }">
             <el-tag size="small">{{ MONITOR_EVENT_STATUS_LABELS[row.status] || row.status }}</el-tag>
@@ -53,7 +55,8 @@
       </el-table>
     </section>
 
-    <el-dialog v-model="dialogVisible" title="新增监控订阅" min-width="480px" class="customer-hub-dialog">
+    <el-dialog v-model="dialogVisible" append-to-body title="新增监控订阅" width="min(480px, calc(100vw - 24px))" class="customer-hub-dialog">
+      <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <el-form label-width="72px" size="small">
         <el-form-item label="渠道">
           <el-select v-model="form.channel" style="width: 100%">
@@ -74,7 +77,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitSubscription">保存</el-button>
+        <GlassButton v-permission="'customer_pcw:write'" variant="primary" :loading="saving" @click="submitSubscription">保存</GlassButton>
       </template>
     </el-dialog>
   </div>
@@ -87,6 +90,8 @@ import {
   listMonitorEvents, listMonitorSubscriptions, patchMonitorSubscription, runMonitorSubscription,
 } from '@/api/customerHub'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
+import { formatBeijingDateTime } from '@/utils/datetime'
+import { createSubmissionIdentity, errorMessage } from '../workbenchV2Controller'
 import {
   MONITOR_COLLECTION_STATUS_LABELS, MONITOR_EVENT_STATUS_LABELS,
   buildEventDecisionPayload, buildSubscriptionPayload,
@@ -94,6 +99,8 @@ import {
 
 const props = defineProps({ customerId: { type: Number, required: true }, customer: { type: Object, default: null } })
 const subscriptions = ref([])
+const error = ref(''), saving = ref(false), identity = createSubmissionIdentity('monitor')
+const date = value => value ? formatBeijingDateTime(value, {seconds:false}) : '未提供'
 const events = ref([])
 const dialogVisible = ref(false)
 const form = reactive({ channel: 'website', url: '', interval_days: 7 })
@@ -103,6 +110,7 @@ function statusTagType(status) {
 }
 
 async function loadAll() {
+  error.value = ''
   try {
     const [subRes, eventRes] = await Promise.all([
       listMonitorSubscriptions(props.customerId),
@@ -110,21 +118,25 @@ async function loadAll() {
     ])
     subscriptions.value = subRes.data?.items ?? subRes.data ?? []
     events.value = eventRes.data?.items ?? []
-  } catch { /* 拦截器已提示 */ }
+  } catch (caught) { error.value = errorMessage(caught) }
 }
 
 async function submitSubscription() {
+  if(saving.value)return
+  saving.value=true
   try {
+    const payload=buildSubscriptionPayload(form)
     await createMonitorSubscription(
       props.customerId,
-      buildSubscriptionPayload(form),
-      `monitor-sub-${Date.now()}`,
+      payload,
+      identity.forPayload(payload),
     )
     msgSuccess('订阅已创建；首次采集只建立基线')
     dialogVisible.value = false
     form.url = ''
     await loadAll()
-  } catch { /* 拦截器已提示（含 URL_NOT_ALLOWED） */ }
+  } catch (caught) { error.value=errorMessage(caught) }
+  finally { saving.value=false }
 }
 
 async function toggleEnabled(row) {
@@ -134,15 +146,15 @@ async function toggleEnabled(row) {
     }, `monitor-toggle-${row.id}-${Date.now()}`)
     msgSuccess(row.enabled ? '已暂停（历史与水位保留）' : '已恢复')
     await loadAll()
-  } catch { /* 拦截器已提示 */ }
+  } catch (caught) { error.value=errorMessage(caught) }
 }
 
 async function runOnce(row) {
   try {
     await runMonitorSubscription(row.id, `monitor-run-${row.id}-${Date.now()}`)
-    msgSuccess('采集已执行')
+    msgSuccess('采集请求已处理，请核对采集状态')
     await loadAll()
-  } catch { /* 拦截器已提示 */ }
+  } catch (caught) { error.value=errorMessage(caught) }
 }
 
 async function decide(row, operation) {
@@ -155,7 +167,7 @@ async function decide(row, operation) {
       }), `event-${row.id}-${Date.now()}`)
       msgSuccess('已忽略')
       await loadAll()
-    } catch { return }
+    } catch (caught) { error.value=errorMessage(caught) }
     return
   }
   const confirmed = await confirmDanger('确认该事件并生成跟进任务？')
@@ -166,7 +178,7 @@ async function decide(row, operation) {
     }), `event-${row.id}-${Date.now()}`)
     msgSuccess('已确认并生成任务')
     await loadAll()
-  } catch { /* 拦截器已提示 */ }
+  } catch (caught) { error.value=errorMessage(caught) }
 }
 
 onMounted(loadAll)

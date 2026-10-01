@@ -1548,6 +1548,9 @@ class CustomerAction(Base):
         comment="可选目标联系人ID",
     )
     action_type = Column(String(24), nullable=False, index=True, comment="行动类型：call、email、message、meeting、research、review")
+    execution_mode = Column(String(16), nullable=False, default="manual", comment="执行权所属：manual、agent、source_module")
+    source_task_ref = Column(JSON, nullable=True, comment="源模块任务引用：domain、id、revision；不复制源任务状态")
+    required_for_resolution = Column(Boolean, nullable=False, default=False, comment="是否属于事项目标必须验收的行动")
     thread_group = Column(String(24), nullable=False, index=True, comment="分组：new_inquiry、sample、key_account、reorder、reactivation、public_pool")
     channel = Column(String(16), nullable=True, comment="渠道：alibaba、email、whatsapp、phone、linkedin、offline、internal")
     priority = Column(String(16), nullable=False, index=True, comment="优先级：urgent、high、normal、low")

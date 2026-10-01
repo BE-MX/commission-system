@@ -5,13 +5,23 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Mapping
 
-from sqlalchemy import or_
+from sqlalchemy import Numeric, or_
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
 from app.customer import models
+from app.customer.pcw_models import (
+    CustomerWorkItem, MaintenanceOccurrence, MaintenancePlan, MonitorEvent,
+    ReorderWindow, SampleCase,
+)
+from app.customer.workbench_models import (
+    CustomerDelegation, WorkItemDependency, WorkItemEvent, WorkItemFeedback,
+    WorkItemSourceDelivery, WorkbenchAdmission,
+)
 from app.customer.logical_customer_service import logical_root_predicate
 from app.customer.contracts import (
     OBJECT_OWNERSHIP_REGISTRY,
@@ -42,6 +52,7 @@ ROOT_MODELS = {
     "search_result": models.SearchResult,
     "opportunity": models.CustomerOpportunity,
     "action": models.CustomerAction,
+    "work_item": CustomerWorkItem,
     "annotation": models.CustomerAnnotation,
     "acquisition_attribution": models.CustomerAcquisitionAttribution,
 }
@@ -67,8 +78,26 @@ class ExecutionContractError(ValueError):
 
 
 def _canonical_hash(value: object) -> str:
-    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    def persisted_value(item):
+        if isinstance(item, (date, datetime)):
+            return item.isoformat()
+        if isinstance(item, Decimal):
+            return str(item)
+        raise TypeError(f"Unsupported ownership inventory value: {type(item).__name__}")
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=persisted_value)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _row_content(row: object) -> dict[str, object]:
+    values = {}
+    for column in row.__table__.columns:
+        value = getattr(row, column.name)
+        # The identity map may hold an assigned int before commit and a scaled
+        # Decimal after reload. Both represent the same persisted Numeric value.
+        if value is not None and isinstance(column.type, Numeric):
+            value = str(Decimal(str(value)).normalize())
+        values[column.name] = value
+    return values
 
 
 def _action_hash(proposal: models.CustomerChangeProposal, payload: Mapping[str, Any]) -> str:
@@ -174,6 +203,13 @@ def _graph_inventory(
         models.CustomerFact.id.in_(roots["fact"])).order_by(models.CustomerFact.id).all()):
         next(item for item in root_edges["fact"] if item[0] == row.id).extend(
             [row.subject_type, row.subject_id, row.evidence_json or {}])
+    # Item acceptance, source revisions and immutable child evidence are approved bytes.
+    # IDs alone do not detect an in-place source/feedback/delegation update.
+    graph["work_item_content"] = [
+        _row_content(row)
+        for row in ([] if not roots["work_item"] else db.query(CustomerWorkItem).filter(
+            CustomerWorkItem.id.in_(roots["work_item"])).order_by(CustomerWorkItem.id).all())
+    ]
     graph["root_edges"] = root_edges
     graph["transition_edges"] = {
         "contact_relationships": [
@@ -198,12 +234,21 @@ def _graph_inventory(
         ("order_items", models.CustomerOrderItem, "order_id", "order"),
         ("opportunity_events", models.CustomerOpportunityEvent, "opportunity_id", "opportunity"),
         ("search_result_sources", models.SearchResultSource, "result_id", "search_result"),
+        ("work_item_events", WorkItemEvent, "item_id", "work_item"),
+        ("work_item_dependencies", WorkItemDependency, "item_id", "work_item"),
+        ("work_item_delegations", CustomerDelegation, "item_id", "work_item"),
+        ("work_item_feedback", WorkItemFeedback, "item_id", "work_item"),
+        ("work_item_deliveries", WorkItemSourceDelivery, "item_id", "work_item"),
+        ("work_item_admissions", WorkbenchAdmission, "item_id", "work_item"),
+        ("work_item_reorder_windows", ReorderWindow, "work_item_id", "work_item"),
+        ("work_item_sample_cases", SampleCase, "work_item_id", "work_item"),
+        ("work_item_maintenance_occurrences", MaintenanceOccurrence, "work_item_id", "work_item"),
     )
     for name, model, parent_field, root_type in child_specs:
         parent_ids = roots[root_type]
         rows = [] if not parent_ids else db.query(model).filter(
             getattr(model, parent_field).in_(parent_ids)
-        ).order_by(model.id).all()
+        ).order_by(model.id).with_for_update().all()
         if any(
             getattr(row, "source_record_id", None) is not None
             and row.source_record_id not in source_ids
@@ -215,6 +260,74 @@ def _graph_inventory(
              getattr(row, "customer_id", None), getattr(row, "evidence_fact_ids", None)]
             for row in rows
         ]
+        if root_type == "work_item":
+            graph[name] = [
+                _row_content(row)
+                for row in rows
+            ]
+    item_ids = roots["work_item"]
+    incoming_actions = ([] if not item_ids else db.query(models.CustomerAction).filter(
+        models.CustomerAction.work_item_id.in_(item_ids)).order_by(models.CustomerAction.id).with_for_update().all())
+    graph["work_item_linked_actions"] = [
+        _row_content(row)
+        for row in incoming_actions
+    ]
+    plan_ids = {row["plan_id"] for row in graph["work_item_maintenance_occurrences"]}
+    context_specs = {"sample_case_id": SampleCase, "reorder_window_id": ReorderWindow,
+                     "occurrence_id": MaintenanceOccurrence, "monitor_event_id": MonitorEvent,
+                     "maintenance_plan_id": MaintenancePlan, "plan_id": MaintenancePlan}
+    graph["work_item_context_sources"] = []
+    for content in graph["work_item_content"]:
+        for field, model in context_specs.items():
+            identity = (content["context_json"] or {}).get(field)
+            if _positive_int(identity):
+                row = db.query(model).filter(model.id == identity).with_for_update().one_or_none()
+                graph["work_item_context_sources"].append([content["id"], field, identity,
+                    None if row is None else _row_content(row)])
+                if isinstance(row, MaintenanceOccurrence):
+                    plan_ids.add(row.plan_id)
+                elif isinstance(row, MaintenancePlan):
+                    plan_ids.add(row.id)
+    graph["work_item_maintenance_plans"] = [
+        _row_content(row) for row in ([] if not plan_ids else db.query(MaintenancePlan).filter(
+            MaintenancePlan.id.in_(plan_ids)).order_by(MaintenancePlan.id).with_for_update().all())
+    ]
+    references = set()
+    aliases = {"customer_message": "message", "customer_event": "event", "customer_source_record": "source_record"}
+    for content in graph["work_item_content"] + graph["work_item_events"] + graph["work_item_feedback"]:
+        for ref in content.get("resolution_evidence", content.get("evidence_refs", [])) or []:
+            if isinstance(ref, Mapping) and _positive_int(ref.get("id")):
+                references.add((aliases.get(ref.get("type"), ref.get("type")), ref["id"]))
+    for action in incoming_actions:
+        references.update(("fact", identity) for identity in action.evidence_fact_ids or [] if _positive_int(identity))
+        references.update(("event", identity) for identity in action.source_event_ids or [] if _positive_int(identity))
+    for content in graph["work_item_dependencies"]:
+        if content["source_domain"] in ROOT_MODELS:
+            try:
+                identity = int(content["source_id"])
+            except (TypeError, ValueError):
+                continue  # Projected validation reports malformed references.
+            references.add((content["source_domain"], identity))
+    evidence_models = {**ROOT_MODELS, "message": models.CustomerMessage, "event": models.CustomerEvent}
+    graph["work_item_evidence_content"] = []
+    for kind, row_id in sorted(references, key=lambda ref: (str(ref[0]), ref[1])):
+        model = evidence_models.get(kind)
+        row = db.query(model).filter(model.id == row_id).with_for_update().one_or_none() if model else None
+        graph["work_item_evidence_content"].append([kind, row_id, None if row is None else
+            _row_content(row)])
+    from app.customer.pcw_models import ShipmentOrderLink
+    shipment_ids = [row["source_id"] for row in graph["work_item_dependencies"] if row["source_domain"] == "shipment"]
+    graph["work_item_shipment_links"] = [
+        _row_content(row)
+        for row in ([] if not shipment_ids else db.query(ShipmentOrderLink).filter(
+            ShipmentOrderLink.shipment_id.in_(shipment_ids), ShipmentOrderLink.state == "active"
+        ).order_by(ShipmentOrderLink.id).with_for_update().all())
+    ]
+    from app.tracking.models import ShipmentTracking
+    graph["work_item_shipments"] = [
+        _row_content(row) for row in ([] if not shipment_ids else db.query(ShipmentTracking).filter(
+            ShipmentTracking.id.in_(shipment_ids)).order_by(ShipmentTracking.id).with_for_update().all())
+    ]
     fact_ids = roots["fact"]
     evidence_rows = (
             [] if not fact_ids else db.query(models.CustomerFactEvidenceLink).filter(

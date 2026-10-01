@@ -360,6 +360,7 @@ class Settings(BaseSettings):
     # ── 私海客户工作台（PCW）─────────────────────────────
     # 三个功能开关默认全关，灰度节奏见上线 runbook；先开评估，再开 AI 分析，最后开监控采集。
     PCW_EVALUATION_ENABLED: bool = False  # 每日客户评估批次（规则评估）
+    PCW_DAILY_ITEM_BUDGET: _PositiveInt = 22  # 工作台试点普通事项日容量，完成不返还
     PCW_EVALUATION_HOUR: _PositiveInt = 7  # 每日评估启动小时（北京时间）
     PCW_AI_ANALYSIS_ENABLED: bool = False  # 评估后的 AI 增量分析
     PCW_MONITOR_ENABLED: bool = False  # 客户官网/社媒监控采集

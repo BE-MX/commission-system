@@ -17,6 +17,15 @@ from app.customer.proposal_service import canonical_action_hash
 NOW = datetime(2026, 8, 31, 9, 0)
 
 
+@pytest.fixture(autouse=True)
+def ownership_clock(monkeypatch):
+    # Approval fixtures have an explicit business timestamp; the wall clock must
+    # not turn every unrelated graph assertion into an expired-approval failure.
+    from app.customer import ownership_contract_service, ownership_execution_contract, ownership_execution_service, ownership_service
+    for module in (ownership_contract_service, ownership_execution_contract, ownership_execution_service, ownership_service):
+        monkeypatch.setattr(module, "beijing_now", lambda: NOW)
+
+
 def _account(db, row_id, code):
     row = models.CustomerAccount(
         id=row_id, customer_code=code, display_name=code,

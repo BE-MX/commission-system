@@ -146,7 +146,7 @@ def test_complete_action_v2_with_followup_advances_round(db):
     )
     db.commit()
     assert result["action"]["status"] == "done"
-    assert result["event_state"] == "awaiting_reply"
+    assert result["event_state"] == "waiting"
     followup_id = result["followup_action"]["id"]
     assert followup_id != action.id
 
@@ -246,6 +246,11 @@ def test_complete_action_v2_resolve_closes_work_item(db):
     account, owner = _customer_with_profile(db)
     item = _open_item(db, account)
     action = _action(db, account, owner, item)
+    from tests.test_pcw_evaluation import _conversation, _message
+    conversation = _conversation(db, account, external_id="completed-inquiry")
+    message = _message(db, account, conversation, external_id="out-complete", direction="out",
+        sent_at=beijing_now(), record_id=98101)
+    item.context_json = {**item.context_json, "conversation_id": conversation.id}
     db.commit()
     item_version = db.get(CustomerWorkItem, item.id).row_version
     result = complete_action_v2(
@@ -259,6 +264,7 @@ def test_complete_action_v2_resolve_closes_work_item(db):
         channel="offline",
         occurred_at=NOW,
         summary="客户确认问题已解决。",
+        evidence_message_ids=[message.id],
     )
     assert result["event_state"] == "resolved"
     assert result["followup_action"] is None
@@ -388,15 +394,23 @@ def test_snooze_keeps_original_due_and_dismiss_requires_reason(db):
     action = _action(db, account, owner, item)
     db.commit()
     original_due = action.original_due_at
+    initial_item_version = item.row_version
 
     result = snooze_action_v2(
         db,
         action_id=action.id,
         actor_user_id=owner.id,
         expected_action_version=1,
+        expected_work_item_version=initial_item_version,
         snoozed_until=NOW + timedelta(days=1),
+        idempotency_key="snooze-pcw-000001",
     )
     assert result["status"] == "snoozed"
+    assert result["work_item_version"] == item.row_version
+    replay = snooze_action_v2(db, action_id=action.id, actor_user_id=owner.id,
+        expected_action_version=1, expected_work_item_version=initial_item_version,
+        snoozed_until=NOW + timedelta(days=1), idempotency_key="snooze-pcw-000001")
+    assert replay == result
     db.refresh(action)
     assert action.original_due_at == original_due
 
@@ -406,6 +420,8 @@ def test_snooze_keeps_original_due_and_dismiss_requires_reason(db):
             action_id=action.id,
             actor_user_id=owner.id,
             expected_action_version=2,
+            expected_work_item_version=item.row_version,
             dismissal_reason="",
+            idempotency_key="dismiss-pcw-00001",
         )
     assert excinfo.value.error_code == "DISMISS_REASON_REQUIRED"

@@ -18,6 +18,14 @@ from app.dashboard.schemas import DashboardPrefs, GreetingRequest
 router = APIRouter()
 
 
+@router.get("/customer-work-summary", summary="读取本人客户事项的最小摘要")
+def customer_work_summary(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    from app.customer.work_item_query_service import responsibility_summary
+    result = responsibility_summary(db, current_user)
+    db.commit()
+    return ok(result)
+
+
 @router.get("/preference", summary="读当前用户工作台布局配置")
 def get_preference(
     db: Session = Depends(get_db),

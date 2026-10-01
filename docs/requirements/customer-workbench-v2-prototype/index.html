@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>客户工作台 v2</title>
+<link rel="stylesheet" href="prototype.css">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2B544"/><stop offset="1" stop-color="#B97813"/></linearGradient>
+    <linearGradient id="winGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#F5CB5C" stop-opacity=".12"/><stop offset=".5" stop-color="#F5CB5C" stop-opacity=".38"/><stop offset="1" stop-color="#E07A3F" stop-opacity=".18"/></linearGradient>
+  </defs>
+</svg>
+
+<div class="shell">
+  <nav class="side" aria-label="方舟导航（示意）">
+    <div class="brand">莱莎方舟<small>LESHINE ARK</small></div>
+    <div class="side-group">客户经营</div>
+    <div class="side-item active">客户工作台</div>
+    <div class="side-item">跟进日历</div>
+    <div class="side-item">客户机会</div>
+    <div class="side-item">获客与背调</div>
+    <div class="side-item" style="opacity:.55">今日工作台 <span class="gone">已合并</span></div>
+    <div class="side-item" style="opacity:.55">客户档案 <span class="gone">已合并</span></div>
+    <div class="side-note">原型示意：「今日工作台」和「客户档案」合并为「客户工作台」；客户抽屉和工作区合并为「客户作战卡」，一键补全放在作战卡的档案页。</div>
+  </nav>
+
+  <div class="stage">
+    <div class="aurora" aria-hidden="true"></div>
+    <main id="main">
+      <div class="demo-bar" style="--i:0">
+        <span><span class="demo-tag">示例数据</span>&nbsp; 可点击原型，所有客户、订单和消息都是虚构的</span>
+        <div class="persona" id="persona" role="group" aria-label="切换演示视角" data-at="senior">
+          <span class="thumb" aria-hidden="true"></span>
+          <button id="p-senior" type="button" aria-pressed="true" data-persona="senior">成熟业务员 · Sarah</button>
+          <button id="p-junior" type="button" aria-pressed="false" data-persona="junior">新业务员 · Kevin</button>
+        </div>
+      </div>
+
+      <header class="head" style="--i:1">
+        <div>
+          <div class="kicker">CUSTOMER WORKBENCH</div>
+          <h1 id="greet">早上好，Sarah</h1>
+          <p class="sub" id="greet-sub"></p>
+        </div>
+        <div class="kpis" id="kpis"></div>
+      </header>
+
+      <section class="focus-bar"><div><label for="focus-select">经营重点</label> <select id="focus-select"><option>承诺优先</option><option>需求确认</option><option>复购核实</option></select><span class="meta"> 影响同级排序，不改变公司分层</span></div><div class="btn-row"><button class="btn" data-summary type="button">全员工作台摘要示意</button><button class="btn" data-review type="button">本轮复盘</button></div></section>
+      <div class="simulation"><span id="storage-note">仅本地演示；刷新保留事项与登记，无真实发送或后台执行。</span><button class="link-btn" type="button" data-advance>模拟下一天</button><button class="link-btn" type="button" data-reset>重置当前视角</button></div>
+      <section class="card segments" aria-labelledby="seg-title" style="--i:2">
+        <div class="seg-head">
+          <h2 id="seg-title">我的私海 · <span id="seg-total" class="tnum"></span> 位</h2>
+          <button class="link-btn" type="button" id="rules-toggle" aria-expanded="false" aria-controls="rules">分层口径（公司统一）</button>
+        </div>
+        <div class="seg-bar" id="seg-bar" aria-hidden="true"></div>
+        <div class="seg-chips" id="seg-chips"></div>
+        <div class="rules" id="rules">
+          原型统一试点口径；拟每日 08:00 重算，生产策略需回放定版。按顺序匹配，客户只属于第一个命中的分层：
+          <ol>
+            <li><b>复购窗口</b>：至少 3 笔有效订单，距上次下单达到个人平均周期的 85%～150%</li>
+            <li><b>活跃</b>：近 90 天有有效订单，或近 30 天有有效沟通</li>
+            <li><b>新客培育</b>：还没有成交订单，近 60 天有沟通</li>
+            <li><b>需唤醒</b>：曾经下单，距上次下单 91～240 天</li>
+            <li><b>沉睡</b>：以上都不满足</li>
+          </ol>
+        </div>
+      </section>
+
+      <div class="work-grid" style="--i:3">
+        <section class="card pane today" aria-labelledby="today-title">
+          <div class="pane-head">
+            <div>
+              <h2 class="section-title" id="today-title">客户事项</h2>
+              <p id="today-sub"></p>
+            </div>
+            <div class="progress-mini"><span id="done-label" class="tnum"></span><span class="track"><i id="done-bar" style="width:0"></i></span></div>
+          </div>
+          <div class="view-bar" id="view-tabs" role="group" aria-label="事项视图"></div><select id="ended-filter" aria-label="结束类型" hidden><option value="all">全部结束</option><option value="resolved">已解决</option><option value="cancelled">已终止</option></select><div id="coach"></div>
+          <div class="pane-scroll" id="task-scroll"><div id="task-list"></div></div>
+          <div class="pane-foot"><span id="today-foot"></span><div class="pager" id="task-pager"></div></div>
+        </section>
+
+        <section class="card pane all" aria-labelledby="all-title">
+          <div class="pane-head">
+            <h2 class="section-title" id="all-title">全部客户</h2>
+            <div class="tool-row">
+              <span class="filter-note" id="filter-note"></span>
+              <input id="search" type="search" placeholder="搜索客户、国家或产品" aria-label="搜索客户">
+              <button type="button" class="btn" id="batch-enrich">批量补全资料</button>
+            </div>
+          </div>
+          <div class="pane-scroll" id="table-scroll">
+            <table>
+              <thead><tr>
+                <th>客户</th><th>分层</th><th>近 12 个月订单</th>
+                <th class="num"><button type="button" data-sort="value">累计金额</button></th>
+                <th><button type="button" data-sort="order">距上次下单</button></th>
+                <th><button type="button" data-sort="contact">距上次联系</button></th>
+                <th><button type="button" data-sort="profile">资料</button></th>
+                <th>下一步</th>
+              </tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pane-foot"><span id="table-foot"></span><div class="pager" id="table-pager"></div></div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<dialog id="workbench-dialog" aria-labelledby="dialog-title"><form id="dialog-form" method="dialog"><div id="dialog-content"></div></form></dialog>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dr-name" aria-hidden="true"></aside>
+<div class="toast hide" id="toast" role="status" aria-live="polite"><span id="toast-text"></span><button type="button" id="toast-undo">撤销</button></div>
+
+<script src="workbench-state.js"></script>
+<script src="prototype.js"></script>
+
+</html>

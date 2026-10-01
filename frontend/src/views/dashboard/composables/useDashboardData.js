@@ -18,7 +18,7 @@ import { getEmployeeList } from '@/api/employee'
 import { getSyncedPayments } from '@/api/payment'
 import { getShipmentList, getTrackingStats } from '@/api/tracking'
 import { getRequests, getTaskList, getDesignStats } from '@/api/design'
-import { fetchGreeting } from '@/api/dashboard'
+import { fetchGreeting, getCustomerWorkSummary } from '@/api/dashboard'
 
 import dailyTipsData from '@/assets/daily-tips.json'
 import { getTodayHolidays, getUpcomingHolidays } from '../holidays'
@@ -95,6 +95,8 @@ export function useDashboardData() {
   // 数据状态
   const dailyTip = ref('')
   const incompleteCount = ref(0)
+  const customerWorkSummary = ref({ items: [], total: 0 })
+  const customerWorkSummaryError = ref('')
   const batchCount = ref(0)
   const latestBatch = ref(null)
   const employeeCount = ref(0)
@@ -227,7 +229,8 @@ export function useDashboardData() {
     return (authStore.hasAnyPermission(['design:audit']) && pendingApprovals.value > 0) ||
            (authStore.hasAnyPermission(['design:manage']) && todayShootCount.value > 0) ||
            (authStore.hasAnyPermission(['customer:write']) && incompleteCount.value > 0) ||
-           (authStore.hasAnyPermission(['tracking:read']) && trackingAbnormal.value > 0)
+           (authStore.hasAnyPermission(['tracking:read']) && trackingAbnormal.value > 0) ||
+           customerWorkSummary.value.total > 0 || !!customerWorkSummaryError.value
   })
 
   const donutTotal = computed(() => donutData.value.reduce((s, i) => s + i.value, 0))
@@ -272,6 +275,18 @@ export function useDashboardData() {
   }
 
   async function loadAllData() {
+    if (authStore.hasAnyPermission(['customer_pcw:read', 'customer_radar:read', 'customer:read', 'customer:read_all'])) {
+      try {
+        customerWorkSummary.value = (await getCustomerWorkSummary()).data
+        customerWorkSummaryError.value = ''
+      } catch {
+        customerWorkSummary.value = { items: [], total: 0 }
+        customerWorkSummaryError.value = '客户事项摘要暂时无法读取，请打开客户工作台核验'
+      }
+    } else {
+      customerWorkSummary.value = { items: [], total: 0 }
+      customerWorkSummaryError.value = ''
+    }
     // 归属待补充
     if (authStore.hasAnyPermission(['customer:read'])) {
       try {
@@ -447,6 +462,7 @@ export function useDashboardData() {
     // state
     dailyTip,
     incompleteCount, batchCount, latestBatch, employeeCount,
+    customerWorkSummary, customerWorkSummaryError,
     trackingCount, trackingAbnormal, todayShootCount, pendingApprovals, latestPayment,
     recentCommissions, recentTrackings, recentDesigns, recentPayments, recentShipments,
     donutData, donutLabel,

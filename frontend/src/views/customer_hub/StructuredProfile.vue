@@ -1,0 +1,12 @@
+<template><section class="profile-sections"><article v-for="section in sections" :key="section.key" :data-section="section.key"><h3>{{ section.label }}</h3><StructuredValue :value="section.value" /></article></section></template>
+<script setup>
+import { computed, defineComponent, h } from 'vue'
+import { mapCustomerProfileSections } from './customerHubController'
+import { getProfileValueKind, profileFieldLabel } from './customerHubPresentation'
+const props=defineProps({customer:{type:Object,required:true}})
+const sections=computed(()=>{const values=mapCustomerProfileSections(props.customer,[]);values.annotations=props.customer.annotations ?? values.annotations;return [
+['overview','客户业务概览'],['identity','身份信息'],['contacts','联系人'],['preferences','偏好'],['behaviorPatterns','行为模式'],['currentNeeds','当前需求'],['opportunities','客户机会'],['actions','经营动作'],['risks','风险'],['recentChanges','最近变化'],['openQuestions','待确认问题'],['annotations','人工批注'],['versionQuality','档案质量'],['profileMetadata','版本与来源时点']
+].map(([key,label])=>({key,label,value:values[key]}))})
+const StructuredValue=defineComponent({name:'StructuredValue',props:{value:null},setup(valueProps){return()=>{const kind=getProfileValueKind(valueProps.value);if(kind==='empty')return h('span',{class:'empty'},'该档案版本未提供');if(kind==='scalar')return h('span',typeof valueProps.value==='boolean'?(valueProps.value?'是':'否'):String(valueProps.value));if(kind==='list')return valueProps.value.length?h('ul',valueProps.value.map((value,index)=>h('li',{key:index},[h(StructuredValue,{value})]))):h('span',{class:'empty'},'暂无记录');const entries=Object.entries(valueProps.value);return entries.length?h('dl',entries.map(([key,value])=>h('div',{key},[h('dt',profileFieldLabel(key)),h('dd',[h(StructuredValue,{value})])]))):h('span',{class:'empty'},'暂无记录')}}})
+</script>
+<style scoped>.profile-sections{display:grid;gap:12px}article{padding:14px;border:1px solid var(--border-color);border-radius:var(--card-radius)}h3{margin:0 0 10px;font-size:14px}.profile-sections :deep(dl){margin:0}.profile-sections :deep(dl>div){display:grid;grid-template-columns:minmax(100px,28%) 1fr;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-color)}.profile-sections :deep(dd){margin:0;overflow-wrap:anywhere}.profile-sections :deep(dt),.profile-sections :deep(.empty){color:var(--text-muted)}.profile-sections :deep(ul){padding-left:20px;line-height:1.6}@media(max-width:600px){.profile-sections :deep(dl>div){grid-template-columns:1fr;gap:4px}}</style>

@@ -64,20 +64,39 @@ def _fail_runtime_limit(db: Session, row: AgentRun, message: str) -> None:
         payload={"error_code": row.error_code, "message": message},
         visibility="admin",
     )
+    from app.customer.delegation_guard_service import record_run_stop
+    record_run_stop(db, row)
     db.commit()
 
 
 def reconcile_expired_runs(db: Session, *, limit: int = 100) -> int:
     now = _utc_now()
-    rows = db.query(AgentRun).filter(
+    candidates = db.query(AgentRun).filter(
         AgentRun.status.in_([RunStatus.LEASED.value, RunStatus.RUNNING.value, RunStatus.WAITING_INPUT.value]),
         AgentRun.lease_expires_at.isnot(None),
         AgentRun.lease_expires_at <= now,
-    ).order_by(AgentRun.lease_expires_at).with_for_update(skip_locked=True).limit(limit).all()
-    for row in rows:
+    ).order_by(AgentRun.lease_expires_at).limit(limit).all()
+    count = 0
+    from app.customer.delegation_guard_service import lock_delegation_for_stop, record_run_stop
+    for candidate in candidates:
+        lock_delegation_for_stop(db, candidate)
+        row = db.query(AgentRun).filter(AgentRun.id == candidate.id,
+            AgentRun.status.in_([RunStatus.LEASED.value, RunStatus.RUNNING.value, RunStatus.WAITING_INPUT.value]),
+            AgentRun.lease_expires_at <= now).populate_existing().with_for_update(skip_locked=True).one_or_none()
+        if row is None:
+            continue
+        count += 1
         previous_worker = row.claimed_by
         if row.status == RunStatus.LEASED.value:
-            if row.attempt_no < row.max_attempts:
+            if row.cancel_requested:
+                require_transition(row.status, RunStatus.CANCELLED)
+                row.status = RunStatus.CANCELLED.value
+                row.completed_at = beijing_now()
+                row.lease_token_hash = None
+                row.lease_expires_at = None
+                append_event(db, row, event_id=f"run-{row.id}-cancelled-expired-{row.attempt_no}",
+                    event_type="run.cancelled", actor_type="control_plane", payload={"reason": "cancelled_before_start"})
+            elif row.attempt_no < row.max_attempts:
                 require_transition(row.status, RunStatus.QUEUED)
                 row.status = RunStatus.QUEUED.value
                 row.claimed_by = None
@@ -124,9 +143,11 @@ def reconcile_expired_runs(db: Session, *, limit: int = 100) -> int:
                 payload={"expired_worker": previous_worker, "attempt_no": row.attempt_no},
                 visibility="admin",
             )
-    if rows:
+        if row.status in {"failed", "cancelled", "ambiguous"}:
+            record_run_stop(db, row)
+    if count:
         db.flush()
-    return len(rows)
+    return count
 
 
 def reconcile_expired_runs_job() -> int:
@@ -146,10 +167,25 @@ def claim_run(db: Session, *, worker_id: str, runtimes: list[str]) -> dict | Non
         AgentRun.status == RunStatus.QUEUED.value,
         AgentRun.source_runtime.in_(runtimes),
         AgentRun.attempt_no < AgentRun.max_attempts,
-    ).order_by(AgentRun.created_at, AgentRun.id).with_for_update(skip_locked=True).first()
+    ).order_by(AgentRun.created_at, AgentRun.id).first()
     if row is None:
         db.commit()
         return None
+    from app.customer.delegation_guard_service import guard_runtime_run
+    guard_error = None
+    try:
+        guard_runtime_run(db, row, lock=True)
+    except ConflictError as exc:
+        guard_error = str(exc)
+        from app.customer.delegation_guard_service import lock_delegation_for_stop
+        lock_delegation_for_stop(db, row)
+    row = db.query(AgentRun).filter(AgentRun.id == row.id, AgentRun.status == RunStatus.QUEUED.value).populate_existing().with_for_update(skip_locked=True).one_or_none()
+    if row is None:
+        db.commit()
+        return None
+    if guard_error:
+        row.cancel_requested = True
+        row.error_code = guard_error
     if row.cancel_requested:
         require_transition(row.status, RunStatus.CANCELLED)
         row.status = RunStatus.CANCELLED.value
@@ -161,6 +197,8 @@ def claim_run(db: Session, *, worker_id: str, runtimes: list[str]) -> dict | Non
             actor_type="control_plane",
             payload={"reason": "cancel_requested"},
         )
+        from app.customer.delegation_guard_service import record_run_stop
+        record_run_stop(db, row)
         db.commit()
         return None
 
@@ -187,11 +225,20 @@ def claim_run(db: Session, *, worker_id: str, runtimes: list[str]) -> dict | Non
         return None
     lease_token = secrets.token_urlsafe(32)
     require_transition(row.status, RunStatus.LEASED)
-    row.status = RunStatus.LEASED.value
-    row.claimed_by = worker_id
-    row.lease_token_hash = _hash_token(lease_token)
-    row.lease_expires_at = _utc_now() + timedelta(seconds=settings.AGENT_RUNTIME_WORKER_LEASE_SECONDS)
-    row.attempt_no += 1
+    # Row locks serialize MySQL claimers; the conditional update also closes
+    # the race on SQLite and any dialect that ignores FOR UPDATE.
+    claimed = db.query(AgentRun).filter(AgentRun.id == row.id,
+        AgentRun.status == RunStatus.QUEUED.value, AgentRun.attempt_no == row.attempt_no,
+        AgentRun.cancel_requested.is_(False)).update({
+            AgentRun.status: RunStatus.LEASED.value, AgentRun.claimed_by: worker_id,
+            AgentRun.lease_token_hash: _hash_token(lease_token),
+            AgentRun.lease_expires_at: _utc_now() + timedelta(seconds=settings.AGENT_RUNTIME_WORKER_LEASE_SECONDS),
+            AgentRun.attempt_no: row.attempt_no + 1,
+        }, synchronize_session=False)
+    if not claimed:
+        db.commit()
+        return None
+    db.refresh(row)
     append_event(
         db, row,
         event_id=f"run-{row.id}-claimed-{row.attempt_no}",
@@ -220,8 +267,21 @@ def claim_run(db: Session, *, worker_id: str, runtimes: list[str]) -> dict | Non
     }
 
 
-def _leased_run(db: Session, run_id: int, *, worker_id: str, lease_token: str) -> AgentRun:
-    row = db.query(AgentRun).filter(AgentRun.id == run_id).with_for_update().one_or_none()
+def _leased_run(db: Session, run_id: int, *, worker_id: str, lease_token: str, stopping=False) -> AgentRun:
+    from app.customer.delegation_guard_service import guard_runtime_run
+    candidate = db.get(AgentRun, run_id)
+    if candidate is not None and (stopping or candidate.cancel_requested):
+        from app.customer.delegation_guard_service import lock_delegation_for_stop
+        lock_delegation_for_stop(db, candidate)
+    guard_error = None
+    if candidate is not None and not candidate.cancel_requested:
+        try:
+            guard_runtime_run(db, candidate, lock=True)
+        except ConflictError as exc:
+            if not stopping:
+                raise
+            guard_error = str(exc)
+    row = db.query(AgentRun).filter(AgentRun.id == run_id).populate_existing().with_for_update().one_or_none()
     if row is None:
         raise NotFoundError("Agent 任务不存在")
     if row.status not in {RunStatus.LEASED.value, RunStatus.RUNNING.value, RunStatus.WAITING_INPUT.value}:
@@ -232,6 +292,9 @@ def _leased_run(db: Session, run_id: int, *, worker_id: str, lease_token: str) -
         raise LeaseError("Agent 租约令牌无效")
     if row.lease_expires_at is None or row.lease_expires_at <= _utc_now():
         raise LeaseError("Agent 租约已经过期")
+    if guard_error:
+        row.cancel_requested = True
+        row.error_code = guard_error
     return row
 
 
@@ -245,6 +308,11 @@ def heartbeat(
     steps_used: int | None,
 ) -> AgentRun:
     row = _leased_run(db, run_id, worker_id=worker_id, lease_token=lease_token)
+    if row.cancel_requested:
+        # Return the stop request without renewing a lease indefinitely.
+        db.commit()
+        db.refresh(row)
+        return row
     profile = db.query(AgentProfile).filter(AgentProfile.id == row.profile_id).one()
     max_steps, timeout_seconds = _runtime_limits(profile)
     effective_steps = steps_used if steps_used is not None else row.steps_used
@@ -270,6 +338,8 @@ def heartbeat(
 
 def get_context(db: Session, run_id: int, *, worker_id: str, lease_token: str) -> dict:
     row = _leased_run(db, run_id, worker_id=worker_id, lease_token=lease_token)
+    if row.cancel_requested:
+        raise ConflictError("任务已请求取消，禁止继续读取运行上下文")
     profile = db.query(AgentProfile).filter(AgentProfile.id == row.profile_id).one()
     session = db.query(AgentSession).filter(AgentSession.id == row.session_id).one()
     preset = db.query(AiPreset).filter(
@@ -333,7 +403,8 @@ def append_worker_events(
         row.status = RunStatus.RUNNING.value
         row.started_at = row.started_at or beijing_now()
     forbidden = {"run.created", "run.claimed", "run.requeued", "run.completed", "run.failed", "run.cancelled", "run.ambiguous"}
-    for item in events:
+    waiting = None
+    for index, item in enumerate(events):
         if item.event_type in forbidden:
             raise ConflictError(f"{item.event_type} 只能由方舟控制面写入")
         append_event(
@@ -349,6 +420,25 @@ def append_worker_events(
             source_event_ids=item.source_event_ids,
             created_at=item.created_at,
         )
+        if item.event_type == "run.waiting_input" and (row.input_json or {}).get("delegation_id") is not None:
+            if index != len(events) - 1:
+                raise ConflictError("等待输入必须是本批最后一个事件")
+            if not item.payload.get("review_at") or not str(item.payload.get("resume_condition") or "").strip():
+                raise ConflictError("委派等待需要继续条件和未来复核时间")
+            waiting = item.payload
+        elif item.event_type == "run.waiting_input":
+            require_transition(row.status, RunStatus.WAITING_INPUT)
+            row.status = RunStatus.WAITING_INPUT.value
+    if waiting is not None:
+        from app.customer.delegation_guard_service import finish_delegation
+        finish_delegation(db, row, [], waiting_payload=waiting)
+        require_transition(row.status, RunStatus.COMPLETED)
+        row.status = RunStatus.COMPLETED.value
+        row.completed_at = beijing_now()
+        row.lease_token_hash = None
+        row.lease_expires_at = None
+        append_event(db, row, event_id=f"run-{row.id}-completed", event_type="run.completed",
+            actor_type="control_plane", payload={"reason": "waiting_for_new_input", "review_at": waiting["review_at"]})
     db.commit()
     db.refresh(row)
     return row, next_sequence(db, row.id)
@@ -379,6 +469,8 @@ def complete_run(
             actor_type="control_plane",
             payload={"worker_id": worker_id, "reason": "cancel_requested"},
         )
+        from app.customer.delegation_guard_service import record_run_stop
+        record_run_stop(db, row)
         db.commit()
         return row, []
     if row.status not in {RunStatus.RUNNING.value, RunStatus.WAITING_INPUT.value}:
@@ -444,6 +536,8 @@ def complete_run(
             "cost_usd": str(cost_usd),
         },
     )
+    from app.customer.delegation_guard_service import finish_delegation
+    finish_delegation(db, row, created)
     db.commit()
     for item in created:
         db.refresh(item)
@@ -461,13 +555,13 @@ def fail_run(
     error_message: str,
     ambiguous: bool,
 ) -> AgentRun:
-    row = _leased_run(db, run_id, worker_id=worker_id, lease_token=lease_token)
-    if row.cancel_requested:
-        target = RunStatus.CANCELLED
-        event_type = "run.cancelled"
-    elif ambiguous:
+    row = _leased_run(db, run_id, worker_id=worker_id, lease_token=lease_token, stopping=True)
+    if ambiguous:
         target = RunStatus.AMBIGUOUS
         event_type = "run.ambiguous"
+    elif row.cancel_requested:
+        target = RunStatus.CANCELLED
+        event_type = "run.cancelled"
     else:
         target = RunStatus.FAILED
         event_type = "run.failed"
@@ -486,6 +580,8 @@ def fail_run(
         payload={"error_code": error_code, "error_message": error_message, "worker_id": worker_id},
         visibility="admin",
     )
+    from app.customer.delegation_guard_service import record_run_stop
+    record_run_stop(db, row)
     db.commit()
     db.refresh(row)
     return row

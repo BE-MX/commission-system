@@ -132,6 +132,11 @@ def _event_registration(
 
 
 EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
+    "sample.feedback_received": _event_registration(
+        ("manual",), {"sample_id": int, "feedback_round": int, "feedback_date": str},
+        required=("sample_id", "feedback_round", "feedback_date"), reference="customer", human=True,
+        classification=DataClassification.PERSONAL_CONTACT,
+    ),
     "inquiry.received": _event_registration(
         ("alibaba",), {"channel": str}, reference="source_record"
     ),
@@ -2135,6 +2140,11 @@ def _validate_event_reference_semantics(
     target_relationship_stage: str | None,
     fallback_occurred_at: datetime,
 ) -> datetime:
+    if event_type == "sample.feedback_received":
+        from app.customer.pcw_models import SampleCase
+        sample = db.get(SampleCase, payload["sample_id"])
+        if sample is None or sample.customer_id != customer_id or sample.stage != "feedback_received" or sample.feedback_round != payload["feedback_round"] or not sample.feedback_text:
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
     if source_ref_type is None or source_ref_id is None:
         return fallback_occurred_at
     object_id = int(source_ref_id)

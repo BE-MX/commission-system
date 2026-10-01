@@ -7,6 +7,11 @@ from typing import Any, Mapping
 from sqlalchemy.orm import Session
 
 from app.customer import models
+from app.customer.pcw_models import (
+    CustomerWorkItem, MaintenanceOccurrence, MaintenancePlan, MonitorEvent,
+    ReorderWindow, SampleCase,
+)
+from app.customer.workbench_models import WorkItemDependency, WorkItemEvent, WorkItemFeedback
 
 
 TERMINAL_RESEARCH = frozenset({"completed", "failed", "skipped", "cancelled"})
@@ -22,7 +27,7 @@ ROOT_REF_FIELDS = {
     "conversation": (("latest_source_record_id", "source_record"),),
     "order": (("source_record_id", "source_record"),),
     "opportunity": (("linked_order_id", "order"),),
-    "action": (("opportunity_id", "opportunity"),),
+    "action": (("opportunity_id", "opportunity"), ("work_item_id", "work_item"), ("parent_action_id", "action")),
     "annotation": (("target_fact_id", "fact"),),
     "acquisition_attribution": (
         ("research_task_id", "research_task"), ("opportunity_id", "opportunity"),
@@ -37,7 +42,7 @@ DYNAMIC_REF_FIELDS = (
 ROOT_LIST_REF_FIELDS = {
     "research_task": (("evidence_fact_ids", "fact"),),
     "opportunity": (("evidence_fact_ids", "fact"),),
-    "action": (("evidence_fact_ids", "fact"),),
+    "action": (("evidence_fact_ids", "fact"), ("source_event_ids", "event")),
 }
 
 
@@ -212,6 +217,14 @@ def validate_graph_targets(
         if kind == "message":
             message = db.get(models.CustomerMessage, int(row_id))
             return owner("conversation", message.conversation_id) if message else None
+        if kind == "event":
+            event = db.get(models.CustomerEvent, int(row_id))
+            if event is None:
+                return None
+            # Customer events remain immutable storage records; only a complete merge
+            # redirects their account. A retained-source split cannot move one event.
+            return (payload.get("keep_customer_id", int(event.customer_id))
+                    if event.customer_id == payload["source_customer_id"] else int(event.customer_id))
         key = (kind, int(row_id))
         if key in target:
             return target[key]
@@ -294,6 +307,97 @@ def validate_graph_targets(
                   owner("source_record", getattr(row, "source_record_id", None))])
             for fact_id in getattr(row, "evidence_fact_ids", None) or []:
                 same([owner(parent_kind, getattr(row, parent_field)), owner("fact", fact_id)])
+    item_ids = [row_id for (kind, row_id) in target if kind == "work_item"]
+
+    def check_reference(item_id, kind, linked_id):
+        aliases = {"customer_message": "message", "customer_source_record": "source_record", "customer_event": "event"}
+        kind = aliases.get(kind, kind)
+        if kind not in {*ROOT_MODELS, "message", "event"} or not _positive(linked_id):
+            _fail("OWNERSHIP_EXECUTION_GRAPH_CLOSURE_INVALID")
+        linked_owner = owner(kind, linked_id)
+        if linked_owner is None:
+            _fail("OWNERSHIP_EXECUTION_GRAPH_CLOSURE_INVALID")
+        same([owner("work_item", item_id), linked_owner])
+
+    def source_owner(customer_id):
+        from app.customer.logical_customer_service import resolve_canonical_customer_id
+        current = resolve_canonical_customer_id(db, customer_id)
+        return (payload.get("keep_customer_id", current)
+                if current == payload["source_customer_id"] else current)
+
+    def check_source(item_id, row):
+        if row is None:
+            _fail("OWNERSHIP_EXECUTION_GRAPH_CLOSURE_INVALID")
+        if isinstance(row, MaintenanceOccurrence):
+            plan_row = db.get(MaintenancePlan, row.plan_id)
+            if plan_row is None:
+                _fail("OWNERSHIP_EXECUTION_GRAPH_CLOSURE_INVALID")
+            same([owner("work_item", item_id), source_owner(plan_row.customer_id)])
+            if row.current_action_id is not None:
+                check_reference(item_id, "action", row.current_action_id)
+        else:
+            same([owner("work_item", item_id), source_owner(row.customer_id)])
+        if isinstance(row, SampleCase):
+            check_reference(item_id, "order", row.sample_order_id)
+        if isinstance(row, ReorderWindow) and row.action_id is not None:
+            check_reference(item_id, "action", row.action_id)
+
+    def check_evidence(item_id, refs):
+        for ref in refs or []:
+            if not isinstance(ref, Mapping):
+                _fail("OWNERSHIP_EXECUTION_GRAPH_CLOSURE_INVALID")
+            check_reference(item_id, ref.get("type"), ref.get("id"))
+
+    for item in ([] if not item_ids else db.query(CustomerWorkItem).filter(
+            CustomerWorkItem.id.in_(item_ids)).all()):
+        check_evidence(item.id, item.resolution_evidence)
+        context = item.context_json or {}
+        for field, kind in (("conversation_id", "conversation"), ("order_id", "order"),
+                ("sample_order_id", "order"), ("action_id", "action"),
+                ("source_record_id", "source_record"), ("last_inbound_message_id", "message")):
+            if context.get(field) is not None:
+                check_reference(item.id, kind, context[field])
+        for field, model in (("sample_case_id", SampleCase), ("reorder_window_id", ReorderWindow),
+                ("occurrence_id", MaintenanceOccurrence), ("monitor_event_id", MonitorEvent),
+                ("maintenance_plan_id", MaintenancePlan), ("plan_id", MaintenancePlan)):
+            if context.get(field) is not None:
+                if not _positive(context[field]):
+                    _fail("OWNERSHIP_EXECUTION_GRAPH_CLOSURE_INVALID")
+                check_source(item.id, db.get(model, context[field]))
+        for fact_id in context.get("evidence_fact_ids", []):
+            check_reference(item.id, "fact", fact_id)
+    for model in (SampleCase, ReorderWindow, MaintenanceOccurrence):
+        for row in ([] if not item_ids else db.query(model).filter(model.work_item_id.in_(item_ids)).all()):
+            check_source(row.work_item_id, row)
+    for action in ([] if not item_ids else db.query(models.CustomerAction).filter(
+            models.CustomerAction.work_item_id.in_(item_ids)).all()):
+        same([owner("work_item", action.work_item_id), owner("action", action.id)])
+    for model in (WorkItemEvent, WorkItemFeedback):
+        for row in ([] if not item_ids else db.query(model).filter(model.item_id.in_(item_ids)).all()):
+            check_evidence(row.item_id, row.evidence_refs)
+    for dependency in ([] if not item_ids else db.query(WorkItemDependency).filter(
+            WorkItemDependency.item_id.in_(item_ids)).all()):
+        if dependency.source_domain in ROOT_MODELS:
+            try:
+                source_id = int(dependency.source_id)
+            except (TypeError, ValueError):
+                _fail("OWNERSHIP_EXECUTION_GRAPH_CLOSURE_INVALID")
+            check_reference(dependency.item_id, dependency.source_domain, source_id)
+            if dependency.source_domain == "action":
+                action = db.get(models.CustomerAction, source_id)
+                if action.work_item_id != dependency.item_id:
+                    _fail("OWNERSHIP_EXECUTION_GRAPH_TARGET_CONFLICT")
+        elif dependency.source_domain == "shipment":
+            from app.customer.pcw_models import ShipmentOrderLink
+            links = db.query(ShipmentOrderLink).filter_by(
+                shipment_id=dependency.source_id, state="active").all()
+            if not links:
+                _fail("OWNERSHIP_EXECUTION_GRAPH_CLOSURE_INVALID")
+            for link in links:
+                check_reference(dependency.item_id, "order", link.order_id)
+        else:
+            # Unregistered domains cannot prove projected customer ownership.
+            _fail("OWNERSHIP_EXECUTION_GRAPH_CLOSURE_INVALID")
     fact_ids = [row_id for (kind, row_id), _ in target.items() if kind == "fact"]
     for row in ([] if not fact_ids else db.query(models.CustomerFactEvidenceLink).filter(
         models.CustomerFactEvidenceLink.fact_id.in_(fact_ids)).all()):

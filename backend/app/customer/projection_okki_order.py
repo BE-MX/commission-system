@@ -336,6 +336,8 @@ def _project_okki_order(
     if not valid:
         reconcile_invalidated_order(db, order.id)
     db.flush()
+    from app.customer.pcw_order_service import on_order_projected
+    on_order_projected(db, order.id)
     return ProjectionReceipt(
         "processed",
         order_source.id,

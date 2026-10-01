@@ -2,6 +2,8 @@ from datetime import timedelta
 
 import pytest
 
+from tests.test_customer_ownership_execution import ownership_clock
+
 from app.customer import models
 from app.customer.logical_customer_service import logical_root_query
 from app.customer.ownership_execution_contract import ExecutionContractError

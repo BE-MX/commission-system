@@ -3,7 +3,7 @@
 from datetime import datetime
 from app.core.time import beijing_now
 
-from sqlalchemy import desc
+from sqlalchemy import desc, false, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -88,6 +88,10 @@ def _session_for_user(db: Session, session_id: int, user_id: int, can_read_all: 
     row = query.one_or_none()
     if row is None:
         raise NotFoundError("Agent 会话不存在")
+    delegated = db.query(AgentRun).filter(AgentRun.session_id == row.id,
+        AgentRun.input_json["delegation_id"].as_integer().isnot(None)).first()
+    if delegated is not None:
+        _require_delegation_visibility(db, delegated, user_id)
     return row
 
 
@@ -101,6 +105,10 @@ def list_sessions(
     query = db.query(AgentSession)
     if not can_read_all:
         query = query.filter(AgentSession.owner_user_id == user_id)
+    delegated = db.query(AgentRun.id).filter(AgentRun.session_id == AgentSession.id,
+        AgentRun.input_json["delegation_id"].as_integer().isnot(None))
+    visible_delegated = _visible_delegation_runs(db, delegated, user_id).exists()
+    query = query.filter(or_(~delegated.exists(), visible_delegated))
     total = query.count()
     rows = query.order_by(desc(AgentSession.updated_at), desc(AgentSession.id)).offset(
         (page - 1) * page_size
@@ -118,6 +126,7 @@ def create_run(
     roles: list[str],
     system_initiated: bool = False,
     evaluation_initiated: bool = False,
+    commit: bool = True,
 ) -> AgentRun:
     effective_permissions = set(permissions)
     if "super_admin" in set(roles):
@@ -128,6 +137,8 @@ def create_run(
     if "agent_runtime:invoke" not in effective_permissions:
         raise ForbiddenError("创建 Agent 任务需要 Agent 调用权限")
     run_input = dict(data.get("input") or {})
+    if {"delegation_id", "delegation_generation", "work_item_id", "work_item_input_revision"} & set(run_input) and not system_initiated:
+        raise ForbiddenError("事项委派标记只能由方舟受控编排生成")
     reserved_evaluation_fields = {"evaluation_suite", "evaluation_case_id"}
     if reserved_evaluation_fields & set(run_input) and not evaluation_initiated:
         raise ForbiddenError("标准评测标记只能由方舟评测流程生成")
@@ -279,8 +290,13 @@ def create_run(
                 "profile_version": profile.version,
             },
         )
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except IntegrityError:
+        if not commit:
+            raise
         db.rollback()
         raced = db.query(AgentRun).filter(
             AgentRun.owner_user_id == user_id,
@@ -289,7 +305,8 @@ def create_run(
         if raced is not None and raced.session_id == session_id and raced.input_json == run_input:
             return raced
         raise ConflictError("Agent 任务幂等键冲突") from None
-    db.refresh(row)
+    if commit:
+        db.refresh(row)
     return row
 
 
@@ -297,12 +314,45 @@ def _run_for_user(db: Session, run_id: int, user_id: int, can_read_all: bool, *,
     query = db.query(AgentRun).filter(AgentRun.id == run_id)
     if not can_read_all:
         query = query.filter(AgentRun.owner_user_id == user_id)
-    if lock:
-        query = query.with_for_update()
     row = query.one_or_none()
     if row is None:
         raise NotFoundError("Agent 任务不存在")
+    _require_delegation_visibility(db, row, user_id, lock=lock)
+    if lock:
+        row = query.populate_existing().with_for_update().one()
     return row
+
+
+def _require_delegation_visibility(db: Session, run: AgentRun, user_id: int, *, lock=False):
+    if (run.input_json or {}).get("delegation_id") is None:
+        return
+    from app.customer import pcw_errors
+    from app.customer.delegation_guard_service import live_delegation_user
+    from app.customer.work_item_service import item_access
+    try:
+        item_access(db, live_delegation_user(db, user_id), int((run.input_json or {}).get("work_item_id") or 0), lock=lock)
+    except pcw_errors.PcwError as exc:
+        raise NotFoundError("Agent 任务不存在") from exc
+
+
+def _visible_delegation_runs(db, query, user_id):
+    from app.customer.access_service import apply_customer_scope
+    from app.customer.delegation_guard_service import live_delegation_user
+    from app.customer.logical_customer_service import logical_owner_expression
+    from app.customer.models import CustomerAccount
+    from app.customer.pcw_models import CustomerWorkItem
+    from app.customer.workbench_models import CustomerDelegation
+    from app.customer.work_item_service import READ
+    try:
+        customers = apply_customer_scope(db.query(CustomerAccount.id),
+            user=live_delegation_user(db, user_id), read_permissions=READ, include_public_pool=False)
+        visible = db.query(CustomerDelegation.id).join(CustomerWorkItem,
+            CustomerWorkItem.id == CustomerDelegation.item_id).filter(
+            CustomerDelegation.id == AgentRun.input_json["delegation_id"].as_integer(),
+            logical_owner_expression(CustomerWorkItem, "work_item").in_(customers)).exists()
+    except CustomerAccessDenied:
+        visible = false()
+    return query.filter(or_(AgentRun.input_json["delegation_id"].as_integer().is_(None), visible))
 
 
 def get_run(db: Session, run_id: int, *, user_id: int, can_read_all: bool) -> AgentRun:
@@ -326,10 +376,10 @@ def list_runs(
         query = query.filter(AgentRun.status == status)
     if runtime:
         query = query.filter(AgentRun.source_runtime == runtime)
+    query = _visible_delegation_runs(db, query, user_id)
     total = query.count()
     rows = query.order_by(desc(AgentRun.created_at), desc(AgentRun.id)).offset(
-        (page - 1) * page_size
-    ).limit(page_size).all()
+        (page - 1) * page_size).limit(page_size).all()
     return rows, total
 
 

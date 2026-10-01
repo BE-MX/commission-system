@@ -101,6 +101,12 @@ def resolve_run_token(db: Session, raw_token: str) -> dict:
         raise MCPAuthError("Agent Run 尚未开始或已经结束")
     if run.cancel_requested or profile.status != "active":
         raise MCPAuthError("Agent Run 已取消或 Profile 已停用")
+    from app.customer.delegation_guard_service import guard_run
+    from app.customer.pcw_errors import PcwError
+    try:
+        guard_run(db, run)
+    except PcwError as exc:
+        raise MCPAuthError("事项委派已失效") from exc
     if run.lease_expires_at is None or run.lease_expires_at <= utc_now_naive():
         raise MCPAuthError("Agent Run 租约已过期")
 

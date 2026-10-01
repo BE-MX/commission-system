@@ -12,12 +12,10 @@ function fail(code, message) {
 
 // ── 页签与权限声明 ─────────────────────────────────────────
 export const WORKSPACE_TABS = [
-  { key: 'overview', label: '概览', permission: 'customer:read' },
-  { key: 'profile', label: '档案与建议', permission: 'customer:read' },
-  { key: 'conversations', label: '沟通与询盘', permission: 'customer:read' },
-  { key: 'orders', label: '订单与复购', permission: 'customer:read' },
-  { key: 'monitor', label: '渠道监控', permission: 'customer:read' },
-  { key: 'maintenance', label: '维护计划', permission: 'customer:read' },
+  { key: 'overview', label: '概况', permission: 'customer:read' },
+  { key: 'conversations', label: '沟通', permission: 'customer:read' },
+  { key: 'profile', label: '档案', permission: 'customer:read' },
+  { key: 'maintenance', label: '计划', permission: 'customer:read' },
 ]
 
 // ── PCW-01 概览 ────────────────────────────────────────────
@@ -241,7 +239,7 @@ export function buildPlanPayload(planType, form = {}) {
       contact_id: form.contact_id ?? form.contactId,
       month, day,
       local_contact_time: form.local_contact_time ?? form.localContactTime ?? null,
-      leap_day_policy: form.leap_day_policy ?? form.leapDayPolicy ?? null,
+      leap_day_policy: form.leap_day_policy ?? form.leapDayPolicy ?? (month === 2 && day === 29 ? null : 'skip'),
     }
   } else if (planType === 'holiday') {
     if (!hasText(form.holiday_code ?? form.holidayCode)) fail('VALUE_REQUIRED', '请选择节日')
@@ -266,7 +264,7 @@ export function buildPlanPayload(planType, form = {}) {
   } else if (planType === 'shipping') {
     const linkIds = form.shipment_order_link_ids ?? form.shipmentOrderLinkIds
     if (!Array.isArray(linkIds) || linkIds.length === 0) fail('VALUE_REQUIRED', '物流计划需要显式订单/运单关联')
-    if (!hasText(form.shipment_event_id ?? form.shipmentEventId)) fail('VALUE_REQUIRED', '缺少物流事件标识')
+    if (!hasValue(form.shipment_event_id ?? form.shipmentEventId)) fail('VALUE_REQUIRED', '缺少物流事件标识')
     typed = {
       shipment_order_link_ids: linkIds,
       trigger_event_type: form.trigger_event_type ?? form.triggerEventType ?? 'delivered',
@@ -333,16 +331,16 @@ export function buildSampleCasePayload(operation, form = {}, versions = {}) {
   }
   if (operation === 'start_test') {
     if (!hasText(form.actual_date ?? form.actualDate)) fail('VALUE_REQUIRED', '请填写实际测试日期')
-    const evidence = form.evidence_message_ids ?? form.evidenceMessageIds
+    const evidence = form.evidence_refs ?? form.evidenceRefs
     if (!Array.isArray(evidence) || evidence.length === 0) fail('EVIDENCE_REQUIRED', '开始测试需要客户明确证据')
     payload.actual_date = form.actual_date ?? form.actualDate
-    payload.evidence_message_ids = evidence
+    payload.evidence_refs = evidence
   }
   if (operation === 'record_feedback') {
     if (!hasText(form.feedback)) fail('VALUE_REQUIRED', '请填写反馈内容')
     if (!hasText(form.feedback_date ?? form.feedbackDate)) fail('VALUE_REQUIRED', '请填写反馈日期')
-    payload.feedback = form.feedback.trim()
-    payload.feedback_date = form.feedback_date ?? form.feedbackDate
+    payload.feedback_text = form.feedback.trim()
+    payload.actual_date = form.feedback_date ?? form.feedbackDate
     if (hasText(form.reason)) payload.reason = form.reason.trim()
   }
   if (operation === 'close') {

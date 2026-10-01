@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
 from app.customer import models
+from app.customer.pcw_models import CustomerWorkItem
 
 
 _ROOT_MODELS = {
@@ -21,6 +22,7 @@ _ROOT_MODELS = {
     "search_result": models.SearchResult,
     "opportunity": models.CustomerOpportunity,
     "action": models.CustomerAction,
+    "work_item": CustomerWorkItem,
     "annotation": models.CustomerAnnotation,
     "acquisition_attribution": models.CustomerAcquisitionAttribution,
 }

@@ -351,7 +351,7 @@ def test_okki_contact_and_order_item_sources_are_explicitly_registered():
     assert contact.source_family_key_rule == "external_contact_id"
     assert contact.default_classification == DataClassification.PERSONAL_CONTACT
     assert contact.promotion_ceiling == "identified"
-    assert contact.allowed_fact_keys == frozenset()
+    assert contact.allowed_fact_keys == frozenset({"contact.birthday"})
 
     assert order_item.authority == "transactional"
     assert order_item.publisher_key_rule == "internal_source_account"
@@ -418,6 +418,7 @@ def test_every_allowed_fact_source_has_a_matching_source_registration():
 
 def test_fact_registry_order_is_stable():
     expected_keys = (
+        "contact.birthday",
         "business.industry",
         "commercial.has_valid_order",
         "behavior.confirmed.priority",

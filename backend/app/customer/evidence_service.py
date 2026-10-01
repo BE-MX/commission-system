@@ -7,19 +7,23 @@ from sqlalchemy import or_
 
 from app.core.time import beijing_now
 from app.customer.access_service import apply_record_access, require_customer_access
-from app.customer.models import CustomerEvent, CustomerFact, CustomerOpportunity, CustomerSourceRecord
-from app.customer.logical_customer_service import logical_owner_expression
+from app.customer.models import CustomerConversation, CustomerEvent, CustomerFact, CustomerMessage, CustomerOpportunity, CustomerSourceRecord
+from app.customer.logical_customer_service import logical_owner_expression, logical_root_predicate
 from app.customer.access_service import CustomerAccessDenied
 from app.customer.query_service import iso_beijing
+from app.customer.work_item_evidence_service import evidence_revision
 
 
 READ_PERMISSIONS = {"customer:read", "customer:read_all", "sales_automation:read",
                     "sales_automation:write", "sales_automation:admin",
-                    "customer_opportunity:read", "customer_opportunity:write", "customer_radar:read"}
+                    "customer_opportunity:read", "customer_opportunity:write", "customer_radar:read",
+                    "customer_pcw:read"}
 logger = logging.getLogger(__name__)
 
 
 def access_for(db, user, customer_id):
+    from app.customer.work_item_service import live_user
+    user = live_user(db, user)
     return require_customer_access(db, customer_id=customer_id, user=user,
         action_permissions=READ_PERMISSIONS, manage_permissions={"customer:admin"}, allow_public_pool=True)
 
@@ -30,6 +34,21 @@ def visible_facts(db, access):
     return apply_record_access(db.query(CustomerFact), CustomerFact, access, logical_object_type="fact").filter(
         or_(CustomerFact.source_record_id.is_(None), CustomerFact.source_record_id.in_(sources)),
     )
+
+
+def visible_events(db, access):
+    # Events are immutable storage-domain history. Only complete merges create aliases;
+    # a retain-source split cannot redirect an event to the target customer.
+    from app.customer.models import CustomerAccount
+    ids, frontier = {access.customer_id}, {access.customer_id}
+    while frontier:
+        added = {row[0] for row in db.query(CustomerAccount.id).filter(CustomerAccount.record_status == "merged",
+            CustomerAccount.merged_into_customer_id.in_(frontier))} - ids
+        ids.update(added)
+        frontier = added
+    return db.query(CustomerEvent).filter(CustomerEvent.customer_id.in_(ids),
+        CustomerEvent.data_classification.in_(access.allowed_classifications()),
+        CustomerEvent.visibility_scope.in_(access.allowed_visibility_scopes()))
 
 
 def _safe_url(value):
@@ -52,6 +71,7 @@ def serialize_facts(db, rows):
     now = beijing_now()
     return [{
         "id": row.id, "kind": "fact", "title": row.fact_key,
+        "evidence_ref": {"type": "fact", "id": row.id, "revision": evidence_revision(row)},
         "value": (row.value_json or {}).get("value"), "fact_layer": row.fact_layer,
         "verification_status": row.verification_status,
         "occurred_at": iso_beijing(row.observed_at),
@@ -75,10 +95,33 @@ def list_evidence(db, user, customer_id, *, kind="fact", page=1, page_size=20, k
         ).one_or_none()
         if opportunity is None:
             raise CustomerAccessDenied("CUSTOMER_NOT_FOUND_OR_FORBIDDEN")
-    if kind == "event":
+    if kind == "message":
+        conversations = db.query(CustomerConversation.id).filter(logical_root_predicate(
+            CustomerConversation, "conversation", access.customer_id))
+        sources = apply_record_access(db.query(CustomerSourceRecord.id), CustomerSourceRecord,
+            access, logical_object_type="source_record")
+        query = db.query(CustomerMessage, CustomerConversation).join(CustomerConversation,
+            CustomerConversation.id == CustomerMessage.conversation_id).filter(
+            CustomerMessage.conversation_id.in_(conversations), CustomerMessage.source_record_id.in_(sources),
+            CustomerMessage.direction.in_(("in", "out")))
+        if keyword and keyword.strip():
+            query = query.filter(CustomerMessage.content_text.ilike(f"%{keyword.strip()}%"))
+        total = query.count()
+        rows = query.order_by(CustomerMessage.sent_at.desc(), CustomerMessage.id.desc()).offset(
+            (page - 1) * page_size).limit(page_size).all()
+        items = [{"id": message.id, "kind": "message",
+                  "title": "已发给客户" if message.direction == "out" else "客户发来",
+                  "summary": (message.content_text or "[附件或非文本消息]")[:300],
+                  "direction": message.direction, "conversation_id": message.conversation_id,
+                  "source": conversation.channel, "occurred_at": iso_beijing(message.sent_at),
+                  "evidence_ref": {"type": "message", "id": message.id,
+                                   "revision": evidence_revision(message)},
+                  "selectable": True, "unavailable_reason": None}
+                 for message, conversation in rows]
+    elif kind == "event":
         from app.customer.workflow_service import _event_supports_stage
 
-        query = apply_record_access(db.query(CustomerEvent), CustomerEvent, access)
+        query = visible_events(db, access)
         if keyword and keyword.strip():
             query = query.filter(or_(CustomerEvent.event_title.ilike(f"%{keyword.strip()}%"),
                                      CustomerEvent.event_summary.ilike(f"%{keyword.strip()}%")))
@@ -91,6 +134,7 @@ def list_evidence(db, user, customer_id, *, kind="fact", page=1, page_size=20, k
                 db, event=row, opportunity=opportunity, new_status=target_status,
             )
             items.append({"id": row.id, "kind": "event", "title": row.event_title,
+                          "evidence_ref": {"type": "event", "id": row.id, "revision": evidence_revision(row)},
                           "summary": row.event_summary, "event_type": row.event_type,
                           "source": row.event_source, "occurred_at": iso_beijing(row.occurred_at),
                           "selectable": selectable,
@@ -115,7 +159,7 @@ def require_visible_selection(db, access, *, fact_ids=(), event_ids=()):
         if set(fact_ids) != allowed:
             raise CustomerWorkflowConflict("EVIDENCE_NOT_AVAILABLE_REFRESH_REQUIRED")
     if event_ids:
-        allowed = {row.id for row in apply_record_access(db.query(CustomerEvent.id), CustomerEvent, access).filter(
+        allowed = {row.id for row in visible_events(db, access).filter(
             CustomerEvent.id.in_(event_ids)).all()}
         if set(event_ids) != allowed:
             raise CustomerWorkflowConflict("EVIDENCE_NOT_AVAILABLE_REFRESH_REQUIRED")

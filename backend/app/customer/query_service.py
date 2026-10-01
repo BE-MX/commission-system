@@ -6,6 +6,7 @@ from datetime import timedelta, timezone
 
 from sqlalchemy import and_, exists, or_
 from sqlalchemy.orm import Session
+from app.core.time import beijing_now
 
 from app.customer.access_service import (
     CLASSIFICATION_ORDER,
@@ -150,6 +151,8 @@ def get_customer(db: Session, user: dict, customer_id: int) -> dict:
     data["access_scope"] = access.scope_kind
     if access.scope_kind == "public_pool":
         return data
+    data["current_profile_version_id"] = row.current_profile_version_id
+    data["profile_input_seq"] = row.profile_input_seq
     from app.insight.customer_profile_service import get_profile
     projection = get_profile(db, row.id, access=access)
     data["profile"] = projection["profile_json"] if projection else None
@@ -468,12 +471,22 @@ def list_actions(db: Session, user: dict, *, page, page_size):
 
 
 def serialize_action(row, *, customer_id=None) -> dict:
+    effective_status = ("pending" if row.status == "snoozed" and row.snoozed_until
+                        and row.snoozed_until <= beijing_now() else row.status)
     return {
         "action_id": row.id,
+        "row_version": row.row_version,
+        "work_item_id": row.work_item_id,
+        "original_due_at": iso_beijing(row.original_due_at),
+        "business_due_at": iso_beijing(row.business_due_at),
         "customer_id": customer_id or row.customer_id,
         "opportunity_id": row.opportunity_id,
         "action_type": row.action_type,
+        "execution_mode": row.execution_mode,
+        "source_task_ref": row.source_task_ref,
+        "required_for_resolution": row.required_for_resolution,
         "status": row.status,
+        "effective_status": effective_status,
         "priority": row.priority,
         "owner_user_id": row.owner_user_id,
         "reason": row.reason,
@@ -481,6 +494,8 @@ def serialize_action(row, *, customer_id=None) -> dict:
         "channel": row.channel,
         "thread_group": row.thread_group,
         "snoozed_until": iso_beijing(row.snoozed_until),
+        "effective_due_at": iso_beijing(row.snoozed_until if effective_status == "snoozed" else
+            row.business_due_at or row.original_due_at or row.due_at),
         "completed_at": iso_beijing(row.completed_at),
         "evidence_status": row.evidence_status,
         "followup_action_id": (row.feedback_json or {}).get("completion", {}).get("followup_action_id"),

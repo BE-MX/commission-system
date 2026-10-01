@@ -1,0 +1,17 @@
+{
+  "version": "customer_segment_v1",
+  "status": "candidate",
+  "effective_at": null,
+  "approved_by": null,
+  "replay_conclusion": null,
+  "active_order_days": 90,
+  "active_interaction_days": 30,
+  "new_interaction_days": 60,
+  "wake_order_days": 240,
+  "reorder_policy": "commercial_cycle_v1",
+  "minimum_commercial_batches": 4,
+  "interval_statistic": "median",
+  "irregular_range_ratio": 0.6,
+  "window_margin_days": 7,
+  "prototype_comparison": {"minimum_orders": 3, "interval_statistic": "mean", "lower_ratio": 0.85, "upper_ratio": 1.5}
+}

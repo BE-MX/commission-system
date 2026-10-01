@@ -12,6 +12,7 @@ from app.customer.access_service import CustomerAccessDenied, require_customer_a
 from app.customer.logical_customer_service import logical_owner_expression
 from app.customer.models import CustomerAction, CustomerOpportunity, CustomerResearchTask
 from app.customer.schemas import ActionUpdate, OpportunityUpdate, QualificationDecision
+from app.customer import workbench_v2_router
 from app.customer.qualification_transaction import qualification_db
 from app.customer.workflow_service import CustomerWorkflowConflict, CustomerWorkflowError, CustomerWorkflowNotFound
 from app.sales_automation import router as acquisition_views
@@ -29,6 +30,7 @@ router.include_router(enrichment_router.router)
 router.include_router(proposal_router.router)
 router.include_router(pcw_router.router)
 router.include_router(pcw_maintenance_router.router)
+router.include_router(workbench_v2_router.router)
 CUSTOMER_READ = ("customer:read", "customer:read_all")
 RESEARCH_READ = ("sales_automation:read", "customer:read_all")
 OPPORTUNITY_READ = ("customer_opportunity:read", "customer:read_all")
@@ -103,9 +105,24 @@ def _logical_record(db, model, object_type, object_id, user, permissions):
 def customers(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None, max_length=255), db: Session = Depends(get_db),
+    customer_scope: str | None = Query(None, pattern="^(primary|collaborator|authorized)$"),
+    tier: str | None = Query(None, pattern="^(reorder|active|new|wake|sleep|unknown)$"),
+    sort: str = Query("updated", pattern="^(value|order|contact|profile|updated)$"),
+    focus: str | None = Query(None, pattern="^(commitments|needs|reorder)$"),
+    preview_segments: bool = False,
     user=Depends(require_any_permission(*CUSTOMER_READ)),
 ):
     try:
+        if customer_scope is not None:
+            from app.customer.customer_segment_service import list_customers
+            if preview_segments:
+                from app.customer.work_item_service import live_user
+                from app.customer import pcw_errors
+                current = live_user(db, user)
+                if "customer:admin" not in current["permissions"] and "super_admin" not in current["roles"]:
+                    raise pcw_errors.forbidden("分群回放仅供客户管理员查看", error_code="SEGMENT_REPLAY_FORBIDDEN")
+            return ok(list_customers(db, user, page=page, page_size=page_size, keyword=keyword,
+                customer_scope=customer_scope, tier=tier, sort=sort, focus=focus, preview=preview_segments))
         items, total = query_service.list_customers(db, user, page=page, page_size=page_size, keyword=keyword)
     except CustomerAccessDenied:
         _not_found()
@@ -285,7 +302,7 @@ def qualification_decision(task_id: int, payload: QualificationDecision, db: Ses
 
 
 @router.get("/customers/{customer_id}/evidence")
-def customer_evidence(customer_id: int, kind: str = Query("fact", pattern="^(fact|event)$"),
+def customer_evidence(customer_id: int, kind: str = Query("fact", pattern="^(fact|event|message)$"),
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None, max_length=255), db: Session = Depends(get_db),
     opportunity_id: int | None = Query(None, gt=0),
@@ -390,6 +407,8 @@ def update_action(
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     user=Depends(require_any_permission("customer_radar:write", "customer:admin")),
 ):
+    from app.customer.work_item_service import live_user
+    user = live_user(db, user)
     scoped, logical_id = _logical_record(
         db, CustomerAction, "action", action_id, user, ACTION_WRITE,
     )
@@ -401,7 +420,17 @@ def update_action(
         scoped.owner_user_id != uid or linked is not None and linked.owner_user_id != uid
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "ACTION_OWNER_REQUIRED")
-    can_manage = access.can_manage or scoped.customer_id != int(logical_id)
+    can_manage = access.can_manage
+    if scoped.work_item_id is not None:
+        from app.customer.pcw_idempotency import validate_idempotency_key
+        from app.customer import pcw_errors
+        validate_idempotency_key(idempotency_key)
+        if payload.expected_action_version is None or payload.expected_work_item_version is None:
+            raise pcw_errors.bad_request("PCW行动必须携带行动及事项版本", error_code="PCW_VERSIONS_REQUIRED")
+        from app.customer.work_item_evidence_service import visible_message
+        for message_id in payload.evidence_message_ids:
+            if visible_message(db, access, message_id) is None:
+                raise pcw_errors.conflict("结果依据不可见或失效", error_code="EVIDENCE_NOT_AVAILABLE")
     v2_fields_present = any(
         value is not None
         for value in (
@@ -439,6 +468,7 @@ def update_action(
                 followup_action_type=payload.followup_action_type,
                 followup_channel=payload.followup_channel,
                 idempotency_key=idempotency_key,
+                evidence_access=access,
             )
             db.commit()
             return ok(result)
@@ -451,7 +481,10 @@ def update_action(
                 actor_user_id=uid,
                 can_manage=can_manage,
                 expected_action_version=payload.expected_action_version,
+                expected_work_item_version=payload.expected_work_item_version,
+                expected_occurrence_version=payload.expected_occurrence_version,
                 snoozed_until=payload.snoozed_until,
+                idempotency_key=idempotency_key,
             )
             db.commit()
             return ok(result)
@@ -462,7 +495,10 @@ def update_action(
                 actor_user_id=uid,
                 can_manage=can_manage,
                 expected_action_version=payload.expected_action_version,
+                expected_work_item_version=payload.expected_work_item_version,
+                expected_occurrence_version=payload.expected_occurrence_version,
                 dismissal_reason=payload.reason_code or payload.note or "",
+                idempotency_key=idempotency_key,
             )
             db.commit()
             return ok(result)
