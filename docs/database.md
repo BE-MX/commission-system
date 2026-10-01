@@ -1,5 +1,18 @@
 # 莱莎方舟 数据库表参考
 
+## 任务中心一期（`173_task_center`，本地未部署）
+
+| 表 | 关键字段与约束 |
+| --- | --- |
+| `ark_task_modules` | `key` 主键（导航条目用路由 name）；`kind`、分组、标题、路由、排序、`owner_id`、有效标记、同步时间；个人分类按 owner 隔离。 |
+| `ark_task_items` | 自增 `id` 派生 `T-<id>`；`owner_id`、`parent_id`、标题/描述/验收标准、优先级、状态/受阻原因、模块、截止日、排序/来源、创建/更新/完成/软删时间、`delete_batch`。按 owner+状态和 owner+父任务建索引。 |
+| `ark_task_links` | 任务、类型、引用、标题、匹配方式/`status`、附加信息、创建时间；`(task_id, kind, ref)` 唯一。 |
+| `ark_task_events` | 任务、操作者、事件类型、JSON 详情与发生时间；按任务索引。 |
+| `ark_task_briefs` | `owner_id`、北京时间日期、简报内容/来源、推送/创建时间；`(owner_id, brief_date)` 唯一。 |
+
+迁移父版本为 `172_workbench_lifecycle`。开发机不对共享库执行迁移；生产由统一发布入口检查并执行。
+
+
 ## 客户级素材标签（168_customer_media_customer_tags，已部署）
 
 `ark_customer_media_customer_tags` 以 `(customer_id, dimension_id, tag_value_id)` 为联合主键，保存客户长期持有的标签，独立于预约单、设计任务和素材批次。`dimension_id`、`tag_value_id` 关联现有标签库，`created_by` 关联方舟用户，`created_at` 使用北京时间；按 `(tag_value_id, customer_id)` 建索引。新增标签采取追加和重复写幂等语义。迁移从未删除素材的既有打标记录按客户去重回填，不改动现有素材标签、目录或文件。2026-09-25 的生产恢复与验证见[恢复报告](reports/2026-09-25-migration168-collation.md)。

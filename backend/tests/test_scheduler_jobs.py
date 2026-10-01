@@ -117,12 +117,18 @@ class TestSchedulerRegistration:
                 "battle_posters_afternoon",
                 "announcement_dispatch",
                 "announcement_weekly",
+                "task_daily_brief",
                 "whatsapp_translation_pairing_cleanup",
                 "domestic_public_sea_daily",
                 "okki_outbound_reconcile",
                 "receipt_delivery",
                 "okki_outbound_delete_reconcile",
             }
+            task_brief = scheduler.get_job("task_daily_brief")
+            task_brief_fields = {field.name: str(field) for field in task_brief.trigger.fields}
+            assert task_brief_fields["hour"] == "8"
+            assert task_brief_fields["minute"] == "53"
+            assert task_brief.max_instances == 1
             design_image = scheduler.get_job("design_image_queue")
             assert design_image.max_instances == 1
             assert design_image.coalesce is True

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>任务中心 · 方舟原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="page.css">
+<link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+<div class="app">
+  <aside class="aside">
+    <div class="logo-area">
+      <div class="logo-mark">L</div>
+      <div class="logo-text-group"><span class="logo-text">LeShine Ark</span><span class="logo-sub">莱莎方舟平台</span></div>
+    </div>
+    <nav class="nav" id="nav" aria-label="主导航"></nav>
+    <div class="nav-hint">悬停菜单项，点 <b>+</b> 直接为该模块记任务</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumbs"><span>方舟</span><i>/</i><b>任务中心</b></div>
+      <div class="tabs">
+        <span class="tab">工作台</span><span class="tab">订单发票</span><span class="tab is-active">任务中心</span>
+      </div>
+      <button class="btn btn-soft" id="headerQuick" type="button"><span class="plus">+</span>记任务</button>
+      <div class="avatar" title="亮哥">亮</div>
+    </header>
+
+    <main class="content">
+      <div class="lg-aurora" aria-hidden="true"><i class="b1"></i><i class="b2"></i><i class="b3"></i></div>
+
+      <section class="page-head">
+        <div>
+          <h1>任务中心</h1>
+          <p class="sub">方舟开发需求与个人事项 · git 自动推进 · 仅本人可见</p>
+        </div>
+        <div class="stats" id="stats"></div>
+      </section>
+
+      <section class="brief lg-card" id="brief"></section>
+
+      <section class="toolbar lg-card is-static">
+        <div class="seg" role="tablist" id="viewSeg">
+          <button role="tab" data-view="tree" class="is-on">树形</button>
+          <button role="tab" data-view="board">看板</button>
+          <button role="tab" data-view="map">模块地图</button>
+        </div>
+        <div class="filters">
+          <label class="search"><input id="search" placeholder="搜索标题 / T-编号"></label>
+          <select id="fModule"><option value="">全部模块</option></select>
+          <div class="chips" id="fPriority"></div>
+          <label class="check"><input type="checkbox" id="fHideDone" checked> 隐藏已结束</label>
+        </div>
+        <button class="btn btn-primary" id="newTask" type="button">+ 新建任务</button>
+      </section>
+
+      <section class="panel lg-card is-static" id="viewTree"></section>
+      <section class="board" id="viewBoard" hidden></section>
+      <section class="map" id="viewMap" hidden></section>
+    </main>
+  </div>
+</div>
+
+<!-- 快速建任务浮层 -->
+<div class="quick" id="quick" role="dialog" aria-label="快速建任务" hidden></div>
+<!-- 详情抽屉 -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-label="任务详情" hidden></aside>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="data.js"></script>
+<script src="render.js"></script>
+<script src="drawer.js"></script>
+<script src="interact.js"></script>
+</body>
+</html>

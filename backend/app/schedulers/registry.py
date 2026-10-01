@@ -124,6 +124,10 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     scheduler.add_job(process_receipts, trigger="interval", seconds=30,
                       id="receipt_delivery", replace_existing=True, max_instances=1, coalesce=True)
 
+    from app.task.scheduler import send_task_briefs_job
+    scheduler.add_job(send_task_briefs_job, trigger="cron", hour=8, minute=53, timezone="Asia/Shanghai",
+                      id="task_daily_brief", replace_existing=True, max_instances=1, coalesce=True,
+                      misfire_grace_time=1800)
     if settings.ANNOUNCEMENT_WORKER_ENABLED:
         from app.announcement.scheduler import dispatch_announcements, generate_announcement_weekly
         scheduler.add_job(dispatch_announcements, 'interval', seconds=10, id='announcement_dispatch',

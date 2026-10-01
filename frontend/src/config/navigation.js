@@ -19,6 +19,7 @@ import {
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard, Key,
   DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop, Wallet, Monitor,
+  Finished,
 } from '@element-plus/icons-vue'
 
 const FESTIVAL_PERMISSION = 'festival:read'
@@ -196,6 +197,11 @@ export const MENU_GROUPS = {
       'governance:read', 'governance:write', 'governance:admin',
       'governance_graph:read', 'governance_log:read',
     ],
+  },
+  task: {
+    title: '个人效率',
+    icon: Finished,
+    anyPermission: ['task:read', 'task:write'],
   },
 }
 
@@ -1643,6 +1649,19 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'colorwork', title: '原始库存图文件', icon: Picture, order: 30,
       permission: 'colorwork_master:read',
+    },
+  },
+
+  // ── 任务中心（个人任务，数据按本人隔离） ─────────────────────
+  {
+    path: '/task',
+    name: 'TaskCenter',
+    component: () => import('@/views/task/TaskCenter.vue'),
+    title: '任务中心',
+    anyPermission: ['task:read', 'task:write'],
+    menu: {
+      group: 'task', title: '任务中心', icon: Finished, order: 1,
+      anyPermission: ['task:read', 'task:write'],
     },
   },
 

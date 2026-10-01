@@ -54,6 +54,7 @@ from app.invoice import models as _invoice_models, settlement_models as _settlem
 from app.receipt import models as _receipt_models  # noqa: F401
 # sys_dict 供术语表（whatsapp_glossary_*）检索使用
 from app.system import models as _system_models  # noqa: F401
+from app.task import models as _task_models  # noqa: F401
 
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER

@@ -37,4 +37,5 @@ JOB_METADATA = {
     "battle_posters_afternoon": JobMetadata("战报海报 17:01", "临时战报", "业务运营"),
     "announcement_dispatch": JobMetadata("公告群消息投递", "公告管理", "公告管理员"),
     "announcement_weekly": JobMetadata("公告 AI 周报", "公告管理", "公告管理员"),
+    "task_daily_brief": JobMetadata("任务中心每日简报", "任务中心", "平台研发"),
 }

@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
     ANNOUNCEMENT_WORKER_ENABLED: bool = True
+    # 任务中心：启动时用 frontend/dist/nav-manifest.json 同步模块注册表。仅生产 .env 置 true；
+    # 开发机与云端展会实例保持 false，避免不同版本的导航清单互相覆盖共享库
+    TASK_MODULE_SYNC_ENABLED: bool = False
     DOMESTIC_REVIEW_NOTICE_BASE_URL: str = "https://leshine.work"
     ANNOUNCEMENT_PUBLIC_BASE_URL: str = "https://leshine.work"
 
