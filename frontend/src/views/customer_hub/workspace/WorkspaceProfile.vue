@@ -4,15 +4,15 @@
       <h3>普通字段修订 <span class="hint">治理字段（身份/归属/DNC/风险）走变更提案</span></h3>
       <el-form label-width="96px" size="small" @submit.prevent>
         <el-form-item label="字段">
-          <el-select v-model="form.field_key" placeholder="选择字段" style="width: 260px">
+          <el-select v-model="form.field_key" placeholder="选择字段" class="profile-select">
             <el-option v-for="key in PROFILE_FIELD_WHITELIST" :key="key" :value="key" :label="PROFILE_FIELD_LABELS[key]" />
           </el-select>
         </el-form-item>
         <el-form-item label="新值">
-          <el-input v-model="form.value" placeholder="依据客户确认填写" style="width: 320px" />
+          <el-input v-model="form.value" placeholder="依据客户确认填写" class="profile-input" />
         </el-form-item>
         <el-form-item label="依据">
-          <el-input v-model="form.reason" type="textarea" :rows="2" placeholder="为什么这样修改" style="width: 320px" />
+          <el-input v-model="form.reason" type="textarea" :rows="2" placeholder="为什么这样修改" class="profile-input" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="saving" v-permission="'customer_profile:write'" @click="submitRevision">保存修订</el-button>
@@ -57,7 +57,7 @@
       <h3>客户服务入口 <span class="hint">登记用途与入口；使用表现仅在有可靠来源后展示</span></h3>
       <el-form label-width="96px" size="small" @submit.prevent>
         <el-form-item label="类型">
-          <el-select v-model="assetForm.asset_type" style="width: 260px">
+          <el-select v-model="assetForm.asset_type" class="profile-select">
             <el-option value="customer_website" label="客户网站" />
             <el-option value="selection_page" label="选品页" />
             <el-option value="purchase_entry" label="采购入口" />
@@ -65,9 +65,9 @@
             <el-option value="other" label="其他入口" />
           </el-select>
         </el-form-item>
-        <el-form-item label="入口地址"><el-input v-model="assetForm.entry_url" placeholder="https://" style="width: min(420px, 100%)" /></el-form-item>
-        <el-form-item label="服务用途"><el-input v-model="assetForm.purpose" placeholder="这个入口帮助客户完成什么" style="width: min(420px, 100%)" /></el-form-item>
-        <el-form-item label="已知问题"><el-input v-model="assetForm.known_issue" placeholder="可选，记录当前障碍" style="width: min(420px, 100%)" /></el-form-item>
+        <el-form-item label="入口地址"><el-input v-model="assetForm.entry_url" placeholder="https://" class="asset-input" /></el-form-item>
+        <el-form-item label="服务用途"><el-input v-model="assetForm.purpose" placeholder="这个入口帮助客户完成什么" class="asset-input" /></el-form-item>
+        <el-form-item label="已知问题"><el-input v-model="assetForm.known_issue" placeholder="可选，记录当前障碍" class="asset-input" /></el-form-item>
         <el-form-item><el-button type="primary" :loading="assetSaving" v-permission="'customer_pcw:write'" @click="submitAsset">登记入口</el-button></el-form-item>
       </el-form>
       <el-empty v-if="!assets.length" description="暂无已登记服务入口" :image-size="60" />
@@ -76,7 +76,7 @@
         <a v-if="/^https?:\/\//i.test(asset.entry_url || '')" :href="asset.entry_url" target="_blank" rel="noopener noreferrer">{{ asset.entry_url }}</a>
         <div v-if="asset.known_issue" class="hint">待处理：{{ asset.known_issue }}</div>
         <template v-if="revokeAssetId === asset.asset_id">
-          <el-input v-model="revokeReason" placeholder="撤销原因" style="width: min(360px, 100%)" />
+          <el-input v-model="revokeReason" placeholder="撤销原因" class="revoke-input" />
           <el-button type="danger" :loading="assetSaving" @click="confirmRevoke(asset)">确认撤销</el-button>
           <el-button @click="revokeAssetId = null">取消</el-button>
         </template>
@@ -238,4 +238,8 @@ onMounted(loadAll)
 .panel h3 { margin: 0 0 10px; font-size: 14px; }
 .hint { font-size: 12px; color: var(--text-muted); font-weight: normal; }
 .asset-row { display: grid; gap: 5px; padding: 10px 0; border-top: 1px solid var(--border-color); overflow-wrap: anywhere; }
+.profile-select { width: min(260px, 100%); }
+.profile-input { width: min(320px, 100%); }
+.asset-input { width: min(420px, 100%); }
+.revoke-input { width: min(360px, 100%); }
 </style>

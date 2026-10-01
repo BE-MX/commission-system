@@ -1093,23 +1093,6 @@
     "static_tag_type": 0,
     "transition_all": 0
   },
-  "frontend/src/views/customer_hub/CustomerWorkspace.vue": {
-    "bad_dialog_width": 0,
-    "bad_drawer_size": 0,
-    "bad_pagination_layout": 0,
-    "bad_value_format": 0,
-    "deep_el_override": 1,
-    "empty_text_attr": 0,
-    "footer_alias": 0,
-    "hex_colors": 0,
-    "inline_width": 0,
-    "lines_over_500": 0,
-    "message_calls": 0,
-    "money_format": 0,
-    "small_controls": 0,
-    "static_tag_type": 2,
-    "transition_all": 0
-  },
   "frontend/src/views/customer_hub/EvidencePicker.vue": {
     "bad_dialog_width": 0,
     "bad_drawer_size": 0,
@@ -1195,23 +1178,6 @@
     "static_tag_type": 0,
     "transition_all": 0
   },
-  "frontend/src/views/customer_hub/WorkbenchList.vue": {
-    "bad_dialog_width": 0,
-    "bad_drawer_size": 0,
-    "bad_pagination_layout": 1,
-    "bad_value_format": 0,
-    "deep_el_override": 3,
-    "empty_text_attr": 0,
-    "footer_alias": 0,
-    "hex_colors": 0,
-    "inline_width": 0,
-    "lines_over_500": 0,
-    "message_calls": 0,
-    "money_format": 0,
-    "small_controls": 0,
-    "static_tag_type": 0,
-    "transition_all": 0
-  },
   "frontend/src/views/customer_hub/mail_outreach/MailOutreachPanel.vue": {
     "bad_dialog_width": 1,
     "bad_drawer_size": 0,
@@ -1263,23 +1229,6 @@
     "static_tag_type": 0,
     "transition_all": 0
   },
-  "frontend/src/views/customer_hub/workspace/WorkspaceMaintenance.vue": {
-    "bad_dialog_width": 0,
-    "bad_drawer_size": 0,
-    "bad_pagination_layout": 0,
-    "bad_value_format": 0,
-    "deep_el_override": 0,
-    "empty_text_attr": 0,
-    "footer_alias": 0,
-    "hex_colors": 0,
-    "inline_width": 1,
-    "lines_over_500": 0,
-    "message_calls": 0,
-    "money_format": 0,
-    "small_controls": 0,
-    "static_tag_type": 0,
-    "transition_all": 0
-  },
   "frontend/src/views/customer_hub/workspace/WorkspaceMonitor.vue": {
     "bad_dialog_width": 0,
     "bad_drawer_size": 0,
@@ -1311,23 +1260,6 @@
     "message_calls": 0,
     "money_format": 0,
     "small_controls": 2,
-    "static_tag_type": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/customer_hub/workspace/WorkspaceProfile.vue": {
-    "bad_dialog_width": 0,
-    "bad_drawer_size": 0,
-    "bad_pagination_layout": 0,
-    "bad_value_format": 0,
-    "deep_el_override": 0,
-    "empty_text_attr": 0,
-    "footer_alias": 0,
-    "hex_colors": 0,
-    "inline_width": 3,
-    "lines_over_500": 0,
-    "message_calls": 0,
-    "money_format": 0,
-    "small_controls": 0,
     "static_tag_type": 0,
     "transition_all": 0
   },

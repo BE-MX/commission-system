@@ -55,7 +55,7 @@
       </el-table>
     </section>
 
-    <el-dialog v-model="dialogVisible" append-to-body title="新增监控订阅" width="min(480px, calc(100vw - 24px))" class="customer-hub-dialog">
+    <el-dialog v-model="dialogVisible" append-to-body title="新增监控订阅" width="480px" class="customer-hub-dialog">
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <el-form label-width="72px" size="small">
         <el-form-item label="渠道">

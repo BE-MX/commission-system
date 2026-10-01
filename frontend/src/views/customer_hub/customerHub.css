@@ -53,6 +53,7 @@
   margin: 24px auto;
   max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
+  max-width: calc(100vw - 24px);
 }
 .customer-hub-dialog .el-dialog__header,
 .customer-hub-dialog .el-dialog__footer,
@@ -77,6 +78,7 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+.customer-hub-drawer.el-drawer { max-width: 100vw; }
 .customer-hub-drawer .el-drawer__body {
   min-width: 0;
   overscroll-behavior: contain;
