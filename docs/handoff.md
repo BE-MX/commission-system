@@ -1,8 +1,10 @@
 # 当前交接与待办
 
-## 2026-10-02 设计规范合并发布（Codex，执行中）
+## 2026-10-02 设计规范合并发布（Codex，已部署）
 
-- 亮哥已授权本任务合并、推送和部署。将在主worktree合并，保留主目录其他任务未提交文档；候选固定本次完整提交，通过 `deploy/deploy.bat` 完成办公室及已登记云目标准备、激活与后检。发布回执和目标摘要验证完成后再记为已部署。
+- 应用候选 `6afaf0b47bc43a74a6ab7b70918d1cd9d822b2cf` 已在主worktree合入main并推送origin；其他15个文件指纹不变，原交接文档无关diff已恢复。服务器统一 `deploy/deploy.bat` 先准备再固定同SHA正式发布，退出0，`release_id=77bbe018598147a1867a59b715454681`，范围`office-and-cloud`，`deferred=[]`。
+- 办公室、两地主站与已登记色块/出库目标通过入口验证；北京后端内容、PM与客户素材制品无需变化。数据库仍`173_task_center`，无迁移；出库回执`verified`且调度`active/enabled=true`。两站额外12次HTTPS后检确认HTML/导航/主脚本/样例资源一致，health均`ok/connected`。额外Office SSH journal后检banner timeout，保留成功入口stdout；没有重复发布或绕过连接校验。
+- [发布记录](reports/2026-10-02-ui-convergence-release.md)。本条是下方“本地完成未提交/发布”的后续交付状态；应用代码固定上述SHA，发布后文档记录另提交。本任务恢复证据已移至主目录`.deploy_state/ui-convergence-delivery/`，任务工作树/分支按合并后的清理约定处理；其他代理成果保留。
 
 ## 2026-10-02 设计规范剩余四阶段（Codex，本地完成，未提交/发布）
 

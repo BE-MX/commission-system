@@ -1,6 +1,6 @@
 # 设计规范四阶段最终验收
 
-更新：2026-10-02。分支 `codex/list-filter-behavior`，工作树 `C:/Users/windb/.codex/worktrees/list-filter-behavior/commission-system`。既定第1–13项及主站资源推广、门禁、规范索引已本地落地；未提交、推送、合并或部署。
+更新：2026-10-02。既定第1–13项及主站资源推广、门禁、规范索引已落地；原工作树为 `C:/Users/windb/.codex/worktrees/list-filter-behavior/commission-system`，分支 `codex/list-filter-behavior`。亮哥随后授权合并推送部署，应用版本`6afaf0b4`已发布，见[发布记录](../reports/2026-10-02-ui-convergence-release.md)。下文“未提交/发布”描述实现阶段的历史证据；忽略的验证与恢复材料已保留到主目录`.deploy_state/ui-convergence-delivery/`。
 
 当前资源账本登记277个唯一语义资源：P85 / F74 / B34 / C3 / S81，已知待实施0；另列10类专业交互与范围边界。该计数证明已识别资源的采用与证据状态，不代表所有生产流程均已实机验证。
 
