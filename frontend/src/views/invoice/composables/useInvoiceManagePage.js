@@ -1,7 +1,8 @@
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import { formatMoney } from '@/utils/money'
+import { useTableView } from '@/composables/useTableView'
 import {
   deleteInvoice,
   downloadInvoiceExcel,
@@ -46,7 +47,7 @@ export function useInvoiceManagePage() {
     loadInvoices()
   }
 
-  // 表格视图状态：列显示 + 行密度，页面本地持久化（List Page Spec 第 9 节试点）
+  // 列配置数组：TableTools 列显隐的数据源 + 表格渲染驱动（Action Bar Spec / List Page Spec 第 9 节）
   const columnDefs = [
     { key: 'invoice_no', label: '发票号', prop: 'invoice_no', minWidth: 220, maxWidth: 320, className: 'invoice-number-column' },
     { key: 'customer_name', label: '客户', prop: 'customer_name', minWidth: 180, maxWidth: 260, tooltip: true },
@@ -59,26 +60,9 @@ export function useInvoiceManagePage() {
     { key: 'created_by', label: '创建人', minWidth: 84, maxWidth: 120, tooltip: true },
     { key: 'created_at', label: '创建时间', minWidth: 130, maxWidth: 160, tooltip: true },
   ]
-  const TABLE_VIEW_KEY = 'invoice-manage-table-view'
-  const density = ref('default')
-  const visibleKeys = ref(columnDefs.map(column => column.key))
-  try {
-    const saved = JSON.parse(localStorage.getItem(TABLE_VIEW_KEY) || 'null')
-    if (Array.isArray(saved?.visibleKeys)) {
-      const known = new Set(columnDefs.map(column => column.key))
-      const restored = saved.visibleKeys.filter(key => known.has(key))
-      if (restored.length) visibleKeys.value = restored
-    }
-    if (['compact', 'default', 'comfort'].includes(saved?.density)) density.value = saved.density
-  } catch { /* 本地偏好损坏时忽略，使用默认视图 */ }
-
-  watch([density, visibleKeys], () => {
-    try {
-      localStorage.setItem(TABLE_VIEW_KEY, JSON.stringify({ density: density.value, visibleKeys: visibleKeys.value }))
-    } catch { /* 隐私模式等写入失败时忽略 */ }
-  }, { deep: true })
-
-  const visibleColumns = computed(() => columnDefs.filter(column => visibleKeys.value.includes(column.key)))
+  // 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）
+  const { density, densityClass, visibleKeys, visibleColumns, panelRef, isFullscreen, toggleFullscreen } =
+    useTableView('invoice-manage', columnDefs)
   const syncLogsVisible = ref(false)
   const syncLogsLoading = ref(false)
   const syncLogs = ref([])
@@ -233,6 +217,6 @@ export function useInvoiceManagePage() {
     syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
     isInvoiceSyncing, resolveUncertain, validateAndSync,
     hasActiveFilters, handleSizeChange, orderTypeTone, resetFilters, statusOptions,
-    columnDefs, density, visibleColumns, visibleKeys,
+    columnDefs, density, densityClass, isFullscreen, panelRef, toggleFullscreen, visibleColumns, visibleKeys,
   }
 }

@@ -15,16 +15,6 @@
           <span style="font-size:17px;font-weight:600;color:#1e1e2d;">全局参数配置</span>
           <el-tag size="small" type="info" effect="plain">应用于所有 SKU</el-tag>
         </div>
-        <div style="display:flex;gap:10px;align-items:center;">
-          <GlassButton v-if="authStore.hasPermission('stock:write')" variant="primary" :left-icon="MagicStick" :loading="aiLoading" @click="aiBatchGenerate">AI 批量生成</GlassButton>
-          <GlassButton v-if="authStore.hasPermission('stock:write')" variant="success" :left-icon="Check" :loading="saveLoading" @click="saveAll">保存所有</GlassButton>
-          <!-- 购物车图标 -->
-          <el-badge :value="cartCount" :hidden="cartCount === 0" class="cart-badge" v-if="authStore.hasPermission('production:write')">
-            <el-button circle @click="cartDrawerVisible = true">
-              <el-icon :size="18"><ShoppingCart /></el-icon>
-            </el-button>
-          </el-badge>
-        </div>
       </div>
       <div class="params-row">
         <div class="param-item">
@@ -64,76 +54,94 @@
       <el-button @click="clearAiPreview">清除预览</el-button>
     </div>
 
-    <!-- 数据表 -->
-    <div class="card">
-      <div class="table-toolbar">
-        <div class="toolbar-left">
-          <span class="toolbar-title">SKU 安全库存配置</span>
-          <el-tag size="small" type="info">共 {{ pagination.total }} 条</el-tag>
-        </div>
-        <div class="toolbar-filters">
-          <el-select v-model="filters.model" multiple placeholder="型号" clearable filterable style="width:140px">
-            <el-option v-for="m in filterOptions.models" :key="m" :label="m" :value="m" />
-          </el-select>
-          <el-select v-model="filters.product_type" multiple placeholder="类型" clearable filterable style="width:140px">
-            <el-option v-for="t in filterOptions.types" :key="t" :label="t" :value="t" />
-          </el-select>
-          <el-select v-model="filters.size" multiple placeholder="尺寸" clearable filterable style="width:120px">
-            <el-option v-for="s in filterOptions.sizes" :key="s" :label="s" :value="s" />
-          </el-select>
-          <el-select v-model="filters.color" multiple placeholder="颜色" clearable filterable style="width:120px">
-            <el-option v-for="c in filterOptions.colors" :key="c" :label="c" :value="c" />
-          </el-select>
-          <el-select v-model="filters.weight" multiple placeholder="克重" clearable filterable style="width:120px">
-            <el-option v-for="w in filterOptions.weights" :key="w" :label="w" :value="w" />
-          </el-select>
-          <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:180px" @input="handleSearch" />
-          <el-checkbox v-model="filters.has_in_transit" label="仅看在途" size="small" border @change="applyFilters" />
-          <el-checkbox v-model="filters.has_safety_stock" label="仅看已设安全库存" size="small" border @change="applyFilters" />
-          <el-select v-model="filters.stock_status" placeholder="备货状态" clearable style="width:120px" @change="applyFilters">
-            <el-option label="全部状态" value="" />
-            <el-option label="备货中" value="stocking" />
-            <el-option label="加急中" value="urgent" />
-          </el-select>
-          <GlassButton variant="primary" size="sm" :left-icon="Filter" @click="applyFilters">筛选</GlassButton>
-          <GlassButton variant="secondary" size="sm" @click="resetFilters">重置</GlassButton>
-        </div>
+    <!-- 数据表：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
+    <div ref="panelRef" class="table-card safety-panel">
+      <div class="toolbar">
+        <span class="toolbar-title">SKU 安全库存配置</span>
+        <el-tag size="small" type="info">共 {{ pagination.total }} 条</el-tag>
+        <el-select v-model="filters.model" multiple placeholder="型号" clearable filterable class="filter-w-sm">
+          <el-option v-for="m in filterOptions.models" :key="m" :label="m" :value="m" />
+        </el-select>
+        <el-select v-model="filters.product_type" multiple placeholder="类型" clearable filterable class="filter-w-sm">
+          <el-option v-for="t in filterOptions.types" :key="t" :label="t" :value="t" />
+        </el-select>
+        <el-select v-model="filters.size" multiple placeholder="尺寸" clearable filterable class="filter-w-sm">
+          <el-option v-for="s in filterOptions.sizes" :key="s" :label="s" :value="s" />
+        </el-select>
+        <el-select v-model="filters.color" multiple placeholder="颜色" clearable filterable class="filter-w-sm">
+          <el-option v-for="c in filterOptions.colors" :key="c" :label="c" :value="c" />
+        </el-select>
+        <el-select v-model="filters.weight" multiple placeholder="克重" clearable filterable class="filter-w-sm">
+          <el-option v-for="w in filterOptions.weights" :key="w" :label="w" :value="w" />
+        </el-select>
+        <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable class="filter-w-md" @input="handleSearch" @keyup.enter="applyFilters" />
+        <el-checkbox v-model="filters.has_in_transit" label="仅看在途" border @change="applyFilters" />
+        <el-checkbox v-model="filters.has_safety_stock" label="仅看已设安全库存" border @change="applyFilters" />
+        <el-select v-model="filters.stock_status" placeholder="备货状态" clearable class="filter-w-sm" @change="applyFilters">
+          <el-option label="全部状态" value="" />
+          <el-option label="备货中" value="stocking" />
+          <el-option label="加急中" value="urgent" />
+        </el-select>
+        <GlassButton variant="primary" :left-icon="Filter" @click="applyFilters">查询</GlassButton>
+        <GlassButton :left-icon="RefreshRight" @click="resetFilters">重置</GlassButton>
       </div>
-      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" @sort-change="handleSortChange" border class="list-table">
+
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-if="authStore.hasPermission('stock:write')" variant="primary" :left-icon="MagicStick" :loading="aiLoading" @click="aiBatchGenerate">AI 批量生成</GlassButton>
+        <GlassButton v-if="authStore.hasPermission('stock:write')" variant="secondary" :left-icon="Check" :loading="saveLoading" @click="saveAll">保存所有</GlassButton>
+        <el-badge v-if="authStore.hasPermission('production:write')" :value="cartCount" :hidden="cartCount === 0" class="cart-badge">
+          <GlassButton variant="secondary" :left-icon="ShoppingCart" @click="cartDrawerVisible = true">购物车</GlassButton>
+        </el-badge>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadData"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" @sort-change="handleSortChange" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" :left-icon="RefreshRight" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
         <el-table-column type="index" label="#" min-width="50" />
-        <el-table-column label="型号" prop="model" min-width="100" show-overflow-tooltip sortable="custom" />
-        <el-table-column label="类型" min-width="90" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('model')" label="型号" prop="model" min-width="100" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
         </el-table-column>
-        <el-table-column label="尺寸" min-width="90" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('size')" label="尺寸" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).size }}</template>
         </el-table-column>
-        <el-table-column label="颜色" prop="color" min-width="80" show-overflow-tooltip sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('color')" label="颜色" prop="color" min-width="80" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).color }}</template>
         </el-table-column>
-        <el-table-column label="克重" min-width="80" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('weight')" label="克重" min-width="80" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
         </el-table-column>
-        <el-table-column label="近30日销量" prop="sales_30d" min-width="95" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('sales-30d')" label="近30日销量" prop="sales_30d" min-width="95" sortable="custom">
           <template #default="{ row }">
             <span class="sales-value">{{ row.sales_30d || 0 }}</span><span class="sales-unit">件</span>
           </template>
         </el-table-column>
-        <el-table-column label="当前可用库存" prop="enable_count" min-width="105" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('enable-count')" label="当前可用库存" prop="enable_count" min-width="105" sortable="custom">
           <template #default="{ row }">
             <span :class="['stock-value', row.enable_count < (row.safety_stock||0) ? 'stock-low' : '']">
               {{ Math.round(row.enable_count || 0) }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="生产在途" min-width="85">
+        <el-table-column v-if="visibleKeys.includes('production-in-transit')" label="生产在途" min-width="85">
           <template #default="{ row }">
             <span :class="['in-transit-value', row.production_in_transit > 0 ? 'in-transit-active' : '']">
               {{ row.production_in_transit || 0 }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="备货状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('stock-status')" label="备货状态" min-width="90">
           <template #default="{ row }">
             <span
               v-if="row.stock_status"
@@ -146,7 +154,7 @@
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="安全库存阈值" prop="safety_stock" min-width="140" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('safety-stock')" label="安全库存阈值" prop="safety_stock" min-width="140" sortable="custom">
           <template #default="{ row }">
             <div class="editable-cell">
               <el-input-number v-model="row.safety_stock" :min="0" :max="10000" :step="1" controls-position="right" style="width:100px" @change="markDirty(row)" />
@@ -156,12 +164,12 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="日均销量" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('avg-daily-sales')" label="日均销量" min-width="90">
           <template #default="{ row }">
             <span class="avg-daily">{{ (row.avg_daily_sales_30d||0).toFixed(1) }}</span><span class="sales-unit">/天</span>
           </template>
         </el-table-column>
-        <el-table-column label="建议备货量" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('suggested-qty')" label="建议备货量" min-width="90">
           <template #default="{ row }">
             <span :class="row.suggested_qty > 0 ? 'value-danger' : 'text-muted'">
               {{ row.suggested_qty > 0 ? row.suggested_qty : '—' }}
@@ -179,10 +187,9 @@
           </template>
         </el-table-column>
       </el-table>
-      <div class="pagination-bar">
-        <el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.page_size" :total="pagination.total"
-          :page-sizes="[20,50,100]" layout="total,sizes,prev,pager,next,jumper" @size-change="loadData" @current-change="loadData" />
-      </div>
+      <el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.page_size" :total="pagination.total"
+        :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager"
+        @size-change="handleSizeChange" @current-change="loadData" />
     </div>
 
     <!-- AI 建议弹窗 -->
@@ -385,10 +392,15 @@ import {
 } from '@/api/stock'
 import { getProgress, initProgress } from '@/api/production'
 import { useProductionCart } from './composables/useProductionCart'
+import { useSafetyConfigTable } from './composables/useSafetyConfigTable'
+import { parseProductName, sourceLabel, sourceTagType, headerStyle, isCurrentProgressStep } from './safetyConfigPresentation'
 import ProductionOrderDialog from './components/ProductionOrderDialog.vue'
+import TableTools from '@/components/TableTools.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
 const authStore = useAuthStore()
+// 表格视图状态（列显隐/密度/全屏），columnDefs 仅供 TableTools 列显隐面板
+const { columnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useSafetyConfigTable()
 const { sortParams, onSortChange, reset: resetSort } = useTableSort('product_id', 'asc')
 function handleSortChange(sortInfo) {
   onSortChange(sortInfo)
@@ -415,22 +427,14 @@ const filters = reactive({
   stock_status: '',
 })
 
-function parseProductName(name) {
-  if (!name) return { type: '', size: '', color: '', weight: '' }
-  const parts = name.split('/')
-  const n = parts.length
-  const type = parts[0] || ''
-  const size = parts[1] || ''
-  const color = (n >= 5 && parts[n - 3].startsWith('#'))
-    ? `${parts[n - 3]}/${parts[n - 2]}`
-    : (parts[n - 2] || '')
-  const weight = parts[n - 1] || ''
-  return { type, size, color, weight }
-}
+const hasActiveFilters = computed(() => Boolean(
+  filters.keyword || filters.model.length || filters.product_type.length ||
+  filters.size.length || filters.color.length || filters.weight.length ||
+  filters.has_in_transit || filters.has_safety_stock || filters.stock_status
+))
 
 const allFilterOptions = ref({ models: [], types: [], sizes: [], colors: [], weights: [] })
 const filterOptions = computed(() => allFilterOptions.value)
-
 const aiDialogVisible = ref(false)
 const aiSuggestion = ref(null)
 const currentAiRow = ref(null)
@@ -443,17 +447,10 @@ const aiSourceLabel = computed(() => {
   return hasFormula ? '公式估算' : '—'
 })
 
-const sourceLabel = (s) => ({ '': '未设置', manual: '手动', formula: '公式估算', tft: 'TFT预测' })[s] || s
-const sourceTagType = (s) => ({ '': 'info', manual: 'primary', formula: 'warning', tft: 'success' })[s] || 'info'
-
 function markDirty(row) {
   row._dirty = true
   row._aiGenerated = false
   row.source = 'manual'
-}
-
-function headerStyle() {
-  return { background: 'linear-gradient(135deg,#faf8f3,#f0ece3)', fontWeight: 600, color: '#4a4a5a' }
 }
 
 async function loadData() {
@@ -502,6 +499,11 @@ function handleSearch() {
 }
 
 function applyFilters() {
+  pagination.page = 1
+  loadData()
+}
+
+function handleSizeChange() {
   pagination.page = 1
   loadData()
 }
@@ -770,9 +772,7 @@ const progressData = ref(null)
 const progressLoading = ref(false)
 
 function isCurrentStep(step) {
-  if (!progressData.value || !progressData.value.steps) return false
-  const firstPending = progressData.value.steps.find(s => s.status === 0)
-  return firstPending && step.id === firstPending.id
+  return isCurrentProgressStep(progressData.value, step)
 }
 
 async function openProgressDialog(row) {

@@ -10,7 +10,7 @@
    el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
    .el-overlay 的 position: fixed，弹窗打开后看不见 */
 .price-config-page .page-header,
-.price-config-page .table-card {
+.price-config-page .price-tabs-panel {
   position: relative;
   z-index: 1;
 }
@@ -29,7 +29,7 @@
 }
 
 /* 表格面板：同款渐变玻璃 */
-.table-card {
+.price-tabs-panel {
   padding: 4px 16px 16px;
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
@@ -37,10 +37,16 @@
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
 }
+.price-table-panel {
+  margin-top: 12px;
+  background: transparent;
+  border-color: var(--dash-glass-border);
+  box-shadow: none;
+}
 
 /* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白
    （:deep 同时覆盖 AccessoryPriceConfig 子组件内的表格） */
-.table-card :deep(.el-table) {
+.price-tabs-panel :deep(.el-table) {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
   --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
@@ -50,19 +56,11 @@
 
 /* 右侧固定操作列：sticky 单元格 background:inherit，行透明时滑到它下面的
    内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
-.table-card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+.price-tabs-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.price-tabs-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.price-tabs-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
-.tab-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.tab-toolbar .hint {
-  flex: 1;
+.price-table-panel .toolbar .hint {
   color: var(--text-muted);
   font-size: 13px;
 }

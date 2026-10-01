@@ -211,28 +211,31 @@
           </el-table>
         </div>
 
-        <div v-else v-loading="detailLoading" class="oi-table-wrap">
+        <div v-else ref="customerPanelRef" v-loading="detailLoading" class="oi-table-wrap table-card">
           <div class="oi-section-note oi-customer-filters">
             <div><b>客户行动清单</b><span>{{ customers.risk_definition }}</span></div>
             <el-select v-model="customerFilters.risk_status" clearable placeholder="全部风险" @change="changeCustomerPage"><el-option label="到期提醒" value="due" /><el-option label="周期异常" value="abnormal" /><el-option label="样本不足" value="insufficient_data" /></el-select>
             <el-select v-model="customerFilters.country" clearable filterable placeholder="全部国家" @change="changeCustomerPage"><el-option v-for="country in options.countries" :key="country" :label="country" :value="country" /></el-select>
           </div>
-          <el-table :data="customers.items" border class="list-table">
-            <el-table-column label="客户" prop="company_name" min-width="190" show-overflow-tooltip fixed />
-            <el-table-column label="国家" prop="country" min-width="94" />
-            <el-table-column label="负责人" prop="user_name" min-width="96" />
-            <el-table-column label="风险" min-width="108"><template #default="{ row }"><el-tag effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</el-tag></template></el-table-column>
-            <el-table-column label="所属画像" prop="profile_label" min-width="280" show-overflow-tooltip />
-            <el-table-column label="典型周期" min-width="158"><template #default="{ row }">{{ row.typical_cycle_days ? `${row.typical_cycle_days} 天` : '样本不足' }} · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
-            <el-table-column label="上次下单" prop="last_order_date" min-width="108" />
-            <el-table-column label="提醒日期" prop="expected_order_date" min-width="108" />
-            <el-table-column label="异常日期" prop="abnormal_date" min-width="108" />
-            <el-table-column label="超期" min-width="80"><template #default="{ row }">{{ row.overdue_days ? `${row.overdue_days} 天` : '—' }}</template></el-table-column>
-            <el-table-column label="历史金额" min-width="118"><template #default="{ row }">${{ money(row.lifetime_amount_usd) }}</template></el-table-column>
-            <el-table-column label="偏好" min-width="190"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
-            <el-table-column label="建议动作" prop="recommended_action" min-width="300" />
+          <div class="action-bar">
+            <TableTools v-model:visible-keys="customerVisibleKeys" v-model:density="customerDensity" :columns="customerColumnDefs" :fullscreen="customerIsFullscreen" @refresh="changeCustomerPage" @fullscreen="toggleCustomerFullscreen" />
+          </div>
+          <el-table :data="customers.items" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640">
+            <el-table-column v-if="customerVisibleKeys.includes('company')" label="客户" prop="company_name" min-width="190" show-overflow-tooltip fixed />
+            <el-table-column v-if="customerVisibleKeys.includes('country')" label="国家" prop="country" min-width="94" />
+            <el-table-column v-if="customerVisibleKeys.includes('owner')" label="负责人" prop="user_name" min-width="96" />
+            <el-table-column v-if="customerVisibleKeys.includes('risk')" label="风险" min-width="108"><template #default="{ row }"><el-tag effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</el-tag></template></el-table-column>
+            <el-table-column v-if="customerVisibleKeys.includes('profile')" label="所属画像" prop="profile_label" min-width="280" show-overflow-tooltip />
+            <el-table-column v-if="customerVisibleKeys.includes('cycle')" label="典型周期" min-width="158"><template #default="{ row }">{{ row.typical_cycle_days ? `${row.typical_cycle_days} 天` : '样本不足' }} · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
+            <el-table-column v-if="customerVisibleKeys.includes('last-order')" label="上次下单" prop="last_order_date" min-width="108" />
+            <el-table-column v-if="customerVisibleKeys.includes('expected')" label="提醒日期" prop="expected_order_date" min-width="108" />
+            <el-table-column v-if="customerVisibleKeys.includes('abnormal')" label="异常日期" prop="abnormal_date" min-width="108" />
+            <el-table-column v-if="customerVisibleKeys.includes('overdue')" label="超期" min-width="80"><template #default="{ row }">{{ row.overdue_days ? `${row.overdue_days} 天` : '—' }}</template></el-table-column>
+            <el-table-column v-if="customerVisibleKeys.includes('amount')" label="历史金额" min-width="118"><template #default="{ row }">${{ money(row.lifetime_amount_usd) }}</template></el-table-column>
+            <el-table-column v-if="customerVisibleKeys.includes('preference')" label="偏好" min-width="190"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
+            <el-table-column v-if="customerVisibleKeys.includes('action')" label="建议动作" prop="recommended_action" min-width="300" />
           </el-table>
-          <div class="oi-pagination"><el-pagination v-model:current-page="customers.page" v-model:page-size="customers.page_size" :total="customers.total" :page-sizes="[20, 50, 100]" layout="total,sizes,prev,pager,next" @size-change="changeCustomerPage" @current-change="changeCustomerPage" /></div>
+          <div class="oi-pagination pager"><el-pagination v-model:current-page="customers.page" v-model:page-size="customers.page_size" :total="customers.total" :page-sizes="[20, 50, 100]" layout="total,sizes,prev,pager,next" @size-change="changeCustomerPage" @current-change="changeCustomerPage" /></div>
         </div>
       </section>
     </template>
@@ -251,6 +254,8 @@
 import { computed, ref } from 'vue'
 import { DataAnalysis, MagicStick } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import OrderFilters from './components/OrderFilters.vue'
 import OrderTrendChart from './components/OrderTrendChart.vue'
 import RepeatPurchaseTrendChart from './components/RepeatPurchaseTrendChart.vue'
@@ -262,6 +267,18 @@ const {
   error, filters, generateBrief, handleBriefAction, loadPage, loading, options, overview,
   people, peopleDimension, profiles, scopedUsers,
 } = useOrderIntelligence()
+
+const customerColumnDefs = [
+  { key: 'company', label: '客户' }, { key: 'country', label: '国家' }, { key: 'owner', label: '负责人' },
+  { key: 'risk', label: '风险' }, { key: 'profile', label: '所属画像' }, { key: 'cycle', label: '典型周期' },
+  { key: 'last-order', label: '上次下单' }, { key: 'expected', label: '提醒日期' }, { key: 'abnormal', label: '异常日期' },
+  { key: 'overdue', label: '超期' }, { key: 'amount', label: '历史金额' }, { key: 'preference', label: '偏好' },
+  { key: 'action', label: '建议动作' },
+]
+const {
+  density: customerDensity, densityClass: customerDensityClass, visibleKeys: customerVisibleKeys,
+  panelRef: customerPanelRef, isFullscreen: customerIsFullscreen, toggleFullscreen: toggleCustomerFullscreen,
+} = useTableView('order-intelligence-customers', customerColumnDefs)
 
 const trendMode = ref('amount')
 const briefButtonText = computed(() => {

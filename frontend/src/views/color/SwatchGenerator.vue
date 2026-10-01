@@ -94,19 +94,22 @@
     </div>
 
     <!-- 历史记录 -->
-    <div class="history-section">
-      <h3>历史生成记录</h3>
-      <el-table :data="historyList" size="small" @sort-change="orderSort.onSortChange" border class="list-table">
-        <el-table-column prop="id" label="ID" min-width="60" />
-        <el-table-column label="色号" min-width="100">
+    <div ref="historyPanelRef" class="history-section table-card">
+      <div class="action-bar">
+        <h3>历史生成记录</h3>
+        <TableTools v-model:visible-keys="historyVisibleKeys" v-model:density="historyDensity" :columns="historyColumnDefs" :fullscreen="historyIsFullscreen" @refresh="loadHistory" @fullscreen="toggleHistoryFullscreen" />
+      </div>
+      <el-table :data="historyList" v-loading="historyLoading" @sort-change="handleHistorySort" border class="list-table" :class="historyDensityClass" :max-height="historyIsFullscreen ? undefined : 640">
+        <el-table-column v-if="historyVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
+        <el-table-column v-if="historyVisibleKeys.includes('color')" label="色号" min-width="100">
           <template #default="{ row }">
             <span v-if="row.palette_id">#{{ row.palette_id }}</span>
             <span v-else-if="row.blend_id">混#{{ row.blend_id }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="target_hex" label="目标色" min-width="100" />
-        <el-table-column prop="model_used" label="模型" min-width="120" />
-        <el-table-column label="ΔE" min-width="100">
+        <el-table-column v-if="historyVisibleKeys.includes('target')" prop="target_hex" label="目标色" min-width="100" />
+        <el-table-column v-if="historyVisibleKeys.includes('model')" prop="model_used" label="模型" min-width="120" />
+        <el-table-column v-if="historyVisibleKeys.includes('delta')" label="ΔE" min-width="100">
           <template #default="{ row }">
             <el-tag v-if="row.delta_e !== null" :type="row.pass_check ? 'success' : 'warning'" size="small">
               {{ row.delta_e }}
@@ -114,19 +117,24 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" min-width="100">
+        <el-table-column v-if="historyVisibleKeys.includes('status')" prop="status" label="状态" min-width="100">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" sortable="custom" />
+        <el-table-column v-if="historyVisibleKeys.includes('created')" prop="created_at" label="创建时间" min-width="160" sortable="custom" />
+        <template #empty><el-empty description="暂无数据" /></template>
       </el-table>
       <el-pagination
         v-if="historyTotal > 0"
         v-model:current-page="historyPage"
         v-model:page-size="historyPageSize"
         :total="historyTotal"
-        layout="total, prev, pager, next"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @current-change="loadHistory"
+        @size-change="handleHistorySizeChange"
       />
     </div>
   </div>
@@ -137,6 +145,8 @@ import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, MagicStick, Picture } from '@element-plus/icons-vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import { generateSwatch, getColors, getSwatches, getSwatchStatus } from '@/api/color'
 
 const colorOptions = ref([])
@@ -149,9 +159,32 @@ const orderSort = useTableSort()
 const currentTask = ref(null)
 
 const historyList = ref([])
+const historyLoading = ref(false)
 const historyPage = ref(1)
 const historyPageSize = ref(20)
 const historyTotal = ref(0)
+const historyColumnDefs = [
+  { key: 'id', label: 'ID' }, { key: 'color', label: '色号' },
+  { key: 'target', label: '目标色' }, { key: 'model', label: '模型' },
+  { key: 'delta', label: 'ΔE' }, { key: 'status', label: '状态' },
+  { key: 'created', label: '创建时间' },
+]
+const {
+  density: historyDensity, densityClass: historyDensityClass,
+  visibleKeys: historyVisibleKeys, panelRef: historyPanelRef,
+  isFullscreen: historyIsFullscreen, toggleFullscreen: toggleHistoryFullscreen,
+} = useTableView('swatch-history', historyColumnDefs)
+
+function handleHistorySort(event) {
+  orderSort.onSortChange(event)
+  historyPage.value = 1
+  loadHistory()
+}
+
+function handleHistorySizeChange() {
+  historyPage.value = 1
+  loadHistory()
+}
 
 onMounted(() => {
   loadColorOptions()
@@ -171,13 +204,14 @@ async function loadColorOptions() {
 }
 
 async function loadHistory() {
+  historyLoading.value = true
   try {
     const res = await getSwatches({ page: historyPage.value, page_size: historyPageSize.value, ...orderSort.sortParams.value })
     if (res.data?.code === 200) {
       historyList.value = res.data.data.items || []
       historyTotal.value = res.data.data.total || 0
     }
-  } catch { /* ignore */ }
+  } finally { historyLoading.value = false }
 }
 
 async function generate() {
@@ -266,13 +300,13 @@ function statusLabel(s) {
 
 /* 历史记录表格面板：同款渐变玻璃 */
 .history-section {
-  padding: 20px;
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
   background: var(--dash-glass-bg);
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
 }
+.history-section .action-bar h3 { margin: 0; }
 
 /* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
 .history-section :deep(.el-table) {

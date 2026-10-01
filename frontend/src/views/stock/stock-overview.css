@@ -1,0 +1,85 @@
+.stock-overview-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.stock-overview-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.stock-overview-page .stats-row,
+.stock-overview-page .stock-panel {
+  position: relative;
+  z-index: 1;
+}
+
+/* 统计卡 */
+.stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），这里只留布局 */
+.stat-card { padding: 24px; display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; cursor: pointer; transition: transform .15s; }
+.stat-card:hover { transform: translateY(-2px); }
+.stat-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+.stat-card.shortage::before { background: linear-gradient(180deg, #e74c3c, #c0392b); }
+.stat-card.warning::before { background: linear-gradient(180deg, #f39c12, #e67e22); }
+.stat-card.sufficient::before { background: linear-gradient(180deg, #27ae60, #219a52); }
+.stat-icon-bg { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.stat-card.shortage .stat-icon-bg { background: linear-gradient(135deg, #fdecea, #fadbd8); }
+.stat-card.warning .stat-icon-bg { background: linear-gradient(135deg, #fef5e7, #fdebd0); }
+.stat-card.sufficient .stat-icon-bg { background: linear-gradient(135deg, #e9f7ef, #d5f5e3); }
+.stat-info { flex: 1; }
+.stat-label { font-size: 13px; color: #888; margin-bottom: 4px; }
+.stat-value { font-size: 28px; font-weight: 700; color: #1e1e2d; line-height: 1.2; }
+.stat-sub { font-size: 12px; color: #aaa; margin-top: 2px; }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底）。
+   筛选区三档宽度、操作行、分页均为全局规范类（app.css），本页只保留玻璃皮肤覆写 */
+.stock-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+.filter-group { display: flex; align-items: center; gap: 8px; }
+.filter-label { font-size: 13px; font-weight: 500; color: #666; white-space: nowrap; }
+.sort-hint { font-size: 12px; color: #aaa; white-space: nowrap; }
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.stock-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  --el-table-striped-bg-color: rgba(255, 255, 255, 0.35);
+  background: transparent;
+}
+
+/* 右侧固定「状态」列：sticky 单元格 background:inherit，行透明时滑到它下面的
+   内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
+.stock-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.stock-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.stock-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+
+/* 全屏态：面板自身滚动 */
+.stock-panel:fullscreen { overflow: auto; }
+.value-gold { color: #d4af6e; font-weight: 600; }
+.value-danger { color: #e74c3c; font-weight: 600; }
+.text-muted { color: #ccc; }
+.avg-badge { background: rgba(212,175,110,0.1); color: #d4af6e; font-weight: 500; padding: 2px 8px; border-radius: 6px; font-size: 13px; }
+.status-tag { border-radius: 6px; }
+
+.stock-shortage { color: #e74c3c; background: #fdecea; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+.stock-warning { color: #f39c12; background: #fef5e7; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+.stock-sufficient { color: #27ae60; background: #e9f7ef; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+
+:deep(.anomaly-row .el-table__cell) { background: #fff0f0 !important; }
+
+.in-transit-value { font-weight: 500; font-size: 14px; color: #888; }
+.in-transit-active { color: #27ae60; font-weight: 600; }
+
+.stock-status-label { font-size: 13px; }
+.stock-status-normal { color: #27ae60; }
+.stock-status-urgent { color: #e74c3c; font-weight: 700; }
+
+.stock-status-dialog { padding: 10px 0; }
+.stock-status-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #eee; }
+.stock-status-product { font-weight: 600; font-size: 15px; color: #1e1e2d; }

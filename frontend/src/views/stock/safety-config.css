@@ -8,7 +8,7 @@
    .el-overlay 的 position: fixed，抽屉/弹窗打开后看不见 */
 .safety-config-page .global-params-card,
 .safety-config-page .ai-preview-banner,
-.safety-config-page .card {
+.safety-config-page .safety-panel {
   position: relative;
   z-index: 1;
 }
@@ -30,9 +30,9 @@
 .banner-content { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #5a4a2a; }
 .banner-hint { color: #d4af6e; font-size: 13px; font-style: italic; }
 
-/* 表格面板：同款渐变玻璃 */
-.card {
-  padding: 24px;
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底）。
+   筛选区三档宽度、操作行、分页均为全局规范类（app.css），本页只保留玻璃皮肤覆写 */
+.safety-panel {
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
   background: var(--dash-glass-bg);
@@ -41,7 +41,7 @@
 }
 
 /* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.card :deep(.el-table) {
+.safety-panel :deep(.el-table) {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
   --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
@@ -51,13 +51,13 @@
 
 /* 右侧固定操作列：sticky 单元格 background:inherit，行透明时滑到它下面的
    内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
-.card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-.table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.toolbar-left { display: flex; align-items: center; gap: 10px; }
+.safety-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.safety-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.safety-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+
+/* 全屏态：面板自身滚动 */
+.safety-panel:fullscreen { overflow: auto; }
 .toolbar-title { font-size: 16px; font-weight: 600; color: #1e1e2d; }
-.toolbar-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sales-value { font-weight: 600; color: #1e1e2d; }
 .sales-unit { font-size: 12px; color: #999; margin-left: 2px; }
 .stock-value { font-weight: 600; font-size: 15px; }
@@ -75,8 +75,6 @@
 .editable-cell { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .source-badge { font-size: 11px; }
 .avg-daily { font-weight: 500; color: #d4af6e; }
-.pagination-bar { margin-top: 16px; display: flex; justify-content: flex-end; }
-
 
 .ai-dialog-content { padding: 10px 0; }
 .ai-product-info { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
@@ -110,7 +108,7 @@
 .selected-products-preview { display: flex; flex-wrap: wrap; gap: 4px; }
 
 @media (max-width: 768px) {
-  .params-header, .params-header > div, .table-toolbar { flex-wrap: wrap; gap: 12px; }
+  .params-header, .params-header > div { flex-wrap: wrap; gap: 12px; }
   .param-item { flex-wrap: wrap; }
   .param-divider { display: none; }
   .param-formula { min-width: 0; overflow-wrap: anywhere; }

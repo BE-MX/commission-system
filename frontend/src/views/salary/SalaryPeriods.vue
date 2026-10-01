@@ -10,29 +10,44 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="6">
-        <el-select v-model="statusFilter" placeholder="全部状态" clearable style="width: 100%" @change="fetchList">
+    <!-- 表格卡片：筛选区 + 操作行 + 表格（List Page Spec / Action Bar Spec） -->
+    <div ref="panelRef" class="table-card salary-panel">
+      <div class="toolbar">
+        <el-select v-model="statusFilter" placeholder="全部状态" clearable class="filter-w-sm" @change="fetchList">
           <el-option v-for="s in PERIOD_STATUS_ORDER" :key="s" :label="STATUS_TEXT[s]" :value="s" />
         </el-select>
-      </el-col>
-      <el-col :span="18" class="toolbar-right">
-        <GlassButton variant="ghost" left-icon="RefreshLeft" @click="fetchList">刷新</GlassButton>
-        <GlassButton v-permission="'salary:write'" variant="primary" left-icon="Plus" @click="openCreate">新建批次</GlassButton>
-      </el-col>
-    </el-row>
+        <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <div class="table-card salary-panel">
-      <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column prop="year_month" label="月份" min-width="100" />
-        <el-table-column label="状态" min-width="110">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'salary:write'" variant="primary" left-icon="Plus" @click="openCreate">新建批次</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+        <template #empty>
+          <el-empty :image-size="96" :description="statusFilter ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="statusFilter" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('year-month')" prop="year_month" label="月份" min-width="100" />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <el-tag size="small" :type="STATUS_TAG[row.status] || 'info'" effect="plain">
               {{ row.status_label }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="工作日数" min-width="130" align="right">
+        <el-table-column v-if="visibleKeys.includes('workday-count')" label="工作日数" min-width="130" align="right">
           <template #default="{ row }">
             {{ row.workday_count ?? '-' }}
             <!-- 自动推算只按周一~五数，没扣法定节假日也没加调休。
@@ -40,8 +55,8 @@
             <el-tag v-if="row.workday_needs_review" size="small" type="warning" effect="plain">待复核</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="自然日" prop="natural_days" min-width="80" align="right" />
-        <el-table-column label="锁定" min-width="150">
+        <el-table-column v-if="visibleKeys.includes('natural-days')" label="自然日" prop="natural_days" min-width="80" align="right" />
+        <el-table-column v-if="visibleKeys.includes('locked')" label="锁定" min-width="150">
           <template #default="{ row }">
             <span v-if="row.confirmed_at">{{ row.confirmed_at.slice(0, 16).replace('T', ' ') }}</span>
             <span v-else class="muted">-</span>
@@ -50,18 +65,12 @@
             <el-tag v-if="row.unlocked_at" size="small" type="danger" effect="plain">解锁过</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openPeriod(row)">进入工作台</el-button>
           </template>
         </el-table-column>
-        <template #empty>
-          <div class="empty-hint">
-            还没有任何工资批次。<br>
-            一个批次 = 一个月的工资，从建批次开始，依次同步考勤、导入社保公积金、计算、复核、锁定。
-          </div>
-        </template>
       </el-table>
     </div>
 
@@ -91,7 +100,20 @@
 
 <script setup>
 import { PERIOD_STATUS_ORDER } from '@/api/salary'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { useSalaryPeriods } from './composables/useSalaryPeriods'
+
+// 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
+const columnDefs = [
+  { key: 'year-month', label: '月份' },
+  { key: 'status', label: '状态' },
+  { key: 'workday-count', label: '工作日数' },
+  { key: 'natural-days', label: '自然日' },
+  { key: 'locked', label: '锁定' },
+  { key: 'remark', label: '备注' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('salary-periods', columnDefs)
 
 // 筛选下拉的文案。列表行里一律用接口回的 status_label，这份只服务于「还没有数据
 // 时也要能选状态」的下拉——不能靠行数据现推。
@@ -118,17 +140,19 @@ const {
   dialogVisible, saving, formRef, form, formRules, openCreate, submit,
   openPeriod,
 } = useSalaryPeriods()
+
+function resetFilters() {
+  statusFilter.value = ''
+  fetchList()
+}
 </script>
 
 <style scoped>
 .salary-page { position: relative; }
 .salary-aurora { inset: -24px -28px; }
-.salary-page .toolbar,
 .salary-page .salary-panel { position: relative; z-index: 1; }
 
-.toolbar { margin-bottom: 16px; }
-.toolbar-right { display: flex; gap: 8px; justify-content: flex-end; }
-
+/* 表格面板玻璃皮肤（scoped 覆盖全局 .table-card 白底）；筛选区/操作行/分页用全局规范类 */
 .salary-panel {
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
@@ -146,5 +170,4 @@ const {
 
 .muted { color: var(--el-text-color-placeholder); }
 .hint { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.5; margin-top: 4px; }
-.empty-hint { padding: 32px 16px; color: var(--el-text-color-secondary); line-height: 1.8; }
 </style>

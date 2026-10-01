@@ -7,36 +7,49 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 工具栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <el-input v-model="keyword" placeholder="产品名称/编号" clearable style="width: 200px" @keyup.enter="loadData" @clear="loadData" />
-        <el-select v-model="filterModel" placeholder="型号" clearable style="width: 120px" @change="loadData">
+    <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
+    <div ref="panelRef" class="table-card">
+      <div class="toolbar">
+        <el-input v-model="keyword" placeholder="产品名称/编号" clearable class="filter-w-md" @keyup.enter="search" @clear="search" />
+        <el-select v-model="filterModel" placeholder="型号" clearable class="filter-w-sm" @change="search">
           <el-option v-for="m in filterOptions.models" :key="m" :label="m" :value="m" />
         </el-select>
-        <el-select v-model="filterRouteBound" placeholder="路线绑定" clearable style="width: 130px" @change="loadData">
+        <el-select v-model="filterRouteBound" placeholder="路线绑定" clearable class="filter-w-sm" @change="search">
           <el-option label="已绑定" value="bound" />
           <el-option label="未绑定" value="unbound" />
         </el-select>
-        <GlassButton variant="primary" @click="loadData">搜索</GlassButton>
-        <el-checkbox v-model="showDisabled" @change="loadData">显示已禁用</el-checkbox>
+        <el-checkbox v-model="showDisabled" @change="search">显示已禁用</el-checkbox>
+        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
       </div>
-      <div class="toolbar-right">
+
+      <!-- 操作行：批量操作 + TableTools 四图标 -->
+      <div class="action-bar">
         <template v-if="selectedProducts.length > 0">
           <el-tag>已选 {{ selectedProducts.length }} 项</el-tag>
-          <GlassButton v-permission="'production:write'" variant="primary" size="sm" @click="openBatchBind">批量绑定路线</GlassButton>
+          <GlassButton v-permission="'production:write'" variant="primary" @click="openBatchBind">批量绑定路线</GlassButton>
         </template>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadData"
+          @fullscreen="toggleFullscreen"
+        />
       </div>
-    </div>
 
-    <!-- 表格 -->
-    <div class="table-card">
-      <el-table :data="items" v-loading="loading" border class="list-table" @selection-change="onSelectionChange">
+      <el-table :data="items" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="onSelectionChange">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
         <el-table-column type="selection" min-width="40" />
-        <el-table-column prop="product_no" label="产品编号" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column prop="name" label="产品名称" min-width="200" max-width="300" show-overflow-tooltip />
-        <el-table-column prop="model" label="型号" min-width="100" max-width="150" show-overflow-tooltip />
-        <el-table-column label="工序路线" min-width="200" max-width="300">
+        <el-table-column v-if="visibleKeys.includes('product-no')" prop="product_no" label="产品编号" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品名称" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('model')" prop="model" label="型号" min-width="100" max-width="150" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('process-route')" label="工序路线" min-width="200" max-width="300">
           <template #default="{ row }">
             <template v-if="row.process_route">
               <span>{{ row.process_route.route_name }}</span>
@@ -48,7 +61,7 @@
             </template>
           </template>
         </el-table-column>
-        <el-table-column label="状态" min-width="80" max-width="120">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" max-width="120">
           <template #default="{ row }">
             <el-tag :type="row.disable_flag === 0 ? 'success' : 'info'" size="small" effect="plain">
               {{ row.disable_flag === 0 ? '正常' : '禁用' }}
@@ -56,10 +69,17 @@
           </template>
         </el-table-column>
       </el-table>
-    </div>
 
-    <div class="pagination-wrap">
-      <el-pagination background layout="total, prev, pager, next" :total="total" :page-size="pageSize" v-model:current-page="page" @current-change="loadData" />
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @size-change="handleSizeChange"
+        @current-change="loadData"
+      />
     </div>
 
     <!-- 绑定路线弹窗 -->
@@ -109,6 +129,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as api from '@/api/production'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 
 const loading = ref(false)
 const items = ref([])
@@ -120,6 +142,36 @@ const filterModel = ref(null)
 const filterRouteBound = ref(null)
 const showDisabled = ref(false)
 const filterOptions = ref({ models: [], group_names: [] })
+
+// 列显隐元数据（TableTools 列面板数据源，模板列保持静态；多选列固定显示）
+const columnDefs = [
+  { key: 'product-no', label: '产品编号' },
+  { key: 'name', label: '产品名称' },
+  { key: 'model', label: '型号' },
+  { key: 'process-route', label: '工序路线' },
+  { key: 'status', label: '状态' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('product-manage', columnDefs)
+
+const hasActiveFilters = computed(() => Boolean(keyword.value) || Boolean(filterModel.value) || Boolean(filterRouteBound.value) || showDisabled.value)
+
+function search() {
+  page.value = 1
+  loadData()
+}
+
+function resetFilters() {
+  keyword.value = ''
+  filterModel.value = null
+  filterRouteBound.value = null
+  showDisabled.value = false
+  search()
+}
+
+function handleSizeChange() {
+  page.value = 1
+  loadData()
+}
 
 // 选择
 const selectedProducts = ref([])
@@ -233,21 +285,18 @@ onMounted(() => {
 
 /* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
    el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
-   .el-overlay 的 position: fixed，弹窗打开后看不见 */
-.product-manage .toolbar,
-.product-manage .table-card,
-.product-manage .pagination-wrap {
+   .el-overlay 的 position: fixed，弹窗打开后看不见。
+   同时覆写全局 .table-card 白底为同款渐变玻璃 */
+.product-manage .table-card {
   position: relative;
   z-index: 1;
-}
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底） */
-.product-manage .table-card {
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
   background: var(--dash-glass-bg);
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
 }
+
+/* 筛选区/操作行/分页均为全局规范类（app.css .table-card > …），本页不覆写 */
 
 /* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
 .product-manage .table-card :deep(.el-table) {
@@ -257,19 +306,12 @@ onMounted(() => {
   --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
   background: transparent;
 }
-.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.toolbar-left { display: flex; gap: 10px; align-items: center; }
-.toolbar-right { display: flex; gap: 8px; align-items: center; }
-.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+/* 全屏态：面板自身滚动（.table-card 默认 overflow:hidden） */
+.product-manage .table-card:fullscreen { overflow: auto; }
 .bind-product-name { font-weight: 500; margin-bottom: 16px; }
 .route-preview { margin-top: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px; }
 .preview-label { font-size: 12px; color: #909399; margin-bottom: 8px; }
 .preview-steps { font-size: 13px; line-height: 1.6; }
 .bind-tip { margin-top: 12px; font-size: 12px; color: #e6a23c; }
-
-@media (max-width: 768px) {
-  .toolbar, .toolbar-left, .toolbar-right { flex-wrap: wrap; gap: 10px; }
-  .toolbar-left { min-width: 0; width: 100%; }
-  .toolbar-left :deep(.el-input), .toolbar-left :deep(.el-select) { max-width: 100%; }
-}
 </style>

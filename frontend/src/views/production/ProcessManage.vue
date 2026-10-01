@@ -7,43 +7,58 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 工具栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <el-input v-model="searchName" placeholder="搜索工序名称" clearable style="width: 220px" @clear="loadData" @keyup.enter="loadData">
+    <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
+    <div ref="panelRef" class="table-card">
+      <div class="toolbar">
+        <el-input v-model="searchName" placeholder="搜索工序名称" clearable class="filter-w-md" @clear="search" @keyup.enter="search">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="filterStatus" placeholder="状态" clearable style="width: 120px" @change="loadData">
+        <el-select v-model="filterStatus" placeholder="状态" clearable class="filter-w-sm" @change="search">
           <el-option label="启用" :value="1" />
           <el-option label="禁用" :value="0" />
         </el-select>
-        <GlassButton variant="primary" @click="loadData">搜索</GlassButton>
+        <GlassButton variant="primary" :left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
       </div>
-      <GlassButton variant="primary" :left-icon="Plus" @click="openForm()">新增工序</GlassButton>
-    </div>
 
-    <!-- 表格 -->
-    <div class="table-card">
-      <el-table :data="items" v-loading="loading" border class="list-table">
-        <el-table-column prop="id" label="ID" min-width="70" max-width="100" show-overflow-tooltip />
-        <el-table-column prop="name" label="工序名称" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
-        <el-table-column prop="sort_order" label="排序" min-width="80" max-width="120" />
-        <el-table-column label="客户进度页" min-width="110" max-width="140">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标 -->
+      <div class="action-bar">
+        <GlassButton variant="primary" :left-icon="Plus" @click="openForm()">新增工序</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadData"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="items" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('id')" prop="id" label="ID" min-width="70" max-width="100" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="工序名称" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('description')" prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('sort-order')" prop="sort_order" label="排序" min-width="80" max-width="120" />
+        <el-table-column v-if="visibleKeys.includes('customer-track')" label="客户进度页" min-width="110" max-width="140">
           <template #default="{ row }">
             <el-tag :type="row.show_in_domestic_track ? 'success' : 'info'" size="small" effect="plain">
               {{ row.show_in_domestic_track ? '显示' : '隐藏' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" min-width="80" max-width="120">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" max-width="120">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
               {{ row.status === 1 ? '启用' : '禁用' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" min-width="160" max-width="240">
+        <el-table-column v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="160" max-width="240">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="240" max-width="360" fixed="right">
@@ -56,11 +71,17 @@
           </template>
         </el-table-column>
       </el-table>
-    </div>
 
-    <!-- 分页 -->
-    <div class="pagination-wrap">
-      <el-pagination background layout="total, prev, pager, next" :total="total" :page-size="pageSize" v-model:current-page="page" @current-change="loadData" />
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @size-change="handleSizeChange"
+        @current-change="loadData"
+      />
     </div>
 
     <!-- 新增/编辑弹窗 -->
@@ -88,11 +109,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { Plus, RefreshLeft, Search } from '@element-plus/icons-vue'
 import * as api from '@/api/production'
 import { formatBeijingDateTime } from '@/utils/datetime'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 
 const loading = ref(false)
 const items = ref([])
@@ -101,6 +124,36 @@ const page = ref(1)
 const pageSize = ref(20)
 const searchName = ref('')
 const filterStatus = ref(null)
+
+// 列显隐元数据（TableTools 列面板数据源，模板列保持静态）
+const columnDefs = [
+  { key: 'id', label: 'ID' },
+  { key: 'name', label: '工序名称' },
+  { key: 'description', label: '描述' },
+  { key: 'sort-order', label: '排序' },
+  { key: 'customer-track', label: '客户进度页' },
+  { key: 'status', label: '状态' },
+  { key: 'created-at', label: '创建时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('process-manage', columnDefs)
+
+const hasActiveFilters = computed(() => Boolean(searchName.value) || filterStatus.value !== null)
+
+function search() {
+  page.value = 1
+  loadData()
+}
+
+function resetFilters() {
+  searchName.value = ''
+  filterStatus.value = null
+  search()
+}
+
+function handleSizeChange() {
+  page.value = 1
+  loadData()
+}
 
 const formVisible = ref(false)
 const submitting = ref(false)
@@ -190,21 +243,18 @@ onMounted(loadData)
 
 /* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
    el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
-   .el-overlay 的 position: fixed，弹窗打开后看不见 */
-.process-manage .toolbar,
-.process-manage .table-card,
-.process-manage .pagination-wrap {
+   .el-overlay 的 position: fixed，弹窗打开后看不见。
+   同时覆写全局 .table-card 白底为同款渐变玻璃 */
+.process-manage .table-card {
   position: relative;
   z-index: 1;
-}
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底） */
-.process-manage .table-card {
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
   background: var(--dash-glass-bg);
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
 }
+
+/* 筛选区/操作行/分页均为全局规范类（app.css .table-card > …），本页不覆写 */
 
 /* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
 .process-manage .table-card :deep(.el-table) {
@@ -220,13 +270,7 @@ onMounted(loadData)
 .process-manage .table-card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
 .process-manage .table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .process-manage .table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.toolbar-left { display: flex; gap: 10px; align-items: center; }
-.pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 
-@media (max-width: 768px) {
-  .toolbar, .toolbar-left, .toolbar-right { flex-wrap: wrap; gap: 10px; }
-  .toolbar-left { min-width: 0; width: 100%; }
-  .toolbar-left :deep(.el-input), .toolbar-left :deep(.el-select) { max-width: 100%; }
-}
+/* 全屏态：面板自身滚动（.table-card 默认 overflow:hidden） */
+.process-manage .table-card:fullscreen { overflow: auto; }
 </style>

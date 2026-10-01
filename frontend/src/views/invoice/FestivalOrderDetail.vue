@@ -11,18 +11,6 @@
         <h2>采购节数据明细</h2>
         <p>直接核对采购节新签、首返和复购订单及其统计口径。</p>
       </div>
-      <div v-if="summary.can_read_all" class="scope-selector">
-        <span>查看范围</span>
-        <el-select v-model="selectedUserId" placeholder="全公司" @change="changeScope">
-          <el-option label="全公司" value="" />
-          <el-option
-            v-for="user in summary.users"
-            :key="user.user_id"
-            :label="user.user_name"
-            :value="user.user_id"
-          />
-        </el-select>
-      </div>
     </header>
 
     <el-alert
@@ -60,47 +48,72 @@
       </article>
     </section>
 
-    <section class="festival-order-panel table-card">
+    <section ref="panelRef" class="festival-order-panel table-card">
       <el-tabs v-model="activeType" class="festival-tabs" @tab-change="changeType">
         <el-tab-pane label="新签订单" name="new_sign" />
         <el-tab-pane label="首返订单" name="first_return" />
         <el-tab-pane label="复购订单" name="repurchase" />
       </el-tabs>
 
-      <div class="festival-order-toolbar">
+      <div class="toolbar">
+        <el-select
+          v-if="summary.can_read_all"
+          v-model="selectedUserId"
+          placeholder="查看范围：全公司"
+          class="filter-w-md"
+          @change="changeScope"
+        >
+          <el-option label="全公司" value="" />
+          <el-option
+            v-for="user in summary.users"
+            :key="user.user_id"
+            :label="user.user_name"
+            :value="user.user_id"
+          />
+        </el-select>
         <el-input
           v-model="filters.keyword"
           clearable
           placeholder="搜索订单号或客户名称"
+          class="filter-w-lg"
           @keyup.enter="search"
           @clear="search"
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-button type="primary" @click="search">
-          <el-icon><Search /></el-icon>
-          查询
-        </el-button>
+        <GlassButton variant="primary" :left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
         <span class="activity-window">{{ windowText }}</span>
       </div>
 
-      <el-table v-loading="loading" :data="orders" border class="list-table festival-order-table">
+      <!-- 操作行：本页无主操作按钮，右侧放 TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="currentColumnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadPage()"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table v-loading="loading" :data="orders" border class="list-table festival-order-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
-          <div class="festival-order-empty">
-            <strong>当前范围暂无{{ activeLabel }}</strong>
-            <span>可切换标签或调整搜索关键词继续查看。</span>
-          </div>
+          <el-empty :image-size="96" :description="filters.keyword ? '没有符合条件的记录' : `当前范围暂无${activeLabel}，可切换标签继续查看`">
+            <GlassButton v-if="filters.keyword" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
         </template>
-        <el-table-column prop="order_no" label="订单号" min-width="150" max-width="190" show-overflow-tooltip />
-        <el-table-column prop="account_date" label="记账日期" min-width="108" max-width="128" />
-        <el-table-column prop="amount_usd" label="金额（USD）" min-width="120" max-width="150" align="right">
+        <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no" label="订单号" min-width="150" max-width="190" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('account-date')" prop="account_date" label="记账日期" min-width="108" max-width="128" />
+        <el-table-column v-if="visibleKeys.includes('amount-usd')" prop="amount_usd" label="金额（USD）" min-width="120" max-width="150" align="right">
           <template #default="{ row }">{{ money(row.amount_usd) }}</template>
         </el-table-column>
-        <el-table-column prop="company_name" label="客户名称" min-width="180" max-width="300" show-overflow-tooltip />
-        <el-table-column prop="user_name" label="业务员" min-width="96" max-width="120" />
-        <el-table-column prop="team" label="所属团队" min-width="116" max-width="150" show-overflow-tooltip />
-        <el-table-column prop="camp" label="所属阵营" min-width="100" max-width="130" show-overflow-tooltip />
-        <el-table-column v-if="activeType === 'new_sign'" prop="points" label="积分" min-width="76" max-width="90" align="right">
+        <el-table-column v-if="visibleKeys.includes('company-name')" prop="company_name" label="客户名称" min-width="180" max-width="300" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('user-name')" prop="user_name" label="业务员" min-width="96" max-width="120" />
+        <el-table-column v-if="visibleKeys.includes('team')" prop="team" label="所属团队" min-width="116" max-width="150" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('camp')" prop="camp" label="所属阵营" min-width="100" max-width="130" show-overflow-tooltip />
+        <el-table-column v-if="activeType === 'new_sign' && visibleKeys.includes('points')" prop="points" label="积分" min-width="76" max-width="90" align="right">
           <template #default="{ row }">
             <span>{{ number(row.points) }}</span>
             <el-tooltip v-if="row.points_note" :content="row.points_note" placement="top">
@@ -109,30 +122,32 @@
           </template>
         </el-table-column>
       </el-table>
-    </section>
 
-    <div class="festival-order-pagination">
       <el-pagination
         v-model:current-page="pagination.page"
         v-model:page-size="pagination.page_size"
         :total="pagination.total"
         :page-sizes="[20, 50, 100]"
-        layout="total,sizes,prev,pager,next,jumper"
-        @size-change="changePage"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @size-change="handleSizeChange"
         @current-change="changePage"
       />
-    </div>
+    </section>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { RefreshLeft, Search } from '@element-plus/icons-vue'
+import TableTools from '@/components/TableTools.vue'
 import { useFestivalOrderDetail } from './composables/useFestivalOrderDetail'
 
 const {
   activeType, changePage, changeScope, changeType, error, filters, loadPage,
   loading, orders, pagination, search, selectedUserId, summary,
+  resetFilters, handleSizeChange,
+  columnDefs, currentColumnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen,
 } = useFestivalOrderDetail()
 
 const labels = { new_sign: '新签订单', first_return: '首返订单', repurchase: '复购订单' }

@@ -5,40 +5,54 @@
         <h1>搜索任务</h1>
         <p>提交目标后等待已配置的 Codex/OpenClaw Agent 领取。Agent 真正开始工作后才显示“执行中”。</p>
       </div>
-      <GlassButton
-        v-any-permission="['sales_automation:write', 'sales_automation:admin']"
-        variant="primary"
-        left-icon="Plus"
-        @click="dialogVisible = true"
-      >新建搜索任务</GlassButton>
     </header>
 
-    <div class="toolbar">
-      <el-select v-model="filters.status" clearable placeholder="全部状态" style="width: 160px" @change="search">
-        <el-option v-for="item in STATUS_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
-      </el-select>
-      <GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="fetchJobs">刷新</GlassButton>
-      <span class="toolbar-spacer" />
-      <span v-if="activeCount" class="muted">{{ activeCount }} 个任务等待或执行中，页面每 10 秒自动刷新</span>
-    </div>
-
-    <section class="surface-card table-card">
-      <el-table v-loading="loading" :data="jobs" border class="list-table">
-        <el-table-column prop="name" label="任务" min-width="190" show-overflow-tooltip />
-        <el-table-column label="状态" min-width="100">
+    <section ref="panelRef" class="surface-card table-card">
+      <div class="toolbar">
+        <el-select v-model="filters.status" clearable placeholder="全部状态" class="filter-w-sm" @change="search">
+          <el-option v-for="item in STATUS_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
+        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+        <span v-if="activeCount" class="muted">{{ activeCount }} 个任务等待或执行中，页面每 10 秒自动刷新</span>
+      </div>
+      <div class="action-bar">
+        <GlassButton
+          v-any-permission="['sales_automation:write', 'sales_automation:admin']"
+          variant="primary"
+          left-icon="Plus"
+          @click="dialogVisible = true"
+        >新建搜索任务</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchJobs"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table v-loading="loading" :data="jobs" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="filters.status ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="filters.status" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('task')" prop="name" label="任务" min-width="190" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
           <template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="light">{{ statusMeta(row.status).label }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="目标 / 已发现" min-width="130">
+        <el-table-column v-if="visibleKeys.includes('target-result')" label="目标 / 已发现" min-width="130">
           <template #default="{ row }">{{ row.target_count }} / {{ row.result_count }}</template>
         </el-table-column>
-        <el-table-column prop="created_count" label="新客户" min-width="90" />
-        <el-table-column prop="deduplicated_count" label="已去重" min-width="90" />
-        <el-table-column prop="public_pool_deduplicated_count" label="公海去重" min-width="100" />
-        <el-table-column prop="attempt_count" label="执行次数" min-width="90" />
-        <el-table-column label="创建时间" min-width="155">
+        <el-table-column v-if="visibleKeys.includes('created-count')" prop="created_count" label="新客户" min-width="90" />
+        <el-table-column v-if="visibleKeys.includes('deduplicated-count')" prop="deduplicated_count" label="已去重" min-width="90" />
+        <el-table-column v-if="visibleKeys.includes('public-pool-dedup')" prop="public_pool_deduplicated_count" label="公海去重" min-width="100" />
+        <el-table-column v-if="visibleKeys.includes('attempt-count')" prop="attempt_count" label="执行次数" min-width="90" />
+        <el-table-column v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="155">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="结果" min-width="180" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('result')" label="结果" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.error_message" class="error-text">{{ row.error_message }}</span>
             <span v-else class="muted">{{ resultText(row) }}</span>
@@ -91,10 +105,26 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
 import { createSearchJob, getSearchJobs, requeueSearchJob } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
+import { useTableView } from '@/composables/useTableView'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
+
+const columnDefs = [
+  { key: 'task', label: '任务' },
+  { key: 'status', label: '状态' },
+  { key: 'target-result', label: '目标 / 已发现' },
+  { key: 'created-count', label: '新客户' },
+  { key: 'deduplicated-count', label: '已去重' },
+  { key: 'public-pool-dedup', label: '公海去重' },
+  { key: 'attempt-count', label: '执行次数' },
+  { key: 'created-at', label: '创建时间' },
+  { key: 'result', label: '结果' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('search-jobs', columnDefs)
 
 const STATUS_OPTIONS = [
   { value: 'pending', label: '等待 Agent', type: 'info' },
@@ -108,7 +138,7 @@ const resultText = row => row.status === 'completed' ? `新增 ${row.created_cou
 
 const {
   loading, list: jobs, total, page, pageSize, searchForm: filters,
-  fetchList: fetchJobs, handleSearch: search, handlePageChange, handleSizeChange,
+  fetchList: fetchJobs, handleSearch: search, handleReset: resetFilters, handlePageChange, handleSizeChange,
 } = useListPage(async params => {
   const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== ''))
   const res = await getSearchJobs(clean)

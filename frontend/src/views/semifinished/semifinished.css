@@ -2,10 +2,10 @@
 .sf-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .sf-header h2 { margin: 0 0 6px; color: var(--text-primary); }
 .sf-header p { margin: 0; color: var(--text-secondary); }
-.sf-actions, .sf-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.sf-card { padding: 16px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); }
-.sf-table { margin-top: 14px; }
-.sf-pagination { display: flex; justify-content: flex-end; margin-top: 16px; }
+/* 卡片/筛选区/操作行/分页均为全局规范类（app.css 的 .table-card > .toolbar/.action-bar/.pager），
+   本文件只保留半成品域的页面级定制 */
+.sf-tabs { padding: 4px 14px 0; }
+.sf-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
 .sf-material { display: flex; flex-direction: column; gap: 3px; }
 .sf-material strong { color: var(--text-primary); }
 .sf-material small, .sf-muted { color: var(--text-muted); }

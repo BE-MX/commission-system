@@ -7,123 +7,136 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 筛选栏 -->
-    <el-row :gutter="12" class="toolbar" align="middle">
-      <el-col :span="5">
-        <el-input
-          v-model="keyword"
-          placeholder="预约编号 / 客户名"
-          clearable
-          @keyup.enter="doSearch"
-          @clear="doSearch"
-        >
-          <template #prefix><el-icon><Search /></el-icon></template>
-        </el-input>
-      </el-col>
-      <el-col :span="4">
-        <el-select
-          v-model="salespersonFilter"
-          placeholder="业务员"
-          clearable
-          filterable
-          @change="doSearch"
-        >
-          <el-option
-            v-for="item in salespersonOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-      </el-col>
-      <el-col :span="4">
-        <el-select
-          v-model="statusFilter"
-          placeholder="状态筛选"
-          clearable
-          multiple
-          collapse-tags
-          @change="doSearch"
-        >
-          <el-option
-            v-for="item in STATUS_OPTIONS"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-      </el-col>
-      <el-col :span="6">
-        <el-date-picker
-          v-model="expectDateRange"
-          type="daterange"
-          range-separator="~"
-          start-placeholder="期望日期起"
-          end-placeholder="期望日期止"
-          value-format="YYYY-MM-DD"
-          clearable
-          style="width: 100%"
-          @change="doSearch"
-        />
-      </el-col>
-      <el-col :span="2">
-        <GlassButton left-icon="Search" @click="doSearch">
-          查询
-        </GlassButton>
-      </el-col>
-    </el-row>
-
     <!-- 表格 -->
-    <div class="table-card my-requests-panel">
+    <div ref="panelRef" class="table-card my-requests-panel">
+    <!-- 筛选区（List Page Spec 第 5 节） -->
+    <div class="toolbar">
+      <el-input
+        v-model="keyword"
+        placeholder="预约编号 / 客户名"
+        clearable
+        class="filter-w-md"
+        @keyup.enter="doSearch"
+        @clear="doSearch"
+      >
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <el-select
+        v-model="salespersonFilter"
+        placeholder="业务员"
+        clearable
+        filterable
+        class="filter-w-sm"
+        @change="doSearch"
+      >
+        <el-option
+          v-for="item in salespersonOptions"
+          :key="item.value"
+          :label="item.label"
+          :value="item.value"
+        />
+      </el-select>
+      <el-select
+        v-model="statusFilter"
+        placeholder="状态筛选"
+        clearable
+        multiple
+        collapse-tags
+        class="filter-w-md"
+        @change="doSearch"
+      >
+        <el-option
+          v-for="item in STATUS_OPTIONS"
+          :key="item.value"
+          :label="item.label"
+          :value="item.value"
+        />
+      </el-select>
+      <el-date-picker
+        v-model="expectDateRange"
+        type="daterange"
+        range-separator="~"
+        start-placeholder="期望日期起"
+        end-placeholder="期望日期止"
+        value-format="YYYY-MM-DD"
+        clearable
+        class="filter-w-lg"
+        @change="doSearch"
+      />
+      <GlassButton variant="primary" left-icon="Search" @click="doSearch">
+        查询
+      </GlassButton>
+      <GlassButton left-icon="RefreshLeft" @click="resetFilters">
+        重置
+      </GlassButton>
+    </div>
+
+    <!-- 操作行：TableTools 四图标（Action Bar Spec；本页无主操作按钮，刷新走工具图标） -->
+    <div class="action-bar">
+      <TableTools
+        v-model:visible-keys="visibleKeys"
+        v-model:density="density"
+        :columns="columnDefs"
+        :fullscreen="isFullscreen"
+        @refresh="fetchList"
+        @fullscreen="toggleFullscreen"
+      />
+    </div>
+
     <el-table
-      ref="tableRef"
       :data="tableData"
       v-loading="loading"
       class="list-table"
+      :class="densityClass"
       border
-      :max-height="maxHeight"
+      :max-height="isFullscreen ? undefined : 640"
       @sort-change="orderSort.onSortChange"
     >
-      <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom">
+      <template #empty>
+        <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+          <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+        </el-empty>
+      </template>
+      <el-table-column v-if="visibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom">
         <template #default="{ row }">
           <GlassButton variant="link" @click="toggleDetail(row)">{{ row.request_no }}</GlassButton>
         </template>
       </el-table-column>
-      <el-table-column prop="salesperson_name" label="业务员" min-width="100" max-width="140" show-overflow-tooltip />
-      <el-table-column prop="customer_name" label="客户名称" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip />
-      <el-table-column prop="customer_level" label="客户等级" min-width="100" max-width="140">
+      <el-table-column v-if="visibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="100" max-width="140" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="100" max-width="140">
         <template #default="{ row }">
           <span>{{ customerLevelLabel(row.customer_level) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="拍摄类型" min-width="100" max-width="150">
+      <el-table-column v-if="visibleKeys.includes('shoot-type')" label="拍摄类型" min-width="100" max-width="150">
         <template #default="{ row }">{{ shootTypeLabel(row.shoot_type) }}</template>
       </el-table-column>
-      <el-table-column label="期望日期" min-width="230" max-width="320" prop="expect_start_date" sortable="custom">
+      <el-table-column v-if="visibleKeys.includes('expect-date')" label="期望日期" min-width="230" max-width="320" prop="expect_start_date" sortable="custom">
         <template #default="{ row }">
           {{ formatDatePeriod(row.expect_start_date, row.expect_start_period) }}
           ~
           {{ formatDatePeriod(row.expect_end_date, row.expect_end_period) }}
         </template>
       </el-table-column>
-      <el-table-column label="优先级" min-width="80" max-width="120">
+      <el-table-column v-if="visibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120">
         <template #default="{ row }">
           <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" min-width="110" max-width="170" prop="status" sortable="custom">
+      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" max-width="170" prop="status" sortable="custom">
         <template #default="{ row }">
           <el-tag :type="STATUS_TAG[row.status]" effect="plain">
             {{ STATUS_MAP[row.status] || row.status }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+      <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
       <el-table-column class-name="table-action-column" label="操作" min-width="160" max-width="240" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="View" @click="toggleDetail(row)">详情</GlassButton>
@@ -137,18 +150,18 @@
         </template>
       </el-table-column>
     </el-table>
-    </div>
 
     <el-pagination
-      class="pagination"
+      class="pager"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
-      layout="total, prev, pager, next, sizes"
+      layout="total, sizes, prev, pager, next"
       :page-sizes="[20, 50, 100]"
       @current-change="fetchList"
-      @size-change="fetchList"
+      @size-change="handleSizeChange"
     />
+    </div>
 
     <!-- Detail drawer -->
     <el-drawer v-model="detailVisible" title="预约详情" size="480px" direction="rtl">
@@ -221,16 +234,32 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Paperclip, Download } from '@element-plus/icons-vue'
+import { Paperclip, Download, Search } from '@element-plus/icons-vue'
 import { getRequests, actionRequest, getAuditLogs, getAttachments, downloadAttachment } from '@/api/design'
 import { useAuthStore } from '@/stores/auth'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
+import TableTools from '@/components/TableTools.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
 const authStore = useAuthStore()
 const orderSort = useTableSort()
+
+// 列配置数组：TableTools 列显隐的数据源（操作列不进配置）
+const columnDefs = [
+  { key: 'request-no', label: '预约编号' },
+  { key: 'salesperson', label: '业务员' },
+  { key: 'customer-name', label: '客户名称' },
+  { key: 'customer-level', label: '客户等级' },
+  { key: 'shoot-type', label: '拍摄类型' },
+  { key: 'expect-date', label: '期望日期' },
+  { key: 'priority', label: '优先级' },
+  { key: 'status', label: '状态' },
+  { key: 'remark', label: '备注' },
+  { key: 'created-at', label: '创建时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('my-requests', columnDefs)
 
 const keyword = ref('')
 const salespersonFilter = ref(null)
@@ -351,6 +380,23 @@ function doSearch() {
   fetchList()
 }
 
+const hasActiveFilters = computed(() =>
+  Boolean(keyword.value || salespersonFilter.value || statusFilter.value.length || expectDateRange.value?.length)
+)
+
+function resetFilters() {
+  keyword.value = ''
+  salespersonFilter.value = null
+  statusFilter.value = []
+  expectDateRange.value = null
+  doSearch()
+}
+
+function handleSizeChange() {
+  page.value = 1
+  fetchList()
+}
+
 async function fetchList() {
   loading.value = true
   try {
@@ -428,133 +474,4 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
-/* 极光层（.lg-aurora）定位上下文 */
-.my-requests-page {
-  position: relative;
-}
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
-.my-requests-aurora {
-  inset: -24px -28px;
-}
-
-/* 内容压到极光之上（点名内容块，不能用 > :not(.lg-aurora) 通配——
-   会压掉就地渲染的 el-drawer .el-overlay 的 position: fixed） */
-.my-requests-page .toolbar,
-.my-requests-page .my-requests-panel,
-.my-requests-page .pagination {
-  position: relative;
-  z-index: 1;
-}
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.my-requests-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.my-requests-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透上来重影，
-   改成磨砂但不透明的暖白，表头/hover 态同步 */
-.my-requests-panel :deep(.el-table-fixed-column--right) {
-  background-color: rgba(249, 244, 234, 0.97);
-}
-.my-requests-panel :deep(th.el-table-fixed-column--right) {
-  background-color: rgba(246, 239, 226, 0.98);
-}
-.my-requests-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
-  background-color: rgba(245, 236, 220, 0.98);
-}
-
-.toolbar { margin-bottom: 16px; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
-
-.timeline-section {
-  margin-top: 24px;
-}
-.timeline-section h4 {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 12px;
-  color: var(--text-primary);
-}
-.log-action {
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0 0 2px;
-}
-.log-operator {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin: 0 0 2px;
-}
-.log-transition {
-  font-size: 12px;
-  color: var(--color-primary);
-  margin: 0 0 2px;
-}
-.log-comment {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-.attachment-section {
-  margin-top: 24px;
-}
-.attachment-section h4 {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 12px;
-  color: var(--text-primary);
-}
-.attachment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.attachment-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--fill-color-lighter, #fafafa);
-  border-radius: 6px;
-  font-size: 13px;
-}
-.attachment-icon {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-.attachment-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.attachment-size {
-  color: var(--text-secondary);
-  font-size: 12px;
-  flex-shrink: 0;
-}
-.attachment-download {
-  color: var(--color-primary);
-  flex-shrink: 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-}
-</style>
+<style scoped src="./my-requests.css"></style>

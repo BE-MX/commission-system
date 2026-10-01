@@ -1,14 +1,38 @@
 <template>
   <div class="accounts-page">
     <div class="accounts-aurora lg-aurora" aria-hidden="true"><div class="lg-aurora__blob lg-aurora__blob--gold" /><div class="lg-aurora__blob lg-aurora__blob--amber" /><div class="lg-aurora__blob lg-aurora__blob--peach" /></div>
-    <header class="page-header"><div><h2>客户素材门户账号</h2><p>一个客户ID仅允许一个登录邮箱；密码只能设置或重置，不能查看。</p></div><GlassButton variant="primary" left-icon="Plus" @click="openCreate">新建账号</GlassButton></header>
-    <div class="toolbar"><el-input v-model="search" placeholder="客户名称 / ID / 邮箱" clearable @keyup.enter="load" @clear="load" /><GlassButton left-icon="Search" @click="load">查询</GlassButton></div>
-    <div class="table-card accounts-panel"><el-table :data="rows" v-loading="loading" class="list-table" border>
-      <el-table-column prop="customer_name" label="客户名称" min-width="190" show-overflow-tooltip /><el-table-column prop="customer_id" label="客户ID" min-width="130" /><el-table-column prop="login_email" label="登录邮箱" min-width="220" show-overflow-tooltip />
-      <el-table-column label="状态" min-width="100"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'" effect="plain">{{ row.is_active ? '启用' : '停用' }}</el-tag></template></el-table-column>
-      <el-table-column prop="last_login_at" label="最近登录" min-width="180"><template #default="{ row }">{{ row.last_login_at || '从未登录' }}</template></el-table-column>
-      <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">修改邮箱/密码</GlassButton><GlassButton variant="link" :link-tone="row.is_active ? 'danger' : 'success'" @click="toggle(row)">{{ row.is_active ? '停用' : '启用' }}</GlassButton></template></el-table-column>
-    </el-table></div>
+    <header class="page-header"><div><h2>客户素材门户账号</h2><p>一个客户ID仅允许一个登录邮箱；密码只能设置或重置，不能查看。</p></div></header>
+    <div ref="panelRef" class="table-card accounts-panel">
+      <div class="toolbar">
+        <el-input v-model="search" placeholder="客户名称 / ID / 邮箱" clearable class="filter-w-lg" @keyup.enter="load" @clear="load" />
+        <GlassButton variant="primary" left-icon="Search" @click="load">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
+      <div class="action-bar">
+        <GlassButton variant="primary" left-icon="Plus" @click="openCreate">新建账号</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="load"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table :data="rows" v-loading="loading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="search ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="search" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="190" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('customer-id')" prop="customer_id" label="客户ID" min-width="130" />
+        <el-table-column v-if="visibleKeys.includes('login-email')" prop="login_email" label="登录邮箱" min-width="220" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'" effect="plain">{{ row.is_active ? '启用' : '停用' }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('last-login')" prop="last_login_at" label="最近登录" min-width="180"><template #default="{ row }">{{ row.last_login_at || '从未登录' }}</template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">修改邮箱/密码</GlassButton><GlassButton variant="link" :link-tone="row.is_active ? 'danger' : 'success'" @click="toggle(row)">{{ row.is_active ? '停用' : '启用' }}</GlassButton></template></el-table-column>
+      </el-table>
+    </div>
     <el-dialog v-model="dialog" :title="editing ? '修改门户账号' : '新建门户账号'" width="520px">
       <el-form label-position="top">
         <el-form-item v-if="!editing" label="客户"><el-select v-model="form.customer_id" filterable remote :remote-method="searchCustomers" :loading="customerLoading" style="width:100%" placeholder="输入客户名称或联系人名称搜索"><el-option v-for="item in customers" :key="item.id" :label="formatCustomerOptionLabel(item)" :value="item.id" /></el-select></el-form-item>
@@ -24,9 +48,21 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createPortalAccount, getPortalAccounts, searchMediaCustomers, updatePortalAccount } from '@/api/customerMedia'
 import { formatCustomerOptionLabel } from './appointmentContract'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 const rows=ref([]),loading=ref(false),search=ref(''),dialog=ref(false),editing=ref(null),saving=ref(false),customers=ref([]),customerLoading=ref(false)
 const form=reactive({customer_id:'',login_email:'',password:''})
+// 列配置数组：TableTools 列显隐的数据源（操作列不进配置）
+const columnDefs=[
+  {key:'customer-name',label:'客户名称'},
+  {key:'customer-id',label:'客户ID'},
+  {key:'login-email',label:'登录邮箱'},
+  {key:'status',label:'状态'},
+  {key:'last-login',label:'最近登录'},
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('customer-media-accounts', columnDefs)
 async function load(){loading.value=true;try{rows.value=(await getPortalAccounts(search.value)).data||[]}finally{loading.value=false}}
+function resetFilters(){search.value='';load()}
 function openCreate(){editing.value=null;Object.assign(form,{customer_id:'',login_email:'',password:''});dialog.value=true}
 function openEdit(row){editing.value=row;Object.assign(form,{customer_id:row.customer_id,login_email:row.login_email,password:''});dialog.value=true}
 async function searchCustomers(term){if(!term?.trim())return;customerLoading.value=true;try{customers.value=(await searchMediaCustomers(term)).data||[]}finally{customerLoading.value=false}}
@@ -35,5 +71,5 @@ async function toggle(row){try{await ElMessageBox.confirm(`确认${row.is_active
 onMounted(load)
 </script>
 <style scoped>
-.accounts-page{position:relative}.accounts-aurora{inset:-24px -28px}.page-header,.toolbar,.accounts-panel{position:relative;z-index:1}.page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px}.page-header h2{margin:0 0 5px}.page-header p{margin:0;color:var(--text-secondary)}.toolbar{display:flex;gap:10px;margin-bottom:14px}.toolbar .el-input{max-width:340px}.accounts-panel{background:var(--dash-glass-bg);border:1px solid var(--dash-glass-border);border-radius:var(--dash-card-radius);overflow:hidden}.field-hint{color:var(--text-secondary);font-size:12px;margin-top:5px}
+.accounts-page{position:relative}.accounts-aurora{inset:-24px -28px}.page-header,.accounts-panel{position:relative;z-index:1}.page-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px}.page-header h2{margin:0 0 5px}.page-header p{margin:0;color:var(--text-secondary)}.accounts-panel{background:var(--dash-glass-bg);border:1px solid var(--dash-glass-border);border-radius:var(--dash-card-radius);overflow:hidden}.field-hint{color:var(--text-secondary);font-size:12px;margin-top:5px}
 </style>

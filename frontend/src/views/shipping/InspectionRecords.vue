@@ -35,18 +35,36 @@
       <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total" layout="prev, pager, next" :pager-count="5" @current-change="handlePageChange" />
     </section>
 
-    <div class="table-card inspection-panel inspection-desktop-list">
-      <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column prop="outbound_no" label="验货单号" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
-        <el-table-column prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
-        <el-table-column label="照片数" min-width="80" align="right">
+    <div ref="panelRef" class="table-card inspection-panel inspection-desktop-list">
+      <!-- 操作行：TableTools 四图标（Action Bar Spec）。筛选表单同时驱动移动端卡片列表与桌面表格，
+           移动端隐藏桌面卡片，故筛选区保持在卡片外（见 .inspection-filters） -->
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="handleSearch"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的验货单' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="验货单号" min-width="140" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('photo-count')" label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.photo_count }}</template>
         </el-table-column>
-        <el-table-column prop="salesperson_name" label="业务员" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="submitted_by_name" label="提交人" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="submitted_at" label="提交时间" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="100" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('submitted-by-name')" prop="submitted_by_name" label="提交人" min-width="100" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="提交时间" min-width="150" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="280" fixed="right">
@@ -108,14 +126,17 @@
  * 验货单列表 + 详情抽屉（照片墙） + 验货单打印。
  * 逻辑在 composables/useInspectionRecords.js（宪法 12）。
  */
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
 import InspectionPhotos from './components/InspectionPhotos.vue'
 import InspectionVideos from './components/InspectionVideos.vue'
 import InspectionEvents from './components/InspectionEvents.vue'
 import ShippingPrintDialog from './print/ShippingPrintDialog.vue'
 import { useInspectionRecords } from './composables/useInspectionRecords'
+import { useTableView } from '@/composables/useTableView'
 
 const route = useRoute()
 const {
@@ -125,6 +146,25 @@ const {
   detailVisible, detailLoading, detail, openDetail,
   printDialog, openPrint, recallingId, recallForEdit,
 } = useInspectionRecords()
+
+// 列配置数组：TableTools 列显隐的数据源；模板列保持静态 + v-if（推广期约定，不做配置化渲染）
+const columnDefs = [
+  { key: 'outbound-no', label: '验货单号' },
+  { key: 'order-id', label: '订单 ID' },
+  { key: 'customer-name', label: '客户名称' },
+  { key: 'photo-count', label: '照片数' },
+  { key: 'salesperson-name', label: '业务员' },
+  { key: 'submitted-by-name', label: '提交人' },
+  { key: 'submitted-at', label: '提交时间' },
+  { key: 'remark', label: '备注' },
+]
+// 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec），作用于桌面表格卡片
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('inspection-records', columnDefs)
+const hasActiveFilters = computed(() => Boolean(
+  searchForm.keyword || searchForm.orderId || searchForm.submittedByName ||
+  searchForm.salespersonName || searchForm.dateFrom || searchForm.dateTo,
+))
 
 // 日期起止互相约束（替代原原生 date input 的 min/max）：起不晚于止，止不早于起
 const disableFromDate = d => Boolean(searchForm.dateTo) && d.getTime() > new Date(`${searchForm.dateTo}T23:59:59`).getTime()
@@ -207,8 +247,6 @@ const disableToDate = d => Boolean(searchForm.dateFrom) && d.getTime() < new Dat
 .inspection-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
 .inspection-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .inspection-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-
-.pager { margin: 12px; justify-content: flex-end; }
 
 .detail-descriptions { margin-bottom: 12px; }
 

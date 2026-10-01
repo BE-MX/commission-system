@@ -15,14 +15,6 @@
         <GlassButton left-icon="CopyDocument" @click="copyText(INVOICE_API_ENDPOINT, '服务地址已复制')">
           复制地址
         </GlassButton>
-        <GlassButton
-          v-permission="'integration:admin'"
-          variant="primary"
-          left-icon="Plus"
-          @click="openCreateDialog"
-        >
-          新建站点凭证
-        </GlassButton>
       </div>
     </section>
 
@@ -32,27 +24,38 @@
       <article><span>已吊销</span><strong>{{ metrics.revoked }}</strong></article>
     </section>
 
-    <section class="table-card">
-      <div class="table-toolbar">
+    <section ref="panelRef" class="table-card">
+      <div class="toolbar">
         <div>
           <h2>已接入站点</h2>
           <p>明文 Token 不可找回；遗失时请轮换，旧 Token 会立即失效。</p>
         </div>
         <div class="filters">
           <el-input
+            class="filter-w-md"
             v-model="filters.keyword"
             clearable
             placeholder="搜索站点、账号或 Token 尾号"
             :prefix-icon="Search"
           />
-          <el-select v-model="filters.status" aria-label="凭证状态">
+          <el-select v-model="filters.status" class="filter-w-sm" aria-label="凭证状态">
             <el-option label="全部状态" value="all" />
             <el-option label="有效" value="active" />
             <el-option label="已过期" value="expired" />
             <el-option label="已吊销" value="revoked" />
           </el-select>
-          <GlassButton left-icon="Refresh" :loading="loading" @click="loadApps">刷新</GlassButton>
         </div>
+      </div>
+      <div class="action-bar">
+        <GlassButton v-permission="'integration:admin'" variant="primary" left-icon="Plus" @click="openCreateDialog">新建站点凭证</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadApps"
+          @fullscreen="toggleFullscreen"
+        />
       </div>
 
       <el-table
@@ -60,12 +63,14 @@
         v-loading="loading"
         :data="filteredRows"
         class="integration-table list-table"
+        :class="densityClass"
+        :max-height="isFullscreen ? undefined : 640"
         border
       >
-        <el-table-column label="站点名称" min-width="180" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('name')" label="站点名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }"><strong class="site-name">{{ row.name }}</strong></template>
         </el-table-column>
-        <el-table-column label="绑定账号" min-width="170" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('owner')" label="绑定账号" min-width="170" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="account-cell">
               <span>{{ row.owner_real_name || row.owner_username || '-' }}</span>
@@ -73,23 +78,23 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="授权范围" min-width="140">
+        <el-table-column v-if="visibleKeys.includes('scopes')" label="授权范围" min-width="140">
           <template #default="{ row }">
             <el-tag v-for="scope in row.scopes" :key="scope" type="info" effect="plain" size="small">
               {{ scope }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="Token 尾号" min-width="120">
+        <el-table-column v-if="visibleKeys.includes('suffix')" label="Token 尾号" min-width="120">
           <template #default="{ row }"><code class="suffix">••••••{{ row.token_suffix }}</code></template>
         </el-table-column>
-        <el-table-column label="到期时间" min-width="170">
+        <el-table-column v-if="visibleKeys.includes('expires')" label="到期时间" min-width="170">
           <template #default="{ row }">{{ formatCredentialTime(row.expires_at, '长期有效') }}</template>
         </el-table-column>
-        <el-table-column label="最近使用" min-width="170">
+        <el-table-column v-if="visibleKeys.includes('last-used')" label="最近使用" min-width="170">
           <template #default="{ row }">{{ formatCredentialTime(row.last_used_at) }}</template>
         </el-table-column>
-        <el-table-column label="状态" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
           <template #default="{ row }">
             <el-tag :type="statusFor(row).type" effect="plain" size="small">
               {{ statusFor(row).label }}
@@ -253,6 +258,8 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, WarningFilled } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import {
   createIntegrationApp,
   listIntegrationApps,
@@ -273,6 +280,17 @@ import {
 
 const loading = ref(false)
 const rows = ref([])
+const columnDefs = [
+  { key: 'name', label: '站点名称' },
+  { key: 'owner', label: '绑定账号' },
+  { key: 'scopes', label: '授权范围' },
+  { key: 'suffix', label: 'Token 尾号' },
+  { key: 'expires', label: '到期时间' },
+  { key: 'last-used', label: '最近使用' },
+  { key: 'status', label: '状态' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('integration-app-management', columnDefs)
 const filters = reactive({ keyword: '', status: 'all' })
 const createVisible = ref(false)
 const creating = ref(false)
@@ -430,7 +448,7 @@ onBeforeUnmount(cleanupPage)
 .eyebrow { color: var(--color-gold-muted); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
 h1 { margin: 4px 0 5px; font-size: 23px; letter-spacing: -.02em; }
 .endpoint-copy p,
-.table-toolbar p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.toolbar p { margin: 0; color: var(--text-secondary); font-size: 13px; }
 .endpoint-actions { display: flex; align-items: center; gap: 10px; }
 .endpoint-value { min-width: 330px; padding: 8px 11px; background: var(--toolbar-bg); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
 .endpoint-value span,
@@ -443,11 +461,10 @@ h1 { margin: 4px 0 5px; font-size: 23px; letter-spacing: -.02em; }
 .metrics span { color: var(--text-secondary); font-size: 12px; }
 .metrics strong { font-size: 23px; font-variant-numeric: tabular-nums; }
 .table-card { overflow: hidden; border-radius: var(--radius-xl); }
-.table-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px 13px; border-bottom: 1px solid var(--border-color); }
-.table-toolbar h2 { margin: 0 0 3px; font-size: 16px; }
-.filters { display: flex; align-items: center; gap: 8px; }
-.filters .el-input { width: 260px; }
-.filters .el-select { width: 120px; }
+.toolbar { justify-content: space-between; }
+.toolbar h2 { margin: 0 0 3px; font-size: 16px; }
+.filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.table-card:fullscreen { overflow: auto; }
 .site-name { font-size: 13px; }
 .account-cell { display: flex; flex-direction: column; line-height: 1.35; }
 .account-cell small,
@@ -468,8 +485,7 @@ h1 { margin: 4px 0 5px; font-size: 23px; letter-spacing: -.02em; }
 .copy-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
 @media (max-width: 1000px) {
-  .endpoint-card,
-  .table-toolbar { align-items: flex-start; flex-direction: column; }
+  .endpoint-card { align-items: flex-start; flex-direction: column; }
   .endpoint-actions,
   .filters { width: 100%; flex-wrap: wrap; }
   .endpoint-value { flex: 1; min-width: 260px; }

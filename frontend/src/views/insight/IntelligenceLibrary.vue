@@ -8,75 +8,80 @@
     </div>
 
     <div class="page-header">
-      <h1>情报采集库</h1>
-      <div class="header-actions">
-        <GlassButton variant="primary" :left-icon="Plus" @click="showSourceDialog = true" v-if="authStore.hasPermission('insight:admin')">
+      <div>
+        <h1>情报采集库</h1>
+        <p>RSS / XPOZ / 竞品监控 / 手工上传的情报条目，支持精选与归档。</p>
+      </div>
+    </div>
+
+    <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
+    <section ref="panelRef" class="table-card library-panel">
+      <div class="toolbar">
+        <el-date-picker
+          v-model="dateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始"
+          end-placeholder="结束"
+          value-format="YYYY-MM-DD"
+          class="filter-w-lg"
+          @change="handleFilterChange"
+        />
+        <el-select v-model="filterForm.source_types" multiple collapse-tags placeholder="信源类型" class="filter-w-md" @change="handleFilterChange">
+          <el-option label="RSS" value="google_alerts_rss" />
+          <el-option label="XPOZ" value="xpoz" />
+          <el-option label="竞品监控" value="competitor_monitor" />
+          <el-option label="手工" value="manual" />
+        </el-select>
+        <el-select v-model="filterForm.credibility_labels" multiple collapse-tags placeholder="可信度" class="filter-w-md" @change="handleFilterChange">
+          <el-option label="已核实" value="verified" />
+          <el-option label="可信" value="plausible" />
+          <el-option label="存疑" value="uncertain" />
+          <el-option label="无法核实" value="unverifiable" />
+        </el-select>
+        <el-select v-model="filterForm.status" placeholder="状态" class="filter-w-sm" @change="handleFilterChange">
+          <el-option label="活跃" value="active" />
+          <el-option label="已归档" value="archived" />
+          <el-option label="已标记" value="flagged" />
+        </el-select>
+        <el-input v-model="filterForm.keyword" placeholder="搜索标题/内容" clearable class="filter-w-md" @keyup.enter="handleFilterChange" @clear="handleFilterChange" />
+        <GlassButton variant="primary" :left-icon="Search" @click="handleFilterChange">查询</GlassButton>
+        <GlassButton :left-icon="RefreshLeft" @click="resetFilter">重置</GlassButton>
+      </div>
+
+      <!-- 操作行：主操作按钮组 + TableTools 四图标 -->
+      <div class="action-bar">
+        <GlassButton variant="primary" :left-icon="Plus" @click="router.push('/insight/sources')" v-if="authStore.hasPermission('insight:admin')">
           添加信源
         </GlassButton>
         <GlassButton variant="secondary" :left-icon="Upload" @click="showUploadDialog = true" v-if="authStore.hasPermission('insight:admin')">
           上传 MD
         </GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadItems"
+          @fullscreen="toggleFullscreen"
+        />
       </div>
-    </div>
 
-    <!-- 筛选栏 -->
-    <el-card class="filter-card" shadow="never">
-      <el-form :model="filterForm" inline>
-        <el-form-item label="日期">
-          <el-date-picker
-            v-model="dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始"
-            end-placeholder="结束"
-            value-format="YYYY-MM-DD"
-            @change="handleFilterChange"
-          />
-        </el-form-item>
-        <el-form-item label="信源类型">
-          <el-select v-model="filterForm.source_types" multiple collapse-tags placeholder="全部" @change="handleFilterChange" style="width: 180px">
-            <el-option label="RSS" value="google_alerts_rss" />
-            <el-option label="XPOZ" value="xpoz" />
-            <el-option label="竞品监控" value="competitor_monitor" />
-            <el-option label="手工" value="manual" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="可信度">
-          <el-select v-model="filterForm.credibility_labels" multiple collapse-tags placeholder="全部" @change="handleFilterChange" style="width: 180px">
-            <el-option label="已核实" value="verified" />
-            <el-option label="可信" value="plausible" />
-            <el-option label="存疑" value="uncertain" />
-            <el-option label="无法核实" value="unverifiable" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="filterForm.status" placeholder="全部" @change="handleFilterChange" style="width: 120px">
-            <el-option label="活跃" value="active" />
-            <el-option label="已归档" value="archived" />
-            <el-option label="已标记" value="flagged" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="关键词">
-          <el-input v-model="filterForm.keyword" placeholder="搜索标题/内容" clearable @change="handleFilterChange" />
-        </el-form-item>
-        <el-form-item>
-          <el-button @click="resetFilter">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
-
-    <!-- 列表 -->
-    <el-card class="list-card" shadow="never" v-loading="loading">
-      <el-table :data="items" @selection-change="handleSelectionChange" @sort-change="libSort.onSortChange" border class="list-table">
+      <el-table :data="items" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="libSort.onSortChange" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilter">重置筛选</GlassButton>
+          </el-empty>
+        </template>
         <el-table-column type="selection" min-width="40" />
-        <el-table-column label="可信度" min-width="90" prop="credibility_label" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('credibility')" label="可信度" min-width="90" prop="credibility_label" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="credibilityType(row.credibility_label)" size="small">
               {{ credibilityLabel(row.credibility_label) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="标题" min-width="300" prop="title" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('title')" label="标题" min-width="300" prop="title" sortable="custom">
           <template #default="{ row }">
             <div class="item-title">
               <el-icon v-if="row.is_featured" class="featured-star"><Star-Filled /></el-icon>
@@ -89,12 +94,12 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="类型" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('item-type')" label="类型" min-width="100">
           <template #default="{ row }">
             <el-tag size="small">{{ row.item_type || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" min-width="80" prop="status" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" prop="status" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
@@ -108,17 +113,17 @@
         </el-table-column>
       </el-table>
 
-      <!-- 分页 -->
       <el-pagination
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
         :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
-        @change="loadItems"
-        class="pagination"
+        class="pager"
+        @size-change="handleSizeChange"
+        @current-change="loadItems"
       />
-    </el-card>
+    </section>
 
     <!-- 批量操作栏 -->
     <div class="batch-bar" v-if="selectedItems.length > 0">
@@ -157,15 +162,19 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, Upload, StarFilled } from '@element-plus/icons-vue'
+import { Plus, RefreshLeft, Search, Upload, StarFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { listItems, toggleItemFeature, batchFeature as apiBatchFeature, batchStatus, uploadMd } from '@/api/insight'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import { formatBeijingDate } from '@/utils/datetime'
 
 const authStore = useAuthStore()
+const router = useRouter()
 const libSort = useTableSort()
 
 // 状态
@@ -175,6 +184,15 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(50)
 const selectedItems = ref([])
+
+// 列显隐元数据（TableTools 列面板数据源，模板列保持静态；多选列固定显示）
+const columnDefs = [
+  { key: 'credibility', label: '可信度' },
+  { key: 'title', label: '标题' },
+  { key: 'item-type', label: '类型' },
+  { key: 'status', label: '状态' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('intelligence-library', columnDefs)
 
 // 筛选
 const dateRange = ref([])
@@ -226,6 +244,19 @@ function handleFilterChange() {
   page.value = 1
   loadItems()
 }
+
+function handleSizeChange() {
+  page.value = 1
+  loadItems()
+}
+
+const hasActiveFilters = computed(() =>
+  Boolean(dateRange.value?.length === 2) ||
+  filterForm.source_types.length > 0 ||
+  filterForm.credibility_labels.length > 0 ||
+  Boolean(filterForm.status) ||
+  Boolean(filterForm.keyword)
+)
 
 function resetFilter() {
   dateRange.value = []
@@ -342,8 +373,7 @@ onMounted(loadItems)
    会覆盖就地渲染的 el-dialog 的 .el-overlay position: fixed。
    .batch-bar 本身是 position: fixed + z-index:100，天然在极光之上，不列入 */
 .page-wrapper .page-header,
-.page-wrapper .filter-card,
-.page-wrapper .list-card {
+.page-wrapper .library-panel {
   position: relative;
   z-index: 1;
 }
@@ -358,19 +388,14 @@ onMounted(loadItems)
   font-weight: 600;
   margin: 0;
 }
-.header-actions {
-  display: flex;
-  gap: 8px;
+.page-header p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
-/* 筛选/列表面板：同款渐变玻璃（scoped 覆盖 el-card 白底） */
-.filter-card {
-  margin-bottom: 16px;
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-}
-.list-card {
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底）；
+   筛选区/操作行/分页均为全局规范类（app.css .table-card > …），本页不覆写 */
+.library-panel {
   margin-bottom: 16px;
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
@@ -379,8 +404,13 @@ onMounted(loadItems)
   overflow: hidden;
 }
 
+/* 全屏态：面板自身滚动（.table-card 默认 overflow:hidden） */
+.library-panel:fullscreen {
+  overflow: auto;
+}
+
 /* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.list-card :deep(.el-table) {
+.library-panel :deep(.el-table) {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
   --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
@@ -390,13 +420,13 @@ onMounted(loadItems)
 
 /* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
    改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
-.list-card :deep(.el-table-fixed-column--right) {
+.library-panel :deep(.el-table-fixed-column--right) {
   background-color: rgba(249, 244, 234, 0.97);
 }
-.list-card :deep(th.el-table-fixed-column--right) {
+.library-panel :deep(th.el-table-fixed-column--right) {
   background-color: rgba(246, 239, 226, 0.98);
 }
-.list-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+.library-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
   background-color: rgba(245, 236, 220, 0.98);
 }
 .item-title {
@@ -416,10 +446,6 @@ onMounted(loadItems)
   display: flex;
   gap: 8px;
   align-items: center;
-}
-.pagination {
-  margin-top: 16px;
-  justify-content: flex-end;
 }
 .batch-bar {
   position: fixed;

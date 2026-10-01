@@ -11,54 +11,64 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="6">
+    <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
+    <div ref="panelRef" class="table-card salary-panel">
+      <div class="toolbar">
         <el-input
           v-model="searchForm.keyword" placeholder="搜索姓名 / 工号 / 岗位" clearable
-          prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch"
+          prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch"
         />
-      </el-col>
-      <el-col :span="4">
-        <el-select v-model="searchForm.dept_detail" placeholder="明细部门" clearable style="width: 100%" @change="handleSearch">
+        <el-select v-model="searchForm.dept_detail" placeholder="明细部门" clearable class="filter-w-sm" @change="handleSearch">
           <el-option v-for="d in deptOptions" :key="d.id" :label="d.dept_detail" :value="d.dept_detail" />
         </el-select>
-      </el-col>
-      <el-col :span="4">
-        <el-select v-model="searchForm.status" placeholder="在职状态" clearable style="width: 100%" @change="handleSearch">
+        <el-select v-model="searchForm.status" placeholder="在职状态" clearable class="filter-w-sm" @change="handleSearch">
           <el-option label="在职" value="active" />
           <el-option label="离职" value="left" />
         </el-select>
-      </el-col>
-      <el-col :span="10" class="toolbar-right">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton variant="ghost" left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
-        <GlassButton v-permission="'salary:write'" variant="primary" left-icon="Plus" @click="openCreate">新增档案</GlassButton>
-      </el-col>
-    </el-row>
+        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
+      </div>
 
-    <div class="table-card salary-panel">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'salary:write'" variant="primary" left-icon="Plus" @click="openCreate">新增档案</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
       <el-table
-        :data="list" v-loading="loading" border class="list-table" style="width: 100%"
+        :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%"
         :default-sort="{ prop: sortField, order: sortOrder === 'desc' ? 'descending' : 'ascending' }"
         @sort-change="handleSortChange"
       >
-        <el-table-column prop="emp_no" label="工号" min-width="80" sortable="custom" />
-        <el-table-column prop="name" label="姓名" min-width="90" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="dept_detail" label="明细部门" min-width="110" show-overflow-tooltip sortable="custom" />
-        <el-table-column label="汇总大部门" min-width="110">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('emp-no')" prop="emp_no" label="工号" min-width="80" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="姓名" min-width="90" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('dept-detail')" prop="dept_detail" label="明细部门" min-width="110" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('dept-group')" label="汇总大部门" min-width="110">
           <template #default="{ row }">
             <el-tag v-if="row.dept_group" size="small" effect="plain">{{ row.dept_group }}</el-tag>
             <span v-else class="muted">未映射</span>
           </template>
         </el-table-column>
-        <el-table-column prop="position" label="岗位" min-width="110" show-overflow-tooltip sortable="custom" />
-        <el-table-column label="职级" min-width="130" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('position')" prop="position" label="岗位" min-width="110" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('grade')" label="职级" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.grade_code">{{ schemeLabels[row.grade_scheme] || row.grade_scheme }} · {{ row.grade_code }}</span>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="生效底薪" min-width="100" align="right">
+        <el-table-column v-if="visibleKeys.includes('base-salary')" label="生效底薪" min-width="100" align="right">
           <template #default="{ row }">
             <span v-if="row.base_salary_effective !== null && row.base_salary_effective !== undefined">
               <!-- 后端 Decimal 经 JSON 变 float，3500.00 会显示成 3500；工资域分位必须留住 -->
@@ -69,11 +79,11 @@
             <el-tag v-else size="small" type="danger" effect="plain">待补</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="hire_date" label="入职日期" min-width="110" sortable="custom" />
-        <el-table-column label="银行卡" min-width="150" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('hire-date')" prop="hire_date" label="入职日期" min-width="110" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('bank-card')" label="银行卡" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ row.bank_card_masked || '-' }}</template>
         </el-table-column>
-        <el-table-column label="状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small" effect="plain">
               {{ row.status === 'active' ? '在职' : '离职' }}
@@ -250,11 +260,29 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { money } from '@/api/salary'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { useSalaryProfiles } from './composables/useSalaryProfiles'
 
+// 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
+const columnDefs = [
+  { key: 'emp-no', label: '工号' },
+  { key: 'name', label: '姓名' },
+  { key: 'dept-detail', label: '明细部门' },
+  { key: 'dept-group', label: '汇总大部门' },
+  { key: 'position', label: '岗位' },
+  { key: 'grade', label: '职级' },
+  { key: 'base-salary', label: '生效底薪' },
+  { key: 'hire-date', label: '入职日期' },
+  { key: 'bank-card', label: '银行卡' },
+  { key: 'status', label: '状态' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('salary-profiles', columnDefs)
+
 const {
-  loading, list, total, page, pageSize, searchForm,
+  loading, list, total, page, pageSize, searchForm, fetchList,
   handleSearch, handleReset, handlePageChange, handleSizeChange,
   sortField, sortOrder, handleSortChange,
   deptOptions, gradeCodeOptions, schemeOptions, schemeLabels,
@@ -262,17 +290,16 @@ const {
   dialogVisible, saving, isEdit, formRef, form, formRules,
   openCreate, openEdit, submit,
 } = useSalaryProfiles()
+
+const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.dept_detail || searchForm.status))
 </script>
 
 <style scoped>
 .salary-page { position: relative; }
 .salary-aurora { inset: -24px -28px; }
-.salary-page .toolbar,
 .salary-page .salary-panel { position: relative; z-index: 1; }
 
-.toolbar { margin-bottom: 16px; }
-.toolbar-right { display: flex; gap: 8px; justify-content: flex-end; }
-
+/* 表格面板玻璃皮肤（scoped 覆盖全局 .table-card 白底）；筛选区/操作行/分页用全局规范类 */
 .salary-panel {
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
@@ -292,7 +319,6 @@ const {
 .salary-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .salary-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
-.pager { justify-content: flex-end; padding: 12px 16px; }
 .muted { color: var(--el-text-color-placeholder); }
 /* 清除开关是破坏性操作，压在输入框下方、字号收小，不跟主输入抢注意力 */
 .pii-clear { margin-top: 4px; font-size: 12px; }

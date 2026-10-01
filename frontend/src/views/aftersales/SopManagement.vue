@@ -6,18 +6,31 @@
       <div class="lg-aurora__blob lg-aurora__blob--amber" />
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
-    <div class="page-heading"><div><h1>售后 SOP 管理</h1><p>上传后先检查解析和问题映射，再启用；历史售后仍保留原版本引用。</p></div><GlassButton v-permission="'aftersales:admin'" variant="primary" left-icon="Upload" @click="dialogVisible = true">上传新版本</GlassButton></div>
-    <div class="table-card sop-panel">
-      <el-table :data="versions" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column prop="version_no" label="版本号" min-width="130" max-width="190" show-overflow-tooltip />
-        <el-table-column prop="original_filename" label="文件名" min-width="190" max-width="320" show-overflow-tooltip />
-        <el-table-column prop="clause_count" label="条款数" min-width="90" max-width="120" />
-        <el-table-column prop="uploaded_by_name" label="上传人" min-width="100" max-width="150" show-overflow-tooltip />
-        <el-table-column prop="reference_count" label="引用单据" min-width="90" max-width="120" />
-        <el-table-column label="问题映射" min-width="110" max-width="160"><template #default="{ row }">{{ Object.keys(row.issue_mapping || {}).length }} / 11</template></el-table-column>
-        <el-table-column label="解析状态" min-width="100" max-width="140"><template #default="{ row }"><el-tag :type="row.parse_status === 'parsed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status }}</el-tag></template></el-table-column>
-        <el-table-column label="生效状态" min-width="100" max-width="140"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'" effect="plain">{{ row.is_active ? '当前生效' : '未生效' }}</el-tag></template></el-table-column>
-        <el-table-column prop="effective_date" label="生效日期" min-width="120" max-width="160" />
+    <div class="page-heading"><div><h1>售后 SOP 管理</h1><p>上传后先检查解析和问题映射，再启用；历史售后仍保留原版本引用。</p></div></div>
+    <div ref="panelRef" class="table-card sop-panel">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'aftersales:admin'" variant="primary" left-icon="Upload" @click="dialogVisible = true">上传新版本</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchVersions"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table :data="versions" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty><el-empty :image-size="96" description="暂无数据" /></template>
+        <el-table-column v-if="visibleKeys.includes('version-no')" prop="version_no" label="版本号" min-width="130" max-width="190" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('filename')" prop="original_filename" label="文件名" min-width="190" max-width="320" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('clause-count')" prop="clause_count" label="条款数" min-width="90" max-width="120" />
+        <el-table-column v-if="visibleKeys.includes('uploaded-by')" prop="uploaded_by_name" label="上传人" min-width="100" max-width="150" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('reference-count')" prop="reference_count" label="引用单据" min-width="90" max-width="120" />
+        <el-table-column v-if="visibleKeys.includes('issue-mapping')" label="问题映射" min-width="110" max-width="160"><template #default="{ row }">{{ Object.keys(row.issue_mapping || {}).length }} / 11</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('parse-status')" label="解析状态" min-width="100" max-width="140"><template #default="{ row }"><el-tag :type="row.parse_status === 'parsed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('active-status')" label="生效状态" min-width="100" max-width="140"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'" effect="plain">{{ row.is_active ? '当前生效' : '未生效' }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('effective-date')" prop="effective_date" label="生效日期" min-width="120" max-width="160" />
         <el-table-column class-name="table-action-column" label="操作" min-width="180" max-width="240" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="preview(row)">查看解析</GlassButton><GlassButton v-if="!row.is_active" v-permission="'aftersales:admin'" variant="link" link-tone="success" left-icon="CircleCheck" @click="activate(row)">启用</GlassButton></template></el-table-column>
       </el-table>
     </div>
@@ -46,9 +59,24 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { activateAfterSalesSop, getAfterSalesSopVersions, uploadAfterSalesSop } from '@/api/aftersales'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import { msgError, msgSuccess } from '@/utils/feedback'
 const loading = ref(false); const saving = ref(false); const versions = ref([]); const dialogVisible = ref(false); const previewVisible = ref(false); const selectedVersion = ref(null); const selectedFile = ref(null)
 const form = reactive({ version_no: '', effective_date: '', change_summary: '' })
+// 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
+const columnDefs = [
+  { key: 'version-no', label: '版本号' },
+  { key: 'filename', label: '文件名' },
+  { key: 'clause-count', label: '条款数' },
+  { key: 'uploaded-by', label: '上传人' },
+  { key: 'reference-count', label: '引用单据' },
+  { key: 'issue-mapping', label: '问题映射' },
+  { key: 'parse-status', label: '解析状态' },
+  { key: 'active-status', label: '生效状态' },
+  { key: 'effective-date', label: '生效日期' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('aftersales-sop', columnDefs)
 async function fetchVersions() { loading.value = true; try { const response = await getAfterSalesSopVersions(); versions.value = response.data?.items || [] } finally { loading.value = false } }
 function preview(row) { selectedVersion.value = row; previewVisible.value = true }
 async function upload() {
@@ -73,6 +101,8 @@ onMounted(fetchVersions)
    本页有就地渲染的 el-dialog/el-drawer，通配会压掉 .el-overlay 的 position: fixed */
 .sop-page .page-heading,
 .sop-page .sop-panel { position: relative; z-index: 1; }
+/* 操作行为全局规范类（app.css），本页只保留玻璃皮肤覆写 */
+.action-bar { background: rgba(255, 255, 255, 0.28); }
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
 .sop-panel {
   border: 1px solid var(--dash-glass-border);

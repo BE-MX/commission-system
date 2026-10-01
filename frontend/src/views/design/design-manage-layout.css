@@ -45,9 +45,6 @@
   background-color: rgba(245, 236, 220, 0.98);
 }
 
-.tab-toolbar { margin-bottom: 12px; display: flex; justify-content: flex-end; }
-.filter-bar { margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
 .text-muted { color: var(--text-secondary); font-size: 12px; }
 .import-section { max-width: 600px; }
 

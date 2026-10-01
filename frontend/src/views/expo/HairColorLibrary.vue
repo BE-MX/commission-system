@@ -7,34 +7,49 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="8">
-        <el-input v-model="keyword" placeholder="搜索色号 / 名称" clearable prefix-icon="Search" />
-      </el-col>
-      <el-col :span="16">
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreate">新建发色</GlassButton>
-      </el-col>
-    </el-row>
+    <div ref="panelRef" class="table-card color-panel">
+      <div class="toolbar">
+        <el-input v-model="keyword" placeholder="搜索色号 / 名称" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="fetchColors" />
+        <GlassButton variant="primary" left-icon="Search" @click="fetchColors">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <div class="table-card color-panel">
-      <el-table :data="filteredColors" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column label="色板图" min-width="70">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton variant="primary" left-icon="Plus" @click="openCreate">新建发色</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchColors"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="filteredColors" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('swatch')" label="色板图" min-width="70">
           <template #default="{ row }">
             <el-image v-if="row.swatch_url" :src="row.thumb_url || row.swatch_url" :preview-src-list="[row.swatch_url]" preview-teleported fit="cover" class="swatch-thumb" />
             <span v-else class="swatch-empty">无</span>
           </template>
         </el-table-column>
-        <el-table-column prop="code" label="色号" min-width="90" show-overflow-tooltip />
-        <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
-        <el-table-column label="色块" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('code')" prop="code" label="色号" min-width="90" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="名称" min-width="120" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('hex')" label="色块" min-width="80">
           <template #default="{ row }">
             <span v-if="row.hex" class="hex-dot" :style="{ background: row.hex }" />
             <span v-else class="swatch-empty">—</span>
           </template>
         </el-table-column>
-        <el-table-column prop="color_description" label="颜色描述" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="priority" label="优先级" min-width="80" sortable />
-        <el-table-column label="启用" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('description')" prop="color_description" label="颜色描述" min-width="240" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('priority')" prop="priority" label="优先级" min-width="80" sortable />
+        <el-table-column v-if="visibleKeys.includes('is-active')" label="启用" min-width="80">
           <template #default="{ row }">
             <el-switch :model-value="!!row.is_active" @change="(v) => toggleActive(row, v)" />
           </template>
@@ -82,6 +97,21 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getHairColors, createHairColor, updateHairColor, deleteHairColor, uploadHairColorSwatch, getHairColorUsage } from '@/api/expo'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
+
+// columnDefs 只供 TableTools 列显隐面板，模板列保持静态（推广期不配置化渲染）
+const columnDefs = [
+  { key: 'swatch', label: '色板图' },
+  { key: 'code', label: '色号' },
+  { key: 'name', label: '名称' },
+  { key: 'hex', label: '色块' },
+  { key: 'description', label: '颜色描述' },
+  { key: 'priority', label: '优先级' },
+  { key: 'is-active', label: '启用' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('hair-color-library', columnDefs)
 
 const colors = ref([])
 const loading = ref(false)
@@ -91,6 +121,11 @@ const filteredColors = computed(() => {
   if (!kw) return colors.value
   return colors.value.filter((c) => (c.code || '').toLowerCase().includes(kw) || (c.name || '').toLowerCase().includes(kw))
 })
+const hasActiveFilters = computed(() => Boolean(keyword.value.trim()))
+function resetFilters() {
+  keyword.value = ''
+  fetchColors()
+}
 
 const drawerVisible = ref(false)
 const isEdit = ref(false)
@@ -211,7 +246,6 @@ onMounted(fetchColors)
 
 /* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
    会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
-.color-page .toolbar,
 .color-page .color-panel { position: relative; z-index: 1; }
 
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
@@ -238,7 +272,13 @@ onMounted(fetchColors)
 .color-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .color-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
-.toolbar { margin-bottom: 16px; }
+/* 筛选区/操作行：结构类是全局 .table-card > .toolbar/.action-bar（app.css），此处只做玻璃皮肤覆写（同 invoice-manage.css） */
+.toolbar { background: rgba(255, 255, 255, 0.4); }
+.action-bar { background: rgba(255, 255, 255, 0.28); }
+
+/* 全屏态：面板自身滚动 */
+.color-panel:fullscreen { overflow: auto; }
+
 .swatch-thumb { width: 40px; height: 40px; border-radius: 6px; display: block; }
 .swatch-empty { color: var(--text-muted); font-size: 12px; }
 .hex-dot {

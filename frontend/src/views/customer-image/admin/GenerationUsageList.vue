@@ -5,48 +5,65 @@
         <strong>生成用量</strong>
         <span>按任务核对运行状态、Token 用量和预估成本。</span>
       </div>
-      <GlassButton variant="outline" left-icon="Refresh" :loading="loading" @click="load()">刷新</GlassButton>
     </div>
 
-    <el-table v-loading="loading" :data="generations" empty-text="暂无生成记录" border class="list-table">
-      <el-table-column prop="id" label="任务" min-width="90">
-        <template #default="{ row }">#{{ row.id }}</template>
-      </el-table-column>
-      <el-table-column prop="product_name" label="产品" min-width="170" show-overflow-tooltip />
-      <el-table-column prop="invite_id" label="邀请" min-width="90">
-        <template #default="{ row }">#{{ row.invite_id }}</template>
-      </el-table-column>
-      <el-table-column label="状态" min-width="110">
-        <template #default="{ row }"><el-tag :type="statusType[row.status] || 'info'" effect="plain">{{ statusLabel[row.status] || row.status }}</el-tag></template>
-      </el-table-column>
-      <el-table-column label="Token" min-width="150">
-        <template #default="{ row }">{{ formatNumber(row.total_tokens) }} <small>（入 {{ formatNumber(row.input_tokens) }} / 出 {{ formatNumber(row.output_tokens) }}）</small></template>
-      </el-table-column>
-      <el-table-column label="预估成本" min-width="120">
-        <template #default="{ row }">{{ formatCost(row.estimated_cost_microusd) }}</template>
-      </el-table-column>
-      <el-table-column label="创建时间" min-width="170">
-        <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
-      </el-table-column>
-      <el-table-column prop="error_message" label="异常" min-width="180" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.error_message || '-' }}</template>
-      </el-table-column>
-    </el-table>
+    <section ref="panelRef" class="table-card">
+      <!-- 操作行：本页无页级主操作，仅 TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="load()"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
 
-    <el-pagination
-      v-model:current-page="generationPage"
-      v-model:page-size="generationPageSize"
-      :total="generationTotal"
-      :page-sizes="[20, 50, 100]"
-      layout="total, sizes, prev, pager, next"
-      @current-change="load"
-      @size-change="changeSize"
-    />
+      <el-table v-loading="loading" :data="generations" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty><el-empty :image-size="96" description="暂无数据" /></template>
+        <el-table-column v-if="visibleKeys.includes('task')" prop="id" label="任务" min-width="90">
+          <template #default="{ row }">#{{ row.id }}</template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('product')" prop="product_name" label="产品" min-width="170" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('invite')" prop="invite_id" label="邀请" min-width="90">
+          <template #default="{ row }">#{{ row.invite_id }}</template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
+          <template #default="{ row }"><el-tag :type="statusType[row.status] || 'info'" effect="plain">{{ statusLabel[row.status] || row.status }}</el-tag></template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('tokens')" label="Token" min-width="150">
+          <template #default="{ row }">{{ formatNumber(row.total_tokens) }} <small>（入 {{ formatNumber(row.input_tokens) }} / 出 {{ formatNumber(row.output_tokens) }}）</small></template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('cost')" label="预估成本" min-width="120">
+          <template #default="{ row }">{{ formatCost(row.estimated_cost_microusd) }}</template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="170">
+          <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('error')" prop="error_message" label="异常" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.error_message || '-' }}</template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        v-model:current-page="generationPage"
+        v-model:page-size="generationPageSize"
+        :total="generationTotal"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @current-change="load"
+        @size-change="changeSize"
+      />
+    </section>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { formatBeijingDateTime } from '@/utils/datetime'
 
 const props = defineProps({ state: { type: Object, required: true } })
@@ -57,6 +74,20 @@ const statusType = { queued: 'info', running: 'warning', succeeded: 'success', f
 const formatDate = value => formatBeijingDateTime(value)
 const formatNumber = value => Number(value || 0).toLocaleString('zh-CN')
 const formatCost = value => value == null ? '-' : `$${(Number(value) / 1_000_000).toFixed(4)}`
+
+// 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节）
+const columnDefs = [
+  { key: 'task', label: '任务' },
+  { key: 'product', label: '产品' },
+  { key: 'invite', label: '邀请' },
+  { key: 'status', label: '状态' },
+  { key: 'tokens', label: 'Token' },
+  { key: 'cost', label: '预估成本' },
+  { key: 'created-at', label: '创建时间' },
+  { key: 'error', label: '异常' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('customer-image-usage', columnDefs)
 
 async function load(page = generationPage.value) {
   loading.value = true
@@ -75,7 +106,4 @@ onMounted(load)
 .list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; }
 .list-toolbar div { display: grid; gap: 3px; }
 .list-toolbar span, small { color: var(--el-text-color-secondary); font-size: 13px; }
-.el-pagination { justify-content: flex-end; margin-top: 16px; }
-:deep(.glass-button:not(.glass-button--link)) { min-height: 44px; }
-@media (max-width: 720px) { .el-pagination { justify-content: flex-start; overflow-x: auto; } }
 </style>

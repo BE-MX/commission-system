@@ -42,125 +42,155 @@
     <el-tabs v-model="activeTab" class="order-tabs">
       <!-- 标签页一：按生产单维度 -->
       <el-tab-pane label="按生产单维度" name="order">
-        <div class="tab-toolbar">
-          <el-select v-model="orderFilters.status" placeholder="状态" clearable style="width:120px">
-            <el-option label="已提交" :value="0" />
-            <el-option label="已终止" :value="1" />
-            <el-option label="已完成" :value="2" />
-          </el-select>
-          <el-input v-model="orderFilters.keyword" placeholder="搜索单号/批次号" clearable style="width:200px" @input="handleOrderSearch" />
-          <GlassButton variant="primary" size="sm" :left-icon="Filter" @click="loadOrderList">筛选</GlassButton>
-          <GlassButton variant="secondary" size="sm" @click="resetOrderFilters">重置</GlassButton>
-        </div>
-        <div class="table-card">
-        <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" border class="list-table" @sort-change="handleOrderSortChange">
-          <el-table-column label="生产单号" prop="order_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="生产批次号" prop="batch_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="创建人" min-width="100" max-width="150" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.created_by_name || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="创建时间" prop="created_at" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip>
-            <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
-          </el-table-column>
-          <el-table-column label="明细数" min-width="80" max-width="120" prop="item_count" show-overflow-tooltip />
-          <el-table-column label="总下单量" min-width="90" max-width="135" prop="total_order_qty" show-overflow-tooltip />
-          <el-table-column label="总入库量" min-width="90" max-width="135" prop="total_received_qty" show-overflow-tooltip />
-          <el-table-column label="在途量" min-width="80" max-width="120">
-            <template #default="{ row }">
-              <span :class="row.total_in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.total_in_transit_qty }}</span>
+        <div ref="orderPanelRef" class="table-card">
+          <div class="toolbar">
+            <el-select v-model="orderFilters.status" placeholder="状态" clearable class="filter-w-sm">
+              <el-option label="已提交" :value="0" />
+              <el-option label="已终止" :value="1" />
+              <el-option label="已完成" :value="2" />
+            </el-select>
+            <el-input v-model="orderFilters.keyword" placeholder="搜索单号/批次号" clearable class="filter-w-md" @input="handleOrderSearch" @keyup.enter="loadOrderList" />
+            <GlassButton variant="primary" :left-icon="Filter" @click="loadOrderList">查询</GlassButton>
+            <GlassButton :left-icon="RefreshRight" @click="resetOrderFilters">重置</GlassButton>
+          </div>
+          <!-- 操作行：本页无页面级主操作，右侧 TableTools 四图标（Action Bar Spec） -->
+          <div class="action-bar">
+            <TableTools
+              v-model:visible-keys="orderVisibleKeys"
+              v-model:density="orderDensity"
+              :columns="orderColumnDefs"
+              :fullscreen="orderIsFullscreen"
+              @refresh="loadOrderList"
+              @fullscreen="orderToggleFullscreen"
+            />
+          </div>
+          <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" border class="list-table" :class="orderDensityClass" :max-height="orderIsFullscreen ? undefined : 640" @sort-change="handleOrderSortChange">
+            <template #empty>
+              <el-empty :image-size="96" :description="hasActiveOrderFilters ? '没有符合条件的记录' : '暂无数据'">
+                <GlassButton v-if="hasActiveOrderFilters" :left-icon="RefreshRight" @click="resetOrderFilters">重置筛选</GlassButton>
+              </el-empty>
             </template>
-          </el-table-column>
-          <el-table-column label="状态" prop="status" min-width="90" max-width="135" sortable="custom">
-            <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
-            <template #default="{ row }">
-              <div class="table-actions">
-                <GlassButton variant="link" left-icon="View" @click="viewOrderDetail(row)">详情</GlassButton>
-                <GlassButton variant="link" left-icon="Edit" @click="editOrder(row)">编辑</GlassButton>
-                <el-dropdown trigger="click" @command="(cmd) => handlePrintCommand(cmd, row)">
-                  <GlassButton variant="link" left-icon="Printer">打印</GlassButton>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="order">打印生产单</el-dropdown-item>
-                      <el-dropdown-item command="process_card">打印工序卡片</el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-                <GlassButton variant="link" left-icon="Download" @click="exportOrder(row)">导出</GlassButton>
-                <GlassButton variant="link" left-icon="Refresh" @click="handleResetProcess(row)">重置工艺</GlassButton>
-                <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
-        </div>
-        <div class="pagination-bar">
+            <el-table-column v-if="orderVisibleKeys.includes('order-no')" label="生产单号" prop="order_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
+            <el-table-column v-if="orderVisibleKeys.includes('batch-no')" label="生产批次号" prop="batch_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
+            <el-table-column v-if="orderVisibleKeys.includes('created-by')" label="创建人" min-width="100" max-width="150" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.created_by_name || '-' }}</template>
+            </el-table-column>
+            <el-table-column v-if="orderVisibleKeys.includes('created-at')" label="创建时间" prop="created_at" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column v-if="orderVisibleKeys.includes('item-count')" label="明细数" min-width="80" max-width="120" prop="item_count" show-overflow-tooltip />
+            <el-table-column v-if="orderVisibleKeys.includes('total-order-qty')" label="总下单量" min-width="90" max-width="135" prop="total_order_qty" show-overflow-tooltip />
+            <el-table-column v-if="orderVisibleKeys.includes('total-received-qty')" label="总入库量" min-width="90" max-width="135" prop="total_received_qty" show-overflow-tooltip />
+            <el-table-column v-if="orderVisibleKeys.includes('in-transit-qty')" label="在途量" min-width="80" max-width="120">
+              <template #default="{ row }">
+                <span :class="row.total_in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.total_in_transit_qty }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="orderVisibleKeys.includes('status')" label="状态" prop="status" min-width="90" max-width="135" sortable="custom">
+              <template #default="{ row }">
+                <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
+              <template #default="{ row }">
+                <div class="table-actions">
+                  <GlassButton variant="link" left-icon="View" @click="viewOrderDetail(row)">详情</GlassButton>
+                  <GlassButton variant="link" left-icon="Edit" @click="editOrder(row)">编辑</GlassButton>
+                  <el-dropdown trigger="click" @command="(cmd) => handlePrintCommand(cmd, row)">
+                    <GlassButton variant="link" left-icon="Printer">打印</GlassButton>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="order">打印生产单</el-dropdown-item>
+                        <el-dropdown-item command="process_card">打印工序卡片</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                  <GlassButton variant="link" left-icon="Download" @click="exportOrder(row)">导出</GlassButton>
+                  <GlassButton variant="link" left-icon="Refresh" @click="handleResetProcess(row)">重置工艺</GlassButton>
+                  <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
           <el-pagination v-model:current-page="orderPagination.page" v-model:page-size="orderPagination.page_size" :total="orderPagination.total"
-            :page-sizes="[20,50,100]" layout="total,sizes,prev,pager,next,jumper" @size-change="loadOrderList" @current-change="loadOrderList" />
+            :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager"
+            @size-change="handleOrderSizeChange" @current-change="loadOrderList" />
         </div>
       </el-tab-pane>
 
       <!-- 标签页二：按明细维度 -->
       <el-tab-pane label="按生产单产品明细维度" name="item">
-        <div class="tab-toolbar">
-          <el-select v-model="itemFilters.status" placeholder="明细状态" clearable style="width:120px">
-            <el-option label="已提交" :value="0" />
-            <el-option label="已终止" :value="1" />
-            <el-option label="已完成" :value="2" />
-          </el-select>
-          <el-input v-model="itemFilters.keyword" placeholder="搜索产品/单号/批次号" clearable style="width:200px" @input="handleItemSearch" />
-          <GlassButton variant="primary" size="sm" :left-icon="Filter" @click="loadItemList">筛选</GlassButton>
-          <GlassButton variant="secondary" size="sm" @click="resetItemFilters">重置</GlassButton>
-        </div>
-        <div class="table-card">
-        <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" border class="list-table" @sort-change="handleItemSortChange">
-          <el-table-column label="生产单号" prop="order_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="批次号" prop="batch_no" min-width="120" max-width="180" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="产品名称" prop="product_name" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="型号" prop="model" min-width="100" max-width="150" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="下单数量" min-width="90" max-width="135" prop="order_qty" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="已入库" min-width="80" max-width="120" prop="received_qty" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="在途" min-width="70" max-width="105">
-            <template #default="{ row }">
-              <span :class="row.in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.in_transit_qty }}</span>
+        <div ref="itemPanelRef" class="table-card">
+          <div class="toolbar">
+            <el-select v-model="itemFilters.status" placeholder="明细状态" clearable class="filter-w-sm">
+              <el-option label="已提交" :value="0" />
+              <el-option label="已终止" :value="1" />
+              <el-option label="已完成" :value="2" />
+            </el-select>
+            <el-input v-model="itemFilters.keyword" placeholder="搜索产品/单号/批次号" clearable class="filter-w-md" @input="handleItemSearch" @keyup.enter="loadItemList" />
+            <GlassButton variant="primary" :left-icon="Filter" @click="loadItemList">查询</GlassButton>
+            <GlassButton :left-icon="RefreshRight" @click="resetItemFilters">重置</GlassButton>
+          </div>
+          <!-- 操作行：本页无页面级主操作，右侧 TableTools 四图标（Action Bar Spec） -->
+          <div class="action-bar">
+            <TableTools
+              v-model:visible-keys="itemVisibleKeys"
+              v-model:density="itemDensity"
+              :columns="itemColumnDefs"
+              :fullscreen="itemIsFullscreen"
+              @refresh="loadItemList"
+              @fullscreen="itemToggleFullscreen"
+            />
+          </div>
+          <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" border class="list-table" :class="itemDensityClass" :max-height="itemIsFullscreen ? undefined : 640" @sort-change="handleItemSortChange">
+            <template #empty>
+              <el-empty :image-size="96" :description="hasActiveItemFilters ? '没有符合条件的记录' : '暂无数据'">
+                <GlassButton v-if="hasActiveItemFilters" :left-icon="RefreshRight" @click="resetItemFilters">重置筛选</GlassButton>
+              </el-empty>
             </template>
-          </el-table-column>
-          <el-table-column label="明细状态" min-width="90" max-width="135">
-            <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="订单状态" min-width="90" max-width="135">
-            <template #default="{ row }">
-              <el-tag :type="statusTagType(row.order_status)" size="small" effect="plain">{{ row.order_status_label }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="加急" min-width="70" max-width="105">
-            <template #default="{ row }">
-              <el-tag v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</el-tag>
-              <span v-else class="text-muted">—</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="预计交期" min-width="110" max-width="165">
-            <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
-          </el-table-column>
-          <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
-            <template #default="{ row }">
-              <GlassButton variant="link" left-icon="Edit" @click="editItem(row)">编辑</GlassButton>
-              <GlassButton variant="link" left-icon="VideoPause" @click="changeItemStatus(row)">改状态</GlassButton>
-              <GlassButton variant="link" left-icon="Box" @click="inputReceived(row)">入库</GlassButton>
-              <GlassButton variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>
-              <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteItem(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
-            </template>
-          </el-table-column>
-        </el-table>
-        </div>
-        <div class="pagination-bar">
+            <el-table-column v-if="itemVisibleKeys.includes('order-no')" label="生产单号" prop="order_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
+            <el-table-column v-if="itemVisibleKeys.includes('batch-no')" label="批次号" prop="batch_no" min-width="120" max-width="180" sortable="custom" show-overflow-tooltip />
+            <el-table-column v-if="itemVisibleKeys.includes('product-name')" label="产品名称" prop="product_name" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip />
+            <el-table-column v-if="itemVisibleKeys.includes('model')" label="型号" prop="model" min-width="100" max-width="150" sortable="custom" show-overflow-tooltip />
+            <el-table-column v-if="itemVisibleKeys.includes('order-qty')" label="下单数量" min-width="90" max-width="135" prop="order_qty" sortable="custom" show-overflow-tooltip />
+            <el-table-column v-if="itemVisibleKeys.includes('received-qty')" label="已入库" min-width="80" max-width="120" prop="received_qty" sortable="custom" show-overflow-tooltip />
+            <el-table-column v-if="itemVisibleKeys.includes('in-transit')" label="在途" min-width="70" max-width="105">
+              <template #default="{ row }">
+                <span :class="row.in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.in_transit_qty }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="itemVisibleKeys.includes('item-status')" label="明细状态" min-width="90" max-width="135">
+              <template #default="{ row }">
+                <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="itemVisibleKeys.includes('order-status')" label="订单状态" min-width="90" max-width="135">
+              <template #default="{ row }">
+                <el-tag :type="statusTagType(row.order_status)" size="small" effect="plain">{{ row.order_status_label }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="itemVisibleKeys.includes('urgent')" label="加急" min-width="70" max-width="105">
+              <template #default="{ row }">
+                <el-tag v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</el-tag>
+                <span v-else class="text-muted">—</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="itemVisibleKeys.includes('expected-delivery')" label="预计交期" min-width="110" max-width="165">
+              <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
+            </el-table-column>
+            <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
+              <template #default="{ row }">
+                <GlassButton variant="link" left-icon="Edit" @click="editItem(row)">编辑</GlassButton>
+                <GlassButton variant="link" left-icon="VideoPause" @click="changeItemStatus(row)">改状态</GlassButton>
+                <GlassButton variant="link" left-icon="Box" @click="inputReceived(row)">入库</GlassButton>
+                <GlassButton variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>
+                <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteItem(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
+              </template>
+            </el-table-column>
+          </el-table>
           <el-pagination v-model:current-page="itemPagination.page" v-model:page-size="itemPagination.page_size" :total="itemPagination.total"
-            :page-sizes="[20,50,100]" layout="total,sizes,prev,pager,next,jumper" @size-change="loadItemList" @current-change="loadItemList" />
+            :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager"
+            @size-change="handleItemSizeChange" @current-change="loadItemList" />
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -397,14 +427,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, CircleClose, CircleCheck, Filter, Loading } from '@element-plus/icons-vue'
+import { Document, CircleClose, CircleCheck, Filter, Loading, RefreshRight } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatBeijingDateTime, formatBeijingShortDateTime } from '@/utils/datetime'
 import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useProductionOrderTables } from './composables/useProductionOrderTables'
 import { getProgress, initProgress, getPrintCardData } from '@/api/production'
 import {
   getProductionOrders, getProductionOrderDetail, updateProductionOrder,
@@ -415,6 +447,12 @@ import {
 
 const router = useRouter()
 const authStore = useAuthStore()
+
+// 两个维度表格各自的视图状态（列显隐/密度/全屏），columnDefs 仅供 TableTools 列显隐面板
+const {
+  orderColumnDefs, orderDensity, orderDensityClass, orderVisibleKeys, orderPanelRef, orderIsFullscreen, orderToggleFullscreen,
+  itemColumnDefs, itemDensity, itemDensityClass, itemVisibleKeys, itemPanelRef, itemIsFullscreen, itemToggleFullscreen,
+} = useProductionOrderTables()
 
 const orderSort = useTableSort()
 const itemSort = useTableSort()
@@ -445,6 +483,8 @@ const orderLoading = ref(false)
 const orderList = ref([])
 const orderPagination = reactive({ total: 0, page: 1, page_size: 20 })
 const orderFilters = reactive({ status: null, keyword: '' })
+const hasActiveOrderFilters = computed(() =>
+  Boolean(orderFilters.keyword) || (orderFilters.status !== null && orderFilters.status !== undefined))
 
 async function loadOrderList() {
   orderLoading.value = true
@@ -486,11 +526,18 @@ function resetOrderFilters() {
   loadOrderList()
 }
 
+function handleOrderSizeChange() {
+  orderPagination.page = 1
+  loadOrderList()
+}
+
 // ── 明细维度 ────────────────────────────
 const itemLoading = ref(false)
 const itemList = ref([])
 const itemPagination = reactive({ total: 0, page: 1, page_size: 20 })
 const itemFilters = reactive({ status: null, keyword: '' })
+const hasActiveItemFilters = computed(() =>
+  Boolean(itemFilters.keyword) || (itemFilters.status !== null && itemFilters.status !== undefined))
 
 async function loadItemList() {
   itemLoading.value = true
@@ -524,6 +571,11 @@ function resetItemFilters() {
   itemFilters.keyword = ''
   itemPagination.page = 1
   itemSort.reset()
+  loadItemList()
+}
+
+function handleItemSizeChange() {
+  itemPagination.page = 1
   loadItemList()
 }
 
@@ -798,92 +850,4 @@ function exportOrder(row) {
 }
 </script>
 
-<style scoped>
-.production-order-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
-.prod-order-aurora { inset: -24px -28px; }
-
-/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
-   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
-   .el-overlay 的 position: fixed，弹窗打开后看不见 */
-.production-order-page .stats-row,
-.production-order-page .order-tabs {
-  position: relative;
-  z-index: 1;
-}
-
-/* 统计卡 */
-.stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-/* 统计卡：玻璃质感由 .lg-card 提供，这里只留布局 */
-.stat-card { padding: 24px; display: flex; align-items: center; gap: 16px; }
-.stat-icon-bg { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.stat-card.submitted .stat-icon-bg { background: linear-gradient(135deg, #e6f2ff, #cce0ff); }
-.stat-card.terminated .stat-icon-bg { background: linear-gradient(135deg, #f0f0f0, #e0e0e0); }
-.stat-card.completed .stat-icon-bg { background: linear-gradient(135deg, #e6f7e6, #ccf2cc); }
-.stat-info { flex: 1; }
-.stat-label { font-size: 13px; color: #888; margin-bottom: 4px; }
-.stat-value { font-size: 28px; font-weight: 700; color: #1e1e2d; line-height: 1.2; }
-
-/* 标签页 */
-.order-tabs :deep(.el-tabs__header) { margin-bottom: 16px; }
-.tab-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底） */
-.production-order-page .table-card {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.production-order-page .table-card :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：sticky 单元格 background:inherit，行透明时滑到它下面的
-   内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
-.production-order-page .table-card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.production-order-page .table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.production-order-page .table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-
-/* 分页 */
-.pagination-bar { margin-top: 16px; display: flex; justify-content: flex-end; }
-
-/* 详情弹窗 */
-.order-detail { padding: 10px 0; }
-.detail-header { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.detail-row { display: flex; gap: 10px; align-items: center; }
-.detail-label { color: #888; font-size: 13px; min-width: 70px; }
-.detail-value { font-weight: 500; color: #1e1e2d; }
-.detail-subtitle { font-size: 15px; font-weight: 600; color: #1e1e2d; margin-bottom: 12px; }
-
-/* 状态变更弹窗 */
-.status-dialog-content { padding: 10px 0; }
-.received-dialog-content { padding: 10px 0; }
-
-/* 通用 */
-.in-transit-active { color: #27ae60; font-weight: 600; }
-
-/* 工序进度看板 */
-.progress-panel { margin-top: 12px; padding: 16px; background: #fafbfc; border-radius: 8px; border: 1px solid #ebeef5; }
-.progress-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.progress-bar-wrap { margin-bottom: 12px; }
-.progress-summary { font-size: 13px; color: #606266; }
-.step-timeline { display: flex; flex-direction: column; gap: 4px; }
-.step-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; font-size: 13px; }
-.step-row.completed { background: #f0f9eb; }
-.step-row.current { background: #ecf5ff; }
-.step-icon { font-size: 14px; width: 20px; text-align: center; }
-.step-order-num { width: 20px; height: 20px; border-radius: 50%; background: #c0c4cc; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; }
-.step-row.completed .step-order-num { background: #67c23a; }
-.step-row.current .step-order-num { background: #409eff; }
-.step-process-name { font-weight: 500; min-width: 80px; }
-.step-meta { color: #909399; font-size: 12px; }
-.progress-empty { text-align: center; padding: 16px; }
-</style>
+<style scoped src="./production-order-manage.css"></style>

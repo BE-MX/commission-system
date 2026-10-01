@@ -168,7 +168,7 @@
 
 ### 页头按钮
 
-页头/工具栏主按钮用 GlassButton（见 Button Spec）：主操作 `variant="primary"`（金渐变 `#D4941C→#BB8218`），次操作 `variant="secondary"`（半透明白磨砂），替换 Element 默认蓝/白按钮；`v-permission` 行为不变。操作列 link 按钮维持 List Page Spec 不变。
+主操作按钮位置已统一到卡片内操作行（Action Bar Spec，2026-10-01 起），页头不再放按钮。变体映射不变：主操作 `variant="primary"`（金渐变 `#D4941C→#BB8218`），次操作 `variant="secondary"`（半透明白磨砂），替换 Element 默认蓝/白按钮；`v-permission` 行为不变。操作列 link 按钮维持 List Page Spec 不变。
 
 ### 性能红线（2026-07-25 滚动卡顿的教训）
 
@@ -252,6 +252,8 @@
 
 ```html
 <div class="table-card">
+  <div class="toolbar">…筛选区（见第 5 节）…</div>
+  <div class="action-bar">…主操作按钮组 + TableTools（见 Action Bar Spec）…</div>
   <el-table
     :data="tableData"
     v-loading="loading"
@@ -261,6 +263,7 @@
   >
     ...
   </el-table>
+  <el-pagination class="pager" layout="total, sizes, prev, pager, next" ... />
 </div>
 ```
 
@@ -390,28 +393,47 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 - [ ] 表格有统一 empty 处理，无新增 `empty-text`
 - [ ] 状态 tag 用 pill 样式（如需），状态映射查域字典
 - [ ] 不在 scoped style 里重复写表格样式
+- [ ] 主操作按钮在 `.action-bar`（卡片内、筛选区下方），页头无操作按钮
+- [ ] 操作行右侧为 TableTools 四图标（密度/列显隐已接线）
+- [ ] 分页在卡片内底部 `class="pager"`
 
-### 9. 扩展增强项（试点规范）
+### 9. 扩展增强项
 
-以下条目来自 2026-09-30 参考框架调研（Art Design Pro / vue-pure-admin / vben5 / Soybean / shadcn-admin）。**不强制改造存量页面**；新页面或页面大改版时可试点，试点稳定后按「Component Adoption」晋升流程转为强制规范。
-
-**表格工具栏右侧标配**（借鉴 vben / pure-admin）
-
-- 表格卡片右上角可提供图标操作，固定顺序：刷新 → 列显示开关 → 密度切换 → 全屏 **[评审]**
-- 图标按钮用 GlassButton `variant="ghost"` 纯图标形态，与筛选区视觉分层
-- 列显示/密度等状态跟随页面本地状态，不入全局
-- 首批试点：订单发票管理、回款单
+以下条目来自 2026-09-30 参考框架调研（Art Design Pro / vue-pure-admin / Soybean / shadcn-admin 等）。表格工具栏四图标已于 2026-10-01 转为列表页标配并推广全站，接入方式见「Action Bar Spec」。
 
 **列配置数组驱动**（借鉴 pure-admin / Art Design Pro）
 
-- 新表格页可将列定义为配置数组（`label / prop / minWidth / maxWidth / formatter / slot`），渲染层仍输出标准 `el-table-column`，列宽等既有规则不变 **[评审]**
-- 配置化只是组织方式，不追求「页面无模板代码」：复杂列（操作列、多态状态列）继续用模板插槽（Art Design Pro 自身亦警示过度配置化会隐藏业务流程）
+- 列定义为配置数组（`key / label / prop / minWidth / maxWidth / align / tooltip / className`），渲染层仍输出标准 `el-table-column`，列宽等既有规则不变 **[评审]**
+- 列配置数组是 TableTools 列显隐的数据源；复杂单元格用 `key` 分发插槽，操作列保持独立模板列、不进配置数组
+- 配置化只是组织方式，不追求「页面无模板代码」（Art Design Pro 自身亦警示过度配置化会隐藏业务流程）
 - 配置数组便于机器检查列宽规则，是未来把列宽门禁做到字段级的前提
 
 **行密度**（借鉴 Soybean / shadcn-admin）
 
-- 当前全站唯一密度（cell padding 10px 12px、控件 36px），不提供用户级密度切换
-- 若试点密度切换，紧凑/默认/宽松三档值必须先落入 `tokens.css`，页面不手写像素值 **[评审]**
+- 三档值固定在 `tokens.css`：`--table-cell-padding-compact / -default / -comfort`（纵向 6/10/14px），由 `app.css` 的 `.list-table.density-compact / .density-comfort` 全局类消费；页面不手写像素值 **[评审]**
+- 用户级切换通过 TableTools 密度图标提供，状态持久化到 localStorage 页面键（见 Action Bar Spec）
+
+## Action Bar Spec（操作行）
+
+列表页主操作按钮的统一位置（2026-10-01 起）：**操作行位于筛选区与表格之间，同在表格卡片内**。
+
+**布局**
+
+- 左侧：页面主操作按钮组（新建 / 批量操作 / 导入导出等），GlassButton 变体按 Button Spec（主操作 `primary`、次操作 `secondary`、配置类 `outline`/`ghost`） **[评审]**
+- 右侧：TableTools 四图标（刷新 → 列显示 → 密度 → 全屏），统一用全局组件 `components/TableTools.vue` **[评审]**
+- 换行与窄屏行为同筛选区（flex-wrap，不裁切）
+- 全局结构类：`.table-card > .action-bar`（`app.css`），页面级只做玻璃皮肤等最小覆写
+
+**页头**
+
+- 页头只保留标题 + 一句描述，**不再放操作按钮**（原页头主操作全部迁入操作行） **[评审]**
+- 页面级提示（`el-alert`）留在页头与卡片之间，不入操作行
+
+**TableTools 接入**
+
+- 四图标顺序固定；`columns` 传列配置数组（驱动列显隐，可空——空时不渲染列设置图标），`density` / `visibleKeys` 用 `v-model`，状态持久化到 localStorage 页面级键（`<页面名>-table-view`）
+- 表格挂 `:class="`density-${density}`"`；全屏切换让表格卡片覆盖视口，全屏时取消 `max-height`，Esc 退出。保持弹窗、抽屉仍在页面根节点内可见。
+- 列配置数组的字段约定见 List Page Spec 第 9 节
 
 ## Dialog & Form Spec
 
@@ -497,6 +519,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 - 新列表页**必须**基于 `useListPage.js` **[评审]**
 - 新详情抽屉**必须**基于 `DetailDrawer.vue` **[评审]**
+- 已晋升公共组件登记：`components/TableTools.vue`（2026-10-01，发票页首发后晋升，全站列表页推广）
 
 ## Login Page — Kimi Design (Dark Theme)
 
@@ -554,6 +577,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 | 2026-09-30 | 组件规范扩容：List Page Spec 增补筛选区/分页/三态三节，新增 Dialog & Form / Status Badge / Feedback / Format / Component Adoption 五个规范节 | 参考 Art Design Pro、vue-pure-admin、Soybean Admin、vben5、shadcn-admin 调研结论（表格之外无统一规范：筛选区 6 种写法并存、dialog 宽度 11 档、裸 ElMessage 497 处、money 格式化 4 份并存）；条目按 [门禁]/[可门禁]/[评审] 三级标注，[可门禁] 项同日扩展进 scripts/audit_frontend_ui.py（债务基线 15 项度量 + 白名单比对，新基线随本行文档一并提交后 check_conventions 门禁生效） |
 | 2026-10-01 | 调研剩余四条目处置：工具栏右侧标配/列配置驱动/行密度写入「扩展增强项」试点规范；操作列溢出维持换行方案，不引入 dropdown 收敛 | 操作列换行已有 table-actions.css + tableActions.test.mjs 回归门禁，dropdown 仅放「更多」低频动作；筛选按钮组保持跟随字段末尾（与存量页面一致），不采用右对齐 |
 | 2026-10-01 | 试点条款落地发票页：TableTools 四图标（刷新/列显示/密度/全屏）+ 列配置数组驱动渲染 + 密度三档入 tokens.css | TableTools 暂居 `views/invoice/components/`（晋升流程：回款单采用后升 `components/`）；列显隐与密度持久化于 localStorage 页面键；density 类挂在 list-table 上由 app.css 消费 token；全屏时取消 max-height |
+| 2026-10-01 | 主操作按钮从页头迁入卡片内操作行（左按钮组 + 右 TableTools 四图标），TableTools 晋升全局 components/，列表页结构推广全站 | 用户决策：新建类按钮统一在列表上方、筛选项下方、与四图标同一行；页头只留标题描述。结构类（.table-card>.toolbar/.action-bar/.pager + filter-w 三档）全局化到 app.css |
 
 ## 登录页背景与动效（2026-09-06）
 

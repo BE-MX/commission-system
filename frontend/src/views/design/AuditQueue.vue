@@ -26,44 +26,58 @@
     </div>
 
     <!-- 表格 -->
-    <div class="table-card audit-queue-panel">
+    <div ref="panelRef" class="table-card audit-queue-panel">
+    <!-- 操作行：TableTools 四图标（Action Bar Spec；本页无主操作按钮，刷新走工具图标） -->
+    <div class="action-bar">
+      <TableTools
+        v-model:visible-keys="visibleKeys"
+        v-model:density="density"
+        :columns="columnDefs"
+        :fullscreen="isFullscreen"
+        @refresh="fetchList"
+        @fullscreen="toggleFullscreen"
+      />
+    </div>
     <el-table
-      ref="tableRef"
       :data="tableData"
       v-loading="loading"
       border
       class="list-table"
-      :max-height="maxHeight"
+      :class="densityClass"
+      :max-height="isFullscreen ? undefined : 640"
       @sort-change="orderSort.onSortChange"
     >
-      <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip />
-      <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
-      <el-table-column prop="customer_level" label="客户等级" min-width="90" max-width="130">
+      <template #empty>
+        <el-empty :image-size="96" description="暂无数据" />
+      </template>
+      <el-table-column v-if="visibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="90" max-width="130">
         <template #default="{ row }">{{ customerLevelLabel(row.customer_level) }}</template>
       </el-table-column>
-      <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" sortable="custom" show-overflow-tooltip />
-      <el-table-column label="拍摄类型" min-width="120" max-width="180">
+      <el-table-column v-if="visibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" sortable="custom" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('shoot-type')" label="拍摄类型" min-width="120" max-width="180">
         <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
       </el-table-column>
-      <el-table-column label="期望日期" min-width="230" max-width="320" prop="expect_start_date" sortable="custom">
+      <el-table-column v-if="visibleKeys.includes('expect-date')" label="期望日期" min-width="230" max-width="320" prop="expect_start_date" sortable="custom">
         <template #default="{ row }">
           {{ row.expect_start_date }} {{ row.expect_start_period === 'am' ? '上午' : row.expect_start_period === 'pm' ? '下午' : '' }}
           ~
           {{ row.expect_end_date }} {{ row.expect_end_period === 'am' ? '上午' : row.expect_end_period === 'pm' ? '下午' : '' }}
         </template>
       </el-table-column>
-      <el-table-column label="优先级" min-width="80" max-width="120" prop="priority" sortable="custom">
+      <el-table-column v-if="visibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120" prop="priority" sortable="custom">
         <template #default="{ row }">
           <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+      <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="created_at" label="提交时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-      <el-table-column label="附件" min-width="70" max-width="100">
+      <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="提交时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('attachments')" label="附件" min-width="70" max-width="100">
         <template #default="{ row }">
           <GlassButton
             v-if="row._attachment_count > 0"
@@ -74,7 +88,7 @@
           <span v-else class="text-muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="冲突" min-width="80" max-width="120">
+      <el-table-column v-if="visibleKeys.includes('conflict')" label="冲突" min-width="80" max-width="120">
         <template #default="{ row }">
           <el-popover
             v-if="row.conflict_detail"
@@ -98,18 +112,18 @@
         </template>
       </el-table-column>
     </el-table>
-    </div>
 
     <el-pagination
-      class="pagination"
+      class="pager"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
-      layout="total, prev, pager, next, sizes"
+      layout="total, sizes, prev, pager, next"
       :page-sizes="[20, 50, 100]"
       @current-change="fetchList"
-      @size-change="fetchList"
+      @size-change="handleSizeChange"
     />
+    </div>
 
     <!-- Approve dialog -->
     <el-dialog v-model="approveVisible" title="审批通过" width="460px" :close-on-click-modal="false">
@@ -162,13 +176,30 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, CircleClose, Paperclip, Download } from '@element-plus/icons-vue'
 import { getRequests, auditRequest, getAttachments, downloadAttachment } from '@/api/design'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 import RequestDetailDrawer from '@/components/design/RequestDetailDrawer.vue'
+import TableTools from '@/components/TableTools.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
+
+// 列配置数组：TableTools 列显隐的数据源（操作列不进配置）
+const columnDefs = [
+  { key: 'request-no', label: '预约编号' },
+  { key: 'customer-name', label: '客户名称' },
+  { key: 'customer-level', label: '客户等级' },
+  { key: 'salesperson', label: '业务员' },
+  { key: 'shoot-type', label: '拍摄类型' },
+  { key: 'expect-date', label: '期望日期' },
+  { key: 'priority', label: '优先级' },
+  { key: 'remark', label: '备注' },
+  { key: 'created-at', label: '提交时间' },
+  { key: 'attachments', label: '附件' },
+  { key: 'conflict', label: '冲突' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('audit-queue', columnDefs)
 
 const shootTypeMap = ref({})
 const customerLevelMap = ref({})
@@ -187,6 +218,11 @@ const pageSize = ref(20)
 const total = ref(0)
 const tableData = ref([])
 const loading = ref(false)
+
+function handleSizeChange() {
+  page.value = 1
+  fetchList()
+}
 
 const approveVisible = ref(false)
 const rejectVisible = ref(false)
@@ -309,8 +345,7 @@ onMounted(() => {
 /* 内容压到极光之上（点名内容块，不能用 > :not(.lg-aurora) 通配——
    会压掉就地渲染的 el-dialog/el-drawer .el-overlay 的 position: fixed） */
 .audit-queue-page .stats-banner,
-.audit-queue-page .audit-queue-panel,
-.audit-queue-page .pagination {
+.audit-queue-page .audit-queue-panel {
   position: relative;
   z-index: 1;
 }
@@ -345,8 +380,6 @@ onMounted(() => {
   background-color: rgba(245, 236, 220, 0.98);
 }
 
-.toolbar { margin-bottom: 16px; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
 .text-muted { color: var(--text-secondary); font-size: 12px; }
 
 .attachment-list {

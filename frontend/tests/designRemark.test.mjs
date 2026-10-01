@@ -11,6 +11,12 @@ function setup() {
     .replace('export function useDesignManage', 'function useDesignManage')
   const context = vm.createContext({
     ref: value => ({ value }), reactive: value => value, onMounted: () => {},
+    computed: getter => ({ get value() { return getter() } }),
+    useTableView: () => ({
+      density: { value: 'default' }, densityClass: { value: 'density-default' },
+      visibleKeys: { value: [] }, panelRef: { value: null },
+      isFullscreen: { value: false }, toggleFullscreen() {},
+    }),
     useTableSort: () => ({ sortParams: { value: {} } }), ElMessage: { success() {} },
     updateRequestRemark: async (id, data) => { calls.push(['request', id, data.remark]); if (fail) throw Error('failure') },
     updateTaskRemark: async (id, data) => { calls.push(['task', id, data.remark]); if (fail) throw Error('failure') },

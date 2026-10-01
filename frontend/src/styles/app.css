@@ -496,6 +496,68 @@ html, body, #app {
   z-index: 3;
 }
 
+/* ===== 列表页结构规范（DESIGN.md List Page Spec / Action Bar Spec，2026-10-01 起） ===== */
+
+/* 筛选区在表格卡片内时：去掉独立卡片样式与 sticky，改为卡片内的分隔行 */
+.table-card > .toolbar {
+  position: static;
+  margin-bottom: 0;
+  padding: 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 筛选控件宽度三档（禁内联 width） */
+.table-card > .toolbar .filter-w-sm { width: 160px; }
+.table-card > .toolbar .filter-w-md { width: 200px; }
+.table-card > .toolbar .filter-w-lg { width: 280px; }
+
+/* 操作行：筛选区与表格之间，左侧主操作按钮组，右侧 TableTools 四图标 */
+.table-card > .action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.table-card > .action-bar .table-tools {
+  margin-left: auto;
+}
+
+/* 分页：表格卡片内底部 */
+.table-card > .pager {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 14px;
+}
+
+.table-card--fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1900 !important;
+  width: 100vw;
+  height: 100dvh;
+  max-height: none !important;
+  overflow: auto;
+  background: var(--card-bg);
+}
+
+.table-fullscreen-ancestor {
+  position: relative !important;
+  z-index: 1890 !important;
+  overflow: visible !important;
+  transform: none !important;
+}
+
 .el-main .el-table {
   box-shadow: var(--card-shadow);
   border: 1px solid var(--border-color);

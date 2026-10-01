@@ -20,19 +20,21 @@
       <p>外贸术语由「系统管理 → 数据字典」维护，按目标语言分类型：<code>whatsapp_glossary_en</code>、<code>whatsapp_glossary_es</code>、<code>whatsapp_glossary_fr</code>、<code>whatsapp_glossary_ar</code>、<code>whatsapp_glossary_ja</code>。code 填中文术语，label 填对应语言术语，翻译时只注入命中的条目。</p>
     </el-card>
 
-    <el-card class="section-card" shadow="never">
-      <template #header>
-        <div class="card-header">
+    <section ref="panelRef" class="table-card">
+        <div class="toolbar">
           <span>设备</span>
-          <el-input v-model="keyword" clearable placeholder="搜索设备名" />
+          <el-input v-model="keyword" class="filter-w-md" clearable placeholder="搜索设备名" />
         </div>
-      </template>
-      <el-table :data="visibleDevices" v-loading="loading" border class="list-table">
-        <el-table-column prop="device_name" label="设备" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="browser_name" label="浏览器" min-width="100" />
-        <el-table-column prop="extension_version" label="版本" min-width="90" />
-        <el-table-column prop="last_used_at" label="最近使用" min-width="140" />
-        <el-table-column label="状态" min-width="90">
+      <div class="action-bar">
+        <span />
+        <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="load" @fullscreen="toggleFullscreen" />
+      </div>
+      <el-table :data="visibleDevices" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <el-table-column v-if="visibleKeys.includes('device')" prop="device_name" label="设备" min-width="140" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('browser')" prop="browser_name" label="浏览器" min-width="100" />
+        <el-table-column v-if="visibleKeys.includes('version')" prop="extension_version" label="版本" min-width="90" />
+        <el-table-column v-if="visibleKeys.includes('last-used')" prop="last_used_at" label="最近使用" min-width="140" />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90">
           <template #default="{ row }">{{ deviceStatusLabel(row) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
@@ -41,7 +43,7 @@
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+    </section>
   </div>
 </template>
 
@@ -49,8 +51,16 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getAdminDevices, getAdminHealth, revokeAdminDevice } from '@/api/whatsappTranslation'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { deviceStatusLabel, healthLabel, parseReleaseManifest, releaseDownloadUrl, sanitizeDeviceRows } from './whatsappTranslationAdmin'
 
+const columnDefs = [
+  { key: 'device', label: '设备' }, { key: 'browser', label: '浏览器' },
+  { key: 'version', label: '版本' }, { key: 'last-used', label: '最近使用' },
+  { key: 'status', label: '状态' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('whatsapp-translation', columnDefs)
 const loading = ref(false)
 const keyword = ref('')
 const health = ref({})

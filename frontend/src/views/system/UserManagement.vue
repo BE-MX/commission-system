@@ -7,45 +7,57 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 搜索栏 -->
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="8">
-        <el-input v-model="keyword" placeholder="搜索用户名/姓名" clearable @keyup.enter="fetchList" @clear="fetchList">
+    <!-- 表格卡片：筛选区 / 操作行 / 表格 / 分页（List Page Spec / Action Bar Spec） -->
+    <div ref="panelRef" class="table-card user-panel">
+      <div class="toolbar">
+        <el-input v-model="keyword" clearable placeholder="搜索用户名/姓名" class="filter-w-md" @keyup.enter="fetchList" @clear="fetchList">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-      </el-col>
-      <el-col :span="16">
-        <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
-        <GlassButton v-permission="'user:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增用户</GlassButton>
-        <GlassButton v-permission="'user:write'" left-icon="Connection" :loading="syncingAll" @click="handleSyncAll">批量同步钉钉</GlassButton>
-      </el-col>
-    </el-row>
+        <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <!-- 表格 -->
-    <div class="table-card user-panel">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight" @sort-change="orderSort.onSortChange">
-      <el-table-column prop="username" label="用户名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="real_name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="phone" label="手机号" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column label="钉钉绑定" min-width="120" max-width="180">
+      <div class="action-bar">
+        <GlassButton v-permission="'user:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增用户</GlassButton>
+        <GlassButton v-permission="'user:write'" variant="secondary" left-icon="Connection" :loading="syncingAll" @click="handleSyncAll">批量同步钉钉</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+    <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange">
+      <template #empty>
+        <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+          <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+        </el-empty>
+      </template>
+      <el-table-column v-if="visibleKeys.includes('username')" prop="username" label="用户名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('real-name')" prop="real_name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('email')" prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('phone')" prop="phone" label="手机号" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('dingtalk-bind')" label="钉钉绑定" min-width="120" max-width="180">
         <template #default="{ row }">
           <el-tag v-if="row.dingtalk_id" type="success" size="small" effect="plain">已绑定</el-tag>
           <el-tag v-else type="info" size="small" effect="plain">未绑定</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="角色" min-width="160" max-width="240">
+      <el-table-column v-if="visibleKeys.includes('roles')" label="角色" min-width="160" max-width="240">
         <template #default="{ row }">
           <el-tag v-for="r in row.roles" :key="r" size="small" effect="plain" style="margin-right: 4px">{{ r }}</el-tag>
           <span v-if="!row.roles?.length" style="color: var(--text-muted)">未分配</span>
         </template>
       </el-table-column>
-      <el-table-column label="状态" min-width="80" max-width="120">
+      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" max-width="120">
         <template #default="{ row }">
           <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '正常' : '禁用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('last-login')" prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
       <el-table-column class-name="table-action-column" label="操作" min-width="340" max-width="480" fixed="right">
         <template #default="{ row }">
           <GlassButton v-permission="'user:write'" variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
@@ -59,18 +71,18 @@
         </template>
       </el-table-column>
     </el-table>
-    </div>
 
     <el-pagination
-      class="pagination"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
-      layout="total, prev, pager, next, sizes"
       :page-sizes="[20, 50, 100]"
+      layout="total, sizes, prev, pager, next"
+      class="pager"
       @current-change="fetchList"
-      @size-change="fetchList"
+      @size-change="handleSizeChange"
     />
+    </div>
 
     <!-- 新增/编辑用户 Dialog -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="560px">
@@ -175,7 +187,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getUserList, createUser, updateUser, deleteUser,
@@ -184,11 +196,23 @@ import {
   getInvoiceDelegateGrants, updateInvoiceDelegateGrants,
 } from '@/api/userManagement'
 import { getActiveProcesses, getUserProcessBindings, updateUserProcessBindings, updateUserWxId } from '@/api/production'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableView } from '@/composables/useTableView'
 import { useTableSort } from '@/composables/useTableSort'
+import TableTools from '@/components/TableTools.vue'
 import UserPermissionDrawer from './components/UserPermissionDrawer.vue'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
+// 列显隐元数据（TableTools 面板数据源，不驱动列渲染）
+const columnDefs = [
+  { key: 'username', label: '用户名' },
+  { key: 'real-name', label: '姓名' },
+  { key: 'email', label: '邮箱' },
+  { key: 'phone', label: '手机号' },
+  { key: 'dingtalk-bind', label: '钉钉绑定' },
+  { key: 'roles', label: '角色' },
+  { key: 'status', label: '状态' },
+  { key: 'last-login', label: '最后登录' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('user-management', columnDefs)
 const orderSort = useTableSort()
 
 const keyword = ref('')
@@ -198,6 +222,18 @@ const total = ref(0)
 const tableData = ref([])
 const loading = ref(false)
 const saving = ref(false)
+const hasActiveFilters = computed(() => Boolean(keyword.value))
+
+function resetFilters() {
+  keyword.value = ''
+  page.value = 1
+  fetchList()
+}
+
+function handleSizeChange() {
+  page.value = 1
+  fetchList()
+}
 
 // ── 列表查询 ────────────────────────────────────────
 async function fetchList() {
@@ -512,55 +548,4 @@ async function handleSyncAll() {
 }
 </script>
 
-<style scoped>
-/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
-.user-page {
-  position: relative;
-}
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
-.user-aurora {
-  inset: -24px -28px;
-}
-
-/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
-   el-dialog/el-drawer 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
-.user-page .toolbar,
-.user-page .user-panel,
-.user-page .pagination {
-  position: relative;
-  z-index: 1;
-}
-
-.toolbar { margin-bottom: 16px; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
-.form-tip { font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4; }
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.user-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.user-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
-.user-panel :deep(.el-table-fixed-column--right) {
-  background-color: rgba(249, 244, 234, 0.97);
-}
-.user-panel :deep(th.el-table-fixed-column--right) {
-  background-color: rgba(246, 239, 226, 0.98);
-}
-.user-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
-  background-color: rgba(245, 236, 220, 0.98);
-}
-</style>
+<style scoped src="./user-management.css"></style>

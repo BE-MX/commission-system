@@ -140,6 +140,11 @@
   gap: 16px;
   min-width: 0;
 }
+.main-content:fullscreen {
+  padding: 16px;
+  overflow: auto;
+  background: var(--page-bg);
+}
 
 /* 顶部工具栏：sticky 悬浮条，内容会从底下滚过，
    用更实的玻璃底（--dash-glass-bg-strong），避免透出下方卡片文字 */

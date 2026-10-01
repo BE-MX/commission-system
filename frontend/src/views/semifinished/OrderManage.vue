@@ -2,26 +2,45 @@
   <div class="sf-page">
     <header class="sf-header">
       <div><h2>半成品订单</h2><p>订单以 g 为单位；实际完成或收货时录入增量，自动形成库存入库流水。</p></div>
-      <el-button v-permission="'semifinished:write'" type="primary" @click="openCreate">新建半成品订单</el-button>
     </header>
-    <section class="sf-card">
-      <div class="sf-toolbar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索订单号或批次号" style="width: 260px" @keyup.enter="search" />
-        <el-select v-model="filters.status" clearable placeholder="订单状态" style="width: 150px" @change="search">
+    <section ref="panelRef" class="table-card">
+      <div class="toolbar">
+        <el-input v-model="filters.keyword" clearable placeholder="搜索订单号或批次号" class="filter-w-lg" @keyup.enter="search" />
+        <el-select v-model="filters.status" clearable placeholder="订单状态" class="filter-w-sm" @change="search">
           <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-button type="primary" @click="search">查询</el-button><el-button @click="reset">重置</el-button>
+        <GlassButton variant="primary" :left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton :left-icon="RefreshLeft" @click="reset">重置</GlassButton>
       </div>
-      <el-table v-loading="loading" :data="rows" border class="list-table sf-table">
-        <el-table-column prop="order_no" label="订单号" min-width="155" />
-        <el-table-column prop="batch_no" label="批次号" min-width="130" show-overflow-tooltip />
-        <el-table-column label="来源" min-width="120"><template #default="{ row }"><el-tag effect="plain">{{ row.source_type === 'production_sync' ? '产成品联动' : '手工创建' }}</el-tag></template></el-table-column>
-        <el-table-column label="状态" min-width="100"><template #default="{ row }"><el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag></template></el-table-column>
-        <el-table-column prop="item_count" label="明细" min-width="80" align="right" />
-        <el-table-column label="下单(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
-        <el-table-column label="已入库(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>
-        <el-table-column prop="expected_delivery_date" label="预计交期" min-width="120" />
-        <el-table-column prop="created_at" label="创建时间" min-width="165" />
+
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'semifinished:write'" variant="primary" :left-icon="Plus" @click="openCreate">新建半成品订单</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="load"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no" label="订单号" min-width="155" />
+        <el-table-column v-if="visibleKeys.includes('batch-no')" prop="batch_no" label="批次号" min-width="130" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="120"><template #default="{ row }"><el-tag effect="plain">{{ row.source_type === 'production_sync' ? '产成品联动' : '手工创建' }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100"><template #default="{ row }"><el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('item-count')" prop="item_count" label="明细" min-width="80" align="right" />
+        <el-table-column v-if="visibleKeys.includes('order-qty')" label="下单(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('received-qty')" label="已入库(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('expected-delivery')" prop="expected_delivery_date" label="预计交期" min-width="120" />
+        <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="165" />
         <el-table-column class-name="table-action-column" label="操作" min-width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
@@ -29,7 +48,17 @@
           </template>
         </el-table-column>
       </el-table>
-      <div class="sf-pagination"><el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.page_size" :total="pagination.total" :page-sizes="[20,50,100]" layout="total,sizes,prev,pager,next" @change="load" /></div>
+
+      <el-pagination
+        v-model:current-page="pagination.page"
+        v-model:page-size="pagination.page_size"
+        :total="pagination.total"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @size-change="handleSizeChange"
+        @current-change="load"
+      />
     </section>
 
     <el-dialog v-model="createVisible" title="新建半成品订单" width="700px">
@@ -78,8 +107,11 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, RefreshLeft, Search } from '@element-plus/icons-vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { createSemifinishedOrder, getMaterials, getSemifinishedOrder, getSemifinishedOrders, receiveSemifinishedItem, terminateSemifinishedOrder } from '@/api/semifinished'
 
 const statusOptions = [{ value: 'submitted', label: '已提交' }, { value: 'partial', label: '部分入库' }, { value: 'completed', label: '已完成' }, { value: 'terminated', label: '已终止' }]
@@ -93,13 +125,31 @@ const detailVisible = ref(false); const detail = ref(null)
 const receiveVisible = ref(false); const receivingItem = ref(null); const receiveForm = reactive({ quantity_grams: 0, remark: '' })
 const receiveSubmitting = ref(false)
 const receiveIdempotencyKey = ref('')
+const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.status))
 const grams = value => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 3 })
 const statusText = value => statusOptions.find(item => item.value === value)?.label || value
 const statusType = value => ({ submitted: 'primary', partial: 'warning', completed: 'success', terminated: 'info' }[value] || 'info')
 
+// 列显隐面板数据源（TableTools；渲染保持静态模板列，v-if 按 key 控制）
+const columnDefs = [
+  { key: 'order-no', label: '订单号' },
+  { key: 'batch-no', label: '批次号' },
+  { key: 'source', label: '来源' },
+  { key: 'status', label: '状态' },
+  { key: 'item-count', label: '明细' },
+  { key: 'order-qty', label: '下单(g)' },
+  { key: 'received-qty', label: '已入库(g)' },
+  { key: 'expected-delivery', label: '预计交期' },
+  { key: 'created-at', label: '创建时间' },
+]
+// 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('semifinished-orders', columnDefs)
+
 async function load() { loading.value = true; try { const data = await getSemifinishedOrders({ ...filters, page: pagination.page, page_size: pagination.page_size }); rows.value = data.items || []; pagination.total = data.total || 0 } finally { loading.value = false } }
 function search() { pagination.page = 1; load() }
 function reset() { filters.keyword = ''; filters.status = ''; search() }
+function handleSizeChange() { pagination.page = 1; load() }
 async function openCreate() { const first = await getMaterials({ page: 1, page_size: 100 }); const items = [...(first.items || [])]; const pages = Math.ceil(Number(first.total || items.length) / 100); for (let page = 2; page <= pages; page += 1) { const next = await getMaterials({ page, page_size: 100 }); items.push(...(next.items || [])) } materialOptions.value = items; Object.assign(createForm, { batch_no: '', expected_delivery_date: null, is_urgent: false, remark: '', items: [{ material_id: null, quantity_grams: 100 }] }); createVisible.value = true }
 async function submitCreate() { if (!createForm.items.length || createForm.items.some(item => !item.material_id || Number(item.quantity_grams) <= 0)) return ElMessage.warning('请完整填写订单明细'); createSubmitting.value = true; try { await createSemifinishedOrder({ ...createForm }); ElMessage.success('订单已创建'); createVisible.value = false; load() } finally { createSubmitting.value = false } }
 async function openDetail(row) { detail.value = await getSemifinishedOrder(row.id); detailVisible.value = true }

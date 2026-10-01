@@ -7,36 +7,52 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 状态筛选 + 新建 -->
-    <div class="commission-panel commission-filter-bar commission-lift cm-enter">
-      <el-radio-group v-model="statusFilter" @change="fetchList">
-        <el-radio-button value="">全部</el-radio-button>
-        <el-radio-button value="draft">草稿</el-radio-button>
-        <el-radio-button value="calculated">已计算</el-radio-button>
-        <el-radio-button value="confirming">确认中</el-radio-button>
-        <el-radio-button value="confirmed">已确认</el-radio-button>
-        <el-radio-button value="voided">已作废</el-radio-button>
-      </el-radio-group>
-      <div class="commission-filter-bar__actions">
-        <GlassButton v-permission="'commission:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新建批次</GlassButton>
+    <!-- 批次表格：筛选区 + 操作行 + 表格 + 分页同在卡片内（List Page Spec） -->
+    <div ref="panelRef" class="table-card commission-panel commission-lift cm-enter">
+      <div class="toolbar">
+        <el-radio-group v-model="statusFilter" @change="fetchList">
+          <el-radio-button value="">全部</el-radio-button>
+          <el-radio-button value="draft">草稿</el-radio-button>
+          <el-radio-button value="calculated">已计算</el-radio-button>
+          <el-radio-button value="confirming">确认中</el-radio-button>
+          <el-radio-button value="confirmed">已确认</el-radio-button>
+          <el-radio-button value="voided">已作废</el-radio-button>
+        </el-radio-group>
+        <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
       </div>
-    </div>
 
-    <!-- 表格 -->
-    <div class="table-card commission-panel commission-lift cm-enter-2">
-      <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
-        <el-table-column prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-        <el-table-column label="周期类型" min-width="90" max-width="140">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'commission:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新建批次</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="tableData" v-loading="loading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('batch-name')" prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('period-type')" label="周期类型" min-width="90" max-width="140">
           <template #default="{ row }">{{ periodLabel(row.period_type) }}</template>
         </el-table-column>
-        <el-table-column prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="status" label="状态" min-width="90" max-width="140" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('period-start')" prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('period-end')" prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="90" max-width="140" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="batchStatusType(row.status)" size="small" effect="plain">{{ batchStatusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="确认进度" min-width="160" max-width="220">
+        <el-table-column v-if="visibleKeys.includes('confirm-progress')" label="确认进度" min-width="160" max-width="220">
           <template #default="{ row }">
             <div class="confirm-progress">
               <span>{{ row.confirmed_count || 0 }}/{{ row.expected_confirm_count || 0 }}</span>
@@ -49,15 +65,15 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="确认状态" min-width="110" max-width="160">
+        <el-table-column v-if="visibleKeys.includes('confirmation-status')" label="确认状态" min-width="110" max-width="160">
           <template #default="{ row }">
             <el-tag :type="confirmationStatusType(row.confirmation_status)" size="small" effect="plain">
               {{ confirmationStatusLabel(row.confirmation_status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="feedback_count" label="反馈数" min-width="80" max-width="120" align="right" />
-        <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('feedback-count')" prop="feedback_count" label="反馈数" min-width="80" max-width="120" align="right" />
+        <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
         <el-table-column class-name="table-action-column" label="操作" min-width="280" max-width="420" fixed="right">
           <template #default="{ row }">
             <!-- 草稿 -->
@@ -92,18 +108,18 @@
           </template>
         </el-table-column>
       </el-table>
-    </div>
 
-    <el-pagination
-      class="commission-pagination commission-lift cm-enter-3"
-      v-model:current-page="page"
-      v-model:page-size="pageSize"
-      :total="total"
-      layout="total, prev, pager, next, sizes"
-      :page-sizes="[20, 50, 100]"
-      @current-change="fetchList"
-      @size-change="fetchList"
-    />
+      <el-pagination
+        class="pager"
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        layout="total, sizes, prev, pager, next"
+        :page-sizes="[20, 50, 100]"
+        @current-change="fetchList"
+        @size-change="handleSizeChange"
+      />
+    </div>
 
     <!-- 新建批次 Dialog -->
     <el-dialog v-model="createDialogVisible" title="新建提成批次" width="460px">
@@ -171,12 +187,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createBatch, getBatchList, calculateBatch, confirmBatch, voidBatch, sendConfirmBatch, revokeConfirmBatch } from '@/api/commission'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import {
   batchStatusLabel,
   batchStatusType,
@@ -188,7 +205,6 @@ import {
 } from './commissionFormat'
 import CommissionExportMenu from './components/CommissionExportMenu.vue'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
 
 const router = useRouter()
@@ -204,6 +220,24 @@ const sendConfirmLoading = ref(false)
 const sendDingtalkNotify = ref(true)
 const currentSendConfirmRow = ref(null)
 
+const hasActiveFilters = computed(() => Boolean(statusFilter.value))
+
+// 列显隐元数据：TableTools 列设置面板的数据源（模板列保持静态，操作列不进配置）
+const columnDefs = [
+  { key: 'batch-name', label: '批次名称' },
+  { key: 'period-type', label: '周期类型' },
+  { key: 'period-start', label: '起始日期' },
+  { key: 'period-end', label: '结束日期' },
+  { key: 'status', label: '状态' },
+  { key: 'confirm-progress', label: '确认进度' },
+  { key: 'confirmation-status', label: '确认状态' },
+  { key: 'feedback-count', label: '反馈数' },
+  { key: 'created-at', label: '创建时间' },
+]
+// 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('commission-batch', columnDefs)
+
 async function fetchList() {
   loading.value = true
   try {
@@ -216,6 +250,17 @@ async function fetchList() {
   } finally {
     loading.value = false
   }
+}
+
+function resetFilters() {
+  statusFilter.value = ''
+  page.value = 1
+  fetchList()
+}
+
+function handleSizeChange() {
+  page.value = 1
+  fetchList()
 }
 
 // 新建批次
@@ -357,9 +402,5 @@ onMounted(fetchList)
   margin-bottom: 14px;
   color: var(--text-primary);
   line-height: 1.6;
-}
-
-.list-table {
-  width: 100%;
 }
 </style>

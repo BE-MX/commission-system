@@ -6,30 +6,40 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="7">
-        <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
-      </el-col>
-      <el-col :span="5">
-        <el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable @keyup.enter="handleSearch" @clear="handleSearch" />
-      </el-col>
-      <el-col :span="7">
+    <div ref="panelRef" class="table-card outbound-panel">
+      <div class="toolbar">
+        <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch" />
+        <el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable class="filter-w-md" @keyup.enter="handleSearch" @clear="handleSearch" />
         <el-date-picker
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
-          start-placeholder="出库起" end-placeholder="出库止" style="width: 100%" @change="handleSearch"
+          start-placeholder="出库起" end-placeholder="出库止" class="filter-w-lg" @change="handleSearch"
         />
-      </el-col>
-      <el-col :span="5">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-      </el-col>
-    </el-row>
+        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
+      </div>
 
-    <div class="table-card outbound-panel">
-      <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
-        <el-table-column prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
-        <el-table-column label="出库日期" min-width="120">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的出库单' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('outbound-date')" label="出库日期" min-width="120">
           <template #default="{ row }">
             <template v-if="row.record_source === 'ark_task'">
               <span class="queue-note">待出库</span><small class="queue-note">{{ row.requested_date }} 创建</small>
@@ -37,10 +47,10 @@
             <template v-else>{{ row.outbound_date }}</template>
           </template>
         </el-table-column>
-        <el-table-column label="明细 / 数量" min-width="110">
+        <el-table-column v-if="visibleKeys.includes('item-count')" label="明细 / 数量" min-width="110">
           <template #default="{ row }">{{ row.item_count }} 行 / {{ row.total_qty }} 件</template>
         </el-table-column>
-        <el-table-column label="出库单状态" min-width="170">
+        <el-table-column v-if="visibleKeys.includes('outbound-state')" label="出库单状态" min-width="170">
           <template #default="{ row }">
             <el-tag :type="OUTBOUND_STATE_TAGS[row.outbound_state] || 'info'">
               {{ OUTBOUND_STATE_LABELS[row.outbound_state] || '状态待确认' }}
@@ -56,7 +66,7 @@
             </el-popover>
           </template>
         </el-table-column>
-        <el-table-column label="检验状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('inspection-status')" label="检验状态" min-width="90">
           <template #default="{ row }">
             <span v-if="row.record_source === 'ark_task'" class="queue-note">—</span>
             <el-tag v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
@@ -65,7 +75,7 @@
             <el-tag v-if="row.recheck_status" size="small" type="warning">{{ row.recheck_status === 'pending_sync' ? '待同步重验' : '待补验' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="照片数" min-width="80" align="right">
+        <el-table-column v-if="visibleKeys.includes('photo-count')" label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right">
@@ -115,9 +125,12 @@
 /**
  * OKKI 出库单列表 + 出库单直接打印（无预览弹框）。逻辑在 composables/useOutboundRecords.js（宪法 12）。
  */
+import { computed } from 'vue'
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useTableView } from '@/composables/useTableView'
 import { useOutboundRecords } from './composables/useOutboundRecords'
 import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
 import OutboundSyncDialog from './OutboundSyncDialog.vue'
@@ -125,12 +138,28 @@ import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from 
 
 const {
   loading, list, total, page, pageSize, searchForm, fetchList,
-  handleSearch, handlePageChange, handleSizeChange,
+  handleSearch, handleReset, handlePageChange, handleSizeChange,
   printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
   allowingPrintId, allowPrintBeforeRecheck,
 } = useOutboundRecords()
 const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync } = useOutboundInvoiceSync(fetchList)
 const auth = useAuthStore()
+
+// 列配置数组：TableTools 列显隐的数据源；模板列保持静态 + v-if（推广期约定，不做配置化渲染）
+const columnDefs = [
+  { key: 'outbound-no', label: '出库单号' },
+  { key: 'order-id', label: '订单 ID' },
+  { key: 'customer-name', label: '客户名称' },
+  { key: 'outbound-date', label: '出库日期' },
+  { key: 'item-count', label: '明细 / 数量' },
+  { key: 'outbound-state', label: '出库单状态' },
+  { key: 'inspection-status', label: '检验状态' },
+  { key: 'photo-count', label: '照片数' },
+]
+// 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('outbound-records', columnDefs)
+const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.orderId || searchForm.dateRange?.length))
 function canShowMore(row) {
   if (row.record_source !== 'okki') return false
   if (auth.hasPermission('shipping_inspection:admin')) return true
@@ -143,10 +172,7 @@ function canShowMore(row) {
 <style scoped>
 .outbound-page { position: relative; }
 .outbound-aurora { inset: -24px -28px; }
-.outbound-page .toolbar,
 .outbound-page .outbound-panel { position: relative; z-index: 1; }
-
-.toolbar { margin-bottom: 16px; }
 
 .outbound-panel {
   border: 1px solid var(--dash-glass-border);
@@ -167,7 +193,6 @@ function canShowMore(row) {
 .outbound-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .outbound-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
-.pager { margin: 12px; justify-content: flex-end; }
 .queue-note { color: var(--text-secondary); }
 small.queue-note { display: block; margin-top: 4px; }
 .shortage-item { margin: 0 0 12px; overflow-wrap: anywhere; }

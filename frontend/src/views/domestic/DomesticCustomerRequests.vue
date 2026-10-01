@@ -6,41 +6,49 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <div class="toolbar requests-toolbar">
-      <div class="request-filter request-filter-wide">
-        <el-input v-model="searchForm.keyword" placeholder="搜索客户店名" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
-      </div>
-      <div class="request-filter">
-        <el-select v-model="searchForm.request_type" placeholder="类型" clearable style="width: 100%" @change="handleSearch">
+    <div ref="panelRef" class="table-card requests-panel">
+      <div class="toolbar">
+        <el-input
+          v-model="searchForm.keyword" placeholder="搜索客户店名" clearable
+          prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch"
+        />
+        <el-select v-model="searchForm.request_type" placeholder="类型" clearable class="filter-w-sm" @change="handleSearch">
           <el-option label="充值" value="recharge" />
           <el-option label="调整" value="adjust" />
         </el-select>
-      </div>
-      <div class="request-filter">
-        <el-select v-model="searchForm.status" placeholder="状态" clearable style="width: 100%" @change="handleSearch">
+        <el-select v-model="searchForm.status" placeholder="状态" clearable class="filter-w-sm" @change="handleSearch">
           <el-option v-for="s in REQUEST_STATUS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
-      </div>
-      <div class="request-filter-actions">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
       </div>
-    </div>
-
-    <div class="table-card requests-panel">
-      <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column prop="created_at" label="申请时间" min-width="150" />
-        <el-table-column label="类型" min-width="80">
+      <!-- 操作行：本页无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys" v-model:density="density"
+          :columns="columnDefs" :fullscreen="isFullscreen"
+          @refresh="fetchList" @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasRequestFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasRequestFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('created_at')" prop="created_at" label="申请时间" min-width="150" />
+        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="80">
           <template #default="{ row }">{{ REQUEST_TYPE_LABELS[row.request_type] || row.request_type }}</template>
         </el-table-column>
-        <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
-        <el-table-column label="金额/调整" min-width="110" align="right">
+        <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('amount')" label="金额/调整" min-width="110" align="right">
           <template #default="{ row }">{{ amountText(row) }}</template>
         </el-table-column>
-        <el-table-column label="会员等级" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="100">
           <template #default="{ row }">{{ membershipText(row) }}</template>
         </el-table-column>
-        <el-table-column prop="remark" label="申请说明" min-width="160" show-overflow-tooltip />
-        <el-table-column label="凭证" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="申请说明" min-width="160" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('voucher')" label="凭证" min-width="90">
           <template #default="{ row }">
             <el-link v-if="row.has_voucher" type="primary" :disabled="voucherLoadingId === row.id" @click="openVoucher(row)">
               {{ voucherLoadingId === row.id ? '加载中' : '查看凭证' }}
@@ -48,13 +56,13 @@
             <span v-else>—</span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_by_name" label="申请人" min-width="100" />
-        <el-table-column label="状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('created_by')" prop="created_by_name" label="申请人" min-width="100" />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90">
           <template #default="{ row }">
             <el-tag size="small" :type="REQUEST_STATUS_MAP[row.status]?.tag">{{ REQUEST_STATUS_MAP[row.status]?.label || row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="审核信息" min-width="180" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('review')" label="审核信息" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.status === 'pending'">—</span>
             <span v-else>{{ row.reviewed_by_name || '—' }} · {{ row.reviewed_at || '' }}<template v-if="row.review_remark"> · {{ row.review_remark }}</template></span>
@@ -85,28 +93,35 @@
 
 <script setup>
 /** 内贸充值/调整申请审核列表。逻辑在 composables/useDomesticCustomerRequests.js。 */
+import { computed } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { useDomesticCustomerRequests } from './composables/useDomesticCustomerRequests'
+import { customerRequestsColumnDefs as columnDefs } from './domesticTableColumns'
+
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('domestic-customer-requests', columnDefs)
 
 const {
   loading, list, total, page, pageSize, searchForm,
-  handleSearch, handlePageChange, handleSizeChange,
+  fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange,
   canReview, canReviewRow, REQUEST_STATUS, REQUEST_STATUS_MAP, REQUEST_TYPE_LABELS,
   voucherDialog, voucherLoadingId, openVoucher, closeVoucher,
   reviewingIds, handleApprove, handleReject,
   amountText, membershipText,
 } = useDomesticCustomerRequests()
+
+// 默认只看「待审核」，偏离默认视图也算有筛选
+const hasRequestFilters = computed(() => Boolean(
+  searchForm.keyword || searchForm.request_type || searchForm.status !== 'pending',
+))
 </script>
 
 <style scoped>
 .requests-page { position: relative; }
 .requests-aurora { inset: -24px -28px; }
-.requests-page .toolbar,
 .requests-page .requests-panel { position: relative; z-index: 1; }
-.requests-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 10px; }
-.request-filter { flex: 0 0 140px; min-width: 0; }
-.request-filter-wide { flex-basis: 280px; }
-.request-filter-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .requests-panel {
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
@@ -120,6 +135,5 @@ const {
   --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
 }
 .action-gap { margin-left: 12px; }
-.pager { margin-top: 10px; justify-content: flex-end; }
 .voucher-image { width: 100%; display: block; }
 </style>

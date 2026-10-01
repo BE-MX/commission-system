@@ -96,22 +96,7 @@
   background-color: var(--cm-frost-hover);
 }
 
-/* ── 筛选条 ── */
-.commission-filter-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 14px 16px;
-}
-
-.commission-filter-bar__actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
+/* ── 筛选条/操作行/分页：全局结构类（app.css 的 .table-card > .toolbar / .action-bar / .pager） ── */
 
 /* ── 页头 ── */
 .commission-page-header {
@@ -294,11 +279,7 @@
   background: var(--cm-frost);
 }
 
-/* ── 分页 ── */
-.commission-pagination {
-  display: flex;
-  justify-content: flex-end;
-}
+/* ── 分页：卡片内底部，样式走全局 .table-card > .pager（app.css） ── */
 
 /* ── 入场动效（Emil 强化曲线；只过渡具体属性） ── */
 .commission-page .cm-enter,
@@ -330,17 +311,6 @@
 }
 
 @media (max-width: 960px) {
-  .commission-filter-bar {
-    align-items: stretch;
-  }
-
-  .commission-filter-bar__actions,
-  .commission-filter-bar__actions .el-input,
-  .commission-filter-bar__actions .el-select,
-  .commission-filter-bar__actions .el-date-editor {
-    width: 100%;
-  }
-
   .commission-page-header {
     flex-direction: column;
   }

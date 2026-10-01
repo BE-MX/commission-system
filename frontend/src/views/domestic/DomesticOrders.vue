@@ -6,16 +6,33 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <DomesticOrderFilters ref="filtersRef" :form="searchForm" :options="filterOptions" :loading="loading"
-      @search="handleSearch" @create="goCreate" />
-
-    <div class="table-card orders-panel">
+    <div ref="panelRef" class="table-card orders-panel">
+      <DomesticOrderFilters ref="filtersRef" :form="searchForm" :options="filterOptions" :loading="loading"
+        @search="handleSearch" />
       <el-tabs v-model="searchForm.order_kind" class="order-kind-tabs" @tab-change="handleKindChange">
         <el-tab-pane label="全部订单" name="" />
         <el-tab-pane label="业务订单" name="business" />
         <el-tab-pane label="生产订单" name="production" />
       </el-tabs>
-      <el-table ref="tableRef" :data="list" :height="tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" style="width: 100%">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务下单</GlassButton>
+        <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产下单</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasOrderFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasOrderFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
         <el-table-column :render-header="renderOrderHeader" prop="domestic_no" label="订单编号" min-width="140" fixed="left" class-name="order-number-column">
           <template #default="{ row }">
             <div>{{ row.domestic_no }}</div>
@@ -25,35 +42,35 @@
         <el-table-column :render-header="renderOrderHeader" prop="customer_name" label="客户 / 用途" min-width="120" fixed="left" show-overflow-tooltip>
           <template #default="{ row }">{{ row.customer_name || (row.order_kind === 'production' ? '公司备货' : '-') }}</template>
         </el-table-column>
-        <el-table-column :render-header="renderOrderHeader" prop="customer_source_label" label="客户来源" min-width="100" show-overflow-tooltip />
-        <el-table-column :render-header="renderOrderHeader" prop="order_kind_label" label="订单大类" min-width="90" />
-        <el-table-column :render-header="renderOrderHeader" prop="order_date" label="下单日期" min-width="116" />
-        <el-table-column :render-header="renderOrderHeader" prop="owner_name" label="归属销售" min-width="95" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('customer_source')" :render-header="renderOrderHeader" prop="customer_source_label" label="客户来源" min-width="100" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('order_kind')" :render-header="renderOrderHeader" prop="order_kind_label" label="订单大类" min-width="90" />
+        <el-table-column v-if="visibleKeys.includes('order_date')" :render-header="renderOrderHeader" prop="order_date" label="下单日期" min-width="116" />
+        <el-table-column v-if="visibleKeys.includes('owner')" :render-header="renderOrderHeader" prop="owner_name" label="归属销售" min-width="95" show-overflow-tooltip>
           <template #default="{ row }">{{ row.owner_name || '-' }}</template>
         </el-table-column>
-        <el-table-column :render-header="renderOrderHeader" prop="order_type_label" label="订单类型" min-width="95" />
-        <el-table-column :render-header="renderOrderHeader" prop="order_channel_label" label="订单渠道" min-width="95" />
-        <el-table-column :render-header="renderOrderHeader" prop="total_qty" label="产品总数" min-width="90" align="right" />
-        <el-table-column :render-header="renderOrderHeader" label="订单状态" min-width="95">
+        <el-table-column v-if="visibleKeys.includes('order_type')" :render-header="renderOrderHeader" prop="order_type_label" label="订单类型" min-width="95" />
+        <el-table-column v-if="visibleKeys.includes('order_channel')" :render-header="renderOrderHeader" prop="order_channel_label" label="订单渠道" min-width="95" />
+        <el-table-column v-if="visibleKeys.includes('total_qty')" :render-header="renderOrderHeader" prop="total_qty" label="产品总数" min-width="90" align="right" />
+        <el-table-column v-if="visibleKeys.includes('status')" :render-header="renderOrderHeader" label="订单状态" min-width="95">
           <template #default="{ row }">
             <el-tag size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :render-header="renderOrderHeader" label="要求交付日期" min-width="116">
+        <el-table-column v-if="visibleKeys.includes('required_ship_date')" :render-header="renderOrderHeader" label="要求交付日期" min-width="116">
           <template #default="{ row }">
             <span :class="{ 'ship-date-overdue': isShipDateOverdue(row) }">{{ row.required_ship_date || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column :render-header="renderOrderHeader" label="实际交付日期" min-width="116">
+        <el-table-column v-if="visibleKeys.includes('actual_ship_date')" :render-header="renderOrderHeader" label="实际交付日期" min-width="116">
           <template #default="{ row }">{{ row.actual_ship_date || '-' }}</template>
         </el-table-column>
-        <el-table-column :render-header="renderOrderHeader" label="上次下单日期" min-width="116">
+        <el-table-column v-if="visibleKeys.includes('last_order_date')" :render-header="renderOrderHeader" label="上次下单日期" min-width="116">
           <template #default="{ row }">{{ row.last_order_date || '-' }}</template>
         </el-table-column>
-        <el-table-column :render-header="renderOrderHeader" label="复购周期/天" min-width="100" align="right">
+        <el-table-column v-if="visibleKeys.includes('repurchase_cycle')" :render-header="renderOrderHeader" label="复购周期/天" min-width="100" align="right">
           <template #default="{ row }">{{ row.repurchase_cycle_days != null ? row.repurchase_cycle_days : '-' }}</template>
         </el-table-column>
-        <el-table-column :render-header="renderOrderHeader" prop="remark" label="订单备注" min-width="140" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('remark')" :render-header="renderOrderHeader" prop="remark" label="订单备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" :render-header="renderOrderHeader" label="操作" min-width="270">
@@ -342,25 +359,28 @@
  * 内贸订单列表 + 详情。逻辑在 composables/useDomesticOrders.js（宪法 12）。
  * 进度按「数量」展示：每道工序看到已完成多少 / 还能接多少，拆批状态一眼可见。
  */
-import { h } from 'vue'
+import { computed, h } from 'vue'
 import { ElTooltip } from 'element-plus'
 import { useOrderTableHeight } from './composables/useOrderTableHeight'
+import { useTableView } from '@/composables/useTableView'
 import { DETAIL_SECTIONS, ORDER_STATUS_TAGS } from '@/api/domestic'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
 import DomesticOrderFilters from './components/DomesticOrderFilters.vue'
 import DomesticOrderEditDialog from './components/DomesticOrderEditDialog.vue'
 import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'
+import { ordersColumnDefs as columnDefs } from './domesticTableColumns'
 import { attributeFieldLabel, visibleAttributeFields } from './domesticAttributeRules'
 import { detailSectionsForKind } from './domesticOrderKinds'
 import { membershipLevelLabel } from './composables/domesticMemberPricing'
 
 const {
   loading, list, total, page, pageSize, searchForm, filterOptions,
-  handleSearch, handlePageChange, handleSizeChange,
+  fetchList, handleSearch, handlePageChange, handleSizeChange,
   detailVisible, detailLoading, detail, routes, openDetail, refreshAll,
   shipDialog, openShip, confirmShip,
   reportDialog, openReport, confirmReport,
@@ -378,6 +398,21 @@ const {
 } = useDomesticOrders()
 
 const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
+
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('domestic-orders', columnDefs)
+
+const hasOrderFilters = computed(() => Boolean(
+  searchForm.keyword || searchForm.customer_name || searchForm.owner_user_id
+  || (searchForm.status !== '' && searchForm.status != null)
+  || searchForm.dateRange?.length === 2
+  || searchForm.order_category || searchForm.order_type || searchForm.order_channel || searchForm.customer_source,
+))
+
+function resetFilters() {
+  filtersRef.value?.resetFilters()
+}
+
 function renderOrderHeader({ column }) {
   return h(ElTooltip, { content: column.label, placement: 'top' }, {
     default: () => h('span', { class: 'order-column-title' }, column.label),

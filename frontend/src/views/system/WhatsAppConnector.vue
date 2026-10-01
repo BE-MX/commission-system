@@ -12,10 +12,6 @@
         <h2>WhatsApp 同步</h2>
         <p>扫码绑定后，方舟从独立 Connector 拉取会话与消息记录。</p>
       </div>
-      <div class="header-actions">
-        <GlassButton variant="ghost" left-icon="Refresh" @click="loadAccounts">刷新</GlassButton>
-        <GlassButton v-permission="'whatsapp:write'" variant="primary" left-icon="Connection" @click="handleCreateBindSession">扫码绑定</GlassButton>
-      </div>
     </div>
 
     <div class="metric-strip">
@@ -34,9 +30,25 @@
     </div>
 
     <div class="content-grid">
-      <div class="table-card whatsapp-panel">
-        <el-table :data="accounts" v-loading="loading" border class="list-table" style="width: 100%">
-          <el-table-column label="账号" min-width="180" max-width="270" show-overflow-tooltip>
+      <div ref="panelRef" class="table-card whatsapp-panel">
+        <!-- 操作行（本页账号列表无筛选区）：主操作 + TableTools（Action Bar Spec） -->
+        <div class="action-bar">
+          <GlassButton v-permission="'whatsapp:write'" variant="primary" left-icon="Connection" @click="handleCreateBindSession">扫码绑定</GlassButton>
+          <TableTools
+            v-model:visible-keys="visibleKeys"
+            v-model:density="density"
+            :columns="columnDefs"
+            :fullscreen="isFullscreen"
+            @refresh="loadAccounts"
+            @fullscreen="toggleFullscreen"
+          />
+        </div>
+
+        <el-table :data="accounts" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+          <template #empty>
+            <el-empty :image-size="96" description="暂无数据" />
+          </template>
+          <el-table-column v-if="visibleKeys.includes('account')" label="账号" min-width="180" max-width="270" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="account-cell">
                 <span>{{ row.display_name || row.phone_number || row.account_uid }}</span>
@@ -44,7 +56,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="方舟用户" min-width="120" max-width="180" show-overflow-tooltip>
+          <el-table-column v-if="visibleKeys.includes('ark-user')" label="方舟用户" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="account-cell compact">
                 <span>{{ arkUserText(row) }}</span>
@@ -52,12 +64,12 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="100" max-width="150">
+          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
               <el-tag :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="Connector" min-width="150" max-width="220">
+          <el-table-column v-if="visibleKeys.includes('connector')" label="Connector" min-width="150" max-width="220">
             <template #default="{ row }">
               <el-tooltip
                 :disabled="!row.last_error"
@@ -70,10 +82,10 @@
               </el-tooltip>
             </template>
           </el-table-column>
-          <el-table-column label="最后同步" min-width="160" max-width="240">
+          <el-table-column v-if="visibleKeys.includes('last-sync-at')" label="最后同步" min-width="160" max-width="240">
             <template #default="{ row }">{{ formatTime(row.last_sync_at) }}</template>
           </el-table-column>
-          <el-table-column label="消息拉取" min-width="160" max-width="240">
+          <el-table-column v-if="visibleKeys.includes('last-message-pull-at')" label="消息拉取" min-width="160" max-width="240">
             <template #default="{ row }">{{ formatTime(row.last_message_pull_at) }}</template>
           </el-table-column>
           <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
@@ -174,6 +186,19 @@ import {
   pullWhatsAppResource,
   revokeWhatsAppAccount,
 } from '@/api/whatsapp'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
+
+// 列显隐元数据（TableTools 面板数据源，不驱动列渲染）
+const columnDefs = [
+  { key: 'account', label: '账号' },
+  { key: 'ark-user', label: '方舟用户' },
+  { key: 'status', label: '状态' },
+  { key: 'connector', label: 'Connector' },
+  { key: 'last-sync-at', label: '最后同步' },
+  { key: 'last-message-pull-at', label: '消息拉取' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('whatsapp-connector', columnDefs)
 const accounts = ref([])
 const conversations = ref([])
 const messages = ref([])
@@ -370,252 +395,4 @@ function conversationTitle(row) {
 onMounted(loadAccounts)
 </script>
 
-<style scoped>
-.whatsapp-page {
-  padding: 24px 28px;
-  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
-  position: relative;
-}
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
-.whatsapp-aurora {
-  inset: -24px -28px;
-}
-
-/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
-   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
-.whatsapp-page .page-header,
-.whatsapp-page .metric-strip,
-.whatsapp-page .content-grid {
-  position: relative;
-  z-index: 1;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.page-header h2 { margin: 0; font-size: 20px; font-family: var(--font-display); color: var(--text-primary); }
-.page-header p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
-.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.metric-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-/* 玻璃质感由 .lg-card 提供（is-static：指标卡不上浮/不按压），这里只留布局 */
-.metric-item {
-  min-height: 64px;
-  padding: 12px 14px;
-}
-.metric-label { display: block; color: var(--text-muted); font-size: 12px; margin-bottom: 6px; }
-.metric-item strong { color: var(--text-primary); font-size: 20px; font-family: var(--font-display); }
-.content-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
-  gap: 14px;
-}
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.whatsapp-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.whatsapp-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
-.whatsapp-panel :deep(.el-table-fixed-column--right) {
-  background-color: rgba(249, 244, 234, 0.97);
-}
-.whatsapp-panel :deep(th.el-table-fixed-column--right) {
-  background-color: rgba(246, 239, 226, 0.98);
-}
-.whatsapp-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
-  background-color: rgba(245, 236, 220, 0.98);
-}
-
-/* 玻璃质感由 .lg-card 提供（is-static），这里只留布局 */
-.conversation-panel {
-  padding: 14px;
-  min-height: 520px;
-}
-.panel-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  font-weight: 600;
-}
-.panel-title small {
-  display: block;
-  margin-top: 3px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 400;
-}
-.conversation-workspace {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.42fr) minmax(0, 0.58fr);
-  gap: 12px;
-  min-height: 456px;
-}
-.conversation-list {
-  min-height: 456px;
-  max-height: 640px;
-  overflow: auto;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  background: rgba(248, 250, 252, 0.78);
-}
-.conversation-row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 8px;
-  padding: 11px 12px;
-  border: 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-.conversation-row:hover,
-.conversation-row.active {
-  background: rgba(212, 148, 28, 0.1);
-}
-.conversation-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 600;
-}
-.conversation-time {
-  color: var(--text-muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.conversation-preview {
-  grid-column: 1 / -1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.message-thread {
-  min-height: 456px;
-  max-height: 640px;
-  overflow: auto;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  background: #fff;
-}
-.thread-header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.96);
-}
-.thread-header strong {
-  display: block;
-  color: var(--text-primary);
-  font-size: 14px;
-}
-.thread-header span {
-  display: block;
-  margin-top: 3px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.message-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-}
-.message-item {
-  max-width: 84%;
-  align-self: flex-start;
-}
-.message-item.outbound {
-  align-self: flex-end;
-}
-.message-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-.message-item.outbound .message-meta {
-  justify-content: flex-end;
-}
-.message-bubble {
-  padding: 9px 11px;
-  border-radius: 8px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(248, 250, 252, 0.96);
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.message-item.outbound .message-bubble {
-  border-color: rgba(212, 148, 28, 0.24);
-  background: rgba(212, 148, 28, 0.12);
-}
-.account-cell { display: flex; flex-direction: column; gap: 2px; }
-.account-cell small { color: var(--text-muted); font-size: 12px; }
-.qr-box { display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.qr-box img {
-  width: 260px;
-  height: 260px;
-  object-fit: contain;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  border-radius: 8px;
-  background: #fff;
-}
-@media (max-width: 1100px) {
-  .content-grid { grid-template-columns: 1fr; }
-}
-@media (max-width: 900px) {
-  .conversation-workspace { grid-template-columns: 1fr; }
-  .conversation-list,
-  .message-thread {
-    min-height: 280px;
-    max-height: 420px;
-  }
-}
-@media (max-width: 720px) {
-  .page-header { flex-direction: column; }
-  .metric-strip { grid-template-columns: 1fr; }
-  .whatsapp-page { padding: 18px 16px; }
-  .message-item { max-width: 94%; }
-}
-</style>
+<style scoped src="./whatsapp-connector.css"></style>

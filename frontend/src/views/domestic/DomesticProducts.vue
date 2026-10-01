@@ -35,75 +35,83 @@
       </el-tab-pane>
 
       <el-tab-pane label="产品" name="products">
-        <div class="panel">
+        <div ref="panelRef" class="table-card panel products-panel">
           <el-alert
             type="info" show-icon :closable="false" class="tips"
             title="产品不用手工建"
             description="下单选完属性后系统自动沉淀产品；同一组属性永远只对应一个产品。这里只做查看和个别产品的路线改绑。"
           />
-          <el-row :gutter="16" class="toolbar">
-            <el-col :span="6">
-              <el-input v-model="searchForm.keyword" placeholder="搜索产品名" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
-            </el-col>
-            <el-col :span="4">
-              <el-select v-model="searchForm.product_type" placeholder="产品类型" clearable style="width: 100%" @change="handleSearch">
-                <el-option label="头套" value="cap" />
-                <el-option label="发片" value="piece" />
-              </el-select>
-            </el-col>
-            <el-col :span="4">
-              <el-select v-model="searchForm.route_bound" placeholder="路线绑定" clearable style="width: 100%" @change="handleSearch">
-                <el-option label="已绑路线" value="bound" />
-                <el-option label="未绑路线" value="unbound" />
-              </el-select>
-            </el-col>
-            <el-col :span="4">
-              <el-select v-model="searchForm.price_status" placeholder="原始价状态" clearable style="width: 100%" @change="handleSearch">
-                <el-option label="已配置" value="configured" />
-                <el-option label="缺原价" value="missing" />
-              </el-select>
-            </el-col>
-            <el-col :span="4">
-              <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-            </el-col>
-          </el-row>
+          <div class="toolbar">
+            <el-input
+              v-model="searchForm.keyword" placeholder="搜索产品名" clearable
+              prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch"
+            />
+            <el-select v-model="searchForm.product_type" placeholder="产品类型" clearable class="filter-w-sm" @change="handleSearch">
+              <el-option label="头套" value="cap" />
+              <el-option label="发片" value="piece" />
+            </el-select>
+            <el-select v-model="searchForm.route_bound" placeholder="路线绑定" clearable class="filter-w-sm" @change="handleSearch">
+              <el-option label="已绑路线" value="bound" />
+              <el-option label="未绑路线" value="unbound" />
+            </el-select>
+            <el-select v-model="searchForm.price_status" placeholder="原始价状态" clearable class="filter-w-sm" @change="handleSearch">
+              <el-option label="已配置" value="configured" />
+              <el-option label="缺原价" value="missing" />
+            </el-select>
+            <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
+            <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+          </div>
 
-          <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
-            <el-table-column prop="name" label="产品" min-width="240" show-overflow-tooltip />
-            <el-table-column prop="product_type_label" label="类型" min-width="80" />
-            <el-table-column prop="craft" label="工艺/尺寸" min-width="130" show-overflow-tooltip />
-            <el-table-column prop="length" label="发长" min-width="90" />
-            <el-table-column prop="net_color" label="网帽颜色" min-width="120" show-overflow-tooltip>
+          <!-- 操作行：产品由下单自动沉淀、无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
+          <div class="action-bar">
+            <TableTools
+              v-model:visible-keys="visibleKeys" v-model:density="density"
+              :columns="columnDefs" :fullscreen="isFullscreen"
+              @refresh="fetchList" @fullscreen="toggleFullscreen"
+            />
+          </div>
+
+          <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+            <template #empty>
+              <el-empty :image-size="96" :description="hasProductFilters ? '没有符合条件的记录' : '暂无数据'">
+                <GlassButton v-if="hasProductFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+              </el-empty>
+            </template>
+            <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品" min-width="240" show-overflow-tooltip />
+            <el-table-column v-if="visibleKeys.includes('product_type')" prop="product_type_label" label="类型" min-width="80" />
+            <el-table-column v-if="visibleKeys.includes('craft')" prop="craft" label="工艺/尺寸" min-width="130" show-overflow-tooltip />
+            <el-table-column v-if="visibleKeys.includes('length')" prop="length" label="发长" min-width="90" />
+            <el-table-column v-if="visibleKeys.includes('net_color')" prop="net_color" label="网帽颜色" min-width="120" show-overflow-tooltip>
               <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.net_color || '' }}</span></template>
             </el-table-column>
-            <el-table-column prop="size" label="头套尺码" min-width="95">
+            <el-table-column v-if="visibleKeys.includes('size')" prop="size" label="头套尺码" min-width="95">
               <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.size }}</span></template>
             </el-table-column>
-            <el-table-column prop="density" label="发量" min-width="80">
+            <el-table-column v-if="visibleKeys.includes('density')" prop="density" label="发量" min-width="80">
               <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.density || '' }}</span></template>
             </el-table-column>
-            <el-table-column prop="hair_style_series" label="发型系列" min-width="110" show-overflow-tooltip>
+            <el-table-column v-if="visibleKeys.includes('hair_style_series')" prop="hair_style_series" label="发型系列" min-width="110" show-overflow-tooltip>
               <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.hair_style_series }}</span></template>
             </el-table-column>
-            <el-table-column label="原始价" min-width="110" align="right">
+            <el-table-column v-if="visibleKeys.includes('original_price')" label="原始价" min-width="110" align="right">
               <template #default="{ row }">
                 <strong v-if="row.price_status === 'configured'">¥{{ Number(row.original_price).toFixed(2) }}</strong>
                 <el-tag v-else size="small" type="danger" effect="plain">缺原价</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="价格状态" min-width="100">
+            <el-table-column v-if="visibleKeys.includes('price_status')" label="价格状态" min-width="100">
               <template #default="{ row }">
                 <span v-if="row.price_status === 'configured'">已配置 · v{{ row.base_price_version }}</span>
                 <span v-else class="danger-text">待维护</span>
               </template>
             </el-table-column>
-            <el-table-column label="工艺路线" min-width="150">
+            <el-table-column v-if="visibleKeys.includes('route')" label="工艺路线" min-width="150">
               <template #default="{ row }">
                 <span v-if="row.route_name">{{ row.route_name }}</span>
                 <el-tag v-else size="small" type="warning" effect="plain">未绑路线</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="use_count" label="下单次数" min-width="100" sortable />
+            <el-table-column v-if="visibleKeys.includes('use_count')" prop="use_count" label="下单次数" min-width="100" sortable />
             <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'domestic:admin'" variant="link" left-icon="Money" @click="openPrice(row)">{{ row.price_status === 'configured' ? '改原始价' : '配原始价' }}</GlassButton>
@@ -200,7 +208,10 @@ import {
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { priceImpactLabel } from './composables/domesticMemberPricing'
+import { productsColumnDefs as columnDefs } from './domesticTableColumns'
 
 const activeTab = ref('mapping')
 const saving = ref(false)
@@ -227,6 +238,18 @@ const {
   },
   { searchForm: { keyword: '', product_type: '', route_bound: '', price_status: initialPriceStatus } },
 )
+
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('domestic-products', columnDefs)
+
+function resetFilters() {
+  Object.assign(searchForm, { keyword: '', product_type: '', route_bound: '', price_status: '' })
+  handleSearch()
+}
+
+const hasProductFilters = computed(() => Boolean(
+  searchForm.keyword || searchForm.product_type || searchForm.route_bound || searchForm.price_status,
+))
 
 const mappingDialog = reactive({ visible: false, isEdit: false, id: null, product_type: 'cap', craft: '', route_id: null })
 const rebindDialog = reactive({ visible: false, product: null, route_id: null })
@@ -386,7 +409,8 @@ onMounted(async () => {
 .panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 
 .tips { margin-bottom: 12px; }
-.toolbar { margin-bottom: 12px; }
 .panel-actions { margin-bottom: 12px; }
-.pager { margin-top: 12px; justify-content: flex-end; }
+/* 产品 tab 是标准列表卡片（table-card 结构类接管 toolbar/action-bar/pager 布局），去掉面板内边距 */
+.products-panel { padding: 0; }
+.products-panel > .tips { margin: 14px 14px 0; }
 </style>

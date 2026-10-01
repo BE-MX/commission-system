@@ -12,54 +12,69 @@
         <h2>公告管理</h2>
         <p>发布通知、沉淀知识，重要信息及时送达。</p>
       </div>
-      <div class="header-actions">
-        <GlassButton v-any-permission="['announcement:write', 'announcement:admin']" variant="primary" left-icon="Plus" :disabled="!config.initialized" @click="openEditor(null, true)">新建公告</GlassButton>
-        <GlassButton left-icon="Calendar" :disabled="!config.initialized" @click="weeklyOpen = true">公告周报</GlassButton>
-        <GlassButton v-permission="'announcement:admin'" left-icon="Setting" @click="settingsOpen = true">公告设置</GlassButton>
-      </div>
     </div>
 
     <el-alert v-if="!config.initialized" class="page-alert" type="info" title="公告库尚未初始化，请管理员在公告设置中创建。" :closable="false" show-icon />
-    <section v-else class="table-card announcement-panel">
+    <section v-else ref="panelRef" class="table-card announcement-panel">
       <div class="toolbar">
-        <el-input v-model="searchForm.q" clearable placeholder="搜索标题或正文" class="filter-keyword" @keyup.enter="search" @clear="search">
+        <el-input v-model="searchForm.q" clearable placeholder="搜索标题或正文" class="filter-w-lg" @keyup.enter="search" @clear="search">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="searchForm.category_id" clearable placeholder="全部类别" class="filter-category">
+        <el-select v-model="searchForm.category_id" clearable placeholder="全部类别" class="filter-w-sm">
           <el-option v-for="c in categories" :key="c.id" :label="c.title" :value="c.id" />
         </el-select>
-        <el-select v-model="searchForm.status" clearable placeholder="全部状态" class="filter-status">
+        <el-select v-model="searchForm.status" clearable placeholder="全部状态" class="filter-w-sm">
           <el-option v-for="(label, value) in statuses" :key="value" :label="label" :value="value" />
         </el-select>
         <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
         <GlassButton left-icon="RefreshLeft" @click="reset">重置</GlassButton>
       </div>
 
-      <el-table v-loading="loading" :data="list" class="list-table" border style="width: 100%">
-        <el-table-column label="公告标题" min-width="260" show-overflow-tooltip>
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-any-permission="['announcement:write', 'announcement:admin']" variant="primary" left-icon="Plus" :disabled="!config.initialized" @click="openEditor(null, true)">新建公告</GlassButton>
+        <GlassButton variant="secondary" left-icon="Calendar" :disabled="!config.initialized" @click="weeklyOpen = true">公告周报</GlassButton>
+        <GlassButton v-permission="'announcement:admin'" variant="secondary" left-icon="Setting" @click="settingsOpen = true">公告设置</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('title')" label="公告标题" min-width="260" show-overflow-tooltip>
           <template #default="{ row }">
             <el-button link type="primary" @click="openEditor(row.id)"><el-icon><Document /></el-icon>{{ row.title }}</el-button>
           </template>
         </el-table-column>
-        <el-table-column label="标记" min-width="130">
+        <el-table-column v-if="visibleKeys.includes('flags')" label="标记" min-width="130">
           <template #default="{ row }">
             <el-tag v-if="row.pinned" size="small" effect="plain">置顶</el-tag>
             <el-tag v-if="row.important" size="small" effect="plain" type="warning">重要</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="category_name" label="类别" min-width="130" show-overflow-tooltip />
-        <el-table-column label="发布时间" min-width="180">
+        <el-table-column v-if="visibleKeys.includes('category')" prop="category_name" label="类别" min-width="130" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('published-at')" label="发布时间" min-width="180">
           <template #default="{ row }">{{ formatBeijingDateTime(row.published_at) }}</template>
         </el-table-column>
-        <el-table-column label="截止时间" min-width="180">
+        <el-table-column v-if="visibleKeys.includes('expires-at')" label="截止时间" min-width="180">
           <template #default="{ row }">{{ formatBeijingDateTime(row.expires_at) }}</template>
         </el-table-column>
-        <el-table-column label="发布状态" min-width="120">
+        <el-table-column v-if="visibleKeys.includes('status')" label="发布状态" min-width="120">
           <template #default="{ row }">
             <el-tag size="small" effect="plain">{{ statuses[row.status] || row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="群推送" min-width="135">
+        <el-table-column v-if="visibleKeys.includes('delivery')" label="群推送" min-width="135">
           <template #default="{ row }">{{ deliveryLabel(row.deliveries) }}</template>
         </el-table-column>
         <el-table-column label="操作" min-width="260" class-name="table-action-column" fixed="right">
@@ -75,9 +90,9 @@
         </el-table-column>
       </el-table>
       <el-pagination
-        v-model:current-page="page" :page-size="pageSize" :total="total"
-        layout="total, prev, pager, next"
-        class="pager" @current-change="handlePageChange"
+        v-model:current-page="page" v-model:page-size="pageSize" :total="total"
+        :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next"
+        class="pager" @current-change="handlePageChange" @size-change="handleSizeChange"
       />
     </section>
 
@@ -90,15 +105,17 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { Document, Search } from '@element-plus/icons-vue'
 import { announcementApi as api } from '@/api/announcement'
 import { useListPage } from '@/composables/useListPage'
+import { useTableView } from '@/composables/useTableView'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import TableTools from '@/components/TableTools.vue'
 import AnnouncementEditor from './AnnouncementEditor.vue'
 import AnnouncementSettings from './AnnouncementSettings.vue'
 import AnnouncementWeekly from './AnnouncementWeekly.vue'
@@ -109,10 +126,22 @@ const config = ref({ initialized: false }), categories = ref([])
 const settingsOpen = ref(false), weeklyOpen = ref(false), editorOpen = ref(false), editing = ref(false)
 const selectedId = ref(null), editorKey = ref(0), editor = ref(null)
 const statuses = { draft: '草稿', pending: '待审核', published: '已发布', withdrawn: '已撤回' }
-const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch: search, handleReset: reset, handlePageChange } = useListPage(
+// 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
+const columnDefs = [
+  { key: 'title', label: '公告标题' },
+  { key: 'flags', label: '标记' },
+  { key: 'category', label: '类别' },
+  { key: 'published-at', label: '发布时间' },
+  { key: 'expires-at', label: '截止时间' },
+  { key: 'status', label: '发布状态' },
+  { key: 'delivery', label: '群推送' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('announcement-list', columnDefs)
+const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch: search, handleReset: reset, handlePageChange, handleSizeChange } = useListPage(
   params => api.get('', Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== null))),
   { immediate: false, searchForm: { q: '', category_id: null, status: '' } },
 )
+const hasActiveFilters = computed(() => Boolean(searchForm.q || searchForm.category_id || searchForm.status))
 async function load() {
   config.value = await api.get('/config')
   if (config.value.initialized) { categories.value = await api.get('/categories'); await fetchList() }
@@ -154,7 +183,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .page-header h2 { margin: 0 0 6px; font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--text-primary); }
 .page-header p { margin: 0; font-size: 14px; font-weight: 500; color: var(--text-secondary); }
-.header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 .page-alert { margin-bottom: 14px; }
 
@@ -166,10 +194,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
 }
 
+/* 筛选控件三档宽度、操作行、分页均为全局规范类（app.css），本页只保留玻璃皮肤覆写 */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px; border-bottom: 1px solid var(--border-color); border-radius: var(--dash-card-radius) var(--dash-card-radius) 0 0; background: rgba(255, 255, 255, 0.4); }
-.filter-keyword { width: 240px; }
-.filter-category { width: 160px; }
-.filter-status { width: 140px; }
+.action-bar { background: rgba(255, 255, 255, 0.28); }
 
 /* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
 .announcement-panel :deep(.el-table) {
@@ -184,11 +211,4 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 .announcement-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
 .announcement-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .announcement-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-
-.pager { margin: 12px; justify-content: flex-end; }
-
-@media (max-width: 768px) {
-  .filter-keyword { width: 100%; }
-  .filter-category, .filter-status { width: calc(50% - 5px); }
-}
 </style>

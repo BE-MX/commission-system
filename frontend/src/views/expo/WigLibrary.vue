@@ -7,50 +7,65 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="8">
-        <el-input v-model="keyword" placeholder="搜索型号 / 名称" clearable prefix-icon="Search" />
-      </el-col>
-      <el-col :span="16">
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreate">新建发型</GlassButton>
-      </el-col>
-    </el-row>
+    <div ref="panelRef" class="table-card wig-panel">
+      <div class="toolbar">
+        <el-input v-model="keyword" placeholder="搜索型号 / 名称" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="fetchWigs" />
+        <GlassButton variant="primary" left-icon="Search" @click="fetchWigs">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <div class="table-card wig-panel">
-      <el-table :data="filteredWigs" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column label="封面" min-width="70">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton variant="primary" left-icon="Plus" @click="openCreate">新建发型</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchWigs"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="filteredWigs" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('cover')" label="封面" min-width="70">
           <template #default="{ row }">
             <el-image v-if="row.cover_url" :src="row.thumb_url || row.cover_url" :preview-src-list="[row.cover_url]" preview-teleported fit="cover" class="cover-thumb" />
             <span v-else class="cover-empty">无</span>
           </template>
         </el-table-column>
-        <el-table-column prop="model_no" label="型号" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="name" label="名称" min-width="130" show-overflow-tooltip />
-        <el-table-column label="系列" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('model-no')" prop="model_no" label="型号" min-width="110" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="名称" min-width="130" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('series')" label="系列" min-width="90">
           <template #default="{ row }">
             <el-tag v-if="row.series === 'zhizhen'" size="small" class="tag-zhizhen">至臻</el-tag>
             <el-tag v-else size="small" effect="plain">经典</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="适配标签" min-width="220">
+        <el-table-column v-if="visibleKeys.includes('fit-tags')" label="适配标签" min-width="220">
           <template #default="{ row }">
             <el-tag v-for="f in row.fit_tags?.face_shapes || []" :key="'f-' + f" size="small" effect="plain" class="fit-tag">{{ labelOf(FACE_SHAPES, f) }}</el-tag>
             <el-tag v-for="n in row.fit_tags?.needs || []" :key="'n-' + n" size="small" effect="plain" type="warning" class="fit-tag">{{ labelOf(NEEDS, n) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="销售定位" min-width="160">
+        <el-table-column v-if="visibleKeys.includes('sell-positions')" label="销售定位" min-width="160">
           <template #default="{ row }">
             <el-tag v-for="p in row.fit_tags?.sell_positions || []" :key="'p-' + p" size="small" effect="plain" type="success" class="fit-tag">{{ p }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="priority" label="优先级" min-width="80" sortable />
-        <el-table-column label="主推" min-width="70">
+        <el-table-column v-if="visibleKeys.includes('priority')" prop="priority" label="优先级" min-width="80" sortable />
+        <el-table-column v-if="visibleKeys.includes('must-recommend')" label="主推" min-width="70">
           <template #default="{ row }">
             <el-tag v-if="row.must_recommend" type="danger" effect="plain" size="small">主推</el-tag>
             <span v-else style="color: var(--text-muted)">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="启用" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('is-active')" label="启用" min-width="80">
           <template #default="{ row }">
             <el-switch :model-value="!!row.is_active" @change="(v) => toggleActive(row, v)" />
           </template>
@@ -218,6 +233,8 @@ import {
   getWigColorImages, saveWigColorImages, deleteWigColorImages,
 } from '@/api/expo'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
+import TableTools from '@/components/TableTools.vue'
+import { useWigLibraryTable } from './composables/useWigLibraryTable'
 
 // 选项词汇对齐《发型推荐分析表》的业务语言；value 是 AI 分析枚举，不可改
 const FACE_SHAPES = [
@@ -302,6 +319,11 @@ async function fetchWigs() {
     loading.value = false
   }
 }
+
+const {
+  columnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen,
+  hasActiveFilters, resetFilters,
+} = useWigLibraryTable(keyword, fetchWigs)
 
 function toUpsert(src) {
   return {
@@ -458,78 +480,4 @@ async function handleDelete(row) {
 onMounted(fetchWigs)
 </script>
 
-<style scoped>
-/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
-.wig-page { position: relative; }
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
-.wig-aurora { inset: -24px -28px; }
-
-/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
-   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
-.wig-page .toolbar,
-.wig-page .wig-panel { position: relative; z-index: 1; }
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.wig-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.wig-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
-   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
-.wig-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.wig-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.wig-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-
-.toolbar { margin-bottom: 16px; }
-.cover-thumb { width: 40px; height: 40px; border-radius: 6px; display: block; }
-.cover-empty { color: var(--text-muted); font-size: 12px; }
-.fit-tag { margin: 2px 4px 2px 0; }
-.tag-zhizhen {
-  background: var(--color-warning-bg);
-  border-color: var(--color-gold-muted);
-  color: var(--color-gold-muted, #b8860b);
-}
-.upload-slot {
-  width: 88px; height: 88px; border: 1px dashed var(--border-color); border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-muted); font-size: 12px; cursor: pointer; background: var(--toolbar-bg);
-}
-.upload-slot:hover { border-color: var(--color-primary); color: var(--color-primary); }
-.upload-preview { width: 88px; height: 88px; border-radius: 8px; display: block; }
-.angle-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.angle-item { position: relative; }
-.angle-remove {
-  position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; line-height: 16px;
-  text-align: center; border-radius: 50%; background: var(--color-danger); color: #fff;
-  font-size: 12px; cursor: pointer; z-index: 1;
-}
-/* 发色×三角度矩阵 */
-.cm-hint { margin: 0 0 12px; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
-.cm-list { display: flex; flex-direction: column; gap: 14px; }
-.cm-row {
-  display: flex; flex-direction: column; gap: 8px;
-  padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--toolbar-bg);
-}
-.cm-color { display: flex; align-items: center; gap: 8px; }
-.cm-sw { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border-color); flex: none; object-fit: cover; }
-.cm-meta { display: flex; flex-direction: column; line-height: 1.3; }
-.cm-meta b { font-size: 13px; }
-.cm-meta small { color: var(--text-muted); font-size: 11px; }
-.cm-row.dirty { border-color: var(--color-warning, #e6a23c); background: var(--color-warning-bg, rgba(230, 162, 60, 0.08)); }
-.cm-unsaved { margin-left: auto; font-size: 11px; color: var(--color-warning, #e6a23c); border: 1px solid currentColor; border-radius: 10px; padding: 1px 8px; }
-.cm-empty { color: var(--text-muted); font-size: 12px; padding: 8px 0; }
-</style>
+<style scoped src="./wig-library.css"></style>

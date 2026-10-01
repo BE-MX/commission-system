@@ -56,7 +56,7 @@ function releaseUrl() {
 }
 
 function retry() {
-  deleteNode()
+  props.deleteNode()
   props.editor.view.dom.dispatchEvent(new CustomEvent('knowledge-image-retry', { bubbles: true }))
 }
 

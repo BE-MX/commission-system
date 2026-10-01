@@ -44,12 +44,12 @@
       </div>
     </div>
 
-    <!-- 筛选栏 -->
-    <div class="toolbar-card">
-      <div class="filter-row">
+    <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
+    <div ref="panelRef" class="table-card stock-panel">
+      <div class="toolbar">
         <div class="filter-group">
           <span class="filter-label">状态</span>
-          <el-select v-model="filters.status" multiple placeholder="全部状态" collapse-tags collapse-tags-tooltip style="width:150px" clearable>
+          <el-select v-model="filters.status" multiple placeholder="全部状态" collapse-tags collapse-tags-tooltip class="filter-w-sm" clearable>
             <el-option label="紧缺" value="shortage"><el-tag size="small" type="danger" style="margin-right:6px">●</el-tag>紧缺</el-option>
             <el-option label="预警" value="warning"><el-tag size="small" type="warning" style="margin-right:6px">●</el-tag>预警</el-option>
             <el-option label="充足" value="sufficient"><el-tag size="small" type="success" style="margin-right:6px">●</el-tag>充足</el-option>
@@ -58,31 +58,31 @@
         </div>
         <div class="filter-group">
           <span class="filter-label">型号</span>
-          <el-select v-model="filters.model" multiple placeholder="全部型号" clearable filterable style="width:140px">
+          <el-select v-model="filters.model" multiple placeholder="全部型号" clearable filterable class="filter-w-sm">
             <el-option v-for="m in filterOptions.models" :key="m" :label="m" :value="m" />
           </el-select>
         </div>
         <div class="filter-group">
           <span class="filter-label">类型</span>
-          <el-select v-model="filters.product_type" multiple placeholder="全部类型" clearable filterable style="width:140px">
+          <el-select v-model="filters.product_type" multiple placeholder="全部类型" clearable filterable class="filter-w-sm">
             <el-option v-for="t in filterOptions.types" :key="t" :label="t" :value="t" />
           </el-select>
         </div>
         <div class="filter-group">
           <span class="filter-label">尺寸</span>
-          <el-select v-model="filters.size" multiple placeholder="全部尺寸" clearable filterable style="width:120px">
+          <el-select v-model="filters.size" multiple placeholder="全部尺寸" clearable filterable class="filter-w-sm">
             <el-option v-for="s in filterOptions.sizes" :key="s" :label="s" :value="s" />
           </el-select>
         </div>
         <div class="filter-group">
           <span class="filter-label">颜色</span>
-          <el-select v-model="filters.color" multiple placeholder="全部颜色" clearable filterable style="width:120px">
+          <el-select v-model="filters.color" multiple placeholder="全部颜色" clearable filterable class="filter-w-sm">
             <el-option v-for="c in filterOptions.colors" :key="c" :label="c" :value="c" />
           </el-select>
         </div>
         <div class="filter-group">
           <span class="filter-label">克重</span>
-          <el-select v-model="filters.weight" multiple placeholder="全部克重" clearable filterable style="width:120px">
+          <el-select v-model="filters.weight" multiple placeholder="全部克重" clearable filterable class="filter-w-sm">
             <el-option v-for="w in filterOptions.weights" :key="w" :label="w" :value="w" />
           </el-select>
         </div>
@@ -90,66 +90,79 @@
           <span class="filter-label">排序</span>
           <span class="sort-hint">点击表头箭头排序</span>
         </div>
-        <div class="filter-group">
-          <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:200px" @input="handleSearch" />
-        </div>
-        <GlassButton variant="primary" :left-icon="Filter" @click="applyFilters">筛选</GlassButton>
-        <GlassButton variant="secondary" :left-icon="RefreshRight" @click="resetFilters">重置</GlassButton>
+        <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable class="filter-w-md" @input="handleSearch" @keyup.enter="applyFilters" />
+        <GlassButton variant="primary" :left-icon="Search" @click="applyFilters">查询</GlassButton>
+        <GlassButton :left-icon="RefreshRight" @click="resetFilters">重置</GlassButton>
       </div>
-    </div>
 
-    <!-- 数据表 -->
-    <div class="card">
+      <!-- 操作行：本页无页面级主操作，右侧 TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadData"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
       <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading"
-        :row-class-name="rowClassName" @sort-change="handleSortChange" border class="list-table">
+        :row-class-name="rowClassName" @sort-change="handleSortChange" border class="list-table" :class="densityClass"
+        :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" :left-icon="RefreshRight" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
         <el-table-column type="index" label="#" min-width="50" />
-        <el-table-column label="型号" prop="model" min-width="120" sortable="custom" show-overflow-tooltip />
-        <el-table-column label="类型" min-width="100" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('model')" label="型号" prop="model" min-width="120" sortable="custom" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
         </el-table-column>
-        <el-table-column label="尺寸" min-width="100" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('size')" label="尺寸" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).size }}</template>
         </el-table-column>
-        <el-table-column label="颜色" prop="color" min-width="90" show-overflow-tooltip sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('color')" label="颜色" prop="color" min-width="90" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).color }}</template>
         </el-table-column>
-        <el-table-column label="克重" min-width="90" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('weight')" label="克重" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
         </el-table-column>
-        <el-table-column label="30天销量" prop="sales_30d" min-width="100" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('sales-30d')" label="30天销量" prop="sales_30d" min-width="100" sortable="custom">
           <template #default="{ row }"><span class="value-gold">{{ row.sales_30d }}</span></template>
         </el-table-column>
-        <el-table-column label="90天销量" prop="sales_90d" min-width="100" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('sales-90d')" label="90天销量" prop="sales_90d" min-width="100" sortable="custom">
           <template #default="{ row }"><span style="color:#888">{{ row.sales_90d }}</span></template>
         </el-table-column>
-        <el-table-column label="日均销量" prop="avg_daily_sales_30d" min-width="100" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('avg-daily-sales')" label="日均销量" prop="avg_daily_sales_30d" min-width="100" sortable="custom">
           <template #default="{ row }">
             <span class="avg-badge">{{ row.avg_daily_sales_30d?.toFixed(1) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="可用库存(小满)" prop="enable_count" min-width="120" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('enable-count')" label="可用库存(小满)" prop="enable_count" min-width="120" sortable="custom">
           <template #default="{ row }">
             <span>{{ Math.round(row.enable_count || 0) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="实时库存(小满)" prop="real_count" min-width="120" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('real-count')" label="实时库存(小满)" prop="real_count" min-width="120" sortable="custom">
           <template #default="{ row }">
             <span>{{ Math.round(row.real_count || 0) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="可用库存" prop="effective_enable_count" min-width="100" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('effective-enable-count')" label="可用库存" prop="effective_enable_count" min-width="100" sortable="custom">
           <template #default="{ row }">
             <span :class="getStockClass(row)">{{ Math.round(row.effective_enable_count ?? row.enable_count) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="生产在途" prop="production_in_transit" min-width="90" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('production-in-transit')" label="生产在途" prop="production_in_transit" min-width="90" sortable="custom">
           <template #default="{ row }">
             <span :class="['in-transit-value', row.production_in_transit > 0 ? 'in-transit-active' : '']">
               {{ row.production_in_transit || 0 }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="备货状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('stock-status')" label="备货状态" min-width="90">
           <template #default="{ row }">
             <span
               v-if="row.stock_status"
@@ -162,18 +175,18 @@
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="安全库存" prop="safety_stock" min-width="100" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('safety-stock')" label="安全库存" prop="safety_stock" min-width="100" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.safety_stock" style="font-weight:500;color:#666">{{ row.safety_stock }}</span>
             <el-tag v-else size="small" type="info">未设置</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="建议备货量" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('suggested-qty')" label="建议备货量" min-width="100">
           <template #default="{ row }">
             <span :class="row.suggested_qty > 0 ? 'value-danger' : 'text-muted'">{{ row.suggested_qty > 0 ? row.suggested_qty : '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" min-width="100" fixed="right">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" fixed="right">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small" effect="dark" class="status-tag">
               <el-icon :size="12" style="margin-right:2px"><component :is="statusIcon(row.status)" /></el-icon>
@@ -181,17 +194,16 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="来源" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="80">
           <template #default="{ row }">
             <el-tag v-if="row.safety_stock_source" size="small" :type="sourceTagType(row.safety_stock_source)">{{ sourceLabel(row.safety_stock_source) }}</el-tag>
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
       </el-table>
-      <div class="pagination-bar">
-        <el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.page_size" :total="pagination.total"
-          :page-sizes="[20,50,100]" layout="total,sizes,prev,pager,next,jumper" @size-change="loadData" @current-change="loadData" />
-      </div>
+      <el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.page_size" :total="pagination.total"
+        :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager"
+        @size-change="handleSizeChange" @current-change="loadData" />
     </div>
 
     <!-- 备货状态明细弹窗 -->
@@ -266,11 +278,16 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   WarningFilled, Timer, CircleCheckFilled, QuestionFilled,
-  Search, Filter, RefreshRight,
+  Search, RefreshRight,
 } from '@element-plus/icons-vue'
 import { getStockOverview, getFilterOptions } from '@/api/stock'
 import { useTableSort } from '@/composables/useTableSort'
+import { useStockOverviewTable } from './composables/useStockOverviewTable'
+import TableTools from '@/components/TableTools.vue'
 import { getProgress, initProgress } from '@/api/production'
+
+// 表格视图状态（列显隐/密度/全屏），columnDefs 仅供 TableTools 列显隐面板
+const { columnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useStockOverviewTable()
 
 const loading = ref(false)
 const tableData = ref([])
@@ -291,6 +308,11 @@ const filters = reactive({
   color: [],
   weight: [],
 })
+
+const hasActiveFilters = computed(() => Boolean(
+  filters.status.length || filters.keyword || filters.model.length ||
+  filters.product_type.length || filters.size.length || filters.color.length || filters.weight.length
+))
 
 const allFilterOptions = ref({ models: [], types: [], sizes: [], colors: [], weights: [] })
 
@@ -416,6 +438,11 @@ function applyFilters() {
   loadData()
 }
 
+function handleSizeChange() {
+  pagination.page = 1
+  loadData()
+}
+
 function resetFilters() {
   filters.status = []
   filters.keyword = ''
@@ -459,95 +486,4 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
-.stock-overview-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
-.stock-overview-aurora { inset: -24px -28px; }
-
-/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
-   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
-   .el-overlay 的 position: fixed，弹窗打开后看不见 */
-.stock-overview-page .stats-row,
-.stock-overview-page .toolbar-card,
-.stock-overview-page .card {
-  position: relative;
-  z-index: 1;
-}
-
-/* 统计卡 */
-.stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），这里只留布局 */
-.stat-card { padding: 24px; display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; cursor: pointer; transition: transform .15s; }
-.stat-card:hover { transform: translateY(-2px); }
-.stat-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
-.stat-card.shortage::before { background: linear-gradient(180deg, #e74c3c, #c0392b); }
-.stat-card.warning::before { background: linear-gradient(180deg, #f39c12, #e67e22); }
-.stat-card.sufficient::before { background: linear-gradient(180deg, #27ae60, #219a52); }
-.stat-icon-bg { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.stat-card.shortage .stat-icon-bg { background: linear-gradient(135deg, #fdecea, #fadbd8); }
-.stat-card.warning .stat-icon-bg { background: linear-gradient(135deg, #fef5e7, #fdebd0); }
-.stat-card.sufficient .stat-icon-bg { background: linear-gradient(135deg, #e9f7ef, #d5f5e3); }
-.stat-info { flex: 1; }
-.stat-label { font-size: 13px; color: #888; margin-bottom: 4px; }
-.stat-value { font-size: 28px; font-weight: 700; color: #1e1e2d; line-height: 1.2; }
-.stat-sub { font-size: 12px; color: #aaa; margin-top: 2px; }
-
-/* 筛选栏/表格面板：同款渐变玻璃（scoped 覆盖白底） */
-.toolbar-card,
-.card {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-}
-.toolbar-card { padding: 20px 24px; }
-.filter-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.filter-group { display: flex; align-items: center; gap: 8px; }
-.filter-label { font-size: 13px; font-weight: 500; color: #666; white-space: nowrap; }
-.sort-hint { font-size: 12px; color: #aaa; white-space: nowrap; }
-
-/* 卡片和表格 */
-.card { padding: 24px; }
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.card :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  --el-table-striped-bg-color: rgba(255, 255, 255, 0.35);
-  background: transparent;
-}
-
-/* 右侧固定「状态」列：sticky 单元格 background:inherit，行透明时滑到它下面的
-   内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
-.card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-
-.pagination-bar { margin-top: 16px; display: flex; justify-content: flex-end; }
-.value-gold { color: #d4af6e; font-weight: 600; }
-.value-danger { color: #e74c3c; font-weight: 600; }
-.text-muted { color: #ccc; }
-.avg-badge { background: rgba(212,175,110,0.1); color: #d4af6e; font-weight: 500; padding: 2px 8px; border-radius: 6px; font-size: 13px; }
-.status-tag { border-radius: 6px; }
-
-.stock-shortage { color: #e74c3c; background: #fdecea; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
-.stock-warning { color: #f39c12; background: #fef5e7; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
-.stock-sufficient { color: #27ae60; background: #e9f7ef; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
-
-:deep(.anomaly-row .el-table__cell) { background: #fff0f0 !important; }
-
-.in-transit-value { font-weight: 500; font-size: 14px; color: #888; }
-.in-transit-active { color: #27ae60; font-weight: 600; }
-
-.stock-status-label { font-size: 13px; }
-.stock-status-normal { color: #27ae60; }
-.stock-status-urgent { color: #e74c3c; font-weight: 700; }
-
-.stock-status-dialog { padding: 10px 0; }
-.stock-status-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #eee; }
-.stock-status-product { font-weight: 600; font-size: 15px; color: #1e1e2d; }
-</style>
+<style scoped src="./stock-overview.css"></style>

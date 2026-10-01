@@ -7,50 +7,57 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="6">
-        <el-input v-model="filters.keyword" placeholder="搜索姓名 / 电话 / 微信" clearable prefix-icon="Search" @keyup.enter="search" @clear="search" />
-      </el-col>
-      <el-col :span="4">
-        <el-select v-model="filters.intent_level" placeholder="意向等级" clearable style="width: 100%" @change="search">
+    <div ref="panelRef" class="table-card leads-panel">
+      <div class="toolbar">
+        <el-input v-model="filters.keyword" placeholder="搜索姓名 / 电话 / 微信" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="search" @clear="search" />
+        <el-select v-model="filters.intent_level" placeholder="意向等级" clearable class="filter-w-sm" @change="search">
           <el-option v-for="l in ['A', 'B', 'C', 'D']" :key="l" :label="`${l} 级`" :value="l" />
         </el-select>
-      </el-col>
-      <el-col :span="4">
-        <el-input v-model="filters.expo_code" placeholder="展会编码" clearable @keyup.enter="search" @clear="search" />
-      </el-col>
-      <el-col :span="10" class="toolbar-right">
-        <el-select
-          v-if="canReadAll" v-model="filters.store_id" placeholder="全部门店" clearable
-          style="width: 160px" @change="search"
-        >
+        <el-input v-model="filters.expo_code" placeholder="展会编码" clearable class="filter-w-sm" @keyup.enter="search" @clear="search" />
+        <el-select v-if="canReadAll" v-model="filters.store_id" placeholder="全部门店" clearable class="filter-w-sm" @change="search">
           <el-option v-for="s in storeOptions" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
         <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
         <el-tag v-if="quota?.bound" class="quota-badge" :type="quotaTagType" effect="light">
           剩余 {{ quota.remaining }} 张
         </el-tag>
-      </el-col>
-    </el-row>
+      </div>
 
-    <div class="table-card leads-panel">
-      <el-table :data="leads" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column prop="name" label="姓名" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="phone" label="电话" min-width="120" show-overflow-tooltip />
-        <el-table-column label="核心需求" min-width="100">
+      <!-- 操作行：本页无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchLeads"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="leads" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="姓名" min-width="100" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('phone')" prop="phone" label="电话" min-width="120" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('primary-need')" label="核心需求" min-width="100">
           <template #default="{ row }">{{ NEED_LABELS[row.primary_need] || row.primary_need || '-' }}</template>
         </el-table-column>
-        <el-table-column label="体验 / 生成" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('usage')" label="体验 / 生成" min-width="100">
           <template #default="{ row }">{{ row.session_count }} 次 / {{ row.result_count }} 张</template>
         </el-table-column>
-        <el-table-column label="意向等级" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('intent-level')" label="意向等级" min-width="90">
           <template #default="{ row }">
             <el-tag v-if="row.intent_level" size="small" :class="'intent-' + row.intent_level">{{ row.intent_level }} 级</el-tag>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="next_action" label="下一步动作" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="created_at" label="登记时间" min-width="150" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('next-action')" prop="next_action" label="下一步动作" min-width="150" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="登记时间" min-width="150" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
@@ -143,6 +150,8 @@ import { useListPage } from '@/composables/useListPage'
 import { useAuthStore } from '@/stores/auth'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { useStoreQuota } from './composables/useStoreQuota'
 
 const NEED_LABELS = { volume: '发量丰盈', gray_cover: '白发遮盖', style_change: '造型变换' }
@@ -172,7 +181,7 @@ onMounted(async () => {
 
 const {
   loading, list: leads, total, page, pageSize, searchForm: filters,
-  fetchList: fetchLeads, handleSearch: search, handlePageChange, handleSizeChange,
+  fetchList: fetchLeads, handleSearch: search, handleReset: resetFilters, handlePageChange, handleSizeChange,
 } = useListPage(
   async ({ page, page_size, ...form }) => {
     const params = { page, page_size }
@@ -184,6 +193,21 @@ const {
   },
   { searchForm: { keyword: '', intent_level: '', expo_code: '', store_id: '' } },
 )
+
+// columnDefs 只供 TableTools 列显隐面板，模板列保持静态（推广期不配置化渲染）
+const columnDefs = [
+  { key: 'name', label: '姓名' },
+  { key: 'phone', label: '电话' },
+  { key: 'primary-need', label: '核心需求' },
+  { key: 'usage', label: '体验 / 生成' },
+  { key: 'intent-level', label: '意向等级' },
+  { key: 'next-action', label: '下一步动作' },
+  { key: 'created-at', label: '登记时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('expo-leads', columnDefs)
+const hasActiveFilters = computed(() =>
+  Boolean(filters.keyword || filters.intent_level || filters.expo_code || filters.store_id))
 
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -264,7 +288,6 @@ async function handleDelete(row) {
 
 /* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
    会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
-.leads-page .toolbar,
 .leads-page .leads-panel { position: relative; z-index: 1; }
 
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
@@ -291,10 +314,14 @@ async function handleDelete(row) {
 .leads-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .leads-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
-.toolbar { margin-bottom: 16px; }
-.toolbar-right { display: flex; align-items: center; gap: 10px; }
+/* 筛选区/操作行/分页：结构类是全局 .table-card > .toolbar/.action-bar/.pager（app.css），此处只做玻璃皮肤覆写（同 invoice-manage.css） */
+.toolbar { background: rgba(255, 255, 255, 0.4); }
+.action-bar { background: rgba(255, 255, 255, 0.28); }
+
+/* 全屏态：面板自身滚动 */
+.leads-panel:fullscreen { overflow: auto; }
+
 .quota-badge { margin-left: auto; }
-.pager { margin-top: 16px; justify-content: flex-end; }
 .muted { color: var(--text-muted); font-size: 12px; }
 
 /* 意向等级 tag */

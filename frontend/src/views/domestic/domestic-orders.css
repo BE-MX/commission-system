@@ -25,8 +25,6 @@
 .orders-panel :deep(th.el-table-fixed-column--left) { background-color: rgba(246, 239, 226, 0.98); }
 .orders-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--left) { background-color: rgba(245, 236, 220, 0.98); }
 
-.pager { margin: 12px; justify-content: flex-end; }
-
 .info-card {
   padding: 12px 14px;
   border-radius: 10px;

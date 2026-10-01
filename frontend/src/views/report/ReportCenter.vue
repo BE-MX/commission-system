@@ -11,27 +11,42 @@
     <div v-if="!designerMode" class="template-list">
       <div class="card-header" style="margin-bottom: 16px;">
         <span class="header-title">报表模板</span>
-        <GlassButton
-          v-if="authStore.hasAnyPermission(['report:design', 'report:admin'])"
-          variant="primary" left-icon="Plus"
-          @click="showCreateDialog"
-        >
-          新建模板
-        </GlassButton>
       </div>
 
-      <div class="table-card report-panel">
+      <div ref="panelRef" class="table-card report-panel">
+        <div class="action-bar">
+          <GlassButton
+            v-if="authStore.hasAnyPermission(['report:design', 'report:admin'])"
+            variant="primary" left-icon="Plus"
+            @click="showCreateDialog"
+          >
+            新建模板
+          </GlassButton>
+          <TableTools
+            v-model:visible-keys="visibleKeys"
+            v-model:density="density"
+            :columns="columnDefs"
+            :fullscreen="isFullscreen"
+            @refresh="loadTemplates"
+            @fullscreen="toggleFullscreen"
+          />
+        </div>
         <el-table
           :data="templates"
           v-loading="loading"
           border
           class="list-table"
+          :class="densityClass"
+          :max-height="isFullscreen ? undefined : 640"
           style="width: 100%"
         >
-          <el-table-column label="报表编码" prop="report_code" min-width="180" max-width="270" show-overflow-tooltip />
-          <el-table-column label="报表名称" prop="name" min-width="200" max-width="300" show-overflow-tooltip />
-          <el-table-column label="版本" prop="version" min-width="80" max-width="120" />
-          <el-table-column label="状态" min-width="100" max-width="150">
+          <template #empty>
+            <el-empty :image-size="96" description="暂无数据" />
+          </template>
+          <el-table-column v-if="visibleKeys.includes('report-code')" label="报表编码" prop="report_code" min-width="180" max-width="270" show-overflow-tooltip />
+          <el-table-column v-if="visibleKeys.includes('name')" label="报表名称" prop="name" min-width="200" max-width="300" show-overflow-tooltip />
+          <el-table-column v-if="visibleKeys.includes('version')" label="版本" prop="version" min-width="80" max-width="120" />
+          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
               <el-switch
                 v-if="authStore.hasPermission('report:admin')"
@@ -43,7 +58,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="更新时间" min-width="170" max-width="255" show-overflow-tooltip>
+          <el-table-column v-if="visibleKeys.includes('updated-at')" label="更新时间" min-width="170" max-width="255" show-overflow-tooltip>
             <template #default="{ row }">
               {{ formatTime(row.updated_at) }}
             </template>
@@ -193,7 +208,9 @@ import {
   toggleTemplateStatus, getReportTemplate,
 } from '@/api/reportCenter'
 import { useStimulsoft } from '@/composables/useStimulsoft'
+import { useTableView } from '@/composables/useTableView'
 import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
+import TableTools from '@/components/TableTools.vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
 
 const authStore = useAuthStore()
@@ -201,6 +218,17 @@ const { createDesigner } = useStimulsoft()
 
 const loading = ref(false)
 const templates = ref([])
+
+// 列显隐元数据（TableTools 列设置面板数据源，Action Bar Spec）
+const columnDefs = [
+  { key: 'report-code', label: '报表编码' },
+  { key: 'name', label: '报表名称' },
+  { key: 'version', label: '版本' },
+  { key: 'status', label: '状态' },
+  { key: 'updated-at', label: '更新时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('report-center', columnDefs)
 
 // ── 模板 CRUD ────────────────────────────────
 const dialogVisible = ref(false)
@@ -452,98 +480,4 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
-.report-center-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
-  position: relative;
-}
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
-.report-aurora {
-  inset: -24px -28px;
-}
-
-/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
-   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed。
-   designer 分支（第三方设计器本体）仅抬层级，材质不动 */
-.report-center-page .template-list,
-.report-center-page .designer-page {
-  position: relative;
-  z-index: 1;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.header-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1e1e2d;
-}
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.report-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.report-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
-.report-panel :deep(.el-table-fixed-column--right) {
-  background-color: rgba(249, 244, 234, 0.97);
-}
-.report-panel :deep(th.el-table-fixed-column--right) {
-  background-color: rgba(246, 239, 226, 0.98);
-}
-.report-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
-  background-color: rgba(245, 236, 220, 0.98);
-}
-
-.preview-toolbar {
-  display: flex;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-/* Designer 全屏模式 */
-.designer-page {
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - 100px);
-}
-
-.designer-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 0;
-  flex-shrink: 0;
-}
-
-.toolbar-info {
-  flex: 1;
-  font-size: 14px;
-  color: #606266;
-}
-
-.designer-container {
-  flex: 1;
-  min-height: 0;
-}
-</style>
+<style scoped src="./report-center.css"></style>

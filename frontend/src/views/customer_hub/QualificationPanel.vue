@@ -1,17 +1,47 @@
 <template>
   <section class="qualification-panel">
     <el-alert type="info" title="开发资格决定是否值得继续开发；研究质量审核只确认材料是否可用。审核通过不会改变客户归属。" :closable="false" />
-    <div class="toolbar"><el-input v-model="searchForm.keyword" placeholder="搜索待审核客户" clearable @keyup.enter="handleSearch" @clear="handleSearch" /><GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="handleSearch">刷新</GlassButton></div>
     <el-alert v-if="error" type="error" title="资格队列加载失败，请重试。" :closable="false" />
-    <div v-else class="table-card"><el-table v-loading="loading" :data="list" border class="list-table" row-key="research_task_id">
-      <el-table-column prop="customer_name" label="客户" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="scope_label" label="开发方向" min-width="160" show-overflow-tooltip />
-      <el-table-column label="目标匹配分" min-width="120"><template #default="{ row }">{{ row.match_score ?? '未评估' }}</template></el-table-column>
-      <el-table-column label="研究更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at, { seconds: false }) }}</template></el-table-column>
-      <el-table-column class-name="table-action-column" label="操作" min-width="150" max-width="180" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="inspect(row)">{{ row.can_review ? '审阅并决定' : '查看受限原因' }}</GlassButton></template></el-table-column>
-      <template #empty>当前没有待做资格判断的客户；已决定或未到重评时间的客户不会重复出现。</template>
-    </el-table></div>
-    <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="handlePageChange" />
+    <div ref="panelRef" class="table-card">
+      <div class="toolbar">
+        <el-input v-model="searchForm.keyword" placeholder="搜索待审核客户" clearable class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch" />
+        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
+      </div>
+      <!-- 操作行：TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" row-key="research_task_id">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="180" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('scope')" prop="scope_label" label="开发方向" min-width="160" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('match-score')" label="目标匹配分" min-width="120"><template #default="{ row }">{{ row.match_score ?? '未评估' }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('updated')" label="研究更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at, { seconds: false }) }}</template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="150" max-width="180" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="inspect(row)">{{ row.can_review ? '审阅并决定' : '查看受限原因' }}</GlassButton></template></el-table-column>
+      </el-table>
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @size-change="handleSizeChange"
+        @current-change="handlePageChange"
+      />
+    </div>
     <el-drawer class="customer-hub-drawer" v-model="visible" title="开发资格审核" size="min(760px, 100vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
       <div v-loading="context.loading" class="review-body">
         <el-alert v-if="context.error" type="error" title="审核依据加载失败，请重新加载后再决定。" :closable="false"><el-button link @click="reload">重新加载</el-button></el-alert>
@@ -38,6 +68,8 @@ import { computed, reactive, ref, watch } from 'vue'
 import { listQualificationQueue, getQualificationContext, submitQualificationDecision } from '@/api/customerHub'
 import { formatBeijingDateTime, parseApiDateTime } from '@/utils/datetime'
 import { msgSuccess } from '@/utils/feedback'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { createLatestResource } from './customerHubResources'
 import { createSearchJobIdempotencyKey } from './customerHubController'
 import { useOperationsList } from './composables/useOperationsList'
@@ -45,7 +77,16 @@ import ResearchSummary from './ResearchSummary.vue'
 const visible = ref(false), saving = ref(false), saveError = ref(null), taskId = ref(null), requestKey = ref('')
 const context = reactive(createLatestResource(getQualificationContext))
 const form = reactive({ decision: 'approve', reason: '', reviewAfter: '' })
-const { loading, list, total, page, pageSize, searchForm, error, fetchList, handleSearch, handlePageChange } = useOperationsList(listQualificationQueue, { searchForm: { keyword: '' } })
+const { loading, list, total, page, pageSize, searchForm, error, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange } = useOperationsList(listQualificationQueue, { searchForm: { keyword: '' } })
+// 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
+const columnDefs = [
+  { key: 'customer', label: '客户' },
+  { key: 'scope', label: '开发方向' },
+  { key: 'match-score', label: '目标匹配分' },
+  { key: 'updated', label: '研究更新' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('qualification-panel', columnDefs)
+const hasActiveFilters = computed(() => Boolean(searchForm.keyword))
 const needsDate = computed(() => ['defer', 'supplement'].includes(form.decision))
 const canSubmit = computed(() => !context.loading && !context.error && context.data?.can_review && context.data?.research_task_id === taskId.value && form.reason.trim() && (!needsDate.value || (parseApiDateTime(form.reviewAfter)?.getTime() || 0) > Date.now()))
 watch(form, () => { requestKey.value = createSearchJobIdempotencyKey() }, { flush: 'sync' })
@@ -62,4 +103,4 @@ async function save() {
 }
 defineExpose({ refresh: fetchList })
 </script>
-<style scoped>.qualification-panel { display: grid; gap: 14px; }.toolbar { display: flex; gap: 10px; }.toolbar :deep(.el-input) { max-width: 400px; }.review-body { min-height: 160px; }.review-body h2 { margin: 0; font-size: 17px; }.review-body p { color: var(--text-secondary); line-height: 1.6; }.decision-form { margin-top: 20px; }.decision-form :deep(.el-date-editor) { width: 100%; }.hint { color: var(--text-muted); font-size: 12px; }.el-pagination { overflow-x: auto; }</style>
+<style scoped>.qualification-panel { display: grid; gap: 14px; }.review-body { min-height: 160px; }.review-body h2 { margin: 0; font-size: 17px; }.review-body p { color: var(--text-secondary); line-height: 1.6; }.decision-form { margin-top: 20px; }.decision-form :deep(.el-date-editor) { width: 100%; }.hint { color: var(--text-muted); font-size: 12px; }</style>

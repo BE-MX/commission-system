@@ -1,6 +1,7 @@
 <!--
-  列表页标杆模板（标记语言/样式规范）：新列表页复制本文件的结构
-  （table-card / list-table / min-width / GlassButton link / el-tag plain / show-overflow-tooltip）。
+  列表页结构示例（标记语言/样式规范）：table-card（内含 .toolbar 筛选区 / .action-bar 操作行 + TableTools /
+  list-table）+ min-width + max-width / GlassButton link / el-tag plain / show-overflow-tooltip，
+  完整规范见 DESIGN.md「List Page Spec / Action Bar Spec」。
   服务端分页的编排逻辑另见标杆用例 views/expo/ExpoLeads.vue
   （useListPage + utils/feedback + DetailDrawer，2026-07-03 治理 F-2）。
 -->
@@ -13,9 +14,9 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="8">
-        <el-select v-model="currentType" placeholder="选择字典类型" style="width: 100%" @change="onTypeChange">
+    <div ref="panelRef" class="table-card dict-panel">
+      <div class="toolbar">
+        <el-select v-model="currentType" placeholder="选择字典类型" class="filter-w-lg" @change="onTypeChange">
           <el-option
             v-for="t in typeOptions"
             :key="t.type"
@@ -23,23 +24,35 @@
             :value="t.type"
           />
         </el-select>
-      </el-col>
-      <el-col :span="16">
-        <GlassButton v-permission="'dict:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增字典项</GlassButton>
-      </el-col>
-    </el-row>
+        <GlassButton variant="primary" left-icon="Search" @click="fetchItems">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <div class="table-card dict-panel">
-      <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
-        <el-table-column prop="code" label="字典编码" min-width="140" max-width="210" show-overflow-tooltip sortable />
-        <el-table-column prop="label" label="显示名" min-width="140" max-width="210" show-overflow-tooltip sortable />
-        <el-table-column prop="sort" label="排序" min-width="80" max-width="120" sortable />
-        <el-table-column label="状态" min-width="80" max-width="120">
+      <div class="action-bar">
+        <GlassButton v-permission="'dict:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增字典项</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchItems"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" description="暂无数据" />
+        </template>
+        <el-table-column v-if="visibleKeys.includes('code')" prop="code" label="字典编码" min-width="140" max-width="210" show-overflow-tooltip sortable />
+        <el-table-column v-if="visibleKeys.includes('label')" prop="label" label="显示名" min-width="140" max-width="210" show-overflow-tooltip sortable />
+        <el-table-column v-if="visibleKeys.includes('sort')" prop="sort" label="排序" min-width="80" max-width="120" sortable />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" max-width="120">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" max-width="210" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="操作" min-width="240" max-width="360" fixed="right">
           <template #default="{ row }">
             <GlassButton v-permission="'dict:write'" variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
@@ -85,9 +98,18 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getDictTypes, getDictItems, createDictItem, updateDictItem, deleteDictItem } from '@/api/system'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
+// 列显隐元数据（TableTools 面板数据源，不驱动列渲染）
+const columnDefs = [
+  { key: 'code', label: '字典编码' },
+  { key: 'label', label: '显示名' },
+  { key: 'sort', label: '排序' },
+  { key: 'status', label: '状态' },
+  { key: 'remark', label: '备注' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('dict-management', columnDefs)
 
 const typeOptions = ref([])
 const currentType = ref('')
@@ -131,6 +153,12 @@ async function fetchItems() {
 }
 
 function onTypeChange() {
+  fetchItems()
+}
+
+// 类型选择器是必选分类而非可清空筛选：重置=回到首个类型（页面初始默认态）并重载
+function resetFilters() {
+  currentType.value = typeOptions.value[0]?.type || ''
   fetchItems()
 }
 
@@ -208,13 +236,10 @@ onMounted(fetchTypes)
 
 /* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
    el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
-.dict-page .toolbar,
 .dict-page .dict-panel {
   position: relative;
   z-index: 1;
 }
-
-.toolbar { margin-bottom: 16px; }
 
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
 .dict-panel {

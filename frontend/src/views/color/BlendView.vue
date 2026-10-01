@@ -7,39 +7,57 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <div class="filter-bar">
-      <el-select v-model="filters.blend_type" placeholder="混合类型" clearable>
-        <el-option label="钢琴色 (Piano)" value="piano" />
-        <el-option label="渐变 (Ombre)" value="ombre" />
-        <el-option label="画染 (Balayage)" value="balayage" />
-        <el-option label="发根深色 (Rooted)" value="rooted" />
-        <el-option label="三色混编" value="tri-blend" />
-        <el-option label="多色混编" value="multi-blend" />
-      </el-select>
-      <el-select v-model="filters.source" placeholder="来源" clearable>
-        <el-option v-for="s in filterOptions.sources" :key="s" :label="sourceLabel(s)" :value="s" />
-      </el-select>
-      <el-input v-model="filters.keyword" placeholder="搜索编码/名称..." clearable style="width: 200px;" />
-      <GlassButton variant="primary" :left-icon="Search" @click="loadData">查询</GlassButton>
-      <GlassButton variant="secondary" :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
-      <GlassButton v-if="canWrite" variant="success" :left-icon="Plus" @click="openCreate">新增混合色</GlassButton>
-    </div>
+    <!-- 混合色表格：筛选区 + 操作行 + 表格 + 分页同在卡片内（List Page Spec） -->
+    <section ref="panelRef" class="table-card blend-panel">
+      <div class="toolbar">
+        <el-select v-model="filters.blend_type" placeholder="混合类型" clearable class="filter-w-sm">
+          <el-option label="钢琴色 (Piano)" value="piano" />
+          <el-option label="渐变 (Ombre)" value="ombre" />
+          <el-option label="画染 (Balayage)" value="balayage" />
+          <el-option label="发根深色 (Rooted)" value="rooted" />
+          <el-option label="三色混编" value="tri-blend" />
+          <el-option label="多色混编" value="multi-blend" />
+        </el-select>
+        <el-select v-model="filters.source" placeholder="来源" clearable class="filter-w-sm">
+          <el-option v-for="s in filterOptions.sources" :key="s" :label="sourceLabel(s)" :value="s" />
+        </el-select>
+        <el-input v-model="filters.keyword" placeholder="搜索编码/名称..." clearable class="filter-w-md" @keyup.enter="loadData" />
+        <GlassButton variant="primary" :left-icon="Search" @click="loadData">查询</GlassButton>
+        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <section class="table-card blend-panel">
-      <el-table v-loading="loading" :data="blendList" style="width: 100%;" @sort-change="orderSort.onSortChange" border class="list-table">
-      <el-table-column label="综合色" min-width="80">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-if="canWrite" variant="primary" :left-icon="Plus" @click="openCreate">新增混合色</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadData"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table v-loading="loading" :data="blendList" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange" border>
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+      <el-table-column v-if="visibleKeys.includes('preview')" label="综合色" min-width="80">
         <template #default="{ row }">
           <div class="blend-preview" :style="{ backgroundColor: row.computed_hex }"></div>
         </template>
       </el-table-column>
-      <el-table-column prop="blend_code" label="编码" min-width="120" sortable="custom" />
-      <el-table-column prop="display_name" label="名称" sortable="custom" />
-      <el-table-column prop="blend_type" label="类型" min-width="120" sortable="custom">
+      <el-table-column v-if="visibleKeys.includes('blend-code')" prop="blend_code" label="编码" min-width="120" sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('display-name')" prop="display_name" label="名称" sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('blend-type')" prop="blend_type" label="类型" min-width="120" sortable="custom">
         <template #default="{ row }">
           <el-tag size="small">{{ blendTypeLabel(row.blend_type) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="成分" min-width="200">
+      <el-table-column v-if="visibleKeys.includes('components')" label="成分" min-width="200">
         <template #default="{ row }">
           <div class="component-tags">
             <el-tag
@@ -53,30 +71,37 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="source" label="来源" min-width="120">
+      <el-table-column v-if="visibleKeys.includes('source')" prop="source" label="来源" min-width="120">
         <template #default="{ row }">
           {{ sourceLabel(row.source) }}
         </template>
       </el-table-column>
       <el-table-column class-name="table-action-column" label="操作" min-width="180" fixed="right">
         <template #default="{ row }">
-          <el-button @click="openDetail(row)">详情</el-button>
-          <el-button v-if="canWrite" type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button v-if="canAdmin" type="danger" @click="confirmDelete(row)">删除</el-button>
+          <el-button link type="primary" @click="openDetail(row)">
+            <el-icon><View /></el-icon> 详情
+          </el-button>
+          <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">
+            <el-icon><Edit /></el-icon> 编辑
+          </el-button>
+          <el-button v-if="canAdmin" link type="danger" @click="confirmDelete(row)">
+            <el-icon><Delete /></el-icon> 删除
+          </el-button>
         </template>
       </el-table-column>
       </el-table>
-    </section>
 
-    <el-pagination
-      v-if="total > 0"
-      v-model:current-page="page"
-      v-model:page-size="pageSize"
-      :total="total"
-      :page-sizes="[20, 50, 100]"
-      layout="total, sizes, prev, pager, next"
-      @change="loadData"
-    />
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @size-change="handleSizeChange"
+        @current-change="loadData"
+      />
+    </section>
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="formVisible" :title="formTitle" width="700px" destroy-on-close>
@@ -197,7 +222,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus, RefreshLeft, Search } from '@element-plus/icons-vue'
+import { Delete, Edit, Plus, RefreshLeft, Search, View } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   createBlend,
@@ -208,6 +233,8 @@ import {
   updateBlend,
 } from '@/api/color'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import GradientBar from './components/GradientBar.vue'
 
 const authStore = useAuthStore()
@@ -224,6 +251,20 @@ const filterOptions = reactive({ blend_types: [], sources: [] })
 const paletteOptions = ref([])
 
 const filters = reactive({ blend_type: '', source: '', keyword: '' })
+const hasActiveFilters = computed(() => Boolean(filters.blend_type || filters.source || filters.keyword))
+
+// 列显隐元数据：TableTools 列设置面板的数据源（模板列保持静态，操作列不进配置）
+const columnDefs = [
+  { key: 'preview', label: '综合色' },
+  { key: 'blend-code', label: '编码' },
+  { key: 'display-name', label: '名称' },
+  { key: 'blend-type', label: '类型' },
+  { key: 'components', label: '成分' },
+  { key: 'source', label: '来源' },
+]
+// 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('blend-view', columnDefs)
 
 const formVisible = ref(false)
 const formTitle = ref('新增混合色')
@@ -300,6 +341,11 @@ function resetFilters() {
   Object.keys(filters).forEach(k => filters[k] = '')
   page.value = 1
   orderSort.reset()
+  loadData()
+}
+
+function handleSizeChange() {
+  page.value = 1
   loadData()
 }
 
@@ -422,66 +468,4 @@ function positionLabel(p) {
 }
 </script>
 
-<style scoped>
-.blend-page {
-  padding: 20px;
-  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
-  position: relative;
-}
-
-/* 极光外溢一圈，盖住 main-content 的 padding 环（同工作台/发票页） */
-.blend-aurora {
-  inset: -24px -28px;
-}
-
-/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配——
-   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
-.blend-page .filter-bar,
-.blend-page .blend-panel,
-.blend-page .el-pagination {
-  position: relative;
-  z-index: 1;
-}
-
-.filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.blend-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.blend-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
-   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
-.blend-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.blend-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.blend-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-
-.blend-preview { width: 40px; height: 40px; border-radius: 6px; border: 1px solid var(--el-border-color-lighter); }
-.component-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.components-section { padding: 0 12px; }
-.component-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-.weight-summary { margin-top: 12px; text-align: right; }
-.option-color { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 8px; vertical-align: middle; border: 1px solid var(--el-border-color-lighter); }
-.blend-detail { padding: 8px; }
-.detail-header { display: flex; gap: 16px; margin-bottom: 20px; }
-.big-preview { width: 100px; height: 100px; border-radius: 10px; border: 1px solid var(--el-border-color-lighter); flex-shrink: 0; }
-.detail-info h3 { margin: 0 0 8px; font-size: 18px; }
-.detail-info p { margin: 0 0 8px; color: var(--el-text-color-secondary); font-family: monospace; }
-.blend-bar-section { margin-bottom: 20px; }
-.section-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
-.blend-bar-wrapper { height: 40px; border-radius: 8px; overflow: hidden; border: 1px solid var(--el-border-color-lighter); }
-.mini-color { width: 20px; height: 20px; border-radius: 4px; border: 1px solid var(--el-border-color-lighter); }
-</style>
+<style scoped src="./blend-view.css"></style>

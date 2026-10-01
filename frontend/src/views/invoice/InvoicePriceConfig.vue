@@ -13,34 +13,38 @@
         <p>标准参考价矩阵、色型映射、客户价格规则与生产单沉淀产品管理。</p>
       </div>
     </div>
-    <section class="table-card">
+    <section class="price-tabs-panel">
       <el-tabs v-model="activeTab">
         <!-- ── 标准价格表 ── -->
         <el-tab-pane label="标准价格表" name="std">
           <el-tabs v-model="activePriceKind">
             <el-tab-pane label="头发价格" name="hair">
-          <div class="tab-toolbar">
-            <el-select v-model="stdFilter" clearable filterable placeholder="按系列筛选" style="width: 320px" @change="loadStdPrices">
+          <div ref="stdPanelRef" class="table-card price-table-panel">
+          <div class="toolbar">
+            <el-select v-model="stdFilter" clearable filterable placeholder="按系列筛选" class="filter-w-md" @change="loadStdPrices">
               <el-option v-for="s in stdSeriesOptions" :key="s" :label="s" :value="s" />
             </el-select>
+          </div>
+          <div class="action-bar">
             <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="openStdDialog()">新增价格</GlassButton>
             <el-upload v-permission="'invoice:admin'" :show-file-list="false" accept=".xlsx" :http-request="handleImport">
               <GlassButton variant="secondary" :left-icon="Upload">导入价格表 Excel</GlassButton>
             </el-upload>
+            <TableTools v-model:visible-keys="stdVisibleKeys" v-model:density="stdDensity" :columns="stdColumnDefs" :fullscreen="stdIsFullscreen" @refresh="loadStdPrices" @fullscreen="toggleStdFullscreen" />
           </div>
-          <el-table v-loading="stdLoading" :data="stdPrices" border class="list-table">
-            <el-table-column prop="series_grade" label="系列 + 工艺档" min-width="280" show-overflow-tooltip />
-            <el-table-column prop="length" label="长度" min-width="80" />
-            <el-table-column prop="weight_unit" label="克重" min-width="80" />
-            <el-table-column label="色型" min-width="110">
+          <el-table v-loading="stdLoading" :data="stdPrices" border class="list-table" :class="stdDensityClass" :max-height="stdIsFullscreen ? undefined : 640">
+            <el-table-column v-if="stdVisibleKeys.includes('series')" prop="series_grade" label="系列 + 工艺档" min-width="280" show-overflow-tooltip />
+            <el-table-column v-if="stdVisibleKeys.includes('length')" prop="length" label="长度" min-width="80" />
+            <el-table-column v-if="stdVisibleKeys.includes('weight')" prop="weight_unit" label="克重" min-width="80" />
+            <el-table-column v-if="stdVisibleKeys.includes('color-type')" label="色型" min-width="110">
               <template #default="{ row }">
                 <el-tag effect="plain">{{ colorTypeText(row.color_type) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="标准价" min-width="120" align="right">
+            <el-table-column v-if="stdVisibleKeys.includes('price')" label="标准价" min-width="120" align="right">
               <template #default="{ row }">{{ row.currency }} {{ Number(row.price).toFixed(2) }}</template>
             </el-table-column>
-            <el-table-column prop="updated_at" label="更新时间" min-width="170" show-overflow-tooltip />
+            <el-table-column v-if="stdVisibleKeys.includes('updated')" prop="updated_at" label="更新时间" min-width="170" show-overflow-tooltip />
             <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
               <template #default="{ row }">
                 <el-button v-permission="'invoice:admin'" link type="primary" @click="openStdDialog(row)">
@@ -54,6 +58,7 @@
               </template>
             </el-table-column>
           </el-table>
+          </div>
             </el-tab-pane>
             <el-tab-pane label="配件价格" name="accessory" lazy>
               <AccessoryPriceConfig />
@@ -62,13 +67,17 @@
         </el-tab-pane>
         <!-- ── 色型映射 ── -->
         <el-tab-pane label="色型映射" name="colors">
-          <div class="tab-toolbar">
+          <div ref="colorPanelRef" class="table-card price-table-panel">
+          <div class="toolbar">
             <span class="hint">未登记的色号会按命名规则自动推断色型，推断不了则该行显示"无标准价"。</span>
-            <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="colorDialog.visible = true">新增映射</GlassButton>
           </div>
-          <el-table v-loading="colorLoading" :data="colorTypes" border class="list-table">
-            <el-table-column prop="color_code" label="色号" min-width="160" />
-            <el-table-column label="色型" min-width="140">
+          <div class="action-bar">
+            <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="colorDialog.visible = true">新增映射</GlassButton>
+            <TableTools v-model:visible-keys="colorVisibleKeys" v-model:density="colorDensity" :columns="colorColumnDefs" :fullscreen="colorIsFullscreen" @refresh="loadColorTypes" @fullscreen="toggleColorFullscreen" />
+          </div>
+          <el-table v-loading="colorLoading" :data="colorTypes" border class="list-table" :class="colorDensityClass" :max-height="colorIsFullscreen ? undefined : 640">
+            <el-table-column v-if="colorVisibleKeys.includes('code')" prop="color_code" label="色号" min-width="160" />
+            <el-table-column v-if="colorVisibleKeys.includes('type')" label="色型" min-width="140">
               <template #default="{ row }">
                 <el-tag effect="plain">{{ colorTypeText(row.color_type) }}</el-tag>
               </template>
@@ -82,28 +91,34 @@
               </template>
             </el-table-column>
           </el-table>
+          </div>
         </el-tab-pane>
         <!-- ── 客户价格规则 ── -->
         <el-tab-pane label="客户价格规则" name="rules">
-          <div class="tab-toolbar">
-            <el-input v-model="ruleKeyword" clearable placeholder="搜索客户" style="width: 240px" @keyup.enter="loadRules" />
-            <GlassButton variant="secondary" :left-icon="Search" @click="loadRules">筛选</GlassButton>
-            <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="openRuleDialog()">新增规则</GlassButton>
+          <div ref="rulePanelRef" class="table-card price-table-panel">
+          <div class="toolbar">
+            <el-input v-model="ruleKeyword" clearable placeholder="搜索客户" class="filter-w-md" @keyup.enter="loadRules" />
+            <GlassButton variant="primary" :left-icon="Search" @click="loadRules">查询</GlassButton>
+            <GlassButton variant="secondary" left-icon="RefreshLeft" @click="resetRuleFilter">重置</GlassButton>
           </div>
-          <el-table v-loading="ruleLoading" :data="rules" border class="list-table">
-            <el-table-column prop="customer_name" label="客户" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="customer_id" label="客户 ID" min-width="140" show-overflow-tooltip />
-            <el-table-column label="调价方式" min-width="200">
+          <div class="action-bar">
+            <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="openRuleDialog()">新增规则</GlassButton>
+            <TableTools v-model:visible-keys="ruleVisibleKeys" v-model:density="ruleDensity" :columns="ruleColumnDefs" :fullscreen="ruleIsFullscreen" @refresh="loadRules" @fullscreen="toggleRuleFullscreen" />
+          </div>
+          <el-table v-loading="ruleLoading" :data="rules" border class="list-table" :class="ruleDensityClass" :max-height="ruleIsFullscreen ? undefined : 640">
+            <el-table-column v-if="ruleVisibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="220" show-overflow-tooltip />
+            <el-table-column v-if="ruleVisibleKeys.includes('customer-id')" prop="customer_id" label="客户 ID" min-width="140" show-overflow-tooltip />
+            <el-table-column v-if="ruleVisibleKeys.includes('adjust')" label="调价方式" min-width="200">
               <template #default="{ row }">
                 {{ ruleText(row) }}
               </template>
             </el-table-column>
-            <el-table-column label="启用" min-width="80">
+            <el-table-column v-if="ruleVisibleKeys.includes('enabled')" label="启用" min-width="80">
               <template #default="{ row }">
                 <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">{{ row.enabled ? '启用' : '停用' }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
+            <el-table-column v-if="ruleVisibleKeys.includes('remark')" prop="remark" label="备注" min-width="180" show-overflow-tooltip />
             <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
               <template #default="{ row }">
                 <el-button v-permission="'invoice:admin'" link type="primary" @click="openRuleDialog(row)">
@@ -117,28 +132,35 @@
               </template>
             </el-table-column>
           </el-table>
+          </div>
         </el-tab-pane>
         <!-- ── 自定义产品 ── -->
         <el-tab-pane label="生产单沉淀产品" name="custom">
-          <div class="tab-toolbar">
-            <el-input v-model="customKeyword" clearable placeholder="搜索产品名/型号" style="width: 260px" @keyup.enter="loadCustom" />
-            <GlassButton variant="secondary" :left-icon="Search" @click="loadCustom">筛选</GlassButton>
-            <GlassButton v-permission="'invoice:admin'" variant="secondary" :left-icon="Refresh" @click="runReconcile">与 OKKI 产品库对账回填</GlassButton>
+          <div ref="customPanelRef" class="table-card price-table-panel">
+          <div class="toolbar">
+            <el-input v-model="customKeyword" clearable placeholder="搜索产品名/型号" class="filter-w-md" @keyup.enter="loadCustom" />
+            <GlassButton variant="primary" :left-icon="Search" @click="loadCustom">查询</GlassButton>
+            <GlassButton variant="secondary" left-icon="RefreshLeft" @click="resetCustomFilter">重置</GlassButton>
           </div>
-          <el-table v-loading="customLoading" :data="customProducts" border class="list-table">
-            <el-table-column prop="product_name" label="产品名" min-width="300" show-overflow-tooltip />
-            <el-table-column prop="model" label="Model" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="color" label="Color" min-width="110" />
-            <el-table-column prop="size" label="Length" min-width="90" />
-            <el-table-column prop="unit" label="Unit" min-width="90" />
-            <el-table-column prop="use_count" label="使用次数" min-width="90" align="right" />
-            <el-table-column label="OKKI 关联" min-width="150">
+          <div class="action-bar">
+            <GlassButton v-permission="'invoice:admin'" variant="secondary" :left-icon="Refresh" @click="runReconcile">与 OKKI 产品库对账回填</GlassButton>
+            <TableTools v-model:visible-keys="customVisibleKeys" v-model:density="customDensity" :columns="customColumnDefs" :fullscreen="customIsFullscreen" @refresh="loadCustom" @fullscreen="toggleCustomFullscreen" />
+          </div>
+          <el-table v-loading="customLoading" :data="customProducts" border class="list-table" :class="customDensityClass" :max-height="customIsFullscreen ? undefined : 640">
+            <el-table-column v-if="customVisibleKeys.includes('name')" prop="product_name" label="产品名" min-width="300" show-overflow-tooltip />
+            <el-table-column v-if="customVisibleKeys.includes('model')" prop="model" label="Model" min-width="140" show-overflow-tooltip />
+            <el-table-column v-if="customVisibleKeys.includes('color')" prop="color" label="Color" min-width="110" />
+            <el-table-column v-if="customVisibleKeys.includes('size')" prop="size" label="Length" min-width="90" />
+            <el-table-column v-if="customVisibleKeys.includes('unit')" prop="unit" label="Unit" min-width="90" />
+            <el-table-column v-if="customVisibleKeys.includes('count')" prop="use_count" label="使用次数" min-width="90" align="right" />
+            <el-table-column v-if="customVisibleKeys.includes('okki')" label="OKKI 关联" min-width="150">
               <template #default="{ row }">
                 <el-tag v-if="row.okki_product_id" type="success" effect="plain">已关联 {{ row.okki_product_id }}</el-tag>
                 <el-tag v-else type="info" effect="plain">待 OKKI 建品</el-tag>
               </template>
             </el-table-column>
           </el-table>
+          </div>
         </el-tab-pane>
       </el-tabs>
     </section>
@@ -240,9 +262,12 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Delete, Edit, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import { customerLabel } from './composables/useInvoiceEditor'
 import AccessoryPriceConfig from './components/AccessoryPriceConfig.vue'
+import { COLOR_TYPE_TEXT, stdColumnDefs, colorColumnDefs, ruleColumnDefs, customColumnDefs, emptyStd, emptyRule, colorTypeText, ruleText } from './invoicePricePresentation'
 import {
   deleteColorType,
   deleteCustomerRule,
@@ -259,10 +284,24 @@ import {
   upsertStdPrice,
 } from '@/api/invoice'
 
-const COLOR_TYPE_TEXT = { solid: '纯色 Solid', piano: '钢琴色 Piano', ombre: '渐变 Ombre', balayage: '巴拉雅奇 Balayage' }
-
 const activeTab = ref('std')
 const activePriceKind = ref('hair')
+const {
+  density: stdDensity, densityClass: stdDensityClass, visibleKeys: stdVisibleKeys,
+  panelRef: stdPanelRef, isFullscreen: stdIsFullscreen, toggleFullscreen: toggleStdFullscreen,
+} = useTableView('invoice-standard-prices', stdColumnDefs)
+const {
+  density: colorDensity, densityClass: colorDensityClass, visibleKeys: colorVisibleKeys,
+  panelRef: colorPanelRef, isFullscreen: colorIsFullscreen, toggleFullscreen: toggleColorFullscreen,
+} = useTableView('invoice-color-types', colorColumnDefs)
+const {
+  density: ruleDensity, densityClass: ruleDensityClass, visibleKeys: ruleVisibleKeys,
+  panelRef: rulePanelRef, isFullscreen: ruleIsFullscreen, toggleFullscreen: toggleRuleFullscreen,
+} = useTableView('invoice-customer-rules', ruleColumnDefs)
+const {
+  density: customDensity, densityClass: customDensityClass, visibleKeys: customVisibleKeys,
+  panelRef: customPanelRef, isFullscreen: customIsFullscreen, toggleFullscreen: toggleCustomFullscreen,
+} = useTableView('invoice-custom-products', customColumnDefs)
 
 // 标准价
 const stdLoading = ref(false)
@@ -288,6 +327,8 @@ const ruleDialog = reactive({ visible: false, customer: null, form: emptyRule() 
 const customLoading = ref(false)
 const customProducts = ref([])
 const customKeyword = ref('')
+function resetRuleFilter() { ruleKeyword.value = ''; loadRules() }
+function resetCustomFilter() { customKeyword.value = ''; loadCustom() }
 
 onMounted(() => {
   loadStdPrices()
@@ -295,25 +336,6 @@ onMounted(() => {
   loadRules()
   loadCustom()
 })
-
-function emptyStd() {
-  return { id: null, series_grade: '', length: '', weight_unit: '', color_type: 'solid', price: null, currency: 'USD' }
-}
-
-function emptyRule() {
-  return { id: null, customer_id: '', customer_name: '', adjust_type: 'fixed', adjust_value: 0, enabled: true, remark: '' }
-}
-
-function colorTypeText(key) {
-  return COLOR_TYPE_TEXT[key] || key
-}
-
-function ruleText(row) {
-  const sign = Number(row.adjust_value) >= 0 ? '+' : ''
-  return row.adjust_type === 'percent'
-    ? `标准价 ${sign}${Number(row.adjust_value)}%`
-    : `标准价 ${sign}${Number(row.adjust_value)}（固定额）`
-}
 
 // ── 标准价 ──────────────────────────────────────────
 

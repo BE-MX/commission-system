@@ -5,7 +5,6 @@
         <h1>AI 优化配置</h1>
         <p>配置提示词、模型、允许访问的来源知识库及适用目标库。系统安全规则不能被业务提示词覆盖。</p>
       </div>
-      <GlassButton v-permission="'knowledge_ai:admin'" variant="primary" left-icon="Plus" @click="openCreate">新建方案</GlassButton>
     </header>
 
     <section class="summary-grid">
@@ -15,20 +14,34 @@
       <article><span>知识库</span><strong>{{ libraries.length }}</strong></article>
     </section>
 
-    <section class="table-card settings-panel">
-      <el-table :data="profiles" class="list-table" border v-loading="loading">
-        <el-table-column prop="name" label="方案名称" min-width="170" show-overflow-tooltip />
-        <el-table-column prop="preset_name" label="AI Preset" min-width="170" show-overflow-tooltip />
-        <el-table-column label="知识范围" min-width="180">
+    <section ref="panelRef" class="table-card settings-panel">
+      <div class="action-bar">
+        <GlassButton v-permission="'knowledge_ai:admin'" variant="primary" left-icon="Plus" @click="openCreate">新建方案</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="load"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table :data="profiles" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border v-loading="loading">
+        <template #empty>
+          <el-empty :image-size="96" description="暂无数据" />
+        </template>
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="方案名称" min-width="170" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('preset')" prop="preset_name" label="AI Preset" min-width="170" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('scope')" label="知识范围" min-width="180">
           <template #default="{ row }">来源 {{ row.source_library_ids.length }} 个 · 目标 {{ row.target_library_ids.length }} 个</template>
         </el-table-column>
-        <el-table-column label="安全设置" min-width="190">
+        <el-table-column v-if="visibleKeys.includes('security')" label="安全设置" min-width="190">
           <template #default="{ row }">
             <el-tag size="small" effect="plain">{{ row.allow_cross_library ? '允许跨库' : '仅同库' }}</el-tag>
             <el-tag size="small" effect="plain" :type="row.require_citations ? 'success' : 'info'">{{ row.require_citations ? '要求引用' : '引用可选' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="版本/状态" min-width="130">
+        <el-table-column v-if="visibleKeys.includes('version-status')" label="版本/状态" min-width="130">
           <template #default="{ row }">v{{ row.config_version }} · {{ row.is_enabled ? '启用' : '停用' }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="240">
@@ -127,11 +140,24 @@ import {
 } from '@/api/knowledge'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 
 const profiles = ref([])
 const presets = ref([])
 const libraries = ref([])
 const loading = ref(false)
+
+// 列显隐元数据（TableTools 列设置面板数据源，Action Bar Spec）
+const columnDefs = [
+  { key: 'name', label: '方案名称' },
+  { key: 'preset', label: 'AI Preset' },
+  { key: 'scope', label: '知识范围' },
+  { key: 'security', label: '安全设置' },
+  { key: 'version-status', label: '版本/状态' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('knowledge-ai-settings', columnDefs)
 const dialog = ref(false)
 const saving = ref(false)
 const testDialog = ref(false)

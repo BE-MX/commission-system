@@ -62,85 +62,91 @@
       </div>
     </section>
 
-    <!-- 筛选栏 -->
-    <el-row :gutter="12" class="toolbar" align="middle">
-      <el-col :span="4">
-        <el-input v-model="keyword" placeholder="运单号 / 收件人" clearable @keyup.enter="fetchList" @clear="fetchList">
-          <template #prefix><el-icon><Search /></el-icon></template>
-        </el-input>
-      </el-col>
-      <el-col :span="3">
-        <el-select v-model="statusFilter" placeholder="状态" clearable @change="handleStatusFilterChange">
-          <el-option label="待查询" value="pending" />
-          <el-option label="运输中" value="in_transit" />
-          <el-option label="清关中" value="customs" />
-          <el-option label="派送中" value="out_for_delivery" />
-          <el-option label="已签收" value="delivered" />
-          <el-option label="异常" value="exception" />
-          <el-option label="已退回" value="returned" />
-        </el-select>
-      </el-col>
-      <el-col :span="3">
-        <el-select v-model="carrierFilter" placeholder="物流商" clearable @change="fetchList">
-          <el-option label="DHL" value="DHL" />
-          <el-option label="FedEx" value="FEDEX" />
-          <el-option label="UPS" value="UPS" />
-          <el-option label="TNT" value="TNT" />
-        </el-select>
-      </el-col>
-      <el-col :span="4">
-        <el-select v-model="activeFilter" placeholder="跟踪状态" clearable @change="fetchList">
-          <el-option label="跟踪中" value="1" />
-          <el-option label="已结束" value="0" />
-        </el-select>
-      </el-col>
-      <el-col :span="2">
-        <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
-      </el-col>
-      <el-col :span="8" style="text-align:right">
-        <GlassButton v-permission="'tracking:write'" left-icon="Refresh" @click="handleScanStaging">扫描暂存</GlassButton>
-        <GlassButton v-permission="'tracking:write'" left-icon="Loading" @click="handlePoll">批量轮询</GlassButton>
-      </el-col>
-    </el-row>
+    <!-- 筛选栏 + 操作行 + 表格 + 分页统一收进表格卡片（List Page Spec / Action Bar Spec） -->
+    <div ref="panelRef" class="table-card tracking-panel">
+    <div class="toolbar">
+      <el-input v-model="keyword" placeholder="运单号 / 收件人" clearable class="filter-w-md" @keyup.enter="fetchList" @clear="fetchList">
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <el-select v-model="statusFilter" placeholder="状态" clearable class="filter-w-sm" @change="handleStatusFilterChange">
+        <el-option label="待查询" value="pending" />
+        <el-option label="运输中" value="in_transit" />
+        <el-option label="清关中" value="customs" />
+        <el-option label="派送中" value="out_for_delivery" />
+        <el-option label="已签收" value="delivered" />
+        <el-option label="异常" value="exception" />
+        <el-option label="已退回" value="returned" />
+      </el-select>
+      <el-select v-model="carrierFilter" placeholder="物流商" clearable class="filter-w-sm" @change="fetchList">
+        <el-option label="DHL" value="DHL" />
+        <el-option label="FedEx" value="FEDEX" />
+        <el-option label="UPS" value="UPS" />
+        <el-option label="TNT" value="TNT" />
+      </el-select>
+      <el-select v-model="activeFilter" placeholder="跟踪状态" clearable class="filter-w-sm" @change="fetchList">
+        <el-option label="跟踪中" value="1" />
+        <el-option label="已结束" value="0" />
+      </el-select>
+      <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
+      <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+    </div>
 
-    <!-- 表格 -->
-    <div ref="tableCardRef" class="table-card tracking-panel">
+    <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+    <div class="action-bar">
+      <GlassButton v-permission="'tracking:write'" variant="secondary" left-icon="Refresh" @click="handleScanStaging">扫描暂存</GlassButton>
+      <GlassButton v-permission="'tracking:write'" variant="secondary" left-icon="Loading" @click="handlePoll">批量轮询</GlassButton>
+      <TableTools
+        v-model:visible-keys="visibleKeys"
+        v-model:density="density"
+        :columns="columnDefs"
+        :fullscreen="isFullscreen"
+        @refresh="fetchList"
+        @fullscreen="toggleFullscreen"
+      />
+    </div>
+
     <el-table
       ref="tableRef"
       :data="tableData"
       v-loading="loading"
-      :max-height="tableMaxHeight"
+      :max-height="isFullscreen ? undefined : 640"
       @sort-change="orderSort.onSortChange"
       class="list-table"
+      :class="densityClass"
       border
     >
-      <el-table-column prop="waybill_no" label="运单号" min-width="140" max-width="200" show-overflow-tooltip sortable="custom">
+      <template #empty>
+        <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的运单' : '暂无数据'">
+          <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+        </el-empty>
+      </template>
+      <el-table-column v-if="visibleKeys.includes('waybill-no')" prop="waybill_no" label="运单号" min-width="140" max-width="200" show-overflow-tooltip sortable="custom">
         <template #default="{ row }">
           <GlassButton variant="link" class="primary-link" @click="goDetail(row)">{{ row.waybill_no }}</GlassButton>
         </template>
       </el-table-column>
-      <el-table-column prop="carrier_name" label="物流商" min-width="100" max-width="140" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="receiver_name" label="收件人" min-width="110" max-width="170" show-overflow-tooltip />
-      <el-table-column prop="receiver_country" label="国家" min-width="90" max-width="130" show-overflow-tooltip />
-      <el-table-column prop="current_status" label="状态" min-width="110" max-width="150" sortable="custom">
+      <el-table-column v-if="visibleKeys.includes('carrier-name')" prop="carrier_name" label="物流商" min-width="100" max-width="140" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('receiver-name')" prop="receiver_name" label="收件人" min-width="110" max-width="170" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('receiver-country')" prop="receiver_country" label="国家" min-width="90" max-width="130" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('current-status')" prop="current_status" label="状态" min-width="110" max-width="150" sortable="custom">
         <template #default="{ row }">
           <el-tag :type="statusTagType(row.current_status)" size="small" effect="plain">
             {{ statusText(row.current_status) }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="current_status_text" label="最新动态" min-width="190" max-width="340" show-overflow-tooltip />
-      <el-table-column prop="current_location" label="当前位置" min-width="130" max-width="220" show-overflow-tooltip />
-      <el-table-column label="预计送达" min-width="90" max-width="130" show-overflow-tooltip>
+      <el-table-column v-if="visibleKeys.includes('current-status-text')" prop="current_status_text" label="最新动态" min-width="190" max-width="340" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('current-location')" prop="current_location" label="当前位置" min-width="130" max-width="220" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('estimated-delivery')" label="预计送达" min-width="90" max-width="130" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.estimated_delivery_date ? fmtDateShort(row.estimated_delivery_date) : '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="最新时间" min-width="160" max-width="200" show-overflow-tooltip>
+      <el-table-column v-if="visibleKeys.includes('last-event-time')" label="最新时间" min-width="160" max-width="200" show-overflow-tooltip>
         <template #default="{ row }">{{ row.last_event_time || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="dingtalk_user_name" label="提交人" min-width="100" max-width="140" show-overflow-tooltip />
-      <el-table-column label="短链接" min-width="100" max-width="140">
+      <el-table-column v-if="visibleKeys.includes('dingtalk-user-name')" prop="dingtalk_user_name" label="提交人" min-width="100" max-width="140" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('short-link')" label="短链接" min-width="100" max-width="140">
         <template #default="{ row }">
           <GlassButton v-if="row.short_link" variant="link" left-icon="CopyDocument" @click="copyLink(row.short_link)">
             复制
@@ -148,7 +154,7 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="跟踪" min-width="110" max-width="150">
+      <el-table-column v-if="visibleKeys.includes('tracking-active')" label="跟踪" min-width="110" max-width="150">
         <template #default="{ row }">
           <el-tag :type="row.is_active ? 'success' : 'info'" size="small" effect="plain">
             {{ row.is_active ? '进行中' : '已结束' }}
@@ -172,44 +178,40 @@
         </template>
       </el-table-column>
     </el-table>
-    </div>
 
     <el-pagination
-      class="pagination"
+      class="pager"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
-      layout="total, prev, pager, next, sizes"
+      layout="total, sizes, prev, pager, next"
       :page-sizes="[20, 50, 100]"
       @current-change="fetchList"
-      @size-change="fetchList"
+      @size-change="handleSizeChange"
     />
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getShipmentList, getTrackingStats, refreshShipment, deleteShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTrackingTableView } from './composables/useTrackingTableView'
+import TableTools from '@/components/TableTools.vue'
 import { formatBeijingDate, formatBeijingDateTime } from '@/utils/datetime'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const orderSort = useTableSort()
 
-const tableCardRef = ref()
-const tableRef = ref()
-const tableMaxHeight = ref(400)
-let resizeObserver = null
+// 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）
+const { columnDefs, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTrackingTableView()
 
-function updateTableHeight() {
-  if (!tableCardRef.value) return
-  const h = tableCardRef.value.clientHeight
-  if (h > 50) tableMaxHeight.value = h
-}
+const tableRef = ref()
 
 const stats = ref(null)
 const lastUpdated = ref('')
@@ -267,6 +269,24 @@ function getProgress(key) {
   if (!totalCount) return 0
   const v = stats.value?.[key] || 0
   return Math.min(Math.round((v / totalCount) * 100), 100)
+}
+
+const hasActiveFilters = computed(() => Boolean(keyword.value || statusFilter.value || carrierFilter.value || activeFilter.value))
+
+// 重置 = 清空筛选（含看板高亮）+ 回第 1 页 + 重新加载
+function resetFilters() {
+  keyword.value = ''
+  statusFilter.value = ''
+  carrierFilter.value = ''
+  activeFilter.value = ''
+  activeKanban.value = ''
+  page.value = 1
+  fetchList()
+}
+
+function handleSizeChange() {
+  page.value = 1
+  fetchList()
 }
 
 function handleKanbanClick(item) {
@@ -426,228 +446,4 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.tracking-page {
-  height: calc(100vh - 100px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
-  position: relative;
-}
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
-.tracking-aurora {
-  inset: -24px -28px;
-}
-
-/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
-   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
-.tracking-page .kanban,
-.tracking-page .toolbar,
-.tracking-page .tracking-panel,
-.tracking-page .pagination {
-  position: relative;
-  z-index: 1;
-}
-
-.toolbar { margin-bottom: 16px; flex-shrink: 0; }
-.table-card { flex: 1; overflow: hidden; }
-.pagination { margin-top: 16px; justify-content: flex-end; flex-shrink: 0; }
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
-.tracking-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.tracking-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
-   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
-.tracking-panel :deep(.el-table-fixed-column--right) {
-  background-color: rgba(249, 244, 234, 0.97);
-}
-.tracking-panel :deep(th.el-table-fixed-column--right) {
-  background-color: rgba(246, 239, 226, 0.98);
-}
-.tracking-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
-  background-color: rgba(245, 236, 220, 0.98);
-}
-
-/* ===== 看板：运单状态概览 ===== */
-.kanban {
-  margin-bottom: 14px;
-  flex-shrink: 0;
-}
-.kanban-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 2px 8px;
-}
-.kanban-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.kanban-title h3 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: #1f2937;
-  letter-spacing: 0.2px;
-}
-.kanban-accent {
-  width: 3px;
-  height: 14px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #D4941C 0%, #B8860B 100%);
-}
-.kanban-realtime {
-  font-size: 10px;
-  color: #6b7280;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 999px;
-  padding: 1px 8px;
-  line-height: 14px;
-}
-.kanban-updated {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  color: #9ca3af;
-}
-.kanban-updated .el-icon {
-  font-size: 11px;
-}
-
-.kanban-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.kanban-card {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid;
-  border-radius: 10px;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-  opacity: 0;
-  transform: translateY(10px);
-  animation: kanbanIn 0.4s ease forwards;
-}
-.kanban-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
-}
-.kanban-card.is-active {
-  transform: translateY(-2px) scale(1.01);
-}
-
-@keyframes kanbanIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.kanban-card__bg-icon {
-  position: absolute;
-  right: -6px;
-  bottom: -8px;
-  opacity: 0.07;
-  transition: transform 0.3s ease, opacity 0.3s ease;
-  pointer-events: none;
-}
-.kanban-card__bg-icon .el-icon {
-  font-size: 54px;
-}
-.kanban-card:hover .kanban-card__bg-icon {
-  transform: scale(1.08) rotate(3deg);
-  opacity: 0.1;
-}
-
-.kanban-card__inner {
-  position: relative;
-  z-index: 1;
-}
-.kanban-card__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-.kanban-card__icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.25s ease;
-}
-.kanban-card__icon .el-icon {
-  font-size: 13px;
-}
-.kanban-card:hover .kanban-card__icon {
-  transform: scale(1.08);
-}
-
-.kanban-card__value {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  margin-bottom: 4px;
-}
-.kanban-card__value .value {
-  font-size: 20px;
-  font-weight: 700;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  letter-spacing: -0.4px;
-  line-height: 1.1;
-}
-.kanban-card__value .desc {
-  font-size: 10px;
-  color: #6b7280;
-}
-
-.kanban-card__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-.kanban-card__foot .label {
-  font-size: 11px;
-  font-weight: 500;
-  color: #374151;
-}
-.kanban-card__foot .progress {
-  width: 32px;
-  height: 3px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.6);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.kanban-card__foot .progress__fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  transition: width 0.6s ease;
-}
-</style>
+<style scoped src="./tracking-list.css"></style>

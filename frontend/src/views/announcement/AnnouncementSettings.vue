@@ -40,13 +40,15 @@
         <el-button :icon="Check" type="primary" @click="saveMembers">保存成员权限</el-button>
       </el-tab-pane>
       <el-tab-pane label="投递记录" name="deliveries">
-        <el-button :icon="Refresh" @click="loadDeliveries">刷新记录</el-button>
-        <div class="table-card">
-          <el-table :data="deliveries" class="list-table" border>
-            <el-table-column prop="source_key" label="来源" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="sequence" label="分片" min-width="70" />
-            <el-table-column label="状态" min-width="120"><template #default="{ row }">{{ deliveryStatuses[row.status] }}</template></el-table-column>
-            <el-table-column prop="error" label="处理说明" min-width="180" show-overflow-tooltip />
+        <div ref="panelRef" class="table-card">
+          <div class="action-bar">
+            <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="loadDeliveries" @fullscreen="toggleFullscreen" />
+          </div>
+          <el-table :data="deliveries" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border>
+            <el-table-column v-if="visibleKeys.includes('source')" prop="source_key" label="来源" min-width="160" show-overflow-tooltip />
+            <el-table-column v-if="visibleKeys.includes('sequence')" prop="sequence" label="分片" min-width="70" />
+            <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120"><template #default="{ row }">{{ deliveryStatuses[row.status] }}</template></el-table-column>
+            <el-table-column v-if="visibleKeys.includes('error')" prop="error" label="处理说明" min-width="180" show-overflow-tooltip />
             <el-table-column label="操作" min-width="230" class-name="table-action-column"><template #default="{ row }">
               <el-button v-if="row.status === 'failed'" :icon="Refresh" link type="primary" @click="retry(row)">重试</el-button>
               <template v-if="row.status === 'uncertain'">
@@ -67,12 +69,22 @@
 import { onMounted, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { Plus, Check, Promotion, View, Delete, Refresh } from '@element-plus/icons-vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { announcementApi as api } from '@/api/announcement'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import { deliveryStatuses } from './presentation.js'
 const emit = defineEmits(['updated'])
 const config = ref({ initialized: false }), loading = ref(false), saving = ref(false), tab = ref('config')
 const categories = ref([]), members = ref([]), people = ref([]), deliveries = ref([])
+const columnDefs = [
+  { key: 'source', label: '来源' },
+  { key: 'sequence', label: '分片' },
+  { key: 'status', label: '状态' },
+  { key: 'error', label: '处理说明' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('announcement-deliveries', columnDefs)
 const newCategory = ref(''), newMember = ref(null), testKey = ref('')
 const roles = { viewer: '查看', editor: '编辑', reviewer: '审核', admin: '管理' }
 async function load() {
@@ -121,6 +133,7 @@ onMounted(load)
 
 <style scoped>
 .settings { display: grid; gap: 16px; }
+.table-card:fullscreen { overflow: auto; }
 .config-form { margin-top: 20px; }
 .actions, .category-row, .member-row { display: flex; align-items: center; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
 .actions .el-input { max-width: 320px; }

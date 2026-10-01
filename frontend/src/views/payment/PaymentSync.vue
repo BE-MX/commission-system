@@ -72,60 +72,71 @@
 
     <!-- 已同步回款列表 -->
     <el-card shadow="never" class="payment-panel">
-      <template #header>
-        <el-row :gutter="16" align="middle">
-          <el-col :span="6">
-            <el-input v-model="listKeyword" placeholder="搜索" clearable @keyup.enter="fetchPayments" @clear="fetchPayments">
-              <template #prefix><el-icon><Search /></el-icon></template>
-            </el-input>
-          </el-col>
-          <el-col :span="2">
-            <GlassButton left-icon="Search" @click="fetchPayments">查询</GlassButton>
-          </el-col>
-        </el-row>
-      </template>
+      <div ref="panelRef" class="table-card">
+      <div class="toolbar">
+        <el-input v-model="listKeyword" placeholder="搜索" clearable class="filter-w-md" @keyup.enter="searchPayments" @clear="searchPayments">
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+        <GlassButton variant="primary" left-icon="Search" @click="searchPayments">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetListFilter">重置</GlassButton>
+      </div>
 
-      <div class="table-card">
-      <el-table ref="tableRef" :data="paymentList" v-loading="listLoading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
-        <el-table-column prop="payment_id" label="回款ID" min-width="180" max-width="270" show-overflow-tooltip />
-        <el-table-column prop="order_id" label="订单ID" min-width="180" max-width="270" show-overflow-tooltip />
-        <el-table-column prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="payment_date" label="回款日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="payment_amount" label="回款金额(USD)" min-width="130" max-width="200" sortable="custom">
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchPayments"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="paymentList" v-loading="listLoading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange">
+        <template #empty>
+          <el-empty :image-size="96" :description="listKeyword ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="listKeyword" left-icon="RefreshLeft" @click="resetListFilter">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('payment-id')" prop="payment_id" label="回款ID" min-width="180" max-width="270" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单ID" min-width="180" max-width="270" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('payment-date')" prop="payment_date" label="回款日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('payment-amount')" prop="payment_amount" label="回款金额(USD)" min-width="130" max-width="200" sortable="custom">
           <template #default="{ row }">{{ formatAmount(row.payment_amount) }}</template>
         </el-table-column>
-        <el-table-column prop="service_fee" label="服务费" min-width="110" max-width="170">
+        <el-table-column v-if="visibleKeys.includes('service-fee')" prop="service_fee" label="服务费" min-width="110" max-width="170">
           <template #default="{ row }">{{ formatAmount(row.service_fee) }}</template>
         </el-table-column>
-        <el-table-column prop="exchange_rate" label="汇率" min-width="90" max-width="140">
+        <el-table-column v-if="visibleKeys.includes('exchange-rate')" prop="exchange_rate" label="汇率" min-width="90" max-width="140">
           <template #default="{ row }">{{ formatAmount(row.exchange_rate, 4) }}</template>
         </el-table-column>
-        <el-table-column prop="real_amount_rmb" label="回款金额(RMB)" min-width="140" max-width="210">
+        <el-table-column v-if="visibleKeys.includes('real-amount-rmb')" prop="real_amount_rmb" label="回款金额(RMB)" min-width="140" max-width="210">
           <template #default="{ row }">{{ formatAmount(row.real_amount_rmb) }}</template>
         </el-table-column>
-        <el-table-column label="是否已计算" min-width="100" max-width="150">
+        <el-table-column v-if="visibleKeys.includes('is-calculated')" label="是否已计算" min-width="100" max-width="150">
           <template #default="{ row }">
             <el-tag :type="row.is_calculated ? 'success' : 'info'" size="small" effect="plain">
               {{ row.is_calculated ? '是' : '否' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="所属批次" min-width="120" max-width="180" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('batch-id')" label="所属批次" min-width="120" max-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.batch_id || '-' }}</template>
         </el-table-column>
       </el-table>
-      </div>
 
       <el-pagination
-        class="pagination"
+        class="pager"
         v-model:current-page="listPage"
         v-model:page-size="listPageSize"
         :total="listTotal"
-        layout="total, prev, pager, next, sizes"
+        layout="total, sizes, prev, pager, next"
         :page-sizes="[20, 50, 100]"
         @current-change="fetchPayments"
-        @size-change="fetchPayments"
+        @size-change="handleSizeChange"
       />
+      </div>
     </el-card>
   </div>
 </template>
@@ -134,11 +145,27 @@
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { syncPayments, getSyncedPayments } from '@/api/payment'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
+
+// 列显隐元数据（TableTools 列设置面板数据源，Action Bar Spec）
+const columnDefs = [
+  { key: 'payment-id', label: '回款ID' },
+  { key: 'order-id', label: '订单ID' },
+  { key: 'customer-name', label: '客户名称' },
+  { key: 'payment-date', label: '回款日期' },
+  { key: 'payment-amount', label: '回款金额(USD)' },
+  { key: 'service-fee', label: '服务费' },
+  { key: 'exchange-rate', label: '汇率' },
+  { key: 'real-amount-rmb', label: '回款金额(RMB)' },
+  { key: 'is-calculated', label: '是否已计算' },
+  { key: 'batch-id', label: '所属批次' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('payment-sync', columnDefs)
 
 // 同步操作
 const dateRange = ref(null)
@@ -178,6 +205,23 @@ const listLoading = ref(false)
 
 function formatAmount(value, digits = 2) {
   return value == null ? '-' : Number(value).toFixed(digits)
+}
+
+// 查询/重置成对（List Page Spec 第 5 节）：回第 1 页再加载；dateRange 是同步上下文，不属于列表筛选，重置不动它
+function searchPayments() {
+  listPage.value = 1
+  fetchPayments()
+}
+
+function resetListFilter() {
+  listKeyword.value = ''
+  listPage.value = 1
+  fetchPayments()
+}
+
+function handleSizeChange() {
+  listPage.value = 1
+  fetchPayments()
 }
 
 async function fetchPayments() {
@@ -277,7 +321,6 @@ async function fetchPayments() {
   align-items: center;
   gap: 12px;
 }
-.pagination { margin-top: 16px; justify-content: flex-end; }
 
 @media (max-width: 768px) {
   .sync-action-card { position: relative; padding: 16px; flex-direction: column; align-items: stretch; gap: 16px; }

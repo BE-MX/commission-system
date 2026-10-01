@@ -14,34 +14,33 @@
     <el-tabs v-model="activeTab" class="rules-tabs">
       <!-- 职级薪级表 -->
       <el-tab-pane label="职级薪级表" name="grades">
-        <el-row :gutter="16" class="toolbar">
-          <el-col :span="6">
-            <el-select v-model="schemeFilter" placeholder="全部赛道" clearable style="width: 100%">
+        <div ref="gradePanelRef" class="table-card salary-panel">
+          <div class="toolbar">
+            <el-select v-model="schemeFilter" placeholder="全部赛道" clearable class="filter-w-sm">
               <el-option v-for="s in schemeOptions" :key="s.value" :label="s.label" :value="s.value" />
             </el-select>
-          </el-col>
-          <el-col :span="18" class="toolbar-right">
+            <GlassButton variant="secondary" left-icon="RefreshLeft" @click="schemeFilter = ''">重置</GlassButton>
+          </div>
+          <div class="action-bar">
             <GlassButton v-permission="'salary:write'" variant="primary" left-icon="Plus" @click="openGrade(null)">新增职级行</GlassButton>
-          </el-col>
-        </el-row>
-
-        <div class="table-card salary-panel">
-          <el-table :data="filteredGrades" v-loading="loading" border class="list-table" style="width: 100%">
-            <el-table-column label="赛道" min-width="130">
+            <TableTools v-model:visible-keys="gradeVisibleKeys" v-model:density="gradeDensity" :columns="gradeColumnDefs" :fullscreen="gradeIsFullscreen" @refresh="fetchAll" @fullscreen="toggleGradeFullscreen" />
+          </div>
+          <el-table :data="filteredGrades" v-loading="loading" border class="list-table" :class="gradeDensityClass" :max-height="gradeIsFullscreen ? undefined : 640">
+            <el-table-column v-if="gradeVisibleKeys.includes('scheme')" label="赛道" min-width="130">
               <template #default="{ row }">{{ schemeLabels[row.scheme] || row.scheme }}</template>
             </el-table-column>
-            <el-table-column prop="grade_code" label="职级" min-width="80" sortable />
-            <el-table-column label="底薪 / 标准工资" min-width="130" align="right">
+            <el-table-column v-if="gradeVisibleKeys.includes('grade')" prop="grade_code" label="职级" min-width="80" sortable />
+            <el-table-column v-if="gradeVisibleKeys.includes('salary')" label="底薪 / 标准工资" min-width="130" align="right">
               <template #default="{ row }">{{ money(salaryOf(row)) }}</template>
             </el-table-column>
-            <el-table-column prop="perf_target_monthly" label="月业绩目标($)" min-width="130" align="right" sortable />
-            <el-table-column prop="perf_full" label="绩效满额" min-width="100" align="right" />
-            <el-table-column prop="new_sign_min" label="新签下限(单)" min-width="110" align="right" />
-            <el-table-column label="团队提成率" min-width="100" align="right">
+            <el-table-column v-if="gradeVisibleKeys.includes('target')" prop="perf_target_monthly" label="月业绩目标($)" min-width="130" align="right" sortable />
+            <el-table-column v-if="gradeVisibleKeys.includes('perf')" prop="perf_full" label="绩效满额" min-width="100" align="right" />
+            <el-table-column v-if="gradeVisibleKeys.includes('new-sign')" prop="new_sign_min" label="新签下限(单)" min-width="110" align="right" />
+            <el-table-column v-if="gradeVisibleKeys.includes('rate')" label="团队提成率" min-width="100" align="right">
               <template #default="{ row }">{{ row.team_rate !== null && row.team_rate !== undefined ? `${(row.team_rate * 100).toFixed(2)}%` : '-' }}</template>
             </el-table-column>
-            <el-table-column prop="effective_from" label="生效日" min-width="110" sortable />
-            <el-table-column label="失效日" min-width="110">
+            <el-table-column v-if="gradeVisibleKeys.includes('effective')" prop="effective_from" label="生效日" min-width="110" sortable />
+            <el-table-column v-if="gradeVisibleKeys.includes('expires')" label="失效日" min-width="110">
               <template #default="{ row }">
                 <span v-if="row.effective_to">{{ row.effective_to }}</span>
                 <el-tag v-else size="small" type="success" effect="plain">现行</el-tag>
@@ -58,24 +57,27 @@
 
       <!-- 计算参数 -->
       <el-tab-pane label="计算参数" name="params">
-        <div class="table-card salary-panel">
-          <el-table :data="params" v-loading="loading" border class="list-table" style="width: 100%">
-            <el-table-column prop="param_key" label="参数键" min-width="200" show-overflow-tooltip />
-            <el-table-column label="参数值" min-width="160">
+        <div ref="paramPanelRef" class="table-card salary-panel">
+          <div class="action-bar">
+            <TableTools v-model:visible-keys="paramVisibleKeys" v-model:density="paramDensity" :columns="paramColumnDefs" :fullscreen="paramIsFullscreen" @refresh="fetchAll" @fullscreen="toggleParamFullscreen" />
+          </div>
+          <el-table :data="params" v-loading="loading" border class="list-table" :class="paramDensityClass" :max-height="paramIsFullscreen ? undefined : 640">
+            <el-table-column v-if="paramVisibleKeys.includes('key')" prop="param_key" label="参数键" min-width="200" show-overflow-tooltip />
+            <el-table-column v-if="paramVisibleKeys.includes('value')" label="参数值" min-width="160">
               <template #default="{ row }">
                 <el-input v-if="editingParamId === row.id" v-model="paramDraft.param_value" size="small" />
                 <strong v-else>{{ row.param_value }}</strong>
               </template>
             </el-table-column>
-            <el-table-column prop="value_type" label="类型" min-width="80" />
-            <el-table-column prop="category" label="分类" min-width="100" />
-            <el-table-column label="用途说明" min-width="280" show-overflow-tooltip>
+            <el-table-column v-if="paramVisibleKeys.includes('type')" prop="value_type" label="类型" min-width="80" />
+            <el-table-column v-if="paramVisibleKeys.includes('category')" prop="category" label="分类" min-width="100" />
+            <el-table-column v-if="paramVisibleKeys.includes('description')" label="用途说明" min-width="280" show-overflow-tooltip>
               <template #default="{ row }">
                 <el-input v-if="editingParamId === row.id" v-model="paramDraft.description" size="small" />
                 <span v-else>{{ row.description || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="effective_from" label="生效日" min-width="110" />
+            <el-table-column v-if="paramVisibleKeys.includes('effective')" prop="effective_from" label="生效日" min-width="110" />
             <el-table-column class-name="table-action-column" label="操作" min-width="150" fixed="right">
               <template #default="{ row }">
                 <template v-if="editingParamId === row.id">
@@ -96,18 +98,17 @@
 
       <!-- 部门映射 -->
       <el-tab-pane label="部门映射" name="depts">
-        <el-row :gutter="16" class="toolbar">
-          <el-col :span="24" class="toolbar-right">
+        <div ref="deptPanelRef" class="table-card salary-panel">
+          <div class="action-bar">
             <GlassButton v-permission="'salary:write'" variant="primary" left-icon="Plus" @click="openDept(null)">新增映射</GlassButton>
-          </el-col>
-        </el-row>
-        <div class="table-card salary-panel">
-          <el-table :data="deptMappings" v-loading="loading" border class="list-table" style="width: 100%">
-            <el-table-column prop="dept_detail" label="明细部门" min-width="160" sortable />
-            <el-table-column label="汇总大部门" min-width="160">
+            <TableTools v-model:visible-keys="deptVisibleKeys" v-model:density="deptDensity" :columns="deptColumnDefs" :fullscreen="deptIsFullscreen" @refresh="fetchAll" @fullscreen="toggleDeptFullscreen" />
+          </div>
+          <el-table :data="deptMappings" v-loading="loading" border class="list-table" :class="deptDensityClass" :max-height="deptIsFullscreen ? undefined : 640">
+            <el-table-column v-if="deptVisibleKeys.includes('detail')" prop="dept_detail" label="明细部门" min-width="160" sortable />
+            <el-table-column v-if="deptVisibleKeys.includes('group')" label="汇总大部门" min-width="160">
               <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.dept_group }}</el-tag></template>
             </el-table-column>
-            <el-table-column prop="sort_order" label="排序" min-width="80" sortable />
+            <el-table-column v-if="deptVisibleKeys.includes('sort')" prop="sort_order" label="排序" min-width="80" sortable />
             <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'salary:write'" variant="link" left-icon="Edit" @click="openDept(row)">编辑</GlassButton>
@@ -210,10 +211,41 @@
 
 <script setup>
 import { money } from '@/api/salary'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { useSalaryRules } from './composables/useSalaryRules'
 
+const gradeColumnDefs = [
+  { key: 'scheme', label: '赛道' }, { key: 'grade', label: '职级' },
+  { key: 'salary', label: '底薪 / 标准工资' }, { key: 'target', label: '月业绩目标($)' },
+  { key: 'perf', label: '绩效满额' }, { key: 'new-sign', label: '新签下限(单)' },
+  { key: 'rate', label: '团队提成率' }, { key: 'effective', label: '生效日' },
+  { key: 'expires', label: '失效日' },
+]
+const paramColumnDefs = [
+  { key: 'key', label: '参数键' }, { key: 'value', label: '参数值' },
+  { key: 'type', label: '类型' }, { key: 'category', label: '分类' },
+  { key: 'description', label: '用途说明' }, { key: 'effective', label: '生效日' },
+]
+const deptColumnDefs = [
+  { key: 'detail', label: '明细部门' }, { key: 'group', label: '汇总大部门' },
+  { key: 'sort', label: '排序' },
+]
 const {
-  activeTab, loading,
+  density: gradeDensity, densityClass: gradeDensityClass, visibleKeys: gradeVisibleKeys,
+  panelRef: gradePanelRef, isFullscreen: gradeIsFullscreen, toggleFullscreen: toggleGradeFullscreen,
+} = useTableView('salary-rules-grades', gradeColumnDefs)
+const {
+  density: paramDensity, densityClass: paramDensityClass, visibleKeys: paramVisibleKeys,
+  panelRef: paramPanelRef, isFullscreen: paramIsFullscreen, toggleFullscreen: toggleParamFullscreen,
+} = useTableView('salary-rules-params', paramColumnDefs)
+const {
+  density: deptDensity, densityClass: deptDensityClass, visibleKeys: deptVisibleKeys,
+  panelRef: deptPanelRef, isFullscreen: deptIsFullscreen, toggleFullscreen: toggleDeptFullscreen,
+} = useTableView('salary-rules-depts', deptColumnDefs)
+
+const {
+  activeTab, loading, fetchAll,
   params, deptMappings,
   schemeFilter, filteredGrades, salaryOf, schemeOptions, schemeLabels,
   gradeDialog, gradeSaving, gradeFormRef, gradeForm, gradeRules, openGrade, submitGrade,
@@ -227,8 +259,6 @@ const {
 .salary-aurora { inset: -24px -28px; }
 .salary-page .rules-tabs { position: relative; z-index: 1; }
 
-.toolbar { margin-bottom: 16px; }
-.toolbar-right { display: flex; gap: 8px; justify-content: flex-end; }
 
 .salary-panel {
   border: 1px solid var(--dash-glass-border);

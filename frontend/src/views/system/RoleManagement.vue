@@ -7,27 +7,36 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 操作栏 -->
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="24">
-        <GlassButton v-permission="'role:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增角色</GlassButton>
-      </el-col>
-    </el-row>
-
     <!-- 角色列表 -->
-    <div class="table-card role-panel">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
-      <el-table-column prop="name" label="角色标识" min-width="140" max-width="210" show-overflow-tooltip sortable />
-      <el-table-column prop="label" label="角色名称" min-width="140" max-width="210" show-overflow-tooltip sortable />
-      <el-table-column prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
-      <el-table-column label="类型" min-width="100" max-width="150">
+    <div ref="panelRef" class="table-card role-panel">
+      <!-- 操作行（本页无筛选区）：主操作 + TableTools（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'role:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增角色</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+    <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <template #empty>
+        <el-empty :image-size="96" description="暂无数据" />
+      </template>
+      <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="角色标识" min-width="140" max-width="210" show-overflow-tooltip sortable />
+      <el-table-column v-if="visibleKeys.includes('label')" prop="label" label="角色名称" min-width="140" max-width="210" show-overflow-tooltip sortable />
+      <el-table-column v-if="visibleKeys.includes('description')" prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="100" max-width="150">
         <template #default="{ row }">
           <el-tag :type="row.is_system ? 'warning' : 'primary'" size="small" effect="plain">{{ row.is_system ? '系统' : '自定义' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="user_count" label="用户数" min-width="80" max-width="120" show-overflow-tooltip sortable />
-      <el-table-column prop="permission_count" label="权限数" min-width="80" max-width="120" show-overflow-tooltip sortable />
-      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable />
+      <el-table-column v-if="visibleKeys.includes('user-count')" prop="user_count" label="用户数" min-width="80" max-width="120" show-overflow-tooltip sortable />
+      <el-table-column v-if="visibleKeys.includes('permission-count')" prop="permission_count" label="权限数" min-width="80" max-width="120" show-overflow-tooltip sortable />
+      <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable />
       <el-table-column class-name="table-action-column" label="操作" min-width="220" max-width="300" fixed="right">
         <template #default="{ row }">
           <GlassButton v-permission="'role:write'" variant="link" :disabled="row.name === 'super_admin'" @click="openEditDialog(row)" left-icon="Edit">
@@ -119,13 +128,24 @@ import { ref, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { getRoleList, createRole, updateRole, deleteRole } from '@/api/userManagement'
 import { msgSuccess, msgError, confirmDanger } from '@/utils/feedback'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableView } from '@/composables/useTableView'
 import { ROLE_TEMPLATES } from '@/config/roleTemplates'
 import { usePermissionMatrix } from './composables/usePermissionMatrix'
 import PermissionMatrixTab from './components/PermissionMatrixTab.vue'
 import PermissionNavTab from './components/PermissionNavTab.vue'
+import TableTools from '@/components/TableTools.vue'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
+// 列显隐元数据（TableTools 面板数据源，不驱动列渲染）
+const columnDefs = [
+  { key: 'name', label: '角色标识' },
+  { key: 'label', label: '角色名称' },
+  { key: 'description', label: '描述' },
+  { key: 'type', label: '类型' },
+  { key: 'user-count', label: '用户数' },
+  { key: 'permission-count', label: '权限数' },
+  { key: 'created-at', label: '创建时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('role-management', columnDefs)
 
 const tableData = ref([])
 const loading = ref(false)
@@ -305,13 +325,11 @@ onMounted(fetchList)
 
 /* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
    el-dialog/el-drawer 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
-.role-page .toolbar,
 .role-page .role-panel {
   position: relative;
   z-index: 1;
 }
 
-.toolbar { margin-bottom: 16px; }
 .form-tip { font-size: 12px; color: var(--text-secondary, #718096); }
 
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */

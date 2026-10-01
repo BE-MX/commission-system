@@ -11,13 +11,13 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <div class="toolbar">
-      <div class="toolbar-left">
+    <div ref="panelRef" class="table-card training-panel">
+      <div class="toolbar">
         <el-input
           v-model="filters.keyword"
           placeholder="搜标题 / 机构 / 讲师 / 总结"
           clearable
-          style="width: 260px"
+          class="filter-w-lg"
           @keyup.enter="search"
           @clear="search"
         />
@@ -30,30 +30,43 @@
           @close="clearTag"
         >标签：{{ filters.tag }}</el-tag>
         <el-checkbox v-model="mineOnly" v-permission="'training:write'" @change="search">只看我发布的</el-checkbox>
-        <GlassButton variant="secondary" left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
       </div>
-      <div class="toolbar-right">
+
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
         <GlassButton
           v-permission="'training:write'"
           variant="primary"
           left-icon="Plus"
           @click="router.push('/training/digests/new')"
         >发布培训速递</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
       </div>
-    </div>
 
-    <div class="table-card training-panel">
       <el-table
-        ref="tableRef"
         :data="list"
         v-loading="loading"
         border
         class="list-table"
-        style="width: 100%"
-        :max-height="maxHeight"
+        :class="densityClass"
+        :max-height="isFullscreen ? undefined : 640"
         @row-click="openDetail"
       >
-        <el-table-column prop="title" label="培训主题" min-width="240" max-width="380">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('title')" prop="title" label="培训主题" min-width="240" max-width="380">
           <template #default="{ row }">
             <div class="title-cell">
               <span class="title-text">{{ row.title }}</span>
@@ -62,7 +75,7 @@
             <div v-if="row.summary" class="summary-text">{{ row.summary }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="标签" min-width="140" max-width="220">
+        <el-table-column v-if="visibleKeys.includes('tags')" label="标签" min-width="140" max-width="220">
           <template #default="{ row }">
             <el-tag
               v-for="t in row.tags"
@@ -74,15 +87,15 @@
             >{{ t }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="trained_at" label="培训日期" min-width="110" max-width="130" sortable show-overflow-tooltip />
-        <el-table-column label="机构 / 讲师" min-width="150" max-width="220" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('trained-at')" prop="trained_at" label="培训日期" min-width="110" max-width="130" sortable show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('org-lecturer')" label="机构 / 讲师" min-width="150" max-width="220" show-overflow-tooltip>
           <template #default="{ row }">{{ [row.org, row.lecturer].filter(Boolean).join(' / ') || '—' }}</template>
         </el-table-column>
-        <el-table-column prop="creator_name" label="参训发布人" min-width="110" max-width="140" show-overflow-tooltip />
-        <el-table-column label="阅读" min-width="90" max-width="110">
+        <el-table-column v-if="visibleKeys.includes('creator')" prop="creator_name" label="参训发布人" min-width="110" max-width="140" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('read')" label="阅读" min-width="90" max-width="110">
           <template #default="{ row }">约 {{ row.read_minutes || 1 }} 分钟</template>
         </el-table-column>
-        <el-table-column label="反馈" min-width="110" max-width="130">
+        <el-table-column v-if="visibleKeys.includes('feedback')" label="反馈" min-width="110" max-width="130">
           <template #default="{ row }">
             <span class="stat-item">👍 {{ row.useful_count }}</span>
             <span class="stat-item muted">阅 {{ row.view_count }}</span>
@@ -123,18 +136,30 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { listDigests, deleteDigest } from '@/api/training'
 import { useListPage } from '@/composables/useListPage'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableView } from '@/composables/useTableView'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { useAuthStore } from '@/stores/auth'
+import TableTools from '@/components/TableTools.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
-const { tableRef, maxHeight } = useTableMaxHeight()
 const mineOnly = ref(false)
+
+// 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
+const columnDefs = [
+  { key: 'title', label: '培训主题' },
+  { key: 'tags', label: '标签' },
+  { key: 'trained-at', label: '培训日期' },
+  { key: 'org-lecturer', label: '机构 / 讲师' },
+  { key: 'creator', label: '参训发布人' },
+  { key: 'read', label: '阅读' },
+  { key: 'feedback', label: '反馈' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('training-list', columnDefs)
 
 function canEditRow(row) {
   return row.created_by === auth.user?.id || auth.hasPermission('training:admin')
@@ -149,7 +174,7 @@ function canDeleteRow(row) {
 
 const {
   loading, list, total, page, pageSize, searchForm: filters,
-  fetchList, handleSearch: search, handlePageChange, handleSizeChange,
+  fetchList, handleSearch: search, handleReset, handlePageChange, handleSizeChange,
 } = useListPage(
   async ({ page, page_size, ...form }) => {
     const params = { page, page_size }
@@ -161,6 +186,13 @@ const {
   },
   { searchForm: { keyword: '', tag: '' } },
 )
+
+const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.tag || mineOnly.value))
+
+function resetFilters() {
+  mineOnly.value = false
+  handleReset()
+}
 
 function openDetail(row) {
   router.push(`/training/digests/${row.id}`)
@@ -204,7 +236,6 @@ async function handleDelete(row) {
 
 /* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
    会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
-.page .toolbar,
 .page .training-panel {
   position: relative;
   z-index: 1;
@@ -240,20 +271,13 @@ async function handleDelete(row) {
   background-color: rgba(245, 236, 220, 0.98);
 }
 
+/* 筛选控件三档宽度、操作行、分页均为全局规范类（app.css），本页只保留玻璃皮肤覆写 */
 .toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.4);
 }
 
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+.action-bar {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .title-cell {
@@ -301,11 +325,5 @@ async function handleDelete(row) {
 
 .list-table :deep(.el-table__row) {
   cursor: pointer;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  padding: 12px 4px 4px;
 }
 </style>

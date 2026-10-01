@@ -56,17 +56,6 @@
   color: var(--invoice-muted);
 }
 
-.header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.primary-action {
-  min-width: 112px;
-}
-
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
 .invoice-panel {
   border: 1px solid var(--dash-glass-border);
@@ -86,22 +75,10 @@
   background: rgba(255, 255, 255, 0.4);
 }
 
-/* 筛选控件宽度三档（DESIGN.md FilterBar Spec：160/200/280，禁内联宽度） */
-.toolbar .filter-w-sm {
-  width: 160px;
-}
-
-.toolbar .filter-w-md {
-  width: 200px;
-}
-
-.toolbar .filter-w-lg {
-  width: 280px;
-}
-
-/* 表格工具四图标：钉在筛选区末尾右侧（List Page Spec 第 9 节试点） */
-.toolbar-tools {
-  margin-left: auto;
+/* 筛选控件三档宽度、操作行、分页均为全局规范类（app.css），本页只保留玻璃皮肤覆写 */
+.action-bar {
+  border-bottom-color: var(--invoice-border);
+  background: rgba(255, 255, 255, 0.28);
 }
 
 /* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
@@ -143,12 +120,7 @@
   text-overflow: clip;
 }
 
-/* 分页：表格卡片内底部（DESIGN.md List Page Spec 第 6 节） */
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  padding: 12px 14px;
-}
+/* 分页已全局化为 .table-card > .pager（app.css），本页不覆写 */
 
 /* 全屏态：面板自身滚动 */
 .invoice-panel:fullscreen {

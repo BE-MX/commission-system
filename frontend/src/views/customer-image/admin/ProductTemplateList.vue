@@ -5,55 +5,70 @@
         <strong>产品模板</strong>
         <span>只有已发布且素材完整的产品会出现在客户邀请中。</span>
       </div>
-      <GlassButton
-        v-if="canAdmin"
-        v-permission="'customer_image:admin'"
-        variant="primary"
-        left-icon="Plus"
-        @click="openEditor()"
-      >新建产品</GlassButton>
     </div>
 
-    <el-table v-loading="loading" :data="products" empty-text="暂无可查看的产品模板" border class="list-table">
-      <el-table-column label="封面" min-width="86">
-        <template #default="{ row }">
-          <img v-if="productCoverUrls[row.id]" :src="productCoverUrls[row.id]" :alt="row.name" class="product-cover">
-          <span v-else class="cover-empty">暂无</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="name" label="产品" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="category" label="分类" min-width="120" show-overflow-tooltip />
-      <el-table-column label="参数" min-width="84">
-        <template #default="{ row }">{{ row.options?.length || 0 }} 项</template>
-      </el-table-column>
-      <el-table-column label="配置版本" min-width="100">
-        <template #default="{ row }">v{{ row.config_version }}</template>
-      </el-table-column>
-      <el-table-column label="状态" min-width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.is_published ? 'success' : 'info'" effect="plain">
-            {{ row.is_published ? '已发布' : '草稿' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column class-name="table-action-column" v-if="canAdmin" label="操作" min-width="250" fixed="right">
-        <template #default="{ row }">
-          <GlassButton v-permission="'customer_image:admin'" variant="link" @click="openEditor(row)">编辑</GlassButton>
-          <GlassButton
-            v-permission="'customer_image:admin'"
-            variant="link"
-            :link-tone="row.is_published ? '' : 'success'"
-            @click="togglePublish(row)"
-          >{{ row.is_published ? '取消发布' : '发布' }}</GlassButton>
-          <GlassButton
-            v-permission="'customer_image:admin'"
-            variant="link"
-            link-tone="danger"
-            @click="remove(row)"
-          >删除</GlassButton>
-        </template>
-      </el-table-column>
-    </el-table>
+    <section ref="panelRef" class="table-card">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton
+          v-if="canAdmin"
+          v-permission="'customer_image:admin'"
+          variant="primary"
+          left-icon="Plus"
+          @click="openEditor()"
+        >新建产品</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="load"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table v-loading="loading" :data="products" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty><el-empty :image-size="96" description="暂无数据" /></template>
+        <el-table-column v-if="visibleKeys.includes('cover')" label="封面" min-width="86">
+          <template #default="{ row }">
+            <img v-if="productCoverUrls[row.id]" :src="productCoverUrls[row.id]" :alt="row.name" class="product-cover">
+            <span v-else class="cover-empty">暂无</span>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品" min-width="180" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('category')" prop="category" label="分类" min-width="120" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('options')" label="参数" min-width="84">
+          <template #default="{ row }">{{ row.options?.length || 0 }} 项</template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('config-version')" label="配置版本" min-width="100">
+          <template #default="{ row }">v{{ row.config_version }}</template>
+        </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.is_published ? 'success' : 'info'" effect="plain">
+              {{ row.is_published ? '已发布' : '草稿' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="canAdmin" class-name="table-action-column" label="操作" min-width="250" fixed="right">
+          <template #default="{ row }">
+            <GlassButton v-permission="'customer_image:admin'" variant="link" @click="openEditor(row)">编辑</GlassButton>
+            <GlassButton
+              v-permission="'customer_image:admin'"
+              variant="link"
+              :link-tone="row.is_published ? '' : 'success'"
+              @click="togglePublish(row)"
+            >{{ row.is_published ? '取消发布' : '发布' }}</GlassButton>
+            <GlassButton
+              v-permission="'customer_image:admin'"
+              variant="link"
+              link-tone="danger"
+              @click="remove(row)"
+            >删除</GlassButton>
+          </template>
+        </el-table-column>
+      </el-table>
+    </section>
 
     <ProductTemplateEditor
       v-if="canAdmin"
@@ -69,6 +84,8 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listProductAssets } from '@/api/customerImage'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import ProductTemplateEditor from './ProductTemplateEditor.vue'
 import { validateProductForPublish } from './composables/useCustomerImageAdmin'
 
@@ -81,6 +98,18 @@ const { productCoverUrls, products } = props.state
 const loading = ref(false)
 const editorVisible = ref(false)
 const editingProduct = ref(null)
+
+// 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
+const columnDefs = [
+  { key: 'cover', label: '封面' },
+  { key: 'name', label: '产品' },
+  { key: 'category', label: '分类' },
+  { key: 'options', label: '参数' },
+  { key: 'config-version', label: '配置版本' },
+  { key: 'status', label: '状态' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('customer-image-products', columnDefs)
 
 async function load() {
   loading.value = true
@@ -129,6 +158,5 @@ onMounted(load)
 .list-toolbar span { color: var(--el-text-color-secondary); font-size: 13px; }
 .product-cover { display: block; width: 54px; height: 54px; border-radius: 9px; object-fit: cover; }
 .cover-empty { color: var(--el-text-color-placeholder); font-size: 12px; }
-:deep(.glass-button:not(.glass-button--link)) { min-height: 44px; }
 @media (max-width: 720px) { .list-toolbar { align-items: flex-start; flex-direction: column; padding-block: 12px; } }
 </style>

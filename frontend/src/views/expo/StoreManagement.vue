@@ -7,45 +7,57 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="6">
-        <el-input v-model="filters.keyword" placeholder="搜索门店名称 / 编码" clearable prefix-icon="Search" @keyup.enter="search" @clear="search" />
-      </el-col>
-      <el-col :span="4">
-        <el-select v-model="filters.status" placeholder="状态" clearable style="width: 100%" @change="search">
+    <div ref="panelRef" class="table-card stores-panel">
+      <div class="toolbar">
+        <el-input v-model="filters.keyword" placeholder="搜索门店名称 / 编码" clearable prefix-icon="Search" class="filter-w-lg" @keyup.enter="search" @clear="search" />
+        <el-select v-model="filters.status" placeholder="状态" clearable class="filter-w-sm" @change="search">
           <el-option label="启用" :value="1" />
           <el-option label="停用" :value="0" />
         </el-select>
-      </el-col>
-      <el-col :span="14" class="toolbar-actions">
         <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
-        <GlassButton v-permission="'expo_store:admin'" variant="primary" left-icon="Plus" @click="openEdit(null)">新增门店</GlassButton>
-      </el-col>
-    </el-row>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <div class="table-card stores-panel">
-      <el-table :data="stores" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column prop="name" label="门店名称" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="code" label="编码" min-width="100" show-overflow-tooltip />
-        <el-table-column label="状态" min-width="80">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'expo_store:admin'" variant="primary" left-icon="Plus" @click="openEdit(null)">新增门店</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchStores"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="stores" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="门店名称" min-width="140" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('code')" prop="code" label="编码" min-width="100" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80">
           <template #default="{ row }">
             <el-tag size="small" :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="剩余额度" min-width="110" align="right">
+        <el-table-column v-if="visibleKeys.includes('remaining')" label="剩余额度" min-width="110" align="right">
           <template #default="{ row }">
             <span :class="{ 'quota-zero': row.remaining === 0 }">{{ row.remaining }} 张</span>
           </template>
         </el-table-column>
-        <el-table-column label="已用 / 累计" min-width="110" align="right">
+        <el-table-column v-if="visibleKeys.includes('usage')" label="已用 / 累计" min-width="110" align="right">
           <template #default="{ row }">{{ row.used_quota }} / {{ row.total_quota }}</template>
         </el-table-column>
-        <el-table-column label="联系人" min-width="110" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('contact')" label="联系人" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.contact_name || '-' }}<span v-if="row.contact_phone" class="muted">（{{ row.contact_phone }}）</span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" min-width="150" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="150" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right">
           <template #default="{ row }">
             <GlassButton v-any-permission="['expo_store:admin', 'expo_store:recharge']" variant="link" left-icon="Coin" @click="openQuota(row)">额度</GlassButton>
@@ -136,7 +148,7 @@
  * 结构照线索台标杆（ExpoLeads.vue）：useListPage + DetailDrawer + feedback.js。
  * 运营（expo_store:admin）管门店与人员；财务（expo_store:recharge）只进额度抽屉。
  */
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import {
   getStores, createStore, updateStore, toggleStore,
   getStoreUsers, bindStoreUser, unbindStoreUser,
@@ -145,11 +157,13 @@ import { getUserList } from '@/api/userManagement'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess, msgError, confirmDanger } from '@/utils/feedback'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import StoreQuotaDrawer from './StoreQuotaDrawer.vue'
 
 const {
   loading, list: stores, total, page, pageSize, searchForm: filters,
-  fetchList: fetchStores, handleSearch: search, handlePageChange, handleSizeChange,
+  fetchList: fetchStores, handleSearch: search, handleReset: resetFilters, handlePageChange, handleSizeChange,
 } = useListPage(
   async ({ page, page_size, ...form }) => {
     const params = { offset: (page - 1) * page_size, limit: page_size }
@@ -162,6 +176,20 @@ const {
   },
   { searchForm: { keyword: '', status: '' } },
 )
+
+// columnDefs 只供 TableTools 列显隐面板，模板列保持静态（推广期不配置化渲染）
+const columnDefs = [
+  { key: 'name', label: '门店名称' },
+  { key: 'code', label: '编码' },
+  { key: 'status', label: '状态' },
+  { key: 'remaining', label: '剩余额度' },
+  { key: 'usage', label: '已用 / 累计' },
+  { key: 'contact', label: '联系人' },
+  { key: 'created-at', label: '创建时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('store-management', columnDefs)
+const hasActiveFilters = computed(() => Boolean(filters.keyword || filters.status !== ''))
 
 // ── 新增 / 编辑 ──
 const editVisible = ref(false)
@@ -290,7 +318,6 @@ function openQuota(row) {
 <style scoped>
 .stores-page { position: relative; }
 .stores-aurora { inset: -24px -28px; }
-.stores-page .toolbar,
 .stores-page .stores-panel { position: relative; z-index: 1; }
 
 .stores-panel {
@@ -311,9 +338,13 @@ function openQuota(row) {
 .stores-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .stores-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
-.toolbar { margin-bottom: 16px; }
-.toolbar-actions { display: flex; gap: 10px; }
-.pager { margin-top: 16px; justify-content: flex-end; }
+/* 筛选区/操作行/分页：结构类是全局 .table-card > .toolbar/.action-bar/.pager（app.css），此处只做玻璃皮肤覆写（同 invoice-manage.css） */
+.toolbar { background: rgba(255, 255, 255, 0.4); }
+.action-bar { background: rgba(255, 255, 255, 0.28); }
+
+/* 全屏态：面板自身滚动 */
+.stores-panel:fullscreen { overflow: auto; }
+
 .muted { color: var(--text-muted); font-size: 12px; }
 .quota-zero { color: var(--color-danger-text, #c0392b); font-weight: 700; }
 .bind-form { margin-bottom: 12px; }

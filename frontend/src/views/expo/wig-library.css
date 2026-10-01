@@ -1,0 +1,78 @@
+/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+.wig-page { position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.wig-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
+.wig-page .wig-panel { position: relative; z-index: 1; }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.wig-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.wig-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.wig-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.wig-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.wig-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+
+/* 筛选区/操作行：结构类是全局 .table-card > .toolbar/.action-bar（app.css），此处只做玻璃皮肤覆写（同 invoice-manage.css） */
+.toolbar { background: rgba(255, 255, 255, 0.4); }
+.action-bar { background: rgba(255, 255, 255, 0.28); }
+
+/* 全屏态：面板自身滚动 */
+.wig-panel:fullscreen { overflow: auto; }
+
+.cover-thumb { width: 40px; height: 40px; border-radius: 6px; display: block; }
+.cover-empty { color: var(--text-muted); font-size: 12px; }
+.fit-tag { margin: 2px 4px 2px 0; }
+.tag-zhizhen {
+  background: var(--color-warning-bg);
+  border-color: var(--color-gold-muted);
+  color: var(--color-gold-muted, #b8860b);
+}
+.upload-slot {
+  width: 88px; height: 88px; border: 1px dashed var(--border-color); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 12px; cursor: pointer; background: var(--toolbar-bg);
+}
+.upload-slot:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.upload-preview { width: 88px; height: 88px; border-radius: 8px; display: block; }
+.angle-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.angle-item { position: relative; }
+.angle-remove {
+  position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; line-height: 16px;
+  text-align: center; border-radius: 50%; background: var(--color-danger); color: #fff;
+  font-size: 12px; cursor: pointer; z-index: 1;
+}
+/* 发色×三角度矩阵 */
+.cm-hint { margin: 0 0 12px; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.cm-list { display: flex; flex-direction: column; gap: 14px; }
+.cm-row {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--toolbar-bg);
+}
+.cm-color { display: flex; align-items: center; gap: 8px; }
+.cm-sw { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border-color); flex: none; object-fit: cover; }
+.cm-meta { display: flex; flex-direction: column; line-height: 1.3; }
+.cm-meta b { font-size: 13px; }
+.cm-meta small { color: var(--text-muted); font-size: 11px; }
+.cm-row.dirty { border-color: var(--color-warning, #e6a23c); background: var(--color-warning-bg, rgba(230, 162, 60, 0.08)); }
+.cm-unsaved { margin-left: auto; font-size: 11px; color: var(--color-warning, #e6a23c); border: 1px solid currentColor; border-radius: 10px; padding: 1px 8px; }
+.cm-empty { color: var(--text-muted); font-size: 12px; padding: 8px 0; }

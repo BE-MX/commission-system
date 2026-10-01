@@ -6,63 +6,62 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <div ref="filtersRef" class="customer-filters">
-      <div class="toolbar customers-toolbar">
-        <div class="customer-filter customer-filter-wide">
-          <el-input v-model="searchForm.keyword" placeholder="搜索编码 / 店名 / 联系人 / 电话" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
-        </div>
-        <div class="customer-filter">
-          <el-select v-model="searchForm.status" placeholder="状态" clearable style="width: 100%" @change="handleSearch">
-            <el-option label="启用" :value="1" />
-            <el-option label="停用" :value="0" />
-          </el-select>
-        </div>
-        <div class="customer-filter">
-          <el-select v-model="searchForm.province" placeholder="省份" filterable clearable style="width: 100%" @change="handleProvinceChange">
-            <el-option v-for="province in options.provinces" :key="province" :label="province" :value="province" />
-          </el-select>
-        </div>
-        <div class="customer-filter">
-          <el-select v-model="searchForm.city" placeholder="城市" filterable clearable style="width: 100%" @change="handleSearch">
-            <el-option v-for="city in options.cities" :key="city" :label="city" :value="city" />
-          </el-select>
-        </div>
-        <div class="customer-filter">
-          <el-select v-model="searchForm.customer_level" placeholder="客户等级" clearable style="width: 100%" @change="handleSearch">
-            <el-option v-for="item in options.customer_level" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </div>
-        <div class="customer-filter">
-          <el-select v-model="searchForm.owner_user_id" placeholder="归属销售" filterable clearable style="width: 100%" @change="handleSearch">
-            <el-option v-for="item in options.owners" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </div>
-        <div class="customer-filter-actions">
-          <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-          <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="openDialog()">新增客户</GlassButton>
-          <GlassButton v-permission="'domestic:admin'" variant="ghost" left-icon="Upload" @click="openImport">导入客户</GlassButton>
-        </div>
+    <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级默认按最近一次充值金额核定；管理员可「初始化」期初或「调整」临时覆盖，下一次充值会重新按金额核定。" />
+
+    <div ref="panelRef" class="table-card customers-panel">
+      <div ref="filtersRef" class="toolbar">
+        <el-input
+          v-model="searchForm.keyword" placeholder="搜索编码 / 店名 / 联系人 / 电话" clearable
+          prefix-icon="Search" class="filter-w-lg" @keyup.enter="handleSearch" @clear="handleSearch"
+        />
+        <el-select v-model="searchForm.status" placeholder="状态" clearable class="filter-w-sm" @change="handleSearch">
+          <el-option label="启用" :value="1" />
+          <el-option label="停用" :value="0" />
+        </el-select>
+        <el-select v-model="searchForm.province" placeholder="省份" filterable clearable class="filter-w-sm" @change="handleProvinceChange">
+          <el-option v-for="province in options.provinces" :key="province" :label="province" :value="province" />
+        </el-select>
+        <el-select v-model="searchForm.city" placeholder="城市" filterable clearable class="filter-w-sm" @change="handleSearch">
+          <el-option v-for="city in options.cities" :key="city" :label="city" :value="city" />
+        </el-select>
+        <el-select v-model="searchForm.customer_level" placeholder="客户等级" clearable class="filter-w-sm" @change="handleSearch">
+          <el-option v-for="item in options.customer_level" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
+        <el-select v-model="searchForm.owner_user_id" placeholder="归属销售" filterable clearable class="filter-w-sm" @change="handleSearch">
+          <el-option v-for="item in options.owners" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
+        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
       </div>
-
-      <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级默认按最近一次充值金额核定；管理员可「初始化」期初或「调整」临时覆盖，下一次充值会重新按金额核定。" />
-
-    </div>
-
-    <div class="table-card customers-panel">
       <el-tabs v-model="searchForm.owner_scope" class="customer-tabs" @tab-change="handleSearch">
         <el-tab-pane label="私海客户" name="private" />
         <el-tab-pane label="公海客户" name="public" />
       </el-tabs>
-      <el-table ref="tableRef" :data="list" :height="tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" style="width: 100%">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="openDialog()">新增客户</GlassButton>
+        <GlassButton v-permission="'domestic:admin'" variant="secondary" left-icon="Upload" @click="openImport">导入客户</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys" v-model:density="density"
+          :columns="columnDefs" :fullscreen="isFullscreen"
+          @refresh="fetchList" @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasCustomerFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasCustomerFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
         <el-table-column prop="shop_name" label="客户店名" min-width="160" fixed="left" show-overflow-tooltip />
-        <el-table-column prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip />
-        <el-table-column label="客户等级" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('custom_code')" prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('customer_level')" label="客户等级" min-width="90">
           <template #default="{ row }">
             <el-tag v-if="row.customer_level" size="small" effect="plain" type="warning">{{ row.customer_level }}</el-tag>
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="客户状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('lifecycle_status')" label="客户状态" min-width="90">
           <template #default="{ row }">
             <el-tag v-if="row.lifecycle_status" size="small" effect="plain"
               :type="{ 活跃: 'success', 潜在: 'warning', 沉默: 'info', 流失: 'danger' }[row.lifecycle_status] || 'info'">
@@ -71,30 +70,30 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="owner_name" label="归属销售" min-width="100" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('owner')" prop="owner_name" label="归属销售" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ row.owner_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="customer_source" label="客户来源" min-width="110" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('customer_source')" prop="customer_source" label="客户来源" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.customer_source || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="store_type" label="门店类型" min-width="130" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('store_type')" prop="store_type" label="门店类型" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.store_type || '-' }}</template>
         </el-table-column>
-        <el-table-column label="会员等级" min-width="110">
+        <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="110">
           <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.membership_label }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="最近充值" min-width="120" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('last_recharge')" label="最近充值" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.last_recharge_amount != null ? `¥${Number(row.last_recharge_amount).toFixed(2)}` : '-' }}</template>
         </el-table-column>
-        <el-table-column label="最近充值时间" min-width="170" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('last_recharged_at')" label="最近充值时间" min-width="170" show-overflow-tooltip>
           <template #default="{ row }">{{ row.last_recharged_at || '-' }}</template>
         </el-table-column>
-        <el-table-column label="省 / 市" min-width="130" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('region')" label="省 / 市" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ [row.province, row.city].filter(Boolean).join(' / ') || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="contact" label="联系人" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="phone" label="电话" min-width="130" show-overflow-tooltip />
-        <el-table-column label="累计订单 / 销售额" min-width="150">
+        <el-table-column v-if="visibleKeys.includes('contact')" prop="contact" label="联系人" min-width="100" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('phone')" prop="phone" label="电话" min-width="130" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('totals')" label="累计订单 / 销售额" min-width="150">
           <template #default="{ row }">
             <template v-if="row.total_order_count != null || row.total_sales_amount != null">
               {{ row.total_order_count ?? '-' }} 单 / ¥{{ Number(row.total_sales_amount || 0).toFixed(2) }}
@@ -102,21 +101,21 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="order_count" label="订单数" min-width="90" />
-        <el-table-column label="结算方式" min-width="120">
+        <el-table-column v-if="visibleKeys.includes('order_count')" prop="order_count" label="订单数" min-width="90" />
+        <el-table-column v-if="visibleKeys.includes('settle_mode')" label="结算方式" min-width="120">
           <template #default="{ row }">
             <el-tag size="small" :type="row.settle_mode === 'credit' ? 'warning' : 'info'" effect="plain">
               {{ row.settle_mode_label || '先充值后下单' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="充值余额" min-width="110" align="right">
+        <el-table-column v-if="visibleKeys.includes('balance')" label="充值余额" min-width="110" align="right">
           <template #default="{ row }">
             <span v-if="Number(row.balance || 0) < 0" class="debt-value">欠款 ¥{{ Math.abs(Number(row.balance)).toFixed(2) }}</span>
             <span v-else class="balance-value">¥{{ Number(row.balance || 0).toFixed(2) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80">
           <template #default="{ row }">
             <el-tag size="small" :type="row.status ? 'success' : 'info'" effect="plain">{{ row.status ? '启用' : '停用' }}</el-tag>
           </template>
@@ -403,7 +402,7 @@
       </el-table>
       <el-pagination
         v-model:current-page="ledgerDrawer.page" :page-size="20" :total="ledgerDrawer.total"
-        layout="total, prev, pager, next" class="pager" @current-change="loadLedger"
+        layout="total, prev, pager, next" class="ledger-pager" @current-change="loadLedger"
       />
     </el-drawer>
   </div>
@@ -411,19 +410,26 @@
 
 <script setup>
 /** 内贸客户管理。下单页可就地新建客户，这里做集中维护；逻辑在 composables/useDomesticCustomers.js。 */
+import { computed } from 'vue'
 import { CHINA_REGIONS } from '@/data/chinaRegions'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { useOrderTableHeight } from './composables/useOrderTableHeight'
 import { useDomesticCustomers } from './composables/useDomesticCustomers'
+import { customersColumnDefs as columnDefs } from './domesticTableColumns'
 
 const chinaRegions = CHINA_REGIONS
 const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
 
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('domestic-customers', columnDefs)
+
 const {
   loading, list, total, page, pageSize, searchForm,
-  handleSearch, handlePageChange, handleSizeChange,
-  canOperateCustomer, handleProvinceChange,
+  fetchList, handleSearch, handlePageChange, handleSizeChange,
+  canOperateCustomer, handleProvinceChange, resetFilters,
   saving, dialog, options, openDialog, save,
   rechargeDialog, openRecharge, confirmRecharge,
   onRechargeVoucherChange, onRechargeVoucherRemove, onRechargeVoucherExceed,
@@ -434,22 +440,18 @@ const {
   toggleStatus, handleDelete, membershipOptions,
   membershipPreview,
 } = useDomesticCustomers()
+
+const hasCustomerFilters = computed(() => Boolean(
+  searchForm.keyword || searchForm.status !== '' || searchForm.province || searchForm.city
+  || searchForm.customer_level || searchForm.owner_user_id,
+))
 </script>
 
 <style scoped>
 .customers-page { position: relative; }
 .customers-aurora { inset: -24px -28px; }
-.customers-page .toolbar,
 .customers-page .customers-panel { position: relative; z-index: 1; }
 
-.customers-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 10px; }
-.customer-filter { flex: 0 0 116px; min-width: 0; }
-.customer-filter-wide { flex-basis: 300px; }
-.customer-filter-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-@media (max-width: 600px) {
-  .customer-filter { flex: 1 1 calc(50% - 8px); }
-  .customer-filter-wide { flex-basis: 100%; }
-}
 .membership-tip { margin-bottom: 12px; position: relative; z-index: 1; }
 
 .customers-panel {
@@ -483,7 +485,7 @@ const {
 .customer-more { display: flex; align-items: center; flex: 0 0 auto; }
 .customer-delete-action { color: var(--el-color-danger); }
 
-.pager { margin: 12px; justify-content: flex-end; }
+.ledger-pager { margin: 12px; justify-content: flex-end; }
 .balance-value { color: var(--el-color-success); font-weight: 600; }
 .debt-value { color: var(--el-color-danger); font-weight: 600; }
 .amount-in { color: var(--el-color-success); font-weight: 600; }

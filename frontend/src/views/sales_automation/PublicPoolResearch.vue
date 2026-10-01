@@ -5,11 +5,6 @@
         <h1>客户背调</h1>
         <p>覆盖 OKKI 公海客户与智能获客 70 分以上候选。Agent 只补全证据与开发草稿，由业务员确认后才进入机会雷达。</p>
       </div>
-      <div class="heading-actions">
-        <GlassButton v-permission="'sales_automation:admin'" variant="secondary" left-icon="Refresh" :loading="auditLoading" @click="refreshAudit">重新审计</GlassButton>
-        <span v-if="activeBatch" class="batch-state">批次 #{{ activeBatch.id }} 后台生成中</span>
-        <GlassButton v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="primary" left-icon="Plus" :loading="batchLoading" :disabled="Boolean(activeBatch)" @click="batchDialogVisible = true">{{ activeBatch ? '批次生成中' : '生成今日批次' }}</GlassButton>
-      </div>
     </header>
 
     <section class="metric-grid">
@@ -18,6 +13,7 @@
       </article>
     </section>
 
+    <section ref="panelRef" v-loading="batchListLoading" class="batch-tree table-card" aria-label="公海背调批次列表">
     <div class="toolbar batch-filter-toolbar">
       <el-input v-model="filters.keyword" clearable placeholder="筛选批次内客户 / OKKI ID" class="keyword-filter" @keyup.enter="search" @clear="search" />
       <el-select v-model="filters.tier" clearable placeholder="全部分档" style="width: 130px" @change="search">
@@ -28,7 +24,12 @@
       <span class="toolbar-hint">筛选只影响明细显示，整批操作始终覆盖完整批次</span>
     </div>
 
-    <section v-loading="batchListLoading" class="batch-tree" aria-label="公海背调批次列表">
+    <div class="action-bar">
+      <GlassButton v-permission="'sales_automation:admin'" variant="secondary" left-icon="Refresh" :loading="auditLoading" @click="refreshAudit">重新审计</GlassButton>
+      <GlassButton v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="primary" left-icon="Plus" :loading="batchLoading" :disabled="Boolean(activeBatch)" @click="batchDialogVisible = true">{{ activeBatch ? '批次生成中' : '生成今日批次' }}</GlassButton>
+      <span v-if="activeBatch" class="batch-state">批次 #{{ activeBatch.id }} 后台生成中</span>
+      <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="refreshBatchTree" @fullscreen="toggleFullscreen" />
+    </div>
       <article v-for="batch in batches" :key="batch.id" class="surface-card batch-node">
         <button class="batch-toggle" type="button" :aria-expanded="isBatchExpanded(batch.id)" @click="toggleBatch(batch)">
           <span class="batch-chevron" :class="{ 'is-expanded': isBatchExpanded(batch.id) }" aria-hidden="true">›</span>
@@ -59,18 +60,18 @@
           </div>
 
           <div class="table-card batch-table-card">
-            <el-table v-loading="batchTasksLoading[batch.id]" :data="visibleBatchTasks(batch.id)" row-key="id" border class="list-table" @selection-change="setBatchSelection(batch.id, $event)">
+            <el-table v-loading="batchTasksLoading[batch.id]" :data="visibleBatchTasks(batch.id)" row-key="id" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="setBatchSelection(batch.id, $event)">
               <el-table-column v-if="activeStatusByBatch[batch.id] === 'pending_review'" type="selection" min-width="52" />
-              <el-table-column label="客户" min-width="210" show-overflow-tooltip>
+              <el-table-column v-if="visibleKeys.includes('company')" label="客户" min-width="210" show-overflow-tooltip>
                 <template #default="{ row }"><div class="company-cell"><strong>{{ row.subject.display_name }}</strong><span>{{ row.subject.country || '地区未知' }} · {{ sourceLabel(row.subject) }}</span></div></template>
               </el-table-column>
-              <el-table-column label="档位" min-width="105"><template #default="{ row }"><el-tag :type="tierMeta(row.tier).type">{{ tierMeta(row.tier).label }}</el-tag></template></el-table-column>
-              <el-table-column label="订单 / 完整度" min-width="145"><template #default="{ row }">{{ row.subject.order_count }} 单 / {{ row.subject.completeness_score }}%</template></el-table-column>
-              <el-table-column label="背调进度" min-width="105"><template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="plain">{{ statusMeta(row.status).label }}</el-tag></template></el-table-column>
-              <el-table-column label="成交等级" min-width="110"><template #default="{ row }"><span v-if="row.assessment" class="grade" :data-grade="row.assessment.grade">{{ row.assessment.grade }}</span><span v-else>-</span></template></el-table-column>
-              <el-table-column label="行业判定" min-width="115"><template #default="{ row }"><el-tag v-if="row.assessment" :type="relevanceMeta(row.assessment.industry_relevance).type" effect="plain">{{ relevanceMeta(row.assessment.industry_relevance).label }}</el-tag><span v-else>-</span></template></el-table-column>
-              <el-table-column label="证据置信度" min-width="115"><template #default="{ row }">{{ confidenceLabel(row.assessment?.evidence_confidence) }}</template></el-table-column>
-              <el-table-column label="团队分配" min-width="125"><template #default="{ row }"><el-tag :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</el-tag></template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('tier')" label="档位" min-width="105"><template #default="{ row }"><el-tag :type="tierMeta(row.tier).type">{{ tierMeta(row.tier).label }}</el-tag></template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('orders')" label="订单 / 完整度" min-width="145"><template #default="{ row }">{{ row.subject.order_count }} 单 / {{ row.subject.completeness_score }}%</template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('progress')" label="背调进度" min-width="105"><template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="plain">{{ statusMeta(row.status).label }}</el-tag></template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('grade')" label="成交等级" min-width="110"><template #default="{ row }"><span v-if="row.assessment" class="grade" :data-grade="row.assessment.grade">{{ row.assessment.grade }}</span><span v-else>-</span></template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('industry')" label="行业判定" min-width="115"><template #default="{ row }"><el-tag v-if="row.assessment" :type="relevanceMeta(row.assessment.industry_relevance).type" effect="plain">{{ relevanceMeta(row.assessment.industry_relevance).label }}</el-tag><span v-else>-</span></template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('confidence')" label="证据置信度" min-width="115"><template #default="{ row }">{{ confidenceLabel(row.assessment?.evidence_confidence) }}</template></el-table-column>
+              <el-table-column v-if="visibleKeys.includes('allocation')" label="团队分配" min-width="125"><template #default="{ row }"><el-tag :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</el-tag></template></el-table-column>
               <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
                 <template #default="{ row }">
                   <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
@@ -134,12 +135,22 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import PublicPoolBatchDialog from './components/PublicPoolBatchDialog.vue'
 import { approvePublicPoolTask, bulkReviewPublicPoolTasks, claimPublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolBatches, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { PUBLIC_POOL_STATUS_TABS, defaultBatchTab, taskStatusBucket, taskStatusCounts } from './publicPoolBatchState'
+
+const columnDefs = [
+  { key: 'company', label: '客户' }, { key: 'tier', label: '档位' },
+  { key: 'orders', label: '订单 / 完整度' }, { key: 'progress', label: '背调进度' },
+  { key: 'grade', label: '成交等级' }, { key: 'industry', label: '行业判定' },
+  { key: 'confidence', label: '证据置信度' }, { key: 'allocation', label: '团队分配' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('public-pool-research', columnDefs)
 
 const audit = ref({}); const auditLoading = ref(false); const batchLoading = ref(false)
 const batchDialogVisible = ref(false)

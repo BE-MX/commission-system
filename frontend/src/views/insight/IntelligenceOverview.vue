@@ -8,20 +8,34 @@
     </div>
 
     <div class="page-header">
-      <h1>行业情报速览</h1>
-      <div class="header-actions">
+      <div>
+        <h1>行业情报速览</h1>
+        <p>按日期范围汇总行业情报条目，支持定时生成与置顶查看。</p>
+      </div>
+    </div>
+
+    <!-- 列表卡片：操作行 + 报告卡片 + 分页（Action Bar Spec；内容物为卡片流而非表格） -->
+    <section ref="panelRef" class="table-card overview-panel">
+      <div class="action-bar">
         <GlassButton variant="primary" :left-icon="Plus" @click="showGenerateDialog = true" v-if="authStore.hasPermission('insight:admin')">
           新建速览
         </GlassButton>
         <GlassButton variant="secondary" :left-icon="Setting" @click="showScheduleDialog = true" v-if="authStore.hasPermission('insight:admin')">
           定时设置
         </GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadReports"
+          @fullscreen="toggleFullscreen"
+        />
       </div>
-    </div>
 
-    <!-- 报告卡片列表 -->
-    <div class="report-cards" v-loading="loading">
-      <el-empty v-if="reports.length === 0" description="暂无速览报告" />
+      <!-- 报告卡片列表 -->
+      <div class="report-cards" v-loading="loading">
+        <el-empty v-if="reports.length === 0" :image-size="96" description="暂无数据" />
 
       <div v-for="report in reports" :key="report.id" class="report-card lg-card" :class="{ pinned: report.is_pinned }">
         <div class="card-header">
@@ -53,17 +67,20 @@
           </div>
         </div>
       </div>
-    </div>
+      </div>
 
-    <!-- 分页 -->
-    <el-pagination
-      v-model:current-page="page"
-      v-model:page-size="pageSize"
-      :total="total"
-      layout="prev, pager, next"
-      @change="loadReports"
-      class="pagination"
-    />
+      <!-- 分页 -->
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="pager"
+        @size-change="handleSizeChange"
+        @current-change="loadReports"
+      />
+    </section>
 
     <!-- 新建速览弹窗 -->
     <el-dialog v-model="showGenerateDialog" title="新建行业情报速览" width="600px">
@@ -117,7 +134,7 @@
       <div class="schedule-header">
         <el-button type="primary" @click="showAddRule = true">+ 新建规则</el-button>
       </div>
-      <el-table :data="scheduleRules" size="small" border class="list-table">
+      <el-table :data="scheduleRules" border class="list-table">
         <el-table-column prop="rule_name" label="规则名" />
         <el-table-column prop="cron_expression" label="Cron" />
         <el-table-column label="状态" min-width="80">
@@ -141,6 +158,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Setting, Top } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import {
   listIntelligenceReports,
   generateIntelligence,
@@ -160,6 +179,10 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const expandedId = ref(null)
+
+// 卡片流列表无可隐藏列，列设置图标不渲染；密度/全屏偏好仍按页面键持久化
+const columnDefs = []
+const { density, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('intelligence-overview', columnDefs)
 
 // 生成弹窗
 const showGenerateDialog = ref(false)
@@ -196,6 +219,12 @@ async function loadReports() {
   } finally {
     loading.value = false
   }
+}
+
+// 分页：每页条数变化先回第 1 页
+function handleSizeChange() {
+  page.value = 1
+  loadReports()
 }
 
 // 展开/收起
@@ -312,8 +341,7 @@ onMounted(() => {
 /* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
    会覆盖就地渲染的 el-dialog 的 .el-overlay position: fixed */
 .page-wrapper .page-header,
-.page-wrapper .report-cards,
-.page-wrapper .pagination {
+.page-wrapper .overview-panel {
   position: relative;
   z-index: 1;
 }
@@ -328,14 +356,29 @@ onMounted(() => {
   font-weight: 600;
   margin: 0;
 }
-.header-actions {
-  display: flex;
-  gap: 8px;
+.page-header p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+/* 列表面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底）；
+   操作行/分页均为全局规范类（app.css .table-card > …），本页不覆写 */
+.overview-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+/* 全屏态：面板自身滚动（.table-card 默认 overflow:hidden） */
+.overview-panel:fullscreen {
+  overflow: auto;
 }
 .report-cards {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding: 14px;
 }
 /* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），这里只留布局 */
 .report-card {
@@ -385,10 +428,6 @@ onMounted(() => {
 }
 .preview-loading {
   padding: 24px;
-}
-.pagination {
-  margin-top: 24px;
-  justify-content: flex-end;
 }
 .schedule-header {
   margin-bottom: 12px;

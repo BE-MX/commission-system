@@ -13,7 +13,7 @@
  *
  * 主文件保留 template + style + composable destructure + 子组件 import。
  */
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getRequests, getTaskList, getDesigners, createDesigner, updateDesigner,
@@ -23,6 +23,7 @@ import {
 } from '@/api/design'
 import { getDictMap } from '@/utils/dict'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
 
 
 const PERIOD_LABELS = { am: '上午', pm: '下午' }
@@ -39,7 +40,59 @@ const TASK_STATUS_TAG = {
   cancelled: 'info',
 }
 
+// 列配置数组：TableTools 列显隐的数据源（Action Bar Spec；操作列不进配置，列保持模板静态渲染）
+const PENDING_COLUMNS = [
+  { key: 'request-no', label: '预约编号' },
+  { key: 'customer-name', label: '客户名称' },
+  { key: 'customer-level', label: '客户等级' },
+  { key: 'salesperson', label: '业务员' },
+  { key: 'shoot-type', label: '拍摄类型' },
+  { key: 'expect-date', label: '期望日期' },
+  { key: 'priority', label: '优先级' },
+  { key: 'remark', label: '备注' },
+  { key: 'created-at', label: '创建时间' },
+]
+const SCHEDULED_COLUMNS = [
+  { key: 'task-no', label: '任务编号' },
+  { key: 'customer-name', label: '客户名称' },
+  { key: 'salesperson', label: '业务员' },
+  { key: 'shoot-type', label: '拍摄类型' },
+  { key: 'designer', label: '设计师' },
+  { key: 'plan-date', label: '排期日期' },
+  { key: 'priority', label: '优先级' },
+  { key: 'remark', label: '备注' },
+  { key: 'status', label: '状态' },
+  { key: 'created-at', label: '创建时间' },
+]
+const COMPLETED_COLUMNS = [
+  { key: 'task-no', label: '任务编号' },
+  { key: 'customer-name', label: '客户名称' },
+  { key: 'salesperson', label: '业务员' },
+  { key: 'shoot-type', label: '拍摄类型' },
+  { key: 'designer', label: '设计师' },
+  { key: 'plan-date', label: '排期日期' },
+  { key: 'priority', label: '优先级' },
+  { key: 'status', label: '状态' },
+  { key: 'created-at', label: '创建时间' },
+]
+const DESIGNER_COLUMNS = [
+  { key: 'id', label: 'ID' },
+  { key: 'name', label: '姓名' },
+  { key: 'email', label: '邮箱' },
+  { key: 'dingtalk-id', label: '钉钉ID' },
+  { key: 'status', label: '状态' },
+  { key: 'created-at', label: '创建时间' },
+]
+
 function periodLabel(p) { return PERIOD_LABELS[p] || '' }
+
+// 每 tab 一套表格视图状态（列显隐/密度/全屏），localStorage 键各自独立（Action Bar Spec）
+function useTabTableView(tab, columns) {
+  const {
+    density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen,
+  } = useTableView(`design-manage-${tab}`, columns)
+  return { columnDefs: columns, density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen }
+}
 
 
 export function useDesignManage() {
@@ -47,6 +100,12 @@ export function useDesignManage() {
   const pendingSort = useTableSort()
   const scheduledSort = useTableSort()
   const completedSort = useTableSort()
+
+  // ── 表格视图（每 tab 独立） ────────────────────────────
+  const pendingView = useTabTableView('pending', PENDING_COLUMNS)
+  const scheduledView = useTabTableView('scheduled', SCHEDULED_COLUMNS)
+  const completedView = useTabTableView('completed', COMPLETED_COLUMNS)
+  const designerView = useTabTableView('designers', DESIGNER_COLUMNS)
 
   // ── 字典 ──────────────────────────────────────────────
   const shootTypeMap = ref({})
@@ -283,6 +342,23 @@ export function useDesignManage() {
   const pendingTotal = ref(0)
   const pendingFilters = reactive({ salesperson_name: '', shoot_type: '', expectDateRange: null })
 
+  const pendingHasActiveFilters = computed(() =>
+    Boolean(pendingFilters.salesperson_name || pendingFilters.shoot_type || pendingFilters.expectDateRange?.length))
+  function searchPending() {
+    pendingPage.value = 1
+    fetchPending()
+  }
+  function resetPendingFilters() {
+    pendingFilters.salesperson_name = ''
+    pendingFilters.shoot_type = ''
+    pendingFilters.expectDateRange = null
+    searchPending()
+  }
+  function handlePendingSizeChange() {
+    pendingPage.value = 1
+    fetchPending()
+  }
+
   async function fetchPending() {
     pendingLoading.value = true
     try {
@@ -332,6 +408,24 @@ export function useDesignManage() {
   const scheduledTotal = ref(0)
   const scheduledFilters = reactive({ salesperson_name: '', shoot_type: '', designer_id: null, planDateRange: null })
 
+  const scheduledHasActiveFilters = computed(() =>
+    Boolean(scheduledFilters.salesperson_name || scheduledFilters.shoot_type || scheduledFilters.designer_id || scheduledFilters.planDateRange?.length))
+  function searchScheduled() {
+    scheduledPage.value = 1
+    fetchScheduled()
+  }
+  function resetScheduledFilters() {
+    scheduledFilters.salesperson_name = ''
+    scheduledFilters.shoot_type = ''
+    scheduledFilters.designer_id = null
+    scheduledFilters.planDateRange = null
+    searchScheduled()
+  }
+  function handleScheduledSizeChange() {
+    scheduledPage.value = 1
+    fetchScheduled()
+  }
+
   async function fetchScheduled() {
     scheduledLoading.value = true
     try {
@@ -367,6 +461,24 @@ export function useDesignManage() {
   const completedPageSize = ref(50)
   const completedTotal = ref(0)
   const completedFilters = reactive({ salesperson_name: '', shoot_type: '', designer_id: null, planDateRange: null })
+
+  const completedHasActiveFilters = computed(() =>
+    Boolean(completedFilters.salesperson_name || completedFilters.shoot_type || completedFilters.designer_id || completedFilters.planDateRange?.length))
+  function searchCompleted() {
+    completedPage.value = 1
+    fetchCompleted()
+  }
+  function resetCompletedFilters() {
+    completedFilters.salesperson_name = ''
+    completedFilters.shoot_type = ''
+    completedFilters.designer_id = null
+    completedFilters.planDateRange = null
+    searchCompleted()
+  }
+  function handleCompletedSizeChange() {
+    completedPage.value = 1
+    fetchCompleted()
+  }
 
   async function fetchCompleted() {
     completedLoading.value = true
@@ -654,16 +766,47 @@ export function useDesignManage() {
     pendingTableRef, pendingData, pendingLoading,
     pendingPage, pendingPageSize, pendingTotal, pendingFilters,
     fetchPending, handleScanShootReminders, pendingSort,
+    pendingHasActiveFilters, searchPending, resetPendingFilters, handlePendingSizeChange,
+    pendingColumnDefs: pendingView.columnDefs,
+    pendingDensity: pendingView.density,
+    pendingDensityClass: pendingView.densityClass,
+    pendingVisibleKeys: pendingView.visibleKeys,
+    pendingPanelRef: pendingView.panelRef,
+    pendingIsFullscreen: pendingView.isFullscreen,
+    pendingToggleFullscreen: pendingView.toggleFullscreen,
     // Scheduled tab
     scheduledTableRef, scheduledData, scheduledLoading,
     scheduledPage, scheduledPageSize, scheduledTotal, scheduledFilters,
     fetchScheduled, scheduledSort,
+    scheduledHasActiveFilters, searchScheduled, resetScheduledFilters, handleScheduledSizeChange,
+    scheduledColumnDefs: scheduledView.columnDefs,
+    scheduledDensity: scheduledView.density,
+    scheduledDensityClass: scheduledView.densityClass,
+    scheduledVisibleKeys: scheduledView.visibleKeys,
+    scheduledPanelRef: scheduledView.panelRef,
+    scheduledIsFullscreen: scheduledView.isFullscreen,
+    scheduledToggleFullscreen: scheduledView.toggleFullscreen,
     // Completed tab
     completedTableRef, completedData, completedLoading,
     completedPage, completedPageSize, completedTotal, completedFilters,
     fetchCompleted, completedSort,
+    completedHasActiveFilters, searchCompleted, resetCompletedFilters, handleCompletedSizeChange,
+    completedColumnDefs: completedView.columnDefs,
+    completedDensity: completedView.density,
+    completedDensityClass: completedView.densityClass,
+    completedVisibleKeys: completedView.visibleKeys,
+    completedPanelRef: completedView.panelRef,
+    completedIsFullscreen: completedView.isFullscreen,
+    completedToggleFullscreen: completedView.toggleFullscreen,
     // Designers tab
     designerData, designerLoading, fetchDesigners,
+    designerColumnDefs: designerView.columnDefs,
+    designerDensity: designerView.density,
+    designerDensityClass: designerView.densityClass,
+    designerVisibleKeys: designerView.visibleKeys,
+    designerPanelRef: designerView.panelRef,
+    designerIsFullscreen: designerView.isFullscreen,
+    designerToggleFullscreen: designerView.toggleFullscreen,
     designerDialogVisible, designerSaving, designerForm,
     openDesignerDialog, submitDesigner, toggleDesignerActive,
     // Confirm dialog

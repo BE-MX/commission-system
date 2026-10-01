@@ -1,0 +1,87 @@
+.production-order-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.prod-order-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.production-order-page .stats-row,
+.production-order-page .order-tabs {
+  position: relative;
+  z-index: 1;
+}
+
+/* 统计卡 */
+.stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+/* 统计卡：玻璃质感由 .lg-card 提供，这里只留布局 */
+.stat-card { padding: 24px; display: flex; align-items: center; gap: 16px; }
+.stat-icon-bg { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.stat-card.submitted .stat-icon-bg { background: linear-gradient(135deg, #e6f2ff, #cce0ff); }
+.stat-card.terminated .stat-icon-bg { background: linear-gradient(135deg, #f0f0f0, #e0e0e0); }
+.stat-card.completed .stat-icon-bg { background: linear-gradient(135deg, #e6f7e6, #ccf2cc); }
+.stat-info { flex: 1; }
+.stat-label { font-size: 13px; color: #888; margin-bottom: 4px; }
+.stat-value { font-size: 28px; font-weight: 700; color: #1e1e2d; line-height: 1.2; }
+
+/* 标签页 */
+.order-tabs :deep(.el-tabs__header) { margin-bottom: 16px; }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底）。
+   筛选区三档宽度、操作行、分页均为全局规范类（app.css），本页只保留玻璃皮肤覆写 */
+.production-order-page .table-card {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.production-order-page .table-card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 background:inherit，行透明时滑到它下面的
+   内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
+.production-order-page .table-card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.production-order-page .table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.production-order-page .table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+
+/* 全屏态：面板自身滚动 */
+.production-order-page .table-card:fullscreen { overflow: auto; }
+
+/* 详情弹窗 */
+.order-detail { padding: 10px 0; }
+.detail-header { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.detail-row { display: flex; gap: 10px; align-items: center; }
+.detail-label { color: #888; font-size: 13px; min-width: 70px; }
+.detail-value { font-weight: 500; color: #1e1e2d; }
+.detail-subtitle { font-size: 15px; font-weight: 600; color: #1e1e2d; margin-bottom: 12px; }
+
+/* 状态变更弹窗 */
+.status-dialog-content { padding: 10px 0; }
+.received-dialog-content { padding: 10px 0; }
+
+/* 通用 */
+.in-transit-active { color: #27ae60; font-weight: 600; }
+
+/* 工序进度看板 */
+.progress-panel { margin-top: 12px; padding: 16px; background: #fafbfc; border-radius: 8px; border: 1px solid #ebeef5; }
+.progress-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.progress-bar-wrap { margin-bottom: 12px; }
+.progress-summary { font-size: 13px; color: #606266; }
+.step-timeline { display: flex; flex-direction: column; gap: 4px; }
+.step-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; font-size: 13px; }
+.step-row.completed { background: #f0f9eb; }
+.step-row.current { background: #ecf5ff; }
+.step-icon { font-size: 14px; width: 20px; text-align: center; }
+.step-order-num { width: 20px; height: 20px; border-radius: 50%; background: #c0c4cc; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+.step-row.completed .step-order-num { background: #67c23a; }
+.step-row.current .step-order-num { background: #409eff; }
+.step-process-name { font-weight: 500; min-width: 80px; }
+.step-meta { color: #909399; font-size: 12px; }
+.progress-empty { text-align: center; padding: 16px; }

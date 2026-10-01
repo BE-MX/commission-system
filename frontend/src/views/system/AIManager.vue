@@ -28,24 +28,28 @@
     <el-tabs v-model="activeTab" type="border-card" class="ai-tabs">
       <!-- Provider Tab -->
       <el-tab-pane label="提供商管理" name="providers">
-        <div class="tab-toolbar">
+        <div ref="providerPanelRef" class="table-card">
+        <div class="toolbar tab-toolbar">
           <div class="toolbar-left">
-            <el-input v-model="providerSearch" placeholder="搜索名称 / API Base" clearable style="width: 220px" />
-            <el-select v-model="providerTypeFilter" placeholder="全部类型" clearable style="width: 140px">
+            <el-input v-model="providerSearch" placeholder="搜索名称 / API Base" clearable class="filter-w-md" />
+            <el-select v-model="providerTypeFilter" placeholder="全部类型" clearable class="filter-w-sm">
               <el-option label="直连大模型" value="direct" />
               <el-option label="ACCIO WORK" value="accio_work" />
             </el-select>
-            <el-select v-model="providerStatusFilter" placeholder="全部状态" clearable style="width: 120px">
+            <el-select v-model="providerStatusFilter" placeholder="全部状态" clearable class="filter-w-sm">
               <el-option label="已启用" :value="true" />
               <el-option label="已禁用" :value="false" />
             </el-select>
           </div>
+        </div>
+        <div class="action-bar">
           <GlassButton variant="primary" left-icon="Plus" @click="openProviderDialog()">新增提供商</GlassButton>
+          <TableTools v-model:visible-keys="providerVisibleKeys" v-model:density="providerDensity" :columns="providerColumnDefs" :fullscreen="providerIsFullscreen" @refresh="fetchProviders" @fullscreen="toggleProviderFullscreen" />
         </div>
 
-        <el-table :data="filteredProviders" border class="list-table" v-loading="providerLoading">
-          <el-table-column prop="id" label="ID" min-width="60" />
-          <el-table-column label="名称" min-width="160">
+        <el-table :data="filteredProviders" border class="list-table" :class="providerDensityClass" :max-height="providerIsFullscreen ? undefined : 640" v-loading="providerLoading">
+          <el-table-column v-if="providerVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
+          <el-table-column v-if="providerVisibleKeys.includes('name')" label="名称" min-width="160">
             <template #default="{ row }">
               <div class="cell-with-icon">
                 <el-icon :size="16" :color="row.provider_type === 'direct' ? '#2563eb' : '#059669'">
@@ -55,14 +59,14 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="类型" min-width="110">
+          <el-table-column v-if="providerVisibleKeys.includes('type')" label="类型" min-width="110">
             <template #default="{ row }">
               <el-tag :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
                 {{ row.provider_type === 'direct' ? '直连' : 'ACCIO' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="协议" min-width="100">
+          <el-table-column v-if="providerVisibleKeys.includes('protocol')" label="协议" min-width="100">
             <template #default="{ row }">
               <el-tag v-if="row.provider_type === 'direct'" :type="row.api_type === 'anthropic' ? 'warning' : 'info'" size="small" effect="plain">
                 {{ row.api_type === 'anthropic' ? 'Anthropic' : 'OpenAI' }}
@@ -70,7 +74,7 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column label="API Base / Key" min-width="220">
+          <el-table-column v-if="providerVisibleKeys.includes('api')" label="API Base / Key" min-width="220">
             <template #default="{ row }">
               <div class="mono-text">{{ row.api_base }}</div>
               <div class="key-row">
@@ -81,9 +85,9 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="timeout_sec" label="超时" min-width="70" />
-          <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-          <el-table-column label="状态" min-width="80">
+          <el-table-column v-if="providerVisibleKeys.includes('timeout')" prop="timeout_sec" label="超时" min-width="70" />
+          <el-table-column v-if="providerVisibleKeys.includes('remark')" prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+          <el-table-column v-if="providerVisibleKeys.includes('status')" label="状态" min-width="80">
             <template #default="{ row }">
               <el-switch v-model="row.is_enabled" @change="toggleProvider(row)" />
             </template>
@@ -102,23 +106,28 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </el-tab-pane>
 
       <!-- Preset Tab -->
       <el-tab-pane label="预设管理" name="presets">
-        <div class="tab-toolbar">
+        <div ref="presetPanelRef" class="table-card">
+        <div class="toolbar tab-toolbar">
           <div class="toolbar-left">
-            <el-input v-model="presetSearch" placeholder="搜索预设名称 / 描述" clearable style="width: 220px" />
-            <el-select v-model="presetProviderFilter" placeholder="全部提供商" clearable style="width: 160px">
+            <el-input v-model="presetSearch" placeholder="搜索预设名称 / 描述" clearable class="filter-w-md" />
+            <el-select v-model="presetProviderFilter" placeholder="全部提供商" clearable class="filter-w-sm">
               <el-option v-for="p in providerOptions" :key="p.id" :label="p.name" :value="p.id" />
             </el-select>
           </div>
+        </div>
+        <div class="action-bar">
           <GlassButton variant="primary" left-icon="Plus" @click="openPresetDialog()">新增预设</GlassButton>
+          <TableTools v-model:visible-keys="presetVisibleKeys" v-model:density="presetDensity" :columns="presetColumnDefs" :fullscreen="presetIsFullscreen" @refresh="fetchPresets" @fullscreen="togglePresetFullscreen" />
         </div>
 
-        <el-table :data="filteredPresets" border class="list-table" v-loading="presetLoading">
-          <el-table-column prop="id" label="ID" min-width="60" />
-          <el-table-column label="预设名称" min-width="180">
+        <el-table :data="filteredPresets" border class="list-table" :class="presetDensityClass" :max-height="presetIsFullscreen ? undefined : 640" v-loading="presetLoading">
+          <el-table-column v-if="presetVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
+          <el-table-column v-if="presetVisibleKeys.includes('name')" label="预设名称" min-width="180">
             <template #default="{ row }">
               <div>
                 <span class="cell-title">{{ row.preset_name }}</span>
@@ -126,7 +135,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="绑定提供商" min-width="140">
+          <el-table-column v-if="presetVisibleKeys.includes('provider')" label="绑定提供商" min-width="140">
             <template #default="{ row }">
               <div class="cell-with-icon">
                 <el-icon :size="14" color="#2563eb"><Position /></el-icon>
@@ -134,12 +143,12 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="model" label="模型" min-width="140">
+          <el-table-column v-if="presetVisibleKeys.includes('model')" prop="model" label="模型" min-width="140">
             <template #default="{ row }">
               <span class="mono-text">{{ row.model || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="80">
+          <el-table-column v-if="presetVisibleKeys.includes('status')" label="状态" min-width="80">
             <template #default="{ row }">
               <el-tag :type="row.is_enabled ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.is_enabled ? '启用' : '禁用' }}
@@ -163,6 +172,7 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </el-tab-pane>
 
       <!-- Logs Tab -->
@@ -180,25 +190,28 @@
           </el-col>
         </el-row>
 
-        <div class="tab-toolbar">
+        <div ref="logPanelRef" class="table-card">
+        <div class="toolbar tab-toolbar">
           <div class="toolbar-left">
-            <el-input v-model="logSearch" placeholder="搜索预设 / 模块" clearable style="width: 180px" />
-            <el-select v-model="logModuleFilter" placeholder="全部模块" clearable style="width: 130px">
+            <el-select v-model="logModuleFilter" placeholder="全部模块" clearable class="filter-w-sm">
               <el-option label="物流跟踪" value="logistics" />
               <el-option label="设计预约" value="design_booking" />
               <el-option label="提成管理" value="commission" />
             </el-select>
-            <el-select v-model="logStatusFilter" placeholder="全部状态" clearable style="width: 120px">
+            <el-select v-model="logStatusFilter" placeholder="全部状态" clearable class="filter-w-sm">
               <el-option label="成功" value="success" />
               <el-option label="错误" value="error" />
               <el-option label="超时" value="timeout" />
               <el-option label="进行中" value="pending" />
             </el-select>
-            <el-date-picker v-model="logDateRange" type="daterange" range-separator="~" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD" style="width: 240px" />
+            <el-date-picker v-model="logDateRange" type="daterange" range-separator="~" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD" class="filter-w-lg" />
           </div>
         </div>
+        <div class="action-bar">
+          <TableTools v-model:visible-keys="logVisibleKeys" v-model:density="logDensity" :columns="logColumnDefs" :fullscreen="logIsFullscreen" @refresh="fetchLogs" @fullscreen="toggleLogFullscreen" />
+        </div>
 
-        <el-table :data="logsData" border class="list-table" v-loading="logsLoading" @expand-change="onLogExpand" @sort-change="logSort.onSortChange">
+        <el-table :data="logsData" border class="list-table" :class="logDensityClass" :max-height="logIsFullscreen ? undefined : 640" v-loading="logsLoading" @expand-change="onLogExpand" @sort-change="logSort.onSortChange">
           <el-table-column type="expand">
             <template #default="{ row }">
               <div class="log-detail">
@@ -215,8 +228,8 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="id" label="ID" min-width="70" />
-          <el-table-column label="模块 / Preset" min-width="160">
+          <el-table-column v-if="logVisibleKeys.includes('id')" prop="id" label="ID" min-width="70" />
+          <el-table-column v-if="logVisibleKeys.includes('module')" label="模块 / Preset" min-width="160">
             <template #default="{ row }">
               <div>
                 <span>{{ moduleLabel(row.caller_module) }}</span>
@@ -224,37 +237,38 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="类型" min-width="80">
+          <el-table-column v-if="logVisibleKeys.includes('type')" label="类型" min-width="80">
             <template #default="{ row }">
               <el-tag :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
                 {{ row.provider_type === 'direct' ? '直连' : 'ACCIO' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="model" label="模型" min-width="120" sortable="custom">
+          <el-table-column v-if="logVisibleKeys.includes('model')" prop="model" label="模型" min-width="120" sortable="custom">
             <template #default="{ row }"><span class="mono-text">{{ row.model || '-' }}</span></template>
           </el-table-column>
-          <el-table-column prop="tokens_used" label="Token" min-width="80" align="right">
+          <el-table-column v-if="logVisibleKeys.includes('tokens')" prop="tokens_used" label="Token" min-width="80" align="right">
             <template #default="{ row }">
               <span class="mono-text">{{ row.tokens_used != null ? row.tokens_used.toLocaleString() : '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="duration_ms" label="耗时" min-width="90" align="right">
+          <el-table-column v-if="logVisibleKeys.includes('duration')" prop="duration_ms" label="耗时" min-width="90" align="right">
             <template #default="{ row }">
               <span class="mono-text">{{ row.duration_ms != null ? formatDuration(row.duration_ms) : '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="80">
+          <el-table-column v-if="logVisibleKeys.includes('status')" label="状态" min-width="80">
             <template #default="{ row }">
               <el-tag :type="statusTagType(row.status)" size="small" effect="plain">
                 {{ statusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="时间" min-width="150" sortable="custom" />
+          <el-table-column v-if="logVisibleKeys.includes('created')" prop="created_at" label="时间" min-width="150" sortable="custom" />
         </el-table>
 
-        <el-pagination v-model:current-page="logPage" v-model:page-size="logPageSize" :page-sizes="[20, 50, 100]" :total="logTotal" layout="total, sizes, prev, pager, next" class="pagination" @change="fetchLogs" />
+        <el-pagination v-model:current-page="logPage" v-model:page-size="logPageSize" :page-sizes="[20, 50, 100]" :total="logTotal" layout="total, sizes, prev, pager, next" class="pager" />
+        </div>
       </el-tab-pane>
       <el-tab-pane label="站点应用" name="sites" lazy>
         <AiGatewayApps />
@@ -417,6 +431,8 @@
 
 <script setup>
 import AiGatewayApps from './components/AiGatewayApps.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import {
   Cpu, Monitor, Position, Lightning, Edit, Delete,
   VideoPlay, DocumentCopy, ChatDotRound, UploadFilled,
@@ -426,6 +442,39 @@ import {
 
 import { useAiManager } from './composables/useAiManager'
 
+const providerColumnDefs = [
+  { key: 'id', label: 'ID' }, { key: 'name', label: '名称' },
+  { key: 'type', label: '类型' }, { key: 'protocol', label: '协议' },
+  { key: 'api', label: 'API Base / Key' }, { key: 'timeout', label: '超时' },
+  { key: 'remark', label: '备注' }, { key: 'status', label: '状态' },
+]
+const presetColumnDefs = [
+  { key: 'id', label: 'ID' }, { key: 'name', label: '预设名称' },
+  { key: 'provider', label: '绑定提供商' }, { key: 'model', label: '模型' },
+  { key: 'status', label: '状态' },
+]
+const logColumnDefs = [
+  { key: 'id', label: 'ID' }, { key: 'module', label: '模块 / Preset' },
+  { key: 'type', label: '类型' }, { key: 'model', label: '模型' },
+  { key: 'tokens', label: 'Token' }, { key: 'duration', label: '耗时' },
+  { key: 'status', label: '状态' }, { key: 'created', label: '时间' },
+]
+const {
+  density: providerDensity, densityClass: providerDensityClass,
+  visibleKeys: providerVisibleKeys, panelRef: providerPanelRef,
+  isFullscreen: providerIsFullscreen, toggleFullscreen: toggleProviderFullscreen,
+} = useTableView('ai-manager-providers', providerColumnDefs)
+const {
+  density: presetDensity, densityClass: presetDensityClass,
+  visibleKeys: presetVisibleKeys, panelRef: presetPanelRef,
+  isFullscreen: presetIsFullscreen, toggleFullscreen: togglePresetFullscreen,
+} = useTableView('ai-manager-presets', presetColumnDefs)
+const {
+  density: logDensity, densityClass: logDensityClass,
+  visibleKeys: logVisibleKeys, panelRef: logPanelRef,
+  isFullscreen: logIsFullscreen, toggleFullscreen: toggleLogFullscreen,
+} = useTableView('ai-manager-logs', logColumnDefs)
+
 const {
   activeTab,
   // Provider
@@ -433,16 +482,16 @@ const {
   showKeyMap, testingId, testResultVisible, testResultData,
   providerDialogVisible, providerEditId, providerFormRef, providerSaving,
   providerForm, providerRules,
-  openProviderDialog, onProviderTypeChange, submitProvider,
+  fetchProviders, openProviderDialog, onProviderTypeChange, submitProvider,
   toggleProvider, handleTestProvider, handleDeleteProvider, toggleKey,
   filteredProviders,
   // Preset
   presets, presetLoading, presetSearch, presetProviderFilter, providerOptions,
-  presetDialogVisible, presetFormRef, presetSaving,
+  presetDialogVisible, presetEditId, presetFormRef, presetSaving,
   presetForm, presetRules, isAccioProvider,
   testDialogVisible, testPresetName, testMessage,
   testImageFileList, testReferenceImageFileList, testing, testResult, isCompositePreset,
-  openPresetDialog, onPresetProviderChange, submitPreset,
+  fetchPresets, openPresetDialog, onPresetProviderChange, submitPreset,
   handleDeletePreset, handleCopyPreset, openTestPreset,
   handleTestImageChange, handleTestImageExceed, clearTestImage,
   handleTestReferenceImageChange, handleTestReferenceImageExceed, clearTestReferenceImage,
@@ -451,7 +500,7 @@ const {
   // Logs
   logsData, logsLoading, logModuleFilter, logStatusFilter, logDateRange,
   logPage, logPageSize, logTotal,
-  onLogExpand, logSort,
+  fetchLogs, onLogExpand, logSort,
   logSummary,
   // shared
   stats,
@@ -459,330 +508,4 @@ const {
 } = useAiManager()
 </script>
 
-<style scoped>
-.ai-manager-page {
-  padding-bottom: 40px;
-}
-
-/* Stats */
-.stats-row {
-  margin-bottom: 20px;
-}
-.stat-card {
-  background: #fff;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-bottom: 16px;
-}
-.stat-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-.stat-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin: 0 0 6px;
-}
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  margin: 0;
-  line-height: 1;
-}
-.stat-sub {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin: 6px 0 0;
-}
-.stat-icon-wrap {
-  padding: 8px;
-  border-radius: 8px;
-}
-
-/* Tabs */
-.ai-tabs {
-  background: #fff;
-  border-radius: 12px;
-}
-.ai-tabs :deep(.el-tabs__header) {
-  border-radius: 12px 12px 0 0;
-  margin: 0;
-}
-.ai-tabs :deep(.el-tabs__content) {
-  padding: 20px;
-}
-
-/* Toolbar */
-.tab-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.toolbar-left {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* Table */
-.list-table {
-  font-size: 13px;
-}
-.cell-with-icon {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.cell-title {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.cell-desc {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin: 2px 0 0;
-}
-.mono-text {
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-.form-tip {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-top: 4px;
-  line-height: 1.4;
-}
-.key-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-}
-.key-mask {
-  color: var(--text-secondary);
-}
-
-/* Log Summary */
-.log-summary-row {
-  margin-bottom: 16px;
-}
-.log-summary-card {
-  background: #fafbfe;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-}
-.log-summary-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-.log-summary-label {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-.log-summary-value {
-  font-size: 18px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  margin: 0;
-}
-
-/* Log Detail */
-.log-detail {
-  padding: 12px 24px;
-  background: #fafbfe;
-}
-.log-error-box {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-}
-.log-error-code {
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: #dc2626;
-  margin: 0;
-}
-.log-error-msg {
-  font-size: 12px;
-  color: #b91c1c;
-  margin: 4px 0 0;
-}
-
-/* Test Dialog */
-.test-dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
-}
-.preset-image-upload {
-  width: 100%;
-}
-.upload-tip {
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-.test-result {
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: #fafbfe;
-  padding: 12px;
-}
-.test-result-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.test-result-meta {
-  margin-left: auto;
-  display: flex;
-  gap: 12px;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-.test-result-content {
-  background: #fff;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  margin: 0;
-  color: var(--text-primary);
-}
-.test-result-image {
-  display: block;
-  width: 100%;
-  max-height: 520px;
-  object-fit: contain;
-  background: #fff;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-}
-
-/* Test Popover */
-.test-popover-body {
-  padding: 8px 4px;
-}
-.test-status-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-.status-dot.ok { background: #16a34a; }
-.status-dot.error { background: #dc2626; }
-.test-status-text {
-  font-weight: 600;
-  font-size: 15px;
-}
-.test-latency {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin: 4px 0;
-}
-.test-detail {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin: 4px 0 0;
-}
-
-/* Form hints */
-.form-hint {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 4px;
-}
-.mono-input :deep(textarea) {
-  font-family: var(--font-mono);
-}
-
-/* Pagination */
-.pagination {
-  margin-top: 16px;
-  justify-content: flex-end;
-}
-/* ── Liquid Glass 材质（追加覆盖上文 scoped 白底；同特异性后者胜） ── */
-/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
-.ai-manager-page {
-  position: relative;
-}
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
-.ai-aurora {
-  inset: -24px -28px;
-}
-
-/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
-   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
-.ai-manager-page .stats-row,
-.ai-manager-page .ai-tabs {
-  position: relative;
-  z-index: 1;
-}
-
-/* 统计卡/日志汇总卡：玻璃质感由 .lg-card 提供（is-static 不上浮/不按压），
-   这里抵消上文的 scoped 白底三件套 */
-.stat-card,
-.log-summary-card {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-}
-
-.ai-tabs {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-}
-.ai-tabs :deep(.el-tabs__header) {
-  border-radius: var(--dash-card-radius) var(--dash-card-radius) 0 0;
-  background: rgba(255, 255, 255, 0.4);
-}
-
-.ai-tabs :deep(.el-tabs__item.is-active) {
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.ai-tabs :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-.ai-tabs :deep(.el-table-fixed-column--right) {
-  background-color: rgba(249, 244, 234, 0.97);
-}
-.ai-tabs :deep(th.el-table-fixed-column--right) {
-  background-color: rgba(246, 239, 226, 0.98);
-}
-.ai-tabs :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
-  background-color: rgba(245, 236, 220, 0.98);
-}
-</style>
+<style scoped src="./ai-manager.css"></style>

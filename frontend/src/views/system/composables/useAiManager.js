@@ -128,7 +128,6 @@ export function useAiManager() {
   // ── Logs ──────────────────────────────────────────────
   const logsData = ref([])
   const logsLoading = ref(false)
-  const logSearch = ref('')
   const logModuleFilter = ref('')
   const logStatusFilter = ref('')
   const logDateRange = ref([])
@@ -470,7 +469,7 @@ export function useAiManager() {
   // ── Watch ─────────────────────────────────────────────
   watch([providerSearch, providerTypeFilter, providerStatusFilter], () => { /* client-side filter */ })
   watch([presetSearch, presetProviderFilter], () => { /* client-side filter */ })
-  watch([logModuleFilter, logStatusFilter, logDateRange, logPage, logPageSize], fetchLogs, { immediate: false })
+  watch([logModuleFilter, logStatusFilter, logDateRange, logPage, logPageSize, logSort.sortField, logSort.sortOrder], fetchLogs, { immediate: false })
 
   // ── Lifecycle ─────────────────────────────────────────
   onMounted(() => {
@@ -502,7 +501,7 @@ export function useAiManager() {
     isImageResponse, sendTest,
     filteredPresets,
     // Logs
-    logsData, logsLoading, logSearch, logModuleFilter, logStatusFilter, logDateRange,
+    logsData, logsLoading, logModuleFilter, logStatusFilter, logDateRange,
     logPage, logPageSize, logTotal, logSummaryData,
     fetchLogs, onLogExpand, logSort,
     logSummary,

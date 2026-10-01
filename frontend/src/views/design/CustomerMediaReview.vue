@@ -3,15 +3,29 @@
     <div class="review-aurora lg-aurora" aria-hidden="true">
       <div class="lg-aurora__blob lg-aurora__blob--gold" /><div class="lg-aurora__blob lg-aurora__blob--amber" /><div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
-    <header class="page-header"><div><h2>拍摄素材审核</h2><p>审核通过后，客户会立即在专属门户看到本批原始素材。</p></div><GlassButton left-icon="Refresh" @click="load">刷新</GlassButton></header>
-    <div class="table-card review-panel">
-      <el-table :data="rows" v-loading="loading" class="list-table" border>
-        <el-table-column prop="customer_name" label="客户名称" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="customer_id" label="客户ID" min-width="130" />
-        <el-table-column prop="revision" label="修订" min-width="80"><template #default="{ row }">R{{ row.revision }}</template></el-table-column>
-        <el-table-column label="素材" min-width="110"><template #default="{ row }">{{ row.assets.length }} 个</template></el-table-column>
-        <el-table-column prop="submitted_at" label="送审时间" min-width="180" />
-        <el-table-column label="状态" min-width="110"><template #default><el-tag type="warning" effect="plain">待审核</el-tag></template></el-table-column>
+    <header class="page-header"><div><h2>拍摄素材审核</h2><p>审核通过后，客户会立即在专属门户看到本批原始素材。</p></div></header>
+    <div ref="panelRef" class="table-card review-panel">
+      <!-- 操作行：TableTools 四图标（Action Bar Spec；原页头「刷新」由工具图标承担） -->
+      <div class="action-bar">
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="load"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+      <el-table :data="rows" v-loading="loading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" description="暂无数据" />
+        </template>
+        <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="180" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('customer-id')" prop="customer_id" label="客户ID" min-width="130" />
+        <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="80"><template #default="{ row }">R{{ row.revision }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('assets')" label="素材" min-width="110"><template #default="{ row }">{{ row.assets.length }} 个</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="送审时间" min-width="180" />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default><el-tag type="warning" effect="plain">待审核</el-tag></template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="120" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="open(row)">审核</GlassButton></template></el-table-column>
       </el-table>
     </div>
@@ -87,6 +101,20 @@ import {
 } from '@/api/customerMedia'
 import CustomerMediaTagPicker from './customer-media/CustomerMediaTagPicker.vue'
 import { filterMediaByTags, groupMediaByTags } from './customer-media/customerMediaGrouping'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
+
+// 列配置数组：TableTools 列显隐的数据源（操作列不进配置）
+const columnDefs = [
+  { key: 'customer-name', label: '客户名称' },
+  { key: 'customer-id', label: '客户ID' },
+  { key: 'revision', label: '修订' },
+  { key: 'assets', label: '素材' },
+  { key: 'submitted-at', label: '送审时间' },
+  { key: 'status', label: '状态' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('customer-media-review', columnDefs)
 
 const rows = ref([]); const loading = ref(false); const saving = ref(false); const drawer = ref(false); const current = ref(null); const comment = ref(''); const previewUrl = ref('')
 const tagDimensions = ref([])

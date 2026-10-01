@@ -10,43 +10,56 @@
         <h2>信源配置管理</h2>
         <p class="subtitle">管理行业情报日报的所有信源 (RSS / 爬虫 / API)。当前为配置阶段,实际抓取尚未实现。</p>
       </div>
-      <div class="header-actions">
-        <GlassButton variant="link" left-icon="ArrowLeft" @click="goBack">返回</GlassButton>
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreate">新增信源</GlassButton>
-      </div>
     </div>
 
-    <div class="sources-panel">
-      <el-table :data="sources" v-loading="loading" border class="source-table list-table" style="width: 100%">
-      <el-table-column prop="id" label="ID" min-width="60" sortable />
-      <el-table-column prop="sort_order" label="排序" min-width="80" sortable />
-      <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip sortable />
-      <el-table-column prop="source_type" label="类型" min-width="140" sortable>
+    <section ref="panelRef" class="table-card sources-panel">
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton variant="ghost" left-icon="ArrowLeft" @click="goBack">返回</GlassButton>
+        <GlassButton variant="primary" left-icon="Plus" @click="openCreate">新增信源</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="refresh"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="sources" v-loading="loading" border class="source-table list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <template #empty>
+        <el-empty :image-size="96" description="暂无数据" />
+      </template>
+      <el-table-column v-if="visibleKeys.includes('id')" prop="id" label="ID" min-width="60" sortable />
+      <el-table-column v-if="visibleKeys.includes('sort-order')" prop="sort_order" label="排序" min-width="80" sortable />
+      <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="名称" min-width="160" show-overflow-tooltip sortable />
+      <el-table-column v-if="visibleKeys.includes('source-type')" prop="source_type" label="类型" min-width="140" sortable>
         <template #default="{ row }">
           <el-tag size="small" effect="light">{{ TYPE_LABELS[row.source_type] || row.source_type }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="url" label="URL" min-width="240" show-overflow-tooltip />
-      <el-table-column label="管线" min-width="80">
+      <el-table-column v-if="visibleKeys.includes('url')" prop="url" label="URL" min-width="240" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('pipeline')" label="管线" min-width="80">
         <template #default="{ row }">
           <el-tag size="small" :type="row.pipeline === 'external' ? 'info' : 'success'">{{ row.pipeline === 'external' ? '外部' : '内部' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="抓取间隔" min-width="100">
+      <el-table-column v-if="visibleKeys.includes('fetch-interval')" label="抓取间隔" min-width="100">
         <template #default="{ row }">{{ row.fetch_interval_hours }}h</template>
       </el-table-column>
-      <el-table-column prop="is_active" label="状态" min-width="80" sortable>
+      <el-table-column v-if="visibleKeys.includes('is-active')" prop="is_active" label="状态" min-width="80" sortable>
         <template #default="{ row }">
           <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="健康度" min-width="120">
+      <el-table-column v-if="visibleKeys.includes('health')" label="健康度" min-width="120">
         <template #default="{ row }">
           <span v-if="row.consecutive_failures === 0" class="health ok">正常</span>
           <span v-else class="health bad">连续失败 {{ row.consecutive_failures }} 次</span>
         </template>
       </el-table-column>
-      <el-table-column label="最近抓取" min-width="160">
+      <el-table-column v-if="visibleKeys.includes('last-fetched')" label="最近抓取" min-width="160">
         <template #default="{ row }">
           <div class="last-fetched">
             <span>{{ row.last_fetched_at ? formatTime(row.last_fetched_at) : '从未' }}</span>
@@ -62,7 +75,7 @@
         </template>
       </el-table-column>
       </el-table>
-    </div>
+    </section>
 
     <!-- 新增/编辑 -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑信源' : '新增信源'" width="600px" :close-on-click-modal="false">
@@ -149,6 +162,8 @@ import {
   listSources, createSource, updateSource, deleteSource, testSource,
 } from '@/api/insight'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 
 const router = useRouter()
 function goBack() {
@@ -167,6 +182,15 @@ const TYPE_LABELS = {
 
 const sources = ref([])
 const loading = ref(false)
+const columnDefs = [
+  { key: 'id', label: 'ID' }, { key: 'sort-order', label: '排序' },
+  { key: 'name', label: '名称' }, { key: 'source-type', label: '类型' },
+  { key: 'url', label: 'URL' }, { key: 'pipeline', label: '管线' },
+  { key: 'fetch-interval', label: '抓取间隔' }, { key: 'is-active', label: '状态' },
+  { key: 'health', label: '健康度' }, { key: 'last-fetched', label: '最近抓取' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('insight-sources', columnDefs)
 
 const dialogVisible = ref(false)
 const isEdit = ref(false)

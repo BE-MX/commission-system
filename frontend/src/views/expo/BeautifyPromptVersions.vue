@@ -1,18 +1,37 @@
 <template>
   <div class="beautify-page">
     <el-alert title="仅用于“美颜生成”的照片预处理。发布新版本只影响之后确认照片的新会话；最终生图不会再执行面部与皮肤处理。" type="info" :closable="false" show-icon />
-    <div class="toolbar">
-      <el-input v-model="searchForm.keyword" placeholder="搜索版本名称" clearable @keyup.enter="handleSearch" @clear="handleSearch" />
-      <GlassButton variant="ghost" left-icon="Search" @click="handleSearch">查询</GlassButton>
-      <GlassButton v-permission="'expo:admin'" variant="primary" left-icon="Plus" @click="openCreate">新建草稿</GlassButton>
-    </div>
-    <div class="table-card">
-      <el-table v-loading="loading" :data="list" border class="list-table">
-        <el-table-column prop="name" label="版本名称" min-width="190" />
-        <el-table-column label="状态" min-width="110"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
-        <el-table-column prop="revision" label="修订" min-width="80" />
-        <el-table-column label="发布时间" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.published_at) || '—' }}</template></el-table-column>
-        <el-table-column label="最后更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>
+    <div ref="panelRef" class="table-card">
+      <div class="toolbar">
+        <el-input v-model="searchForm.keyword" placeholder="搜索版本名称" clearable class="filter-w-md" @keyup.enter="handleSearch" @clear="handleSearch" />
+        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="handleReset">重置</GlassButton>
+      </div>
+
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton v-permission="'expo:admin'" variant="primary" left-icon="Plus" @click="openCreate">新建草稿</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="版本名称" min-width="190" />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="80" />
+        <el-table-column v-if="visibleKeys.includes('published-at')" label="发布时间" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.published_at) || '—' }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('updated-at')" label="最后更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right"><template #default="{ row }">
           <GlassButton variant="link" @click="openVersion(row.id)">查看{{ row.status === 'draft' ? ' / 编辑' : '' }}</GlassButton>
           <GlassButton variant="link" @click="copyVersion(row.id)">复制草稿</GlassButton>
@@ -51,7 +70,9 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import TableTools from '@/components/TableTools.vue'
 import { useListPage } from '@/composables/useListPage'
+import { useTableView } from '@/composables/useTableView'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import {
@@ -60,8 +81,19 @@ import {
   updateBeautifyPromptVersion,
 } from '@/api/expo'
 
-const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch, handlePageChange, handleSizeChange } =
+const { list, loading, total, page, pageSize, searchForm, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange } =
   useListPage(async params => (await getBeautifyPromptVersions(params)).data, { searchForm: { keyword: '' } })
+// columnDefs 只供 TableTools 列显隐面板，模板列保持静态（推广期不配置化渲染）
+const columnDefs = [
+  { key: 'name', label: '版本名称' },
+  { key: 'status', label: '状态' },
+  { key: 'revision', label: '修订' },
+  { key: 'published-at', label: '发布时间' },
+  { key: 'updated-at', label: '最后更新' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('expo-beautify-prompt-versions', columnDefs)
+const hasActiveFilters = computed(() => Boolean(searchForm.keyword))
 const visible = ref(false), opening = ref(false), saving = ref(false), busy = ref(false)
 const editId = ref(null), readOnly = ref(false), form = ref(null), baseline = ref(''), error = ref('')
 const previewInput = ref(null), previewing = ref(false), previewUrl = ref('')
@@ -132,13 +164,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 
 <style scoped>
 .beautify-page { display: flex; flex-direction: column; gap: 16px; }
-.toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.toolbar .el-input { width: 260px; }
-.table-card { padding: 16px; overflow: hidden; border: 1px solid var(--dash-glass-border); border-radius: var(--dash-card-radius); background: var(--dash-glass-bg); box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight); }
-.pager { justify-content: flex-end; margin-top: 16px; }
+.table-card { overflow: hidden; border: 1px solid var(--dash-glass-border); border-radius: var(--dash-card-radius); background: var(--dash-glass-bg); box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight); }
+/* 筛选区/操作行/分页：结构类是全局 .table-card > .toolbar/.action-bar/.pager（app.css），此处只做玻璃皮肤覆写（同 invoice-manage.css） */
+.toolbar { background: rgba(255, 255, 255, 0.4); }
+.action-bar { background: rgba(255, 255, 255, 0.28); }
+/* 全屏态：面板自身滚动 */
+.table-card:fullscreen { overflow: auto; }
 .drawer-alert { margin-bottom: 16px; }
 .preview-box { padding: 16px; border: 1px solid var(--el-border-color); border-radius: 10px; }
 .preview-box p { margin: 0 0 12px; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.7; }
 .preview-box img { display: block; width: min(100%, 480px); max-height: 520px; margin-top: 16px; border-radius: 10px; object-fit: contain; }
-@media (max-width: 600px) { .toolbar .el-input { width: 100%; } }
 </style>

@@ -60,49 +60,46 @@
       </div>
     </section>
 
-    <el-row :gutter="12" class="toolbar">
-      <el-col :xs="24" :sm="7" :md="5">
-        <el-select v-model="filters.status" placeholder="全部状态" clearable style="width: 100%" @change="search">
+    <div ref="panelRef" class="table-card task-panel">
+      <div class="toolbar">
+        <el-select v-model="filters.status" class="filter-w-sm" placeholder="全部状态" clearable>
           <el-option v-for="(meta, key) in STATUS_META" :key="key" :label="meta.label" :value="key" />
         </el-select>
-      </el-col>
-      <el-col :xs="24" :sm="7" :md="5">
-        <el-select v-model="filters.runtime" placeholder="全部运行时" clearable style="width: 100%" @change="search">
+        <el-select v-model="filters.runtime" class="filter-w-sm" placeholder="全部运行时" clearable>
           <el-option label="DSH" value="dsh" />
           <el-option label="OpenClaw" value="openclaw" />
           <el-option label="方舟原生" value="native" />
         </el-select>
-      </el-col>
-      <el-col :xs="24" :sm="10" :md="14" class="toolbar-actions">
-        <GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="fetchTasks">刷新</GlassButton>
-      </el-col>
-    </el-row>
-
-    <div class="table-card task-panel">
-      <el-table :data="tasks" v-loading="loading" border class="list-table" style="width: 100%" empty-text="暂无 Agent 任务">
-        <el-table-column label="任务" min-width="250" show-overflow-tooltip>
+        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton variant="secondary" left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
+      <div class="action-bar">
+        <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="fetchTasks" @fullscreen="toggleFullscreen" />
+      </div>
+      <el-table :data="tasks" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <el-table-column v-if="visibleKeys.includes('task')" label="任务" min-width="250" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="task-title">{{ taskTitle(row) }}</div>
             <div class="task-sub">#{{ row.id }} · {{ profileName(row.profile_id) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
           <template #default="{ row }">
             <el-tag :type="statusMeta(row.status).type" effect="plain" size="small">
               {{ statusMeta(row.status).label }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="运行时" min-width="95">
+        <el-table-column v-if="visibleKeys.includes('runtime')" label="运行时" min-width="95">
           <template #default="{ row }">{{ runtimeLabel(row.source_runtime) }}</template>
         </el-table-column>
-        <el-table-column label="业务对象" min-width="160" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('business')" label="业务对象" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ businessRef(row) }}</template>
         </el-table-column>
-        <el-table-column label="消耗" min-width="135">
+        <el-table-column v-if="visibleKeys.includes('usage')" label="消耗" min-width="135">
           <template #default="{ row }">{{ row.steps_used }} 步 · {{ tokenTotal(row) }} Token</template>
         </el-table-column>
-        <el-table-column label="创建时间" min-width="170">
+        <el-table-column v-if="visibleKeys.includes('created')" label="创建时间" min-width="170">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="100" max-width="140" fixed="right">
@@ -110,6 +107,7 @@
             <GlassButton variant="link" left-icon="View" @click="openRun(row.id)">详情</GlassButton>
           </template>
         </el-table-column>
+        <template #empty><el-empty description="暂无数据" /></template>
       </el-table>
       <el-pagination
         v-model:current-page="page" v-model:page-size="pageSize" :total="total"
@@ -176,12 +174,24 @@ import {
   getCopilotEvaluationCases, searchCopilotEvaluationCustomers, startCopilotEvaluationCase,
 } from '@/api/agentRuntime'
 import { useListPage } from '@/composables/useListPage'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   PROFILE_LABELS, STATUS_META, evaluationCaseMeta, evaluationProgress, formatTime, statusMeta,
 } from './agentRuntimeView'
 
 const router = useRouter()
+const columnDefs = [
+  { key: 'task', label: '任务' },
+  { key: 'status', label: '状态' },
+  { key: 'runtime', label: '运行时' },
+  { key: 'business', label: '业务对象' },
+  { key: 'usage', label: '消耗' },
+  { key: 'created', label: '创建时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('agent-task-center', columnDefs)
 const auth = useAuthStore()
 const config = ref(null)
 const profiles = ref(new Map())
@@ -213,6 +223,12 @@ const {
   const response = await getAgentTasks(cleaned)
   return response.data || {}
 }, { searchForm: { status: '', runtime: '' } })
+
+function resetFilters() {
+  filters.status = ''
+  filters.runtime = ''
+  search()
+}
 
 onMounted(async () => {
   const [configResponse, profileResponse] = await Promise.all([
@@ -320,11 +336,11 @@ const percent = value => `${Math.round(Number(value || 0) * 100)}%`
 <style scoped>
 .task-page { position: relative; }
 .task-aurora { inset: -24px -28px; }
-.page-header, .toolbar, .task-panel { position: relative; z-index: 1; }
+.page-header, .task-panel { position: relative; z-index: 1; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
 .page-header h1 { margin: 0; font-size: 24px; }
 .page-header p { margin: 6px 0 0; color: var(--text-secondary); }
-.runtime-state, .toolbar-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.runtime-state { display: flex; justify-content: flex-end; gap: 8px; }
 .evaluation-panel { position: relative; z-index: 1; margin-bottom: 14px; padding: 16px; border: 1px solid var(--dash-glass-border); border-radius: var(--dash-card-radius); background: var(--dash-glass-bg); box-shadow: var(--dash-glass-highlight); }
 .evaluation-head, .evaluation-actions, .evaluation-metric > div, .evaluation-toolbar, .case-title { display: flex; align-items: center; gap: 10px; }
 .evaluation-head { justify-content: space-between; align-items: flex-start; }
@@ -341,8 +357,8 @@ const percent = value => `${Math.round(Number(value || 0) * 100)}%`
 .case-title { align-items: flex-start; }
 .case-question { margin-top: 6px; color: var(--text-secondary); line-height: 1.45; }
 .case-requires { color: var(--text-secondary); font-size: 12px; }
-.toolbar { margin-bottom: 14px; row-gap: 10px; }
 .task-panel { border: 1px solid var(--dash-glass-border); border-radius: var(--dash-card-radius); background: var(--dash-glass-bg); box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight); }
+.task-panel:fullscreen { overflow: auto; }
 .task-panel :deep(.el-table) { --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent; --el-table-header-bg-color: rgba(255, 255, 255, 0.5); background: transparent; }
 .task-title { color: var(--text-primary); font-weight: 700; }
 .task-sub { margin-top: 4px; color: var(--text-secondary); font-size: 12px; }

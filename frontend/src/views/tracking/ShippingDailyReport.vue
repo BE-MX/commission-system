@@ -234,7 +234,7 @@ const {
   WEEKDAYS,
   calendarYear, calendarMonth, selectedDate,
   loading, generating,
-  reportExists, reportHtml,
+  reportExists, reportHtml, reportData,
   reportShipments, reportStats, reportSummary,
   monthTotal, monthRate,
   calendarDays,

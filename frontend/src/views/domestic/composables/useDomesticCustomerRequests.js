@@ -28,7 +28,7 @@ export function useDomesticCustomerRequests() {
 
   const {
     loading, list, total, page, pageSize, searchForm,
-    fetchList, handleSearch, handlePageChange, handleSizeChange,
+    fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange,
   } = useListPage(
     async ({ page, page_size, ...form }) => {
       const params = { page, page_size }
@@ -119,7 +119,7 @@ export function useDomesticCustomerRequests() {
 
   return {
     loading, list, total, page, pageSize, searchForm,
-    fetchList, handleSearch, handlePageChange, handleSizeChange,
+    fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange,
     canReview, canReviewRow, REQUEST_STATUS, REQUEST_STATUS_MAP, REQUEST_TYPE_LABELS,
     voucherDialog, voucherLoadingId, openVoucher, closeVoucher,
     reviewingIds, handleApprove, handleReject,

@@ -40,7 +40,7 @@ test('public-pool dedupe and score-70 deep research are visible to sales users',
 })
 
 test('public-pool renders batch tree, status tabs and atomic bulk review actions', () => {
-  assert.match(publicPool, /class="batch-tree"/)
+  assert.match(publicPool, /class="[^"]*\bbatch-tree\b[^"]*"/)
   assert.match(publicPool, /toggleBatch\(batch\)/)
   assert.match(publicPool, /statusTabs/)
   assert.match(publicPool, /整批通过/)

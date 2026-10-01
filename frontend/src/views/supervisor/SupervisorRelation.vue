@@ -7,48 +7,60 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 搜索栏 -->
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="8">
-        <el-input v-model="keyword" placeholder="搜索业务员姓名/ID" clearable @keyup.enter="fetchList" @clear="fetchList">
+    <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec / Action Bar Spec） -->
+    <div ref="panelRef" class="table-card">
+      <div class="toolbar">
+        <el-input v-model="keyword" placeholder="搜索业务员姓名/ID" clearable class="filter-w-md" @keyup.enter="search" @clear="search">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-      </el-col>
-      <el-col :span="4">
-        <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
-        <GlassButton v-permission="'supervisor:write'" left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
-      </el-col>
-    </el-row>
+        <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <!-- 表格 -->
-    <div class="table-card">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight" @sort-change="orderSort.onSortChange">
-      <el-table-column prop="salesperson_id" label="业务员ID" min-width="200" max-width="300" show-overflow-tooltip />
-      <el-table-column prop="salesperson_name" label="业务员姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="supervisor_id" label="一级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
-      <el-table-column prop="supervisor_name" label="一级主管姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="second_supervisor_id" label="二级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
-      <el-table-column prop="second_supervisor_name" label="二级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
-      <el-table-column prop="effective_start" label="生效日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
-      <el-table-column class-name="table-action-column" label="操作" min-width="160" max-width="240">
-        <template #default="{ row }">
-          <GlassButton v-permission="'supervisor:write'" variant="link" left-icon="Edit" @click="openSetDialog(row)">变更主管</GlassButton>
-          <GlassButton variant="link" left-icon="Clock" @click="openHistory(row)">查看历史</GlassButton>
+      <div class="action-bar">
+        <GlassButton v-permission="'supervisor:write'" variant="primary" left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="fetchList"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
         </template>
-      </el-table-column>
-    </el-table>
-    </div>
+        <el-table-column v-if="visibleKeys.includes('salesperson-id')" prop="salesperson_id" label="业务员ID" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('supervisor-id')" prop="supervisor_id" label="一级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('supervisor-name')" prop="supervisor_name" label="一级主管姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('second-supervisor-id')" prop="second_supervisor_id" label="二级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('second-supervisor-name')" prop="second_supervisor_name" label="二级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('effective-start')" prop="effective_start" label="生效日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
+        <el-table-column class-name="table-action-column" label="操作" min-width="160" max-width="240">
+          <template #default="{ row }">
+            <GlassButton v-permission="'supervisor:write'" variant="link" left-icon="Edit" @click="openSetDialog(row)">变更主管</GlassButton>
+            <GlassButton variant="link" left-icon="Clock" @click="openHistory(row)">查看历史</GlassButton>
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <el-pagination
-      class="pagination"
-      v-model:current-page="page"
-      v-model:page-size="pageSize"
-      :total="total"
-      layout="total, prev, pager, next, sizes"
-      :page-sizes="[20, 50, 100]"
-      @current-change="fetchList"
-      @size-change="fetchList"
-    />
+      <el-pagination
+        class="pager"
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        layout="total, sizes, prev, pager, next"
+        :page-sizes="[20, 50, 100]"
+        @current-change="fetchList"
+        @size-change="handleSizeChange"
+      />
+    </div>
 
     <!-- 变更主管 Dialog -->
     <el-dialog v-model="setDialogVisible" title="变更主管" width="420px">
@@ -126,13 +138,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getSupervisorList, setSupervisorRelation, getSupervisorHistory, importSupervisorRelations } from '@/api/supervisor'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { Search } from '@element-plus/icons-vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { useTableSort } from '@/composables/useTableSort'
+import { getSupervisorList, setSupervisorRelation, getSupervisorHistory, importSupervisorRelations } from '@/api/supervisor'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
 
 const keyword = ref('')
@@ -141,6 +154,23 @@ const pageSize = ref(20)
 const total = ref(0)
 const tableData = ref([])
 const loading = ref(false)
+
+// 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
+const columnDefs = [
+  { key: 'salesperson-id', label: '业务员ID' },
+  { key: 'salesperson-name', label: '业务员姓名' },
+  { key: 'supervisor-id', label: '一级主管ID' },
+  { key: 'supervisor-name', label: '一级主管姓名' },
+  { key: 'second-supervisor-id', label: '二级主管ID' },
+  { key: 'second-supervisor-name', label: '二级主管姓名' },
+  { key: 'effective-start', label: '生效日期' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('supervisor-relation', columnDefs)
+
+const hasActiveFilters = computed(() => Boolean(keyword.value))
+function search() { page.value = 1; fetchList() }
+function resetFilters() { keyword.value = ''; search() }
+function handleSizeChange() { page.value = 1; fetchList() }
 
 async function fetchList() {
   loading.value = true

@@ -5,38 +5,36 @@
         <h3>Hair ExtensionsTools Fee</h3>
         <p>配件价格必须绑定真实的 OKKI 产品和 SKU，发票会按该身份逐行推送。</p>
       </div>
-      <el-button v-permission="'invoice_price:write'" type="primary" @click="openDialog()">
-        <el-icon><Plus /></el-icon>
-        新增配件价格
-      </el-button>
     </div>
 
-    <div class="accessory-toolbar">
+    <div ref="panelRef" class="table-card accessory-table-card">
+    <div class="toolbar">
       <el-input
         v-model="keyword"
         clearable
+        class="filter-w-md"
         placeholder="搜索 Name / Model / Color"
         @keyup.enter="loadRows"
         @clear="loadRows"
       />
-      <el-button @click="loadRows">
-        <el-icon><Search /></el-icon>
-        筛选
-      </el-button>
+      <GlassButton variant="primary" left-icon="Search" @click="loadRows">查询</GlassButton>
+      <GlassButton variant="secondary" left-icon="RefreshLeft" @click="resetFilter">重置</GlassButton>
     </div>
-
-    <div class="table-card accessory-table-card">
-      <el-table v-loading="loading" :data="rows" class="list-table" border>
-        <el-table-column prop="accessory_name" label="Name" min-width="180" max-width="320" show-overflow-tooltip />
-        <el-table-column prop="accessory_model" label="Model" min-width="150" max-width="240" show-overflow-tooltip />
-        <el-table-column prop="accessory_color" label="Color" min-width="150" max-width="240" show-overflow-tooltip />
-        <el-table-column label="标准价" min-width="110" max-width="150">
+    <div class="action-bar">
+      <GlassButton v-permission="'invoice_price:write'" variant="primary" left-icon="Plus" @click="openDialog()">新增配件价格</GlassButton>
+      <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="loadRows" @fullscreen="toggleFullscreen" />
+    </div>
+      <el-table v-loading="loading" :data="rows" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border>
+        <el-table-column v-if="visibleKeys.includes('name')" prop="accessory_name" label="Name" min-width="180" max-width="320" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('model')" prop="accessory_model" label="Model" min-width="150" max-width="240" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('color')" prop="accessory_color" label="Color" min-width="150" max-width="240" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('price')" label="标准价" min-width="110" max-width="150">
           <template #default="{ row }">
             {{ Number(row.standard_price).toFixed(2) }}
           </template>
         </el-table-column>
-        <el-table-column prop="currency" label="币种" min-width="90" max-width="110" />
-        <el-table-column label="更新时间" min-width="170" max-width="240" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('currency')" prop="currency" label="币种" min-width="90" max-width="110" />
+        <el-table-column v-if="visibleKeys.includes('updated')" label="更新时间" min-width="170" max-width="240" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="150" max-width="190" fixed="right">
@@ -125,6 +123,8 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import {
   buildAccessoryEditorState,
@@ -145,6 +145,13 @@ const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')
 const rows = ref([])
+const columnDefs = [
+  { key: 'name', label: 'Name' }, { key: 'model', label: 'Model' },
+  { key: 'color', label: 'Color' }, { key: 'price', label: '标准价' },
+  { key: 'currency', label: '币种' }, { key: 'updated', label: '更新时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('invoice-accessory-prices', columnDefs)
 const candidateLoading = ref(false)
 const candidates = ref([])
 const dialog = reactive({ visible: false, candidate: null, form: emptyAccessoryPriceForm() })
@@ -178,6 +185,8 @@ async function loadRows() {
     // 保留已显示数据；请求拦截器已给出失败反馈。
   }
 }
+
+function resetFilter() { keyword.value = ''; loadRows() }
 
 async function searchCandidates(query) {
   try {
@@ -263,8 +272,7 @@ async function removeRow(row) {
   max-width: 1120px;
 }
 
-.accessory-heading,
-.accessory-toolbar {
+.accessory-heading {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -289,14 +297,6 @@ async function removeRow(row) {
 
 .accessory-heading p {
   margin: 0;
-}
-
-.accessory-toolbar {
-  margin-bottom: 12px;
-}
-
-.accessory-toolbar .el-input {
-  width: min(320px, 100%);
 }
 
 .accessory-table-card {

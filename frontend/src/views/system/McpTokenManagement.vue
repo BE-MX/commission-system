@@ -12,7 +12,6 @@
           <code>{{ MCP_ENDPOINT }}</code>
         </div>
         <GlassButton left-icon="CopyDocument" @click="copyText(MCP_ENDPOINT, '服务地址已复制')">复制地址</GlassButton>
-        <GlassButton variant="primary" left-icon="Plus" @click="openIssueDialog">发放凭证</GlassButton>
       </div>
     </section>
 
@@ -22,33 +21,43 @@
       <article><span>知识库可用凭证账号</span><strong>{{ metrics.readyOwners }}</strong></article>
     </section>
 
-    <section class="table-card">
-      <div class="table-toolbar">
+    <section ref="panelRef" class="table-card">
+      <div class="toolbar">
         <div>
           <h2>已发放凭证</h2>
           <p>明文不可找回；遗失时请重新发放。</p>
         </div>
         <div class="filters">
-          <el-input v-model="filters.keyword" clearable placeholder="搜索账号或 Agent 用途" :prefix-icon="Search" />
-          <el-select v-model="filters.status" aria-label="凭证状态">
+          <el-input v-model="filters.keyword" class="filter-w-md" clearable placeholder="搜索账号或 Agent 用途" :prefix-icon="Search" />
+          <el-select v-model="filters.status" class="filter-w-sm" aria-label="凭证状态">
             <el-option label="全部状态" value="all" />
             <el-option label="有效" value="active" />
             <el-option label="已吊销" value="revoked" />
           </el-select>
-          <GlassButton left-icon="Refresh" :loading="loading" @click="loadTokens">刷新</GlassButton>
         </div>
       </div>
+      <div class="action-bar">
+        <GlassButton variant="primary" left-icon="Plus" @click="openIssueDialog">发放凭证</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadTokens"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
 
-      <el-table v-if="filteredRows.length || loading" v-loading="loading" :data="filteredRows" class="token-table list-table" border>
-        <el-table-column label="Agent 用途" min-width="170">
+      <el-table v-if="filteredRows.length || loading" v-loading="loading" :data="filteredRows" class="token-table list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border>
+        <el-table-column v-if="visibleKeys.includes('label')" label="Agent 用途" min-width="170">
           <template #default="{ row }"><strong class="purpose">{{ row.label }}</strong></template>
         </el-table-column>
-        <el-table-column label="绑定账号" min-width="180">
+        <el-table-column v-if="visibleKeys.includes('owner')" label="绑定账号" min-width="180">
           <template #default="{ row }">
             <div class="account-cell"><span>{{ row.real_name }}</span><small>@{{ row.username }}</small></div>
           </template>
         </el-table-column>
-        <el-table-column label="知识库访问" min-width="210">
+        <el-table-column v-if="visibleKeys.includes('knowledge')" label="知识库访问" min-width="210">
           <template #default="{ row }">
             <div class="access-tags">
               <el-tag :type="row.has_knowledge_read ? 'success' : 'danger'" effect="plain" size="small">
@@ -60,17 +69,17 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
           <template #default="{ row }">
             <span :class="['status', row.is_active ? 'is-active' : 'is-revoked']">
               <i />{{ row.is_active ? '有效' : '已吊销' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="最近使用" min-width="160">
+        <el-table-column v-if="visibleKeys.includes('last-used')" label="最近使用" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.last_used_at) }}</template>
         </el-table-column>
-        <el-table-column label="创建时间" min-width="160">
+        <el-table-column v-if="visibleKeys.includes('created')" label="创建时间" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="190" fixed="right">
@@ -165,11 +174,23 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleCheck, Collection, Key, Search, WarningFilled } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
 import { issueMcpToken, listMcpTokens, revokeMcpToken, rotateMcpToken, searchMcpTokenCandidates } from '@/api/mcpTokens'
 import { MCP_ENDPOINT, buildAgentConfig, copyToClipboard, filterTokens, formatDateTime, isKnowledgeReady } from './mcpTokenManagement'
 
 const loading = ref(false)
 const rows = ref([])
+const columnDefs = [
+  { key: 'label', label: 'Agent 用途' },
+  { key: 'owner', label: '绑定账号' },
+  { key: 'knowledge', label: '知识库访问' },
+  { key: 'status', label: '状态' },
+  { key: 'last-used', label: '最近使用' },
+  { key: 'created', label: '创建时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('mcp-token-management', columnDefs)
 const filters = reactive({ keyword: '', status: 'all' })
 const issueVisible = ref(false)
 const issuing = ref(false)
@@ -285,7 +306,7 @@ onMounted(loadTokens)
 .endpoint-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 22px; border-radius: 14px; }
 .eyebrow { color: var(--color-gold-muted); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
 h1 { margin: 4px 0 5px; font-size: 23px; letter-spacing: -.02em; }
-.endpoint-copy p, .table-toolbar p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.endpoint-copy p, .toolbar p { margin: 0; color: var(--text-secondary); font-size: 13px; }
 .endpoint-actions { display: flex; align-items: center; gap: 10px; }
 .endpoint-value { min-width: 270px; padding: 8px 11px; background: var(--toolbar-bg); border: 1px solid var(--border-color); border-radius: 8px; }
 .endpoint-value span { display: block; color: var(--text-tertiary); font-size: 10px; margin-bottom: 2px; }
@@ -294,13 +315,14 @@ h1 { margin: 4px 0 5px; font-size: 23px; letter-spacing: -.02em; }
 .metrics article { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 16px; border-radius: 10px; }
 .metrics span { color: var(--text-secondary); font-size: 12px; }.metrics strong { font-size: 23px; font-variant-numeric: tabular-nums; }
 .table-card { border-radius: 14px; overflow: hidden; }
-.table-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px 13px; border-bottom: 1px solid var(--border-color); }
-.table-toolbar h2 { margin: 0 0 3px; font-size: 16px; }.filters { display: flex; align-items: center; gap: 8px; }.filters .el-input { width: 230px; }.filters .el-select { width: 120px; }
+.toolbar { justify-content: space-between; }
+.toolbar h2 { margin: 0 0 3px; font-size: 16px; }
+.filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.table-card:fullscreen { overflow: auto; }
 .purpose { font-size: 13px; }.account-cell { display: flex; flex-direction: column; line-height: 1.35; }.account-cell small, .candidate-option small, .muted { color: var(--text-tertiary); }
 .access-tags { display: flex; flex-wrap: wrap; gap: 5px; }.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }.status i { width: 7px; height: 7px; border-radius: 50%; }.is-active i { background: var(--color-success); box-shadow: 0 0 0 3px var(--color-success-bg); }.is-revoked { color: var(--text-tertiary); }.is-revoked i { background: var(--text-muted); }
 .candidate-option { display: flex; align-items: center; justify-content: space-between; width: 100%; }.readiness-panel { margin: -2px 0 18px; padding: 12px 14px; background: var(--toolbar-bg); border: 1px solid var(--border-color); border-radius: 9px; }.readiness-panel > div { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; padding: 5px 0; font-size: 13px; }.readiness-panel .el-icon { color: var(--text-muted); }.readiness-panel .el-icon.ok { color: var(--color-success); }.readiness-warning { margin: 8px 0 0; padding-top: 9px; border-top: 1px solid var(--border-color); color: var(--color-warning-text); font-size: 12px; line-height: 1.65; }.readiness-warning a { color: var(--color-gold-muted); font-weight: 700; }.field-hint { color: var(--text-tertiary); font-size: 11px; margin-top: 4px; }
 .security-notice { display: flex; gap: 10px; padding: 12px; background: var(--color-warning-bg); border: 1px solid var(--color-gold-soft-2); border-radius: 9px; color: var(--color-warning-text); }.security-notice .el-icon { margin-top: 2px; font-size: 18px; }.security-notice p { margin: 3px 0 0; font-size: 12px; }.secret-content > label { display: block; margin: 16px 0 6px; color: var(--text-secondary); font-size: 11px; font-weight: 700; text-transform: uppercase; }.secret-value { padding: 13px; background: var(--sidebar-bg-to); color: var(--text-on-dark); border-radius: 8px; overflow-wrap: anywhere; line-height: 1.6; }.secret-value code { font-size: 12px; }.secret-meta { margin-top: 7px; color: var(--text-tertiary); font-size: 12px; }.copy-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-:deep(.token-table .el-table__cell) { padding: 9px 0; }:deep(.token-table th.el-table__cell) { background: var(--table-header-bg); color: var(--text-secondary); font-size: 11px; font-weight: 700; }
-@media (max-width: 900px) { .endpoint-card, .table-toolbar { align-items: flex-start; flex-direction: column; }.endpoint-actions, .filters { width: 100%; flex-wrap: wrap; }.endpoint-value { flex: 1; }.metrics { grid-template-columns: 1fr; }.filters .el-input { flex: 1; min-width: 210px; } }
+@media (max-width: 900px) { .endpoint-card { align-items: flex-start; flex-direction: column; }.endpoint-actions, .filters { width: 100%; flex-wrap: wrap; }.endpoint-value { flex: 1; }.metrics { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>

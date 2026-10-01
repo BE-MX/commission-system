@@ -10,35 +10,52 @@
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <!-- Tab 1: 待确认任务 -->
       <el-tab-pane label="待确认任务" name="pending">
-        <div class="tab-toolbar">
+        <div ref="pendingPanelRef" class="table-card design-manage-panel">
+        <div class="toolbar">
+          <el-input v-model="pendingFilters.salesperson_name" placeholder="业务员" clearable class="filter-w-sm" @clear="searchPending" @keyup.enter="searchPending" />
+          <el-select v-model="pendingFilters.shoot_type" placeholder="拍摄类型" clearable class="filter-w-sm" @change="searchPending">
+            <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
+          </el-select>
+          <el-date-picker v-model="pendingFilters.expectDateRange" type="daterange" start-placeholder="期望开始" end-placeholder="期望结束" value-format="YYYY-MM-DD" class="filter-w-lg" @change="searchPending" />
+          <GlassButton variant="primary" left-icon="Search" @click="searchPending">查询</GlassButton>
+          <GlassButton left-icon="RefreshLeft" @click="resetPendingFilters">重置</GlassButton>
+        </div>
+        <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+        <div class="action-bar">
           <GlassButton variant="secondary" left-icon="Bell" @click="handleScanShootReminders">
             预约任务扫描
           </GlassButton>
+          <TableTools
+            v-model:visible-keys="pendingVisibleKeys"
+            v-model:density="pendingDensity"
+            :columns="pendingColumnDefs"
+            :fullscreen="pendingIsFullscreen"
+            @refresh="fetchPending"
+            @fullscreen="pendingToggleFullscreen"
+          />
         </div>
-        <div class="filter-bar">
-          <el-input v-model="pendingFilters.salesperson_name" placeholder="业务员" clearable style="width: 120px" @clear="fetchPending" @keyup.enter="fetchPending" />
-          <el-select v-model="pendingFilters.shoot_type" placeholder="拍摄类型" clearable style="width: 130px" @change="fetchPending">
-            <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
-          </el-select>
-          <el-date-picker v-model="pendingFilters.expectDateRange" type="daterange" start-placeholder="期望开始" end-placeholder="期望结束" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchPending" />
-        </div>
-        <div class="table-card design-manage-panel">
         <el-table
           ref="pendingTableRef"
           :data="pendingData"
           v-loading="pendingLoading"
           class="list-table"
+          :class="pendingDensityClass"
           border
-          :max-height="tabMaxHeight"
+          :max-height="pendingIsFullscreen ? undefined : tabMaxHeight"
           @sort-change="pendingSort.onSortChange"
         >
-          <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip />
-          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
-          <el-table-column prop="customer_level" label="客户等级" min-width="90" max-width="130">
+          <template #empty>
+            <el-empty :image-size="96" :description="pendingHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+              <GlassButton v-if="pendingHasActiveFilters" left-icon="RefreshLeft" @click="resetPendingFilters">重置筛选</GlassButton>
+            </el-empty>
+          </template>
+          <el-table-column v-if="pendingVisibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="pendingVisibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="pendingVisibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="90" max-width="130">
             <template #default="{ row }">{{ customerLevelLabel(row.customer_level) }}</template>
           </el-table-column>
-          <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
+          <el-table-column v-if="pendingVisibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="pendingVisibleKeys.includes('shoot-type')" label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="clickable-shoot-type" @click="openShootTypeDialog(row, 'request')">
                 {{ buildDictLabel(row.shoot_type, shootTypeMap) }}
@@ -46,7 +63,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="期望日期" min-width="280" max-width="420" prop="expect_start_date" sortable="custom">
+          <el-table-column v-if="pendingVisibleKeys.includes('expect-date')" label="期望日期" min-width="280" max-width="420" prop="expect_start_date" sortable="custom">
             <template #default="{ row }">
               <span class="clickable-date" @click="openEditDateDialog(row)">
                 {{ row.expect_start_date }} {{ periodLabel(row.expect_start_period) }} ~ {{ row.expect_end_date }} {{ periodLabel(row.expect_end_period) }}
@@ -54,14 +71,14 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="优先级" min-width="80" max-width="120" prop="priority" sortable="custom">
+          <el-table-column v-if="pendingVisibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120" prop="priority" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+          <el-table-column v-if="pendingVisibleKeys.includes('remark')" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
             <template #default="{ row }">
               <button v-any-permission="['design:write', 'design:manage']" type="button" class="clickable-remark" aria-label="修改预约备注" @click="openRemarkDialog(row)">
                 {{ row.remark || '添加备注' }}
@@ -69,7 +86,7 @@
               </button>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="pendingVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
           <el-table-column class-name="table-action-column" label="操作" min-width="180" max-width="260" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.id)">详情</GlassButton>
@@ -77,44 +94,65 @@
             </template>
           </el-table-column>
         </el-table>
-        </div>
 
         <el-pagination
-          class="pagination"
+          class="pager"
           v-model:current-page="pendingPage"
           v-model:page-size="pendingPageSize"
           :total="pendingTotal"
-          layout="total, prev, pager, next"
+          :page-sizes="[20, 50, 100]"
+          layout="total, sizes, prev, pager, next"
           @current-change="fetchPending"
+          @size-change="handlePendingSizeChange"
         />
+        </div>
       </el-tab-pane>
 
       <!-- Tab 2: 排期任务 -->
       <el-tab-pane label="排期任务" name="scheduled">
-        <div class="filter-bar">
-          <el-input v-model="scheduledFilters.salesperson_name" placeholder="业务员" clearable style="width: 120px" @clear="fetchScheduled" @keyup.enter="fetchScheduled" />
-          <el-select v-model="scheduledFilters.shoot_type" placeholder="拍摄类型" clearable style="width: 130px" @change="fetchScheduled">
+        <div ref="scheduledPanelRef" class="table-card design-manage-panel">
+        <div class="toolbar">
+          <el-input v-model="scheduledFilters.salesperson_name" placeholder="业务员" clearable class="filter-w-sm" @clear="searchScheduled" @keyup.enter="searchScheduled" />
+          <el-select v-model="scheduledFilters.shoot_type" placeholder="拍摄类型" clearable class="filter-w-sm" @change="searchScheduled">
             <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
           </el-select>
-          <el-select v-model="scheduledFilters.designer_id" placeholder="设计师" clearable style="width: 120px" @change="fetchScheduled">
+          <el-select v-model="scheduledFilters.designer_id" placeholder="设计师" clearable class="filter-w-sm" @change="searchScheduled">
             <el-option v-for="d in designerData" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
-          <el-date-picker v-model="scheduledFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchScheduled" />
+          <el-date-picker v-model="scheduledFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" class="filter-w-lg" @change="searchScheduled" />
+          <GlassButton variant="primary" left-icon="Search" @click="searchScheduled">查询</GlassButton>
+          <GlassButton left-icon="RefreshLeft" @click="resetScheduledFilters">重置</GlassButton>
         </div>
-        <div class="table-card design-manage-panel">
+        <!-- 操作行：本 tab 无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
+        <div class="action-bar">
+          <TableTools
+            v-model:visible-keys="scheduledVisibleKeys"
+            v-model:density="scheduledDensity"
+            :columns="scheduledColumnDefs"
+            :fullscreen="scheduledIsFullscreen"
+            @refresh="fetchScheduled"
+            @fullscreen="scheduledToggleFullscreen"
+          />
+        </div>
         <el-table
           ref="scheduledTableRef"
           :data="scheduledData"
           v-loading="scheduledLoading"
           class="list-table"
+          :class="scheduledDensityClass"
           border
-          :max-height="tabMaxHeight"
+          :max-height="scheduledIsFullscreen ? undefined : tabMaxHeight"
           @sort-change="scheduledSort.onSortChange"
         >
-          <el-table-column prop="task_no" label="任务编号" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
-          <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
-          <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
+          <template #empty>
+            <el-empty :image-size="96" :description="scheduledHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+              <GlassButton v-if="scheduledHasActiveFilters" left-icon="RefreshLeft" @click="resetScheduledFilters">重置筛选</GlassButton>
+            </el-empty>
+          </template>
+          <el-table-column v-if="scheduledVisibleKeys.includes('task-no')" prop="task_no" label="任务编号" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="scheduledVisibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="scheduledVisibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+          <el-table-column v-if="scheduledVisibleKeys.includes('shoot-type')" label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="clickable-shoot-type" @click="openShootTypeDialog(row, 'task')">
                 {{ buildDictLabel(row.shoot_type, shootTypeMap) }}
@@ -122,7 +160,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="设计师" min-width="120" max-width="170">
+          <el-table-column v-if="scheduledVisibleKeys.includes('designer')" label="设计师" min-width="120" max-width="170">
             <template #default="{ row }">
               <div v-if="editingDesignerId === row.id" class="inline-edit">
                 <el-select v-model="editingDesignerValue" size="small" style="width: 100px" @change="saveDesigner(row)" @blur="cancelEditDesigner">
@@ -135,7 +173,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="排期日期" min-width="280" max-width="420" prop="plan_start_date" sortable="custom">
+          <el-table-column v-if="scheduledVisibleKeys.includes('plan-date')" label="排期日期" min-width="280" max-width="420" prop="plan_start_date" sortable="custom">
             <template #default="{ row }">
               <span class="clickable-date" @click="openEditTaskDateDialog(row)">
                 {{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}
@@ -143,14 +181,14 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="优先级" min-width="80" max-width="120">
+          <el-table-column v-if="scheduledVisibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120">
             <template #default="{ row }">
               <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="备注" min-width="180" max-width="300" show-overflow-tooltip>
+          <el-table-column v-if="scheduledVisibleKeys.includes('remark')" label="备注" min-width="180" max-width="300" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="remark-mixed">
                 <div class="remark-line">
@@ -168,14 +206,14 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="100" max-width="150" prop="status" sortable="custom">
+          <el-table-column v-if="scheduledVisibleKeys.includes('status')" label="状态" min-width="100" max-width="150" prop="status" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="TASK_STATUS_TAG[row.status]" effect="plain">
                 {{ TASK_STATUS_MAP[row.status] || row.status }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="scheduledVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
           <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="380" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
@@ -198,110 +236,146 @@
             </template>
           </el-table-column>
         </el-table>
-        </div>
 
         <el-pagination
-          class="pagination"
+          class="pager"
           v-model:current-page="scheduledPage"
           v-model:page-size="scheduledPageSize"
           :total="scheduledTotal"
-          layout="total, prev, pager, next"
+          :page-sizes="[20, 50, 100]"
+          layout="total, sizes, prev, pager, next"
           @current-change="fetchScheduled"
+          @size-change="handleScheduledSizeChange"
         />
+        </div>
       </el-tab-pane>
 
       <!-- Tab 3: 已完成任务 -->
       <el-tab-pane label="已完成任务" name="completed">
-        <div class="filter-bar">
-          <el-input v-model="completedFilters.salesperson_name" placeholder="业务员" clearable style="width: 120px" @clear="fetchCompleted" @keyup.enter="fetchCompleted" />
-          <el-select v-model="completedFilters.shoot_type" placeholder="拍摄类型" clearable style="width: 130px" @change="fetchCompleted">
+        <div ref="completedPanelRef" class="table-card design-manage-panel">
+        <div class="toolbar">
+          <el-input v-model="completedFilters.salesperson_name" placeholder="业务员" clearable class="filter-w-sm" @clear="searchCompleted" @keyup.enter="searchCompleted" />
+          <el-select v-model="completedFilters.shoot_type" placeholder="拍摄类型" clearable class="filter-w-sm" @change="searchCompleted">
             <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
           </el-select>
-          <el-select v-model="completedFilters.designer_id" placeholder="设计师" clearable style="width: 120px" @change="fetchCompleted">
+          <el-select v-model="completedFilters.designer_id" placeholder="设计师" clearable class="filter-w-sm" @change="searchCompleted">
             <el-option v-for="d in designerData" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
-          <el-date-picker v-model="completedFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchCompleted" />
+          <el-date-picker v-model="completedFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" class="filter-w-lg" @change="searchCompleted" />
+          <GlassButton variant="primary" left-icon="Search" @click="searchCompleted">查询</GlassButton>
+          <GlassButton left-icon="RefreshLeft" @click="resetCompletedFilters">重置</GlassButton>
         </div>
-        <div class="table-card design-manage-panel">
+        <!-- 操作行：本 tab 无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
+        <div class="action-bar">
+          <TableTools
+            v-model:visible-keys="completedVisibleKeys"
+            v-model:density="completedDensity"
+            :columns="completedColumnDefs"
+            :fullscreen="completedIsFullscreen"
+            @refresh="fetchCompleted"
+            @fullscreen="completedToggleFullscreen"
+          />
+        </div>
         <el-table
           ref="completedTableRef"
           :data="completedData"
           v-loading="completedLoading"
           class="list-table"
+          :class="completedDensityClass"
           border
-          :max-height="tabMaxHeight"
+          :max-height="completedIsFullscreen ? undefined : tabMaxHeight"
           @sort-change="completedSort.onSortChange"
         >
-          <el-table-column prop="task_no" label="任务编号" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
-          <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
-          <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
+          <template #empty>
+            <el-empty :image-size="96" :description="completedHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+              <GlassButton v-if="completedHasActiveFilters" left-icon="RefreshLeft" @click="resetCompletedFilters">重置筛选</GlassButton>
+            </el-empty>
+          </template>
+          <el-table-column v-if="completedVisibleKeys.includes('task-no')" prop="task_no" label="任务编号" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="completedVisibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="completedVisibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+          <el-table-column v-if="completedVisibleKeys.includes('shoot-type')" label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
           </el-table-column>
-          <el-table-column label="设计师" min-width="100" max-width="150">
+          <el-table-column v-if="completedVisibleKeys.includes('designer')" label="设计师" min-width="100" max-width="150">
             <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
           </el-table-column>
-          <el-table-column label="排期日期" min-width="240" max-width="360" prop="plan_start_date" sortable="custom">
+          <el-table-column v-if="completedVisibleKeys.includes('plan-date')" label="排期日期" min-width="240" max-width="360" prop="plan_start_date" sortable="custom">
             <template #default="{ row }">
               {{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}
             </template>
           </el-table-column>
-          <el-table-column label="优先级" min-width="80" max-width="120">
+          <el-table-column v-if="completedVisibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120">
             <template #default="{ row }">
               <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="80" max-width="120" prop="status" sortable="custom">
+          <el-table-column v-if="completedVisibleKeys.includes('status')" label="状态" min-width="80" max-width="120" prop="status" sortable="custom">
             <template #default="{ row }">
               <el-tag type="success" effect="plain">已完成</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="completedVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
           <el-table-column class-name="table-action-column" label="操作" min-width="100" max-width="150" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
             </template>
           </el-table-column>
         </el-table>
-        </div>
 
         <el-pagination
-          class="pagination"
+          class="pager"
           v-model:current-page="completedPage"
           v-model:page-size="completedPageSize"
           :total="completedTotal"
-          layout="total, prev, pager, next"
+          :page-sizes="[20, 50, 100]"
+          layout="total, sizes, prev, pager, next"
           @current-change="fetchCompleted"
+          @size-change="handleCompletedSizeChange"
         />
+        </div>
       </el-tab-pane>
 
       <!-- Tab 4: 设计师管理 -->
       <el-tab-pane label="设计师管理" name="designers">
-        <el-row style="margin-bottom: 12px" justify="end">
+        <div ref="designerPanelRef" class="table-card design-manage-panel">
+        <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+        <div class="action-bar">
           <GlassButton variant="primary" left-icon="Plus" @click="openDesignerDialog(null)">新建设计师</GlassButton>
-        </el-row>
-        <div class="table-card design-manage-panel">
+          <TableTools
+            v-model:visible-keys="designerVisibleKeys"
+            v-model:density="designerDensity"
+            :columns="designerColumnDefs"
+            :fullscreen="designerIsFullscreen"
+            @refresh="fetchDesigners"
+            @fullscreen="designerToggleFullscreen"
+          />
+        </div>
         <el-table
           :data="designerData"
           v-loading="designerLoading"
           class="list-table"
+          :class="designerDensityClass"
           border
-          :max-height="tabMaxHeight"
+          :max-height="designerIsFullscreen ? undefined : tabMaxHeight"
         >
-          <el-table-column prop="id" label="ID" min-width="80" max-width="120" show-overflow-tooltip />
-          <el-table-column prop="name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip />
-          <el-table-column prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip />
-          <el-table-column prop="dingtalk_id" label="钉钉ID" min-width="140" max-width="210" show-overflow-tooltip />
-          <el-table-column label="状态" min-width="100" max-width="150">
+          <template #empty>
+            <el-empty :image-size="96" description="暂无数据" />
+          </template>
+          <el-table-column v-if="designerVisibleKeys.includes('id')" prop="id" label="ID" min-width="80" max-width="120" show-overflow-tooltip />
+          <el-table-column v-if="designerVisibleKeys.includes('name')" prop="name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip />
+          <el-table-column v-if="designerVisibleKeys.includes('email')" prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip />
+          <el-table-column v-if="designerVisibleKeys.includes('dingtalk-id')" prop="dingtalk_id" label="钉钉ID" min-width="140" max-width="210" show-overflow-tooltip />
+          <el-table-column v-if="designerVisibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
               <el-tag :type="row.is_active ? 'success' : 'info'" effect="plain">
                 {{ row.is_active ? '在职' : '停用' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+          <el-table-column v-if="designerVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
           <el-table-column class-name="table-action-column" label="操作" min-width="150" max-width="230" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="Edit" @click="openDesignerDialog(row)">编辑</GlassButton>
@@ -388,49 +462,11 @@
       </el-tab-pane>
     </el-tabs>
 
-    <!-- Confirm scheduling dialog -->
-    <el-dialog
-      v-model="confirmVisible"
-      title="确认排期"
-      width="560px"
-      :close-on-click-modal="false"
-    >
-      <el-form :model="confirmForm" label-width="90px" class="confirm-form">
-        <el-form-item label="客户">
-          <span>{{ confirmRow?.customer_name }}</span>
-        </el-form-item>
-        <el-form-item label="设计师" required>
-          <el-select v-model="confirmForm.designer_id" placeholder="请选择设计师" style="width: 100%">
-            <el-option
-              v-for="d in designerData"
-              :key="d.id"
-              :label="d.name"
-              :value="d.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="排期日期" required class="date-period-item">
-          <DatePeriodPicker
-            v-model:start-date="confirmForm.startDate"
-            v-model:start-period="confirmForm.startPeriod"
-            v-model:end-date="confirmForm.endDate"
-            v-model:end-period="confirmForm.endPeriod"
-          />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="confirmForm.comment" type="textarea" :rows="2" placeholder="选填" />
-        </el-form-item>
-        <el-form-item>
-          <el-checkbox v-model="confirmForm.sync_unavailable">
-            将当前排期日期同步设置为不可用
-          </el-checkbox>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <GlassButton variant="ghost" @click="confirmVisible = false">取消</GlassButton>
-        <GlassButton variant="primary" @click="submitConfirm" :loading="confirming">确认</GlassButton>
-      </template>
-    </el-dialog>
+    <ConfirmSchedulingDialog
+      v-model:visible="confirmVisible"
+      :row="confirmRow" :form="confirmForm" :designers="designerData" :saving="confirming"
+      @submit="submitConfirm"
+    />
 
     <!-- Designer create/edit dialog -->
     <el-dialog
@@ -462,89 +498,26 @@
     <!-- 预约详情抽屉 -->
     <RequestDetailDrawer v-model="detailVisible" :request-id="detailRequestId" />
 
-    <!-- 修改期望日期 -->
-    <el-dialog v-model="editDateVisible" title="修改期望日期" width="500px" :close-on-click-modal="false">
-      <el-form label-width="100px">
-        <el-form-item label="期望日期">
-          <DatePeriodPicker
-            v-model:start-date="editDateForm.startDate"
-            v-model:start-period="editDateForm.startPeriod"
-            v-model:end-date="editDateForm.endDate"
-            v-model:end-period="editDateForm.endPeriod"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <GlassButton variant="ghost" @click="editDateVisible = false">取消</GlassButton>
-        <GlassButton variant="primary" @click="submitEditDate" :loading="editDateSaving">保存</GlassButton>
-      </template>
-    </el-dialog>
-
-    <!-- 修改备注 -->
-    <el-dialog v-model="remarkVisible" :title="remarkTarget === 'task' ? '修改排期备注' : '修改预约备注'" width="500px" :close-on-click-modal="false" :close-on-press-escape="!remarkSaving" :show-close="!remarkSaving">
-      <el-form label-width="80px">
-        <el-form-item label="备注">
-          <el-input v-model="remarkForm.remark" type="textarea" :rows="4" placeholder="请输入备注" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <GlassButton variant="ghost" :disabled="remarkSaving" @click="remarkVisible = false">取消</GlassButton>
-        <GlassButton variant="primary" @click="submitRemark" :loading="remarkSaving">保存</GlassButton>
-      </template>
-    </el-dialog>
-
-    <!-- 修改排期日期 -->
-    <el-dialog v-model="editTaskDateVisible" title="修改排期日期" width="500px" :close-on-click-modal="false">
-      <el-form label-width="100px">
-        <el-form-item label="排期日期">
-          <DatePeriodPicker
-            v-model:start-date="editTaskDateForm.startDate"
-            v-model:start-period="editTaskDateForm.startPeriod"
-            v-model:end-date="editTaskDateForm.endDate"
-            v-model:end-period="editTaskDateForm.endPeriod"
-          />
-        </el-form-item>
-        <el-form-item label="改期备注">
-          <el-input v-model="editTaskDateForm.comment" type="textarea" :rows="2" placeholder="选填，将包含在钉钉通知中" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <GlassButton variant="ghost" @click="editTaskDateVisible = false">取消</GlassButton>
-        <GlassButton variant="primary" @click="submitEditTaskDate" :loading="editTaskDateSaving">保存</GlassButton>
-      </template>
-    </el-dialog>
-
-    <!-- 修改拍摄类型 -->
-    <el-dialog v-model="shootTypeVisible" title="修改拍摄类型" width="460px" :close-on-click-modal="false">
-      <el-form label-width="90px">
-        <el-form-item label="拍摄类型">
-          <el-select v-model="shootTypeForm.shoot_type" multiple placeholder="请选择拍摄类型" style="width: 100%">
-            <el-option
-              v-for="(label, code) in shootTypeMap"
-              :key="code"
-              :label="label"
-              :value="code"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <GlassButton variant="ghost" @click="shootTypeVisible = false">取消</GlassButton>
-        <GlassButton variant="primary" @click="submitShootType" :loading="shootTypeSaving">保存</GlassButton>
-      </template>
-    </el-dialog>
+    <DesignManageEditDialogs
+      v-model:edit-date-visible="editDateVisible" :edit-date-form="editDateForm" :edit-date-saving="editDateSaving" @submit-edit-date="submitEditDate"
+      v-model:remark-visible="remarkVisible" :remark-target="remarkTarget" :remark-form="remarkForm" :remark-saving="remarkSaving" @submit-remark="submitRemark"
+      v-model:edit-task-date-visible="editTaskDateVisible" :edit-task-date-form="editTaskDateForm" :edit-task-date-saving="editTaskDateSaving" @submit-edit-task-date="submitEditTaskDate"
+      v-model:shoot-type-visible="shootTypeVisible" :shoot-type-form="shootTypeForm" :shoot-type-saving="shootTypeSaving" :shoot-type-map="shootTypeMap" @submit-shoot-type="submitShootType"
+    />
   </div>
 </template>
 
 <script setup>
 import {
-  Upload, Plus, Calendar, VideoPlay, CircleCheck, CircleClose, Edit, SwitchButton, Bell
+  Upload, Plus, Calendar, VideoPlay, CircleCheck, CircleClose, Edit, SwitchButton, Bell, Search, RefreshLeft
 } from '@element-plus/icons-vue'
 import { buildDictLabel } from '@/utils/dict'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
-import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
+import ConfirmSchedulingDialog from './components/ConfirmSchedulingDialog.vue'
+import DesignManageEditDialogs from './components/DesignManageEditDialogs.vue'
 import RequestDetailDrawer from '@/components/design/RequestDetailDrawer.vue'
+import TableTools from '@/components/TableTools.vue'
 import { useDesignManage } from './composables/useDesignManage'
 
 const {
@@ -567,20 +540,31 @@ const {
   pendingTableRef, pendingData, pendingLoading,
   pendingPage, pendingPageSize, pendingTotal, pendingFilters,
   fetchPending, handleScanShootReminders, pendingSort,
+  pendingHasActiveFilters, searchPending, resetPendingFilters, handlePendingSizeChange,
+  pendingColumnDefs, pendingDensity, pendingDensityClass, pendingVisibleKeys,
+  pendingPanelRef, pendingIsFullscreen, pendingToggleFullscreen,
   // Scheduled
   scheduledTableRef, scheduledData, scheduledLoading,
   scheduledPage, scheduledPageSize, scheduledTotal, scheduledFilters,
   fetchScheduled, scheduledSort,
+  scheduledHasActiveFilters, searchScheduled, resetScheduledFilters, handleScheduledSizeChange,
+  scheduledColumnDefs, scheduledDensity, scheduledDensityClass, scheduledVisibleKeys,
+  scheduledPanelRef, scheduledIsFullscreen, scheduledToggleFullscreen,
   // Completed
   completedTableRef, completedData, completedLoading,
   completedPage, completedPageSize, completedTotal, completedFilters,
   fetchCompleted, completedSort,
+  completedHasActiveFilters, searchCompleted, resetCompletedFilters, handleCompletedSizeChange,
+  completedColumnDefs, completedDensity, completedDensityClass, completedVisibleKeys,
+  completedPanelRef, completedIsFullscreen, completedToggleFullscreen,
   // Designers
-  designerData, designerLoading,
+  designerData, designerLoading, fetchDesigners,
+  designerColumnDefs, designerDensity, designerDensityClass, designerVisibleKeys,
+  designerPanelRef, designerIsFullscreen, designerToggleFullscreen,
   designerDialogVisible, designerSaving, designerForm,
   openDesignerDialog, submitDesigner, toggleDesignerActive,
   // Confirm
-  confirmVisible, confirming, confirmForm,
+  confirmVisible, confirmRow, confirming, confirmForm,
   openConfirmDialog, submitConfirm,
   // Task action / Gantt
   handleTaskAction, handleReschedule,

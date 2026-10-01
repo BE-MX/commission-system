@@ -93,14 +93,14 @@
     </aside>
 
     <!-- 主内容区 -->
-    <div class="main-content">
+    <div ref="panelRef" class="main-content">
       <!-- 批量操作栏 -->
       <div v-if="isBatchMode" class="batch-toolbar">
         <span class="batch-info">已选择 {{ selectedAssets.length }} 项</span>
-        <GlassButton variant="primary" size="sm" :left-icon="Download" @click="handleBatchDownload">批量下载</GlassButton>
-        <GlassButton v-if="canWrite" variant="secondary" size="sm" :left-icon="CollectionTag" @click="openBatchTagEditor">批量加标签</GlassButton>
-        <GlassButton v-if="canDelete" variant="danger" size="sm" :left-icon="Delete" @click="handleBatchDelete">批量删除</GlassButton>
-        <GlassButton variant="secondary" size="sm" @click="clearSelection">取消选择</GlassButton>
+        <GlassButton variant="primary" :left-icon="Download" @click="handleBatchDownload">批量下载</GlassButton>
+        <GlassButton v-if="canWrite" variant="secondary" :left-icon="CollectionTag" @click="openBatchTagEditor">批量加标签</GlassButton>
+        <GlassButton v-if="canDelete" variant="danger" :left-icon="Delete" @click="handleBatchDelete">批量删除</GlassButton>
+        <GlassButton variant="secondary" @click="clearSelection">取消选择</GlassButton>
       </div>
 
       <!-- 顶部工具栏 -->
@@ -110,7 +110,7 @@
             v-model="keyword"
             placeholder="搜索文件名或备注"
             clearable
-            style="width: 280px"
+            class="keyword-input"
             @keyup.enter="onKeywordSearch"
             @clear="onKeywordSearch"
           >
@@ -118,10 +118,20 @@
           </el-input>
         </div>
         <div class="toolbar-right">
-          <el-radio-group v-model="viewMode" size="small">
+          <el-radio-group v-model="viewMode">
             <el-radio-button label="grid"><el-icon><Grid /></el-icon></el-radio-button>
             <el-radio-button label="list"><el-icon><List /></el-icon></el-radio-button>
           </el-radio-group>
+          <!-- 列显隐/密度只作用于列表视图；刷新在有检索意图时才重新拉取 -->
+          <TableTools v-if="viewMode === 'list'"
+            v-model:visible-keys="visibleKeys"
+            v-model:density="density"
+            :columns="columnDefs"
+            :fullscreen="isFullscreen"
+            @refresh="onToolsRefresh"
+            @fullscreen="toggleFullscreen"
+          />
+          <GlassButton v-else variant="ghost" left-icon="Refresh" aria-label="刷新" @click="onToolsRefresh" />
         </div>
       </div>
 
@@ -229,24 +239,31 @@
       </div>
 
       <!-- 列表视图 -->
-      <el-table v-else :data="assets" class="asset-list-table list-table" style="width: 100%" @row-click="openPreview" @sort-change="orderSort.onSortChange" border>
-        <el-table-column label="缩略图" min-width="80">
+      <el-table
+        v-else :data="assets" class="asset-list-table list-table" :class="densityClass" style="width: 100%"
+        :max-height="isFullscreen ? undefined : 640"
+        border @row-click="openPreview" @sort-change="handleSortChange"
+      >
+        <template #empty>
+          <el-empty :image-size="96" description="暂无数据" />
+        </template>
+        <el-table-column v-if="visibleKeys.includes('thumb')" label="缩略图" min-width="80">
           <template #default="{ row }">
             <img v-if="row.file_type === 'image' || (row.file_type === 'video' && row.thumbnail_path)" :src="getThumbUrl(row.thumbnail_path || row.storage_path)" class="table-thumb" />
             <el-icon v-else-if="row.file_type === 'video'" size="24"><VideoPlay /></el-icon>
             <el-icon v-else size="24"><Picture /></el-icon>
           </template>
         </el-table-column>
-        <el-table-column label="文件名" prop="file_name" min-width="200" show-overflow-tooltip sortable="custom" />
-        <el-table-column label="类型" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('file-name')" label="文件名" prop="file_name" min-width="200" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="80">
           <template #default="{ row }">
             <el-tag size="small" :type="fileTypeTag(row.file_type)">{{ fileTypeLabel(row.file_type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="大小" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('size')" label="大小" min-width="100">
           <template #default="{ row }">{{ formatSize(row.file_size) }}</template>
         </el-table-column>
-        <el-table-column label="标签" min-width="200">
+        <el-table-column v-if="visibleKeys.includes('tags')" label="标签" min-width="200">
           <template #default="{ row }">
             <div v-for="tag in row.tags" :key="tag.id" class="tag-with-thumb mr-4">
               <img v-if="tag.image_path" :src="getTagImageUrl(tag.image_path)" class="tag-thumb" />
@@ -256,22 +273,26 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="上传时间" prop="created_at" min-width="160" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('created-at')" label="上传时间" prop="created_at" min-width="160" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="200" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
-            <el-button @click.stop="handleDownload(row)">
+            <el-button link type="primary" @click.stop="handleDownload(row)">
               <el-icon><Download /></el-icon>
+              下载
             </el-button>
-            <el-button @click.stop="handleFavorite(row)">
+            <el-button link type="primary" @click.stop="handleFavorite(row)">
               <el-icon><Star /></el-icon>
+              收藏
             </el-button>
-            <el-button v-if="canWrite" title="编辑标签" @click.stop="openTagEditor(row)">
+            <el-button v-if="canWrite" link type="primary" @click.stop="openTagEditor(row)">
               <el-icon><EditPen /></el-icon>
+              标签
             </el-button>
-            <el-button v-if="canDelete" type="danger" plain title="删除" @click.stop="handleDelete(row)">
+            <el-button v-if="canDelete" link type="danger" @click.stop="handleDelete(row)">
               <el-icon><Delete /></el-icon>
+              删除
             </el-button>
           </template>
         </el-table-column>
@@ -284,9 +305,10 @@
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :total="total"
-          :page-sizes="[12, 24, 48, 96]"
+          :page-sizes="[20, 50, 100]"
           layout="total, sizes, prev, pager, next"
-          @change="loadData"
+          @size-change="handleSizeChange"
+          @current-change="loadData"
         />
       </div>
     </div>
@@ -371,16 +393,26 @@ import {
 } from '@element-plus/icons-vue'
 import {
   getAssetList, getTagDimensions, downloadAsset, getFavoriteFolders,
-  addFavoriteItem, analyzeAsset, batchDownload, deleteAsset, batchDeleteAssets,
+  addFavoriteItem, analyzeAsset, batchDownload,
 } from '@/api/asset'
 import { useAuthStore } from '@/stores/auth'
 import AssetTagEditor from './components/AssetTagEditor.vue'
 import { useAssetTagFilters } from './composables/useAssetTagFilters'
+import { useAssetDeletion } from './composables/useAssetDeletion'
 import { getThumbUrl, getFileUrl, getTagImageUrl, formatSize, formatDate, fileTypeLabel, fileTypeTag } from './composables/assetPresentation'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import { currentBeijingDate } from '@/utils/datetime'
 
 const orderSort = useTableSort()
+const columnDefs = [
+  { key: 'thumb', label: '缩略图' }, { key: 'file-name', label: '文件名' },
+  { key: 'type', label: '类型' }, { key: 'size', label: '大小' },
+  { key: 'tags', label: '标签' }, { key: 'created-at', label: '上传时间' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('asset-library', columnDefs)
 
 const authStore = useAuthStore()
 const canWrite = computed(() => authStore.hasPermission('asset:write'))
@@ -390,14 +422,12 @@ const loading = ref(false)
 const assets = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(24)
+const pageSize = ref(20)
 const keyword = ref('')
 const viewMode = ref('grid')
 const sidebarCollapsed = ref(false)
-
 const dimensions = ref([])
 const activeFilters = reactive({})
-
 // 标签关键字筛选
 const filterKeyword = ref('')
 
@@ -423,7 +453,6 @@ const {
 
 const previewVisible = ref(false)
 const previewAsset = ref(null)
-
 const favoriteDialogVisible = ref(false)
 const folders = ref([])
 const selectedFolderId = ref(null)
@@ -463,56 +492,11 @@ async function onTagsSaved() {
   }
 }
 
-// ── 删除素材 ────────────────────────────────────────────
-
-async function handleDelete(asset) {
-  if (!asset) return
-  try {
-    await ElMessageBox.confirm(
-      `确定删除「${asset.file_name}」吗？文件将被一并删除，不可恢复。`,
-      '删除素材',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  try {
-    await deleteAsset(asset.id)
-    ElMessage.success('已删除')
-    selectedAssets.value = selectedAssets.value.filter(a => a.id !== asset.id)
-    if (previewAsset.value?.id === asset.id) previewVisible.value = false
-    await loadData()
-  } catch (e) {
-    // 拦截器已弹出后端错误提示
-  }
-}
-
-async function handleBatchDelete() {
-  if (!selectedAssets.value.length) return
-  const count = selectedAssets.value.length
-  try {
-    await ElMessageBox.confirm(
-      `确定删除选中的 ${count} 个素材吗？文件将被一并删除，不可恢复。`,
-      '批量删除',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  try {
-    const res = await batchDeleteAssets(selectedAssets.value.map(a => a.id))
-    const data = res.data || {}
-    if (data.failed_ids?.length) {
-      ElMessage.warning(`已删除 ${data.deleted} 个，${data.failed_ids.length} 个失败`)
-    } else {
-      ElMessage.success(`已删除 ${data.deleted ?? count} 个素材`)
-    }
-    clearSelection()
-    await loadData()
-  } catch (e) {
-    // 拦截器已弹出后端错误提示
-  }
-}
+const { handleDelete, handleBatchDelete } = useAssetDeletion({
+  selectedAssets, previewAsset, previewVisible, loadData, clearSelection,
+  confirm: (...args) => ElMessageBox.confirm(...args),
+  notify: (type, message) => ElMessage[type](message),
+})
 
 // 初始化维度筛选状态
 watch(dimensions, (dims) => {
@@ -605,6 +589,22 @@ async function loadData() {
   } finally {
     loading.value = false
   }
+}
+
+async function onToolsRefresh() {
+  await loadDimensions()
+  if (hasSearchIntent.value) await loadData()
+}
+
+function handleSizeChange() {
+  page.value = 1
+  if (hasSearchIntent.value) loadData()
+}
+
+function handleSortChange(event) {
+  orderSort.onSortChange(event)
+  page.value = 1
+  if (hasSearchIntent.value) loadData()
 }
 
 function resetFilters() {

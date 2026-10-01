@@ -1,11 +1,11 @@
 <template>
-  <!-- 表格工具四图标（List Page Spec 第 9 节试点）：刷新 → 列显示 → 密度 → 全屏，顺序固定 -->
+  <!-- 表格工具四图标：刷新 → 列显示 → 密度 → 全屏，顺序固定 -->
   <div class="table-tools">
     <el-tooltip content="刷新" placement="top" :show-after="300">
       <GlassButton variant="ghost" :left-icon="Refresh" aria-label="刷新" @click="emit('refresh')" />
     </el-tooltip>
 
-    <el-popover trigger="click" placement="bottom-end" width="200">
+    <el-popover v-if="columns.length" trigger="click" placement="bottom-end" width="200">
       <template #reference>
         <GlassButton variant="ghost" :left-icon="SetUp" aria-label="列显示设置" />
       </template>
@@ -15,7 +15,7 @@
           v-for="column in columns"
           :key="column.key"
           :model-value="visibleKeys.includes(column.key)"
-          :disabled="visibleKeys.length === 1 && visibleKeys.includes(column.key)"
+          :disabled="visibleColumnCount === 1 && visibleKeys.includes(column.key)"
           @change="toggleColumn(column.key)"
         >
           {{ column.label }}
@@ -54,20 +54,22 @@
 
 <script setup>
 import { FullScreen, Grid, Refresh, SetUp, Switch } from '@element-plus/icons-vue'
+import { computed } from 'vue'
 
 const props = defineProps({
-  columns: { type: Array, required: true },
-  visibleKeys: { type: Array, required: true },
+  columns: { type: Array, default: () => [] },
+  visibleKeys: { type: Array, default: () => [] },
   density: { type: String, default: 'default' },
   fullscreen: { type: Boolean, default: false },
 })
 const emit = defineEmits(['refresh', 'fullscreen', 'update:visibleKeys', 'update:density'])
+const visibleColumnCount = computed(() => props.columns.filter(column => props.visibleKeys.includes(column.key)).length)
 
 function toggleColumn(key) {
   const keys = props.visibleKeys.includes(key)
     ? props.visibleKeys.filter(item => item !== key)
     : [...props.visibleKeys, key]
-  if (keys.length) emit('update:visibleKeys', keys)
+  if (props.columns.some(column => keys.includes(column.key))) emit('update:visibleKeys', keys)
 }
 </script>
 

@@ -12,41 +12,58 @@
       <p>系统自动发现的未绑定外部账号，管理员可在此快速绑定到方舟用户。</p>
     </div>
 
-    <div class="co-toolbar">
-      <el-radio-group v-model="statusFilter" @change="loadCandidates">
-        <el-radio-button label="">全部</el-radio-button>
-        <el-radio-button label="pending">待处理</el-radio-button>
-        <el-radio-button label="bound">已绑定</el-radio-button>
-        <el-radio-button label="ignored">已忽略</el-radio-button>
-      </el-radio-group>
-      <GlassButton variant="ghost" left-icon="Refresh" @click="loadCandidates">刷新</GlassButton>
-      <GlassButton v-permission="'external_binding:write'" variant="ghost" left-icon="Connection" :loading="syncingOkki" @click="handleSyncOkki">同步 OKKI 用户</GlassButton>
-    </div>
+    <div ref="panelRef" class="table-card bindings-panel">
+      <div class="toolbar">
+        <el-radio-group v-model="statusFilter" @change="loadCandidates">
+          <el-radio-button label="">全部</el-radio-button>
+          <el-radio-button label="pending">待处理</el-radio-button>
+          <el-radio-button label="bound">已绑定</el-radio-button>
+          <el-radio-button label="ignored">已忽略</el-radio-button>
+        </el-radio-group>
+        <GlassButton variant="primary" left-icon="Search" @click="loadCandidates">查询</GlassButton>
+        <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <div class="table-card bindings-panel">
-      <el-table :data="candidates" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column label="平台" min-width="120" max-width="180">
+      <div class="action-bar">
+        <GlassButton v-permission="'external_binding:write'" variant="primary" left-icon="Connection" :loading="syncingOkki" @click="handleSyncOkki">同步 OKKI 用户</GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadCandidates"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="candidates" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('platform')" label="平台" min-width="120" max-width="180">
           <template #default="{ row }">{{ providerLabel(row.provider) }}</template>
         </el-table-column>
-        <el-table-column label="外部账号 ID" prop="external_account_id" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column label="显示名" prop="external_display_name" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column label="状态" min-width="100" max-width="150">
+        <el-table-column v-if="visibleKeys.includes('external-account-id')" label="外部账号 ID" prop="external_account_id" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('display-name')" label="显示名" prop="external_display_name" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
           <template #default="{ row }">
             <el-tag :type="candidateStatusType(row.candidate_status)" size="small" effect="plain">
               {{ candidateStatusLabel(row.candidate_status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="建议用户" min-width="120" max-width="180" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('suggested-user')" label="建议用户" min-width="120" max-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.suggested_user_name">{{ row.suggested_user_name }}</span>
             <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="首次发现" min-width="160" max-width="240" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('first-seen-at')" label="首次发现" min-width="160" max-width="240" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTime(row.first_seen_at) }}</template>
         </el-table-column>
-        <el-table-column label="出现次数" prop="seen_count" min-width="90" max-width="135" />
+        <el-table-column v-if="visibleKeys.includes('seen-count')" label="出现次数" prop="seen_count" min-width="90" max-width="135" />
         <el-table-column class-name="table-action-column" label="操作" min-width="200" max-width="300" fixed="right">
           <template #default="{ row }">
             <template v-if="row.candidate_status === 'pending'">
@@ -78,15 +95,35 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 // 统一 client：token 注入 / 401 跳转 / 错误提示由拦截器处理（宪法 11）
 import { adminClient as authApi } from '@/api/clients'
 import { formatBeijingDateTime } from '@/utils/datetime'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
+
+// 列显隐元数据（TableTools 面板数据源，不驱动列渲染）
+const columnDefs = [
+  { key: 'platform', label: '平台' },
+  { key: 'external-account-id', label: '外部账号 ID' },
+  { key: 'display-name', label: '显示名' },
+  { key: 'status', label: '状态' },
+  { key: 'suggested-user', label: '建议用户' },
+  { key: 'first-seen-at', label: '首次发现' },
+  { key: 'seen-count', label: '出现次数' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('external-bindings', columnDefs)
 
 const loading = ref(false)
 const candidates = ref([])
 const statusFilter = ref('')
+const hasActiveFilters = computed(() => Boolean(statusFilter.value))
+
+function resetFilters() {
+  statusFilter.value = ''
+  loadCandidates()
+}
 const bindDialogVisible = ref(false)
 const currentCandidate = ref(null)
 const selectedUserId = ref(null)
@@ -195,7 +232,6 @@ onMounted(() => loadCandidates())
 /* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
    el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
 .external-bindings .page-header,
-.external-bindings .co-toolbar,
 .external-bindings .bindings-panel {
   position: relative;
   z-index: 1;
@@ -204,7 +240,6 @@ onMounted(() => loadCandidates())
 .page-header { margin-bottom: 16px; }
 .page-header h2 { margin: 0; font-size: 20px; font-family: var(--font-display); color: var(--text-primary); }
 .page-header p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
-.co-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .text-muted { color: var(--text-muted); }
 
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */

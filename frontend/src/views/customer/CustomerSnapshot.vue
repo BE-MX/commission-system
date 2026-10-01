@@ -7,79 +7,88 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 顶部工具栏 -->
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="5">
-        <el-input v-model="keyword" placeholder="搜索客户名/ID" clearable @keyup.enter="fetchList" @clear="fetchList">
-          <template #prefix><el-icon><Search /></el-icon></template>
-        </el-input>
-      </el-col>
-      <el-col :span="4">
-        <el-input v-model="salespersonKeyword" placeholder="业务员姓名/ID" clearable @keyup.enter="fetchList" @clear="fetchList">
-          <template #prefix><el-icon><User /></el-icon></template>
-        </el-input>
-      </el-col>
-      <el-col :span="3">
-        <el-select v-model="isComplete" @change="fetchList" style="width:100%">
-          <el-option label="全部" value="all" />
-          <el-option label="已完整" value="true" />
-          <el-option label="待补充" value="false" />
-        </el-select>
-      </el-col>
-      <el-col :span="12" style="text-align:right">
-        <GlassButton v-permission="'customer:write'" variant="success" :loading="autoMatching" @click="handleAutoMatch" left-icon="MagicStick">自动匹配</GlassButton>
-        <GlassButton v-permission="'customer:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">手工新增</GlassButton>
-        <GlassButton v-permission="'customer:write'" left-icon="Upload" @click="importDialogVisible = true">Excel导入</GlassButton>
-        <GlassButton left-icon="Download" @click="downloadTpl">下载模板</GlassButton>
-      </el-col>
-    </el-row>
+    <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec） -->
+    <div ref="panelRef" class="table-card">
+    <div class="toolbar">
+      <el-input v-model="keyword" placeholder="搜索客户名/ID" clearable class="filter-w-md" @keyup.enter="searchList" @clear="searchList">
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <el-input v-model="salespersonKeyword" placeholder="业务员姓名/ID" clearable class="filter-w-md" @keyup.enter="searchList" @clear="searchList">
+        <template #prefix><el-icon><User /></el-icon></template>
+      </el-input>
+      <el-select v-model="isComplete" class="filter-w-sm" @change="searchList">
+        <el-option label="全部" value="all" />
+        <el-option label="已完整" value="true" />
+        <el-option label="待补充" value="false" />
+      </el-select>
+      <GlassButton variant="primary" left-icon="Search" @click="searchList">查询</GlassButton>
+      <GlassButton left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+    </div>
 
-    <!-- 表格 -->
-    <div class="table-card">
+    <div class="action-bar">
+      <GlassButton v-permission="'customer:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">手工新增</GlassButton>
+      <GlassButton v-permission="'customer:write'" variant="secondary" :loading="autoMatching" @click="handleAutoMatch" left-icon="MagicStick">自动匹配</GlassButton>
+      <GlassButton v-permission="'customer:write'" left-icon="Upload" @click="importDialogVisible = true">Excel导入</GlassButton>
+      <GlassButton left-icon="Download" @click="downloadTpl">下载模板</GlassButton>
+      <TableTools
+        v-model:visible-keys="visibleKeys"
+        v-model:density="density"
+        :columns="columnDefs"
+        :fullscreen="isFullscreen"
+        @refresh="fetchList"
+        @fullscreen="toggleFullscreen"
+      />
+    </div>
+
     <el-table
-      ref="tableRef"
       :data="tableData"
       v-loading="loading"
       border
       class="list-table"
+      :class="densityClass"
       style="width: 100%"
       :row-class-name="rowClassName"
-      :max-height="maxHeight"
-      @sort-change="orderSort.onSortChange"
+      :max-height="isFullscreen ? undefined : 640"
+      @sort-change="handleSortChange"
     >
-      <el-table-column prop="customer_id" label="客户ID" min-width="160" max-width="240" show-overflow-tooltip />
-      <el-table-column prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="salesperson_name" label="业务员" min-width="100" max-width="150" show-overflow-tooltip sortable="custom" />
-      <el-table-column label="业务员属性" min-width="100" max-width="150">
+      <template #empty>
+        <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+          <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+        </el-empty>
+      </template>
+      <el-table-column v-if="visibleKeys.includes('customer-id')" prop="customer_id" label="客户ID" min-width="160" max-width="240" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="100" max-width="150" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('salesperson-attribute')" label="业务员属性" min-width="100" max-width="150">
         <template #default="{ row }">
           <span>{{ attrLabel(row.salesperson_attribute) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="业务员比例" min-width="100" max-width="150">
+      <el-table-column v-if="visibleKeys.includes('salesperson-rate')" label="业务员比例" min-width="100" max-width="150">
         <template #default="{ row }">{{ rateStr(row.salesperson_rate) }}</template>
       </el-table-column>
-      <el-table-column prop="supervisor_name" label="一级主管" min-width="100" max-width="150" show-overflow-tooltip />
-      <el-table-column label="一级主管属性" min-width="110" max-width="170">
+      <el-table-column v-if="visibleKeys.includes('supervisor-name')" prop="supervisor_name" label="一级主管" min-width="100" max-width="150" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('supervisor-attribute')" label="一级主管属性" min-width="110" max-width="170">
         <template #default="{ row }">
           <span>{{ attrLabel(row.supervisor_attribute) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="一级主管比例" min-width="110" max-width="170">
+      <el-table-column v-if="visibleKeys.includes('supervisor-rate')" label="一级主管比例" min-width="110" max-width="170">
         <template #default="{ row }">{{ rateStr(row.supervisor_rate) }}</template>
       </el-table-column>
-      <el-table-column prop="second_supervisor_name" label="二级主管" min-width="100" max-width="150" show-overflow-tooltip />
-      <el-table-column label="二级主管比例" min-width="110" max-width="170">
+      <el-table-column v-if="visibleKeys.includes('second-supervisor-name')" prop="second_supervisor_name" label="二级主管" min-width="100" max-width="150" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('second-supervisor-rate')" label="二级主管比例" min-width="110" max-width="170">
         <template #default="{ row }">{{ rateStr(row.second_supervisor_rate) }}</template>
       </el-table-column>
-      <el-table-column prop="remark" label="备注" min-width="120" max-width="240" show-overflow-tooltip />
-      <el-table-column prop="first_receipt_date" label="首次成交日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
-      <el-table-column label="状态" min-width="90" max-width="140">
+      <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="120" max-width="240" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('first-receipt-date')" prop="first_receipt_date" label="首次成交日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90" max-width="140">
         <template #default="{ row }">
           <el-tag v-if="row.is_complete" type="success" size="small" effect="plain">已完整</el-tag>
           <el-tag v-else type="warning" size="small" effect="plain">待补充</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="来源" min-width="70" max-width="110">
+      <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="70" max-width="110">
         <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
       </el-table-column>
       <el-table-column class-name="table-action-column" label="操作" min-width="180" max-width="270" fixed="right">
@@ -89,18 +98,18 @@
         </template>
       </el-table-column>
     </el-table>
-    </div>
 
     <el-pagination
-      class="pagination"
+      class="pager"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
-      layout="total, prev, pager, next, sizes"
+      layout="total, sizes, prev, pager, next"
       :page-sizes="[20, 50, 100]"
       @current-change="fetchList"
-      @size-change="fetchList"
+      @size-change="handleSizeChange"
     />
+    </div>
 
     <!-- 手工新增 Dialog -->
     <el-dialog v-model="createDialogVisible" title="手工新增客户归属" width="500px">
@@ -250,15 +259,26 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSnapshotList, createSnapshot, completeSnapshot, resetSnapshot, importSnapshots, downloadTemplate, autoMatchSnapshots } from '@/api/customer'
 import { downloadUrl } from '@/utils/download'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
+const columnDefs = [
+  { key: 'customer-id', label: '客户ID' }, { key: 'customer-name', label: '客户名称' },
+  { key: 'salesperson-name', label: '业务员' }, { key: 'salesperson-attribute', label: '业务员属性' },
+  { key: 'salesperson-rate', label: '业务员比例' }, { key: 'supervisor-name', label: '一级主管' },
+  { key: 'supervisor-attribute', label: '一级主管属性' }, { key: 'supervisor-rate', label: '一级主管比例' },
+  { key: 'second-supervisor-name', label: '二级主管' }, { key: 'second-supervisor-rate', label: '二级主管比例' },
+  { key: 'remark', label: '备注' }, { key: 'first-receipt-date', label: '首次成交日期' },
+  { key: 'status', label: '状态' }, { key: 'source', label: '来源' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('customer-snapshot', columnDefs)
 
 const keyword = ref('')
 const salespersonKeyword = ref('')
@@ -270,6 +290,17 @@ const tableData = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const currentRow = ref(null)
+const hasActiveFilters = computed(() => Boolean(keyword.value || salespersonKeyword.value || isComplete.value !== 'all'))
+
+function searchList() { page.value = 1; fetchList() }
+function resetFilters() {
+  keyword.value = ''
+  salespersonKeyword.value = ''
+  isComplete.value = 'all'
+  searchList()
+}
+function handleSizeChange() { page.value = 1; fetchList() }
+function handleSortChange(event) { orderSort.onSortChange(event); searchList() }
 
 function attrLabel(v) {
   return { develop: '开发', distribute: '分配' }[v] || '-'
@@ -452,48 +483,4 @@ function downloadTpl() {
 onMounted(fetchList)
 </script>
 
-<style scoped>
-.customer-snapshot-page { position: relative; }
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
-.customer-snapshot-aurora { inset: -24px -28px; }
-
-/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
-   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
-   .el-overlay 的 position: fixed，弹窗打开后看不见 */
-.customer-snapshot-page .toolbar,
-.customer-snapshot-page .table-card,
-.customer-snapshot-page .pagination {
-  position: relative;
-  z-index: 1;
-}
-
-/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底） */
-.customer-snapshot-page .table-card {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-}
-
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
-.customer-snapshot-page .table-card :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-/* 右侧固定操作列：sticky 单元格 background:inherit，行透明时滑到它下面的
-   内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
-.customer-snapshot-page .table-card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.customer-snapshot-page .table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.customer-snapshot-page .table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-
-.toolbar { margin-bottom: 16px; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
-:deep(.incomplete-row) {
-  background-color: #fdf6ec !important;
-}
-</style>
+<style scoped src="./customer-snapshot.css"></style>

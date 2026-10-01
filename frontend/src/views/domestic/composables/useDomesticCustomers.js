@@ -77,6 +77,12 @@ export function useDomesticCustomers() {
     handleSearch()
   }
 
+  // 重置只清筛选条件，不动私海/公海 tab（owner_scope）
+  function resetFilters() {
+    Object.assign(searchForm, { keyword: '', status: '', province: '', city: '', customer_level: '', owner_user_id: '' })
+    return handleSearch()
+  }
+
   const dialog = reactive({ ...DIALOG_DEFAULTS })
 
   function openDialog(row) {
@@ -341,7 +347,7 @@ export function useDomesticCustomers() {
   return {
     loading, list, total, page, pageSize, searchForm,
     fetchList, handleSearch, handlePageChange, handleSizeChange,
-    canOperateCustomer, handleProvinceChange,
+    canOperateCustomer, handleProvinceChange, resetFilters,
     saving, dialog, options, openDialog, save,
     rechargeDialog, openRecharge, confirmRecharge,
     onRechargeVoucherChange, onRechargeVoucherRemove, onRechargeVoucherExceed,

@@ -7,25 +7,21 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- Toolbar -->
-    <el-row :gutter="12" class="toolbar" align="middle">
-      <el-col :span="8">
-        <el-date-picker
-          v-model="dateRange"
-          type="daterange"
-          range-separator="至"
-          start-placeholder="开始日期"
-          end-placeholder="结束日期"
-          value-format="YYYY-MM-DD"
-          :clearable="false"
-          style="width: 100%"
-          @change="fetchStats"
-        />
-      </el-col>
-      <el-col :span="3">
-        <GlassButton :icon="Refresh" @click="fetchStats">刷新</GlassButton>
-      </el-col>
-    </el-row>
+    <!-- 页面级筛选：驱动统计卡与工作量表（非纯表格筛选，保留在卡片外） -->
+    <div class="toolbar">
+      <el-date-picker
+        v-model="dateRange"
+        type="daterange"
+        range-separator="至"
+        start-placeholder="开始日期"
+        end-placeholder="结束日期"
+        value-format="YYYY-MM-DD"
+        :clearable="false"
+        class="filter-w-lg"
+        @change="fetchStats"
+      />
+      <GlassButton :icon="Refresh" @click="fetchStats">刷新</GlassButton>
+    </div>
 
     <!-- Summary cards -->
     <el-row :gutter="16" class="summary-cards">
@@ -57,31 +53,47 @@
 
     <!-- Designer workload table -->
     <div class="section-title">设计师工作量</div>
-    <div class="table-card design-stats-panel">
+    <div ref="panelRef" class="table-card design-stats-panel">
+    <!-- 操作行：本页无主操作按钮，右侧 TableTools 四图标（Action Bar Spec） -->
+    <div class="action-bar">
+      <TableTools
+        v-model:visible-keys="visibleKeys"
+        v-model:density="density"
+        :columns="columnDefs"
+        :fullscreen="isFullscreen"
+        @refresh="fetchStats"
+        @fullscreen="toggleFullscreen"
+      />
+    </div>
     <el-table
       :data="designerStats"
       v-loading="loading"
       class="list-table"
+      :class="densityClass"
       border
+      :max-height="isFullscreen ? undefined : 640"
     >
-      <el-table-column prop="designer_name" label="设计师" min-width="120" max-width="180" show-overflow-tooltip sortable />
-      <el-table-column prop="total" label="总任务数" min-width="100" max-width="150" sortable />
-      <el-table-column prop="completed" label="已完成" min-width="100" max-width="150" sortable>
+      <template #empty>
+        <el-empty :image-size="96" description="暂无数据" />
+      </template>
+      <el-table-column v-if="visibleKeys.includes('designer-name')" prop="designer_name" label="设计师" min-width="120" max-width="180" show-overflow-tooltip sortable />
+      <el-table-column v-if="visibleKeys.includes('total')" prop="total" label="总任务数" min-width="100" max-width="150" sortable />
+      <el-table-column v-if="visibleKeys.includes('completed')" prop="completed" label="已完成" min-width="100" max-width="150" sortable>
         <template #default="{ row }">
           <el-tag type="success" size="small" effect="plain">{{ row.completed }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="in_progress" label="进行中" min-width="100" max-width="150" sortable>
+      <el-table-column v-if="visibleKeys.includes('in-progress')" prop="in_progress" label="进行中" min-width="100" max-width="150" sortable>
         <template #default="{ row }">
           <el-tag type="warning" size="small" effect="plain">{{ row.in_progress }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="avg_duration_days" label="平均任务时长(天)" min-width="160" max-width="240" show-overflow-tooltip sortable>
+      <el-table-column v-if="visibleKeys.includes('avg-duration')" prop="avg_duration_days" label="平均任务时长(天)" min-width="160" max-width="240" show-overflow-tooltip sortable>
         <template #default="{ row }">
           {{ row.avg_duration_days || '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="完成率" min-width="160" max-width="240">
+      <el-table-column v-if="visibleKeys.includes('completion-rate')" label="完成率" min-width="160" max-width="240">
         <template #default="{ row }">
           <el-progress
             :percentage="row.total > 0 ? Math.round(row.completed / row.total * 100) : 0"
@@ -100,6 +112,20 @@ import { ref, reactive, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { getDesignStats } from '@/api/design'
 import { beijingCalendarDate } from '@/utils/datetime'
+import TableTools from '@/components/TableTools.vue'
+import { useTableView } from '@/composables/useTableView'
+
+// 列配置数组：TableTools 列显隐的数据源（本表无操作列）
+const columnDefs = [
+  { key: 'designer-name', label: '设计师' },
+  { key: 'total', label: '总任务数' },
+  { key: 'completed', label: '已完成' },
+  { key: 'in-progress', label: '进行中' },
+  { key: 'avg-duration', label: '平均任务时长(天)' },
+  { key: 'completion-rate', label: '完成率' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('design-stats', columnDefs)
 
 function getDefaultDateRange() {
   const now = beijingCalendarDate()

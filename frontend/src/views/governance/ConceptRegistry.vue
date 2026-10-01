@@ -7,20 +7,9 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 页面标题 -->
+    <!-- 页面标题（操作按钮已迁入卡片内操作行，Action Bar Spec） -->
     <div class="page-header">
       <h2>数据治理 · 概念注册表</h2>
-      <div class="header-actions">
-        <GlassButton variant="primary" :left-icon="Plus" @click="handleCreate"
-          v-if="authStore.hasAnyPermission(['governance:write', 'governance:admin'])">
-          新建概念
-        </GlassButton>
-        <GlassButton variant="secondary" :left-icon="Download" @click="handleExport">导出</GlassButton>
-        <GlassButton variant="secondary" :left-icon="UploadFilled" @click="handleSeed"
-          v-if="authStore.hasAnyPermission(['governance:admin'])">
-          初始化种子数据
-        </GlassButton>
-      </div>
     </div>
 
     <!-- 进度看板 -->
@@ -45,61 +34,86 @@
       </div>
     </div>
 
-    <!-- 筛选栏 -->
-    <div class="filter-bar">
-      <el-select v-model="filters.layer" placeholder="层级" clearable style="width: 140px">
-        <el-option label="财务" value="financial" />
-        <el-option label="客户" value="customer" />
-        <el-option label="产品" value="product" />
-        <el-option label="生产" value="production" />
-        <el-option label="销售过程" value="sales_process" />
-        <el-option label="物流" value="logistics" />
-      </el-select>
-      <el-select v-model="filters.status" placeholder="状态" clearable style="width: 140px">
-        <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
-      </el-select>
-      <el-select v-model="filters.confidence" placeholder="置信度" clearable style="width: 120px">
-        <el-option label="高" value="high" />
-        <el-option label="中" value="medium" />
-        <el-option label="低" value="low" />
-      </el-select>
-      <el-input v-model="filters.keyword" placeholder="搜索概念ID/名称" clearable :prefix-icon="Search"
-        style="width: 220px" @keyup.enter="loadConcepts" />
-      <GlassButton variant="primary" :left-icon="Search" @click="loadConcepts">搜索</GlassButton>
-      <GlassButton variant="secondary" @click="resetFilters">重置</GlassButton>
-    </div>
+    <!-- 概念表格：筛选区 + 操作行 + 表格 + 分页同在卡片内（List Page Spec） -->
+    <div ref="panelRef" class="table-card registry-panel">
+      <div class="toolbar">
+        <el-select v-model="filters.layer" placeholder="层级" clearable class="filter-w-sm">
+          <el-option label="财务" value="financial" />
+          <el-option label="客户" value="customer" />
+          <el-option label="产品" value="product" />
+          <el-option label="生产" value="production" />
+          <el-option label="销售过程" value="sales_process" />
+          <el-option label="物流" value="logistics" />
+        </el-select>
+        <el-select v-model="filters.status" placeholder="状态" clearable class="filter-w-sm">
+          <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
+        </el-select>
+        <el-select v-model="filters.confidence" placeholder="置信度" clearable class="filter-w-sm">
+          <el-option label="高" value="high" />
+          <el-option label="中" value="medium" />
+          <el-option label="低" value="low" />
+        </el-select>
+        <el-input v-model="filters.keyword" placeholder="搜索概念ID/名称" clearable :prefix-icon="Search"
+          class="filter-w-md" @keyup.enter="loadConcepts" />
+        <GlassButton variant="primary" :left-icon="Search" @click="loadConcepts">查询</GlassButton>
+        <GlassButton :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      </div>
 
-    <!-- 概念表格 -->
-    <div class="table-card registry-panel">
-      <el-table :data="concepts" v-loading="loading" border class="list-table" @sort-change="handleSortChange"
-        style="width: 100%">
-        <el-table-column prop="id" label="概念 ID" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip>
+      <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
+      <div class="action-bar">
+        <GlassButton variant="primary" :left-icon="Plus" @click="handleCreate"
+          v-if="authStore.hasAnyPermission(['governance:write', 'governance:admin'])">
+          新建概念
+        </GlassButton>
+        <GlassButton variant="secondary" :left-icon="Download" @click="handleExport">导出</GlassButton>
+        <GlassButton variant="secondary" :left-icon="UploadFilled" @click="handleSeed"
+          v-if="authStore.hasAnyPermission(['governance:admin'])">
+          初始化种子数据
+        </GlassButton>
+        <TableTools
+          v-model:visible-keys="visibleKeys"
+          v-model:density="density"
+          :columns="columnDefs"
+          :fullscreen="isFullscreen"
+          @refresh="loadConcepts"
+          @fullscreen="toggleFullscreen"
+        />
+      </div>
+
+      <el-table :data="concepts" v-loading="loading" border class="list-table" :class="densityClass"
+        :max-height="isFullscreen ? undefined : 640" @sort-change="handleSortChange">
+        <template #empty>
+          <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
+            <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
+          </el-empty>
+        </template>
+        <el-table-column v-if="visibleKeys.includes('concept-id')" prop="id" label="概念 ID" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">
             <router-link :to="`/governance/concepts/${row.id}`" class="concept-link">
               {{ row.id }}
             </router-link>
           </template>
         </el-table-column>
-        <el-table-column prop="name_zh" label="中文名" min-width="120" max-width="180" sortable="custom" show-overflow-tooltip />
-        <el-table-column prop="name_en" label="英文名" min-width="160" max-width="240" show-overflow-tooltip />
-        <el-table-column prop="layer" label="层级" min-width="110" max-width="165">
+        <el-table-column v-if="visibleKeys.includes('name-zh')" prop="name_zh" label="中文名" min-width="120" max-width="180" sortable="custom" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('name-en')" prop="name_en" label="英文名" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('layer')" prop="layer" label="层级" min-width="110" max-width="165">
           <template #default="{ row }">{{ layerLabels[row.layer] || row.layer }}</template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" min-width="120" max-width="180" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="120" max-width="180" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small" effect="plain">
               {{ statusLabels[row.status] || row.status }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="confidence" label="置信度" min-width="90" max-width="135">
+        <el-table-column v-if="visibleKeys.includes('confidence')" prop="confidence" label="置信度" min-width="90" max-width="135">
           <template #default="{ row }">
             <span v-if="row.confidence">{{ confidenceLabels[row.confidence] }}</span>
             <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="owner" label="负责人" min-width="100" max-width="150" show-overflow-tooltip />
-        <el-table-column prop="updated_at" label="更新时间" min-width="170" max-width="255" sortable="custom" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('owner')" prop="owner" label="负责人" min-width="100" max-width="150" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('updated-at')" prop="updated_at" label="更新时间" min-width="170" max-width="255" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="200" max-width="300" fixed="right">
@@ -114,13 +128,11 @@
           </template>
         </el-table-column>
       </el-table>
-    </div>
 
-    <!-- 分页 -->
-    <div class="pagination-wrap">
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize"
-        :total="total" :page-sizes="[20, 50, 100]"
-        layout="total, sizes, prev, pager, next" @change="loadConcepts" />
+        :total="total" :page-sizes="[20, 50, 100]" class="pager"
+        layout="total, sizes, prev, pager, next"
+        @size-change="handleSizeChange" @current-change="loadConcepts" />
     </div>
 
     <!-- 新建概念对话框 -->
@@ -158,9 +170,11 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, UploadFilled, Search } from '@element-plus/icons-vue'
+import { Plus, Download, UploadFilled, Search, RefreshLeft } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatBeijingDateTime } from '@/utils/datetime'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import {
   listConcepts, createConcept, transitionStatus,
   getGovernanceStats, exportConcepts, seedGovernanceData,
@@ -192,7 +206,7 @@ const statsLoading = ref(false)
 const concepts = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(50)
+const pageSize = ref(20)
 const sortField = ref('updated_at')
 const sortOrder = ref('desc')
 const stats = ref({})
@@ -200,6 +214,22 @@ const stats = ref({})
 const filters = reactive({
   layer: '', status: '', confidence: '', keyword: '',
 })
+const hasActiveFilters = computed(() => Boolean(filters.layer || filters.status || filters.confidence || filters.keyword))
+
+// 列显隐元数据：TableTools 列设置面板的数据源（模板列保持静态，Action Bar Spec）
+const columnDefs = [
+  { key: 'concept-id', label: '概念 ID' },
+  { key: 'name-zh', label: '中文名' },
+  { key: 'name-en', label: '英文名' },
+  { key: 'layer', label: '层级' },
+  { key: 'status', label: '状态' },
+  { key: 'confidence', label: '置信度' },
+  { key: 'owner', label: '负责人' },
+  { key: 'updated-at', label: '更新时间' },
+]
+// 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('concept-registry', columnDefs)
 
 const createDialogVisible = ref(false)
 const createLoading = ref(false)
@@ -258,6 +288,11 @@ function resetFilters() {
   filters.status = ''
   filters.confidence = ''
   filters.keyword = ''
+  page.value = 1
+  loadConcepts()
+}
+
+function handleSizeChange() {
   page.value = 1
   loadConcepts()
 }
@@ -356,17 +391,12 @@ onMounted(() => {
 /* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配 */
 .concept-registry .page-header,
 .concept-registry .stats-cards,
-.concept-registry .filter-bar,
-.concept-registry .registry-panel,
-.concept-registry .pagination-wrap {
+.concept-registry .registry-panel {
   position: relative;
   z-index: 1;
 }
 
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 20px;
 }
 
@@ -374,11 +404,6 @@ onMounted(() => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-}
-
-.header-actions {
-  display: flex;
-  gap: 8px;
 }
 
 .stats-cards {
@@ -424,14 +449,6 @@ onMounted(() => {
   margin-top: 2px;
 }
 
-.filter-bar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
 .registry-panel {
   border: 1px solid var(--dash-glass-border);
@@ -471,11 +488,5 @@ onMounted(() => {
 
 .text-muted {
   color: var(--el-text-color-placeholder);
-}
-
-.pagination-wrap {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
 }
 </style>

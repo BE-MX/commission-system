@@ -1,0 +1,246 @@
+.whatsapp-page {
+  padding: 24px 28px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.whatsapp-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
+   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
+.whatsapp-page .page-header,
+.whatsapp-page .metric-strip,
+.whatsapp-page .content-grid {
+  position: relative;
+  z-index: 1;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.page-header h2 { margin: 0; font-size: 20px; font-family: var(--font-display); color: var(--text-primary); }
+.page-header p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+/* 玻璃质感由 .lg-card 提供（is-static：指标卡不上浮/不按压），这里只留布局 */
+.metric-item {
+  min-height: 64px;
+  padding: 12px 14px;
+}
+.metric-label { display: block; color: var(--text-muted); font-size: 12px; margin-bottom: 6px; }
+.metric-item strong { color: var(--text-primary); font-size: 20px; font-family: var(--font-display); }
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  gap: 14px;
+}
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.whatsapp-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.whatsapp-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
+.whatsapp-panel :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.whatsapp-panel :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.whatsapp-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
+}
+
+/* 玻璃质感由 .lg-card 提供（is-static），这里只留布局 */
+.conversation-panel {
+  padding: 14px;
+  min-height: 520px;
+}
+.panel-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+.panel-title small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.conversation-workspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.42fr) minmax(0, 0.58fr);
+  gap: 12px;
+  min-height: 456px;
+}
+.conversation-list {
+  min-height: 456px;
+  max-height: 640px;
+  overflow: auto;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.78);
+}
+.conversation-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  padding: 11px 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.conversation-row:hover,
+.conversation-row.active {
+  background: rgba(212, 148, 28, 0.1);
+}
+.conversation-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.conversation-time {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.conversation-preview {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.message-thread {
+  min-height: 456px;
+  max-height: 640px;
+  overflow: auto;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: #fff;
+}
+.thread-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+}
+.thread-header strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.thread-header span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+.message-item {
+  max-width: 84%;
+  align-self: flex-start;
+}
+.message-item.outbound {
+  align-self: flex-end;
+}
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.message-item.outbound .message-meta {
+  justify-content: flex-end;
+}
+.message-bubble {
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.96);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.message-item.outbound .message-bubble {
+  border-color: rgba(212, 148, 28, 0.24);
+  background: rgba(212, 148, 28, 0.12);
+}
+.account-cell { display: flex; flex-direction: column; gap: 2px; }
+.account-cell small { color: var(--text-muted); font-size: 12px; }
+.qr-box { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.qr-box img {
+  width: 260px;
+  height: 260px;
+  object-fit: contain;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  background: #fff;
+}
+@media (max-width: 1100px) {
+  .content-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .conversation-workspace { grid-template-columns: 1fr; }
+  .conversation-list,
+  .message-thread {
+    min-height: 280px;
+    max-height: 420px;
+  }
+}
+@media (max-width: 720px) {
+  .page-header { flex-direction: column; }
+  .metric-strip { grid-template-columns: 1fr; }
+  .whatsapp-page { padding: 18px 16px; }
+  .message-item { max-width: 94%; }
+}

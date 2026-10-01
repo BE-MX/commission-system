@@ -7,26 +7,38 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <!-- 搜索栏 -->
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="8">
-        <el-input v-model="keyword" placeholder="搜索姓名/ID" clearable @keyup.enter="fetchList" @clear="fetchList">
-          <template #prefix><el-icon><Search /></el-icon></template>
-        </el-input>
-      </el-col>
-      <el-col :span="4">
-        <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
-        <GlassButton v-permission="'employee:write'" left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
-      </el-col>
-    </el-row>
+    <!-- 表格卡片：筛选区 + 操作行 + 表格 + 分页（List Page Spec） -->
+    <div ref="panelRef" class="table-card">
+    <div class="toolbar">
+      <el-input v-model="keyword" placeholder="搜索姓名/ID" clearable class="filter-w-md" @keyup.enter="searchList" @clear="searchList">
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <GlassButton variant="primary" left-icon="Search" @click="searchList">查询</GlassButton>
+      <GlassButton left-icon="RefreshLeft" @click="resetFilter">重置</GlassButton>
+    </div>
 
-    <!-- 表格 -->
-    <div class="table-card">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight" @sort-change="orderSort.onSortChange">
-      <el-table-column prop="user_id" label="员工ID" min-width="200" max-width="300" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="full_name" label="姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column prop="nickname" label="昵称" min-width="140" max-width="210" show-overflow-tooltip />
-      <el-table-column prop="current_attribute" label="当前属性" min-width="120" max-width="180" sortable="custom">
+    <div class="action-bar">
+      <GlassButton v-permission="'employee:write'" left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
+      <TableTools
+        v-model:visible-keys="visibleKeys"
+        v-model:density="density"
+        :columns="columnDefs"
+        :fullscreen="isFullscreen"
+        @refresh="fetchList"
+        @fullscreen="toggleFullscreen"
+      />
+    </div>
+
+    <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" :max-height="isFullscreen ? undefined : 640" @sort-change="orderSort.onSortChange">
+      <template #empty>
+        <el-empty :image-size="96" :description="keyword ? '没有符合条件的记录' : '暂无数据'">
+          <GlassButton v-if="keyword" left-icon="RefreshLeft" @click="resetFilter">重置筛选</GlassButton>
+        </el-empty>
+      </template>
+      <el-table-column v-if="visibleKeys.includes('user-id')" prop="user_id" label="员工ID" min-width="200" max-width="300" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('full-name')" prop="full_name" label="姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+      <el-table-column v-if="visibleKeys.includes('nickname')" prop="nickname" label="昵称" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column v-if="visibleKeys.includes('current-attribute')" prop="current_attribute" label="当前属性" min-width="120" max-width="180" sortable="custom">
         <template #default="{ row }">
           <span v-if="row.current_attribute === 'develop'" class="badge-dev">开发</span>
           <span v-else-if="row.current_attribute === 'distribute'" class="badge-assign">分配</span>
@@ -40,18 +52,18 @@
         </template>
       </el-table-column>
     </el-table>
-    </div>
 
     <el-pagination
-      class="pagination"
+      class="pager"
       v-model:current-page="page"
       v-model:page-size="pageSize"
       :total="total"
-      layout="total, prev, pager, next, sizes"
+      layout="total, sizes, prev, pager, next"
       :page-sizes="[20, 50, 100]"
       @current-change="fetchList"
-      @size-change="fetchList"
+      @size-change="handleSizeChange"
     />
+    </div>
 
     <!-- 设置属性 Dialog -->
     <el-dialog v-model="setDialogVisible" title="设置员工属性" width="420px">
@@ -142,12 +154,22 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getEmployeeList, setEmployeeAttribute, getAttributeHistory, importEmployeeAttributes } from '@/api/employee'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useTableSort } from '@/composables/useTableSort'
+import { useTableView } from '@/composables/useTableView'
+import TableTools from '@/components/TableTools.vue'
 import { currentBeijingDate } from '@/utils/datetime'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
+
+// 列显隐元数据（TableTools 列设置面板数据源，Action Bar Spec）
+const columnDefs = [
+  { key: 'user-id', label: '员工ID' },
+  { key: 'full-name', label: '姓名' },
+  { key: 'nickname', label: '昵称' },
+  { key: 'current-attribute', label: '当前属性' },
+]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
+  useTableView('employee-attribute', columnDefs)
 
 const keyword = ref('')
 const page = ref(1)
@@ -165,6 +187,23 @@ async function fetchList() {
   } finally {
     loading.value = false
   }
+}
+
+// 查询/重置成对（List Page Spec 第 5 节）：回第 1 页再加载
+function searchList() {
+  page.value = 1
+  fetchList()
+}
+
+function resetFilter() {
+  keyword.value = ''
+  page.value = 1
+  fetchList()
+}
+
+function handleSizeChange() {
+  page.value = 1
+  fetchList()
 }
 
 // 设置属性
@@ -256,9 +295,7 @@ onMounted(fetchList)
 /* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
    el-drawer/el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
    .el-overlay 的 position: fixed，抽屉/弹窗打开后看不见 */
-.employee-attr-page .toolbar,
-.employee-attr-page .table-card,
-.employee-attr-page .pagination {
+.employee-attr-page .table-card {
   position: relative;
   z-index: 1;
 }
@@ -280,7 +317,5 @@ onMounted(fetchList)
   background: transparent;
 }
 
-.toolbar { margin-bottom: 16px; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
 .history-range { color: var(--text-muted); font-size: 12px; margin-left: 4px; }
 </style>

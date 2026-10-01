@@ -10,48 +10,43 @@
     <el-tabs v-model="activeTab">
       <!-- ── 客户档案 ─────────────────────────── -->
       <el-tab-pane label="客户档案" name="customers">
-        <el-row :gutter="12" class="toolbar-row">
-          <el-col :xs="24" :md="18">
-            <el-form inline @submit.prevent="customerPage.handleSearch">
-              <el-form-item label="业务员">
-                <el-select v-model="customerPage.searchForm.salesperson_id" clearable placeholder="全部"
-                           style="width: 150px" @change="customerPage.handleSearch">
-                  <el-option v-for="sp in salespersons" :key="sp.id" :label="sp.name" :value="sp.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item>
-                <el-input v-model="customerPage.searchForm.keyword" placeholder="称呼 / 邮箱 / WhatsApp"
-                          clearable style="width: 220px" @keyup.enter="customerPage.handleSearch" />
-              </el-form-item>
-              <el-form-item>
-                <GlassButton variant="secondary" left-icon="Search" @click="customerPage.handleSearch">查询</GlassButton>
-                <GlassButton variant="ghost" @click="customerPage.handleReset">重置</GlassButton>
-              </el-form-item>
-            </el-form>
-          </el-col>
-          <el-col :xs="24" :md="6" style="text-align: right">
-            <GlassButton v-permission="'card:write'" variant="primary" left-icon="Plus" @click="openCustomerDialog(null)">
-              新建客户
-            </GlassButton>
-          </el-col>
-        </el-row>
-
-        <div class="table-card">
-          <el-table :data="customerPage.list.value" v-loading="customerPage.loading.value" border class="list-table" style="width: 100%">
-            <el-table-column prop="display_name" label="客户称呼" min-width="130" show-overflow-tooltip />
-            <el-table-column label="口令（邮箱）" min-width="180" show-overflow-tooltip>
+        <div ref="customerPanelRef" class="table-card">
+          <div class="toolbar">
+            <el-input v-model="customerPage.searchForm.keyword" placeholder="称呼 / 邮箱 / WhatsApp"
+                      clearable class="filter-w-md" @keyup.enter="customerPage.handleSearch" />
+            <el-select v-model="customerPage.searchForm.salesperson_id" clearable placeholder="业务员（全部）"
+                       class="filter-w-sm" @change="customerPage.handleSearch">
+              <el-option v-for="sp in salespersons" :key="sp.id" :label="sp.name" :value="sp.id" />
+            </el-select>
+            <GlassButton variant="primary" left-icon="Search" @click="customerPage.handleSearch">查询</GlassButton>
+            <GlassButton left-icon="RefreshLeft" @click="customerPage.handleReset">重置</GlassButton>
+          </div>
+          <div class="action-bar">
+            <GlassButton v-permission="'card:write'" variant="primary" left-icon="Plus" @click="openCustomerDialog(null)">新建客户</GlassButton>
+            <TableTools
+              v-model:visible-keys="customerVisibleKeys"
+              v-model:density="customerDensity"
+              :columns="customerColumnDefs"
+              :fullscreen="customerIsFullscreen"
+              @refresh="customerPage.handleSearch"
+              @fullscreen="toggleCustomerFullscreen"
+            />
+          </div>
+          <el-table :data="customerPage.list.value" v-loading="customerPage.loading.value" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640" style="width: 100%">
+            <el-table-column v-if="customerVisibleKeys.includes('display-name')" prop="display_name" label="客户称呼" min-width="130" show-overflow-tooltip />
+            <el-table-column v-if="customerVisibleKeys.includes('email')" label="口令（邮箱）" min-width="180" show-overflow-tooltip>
               <template #default="{ row }">{{ row.email_norm || '—' }}</template>
             </el-table-column>
-            <el-table-column label="口令（WhatsApp）" min-width="150" show-overflow-tooltip>
+            <el-table-column v-if="customerVisibleKeys.includes('whatsapp')" label="口令（WhatsApp）" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">{{ row.whatsapp_norm || '—' }}</template>
             </el-table-column>
-            <el-table-column prop="expo_code" label="届次" min-width="100" show-overflow-tooltip />
-            <el-table-column label="纪要" min-width="80">
+            <el-table-column v-if="customerVisibleKeys.includes('expo-code')" prop="expo_code" label="届次" min-width="100" show-overflow-tooltip />
+            <el-table-column v-if="customerVisibleKeys.includes('entries')" label="纪要" min-width="80">
               <template #default="{ row }">
                 <el-tag effect="plain" :type="row.entry_count ? 'success' : 'info'">{{ row.entry_count }} 条</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="created_at" label="建档时间" min-width="140" />
+            <el-table-column v-if="customerVisibleKeys.includes('created-at')" prop="created_at" label="建档时间" min-width="140" />
             <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'card:write'" variant="link" left-icon="Notebook" @click="openEntries(row)">纪要</GlassButton>
@@ -64,7 +59,9 @@
             v-model:current-page="customerPage.page.value"
             v-model:page-size="customerPage.pageSize.value"
             :total="customerPage.total.value"
-            layout="total, prev, pager, next, sizes"
+            :page-sizes="[20, 50, 100]"
+            layout="total, sizes, prev, pager, next"
+            class="pager"
             @current-change="customerPage.handlePageChange"
             @size-change="customerPage.handleSizeChange"
           />
@@ -73,35 +70,42 @@
 
       <!-- ── 询盘 ─────────────────────────────── -->
       <el-tab-pane label="客户询盘" name="inquiries">
-        <el-form inline>
-          <el-form-item label="状态">
-            <el-select v-model="inquiryPage.searchForm.status" clearable placeholder="全部"
-                       style="width: 130px" @change="inquiryPage.handleSearch">
+        <div ref="inquiryPanelRef" class="table-card">
+          <div class="toolbar">
+            <el-select v-model="inquiryPage.searchForm.status" clearable placeholder="状态（全部）"
+                       class="filter-w-sm" @change="inquiryPage.handleSearch">
               <el-option label="未处理" value="new" />
               <el-option label="已处理" value="handled" />
             </el-select>
-          </el-form-item>
-          <el-form-item label="业务员">
-            <el-select v-model="inquiryPage.searchForm.salesperson_id" clearable placeholder="全部"
-                       style="width: 150px" @change="inquiryPage.handleSearch">
+            <el-select v-model="inquiryPage.searchForm.salesperson_id" clearable placeholder="业务员（全部）"
+                       class="filter-w-sm" @change="inquiryPage.handleSearch">
               <el-option v-for="sp in salespersons" :key="sp.id" :label="sp.name" :value="sp.id" />
             </el-select>
-          </el-form-item>
-        </el-form>
-
-        <div class="table-card">
-          <el-table :data="inquiryPage.list.value" v-loading="inquiryPage.loading.value" border class="list-table" style="width: 100%">
-            <el-table-column prop="salesperson" label="业务员" min-width="100" />
-            <el-table-column prop="contact" label="客户联系方式" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="message" label="内容" min-width="320" show-overflow-tooltip />
-            <el-table-column label="建档客户" min-width="100">
+            <GlassButton variant="primary" left-icon="Search" @click="inquiryPage.handleSearch">查询</GlassButton>
+            <GlassButton left-icon="RefreshLeft" @click="inquiryPage.handleReset">重置</GlassButton>
+          </div>
+          <div class="action-bar">
+            <TableTools
+              v-model:visible-keys="inquiryVisibleKeys"
+              v-model:density="inquiryDensity"
+              :columns="inquiryColumnDefs"
+              :fullscreen="inquiryIsFullscreen"
+              @refresh="inquiryPage.handleSearch"
+              @fullscreen="toggleInquiryFullscreen"
+            />
+          </div>
+          <el-table :data="inquiryPage.list.value" v-loading="inquiryPage.loading.value" border class="list-table" :class="inquiryDensityClass" :max-height="inquiryIsFullscreen ? undefined : 640" style="width: 100%">
+            <el-table-column v-if="inquiryVisibleKeys.includes('salesperson')" prop="salesperson" label="业务员" min-width="100" />
+            <el-table-column v-if="inquiryVisibleKeys.includes('contact')" prop="contact" label="客户联系方式" min-width="180" show-overflow-tooltip />
+            <el-table-column v-if="inquiryVisibleKeys.includes('message')" prop="message" label="内容" min-width="320" show-overflow-tooltip />
+            <el-table-column v-if="inquiryVisibleKeys.includes('customer')" label="建档客户" min-width="100">
               <template #default="{ row }">
                 <el-tag v-if="row.customer_id" effect="plain" type="success">已命中</el-tag>
                 <el-tag v-else effect="plain" type="info">未建档</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="created_at" label="提交时间" min-width="140" />
-            <el-table-column label="状态" min-width="90">
+            <el-table-column v-if="inquiryVisibleKeys.includes('created-at')" prop="created_at" label="提交时间" min-width="140" />
+            <el-table-column v-if="inquiryVisibleKeys.includes('status')" label="状态" min-width="90">
               <template #default="{ row }">
                 <el-tag effect="plain" :type="row.status === 'new' ? 'warning' : 'success'">
                   {{ row.status === 'new' ? '未处理' : '已处理' }}
@@ -120,7 +124,9 @@
             v-model:current-page="inquiryPage.page.value"
             v-model:page-size="inquiryPage.pageSize.value"
             :total="inquiryPage.total.value"
-            layout="total, prev, pager, next, sizes"
+            :page-sizes="[20, 50, 100]"
+            layout="total, sizes, prev, pager, next"
+            class="pager"
             @current-change="inquiryPage.handlePageChange"
             @size-change="inquiryPage.handleSizeChange"
           />
@@ -129,18 +135,21 @@
 
       <!-- ── 业务员档案 ───────────────────────── -->
       <el-tab-pane label="业务员档案" name="salespersons">
-        <div class="table-card">
-          <el-table :data="salespersons" border class="list-table" style="width: 100%">
-            <el-table-column prop="slug" label="主页地址" min-width="220" show-overflow-tooltip>
+        <div ref="salespersonPanelRef" class="table-card">
+          <div class="action-bar">
+            <TableTools v-model:visible-keys="salespersonVisibleKeys" v-model:density="salespersonDensity" :columns="salespersonColumnDefs" :fullscreen="salespersonIsFullscreen" @refresh="fetchSalespersons" @fullscreen="toggleSalespersonFullscreen" />
+          </div>
+          <el-table :data="salespersons" border class="list-table" :class="salespersonDensityClass" :max-height="salespersonIsFullscreen ? undefined : 640" style="width: 100%">
+            <el-table-column v-if="salespersonVisibleKeys.includes('slug')" prop="slug" label="主页地址" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">leshine.work/card/{{ row.slug }}/</template>
             </el-table-column>
-            <el-table-column prop="name" label="英文名" min-width="110" />
-            <el-table-column prop="title" label="职位" min-width="130" show-overflow-tooltip />
-            <el-table-column prop="email" label="邮箱" min-width="200" show-overflow-tooltip />
-            <el-table-column label="WhatsApp" min-width="140" show-overflow-tooltip>
+            <el-table-column v-if="salespersonVisibleKeys.includes('name')" prop="name" label="英文名" min-width="110" />
+            <el-table-column v-if="salespersonVisibleKeys.includes('title')" prop="title" label="职位" min-width="130" show-overflow-tooltip />
+            <el-table-column v-if="salespersonVisibleKeys.includes('email')" prop="email" label="邮箱" min-width="200" show-overflow-tooltip />
+            <el-table-column v-if="salespersonVisibleKeys.includes('whatsapp')" label="WhatsApp" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">{{ row.whatsapp || '—' }}</template>
             </el-table-column>
-            <el-table-column label="状态" min-width="80">
+            <el-table-column v-if="salespersonVisibleKeys.includes('status')" label="状态" min-width="80">
               <template #default="{ row }">
                 <el-tag effect="plain" :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '启用' : '停用' }}</el-tag>
               </template>
@@ -239,13 +248,51 @@ import { ref } from 'vue'
 import AppUpload from '@/components/AppUpload.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
+import TableTools from '@/components/TableTools.vue'
 import { uploadAttachment } from '@/api/card'
+import { useTableView } from '@/composables/useTableView'
 import { useCardButler } from './composables/useCardButler'
 
 const activeTab = ref('customers')
 
+// 表格视图状态（Action Bar Spec）：客户档案与客户询盘各一套列显隐/密度/全屏
+const customerColumnDefs = [
+  { key: 'display-name', label: '客户称呼' },
+  { key: 'email', label: '口令（邮箱）' },
+  { key: 'whatsapp', label: '口令（WhatsApp）' },
+  { key: 'expo-code', label: '届次' },
+  { key: 'entries', label: '纪要' },
+  { key: 'created-at', label: '建档时间' },
+]
+const inquiryColumnDefs = [
+  { key: 'salesperson', label: '业务员' },
+  { key: 'contact', label: '客户联系方式' },
+  { key: 'message', label: '内容' },
+  { key: 'customer', label: '建档客户' },
+  { key: 'created-at', label: '提交时间' },
+  { key: 'status', label: '状态' },
+]
+const salespersonColumnDefs = [
+  { key: 'slug', label: '主页地址' }, { key: 'name', label: '英文名' },
+  { key: 'title', label: '职位' }, { key: 'email', label: '邮箱' },
+  { key: 'whatsapp', label: 'WhatsApp' }, { key: 'status', label: '状态' },
+]
 const {
-  salespersons,
+  density: customerDensity, densityClass: customerDensityClass, visibleKeys: customerVisibleKeys,
+  panelRef: customerPanelRef, isFullscreen: customerIsFullscreen, toggleFullscreen: toggleCustomerFullscreen,
+} = useTableView('card-butler-customers', customerColumnDefs)
+const {
+  density: inquiryDensity, densityClass: inquiryDensityClass, visibleKeys: inquiryVisibleKeys,
+  panelRef: inquiryPanelRef, isFullscreen: inquiryIsFullscreen, toggleFullscreen: toggleInquiryFullscreen,
+} = useTableView('card-butler-inquiries', inquiryColumnDefs)
+const {
+  density: salespersonDensity, densityClass: salespersonDensityClass,
+  visibleKeys: salespersonVisibleKeys, panelRef: salespersonPanelRef,
+  isFullscreen: salespersonIsFullscreen, toggleFullscreen: toggleSalespersonFullscreen,
+} = useTableView('card-butler-salespersons', salespersonColumnDefs)
+
+const {
+  salespersons, fetchSalespersons,
   spDialogVisible, spSaving, spForm, openSpDialog, saveSalesperson,
   customerPage, customerDialogVisible, customerSaving, customerForm,
   openCustomerDialog, saveCustomer, removeCustomer,
@@ -256,7 +303,6 @@ const {
 </script>
 
 <style scoped>
-.toolbar-row { margin-bottom: 4px; }
 .tip-line { margin-top: 10px; font-size: 12px; color: var(--color-text-secondary, #909399); }
 .field-tip { font-size: 12px; color: var(--color-text-secondary, #909399); }
 .entry-list { margin-bottom: 16px; }
