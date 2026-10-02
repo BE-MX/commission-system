@@ -1,6 +1,9 @@
 """A versioned candidate remains distinguishable from the former demo window."""
 
 from datetime import date, datetime
+from datetime import timedelta
+
+from sqlalchemy import event
 
 from app.customer.customer_segment_service import classify, prototype_comparison
 from app.customer.customer_segment_service import list_customers
@@ -74,3 +77,34 @@ def test_real_order_and_whatsapp_adapter_watermarks_can_prove_coverage(db):
     row = list_customers(db, _actor(owner), page=1, page_size=10, preview=True)["items"][0]
     assert row["source_coverage"] == "verified"
     assert row["candidate_tier"] == "active"
+
+
+def test_interaction_aggregation_is_mysql_strict_grouping_safe(db):
+    from tests.test_pcw_evaluation import _conversation, _message
+
+    account, owner = _customer_with_profile(db)
+    now = beijing_now().replace(microsecond=0)
+    first = _conversation(db, account, external_id="strict-group-first")
+    second = _conversation(db, account, external_id="strict-group-second")
+    _message(db, account, first, external_id="strict-group-old", direction="in",
+        sent_at=now - timedelta(days=2), record_id=99681)
+    _message(db, account, second, external_id="strict-group-new", direction="out",
+        sent_at=now - timedelta(days=1), record_id=99682)
+
+    statements = []
+    def record_sql(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if "ark_customer_messages" in statement and "GROUP BY" in statement.upper():
+            statements.append(statement)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", record_sql)
+    try:
+        result = list_customers(db, _actor(owner), page=1, page_size=10, preview=True)
+    finally:
+        event.remove(engine, "before_cursor_execute", record_sql)
+
+    row = next(item for item in result["items"] if item["customer_id"] == account.id)
+    assert row["last_interaction_at"] == (now - timedelta(days=1)).isoformat() + "+08:00"
+    assert len(statements) == 1
+    # MySQL ONLY_FULL_GROUP_BY rejects grouping by logical-owner scalar subqueries.
+    assert "GROUP BY ark_customer_messages.conversation_id" in statements[0]

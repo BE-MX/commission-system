@@ -135,12 +135,25 @@ def list_customers(db, user, *, page, page_size, keyword=None, customer_scope="p
     source_owner = logical_owner_expression(CustomerSourceRecord, "source_record")
     visible_scopes = ("all_authorized", "customer_team", "management") if "customer:read_all" in perms else (
         "all_authorized", "customer_team")
-    interactions = dict(db.query(conversation_owner, func.max(CustomerMessage.sent_at)).join(CustomerMessage,
-        CustomerMessage.conversation_id == CustomerConversation.id).join(CustomerSourceRecord,
+    # Aggregate by the message's concrete FK first. MySQL ONLY_FULL_GROUP_BY cannot
+    # group by the correlated logical-owner expression and select it at the same time.
+    latest_per_conversation = db.query(
+        CustomerMessage.conversation_id.label("conversation_id"),
+        func.max(CustomerMessage.sent_at).label("last_sent_at"),
+    ).select_from(CustomerMessage).join(CustomerConversation,
+        CustomerConversation.id == CustomerMessage.conversation_id).join(CustomerSourceRecord,
         CustomerSourceRecord.id == CustomerMessage.source_record_id).filter(conversation_owner.in_(ids),
         source_owner == conversation_owner,
         CustomerSourceRecord.visibility_scope.in_(visible_scopes),
-        CustomerMessage.direction.in_(("in", "out")), CustomerMessage.sent_at <= now).group_by(conversation_owner).all())
+        CustomerMessage.direction.in_(("in", "out")), CustomerMessage.sent_at <= now,
+    ).group_by(CustomerMessage.conversation_id).subquery()
+    interactions = {}
+    for logical_id, sent_at in db.query(conversation_owner,
+            latest_per_conversation.c.last_sent_at).select_from(CustomerConversation).join(
+            latest_per_conversation,
+            latest_per_conversation.c.conversation_id == CustomerConversation.id):
+        if logical_id not in interactions or sent_at > interactions[logical_id]:
+            interactions[logical_id] = sent_at
     projections = {row.customer_id: row for row in db.query(CustomerListProjection).filter(CustomerListProjection.customer_id.in_(ids))}
     policy_active = POLICY["status"] == "approved" and POLICY["approved_by"] is not None and POLICY["effective_at"] is not None
     results = []
