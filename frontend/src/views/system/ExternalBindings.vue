@@ -46,7 +46,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('external-account-id')" label="外部账号 ID" prop="external_account_id" min-width="140" max-width="210" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('display-name')" label="显示名" prop="external_display_name" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" max-width="150">
           <template #default="{ row }">
             <StatusBadge :type="candidateStatusType(row.candidate_status)" size="small" effect="plain">
               {{ candidateStatusLabel(row.candidate_status) }}

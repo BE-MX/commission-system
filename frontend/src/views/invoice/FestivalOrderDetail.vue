@@ -101,7 +101,7 @@
         <el-table-column v-if="visibleKeys.includes('user-name')" prop="user_name" label="业务员" min-width="96" max-width="120" />
         <el-table-column v-if="visibleKeys.includes('team')" prop="team" label="所属团队" min-width="116" max-width="150" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('camp')" prop="camp" label="所属阵营" min-width="100" max-width="130" show-overflow-tooltip />
-        <el-table-column v-if="activeType === 'new_sign' && visibleKeys.includes('points')" prop="points" label="积分" min-width="76" max-width="90" align="right">
+        <el-table-column v-if="activeType === 'new_sign' && visibleKeys.includes('points')" prop="points" label="积分" min-width="110" max-width="140" align="right">
           <template #default="{ row }">
             <span>{{ number(row.points) }}</span>
             <el-tooltip v-if="row.points_note" :content="row.points_note" placement="top">

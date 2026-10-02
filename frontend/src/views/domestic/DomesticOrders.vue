@@ -55,7 +55,7 @@
         <el-table-column v-if="visibleKeys.includes('order_type')" :render-header="renderOrderHeader" prop="order_type_label" label="订单类型" min-width="95" />
         <el-table-column v-if="visibleKeys.includes('order_channel')" :render-header="renderOrderHeader" prop="order_channel_label" label="订单渠道" min-width="95" />
         <el-table-column v-if="visibleKeys.includes('total_qty')" :render-header="renderOrderHeader" prop="total_qty" label="产品总数" min-width="90" align="right" />
-        <el-table-column v-if="visibleKeys.includes('status')" :render-header="renderOrderHeader" label="订单状态" min-width="95">
+        <el-table-column v-if="visibleKeys.includes('status')" :render-header="renderOrderHeader" label="订单状态" min-width="120">
           <template #default="{ row }">
             <StatusBadge size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</StatusBadge>
           </template>
@@ -291,7 +291,7 @@
         </el-table-column>
         <el-table-column prop="reported_by_name" label="报工人" min-width="90" />
         <el-table-column prop="reported_at" label="时间" min-width="150" show-overflow-tooltip />
-        <el-table-column label="状态" min-width="80">
+        <el-table-column label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge v-if="row.revoked" size="small" type="info" effect="plain">已撤销</StatusBadge>
             <StatusBadge v-else size="small" type="success" effect="plain">有效</StatusBadge>

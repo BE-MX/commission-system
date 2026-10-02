@@ -86,7 +86,7 @@
                 <span :class="row.total_in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.total_in_transit_qty }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="orderVisibleKeys.includes('status')" label="状态" prop="status" min-width="90" max-width="135" sortable="custom">
+            <el-table-column v-if="orderVisibleKeys.includes('status')" label="状态" prop="status" min-width="120" max-width="135" sortable="custom">
               <template #default="{ row }">
                 <StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</StatusBadge>
               </template>
@@ -159,17 +159,17 @@
                 <span :class="row.in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.in_transit_qty }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="itemVisibleKeys.includes('item-status')" label="明细状态" min-width="90" max-width="135">
+            <el-table-column v-if="itemVisibleKeys.includes('item-status')" label="明细状态" min-width="120" max-width="135">
               <template #default="{ row }">
                 <StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column v-if="itemVisibleKeys.includes('order-status')" label="订单状态" min-width="90" max-width="135">
+            <el-table-column v-if="itemVisibleKeys.includes('order-status')" label="订单状态" min-width="120" max-width="135">
               <template #default="{ row }">
                 <StatusBadge :type="statusTagType(row.order_status)" size="small" effect="plain">{{ row.order_status_label }}</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column v-if="itemVisibleKeys.includes('urgent')" label="加急" min-width="70" max-width="105">
+            <el-table-column v-if="itemVisibleKeys.includes('urgent')" label="加急" min-width="100" max-width="105">
               <template #default="{ row }">
                 <StatusBadge v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</StatusBadge>
                 <span v-else class="text-muted">—</span>
@@ -223,7 +223,7 @@
           <el-table-column label="在途" min-width="70" max-width="105">
             <template #default="{ row }"><span :class="row.in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.in_transit_qty }}</span></template>
           </el-table-column>
-          <el-table-column label="加急" min-width="70" max-width="105">
+          <el-table-column label="加急" min-width="100" max-width="105">
             <template #default="{ row }">
               <StatusBadge v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</StatusBadge>
               <span v-else class="text-muted">—</span>
@@ -232,7 +232,7 @@
           <el-table-column label="预计交期" min-width="100" max-width="150">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
-          <el-table-column label="状态" min-width="80" max-width="120">
+          <el-table-column label="状态" min-width="120" max-width="120">
             <template #default="{ row }"><StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</StatusBadge></template>
           </el-table-column>
         </el-table>

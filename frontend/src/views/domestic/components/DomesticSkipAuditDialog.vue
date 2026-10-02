@@ -20,7 +20,7 @@
         <template #default="{ row: audit }">{{ audit.operator_name }}</template>
       </el-table-column>
       <el-table-column prop="created_at" label="时间" min-width="150" show-overflow-tooltip />
-      <el-table-column label="状态" min-width="80">
+      <el-table-column label="状态" min-width="110">
         <template #default="{ row: audit }">
           <StatusBadge v-if="audit.revoked" size="small" type="info" effect="plain">已撤销</StatusBadge>
           <StatusBadge v-else size="small" type="warning" effect="plain">有效</StatusBadge>

@@ -44,7 +44,7 @@
         <el-table-column v-if="visibleKeys.includes('sender-email')" label="发件邮箱" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ senderEmailOf(row) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="160">
           <template #default="{ row }"><StatusBadge :type="jobStatusTagType(row.status)">{{ jobStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('due-at')" label="计划发送时间（北京时间）" min-width="170">

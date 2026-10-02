@@ -11,7 +11,7 @@
       <el-table class="list-table" v-else :data="subscriptions" size="small" border>
         <el-table-column prop="channel" label="渠道" min-width="100" />
         <el-table-column prop="url" label="URL" min-width="180" show-overflow-tooltip />
-        <el-table-column label="采集状态" min-width="110">
+        <el-table-column label="采集状态" min-width="150">
           <template #default="{ row }">
             <StatusBadge size="small" :type="statusTagType(row.collection_status)">
               {{ MONITOR_COLLECTION_STATUS_LABELS[row.collection_status] || row.collection_status }}
@@ -38,7 +38,7 @@
         <el-table-column prop="event_type" label="类型" min-width="110" />
         <el-table-column prop="title" label="标题" min-width="150" show-overflow-tooltip />
         <el-table-column label="发现时间（北京时间）" min-width="170"><template #default="{row}">{{ date(row.discovered_at) }}</template></el-table-column>
-        <el-table-column label="状态" min-width="100">
+        <el-table-column label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge size="small">{{ MONITOR_EVENT_STATUS_LABELS[row.status] || row.status }}</StatusBadge>
           </template>

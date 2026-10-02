@@ -47,7 +47,7 @@
         <el-table-column v-if="visibleKeys.includes('usage')" label="体验 / 生成" min-width="100">
           <template #default="{ row }">{{ row.session_count }} 次 / {{ row.result_count }} 张</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('intent-level')" label="意向等级" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('intent-level')" label="意向等级" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.intent_level" size="small" :class="'intent-' + row.intent_level">{{ row.intent_level }} 级</StatusBadge>
             <span v-else class="muted">-</span>

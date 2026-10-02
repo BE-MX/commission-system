@@ -53,7 +53,7 @@
         <el-table-column v-if="runtimeVisibleKeys.includes('version')" prop="version" label="版本" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.version || '—' }}</template>
         </el-table-column>
-        <el-table-column v-if="runtimeVisibleKeys.includes('status')" label="状态" min-width="100">
+        <el-table-column v-if="runtimeVisibleKeys.includes('status')" label="状态" min-width="120">
           <template #default="{ row }"><StatusBadge :type="statusType(row.status)" effect="plain" round>{{ statusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="runtimeVisibleKeys.includes('heartbeat')" label="最近心跳" min-width="180">
@@ -115,7 +115,7 @@
         <el-table-column v-if="runsVisibleKeys.includes('job')" label="任务" min-width="200" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.job_name }}</strong><small class="job-id">{{ row.domain }} · {{ row.job_id }}</small></template>
         </el-table-column>
-        <el-table-column v-if="runsVisibleKeys.includes('status')" label="状态" min-width="105">
+        <el-table-column v-if="runsVisibleKeys.includes('status')" label="状态" min-width="120">
           <template #default="{ row }"><StatusBadge :type="jobStatusType(row.status)" effect="plain" round>{{ jobStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="runsVisibleKeys.includes('planned')" label="计划时间" min-width="175"><template #default="{ row }">{{ formatTime(row.planned_at) }}</template></el-table-column>
@@ -147,7 +147,7 @@
         <el-table-column v-if="schedulerVisibleKeys.includes('next')" label="下次执行" min-width="175">
           <template #default="{ row }">{{ formatTime(row.next_run_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="schedulerVisibleKeys.includes('status')" label="最近状态" min-width="115">
+        <el-table-column v-if="schedulerVisibleKeys.includes('status')" label="最近状态" min-width="120">
           <template #default="{ row }"><StatusBadge :type="jobStatusType(row.last_status)" effect="plain" round>{{ jobStatusLabel(row.last_status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">

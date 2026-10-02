@@ -71,7 +71,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="pendingVisibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120" prop="priority" sortable="custom">
+          <el-table-column v-if="pendingVisibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120" prop="priority" sortable="custom">
             <template #default="{ row }">
               <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
@@ -181,7 +181,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="scheduledVisibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120">
+          <el-table-column v-if="scheduledVisibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120">
             <template #default="{ row }">
               <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
@@ -206,7 +206,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="scheduledVisibleKeys.includes('status')" label="状态" min-width="100" max-width="150" prop="status" sortable="custom">
+          <el-table-column v-if="scheduledVisibleKeys.includes('status')" label="状态" min-width="110" max-width="150" prop="status" sortable="custom">
             <template #default="{ row }">
               <StatusBadge :type="TASK_STATUS_TAG[row.status]" effect="plain">
                 {{ TASK_STATUS_MAP[row.status] || row.status }}
@@ -305,14 +305,14 @@
               {{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}
             </template>
           </el-table-column>
-          <el-table-column v-if="completedVisibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120">
+          <el-table-column v-if="completedVisibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120">
             <template #default="{ row }">
               <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="completedVisibleKeys.includes('status')" label="状态" min-width="80" max-width="120" prop="status" sortable="custom">
+          <el-table-column v-if="completedVisibleKeys.includes('status')" label="状态" min-width="110" max-width="120" prop="status" sortable="custom">
             <template #default="{ row }">
               <StatusBadge type="success" effect="plain">已完成</StatusBadge>
             </template>

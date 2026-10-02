@@ -26,7 +26,7 @@
           </el-empty>
         </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="版本名称" min-width="190" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :type="statusType(row.status)">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140"><template #default="{ row }"><StatusBadge :type="statusType(row.status)">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="80" />
         <el-table-column v-if="visibleKeys.includes('published-at')" label="发布时间" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.published_at) || '—' }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('updated-at')" label="最后更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>

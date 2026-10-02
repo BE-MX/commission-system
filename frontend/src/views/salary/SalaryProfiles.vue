@@ -81,7 +81,7 @@
         <el-table-column v-if="visibleKeys.includes('bank-card')" label="银行卡" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ row.bank_card_masked || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="150">
           <template #default="{ row }">
             <StatusBadge :type="row.status === 'active' ? 'success' : 'info'" size="small" effect="plain">
               {{ row.status === 'active' ? '在职' : '离职' }}

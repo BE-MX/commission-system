@@ -65,7 +65,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
+          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120" max-width="150">
             <template #default="{ row }">
               <StatusBadge :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</StatusBadge>
             </template>

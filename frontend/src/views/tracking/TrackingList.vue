@@ -128,7 +128,7 @@
       <el-table-column v-if="visibleKeys.includes('carrier-name')" prop="carrier_name" label="物流商" min-width="100" max-width="140" show-overflow-tooltip sortable="custom" />
       <el-table-column v-if="visibleKeys.includes('receiver-name')" prop="receiver_name" label="收件人" min-width="110" max-width="170" show-overflow-tooltip />
       <el-table-column v-if="visibleKeys.includes('receiver-country')" prop="receiver_country" label="国家" min-width="90" max-width="130" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('current-status')" prop="current_status" label="状态" min-width="110" max-width="150" sortable="custom">
+      <el-table-column v-if="visibleKeys.includes('current-status')" prop="current_status" label="状态" min-width="120" max-width="150" sortable="custom">
         <template #default="{ row }">
           <StatusBadge :type="statusTagType(row.current_status)" size="small" effect="plain">
             {{ statusText(row.current_status) }}

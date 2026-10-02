@@ -51,7 +51,7 @@
           <span v-if="!row.roles?.length" style="color: var(--text-muted)">未分配</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" max-width="120">
+      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="120">
         <template #default="{ row }">
           <StatusBadge :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '正常' : '禁用' }}</StatusBadge>
         </template>

@@ -255,7 +255,7 @@
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('file-name')" label="文件名" prop="file_name" min-width="200" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="100">
           <template #default="{ row }">
             <StatusBadge size="small" :type="fileTypeTag(row.file_type)">{{ fileTypeLabel(row.file_type) }}</StatusBadge>
           </template>

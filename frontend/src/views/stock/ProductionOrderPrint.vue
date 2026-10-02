@@ -95,7 +95,7 @@
         </template>
       </el-table-column>
       <el-table-column label="批次号" prop="batch_no" min-width="150" />
-      <el-table-column label="状态" prop="status_label" min-width="80">
+      <el-table-column label="状态" prop="status_label" min-width="120">
         <template #default="{ row }">
           <StatusBadge :type="statusType(row.status)" size="small" effect="light">{{ row.status_label }}</StatusBadge>
         </template>

@@ -8,7 +8,7 @@
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchDrafts" />
 <el-table v-loading="draftsLoading" :data="drafts" border class="list-table" :class="draftDensityClass" :max-height="draftIsFullscreen ? undefined : 640" row-key="id">
-        <el-table-column v-if="draftVisibleKeys.includes('status')" label="状态" min-width="100">
+        <el-table-column v-if="draftVisibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }"><StatusBadge :type="draftStatusTagType(row.status)">{{ draftStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="draftVisibleKeys.includes('language')" label="语言" min-width="90">
@@ -39,7 +39,7 @@
       </div>
       <ListPageStatus v-if="listPageState1.hasData.value" :error="listPageState1.errorMessage.value" :loading="listPageState1.loading.value" :has-data="listPageState1.hasData.value" :data-page="listPageState1.dataPage.value" @retry="fetchJobs" />
 <el-table v-loading="jobsLoading" :data="jobs" border class="list-table" :class="jobDensityClass" :max-height="jobIsFullscreen ? undefined : 640" row-key="id">
-        <el-table-column v-if="jobVisibleKeys.includes('status')" label="状态" min-width="130">
+        <el-table-column v-if="jobVisibleKeys.includes('status')" label="状态" min-width="160">
           <template #default="{ row }"><StatusBadge :type="jobStatusTagType(row.status)">{{ jobStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="jobVisibleKeys.includes('email')" label="收件邮箱" min-width="180" show-overflow-tooltip>

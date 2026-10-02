@@ -7,7 +7,7 @@
       <el-table-column label="动作" min-width="96" max-width="110">
         <template #default="{ row }">{{ actionText(row.action) }}</template>
       </el-table-column>
-      <el-table-column label="结果" min-width="80" max-width="90">
+      <el-table-column label="结果" min-width="100" max-width="130">
         <template #default="{ row }">
           <StatusBadge :type="row.success ? 'success' : 'danger'" effect="plain">
             {{ row.success ? '成功' : '失败' }}

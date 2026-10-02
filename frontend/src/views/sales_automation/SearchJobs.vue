@@ -36,7 +36,7 @@
           </el-empty>
         </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('task')" prop="name" label="任务" min-width="190" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120">
           <template #default="{ row }"><StatusBadge :type="statusMeta(row.status).type" effect="light">{{ statusMeta(row.status).label }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('target-result')" label="目标 / 已发现" min-width="130">

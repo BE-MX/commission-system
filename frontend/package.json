@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "vite build",
+    "audit:status-badges": "node scripts/auditStatusBadgeColumns.mjs",
     "test:task-center": "node --test tests/taskCenter.test.mjs",
     "test:invoice-layout": "node --test tests/invoiceLayout.test.mjs",
     "test:customer-workspace": "node --test tests/customerWorkspace.test.mjs",

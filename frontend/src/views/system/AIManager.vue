@@ -66,7 +66,7 @@
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="providerVisibleKeys.includes('protocol')" label="协议" min-width="100">
+          <el-table-column v-if="providerVisibleKeys.includes('protocol')" label="协议" min-width="140">
             <template #default="{ row }">
               <StatusBadge v-if="row.provider_type === 'direct'" :type="row.api_type === 'anthropic' ? 'warning' : 'info'" size="small" effect="plain">
                 {{ row.api_type === 'anthropic' ? 'Anthropic' : 'OpenAI' }}
@@ -148,7 +148,7 @@
               <span class="mono-text">{{ row.model || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="presetVisibleKeys.includes('status')" label="状态" min-width="80">
+          <el-table-column v-if="presetVisibleKeys.includes('status')" label="状态" min-width="110">
             <template #default="{ row }">
               <StatusBadge :type="row.is_enabled ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.is_enabled ? '启用' : '禁用' }}
@@ -237,7 +237,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="logVisibleKeys.includes('type')" label="类型" min-width="80">
+          <el-table-column v-if="logVisibleKeys.includes('type')" label="类型" min-width="110">
             <template #default="{ row }">
               <StatusBadge :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
                 {{ row.provider_type === 'direct' ? '直连' : 'ACCIO' }}
@@ -257,7 +257,7 @@
               <span class="mono-text">{{ row.duration_ms != null ? formatDuration(row.duration_ms) : '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="logVisibleKeys.includes('status')" label="状态" min-width="80">
+          <el-table-column v-if="logVisibleKeys.includes('status')" label="状态" min-width="110">
             <template #default="{ row }">
               <StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">
                 {{ statusLabel(row.status) }}

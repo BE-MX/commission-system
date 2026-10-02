@@ -83,7 +83,7 @@
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="120" max-width="240" show-overflow-tooltip />
       <el-table-column v-if="visibleKeys.includes('first-receipt-date')" prop="first_receipt_date" label="首次成交日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90" max-width="140">
+      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" max-width="140">
         <template #default="{ row }">
           <StatusBadge v-if="row.is_complete" type="success" size="small" effect="plain">已完整</StatusBadge>
           <StatusBadge v-else type="warning" size="small" effect="plain">待补充</StatusBadge>

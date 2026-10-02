@@ -31,7 +31,7 @@
         <el-table-column label="识别内容">
           <template #default="{ row }"><span class="value-cell">{{ row.value || '—' }}</span></template>
         </el-table-column>
-        <el-table-column label="状态" min-width="130">
+        <el-table-column label="状态" min-width="160">
           <template #default="{ row }"><StatusBadge :type="row.statusType" effect="plain">{{ row.statusText }}</StatusBadge></template>
         </el-table-column>
       </el-table>
@@ -63,7 +63,7 @@
             class="list-table preview-table"
           >
             <el-table-column prop="source_row" label="行" min-width="56" fixed />
-            <el-table-column label="状态" min-width="82" fixed>
+            <el-table-column label="状态" min-width="110" fixed>
               <template #default="{ row }">
                 <StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
               </template>

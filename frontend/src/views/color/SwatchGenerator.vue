@@ -120,7 +120,7 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="historyVisibleKeys.includes('status')" prop="status" label="状态" min-width="100">
+        <el-table-column v-if="historyVisibleKeys.includes('status')" prop="status" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge>
           </template>

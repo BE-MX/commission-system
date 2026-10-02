@@ -40,7 +40,7 @@
               <template #default="{ row }">{{ row.whatsapp_norm || '—' }}</template>
             </el-table-column>
             <el-table-column v-if="customerVisibleKeys.includes('expo-code')" prop="expo_code" label="届次" min-width="100" show-overflow-tooltip />
-            <el-table-column v-if="customerVisibleKeys.includes('entries')" label="纪要" min-width="80">
+            <el-table-column v-if="customerVisibleKeys.includes('entries')" label="纪要" min-width="100">
               <template #default="{ row }">
                 <StatusBadge effect="plain" :type="row.entry_count ? 'success' : 'info'">{{ row.entry_count }} 条</StatusBadge>
               </template>
@@ -96,14 +96,14 @@
             <el-table-column v-if="inquiryVisibleKeys.includes('salesperson')" prop="salesperson" label="业务员" min-width="100" />
             <el-table-column v-if="inquiryVisibleKeys.includes('contact')" prop="contact" label="客户联系方式" min-width="180" show-overflow-tooltip />
             <el-table-column v-if="inquiryVisibleKeys.includes('message')" prop="message" label="内容" min-width="320" show-overflow-tooltip />
-            <el-table-column v-if="inquiryVisibleKeys.includes('customer')" label="建档客户" min-width="100">
+            <el-table-column v-if="inquiryVisibleKeys.includes('customer')" label="建档客户" min-width="110">
               <template #default="{ row }">
                 <StatusBadge v-if="row.customer_id" effect="plain" type="success">已命中</StatusBadge>
                 <StatusBadge v-else effect="plain" type="info">未建档</StatusBadge>
               </template>
             </el-table-column>
             <el-table-column v-if="inquiryVisibleKeys.includes('created-at')" prop="created_at" label="提交时间" min-width="140" />
-            <el-table-column v-if="inquiryVisibleKeys.includes('status')" label="状态" min-width="90">
+            <el-table-column v-if="inquiryVisibleKeys.includes('status')" label="状态" min-width="110">
               <template #default="{ row }">
                 <StatusBadge effect="plain" :type="row.status === 'new' ? 'warning' : 'success'">
                   {{ row.status === 'new' ? '未处理' : '已处理' }}
@@ -149,7 +149,7 @@
             <el-table-column v-if="salespersonVisibleKeys.includes('whatsapp')" label="WhatsApp" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">{{ row.whatsapp || '—' }}</template>
             </el-table-column>
-            <el-table-column v-if="salespersonVisibleKeys.includes('status')" label="状态" min-width="80">
+            <el-table-column v-if="salespersonVisibleKeys.includes('status')" label="状态" min-width="110">
               <template #default="{ row }">
                 <StatusBadge effect="plain" :value="row.is_active" :dictionary="ENABLED_STATUS" />
               </template>

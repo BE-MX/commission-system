@@ -22,7 +22,7 @@
           <el-table-column v-if="resultsVisibleKeys.includes('customer')" label="客户" min-width="110"><template #default="{ row }">#{{ row.customer_id }}</template></el-table-column>
           <el-table-column v-if="resultsVisibleKeys.includes('rank')" prop="best_rank" label="排名" min-width="80" />
           <el-table-column v-if="resultsVisibleKeys.includes('score')" label="匹配分" min-width="100"><template #default="{ row }">{{ row.best_score }}</template></el-table-column>
-          <el-table-column v-if="resultsVisibleKeys.includes('status')" label="结果状态" min-width="110"><template #default="{ row }"><StatusBadge size="small">{{ searchResultStatusLabel(row.result_status) }}</StatusBadge></template></el-table-column>
+          <el-table-column v-if="resultsVisibleKeys.includes('status')" label="结果状态" min-width="120"><template #default="{ row }"><StatusBadge size="small">{{ searchResultStatusLabel(row.result_status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="resultsVisibleKeys.includes('created')" label="入档时间" min-width="170"><template #default="{ row }">{{ formatResultDate(row.created_at) }}</template></el-table-column>
         </el-table>
         <el-pagination v-model:current-page="resultsPage" v-model:page-size="resultsPageSize" :page-sizes="[20, 50, 100]" :total="resultsTotal" layout="total, sizes, prev, pager, next" class="pager" @current-change="handlePageChange" @size-change="handleSizeChange" />

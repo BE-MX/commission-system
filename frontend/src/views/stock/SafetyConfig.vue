@@ -336,7 +336,7 @@
           <el-table-column label="下单量" min-width="80" prop="order_qty" />
           <el-table-column label="已入库" min-width="80" prop="received_qty" />
           <el-table-column label="在途" min-width="70" prop="in_transit_qty" />
-          <el-table-column label="加急" min-width="70">
+          <el-table-column label="加急" min-width="100">
             <template #default="{ row }">
               <StatusBadge v-if="row.is_urgent" type="danger" size="small">加急</StatusBadge>
               <span v-else class="text-muted">—</span>

@@ -52,7 +52,7 @@
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" max-width="120">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="120">
           <template #default="{ row }">
             <StatusBadge :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
               {{ row.status === 1 ? '启用' : '禁用' }}

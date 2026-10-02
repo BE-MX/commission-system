@@ -37,7 +37,7 @@
         </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="门店名称" min-width="140" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('code')" prop="code" label="编码" min-width="100" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge size="small" :value="row.status" :dictionary="ENABLED_STATUS" />
           </template>
@@ -121,7 +121,7 @@
         <template #empty><ListPageStatus :paged="false" :error="usersResource.errorMessage.value" :loading="usersLoading" @retry="fetchStoreUsers"><el-empty v-if="usersResource.isEmpty.value" description="暂无绑定人员" /></ListPageStatus></template>
         <el-table-column prop="username" label="账号" min-width="100" show-overflow-tooltip />
         <el-table-column prop="real_name" label="姓名" min-width="100" show-overflow-tooltip />
-        <el-table-column label="角色" min-width="80">
+        <el-table-column label="角色" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.is_primary" size="small" type="warning">店长</StatusBadge>
             <span v-else class="muted">导购</span>

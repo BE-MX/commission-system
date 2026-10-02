@@ -27,7 +27,7 @@
         </ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="版本名称" min-width="150" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('hint')" prop="hint" label="客户可见说明" min-width="220" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="130"><template #default="{ row }">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="150"><template #default="{ row }">
           <StatusBadge :type="row.is_active ? 'success' : 'info'">{{ row.is_default ? '默认 · 启用' : row.is_active ? '启用' : '停用' }}</StatusBadge>
         </template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="75" />

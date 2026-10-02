@@ -61,7 +61,7 @@
               </button>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleKeys.includes('identity')" label="身份" min-width="116"><template #default="{ row }"><StatusBadge :type="row.identity_status === 'verified' ? 'success' : 'warning'" size="small">{{ identityLabel(row.identity_status) }}</StatusBadge></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('identity')" label="身份" min-width="140"><template #default="{ row }"><StatusBadge :type="row.identity_status === 'verified' ? 'success' : 'warning'" size="small">{{ identityLabel(row.identity_status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('industry')" prop="primary_industry" label="行业" min-width="130" max-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.primary_industry || '待补充' }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('relationship-stage')" prop="relationship_stage" label="关系阶段" min-width="120" max-width="180" show-overflow-tooltip />
           <el-table-column v-if="visibleKeys.includes('ownership')" label="归属" min-width="118"><template #default="{ row }">{{ row.is_public_pool ? '公海' : '已分配' }}</template></el-table-column>
@@ -75,7 +75,7 @@
 
         <template v-else-if="kind === 'acquisition'">
           <el-table-column v-if="visibleKeys.includes('task')" prop="name" label="任务" min-width="220" max-width="360" show-overflow-tooltip />
-          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140"><template #default="{ row }"><StatusBadge :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('target-result')" label="目标 / 结果" min-width="130"><template #default="{ row }">{{ row.target_count ?? 0 }} / {{ row.result_count ?? 0 }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('archived-customers')" label="归档客户" min-width="110"><template #default="{ row }">{{ row.created_customer_count ?? 0 }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('policy-version')" prop="policy_version" label="策略版本" min-width="130" max-width="180" show-overflow-tooltip />
@@ -87,7 +87,7 @@
           <el-table-column v-if="visibleKeys.includes('customer')" label="客户" min-width="130"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" :title="row.customer_name" type="button" @click="openCustomer(row.customer_id)">{{ row.customer_name || `临时客户 #${row.customer_id}` }}</button><span v-else>{{ row.customer_name || `临时客户 #${row.customer_id}` }}</span></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('research-type')" label="背调类型" min-width="150" max-width="240" show-overflow-tooltip><template #default="{ row }">{{ researchTypeLabels[row.task_type] || '客户研究' }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('tier')" prop="tier" label="层级" min-width="90" />
-          <el-table-column v-if="visibleKeys.includes('exec-status')" label="执行状态" min-width="110"><template #default="{ row }"><StatusBadge :type="tagType(row.task_status)" size="small">{{ statusLabel(row.task_status) }}</StatusBadge></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('exec-status')" label="执行状态" min-width="140"><template #default="{ row }"><StatusBadge :type="tagType(row.task_status)" size="small">{{ statusLabel(row.task_status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('quality')" label="研究质量" min-width="120"><template #default="{ row }">{{ operationStatusLabel(row.result_review_status) }}</template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('data-classification')" label="数据级别" min-width="150" max-width="220" show-overflow-tooltip><template #default="{ row }">{{ classificationLabels[row.data_classification] || '待确认' }}</template></el-table-column>
           <el-table-column class-name="table-action-column" label="操作" min-width="128" max-width="160" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="$emit('inspect-task', row)">查看详情</GlassButton></template></el-table-column>
@@ -96,7 +96,7 @@
         <template v-else-if="kind === 'opportunities'">
           <el-table-column v-if="visibleKeys.includes('opportunity')" prop="title" label="机会" min-width="240" max-width="380" show-overflow-tooltip />
           <el-table-column v-if="visibleKeys.includes('customer')" label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" :title="row.customer_name" type="button" @click="openCustomer(row.customer_id)">{{ row.customer_name || `临时客户 #${row.customer_id}` }}</button><span v-else>{{ row.customer_name || `临时客户 #${row.customer_id}` }}</span></template></el-table-column>
-          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140"><template #default="{ row }"><StatusBadge :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('priority')" prop="priority_level" label="优先级" min-width="100" />
           <el-table-column v-if="visibleKeys.includes('owner')" prop="owner_name" label="负责人" min-width="100" />
           <el-table-column v-if="visibleKeys.includes('due-at')" label="截止时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
@@ -106,7 +106,7 @@
         <template v-else>
           <el-table-column v-if="visibleKeys.includes('action')" prop="action_type" label="建议动作" min-width="200" max-width="360" show-overflow-tooltip />
           <el-table-column v-if="visibleKeys.includes('customer')" label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" :title="row.customer_name" type="button" @click="openCustomer(row.customer_id)">{{ row.customer_name || `临时客户 #${row.customer_id}` }}</button><span v-else>{{ row.customer_name || `临时客户 #${row.customer_id}` }}</span></template></el-table-column>
-          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="105"><template #default="{ row }"><StatusBadge :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
+          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140"><template #default="{ row }"><StatusBadge :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
           <el-table-column v-if="visibleKeys.includes('priority')" prop="priority" label="优先级" min-width="100" />
           <el-table-column v-if="visibleKeys.includes('due-at')" label="建议完成时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
           <el-table-column class-name="table-action-column" label="操作" min-width="128" max-width="160" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_radar:write', 'customer:admin']" variant="link" left-icon="Operation" :disabled="getRadarOperationOptions(row.status).length === 0" @click="$emit('operate-action', row)">处理</GlassButton></template></el-table-column>

@@ -143,7 +143,7 @@
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('safety-stock')" label="安全库存" prop="safety_stock" min-width="100" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('safety-stock')" label="安全库存" prop="safety_stock" min-width="110" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.safety_stock" style="font-weight:500;color:#666">{{ row.safety_stock }}</span>
             <StatusBadge v-else size="small" type="info">未设置</StatusBadge>
@@ -154,7 +154,7 @@
             <span :class="row.suggested_qty > 0 ? 'value-danger' : 'text-muted'">{{ row.suggested_qty > 0 ? row.suggested_qty : '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" fixed="right">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="130" fixed="right">
           <template #default="{ row }">
             <StatusBadge :type="statusTagType(row.status)" size="small" effect="dark" class="status-tag">
               <el-icon :size="12" style="margin-right:2px"><component :is="statusIcon(row.status)" /></el-icon>
@@ -162,7 +162,7 @@
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="110">
           <template #default="{ row }">
             <StatusBadge v-if="row.safety_stock_source" size="small" :type="sourceTagType(row.safety_stock_source)">{{ sourceLabel(row.safety_stock_source) }}</StatusBadge>
             <span v-else class="text-muted">—</span>
@@ -194,7 +194,7 @@
           <el-table-column label="下单量" min-width="80" prop="order_qty" />
           <el-table-column label="已入库" min-width="80" prop="received_qty" />
           <el-table-column label="在途" min-width="70" prop="in_transit_qty" />
-          <el-table-column label="加急" min-width="70">
+          <el-table-column label="加急" min-width="100">
             <template #default="{ row }">
               <StatusBadge v-if="row.is_urgent" type="danger" size="small">加急</StatusBadge>
               <span v-else class="text-muted">—</span>

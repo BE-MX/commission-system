@@ -48,7 +48,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('period-start')" prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('period-end')" prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="90" max-width="140" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="110" max-width="140" sortable="custom">
           <template #default="{ row }">
             <StatusBadge :type="batchStatusType(row.status)" size="small" effect="plain">{{ batchStatusLabel(row.status) }}</StatusBadge>
           </template>
@@ -66,7 +66,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('confirmation-status')" label="确认状态" min-width="110" max-width="160">
+        <el-table-column v-if="visibleKeys.includes('confirmation-status')" label="确认状态" min-width="120" max-width="160">
           <template #default="{ row }">
             <StatusBadge :type="confirmationStatusType(row.confirmation_status)" size="small" effect="plain">
               {{ confirmationStatusLabel(row.confirmation_status) }}

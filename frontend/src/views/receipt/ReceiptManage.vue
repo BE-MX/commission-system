@@ -70,7 +70,7 @@
         <el-table-column v-if="visibleKeys.includes('amount')" label="本次回款金额" min-width="150" max-width="210" align="right">
           <template #default="{ row }">{{ row.currency }} {{ money(row.amount) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('sync-status')" label="同步状态" min-width="120" max-width="170">
+        <el-table-column v-if="visibleKeys.includes('sync-status')" label="同步状态" min-width="160" max-width="170">
           <template #default="{ row }">
             <StatusBadge size="small" effect="plain" :type="statusTone(row.sync_status)">{{ row.status === 'remote_deleted' ? '远端删除已核实' : row.status === 'voided' ? '已作废' : statusLabel(row.sync_status) }}</StatusBadge>
           </template>

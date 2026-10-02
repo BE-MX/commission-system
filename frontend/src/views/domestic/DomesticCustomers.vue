@@ -53,13 +53,13 @@
         </ListPageStatus></template>
         <el-table-column prop="shop_name" label="客户店名" min-width="160" fixed="left" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('custom_code')" prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('customer_level')" label="客户等级" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('customer_level')" label="客户等级" min-width="120">
           <template #default="{ row }">
             <StatusBadge v-if="row.customer_level" size="small" effect="plain" type="warning">{{ row.customer_level }}</StatusBadge>
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('lifecycle_status')" label="客户状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('lifecycle_status')" label="客户状态" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.lifecycle_status" size="small" effect="plain"
               :type="{ 活跃: 'success', 潜在: 'warning', 沉默: 'info', 流失: 'danger' }[row.lifecycle_status] || 'info'">
@@ -77,7 +77,7 @@
         <el-table-column v-if="visibleKeys.includes('store_type')" prop="store_type" label="门店类型" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.store_type || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="110">
+        <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="140">
           <template #default="{ row }"><StatusBadge size="small" effect="plain">{{ row.membership_label }}</StatusBadge></template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('last_recharge')" label="最近充值" min-width="120" show-overflow-tooltip>
@@ -100,7 +100,7 @@
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('order_count')" prop="order_count" label="订单数" min-width="90" />
-        <el-table-column v-if="visibleKeys.includes('settle_mode')" label="结算方式" min-width="120">
+        <el-table-column v-if="visibleKeys.includes('settle_mode')" label="结算方式" min-width="150">
           <template #default="{ row }">
             <StatusBadge size="small" :type="row.settle_mode === 'credit' ? 'warning' : 'info'" effect="plain">
               {{ row.settle_mode_label || '先充值后下单' }}
@@ -113,7 +113,7 @@
             <span v-else class="balance-value">{{ formatMoney(Number(row.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge size="small" :value="row.status" :dictionary="ENABLED_STATUS" effect="plain" />
           </template>

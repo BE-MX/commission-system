@@ -42,7 +42,7 @@
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('url')" prop="url" label="URL" min-width="240" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('pipeline')" label="管线" min-width="80">
+      <el-table-column v-if="visibleKeys.includes('pipeline')" label="管线" min-width="100">
         <template #default="{ row }">
           <StatusBadge size="small" :type="row.pipeline === 'external' ? 'info' : 'success'">{{ row.pipeline === 'external' ? '外部' : '内部' }}</StatusBadge>
         </template>
@@ -50,7 +50,7 @@
       <el-table-column v-if="visibleKeys.includes('fetch-interval')" label="抓取间隔" min-width="100">
         <template #default="{ row }">{{ row.fetch_interval_hours }}h</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('is-active')" prop="is_active" label="状态" min-width="80" sortable>
+      <el-table-column v-if="visibleKeys.includes('is-active')" prop="is_active" label="状态" min-width="100" sortable>
         <template #default="{ row }">
           <StatusBadge :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</StatusBadge>
         </template>

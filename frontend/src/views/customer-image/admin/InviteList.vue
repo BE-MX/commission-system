@@ -39,7 +39,7 @@
         <el-table-column v-if="visibleKeys.includes('expires-at')" label="失效时间" min-width="170">
           <template #default="{ row }">{{ formatDate(row.expires_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120">
           <template #default="{ row }">
             <StatusBadge :type="statusOf(row).type" effect="plain">{{ statusOf(row).label }}</StatusBadge>
           </template>

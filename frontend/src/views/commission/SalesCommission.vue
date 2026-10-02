@@ -77,12 +77,12 @@
         <el-table-column v-if="visibleKeys.includes('period')" label="批次周期" min-width="180" max-width="280" show-overflow-tooltip>
           <template #default="{ row }">{{ row.period_start }} 至 {{ row.period_end }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90" max-width="130">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" max-width="130">
           <template #default="{ row }">
             <StatusBadge :type="batchStatusType(row.status)" size="small" effect="plain">{{ batchStatusLabel(row.status) }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('my-confirmation')" label="我的确认" min-width="100" max-width="150">
+        <el-table-column v-if="visibleKeys.includes('my-confirmation')" label="我的确认" min-width="110" max-width="150">
           <template #default="{ row }">
             <StatusBadge v-if="row.is_confirmed_by_me" type="success" size="small" effect="plain">已确认</StatusBadge>
             <StatusBadge v-else-if="row.status === 'confirming'" type="warning" size="small" effect="plain">待确认</StatusBadge>

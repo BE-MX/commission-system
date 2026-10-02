@@ -40,7 +40,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('model-no')" prop="model_no" label="型号" min-width="110" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="名称" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('series')" label="系列" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('series')" label="系列" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.series === 'zhizhen'" size="small" class="tag-zhizhen">至臻</StatusBadge>
             <StatusBadge v-else size="small" effect="plain">经典</StatusBadge>
@@ -58,7 +58,7 @@
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('priority')" prop="priority" label="优先级" min-width="80" sortable />
-        <el-table-column v-if="visibleKeys.includes('must-recommend')" label="主推" min-width="70">
+        <el-table-column v-if="visibleKeys.includes('must-recommend')" label="主推" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.must_recommend" type="danger" effect="plain" size="small">主推</StatusBadge>
             <span v-else style="color: var(--text-muted)">—</span>

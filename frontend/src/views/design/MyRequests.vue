@@ -111,7 +111,7 @@
           {{ formatDatePeriod(row.expect_end_date, row.expect_end_period) }}
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('priority')" label="优先级" min-width="80" max-width="120">
+      <el-table-column v-if="visibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120">
         <template #default="{ row }">
           <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}

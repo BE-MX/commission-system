@@ -39,7 +39,7 @@
     <el-table :data="records" v-loading="recordsLoading" size="small" border style="width: 100%" class="list-table">
       <template #empty><ListPageStatus :error="recordsState.errorMessage.value" :loading="recordsLoading" @retry="fetchRecords"><el-empty description="暂无变动记录" :image-size="96" /></ListPageStatus></template>
       <el-table-column prop="created_at" label="时间" min-width="150" show-overflow-tooltip />
-      <el-table-column label="类型" min-width="76">
+      <el-table-column label="类型" min-width="100">
         <template #default="{ row }">
           <StatusBadge size="small" :type="row.type === 'recharge' ? 'success' : 'warning'">
             {{ row.type === 'recharge' ? '充值' : '消耗' }}

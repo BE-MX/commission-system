@@ -95,7 +95,7 @@
         <el-table-column v-if="visibleKeys.includes('last-used')" label="最近使用" min-width="170">
           <template #default="{ row }">{{ formatCredentialTime(row.last_used_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge :type="statusFor(row).type" effect="plain" size="small">
               {{ statusFor(row).label }}

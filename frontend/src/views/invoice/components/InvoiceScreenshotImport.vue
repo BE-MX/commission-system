@@ -151,7 +151,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="86" max-width="110">
+          <el-table-column label="状态" min-width="110" max-width="110">
             <template #default="{ row }">
               <StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
             </template>

@@ -55,7 +55,7 @@
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('created_by')" prop="created_by_name" label="申请人" min-width="100" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge size="small" :type="REQUEST_STATUS_MAP[row.status]?.tag">{{ REQUEST_STATUS_MAP[row.status]?.label || row.status }}</StatusBadge>
           </template>

@@ -38,7 +38,7 @@
             <el-table-column v-if="stdVisibleKeys.includes('series')" prop="series_grade" label="系列 + 工艺档" min-width="280" show-overflow-tooltip />
             <el-table-column v-if="stdVisibleKeys.includes('length')" prop="length" label="长度" min-width="80" />
             <el-table-column v-if="stdVisibleKeys.includes('weight')" prop="weight_unit" label="克重" min-width="80" />
-            <el-table-column v-if="stdVisibleKeys.includes('color-type')" label="色型" min-width="110">
+            <el-table-column v-if="stdVisibleKeys.includes('color-type')" label="色型" min-width="190">
               <template #default="{ row }">
                 <StatusBadge effect="plain">{{ colorTypeText(row.color_type) }}</StatusBadge>
               </template>
@@ -81,7 +81,7 @@
           <el-table v-loading="colorLoading" :data="colorTypes" border class="list-table" :class="colorDensityClass" :max-height="colorIsFullscreen ? undefined : 640">
             <template #empty><ListPageStatus v-bind="resourceStatus(colorResource)" @retry="loadColorTypes"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="colorVisibleKeys.includes('code')" prop="color_code" label="色号" min-width="160" />
-            <el-table-column v-if="colorVisibleKeys.includes('type')" label="色型" min-width="140">
+            <el-table-column v-if="colorVisibleKeys.includes('type')" label="色型" min-width="190">
               <template #default="{ row }">
                 <StatusBadge effect="plain">{{ colorTypeText(row.color_type) }}</StatusBadge>
               </template>
@@ -117,7 +117,7 @@
                 {{ ruleText(row) }}
               </template>
             </el-table-column>
-            <el-table-column v-if="ruleVisibleKeys.includes('enabled')" label="启用" min-width="80">
+            <el-table-column v-if="ruleVisibleKeys.includes('enabled')" label="启用" min-width="100">
               <template #default="{ row }">
                 <StatusBadge :value="row.enabled" :dictionary="ENABLED_STATUS" effect="plain" />
               </template>

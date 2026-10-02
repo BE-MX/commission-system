@@ -27,7 +27,7 @@
         <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="190" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('customer-id')" prop="customer_id" label="客户ID" min-width="130" />
         <el-table-column v-if="visibleKeys.includes('login-email')" prop="login_email" label="登录邮箱" min-width="220" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100"><template #default="{ row }"><StatusBadge :value="row.is_active" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :value="row.is_active" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('last-login')" prop="last_login_at" label="最近登录" min-width="180"><template #default="{ row }">{{ row.last_login_at || '从未登录' }}</template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">修改邮箱/密码</GlassButton><GlassButton variant="link" :link-tone="row.is_active ? 'danger' : 'success'" @click="toggle(row)">{{ row.is_active ? '停用' : '启用' }}</GlassButton></template></el-table-column>
       </el-table>

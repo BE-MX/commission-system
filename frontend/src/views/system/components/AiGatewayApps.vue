@@ -8,7 +8,7 @@
 <el-table :data="list" v-loading="loading" border class="list-table"><template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
         <el-table-column prop="name" label="应用名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="owner_name" label="负责人" min-width="100" />
-        <el-table-column label="状态" min-width="95">
+        <el-table-column label="状态" min-width="110">
           <template #default="{ row }"><StatusBadge :value="row.is_enabled" :dictionary="ENABLED_STATUS" effect="plain" /></template>
         </el-table-column>
         <el-table-column label="今日已占用" min-width="125"><template #default="{ row }">{{ row.today_calls }} / {{ row.daily_limit }}</template></el-table-column>

@@ -81,7 +81,7 @@
             <div class="task-sub">#{{ row.id }} · {{ profileName(row.profile_id) }}</div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge :type="statusMeta(row.status).type" effect="plain" size="small">
               {{ statusMeta(row.status).label }}
@@ -143,7 +143,7 @@
         <el-table-column label="数据要求" min-width="190">
           <template #default="{ row }"><span class="case-requires">{{ row.requires.join(' · ') }}</span></template>
         </el-table-column>
-        <el-table-column label="状态" min-width="105">
+        <el-table-column label="状态" min-width="110">
           <template #default="{ row }"><StatusBadge :type="evaluationCaseMeta(row).type" effect="plain" size="small">{{ evaluationCaseMeta(row).label }}</StatusBadge></template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="105" max-width="130" fixed="right">

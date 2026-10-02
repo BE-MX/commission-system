@@ -89,7 +89,7 @@
           </el-button>
         </div>
         <el-table :data="filteredAnomalies" border class="list-table" max-height="380">
-          <el-table-column label="严重度" min-width="90">
+          <el-table-column label="严重度" min-width="120">
             <template #default="{ row }">
               <StatusBadge size="small" effect="dark"
                       :type="row.severity === 'blocking' ? 'danger' : 'info'">
@@ -211,7 +211,7 @@
             <el-table-column label="旷工" min-width="70" align="right">
               <template #default="{ row }">{{ money(row.absent_count) }}</template>
             </el-table-column>
-            <el-table-column label="全勤" min-width="70">
+            <el-table-column label="全勤" min-width="100">
               <template #default="{ row }">
                 <StatusBadge size="small" :type="row.full_attendance ? 'success' : 'info'" effect="plain">
                   {{ row.full_attendance ? '是' : '否' }}

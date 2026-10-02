@@ -64,7 +64,7 @@
             </el-popover>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('inspection-status')" label="检验状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('inspection-status')" label="检验状态" min-width="140">
           <template #default="{ row }">
             <span v-if="row.record_source === 'ark_task'" class="queue-note">—</span>
             <StatusBadge v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">

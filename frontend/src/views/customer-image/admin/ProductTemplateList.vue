@@ -45,7 +45,7 @@
         <el-table-column v-if="visibleKeys.includes('config-version')" label="配置版本" min-width="100">
           <template #default="{ row }">v{{ row.config_version }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge :type="row.is_published ? 'success' : 'info'" effect="plain">
               {{ row.is_published ? '已发布' : '草稿' }}

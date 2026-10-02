@@ -75,7 +75,7 @@
           <template #default="{ row }"><span class="tabular">{{ row.has_compensation ? formatMoney(row.estimated_compensation_usd, { currency: 'USD', missing: '—' }) : '无赔偿' }}</span></template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('actions')" label="处理措施" min-width="160" max-width="260" show-overflow-tooltip><template #default="{ row }">{{ actionSummary(row.selected_actions_json) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120" max-width="170">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="200" max-width="230">
           <template #default="{ row }"><StatusBadge :value="row.current_status" :dictionary="CASE_STATUS" effect="plain" /></template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('creator')" prop="creator_name_snapshot" label="业务员" min-width="100" max-width="150" show-overflow-tooltip />

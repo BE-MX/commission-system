@@ -70,7 +70,7 @@
           class="list-table preview-table"
         >
           <el-table-column prop="source_row" label="Excel 行" min-width="78" fixed />
-          <el-table-column label="状态" min-width="88" fixed>
+          <el-table-column label="状态" min-width="110" fixed>
             <template #default="{ row }">
               <StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
             </template>

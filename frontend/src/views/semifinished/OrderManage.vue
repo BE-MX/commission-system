@@ -34,8 +34,8 @@
         </template>
         <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no" label="订单号" min-width="155" />
         <el-table-column v-if="visibleKeys.includes('batch-no')" prop="batch_no" label="批次号" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="120"><template #default="{ row }"><StatusBadge effect="plain">{{ row.source_type === 'production_sync' ? '产成品联动' : '手工创建' }}</StatusBadge></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100"><template #default="{ row }"><StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="140"><template #default="{ row }"><StatusBadge effect="plain">{{ row.source_type === 'production_sync' ? '产成品联动' : '手工创建' }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120"><template #default="{ row }"><StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('item-count')" prop="item_count" label="明细" min-width="80" align="right" />
         <el-table-column v-if="visibleKeys.includes('order-qty')" label="下单(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('received-qty')" label="已入库(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>

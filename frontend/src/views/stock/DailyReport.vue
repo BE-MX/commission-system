@@ -120,7 +120,7 @@
           <el-table-column prop="suggested_qty" label="建议备货量" min-width="110" sortable>
             <template #default="{ row }"><span class="cell-suggest">{{ row.suggested_qty }} 件</span></template>
           </el-table-column>
-          <el-table-column label="缺口" min-width="90" sortable>
+          <el-table-column label="缺口" min-width="100" sortable>
             <template #default="{ row }">
               <StatusBadge size="small" type="danger" effect="dark">-{{ row.safety_stock - row.enable_count }}</StatusBadge>
             </template>
@@ -162,7 +162,7 @@
           <el-table-column prop="suggested_qty" label="建议备货量" min-width="110" sortable>
             <template #default="{ row }"><span class="cell-suggest">{{ row.suggested_qty }} 件</span></template>
           </el-table-column>
-          <el-table-column label="余量" min-width="90" sortable>
+          <el-table-column label="余量" min-width="100" sortable>
             <template #default="{ row }">
               <StatusBadge size="small" type="warning">{{ Math.round(row.enable_count - row.safety_stock) }}</StatusBadge>
             </template>

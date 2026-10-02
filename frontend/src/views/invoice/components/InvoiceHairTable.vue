@@ -138,7 +138,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="标准价" min-width="95" max-width="140" align="right">
+        <el-table-column label="标准价" min-width="120" max-width="140" align="right">
           <template #default="{ row }">
             <span v-if="row.standard_price != null" class="std-price">
               {{ money4(row.standard_price) }}

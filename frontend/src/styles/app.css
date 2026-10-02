@@ -483,6 +483,11 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Keep each badge on one line, while exposing every badge in a multi-tag cell. */
+.list-table .el-table__body td.el-table__cell:not(.table-action-column) > .cell:has(.status-badge) {
+  white-space: normal !important;
+}
+
 /* Status tags — pill shape inside list tables */
 .list-table .el-tag {
   border-radius: 9999px;

@@ -46,12 +46,12 @@ export function useInvoiceManagePage() {
   const columnDefs = [
     { key: 'invoice_no', label: '发票号', prop: 'invoice_no', minWidth: 220, maxWidth: 320, className: 'invoice-number-column' },
     { key: 'customer_name', label: '客户', prop: 'customer_name', minWidth: 180, maxWidth: 260, tooltip: true },
-    { key: 'order_type', label: '类型', minWidth: 76, maxWidth: 96 },
+    { key: 'order_type', label: '类型', minWidth: 110, maxWidth: 130 },
     { key: 'invoice_date', label: '日期', prop: 'invoice_date', minWidth: 116, maxWidth: 150 },
     { key: 'item_count', label: '明细', prop: 'item_count', minWidth: 80, maxWidth: 120, align: 'right' },
     { key: 'total_amount', label: '金额（USD）', minWidth: 132, maxWidth: 160, align: 'right' },
-    { key: 'status', label: '状态', minWidth: 84, maxWidth: 110 },
-    { key: 'sync_status', label: '同步', minWidth: 84, maxWidth: 110 },
+    { key: 'status', label: '状态', minWidth: 160, maxWidth: 180, tooltip: true },
+    { key: 'sync_status', label: '同步', minWidth: 110, maxWidth: 130, tooltip: true },
     { key: 'created_by', label: '创建人', minWidth: 84, maxWidth: 120, tooltip: true },
     { key: 'created_at', label: '创建时间', minWidth: 130, maxWidth: 160, tooltip: true },
   ]

@@ -46,7 +46,7 @@
         <el-table-column label="Color" min-width="130" max-width="190">
           <template #default="{ row }"><el-input :model-value="row.color" readonly /></template>
         </el-table-column>
-        <el-table-column label="标准价" min-width="92" max-width="125" align="right">
+        <el-table-column label="标准价" min-width="140" max-width="170" align="right">
           <template #default="{ row }">
             <span v-if="row.standard_price != null" class="std-price">{{ money4(row.standard_price) }}</span>
             <StatusBadge v-else-if="accessoryStandardPriceState(row) === 'invalid'" size="small" type="warning" effect="plain">需重新配置</StatusBadge>

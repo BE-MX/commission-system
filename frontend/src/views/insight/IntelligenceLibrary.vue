@@ -77,7 +77,7 @@
         </ListPageStatus>
         </template>
         <el-table-column type="selection" min-width="40" />
-        <el-table-column v-if="visibleKeys.includes('credibility')" label="可信度" min-width="90" prop="credibility_label" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('credibility')" label="可信度" min-width="120" prop="credibility_label" sortable="custom">
           <template #default="{ row }">
             <StatusBadge :type="credibilityType(row.credibility_label)" size="small">
               {{ credibilityLabel(row.credibility_label) }}
@@ -97,12 +97,12 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('item-type')" label="类型" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('item-type')" label="类型" min-width="160">
           <template #default="{ row }">
             <StatusBadge size="small">{{ row.item_type || '-' }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="80" prop="status" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140" prop="status" sortable="custom">
           <template #default="{ row }">
             <StatusBadge :type="statusType(row.status)" size="small">{{ row.status }}</StatusBadge>
           </template>

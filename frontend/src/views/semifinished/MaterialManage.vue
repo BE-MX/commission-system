@@ -46,7 +46,7 @@
         <el-table-column v-if="visibleKeys.includes('on-hand')" label="实存(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.on_hand_grams) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('reserved')" label="占用(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.reserved_grams) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('available')" label="可用(g)" min-width="110" align="right"><template #default="{ row }"><strong>{{ grams(row.available_grams) }}</strong></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90"><template #default="{ row }"><StatusBadge :value="row.status === 'active'" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :value="row.status === 'active'" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
       </el-table>
 
       <el-table v-else v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">

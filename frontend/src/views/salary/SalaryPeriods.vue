@@ -43,7 +43,7 @@
           </ListPageStatus>
         </template>
         <el-table-column v-if="visibleKeys.includes('year-month')" prop="year_month" label="月份" min-width="100" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140">
           <template #default="{ row }">
             <StatusBadge size="small" :value="row.status" :dictionary="SALARY_STATUS" :label="row.status_label" effect="plain" />
           </template>

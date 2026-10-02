@@ -7,7 +7,7 @@
       <el-table-column prop="user_name" label="业务员" min-width="110" max-width="160" show-overflow-tooltip />
       <el-table-column prop="team" label="业务组" min-width="120" max-width="160" show-overflow-tooltip />
       <el-table-column label="目标 / USD" min-width="200" max-width="260"><template #default="{ row }"><el-input v-if="row.can_edit" v-model="values[row.id]" :disabled="saving" :aria-label="`${row.user_name}的目标`" placeholder="填写金额" inputmode="decimal" /><span v-else>{{ row.target_usd == null ? '待填报' : money(row.target_usd) }}</span></template></el-table-column>
-      <el-table-column label="填报状态" min-width="100" max-width="140"><template #default="{ row }"><StatusBadge size="small" effect="plain" :type="row.target_usd == null ? 'warning' : 'success'">{{ row.target_usd == null ? '待填报' : '已填报' }}</StatusBadge></template></el-table-column>
+      <el-table-column label="填报状态" min-width="110" max-width="140"><template #default="{ row }"><StatusBadge size="small" effect="plain" :type="row.target_usd == null ? 'warning' : 'success'">{{ row.target_usd == null ? '待填报' : '已填报' }}</StatusBadge></template></el-table-column>
     </el-table>
     <div v-if="report.can_admin" class="battle-reason"><el-input v-model="reason" maxlength="500" placeholder="代录或更正原因（截止后必填）" aria-label="目标更正原因" /></div>
     <div class="battle-section-title"><span>保存后更新本人、小组及战报完成进度；留存修改记录。</span><GlassButton v-any-permission="['battle_report:write', 'battle_report:admin']" variant="primary" :loading="saving" :disabled="!members.some(m => m.can_edit)" @click="save">保存目标</GlassButton></div>

@@ -131,7 +131,7 @@
               </template>
             </el-table-column>
             <el-table-column label="国家" prop="country" min-width="100" fixed />
-            <el-table-column label="机会分" prop="opportunity_score" min-width="92">
+            <el-table-column label="机会分" prop="opportunity_score" min-width="100">
               <template #default="{ row }"><StatusBadge effect="plain" :type="scoreType(row.opportunity_score)">{{ row.opportunity_score }}</StatusBadge></template>
             </el-table-column>
             <el-table-column label="新签客户" prop="new_sign_customers" min-width="104" />
@@ -236,7 +236,7 @@
             <el-table-column v-if="customerVisibleKeys.includes('company')" label="客户" prop="company_name" min-width="190" show-overflow-tooltip fixed />
             <el-table-column v-if="customerVisibleKeys.includes('country')" label="国家" prop="country" min-width="94" />
             <el-table-column v-if="customerVisibleKeys.includes('owner')" label="负责人" prop="user_name" min-width="96" />
-            <el-table-column v-if="customerVisibleKeys.includes('risk')" label="风险" min-width="108"><template #default="{ row }"><StatusBadge effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</StatusBadge></template></el-table-column>
+            <el-table-column v-if="customerVisibleKeys.includes('risk')" label="风险" min-width="120"><template #default="{ row }"><StatusBadge effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</StatusBadge></template></el-table-column>
             <el-table-column v-if="customerVisibleKeys.includes('profile')" label="所属画像" prop="profile_label" min-width="280" show-overflow-tooltip />
             <el-table-column v-if="customerVisibleKeys.includes('cycle')" label="典型周期" min-width="158"><template #default="{ row }">{{ row.typical_cycle_days ? `${row.typical_cycle_days} 天` : '样本不足' }} · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
             <el-table-column v-if="customerVisibleKeys.includes('last-order')" label="上次下单" prop="last_order_date" min-width="108" />
