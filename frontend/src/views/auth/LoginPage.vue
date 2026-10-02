@@ -280,15 +280,18 @@ const handleSubmit = async () => {
 .login-options { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 20px; }
 .remember-checkbox { width: 15px; height: 15px; margin: 0; accent-color: var(--login-gold); cursor: pointer; }
 .forgot-link { color: var(--login-gold); font-size: 13px; white-space: nowrap; text-decoration: none; }
-.tech-btn-primary { background: linear-gradient(115deg, var(--login-gold-light), var(--login-gold)); color: var(--login-bg); transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 160ms ease; }
-.tech-btn-primary:hover { filter: none; box-shadow: none; }
+.tech-btn-primary { background: var(--button-primary); color: var(--button-surface); transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 160ms ease; }
+.tech-btn-primary:hover:not(:disabled) { background: var(--button-primary-hover); filter: none; box-shadow: none; }
+.tech-btn-primary:active:not(:disabled) { background: var(--button-primary-active); }
+.tech-btn-primary:focus-visible { outline: 2px solid var(--button-primary-border); outline-offset: 3px; }
 .tech-btn-primary:disabled { opacity: 0.7; cursor: wait; }
 .tech-btn-primary:disabled:active { transform: none; }
-.login-card :is(button, a, input[type='checkbox']):focus-visible { outline: 2px solid var(--login-gold); outline-offset: 4px; }
+.login-card button:focus-visible { outline: 2px solid var(--button-primary-border); outline-offset: 4px; }
+.login-card :is(a, input[type='checkbox']):focus-visible { outline: 2px solid var(--login-gold); outline-offset: 4px; }
 @media (hover: hover) and (pointer: fine) {
-  .password-toggle:hover { color: var(--login-gold-light); }
+  .password-toggle:hover { color: var(--button-primary-border); }
   .forgot-link:hover { text-decoration: underline; }
-  .tech-btn-primary:not(:disabled):hover { box-shadow: 0 4px 20px var(--login-wash); }
+  .tech-btn-primary:not(:disabled):hover { box-shadow: 0 4px 20px var(--button-focus); }
 }
 .site-filing {
   position: absolute; right: 24px; bottom: 18px; left: 24px;

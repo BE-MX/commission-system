@@ -115,14 +115,17 @@
 .today-btn {
   width: auto;
   padding: 0 12px;
-  background: linear-gradient(to right, var(--color-primary), #c49b52) !important;
-  color: #fff !important;
+  background: var(--button-primary) !important;
+  color: var(--button-surface) !important;
   font-size: 12px;
   font-weight: 500;
 }
 .today-btn:hover {
-  box-shadow: 0 2px 8px rgba(212, 175, 110, 0.3);
+  background: var(--button-primary-hover) !important;
+  box-shadow: none;
 }
+.today-btn:active { background: var(--button-primary-active) !important; }
+.today-btn:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 3px; }
 
 .weekdays {
   display: grid;

@@ -91,13 +91,18 @@ function table(command) {
 button, select { height: 30px; border: 1px solid transparent; border-radius: 6px; color: var(--text-secondary); background: transparent; font: inherit; font-size: 13px; }
 button { min-width: 30px; padding: 0 6px; cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), color 120ms ease, background-color 120ms ease; }
 button:active:not(:disabled) { transform: scale(.97); }
-button.active { color: var(--color-primary-text); background: var(--color-primary-light); }
-button.danger { color: var(--color-danger); }
+button.active { color: var(--button-primary); background: var(--button-primary-soft); }
+button.danger { color: var(--button-danger); }
 button:disabled { opacity: .35; cursor: not-allowed; }
-button:focus-visible, select:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+button:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 1px; }
+select:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 select { max-width: 104px; padding: 0 24px 0 8px; border-color: var(--border-color); cursor: pointer; }
 .table-tools button { width: auto; font-size: 12px; }
 .shortcut-hint { margin-left: auto; color: var(--text-muted-blue); font-size: 11px; white-space: nowrap; }
-@media (hover: hover) and (pointer: fine) { button:hover:not(:disabled), select:hover { color: var(--color-primary-text); background: var(--color-primary-light); } }
+@media (hover: hover) and (pointer: fine) {
+  button:hover:not(:disabled) { color: var(--button-primary); background: var(--button-primary-soft); }
+  button.danger:hover:not(:disabled) { color: var(--button-danger-hover); background: var(--button-danger-soft); }
+  select:hover { color: var(--color-primary-text); background: var(--color-primary-light); }
+}
 @media (prefers-reduced-motion: reduce) { button { transition: color 120ms ease, background-color 120ms ease; } button:active:not(:disabled) { transform: none; } }
 </style>

@@ -7,17 +7,35 @@
 :root {
   --domestic-price-review-bg: #f4ff5c;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
-  /* Shared GlassButton semantic states. */
-  --button-primary-hover-from: #c4891a;
-  --button-primary-hover-to: #a87616;
-  --button-soft-border: #f5e0b5;
-  --button-soft-hover: #fef3e0;
-  --button-soft-border-hover: #e8cc8e;
-  --button-warning-from: #f59e0b;
-  --button-warning-to: #d97706;
-  --button-warning-hover: #b45309;
-  --button-info-from: #2563eb;
-  --button-info-hover: #1d4ed8;
+  /* Buttons: Ant Design palette, darker solid steps for small white text. */
+  --button-primary: #1668dc;
+  --button-primary-hover: #145fc8;
+  --button-primary-active: #0958d9;
+  --button-primary-soft: #e6f4ff;
+  --button-primary-border: #91caff;
+  --button-danger: #d9363e;
+  --button-danger-hover: #cf1322;
+  --button-danger-active: #a8071a;
+  --button-danger-soft: #fff1f0;
+  --button-danger-border: #ffa39e;
+  --button-success: #237804;
+  --button-success-hover: #135200;
+  --button-success-active: #092b00;
+  --button-success-soft: #f6ffed;
+  --button-success-border: #b7eb8f;
+  --button-warning: #faad14;
+  --button-warning-hover: #ffc53d;
+  --button-warning-active: #d48806;
+  --button-warning-text: #874d00;
+  --button-warning-soft: #fffbe6;
+  --button-warning-border: #ffe58f;
+  --button-surface: #ffffff;
+  --button-text: #1f1f1f;
+  --button-border: #d9d9d9;
+  --button-quiet-hover: #f5f5f5;
+  --button-disabled-bg: #f5f5f5;
+  --button-disabled-text: #bfbfbf;
+  --button-focus: rgba(22, 104, 220, 0.22);
 
   /* Login: quiet dark-gold scene, separate from the light workspace surfaces. */
   --login-bg: #0d0e13;

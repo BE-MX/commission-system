@@ -96,7 +96,7 @@ function rowClass({ row }) {
 .tt-title { overflow: hidden; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
 .tt-add {
   flex-shrink: 0; height: 24px; padding: 0 8px; border: 0; border-radius: 6px;
-  background: var(--color-gold-soft); color: var(--color-warning-text); font-size: 12px; cursor: pointer;
+  background: var(--button-primary-soft); color: var(--button-primary); font-size: 12px; cursor: pointer;
   opacity: 0; transition: opacity 120ms ease;
 }
 .el-table__row:hover .tt-add, .tt-add:focus-visible { opacity: 1; }

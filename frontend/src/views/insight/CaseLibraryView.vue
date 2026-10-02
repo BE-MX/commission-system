@@ -530,8 +530,8 @@ const {
   transition: color 0.15s, background-color 0.15s;
 }
 
-.like-btn:hover { background: #fafbfe; }
-.like-btn.liked { color: #ef4444; }
+.like-btn:hover { background: var(--button-quiet-hover); color: var(--button-primary-hover); }
+.like-btn.liked { color: var(--button-primary); }
 
 .list-view { display: flex; flex-direction: column; gap: 8px; }
 

@@ -190,7 +190,7 @@ async function onDelete() {
   .vc-toggle:hover { color: var(--gold-deep); }
 }
 .vc-mark { color: var(--gold-deep); font-size: 13px; }
-.vc-toggle.failed { color: var(--danger); }
+.vc-toggle.failed { color: var(--button-danger); }
 .vc-chevron { transition: transform var(--dur-fast) var(--ease-out); }
 .vc-chevron.open { transform: rotate(180deg); }
 
@@ -225,8 +225,8 @@ async function onDelete() {
 }
 .btn-bare:active { transform: scale(0.96); }
 @media (hover: hover) and (pointer: fine) {
-  .btn-bare:hover { color: var(--gold-deep); }
-  .btn-bare.danger:hover { color: var(--danger); }
+  .btn-bare:hover { color: var(--button-primary-hover); }
+  .btn-bare.danger:hover { color: var(--button-danger); }
 }
 
 .vc-replies {

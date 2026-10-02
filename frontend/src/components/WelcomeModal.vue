@@ -576,7 +576,7 @@ defineExpose({ open })
   height: 42px;
   border: none;
   border-radius: 12px;
-  background: linear-gradient(135deg, #d4af6e, #c49b52);
+  background: var(--button-primary);
   color: #fff;
   font-family: var(--font-display);
   font-size: 14px;
@@ -585,10 +585,13 @@ defineExpose({ open })
   transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
 }
 .welcome-start-btn:hover {
-  box-shadow: 0 4px 20px rgba(212, 175, 110, 0.3);
+  background: var(--button-primary-hover);
+  box-shadow: none;
   transform: translateY(-1px);
 }
+.welcome-start-btn:focus-visible { outline: 2px solid var(--button-primary-border); outline-offset: 3px; }
 .welcome-start-btn:active {
+  background: var(--button-primary-active);
   transform: scale(0.98);
 }
 
@@ -631,7 +634,7 @@ defineExpose({ open })
 
 /* ===== 通用动画 ===== */
 
-.welcome-modal-close:focus-visible,
+.welcome-modal-close:focus-visible { outline: 2px solid var(--button-primary-border); outline-offset: 3px; }
 .check-box:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 3px; }
 .check-box { accent-color: var(--color-gold); cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {

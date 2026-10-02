@@ -227,12 +227,12 @@ defineExpose({ focus })
 .send-button,
 .stop-button { min-width: 82px; padding: 0 14px; }
 .send-button {
-  border: 1px solid var(--color-primary);
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+  border: 1px solid var(--button-primary);
+  background: var(--button-primary);
   box-shadow: var(--card-shadow);
   color: var(--text-on-dark);
 }
-.send-button:disabled { cursor: not-allowed; filter: grayscale(0.5); opacity: 0.45; }
+.send-button:disabled { cursor: not-allowed; background: var(--button-disabled-bg); border-color: var(--button-border); color: var(--button-disabled-text); box-shadow: none; }
 .stop-button { border: 1px solid var(--border-color); background: var(--toolbar-bg); color: var(--text-primary); }
 .attachment-limit { color: var(--text-muted); font-size: 11px; }
 
@@ -250,11 +250,11 @@ defineExpose({ focus })
 .attach-button:focus-visible,
 .send-button:focus-visible,
 .stop-button:focus-visible,
-.attachment-chip button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.attachment-chip button:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 2px; }
 
 .attach-button:active,
 .stop-button:active { transform: scale(0.96); }
-.send-button:not(:disabled):active { transform: scale(0.94); }
+.send-button:not(:disabled):active { background: var(--button-primary-active); transform: scale(0.94); }
 
 .attachment-chip { animation: chip-in 220ms var(--ease-out-strong) backwards; }
 .attachment-chip button { transition: background-color 180ms ease, color 180ms ease; }
@@ -265,9 +265,9 @@ defineExpose({ focus })
 
 @media (hover: hover) and (pointer: fine) {
   .attach-button:hover,
-  .stop-button:hover { border-color: var(--border-hover); box-shadow: var(--card-shadow); color: var(--text-primary); transform: translateY(-1px); }
-  .send-button:not(:disabled):hover { box-shadow: var(--dash-glass-shadow-hover); transform: translateY(-1px); }
-  .attachment-chip button:not(:disabled):hover { background: var(--color-danger-bg); color: var(--color-danger-text); }
+  .stop-button:hover { border-color: var(--button-primary-hover); box-shadow: var(--card-shadow); color: var(--button-primary-hover); transform: translateY(-1px); }
+  .send-button:not(:disabled):hover { background: var(--button-primary-hover); border-color: var(--button-primary-hover); box-shadow: var(--dash-glass-shadow-hover); transform: translateY(-1px); }
+  .attachment-chip button:not(:disabled):hover { background: var(--button-danger-soft); color: var(--button-danger); }
 }
 
 @media (prefers-reduced-motion: reduce) {

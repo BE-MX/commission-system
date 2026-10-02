@@ -324,7 +324,7 @@ watch(
   transition: background-color 180ms ease, color 180ms ease;
 }
 
-.message-actions button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.message-actions button:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 1px; }
 
 /* 上翻时出现的「回到最新」浮钮（sticky 于滚动容器底部） */
 .scroll-latest {
@@ -387,7 +387,7 @@ watch(
   .message-actions { opacity: 0; }
   .message-row:hover .message-actions,
   .message-row:focus-within .message-actions { opacity: 1; }
-  .message-actions button:hover { background: var(--color-primary-light); color: var(--color-primary-text); }
+  .message-actions button:hover { background: var(--button-primary-soft); color: var(--button-primary); }
   .scroll-latest:hover {
     transform: translateY(-2px);
     box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow-hover);

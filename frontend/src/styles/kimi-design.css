@@ -54,8 +54,8 @@
 
 /* ── Tech Buttons ── */
 .tech-btn-primary {
-  background: linear-gradient(135deg, var(--kimi-gold), var(--kimi-gold-dark));
-  color: var(--kimi-bg-base);
+  background: var(--button-primary);
+  color: var(--button-surface);
   border-radius: 8px;
   border: none;
   font-weight: 600;
@@ -63,12 +63,13 @@
   cursor: pointer;
 }
 
-.tech-btn-primary:hover {
-  filter: brightness(1.15);
-  box-shadow: 0 0 20px rgba(212, 175, 110, 0.3);
+.tech-btn-primary:hover:not(:disabled) {
+  background: var(--button-primary-hover);
+  box-shadow: none;
 }
 
-.tech-btn-primary:active {
+.tech-btn-primary:active:not(:disabled) {
+  background: var(--button-primary-active);
   transform: scale(0.98);
 }
 
@@ -82,9 +83,11 @@
 }
 
 .tech-btn-secondary:hover {
-  background: rgba(212, 175, 110, 0.1);
-  border-color: rgba(212, 175, 110, 0.3);
+  background: var(--button-focus);
+  border-color: var(--button-primary-border);
 }
+
+.tech-btn-primary:focus-visible, .tech-btn-secondary:focus-visible { outline: 2px solid var(--button-primary-border); outline-offset: 3px; }
 
 /* ── Tech Input ── */
 .tech-input {

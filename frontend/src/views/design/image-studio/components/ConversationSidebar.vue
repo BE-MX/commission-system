@@ -169,7 +169,7 @@ const SidebarContent = defineComponent({
 .sidebar-content :deep(.empty-copy) { margin: 14px 6px; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
 .sidebar-content :deep(.more-button) {
   width: 100%; margin-top: 8px; padding: 8px; border: 1px dashed var(--border-color); border-radius: 10px;
-  background: transparent; color: var(--color-gold-muted); cursor: pointer; font-size: 12px;
+  background: transparent; color: var(--button-primary); cursor: pointer; font-size: 12px;
   transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .sidebar-content :deep(.more-button:disabled) { cursor: default; opacity: 0.6; }
@@ -189,7 +189,7 @@ const SidebarContent = defineComponent({
 @media (hover: hover) and (pointer: fine) {
   .sidebar-content :deep(.session-item:hover) { background: rgba(255, 255, 255, 0.72); color: var(--text-primary); }
   .sidebar-content :deep(.session-item.is-active:hover) { background: var(--color-primary-light); }
-  .sidebar-content :deep(.more-button:not(:disabled):hover) { border-color: var(--color-primary); background: var(--color-primary-light); }
+  .sidebar-content :deep(.more-button:not(:disabled):hover) { border-color: var(--button-primary); background: var(--button-primary-soft); }
   .drawer-close:hover { color: var(--text-primary); }
 }
 @media (max-width: 900px) { .conversation-sidebar { display: none; } }

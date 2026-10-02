@@ -55,8 +55,9 @@ test('normal text and semantic badges meet 4.5 contrast on workspace surfaces', 
   for (const foreground of ['--text-primary', '--text-secondary', '--text-muted', '--text-placeholder', '--text-tertiary', '--color-primary-text', '--color-success-text', '--color-warning-text', '--color-danger-text', '--color-info-text']) {
     for (const surface of ['#ffffff', color('--page-bg')]) assert.ok(contrast(color(foreground), surface) >= 4.5, `${foreground} on ${surface}`)
   }
-  for (const name of ['--color-success', '--button-info-from']) assert.ok(contrast(color(name), '#ffffff') >= 4.5, name)
+  for (const name of ['--color-success', '--button-primary', '--button-primary-hover', '--button-primary-active', '--button-danger', '--button-danger-hover', '--button-danger-active', '--button-success', '--button-success-hover', '--button-success-active']) assert.ok(contrast(color(name), '#ffffff') >= 4.5, name)
   assert.ok(contrast(color('--ink-dark'), color('--color-primary')) >= 4.5)
+  for (const name of ['--button-warning', '--button-warning-hover', '--button-warning-active']) assert.ok(contrast(color('--button-text'), color(name)) >= 4.5, name)
   const app = readFileSync(new URL('../src/styles/app.css', import.meta.url), 'utf8')
   assert.match(app, /body\s*\{[^}]*--el-color-primary:\s*var\(--color-primary-text\)/)
 })

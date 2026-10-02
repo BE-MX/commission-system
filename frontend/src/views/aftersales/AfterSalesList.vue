@@ -212,6 +212,6 @@ onMounted(async () => {
 .aftersales-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
 .aftersales-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .aftersales-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-.case-link { border: 0; padding: 0; background: transparent; color: var(--color-primary-text); font: 600 13px/1.4 var(--font-body); cursor: pointer; }
+.case-link { border: 0; padding: 0; background: transparent; color: var(--button-primary); font: 600 13px/1.4 var(--font-body); cursor: pointer; }
 .tabular { font-variant-numeric: tabular-nums; }
 </style>

@@ -100,7 +100,7 @@ const authStore = useAuthStore()
   box-shadow: var(--dash-glass-highlight);
   transition: transform 200ms var(--ease-out-strong), box-shadow 200ms var(--ease-out-strong);
 }
-.todo-retry { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
+.todo-retry { border: 0; background: none; color: var(--button-primary); text-decoration: underline; cursor: pointer; }
 .todo-alert:active {
   transform: scale(0.99);
 }

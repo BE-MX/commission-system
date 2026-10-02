@@ -488,7 +488,7 @@ function handleContinue() {
   white-space: nowrap;
 }
 
-/* 视觉（金渐变/尺寸/圆角）由 GlassButton variant="primary" size="sm" 提供，
+/* 视觉（按钮配色/尺寸/圆角）由 GlassButton variant="primary" size="sm" 提供，
    这里只留布局与「已复制」绿色反馈 */
 .copy-btn {
   flex-shrink: 0;
@@ -496,7 +496,9 @@ function handleContinue() {
 
 .copy-btn.copied,
 .copy-btn.copied:hover {
-  background: linear-gradient(135deg, #059669, #16a34a);
+  background: var(--button-success);
+  border-color: var(--button-success);
+  color: var(--button-surface);
 }
 
 /* 物流状态区域 */
@@ -589,13 +591,13 @@ function handleContinue() {
   padding: 0 28px;
   border-radius: 10px;
   font-size: 14px;
-  border: 1px solid #dcdfe6;
-  color: #4a5568;
+  border: 1px solid var(--button-border);
+  color: var(--button-text);
 }
 
 .btn-secondary:hover {
-  border-color: #d4af6e;
-  color: #b08d4f;
+  border-color: var(--button-primary-hover);
+  color: var(--button-primary-hover);
 }
 
 /* 弹窗动画 */

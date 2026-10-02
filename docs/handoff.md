@@ -1,5 +1,11 @@
 # 当前交接与待办
 
+## 2026-10-02 中后台按钮配色（Codex，已验证，未部署）
+
+- 分支 `codex/button-colors`：GlassButton、Element Plus、PM 共享按钮及登录、聊天、物流、发货、知识工具栏、任务创建等独立操作统一为 Ant Design 蓝色方向；主操作蓝底白字、次操作白底灰边、危险红色。按钮独立 token 不改变品牌/状态/导航配色；13px 蓝底白字采用 `#1668dc` 满足对比度。
+- 真实 Chrome 317 项观测通过，包含桌面/390px、hover/active/键盘 focus、disabled/loading、Space 按压、减少动态效果、登录与 PM 入口；独立审查问题已修复，PM ghost 禁用 hover 另有20项定向复核。定向 Node 4/4，主站与 PM 构建、严格约定、UI门禁、diff检查通过；Git巡检为 --no-fetch 本地快照。
+- 本次交付按亮哥授权合并推送 main，不包含生产部署。详细结果与范围见 [按钮配色报告](reports/2026-10-02-button-colors.md)，预览随报告保存；分支交付后详细本地证据保留于主目录 `.deploy_state/button-colors-delivery/evidence/`。
+
 ## 2026-10-02 状态标签竖排修复（Codex，已合并推送部署）
 
 - 反馈截图已复现：共享 StatusBadge 任意换行与发票84px窄列共同把中文标签压成逐字竖排。已在独立 worktree、分支 `codex/status-badge-nowrap` 恢复单行与超长省略；发票类型/状态/同步最小列宽调整为110/160/110。按亮哥“其他页面也要修复”扩大检查，调整70个Vue页面/组件中的121个状态列，覆盖售后、工资、邮件、客户、物流、生产、库存和系统等模块；源码审计185处状态列声明，单独核对1处发票动态模板。

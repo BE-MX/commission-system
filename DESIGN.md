@@ -27,8 +27,9 @@
   - Micro label: 10-11px / 700, letter-spacing 0.1em+, uppercase
 
 ## Color
-- **Approach:** restrained — 一个金色主色 + 中性色系统，颜色有语义不随意
-- **Primary:** #D4941C — LeShine Gold，用于主按钮、链接、强调元素
+- **Approach:** restrained — 品牌金 + 中性色系统，操作按钮使用 Ant Design 蓝色与语义色
+- **Primary:** #D4941C — LeShine Gold，用于品牌强调、导航与表单聚焦；按钮独立使用 `--button-*`
+- **Button Primary:** #1668DC，hover #145FC8，active #0958D9；白字。参考 Ant Design Pro 的 #1677FF，采用更深色阶满足 13px 正文 4.5:1 对比度。次操作白底灰边，危险操作红色，禁用灰色。
 - **Primary Hover:** #BB8218
 - **Primary Light:** rgba(212,148,28,0.08) — hover 背景、输入聚焦光晕
 - **Gold Accent:** #F5CB5C — 侧边栏活跃态、标签、徽章、装饰
@@ -168,7 +169,7 @@
 
 ### 页头按钮
 
-主操作按钮位置已统一到卡片内操作行（Action Bar Spec，2026-10-01 起），页头不再放按钮。变体映射不变：主操作 `variant="primary"`（金渐变 `#D4941C→#BB8218`），次操作 `variant="secondary"`（半透明白磨砂），替换 Element 默认蓝/白按钮；`v-permission` 行为不变。操作列 link 按钮维持 List Page Spec 不变。
+主操作按钮位置已统一到卡片内操作行（Action Bar Spec，2026-10-01 起），页头不再放按钮。主操作 `variant="primary"`（蓝色实心白字），次操作 `variant="secondary"`（白底灰边），共享 GlassButton、Element Plus 与独立操作按钮统一引用 `--button-*`；`v-permission` 行为不变。操作列 link 按钮使用蓝色文字。
 
 ### 性能红线（2026-07-25 滚动卡顿的教训）
 
@@ -178,7 +179,7 @@
 
 ## Button Spec
 
-按钮统一使用 **Glass Button** 设计体系（浅色毛玻璃风格），覆盖中后台所有常见按钮场景。
+按钮统一使用 **GlassButton** 的现有尺寸、圆角和接口，配色参照 [Ant Design Button](https://ant.design/components/button)。主站及 PM 中后台操作按钮采用实心蓝、白底灰边和语义色；不使用金色渐变与彩色外发光。主站、PM 的独立 token 文件分别维护相同按钮色值，部署制品互不依赖。导航、状态标签、表单及专属展会/客户门户场景仍采用对应规范。
 
 ### 尺寸体系
 
@@ -202,36 +203,37 @@
 
 | 变体 | 风格 | 适用场景 |
 |------|------|----------|
-| `primary` | 品牌金渐变填充 | 主操作、提交、确认 |
-| `secondary` | 白色毛玻璃 + 灰色边框 | 次操作、批量操作 |
-| `outline` | 透明底 + 灰色描边 | 筛选、配置类操作 |
+| `primary` | 蓝色实心 + 白字 | 主操作、提交、确认 |
+| `secondary` | 白底 + 灰色边框 | 次操作、批量操作 |
+| `outline` | 白底 + 灰色描边 | 筛选、配置类操作 |
 | `ghost` | 完全透明，hover 才显背景 | 工具栏、弱操作 |
-| `soft` | 浅金底色 | 收藏、标记类柔和操作 |
-| `link` | 纯文字 + hover 下划线 | 操作列跳转、查看 |
-| `danger` | 红色渐变 | 删除、禁用、强警告 |
-| `success` | 绿色渐变 | 保存成功、通过、启用 |
-| `warning` | 橙色渐变 | 提交审核、提醒 |
-| `info` | 蓝色渐变 | 帮助、提示、信息 |
-| `white` | 清透白玻璃 + 弥散阴影 | 叠加在复杂背景上 |
+| `soft` | 浅蓝底 + 蓝字 | 收藏、标记类柔和操作 |
+| `link` | 蓝色文字 + hover 浅色背景 | 操作列跳转、查看 |
+| `danger` | 红色实心 + 白字 | 删除、禁用、强警告 |
+| `success` | 绿色实心 + 白字 | 保存成功、通过、启用 |
+| `warning` | 琥珀色实心 + 深色字 | 提交审核、提醒 |
+| `info` | 蓝色实心 + 白字 | 帮助、提示、信息 |
+| `white` | 白底 + 灰边 | 叠加在复杂背景上 |
 
 ### 列表页按钮映射
 
 **工具栏按钮**
-- 主操作：`variant="primary"`（金色渐变）
+- 主操作：`variant="primary"`（蓝色实心白字）
 - 次操作：`variant="secondary"`（白底 + 边框）
 - 筛选/切换：`variant="outline"` 或 `variant="ghost"`
 
 **操作列按钮**
-- 编辑/查看：`variant="link"` + 金色文字 + `<el-icon>` 前缀图标
+- 编辑/查看：`variant="link"` + 蓝色文字 + `<el-icon>` 前缀图标
 - 通过/启用：`variant="link"` + `type="success"`
 - 拒绝/禁用：`variant="link"` + `type="danger"`
 - 统一要求：图标 + 文字，**禁止** `size="small"`
 
 ### 特殊状态
 
-- **加载状态**：`isLoading` 自动显示旋转图标
-- **禁用状态**：`isDisabled` 自动降低透明度 + 去色
-- **激活状态**：`active` 显示品牌色 ring 聚焦环
+- **加载状态**：`loading` 显示旋转图标，保留变体颜色，阻止重复点击
+- **禁用状态**：`disabled` 使用浅灰底、灰字、灰边；文字/ghost 按钮保持透明底，不响应 hover/active
+- **激活状态**：`active` 显示蓝色 ring；键盘 `:focus-visible` 显示清晰蓝色轮廓
+- **Element Plus**：solid/plain/text/link 使用同一语义色族；默认类型为空串也保持中性配色；warning 文字按钮使用深琥珀色；focus、disabled、loading 不回退到全局品牌金
 - **图标组合**：支持 `leftIcon` / `rightIcon` / 纯图标按钮
 - **全宽按钮**：`fullWidth` 撑满容器（表单底部提交场景）
 - **阴影层级**：`shadow` 支持 `sm/md/lg/xl`
@@ -336,7 +338,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 - **禁止** `size="small"`
 - 必须图标 + 文字
-- link 样式，金色文字
+- link 样式，蓝色文字
 
 操作/处理列统一加 `class-name="table-action-column"`，布局由 `frontend/src/styles/table-actions.css` 管理：按钮按原顺序换行，单元格随内容增高，不继承普通文本列的单行省略。需要额外包裹按钮时使用 `<div class="table-actions">`，不要另设 `nowrap`、固定高度或裁切。长按钮文字允许换行，间距统一使用 `gap`，不叠加相邻按钮的 margin。
 
@@ -347,7 +349,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 **工具栏按钮**
 
 - 次操作：默认样式（白底 + 边框）
-- 主操作：`type="primary"`（金色渐变）
+- 主操作：`type="primary"`（蓝色实心白字）
 - 统一高度 36px
 
 ### 5. 筛选区（FilterBar）
@@ -474,7 +476,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 - dialog：统一 `#footer` 插槽 + `class="dialog-footer"`，取消在左、主按钮在右 **[评审]**；`form-actions` / `drawer-actions` 别名不再新增 **[可门禁：后两者类名计数进债务基线冻结]**
 - drawer：用 DetailDrawer 内置 footer，不另写按钮区
-- 提交按钮必须带 loading（GlassButton `isLoading` 或 `el-button :loading`），防重复提交 **[评审]**
+- 提交按钮必须带 loading（GlassButton `:loading` 或 `el-button :loading`），防重复提交 **[评审]**
 
 ## Status Badge & 状态字典
 
@@ -569,7 +571,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 |------|------|
 | `.glass-card` | 玻璃态容器：`backdrop-filter: blur(20px)`，半透明深色背景 |
 | `.gold-glow` | 金色外发光：`box-shadow` 三层叠加，用于登录卡片 |
-| `.tech-btn-primary` | 主按钮：金色渐变 `#d4af6e→#a08040`，深色文字 |
+| `.tech-btn-primary` | 主按钮：引用 `--button-primary`，蓝底白字，hover/active 使用同色族 |
 | `.tech-btn-secondary` | 次要按钮：半透明白色描边 |
 | `.tech-input` | 输入框：近透明底色，聚焦时金色边框 + 光晕 |
 | `.badge-cyan/gold/green/amber` | 标签徽章，对应四种目的地颜色 |

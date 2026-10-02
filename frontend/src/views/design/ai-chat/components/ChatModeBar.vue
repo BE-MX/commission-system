@@ -30,9 +30,9 @@ defineEmits(['details', 'remove', 'retry'])
 .mode-row { justify-content: space-between; }
 .mode-row strong { color: var(--color-primary-text); }
 .mode-actions { flex-shrink: 0; }
-.mode-bar button { min-height: 44px; min-width: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--color-primary-text); font: inherit; cursor: pointer; }
+.mode-bar button { min-height: 44px; min-width: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--button-primary); font: inherit; cursor: pointer; }
 .mode-bar button:disabled { opacity: .55; cursor: not-allowed; }
-.mode-bar button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.mode-bar button:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 1px; }
 .mode-file button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .mode-file > span { flex-shrink: 0; }
 .mode-bar p { margin: 2px 0; line-height: 1.5; }

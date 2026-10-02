@@ -135,96 +135,170 @@ body {
   margin-left: 4px;
 }
 
-/* Default buttons — secondary style */
-.el-button--default {
-  background: var(--card-bg);
-  border-color: var(--border-color);
-  color: var(--text-secondary);
+/* Button colors are local; workspace brand and status tokens stay independent. */
+.el-button {
+  --action-color: var(--button-primary);
+  --action-hover: var(--button-primary-hover);
+  --action-active: var(--button-primary-active);
+  --action-soft: var(--button-primary-soft);
+  --action-border: var(--button-primary-border);
+  --action-ink: var(--button-surface);
+  --action-link: var(--button-primary);
+  background: var(--button-surface);
+  color: var(--button-text);
+  border-color: var(--button-border);
+  filter: none;
 }
-.el-button--default:hover,
-.el-button--default:focus {
-  background: var(--toolbar-bg);
-  border-color: rgba(212, 175, 110, 0.3);
-  color: var(--text-secondary);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .el-button,
-  .el-card,
-  .el-table td.el-table__cell {
-    transition: none;
-  }
-}
-
-/* Solid buttons — brand palette */
 .el-button--primary {
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
-  border-color: transparent;
-  color: var(--ink-dark);
-  font-weight: 600;
+  background: var(--action-color);
+  border-color: var(--action-color);
+  color: var(--action-ink);
 }
-.el-button--primary:hover,
-.el-button--primary:focus {
-  background: linear-gradient(135deg, var(--button-primary-hover-from), var(--button-primary-hover-to));
-  border-color: transparent;
-  color: var(--ink-dark);
-  filter: brightness(1.05);
-  box-shadow: 0 4px 12px rgba(212, 175, 110, 0.25);
-}
-.el-button--success {
-  background: var(--color-success);
-  border-color: var(--color-success);
-  color: #fff;
-}
-.el-button--success:hover,
-.el-button--success:focus {
-  background: var(--color-success-hover);
-  border-color: var(--color-success-hover);
-  color: #fff;
+.el-button--info {
+  background: var(--action-color);
+  border-color: var(--action-color);
+  color: var(--action-ink);
 }
 .el-button--danger {
-  background: var(--color-danger);
-  border-color: var(--color-danger);
-  color: #fff;
+  --action-color: var(--button-danger);
+  --action-hover: var(--button-danger-hover);
+  --action-active: var(--button-danger-active);
+  --action-soft: var(--button-danger-soft);
+  --action-border: var(--button-danger-border);
+  --action-link: var(--button-danger);
+  background: var(--action-color);
+  border-color: var(--action-color);
+  color: var(--action-ink);
 }
-.el-button--danger:hover,
-.el-button--danger:focus {
-  background: var(--color-danger-hover);
-  border-color: var(--color-danger-hover);
-  color: #fff;
+.el-button--success {
+  --action-color: var(--button-success);
+  --action-hover: var(--button-success-hover);
+  --action-active: var(--button-success-active);
+  --action-soft: var(--button-success-soft);
+  --action-border: var(--button-success-border);
+  --action-link: var(--button-success);
+  background: var(--action-color);
+  border-color: var(--action-color);
+  color: var(--action-ink);
 }
-
-/* Link buttons — brand palette */
-.el-button.is-link { font-weight: 500; }
-.el-button.is-link.el-button--primary {
-  color: var(--color-primary-text);
+.el-button--warning {
+  --action-color: var(--button-warning);
+  --action-hover: var(--button-warning-hover);
+  --action-active: var(--button-warning-active);
+  --action-soft: var(--button-warning-soft);
+  --action-border: var(--button-warning-border);
+  --action-link: var(--button-warning-text);
+  --action-ink: var(--button-text);
+  background: var(--action-color);
+  border-color: var(--action-color);
+  color: var(--action-ink);
+}
+.el-button:is(:hover, :focus):not(.is-disabled):not(.is-loading) {
+  background: var(--button-surface);
+  color: var(--action-hover);
+  border-color: var(--action-hover);
+}
+.el-button:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info):is(:hover, :focus):not(.is-disabled):not(.is-loading) {
+  background: var(--action-hover);
+  border-color: var(--action-hover);
+  color: var(--action-ink);
+}
+.el-button:active:not(.is-disabled):not(.is-loading) {
+  background: var(--button-surface);
+  color: var(--action-active);
+  border-color: var(--action-active);
+}
+.el-button:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info):active:not(.is-disabled):not(.is-loading) {
+  background: var(--action-active);
+  border-color: var(--action-active);
+  color: var(--action-ink);
+}
+.el-button.is-plain {
+  background: var(--action-soft);
+  border-color: var(--action-border);
+  color: var(--action-link);
+}
+.el-button.is-plain:not(:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info)) {
+  background: var(--button-surface);
+  border-color: var(--button-border);
+  color: var(--button-text);
+}
+.el-button.is-link, .el-button.is-text {
+  background: transparent;
+  border-color: transparent;
+  color: var(--action-link);
+  box-shadow: none;
+  font-weight: 500;
+}
+.el-button:is(.is-link, .is-text):not(:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info)) {
+  color: var(--button-text);
+}
+.el-button.is-link[class], .el-button.is-text[class] {
+  --el-button-hover-bg-color: transparent;
+}
+.el-button.is-link:is(:hover, :focus):not(.is-disabled):not(.is-loading),
+.el-button.is-text:is(:hover, :focus):not(.is-disabled):not(.is-loading),
+.el-button.is-link:active:not(.is-disabled):not(.is-loading),
+.el-button.is-text:active:not(.is-disabled):not(.is-loading) {
+  background: var(--action-soft);
+  border-color: transparent;
+  color: var(--action-hover);
+  box-shadow: none;
+}
+.el-button.is-link.el-button--warning:is(:hover, :focus):not(.is-disabled):not(.is-loading),
+.el-button.is-text.el-button--warning:is(:hover, :focus):not(.is-disabled):not(.is-loading),
+.el-button.is-link.el-button--warning:active:not(.is-disabled):not(.is-loading),
+.el-button.is-text.el-button--warning:active:not(.is-disabled):not(.is-loading) {
+  color: var(--button-warning-text);
+}
+.el-button.is-text:not(:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info)):is(:hover, :focus):not(.is-disabled):not(.is-loading) {
+  background: var(--button-quiet-hover);
+  color: var(--button-text);
+}
+.el-button:focus-visible {
+  outline: 2px solid var(--button-primary);
+  outline-offset: 3px;
+}
+.el-button.is-disabled,
+.el-button.is-disabled:is(.is-plain, .is-link, .is-text),
+.el-button.is-disabled:hover, .el-button.is-disabled:active,
+.el-button.is-disabled:is(.is-plain, .is-link, .is-text):is(:hover, :focus, :active) {
+  background: var(--button-disabled-bg);
+  border-color: var(--button-border);
+  color: var(--button-disabled-text);
+  box-shadow: none;
+  filter: none;
+}
+.el-button.is-disabled:is(.is-link, .is-text),
+.el-button.is-disabled:is(.is-link, .is-text):is(:hover, :focus, :active) {
   background: transparent;
   border-color: transparent;
 }
-.el-button.is-link.el-button--primary:hover {
-  color: var(--color-primary-text);
-  background: var(--color-primary-light);
+.el-button.is-loading {
+  --el-button-hover-bg-color: var(--button-surface);
+  --el-button-hover-border-color: var(--button-border);
+  --el-button-hover-text-color: var(--button-text);
+  opacity: 0.7;
 }
-.el-button.is-link.el-button--success {
-  color: var(--color-success);
+.el-button.is-loading:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info) {
+  --el-button-hover-bg-color: var(--action-color);
+  --el-button-hover-border-color: var(--action-color);
+  --el-button-hover-text-color: var(--action-ink);
 }
-.el-button.is-link.el-button--success:hover {
-  color: var(--color-success-hover);
-  background: var(--color-success-bg);
+.el-button.is-loading.is-plain {
+  --el-button-hover-bg-color: var(--action-soft);
+  --el-button-hover-border-color: var(--action-border);
+  --el-button-hover-text-color: var(--action-link);
 }
-.el-button.is-link.el-button--danger {
-  color: var(--color-danger-hover);
+.el-button.is-loading:is(.is-link, .is-text) {
+  --el-button-hover-bg-color: transparent;
+  --el-button-hover-border-color: transparent;
+  --el-button-hover-text-color: var(--action-link);
+  --el-button-hover-link-text-color: var(--action-link);
 }
-.el-button.is-link.el-button--danger:hover {
-  color: var(--color-danger-deep);
-  background: var(--color-danger-bg);
-}
-.el-button.is-link.el-button--warning {
-  color: var(--color-primary-text);
-}
-.el-button.is-link.el-button--warning:hover {
-  color: var(--color-primary-text);
-  background: var(--color-primary-light);
+
+@media (prefers-reduced-motion: reduce) {
+  .el-button, .el-card, .el-table td.el-table__cell { transition: none; }
 }
 
 /* ---- Tags: brand-consistent status colors ---- */

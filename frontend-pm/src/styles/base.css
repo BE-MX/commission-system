@@ -82,45 +82,49 @@ time,
               background var(--dur-fast) var(--ease-out);
   user-select: none;
 }
-.btn:active { transform: scale(0.97); }
+.btn {
+  background: var(--button-surface);
+  border-color: var(--button-border);
+  color: var(--button-text);
+}
+.btn:active:not([disabled]) { transform: scale(0.97); }
+.btn:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 3px; }
 @media (hover: hover) and (pointer: fine) {
-  .btn:hover { border-color: var(--ink-3); color: var(--ink); }
+  .btn:hover:not([disabled]) { border-color: var(--button-primary-hover); color: var(--button-primary-hover); }
 }
-.btn-primary {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
-}
-@media (hover: hover) and (pointer: fine) {
-  .btn-primary:hover { background: var(--gold-strong); border-color: var(--gold-strong); color: var(--ink); }
-}
-.btn-accent {
-  background: var(--gold);
-  border-color: var(--gold);
-  color: var(--ink);
-  font-weight: 600;
+.btn-primary, .btn-accent {
+  background: var(--button-primary);
+  border-color: var(--button-primary);
+  color: var(--button-surface);
 }
 @media (hover: hover) and (pointer: fine) {
-  .btn-accent:hover { background: var(--gold-strong); border-color: var(--gold-strong); color: var(--ink); }
+  .btn-primary:hover:not([disabled]), .btn-accent:hover:not([disabled]) {
+    background: var(--button-primary-hover); border-color: var(--button-primary-hover); color: var(--button-surface);
+  }
 }
-.btn-ghost {
-  border-color: transparent;
-  background: transparent;
-  color: var(--ink-3);
+.btn-primary:active:not([disabled]), .btn-accent:active:not([disabled]) {
+  background: var(--button-primary-active); border-color: var(--button-primary-active); color: var(--button-surface);
 }
+.btn-ghost { border-color: transparent; background: transparent; color: var(--button-text); }
 @media (hover: hover) and (pointer: fine) {
-  .btn-ghost:hover { color: var(--ink); background: var(--paper-sunken); border-color: transparent; }
+  .btn-ghost:hover:not([disabled]) { background: var(--button-quiet-hover); border-color: transparent; color: var(--button-text); }
 }
-.btn-danger {
-  color: var(--danger);
-}
+.btn-danger { color: var(--button-danger); }
 @media (hover: hover) and (pointer: fine) {
-  .btn-danger:hover { border-color: var(--danger-line); color: var(--danger-deep); background: var(--danger-wash); }
+  .btn-danger:hover:not([disabled]) { border-color: var(--button-danger-hover); color: var(--button-danger-hover); background: var(--button-danger-soft); }
 }
-.btn[disabled] {
-  opacity: 0.45;
+.btn[disabled], .btn[disabled]:hover {
+  background: var(--button-disabled-bg);
+  border-color: var(--button-border);
+  color: var(--button-disabled-text);
+  opacity: 1;
   cursor: not-allowed;
-  transform: none !important;
+  transform: none;
+}
+.btn-ghost[disabled], .btn-ghost[disabled]:is(:hover, :focus, :active) { background: transparent; border-color: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+  .btn:active:not([disabled]) { transform: none; }
 }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 

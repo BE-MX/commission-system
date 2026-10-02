@@ -191,7 +191,7 @@ watch(
 }
 .panel-boundary { color: var(--text-muted); font-size: 11px; }
 .resource-warning { margin: 8px 0; color: var(--color-warning-text); font-size: 12px; }
-.resource-warning button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
+.resource-warning button { border: 0; background: none; color: var(--button-primary); text-decoration: underline; cursor: pointer; }
 
 .panel-link {
   display: inline-flex;

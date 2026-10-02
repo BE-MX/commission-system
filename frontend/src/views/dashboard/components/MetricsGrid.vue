@@ -148,7 +148,7 @@ function resourceOf(card) { return props.data.resources?.[card.resource] }
   min-height: 22px;
 }
 .metric-resource-note { margin: -2px 0 8px; color: var(--text-secondary); font-size: 12px; }
-.metric-resource-note button { border: 0; background: none; color: var(--color-primary-text); cursor: pointer; text-decoration: underline; }
+.metric-resource-note button { border: 0; background: none; color: var(--button-primary); cursor: pointer; text-decoration: underline; }
 
 .metric-tag {
   display: inline-flex;

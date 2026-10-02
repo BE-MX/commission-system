@@ -155,7 +155,7 @@ function etaText(s) {
 
 <style scoped>
 .resource-warning { margin: 0 0 10px; color: var(--color-warning-text); font-size: 12px; }
-.resource-warning button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
+.resource-warning button { border: 0; background: none; color: var(--button-primary); text-decoration: underline; cursor: pointer; }
 .logistics-card {
   padding: 18px 20px 14px;
 }

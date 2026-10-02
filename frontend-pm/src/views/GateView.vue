@@ -218,18 +218,19 @@ async function submit() {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: var(--ink);
-  color: var(--gold);
+  background: var(--button-primary);
+  color: var(--button-surface);
   transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 }
-.gate-go:active { transform: scale(0.94); }
-.gate-go:disabled { opacity: 0.35; cursor: not-allowed; }
+.gate-go:active:not(:disabled) { background: var(--button-primary-active); transform: scale(0.94); }
+.gate-go:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 3px; }
+.gate-go:disabled { background: var(--button-disabled-bg); color: var(--button-disabled-text); opacity: 1; cursor: not-allowed; }
 @media (hover: hover) and (pointer: fine) {
-  .gate-go:not(:disabled):hover { transform: scale(1.06); }
+  .gate-go:not(:disabled):hover { background: var(--button-primary-hover); transform: scale(1.06); }
 }
 .spinner-ink {
-  border-color: rgba(245, 199, 59, 0.35);
-  border-top-color: var(--gold);
+  border-color: var(--button-primary-border);
+  border-top-color: var(--button-surface);
 }
 .gate-error {
   margin: 10px 0 0;

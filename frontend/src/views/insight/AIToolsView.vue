@@ -333,12 +333,12 @@ onMounted(loadAll)
   cursor: pointer;
   padding: 4px;
   border-radius: 6px;
-  color: #d0d5dd;
+  color: var(--button-text);
   transition: color 0.15s, background-color 0.15s;
 }
 
-.star-btn:hover { background: #f5f2ee; }
-.star-btn.active { color: var(--color-gold, #d4af6e); }
+.star-btn:hover { background: var(--button-quiet-hover); color: var(--button-primary-hover); }
+.star-btn.active { color: var(--button-primary); }
 
 .card-summary {
   font-size: 13px;

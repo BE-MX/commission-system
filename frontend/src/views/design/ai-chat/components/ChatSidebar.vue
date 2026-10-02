@@ -102,7 +102,7 @@ const SidebarContent = defineComponent({
   min-height: 40px;
   justify-content: center;
   border-radius: 11px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+  background: var(--button-primary);
   box-shadow: var(--card-shadow);
   color: var(--text-on-dark);
   font-size: 13px;
@@ -112,7 +112,7 @@ const SidebarContent = defineComponent({
     box-shadow 180ms var(--ease-out-strong);
 }
 
-.sidebar-content :deep(.new-chat-button:disabled) { cursor: not-allowed; opacity: 0.5; }
+.sidebar-content :deep(.new-chat-button:disabled) { cursor: not-allowed; background: var(--button-disabled-bg); color: var(--button-disabled-text); box-shadow: none; }
 
 .sidebar-content :deep(.session-heading) {
   margin: 22px 8px 8px;
@@ -160,16 +160,16 @@ const SidebarContent = defineComponent({
 :deep(.chat-session-drawer) { --el-transition-duration: 200ms; }
 :deep(.chat-session-drawer .el-drawer__body) { padding: 0; }
 
-.sidebar-content :deep(.new-chat-button:focus-visible),
-.sidebar-content :deep(.session-item:focus-visible) {
-  outline: 2px solid var(--color-primary);
+.sidebar-content :deep(.new-chat-button:focus-visible) {
+  outline: 2px solid var(--button-primary);
   outline-offset: 2px;
 }
+.sidebar-content :deep(.session-item:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
-.sidebar-content :deep(.new-chat-button:not(:disabled):active) { transform: scale(0.98); }
+.sidebar-content :deep(.new-chat-button:not(:disabled):active) { background: var(--button-primary-active); transform: scale(0.98); }
 
 @media (hover: hover) and (pointer: fine) {
-  .sidebar-content :deep(.new-chat-button:not(:disabled):hover) { box-shadow: var(--dash-glass-shadow-hover); transform: translateY(-1px); }
+  .sidebar-content :deep(.new-chat-button:not(:disabled):hover) { background: var(--button-primary-hover); box-shadow: var(--dash-glass-shadow-hover); transform: translateY(-1px); }
   .sidebar-content :deep(.session-item:not(.is-active):hover) { background: var(--dash-glass-bg-strong); color: var(--text-primary); }
 }
 
