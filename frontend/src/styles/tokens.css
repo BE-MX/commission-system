@@ -7,63 +7,67 @@
 :root {
   --domestic-price-review-bg: #f4ff5c;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
-  /* Buttons & Tags: 莫兰迪色系（2026-10-02）——以品牌金 #D4941C 为锚点降饱和、掺暖灰：
-     燕麦金=主色 / 灰绿=成功 / 杏赭=警告 / 陶土红=危险 / 雾蓝=信息（呼应侧栏岩蓝光）。
-     实心阶加深保证白色小字对比度 ≥ 4.4；soft/border 为同族低饱和 wash。 */
-  --button-primary: #88713A;
-  --button-primary-hover: #775F30;
-  --button-primary-active: #655026;
-  --button-primary-soft: #F3EEE1;
-  --button-primary-border: #D8CBA4;
-  --button-danger: #A85F50;
-  --button-danger-hover: #935245;
-  --button-danger-active: #7D463B;
-  --button-danger-soft: #F6EBE8;
-  --button-danger-border: #E0C2BA;
-  --button-success: #5C7C62;
-  --button-success-hover: #506C56;
-  --button-success-active: #445C49;
-  --button-success-soft: #EAF0EA;
-  --button-success-border: #C2D1C3;
-  --button-warning: #A06228;
-  --button-warning-hover: #8A5321;
-  --button-warning-active: #74461C;
-  --button-warning-text: #8A5226;
-  --button-warning-soft: #F6EDE1;
-  --button-warning-border: #E3C6A2;
+  /* Buttons & Tags: 科技轻快色系（2026-10-02）——以品牌金 #D4941C 为锚点走亮色阶：
+     能量金=主色（亮金底+深墨字，现代 SaaS 处理）/ 青碧=成功 / 杏橙=警告 /
+     绯红=危险 / 电光蓝=信息（备用），中性色用冷调岩灰压住画面。
+     实心阶文字对比度 ≥ 4.2；soft/border 为高明度浅色 wash。 */
+  --button-primary: #E0A50B;
+  --button-primary-hover: #C9930A;
+  --button-primary-active: #A87C08;
+  --button-primary-ink: #3D2E03;
+  --button-primary-text: #9A6F07;
+  --button-primary-soft: #FDF6DD;
+  --button-primary-border: #F0D889;
+  --button-danger: #E5484D;
+  --button-danger-hover: #D13438;
+  --button-danger-active: #B02529;
+  --button-danger-soft: #FDEBEC;
+  --button-danger-border: #F6C6CA;
+  --button-success: #0D9488;
+  --button-success-hover: #0F766E;
+  --button-success-active: #115E59;
+  --button-success-soft: #E4F7F3;
+  --button-success-border: #A8E3D6;
+  --button-warning: #C2610A;
+  --button-warning-hover: #A85208;
+  --button-warning-active: #8C4406;
+  --button-warning-text: #9A4E08;
+  --button-warning-soft: #FEF0DE;
+  --button-warning-border: #F4CCA0;
   --button-surface: #ffffff;
-  --button-text: #3B362E;
-  --button-border: #D8D2C7;
-  --button-quiet-hover: #F4F1EA;
-  --button-disabled-bg: #F1EEE8;
-  --button-disabled-text: #B5AFA4;
-  --button-focus: rgba(136, 113, 58, 0.22);
+  --button-text: #252A33;
+  --button-border: #DFE2E7;
+  --button-quiet-hover: #F4F5F7;
+  --button-disabled-bg: #F3F4F6;
+  --button-disabled-text: #9CA3AF;
+  --button-focus: rgba(224, 165, 11, 0.28);
 
-  /* ── Tag tokens（莫兰迪浅彩阶：低饱和暖调 wash + 同族深文字；solid 供 dark effect） ── */
-  --tag-gold-bg:         #F4EFE2;
-  --tag-gold-border:     #E2D6B2;
-  --tag-gold-text:       #7A6231;
-  --tag-gold-solid:      #88713A;
-  --tag-success-bg:      #EAF0EA;
-  --tag-success-border:  #C8D6C9;
-  --tag-success-text:    #486A51;
-  --tag-success-solid:   #5C7C62;
-  --tag-warning-bg:      #F6EDE1;
-  --tag-warning-border:  #E8CDA6;
-  --tag-warning-text:    #8A5226;
-  --tag-warning-solid:   #A06228;
-  --tag-danger-bg:       #F6EAE7;
-  --tag-danger-border:   #E4C6BD;
-  --tag-danger-text:     #8C4F43;
-  --tag-danger-solid:    #A85F50;
-  --tag-info-bg:         #EBF0F4;
-  --tag-info-border:     #CAD5DF;
-  --tag-info-text:       #4A6379;
-  --tag-info-solid:      #5B7893;
-  --tag-neutral-bg:      #F3F1EC;
-  --tag-neutral-border:  #DDD8CE;
-  --tag-neutral-text:    #6B665C;
-  --tag-neutral-solid:   #8A857A;
+  /* ── Tag tokens（科技浅彩阶：高明度浅色 wash + 同族深文字；solid 供 dark effect） ── */
+  --tag-gold-bg:         #FDF6DD;
+  --tag-gold-border:     #F0D889;
+  --tag-gold-text:       #8F6508;
+  --tag-gold-solid:      #E0A50B;
+  --tag-gold-ink:        #3D2E03;
+  --tag-success-bg:      #E4F7F3;
+  --tag-success-border:  #A8E3D6;
+  --tag-success-text:    #0B6E63;
+  --tag-success-solid:   #0D9488;
+  --tag-warning-bg:      #FEF0DE;
+  --tag-warning-border:  #F4CCA0;
+  --tag-warning-text:    #9A4E08;
+  --tag-warning-solid:   #C2610A;
+  --tag-danger-bg:       #FDEBEC;
+  --tag-danger-border:   #F6C6CA;
+  --tag-danger-text:     #C62A30;
+  --tag-danger-solid:    #E5484D;
+  --tag-info-bg:         #EBF1FE;
+  --tag-info-border:     #BFD4FB;
+  --tag-info-text:       #1D4ED8;
+  --tag-info-solid:      #2563EB;
+  --tag-neutral-bg:      #F6F7F9;
+  --tag-neutral-border:  #E2E5EA;
+  --tag-neutral-text:    #4A5563;
+  --tag-neutral-solid:   #64748B;
 
   /* Login: quiet dark-gold scene, separate from the light workspace surfaces. */
   --login-bg: #0d0e13;

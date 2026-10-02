@@ -149,6 +149,11 @@ body {
   border-color: var(--button-border);
   filter: none;
 }
+/* Primary is bright gold: dark ink on solid, deep gold for plain/link text. */
+.el-button--primary, .el-button--info {
+  --action-ink: var(--button-primary-ink);
+  --action-link: var(--button-primary-text);
+}
 .el-button--primary {
   background: var(--action-color);
   border-color: var(--action-color);
@@ -333,7 +338,7 @@ body {
 }
 .el-tag--primary.el-tag--dark {
   background: var(--tag-gold-solid);
-  color: #fff;
+  color: var(--tag-gold-ink);
 }
 .el-tag--success.el-tag--dark {
   background: var(--tag-success-solid);
