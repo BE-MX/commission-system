@@ -1,11 +1,11 @@
 # 当前交接与待办
 
-## 2026-10-02 状态标签竖排修复（Codex，已合并推送，部署受阻）
+## 2026-10-02 状态标签竖排修复（Codex，已合并推送部署）
 
 - 反馈截图已复现：共享 StatusBadge 任意换行与发票84px窄列共同把中文标签压成逐字竖排。已在独立 worktree、分支 `codex/status-badge-nowrap` 恢复单行与超长省略；发票类型/状态/同步最小列宽调整为110/160/110。按亮哥“其他页面也要修复”扩大检查，调整70个Vue页面/组件中的121个状态列，覆盖售后、工资、邮件、客户、物流、生产、库存和系统等模块；源码审计185处状态列声明，单独核对1处发票动态模板。
 - 标签保留全文title，动态插槽变化同步更新，显式title优先；多标签只在标签之间换行，可关闭标签保留按钮空间。独立审查发现的关闭按钮裁切与动态插槽title滞后均已修复并实际复核。
 - 桌面与390px实际Chrome回归通过：72个标签含48个真实字典/页面显示映射状态，标签高22.5–24px，选取的登记状态完整展示；窄列原60/96px恢复24px。最终定向Node 17/17、状态列审计、构建（113导航）、严格约定、UI门禁与diff检查通过，债务基线不变。全量Node快照1190项中1184通过，6项为既有loginMapMotion Canvas mock缺save()失败；对应源码与测试未改，不宣称全量绿。最后的字典补漏及2项新增测试已由定向与浏览器验证覆盖。Git巡检为 --no-fetch 本地快照。
-- 亮哥授权“合并推送部署”后，应用提交 `326f7e0bf55dd6b7d1ee3a7675f55bea0d3c4a94` 已在主worktree快进合入main并推送origin；合并后构建和基于e5928845的严格约定检查通过。主目录15个无关文件指纹和原handoff内容保持一致。生产发布尚未触发：office-prod的127.0.0.1:2223由GameViewer监听，但Windows/Git两种SSH客户端均在banner交换前超时；需恢复该端口到办公室22的转发。固定候选、备份与验证证据保留于主目录`.deploy_state/status-badge-delivery/`，任务工作树暂留供接续。详见 `docs/reports/2026-10-02-status-badge-nowrap.md`。
+- 应用提交 `326f7e0bf55dd6b7d1ee3a7675f55bea0d3c4a94` 已合入main并推送origin。恢复GameViewer转发后，办公室统一deploy.bat固定同SHA先预检再正式发布，退出0，`release_id=1fc8d54b4b7c4a34bee5b5b0ee9f71db`，范围office-and-cloud、deferred为空。办公室、北京后端及两地主站纳管目标验证完成；数据库仍173_task_center，无迁移。出库回执verified、active/enabled均true。额外18次HTTPS检查确认两地主站入口/导航/主JS与CSS/发票及物流页面资源逐项匹配办公室候选SHA256，办公室和两站health均ok/connected。主目录15个无关文件指纹及原handoff内容保持一致；证据与恢复备份保留于主目录`.deploy_state/status-badge-delivery/`，任务工作树按合并后的清理约定处理。详见 `docs/reports/2026-10-02-status-badge-nowrap.md`。
 
 ## 2026-10-02 设计规范合并发布（Codex，已部署）
 

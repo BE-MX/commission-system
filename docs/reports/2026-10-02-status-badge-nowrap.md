@@ -66,6 +66,22 @@
 
 主目录其他任务的15个文件SHA256未变；重叠的handoff先独立stash保存，合并后恢复，排除本次新增交接条目后与原文件完整内容一致。备份、恢复stash引用、合并验证及原浏览器证据已保存于主目录 `.deploy_state/status-badge-delivery/`。
 
-**部署未完成，尚未触发生产发布。** 当前 `office-prod` 使用本机 `127.0.0.1:2223` 转发到办公室SSH；端口由GameViewer监听，但Windows OpenSSH与Git SSH均在banner交换阶段超时，未进入身份认证或远端部署入口。未重启GameViewer、修改隧道、绕过主机密钥校验或改用非项目发布入口。
+首次部署连接被阻断（后续已解除）：`office-prod` 使用本机 `127.0.0.1:2223` 转发到办公室SSH；端口由GameViewer监听，但Windows OpenSSH与Git SSH均在banner交换阶段超时，未进入身份认证或远端部署入口。该阶段未触发生产发布，也未重启GameViewer、修改隧道、绕过主机密钥校验或改用非项目发布入口。
 
-最小解锁动作：恢复GameViewer的 `127.0.0.1:2223 → 办公室22` 转发。已保留固定候选的远端入口脚本；连接恢复后先执行同SHA `--prepare-only`，成功才正式发布并检查版本/服务/静态资源。任务工作树暂留，本记录不代表生产已更新。
+亮哥恢复转发并要求“再试”后连接成功。以下是本次实际发布结果，取代上述受阻状态。
+
+## 生产发布与后检（已完成）
+
+应用候选固定为 `326f7e0bf55dd6b7d1ee3a7675f55bea0d3c4a94`。通过办公室SSH调用正常 `deploy/deploy.bat --revision <SHA> --prepare-only`，成功后以同SHA正式发布。未用普通push替代部署，未更改发布器或绕过锁/迁移检查。
+
+- 预检退出0，办公室候选生产构建20.36s、113项导航。两地主站各准备250个变化文件、1,091,974传输字节；PM与客户素材无变化。
+- 正式发布退出0，回执 **MANAGED APPLICATION RELEASE COMPLETED**；`release_id=1fc8d54b4b7c4a34bee5b5b0ee9f71db`，scope为office-and-cloud，deferred为空。正式阶段复用预检制品，额外传输0字节。
+- 办公室服务已切换并通过就绪检查；北京后端内容无需变化，候选及色块/路由检查通过。两地主站静态制品已激活，同一制品摘要为 `289b48f0e441ec13c56bb5fda8c2e6f3267bbcc5b8eb97fc578b2692d9338576`；PM与客户素材纳管目标验证完成。
+- 共享数据库仍为 `173_task_center`，本轮无迁移。PM与Pantone幂等初始化确认已有数据并跳过；北京出库回执verified，调度active=true、enabled=true，保持原状态。
+- 独立MCP、Agent、OpenClaw等非本次纳管应用更新对象未升级。pm.leshine.cloud的DNS/TLS、hair/video权威源码等既有pending对象沿用原边界，不列为已更新。
+
+额外18次HTTPS读取（保持证书校验）覆盖leshine.work与leshine.cloud：入口HTML、导航清单、主JS/CSS、发票JS/CSS、物流JS/CSS及health。全部静态文件逐项SHA256匹配办公室候选构建清单；主CSS包含状态标签自有文字样式与nowrap。两站主脚本均为 `assets/main-yQ5XpxbI.js`，HTML摘要为 `38f702862b91b645b73bc30320a49f1d2a00877356eb22d7fd8d93ce9f501cea`。办公室实际HEAD与发布journal均为固定候选，status=succeeded；办公室与两站health均为ok/connected。
+
+原始证据：主目录 `.deploy_state/status-badge-delivery/prepare.txt`、`deploy.txt`、`server-verification.json`、`public-verification.json`及validation目录。此前72标签桌面/390px隔离回归仍作为UI行为证据；本次没有生产业务写入型测试。
+
+发布记录从本任务所属分支提交并在主目录合并推送。任务验证证据和恢复材料已保存在主目录，随后归档本任务工作树并清理已合并本地任务分支；其他工作树、历史stash和无关修改保留。
