@@ -1,6 +1,6 @@
 # 中后台按钮配色调整
 
-状态：实现与验证完成；来源分支 `codex/button-colors`。本次交付方式为合并推送 main，生产部署未执行。
+状态：应用提交 `98eb7c1828d37f5f8004f659513daecf03dfbc8b` 已合并推送 main，并完成办公室与云端统一发布。
 
 ## 结果与依据
 
@@ -34,3 +34,9 @@
 - `git_sweep.py --no-fetch` 作为本地快照巡检，不执行远端写入或清理其他代理分支。
 
 浏览器访问的 `/api/` 请求均由离线拦截处理，未提交登录或业务写入；这里验证按钮呈现与既有前端点击保护，不代表生产登录/API 集成测试。详细 JSON、矩阵截图、审查与构建日志在分支交付后保留于主目录 `.deploy_state/button-colors-delivery/evidence/`。
+
+## 生产发布
+
+统一 `deploy/deploy.bat` 固定应用提交 `98eb7c1828d37f5f8004f659513daecf03dfbc8b`，先准备再正式发布，退出0；`release_id=9a04e62e81fd4995aa75c60e7cb95ca8`，范围 `office-and-cloud`，`deferred=[]`。办公室、北京后端、两地主站与已登记 PM/客户素材静态目标完成验证；数据库仍 `173_task_center`，无迁移。出库回执 `verified`，调度保持原状态。额外 24 次 HTTPS 检查确认两地主站及 `pm.leshine.work` 的入口、主脚本/CSS及登录页资源逐项匹配候选 SHA256；三站按钮 token 已验证，两地主站及办公室 health 为 `ok/connected`。
+
+主目录原有15个无关文件指纹及交接文档其他内容保持一致；详细发布、公开资源核验与恢复材料保存在 `.deploy_state/button-colors-delivery/`。本段为发布后的文档记录，未作为新的应用版本发布。

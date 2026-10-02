@@ -1,10 +1,10 @@
 # 当前交接与待办
 
-## 2026-10-02 中后台按钮配色（Codex，已验证，未部署）
+## 2026-10-02 中后台按钮配色（Codex，已部署）
 
 - 分支 `codex/button-colors`：GlassButton、Element Plus、PM 共享按钮及登录、聊天、物流、发货、知识工具栏、任务创建等独立操作统一为 Ant Design 蓝色方向；主操作蓝底白字、次操作白底灰边、危险红色。按钮独立 token 不改变品牌/状态/导航配色；13px 蓝底白字采用 `#1668dc` 满足对比度。
 - 真实 Chrome 317 项观测通过，包含桌面/390px、hover/active/键盘 focus、disabled/loading、Space 按压、减少动态效果、登录与 PM 入口；独立审查问题已修复，PM ghost 禁用 hover 另有20项定向复核。定向 Node 4/4，主站与 PM 构建、严格约定、UI门禁、diff检查通过；Git巡检为 --no-fetch 本地快照。
-- 本次交付按亮哥授权合并推送 main，不包含生产部署。详细结果与范围见 [按钮配色报告](reports/2026-10-02-button-colors.md)，预览随报告保存；分支交付后详细本地证据保留于主目录 `.deploy_state/button-colors-delivery/evidence/`。
+- 统一 `deploy/deploy.bat` 固定应用提交 `98eb7c1828d37f5f8004f659513daecf03dfbc8b`，先准备再正式发布，退出0；`release_id=9a04e62e81fd4995aa75c60e7cb95ca8`，范围 `office-and-cloud`，`deferred=[]`。办公室、北京后端、两地主站与已登记 PM/客户素材静态目标完成验证；数据库仍 `173_task_center`，无迁移。出库回执 `verified`，调度保持原状态。额外 24 次 HTTPS 检查确认两地主站及 `pm.leshine.work` 的入口、主脚本/CSS及登录页资源逐项匹配候选 SHA256；三站按钮 token 已验证，两地主站及办公室 health 为 `ok/connected`。详细记录见 [按钮配色报告](reports/2026-10-02-button-colors.md)，预览随报告保存；证据与恢复材料保留于主目录 `.deploy_state/button-colors-delivery/`。
 
 ## 2026-10-02 状态标签竖排修复（Codex，已合并推送部署）
 
