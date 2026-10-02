@@ -188,7 +188,7 @@ body {
   --action-soft: var(--button-warning-soft);
   --action-border: var(--button-warning-border);
   --action-link: var(--button-warning-text);
-  --action-ink: var(--button-text);
+  --action-ink: var(--button-surface);
   background: var(--action-color);
   border-color: var(--action-color);
   color: var(--action-ink);
@@ -301,46 +301,54 @@ body {
   .el-button, .el-card, .el-table td.el-table__cell { transition: none; }
 }
 
-/* ---- Tags: brand-consistent status colors ---- */
+/* ---- Tags: Morandi status colors anchored on LeShine Gold ---- */
 .el-tag--info {
-  background: var(--toolbar-bg);
-  border-color: var(--border-color);
-  color: var(--text-secondary);
+  background: var(--tag-neutral-bg);
+  border-color: var(--tag-neutral-border);
+  color: var(--tag-neutral-text);
 }
 .el-tag--primary, .el-tag:not([class*="--"]) {
-  background: rgba(212,148,28,0.1);
-  border-color: rgba(212,148,28,0.2);
-  color: var(--color-gold-muted);
+  background: var(--tag-gold-bg);
+  border-color: var(--tag-gold-border);
+  color: var(--tag-gold-text);
 }
 .el-tag--success {
-  background: var(--color-success-bg);
-  border-color: rgba(45,159,111,0.18);
-  color: var(--color-success-text);
+  background: var(--tag-success-bg);
+  border-color: var(--tag-success-border);
+  color: var(--tag-success-text);
 }
 .el-tag--danger {
-  background: var(--color-danger-bg);
-  border-color: rgba(192,57,43,0.18);
-  color: var(--color-danger-text);
+  background: var(--tag-danger-bg);
+  border-color: var(--tag-danger-border);
+  color: var(--tag-danger-text);
 }
 .el-tag--warning {
-  background: var(--color-warning-bg);
-  border-color: rgba(245,203,92,0.3);
-  color: var(--color-warning-text);
+  background: var(--tag-warning-bg);
+  border-color: var(--tag-warning-border);
+  color: var(--tag-warning-text);
 }
 /* Dark effect tags (used in detail banner) */
 .el-tag.el-tag--dark {
   border-color: transparent;
 }
+.el-tag--primary.el-tag--dark {
+  background: var(--tag-gold-solid);
+  color: #fff;
+}
 .el-tag--success.el-tag--dark {
-  background: var(--color-success);
+  background: var(--tag-success-solid);
   color: #fff;
 }
 .el-tag--info.el-tag--dark {
-  background: var(--text-secondary);
+  background: var(--tag-neutral-solid);
   color: #fff;
 }
 .el-tag--danger.el-tag--dark {
-  background: var(--color-danger-hover);
+  background: var(--tag-danger-solid);
+  color: #fff;
+}
+.el-tag--warning.el-tag--dark {
+  background: var(--tag-warning-solid);
   color: #fff;
 }
 

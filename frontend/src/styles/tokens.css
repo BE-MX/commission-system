@@ -7,35 +7,63 @@
 :root {
   --domestic-price-review-bg: #f4ff5c;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
-  /* Buttons: Ant Design palette, darker solid steps for small white text. */
-  --button-primary: #1668dc;
-  --button-primary-hover: #145fc8;
-  --button-primary-active: #0958d9;
-  --button-primary-soft: #e6f4ff;
-  --button-primary-border: #91caff;
-  --button-danger: #d9363e;
-  --button-danger-hover: #cf1322;
-  --button-danger-active: #a8071a;
-  --button-danger-soft: #fff1f0;
-  --button-danger-border: #ffa39e;
-  --button-success: #237804;
-  --button-success-hover: #135200;
-  --button-success-active: #092b00;
-  --button-success-soft: #f6ffed;
-  --button-success-border: #b7eb8f;
-  --button-warning: #faad14;
-  --button-warning-hover: #ffc53d;
-  --button-warning-active: #d48806;
-  --button-warning-text: #874d00;
-  --button-warning-soft: #fffbe6;
-  --button-warning-border: #ffe58f;
+  /* Buttons & Tags: 莫兰迪色系（2026-10-02）——以品牌金 #D4941C 为锚点降饱和、掺暖灰：
+     燕麦金=主色 / 灰绿=成功 / 杏赭=警告 / 陶土红=危险 / 雾蓝=信息（呼应侧栏岩蓝光）。
+     实心阶加深保证白色小字对比度 ≥ 4.4；soft/border 为同族低饱和 wash。 */
+  --button-primary: #88713A;
+  --button-primary-hover: #775F30;
+  --button-primary-active: #655026;
+  --button-primary-soft: #F3EEE1;
+  --button-primary-border: #D8CBA4;
+  --button-danger: #A85F50;
+  --button-danger-hover: #935245;
+  --button-danger-active: #7D463B;
+  --button-danger-soft: #F6EBE8;
+  --button-danger-border: #E0C2BA;
+  --button-success: #5C7C62;
+  --button-success-hover: #506C56;
+  --button-success-active: #445C49;
+  --button-success-soft: #EAF0EA;
+  --button-success-border: #C2D1C3;
+  --button-warning: #A06228;
+  --button-warning-hover: #8A5321;
+  --button-warning-active: #74461C;
+  --button-warning-text: #8A5226;
+  --button-warning-soft: #F6EDE1;
+  --button-warning-border: #E3C6A2;
   --button-surface: #ffffff;
-  --button-text: #1f1f1f;
-  --button-border: #d9d9d9;
-  --button-quiet-hover: #f5f5f5;
-  --button-disabled-bg: #f5f5f5;
-  --button-disabled-text: #bfbfbf;
-  --button-focus: rgba(22, 104, 220, 0.22);
+  --button-text: #3B362E;
+  --button-border: #D8D2C7;
+  --button-quiet-hover: #F4F1EA;
+  --button-disabled-bg: #F1EEE8;
+  --button-disabled-text: #B5AFA4;
+  --button-focus: rgba(136, 113, 58, 0.22);
+
+  /* ── Tag tokens（莫兰迪浅彩阶：低饱和暖调 wash + 同族深文字；solid 供 dark effect） ── */
+  --tag-gold-bg:         #F4EFE2;
+  --tag-gold-border:     #E2D6B2;
+  --tag-gold-text:       #7A6231;
+  --tag-gold-solid:      #88713A;
+  --tag-success-bg:      #EAF0EA;
+  --tag-success-border:  #C8D6C9;
+  --tag-success-text:    #486A51;
+  --tag-success-solid:   #5C7C62;
+  --tag-warning-bg:      #F6EDE1;
+  --tag-warning-border:  #E8CDA6;
+  --tag-warning-text:    #8A5226;
+  --tag-warning-solid:   #A06228;
+  --tag-danger-bg:       #F6EAE7;
+  --tag-danger-border:   #E4C6BD;
+  --tag-danger-text:     #8C4F43;
+  --tag-danger-solid:    #A85F50;
+  --tag-info-bg:         #EBF0F4;
+  --tag-info-border:     #CAD5DF;
+  --tag-info-text:       #4A6379;
+  --tag-info-solid:      #5B7893;
+  --tag-neutral-bg:      #F3F1EC;
+  --tag-neutral-border:  #DDD8CE;
+  --tag-neutral-text:    #6B665C;
+  --tag-neutral-solid:   #8A857A;
 
   /* Login: quiet dark-gold scene, separate from the light workspace surfaces. */
   --login-bg: #0d0e13;
