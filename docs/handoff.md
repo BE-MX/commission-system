@@ -1,10 +1,12 @@
 # 当前交接与待办
 
-## 2026-10-02 操作列与按钮一致性（Codex，本地完成，未提交/发布）
+## 2026-10-02 操作列与按钮一致性（Codex，已合并推送部署）
 
 - 分支 `codex/action-button-consistency`，独立工作树 `C:/Users/windb/.codex/worktrees/action-button-consistency/commission-system`，基点 `6d815065`。DESIGN.md与按钮设计契约同步科技轻快配色、四语义接口、link尺寸和状态规则；主站/PM按钮token完全一致。
 - 全量119操作列/272直接按钮及导出复用触发器接入统一规则，补64图标、3操作列实心/描边与分类打印改link、物流删除去内联色、warning tone实现；28处动作语义对齐。共享按钮修复金底文字、hover/active/focus、无阴影/缩放、单个加载图标与触屏44px。43个修改业务模板的脚本/事件/权限/条件/加载绑定核对保留。
-- Node定向7/7；浏览器289源提取案例/384样式观察、139状态/对比度观察和窄列/权限/下拉/触屏回归通过；主站113导航构建和PM构建通过；增量约定、diff检查与独立复核通过。巡检为no-fetch本地快照，无远端写入/生产变更。详见[验收报告](reports/2026-10-02-action-button-consistency.md)与[设计契约](requirements/2026-10-02-action-button-design.md)，截图和源清单随报告保存。
+- Node定向7/7；浏览器289源提取案例/384样式观察、139状态/对比度观察和窄列/权限/下拉/触屏回归通过；主站113导航构建和PM构建通过；增量约定、diff检查与独立复核通过。巡检为no-fetch本地快照，本地修复验收通过。详见[验收报告](reports/2026-10-02-action-button-consistency.md)与[设计契约](requirements/2026-10-02-action-button-design.md)，截图和源清单随报告保存。
+
+- 应用提交 `b807fdcde6fe70267e74ad8f3082ed5ca1a2f8cd` 已合入main并推送origin。办公室统一deploy.bat固定同SHA完成预检及正式发布，两阶段退出0；`release_id=b1c3804f154d443bab2aadc4fdde5ff5`，范围office-and-cloud，deferred为空。数据库仍173_task_center，无迁移；出库verified、active/enabled均true。34项公网资源摘要匹配候选，办公室及两地主站健康ok/connected，PM统一按钮规范已核验。详见[发布记录](reports/2026-10-02-action-button-release.md)，证据保留于主目录`.deploy_state/action-button-release/`。原22个未提交文件完整保留；任务工作树按合并后约定清理。
 
 ## 2026-10-02 中后台按钮配色（Codex，已部署）
 
