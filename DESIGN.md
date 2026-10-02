@@ -69,7 +69,7 @@
 ## Layout
 - **Approach:** grid-disciplined — 左侧固定侧边栏 + 右侧弹性内容区
 - **Sidebar:** 240px（展开）/ 68px（折叠），dark gradient 背景
-- **Header:** 56px 高，白色背景，底部 border
+- **Header:** 56px 高，与页面标签栏共用浅色毛玻璃表面，细分隔线；见下方 Navigation Chrome Spec
 - **Content padding:** 24px 28px
 - **Max content width:** 1440px
 - **Grid:** 表格页用 100% 宽度；Dashboard 用 3 列 metric + 2 列 action grid
@@ -101,6 +101,18 @@
 - **Small viewport:** 主站窄屏导航使用抽屉，页面使用完整可用宽度；筛选栏允许换行，多列表单和上传/配置双栏转为单列。保留表格内部横向滚动，不通过隐藏整个页面溢出来掩盖不可达控件。
 - **Overlay boundaries:** 非全屏弹窗最大宽度为视口减 24px，最大高度为动态视口减 32px；正文滚动、页头页尾保留。详情抽屉挂到 body，最大宽度不超过视口。欢迎提示使用标准 Dialog，支持焦点管理、Escape 与原生复选框。
 - **PM overlays:** PM 站保留独立设计系统；Modal/Drawer 共用焦点栈，只有顶层处理 Tab/Escape，关闭后恢复触发控件焦点及原有页面滚动状态。
+
+## Navigation Chrome Spec（2026-10-02）
+
+主站顶栏和已打开页面标签栏作为一个连续的浅色磨砂表面。参考 [shadcn-admin 的 Header 实现](https://github.com/satnaing/shadcn-admin/blob/main/src/components/layout/header.tsx) 的半透明底色、背景模糊和轻阴影，沿用平台品牌金、Vue / Element Plus 与现有标签交互。
+
+- **材质**：外层 `.navigation-chrome` 使用 `--dash-glass-nav-bg`（白色 0.58 → 0.38 渐变）、`blur(16px) saturate(1.4)`、细边和顶部内高光；顶栏、标签栏内部透明，共用一层模糊，单个标签不另加滤镜。
+- **环境**：右侧布局顶部使用 `--dash-glass-nav-backdrop` 静态浅金 / 蜜桃 wash。导航绝对定位覆盖正文滚动区顶部，内容从真实玻璃后方滚过，透出被模糊的色块 / 轮廓；不新增滚动监听或材质动画。
+- **滚动安全**：正文首屏 padding 和 scroll-padding 为 `--navigation-chrome-height` 加原内容间距，初始内容与定位目标在导航下方。直接依赖正文滚动区的吸顶元素（共享独立工具栏、提成标签头、回款同步卡、素材筛选 / 工具栏、概念章节导航）使用该高度作为 top 偏移；内部独立滚动区的 sticky 仍采用内部坐标。壳内 fullscreen 元素将导航高度归零。
+- **层级**：顶栏高度仍为 `--header-height: 56px`，标签栏保留 7px 顶部留白及 36px 标签高度。顶栏下为淡分隔线，两栏整体底部为细边与轻阴影；选中标签保留深金文字、金色顶线和较实的浅色底。
+- **可用性**：保留标签切换、关闭、方向键 / Home / End、焦点环及窄屏横向滚动；切换标签和栏宽变化后立即露出当前标签，高频操作不加平滑滚动动画。用户菜单和记任务浮层挂到 body，不在玻璃表面上裁切。
+- **降级**：不支持 backdrop-filter 或系统选择减少透明效果时使用 `--dash-glass-nav-fallback` 实色底，关闭模糊；文字颜色与选中标记保持清晰。
+- **令牌**：颜色与阴影集中在 `tokens.css` 的 `--dash-glass-nav-*`；遵循 Liquid Glass 命名与性能约定。两栏只算一个局部滤镜区域，不给页面、卡片或表格增加模糊。
 
 ## Liquid Glass 页面材质体系（2026-07-25 起）
 

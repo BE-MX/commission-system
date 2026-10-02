@@ -665,7 +665,7 @@ onMounted(() => {
   width: 160px;
   flex-shrink: 0;
   position: sticky;
-  top: 20px;
+  top: calc(var(--navigation-chrome-height, 0px) + 20px);
   align-self: flex-start;
 }
 

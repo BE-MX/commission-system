@@ -243,7 +243,7 @@ function formatExchangeRate(value) { return value == null ? '-' : Number(value).
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   border: 1px solid var(--dash-glass-border);
   position: sticky;
-  top: 0;
+  top: var(--navigation-chrome-height, 0px);
   z-index: 3;
 }
 /* 同步结果卡 / 列表面板：同款渐变玻璃（scoped 覆盖 el-card 白底） */

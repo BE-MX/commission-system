@@ -272,7 +272,7 @@
 /* 吸顶 tabs 头：与固定列同款磨砂暖白，玻璃面板上吸顶时不透底 */
 .commission-page :deep(.cm-sticky-tabs > .el-tabs__header) {
   position: sticky;
-  top: 0;
+  top: var(--navigation-chrome-height, 0px);
   z-index: 6;
   margin: 0;
   padding-top: 14px;

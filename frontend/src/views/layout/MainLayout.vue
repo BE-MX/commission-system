@@ -7,54 +7,56 @@
     </el-drawer>
 
     <el-container class="right-container">
-      <el-header class="header">
-        <div class="header-left">
-          <button
-            class="collapse-toggle"
-            type="button"
-            :aria-label="isNarrow ? '打开导航菜单' : (isCollapse ? '展开导航栏' : '收起导航栏')"
-            :aria-expanded="isNarrow ? mobileNavigationOpen : !isCollapse"
-            @click="isNarrow ? mobileNavigationOpen = true : isCollapse = !isCollapse"
-          >
-            <Fold v-if="!isCollapse" />
-            <Expand v-else />
-          </button>
-          <div class="header-title-group">
-            <h1 class="page-title">{{ route.meta.title || '工作台' }}</h1>
-          </div>
-        </div>
-        <div class="header-right">
-          <GlassButton v-permission="'task:write'" class="header-quick-task" size="sm" left-icon="EditPen" data-quick-task-trigger @click="openHeaderQuickTask">记任务</GlassButton>
-          <div class="header-badge">莱莎发制品</div>
-          <el-dropdown trigger="click" @command="handleUserCommand">
-            <div class="user-trigger">
-              <img
-                v-if="authStore.user?.avatar_url"
-                :src="authStore.user.avatar_url"
-                class="header-avatar"
-                alt="avatar"
-              />
-              <el-icon v-else><UserFilled /></el-icon>
-              <span>{{ authStore.user?.real_name || '用户' }}</span>
-              <el-icon class="arrow"><ArrowDown /></el-icon>
+      <div class="navigation-chrome">
+        <el-header class="header">
+          <div class="header-left">
+            <button
+              class="collapse-toggle"
+              type="button"
+              :aria-label="isNarrow ? '打开导航菜单' : (isCollapse ? '展开导航栏' : '收起导航栏')"
+              :aria-expanded="isNarrow ? mobileNavigationOpen : !isCollapse"
+              @click="isNarrow ? mobileNavigationOpen = true : isCollapse = !isCollapse"
+            >
+              <Fold v-if="!isCollapse" />
+              <Expand v-else />
+            </button>
+            <div class="header-title-group">
+              <h1 class="page-title">{{ route.meta.title || '工作台' }}</h1>
             </div>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="profile"><el-icon><User /></el-icon> 个人设置</el-dropdown-item>
-                <el-dropdown-item command="password"><el-icon><Key /></el-icon> 修改密码</el-dropdown-item>
-                <el-dropdown-item divided command="logout"><el-icon><SwitchButton /></el-icon> 退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-      </el-header>
+          </div>
+          <div class="header-right">
+            <GlassButton v-permission="'task:write'" class="header-quick-task" size="sm" left-icon="EditPen" data-quick-task-trigger @click="openHeaderQuickTask">记任务</GlassButton>
+            <div class="header-badge">莱莎发制品</div>
+            <el-dropdown trigger="click" @command="handleUserCommand">
+              <div class="user-trigger">
+                <img
+                  v-if="authStore.user?.avatar_url"
+                  :src="authStore.user.avatar_url"
+                  class="header-avatar"
+                  alt="avatar"
+                />
+                <el-icon v-else><UserFilled /></el-icon>
+                <span>{{ authStore.user?.real_name || '用户' }}</span>
+                <el-icon class="arrow"><ArrowDown /></el-icon>
+              </div>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="profile"><el-icon><User /></el-icon> 个人设置</el-dropdown-item>
+                  <el-dropdown-item command="password"><el-icon><Key /></el-icon> 修改密码</el-dropdown-item>
+                  <el-dropdown-item divided command="logout"><el-icon><SwitchButton /></el-icon> 退出登录</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </el-header>
 
-      <NavigationTabs
-        :tabs="tabs"
-        :active-key="activeKey"
-        @select="selectTab"
-        @close="closeTab"
-      />
+        <NavigationTabs
+          :tabs="tabs"
+          :active-key="activeKey"
+          @select="selectTab"
+          @close="closeTab"
+        />
+      </div>
 
       <el-main
         class="main-content"
@@ -174,9 +176,36 @@ function handleUserCommand(command) {
 <style scoped>
 .main-layout { height: 100vh; height: 100dvh; }
 .right-container {
+  position: relative;
   min-width: 0;
   flex-direction: column;
-  background: var(--page-bg);
+  --navigation-chrome-height: calc(var(--header-height) + 45px);
+  background: var(--dash-glass-nav-backdrop);
+}
+/* Both bars float above the content scrollport, sharing one real backdrop blur. */
+.navigation-chrome {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 5;
+  flex-shrink: 0;
+  min-width: 0;
+  background: var(--dash-glass-nav-fallback);
+  border-bottom: 1px solid var(--dash-glass-nav-border);
+  box-shadow: var(--dash-glass-nav-shadow), var(--dash-glass-highlight);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .navigation-chrome {
+    background: var(--dash-glass-nav-bg);
+    -webkit-backdrop-filter: blur(var(--dash-glass-blur)) saturate(1.4);
+    backdrop-filter: blur(var(--dash-glass-blur)) saturate(1.4);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .navigation-chrome {
+    background: var(--dash-glass-nav-fallback);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 .header {
   display: flex;
@@ -185,9 +214,8 @@ function handleUserCommand(command) {
   align-items: center;
   justify-content: space-between;
   padding: 0 28px;
-  border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.68));
-  z-index: 5;
+  border-bottom: 1px solid var(--dash-glass-nav-divider);
+  background: transparent;
 }
 .header-left { display: flex; min-width: 0; align-items: center; gap: 16px; }
 .header-title-group { min-width: 0; }
@@ -254,7 +282,9 @@ function handleUserCommand(command) {
 .main-content {
   min-height: 0;
   padding: 24px 28px;
-  background: var(--page-bg);
+  padding-top: calc(var(--navigation-chrome-height) + 24px);
+  scroll-padding-top: calc(var(--navigation-chrome-height) + 24px);
+  background: transparent;
 }
 .page-wrapper { max-width: 1440px; }
 .page-wrapper > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
@@ -268,7 +298,11 @@ function handleUserCommand(command) {
   .header-left { gap: 8px; }
   .header-badge { display: none; }
   .header-quick-task { display: none; }
-  .main-content { padding: 12px 10px; }
+  .main-content {
+    padding: 12px 10px;
+    padding-top: calc(var(--navigation-chrome-height) + 12px);
+    scroll-padding-top: calc(var(--navigation-chrome-height) + 12px);
+  }
   .page-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .user-trigger { padding-inline: 6px; }
   .user-trigger span,
@@ -284,6 +318,7 @@ function handleUserCommand(command) {
 </style>
 
 <style>
+.main-layout :fullscreen { --navigation-chrome-height: 0px; }
 .mobile-navigation.el-drawer.ltr { border-radius: 0 16px 16px 0 !important; }
 .mobile-navigation .el-drawer__body { display: flex; padding: 0; }
 .mobile-navigation .aside { width: 100% !important; }

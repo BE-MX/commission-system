@@ -628,7 +628,7 @@ body {
   box-shadow: var(--card-shadow);
   border: 1px solid var(--border-color);
   position: sticky;
-  top: 0;
+  top: var(--navigation-chrome-height, 0px);
   z-index: 3;
 }
 

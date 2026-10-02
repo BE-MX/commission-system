@@ -225,6 +225,14 @@
   --dash-glass-shadow-hover:   0 14px 36px rgba(146, 103, 24, 0.18);
   --dash-glass-dark-border:    rgba(245, 203, 92, 0.24);
 
+  /* Shared top navigation glass: translucent enough to reveal the scrolling backdrop. */
+  --dash-glass-nav-bg:         linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.38));
+  --dash-glass-nav-fallback:   #fafbfe;
+  --dash-glass-nav-border:     rgba(197, 204, 224, 0.58);
+  --dash-glass-nav-divider:    rgba(197, 204, 224, 0.28);
+  --dash-glass-nav-shadow:     0 4px 16px rgba(146, 103, 24, 0.10);
+  --dash-glass-nav-backdrop:   radial-gradient(ellipse 640px 180px at 20% 0, rgba(245, 203, 92, 0.42), transparent 72%), radial-gradient(ellipse 560px 160px at 85% 0, rgba(242, 165, 110, 0.28), transparent 72%), var(--page-bg);
+
   /* ── 工作台极光层（dashboard 专用；暖金三色 wash + 斜向光带。
      低透明度大半径渐变本身是软的，禁止再叠 filter blur） ── */
   --dash-wash-from:       #fdf8ec;

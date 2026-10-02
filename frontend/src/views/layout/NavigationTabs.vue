@@ -1,6 +1,6 @@
 <template>
   <nav class="navigation-tabs" aria-label="已打开页面">
-    <div class="tab-strip" role="tablist">
+    <div ref="tabStrip" class="tab-strip" role="tablist">
       <div
         v-for="tab in tabs"
         :key="tab.key"
@@ -38,7 +38,7 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUpdate, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, ref, watch } from 'vue'
 import { Close } from '@element-plus/icons-vue'
 import { getTabButtonId, getTabPanelId } from './navigationTabState'
 
@@ -50,6 +50,8 @@ const props = defineProps({
 const emit = defineEmits(['select', 'close'])
 
 const tabElements = new Map()
+const tabStrip = ref(null)
+let stripResizeObserver
 
 function setTabElement(key, element) {
   if (element) tabElements.set(key, element)
@@ -74,15 +76,25 @@ function handleTabKeydown(event, key) {
 
 onBeforeUpdate(() => tabElements.clear())
 
-watch(() => props.activeKey, async key => {
-  await nextTick()
-  const reduceMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  tabElements.get(key)?.scrollIntoView({
-    behavior: reduceMotion ? 'auto' : 'smooth',
+function revealActiveTab() {
+  // Reveal the whole tab so its close button remains reachable on narrow screens.
+  tabElements.get(props.activeKey)?.closest('.page-tab')?.scrollIntoView({
+    behavior: 'instant',
     block: 'nearest',
     inline: 'nearest',
   })
+}
+
+watch(() => props.activeKey, async () => {
+  await nextTick()
+  revealActiveTab()
 }, { immediate: true })
+
+onMounted(() => {
+  stripResizeObserver = new ResizeObserver(revealActiveTab)
+  stripResizeObserver.observe(tabStrip.value)
+})
+onBeforeUnmount(() => stripResizeObserver?.disconnect())
 </script>
 
 <style scoped>
@@ -90,8 +102,7 @@ watch(() => props.activeKey, async key => {
   min-width: 0;
   flex-shrink: 0;
   padding: 7px 18px 0;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--toolbar-bg);
+  background: transparent;
 }
 .tab-strip {
   display: flex;
@@ -120,8 +131,8 @@ watch(() => props.activeKey, async key => {
 .page-tab:hover { color: var(--text-primary); background: var(--color-primary-light); }
 .page-tab.is-active {
   color: var(--color-primary-text);
-  border-color: var(--border-color);
-  background: var(--card-bg);
+  border-color: var(--dash-glass-nav-border);
+  background: var(--dash-glass-bg-strong);
   box-shadow: inset 0 2px 0 var(--color-primary);
 }
 .tab-select {
@@ -161,6 +172,7 @@ watch(() => props.activeKey, async key => {
   padding: 0;
   border: 0;
   border-radius: 5px;
+  background: transparent;
   color: var(--text-muted);
   font-size: 11px;
 }
