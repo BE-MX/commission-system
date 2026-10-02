@@ -1,8 +1,18 @@
 <template>
   <section class="workbench" aria-label="客户事项">
     <div class="summary-grid">
-      <button v-for="view in ITEM_VIEWS" :key="view.value" type="button" class="summary-card" :class="{selected:searchForm.view===view.value}" :aria-pressed="searchForm.view===view.value" @click="selectView(view.value)"><span>{{ view.label }}</span><strong>{{ loading || !summary ? '—' : view.count ? summary[view.count] : (summary.items_resolved + summary.items_cancelled) }}</strong></button>
-      <div class="summary-card"><span>今日行动已完成</span><strong>{{ summary?.actions_done_today ?? '—' }}</strong><small>行动完成与事项解决分别记录</small></div>
+      <OverviewMetricCard
+        v-for="view in ITEM_VIEWS"
+        :key="view.value"
+        :label="view.label"
+        :value="loading || !summary ? '—' : view.count ? summary[view.count] : (summary.items_resolved + summary.items_cancelled)"
+        :icon="viewPresentation[view.value].icon"
+        :tone="viewPresentation[view.value].tone"
+        interactive
+        :selected="searchForm.view === view.value"
+        @click="selectView(view.value)"
+      />
+      <OverviewMetricCard label="今日行动已完成" :value="summary?.actions_done_today ?? '—'" :icon="CircleCheck" tone="success" hint="行动完成与事项解决分别记录" />
     </div>
     <p class="hint">按事项计数，三视图互斥；已解决结果需复核时回到待我处理。所有业务时间均为北京时间。</p>
     <section v-if="capacity" class="capacity lg-card is-static"><strong>{{ capacity.business_date }} · 每日普通容量</strong><span>已承接 {{ capacity.admitted }} / {{ capacity.budget }} · 未承接 {{ capacity.queued }}</span><p class="hint">完成、终止和延后都不释放当日额度，也不自动补位。超额需明确主动再领一条及原因。</p></section>
@@ -27,6 +37,8 @@
 </template>
 <script setup>
 import { onMounted, ref, watch } from 'vue'
+import { Bell, Promotion, FolderChecked, CircleCheck } from '@element-plus/icons-vue'
+import OverviewMetricCard from '@/components/OverviewMetricCard.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchListResourceScope } from '@/composables/useListResourceScope'
 import { useListPage } from '@/composables/useListPage'
@@ -37,6 +49,7 @@ import { readableValue } from './operationsPresentation'
 import { ITEM_VIEWS, ITEM_STATE_LABELS, createSubmissionIdentity, errorMessage } from './workbenchV2Controller'
 import WorkItemDetail from './WorkItemDetail.vue'
 const props=defineProps({customerId:{type:Number,default:null},initialItemId:{type:Number,default:null}}), emit=defineEmits(['open-customer','saved'])
+const viewPresentation = { need_me: { icon: Bell, tone: 'gold' }, in_progress: { icon: Promotion, tone: 'info' }, ended: { icon: FolderChecked, tone: 'violet' } }
 const route=useRoute(),router=useRouter()
 const summary=ref(null),capacity=ref(null),dataAsOf=ref(null),policyVersion=ref(null),itemDetail=ref(null),saving=ref(false)
 const listPageState = useListPage(async ({ customer_id, ...params }, { signal, isCurrent }) => {
@@ -73,5 +86,5 @@ onMounted(()=>{if(props.initialItemId)openItem(props.initialItemId)})
 defineExpose({refresh:fetchList,selectView,openItem})
 </script>
 <style scoped>
-.workbench{display:grid;gap:14px;color:var(--text-primary)}.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.summary-card{font:inherit;display:grid;gap:8px;text-align:left;padding:16px;border:1px solid var(--border-color);border-radius:var(--card-radius);background:var(--card-bg);color:var(--text-secondary)}button.summary-card{cursor:pointer}.summary-card strong{font-size:24px;font-variant-numeric:tabular-nums;color:var(--text-primary)}.summary-card.selected{border-color:var(--color-primary)}.summary-card small,.hint{font-size:12px;line-height:1.6;color:var(--text-muted);margin:0}.capacity{padding:14px;display:flex;gap:12px;flex-wrap:wrap}.capacity p{width:100%}.toolbar{display:flex;gap:8px;flex-wrap:wrap}.toolbar .el-input{flex:1;min-width:180px}.toolbar .el-select{width:160px}.action-list{border:1px solid var(--border-color);border-radius:var(--card-radius);background:var(--card-bg);min-height:100px}.action-row{display:flex;justify-content:space-between;gap:16px;padding:16px;border-bottom:1px solid var(--border-color)}.action-row:last-child{border:0}.row-main{min-width:0}.row-action{display:grid;gap:8px;align-content:center;justify-items:end}.customer-link{border:0;background:transparent;color: var(--color-primary-text);font:inherit;text-align:left;cursor:pointer}.row-main h3{font-size:15px;margin:8px 0}.row-main p{color:var(--text-secondary);overflow-wrap:anywhere}.meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--text-muted)}.el-pagination{overflow-x:auto}.summary-card:focus-visible,.customer-link:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}@media(max-width:768px){.summary-grid{grid-template-columns:repeat(2,1fr)}.action-row{flex-direction:column}.row-action{display:flex;justify-content:flex-end;flex-wrap:wrap}}
+.workbench{display:grid;gap:14px;color:var(--text-primary)}.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.hint{font-size:12px;line-height:1.6;color:var(--text-muted);margin:0}.capacity{padding:14px;display:flex;gap:12px;flex-wrap:wrap}.capacity p{width:100%}.toolbar{display:flex;gap:8px;flex-wrap:wrap}.toolbar .el-input{flex:1;min-width:180px}.toolbar .el-select{width:160px}.action-list{border:1px solid var(--border-color);border-radius:var(--card-radius);background:var(--card-bg);min-height:100px}.action-row{display:flex;justify-content:space-between;gap:16px;padding:16px;border-bottom:1px solid var(--border-color)}.action-row:last-child{border:0}.row-main{min-width:0}.row-action{display:grid;gap:8px;align-content:center;justify-items:end}.customer-link{border:0;background:transparent;color: var(--color-primary-text);font:inherit;text-align:left;cursor:pointer}.row-main h3{font-size:15px;margin:8px 0}.row-main p{color:var(--text-secondary);overflow-wrap:anywhere}.meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--text-muted)}.el-pagination{overflow-x:auto}.customer-link:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}@media(max-width:768px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.action-row{flex-direction:column}.row-action{display:flex;justify-content:flex-end;flex-wrap:wrap}}
 </style>

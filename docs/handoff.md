@@ -1,5 +1,10 @@
 # 当前交接与待办
 
+## 2026-10-02 客户工作台看板卡片（Codex，本地待交付）
+
+- 分支 `codex/customer-board-style`，独立工作树 `C:/Users/windb/.codex/worktrees/customer-board-style/commission-system`，基点 `b84dc534`。客户事项 4 卡、客户组合 6 卡共用 `OverviewMetricCard.vue`，按订单发票页统一浅色语义渐变、SVG 图标、右下淡水印，并保留筛选/统计口径；根目录 `DESIGN.md` 已加入全局看板卡片规范。
+- 主站构建、事项 Node 13/13、Chrome 9 组渲染 + 触屏、键盘筛选、0/缺失/长数字、桌面/900px/390px/320px、约定和 diff 检查通过；浏览器使用拦截样例数据，无真实业务请求。Git 巡检为 no-fetch 本地快照。未提交、合并或部署。见[验收与预览](reports/2026-10-02-customer-board-style.md)。
+
 ## 2026-10-02 顶栏与标签栏毛玻璃（Codex，已合并推送部署）
 
 - 分支 `codex/navigation-glass`，独立工作树 `C:/Users/windb/.codex/worktrees/navigation-glass/commission-system`，基点 `217b11bb`。借鉴 shadcn-admin Header 的半透明 / 模糊 / 轻阴影，两栏共用一个毛玻璃表面，沿用品牌金；设计令牌、DESIGN.md 同步。按用户“看不出效果”反馈，改为正文从导航后方实际滚过，白底 0.58 → 0.38，保留单一 16px 模糊层；首屏 / 滚动定位 / 根滚动吸顶控件同步导航高度偏移，fullscreen 内归零。标签在栏宽变化时立即露出，包含关闭按钮；无模糊支持 / 减少透明偏好使用实色底。
