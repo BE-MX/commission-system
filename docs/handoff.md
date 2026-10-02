@@ -1,9 +1,11 @@
 # 当前交接与待办
 
-## 2026-10-02 顶栏与标签栏毛玻璃（Codex，本地完成）
+## 2026-10-02 顶栏与标签栏毛玻璃（Codex，已合并推送部署）
 
 - 分支 `codex/navigation-glass`，独立工作树 `C:/Users/windb/.codex/worktrees/navigation-glass/commission-system`，基点 `217b11bb`。借鉴 shadcn-admin Header 的半透明 / 模糊 / 轻阴影，两栏共用一个毛玻璃表面，沿用品牌金；设计令牌、DESIGN.md 同步。按用户“看不出效果”反馈，改为正文从导航后方实际滚过，白底 0.58 → 0.38，保留单一 16px 模糊层；首屏 / 滚动定位 / 根滚动吸顶控件同步导航高度偏移，fullscreen 内归零。标签在栏宽变化时立即露出，包含关闭按钮；无模糊支持 / 减少透明偏好使用实色底。
-- 导航 Node 10/10、Chrome 桌面 / 390px / 320px、菜单 / 任务浮层 / 标签键盘与关闭 / 侧栏抽屉 / 减少透明及动态检查、主站构建、增量约定与 diff 检查通过；真实正文重叠及开 / 关模糊截图像素变化已验证，吸顶控件与 fullscreen 复核通过；业务网络请求及 JS 异常为 0。巡检为 no-fetch 本地快照。见[验收报告与截图](reports/2026-10-02-navigation-glass.md)。本地预览 `http://127.0.0.1:4334/tmp/navigation-glass/index.html?glass-demo=1`；尚未提交、合并、推送或部署。
+- 导航 Node 10/10、Chrome 桌面 / 390px / 320px、菜单 / 任务浮层 / 标签键盘与关闭 / 侧栏抽屉 / 减少透明及动态检查、主站构建、增量约定与 diff 检查通过；真实正文重叠及开 / 关模糊截图像素变化已验证，吸顶控件与 fullscreen 复核通过；业务网络请求及 JS 异常为 0。巡检为 no-fetch 本地快照。见[验收报告与截图](reports/2026-10-02-navigation-glass.md)。本地预览 `http://127.0.0.1:4334/tmp/navigation-glass/index.html?glass-demo=1`；开发期预览已完成，发布后清理会话。
+
+- 应用 `1c6130853beda46b20390276c8e9bc323f906fc3` 已合入 main 并推送 origin，办公室统一 deploy.bat 固定同 SHA 完成 prepare-only 与正式发布，退出 0；release_id `5edd819e00754ae2964d00781b51389c`，范围 office-and-cloud，deferred 为空。数据库仍 `173_task_center`、无迁移；出库 verified，active/enabled 均 true。额外 50 次 HTTPS 检查确认入口及毛玻璃相关样式 / 页面资源与候选一致，办公室和两地主站健康 ok/connected。原 22 个未提交文件完整保留，任务工作树按合并后约定清理。见[发布记录](reports/2026-10-02-navigation-glass-release.md)。
 
 ## 2026-10-02 操作列与按钮一致性（Codex，已合并推送部署）
 

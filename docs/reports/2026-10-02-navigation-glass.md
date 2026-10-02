@@ -2,7 +2,7 @@
 
 ## 结果与范围
 
-已在 `codex/navigation-glass` 独立工作树完成本地实现，基点 `217b11bb`；未提交、合并、推送或部署。生产仍使用上一轮已发布版本。
+已在 `codex/navigation-glass` 完成实现，原开发基点 `217b11bb`，整合到最新 main `398a8e62` 后提交 `1c6130853beda46b20390276c8e9bc323f906fc3`，已合并、推送并部署。详见[发布记录](2026-10-02-navigation-glass-release.md)。
 
 参考 [shadcn-admin Header 源码](https://github.com/satnaing/shadcn-admin/blob/main/src/components/layout/header.tsx)：该项目固定顶栏在滚动超过阈值后叠加半透明底色、背景模糊与阴影。借鉴材质做法，保留本项目 Vue / Element Plus、品牌金与导航结构。
 
@@ -30,7 +30,7 @@
 
 ## 预览与证据
 
-本地预览：`http://127.0.0.1:4334/tmp/navigation-glass/index.html?glass-demo=1`（打开即展示已滚动状态，可上下滚动观察磨砂透色）。预览内容为样例数据，导航组件使用生产源代码；临时预览及验证脚本位于该工作树的 `frontend/tmp/navigation-glass/` 与 `tmp/navigation-glass-check.py`，不进入发布制品。
+开发期本地预览（发布后会话清理，截图保留）：`http://127.0.0.1:4334/tmp/navigation-glass/index.html?glass-demo=1`（打开即展示已滚动状态，可上下滚动观察磨砂透色）。预览内容为样例数据，导航组件使用生产源代码；临时预览及验证脚本位于该工作树的 `frontend/tmp/navigation-glass/` 与 `tmp/navigation-glass-check.py`，不进入发布制品。
 
 ![滚动时实际毛玻璃](assets/2026-10-02-navigation-glass-scrolled.png)
 
