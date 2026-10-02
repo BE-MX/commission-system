@@ -29,7 +29,7 @@
         <el-table-column v-if="visibleKeys.includes('login-email')" prop="login_email" label="登录邮箱" min-width="220" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :value="row.is_active" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('last-login')" prop="last_login_at" label="最近登录" min-width="180"><template #default="{ row }">{{ row.last_login_at || '从未登录' }}</template></el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">修改邮箱/密码</GlassButton><GlassButton variant="link" :link-tone="row.is_active ? 'danger' : 'success'" @click="toggle(row)">{{ row.is_active ? '停用' : '启用' }}</GlassButton></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">修改邮箱/密码</GlassButton><GlassButton left-icon="SwitchButton" variant="link" :link-tone="row.is_active ? 'warning' : 'success'" @click="toggle(row)">{{ row.is_active ? '停用' : '启用' }}</GlassButton></template></el-table-column>
       </el-table>
     </div>
     <el-dialog v-model="dialog" :title="editing ? '修改门户账号' : '新建门户账号'" width="640px">

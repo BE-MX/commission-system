@@ -76,7 +76,7 @@
                     {{ formatTime(cat.last_printed_at) }}
                   </span>
                   <span class="print-time" v-else>&nbsp;</span>
-                  <el-button
+                  <el-button link
                     type="primary"
                     :icon="Printer"
                     @click="handlePrintCategory(row, cat)"
@@ -119,7 +119,7 @@
       </el-table-column>
       <el-table-column class-name="table-action-column" label="操作" min-width="130" fixed="right">
         <template #default="{ row }">
-          <el-button
+          <el-button link
             type="primary"
             :icon="Printer"
             @click="handlePrintOrder(row)"

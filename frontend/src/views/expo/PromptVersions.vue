@@ -33,9 +33,9 @@
         <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="75" />
         <el-table-column v-if="visibleKeys.includes('updated-at')" label="最后更新" min-width="165"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right"><template #default="{ row }">
-          <GlassButton v-permission="'expo:admin'" variant="link" @click="openVersion(row.id)">编辑</GlassButton>
-          <GlassButton v-permission="'expo:admin'" variant="link" @click="openVersion(row.id, true)">复制</GlassButton>
-          <GlassButton v-permission="'expo:admin'" variant="link" :disabled="row.is_default || !row.is_active || defaultBusy" @click="makeDefault(row)">设为默认</GlassButton>
+          <GlassButton left-icon="Edit" v-permission="'expo:admin'" variant="link" @click="openVersion(row.id)">编辑</GlassButton>
+          <GlassButton left-icon="CopyDocument" v-permission="'expo:admin'" variant="link" @click="openVersion(row.id, true)">复制</GlassButton>
+          <GlassButton left-icon="Star" v-permission="'expo:admin'" variant="link" :disabled="row.is_default || !row.is_active || defaultBusy" @click="makeDefault(row)">设为默认</GlassButton>
         </template></el-table-column>
       </el-table>
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total"

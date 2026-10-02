@@ -38,6 +38,7 @@
 | [requirements/](requirements/) | 需求文档归档 | 产品经理、历史追溯 |
 | [superpowers/](superpowers/) | 设计稿（`specs/`）与实施计划（`plans/`），2026-07 起持续新增；skill 默认路径遗留，未并入 requirements——查近期模块设计时记得也翻这里 | 开发、历史追溯 |
 | [../DESIGN.md](../DESIGN.md) | 设计系统（颜色/字体/间距/组件），UI 决策以此为准 | 前端开发、设计 |
+| [操作列与按钮设计契约](requirements/2026-10-02-action-button-design.md) | 科技轻快按钮接口、语义色、尺寸、状态及验收 | 前端开发、设计 |
 
 ## 外部集成
 

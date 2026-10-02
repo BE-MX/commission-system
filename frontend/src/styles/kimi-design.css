@@ -55,11 +55,11 @@
 /* ── Tech Buttons ── */
 .tech-btn-primary {
   background: var(--button-primary);
-  color: var(--button-surface);
+  color: var(--button-primary-ink);
   border-radius: 8px;
   border: none;
   font-weight: 600;
-  transition: all 0.2s ease;
+  transition: background-color 160ms ease, transform 120ms ease;
   cursor: pointer;
 }
 

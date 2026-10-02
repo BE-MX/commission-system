@@ -143,7 +143,9 @@ body {
   --action-soft: var(--button-primary-soft);
   --action-border: var(--button-primary-border);
   --action-ink: var(--button-surface);
-  --action-link: var(--button-primary);
+  --action-link: var(--button-primary-text);
+  --action-link-hover: var(--button-primary-text-hover);
+  --action-link-active: var(--button-primary-text-active);
   background: var(--button-surface);
   color: var(--button-text);
   border-color: var(--button-border);
@@ -170,7 +172,9 @@ body {
   --action-active: var(--button-danger-active);
   --action-soft: var(--button-danger-soft);
   --action-border: var(--button-danger-border);
-  --action-link: var(--button-danger);
+  --action-link: var(--button-danger-text);
+  --action-link-hover: var(--button-danger-text-hover);
+  --action-link-active: var(--button-danger-text-active);
   background: var(--action-color);
   border-color: var(--action-color);
   color: var(--action-ink);
@@ -181,7 +185,9 @@ body {
   --action-active: var(--button-success-active);
   --action-soft: var(--button-success-soft);
   --action-border: var(--button-success-border);
-  --action-link: var(--button-success);
+  --action-link: var(--button-success-text);
+  --action-link-hover: var(--button-success-text-hover);
+  --action-link-active: var(--button-success-text-active);
   background: var(--action-color);
   border-color: var(--action-color);
   color: var(--action-ink);
@@ -193,27 +199,29 @@ body {
   --action-soft: var(--button-warning-soft);
   --action-border: var(--button-warning-border);
   --action-link: var(--button-warning-text);
+  --action-link-hover: var(--button-warning-text-hover);
+  --action-link-active: var(--button-warning-text-active);
   --action-ink: var(--button-surface);
   background: var(--action-color);
   border-color: var(--action-color);
   color: var(--action-ink);
 }
-.el-button:is(:hover, :focus):not(.is-disabled):not(.is-loading) {
+.el-button:not(.is-link):not(.is-text):is(:hover, :focus):not(.is-disabled):not(.is-loading) {
   background: var(--button-surface);
-  color: var(--action-hover);
+  color: var(--action-link-hover);
   border-color: var(--action-hover);
 }
-.el-button:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info):is(:hover, :focus):not(.is-disabled):not(.is-loading) {
+.el-button:not(.is-link):not(.is-text):is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info):is(:hover, :focus):not(.is-disabled):not(.is-loading) {
   background: var(--action-hover);
   border-color: var(--action-hover);
   color: var(--action-ink);
 }
-.el-button:active:not(.is-disabled):not(.is-loading) {
+.el-button:not(.is-link):not(.is-text):active:not(.is-disabled):not(.is-loading) {
   background: var(--button-surface);
-  color: var(--action-active);
+  color: var(--action-link-active);
   border-color: var(--action-active);
 }
-.el-button:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info):active:not(.is-disabled):not(.is-loading) {
+.el-button:not(.is-link):not(.is-text):is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info):active:not(.is-disabled):not(.is-loading) {
   background: var(--action-active);
   border-color: var(--action-active);
   color: var(--action-ink);
@@ -235,30 +243,40 @@ body {
   box-shadow: none;
   font-weight: 500;
 }
-.el-button:is(.is-link, .is-text):not(:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info)) {
-  color: var(--button-text);
-}
+
 .el-button.is-link[class], .el-button.is-text[class] {
   --el-button-hover-bg-color: transparent;
 }
-.el-button.is-link:is(:hover, :focus):not(.is-disabled):not(.is-loading),
-.el-button.is-text:is(:hover, :focus):not(.is-disabled):not(.is-loading),
-.el-button.is-link:active:not(.is-disabled):not(.is-loading),
-.el-button.is-text:active:not(.is-disabled):not(.is-loading) {
+.el-button.is-link:is(:hover, :focus-visible):not(.is-disabled):not(.is-loading),
+.el-button.is-text:is(:hover, :focus-visible):not(.is-disabled):not(.is-loading) {
   background: var(--action-soft);
   border-color: transparent;
-  color: var(--action-hover);
+  color: var(--action-link-hover);
   box-shadow: none;
 }
-.el-button.is-link.el-button--warning:is(:hover, :focus):not(.is-disabled):not(.is-loading),
-.el-button.is-text.el-button--warning:is(:hover, :focus):not(.is-disabled):not(.is-loading),
-.el-button.is-link.el-button--warning:active:not(.is-disabled):not(.is-loading),
-.el-button.is-text.el-button--warning:active:not(.is-disabled):not(.is-loading) {
-  color: var(--button-warning-text);
+.el-button:is(.is-link, .is-text):active:not(.is-disabled):not(.is-loading) {
+  background: var(--action-soft);
+  border-color: transparent;
+  color: var(--action-link-active);
 }
-.el-button.is-text:not(:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info)):is(:hover, :focus):not(.is-disabled):not(.is-loading) {
-  background: var(--button-quiet-hover);
-  color: var(--button-text);
+/* Link geometry overrides solid sizes, including explicit Element Plus size props. */
+.el-button.is-link {
+  height: auto;
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 0;
+  font-size: 13px;
+  line-height: 16px;
+  transform: none;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+.el-button.is-link > span { gap: 4px; }
+.el-button.is-link .el-icon { font-size: 13px; }
+/* Element Plus replaces icon props while loading; slot prefixes need the same treatment. */
+.el-button.is-loading > span > .el-icon:first-child { display: none; }
+@media (hover: none), (pointer: coarse) {
+  .el-button.is-link { min-height: 44px; }
 }
 .el-button:focus-visible {
   outline: 2px solid var(--button-primary);
@@ -285,6 +303,7 @@ body {
   --el-button-hover-text-color: var(--button-text);
   opacity: 0.7;
 }
+.el-button.is-disabled.is-loading { opacity: 1; }
 .el-button.is-loading:is(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info) {
   --el-button-hover-bg-color: var(--action-color);
   --el-button-hover-border-color: var(--action-color);
@@ -306,7 +325,7 @@ body {
   .el-button, .el-card, .el-table td.el-table__cell { transition: none; }
 }
 
-/* ---- Tags: Morandi status colors anchored on LeShine Gold ---- */
+/* ---- Tags: tech-light status colors anchored on LeShine Gold ---- */
 .el-tag--info {
   background: var(--tag-neutral-bg);
   border-color: var(--tag-neutral-border);
@@ -590,7 +609,7 @@ body {
 }
 .list-table .el-button.is-link .el-icon {
   font-size: 13px;
-  margin-right: 4px;
+  margin-right: 0;
 }
 
 /* Primary key link inside list tables */

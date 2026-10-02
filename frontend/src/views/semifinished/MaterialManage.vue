@@ -62,7 +62,7 @@
         <el-table-column v-if="visibleKeys.includes('components')" label="半成品组成" min-width="240"><template #default="{ row }"><StatusBadge v-for="item in row.components" :key="item.material_id" size="small" effect="plain" style="margin: 2px">{{ item.size }}/{{ item.color_code }} · {{ percent(item.ratio) }}</StatusBadge></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('review')" label="审核" min-width="110"><template #default="{ row }"><StatusBadge :type="row.parse_status === 'confirmed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status === 'confirmed' ? '已确认' : '待审核' }}</StatusBadge></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('parse-message')" label="说明" min-width="160" prop="parse_message" show-overflow-tooltip />
-        <el-table-column class-name="table-action-column" label="操作" min-width="90" fixed="right"><template #default="{ row }"><el-button v-permission="'semifinished:write'" link type="primary" @click="editMapping(row)">配比</el-button></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="90" fixed="right"><template #default="{ row }"><el-button v-permission="'semifinished:write'" link type="primary" @click="editMapping(row)"><el-icon><Setting /></el-icon>配比</el-button></template></el-table-column>
       </el-table>
 
       <el-pagination

@@ -33,9 +33,9 @@
         <el-table-column label="操作" min-width="230" class-name="table-action-column" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 'pending' || row.status === 'deferred'">
-              <GlassButton v-permission="'customer_profile:write'" variant="link" @click="decide(row, 'accept')">采纳</GlassButton>
-              <GlassButton v-permission="'customer_profile:write'" variant="link" @click="decide(row, 'edit_accept')">编辑采纳</GlassButton>
-              <GlassButton v-permission="'customer_profile:write'" variant="link" @click="decide(row, 'reject')">驳回</GlassButton>
+              <GlassButton link-tone="success" left-icon="Check" v-permission="'customer_profile:write'" variant="link" @click="decide(row, 'accept')">采纳</GlassButton>
+              <GlassButton left-icon="Edit" v-permission="'customer_profile:write'" variant="link" @click="decide(row, 'edit_accept')">编辑采纳</GlassButton>
+              <GlassButton link-tone="danger" left-icon="Close" v-permission="'customer_profile:write'" variant="link" @click="decide(row, 'reject')">驳回</GlassButton>
             </template>
             <span v-else>—</span>
           </template>

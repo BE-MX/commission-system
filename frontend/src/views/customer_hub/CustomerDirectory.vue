@@ -15,7 +15,7 @@
         <el-table-column label="商业订单" min-width="150"><template #default="{row}"><strong>{{ row.order_count ?? '—' }} 单</strong><p>{{ row.order_amount_usd == null ? 'USD汇总未提供' : `USD ${formatMoney(row.order_amount_usd)}` }}</p><span class="hint">最近 {{ date(row.last_order_at) }}</span></template></el-table-column>
         <el-table-column label="经营上下文" min-width="220"><template #default="{row}"><p>{{ row.primary_product_families?.join('、') || '产品来源未提供' }}</p><p>最近互动 {{ date(row.last_interaction_at) }}</p><span class="hint">数据截至 {{ date(row.data_as_of) }}</span></template></el-table-column>
         <el-table-column label="档案" min-width="120"><template #default="{row}">{{ identityLabel(row.identity_status) }}<p>完整度 {{ row.profile_completeness ?? '—' }}%</p></template></el-table-column>
-        <el-table-column label="操作" min-width="118" max-width="160" class-name="table-action-column" fixed="right"><template #default="{row}"><GlassButton variant="link" @click="$emit('open-customer',row.customer_id)">客户作战卡</GlassButton></template></el-table-column>
+        <el-table-column label="操作" min-width="118" max-width="160" class-name="table-action-column" fixed="right"><template #default="{row}"><GlassButton left-icon="Document" variant="link" @click="$emit('open-customer',row.customer_id)">客户作战卡</GlassButton></template></el-table-column>
       </el-table><el-empty v-if="!loading && !error && !list.length" description="当前筛选下没有可见客户" :image-size="72" />
       <el-pagination class="pager" v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
     </section>

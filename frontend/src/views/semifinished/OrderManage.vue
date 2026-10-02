@@ -43,8 +43,8 @@
         <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="165" />
         <el-table-column class-name="table-action-column" label="操作" min-width="150" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button v-if="['submitted','partial'].includes(row.status)" v-permission="'semifinished:write'" link type="danger" @click="terminate(row)">终止</el-button>
+            <el-button link type="primary" @click="openDetail(row)"><el-icon><Document /></el-icon>详情</el-button>
+            <el-button v-if="['submitted','partial'].includes(row.status)" v-permission="'semifinished:write'" link type="danger" @click="terminate(row)"><el-icon><Close /></el-icon>终止</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -95,7 +95,7 @@
           <el-table-column label="下单(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
           <el-table-column label="已入库(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>
           <el-table-column label="剩余(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.remaining_qty_grams) }}</template></el-table-column>
-          <el-table-column class-name="table-action-column" label="操作" min-width="100"><template #default="{ row }"><el-button v-if="Number(row.remaining_qty_grams) > 0 && ['submitted','partial'].includes(detail.status)" v-permission="'semifinished:write'" link type="primary" @click="openReceive(row)">入库</el-button></template></el-table-column>
+          <el-table-column class-name="table-action-column" label="操作" min-width="100"><template #default="{ row }"><el-button v-if="Number(row.remaining_qty_grams) > 0 && ['submitted','partial'].includes(detail.status)" v-permission="'semifinished:write'" link type="primary" @click="openReceive(row)"><el-icon><Box /></el-icon>入库</el-button></template></el-table-column>
         </el-table>
       </div>
     </DetailDrawer>

@@ -186,7 +186,7 @@
         <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table">
           <el-table-column class-name="table-action-column" label="操作" min-width="70">
             <template #default="{ row }">
-              <el-button link type="success" @click="openProgressDialog(row)">进度</el-button>
+              <el-button link type="primary" @click="openProgressDialog(row)"><el-icon><TrendCharts /></el-icon>进度</el-button>
             </template>
           </el-table-column>
           <el-table-column label="生产单号" prop="order_no" min-width="120" />

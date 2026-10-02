@@ -22,10 +22,10 @@
         <el-table-column prop="last_error" label="最近失败" min-width="120" show-overflow-tooltip />
         <el-table-column label="操作" min-width="170" class-name="table-action-column" fixed="right">
           <template #default="{ row }">
-            <GlassButton variant="link" v-permission="'customer_pcw:write'" @click="toggleEnabled(row)">
+            <GlassButton :link-tone="row.enabled ? 'warning' : 'success'" left-icon="SwitchButton" variant="link" v-permission="'customer_pcw:write'" @click="toggleEnabled(row)">
               {{ row.enabled ? '暂停' : '恢复' }}
             </GlassButton>
-            <GlassButton variant="link" v-permission="'customer_pcw:write'" @click="runOnce(row)">采集</GlassButton>
+            <GlassButton left-icon="Refresh" variant="link" v-permission="'customer_pcw:write'" @click="runOnce(row)">采集</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -46,8 +46,8 @@
         <el-table-column label="操作" min-width="150" class-name="table-action-column" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 'pending'">
-              <GlassButton variant="link" v-permission="'customer_pcw:write'" @click="decide(row, 'confirm')">确认</GlassButton>
-              <GlassButton variant="link" v-permission="'customer_pcw:write'" @click="decide(row, 'ignore')">忽略</GlassButton>
+              <GlassButton link-tone="success" left-icon="Check" variant="link" v-permission="'customer_pcw:write'" @click="decide(row, 'confirm')">确认</GlassButton>
+              <GlassButton link-tone="danger" left-icon="Close" variant="link" v-permission="'customer_pcw:write'" @click="decide(row, 'ignore')">忽略</GlassButton>
             </template>
             <span v-else class="hint">{{ row.action_id ? `行动 #${row.action_id}` : '—' }}</span>
           </template>

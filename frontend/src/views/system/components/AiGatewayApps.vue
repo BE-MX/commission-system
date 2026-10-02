@@ -19,10 +19,10 @@
         <el-table-column label="最近调用" min-width="170"><template #default="{ row }">{{ formatDateTime(row.last_used_at) || '尚未调用' }}</template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="300" :fixed="isNarrow ? false : 'right'">
           <template #default="{ row }">
-            <GlassButton v-permission="'ai:admin'" variant="link" @click="openEditor(row)">编辑</GlassButton>
-            <GlassButton v-permission="'ai:admin'" variant="link" @click="showRequests(row)">调用记录</GlassButton>
-            <GlassButton v-permission="'ai:admin'" variant="link" :disabled="busy" @click="rotate(row)">重置密钥</GlassButton>
-            <GlassButton v-permission="'ai:admin'" variant="link" :disabled="busy" @click="toggle(row)">{{ row.is_enabled ? '停用' : '启用' }}</GlassButton>
+            <GlassButton left-icon="Edit" v-permission="'ai:admin'" variant="link" @click="openEditor(row)">编辑</GlassButton>
+            <GlassButton left-icon="Document" v-permission="'ai:admin'" variant="link" @click="showRequests(row)">调用记录</GlassButton>
+            <GlassButton left-icon="Key" v-permission="'ai:admin'" variant="link" :disabled="busy" @click="rotate(row)">重置密钥</GlassButton>
+            <GlassButton :link-tone="row.is_enabled ? 'warning' : 'success'" left-icon="SwitchButton" v-permission="'ai:admin'" variant="link" :disabled="busy" @click="toggle(row)">{{ row.is_enabled ? '停用' : '启用' }}</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -75,7 +75,7 @@
         <el-table-column label="输入 / 输出" min-width="130"><template #default="{ row }">{{ row.tokens_prompt ?? '未知' }} / {{ row.tokens_completion ?? '未知' }}</template></el-table-column>
         <el-table-column prop="error_code" label="错误分类" min-width="160" />
         <el-table-column prop="resolution_reason" label="核查结论" min-width="180" show-overflow-tooltip />
-        <el-table-column class-name="table-action-column" label="处理" min-width="130" :fixed="isNarrow ? false : 'right'"><template #default="{ row }"><GlassButton v-if="row.can_resolve" v-permission="'ai:admin'" variant="link" @click="openResolution(row)">解除占用</GlassButton></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="处理" min-width="130" :fixed="isNarrow ? false : 'right'"><template #default="{ row }"><GlassButton link-tone="danger" left-icon="Close" v-if="row.can_resolve" v-permission="'ai:admin'" variant="link" @click="openResolution(row)">解除占用</GlassButton></template></el-table-column>
       </el-table>
       <el-pagination class="pager" :page-sizes="[20, 50, 100]" :current-page="requests.page.value" :page-size="requests.pageSize.value" :total="requests.total.value" layout="total, sizes, prev, pager, next" @current-change="requests.handlePageChange" @size-change="requests.handleSizeChange" />
     </DetailDrawer>

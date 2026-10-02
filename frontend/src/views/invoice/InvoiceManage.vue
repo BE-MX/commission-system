@@ -129,7 +129,7 @@
                 trigger="click"
                 @command="command => resolveUncertain(row, command)"
               >
-                <el-button link type="danger">处理待核对</el-button>
+                <el-button link type="danger"><el-icon><Check /></el-icon>处理待核对</el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item v-if="!row.xiaoman_order_id" command="bind_order">绑定已生成订单</el-dropdown-item>
@@ -138,7 +138,7 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button v-if="row.order_type === 'presale'" v-permission="'shipment:write'" link type="primary" :disabled="!shipmentCapabilities.enabled || row.sync_status !== 'synced' || ['cancel_pending','cancelled'].includes(row.status)" @click="shipmentInvoice = row">生成出库单</el-button>
+              <el-button v-if="row.order_type === 'presale'" v-permission="'shipment:write'" link type="primary" :disabled="!shipmentCapabilities.enabled || row.sync_status !== 'synced' || ['cancel_pending','cancelled'].includes(row.status)" @click="shipmentInvoice = row"><el-icon><Box /></el-icon>生成出库单</el-button>
               <el-dropdown trigger="click" placement="bottom-end">
                 <el-button link>更多<el-icon><ArrowDown /></el-icon></el-button>
                 <template #dropdown>

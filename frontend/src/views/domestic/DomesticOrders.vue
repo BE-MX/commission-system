@@ -82,11 +82,11 @@
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>
             <GlassButton variant="link" left-icon="Printer" @click="openOrderQrLabels(row)">批量打印逐件码</GlassButton>
-            <GlassButton v-if="row.status === 5 && canReviewOrder(row)" variant="link" left-icon="Stamp" :loading="reviewingOrderIds.has(row.id)" :disabled="reviewingOrderIds.has(row.id)" @click="handleReviewApprove(row)">通过</GlassButton>
+            <GlassButton link-tone="success" v-if="row.status === 5 && canReviewOrder(row)" variant="link" left-icon="Stamp" :loading="reviewingOrderIds.has(row.id)" :disabled="reviewingOrderIds.has(row.id)" @click="handleReviewApprove(row)">通过</GlassButton>
             <GlassButton v-if="row.status === 5 && canReviewOrder(row)" variant="link" link-tone="danger" left-icon="CircleClose" :disabled="reviewingOrderIds.has(row.id)" @click="handleReviewReject(row)">驳回</GlassButton>
             <GlassButton v-if="canOperateOrder(row) && row.status < 3" v-permission="'domestic:write'" variant="link" left-icon="EditPen" @click="openEdit(row)">编辑</GlassButton>
             <GlassButton v-if="row.status === 0 && canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="Promotion" :loading="submittingOrderIds.has(row.id)" :disabled="submittingOrderIds.has(row.id)" @click="handleSubmitDraft(row)">提交</GlassButton>
-            <GlassButton v-else-if="canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="[3, 4, 6].includes(row.status)" @click="handleTerminate(row)">终止</GlassButton>
+            <GlassButton link-tone="danger" v-else-if="canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="[3, 4, 6].includes(row.status)" @click="handleTerminate(row)">终止</GlassButton>
             <GlassButton v-if="row.status === 0 && canOperateOrder(row)" v-any-permission="['domestic:write', 'domestic:admin']" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
             <GlassButton v-else-if="canOperateOrder(row)" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>

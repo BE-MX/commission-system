@@ -84,7 +84,7 @@
               :loading="printingId === row.outbound_record_id" @click="openPrint(row)">打印出库单</GlassButton>
             <span v-if="!row.can_print || row.recheck_status" class="queue-note">{{ row.recheck_status === 'pending_sync' ? '待同步并重验' : row.recheck_status === 'pending_inspection' ? '待补验' : outboundPendingHint(row.outbound_state) }}</span>
             <el-dropdown v-if="canShowMore(row)" trigger="click" placement="bottom-end">
-              <GlassButton variant="link" right-icon="ArrowDown">更多</GlassButton>
+              <GlassButton left-icon="MoreFilled" variant="link" right-icon="ArrowDown">更多</GlassButton>
               <template #dropdown>
                 <el-dropdown-menu>
                   <div v-if="row.can_allow_print_before_recheck" v-permission="'shipping_inspection:admin'" role="none">

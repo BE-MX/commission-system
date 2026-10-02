@@ -146,7 +146,7 @@
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="120">
           <template #default="{ row }">
-            <el-button link @click="toggleRule(row.id)">{{ row.is_active ? '停用' : '启用' }}</el-button>
+            <el-button :type="row.is_active ? 'warning' : 'success'" link @click="toggleRule(row.id)"><el-icon><SwitchButton /></el-icon>{{ row.is_active ? '停用' : '启用' }}</el-button>
           </template>
         </el-table-column>
       </el-table>

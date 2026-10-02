@@ -125,7 +125,7 @@
               <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
               <div v-any-permission="['domestic:write', 'domestic:recharge', 'domestic:admin']" class="customer-more">
                 <el-dropdown trigger="click" placement="bottom-end">
-                  <GlassButton variant="link" right-icon="ArrowDown">更多</GlassButton>
+                  <GlassButton left-icon="MoreFilled" variant="link" right-icon="ArrowDown">更多</GlassButton>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <div v-permission="'domestic:write'" role="none">

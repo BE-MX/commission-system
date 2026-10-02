@@ -67,7 +67,7 @@
           <template #default="{ row }">
             <template v-if="row.candidate_status === 'pending'">
               <GlassButton v-permission="'external_binding:write'" variant="link" left-icon="Connection" @click="openBindDialog(row)">绑定用户</GlassButton>
-              <GlassButton v-permission="'external_binding:write'" variant="link" left-icon="Close" @click="handleIgnore(row)">忽略</GlassButton>
+              <GlassButton link-tone="danger" v-permission="'external_binding:write'" variant="link" left-icon="Close" @click="handleIgnore(row)">忽略</GlassButton>
             </template>
             <span v-else class="text-muted">{{ candidateStatusLabel(row.candidate_status) }}</span>
           </template>

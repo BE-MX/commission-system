@@ -34,7 +34,7 @@
         <el-table-column v-if="visibleKeys.includes('safety-stock')" label="安全库存(g)" min-width="130" align="right"><template #default="{ row }">{{ grams(row.safety_stock_grams) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('stock-status')" label="库存状态" min-width="100"><template #default="{ row }"><StatusBadge :type="stockType(row.stock_status)" effect="plain">{{ stockText(row.stock_status) }}</StatusBadge></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('updated-at')" label="更新时间" min-width="170" prop="updated_at" />
-        <el-table-column class-name="table-action-column" label="操作" min-width="150" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openLedger(row)">流水</el-button><el-button v-permission="'semifinished:admin'" link type="warning" @click="openAdjust(row)">调整</el-button></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="150" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openLedger(row)"><el-icon><Document /></el-icon>流水</el-button><el-button v-permission="'semifinished:admin'" link type="warning" @click="openAdjust(row)"><el-icon><Edit /></el-icon>调整</el-button></template></el-table-column>
       </el-table>
 
       <el-pagination

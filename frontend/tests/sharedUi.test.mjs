@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import * as Vue from 'vue'
+import * as Icons from '@element-plus/icons-vue'
 import * as status from '../src/utils/status.js'
 import * as responsive from '../src/utils/responsiveDescriptions.js'
 import { loadComponent, mountComponent, slotShell } from './helpers/mountComponent.mjs'
@@ -55,9 +56,40 @@ test('normal text and semantic badges meet 4.5 contrast on workspace surfaces', 
   for (const foreground of ['--text-primary', '--text-secondary', '--text-muted', '--text-placeholder', '--text-tertiary', '--color-primary-text', '--color-success-text', '--color-warning-text', '--color-danger-text', '--color-info-text']) {
     for (const surface of ['#ffffff', color('--page-bg')]) assert.ok(contrast(color(foreground), surface) >= 4.5, `${foreground} on ${surface}`)
   }
-  for (const name of ['--color-success', '--button-primary', '--button-primary-hover', '--button-primary-active', '--button-danger', '--button-danger-hover', '--button-danger-active', '--button-success', '--button-success-hover', '--button-success-active']) assert.ok(contrast(color(name), '#ffffff') >= 4.5, name)
+  for (const name of ['--color-success', '--button-danger', '--button-danger-hover', '--button-danger-active', '--button-success', '--button-success-hover', '--button-success-active', '--button-warning', '--button-warning-hover', '--button-warning-active']) assert.ok(contrast(color(name), '#ffffff') >= 4.5, name)
   assert.ok(contrast(color('--ink-dark'), color('--color-primary')) >= 4.5)
-  for (const name of ['--button-warning', '--button-warning-hover', '--button-warning-active']) assert.ok(contrast(color('--button-text'), color(name)) >= 4.5, name)
+  for (const name of ['--button-primary', '--button-primary-hover', '--button-primary-active']) assert.ok(contrast(color('--button-primary-ink'), color(name)) >= 4.5, name)
+  for (const tone of ['primary', 'success', 'danger', 'warning']) {
+    for (const state of ['', '-hover', '-active']) {
+      for (const surface of ['#ffffff', color('--page-bg'), color(`--button-${tone}-soft`), '#faf8f5']) {
+        assert.ok(contrast(color(`--button-${tone}-text${state}`), surface) >= 4.5, `${tone}${state} on ${surface}`)
+      }
+    }
+  }
   const app = readFileSync(new URL('../src/styles/app.css', import.meta.url), 'utf8')
   assert.match(app, /body\s*\{[^}]*--el-color-primary:\s*var\(--color-primary-text\)/)
+})
+
+test('main and PM retain identical button token contracts', () => {
+  const tokens = url => Object.fromEntries([...readFileSync(new URL(url, import.meta.url), 'utf8')
+    .matchAll(/(--button-[\w-]+):\s*([^;]+);/g)].map(m => [m[1], m[2].trim()]))
+  assert.deepEqual(tokens('../../frontend-pm/src/styles/tokens.css'), tokens('../src/styles/tokens.css'))
+})
+
+test('GlassButton links retain icons and block disabled/loading submissions', async t => {
+  let clicks = 0
+  const props = Vue.reactive({ variant: 'link', linkTone: 'warning', leftIcon: 'Promotion', onClick: () => clicks++ })
+  const ui = mountComponent(t, loadComponent('../../src/components/GlassButton.vue', { '@element-plus/icons-vue': Icons }), props,
+    { default: () => '发送确认' }, { 'el-icon': slotShell, Promotion: Icons.Promotion })
+  const button = () => ui.find(n => n.type === 'button')[0]
+  assert.match(button().props.class, /gb-link-tone--warning/)
+  assert.doesNotMatch(button().props.class, /gb-shadow/)
+  button().props.onClick({}); assert.equal(clicks, 1)
+  props.loading = true; await Vue.nextTick()
+  assert.equal(button().props.disabled, true)
+  assert.equal(button().props['aria-busy'], true)
+  assert.equal(ui.text(), '发送确认')
+  button().props.onClick({}); assert.equal(clicks, 1)
+  props.loading = false; props.disabled = true; await Vue.nextTick()
+  button().props.onClick({}); assert.equal(clicks, 1)
 })

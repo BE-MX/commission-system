@@ -27,16 +27,16 @@
   - Micro label: 10-11px / 700, letter-spacing 0.1em+, uppercase
 
 ## Color
-- **Approach:** restrained — 品牌金 + 中性色系统，操作按钮使用 Ant Design 蓝色与语义色
+- **Approach:** restrained — 品牌金 + 中性色系统，操作按钮使用科技轻快色系：能量金、青碧、杏橙、绯红
 - **Primary:** #D4941C — LeShine Gold，用于品牌强调、导航与表单聚焦；按钮独立使用 `--button-*`
-- **Button Primary:** #1668DC，hover #145FC8，active #0958D9；白字。参考 Ant Design Pro 的 #1677FF，采用更深色阶满足 13px 正文 4.5:1 对比度。次操作白底灰边，危险操作红色，禁用灰色。
+- **Button Primary:** #E0A50B，hover #C9930A，active #A87C08；深墨字 #211903。链接使用深金 #8F6508。按钮色值以 `frontend/src/styles/tokens.css` 的 `--button-*` 为准；正常、hover、active 文字对比度均 ≥4.5:1。
 - **Primary Hover:** #BB8218
 - **Primary Light:** rgba(212,148,28,0.08) — hover 背景、输入聚焦光晕
 - **Gold Accent:** #F5CB5C — 侧边栏活跃态、标签、徽章、装饰
 - **Gold Soft:** #FDF4DC — 极浅金底色（hover/徽章；表格 header 已改用冷灰）
-- **Danger:** #DC3545 / #C0392B (dark variant)
-- **Success:** #2D9F6F / #1E7D50 (text)
-- **Warning:** 使用 Gold 色系替代 — rgba(245,203,92,0.15) 背景 + #8B6914 文字
+- **Button Danger:** 实心 #D5363C + 白字；链接 #C62A30。状态标签独立引用 `--tag-danger-*`。
+- **Button Success:** 实心 #0F8479 + 白字；链接 #0B6E63。状态标签独立引用 `--tag-success-*`。
+- **Button Warning:** 实心 #B75B09 + 白字；链接 #9A4E08。提醒使用杏橙，区别于主操作的品牌金。
 - **Neutrals (cool gray):**
   - Text primary: #1a1a2e
   - Text secondary: #4a5568
@@ -169,7 +169,7 @@
 
 ### 页头按钮
 
-主操作按钮位置已统一到卡片内操作行（Action Bar Spec，2026-10-01 起），页头不再放按钮。主操作 `variant="primary"`（蓝色实心白字），次操作 `variant="secondary"`（白底灰边），共享 GlassButton、Element Plus 与独立操作按钮统一引用 `--button-*`；`v-permission` 行为不变。操作列 link 按钮使用蓝色文字。
+主操作按钮位置已统一到卡片内操作行（Action Bar Spec，2026-10-01 起），页头不再放按钮。主操作 `variant="primary"`（亮金实心深墨字），次操作 `variant="secondary"`（白底灰边），共享 GlassButton、Element Plus 与独立操作按钮统一引用 `--button-*`；`v-permission` 行为不变。操作列 link 按钮使用对应语义的深色文字。
 
 ### 性能红线（2026-07-25 滚动卡顿的教训）
 
@@ -179,19 +179,19 @@
 
 ## Button Spec
 
-按钮统一使用 **GlassButton** 的现有尺寸、圆角和接口，配色参照 [Ant Design Button](https://ant.design/components/button)。主站及 PM 中后台操作按钮采用实心蓝、白底灰边和语义色；不使用金色渐变与彩色外发光。主站、PM 的独立 token 文件分别维护相同按钮色值，部署制品互不依赖。导航、状态标签、表单及专属展会/客户门户场景仍采用对应规范。
+按钮统一使用 **GlassButton** 的现有尺寸、圆角和接口。最新组件规范为科技轻快色系（2026-10-02）：主操作亮金底 + 深墨字，次操作白底灰边，成功青碧、提醒杏橙、危险绯红。主站 GlassButton、Element Plus、`.tech-btn-primary` 和 PM 原生按钮共用按钮语义；主站、PM 的独立 token 文件分别维护相同 `--button-*` 色值，由回归测试核对一致性，部署制品互不依赖。导航、状态标签、表单及专属展会/客户门户场景采用对应 token。完整接口、颜色与验收示例见 [操作列与按钮设计契约](docs/requirements/2026-10-02-action-button-design.md)。
 
 ### 尺寸体系
 
 | 尺寸 | 名称 | 高度 | 内边距 | 字号 |
 |------|------|------|--------|------|
-| `xs` | 极小 | — | — | 11px |
-| `sm` | 小 | — | — | 12px |
-| `md` | 中（默认） | 36px | — | 13px |
-| `lg` | 大 | — | — | 13px |
-| `xl` | 极大 | — | — | 14px |
+| `xs` | 极小 | 28px | 0 10px | 11px |
+| `sm` | 小 | 32px | 0 12px | 12px |
+| `md` | 中（默认） | 36px | 0 16px | 13px |
+| `lg` | 大 | 40px | 0 20px | 13px |
+| `xl` | 极大 | 48px | 0 24px | 14px |
 
-当前项目统一使用 `md`（36px）作为工具栏及操作按钮高度。
+工具栏使用 `md`（36px）。操作列 link 覆盖尺寸体系：桌面最小高度 24px、padding 4px 8px、13px/500、line-height 16px、图文间距 4px；触屏或粗指针最小高度 44px。长文案自然增高。
 
 ### 圆角体系
 
@@ -203,40 +203,42 @@
 
 | 变体 | 风格 | 适用场景 |
 |------|------|----------|
-| `primary` | 蓝色实心 + 白字 | 主操作、提交、确认 |
+| `primary` | 亮金实心 + 深墨字 | 主操作、提交、确认 |
 | `secondary` | 白底 + 灰色边框 | 次操作、批量操作 |
 | `outline` | 白底 + 灰色描边 | 筛选、配置类操作 |
 | `ghost` | 完全透明，hover 才显背景 | 工具栏、弱操作 |
-| `soft` | 浅蓝底 + 蓝字 | 收藏、标记类柔和操作 |
-| `link` | 蓝色文字 + hover 浅色背景 | 操作列跳转、查看 |
+| `soft` | 浅金底 + 深金字 | 收藏、标记类柔和操作 |
+| `link` | 深色语义文字 + hover 同族浅底 | 操作列跳转、查看 |
 | `danger` | 红色实心 + 白字 | 删除、禁用、强警告 |
-| `success` | 绿色实心 + 白字 | 保存成功、通过、启用 |
-| `warning` | 琥珀色实心 + 深色字 | 提交审核、提醒 |
-| `info` | 蓝色实心 + 白字 | 帮助、提示、信息 |
+| `success` | 青碧实心 + 白字 | 保存成功、通过、启用 |
+| `warning` | 杏橙实心 + 白字 | 提交审核、提醒 |
+| `info` | 亮金实心 + 深墨字 | 帮助、提示、信息 |
 | `white` | 白底 + 灰边 | 叠加在复杂背景上 |
 
 ### 列表页按钮映射
 
 **工具栏按钮**
-- 主操作：`variant="primary"`（蓝色实心白字）
+- 主操作：`variant="primary"`（亮金实心深墨字）
 - 次操作：`variant="secondary"`（白底 + 边框）
 - 筛选/切换：`variant="outline"` 或 `variant="ghost"`
 
 **操作列按钮**
-- 编辑/查看：`variant="link"` + 蓝色文字 + `<el-icon>` 前缀图标
-- 通过/启用：`variant="link"` + `type="success"`
-- 拒绝/禁用：`variant="link"` + `type="danger"`
-- 统一要求：图标 + 文字，**禁止** `size="small"`
+- 编辑/查看：GlassButton `variant="link"`（默认 primary 深金文字），Element Plus `link type="primary"`；带前缀图标
+- 通过/启用：GlassButton `variant="link" link-tone="success"`；Element Plus `link type="success"`
+- 删除/拒绝：GlassButton `variant="link" link-tone="danger"`；Element Plus `link type="danger"`
+- 暂停/禁用/撤销发布等可恢复状态变更：warning；恢复/启用为 success。业务失败或破坏性动作使用 danger
+- 发送确认、待审核提醒：warning；普通查看、编辑、打印、AI 辅助为 primary，明确提醒场景可选 warning
+- 统一要求：图标 + 文字，操作列不传 size、不写内联颜色、不使用实心/描边按钮；link 无圆角、无边框、无阴影、无按压缩放。相邻按钮间距 4px 8px
 
 ### 特殊状态
 
 - **加载状态**：`loading` 显示旋转图标，保留变体颜色，阻止重复点击
 - **禁用状态**：`disabled` 使用浅灰底、灰字、灰边；文字/ghost 按钮保持透明底，不响应 hover/active
-- **激活状态**：`active` 显示蓝色 ring；键盘 `:focus-visible` 显示清晰蓝色轮廓
-- **Element Plus**：solid/plain/text/link 使用同一语义色族；默认类型为空串也保持中性配色；warning 文字按钮使用深琥珀色；focus、disabled、loading 不回退到全局品牌金
+- **激活状态**：实心按钮 `active` 显示品牌金 ring；键盘 `:focus-visible` 显示 2px 品牌金轮廓、offset 3px。link 无阴影，鼠标点击不保留 hover 背景，键盘焦点保留轮廓
+- **Element Plus**：solid/plain/text/link 使用同一语义色族；默认实心按钮保持中性配色；默认 link 与 primary link 一致使用深金文字；warning link 使用深杏橙；hover/active 使用对应 `--button-{tone}-text-hover/active`，不借用实心底色
 - **图标组合**：支持 `leftIcon` / `rightIcon` / 纯图标按钮
 - **全宽按钮**：`fullWidth` 撑满容器（表单底部提交场景）
-- **阴影层级**：`shadow` 支持 `sm/md/lg/xl`
+- **阴影层级**：实心/描边 `shadow` 支持 `sm/md/lg/xl`；link 忽略 shadow，频繁行操作只做 160ms 颜色反馈，减少动态模式关闭过渡
 
 ## List Page Spec
 
@@ -289,7 +291,7 @@
 **行高**
 
 - cell padding: `10px 12px`（上下 10px，左右 12px）
-- 单行显示，**禁止**换行
+- 普通文本列单行省略；操作列与多标签单元格按对应规范换行
 
 ### 2. 字体与排版
 
@@ -298,11 +300,24 @@
 | 表头 | 13px | 600 | `var(--text-secondary)` | 非 uppercase，无 letter-spacing |
 | 内容 | 13px | 400 | `var(--text-primary)` | — |
 | 链接/主键 | 13px | 600 | `var(--color-primary)` | — |
-| 操作按钮文字 | 13px | 500 | `var(--color-primary)` | link 样式 |
+| 操作按钮文字 | 13px | 500 | `var(--button-{tone}-text)` | link 样式；默认 primary |
 
 ### 3. 标签与徽章
 
 **状态标签（pill）**
+
+最新科技轻快标签使用独立 `--tag-*` 色族，不从按钮实心底色推导文字色；按钮加深色阶不会改变标签。浅底 + 同族深字为默认，`dark` 使用 solid，Gold dark 配深墨字：
+
+| type / 色族 | 浅底 | 文字 | 边框 | solid |
+|---|---|---|---|---|
+| primary / gold | #FDF6DD | #8F6508 | #F0D889 | #E0A50B |
+| success / 青碧 | #E4F7F3 | #0B6E63 | #A8E3D6 | #0D9488 |
+| warning / 杏橙 | #FEF0DE | #9A4E08 | #F4CCA0 | #C2610A |
+| danger / 绯红 | #FDEBEC | #C62A30 | #F6C6CA | #E5484D |
+| 电光蓝（信息备用色族） | #EBF1FE | #1D4ED8 | #BFD4FB | #2563EB |
+| info / neutral | #F6F7F9 | #4A5563 | #E2E5EA | #64748B |
+
+Element Plus `info` 当前映射 neutral；电光蓝为备用 token，不把所有 info 标签改蓝。
 
 ```html
 <el-tag size="small" effect="plain">...</el-tag>
@@ -338,7 +353,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 - **禁止** `size="small"`
 - 必须图标 + 文字
-- link 样式，蓝色文字
+- link 样式，使用 Button Spec 的深色语义文字、尺寸、状态与无阴影规则
 
 操作/处理列统一加 `class-name="table-action-column"`，布局由 `frontend/src/styles/table-actions.css` 管理：按钮按原顺序换行，单元格随内容增高，不继承普通文本列的单行省略。需要额外包裹按钮时使用 `<div class="table-actions">`，不要另设 `nowrap`、固定高度或裁切。长按钮文字允许换行，间距统一使用 `gap`，不叠加相邻按钮的 margin。
 
@@ -346,10 +361,12 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 新增操作列后运行 `node --test frontend/tests/tableActions.test.mjs` 检查接入。浏览器布局验证页见 `frontend/tests/fixtures/table-actions/index.html`（Vite 开发服务下访问；隔离数据，不调用业务 API），覆盖多按钮、长文案、窄图标列、下拉及确认弹层。
 
+运行 `python frontend/tests/actionButtons.browser.py --url http://localhost:3000/tests/fixtures/table-actions/` 验证共享按钮状态、单个加载图标、次操作对比度、键盘焦点、点击后移出、权限切换及触屏目标；需要 Python Playwright 与 Chrome。
+
 **工具栏按钮**
 
 - 次操作：默认样式（白底 + 边框）
-- 主操作：`type="primary"`（蓝色实心白字）
+- 主操作：`type="primary"`（亮金实心深墨字）
 - 统一高度 36px
 
 ### 5. 筛选区（FilterBar）
@@ -571,7 +588,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 |------|------|
 | `.glass-card` | 玻璃态容器：`backdrop-filter: blur(20px)`，半透明深色背景 |
 | `.gold-glow` | 金色外发光：`box-shadow` 三层叠加，用于登录卡片 |
-| `.tech-btn-primary` | 主按钮：引用 `--button-primary`，蓝底白字，hover/active 使用同色族 |
+| `.tech-btn-primary` | 主按钮：引用 `--button-primary`，亮金底深墨字，hover/active 使用同色族 |
 | `.tech-btn-secondary` | 次要按钮：半透明白色描边 |
 | `.tech-input` | 输入框：近透明底色，聚焦时金色边框 + 光晕 |
 | `.badge-cyan/gold/green/amber` | 标签徽章，对应四种目的地颜色 |
@@ -598,6 +615,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-10-02 | 科技轻快按钮与操作列组件规范收口 | 主站/PM 按钮 token 对齐；link 深色语义文字、24px/触屏44px、无圆角/阴影/缩放、显式图标；新增 warning tone，静态扫描与浏览器状态验收 |
 | 2026-04-29 | 统一 DESIGN.md，提取现有设计系统 | 之前设计变量分散在 App.vue 和各组件 scoped 样式中，需要集中管理 |
 | 2026-04-29 | 字体 Outfit + DM Sans 已确认 | 系统已在使用，直接记录为正式方案 |
 | 2026-04-29 | 语义色 Warning 复用 Gold 色系 | 系统已有实现，统一记录 |

@@ -382,7 +382,7 @@
               <GlassButton variant="link" left-icon="Edit" @click="openDesignerDialog(row)">编辑</GlassButton>
               <GlassButton
                 variant="link"
-                :link-tone="row.is_active ? 'danger' : 'success'"
+                :link-tone="row.is_active ? 'warning' : 'success'"
                 left-icon="SwitchButton"
                 @click="toggleDesignerActive(row)"
               >{{ row.is_active ? '停用' : '启用' }}</GlassButton>

@@ -54,14 +54,14 @@
         </el-table-column>
         <el-table-column v-if="canAdmin" class-name="table-action-column" label="操作" min-width="250" fixed="right">
           <template #default="{ row }">
-            <GlassButton v-permission="'customer_image:admin'" variant="link" @click="openEditor(row)">编辑</GlassButton>
-            <GlassButton
+            <GlassButton left-icon="Edit" v-permission="'customer_image:admin'" variant="link" @click="openEditor(row)">编辑</GlassButton>
+            <GlassButton left-icon="SwitchButton"
               v-permission="'customer_image:admin'"
               variant="link"
-              :link-tone="row.is_published ? '' : 'success'"
+              :link-tone="row.is_published ? 'warning' : 'success'"
               @click="togglePublish(row)"
             >{{ row.is_published ? '取消发布' : '发布' }}</GlassButton>
-            <GlassButton
+            <GlassButton left-icon="Delete"
               v-permission="'customer_image:admin'"
               variant="link"
               link-tone="danger"

@@ -44,7 +44,7 @@ const props = defineProps({
   leftIcon:  { type: [String, Object], default: '' },
   rightIcon: { type: [String, Object], default: '' },
 
-  /** Only effective when variant="link". Values: primary | success | danger */
+  /** Only effective when variant="link". Values: primary | success | danger | warning */
   linkTone: { type: String, default: '' },
 
   loading:     { type: Boolean, default: false },
@@ -77,7 +77,7 @@ const btnClasses = computed(() => {
   if (props.loading && !props.disabled) c.push('gb-loading')
   if (props.active)          c.push('gb-active')
 
-  if (props.shadow !== false && !props.disabled) {
+  if (props.variant !== 'link' && props.shadow !== false && !props.disabled) {
     const sv = typeof props.shadow === 'string' ? props.shadow : 'default'
     c.push(`gb-shadow--${sv}`)
   }
@@ -168,7 +168,13 @@ function handleClick(e) {
   --action-active: var(--button-primary-active);
   --action-soft: var(--button-primary-soft);
   --action-ink: var(--button-surface);
+  --action-link: var(--button-primary-text);
+  --action-link-hover: var(--button-primary-text-hover);
+  --action-link-active: var(--button-primary-text-active);
   border: 1px solid transparent;
+}
+.gb-variant--primary, .gb-variant--info {
+  --action-ink: var(--button-primary-ink);
 }
 .gb-variant--primary {
   background: var(--action-color);
@@ -203,7 +209,7 @@ function handleClick(e) {
   --action-hover: var(--button-warning-hover);
   --action-active: var(--button-warning-active);
   --action-soft: var(--button-warning-soft);
-  --action-ink: var(--button-text);
+  --action-ink: var(--button-surface);
   background: var(--action-color);
   border-color: var(--action-color);
   color: var(--action-ink);
@@ -220,27 +226,40 @@ function handleClick(e) {
 .gb-variant--soft {
   background: var(--button-primary-soft);
   border-color: var(--button-primary-border);
-  color: var(--button-primary);
+  color: var(--button-primary-text);
 }
 .gb-variant--link {
   background: transparent;
-  color: var(--action-color);
+  color: var(--action-link);
   border: 0;
   font-weight: 500;
   height: auto;
+  min-height: 24px;
+  line-height: 16px;
+  font-size: 13px;
+  gap: 4px;
+  border-radius: 0;
+  box-shadow: none;
   padding: 4px 8px;
+  transition: color 160ms ease, background-color 160ms ease;
 }
 .gb-link-tone--success {
-  --action-color: var(--button-success);
-  --action-hover: var(--button-success-hover);
-  --action-active: var(--button-success-active);
+  --action-link: var(--button-success-text);
+  --action-link-hover: var(--button-success-text-hover);
+  --action-link-active: var(--button-success-text-active);
   --action-soft: var(--button-success-soft);
 }
 .gb-link-tone--danger {
-  --action-color: var(--button-danger);
-  --action-hover: var(--button-danger-hover);
-  --action-active: var(--button-danger-active);
+  --action-link: var(--button-danger-text);
+  --action-link-hover: var(--button-danger-text-hover);
+  --action-link-active: var(--button-danger-text-active);
   --action-soft: var(--button-danger-soft);
+}
+.gb-link-tone--warning {
+  --action-link: var(--button-warning-text);
+  --action-link-hover: var(--button-warning-text-hover);
+  --action-link-active: var(--button-warning-text-active);
+  --action-soft: var(--button-warning-soft);
 }
 .glass-button:hover:not(.gb-disabled) {
   background: var(--action-hover);
@@ -251,19 +270,27 @@ function handleClick(e) {
 .gb-variant--outline:hover:not(.gb-disabled),
 .gb-variant--white:hover:not(.gb-disabled) {
   background: var(--button-surface);
-  color: var(--action-hover);
+  color: var(--action-link-hover);
 }
 .gb-variant--ghost:hover:not(.gb-disabled) {
   background: var(--button-quiet-hover);
   border-color: transparent;
   color: var(--button-text);
 }
-.gb-variant--link:hover:not(.gb-disabled), .gb-variant--soft:hover:not(.gb-disabled) {
+.gb-variant--soft:hover:not(.gb-disabled) {
   background: var(--action-soft);
-  color: var(--action-hover);
+  color: var(--action-link-hover);
   border-color: var(--button-primary-border);
 }
-.gb-variant--link:hover:not(.gb-disabled) { border: 0; }
+.gb-variant--link:is(:hover, :focus-visible):not(.gb-disabled) {
+  background: var(--action-soft);
+  color: var(--action-link-hover);
+  border: 0;
+}
+.gb-variant--link:active:not(.gb-disabled) {
+  background: var(--action-soft);
+  color: var(--action-link-active);
+}
 .glass-button:active:not(.gb-disabled) {
   --action-color: var(--action-active);
   --action-hover: var(--action-active);
@@ -272,11 +299,11 @@ function handleClick(e) {
 .gb-variant--outline:active:not(.gb-disabled),
 .gb-variant--white:active:not(.gb-disabled),
 .gb-variant--soft:active:not(.gb-disabled) {
-  color: var(--action-active);
+  color: var(--action-link-active);
   border-color: var(--action-active);
 }
-.glass-button:active:not(.gb-disabled):not(:focus-visible) { transform: scale(0.98); }
-.gb-active {
+.glass-button:not(.gb-variant--link):active:not(.gb-disabled):not(:focus-visible) { transform: scale(0.98); }
+.gb-active:not(.gb-variant--link) {
   box-shadow: 0 0 0 2px var(--button-primary), 0 0 0 4px var(--button-focus);
 }
 .glass-button.gb-disabled:not(.gb-loading) {
@@ -294,10 +321,11 @@ function handleClick(e) {
 
 @media (hover: none), (pointer: coarse) {
   .glass-button:hover:not(.gb-disabled) { transform: none; }
+  .gb-variant--link { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .glass-button { transition: none; }
   .glass-button:hover:not(.gb-disabled),
-  .glass-button:active:not(.gb-disabled):not(:focus-visible) { transform: none; }
+  .glass-button:not(.gb-variant--link):active:not(.gb-disabled):not(:focus-visible) { transform: none; }
 }
 </style>

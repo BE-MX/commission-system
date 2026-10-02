@@ -90,20 +90,20 @@ time,
 .btn:active:not([disabled]) { transform: scale(0.97); }
 .btn:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 3px; }
 @media (hover: hover) and (pointer: fine) {
-  .btn:hover:not([disabled]) { border-color: var(--button-primary-hover); color: var(--button-primary-hover); }
+  .btn:hover:not([disabled]) { border-color: var(--button-primary-hover); color: var(--button-primary-text-hover); }
 }
 .btn-primary, .btn-accent {
   background: var(--button-primary);
   border-color: var(--button-primary);
-  color: var(--button-surface);
+  color: var(--button-primary-ink);
 }
 @media (hover: hover) and (pointer: fine) {
   .btn-primary:hover:not([disabled]), .btn-accent:hover:not([disabled]) {
-    background: var(--button-primary-hover); border-color: var(--button-primary-hover); color: var(--button-surface);
+    background: var(--button-primary-hover); border-color: var(--button-primary-hover); color: var(--button-primary-ink);
   }
 }
 .btn-primary:active:not([disabled]), .btn-accent:active:not([disabled]) {
-  background: var(--button-primary-active); border-color: var(--button-primary-active); color: var(--button-surface);
+  background: var(--button-primary-active); border-color: var(--button-primary-active); color: var(--button-primary-ink);
 }
 .btn-ghost { border-color: transparent; background: transparent; color: var(--button-text); }
 @media (hover: hover) and (pointer: fine) {
@@ -127,6 +127,56 @@ time,
   .btn:active:not([disabled]) { transform: none; }
 }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* Operation links share main-site geometry and semantic text colors. */
+.btn.btn-link {
+  --link-color: var(--button-primary-text);
+  --link-hover: var(--button-primary-text-hover);
+  --link-active: var(--button-primary-text-active);
+  --link-soft: var(--button-primary-soft);
+  min-height: 24px;
+  padding: 4px 8px;
+  gap: 4px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--link-color);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transform: none;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+.btn-link.btn-danger {
+  --link-color: var(--button-danger-text);
+  --link-hover: var(--button-danger-text-hover);
+  --link-active: var(--button-danger-text-active);
+  --link-soft: var(--button-danger-soft);
+}
+.btn.btn-link:is(:hover, :focus-visible):not([disabled]) {
+  background: var(--link-soft);
+  color: var(--link-hover);
+}
+.btn.btn-link:active:not([disabled]) {
+  background: var(--link-soft);
+  color: var(--link-active);
+  transform: none;
+}
+.btn.btn-link[disabled]:is(.btn-link, :hover, :focus, :active) {
+  background: transparent;
+  color: var(--button-disabled-text);
+}
+.btn-link svg { width: 13px; height: 13px; flex-shrink: 0; }
+@media (hover: none), (pointer: coarse) {
+  .btn.btn-link { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn.btn-link { transition: none; }
+}
+
 
 /* 表单 */
 .field-label {

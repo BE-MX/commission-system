@@ -39,7 +39,7 @@
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
           <template #default="{ row }">
-            <el-button v-permission="'whatsapp_translation:admin'" link type="danger" @click="revoke(row.device_id)">撤销</el-button>
+            <el-button v-permission="'whatsapp_translation:admin'" link type="danger" @click="revoke(row.device_id)"><el-icon><Close /></el-icon>撤销</el-button>
           </template>
         </el-table-column>
       </el-table>

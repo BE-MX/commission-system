@@ -170,7 +170,7 @@
             v-if="authStore.hasAnyPermission(['tracking:delete'])"
             variant="link"
             left-icon="Delete"
-            style="color: var(--el-color-danger)"
+            link-tone="danger"
             @click="handleDelete(row)"
           >
             删除

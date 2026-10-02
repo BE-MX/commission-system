@@ -182,8 +182,8 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="160" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
-              <el-button type="warning" plain @click="aiGenerateSingle(row)" :loading="row.aiLoading" v-if="authStore.hasPermission('stock:write')">AI</el-button>
-              <el-button type="primary" plain @click="openProductionDialog(row)" v-if="authStore.hasPermission('production:write')">
+              <el-button link type="warning" @click="aiGenerateSingle(row)" :loading="row.aiLoading" v-if="authStore.hasPermission('stock:write')"><el-icon><MagicStick /></el-icon>AI</el-button>
+              <el-button link type="primary" @click="openProductionDialog(row)" v-if="authStore.hasPermission('production:write')">
                 <el-icon><Plus /></el-icon> 生产下单
               </el-button>
             </div>
@@ -328,7 +328,7 @@
         <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table">
           <el-table-column class-name="table-action-column" label="操作" min-width="70">
             <template #default="{ row }">
-              <el-button link type="success" @click="openProgressDialog(row)">进度</el-button>
+              <el-button link type="primary" @click="openProgressDialog(row)"><el-icon><TrendCharts /></el-icon>进度</el-button>
             </template>
           </el-table-column>
           <el-table-column label="生产单号" prop="order_no" min-width="120" />

@@ -114,7 +114,7 @@
                     link
                     type="primary"
                     @click="confirmCustom(row)"
-                  >
+                  ><el-icon><Tools /></el-icon>
                     作为定制产品
                   </el-button>
                   <el-text v-if="row.candidates?.length && row.matched_product?.stock_warning" type="warning">

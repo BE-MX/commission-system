@@ -55,7 +55,7 @@
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">
           <template #default="{ row }">
-            <GlassButton v-any-permission="['mail_outreach:write','mail_outreach:admin']" variant="link" link-tone="danger"
+            <GlassButton left-icon="Close" v-any-permission="['mail_outreach:write','mail_outreach:admin']" variant="link" link-tone="danger"
               :disabled="!isCancellable(row)" @click="cancel(row)">撤销</GlassButton>
           </template>
         </el-table-column>

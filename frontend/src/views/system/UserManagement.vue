@@ -63,7 +63,7 @@
           <GlassButton variant="link" left-icon="Lock" @click="openPermPreview(row)">权限</GlassButton>
           <GlassButton v-permission="'user:write'" variant="link" left-icon="Connection" @click="handleSyncDingtalk(row)" :disabled="!row.phone || !!row.dingtalk_id">同步钉钉</GlassButton>
           <GlassButton v-permission="'user:write'" variant="link" left-icon="Key" @click="openResetPwdDialog(row)">重置密码</GlassButton>
-          <GlassButton v-permission="'user:write'" variant="link" :link-tone="row.is_active ? '' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
+          <GlassButton v-permission="'user:write'" variant="link" :link-tone="row.is_active ? 'warning' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
             {{ row.is_active ? '禁用' : '启用' }}
           </GlassButton>
           <GlassButton v-permission="'user:delete'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>

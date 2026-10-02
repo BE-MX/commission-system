@@ -62,7 +62,7 @@
             <GlassButton v-permission="'expo_store:admin'" variant="link" left-icon="User" @click="openUsers(row)">人员</GlassButton>
             <GlassButton v-permission="'expo_store:admin'" variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>
             <GlassButton
-              v-permission="'expo_store:admin'" variant="link" :link-tone="row.status === 1 ? 'danger' : 'success'"
+              v-permission="'expo_store:admin'" variant="link" :link-tone="row.status === 1 ? 'warning' : 'success'"
               left-icon="SwitchButton" @click="handleToggle(row)"
             >{{ row.status === 1 ? '停用' : '启用' }}</GlassButton>
           </template>

@@ -46,11 +46,11 @@
         </el-table-column>
         <el-table-column v-if="canWrite" class-name="table-action-column" label="操作" min-width="100" fixed="right">
           <template #default="{ row }">
-            <GlassButton
+            <GlassButton left-icon="SwitchButton"
               v-if="!row.revoked_at"
               v-permission="'customer_image:write'"
               variant="link"
-              link-tone="danger"
+              link-tone="warning"
               @click="revoke(row)"
             >停用</GlassButton>
           </template>

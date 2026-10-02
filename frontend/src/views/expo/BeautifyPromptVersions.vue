@@ -31,10 +31,10 @@
         <el-table-column v-if="visibleKeys.includes('published-at')" label="发布时间" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.published_at) || '—' }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('updated-at')" label="最后更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right"><template #default="{ row }">
-          <GlassButton variant="link" @click="openVersion(row.id)">查看{{ row.status === 'draft' ? ' / 编辑' : '' }}</GlassButton>
-          <GlassButton variant="link" @click="copyVersion(row.id)">复制草稿</GlassButton>
-          <GlassButton v-if="row.status === 'draft'" variant="link" :disabled="busy" @click="publish(row)">发布</GlassButton>
-          <GlassButton v-if="row.status === 'draft'" variant="link" :disabled="busy" @click="archive(row)">归档</GlassButton>
+          <GlassButton left-icon="Edit" variant="link" @click="openVersion(row.id)">查看{{ row.status === 'draft' ? ' / 编辑' : '' }}</GlassButton>
+          <GlassButton left-icon="CopyDocument" variant="link" @click="copyVersion(row.id)">复制草稿</GlassButton>
+          <GlassButton link-tone="success" left-icon="Promotion" v-if="row.status === 'draft'" variant="link" :disabled="busy" @click="publish(row)">发布</GlassButton>
+          <GlassButton link-tone="warning" left-icon="Folder" v-if="row.status === 'draft'" variant="link" :disabled="busy" @click="archive(row)">归档</GlassButton>
         </template></el-table-column>
       </el-table>
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager" @current-change="handlePageChange" @size-change="handleSizeChange" />

@@ -129,7 +129,7 @@
             <td class="cell-mats">{{ task.materials.map((m) => m.name).join('、') || '—' }}</td>
             <td class="cell-actions">
               <div class="table-actions">
-              <button class="btn btn-sm btn-ghost btn-danger" type="button" @click.stop="askDelete(task)">删除</button>
+              <button class="btn btn-link btn-danger" type="button" @click.stop="askDelete(task)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" /></svg>删除</button>
               </div>
             </td>
           </tr>

@@ -10,28 +10,38 @@
   /* Buttons & Tags: 科技轻快色系（2026-10-02）——以品牌金 #D4941C 为锚点走亮色阶：
      能量金=主色（亮金底+深墨字，现代 SaaS 处理）/ 青碧=成功 / 杏橙=警告 /
      绯红=危险 / 电光蓝=信息（备用），中性色用冷调岩灰压住画面。
-     实心阶文字对比度 ≥ 4.2；soft/border 为高明度浅色 wash。 */
+     按钮实心及链接文字对比度 ≥ 4.5；soft/border 为高明度浅色 wash。 */
   --button-primary: #E0A50B;
   --button-primary-hover: #C9930A;
   --button-primary-active: #A87C08;
-  --button-primary-ink: #3D2E03;
-  --button-primary-text: #9A6F07;
+  --button-primary-ink: #211903;
+  --button-primary-text: #8F6508;
+  --button-primary-text-hover: #775407;
+  --button-primary-text-active: #634606;
   --button-primary-soft: #FDF6DD;
   --button-primary-border: #F0D889;
-  --button-danger: #E5484D;
+  --button-danger: #D5363C;
   --button-danger-hover: #D13438;
   --button-danger-active: #B02529;
   --button-danger-soft: #FDEBEC;
   --button-danger-border: #F6C6CA;
-  --button-success: #0D9488;
+  --button-danger-text: #C62A30;
+  --button-danger-text-hover: #AC2228;
+  --button-danger-text-active: #921C22;
+  --button-success: #0F8479;
   --button-success-hover: #0F766E;
   --button-success-active: #115E59;
   --button-success-soft: #E4F7F3;
   --button-success-border: #A8E3D6;
-  --button-warning: #C2610A;
+  --button-success-text: #0B6E63;
+  --button-success-text-hover: #095B52;
+  --button-success-text-active: #074C44;
+  --button-warning: #B75B09;
   --button-warning-hover: #A85208;
   --button-warning-active: #8C4406;
   --button-warning-text: #9A4E08;
+  --button-warning-text-hover: #824107;
+  --button-warning-text-active: #6B3506;
   --button-warning-soft: #FEF0DE;
   --button-warning-border: #F4CCA0;
   --button-surface: #ffffff;

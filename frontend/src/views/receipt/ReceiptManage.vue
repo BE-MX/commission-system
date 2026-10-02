@@ -91,7 +91,7 @@
           <template #default="{ row }">
             <div class="table-actions">
               <el-button link type="primary" @click="showDetail(row)"><el-icon><View /></el-icon>查看</el-button>
-              <el-button v-if="row.batch_id" link type="primary" @click="showBatch(row.batch_id)">整笔回款</el-button>
+              <el-button v-if="row.batch_id" link type="primary" @click="showBatch(row.batch_id)"><el-icon><Wallet /></el-icon>整笔回款</el-button>
               <el-button v-if="row.sync_status === 'failed' && row.status === 'active'" v-permission="'receipt:write'" link type="primary" :loading="saving" @click="retry(row)"><el-icon><Refresh /></el-icon>重试</el-button>
             </div>
           </template>

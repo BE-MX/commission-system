@@ -183,7 +183,7 @@
                 <GlassButton variant="link" left-icon="Edit" @click="editItem(row)">编辑</GlassButton>
                 <GlassButton variant="link" left-icon="VideoPause" @click="changeItemStatus(row)">改状态</GlassButton>
                 <GlassButton variant="link" left-icon="Box" @click="inputReceived(row)">入库</GlassButton>
-                <GlassButton variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>
+                <GlassButton link-tone="primary" variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>
                 <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteItem(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
               </template>
             </el-table-column>
@@ -212,7 +212,7 @@
         <el-table :data="currentOrder.items || []" border class="list-table">
           <el-table-column class-name="table-action-column" label="操作" min-width="140" max-width="210">
             <template #default="{ row }">
-              <GlassButton variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>
+              <GlassButton link-tone="primary" variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>
               <GlassButton variant="link" left-icon="Printer" @click="printCard(row)">打印流转卡</GlassButton>
             </template>
           </el-table-column>

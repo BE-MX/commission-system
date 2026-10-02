@@ -58,7 +58,7 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="240" max-width="360" fixed="right">
           <template #default="{ row }">
             <GlassButton v-permission="'dict:write'" variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
-            <GlassButton v-permission="'dict:write'" variant="link" :link-tone="row.is_active ? '' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
+            <GlassButton v-permission="'dict:write'" variant="link" :link-tone="row.is_active ? 'warning' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
               {{ row.is_active ? '禁用' : '启用' }}
             </GlassButton>
             <GlassButton v-permission="'dict:write'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>

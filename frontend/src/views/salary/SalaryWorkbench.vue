@@ -105,7 +105,7 @@
             <template #default="{ row }">
               <!-- 记录级异常的处理场所在明细表（action 文案也这么写），其余去考勤页 -->
               <el-button v-if="row.employee_id" link type="primary"
-                         @click="jumpToAnomaly(row)">
+                         @click="jumpToAnomaly(row)"><el-icon><Right /></el-icon>
                 {{ RECORD_LEVEL_KINDS.includes(row.kind) ? '去明细表' : '去考勤页' }}
               </el-button>
             </template>
@@ -221,7 +221,7 @@
             <el-table-column class-name="table-action-column" label="操作" min-width="80" fixed="right">
               <template #default="{ row }">
                 <el-button v-if="writable" v-permission="'salary:write'" link type="primary"
-                           @click="openEditAttendance(row)">录入</el-button>
+                           @click="openEditAttendance(row)"><el-icon><Edit /></el-icon>录入</el-button>
               </template>
             </el-table-column>
             <template #empty>

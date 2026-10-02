@@ -1,5 +1,11 @@
 # 当前交接与待办
 
+## 2026-10-02 操作列与按钮一致性（Codex，本地完成，未提交/发布）
+
+- 分支 `codex/action-button-consistency`，独立工作树 `C:/Users/windb/.codex/worktrees/action-button-consistency/commission-system`，基点 `6d815065`。DESIGN.md与按钮设计契约同步科技轻快配色、四语义接口、link尺寸和状态规则；主站/PM按钮token完全一致。
+- 全量119操作列/272直接按钮及导出复用触发器接入统一规则，补64图标、3操作列实心/描边与分类打印改link、物流删除去内联色、warning tone实现；28处动作语义对齐。共享按钮修复金底文字、hover/active/focus、无阴影/缩放、单个加载图标与触屏44px。43个修改业务模板的脚本/事件/权限/条件/加载绑定核对保留。
+- Node定向7/7；浏览器289源提取案例/384样式观察、139状态/对比度观察和窄列/权限/下拉/触屏回归通过；主站113导航构建和PM构建通过；增量约定、diff检查与独立复核通过。巡检为no-fetch本地快照，无远端写入/生产变更。详见[验收报告](reports/2026-10-02-action-button-consistency.md)与[设计契约](requirements/2026-10-02-action-button-design.md)，截图和源清单随报告保存。
+
 ## 2026-10-02 中后台按钮配色（Codex，已部署）
 
 - 分支 `codex/button-colors`：GlassButton、Element Plus、PM 共享按钮及登录、聊天、物流、发货、知识工具栏、任务创建等独立操作统一为 Ant Design 蓝色方向；主操作蓝底白字、次操作白底灰边、危险红色。按钮独立 token 不改变品牌/状态/导航配色；13px 蓝底白字采用 `#1668dc` 满足对比度。

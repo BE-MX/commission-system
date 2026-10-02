@@ -73,7 +73,7 @@
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="Connection" @click="testOne(row)">测试连通</GlassButton>
           <GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>
-          <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="disable(row)">禁用</GlassButton>
+          <GlassButton variant="link" link-tone="warning" left-icon="Delete" @click="disable(row)">禁用</GlassButton>
         </template>
       </el-table-column>
       </el-table>

@@ -34,7 +34,7 @@
           <el-table-column prop="expires_at" label="有效期" min-width="130" />
           <el-table-column class-name="table-action-column" label="操作" min-width="90">
             <template #default="{ row }">
-              <el-button link type="danger" @click="revoke(row.device_id)">撤销</el-button>
+              <el-button link type="danger" @click="revoke(row.device_id)"><el-icon><Close /></el-icon>撤销</el-button>
             </template>
           </el-table-column>
         </el-table>

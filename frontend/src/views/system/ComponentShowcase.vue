@@ -37,7 +37,7 @@
         <el-table-column v-if="visibleKeys.includes('owner')" prop="owner" label="负责人" min-width="110" />
         <el-table-column v-if="visibleKeys.includes('amount')" label="金额" min-width="130"><template #default="{ row }">{{ formatMoney(row.amount, { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="130"><template #default="{ row }"><StatusBadge :value="row.status" :dictionary="states" /></template></el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="145" fixed="right"><template #default="{ row }"><GlassButton variant="link" @click="openDetail(row)">详情</GlassButton><GlassButton variant="link" link-tone="danger" @click="remove(row)">删除</GlassButton></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="145" fixed="right"><template #default="{ row }"><GlassButton left-icon="Document" variant="link" @click="openDetail(row)">详情</GlassButton><GlassButton left-icon="Delete" variant="link" link-tone="danger" @click="remove(row)">删除</GlassButton></template></el-table-column>
         <template #empty><ListPageStatus :error="errorMessage" :loading="loading" @retry="fetchList"><EmptyState description="没有符合条件的示例记录" action-label="清空筛选" @action="handleReset" /></ListPageStatus></template>
       </el-table>
       <el-pagination class="pager" v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />

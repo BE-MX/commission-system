@@ -42,7 +42,7 @@
         </el-table-column>
         <el-table-column label="操作" min-width="110" class-name="table-action-column" fixed="right">
           <template #default="{ row }">
-            <GlassButton variant="link" v-permission="'customer_pcw:write'" @click="openBinding(row)">核验并绑定本客户</GlassButton>
+            <GlassButton left-icon="Check" variant="link" v-permission="'customer_pcw:write'" @click="openBinding(row)">核验并绑定本客户</GlassButton>
           </template>
         </el-table-column>
       </el-table>
