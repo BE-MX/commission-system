@@ -6,6 +6,10 @@
 鉴权模式沿用：入参为已完成 require_customer_access 的 CustomerAccess。
 """
 
+import json
+import re
+
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
@@ -50,7 +54,7 @@ def _point_quick_missing(
     return missing
 
 
-def build_outreach_snapshot(db: Session, access: CustomerAccess) -> dict:
+def build_outreach_snapshot(db: Session, access: CustomerAccess, user: dict | None = None) -> dict:
     """组装触达安全快照；所有查询过 access.allowed_classifications() 投影。"""
     customer_id = access.customer_id
     customer = db.query(CustomerAccount).filter(CustomerAccount.id == customer_id).one_or_none()
@@ -97,11 +101,19 @@ def build_outreach_snapshot(db: Session, access: CustomerAccess) -> dict:
         db, customer.id, "channel", "email",
     )
 
-    fact_ids = sorted(set(profile.evidence_fact_ids or [])) if profile else []
+    candidate_facts = apply_record_access(
+        db.query(CustomerFact).filter(
+            CustomerFact.fact_key == "research.source.business_contact",
+            CustomerFact.verification_status.notin_(("rejected", "disputed", "superseded")),
+            CustomerFact.effective_to.is_(None),
+            or_(CustomerFact.expires_at.is_(None), CustomerFact.expires_at > beijing_now()),
+        ), CustomerFact, access, logical_object_type="fact",
+    ).all()
+    fact_ids = sorted(set((profile.evidence_fact_ids or []) if profile else []) | {fact.id for fact in candidate_facts})
     fact_query = apply_record_access(
-        db.query(CustomerFact).filter(CustomerFact.id.in_(fact_ids)),
+        db.query(CustomerFact).filter(CustomerFact.id.in_(fact_ids), CustomerFact.verification_status.notin_(("rejected", "disputed", "superseded")), CustomerFact.effective_to.is_(None), or_(CustomerFact.expires_at.is_(None), CustomerFact.expires_at > beijing_now())),
         CustomerFact,
-        access,
+        access, logical_object_type="fact",
     ) if fact_ids else None
     facts = fact_query.order_by(CustomerFact.id).all() if fact_query is not None else []
 
@@ -114,7 +126,7 @@ def build_outreach_snapshot(db: Session, access: CustomerAccess) -> dict:
     source_query = apply_record_access(
         db.query(CustomerSourceRecord).filter(CustomerSourceRecord.id.in_(source_ids)),
         CustomerSourceRecord,
-        access,
+        access, logical_object_type="source_record",
     ) if source_ids else None
     sources = {
         row.id: row for row in source_query.all()
@@ -128,6 +140,8 @@ def build_outreach_snapshot(db: Session, access: CustomerAccess) -> dict:
         if row.source_record_id is None or row.source_record_id in sources
     ]
 
+    visible_contact_ids = {point.contact_id for point in email_points}
+    contacts = {key: value for key, value in contacts.items() if key in visible_contact_ids}
     points_by_contact: dict[int, list] = {}
     for point in email_points:
         contact = contacts.get(point.contact_id)
@@ -147,6 +161,19 @@ def build_outreach_snapshot(db: Session, access: CustomerAccess) -> dict:
             "missing": missing,
         })
 
+    visible_fact_ids = {fact.id for fact in facts}
+    recipient_candidates = []
+    for fact in candidate_facts:
+        if fact.id not in visible_fact_ids:
+            continue
+        value = fact.value_json or {}
+        text = json.dumps(value, ensure_ascii=False)
+        for email in sorted(set(re.findall(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text))):
+            recipient_candidates.append({"fact_id": fact.id, "source_fact_id": fact.id, "email": email,
+                "display_name": value.get("display_name") or value.get("name") or "",
+                "value_json": value, "verification_status": fact.verification_status,
+                "source_url": sources[fact.source_record_id].source_url if fact.source_record_id in sources else None,
+                "language_tag": customer.default_language, "timezone": customer.timezone, "country_code": customer.primary_country_code})
     return {
         "customer_id": customer.id,
         "display_name": customer.display_name,
@@ -180,10 +207,24 @@ def build_outreach_snapshot(db: Session, access: CustomerAccess) -> dict:
             "source_url": sources.get(fact.source_record_id).source_url
             if fact.source_record_id in sources else None,
         } for fact in facts],
-        # P1 留位：获准引用的公司知识版本列表（结构先行，内容后补）
-        "knowledge_items": [],
+        "contact_candidates": recipient_candidates,
+        "knowledge_items": _company_knowledge(db, user) if user else [],
         "captured_at": beijing_now().isoformat(),
     }
 
 
 __all__ = ["build_outreach_snapshot"]
+
+
+def _company_knowledge(db: Session, user: dict) -> list[dict]:
+    """Only active company libraries and their current published revisions pass ACL."""
+    from app.knowledge import access as knowledge_access
+    from app.knowledge.models import KnowledgeDocument, KnowledgeLibrary, KnowledgeRevision
+    if not knowledge_access.has_platform(user, "knowledge:read"):
+        return []
+    libraries = db.query(KnowledgeLibrary).filter(KnowledgeLibrary.category == "company", KnowledgeLibrary.status == "active", KnowledgeLibrary.deleted_at.is_(None)).all()
+    allowed = [library.id for library in libraries if knowledge_access.can(db, user, library.id, "read")]
+    if not allowed:
+        return []
+    rows = db.query(KnowledgeDocument, KnowledgeRevision).join(KnowledgeRevision, (KnowledgeRevision.id == KnowledgeDocument.published_revision_id) & (KnowledgeRevision.document_id == KnowledgeDocument.id)).filter(KnowledgeDocument.library_id.in_(allowed), KnowledgeDocument.deleted_at.is_(None), KnowledgeDocument.node_type == "document").order_by(KnowledgeDocument.id).limit(20).all()
+    return [{"knowledge_version_id": revision.id, "document_id": doc.id, "library_id": doc.library_id, "title": revision.title, "content_text": revision.content_text[:12000]} for doc, revision in rows]

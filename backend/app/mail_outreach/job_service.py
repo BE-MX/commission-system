@@ -3,6 +3,7 @@
 from sqlalchemy.orm import Session
 
 from app.customer.models import CustomerAccount
+from app.customer.access_service import apply_customer_scope
 from app.mail_outreach.errors import conflict, not_found
 from app.mail_outreach.generation_service import _iso_bj, _iso_utc
 from app.mail_outreach.models import MailOutreachMessage, MailOutreachSendJob
@@ -46,9 +47,15 @@ def list_jobs(
     customer_id: int | None = None,
     page: int = 1,
     page_size: int = 20,
+    user: dict | None = None,
 ) -> tuple[list[dict], int]:
     """队列看板：状态/邮箱/客户筛选 + 分页，关联 message 取客户展示字段。"""
-    query = db.query(MailOutreachSendJob)
+    query = db.query(MailOutreachSendJob).join(
+        MailOutreachMessage, MailOutreachMessage.id == MailOutreachSendJob.message_id,
+    ).join(CustomerAccount, CustomerAccount.id == MailOutreachMessage.customer_id)
+    if user is not None:
+        query = apply_customer_scope(query, user=user,
+            read_permissions=("customer:read", "customer:read_all", "customer:admin"), include_public_pool=False)
     if status:
         query = query.filter(MailOutreachSendJob.status == status)
     if mailbox_binding_id is not None:
@@ -96,6 +103,10 @@ def list_jobs(
 
 def cancel_job(db: Session, job_id: int, note: str = "") -> dict:
     """人工撤销：前置状态转 cancelled；已进通道调用报冲突；终态幂等返回。"""
+    probe = db.get(MailOutreachSendJob, job_id)
+    if probe is None:
+        raise not_found("任务不存在")
+    db.query(MailOutreachMessage).filter_by(id=probe.message_id).with_for_update().one()
     job = db.query(MailOutreachSendJob).filter(
         MailOutreachSendJob.id == job_id,
     ).with_for_update().one_or_none()

@@ -7,16 +7,16 @@ approve 单事务口径（设计文档 §五/§六）：
 重复点击幂等返回既有结果。
 """
 
-from datetime import timezone
+from datetime import timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
-from app.core.time import beijing_now, to_beijing_naive
+from app.core.time import beijing_now, to_beijing_naive, utc_now_naive
 from app.customer.access_service import CustomerAccess
-from app.customer.models import CustomerContactPoint
+from app.customer.models import CustomerAccount, CustomerContactPoint
 from app.mail_outreach import policies
 from app.mail_outreach.eligibility_service import evaluate_email_eligibility
 from app.mail_outreach.errors import bad_request, conflict, forbidden, not_found
@@ -105,11 +105,23 @@ def _normalize_scheduled_utc(value) -> tuple:
 
 def approve(db: Session, access: CustomerAccess, user: dict, message_id: int, payload) -> dict:
     approver_id = _require_human(db, user)
+    db.query(CustomerAccount).filter_by(id=access.customer_id).with_for_update().one()
+    mailbox = db.query(MailMailboxBinding).filter_by(
+        id=payload.mailbox_binding_id,
+    ).with_for_update().one_or_none()
     message = _lock_message(db, message_id)
 
     # 幂等：同事务内已有生效批准则直接返回既有结果（并发双击只产生一个 job）
     existing = _active_approval(db, message.id)
     if existing is not None:
+        _, requested_time = _normalize_scheduled_utc(payload.scheduled_at_utc)
+        approved_revision = db.get(MailOutreachRevision, existing.revision_id)
+        if (existing.revision_id != payload.revision_id
+                or existing.mailbox_binding_id != payload.mailbox_binding_id
+                or existing.scheduled_at_utc != requested_time
+                or existing.reschedule_policy_json != payload.schedule_policy
+                or approved_revision.content_sha256 != payload.expected_content_sha256):
+            raise conflict("已有批准与本次请求不同，请先撤销原批准", error_code="approval_conflict")
         job = db.query(MailOutreachSendJob).filter(
             MailOutreachSendJob.approval_id == existing.id,
         ).one_or_none()
@@ -143,6 +155,12 @@ def approve(db: Session, access: CustomerAccess, user: dict, message_id: int, pa
     if blocking:
         detail = "；".join(str(flag.get("detail") or flag["code"]) for flag in blocking[:3])
         raise conflict(f"存在阻断性风险标记，不可批准：{detail}", error_code="risk_blocked")
+    knowledge_ids = (revision.evidence_snapshot_json or {}).get("knowledge_version_ids", [])
+    if knowledge_ids:
+        from app.mail_outreach.context_service import build_outreach_snapshot
+        published = build_outreach_snapshot(db, access, user=user)["knowledge_items"]
+        if not set(knowledge_ids).issubset({x["knowledge_version_id"] for x in published}):
+            raise conflict("引用的公司知识已变化或无权访问，请重新生成", error_code="knowledge_changed")
 
     # 审批时点资格复查（临发复查属 worker 阶段，P1 不做）
     eligibility = evaluate_email_eligibility(
@@ -154,18 +172,24 @@ def approve(db: Session, access: CustomerAccess, user: dict, message_id: int, pa
             error_code="eligibility_failed",
         )
 
-    mailbox = db.query(MailMailboxBinding).filter(
-        MailMailboxBinding.id == payload.mailbox_binding_id,
-    ).one_or_none()
-    if mailbox is None or mailbox.status != "active" or mailbox.pause_reason:
+    if (mailbox is None or mailbox.status != "active" or mailbox.pause_reason
+            or mailbox.auth_status != "active"):
         raise bad_request("发件邮箱绑定不存在、已停用或已暂停", error_code="mailbox_unavailable")
+    if (mailbox.owner_user_id not in (None, approver_id)
+            and "super_admin" not in user.get("roles", [])
+            and "mail_outreach:admin" not in user.get("permissions", [])):
+        raise forbidden("无权使用该发件邮箱", error_code="mailbox_forbidden")
     point = db.query(CustomerContactPoint).filter(
         CustomerContactPoint.id == message.contact_point_id,
-    ).one_or_none()
+    ).with_for_update().one_or_none()
     if point is None:
         raise conflict("收件邮箱点已不存在", error_code="contact_point_missing")
 
     scheduled_aware, scheduled_utc_naive = _normalize_scheduled_utc(payload.scheduled_at_utc)
+    now_utc = utc_now_naive()
+    if not now_utc - timedelta(seconds=30) <= scheduled_utc_naive <= now_utc + timedelta(days=30):
+        raise bad_request("发送时间须在当前至未来 30 天内", error_code="invalid_schedule")
+    scheduled_aware = scheduled_aware.astimezone(timezone.utc)
     scheduled_local = None
     if revision.recipient_timezone:
         try:

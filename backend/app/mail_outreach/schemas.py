@@ -38,6 +38,7 @@ class SchedulePreviewRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
+    state: str | None = Field(default=None, max_length=64)
     country: str | None = Field(default=None, max_length=8)
     timezone: str | None = Field(default=None, max_length=64)
     language: str | None = Field(default=None, max_length=35)
@@ -118,3 +119,18 @@ __all__ = [
     "RevokeRequest",
     "SchedulePreviewRequest",
 ]
+
+
+class RecipientPrepareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    display_name: str = Field(min_length=1, max_length=255)
+    email: str = Field(min_length=3, max_length=255)
+    language_tag: str = Field(min_length=2, max_length=16)
+    timezone: str = Field(min_length=1, max_length=64)
+    country_code: str = Field(min_length=2, max_length=8)
+    source_fact_id: int | None = Field(default=None, gt=0)
+    source_url: str | None = Field(default=None, max_length=2048)
+    verification_basis: str = Field(min_length=5, max_length=1000)
+    verified: bool = False
+    contact_allowed: bool = False

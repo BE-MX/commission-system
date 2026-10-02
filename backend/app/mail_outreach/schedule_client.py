@@ -26,7 +26,10 @@ def preview_schedule(payload: dict) -> dict:
     try:
         response = httpx.post(
             f"{base_url.rstrip('/')}/schedule/preview",
-            json=payload,
+            json={
+                {"language_source": "languageSource", "language_basis": "languageBasis", "office_start": "officeStart"}.get(key, key): value
+                for key, value in payload.items() if value is not None
+            },
             headers=headers,
             timeout=policies.SCHEDULE_SERVICE_TIMEOUT_SEC,
         )
@@ -35,22 +38,24 @@ def preview_schedule(payload: dict) -> dict:
             f"排程服务不可达：{type(exc).__name__}",
             error_code="schedule_service_unavailable",
         ) from exc
-    if response.status_code != 200:
-        raise unavailable(
-            f"排程服务返回 {response.status_code}：{response.text[:200]}",
-            error_code="schedule_service_error",
-        )
     try:
         data = response.json()
     except ValueError as exc:
         raise unavailable("排程服务返回非 JSON", error_code="schedule_service_error") from exc
-    if not isinstance(data, dict) or not data.get("ok"):
-        sidecar_message = data.get("message") if isinstance(data, dict) else None
+    if response.status_code != 200 or not isinstance(data, dict) or not data.get("ok"):
+        sidecar_message = ((data.get("error") or {}).get("message") or data.get("message")) if isinstance(data, dict) else None
         raise unavailable(
             f"排程预览被拒绝：{sidecar_message or '未知原因'}",
-            error_code="schedule_preview_rejected",
+            error_code="schedule_preview_rejected" if response.status_code < 500 else "schedule_service_error",
         )
-    return data
+    result = data.get("data", data)
+    if not isinstance(result, dict):
+        raise unavailable("排程返回结构不正确", error_code="schedule_service_error")
+    keys = {"scheduledAtUtc": "scheduled_at_utc", "scheduledAtLocal": "scheduled_at_local", "officeStart": "office_start", "localDate": "local_date"}
+    normalized = {keys.get(key, key): value for key, value in result.items()}
+    if not normalized.get("scheduled_at_utc"):
+        raise unavailable("排程缺少发送时间", error_code="schedule_service_error")
+    return {**normalized, "ok": True}
 
 
 __all__ = ["preview_schedule"]

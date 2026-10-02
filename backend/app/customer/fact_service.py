@@ -103,7 +103,7 @@ class EventRegistration:
     bumps_profile_input_seq: bool = True
 
 
-EVENT_REGISTRY_VERSION = "customer_event_registry_v4"
+EVENT_REGISTRY_VERSION = "customer_event_registry_v5"
 
 
 def _event_registration(
@@ -132,6 +132,15 @@ def _event_registration(
 
 
 EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
+    "outreach.accepted": _event_registration(
+        ("email",), {"job_id": int}, required=("job_id",), reference="customer",
+        classification=DataClassification.PERSONAL_CONTACT, bump_profile_input_seq=False,
+    ),
+    "outreach.classified": _event_registration(
+        ("manual",), {"event_id": int, "classification": str, "reason": str},
+        required=("event_id", "classification", "reason"), reference="customer", human=True,
+        classification=DataClassification.PERSONAL_CONTACT, bump_profile_input_seq=False,
+    ),
     "sample.feedback_received": _event_registration(
         ("manual",), {"sample_id": int, "feedback_round": int, "feedback_date": str},
         required=("sample_id", "feedback_round", "feedback_date"), reference="customer", human=True,
@@ -2140,6 +2149,19 @@ def _validate_event_reference_semantics(
     target_relationship_stage: str | None,
     fallback_occurred_at: datetime,
 ) -> datetime:
+    if event_type == "outreach.accepted":
+        from app.mail_outreach.models import MailOutreachMessage, MailOutreachSendJob
+        job = db.get(MailOutreachSendJob, payload["job_id"])
+        message = db.get(MailOutreachMessage, job.message_id) if job else None
+        if job is None or message is None or message.customer_id != customer_id or job.status != "provider_accepted":
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    if event_type == "outreach.classified":
+        from app.mail_outreach.models import MailEvent
+        event = db.get(MailEvent, payload["event_id"])
+        if (event is None or event.matched_customer_id != customer_id
+                or event.processed_status != "processed" or event.classification != payload["classification"]
+                or (event.payload_redacted or {}).get("classified_by") != actor_user_id):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
     if event_type == "sample.feedback_received":
         from app.customer.pcw_models import SampleCase
         sample = db.get(SampleCase, payload["sample_id"])

@@ -1,7 +1,7 @@
 """AI 草稿生成、服务端结构校验与人工编辑版本。
 
 设计口径（docs/2026-09-11-mail-outreach-auto-send-design.md §六）：
-- 资格不合格也允许落草稿，但 revision.risk_flags_json 记录缺项、message 保持 draft 不可批准；
+- 资格不合格返回明确错误，不创建空草稿；
 - AI 输出每条 claim 的 fact_id 必须在快照证据集合内，否则剔除并记风险；
 - 未填占位符与未经批准的商业承诺关键词进 risk_flags 供人工核对；
 - 同一 request_key 重复请求幂等返回已存在的 message。
@@ -13,7 +13,7 @@ from datetime import timezone
 
 from sqlalchemy.orm import Session
 
-from app.ai.call_service import chat
+from app.ai.service import chat
 from app.core.config import get_settings
 from app.core.time import beijing_now, to_beijing_time
 from app.customer.access_service import CustomerAccess
@@ -21,7 +21,7 @@ from app.customer.models import CustomerAccount, CustomerContact, CustomerContac
 from app.mail_outreach import policies
 from app.mail_outreach.context_service import build_outreach_snapshot
 from app.mail_outreach.eligibility_service import evaluate_email_eligibility
-from app.mail_outreach.errors import bad_request, not_found
+from app.mail_outreach.errors import bad_request, conflict, not_found
 from app.mail_outreach.models import (
     MailOutreachApproval,
     MailOutreachMessage,
@@ -35,6 +35,9 @@ PRESET_PROMPT_REVISION = "2026-09-11"
 
 # 阻断批准的风险码：命中即 message 不可进入批准，须编辑出新版本或补齐资格
 BLOCKING_RISK_CODES = (
+    "claim_dropped",
+    "claim_evidence_dropped",
+    "model_risk_flag",
     "generation_not_ready",
     "eligibility_missing",
     "unfilled_placeholder",
@@ -157,20 +160,24 @@ def _screen_content(subject: str, body_text: str) -> list[dict]:
     return flags
 
 
-def _validate_claims(claims: list, valid_fact_ids: set[int]) -> tuple[list, list[dict]]:
+def _validate_claims(claims: list, valid_fact_ids: set[int], valid_knowledge_ids: set[int] | None = None) -> tuple[list, list[dict]]:
     """逐条校验 claim 的 fact_id 是否在快照证据集合内；不在则剔除并记风险。"""
     kept: list[dict] = []
     flags: list[dict] = []
-    for claim in claims if isinstance(claims, list) else []:
+    valid_knowledge_ids = valid_knowledge_ids or set()
+    if not isinstance(claims, list):
+        return [], [{"code": "claim_dropped", "detail": "claims 必须是数组"}]
+    for claim in claims:
         if not isinstance(claim, dict):
             flags.append({"code": "claim_dropped", "detail": "claim 结构非法，已剔除"})
             continue
         fact_id = claim.get("fact_id")
         knowledge_version_id = claim.get("knowledge_version_id")
-        if fact_id is not None and fact_id not in valid_fact_ids:
+        if ((fact_id is not None and (type(fact_id) is not int or fact_id not in valid_fact_ids))
+                or (knowledge_version_id is not None and (type(knowledge_version_id) is not int or knowledge_version_id not in valid_knowledge_ids))):
             flags.append({
                 "code": "claim_evidence_dropped",
-                "detail": f"claim 引用了快照外证据 fact_id={fact_id}，已剔除",
+                "detail": "claim 引用了快照外或无权访问的证据，已剔除",
             })
             continue
         if fact_id is None and knowledge_version_id is None:
@@ -261,7 +268,7 @@ def _generate_payload_with_ai(
     data = _extract_ai_json(result.get("content") or "")
 
     valid_fact_ids = {item["fact_id"] for item in snapshot["evidence"]}
-    claims, claim_flags = _validate_claims(data.get("claims") or [], valid_fact_ids)
+    claims, claim_flags = _validate_claims(data.get("claims") or [], valid_fact_ids, {item["knowledge_version_id"] for item in snapshot["knowledge_items"]})
     subject = str(data.get("subject") or "").strip()
     body_text = str(data.get("body_text") or "").strip()
     risk_flags: list[dict] = []
@@ -302,6 +309,7 @@ def _evidence_snapshot(
             "fact_id": item["fact_id"],
             "fact_fingerprint": item["fact_fingerprint"],
         } for item in snapshot["evidence"]],
+        "knowledge_version_ids": [item["knowledge_version_id"] for item in snapshot["knowledge_items"]],
         "contact_point_id": contact_point_id,
         "email": email,
         "captured_at": snapshot["captured_at"],
@@ -414,9 +422,11 @@ def _generate_revision(
     message: MailOutreachMessage,
     revision_no: int,
     request_key: str | None,
+    user: dict | None = None,
 ) -> MailOutreachRevision:
-    """资格评估 →（合格才）AI 生成 → 落 revision；不合格落空内容 + 风险标记。"""
-    snapshot = build_outreach_snapshot(db, access)
+    """资格评估 →（合格才）AI 生成 → 落 revision；不合格返回缺项错误。"""
+    expected_revision_id = message.current_revision_id
+    snapshot = build_outreach_snapshot(db, access, user=user)
     eligibility = evaluate_email_eligibility(
         db, access, message.customer_id, message.contact_id, message.contact_point_id,
     )
@@ -431,20 +441,21 @@ def _generate_revision(
             relationship_goal=message.relationship_goal,
         )
     else:
-        generated = {
-            "subject": "",
-            "body_text": "",
-            "language_tag": "",
-            "meaning_summary_zh": "",
-            "angle": "",
-            "cta": "",
-            "claims": [],
-            "risk_flags": [{
-                "code": "eligibility_missing",
-                "detail": "；".join(eligibility["reasons"]),
-                "missing": eligibility["missing"],
-            }],
-        }
+        raise bad_request("；".join(eligibility["reasons"]), error_code="eligibility_missing")
+    # AI facade commits its call log. Reacquire the message lock afterwards and
+    # reject stale regeneration instead of overwriting a concurrent edit/send.
+    if message.id is None:
+        db.add(message)
+        db.flush()
+    else:
+        db.query(MailOutreachMessage).filter(MailOutreachMessage.id == message.id).populate_existing().with_for_update().one()
+        if message.current_revision_id != expected_revision_id:
+            raise conflict("草稿版本已更新，请刷新后重新生成", error_code="revision_changed")
+        if message.status == "completed" or db.query(MailOutreachSendJob.id).filter(
+            MailOutreachSendJob.message_id == message.id,
+            MailOutreachSendJob.status.in_(("sending", "provider_accepted", "ambiguous")),
+        ).first():
+            raise conflict("该邮件已进入发送，请刷新", error_code="message_not_editable")
     return _new_revision(
         db,
         message=message,
@@ -485,6 +496,10 @@ def generate_draft(
         result["idempotent_replay"] = True
         return result
 
+    # Fail before creating a message; an empty draft is not successful generation.
+    eligibility = evaluate_email_eligibility(db, access, customer_id, contact_id, contact_point_id)
+    if not eligibility["eligible"]:
+        raise bad_request("；".join(eligibility["reasons"]), error_code="eligibility_missing")
     message = MailOutreachMessage(
         customer_id=customer_id,
         contact_id=contact_id,
@@ -493,10 +508,8 @@ def generate_draft(
         status="draft",
         created_by=user_id,
     )
-    db.add(message)
-    db.flush()
     revision = _generate_revision(
-        db, access, user_id=user_id, message=message, revision_no=1, request_key=request_key,
+        db, access, user_id=user_id, message=message, revision_no=1, request_key=request_key, user=user,
     )
     message.current_revision_id = revision.id
     db.commit()
@@ -534,9 +547,17 @@ def create_human_revision(
     message = db.query(MailOutreachMessage).filter(
         MailOutreachMessage.id == message_id,
         MailOutreachMessage.customer_id == access.customer_id,
-    ).one_or_none()
+    ).with_for_update().one_or_none()
     if message is None:
         raise not_found("草稿不存在或无权访问")
+    if message.status in ("completed", "sending", "sent", "provider_accepted", "ambiguous"):
+        raise conflict("该邮件已发送或发送结果待确认，不能编辑", error_code="message_not_editable")
+    active_send = db.query(MailOutreachSendJob.id).filter(
+        MailOutreachSendJob.message_id == message.id,
+        MailOutreachSendJob.status.in_(("sending", "provider_accepted", "ambiguous")),
+    ).first()
+    if active_send:
+        raise conflict("该邮件正在发送或已发送，不能编辑", error_code="message_not_editable")
     current = db.query(MailOutreachRevision).filter(
         MailOutreachRevision.id == message.current_revision_id,
     ).one_or_none()
@@ -547,10 +568,10 @@ def create_human_revision(
     if edits.get("regenerate"):
         revision = _generate_revision(
             db, access, user_id=user_id, message=message,
-            revision_no=current.revision_no + 1, request_key=None,
+            revision_no=current.revision_no + 1, request_key=None, user=user,
         )
     else:
-        snapshot = build_outreach_snapshot(db, access)
+        snapshot = build_outreach_snapshot(db, access, user=user)
         customer, contact, point = _load_parties(db, message)
         subject = (edits.get("subject") or current.subject).strip()[:255]
         body_text = edits.get("body_text") or current.body_text
@@ -558,8 +579,15 @@ def create_human_revision(
         claims, claim_flags = _validate_claims(
             edits.get("claims") if edits.get("claims") is not None else current.claims_json,
             valid_fact_ids,
+            {item["knowledge_version_id"] for item in snapshot["knowledge_items"]},
         )
         risk_flags = _screen_content(subject, body_text) + claim_flags
+        # Discarded evidence cannot be repaired by saving identical unsupported text.
+        # Only a fresh AI generation can clear provenance/readiness failures.
+        risk_flags.extend(flag for flag in (current.risk_flags_json or [])
+                          if flag.get("code") in ("claim_dropped", "claim_evidence_dropped", "generation_not_ready", "model_risk_flag"))
+        if not subject or not body_text.strip():
+            raise bad_request("主题与正文不能为空", error_code="empty_content")
         revision = _new_revision(
             db,
             message=message,

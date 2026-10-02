@@ -9,19 +9,20 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.time import beijing_now
-from app.customer.access_service import CustomerAccess
+from app.customer.access_service import CustomerAccess, apply_record_access
 from app.customer.models import (
     CustomerAccount,
     CustomerContact,
     CustomerContactPoint,
     CustomerContactRelationship,
     CustomerSuppressionRegistry,
+    CustomerSourceRecord,
 )
 from app.mail_outreach.models import MailOutreachSendJob
 from app.sales_automation import public_pool_service
 
 # 冷却期内视为"占用该收件人"的 job 状态（尚未形成最终结论的在途/已接受任务）
-_COOLDOWN_JOB_STATUSES = ("scheduled", "claimed", "sending", "provider_accepted")
+_COOLDOWN_JOB_STATUSES = ("scheduled", "claimed", "sending", "provider_accepted", "ambiguous")
 _RELATIONSHIP_OK_STATUSES = ("identified", "verified")
 
 
@@ -31,6 +32,8 @@ def evaluate_email_eligibility(
     customer_id: int,
     contact_id: int,
     contact_point_id: int,
+    *,
+    exclude_job_id: int | None = None,
 ) -> dict:
     """返回 {"eligible": bool, "missing": [机器码], "reasons": [中文说明]}。"""
     missing: list[str] = []
@@ -64,6 +67,15 @@ def evaluate_email_eligibility(
         missing.append("contact_point")
         reasons.append("收件邮箱点不存在或不属于该联系人")
     else:
+        if point.source_record_id is not None:
+            source = apply_record_access(db.query(CustomerSourceRecord).filter_by(id=point.source_record_id),
+                CustomerSourceRecord, access, logical_object_type="source_record").one_or_none()
+            if source is None:
+                missing.append("contact_point_access")
+                reasons.append("联系点来源不可访问")
+        if point.data_classification not in access.allowed_classifications():
+            missing.append("contact_point_access")
+            reasons.append("当前用户无权使用该联系点")
         if point.verification_status != "valid":
             missing.append("email_verification")
             reasons.append(f"邮箱验证状态为 {point.verification_status}，须为 valid")
@@ -79,6 +91,14 @@ def evaluate_email_eligibility(
         if point_suppressed is not None:
             missing.append("point_suppression")
             reasons.append("该联系点已被抑制注册表命中（退订/硬退信/人工限制）")
+        address_suppressed = db.query(CustomerContactPoint.id).filter(
+            CustomerContactPoint.point_type == "email",
+            CustomerContactPoint.normalized_value == point.normalized_value,
+            CustomerContactPoint.contactability_status.in_(("opted_out", "blocked", "bounced")),
+        ).first()
+        if address_suppressed:
+            missing.append("address_suppression")
+            reasons.append("同一邮箱地址已有退订、退信或禁止联系记录")
 
     # 客户级抑制：全局或 channel=email 范围的禁止开发
     if public_pool_service.is_development_denied(db, customer_id, "channel", "email"):
@@ -93,11 +113,14 @@ def evaluate_email_eligibility(
         reasons.append("缺少时区：联系人与客户均未记录 IANA 时区")
 
     cooldown_days = get_settings().MAIL_OUTREACH_RECIPIENT_COOLDOWN_DAYS
-    recent_job = db.query(MailOutreachSendJob).filter(
-        MailOutreachSendJob.to_contact_point_id == contact_point_id,
+    recent_query = db.query(MailOutreachSendJob).filter(
+        MailOutreachSendJob.to_email_snapshot == (point.normalized_value if point else ""),
         MailOutreachSendJob.status.in_(_COOLDOWN_JOB_STATUSES),
         MailOutreachSendJob.created_at >= beijing_now() - timedelta(days=cooldown_days),
-    ).order_by(MailOutreachSendJob.id.desc()).first()
+    )
+    if exclude_job_id is not None:
+        recent_query = recent_query.filter(MailOutreachSendJob.id != exclude_job_id)
+    recent_job = recent_query.order_by(MailOutreachSendJob.id.desc()).first()
     if recent_job is not None:
         missing.append("recipient_cooldown")
         reasons.append(

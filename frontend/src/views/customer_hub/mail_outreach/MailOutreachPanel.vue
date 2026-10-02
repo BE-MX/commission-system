@@ -1,5 +1,6 @@
 <template>
   <section class="mail-outreach-panel" v-any-permission="['mail_outreach:read','mail_outreach:write','mail_outreach:admin']">
+    <MailRecipientPreparation :customer-id="customerId" @updated="reloadContext" />
     <h3 class="section-title">草稿与审批</h3>
     <div ref="draftPanelRef" class="table-card">
       <div class="action-bar">
@@ -73,7 +74,7 @@
             <el-form-item label="收件邮箱点">
               <el-select v-model="createForm.contact_point_id" placeholder="选择邮箱点" :disabled="!selectedContact">
                 <el-option v-for="point in contactPoints" :key="pointKey(point)" :value="pointKey(point)"
-                  :disabled="!point.eligible && !createForm.allowIneligible" :label="pointLabel(point)" />
+                  :label="pointLabel(point)" />
               </el-select>
             </el-form-item>
             <el-alert v-if="selectedPoint && !selectedPoint.eligible" type="warning" :closable="false" show-icon
@@ -82,9 +83,7 @@
                 <li v-for="(item, index) in missingItems(selectedPoint)" :key="index">{{ item }}</li>
               </ul>
             </el-alert>
-            <el-form-item v-if="selectedPoint && !selectedPoint.eligible">
-              <el-checkbox v-model="createForm.allowIneligible">我已知晓以上缺项，仅生成草稿查看（不具备资格不会排程发送）</el-checkbox>
-            </el-form-item>
+            <p v-if="selectedPoint && !selectedPoint.eligible">请关闭此窗口，在「收件人准备」中补齐以上资料后再生成。</p>
             <el-form-item label="关系目标">
               <el-radio-group v-model="createForm.relationship_goal">
                 <el-radio-button v-for="option in RELATIONSHIP_GOAL_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</el-radio-button>
@@ -116,9 +115,10 @@ import { createLatestResource } from '../customerHubResources'
 import { createSearchJobIdempotencyKey } from '../customerHubController'
 import { useOperationsList } from '../composables/useOperationsList'
 import MailOutreachReviewDrawer from './MailOutreachReviewDrawer.vue'
+import MailRecipientPreparation from './MailRecipientPreparation.vue'
 import {
   RELATIONSHIP_GOAL_OPTIONS, draftStatusLabel, draftStatusTagType, jobStatusLabel, jobStatusTagType,
-  relationshipGoalLabel, verificationStatusLabel,
+  relationshipGoalLabel, verificationStatusLabel, RECIPIENT_MISSING_LABELS,
 } from '@/views/mail_outreach/presentation'
 
 const props = defineProps({
@@ -184,7 +184,7 @@ const creating = ref(false)
 const createError = ref(null)
 const requestKey = ref('')
 const context = reactive(createLatestResource(getOutreachContext))
-const createForm = reactive({ contact_id: null, contact_point_id: null, relationship_goal: 'first_intro', allowIneligible: false })
+const createForm = reactive({ contact_id: null, contact_point_id: null, relationship_goal: 'first_intro' })
 watch(createForm, () => { requestKey.value = createSearchJobIdempotencyKey() }, { flush: 'sync' })
 
 const contacts = computed(() => context.data?.contacts || [])
@@ -199,7 +199,7 @@ const selectedPoint = computed(() => contactPoints.value.find(point => pointKey(
 const canCreate = computed(() => {
   if (!createForm.contact_id || !createForm.contact_point_id || !createForm.relationship_goal) return false
   if (!selectedPoint.value) return false
-  if (!selectedPoint.value.eligible && !createForm.allowIneligible) return false
+  if (!selectedPoint.value.eligible) return false
   return true
 })
 
@@ -221,12 +221,12 @@ function pointLabel(point) {
 }
 function missingItems(point) {
   const missing = Array.isArray(point?.missing) ? point.missing : []
-  return missing.map(item => (typeof item === 'string' ? item : item?.message || item?.code || JSON.stringify(item)))
+  return missing.map(item => (typeof item === 'string' ? (RECIPIENT_MISSING_LABELS[item] || item) : item?.message || item?.code || JSON.stringify(item)))
 }
 
 function openCreate() {
   if (creating.value) return
-  Object.assign(createForm, { contact_id: null, contact_point_id: null, relationship_goal: 'first_intro', allowIneligible: false })
+  Object.assign(createForm, { contact_id: null, contact_point_id: null, relationship_goal: 'first_intro' })
   createError.value = null
   createVisible.value = true
   reloadContext()

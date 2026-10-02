@@ -18,13 +18,19 @@ export function createMailOutreachApi(client) {
     /** 编辑 → 新 revision（使旧审批失效） */
     createRevision: (draftId, payload) => client.post(`/drafts/${draftId}/revisions`, payload),
     /** 排程候选时间预览；侧车不可达时后端返回错误，调用方降级为手动选时间 */
-    previewSchedule: draftId => client.post(`/drafts/${draftId}/schedule-preview`, {}),
-    /** 批准并排程：带 request_key + expected_content_sha256 + schedule_policy + scheduled_at_utc */
+    previewSchedule: (draftId, payload = {}) => client.post(`/drafts/${draftId}/schedule-preview`, payload),
+    /** 批准并排程：带 expected_content_sha256 + schedule_policy + scheduled_at_utc */
     approveDraft: (draftId, payload) => client.post(`/drafts/${draftId}/approve`, payload),
     rejectDraft: (draftId, payload) => client.post(`/drafts/${draftId}/reject`, payload),
     revokeDraft: (draftId, payload) => client.post(`/drafts/${draftId}/revoke`, payload),
     listJobs: (params, config = {}) => client.get('/jobs', { ...config, params, showLoading: false }),
     cancelJob: (jobId, payload) => client.post(`/jobs/${jobId}/cancel`, payload),
+    saveRecipient: (customerId, payload) => client.post(`/customers/${customerId}/recipients`, payload),
+    getMailStatus: () => client.get('/status', { showLoading: false }),
+    createMailbox: payload => client.post('/mailboxes', payload),
+    updateMailbox: (id, payload) => client.put(`/mailboxes/${id}`, payload),
+    listMailEvents: (params, config = {}) => client.get('/events', { ...config, params, showLoading: false }),
+    classifyMailEvent: (id, payload) => client.post(`/events/${id}/classify`, payload),
     /** 邮箱绑定列表（不含凭据） */
     listMailboxes: params => client.get('/mailboxes', { params, showLoading: false }),
   }
@@ -33,5 +39,5 @@ export function createMailOutreachApi(client) {
 export const {
   getOutreachContext, createDraft, listDrafts, getDraft, createRevision,
   previewSchedule, approveDraft, rejectDraft, revokeDraft,
-  listJobs, cancelJob, listMailboxes,
+  listJobs, cancelJob, listMailboxes, saveRecipient, getMailStatus, createMailbox, updateMailbox, listMailEvents, classifyMailEvent,
 } = createMailOutreachApi(mailOutreachClient)

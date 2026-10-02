@@ -51,11 +51,14 @@
 
         <section class="review-section">
           <h3>发送时间</h3>
+          <el-form label-position="top" :disabled="saving">
+            <el-form-item label="州 / 地区（自动计算多时区国家的候选时间时填写）"><el-input v-model="scheduleState" placeholder="如 California；手动选择北京时间无需填写" maxlength="64" /></el-form-item>
+          </el-form>
           <div class="schedule-row">
             <GlassButton variant="secondary" left-icon="AlarmClock" :loading="previewLoading" :disabled="saving" @click="runPreview">计算候选时间</GlassButton>
             <span v-if="!preview && !previewFailed" class="hint">按收件人时区与办公时间政策计算，不产生发送任务。</span>
           </div>
-          <template v-if="preview">
+          <template v-if="preview && !manualBeijing">
             <dl class="review-fields">
               <div><dt>客户当地时间</dt><dd>{{ localTimeText || '未提供' }}<template v-if="preview.timezone">（{{ preview.timezone }}）</template></dd></div>
               <div><dt>北京时间</dt><dd>{{ beijingTimeText || '未提供' }}</dd></div>
@@ -65,18 +68,26 @@
               <li v-for="(reason, index) in preview.skipped_reasons" :key="index">{{ reason }}</li>
             </ul>
           </template>
-          <template v-else-if="previewFailed">
+          <template v-if="previewFailed">
             <el-alert type="warning" title="排程服务不可用或无法计算候选时间：可手动选择北京时间，提交后由服务端复核。" :closable="false" show-icon />
-            <el-form label-position="top" :disabled="saving" class="manual-schedule">
+          </template>
+            <el-form label-position="top" :disabled="saving || previewLoading" class="manual-schedule">
               <el-form-item label="手动选择发送时间（北京时间）">
-                <el-date-picker v-model="manualBeijing" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" placeholder="选择北京时间" />
+                <el-date-picker v-model="manualBeijing" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" placeholder="选择北京时间" />
               </el-form-item>
             </el-form>
-          </template>
+          <dl v-if="manualUtc" class="review-fields">
+            <div><dt>实际排程（北京）</dt><dd>{{ formatBeijingDateTime(manualUtc) }}</dd></div>
+            <div><dt>客户当地时间</dt><dd>{{ formatInTimeZone(parseApiDateTime(manualUtc), revision?.recipient_timezone) || '时区未提供' }}</dd></div>
+            <div><dt>UTC</dt><dd>{{ manualUtc }}</dd></div>
+          </dl>
+          <p class="hint">可直接指定北京时间；填写后优先使用手动时间。批准仅加入队列，通道接受不代表已送达。</p>
         </section>
 
         <section class="review-section">
           <h3>主题与正文</h3>
+          <GlassButton v-any-permission="['mail_outreach:write','mail_outreach:admin']" variant="secondary" left-icon="MagicStick"
+            :loading="saving" :disabled="saving || dirty || detail.status !== 'draft'" @click="regenerate">重新生成</GlassButton>
           <el-alert v-if="dirty" type="info" title="内容已修改：保存后将生成新版本，已有审批自动失效。" :closable="false" show-icon class="section-alert" />
           <el-form label-position="top" :disabled="saving">
             <el-form-item label="主题"><el-input v-model="editForm.subject" maxlength="200" /></el-form-item>
@@ -116,6 +127,10 @@
               <el-input v-model="approveForm.reason" type="textarea" :rows="2" placeholder="如：证据已逐条核对，收件人为采购决策人" />
             </el-form-item>
           </el-form>
+          <el-checkbox v-model="reviewed" :disabled="saving || dirty || detail.status !== 'draft'">我已逐条核对收件人、正文、证据和发送时间，批准本封邮件发送</el-checkbox>
+          <p v-if="!recipientEmail || verificationStatus !== 'valid' || detail.contactability_status !== 'allowed'" class="hint">收件资料尚不具备触达资格，请先在「收件人准备」核实并补齐资料。</p>
+          <p v-if="!mailboxes.some(isMailboxSelectable)" class="hint">暂无可用发件账号，请由管理员在邮件发送队列中配置有效且启用的账号。</p>
+          <p v-if="riskFlags.some(isBlockingRisk)" class="hint">存在阻断风险，请先修改或重新生成正文，保存后再审核。</p>
           <el-alert v-if="saveError" type="error" title="操作失败，填写内容已保留。如草稿已被他人修改，请重新加载后再操作。" :closable="false" show-icon>
             <template #default><el-button link type="primary" :disabled="saving" @click="reload">重新加载</el-button></template>
           </el-alert>
@@ -144,10 +159,9 @@ import {
 } from '@/api/mailOutreach'
 import { formatBeijingDateTime, formatInTimeZone, parseApiDateTime } from '@/utils/datetime'
 import GlassButton from '@/components/GlassButton.vue'
-import { createSearchJobIdempotencyKey } from '../customerHubController'
 import {
   draftStatusLabel, draftStatusTagType, relationshipGoalLabel, languageSourceLabel,
-  verificationStatusLabel, verificationStatusTagType, mailboxAuthStatusLabel, isMailboxSelectable,
+  verificationStatusLabel, verificationStatusTagType, mailboxAuthStatusLabel, isMailboxSelectable, isBlockingRisk,
 } from '@/views/mail_outreach/presentation'
 
 const props = defineProps({
@@ -161,24 +175,28 @@ const loading = ref(false)
 const loadError = ref(null)
 const saving = ref(false)
 const saveError = ref(null)
-const requestKey = ref('')
+let loadSequence = 0
+let previewSequence = 0
 
 const mailboxes = ref([])
 const mailboxesLoading = ref(false)
 
 const editForm = reactive({ subject: '', body_text: '' })
 const approveForm = reactive({ mailbox_binding_id: null, reason: '' })
-// 表单任何变动即重新生成幂等键（QualificationPanel 同范式）：重复提交去重，内容变更后视为新请求
-watch([editForm, approveForm], () => { requestKey.value = createSearchJobIdempotencyKey() }, { flush: 'sync' })
+
 
 const preview = ref(null)
 const previewLoading = ref(false)
 const previewFailed = ref(false)
 const manualBeijing = ref('')
+const scheduleState = ref('')
+watch(scheduleState, () => { previewSequence += 1; previewLoading.value = false; preview.value = null; reviewed.value = false })
+const reviewed = ref(false)
+watch([editForm, approveForm, manualBeijing, preview], () => { reviewed.value = false }, { deep: true })
 
 const revision = computed(() => detail.value?.revision || detail.value?.current_revision || null)
-const claims = computed(() => Array.isArray(revision.value?.claims_json) ? revision.value.claims_json : [])
-const riskFlags = computed(() => Array.isArray(revision.value?.risk_flags_json) ? revision.value.risk_flags_json : [])
+const claims = computed(() => Array.isArray(revision.value?.claims) ? revision.value.claims : [])
+const riskFlags = computed(() => Array.isArray(revision.value?.risk_flags) ? revision.value.risk_flags : [])
 const recipientName = computed(() => detail.value?.contact_name || detail.value?.recipient_name || '')
 const recipientEmail = computed(() => detail.value?.to_email || detail.value?.recipient_email || detail.value?.email || '')
 const verificationStatus = computed(() => detail.value?.verification_status || detail.value?.contact_point_verification_status || '')
@@ -190,20 +208,23 @@ const dirty = computed(() => !!revision.value && (
 const localTimeText = computed(() => {
   if (!preview.value) return ''
   const timeZone = preview.value.timezone || revision.value?.recipient_timezone
-  return formatInTimeZone(preview.value.scheduled_at_utc, timeZone) || preview.value.scheduled_at_local || ''
+  return formatInTimeZone(parseApiDateTime(preview.value.scheduled_at_utc, { naiveTimeZone: 'UTC' }), timeZone) || preview.value.scheduled_at_local || ''
 })
-const beijingTimeText = computed(() => preview.value?.scheduled_at_beijing
-  ? formatBeijingDateTime(preview.value.scheduled_at_beijing, { seconds: false })
+const beijingTimeText = computed(() => preview.value?.scheduled_at_utc
+  ? formatBeijingDateTime(preview.value.scheduled_at_utc, { seconds: false, naiveTimeZone: 'UTC' })
   : '')
 const manualUtc = computed(() => parseApiDateTime(manualBeijing.value)?.toISOString() || '')
-const scheduledAtUtc = computed(() => preview.value?.scheduled_at_utc || manualUtc.value)
+const scheduledAtUtc = computed(() => manualUtc.value || parseApiDateTime(preview.value?.scheduled_at_utc, { naiveTimeZone: 'UTC' })?.toISOString() || '')
 
 const canApprove = computed(() => {
   if (!detail.value || detail.value.status !== 'draft') return false
-  if (dirty.value || loading.value || loadError.value) return false
+  if (dirty.value || loading.value || loadError.value || previewLoading.value) return false
   if (!revision.value?.id || !revision.value?.content_sha256) return false
-  if (!approveForm.mailbox_binding_id) return false
-  return Boolean(scheduledAtUtc.value)
+  if (!reviewed.value || !recipientEmail.value || verificationStatus.value !== 'valid' || detail.value.contactability_status !== 'allowed') return false
+  if (riskFlags.value.some(isBlockingRisk)) return false
+  if (!mailboxes.value.some(mailbox => mailbox.id === approveForm.mailbox_binding_id && isMailboxSelectable(mailbox))) return false
+  const scheduled = parseApiDateTime(scheduledAtUtc.value, { naiveTimeZone: 'UTC' })
+  return Boolean(scheduled && scheduled.getTime() > Date.now())
 })
 
 function mailboxOptionLabel(mailbox) {
@@ -215,36 +236,47 @@ function mailboxOptionLabel(mailbox) {
 
 function riskFlagText(flag) {
   if (typeof flag === 'string') return flag
-  if (flag && typeof flag === 'object') return flag.message || flag.flag || flag.kind || JSON.stringify(flag)
+  if (flag && typeof flag === 'object') return flag.detail || flag.message || flag.code || flag.flag || flag.kind || JSON.stringify(flag)
   return String(flag)
 }
 
 watch(() => [props.modelValue, props.draftId], ([visible, id]) => {
+  loadSequence += 1
+  previewSequence += 1
+  previewLoading.value = false
+  detail.value = null
+  reviewed.value = false
   if (visible && id) reload()
 })
 
-async function reload() {
-  if (saving.value || !props.draftId) return
+async function reload(force = false) {
+  if ((saving.value && force !== true) || !props.draftId) return
+  const sequence = ++loadSequence
+  previewSequence += 1
+  previewLoading.value = false
   loading.value = true
   loadError.value = null
   saveError.value = null
-  requestKey.value = createSearchJobIdempotencyKey()
   try {
     const response = await getDraft(props.draftId)
+    if (sequence !== loadSequence) return
     detail.value = response?.data || null
     const rev = detail.value?.revision || detail.value?.current_revision || {}
     editForm.subject = rev.subject || ''
     editForm.body_text = rev.body_text || ''
     approveForm.reason = ''
+    reviewed.value = false
     preview.value = null
     previewFailed.value = false
     manualBeijing.value = ''
+    scheduleState.value = ''
     loadMailboxes()
   } catch (error) {
+    if (sequence !== loadSequence) return
     detail.value = null
     loadError.value = error
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
 
@@ -268,18 +300,34 @@ async function loadMailboxes() {
 
 async function runPreview() {
   if (previewLoading.value || saving.value) return
+  const sequence = ++previewSequence
   previewLoading.value = true
   try {
-    const response = await previewSchedule(props.draftId)
+    const response = await previewSchedule(props.draftId, scheduleState.value.trim() ? { state: scheduleState.value.trim() } : {})
+    if (sequence !== previewSequence) return
     preview.value = response?.data || null
+    if (preview.value?.scheduled_at_utc) manualBeijing.value = ''
     previewFailed.value = !preview.value?.scheduled_at_utc
     if (previewFailed.value) preview.value = null
   } catch {
+    if (sequence !== previewSequence) return
     preview.value = null
     previewFailed.value = true
   } finally {
-    previewLoading.value = false
+    if (sequence === previewSequence) previewLoading.value = false
   }
+}
+
+async function regenerate() {
+  if (saving.value || dirty.value || detail.value?.status !== 'draft') return
+  saving.value = true
+  saveError.value = null
+  try {
+    await createRevision(props.draftId, { regenerate: true })
+    msgSuccess('已重新生成，请重新审核新版本')
+    emit('updated')
+    await reload(true)
+  } catch (error) { saveError.value = error } finally { saving.value = false }
 }
 
 async function saveRevision() {
@@ -290,7 +338,7 @@ async function saveRevision() {
     await createRevision(props.draftId, { subject: editForm.subject.trim(), body_text: editForm.body_text })
     msgSuccess('草稿已保存为新版本')
     emit('updated')
-    await reload()
+    await reload(true)
   } catch (error) {
     saveError.value = error
   } finally {
@@ -307,10 +355,9 @@ async function approve() {
       revision_id: revision.value.id,
       mailbox_binding_id: approveForm.mailbox_binding_id,
       expected_content_sha256: revision.value.content_sha256,
-      schedule_policy: revision.value.schedule_policy_json || {},
+      schedule_policy: revision.value.schedule_policy || {},
       scheduled_at_utc: scheduledAtUtc.value,
       reason: approveForm.reason.trim(),
-      request_key: requestKey.value,
     })
     msgSuccess('已批准并排程')
     emit('updated')

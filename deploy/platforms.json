@@ -49,6 +49,18 @@
   "external_services": [
     {
       "host": "beijing",
+      "name": "ark-mail-outreach",
+      "manager": "systemd",
+      "source": "services/openclaw-sales-agent/src/mail-worker-main.mjs",
+      "health": "http://127.0.0.1:7911/health",
+      "state": "/var/lib/ark-mail-outreach",
+      "runtime": "/opt/ark-mail-outreach",
+      "database_writer": false,
+      "write_path": "Authenticated HTTPS worker API; no database credentials",
+      "deploy": "deploy.bat -> mail_worker_release; freeze and drain before application/schema activation"
+    },
+    {
+      "host": "beijing",
       "name": "ark-colorwork-backup-retention",
       "manager": "systemd",
       "timer": "ark-colorwork-backup-retention.timer",

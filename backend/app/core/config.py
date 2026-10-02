@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     # ── 客户邮件触达（审核后定时发送）──────────────────────
     # 总停发开关：关闭时 claim / send-authorize 一律拒绝，优先于一切队列任务。
     MAIL_OUTREACH_SEND_ENABLED: bool = False
+    # Identity -> SHA-256 of a dedicated machine token; never a human JWT.
+    MAIL_OUTREACH_WORKER_TOKENS_JSON: str = "{}"
+    # Fail closed during rollout. '*' explicitly enables reviewed real recipients.
+    MAIL_OUTREACH_ALLOWED_RECIPIENTS: str = ""
     # Node 排程侧车（复用 outreach-schedule.mjs 的唯一算法源）；留空 = 预览不可用
     MAIL_OUTREACH_SCHEDULE_SERVICE_URL: str = ""
     MAIL_OUTREACH_SCHEDULE_TOKEN: str = ""

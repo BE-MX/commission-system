@@ -1,17 +1,6 @@
 <template>
   <div class="workflow mail-outreach-queue">
-    <section class="mailbox-strip" v-loading="mailboxesLoading">
-      <article v-for="mailbox in mailboxes" :key="mailbox.id" class="mailbox-card">
-        <div class="mailbox-card__header">
-          <strong>{{ mailbox.sender_email }}</strong>
-          <StatusBadge :type="mailboxAuthStatusTagType(mailbox.auth_status)" size="small">{{ mailboxAuthStatusLabel(mailbox.auth_status) }}</StatusBadge>
-        </div>
-        <p class="mailbox-card__meta">{{ mailbox.display_name || '未命名发件人' }} · 每日配额 {{ mailbox.daily_quota ?? '未设置' }}</p>
-        <el-alert v-if="mailbox.pause_reason" type="warning" :title="`已暂停：${mailbox.pause_reason}`" :closable="false" show-icon />
-        <StatusBadge v-if="mailbox.status === 'disabled'" type="info" size="small">已停用</StatusBadge>
-      </article>
-      <el-empty v-if="!mailboxesLoading && !mailboxes.length" description="暂无发件邮箱绑定" :image-size="72" />
-    </section>
+    <MailboxSettings @updated="mailboxes = $event" />
 
     <div ref="panelRef" class="table-card">
       <FilterBar :loading="loading" :pending="hasPendingSearch" @search="handleSearch" @reset="handleReset">
@@ -70,21 +59,23 @@
         :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager"
         @current-change="handlePageChange" @size-change="handleSizeChange" />
     </div>
+    <MailInboundEvents />
   </div>
 </template>
 
 <script setup>import { promptAction, msgSuccess } from '@/utils/feedback'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 
-import { cancelJob, listJobs, listMailboxes } from '@/api/mailOutreach'
+import { cancelJob, listJobs } from '@/api/mailOutreach'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
+import MailboxSettings from './MailboxSettings.vue'
+import MailInboundEvents from './MailInboundEvents.vue'
 import { useListPage } from '@/composables/useListPage'
 import { useTableView } from '@/composables/useTableView'
 import {
   JOB_STATUS_LABELS, jobStatusLabel, jobStatusTagType,
-  mailboxAuthStatusLabel, mailboxAuthStatusTagType,
 } from './presentation'
 
 const listPageState = useListPage(async (params, { signal }) => {
@@ -115,22 +106,6 @@ function stripEmpty(params) {
 }
 
 const mailboxes = ref([])
-const mailboxesLoading = ref(false)
-
-onMounted(loadMailboxes)
-
-async function loadMailboxes() {
-  mailboxesLoading.value = true
-  try {
-    const response = await listMailboxes()
-    const data = response?.data
-    mailboxes.value = Array.isArray(data) ? data : (data?.items || [])
-  } catch {
-    mailboxes.value = []
-  } finally {
-    mailboxesLoading.value = false
-  }
-}
 
 function senderEmailOf(row) {
   if (row.sender_email) return row.sender_email
@@ -139,14 +114,14 @@ function senderEmailOf(row) {
 
 /** 终态与已进入外部调用的任务不提供撤销入口；sending 中途撤销由服务端判定"撤销太晚" */
 function isCancellable(row) {
-  return !['cancelled', 'provider_accepted', 'ambiguous'].includes(row.status)
+  return ['scheduled', 'claimed', 'blocked', 'needs_review'].includes(row.status) && !row.send_started_at_utc
 }
 
 async function cancel(row) {
   let note = ''
   try {
     const result = await promptAction(
-      `确定撤销发往「${row.to_email || row.to_email_snapshot || '-'}」的发送任务？已开始发送的任务只会被标注"撤销太晚"。`,
+      `确定撤销发往「${row.to_email || row.to_email_snapshot || '-'}」的发送任务？已开始发送的任务无法撤销。`,
       '撤销发送任务',
       {
         type: 'warning',

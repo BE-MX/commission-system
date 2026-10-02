@@ -1,6 +1,6 @@
 """approval_service 审批/哈希/幂等/人类校验/撤销用例。"""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -13,7 +13,7 @@ from app.mail_outreach.models import MailOutreachApproval, MailOutreachSendJob
 from app.mail_outreach.schemas import ApproveRequest
 from tests.mail_outreach_helpers import make_draft, make_mailbox, seed_graph
 
-SCHEDULED_AT = datetime(2026, 9, 20, 1, 0, tzinfo=timezone.utc)
+SCHEDULED_AT = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(minutes=5)
 SCHEDULE_POLICY = {"office_start": "09:00"}
 
 

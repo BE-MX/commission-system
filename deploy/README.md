@@ -1,5 +1,7 @@
 # 统一部署入口
 
+客户邮件 Worker 使用北京独立 systemd 服务并纳入同一候选的准备、发送排空、激活及版本核验。首次 CLI/OAuth 准备和耐久回执恢复见 [邮件 Worker 部署](mail-worker.md)。
+
 OpenClaw、MCP、中继及配套同步已于 2026-09-26 统一到北京 `leshine.cloud`；后续新增 Agent 服务同样部署北京。部署归属、迁移入口、回滚和验证见 [Agent 服务部署](agent-cloud-migration.md)。出库发布与 DDL writer 必须使用本次主机调整后的部署器，旧新加坡 unit 已 mask。
 
 ## Windows 远程更新界面

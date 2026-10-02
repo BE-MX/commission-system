@@ -104,5 +104,17 @@ export function mailboxAuthStatusTagType(value) {
 
 /** 邮箱是否可选作发件账号：停用或已暂停（pause_reason 非空）均不可选 */
 export function isMailboxSelectable(mailbox) {
-  return mailbox?.status !== 'disabled' && !mailbox?.pause_reason
+  return mailbox?.status === 'active' && mailbox?.auth_status === 'active' && !mailbox?.pause_reason
+}
+
+export const BLOCKING_RISK_CODES = ['generation_not_ready', 'eligibility_missing', 'unfilled_placeholder', 'unapproved_commercial_promise', 'claim_dropped', 'claim_evidence_dropped', 'model_risk_flag']
+export function isBlockingRisk(flag) {
+  return flag?.blocking === true || BLOCKING_RISK_CODES.includes(typeof flag === 'string' ? flag : flag?.code)
+}
+export const RECIPIENT_MISSING_LABELS = {
+  timezone: '补充联系人时区', language: '补充写作语言', email_verification: '核实邮箱并填写验证依据',
+  contactability: '确认可联系依据', suppression: '已退订或禁止联系，不能发送',
+}
+export const EVENT_CLASSIFICATION_LABELS = {
+  human_reply: '人工回复', auto_reply: '自动回复', bounce: '退信', opt_out: '退订', other: '其他',
 }

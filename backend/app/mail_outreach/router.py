@@ -16,7 +16,11 @@ from app.customer.access_service import (
     apply_customer_scope,
     require_customer_access,
 )
-from app.customer.models import CustomerAccount, CustomerContact
+from app.customer.models import CustomerAccount, CustomerContact, CustomerContactPoint
+from app.core.config import get_settings
+from app.mail_outreach import event_service, recipient_service, worker_service
+from app.mail_outreach.worker_router import router as worker_router
+from app.mail_outreach.worker_schemas import ClassifyRequest
 from app.mail_outreach import (
     approval_service,
     generation_service,
@@ -30,6 +34,7 @@ from app.mail_outreach.models import (
     MailMailboxBinding,
     MailOutreachMessage,
     MailOutreachRevision,
+    MailOutreachSendJob, MailEvent, MailEventCheckpoint,
 )
 from app.mail_outreach.schemas import (
     ApproveRequest,
@@ -41,14 +46,16 @@ from app.mail_outreach.schemas import (
     RevisionCreateRequest,
     RevokeRequest,
     SchedulePreviewRequest,
+    RecipientPrepareRequest,
 )
 
 router = APIRouter()
+router.include_router(worker_router)
 
 # 客户 ACL：动作权限与管理权限口径与 customer-hub 保持一致
 _READ_PERMS = ("customer:read", "customer:read_all", "customer:admin")
 _WRITE_PERMS = ("customer:write", "customer:admin")
-_MANAGE_PERMS = ("customer:write", "customer:admin")
+_MANAGE_PERMS = ("customer:admin",)
 
 
 def _access(db: Session, customer_id: int, user: dict, *, write: bool = False):
@@ -110,7 +117,14 @@ def get_context(
     user=Depends(require_permission("mail_outreach:read")),
 ):
     access = _access(db, customer_id, user)
-    return ok(build_outreach_snapshot(db, access))
+    return ok(build_outreach_snapshot(db, access, user=user))
+
+
+@router.post("/customers/{customer_id}/recipients")
+def prepare_recipient(customer_id: int, payload: RecipientPrepareRequest,
+                     db: Session = Depends(get_db), user=Depends(require_permission("mail_outreach:write"))):
+    access = _access(db, customer_id, user, write=True)
+    return ok(recipient_service.prepare_recipient(db, access, user, payload))
 
 
 @router.post("/drafts")
@@ -178,7 +192,18 @@ def get_draft(
 ):
     message = _get_message(db, message_id)
     _access(db, message.customer_id, user)
-    return ok(serialize_message(message, _current_revision(db, message)))
+    result = serialize_message(message, _current_revision(db, message))
+    customer = db.get(CustomerAccount, message.customer_id)
+    contact = db.get(CustomerContact, message.contact_id)
+    point = db.get(CustomerContactPoint, message.contact_point_id)
+    access = _access(db, message.customer_id, user)
+    visible = point is not None and point.data_classification in access.allowed_classifications()
+    result.update(customer_name=customer.display_name if customer else None,
+        contact_name=contact.display_name if contact else None,
+        to_email=point.normalized_value if visible else None,
+        verification_status=point.verification_status if visible else None,
+        contactability_status=point.contactability_status if visible else None)
+    return ok(result)
 
 
 @router.post("/drafts/{message_id}/revisions")
@@ -214,6 +239,7 @@ def schedule_preview(
         CustomerContact.id == message.contact_id,
     ).one_or_none()
     sidecar_payload = {
+        "state": payload.state,
         "country": payload.country
         or (contact.country_code if contact else None)
         or (customer.primary_country_code if customer else None),
@@ -280,6 +306,7 @@ def list_jobs_route(
         customer_id=customer_id,
         page=page,
         page_size=page_size,
+        user=user,
     )
     return ok(page_result(items, total, page, page_size))
 
@@ -291,6 +318,11 @@ def cancel_job_route(
     db: Session = Depends(get_db),
     user=Depends(require_permission("mail_outreach:write")),
 ):
+    job = db.get(MailOutreachSendJob, job_id)
+    if job is None:
+        raise not_found("任务不存在")
+    message = _get_message(db, job.message_id)
+    _access(db, message.customer_id, user, write=True)
     return ok(job_service.cancel_job(db, job_id, payload.note))
 
 
@@ -299,8 +331,58 @@ def list_mailboxes(
     db: Session = Depends(get_db),
     user=Depends(require_permission("mail_outreach:read")),
 ):
-    rows = db.query(MailMailboxBinding).order_by(MailMailboxBinding.id).all()
+    rows = _mailbox_query(db, user).order_by(MailMailboxBinding.id).all()
     return ok([_serialize_mailbox(row) for row in rows])
+
+
+def _mailbox_query(db, user):
+    from sqlalchemy import or_
+    query = db.query(MailMailboxBinding)
+    if "super_admin" not in user.get("roles", []) and "mail_outreach:admin" not in user.get("permissions", []):
+        query = query.filter(or_(MailMailboxBinding.owner_user_id == int(user["sub"]), MailMailboxBinding.owner_user_id.is_(None)))
+    return query
+
+
+@router.get("/status")
+def get_status(db: Session = Depends(get_db), user=Depends(require_permission("mail_outreach:read"))):
+    items = []
+    for row in _mailbox_query(db, user).all():
+        checkpoint = db.get(MailEventCheckpoint, row.id)
+        item = _serialize_mailbox(row)
+        item.update(worker_ready=worker_service.mailbox_ready(db, row),
+            worker_last_seen_at=(checkpoint.last_polled_at_utc.isoformat() + "Z") if checkpoint and checkpoint.last_polled_at_utc else None,
+            watch_health=checkpoint.watch_health if checkpoint else "unknown")
+        items.append(item)
+    return ok({"send_enabled": get_settings().MAIL_OUTREACH_SEND_ENABLED,
+        "allowed_recipients": sorted(worker_service.allowed_recipients()), "mailboxes": items,
+        "worker_ready": any(x["worker_ready"] for x in items)})
+
+
+@router.get("/events")
+def list_events(customer_id: int | None = Query(None, gt=0), page: int = Query(1, ge=1),
+                classification: str | None = Query(None, max_length=24),
+                page_size: int = Query(20, ge=1, le=100), db: Session = Depends(get_db),
+                user=Depends(require_permission("mail_outreach:read"))):
+    query = db.query(MailEvent).join(CustomerAccount, CustomerAccount.id == MailEvent.matched_customer_id)
+    query = apply_customer_scope(query, user=user, read_permissions=_READ_PERMS, include_public_pool=False)
+    if classification:
+        query = query.filter(MailEvent.classification == classification)
+    if customer_id:
+        _access(db, customer_id, user)
+        query = query.filter(MailEvent.matched_customer_id == customer_id)
+    total = query.count()
+    rows = query.order_by(MailEvent.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return ok(page_result([event_service.serialize_event(row) for row in rows], total, page, page_size))
+
+
+@router.post("/events/{event_id}/classify")
+def classify_event(event_id: int, payload: ClassifyRequest, db: Session = Depends(get_db),
+                   user=Depends(require_permission("mail_outreach:write"))):
+    event = db.get(MailEvent, event_id)
+    if event is None or event.matched_customer_id is None:
+        raise not_found("收件事件不存在")
+    _access(db, event.matched_customer_id, user, write=True)
+    return ok(event_service.classify(db, event_id, user, payload))
 
 
 @router.post("/mailboxes")

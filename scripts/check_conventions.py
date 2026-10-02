@@ -31,6 +31,7 @@ AUTH_PATTERNS = re.compile(
     r"|get_current_mini_user|_require_\w+|_verify_\w+"
     r"|require_pm_member"  # PM 协作站自定义鉴权（验签+回查白名单），登记即逐端点强制
     r"|require_sales_agent"  # 智能获客 Agent：可撤销 opaque token + invoke 权限
+    r"|require_mail_worker"  # 邮件执行器：独立 token SHA-256 白名单 + 邮箱 worker 绑定
     r"|require_app_key"  # AI 网关：站点密钥哈希，准入事务回查启用状态与 Preset 授权
     r"|verify_runtime_heartbeat_token"  # 云实例：service+instance claim 机器 token SHA-256 白名单
 )
@@ -79,6 +80,8 @@ RED, YELLOW = "红", "黄"
 # UTC 是窄门：按文件登记明确的技术契约。新业务代码不得靠
 # 把 datetime.utcnow 换成 utc_now 绕过北京时间门禁；确需 UTC 先登记用途。
 UTC_TIME_ALLOWLIST = {
+    "backend/app/mail_outreach/worker_service.py": "跨机器发送租约、UTC 配额边界与临发时刻",
+    "backend/app/mail_outreach/approval_service.py": "API scheduled_at_utc 排程范围检查",
     "backend/app/agent_runtime/token_service.py": "JWT 签发",
     "backend/app/agent_runtime/worker_service.py": "跨机器 worker 租约",
     "backend/app/ai/agent_service.py": "Agent 租约校验",
@@ -103,6 +106,8 @@ UTC_TIME_ALLOWLIST = {
     "backend/scripts/design_image_orphan_recovery.py": "跨机器恢复日志与文件 mtime UTC 协议",
 }
 TZINFO_STRIP_ALLOWLIST = {
+    "backend/app/mail_outreach/worker_service.py": "配额日边界先转 UTC 后写技术比较值",
+    "backend/app/mail_outreach/event_service.py": "邮件 received_at_utc 外部协议时间先转 UTC 后存储",
     "backend/app/customer_image/datetime_utils.py": "邀请/租约技术 UTC 规范化",
     "backend/app/design_image/service.py": "租约 UTC 与北京日边界规范化",
     "backend/app/operations/observability.py": "跨机器心跳 UTC 规范化",

@@ -199,6 +199,12 @@ def publish(args):
         if office:
             step("office-static", "准备办公室静态文件与内网 PM 站", stage_static, {**outputs, "pm-lan": build_lan()}, office)
         backend = step("beijing-prepare", "准备北京后端与色块服务", cloud_backend.prepare, ROOT, revision, allow_pending=bool(office), **office_options)
+        import mail_worker_release
+        mail_worker = None
+        if any(item.get('name') == 'ark-mail-outreach' for item in inventory.get('external_services', [])):
+            mail_worker = step('mail-worker-prepare', '准备北京邮件 Worker 与固定 CLI', mail_worker_release.prepare, ROOT, revision, release_id)
+            journal['mail_worker'] = mail_worker['receipt']
+            atomic_json(STATE / 'publish-current.json', journal)
         import colorwork_routing
         colorwork_routes = step("routing-prepare", "校验色块路由配置", colorwork_routing.prepare, ROOT / "deploy")
         prepared = []
@@ -226,6 +232,9 @@ def publish(args):
         if recovery_original and journal['outbound'].get('schedule') != recovery_original['outbound']['schedule']:
             raise RuntimeError('Recovery 168 outbound baseline drift')
         atomic_json(STATE / "publish-current.json", journal)
+        if mail_worker:
+            journal['mail_worker'] = step('mail-worker-freeze', '停止邮件领取并排空发送及回执', mail_worker_release.invoke, mail_worker, 'freeze')
+            atomic_json(STATE / 'publish-current.json', journal)
         stopped = step("migration", "共享数据库迁移（无变更则跳过）", schema_release.migrate, office, inventory, args.migration_credentials) if office else []
         if office:
             print(json.dumps(step("office-activate", "切换并验证办公室应用及静态文件", office_activate, office)), flush=True)
@@ -253,6 +262,10 @@ def publish(args):
             step("writers-resume", "恢复原本运行的关联写入服务", schema_release.resume_external, stopped, office)
         journal['outbound'] = step("outbound-verify", "核验出库版本摘要与调度状态", outbound_release.phase, outbound, 'verify')
         journal['completed'].append('singapore-outbound')
+        if mail_worker:
+            journal['mail_worker'] = step('mail-worker-activate', '切换并验证北京邮件 Worker', mail_worker_release.invoke, mail_worker, 'activate')
+            journal['mail_worker'] = step('mail-worker-verify', '核验邮件 Worker 版本、OAuth 与回执', mail_worker_release.invoke, mail_worker, 'verify')
+            journal['completed'].append('beijing-mail-worker')
         atomic_json(STATE / "publish-current.json", journal)
         if office:
             schema_release.complete(office)
@@ -261,7 +274,9 @@ def publish(args):
                    "deferred": journal["deferred"], "outbound": journal['outbound'],
                    "unmanaged_services": [dict(name=item['name'], status='not_deployed')
                                           for item in inventory.get('external_services', [])
-                                          if item['name'] != 'ark-okki-outbound-poller']}
+                                          if item['name'] not in {'ark-okki-outbound-poller', 'ark-mail-outreach'}]}
+        if mail_worker:
+            summary['mail_worker'] = journal['mail_worker']
         atomic_json(STATE / "publish-success.json", summary)
         journal["status"] = "succeeded"
         atomic_json(STATE / "publish-current.json", journal)
@@ -285,6 +300,7 @@ if __name__ == "__main__":
     parser.add_argument('--storage-cutover', metavar='PLAN_JSON', help='Execute a journalled COS cutover phase')
     parser.add_argument("--storage-routing-only", metavar="PROBES_JSON", help="Prepare/activate public COS routing with explicit cloud object probes")
     parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Beijing outbound worker")
+    parser.add_argument('--mail-worker-stage', choices=['prepare', 'provision', 'configure', 'oauth', 'enable-sending'], help='Prepare Beijing mail service/OAuth without activating application code')
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
@@ -307,7 +323,21 @@ if __name__ == "__main__":
         args = parser.parse_args()
         if args.recover_migration_168 and any(value for key, value in vars(args).items() if key not in {"recover_migration_168", "prepare_only", "revision", "live_root", "no_pull", "migration_credentials"}):
             raise RuntimeError("Recovery 168 only accepts a pinned full release")
-        if args.colorwork_backup_policy:
+        if args.mail_worker_stage:
+            if any(value for key, value in vars(args).items() if key not in {'mail_worker_stage', 'revision', 'live_root', 'no_pull'}):
+                raise RuntimeError('Mail setup cannot be combined with application release actions')
+            source = Path(__file__).resolve().parent.parent
+            actual = run(['git', 'rev-parse', 'HEAD'], cwd=source, capture=True)
+            if args.revision != actual or run(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=source, capture=True):
+                raise RuntimeError('Mail setup requires the clean pinned candidate')
+            with deployment_lock():
+                if args.mail_worker_stage in {'configure', 'enable-sending'}:
+                    from mail_worker_config import configure
+                    print(json.dumps(configure(source, ROOT, args.revision, enable_sending=args.mail_worker_stage == 'enable-sending')), flush=True)
+                else:
+                    from mail_worker_release import execute
+                    execute(source, args.revision, args.mail_worker_stage)
+        elif args.colorwork_backup_policy:
             if any(value for key, value in vars(args).items() if key not in {'colorwork_backup_policy', 'prepare_only'}):
                 raise RuntimeError('Backup policy only accepts --prepare-only')
             from colorwork_backup_policy import execute
@@ -397,7 +427,7 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if any(getattr(locals().get('args'), key, None) for key in ['colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
+        if any(getattr(locals().get('args'), key, None) for key in ['mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
         if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):

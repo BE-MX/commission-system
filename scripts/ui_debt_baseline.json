@@ -1184,7 +1184,7 @@
     "bad_page_default": 0,
     "bad_pagination_layout": 0,
     "bad_pagination_sizes": 0,
-    "bad_value_format": 1,
+    "bad_value_format": 0,
     "deep_el_override": 2,
     "empty_text_attr": 0,
     "footer_alias": 0,

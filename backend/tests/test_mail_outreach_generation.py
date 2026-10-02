@@ -153,7 +153,7 @@ def test_commercial_promise_keyword_flagged(db, monkeypatch):
     assert "unapproved_commercial_promise" in codes
 
 
-def test_ineligible_still_persists_draft_without_ai(db, monkeypatch):
+def test_ineligible_rejected_without_empty_draft_or_ai(db, monkeypatch):
     """资格不合格：不调 AI，落空内容草稿并把缺项记入 risk_flags。"""
     graph = seed_graph(db, verification_status="unknown")
 
@@ -161,13 +161,10 @@ def test_ineligible_still_persists_draft_without_ai(db, monkeypatch):
         raise AssertionError("不合格时不应调用 AI")
 
     monkeypatch.setattr("app.mail_outreach.generation_service.chat", forbidden_chat)
-    result = _generate(db, graph)
-    revision = result["current_revision"]
-    assert result["status"] == "draft"
-    assert revision["subject"] == ""
-    flags = revision["risk_flags"]
-    assert flags and flags[0]["code"] == "eligibility_missing"
-    assert "email_verification" in flags[0]["missing"]
+    with pytest.raises(MailOutreachError) as error:
+        _generate(db, graph)
+    assert error.value.error_code == "eligibility_missing"
+    assert db.query(MailOutreachMessage).count() == 0
 
 
 # ── schedule_client：侧车降级与透传（mock HTTP 层） ─────────────────
@@ -228,3 +225,70 @@ def test_schedule_preview_sidecar_rejection_surfaces_message(db, monkeypatch):
         schedule_client.preview_schedule({"country": "NG"})
     assert exc_info.value.error_code == "schedule_preview_rejected"
     assert "多语国家缺少语言依据" in exc_info.value.message
+
+
+def test_unknown_knowledge_and_edit_cannot_clear_evidence_risk(db, monkeypatch):
+    from app.mail_outreach.generation_service import create_human_revision, BLOCKING_RISK_CODES
+    graph = seed_graph(db)
+    payload = _valid_ai_payload(graph, claims=[{"claim": "invented", "knowledge_version_id": 9999}])
+    monkeypatch.setattr("app.mail_outreach.generation_service.chat", _fake_chat(payload))
+    result = _generate(db, graph)
+    revision = result["current_revision"]
+    assert revision["claims"] == []
+    assert "claim_evidence_dropped" in [f["code"] for f in revision["risk_flags"]]
+    assert "claim_evidence_dropped" in BLOCKING_RISK_CODES
+    edited = create_human_revision(db, graph.access, {"sub": str(graph.user.id)}, result["id"], {"subject": "Updated"})
+    assert "claim_evidence_dropped" in [f["code"] for f in edited["current_revision"]["risk_flags"]]
+
+
+def test_completed_message_cannot_be_edited(db):
+    from app.mail_outreach.generation_service import create_human_revision
+    from tests.mail_outreach_helpers import make_draft
+    graph = seed_graph(db)
+    message, _revision = make_draft(db, graph)
+    message.status = "completed"
+    db.flush()
+    with pytest.raises(MailOutreachError) as error:
+        create_human_revision(db, graph.access, {"sub": str(graph.user.id)}, message.id, {"subject": "Changed"})
+    assert error.value.error_code == "message_not_editable"
+
+
+def test_schedule_client_translates_actual_sidecar_contract(monkeypatch):
+    monkeypatch.setattr(get_settings(), "MAIL_OUTREACH_SCHEDULE_SERVICE_URL", "http://localhost:3999")
+    def fake_post(url, json, **kwargs):
+        assert json == {"country": "US", "state": "NY", "languageSource": "recipient", "languageBasis": "confirmed", "officeStart": "09:00"}
+        return SimpleNamespace(status_code=200, json=lambda: {"ok": True, "data": {"state": "NY", "scheduledAtUtc": "2026-09-21T13:05:00Z", "scheduledAtLocal": "2026-09-21T09:05:00-04:00", "officeStart": "09:00", "localDate": "2026-09-21"}})
+    monkeypatch.setattr(schedule_client.httpx, "post", fake_post)
+    result = schedule_client.preview_schedule({"country": "US", "state": "NY", "language_source": "recipient", "language_basis": "confirmed", "office_start": "09:00"})
+    assert result["scheduled_at_utc"] == "2026-09-21T13:05:00Z"
+    assert result["state"] == "NY"
+    assert result["office_start"] == "09:00"
+    assert "data" not in result
+
+
+def test_ai_failure_does_not_leave_empty_committed_message(db, monkeypatch):
+    graph = seed_graph(db)
+    def fake_chat(db, **kwargs):
+        # Real facade commits its log before making the external call.
+        db.commit()
+        raise ValueError("provider unavailable")
+    monkeypatch.setattr("app.mail_outreach.generation_service.chat", fake_chat)
+    with pytest.raises(ValueError):
+        _generate(db, graph)
+    db.rollback()
+    assert db.query(MailOutreachMessage).count() == 0
+
+
+def test_regeneration_rechecks_state_after_ai_facade_commit(db, monkeypatch):
+    from app.mail_outreach.generation_service import create_human_revision
+    from tests.mail_outreach_helpers import make_draft
+    graph = seed_graph(db)
+    message, _ = make_draft(db, graph)
+    def fake_chat(db, **kwargs):
+        message.status = "completed"
+        db.commit()
+        return {"content": json.dumps(_valid_ai_payload(graph))}
+    monkeypatch.setattr("app.mail_outreach.generation_service.chat", fake_chat)
+    with pytest.raises(MailOutreachError) as error:
+        create_human_revision(db, graph.access, {"sub": str(graph.user.id)}, message.id, {"regenerate": True})
+    assert error.value.error_code == "message_not_editable"

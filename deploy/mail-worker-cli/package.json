@@ -1,0 +1,6 @@
+{
+  "name": "ark-mail-worker-cli",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": { "@tencent-qqmail/agently-cli": "1.0.18" }
+}

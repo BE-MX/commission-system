@@ -1,3 +1,9 @@
+## 2026-10-02 客户获客到邮件发送 MVP（Codex，待线上验收）
+
+- 独立工作树 customer-mail-mvp，分支 codex/customer-mail-mvp；补齐收件人核实、开发信审批契约、受限执行器、临发复查、发送回执和收件人工分类；复用邮件 8 表，无迁移。
+- 用户已授权当前正式站点发布和向 86muliang@163.com 发送验收邮件；本机 Agent Mail CLI 1.0.18 已登录 leshinehair@agent.qq.com，通道烟测已在 sent 查到，不代表主站闭环完成。
+- 当前本地后端/前端回归与构建已验证；发布器、正式邮箱 OAuth、主站登录态及完整线上生成/审批/发送验收仍在进行。未 push 或合并 main。实现约定见 [MVP 计划](requirements/2026-10-02-customer-mail-mvp.md)，使用与限制见 [使用说明](customer-mail-outreach.md)。
+
 # 当前交接与待办
 
 ## 2026-10-02 顶栏与标签栏毛玻璃（Codex，已合并推送部署）

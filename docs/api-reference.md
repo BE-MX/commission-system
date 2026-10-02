@@ -1,5 +1,30 @@
 # 莱莎方舟 API 参考
 
+## 客户邮件触达 MVP（2026-10-02）
+
+基址 `/api/mail-outreach`，统一 `ok(data)`。人类接口需要 `mail_outreach:read/write/admin` 对应权限，并与客户实时数据范围相交；机器凭证不能创建、编辑或批准邮件。已有 8 张邮件表复用，无新增迁移。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/context/{customer_id}` | 可见联系人 `contacts[].points`、背调 `contact_candidates`、当前证据和获准公司知识；公开邮箱仅为线索 |
+| POST | `/customers/{customer_id}/recipients` | `display_name,email,language_tag,timezone,country_code,verification_basis,verified,contact_allowed`，可选 `source_fact_id/source_url`；两项确认默认 false；保留人工核实依据 |
+| GET | `/drafts/{message_id}` | 返回当前 revision 的 `claims/risk_flags/evidence_snapshot` 及精确收件人、验证状态 |
+| POST | `/drafts/{message_id}/revisions` | 编辑或 `{regenerate:true}`；新版本使旧审批失效；已开始发送不能编辑 |
+| POST | `/drafts/{message_id}/schedule-preview` | 可选 `country,state,timezone,language,office_start`；响应 UTC/当地/北京时间统一为 snake_case；未配置侧车时可用人工北京时间 |
+| POST | `/drafts/{message_id}/approve` | `revision_id,mailbox_binding_id,expected_content_sha256,scheduled_at_utc,schedule_policy,reason`；当前至 30 天内；不接收 request_key |
+| GET | `/jobs` | 数据范围内任务分页，筛选 `status/mailbox_binding_id/customer_id` |
+| POST | `/jobs/{job_id}/cancel` | `{note}`；未开始发送才可取消；跨客户访问返回 404 |
+| GET | `/status` | `send_enabled,allowed_recipients,worker_ready,mailboxes`，邮箱含授权、最近心跳与健康；不返回凭据 |
+| GET/POST/PUT | `/mailboxes`、`/mailboxes/{id}` | 读取本人或共享绑定；管理员维护工作区、身份、暂停及额度 |
+| GET | `/events` | 客户范围内收件事件分页，支持 `customer_id/classification` |
+| POST | `/events/{id}/classify` | `{classification,reason}`；人工确认回复/自动回复/退信/退订/其他，退信与退订抑制同地址并取消未发送任务 |
+
+机器接口基址 `/worker`：`GET /bindings`；`POST /{mailbox_id}/heartbeat`、`/{mailbox_id}/claim`、`/{mailbox_id}/events`；`POST /jobs/{id}/authorize`、`/jobs/{id}/result`。独立 Bearer token 的 SHA-256 由 `MAIL_OUTREACH_WORKER_TOKENS_JSON` 映射到 worker identity，再逐请求绑定邮箱。authorize 携带 `fencing_token`，单次返回固定 `{to,subject,body_text}`；result 携带同围栏和 `outcome=accepted|failed_safe|unknown`，同结果幂等，变更结果冲突。`queued=true` 只记录 `provider_accepted`，不代表送达；未知结果不自动重发。
+
+收件只保存与已发送任务唯一关联的元数据。普通回复按地址和规范化主题形成待人工确认候选；退信通知可带 `original_recipient_candidates`（最多 10 项）形成候选，不上传正文、不自动认定退信。发送结果和人工分类通过已登记 `outreach.accepted/outreach.classified` 客户事件回写时间线。
+
+业务步骤见 [邮件触达使用说明](customer-mail-outreach.md)，生产安装与恢复见 [北京执行器部署](../deploy/mail-worker.md)。
+
 ## 任务中心一期（`/api/task`，迁移 `173_task_center`）
 
 所有接口返回 `ok(data)` 信封，按 JWT 所属用户隔离；读接口允许 `task:read` 或 `task:write`，写接口要求 `task:write`。跨用户任务返回 404，非法状态迁移返回 409。
