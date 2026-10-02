@@ -4,7 +4,7 @@
 
 ## 结论
 
-已更新 [DESIGN.md](../../DESIGN.md) 和 [按钮设计契约](../requirements/2026-10-02-action-button-design.md)，并修复上轮巡检发现的操作列与共享按钮问题。本次为独立 worktree 的本地交付，未提交、合并、推送或部署；生产状态不由本报告确认。
+已更新 [DESIGN.md](../../DESIGN.md) 和 [按钮设计契约](../requirements/2026-10-02-action-button-design.md)，并修复上轮巡检发现的操作列与共享按钮问题。本报告记录修复与本地验收；应用已合并推送并生产发布，实际版本、目标及核验见[生产发布记录](2026-10-02-action-button-release.md)。
 
 ## 覆盖与改动
 
