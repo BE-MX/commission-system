@@ -1,26 +1,34 @@
-# 客户邮件 MVP 验收进度
+# 客户邮件 MVP 验收记录
 
-状态：正式发布完成，真实 AI 生成业务校验待排障；主站收发闭环未完成。
+状态：正式发布和内部真实发信链路已验证；待用户回复测试邮件后完成真实回信分类验收。不是对真实外部客户的营销效果验收。
 
 ## 发布与范围
 
-- 正式候选 `af6ed58ad4ced486a4acf4da0b556c2d15a42abc`；用户已完成北京邮箱 OAuth。办公室受管候选的统一 deploy.bat 完成 prepare-only 与完整发布，成功回执为 `.deploy_state/publish-success.json`；日志在 `.deploy_state/mail-worker-transfer/authorized-prepare.log`、`authorized-publish.log`。
-- office/cloud 同版，schema `173_task_center` 无迁移，deferred 为空；出库调度原状态保留；邮件 Worker 已运行并通过身份、授权和健康核验。
-- 绑定 id=1，owner=1，邮箱 `leshinehair@agent.qq.com`，identity/workspace 均为 `ark-mail-beijing`。两端发送开启但白名单仅 `86muliang@163.com`，没有授权向真实外部客户发送。
-- 本机通道烟测在 sent 查到 `msg_qwSDabvobnoChUvAayV4mC-1B_G1CPVKPtGB23IZcgfncw`；这不是主站队列验收证据，也不代表收件人收到。
+- 主功能候选 `af6ed58a`、内部试发及反馈候选 `d71f05bd` 已由办公室受管候选的统一 deploy.bat 完成 prepare-only 和正式发布；office/cloud 同版、schema `173_task_center` 无迁移，deferred 为空，出库调度原状态保留，邮件 Worker 健康。
+- 时间精度修复候选 `1542e47ec8ab8711db9f2c1510bf487cb26449cf` 已完成 prepare-only 和正式发布，office/cloud/Worker 同版，deferred 为空；成功回执为 `.deploy_state/publish-success.json`。相关日志在 `.deploy_state/mail-worker-transfer/time-precision-prepare.log` 和 `time-precision-publish.log`。
+- 绑定 id=1，owner=1，发件邮箱 `leshinehair@agent.qq.com`，identity/workspace 均为 `ark-mail-beijing`。用户完成北京 OAuth；两端发送开启但白名单仅 `86muliang@163.com`，没有向外部客户发送。
+- 内部试发使用独立 preset `mail_outreach_internal_test`（id=42），通过管理员 API 对齐已有邮件模型的 provider/model（deepseek-flash）。输入仅含内部收件人姓名、语言和测试目的，不传客户事实或公司知识。
 
-## 当前验证
+## 真实发信证据
 
-- 既有后端邮件及客户事实/获客回归 183 passed；来源权限与配额补丁另跑 34 passed。前端 46 passed；部署相关 57 passed；Node Worker 15 passed；构建成功。
-- 线上 UI 已确认发送限制、邮箱 active、Worker ready、心跳与监听正常。
-- 真实 AI 请求返回 HTTP 200，草稿业务 API 返回 400：`AI 输出缺少主题或正文，草稿未生成`。没有落空草稿或发送任务。模型未就绪且返回空正文时，修复为向用户保留缺项原因；页面显示服务端安全错误。新增回归先失败后通过，生成测试共 15 passed。
-- customer=25（已有背调样例 haircare.group）的 contact=1 标记为“牟亮亮（方舟内部验收，非客户联系人）”，来源核实说明明确不代表任职或采购关系。其 buying_role=unknown，不能伪造采购角色绕过生成校验。结束验收后通过收件人维护 API 将 contact_allowed 改为 false。
+- 2026-10-03 09:22，北京时间，真实 AI 成功生成 message=1/revision=1；正文明确是内部测试，claims 与 risk_flags 均为空。
+- 编辑主题形成 revision=2；第一次审批 job=1 因毫秒时间与 MySQL 整秒保存精度不同，临发摘要不一致，转 needs_review，attempt 为 failed_safe/authorization_denied；send_started 为空，未调用通道发送。
+- 同一正文形成 revision=3，按整秒排程至 09:30:56，approval=2/job=2；09:32:10 开始发送，唯一 attempt=accepted，主站显示 provider_accepted。
+- Agent Mail sent 对账仅一条匹配：09:32:17，主题 `[ARK INTERNAL TEST] Ark acceptance 20261003-0922`，发件 `leshinehair@agent.qq.com`，收件 `86muliang@163.com`，message ID `msg_A06MkNfpqfCI-qcLMaPQLqZSnYH3IBdtPmDCsvnuuip4lg`。CLI send 返回 queued=true，无 message_id；上述 ID 来自独立 sent 查询，不冒充原回执字段。
+- 收件人联系人 contact=1/point=1 挂于既有背调样例 customer=25，其名称和核实依据明确“方舟内部验收，非客户联系人”，不代表 haircare.group 任职或采购关系。内部试发不写客户触达/回信分类时间线。
+- 发信完成后通过正式 API 撤销 job=1，保留拦截审计；通过收件人维护 API 将 contact_allowed 设为 false，当前 contactability_status=unknown。没有待发送测试任务。
 
-## 尚待完成
+## 验证与修复
 
-1. 发布生成反馈修复后核验模型的实际缺项，补齐真实依据或提供符合语义的内部测试路径；不得弱化生产资格门禁。
-2. 在主站生成并审阅草稿，审批一次仅发向验收地址的任务；核验队列唯一、通道接受与 sent 对账。
-3. 用户回复实际测试邮件后验证收件事件关联、人工分类和后续停发。
-4. 清理本次内部测试联系资格，同步最终结果。
+- 原主功能后端邮件及客户事实/获客回归 183 passed；部署回归 57 passed；Node Worker 15 passed。
+- 本轮全部邮件后端测试 65 passed；时间精度修复的审批/Worker 回归另跑 28 passed。毫秒时间回归先失败后通过，覆盖持久精度、审批摘要和幂等；已有 3 条 python-jose UTC 弃用警告。
+- 前端邮件与列表 46 passed；内部试发版构建 19.16 秒、113 个导航入口。严格约定与 diff 检查通过；Git 巡检 no-fetch，仅本地快照。
+- 模型拒绝生成且返回空主题/正文时，现在保留 missing_requirements 并向页面显示，避免笼统“请重试”。内部试发权限、明确地址白名单（通配符不放行）、测试主题、编辑/再生成用途保留、临发复查、客户时间线隔离均有回归。
+
+## 待用户完成的最后一步
+
+请用户在 `86muliang@163.com` 找到主题 `[ARK INTERNAL TEST] Ark acceptance 20261003-0922` 并直接回复“方舟验收收到”。当前尚无 matched_job_id=2 的收件事件，不能声称收件人已收到或回信链路已验收。
+
+回复后：等待 Worker 关联到 job=2；通过官方 CLI 阅读这一封回信确认内容；在主站将事件分类为 human_reply，并验证 processed 与后续停发逻辑。不得伪造入站事件来代替真实回信。
 
 未推送 origin、未合并 main。保留任务工作树、受管候选、发布回执、配置备份和构建证据供继续。

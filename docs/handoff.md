@@ -1,10 +1,10 @@
-## 2026-10-02 客户获客到邮件发送 MVP（Codex，待线上验收）
+## 2026-10-03 客户邮件 MVP（Codex，真实发信已通过，待回信验收）
 
-- 独立工作树 customer-mail-mvp，分支 codex/customer-mail-mvp；补齐收件人核实、开发信审批契约、受限执行器、临发复查、发送回执和收件人工分类；复用邮件 8 表，无迁移。
-- 用户已授权当前正式站点发布和向 86muliang@163.com 发送验收邮件；本机 Agent Mail CLI 1.0.18 已登录 leshinehair@agent.qq.com，通道烟测已在 sent 查到，不代表主站闭环完成。
-- 2026-10-03 08:24 前后，服务器 OAuth 完成，固定候选 `af6ed58ad4ced486a4acf4da0b556c2d15a42abc` 从办公室正式入口完成 prepare-only 与完整发布；两端同版、schema 173 无迁移，邮件 Worker 运行且心跳健康，发件邮箱 active。发送范围仍仅验收地址。
-- 实际主站生成调用 AI 成功，但返回无主题或正文，尚未建立发送任务。正在修复“模型未就绪时丢失缺项原因”及页面笼统重试提示；不得标为收发闭环完成。customer=25 下存在明确标记的内部验收收件人，非该公司真实联系人；验收结束须取消可联系标记。
-- 已有后端 183 项、前端 46 项、部署 57 项、Worker 15 项及构建证据；本轮生成错误回归 15 项通过。未推送 origin 或合并 main；正式发布使用受管 deploy ref。使用与限制见 [使用说明](customer-mail-outreach.md)，证据与恢复步骤见 [验收进度](reports/2026-10-03-customer-mail-mvp-progress.md)。
+- 分支 `codex/customer-mail-mvp`；主功能及内部试发版本已正式发布，office/cloud 同版、schema 173 无迁移，邮箱 OAuth 与 Worker 健康。时间精度修复 `1542e47e` 已完成正式切换及两端/Worker 同版核验。
+- 发件 `leshinehair@agent.qq.com`，仅允许 `86muliang@163.com`。真实 AI 生成、修改、审批、排程、临发授权、回执均已跑通；message=1/revision=3/job=2 为 provider_accepted，sent 查到唯一邮件 `msg_A06MkNfpqfCI-qcLMaPQLqZSnYH3IBdtPmDCsvnuuip4lg`，主题 `[ARK INTERNAL TEST] Ark acceptance 20261003-0922`。
+- 首次 job=1 被毫秒/数据库整秒摘要差异安全拦截，未发信，已撤销；修复已补先失败后通过的精度回归。内部收件人 contact=1/point=1 明确非样例客户联系人，发信后已取消可联系标记；内部试发不记客户经营时间线。
+- 当前只待用户直接回复测试邮件，然后核验自动关联、阅读真实回信并人工分类。不可将 queued/accepted 说成用户已收到，不伪造入站事件。
+- 相关后端邮件 65 项、时间精度审批/Worker 28 项、前端 46 项及构建通过；原部署 57 项和 Worker 15 项通过。未推送 origin、未合并 main。见 [使用说明](customer-mail-outreach.md) 与 [验收记录](reports/2026-10-03-customer-mail-mvp-progress.md)。
 
 # 当前交接与待办
 
