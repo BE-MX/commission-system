@@ -100,6 +100,9 @@ def _normalize_scheduled_utc(value) -> tuple:
     """协议入参统一为 UTC：naive 按 UTC 解释（对齐 to_beijing_naive 的协议约定）。"""
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
+    # MySQL DATETIME columns store whole seconds. Hash exactly what persists,
+    # otherwise a millisecond-bearing browser request fails the worker recheck.
+    value = value.astimezone(timezone.utc).replace(microsecond=0)
     return value, value.astimezone(timezone.utc).replace(tzinfo=None)
 
 

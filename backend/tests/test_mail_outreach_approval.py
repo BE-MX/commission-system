@@ -64,6 +64,23 @@ def test_approve_creates_job_with_correct_hashes(db):
     assert message.status == "approved"
 
 
+def test_fractional_schedule_is_hashed_at_database_second_precision(db):
+    graph = seed_graph(db)
+    mailbox = make_mailbox(db, owner_user_id=graph.user.id)
+    message, revision = make_draft(db, graph)
+    payload = _payload(graph, mailbox, revision,
+        scheduled_at_utc=SCHEDULED_AT.replace(microsecond=123456))
+    result = approve(db, graph.access, _user(graph), message.id, payload)
+    approval = db.get(MailOutreachApproval, result["approval"]["id"])
+    assert approval.scheduled_at_utc.microsecond == 0
+    assert approval.approval_sha256 == policies.compute_approval_sha256(
+        content_sha256=revision.content_sha256, mailbox_binding_id=mailbox.id,
+        to_contact_point_id=graph.point.id, to_email_snapshot="jane@acme.com",
+        language_tag="en", schedule_policy=SCHEDULE_POLICY,
+        scheduled_at_utc=approval.scheduled_at_utc.replace(tzinfo=timezone.utc).isoformat())
+    assert approve(db, graph.access, _user(graph), message.id, payload)["idempotent_replay"] is True
+
+
 def test_approve_rejects_content_hash_mismatch(db):
     graph = seed_graph(db)
     mailbox = make_mailbox(db, owner_user_id=graph.user.id)
