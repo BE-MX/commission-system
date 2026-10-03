@@ -141,6 +141,7 @@ def create_draft(
         contact_point_id=payload.contact_point_id,
         relationship_goal=payload.relationship_goal,
         request_key=payload.request_key,
+        internal_test=payload.internal_test,
     ))
 
 

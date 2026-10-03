@@ -184,6 +184,10 @@ def approve(db: Session, access: CustomerAccess, user: dict, message_id: int, pa
     ).with_for_update().one_or_none()
     if point is None:
         raise conflict("收件邮箱点已不存在", error_code="contact_point_missing")
+    from app.mail_outreach.internal_test_service import is_internal_test, require_internal_test_recipient, require_internal_test_content
+    if is_internal_test(revision):
+        require_internal_test_recipient(user, point.normalized_value)
+        require_internal_test_content(revision.subject, revision.claims_json)
 
     scheduled_aware, scheduled_utc_naive = _normalize_scheduled_utc(payload.scheduled_at_utc)
     now_utc = utc_now_naive()

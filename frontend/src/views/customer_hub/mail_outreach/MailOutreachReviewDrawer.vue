@@ -7,6 +7,7 @@
         <template #default><el-button link type="primary" @click="reload">重新加载</el-button></template>
       </el-alert>
       <template v-else-if="detail">
+        <el-alert v-if="revision?.evidence_snapshot?.internal_test" type="info" title="内部试发：不代表客户触达，不写入客户经营时间线。" :closable="false" show-icon />
         <header class="review-header">
           <h2>{{ detail.customer_name || `客户 #${detail.customer_id}` }}</h2>
           <p>

@@ -19,7 +19,7 @@ from app.mail_outreach.worker_schemas import ClassifyRequest, EventsRequest, Hea
 from tests.mail_outreach_helpers import make_draft, make_mailbox, seed_graph
 
 
-def prepared(db, monkeypatch):
+def prepared(db, monkeypatch, *, internal_test=False):
     monkeypatch.setattr(get_settings(), "MAIL_OUTREACH_SEND_ENABLED", True)
     monkeypatch.setattr(get_settings(), "MAIL_OUTREACH_ALLOWED_RECIPIENTS", "jane@acme.com")
     graph = seed_graph(db)
@@ -29,6 +29,14 @@ def prepared(db, monkeypatch):
     revision.evidence_snapshot_json = {"profile_version_id": graph.profile.id,
         "contact_point_id": graph.point.id, "email": graph.point.normalized_value,
         "fact_fingerprints": [{"fact_id": graph.fact.id, "fact_fingerprint": graph.fact.fact_fingerprint}]}
+    if internal_test:
+        from app.mail_outreach.policies import compute_content_sha256
+        revision.subject = "[ARK INTERNAL TEST] Mail check"
+        revision.claims_json = []
+        revision.evidence_snapshot_json = {**revision.evidence_snapshot_json, "internal_test": True}
+        revision.content_sha256 = compute_content_sha256(subject=revision.subject,
+            body_text=revision.body_text, language_tag=revision.language_tag, claims=[])
+        db.commit()
     user = {"sub": str(graph.user.id), "roles": ["super_admin"], "permissions": []}
     approved = approval_service.approve(db, graph.access, user, message.id, ApproveRequest(
         revision_id=revision.id, mailbox_binding_id=mailbox.id,
@@ -38,6 +46,34 @@ def prepared(db, monkeypatch):
         HeartbeatRequest(sender_email=mailbox.sender_email, auth_status="active"))
     job = db.get(MailOutreachSendJob, approved["job"]["id"])
     return graph, mailbox, message, revision, job, user
+
+
+def test_internal_test_delivery_does_not_record_customer_touch(db, monkeypatch):
+    graph, mailbox, _, revision, job, user = prepared(db, monkeypatch, internal_test=True)
+    claimed = worker_service.claim(db, "worker-1", mailbox.id)
+    worker_service.authorize(db, "worker-1", job.id, claimed["fencing_token"])
+    worker_service.record_result(db, "worker-1", job.id,
+        ResultRequest(fencing_token=claimed["fencing_token"], outcome="accepted"))
+    assert job.status == "provider_accepted"
+    assert db.query(CustomerEvent).filter_by(event_type="outreach.accepted").count() == 0
+    payload = EventsRequest(events=[dict(provider_message_id="internal-reply",
+        from_address="jane@acme.com", to_address=mailbox.sender_email,
+        subject="Re: " + revision.subject, received_at_utc=datetime.now(timezone.utc))])
+    assert event_service.ingest(db, "worker-1", mailbox.id, payload)["inserted"] == 1
+    event = db.query(MailEvent).one()
+    event_service.classify(db, event.id, user, ClassifyRequest(classification="human_reply", reason="Internal acceptance reply"))
+    assert event.processed_status == "processed"
+    assert db.query(CustomerEvent).filter_by(event_type="outreach.classified").count() == 0
+
+
+def test_internal_test_cannot_use_wildcard_at_send_time(db, monkeypatch):
+    _, mailbox, _, _, job, _ = prepared(db, monkeypatch, internal_test=True)
+    claimed = worker_service.claim(db, "worker-1", mailbox.id)
+    monkeypatch.setattr(get_settings(), "MAIL_OUTREACH_ALLOWED_RECIPIENTS", "*")
+    with pytest.raises(MailOutreachError):
+        worker_service.authorize(db, "worker-1", job.id, claimed["fencing_token"])
+    assert job.status == "needs_review"
+    assert "internal_test_recipient_forbidden" in job.last_precheck_json["reasons"]
 
 
 def test_single_use_authorization_result_replay_and_timeline(db, monkeypatch):

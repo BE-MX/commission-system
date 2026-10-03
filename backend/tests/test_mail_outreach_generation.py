@@ -136,6 +136,43 @@ def test_empty_not_ready_response_explains_missing_evidence(db, monkeypatch):
     assert db.query(MailOutreachMessage).count() == 0
 
 
+@pytest.mark.parametrize("allowed,roles", [("*", ["super_admin"]), ("", ["super_admin"]), ("jane@acme.com", [])])
+def test_internal_test_requires_admin_and_explicit_address(db, monkeypatch, allowed, roles):
+    graph = seed_graph(db)
+    monkeypatch.setattr(get_settings(), "MAIL_OUTREACH_ALLOWED_RECIPIENTS", allowed)
+    monkeypatch.setattr("app.mail_outreach.generation_service.chat", lambda *a, **kw: pytest.fail("must reject before AI"))
+    with pytest.raises(MailOutreachError):
+        generate_draft(db, graph.access, {"sub": str(graph.user.id), "roles": roles},
+            customer_id=graph.customer.id, contact_id=graph.contact.id, contact_point_id=graph.point.id,
+            relationship_goal="first_intro", request_key="internal-test-01", internal_test=True)
+    assert db.query(MailOutreachMessage).count() == 0
+
+
+def test_internal_test_uses_separate_prompt_and_preserves_mode_on_edit(db, monkeypatch):
+    from app.mail_outreach.generation_service import create_human_revision
+    graph = seed_graph(db)
+    monkeypatch.setattr(get_settings(), "MAIL_OUTREACH_ALLOWED_RECIPIENTS", "jane@acme.com")
+    user = {"sub": str(graph.user.id), "roles": ["super_admin"]}
+    def test_chat(db, **kwargs):
+        assert kwargs["preset_name"] == "mail_outreach_internal_test"
+        prompt = json.loads(kwargs["messages"][0]["content"])
+        assert set(prompt) == {"recipient_name", "language", "purpose"}
+        return {"content": json.dumps(_valid_ai_payload(graph, subject="[ARK INTERNAL TEST] Mail check", claims=[]))}
+    monkeypatch.setattr("app.mail_outreach.generation_service.chat", test_chat)
+    result = generate_draft(db, graph.access, user,
+        customer_id=graph.customer.id, contact_id=graph.contact.id, contact_point_id=graph.point.id,
+        relationship_goal="first_intro", request_key="internal-test-01", internal_test=True)
+    assert result["current_revision"]["evidence_snapshot"]["internal_test"] is True
+    assert result["current_revision"]["preset_name"] == "mail_outreach_internal_test"
+    assert result["current_revision"]["risk_flags"] == []
+    edited = create_human_revision(db, graph.access, user, result["id"], {"body_text": "Please reply to this internal test."})
+    assert edited["current_revision"]["evidence_snapshot"]["internal_test"] is True
+    regenerated = create_human_revision(db, graph.access, user, result["id"], {"regenerate": True})
+    assert regenerated["current_revision"]["preset_name"] == "mail_outreach_internal_test"
+    with pytest.raises(MailOutreachError, match="测试主题"):
+        create_human_revision(db, graph.access, user, result["id"], {"subject": "Real outreach"})
+
+
 def test_request_key_replay_returns_existing_message(db, monkeypatch):
     graph = seed_graph(db)
     calls = {"count": 0}

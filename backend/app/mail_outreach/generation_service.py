@@ -22,6 +22,9 @@ from app.mail_outreach import policies
 from app.mail_outreach.context_service import build_outreach_snapshot
 from app.mail_outreach.eligibility_service import evaluate_email_eligibility
 from app.mail_outreach.errors import bad_request, conflict, not_found
+from app.mail_outreach.internal_test_service import (
+    TEST_PREFIX, is_internal_test, require_internal_test_recipient, require_internal_test_content,
+)
 from app.mail_outreach.models import (
     MailOutreachApproval,
     MailOutreachMessage,
@@ -248,6 +251,7 @@ def _generate_payload_with_ai(
     contact_id: int,
     contact_point_id: int,
     relationship_goal: str,
+    internal_test: bool = False,
 ) -> dict:
     """调 AI 并做服务端校验，返回规范化生成结果 dict。"""
     prompt = _build_generation_prompt(
@@ -256,9 +260,14 @@ def _generate_payload_with_ai(
         contact_point_id=contact_point_id,
         relationship_goal=relationship_goal,
     )
+    if internal_test:
+        contact = next(c for c in snapshot["contacts"] if c["contact_id"] == contact_id)
+        prompt = json.dumps({"recipient_name": contact["display_name"],
+            "language": contact["default_language"] or snapshot["default_language"],
+            "purpose": "Internal acceptance of drafting, approval, scheduling, delivery and reply handling."}, ensure_ascii=False)
     result = chat(
         db,
-        preset_name=GENERATION_PRESET,
+        preset_name="mail_outreach_internal_test" if internal_test else GENERATION_PRESET,
         messages=[{"role": "user", "content": prompt}],
         caller_module="mail_outreach",
         caller_user_id=user_id,
@@ -266,6 +275,8 @@ def _generate_payload_with_ai(
         snapshot_mode="metadata",
     )
     data = _extract_ai_json(result.get("content") or "")
+    if internal_test:
+        require_internal_test_content(str(data.get("subject") or ""), data.get("claims"))
 
     valid_fact_ids = {item["fact_id"] for item in snapshot["evidence"]}
     claims, claim_flags = _validate_claims(data.get("claims") or [], valid_fact_ids, {item["knowledge_version_id"] for item in snapshot["knowledge_items"]})
@@ -276,7 +287,7 @@ def _generate_payload_with_ai(
         {"code": "model_risk_flag", "detail": str(item)} for item in (data.get("risk_flags") or [])
     )
     risk_flags.extend(claim_flags)
-    risk_flags.extend(_screen_content(subject, body_text))
+    risk_flags.extend(_screen_content(subject.removeprefix(TEST_PREFIX) if internal_test else subject, body_text))
     if not data.get("ready"):
         risk_flags.append({
             "code": "generation_not_ready",
@@ -359,8 +370,8 @@ def _new_revision(
         recipient_timezone=recipient_timezone,
         location_evidence=location_evidence,
         schedule_policy_json=_default_schedule_policy(),
-        preset_name=GENERATION_PRESET if created_by_kind == "ai" else "",
-        preset_prompt_revision=PRESET_PROMPT_REVISION if created_by_kind == "ai" else "",
+        preset_name=("mail_outreach_internal_test" if evidence_snapshot.get("internal_test") else GENERATION_PRESET) if created_by_kind == "ai" else "",
+        preset_prompt_revision=("2026-10-03" if evidence_snapshot.get("internal_test") else PRESET_PROMPT_REVISION) if created_by_kind == "ai" else "",
         content_sha256=content_sha256,
         created_by_kind=created_by_kind,
         created_by=user_id,
@@ -426,6 +437,7 @@ def _generate_revision(
     revision_no: int,
     request_key: str | None,
     user: dict | None = None,
+    internal_test: bool = False,
 ) -> MailOutreachRevision:
     """资格评估 →（合格才）AI 生成 → 落 revision；不合格返回缺项错误。"""
     expected_revision_id = message.current_revision_id
@@ -434,6 +446,8 @@ def _generate_revision(
         db, access, message.customer_id, message.contact_id, message.contact_point_id,
     )
     customer, contact, point = _load_parties(db, message)
+    if internal_test:
+        require_internal_test_recipient(user or {}, point.normalized_value)
     if eligibility["eligible"]:
         generated = _generate_payload_with_ai(
             db,
@@ -442,6 +456,7 @@ def _generate_revision(
             contact_id=message.contact_id,
             contact_point_id=message.contact_point_id,
             relationship_goal=message.relationship_goal,
+            internal_test=internal_test,
         )
     else:
         raise bad_request("；".join(eligibility["reasons"]), error_code="eligibility_missing")
@@ -468,12 +483,12 @@ def _generate_revision(
         contact=contact,
         customer=customer,
         generated=generated,
-        evidence_snapshot=_evidence_snapshot(
+        evidence_snapshot={**_evidence_snapshot(
             snapshot,
             contact_point_id=message.contact_point_id,
             email=point.normalized_value,
             request_key=request_key,
-        ),
+        ), "internal_test": internal_test},
     )
 
 
@@ -487,6 +502,7 @@ def generate_draft(
     contact_point_id: int,
     relationship_goal: str,
     request_key: str,
+    internal_test: bool = False,
 ) -> dict:
     if customer_id != access.customer_id:
         raise not_found("客户不存在或无权访问")
@@ -496,6 +512,8 @@ def generate_draft(
     )
     if existing is not None:
         result = _message_result(db, existing)
+        if bool(result["current_revision"]["evidence_snapshot"].get("internal_test")) != internal_test:
+            raise conflict("请求键已用于不同邮件用途", error_code="request_key_conflict")
         result["idempotent_replay"] = True
         return result
 
@@ -512,7 +530,7 @@ def generate_draft(
         created_by=user_id,
     )
     revision = _generate_revision(
-        db, access, user_id=user_id, message=message, revision_no=1, request_key=request_key, user=user,
+        db, access, user_id=user_id, message=message, revision_no=1, request_key=request_key, user=user, internal_test=internal_test,
     )
     message.current_revision_id = revision.id
     db.commit()
@@ -567,11 +585,14 @@ def create_human_revision(
     if current is None:
         raise not_found("草稿当前版本缺失")
     user_id = int(user["sub"])
+    internal_test = is_internal_test(current)
+    if internal_test:
+        require_internal_test_recipient(user, (current.evidence_snapshot_json or {}).get("email", ""))
 
     if edits.get("regenerate"):
         revision = _generate_revision(
             db, access, user_id=user_id, message=message,
-            revision_no=current.revision_no + 1, request_key=None, user=user,
+            revision_no=current.revision_no + 1, request_key=None, user=user, internal_test=internal_test,
         )
     else:
         snapshot = build_outreach_snapshot(db, access, user=user)
@@ -584,7 +605,9 @@ def create_human_revision(
             valid_fact_ids,
             {item["knowledge_version_id"] for item in snapshot["knowledge_items"]},
         )
-        risk_flags = _screen_content(subject, body_text) + claim_flags
+        if internal_test:
+            require_internal_test_content(subject, claims)
+        risk_flags = _screen_content(subject.removeprefix(TEST_PREFIX) if internal_test else subject, body_text) + claim_flags
         # Discarded evidence cannot be repaired by saving identical unsupported text.
         # Only a fresh AI generation can clear provenance/readiness failures.
         risk_flags.extend(flag for flag in (current.risk_flags_json or [])
@@ -609,12 +632,12 @@ def create_human_revision(
                 "claims": claims,
                 "risk_flags": risk_flags,
             },
-            evidence_snapshot=_evidence_snapshot(
+            evidence_snapshot={**_evidence_snapshot(
                 snapshot,
                 contact_point_id=message.contact_point_id,
                 email=point.normalized_value,
                 request_key=None,
-            ),
+            ), "internal_test": internal_test},
         )
 
     _supersede_approvals_and_jobs(db, message)

@@ -16,7 +16,8 @@ from app.customer.models import CustomerAccount, CustomerContactPoint
 from app.mail_outreach import policies
 from app.mail_outreach.context_service import build_outreach_snapshot
 from app.mail_outreach.eligibility_service import evaluate_email_eligibility
-from app.mail_outreach.errors import conflict, not_found
+from app.mail_outreach.errors import MailOutreachError, conflict, not_found
+from app.mail_outreach.internal_test_service import is_internal_test, require_internal_test_recipient, require_internal_test_content
 from app.mail_outreach.generation_service import BLOCKING_RISK_CODES
 from app.mail_outreach.job_service import serialize_job
 from app.mail_outreach.models import (
@@ -151,6 +152,12 @@ def _precheck(db, mailbox, message, job):
         reasons.append("approved_content_changed")
     roles, permissions = get_live_user_authorization(db, approval.approver_user_id)
     user = {"sub": str(approval.approver_user_id), "roles": roles, "permissions": permissions}
+    if is_internal_test(revision):
+        try:
+            require_internal_test_recipient(user, job.to_email_snapshot)
+            require_internal_test_content(revision.subject, revision.claims_json)
+        except MailOutreachError as exc:
+            reasons.append(exc.error_code)
     if "super_admin" not in roles and "mail_outreach:write" not in permissions:
         reasons.append("approver_permission_revoked")
     if (mailbox.owner_user_id not in (None, approval.approver_user_id)
@@ -246,7 +253,8 @@ def record_result(db, identity, job_id, payload):
     if payload.outcome == "accepted":
         message.status = "completed"
         from app.mail_outreach.event_service import append_timeline
-        append_timeline(db, message.customer_id, "outreach.accepted", job.id,
-                        "开发信已获邮件通道接受", {"job_id": job.id})
+        if not is_internal_test(db.get(MailOutreachRevision, job.revision_id)):
+            append_timeline(db, message.customer_id, "outreach.accepted", job.id,
+                            "开发信已获邮件通道接受", {"job_id": job.id})
     db.commit()
     return serialize_job(job)

@@ -89,6 +89,9 @@
                 <el-radio-button v-for="option in RELATIONSHIP_GOAL_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</el-radio-button>
               </el-radio-group>
             </el-form-item>
+            <el-form-item v-permission="'mail_outreach:admin'" label="内部验收">
+              <el-checkbox v-model="createForm.internal_test">内部试发（仅限明确测试白名单，不计客户触达）</el-checkbox>
+            </el-form-item>
           </el-form>
           <el-alert v-if="createError" type="error" :title="errorMessage(createError)" :closable="false" show-icon />
         </template>
@@ -185,7 +188,7 @@ const creating = ref(false)
 const createError = ref(null)
 const requestKey = ref('')
 const context = reactive(createLatestResource(getOutreachContext))
-const createForm = reactive({ contact_id: null, contact_point_id: null, relationship_goal: 'first_intro' })
+const createForm = reactive({ contact_id: null, contact_point_id: null, relationship_goal: 'first_intro', internal_test: false })
 watch(createForm, () => { requestKey.value = createSearchJobIdempotencyKey() }, { flush: 'sync' })
 
 const contacts = computed(() => context.data?.contacts || [])
@@ -227,7 +230,7 @@ function missingItems(point) {
 
 function openCreate() {
   if (creating.value) return
-  Object.assign(createForm, { contact_id: null, contact_point_id: null, relationship_goal: 'first_intro' })
+  Object.assign(createForm, { contact_id: null, contact_point_id: null, relationship_goal: 'first_intro', internal_test: false })
   createError.value = null
   createVisible.value = true
   reloadContext()
@@ -247,6 +250,7 @@ async function submitCreate() {
       contact_point_id: createForm.contact_point_id,
       relationship_goal: createForm.relationship_goal,
       request_key: requestKey.value,
+      internal_test: createForm.internal_test,
     })
     createVisible.value = false
     msgSuccess('草稿已生成')

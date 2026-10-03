@@ -8,6 +8,7 @@ from app.customer.models import CustomerAccount, CustomerContactPoint
 from app.mail_outreach.errors import conflict, not_found
 from app.mail_outreach.models import MailEvent, MailOutreachMessage, MailOutreachRevision, MailOutreachSendJob
 from app.mail_outreach.worker_service import binding
+from app.mail_outreach.internal_test_service import is_internal_test
 
 
 def append_timeline(db, customer_id, event_type, item_id, title, payload, actor_id=None):
@@ -108,8 +109,9 @@ def classify(db, event_id, user, payload):
         for pending in jobs:
             pending.status = "cancelled"
             pending.cancel_note = f"inbox_{payload.classification}:event_{event.id}"
-    append_timeline(db, event.matched_customer_id, "outreach.classified", event.id,
-        "开发信收件事件已人工确认", {"event_id": event.id, "classification": event.classification,
-                                "reason": payload.reason}, int(user["sub"]))
+    if not is_internal_test(db.get(MailOutreachRevision, job.revision_id)):
+        append_timeline(db, event.matched_customer_id, "outreach.classified", event.id,
+            "开发信收件事件已人工确认", {"event_id": event.id, "classification": event.classification,
+                                    "reason": payload.reason}, int(user["sub"]))
     db.commit()
     return serialize_event(event)

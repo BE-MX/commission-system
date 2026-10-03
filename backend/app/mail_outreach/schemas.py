@@ -17,6 +17,7 @@ class DraftCreateRequest(BaseModel):
     contact_point_id: int = Field(gt=0)
     relationship_goal: Literal["first_intro", "follow_up", "reactivation"]
     request_key: str = Field(min_length=8, max_length=128)
+    internal_test: bool = False
 
 
 class RevisionCreateRequest(BaseModel):
