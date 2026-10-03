@@ -283,6 +283,9 @@ def _generate_payload_with_ai(
             "detail": "；".join(str(x) for x in (data.get("missing_requirements") or [])) or "模型判定未就绪",
         })
     if not subject or not body_text:
+        if not data.get("ready"):
+            reason = next(flag["detail"] for flag in risk_flags if flag["code"] == "generation_not_ready")
+            raise bad_request(f"生成条件未满足：{reason[:1200]}。请补齐资料后重新生成。", error_code="generation_not_ready")
         raise bad_request("AI 输出缺少主题或正文，草稿未生成", error_code="ai_invalid_output")
     return {
         "subject": subject[:255],

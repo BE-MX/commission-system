@@ -90,7 +90,7 @@
               </el-radio-group>
             </el-form-item>
           </el-form>
-          <el-alert v-if="createError" type="error" title="草稿生成失败，请重试。" :closable="false" show-icon />
+          <el-alert v-if="createError" type="error" :title="errorMessage(createError)" :closable="false" show-icon />
         </template>
       </div>
       <template #footer>
@@ -112,6 +112,7 @@ import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
 import { createLatestResource } from '../customerHubResources'
+import { errorMessage } from '../workbenchV2Controller'
 import { createSearchJobIdempotencyKey } from '../customerHubController'
 import { useOperationsList } from '../composables/useOperationsList'
 import MailOutreachReviewDrawer from './MailOutreachReviewDrawer.vue'

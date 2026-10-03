@@ -122,6 +122,20 @@ def test_ready_false_persists_but_cannot_be_approved(db, monkeypatch):
     assert exc_info.value.error_code == "risk_blocked"
 
 
+def test_empty_not_ready_response_explains_missing_evidence(db, monkeypatch):
+    graph = seed_graph(db)
+    payload = _valid_ai_payload(
+        graph, ready=False, subject="", body_text="",
+        missing_requirements=["联系人角色缺少依据"],
+    )
+    monkeypatch.setattr("app.mail_outreach.generation_service.chat", _fake_chat(payload))
+    with pytest.raises(MailOutreachError) as error:
+        _generate(db, graph)
+    assert error.value.error_code == "generation_not_ready"
+    assert "联系人角色缺少依据" in error.value.message
+    assert db.query(MailOutreachMessage).count() == 0
+
+
 def test_request_key_replay_returns_existing_message(db, monkeypatch):
     graph = seed_graph(db)
     calls = {"count": 0}
