@@ -96,7 +96,7 @@
 - **Data table:** 无斑马纹，hover 高亮（`#fef9f0` 极浅金背景），header 用 `#fafbfe` 冷灰底色 + 13px/600 次字色（非 uppercase）。详细规范见「List Page Spec」一节
 - **Status tags:** 自定义 Element Plus tag 颜色，语义明确（info/primary/success/danger/warning）
 - **Button System:** 见下方「Button Spec」完整规范
-- **Metric card:** 大数字 + 状态圆点 + 操作链接，hover 上浮
+- **Metric card:** 浅色语义渐变 + 图标图片 + 大数字 + 同图标淡水印；统计卡与筛选卡按下方「看板概览卡片」规范实现
 - **Dialog:** 16px 圆角，header 带 bottom border
 - **Small viewport:** 主站窄屏导航使用抽屉，页面使用完整可用宽度；筛选栏允许换行，多列表单和上传/配置双栏转为单列。保留表格内部横向滚动，不通过隐藏整个页面溢出来掩盖不可达控件。
 - **Overlay boundaries:** 非全屏弹窗最大宽度为视口减 24px，最大高度为动态视口减 32px；正文滚动、页头页尾保留。详情抽屉挂到 body，最大宽度不超过视口。欢迎提示使用标准 Dialog，支持焦点管理、Escape 与原生复选框。
@@ -155,6 +155,18 @@
 | hover 位移 | `translateY(-2px)`（仅 `@media (hover:hover) and (pointer:fine)`）；`.is-static` 非交互卡只加深阴影不上浮 |
 | 按压 | `scale(.98)`（`:active`） |
 | 过渡 | 200ms `cubic-bezier(0.23, 1, 0.32, 1)`，只 transition 具体属性不用 all |
+
+### 看板概览卡片（全局，2026-10-02）
+
+适用于主站页面顶部的统计、分类与筛选看板。以订单发票管理的 `InvoiceOverview.vue` 为视觉标杆；客户工作台的「客户事项」「客户组合」统一使用 `components/OverviewMetricCard.vue`。新增或改动同类卡片应遵循本节。
+
+- **必须同时具备三层识别**：浅色语义渐变、左上图标图片、右下同图标水印。图片采用项目已有 Element Plus SVG 图标，选与指标含义相关的图形，不使用无关照片。标签和数字始终保留，不能仅靠颜色区别。
+- **渐变与色彩**：`linear-gradient(145deg, var(--dash-glass-bg-strong), var(--metric-bg))`，沿用 `.lg-card` 的圆角、细边与阴影。前景/底色成对引用 `tokens.css` 的 `--tag-{gold,success,info,warning,neutral}-{text,bg}` 与 `--metric-violet-{ink,bg}`；禁止按数组位置随机配色、裸色值和跨页面覆盖通用选择器。
+- **固定业务映射**：客户事项：待我处理=金 / Bell、推进中=蓝 / Promotion、已结束=紫 / FolderChecked、今日行动已完成=绿 / CircleCheck。客户组合：复购窗口=金 / Refresh、活跃客户=绿 / UserFilled、新客培育=蓝 / Sunrise、需唤醒=橙 / Bell、沉睡客户=紫 / Moon、待核验=灰 / Search。分类配色不替代正式状态标签，也不更改统计口径。
+- **图片与水印尺寸**：前景图标 34×34px、图形 20px、底板圆角 10px；水印 112×112px，右偏 -12px、下偏 -18px、旋转 -12°、透明度 0.09。卡片相对定位并裁切溢出，水印层为 0、文字和前景图标层为 1；装饰层 `aria-hidden="true"`，水印 `pointer-events: none`，不得遮挡数字或拦截点击。
+- **排版与响应式**：内边距 15px 18px，纵向间距 9px，最小高度 142px；标签 13px，数字 22–26px / 700 / `tabular-nums`，说明 12px。网格列使用 `minmax(0, 1fr)`；4 卡在窄屏降为 2 列，6 卡在中等宽度降为 3 列、手机降为 2 列，长文案与大数字允许换行，不横向撑破页面。
+- **交互与无障碍**：可筛选卡使用原生 button，提供 `aria-pressed`；选中用同色加粗边框与勾选图标，键盘聚焦有独立可见轮廓，Enter / Space 保留原生行为。纯统计卡使用 div，不伪装成按钮。高频筛选不添加位移、缩放或入场动画；hover 反馈仅用于精确指针，减少动态模式保持静态；禁止给卡片加实时模糊。
+- **验收**：核对全卡渐变/图片/水印、已选与未选、键盘筛选、0 与缺失值、长数字/说明、桌面与窄屏。业务计数、权限、请求与筛选语义保持原契约。
 
 ### 表格融入玻璃
 

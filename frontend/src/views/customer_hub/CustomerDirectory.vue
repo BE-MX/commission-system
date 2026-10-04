@@ -1,6 +1,18 @@
 <template>
   <section class="directory">
-    <div class="segments"><button v-for="(label,key) in tiers" :key="key" type="button" :class="{selected:searchForm.tier===key}" :aria-pressed="searchForm.tier===key" @click="selectTier(key)"><span>{{ label }}</span><strong>{{ segmentSummary?.[key] ?? '—' }}</strong></button></div>
+    <div class="segments">
+      <OverviewMetricCard
+        v-for="(label, key) in tiers"
+        :key="key"
+        :label="label"
+        :value="segmentSummary?.[key] ?? '—'"
+        :icon="tierPresentation[key].icon"
+        :tone="tierPresentation[key].tone"
+        interactive
+        :selected="searchForm.tier === key"
+        @click="selectTier(key)"
+      />
+    </div>
     <p class="hint">公司统一分层 · {{ policyVersion || '策略版本未提供' }}。分层与事项优先级分开计算，承诺期限优先。</p>
     <section class="table-card lg-card is-static">
       <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="handleReset"><el-input v-model="searchForm.keyword" clearable aria-label="搜索客户" placeholder="搜索客户名称或编号"   />
@@ -24,6 +36,8 @@
 </template>
 <script setup>
 import { ref } from 'vue'
+import { Refresh, UserFilled, Sunrise, Bell, Moon, Search } from '@element-plus/icons-vue'
+import OverviewMetricCard from '@/components/OverviewMetricCard.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchListResourceScope } from '@/composables/useListResourceScope'
 import { useListPage } from '@/composables/useListPage'
@@ -33,6 +47,14 @@ import { formatMoney } from '@/utils/money'
 import { identityLabel } from './operationsPresentation'
 defineEmits(['open-customer'])
 const tiers={reorder:'复购窗口',active:'活跃客户',new:'新客培育',wake:'需唤醒',sleep:'沉睡客户',unknown:'待核验'}
+const tierPresentation = {
+  reorder: { icon: Refresh, tone: 'gold' },
+  active: { icon: UserFilled, tone: 'success' },
+  new: { icon: Sunrise, tone: 'info' },
+  wake: { icon: Bell, tone: 'warning' },
+  sleep: { icon: Moon, tone: 'violet' },
+  unknown: { icon: Search, tone: 'neutral' },
+}
 const route=useRoute(),router=useRouter()
 const segmentSummary=ref(null),policyVersion=ref(null),sourceWatermarks=ref([])
 const listPageState = useListPage(async (params, { signal, isCurrent }) => {
@@ -53,4 +75,4 @@ const date=value=>value?formatBeijingDateTime(value,{seconds:false}):'未提供'
 function selectTier(tier){searchForm.tier=tier;handleSearch()}
 defineExpose({refresh:fetchList})
 </script>
-<style scoped>.directory{display:grid;gap:14px}.segments{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}.segments button{font:inherit;padding:14px;display:grid;gap:8px;text-align:left;border:1px solid var(--border-color);border-radius:var(--card-radius);background:var(--card-bg);color:var(--text-secondary);cursor:pointer}.segments strong{font-size:22px;color:var(--text-primary);font-variant-numeric:tabular-nums}.segments .selected{border-color:var(--color-primary)}.hint{color:var(--text-muted);font-size:12px;line-height:1.6;margin:0}.table-card{padding:0;overflow:hidden}.toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:12px;background:var(--toolbar-bg)}.toolbar .el-input{flex:1;min-width:200px}.toolbar .el-select{width:160px}.customer-link{display:grid;gap:6px;border:0;background:transparent;color:var(--text-primary);font:inherit;text-align:left;cursor:pointer}.customer-link strong{color: var(--color-primary-text)}.customer-link span{color:var(--text-muted);font-size:12px}p{margin:6px 0;line-height:1.6}.el-pagination{padding:12px;justify-content:flex-end;overflow-x:auto}button:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}@media(max-width:850px){.segments{grid-template-columns:repeat(3,1fr)}}@media(max-width:500px){.segments{grid-template-columns:repeat(2,1fr)}.toolbar .el-select{flex:1;min-width:140px}}</style>
+<style scoped>.directory{display:grid;gap:14px}.segments{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}.hint{color:var(--text-muted);font-size:12px;line-height:1.6;margin:0}.table-card{padding:0;overflow:hidden}.toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:12px;background:var(--toolbar-bg)}.toolbar .el-input{flex:1;min-width:200px}.toolbar .el-select{width:160px}.customer-link{display:grid;gap:6px;border:0;background:transparent;color:var(--text-primary);font:inherit;text-align:left;cursor:pointer}.customer-link strong{color: var(--color-primary-text)}.customer-link span{color:var(--text-muted);font-size:12px}p{margin:6px 0;line-height:1.6}.el-pagination{padding:12px;justify-content:flex-end;overflow-x:auto}button:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}@media(max-width:1200px){.segments{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:500px){.segments{grid-template-columns:repeat(2,minmax(0,1fr))}.toolbar .el-select{flex:1;min-width:140px}}</style>

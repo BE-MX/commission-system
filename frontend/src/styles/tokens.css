@@ -79,6 +79,10 @@
   --tag-neutral-text:    #4A5563;
   --tag-neutral-solid:   #64748B;
 
+  /* Overview metric palette: violet complements the shared semantic tag colors. */
+  --metric-violet-ink: #7048a8;
+  --metric-violet-bg: #F1EDF7;
+
   /* Login: quiet dark-gold scene, separate from the light workspace surfaces. */
   --login-bg: #0d0e13;
   --login-gold: #d4af6e;
