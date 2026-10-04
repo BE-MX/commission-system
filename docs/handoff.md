@@ -1,9 +1,9 @@
-## 2026-10-03 客户邮件 MVP（Codex，真实发信已通过，待回信验收）
+## 2026-10-03 客户邮件 MVP（Codex，真实收发闭环验收通过）
 
 - 分支 `codex/customer-mail-mvp`；主功能及内部试发版本已正式发布，office/cloud 同版、schema 173 无迁移，邮箱 OAuth 与 Worker 健康。时间精度修复 `1542e47e` 已完成正式切换及两端/Worker 同版核验。
 - 发件 `leshinehair@agent.qq.com`，仅允许 `86muliang@163.com`。真实 AI 生成、修改、审批、排程、临发授权、回执均已跑通；message=1/revision=3/job=2 为 provider_accepted，sent 查到唯一邮件 `msg_A06MkNfpqfCI-qcLMaPQLqZSnYH3IBdtPmDCsvnuuip4lg`，主题 `[ARK INTERNAL TEST] Ark acceptance 20261003-0922`。
 - 首次 job=1 被毫秒/数据库整秒摘要差异安全拦截，未发信，已撤销；修复已补先失败后通过的精度回归。内部收件人 contact=1/point=1 明确非样例客户联系人，发信后已取消可联系标记；内部试发不记客户经营时间线。
-- 当前只待用户直接回复测试邮件，然后核验自动关联、阅读真实回信并人工分类。不可将 queued/accepted 说成用户已收到，不伪造入站事件。
+- 北京时间 11:00:30 收到用户真实回信“方舟验收收到”，官方邮箱已读信确认；Worker 自动建立 event=1 并关联 job=2，页面人工确认分类后为 human_reply/processed。只读复核没有待发送任务，内部测试未写入客户经营时间线，测试联系人仍不可联系。真实收发闭环验收完成，外部客户发送白名单未开放。
 - 相关后端邮件 65 项、时间精度审批/Worker 28 项、前端 46 项及构建通过；原部署 57 项和 Worker 15 项通过。未推送 origin、未合并 main。见 [使用说明](customer-mail-outreach.md) 与 [验收记录](reports/2026-10-03-customer-mail-mvp-progress.md)。
 
 # 当前交接与待办
