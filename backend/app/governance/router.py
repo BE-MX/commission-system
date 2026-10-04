@@ -52,7 +52,7 @@ def api_list_concepts(
     keyword: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    sort_field: str = Query("updated_at", pattern=r"^(id|name_zh|updated_at|created_at|status|layer)$"),
+    sort_field: str = Query("updated_at", pattern=r"^(id|name_zh|name_en|updated_at|created_at|status|layer|confidence|owner)$"),
     sort_order: str = Query("desc", pattern=r"^(asc|desc)$"),
     _user: dict = Depends(require_any_permission("governance:read", "governance:write", "governance:admin")),
     db: Session = Depends(get_db),

@@ -69,47 +69,47 @@
           </div>
 
           <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" @sort-change="sortTable">
             <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
               <el-empty :image-size="96" :description="hasProductFilters ? '没有符合条件的记录' : '暂无数据'">
                 <GlassButton v-if="hasProductFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
               </el-empty>
             </ListPageStatus></template>
-            <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品" min-width="240" show-overflow-tooltip />
-            <el-table-column v-if="visibleKeys.includes('product_type')" prop="product_type_label" label="类型" min-width="80" />
-            <el-table-column v-if="visibleKeys.includes('craft')" prop="craft" label="工艺/尺寸" min-width="130" show-overflow-tooltip />
-            <el-table-column v-if="visibleKeys.includes('length')" prop="length" label="发长" min-width="90" />
-            <el-table-column v-if="visibleKeys.includes('net_color')" prop="net_color" label="网帽颜色" min-width="120" show-overflow-tooltip>
+            <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品" min-width="240" show-overflow-tooltip sortable="custom" />
+            <el-table-column v-if="visibleKeys.includes('product_type')" prop="product_type_label" label="类型" min-width="80" sortable="custom" />
+            <el-table-column v-if="visibleKeys.includes('craft')" prop="craft" label="工艺/尺寸" min-width="130" show-overflow-tooltip sortable="custom" />
+            <el-table-column v-if="visibleKeys.includes('length')" prop="length" label="发长" min-width="90" sortable="custom" />
+            <el-table-column v-if="visibleKeys.includes('net_color')" prop="net_color" label="网帽颜色" min-width="120" show-overflow-tooltip sortable="custom">
               <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.net_color || '' }}</span></template>
             </el-table-column>
-            <el-table-column v-if="visibleKeys.includes('size')" prop="size" label="头套尺码" min-width="95">
+            <el-table-column v-if="visibleKeys.includes('size')" prop="size" label="头套尺码" min-width="95" sortable="custom">
               <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.size }}</span></template>
             </el-table-column>
-            <el-table-column v-if="visibleKeys.includes('density')" prop="density" label="发量" min-width="80">
+            <el-table-column v-if="visibleKeys.includes('density')" prop="density" label="发量" min-width="80" sortable="custom">
               <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.density || '' }}</span></template>
             </el-table-column>
-            <el-table-column v-if="visibleKeys.includes('hair_style_series')" prop="hair_style_series" label="发型系列" min-width="110" show-overflow-tooltip>
+            <el-table-column v-if="visibleKeys.includes('hair_style_series')" prop="hair_style_series" label="发型系列" min-width="110" show-overflow-tooltip sortable="custom">
               <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.hair_style_series }}</span></template>
             </el-table-column>
-            <el-table-column v-if="visibleKeys.includes('original_price')" label="原始价" min-width="110" align="right">
+            <el-table-column v-if="visibleKeys.includes('original_price')" label="原始价" min-width="110" align="right" prop="original_price" sortable="custom">
               <template #default="{ row }">
                 <strong v-if="row.price_status === 'configured'">{{ formatMoney(Number(row.original_price), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</strong>
                 <StatusBadge v-else size="small" type="danger" effect="plain">缺原价</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column v-if="visibleKeys.includes('price_status')" label="价格状态" min-width="100">
+            <el-table-column v-if="visibleKeys.includes('price_status')" label="价格状态" min-width="100" prop="price_status" sortable="custom">
               <template #default="{ row }">
                 <span v-if="row.price_status === 'configured'">已配置 · v{{ row.base_price_version }}</span>
                 <span v-else class="danger-text">待维护</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="visibleKeys.includes('route')" label="工艺路线" min-width="150">
+            <el-table-column v-if="visibleKeys.includes('route')" label="工艺路线" min-width="150" prop="route_name" sortable="custom">
               <template #default="{ row }">
                 <span v-if="row.route_name">{{ row.route_name }}</span>
                 <StatusBadge v-else size="small" type="warning" effect="plain">未绑路线</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column v-if="visibleKeys.includes('use_count')" prop="use_count" label="下单次数" min-width="100" sortable />
+            <el-table-column v-if="visibleKeys.includes('use_count')" prop="use_count" label="下单次数" min-width="100" sortable="custom" />
             <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'domestic:admin'" variant="link" left-icon="Money" @click="openPrice(row)">{{ row.price_status === 'configured' ? '改原始价' : '配原始价' }}</GlassButton>
@@ -226,7 +226,7 @@ const initialPriceStatus = ['configured', 'missing'].includes(route.query.price_
 
 const listPageState = useListPage(
   async ({ page, page_size, ...form }, { signal, isCurrent }) => {
-    const params = { page, page_size }
+    const params = { page, page_size, sort_field: form.sort_field, sort_order: form.sort_order }
     for (const key of ['keyword', 'product_type', 'route_bound', 'price_status']) {
       if (form[key]) params[key] = form[key]
     }
@@ -382,6 +382,7 @@ onMounted(async () => {
   routes.value = routeRes.data || []
   await loadMappings()
 })
+function sortTable({ prop, order }) { return listPageState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped>

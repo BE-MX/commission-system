@@ -74,30 +74,30 @@
         <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="fetchTasks" @fullscreen="toggleFullscreen" />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchTasks" />
-<el-table :data="tasks" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
-        <el-table-column v-if="visibleKeys.includes('task')" label="任务" min-width="250" show-overflow-tooltip>
+<el-table :data="tasks" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+        <el-table-column sortable="custom" prop="task_title" v-if="visibleKeys.includes('task')" label="任务" min-width="250" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="task-title">{{ taskTitle(row) }}</div>
             <div class="task-sub">#{{ row.id }} · {{ profileName(row.profile_id) }}</div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
+        <el-table-column sortable="custom" prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge :type="statusMeta(row.status).type" effect="plain" size="small">
               {{ statusMeta(row.status).label }}
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('runtime')" label="运行时" min-width="95">
+        <el-table-column sortable="custom" prop="source_runtime" v-if="visibleKeys.includes('runtime')" label="运行时" min-width="95">
           <template #default="{ row }">{{ runtimeLabel(row.source_runtime) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('business')" label="业务对象" min-width="160" show-overflow-tooltip>
+        <el-table-column sortable="custom" prop="business_ref_type" v-if="visibleKeys.includes('business')" label="业务对象" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ businessRef(row) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('usage')" label="消耗" min-width="135">
+        <el-table-column sortable="custom" prop="steps_used" v-if="visibleKeys.includes('usage')" label="消耗" min-width="135">
           <template #default="{ row }">{{ row.steps_used }} 步 · {{ tokenTotal(row) }} Token</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('created')" label="创建时间" min-width="170">
+        <el-table-column sortable="custom" prop="created_at" v-if="visibleKeys.includes('created')" label="创建时间" min-width="170">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="100" max-width="140" fixed="right">
@@ -134,16 +134,16 @@
         </el-select>
       </div>
       <el-table :data="filteredEvaluationCases" border max-height="520" class="list-table" empty-text="暂无标准评测题">
-        <el-table-column label="题目" min-width="300">
+        <el-table-column :sort-by="row => row.title || row.question || row.case_id" label="题目" min-width="300">
           <template #default="{ row }">
             <div class="case-title"><StatusBadge size="small" effect="plain">{{ row.case_id }}</StatusBadge><strong>{{ row.title }}</strong></div>
             <div class="case-question">{{ row.question }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="数据要求" min-width="190">
+        <el-table-column :sort-by="row => (row.requires.join(' · '))" label="数据要求" min-width="190">
           <template #default="{ row }"><span class="case-requires">{{ row.requires.join(' · ') }}</span></template>
         </el-table-column>
-        <el-table-column label="状态" min-width="110">
+        <el-table-column :sort-by="row => (evaluationCaseMeta(row).label)" label="状态" min-width="110">
           <template #default="{ row }"><StatusBadge :type="evaluationCaseMeta(row).type" effect="plain" size="small">{{ evaluationCaseMeta(row).label }}</StatusBadge></template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="105" max-width="130" fixed="right">

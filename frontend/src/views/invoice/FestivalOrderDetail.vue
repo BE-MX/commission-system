@@ -84,7 +84,7 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value" :error="error" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="loadPage()" />
-      <el-table v-loading="loading" :data="orders" border class="list-table festival-order-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="orders" @sort-change="sortTable" border class="list-table festival-order-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
           <ListPageStatus :error="error" :loading="loading" @retry="loadPage()">
           <el-empty :image-size="96" :description="listState.appliedSearchForm.value.keyword ? '没有符合条件的记录' : `当前范围暂无${activeLabel}，可切换标签继续查看`">
@@ -92,16 +92,16 @@
           </el-empty>
           </ListPageStatus>
         </template>
-        <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no" label="订单号" min-width="150" max-width="190" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('account-date')" prop="account_date" label="记账日期" min-width="108" max-width="128" />
-        <el-table-column v-if="visibleKeys.includes('amount-usd')" prop="amount_usd" label="金额（USD）" min-width="120" max-width="150" align="right">
+        <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no" label="订单号" min-width="150" max-width="190" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('account-date')" prop="account_date" label="记账日期" min-width="108" max-width="128" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('amount-usd')" prop="amount_usd" label="金额（USD）" min-width="120" max-width="150" align="right" sortable="custom">
           <template #default="{ row }">{{ money(row.amount_usd) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('company-name')" prop="company_name" label="客户名称" min-width="180" max-width="300" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('user-name')" prop="user_name" label="业务员" min-width="96" max-width="120" />
-        <el-table-column v-if="visibleKeys.includes('team')" prop="team" label="所属团队" min-width="116" max-width="150" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('camp')" prop="camp" label="所属阵营" min-width="100" max-width="130" show-overflow-tooltip />
-        <el-table-column v-if="activeType === 'new_sign' && visibleKeys.includes('points')" prop="points" label="积分" min-width="110" max-width="140" align="right">
+        <el-table-column v-if="visibleKeys.includes('company-name')" prop="company_name" label="客户名称" min-width="180" max-width="300" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('user-name')" prop="user_name" label="业务员" min-width="96" max-width="120" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('team')" prop="team" label="所属团队" min-width="116" max-width="150" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('camp')" prop="camp" label="所属阵营" min-width="100" max-width="130" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="activeType === 'new_sign' && visibleKeys.includes('points')" prop="points" label="积分" min-width="110" max-width="140" align="right" sortable="custom">
           <template #default="{ row }">
             <span>{{ number(row.points) }}</span>
             <el-tooltip v-if="row.points_note" :content="row.points_note" placement="top">
@@ -150,6 +150,7 @@ const windowText = computed(() => activeType.value === 'new_sign'
   : '统计周期：8月1日—9月30日')
 const money = value => formatMoney(value)
 const number = value => formatMoney(value)
+function sortTable({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped src="./festival-order-detail.css"></style>

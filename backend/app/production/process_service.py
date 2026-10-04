@@ -1,5 +1,7 @@
 """工序管理 service"""
 
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,8 @@ def list_processes(
     page_size: int = 20,
     name: str | None = None,
     status: int | None = None,
+    sort_field: str = "",
+    sort_order: str = "",
 ) -> tuple[list[Process], int]:
     q = db.query(Process)
     if name:
@@ -21,7 +25,7 @@ def list_processes(
         q = q.filter(Process.status == status)
     total = q.count()
     items = (
-        q.order_by(Process.sort_order.asc(), Process.id.asc())
+        apply_list_sort(q, sort_field, sort_order, {"id": Process.id, "name": Process.name, "description": Process.description, "sort_order": Process.sort_order, "show_in_domestic_track": Process.show_in_domestic_track, "status": Process.status, "created_at": Process.created_at}, default=(Process.sort_order.asc(), Process.id.asc()), tie_breakers=(Process.id.asc(),))
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

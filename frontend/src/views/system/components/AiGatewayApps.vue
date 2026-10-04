@@ -5,18 +5,18 @@
 <GlassButton @click="fetchList">刷新</GlassButton><GlassButton v-permission="'ai:admin'" variant="primary" left-icon="Plus" @click="openEditor()">创建站点应用</GlassButton></FilterBar>
     <div class="table-card">
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table :data="list" v-loading="loading" border class="list-table"><template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
-        <el-table-column prop="name" label="应用名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="owner_name" label="负责人" min-width="100" />
-        <el-table-column label="状态" min-width="110">
+<el-table :data="list" @sort-change="listPageStateSort" v-loading="loading" border class="list-table"><template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
+        <el-table-column sortable="custom" prop="name" label="应用名称" min-width="160" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="owner_name" label="负责人" min-width="100" />
+        <el-table-column sortable="custom" prop="is_enabled" label="状态" min-width="110">
           <template #default="{ row }"><StatusBadge :value="row.is_enabled" :dictionary="ENABLED_STATUS" effect="plain" /></template>
         </el-table-column>
-        <el-table-column label="今日已占用" min-width="125"><template #default="{ row }">{{ row.today_calls }} / {{ row.daily_limit }}</template></el-table-column>
-        <el-table-column label="已知输入 / 输出 token" min-width="185"><template #default="{ row }">{{ row.tokens_prompt }} / {{ row.tokens_completion }}</template></el-table-column>
-        <el-table-column prop="unknown_usage" label="用量未完整返回" min-width="140" />
-        <el-table-column prop="failures" label="失败 / 未知" min-width="110" />
-        <el-table-column label="并发占用" min-width="160"><template #default="{ row }">{{ row.occupied }} / {{ row.concurrency_limit }}<StatusBadge v-if="row.needs_review" type="warning" effect="plain">{{ row.needs_review }} 条待核查</StatusBadge></template></el-table-column>
-        <el-table-column label="最近调用" min-width="170"><template #default="{ row }">{{ formatDateTime(row.last_used_at) || '尚未调用' }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="today_calls" label="今日已占用" min-width="125"><template #default="{ row }">{{ row.today_calls }} / {{ row.daily_limit }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="tokens_prompt" label="已知输入 / 输出 token" min-width="185"><template #default="{ row }">{{ row.tokens_prompt }} / {{ row.tokens_completion }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="unknown_usage" label="用量未完整返回" min-width="140" />
+        <el-table-column sortable="custom" prop="failures" label="失败 / 未知" min-width="110" />
+        <el-table-column sortable="custom" prop="occupied" label="并发占用" min-width="160"><template #default="{ row }">{{ row.occupied }} / {{ row.concurrency_limit }}<StatusBadge v-if="row.needs_review" type="warning" effect="plain">{{ row.needs_review }} 条待核查</StatusBadge></template></el-table-column>
+        <el-table-column sortable="custom" prop="last_used_at" label="最近调用" min-width="170"><template #default="{ row }">{{ formatDateTime(row.last_used_at) || '尚未调用' }}</template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="300" :fixed="isNarrow ? false : 'right'">
           <template #default="{ row }">
             <GlassButton left-icon="Edit" v-permission="'ai:admin'" variant="link" @click="openEditor(row)">编辑</GlassButton>
@@ -67,14 +67,14 @@
 <GlassButton @click="requests.fetchList">刷新</GlassButton></FilterBar>
       <p class="hint">待核查请求继续占用并发。解除前请确认本地执行已结束并核查供应商结果；解除不退还次数，也不会重发请求。</p>
       <ListPageStatus v-if="requests.hasData.value" :error="requests.errorMessage.value" :loading="requests.loading.value" :has-data="requests.hasData.value" :data-page="requests.dataPage.value" @retry="requests.fetchList" />
-<el-table :data="requests.list.value" v-loading="requests.loading.value" border class="list-table"><template #empty><ListPageStatus :error="requests.errorMessage.value" :loading="requests.loading.value" :has-data="false" @retry="requests.fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
-        <el-table-column prop="request_id" label="Request ID" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="preset_name" label="能力" min-width="130" />
-        <el-table-column label="时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
-        <el-table-column label="状态" min-width="115"><template #default="{ row }">{{ statusNames[row.status] }}</template></el-table-column>
-        <el-table-column label="输入 / 输出" min-width="130"><template #default="{ row }">{{ row.tokens_prompt ?? '未知' }} / {{ row.tokens_completion ?? '未知' }}</template></el-table-column>
-        <el-table-column prop="error_code" label="错误分类" min-width="160" />
-        <el-table-column prop="resolution_reason" label="核查结论" min-width="180" show-overflow-tooltip />
+<el-table :data="requests.list.value" @sort-change="requestsSort" v-loading="requests.loading.value" border class="list-table"><template #empty><ListPageStatus :error="requests.errorMessage.value" :loading="requests.loading.value" :has-data="false" @retry="requests.fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
+        <el-table-column sortable="custom" prop="request_id" label="Request ID" min-width="200" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="preset_name" label="能力" min-width="130" />
+        <el-table-column sortable="custom" prop="created_at" label="时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="status" label="状态" min-width="115"><template #default="{ row }">{{ statusNames[row.status] }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="tokens_prompt" label="输入 / 输出" min-width="130"><template #default="{ row }">{{ row.tokens_prompt ?? '未知' }} / {{ row.tokens_completion ?? '未知' }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="error_code" label="错误分类" min-width="160" />
+        <el-table-column sortable="custom" prop="resolution_reason" label="核查结论" min-width="180" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="处理" min-width="130" :fixed="isNarrow ? false : 'right'"><template #default="{ row }"><GlassButton link-tone="danger" left-icon="Close" v-if="row.can_resolve" v-permission="'ai:admin'" variant="link" @click="openResolution(row)">解除占用</GlassButton></template></el-table-column>
       </el-table>
       <el-pagination class="pager" :page-sizes="[20, 50, 100]" :current-page="requests.page.value" :page-size="requests.pageSize.value" :total="requests.total.value" layout="total, sizes, prev, pager, next" @current-change="requests.handlePageChange" @size-change="requests.handleSizeChange" />
@@ -207,6 +207,8 @@ async function resolve() {
   } finally { busy.value = false }
 }
 onBeforeUnmount(() => { issuedKey.value = ''; narrowQuery.removeEventListener('change', updateNarrow) })
+function listPageStateSort({ prop, order }) { return listPageState.handleSortChange(order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {}) }
+function requestsSort({ prop, order }) { return requests.handleSortChange(order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {}) }
 </script>
 
 <style scoped>

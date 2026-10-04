@@ -50,7 +50,7 @@ export function useDomesticCustomers() {
 
   const listPageState = useListPage(
     async ({ page, page_size, ...form }, { signal, isCurrent }) => {
-      const params = { page, page_size }
+      const params = { page, page_size, sort_field: form.sort_field, sort_order: form.sort_order }
       if (form.keyword) params.keyword = form.keyword
       if (form.status !== '' && form.status !== null) params.status = form.status
       params.owner_scope = form.owner_scope || 'private'
@@ -342,6 +342,7 @@ const {
   onMounted(loadOptions)
 
   return {
+    sortLedger: ({ prop, order }) => ledgerState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }),
     ...listPageState,
     ...listPageState,
     loading, list, total, page, pageSize, searchForm,

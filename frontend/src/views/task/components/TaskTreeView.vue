@@ -1,7 +1,7 @@
 <template>
   <div class="task-tree lg-card is-static">
     <el-table
-      :data="nodes"
+      :data="sortedNodes"
       row-key="id"
       default-expand-all
       border
@@ -9,8 +9,9 @@
       :tree-props="{ children: 'children' }"
       :row-class-name="rowClass"
       @row-click="row => emit('open', row.id)"
+      @sort-change="changeSort"
     >
-      <el-table-column label="任务" min-width="380">
+      <el-table-column sortable="custom" prop="title" label="任务" min-width="380">
         <template #default="{ row }">
           <span class="tt-cell">
             <span class="task-code">T-{{ row.id }}</span>
@@ -25,15 +26,15 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="重要性" min-width="100" max-width="120">
+      <el-table-column sortable="custom" prop="priority" label="重要性" min-width="100" max-width="120">
         <template #default="{ row }">
           <span class="task-prio" :class="`is-${row.priority}`">{{ row.priority }} {{ PRIORITY_META[row.priority].label }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="关联模块" min-width="170" max-width="240" show-overflow-tooltip>
+      <el-table-column sortable="custom" prop="module_key" label="关联模块" min-width="170" max-width="240" show-overflow-tooltip>
         <template #default="{ row }">{{ moduleLabel(row.module_key) }}</template>
       </el-table-column>
-      <el-table-column label="状态 / 进度" min-width="160" max-width="200">
+      <el-table-column sortable="custom" prop="status" label="状态 / 进度" min-width="160" max-width="200">
         <template #default="{ row }">
           <span class="tt-status">
             <span class="task-status" :class="`is-${STATUS_META[row.status].tone}`">{{ STATUS_META[row.status].label }}</span>
@@ -44,7 +45,7 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="截止" min-width="80" max-width="100">
+      <el-table-column sortable="custom" prop="due_date" label="截止" min-width="80" max-width="100">
         <template #default="{ row }">
           <span class="task-due" :class="{ 'is-overdue': isOverdue(row, today) }">{{ row.due_date ? row.due_date.slice(5).replace('-', '/') : '—' }}</span>
         </template>
@@ -57,6 +58,8 @@
 </template>
 
 <script setup>
+import { computed, ref } from 'vue'
+import { getSortValue, sortTableTree } from '../../../utils/tableSort.js'
 import { CLOSED, PRIORITY_META, STATUS_META, isOverdue } from '../taskLabels.js'
 
 const props = defineProps({
@@ -65,6 +68,13 @@ const props = defineProps({
   today: { type: String, required: true },
 })
 const emit = defineEmits(['open', 'add-child'])
+const sort = ref({ prop: '', order: null })
+const sortedNodes = computed(() => sortTableTree(props.nodes, sort.value.prop, sort.value.order, row => {
+  if (sort.value.prop === 'module_key') return moduleLabel(row.module_key)
+  if (sort.value.prop === 'status') return STATUS_META[row.status]?.label || row.status
+  return getSortValue(row, sort.value.prop)
+}))
+function changeSort({ prop, order }) { sort.value = { prop, order } }
 
 function moduleLabel(key) {
   const m = props.modulesByKey[key]

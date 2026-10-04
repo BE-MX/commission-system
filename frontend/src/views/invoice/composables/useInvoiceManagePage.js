@@ -215,8 +215,9 @@ export function useInvoiceManagePage() {
     summaryRequestId += 1
     summaryController?.abort()
   })
+  function handleTableSort({ prop, order }) { return listPage.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
   return {
-    actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
+    handleTableSort, actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
     loading, money, money4, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
     listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch,
     handleSearch, handlePageChange, handleSaved, refreshUpdate,

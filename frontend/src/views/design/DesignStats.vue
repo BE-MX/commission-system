@@ -93,7 +93,7 @@
           {{ row.avg_duration_days || '-' }}
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('completion-rate')" label="完成率" min-width="160" max-width="240">
+      <el-table-column :sort-by="row => row.total ? row.completed / row.total : null" v-if="visibleKeys.includes('completion-rate')" label="完成率" min-width="160" max-width="240">
         <template #default="{ row }">
           <el-progress
             :percentage="row.total > 0 ? Math.round(row.completed / row.total * 100) : 0"
@@ -208,6 +208,7 @@ onMounted(() => {
 }
 
 .toolbar {
+  top: auto;
   margin-bottom: 20px;
 }
 

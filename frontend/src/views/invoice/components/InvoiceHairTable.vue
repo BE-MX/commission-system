@@ -28,9 +28,9 @@
       </div>
     </div>
     <div class="line-table-wrap">
-      <el-table :data="pagedItems" border class="list-table line-table" max-height="560">
+      <el-table :data="pagedItems" @sort-change="sortLines" border class="list-table line-table" max-height="560">
         <el-table-column label="#" type="index" :index="indexBase" min-width="48" max-width="60" fixed />
-        <el-table-column v-if="isProduction" label="Product" min-width="190" max-width="260">
+        <el-table-column v-if="isProduction" label="Product" min-width="190" max-width="260" prop="product_display" sortable="custom">
           <template #default="{ row }">
             <el-select v-model="row.product_display" filterable allow-create default-first-option placeholder="系列描述，可输入" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.displays" :key="value" :label="value" :value="value" />
@@ -38,7 +38,7 @@
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
         </el-table-column>
-        <el-table-column v-if="(showOptionalCols || !isProduction) && !collapseSpecs" label="Model" min-width="120" max-width="180">
+        <el-table-column v-if="(showOptionalCols || !isProduction) && !collapseSpecs" label="Model" min-width="120" max-width="180" prop="model" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.model" filterable allow-create clearable default-first-option placeholder="可选" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.models" :key="value" :label="value" :value="value" />
@@ -55,7 +55,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="!collapseSpecs" label="Color" min-width="120" max-width="170">
+        <el-table-column v-if="!collapseSpecs" label="Color" min-width="120" max-width="170" prop="color" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.color" filterable allow-create default-first-option placeholder="Color" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.colors" :key="value" :label="value" :value="value" />
@@ -72,7 +72,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="!collapseSpecs" label="Length" min-width="95" max-width="130">
+        <el-table-column v-if="!collapseSpecs" label="Length" min-width="95" max-width="130" prop="length" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.length" filterable allow-create default-first-option placeholder="Length" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.sizes" :key="value" :label="value" :value="value" />
@@ -89,7 +89,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="!collapseSpecs" label="Net Weight" min-width="105" max-width="150">
+        <el-table-column v-if="!collapseSpecs" label="Net Weight" min-width="105" max-width="150" prop="net_weight_grams" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.net_weight_grams" filterable allow-create default-first-option placeholder="Unit" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.units" :key="value" :label="value" :value="value" />
@@ -106,7 +106,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="isProduction" label="半成品库存" min-width="240" max-width="320">
+        <el-table-column v-if="isProduction" label="半成品库存" min-width="240" max-width="320" prop="semifinished_summary" sortable="custom">
           <template #default="{ row }">
             <div class="semifinished-cell">
               <el-checkbox v-model="row.semifinished_enabled" :disabled="row.semifinished_loading" @change="enabled => onSemifinishedToggle(row, enabled)">自动使用</el-checkbox>
@@ -121,7 +121,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isProduction" label="Product_name" min-width="230" max-width="360" show-overflow-tooltip>
+        <el-table-column v-if="!isProduction" label="Product_name" min-width="230" max-width="360" show-overflow-tooltip prop="product_name" sortable="custom">
           <template #default="{ row }">
             <div :class="['product-cell', row.product_name ? 'is-matched' : 'is-pending']">
               <span>{{ row.product_name || '待匹配' }}</span>
@@ -131,14 +131,14 @@
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
         </el-table-column>
-        <el-table-column v-if="showOptionalCols" label="Curl" min-width="110" max-width="150">
+        <el-table-column v-if="showOptionalCols" label="Curl" min-width="110" max-width="150" prop="curl" sortable="custom">
           <template #default="{ row }">
             <el-select v-model="row.curl" clearable placeholder="可选">
               <el-option v-for="value in CURL_OPTIONS" :key="value" :label="value" :value="value" />
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="标准价" min-width="120" max-width="140" align="right">
+        <el-table-column label="标准价" min-width="120" max-width="140" align="right" prop="standard_price" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.standard_price != null" class="std-price">
               {{ money4(row.standard_price) }}
@@ -149,7 +149,7 @@
             <StatusBadge v-else size="small" type="warning" effect="plain">无标准价</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column label="客户价" min-width="140" max-width="180">
+        <el-table-column label="客户价" min-width="140" max-width="180" prop="price_per_piece" sortable="custom">
           <template #default="{ row }">
             <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
               <el-input-number v-model="row.price_per_piece" :min="0.01" :precision="4" :controls="false" @change="onPriceInput(row)" />
@@ -157,13 +157,13 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" min-width="100" max-width="140">
+        <el-table-column label="Quantity" min-width="100" max-width="140" prop="quantity" sortable="custom">
           <template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" :precision="0" :controls="false" @change="onQuantityChange(row)" /></template>
         </el-table-column>
-        <el-table-column label="折扣" min-width="110" max-width="150">
+        <el-table-column label="折扣" min-width="110" max-width="150" prop="discount_amount" sortable="custom">
           <template #default="{ row }"><el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="onLineDiscountChange(row)" /></template>
         </el-table-column>
-        <el-table-column label="TotalPrice" min-width="100" max-width="150" align="right">
+        <el-table-column label="TotalPrice" min-width="100" max-width="150" align="right" prop="total_price" sortable="custom">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="64" max-width="80" fixed="right">
@@ -188,6 +188,7 @@
 
 <script setup>import { msgWarning } from '@/utils/feedback'
 import { computed, ref, watch } from 'vue'
+import { sortTableRows } from '@/utils/tableSort'
 
 import { ArrowDown, ArrowUp, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue'
 import { CURL_OPTIONS } from '../composables/useInvoiceEditor'
@@ -215,7 +216,13 @@ const collapseSpecs = ref(false)
 // 窗内分页：几十上百行时表格窗口高度固定；行号跨页连续
 const page = ref(1)
 const pageSize = ref(20)
-const pagedItems = computed(() => props.items.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
+const sortField = ref('')
+const sortOrder = ref('')
+function sortLines({ prop, order }) { sortField.value = prop; sortOrder.value = order; page.value = 1 }
+const sortedItems = computed(() => sortTableRows(props.items, sortField.value, sortOrder.value, row => sortField.value === 'semifinished_summary'
+  ? (row.semifinished_plan || []).map(item => `${item.size}/${item.color_code} ${item.quantity_grams}`).join(' / ')
+  : row[sortField.value]))
+const pagedItems = computed(() => sortedItems.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
 watch(() => props.items.length, (now, before) => {
   const pages = Math.max(1, Math.ceil(now / pageSize.value))

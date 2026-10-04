@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import uuid
+from app.core.list_sort import apply_list_sort
 from datetime import datetime, timedelta
 from app.core.time import beijing_now
 from pathlib import Path
@@ -400,11 +401,19 @@ def query_assets(
             if tid is not None
         ]
 
-    sort_col = getattr(Asset, sort_by, Asset.created_at)
-    if sort_order == "desc":
-        q = q.order_by(desc(sort_col))
-    else:
-        q = q.order_by(sort_col)
+    columns = {
+        "id": Asset.id,
+        "file_name": Asset.file_name,
+        "file_type": Asset.file_type,
+        "file_size": Asset.file_size,
+        "thumbnail_path": Asset.thumbnail_path,
+        "created_at": Asset.created_at,
+        "updated_at": Asset.updated_at,
+        "download_count": Asset.download_count,
+        "tags": db.query(func.min(TagValue.value)).join(asset_tag_association, asset_tag_association.c.tag_value_id == TagValue.id).filter(asset_tag_association.c.asset_id == Asset.id).correlate(Asset).scalar_subquery(),
+    }
+    q = apply_list_sort(q, sort_by, sort_order, columns,
+        default=(Asset.created_at.desc(),), tie_breakers=(Asset.id.asc(),))
 
     # 分页 + selectinload tags (selectinload 比 joinedload 在 LIMIT 场景下快 6 倍)
     # permissions 也加载, 移动端 quick-search 端点会访问 a.permissions.allow_preview 等字段

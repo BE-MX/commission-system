@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import ArkUser
 from app.expo.models import ExpoStore, ExpoStoreUser
+from app.core.list_sort import apply_list_sort
 
 logger = logging.getLogger("commission.expo.store")
 
@@ -57,6 +58,8 @@ def list_stores(
     status: Optional[int] = None,
     limit: int = 20,
     offset: int = 0,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> Tuple[List[ExpoStore], int]:
     """分页查询门店列表；支持按名称/编码关键字与状态过滤。"""
     q = db.query(ExpoStore)
@@ -73,7 +76,21 @@ def list_stores(
 
     total = q.count()
     rows = (
-        q.order_by(ExpoStore.status.desc(), ExpoStore.id.desc())
+        apply_list_sort(
+            q, sort_field, sort_order, {
+                "name": ExpoStore.name,
+                "code": ExpoStore.code,
+                "status": ExpoStore.status,
+                "total_quota": ExpoStore.total_quota,
+                "used_quota": ExpoStore.used_quota,
+                "contact_name": ExpoStore.contact_name,
+                "contact_phone": ExpoStore.contact_phone,
+                "created_at": ExpoStore.created_at,
+                "remaining": ExpoStore.total_quota - ExpoStore.used_quota,
+            },
+            default=(ExpoStore.status.desc(), ExpoStore.id.desc(),),
+            tie_breakers=(ExpoStore.id.asc(),),
+        )
         .offset(offset)
         .limit(limit)
         .all()

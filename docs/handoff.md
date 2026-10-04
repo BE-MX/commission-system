@@ -1,3 +1,9 @@
+## 2026-10-04 列表布局与表头排序（Codex，本地待集成）
+
+- 分支 `codex/table-layout-sorting`，独立工作树 `C:/Users/windb/.codex/worktrees/table-layout-sorting/commission-system`。主管关系/客户归属及其他同类筛选栏重叠已修复，174 个 Element Plus 表格与记录型原生/PM 表格补齐排序；分页按完整授权查询结果排序后切页，银行卡按可见掩码排序，树表保留父子结构。
+- DESIGN.md、API 文档同步；主站/PM 构建、真实页面窄屏/桌面/全屏及跨页排序浏览器回归、受影响隔离后端测试、约定与 diff 检查通过。独立审查发现的公告草稿状态、库存中文回退、偏好摘要和分配状态排序已修复。详见 [验收报告](reports/2026-10-04-table-layout-sorting.md)。
+- 本次无提交、推送、合并、部署或数据库迁移；Git 巡检是 no-fetch 本地快照，原主目录与其他工作树改动保留。PM 构建复用主站已安装依赖；一处 ignored 嵌套 node_modules junction 的删除被工具策略拦截，未绕过，留在本任务工作树，不影响源码或构建。
+
 ## 2026-10-04 客户邮件 MVP（Codex，已合并推送部署）
 
 - 分支 `codex/customer-mail-mvp`；主功能及内部试发版本已正式发布，office/cloud 同版、schema 173 无迁移，邮箱 OAuth 与 Worker 健康。时间精度修复 `1542e47e` 已完成正式切换及两端/Worker 同版核验。

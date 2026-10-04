@@ -4,9 +4,9 @@
     <section class="table-card battle-panel">
       <div class="battle-section-title"><div><h3>每日成交矩阵</h3><span>每格显示 GMV（USD）与订单数；仅可下钻本人或授权组的订单。</span></div><div class="battle-actions"><GlassButton :disabled="!matrix || matrix.dates[0] <= report.start_date" @click="shift(-7)">上一周</GlassButton><span>{{ matrix?.dates[0] }} — {{ matrix?.dates.at(-1) }}</span><GlassButton :disabled="!matrix || matrix.dates.at(-1) >= report.end_date" @click="shift(7)">下一周</GlassButton></div></div>
       <el-table v-loading="matrixLoading" :data="matrix?.rows || []" :max-height="DAILY_MATRIX_TABLE_HEIGHT" border class="list-table battle-matrix-table">
-        <el-table-column label="业务员" min-width="120" max-width="160"><template #default="{ row }"><el-button link type="primary" :disabled="!row.can_view_orders" @click="select(row.member_id, '')"><el-icon><ArrowRight /></el-icon>{{ row.user_name }}</el-button><p>{{ row.team }}</p></template></el-table-column>
-        <el-table-column v-for="(day, index) in matrix?.dates || []" :key="day" :label="day.slice(5)" min-width="125" max-width="150"><template #default="{ row }"><button type="button" class="battle-cell" :class="{ selected: memberId === row.member_id && selectedDay === day }" :disabled="!row.can_view_orders || row.cells[index].state === 'future'" :aria-label="`${row.user_name} ${day} 订单`" @click="select(row.member_id, day)"><b>{{ row.cells[index].state === 'future' ? '—' : money(row.cells[index].gmv) }}</b><small>{{ row.cells[index].state === 'future' ? '未到' : row.cells[index].state === 'incomplete' ? '待核对' : `${row.cells[index].order_count} 单` }}</small></button></template></el-table-column>
-        <el-table-column label="本页小计 / USD" min-width="155" max-width="190"><template #default="{ row }">{{ money(row.subtotal) }}</template></el-table-column>
+        <el-table-column :sort-by="row => row.user_name" label="业务员" min-width="120" max-width="160"><template #default="{ row }"><el-button link type="primary" :disabled="!row.can_view_orders" @click="select(row.member_id, '')"><el-icon><ArrowRight /></el-icon>{{ row.user_name }}</el-button><p>{{ row.team }}</p></template></el-table-column>
+        <el-table-column :sort-by="row => row.cells[index].state === 'future' ? null : row.cells[index].gmv" v-for="(day, index) in matrix?.dates || []" :key="day" :label="day.slice(5)" min-width="125" max-width="150"><template #default="{ row }"><button type="button" class="battle-cell" :class="{ selected: memberId === row.member_id && selectedDay === day }" :disabled="!row.can_view_orders || row.cells[index].state === 'future'" :aria-label="`${row.user_name} ${day} 订单`" @click="select(row.member_id, day)"><b>{{ row.cells[index].state === 'future' ? '—' : money(row.cells[index].gmv) }}</b><small>{{ row.cells[index].state === 'future' ? '未到' : row.cells[index].state === 'incomplete' ? '待核对' : `${row.cells[index].order_count} 单` }}</small></button></template></el-table-column>
+        <el-table-column prop="subtotal" label="本页小计 / USD" min-width="155" max-width="190"><template #default="{ row }">{{ money(row.subtotal) }}</template></el-table-column>
       </el-table>
     </section>
     <section class="table-card battle-panel">
@@ -20,16 +20,16 @@
       <div class="battle-order-summary"><b>所选范围 GMV：${{ money(orderMeta.gmv) }}</b><span>{{ total }} 单 · 完整筛选合计，不受分页影响</span></div>
       <el-alert v-if="orderMeta.issues?.length" type="warning" :closable="false" :title="`${orderMeta.issues.length} 条异常记录未计入`"><template #default><p v-for="(issue, index) in orderMeta.issues" :key="index">{{ issue.order_no || '无订单号' }}：{{ issue.reason }}</p></template></el-alert>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="listPageState.fetchList" />
-<el-table v-loading="loading" :data="list" border class="list-table">
+<el-table @sort-change="event => listPageState.handleSortChange(tableSortParams(event))" v-loading="loading" :data="list" border class="list-table">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="listPageState.fetchList">{{ detailMembers.length ? '当前筛选范围暂无订单' : '当前组没有可查看的订单明细' }}</ListPageStatus></template>
-        <el-table-column label="订单号" min-width="170" max-width="220"><template #default="{ row }"><el-button link type="primary" @click="openOrder(row)"><el-icon><View /></el-icon>{{ row.order_no }}</el-button></template></el-table-column>
-        <el-table-column prop="account_date" label="核算日" min-width="120" max-width="160" />
-        <el-table-column prop="user_name" label="业务员" min-width="110" max-width="150" show-overflow-tooltip />
-        <el-table-column prop="team" label="业务组" min-width="110" max-width="160" show-overflow-tooltip />
-        <el-table-column prop="company_name" label="客户" min-width="180" max-width="260" show-overflow-tooltip />
-        <el-table-column prop="status_name" label="状态" min-width="110" max-width="150" show-overflow-tooltip />
-        <el-table-column label="订单金额 / USD" min-width="160" max-width="200"><template #default="{ row }">{{ money(row.amount_usd) }}</template></el-table-column>
-        <el-table-column label="计入 GMV / USD" min-width="170" max-width="210"><template #default="{ row }">{{ money(row.included_usd) }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="order_no" label="订单号" min-width="170" max-width="220"><template #default="{ row }"><el-button link type="primary" @click="openOrder(row)"><el-icon><View /></el-icon>{{ row.order_no }}</el-button></template></el-table-column>
+        <el-table-column sortable="custom" prop="account_date" label="核算日" min-width="120" max-width="160" />
+        <el-table-column sortable="custom" prop="user_name" label="业务员" min-width="110" max-width="150" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="team" label="业务组" min-width="110" max-width="160" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="company_name" label="客户" min-width="180" max-width="260" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="status_name" label="状态" min-width="110" max-width="150" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="amount_usd" label="订单金额 / USD" min-width="160" max-width="200"><template #default="{ row }">{{ money(row.amount_usd) }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="included_usd" label="计入 GMV / USD" min-width="170" max-width="210"><template #default="{ row }">{{ money(row.included_usd) }}</template></el-table-column>
       </el-table>
       <el-pagination class="pager" :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" />
     </section>
@@ -40,6 +40,8 @@
   </div>
 </template>
 <script setup>
+import { tableSortParams } from "@/utils/tableSort"
+
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowRight, View } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'

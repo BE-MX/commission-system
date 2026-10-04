@@ -174,3 +174,20 @@ def test_keyword_and_pagination_keep_required_columns(db):
             "order_no", "account_date", "amount_usd", "company_name",
             "user_name", "team", "camp",
         )).issubset(data["items"][0])
+
+
+def test_festival_header_sort_keeps_scope_and_decorated_points_before_paging(db):
+    salesperson, _, _ = _setup(db)
+    with _client(db, salesperson, ("festival_order:read",)) as client:
+        def request(**params):
+            return client.get("/api/festival/orders", params={"type": "new_sign", "user_id": "U2", **params}).json()["data"]
+        for field in ("order_no", "account_date", "amount_usd", "company_name", "user_name", "team", "camp", "points"):
+            for direction in ("asc", "desc"):
+                full = request(sort_field=field, sort_order=direction, page_size=20)
+                pages = [request(sort_field=field, sort_order=direction, page=number, page_size=1)["items"][0] for number in (1, 2)]
+                assert pages == full["items"]
+                assert [row[field] for row in pages] == sorted([row[field] for row in pages], reverse=direction == "desc")
+                assert all(row["user_id"] == "U1" for row in pages)
+        assert request(sort_field="points", sort_order="desc", keyword="NO-N1")["items"][0]["points"] == 1.5
+        baseline = request()
+        assert request(sort_field="invalid", sort_order="desc") == baseline

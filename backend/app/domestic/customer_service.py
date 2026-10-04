@@ -3,6 +3,8 @@
 import logging
 from datetime import timedelta
 
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -165,6 +167,8 @@ def list_customers(
     city: str = "",
     customer_level: str = "",
     owner_user_id: int | None = None,
+    sort_field: str = "",
+    sort_order: str = "",
 ) -> tuple[list[dict], int]:
     q = db.query(DomesticCustomer)
     if keyword:
@@ -192,7 +196,7 @@ def list_customers(
         q = q.filter(DomesticCustomer.owner_user_id == owner_user_id)
 
     total = q.count()
-    rows = q.order_by(DomesticCustomer.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    rows = apply_list_sort(q, sort_field, sort_order, {"shop_name": DomesticCustomer.shop_name, "custom_code": DomesticCustomer.custom_code, "customer_level": DomesticCustomer.customer_level, "lifecycle_status": DomesticCustomer.lifecycle_status, "customer_source": DomesticCustomer.customer_source, "store_type": DomesticCustomer.store_type, "membership_level": DomesticCustomer.membership_level, "settle_mode": DomesticCustomer.settle_mode, "last_recharge_amount": DomesticCustomer.last_recharge_amount, "last_recharged_at": DomesticCustomer.last_recharged_at, "province": DomesticCustomer.province, "contact": DomesticCustomer.contact, "phone": DomesticCustomer.phone, "total_sales_amount": DomesticCustomer.total_sales_amount, "total_order_count": DomesticCustomer.total_order_count, "balance": DomesticCustomer.balance, "created_at": DomesticCustomer.created_at, "first_contact_date": DomesticCustomer.first_contact_date, "first_order_date": DomesticCustomer.first_order_date, "last_order_date": DomesticCustomer.last_order_date, "remark": DomesticCustomer.remark, "status": DomesticCustomer.status, "owner_name": db.query(ArkUser.real_name).filter(ArkUser.id == DomesticCustomer.owner_user_id).correlate(DomesticCustomer).scalar_subquery(), "order_count": db.query(func.count(DomesticOrder.id)).filter(DomesticOrder.customer_id == DomesticCustomer.id, DomesticOrder.order_kind == "business", DomesticOrder.deleted_flag == 0).correlate(DomesticCustomer).scalar_subquery()}, default=(DomesticCustomer.id.desc(),), tie_breakers=(DomesticCustomer.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()
 
     order_counts = {}
     initialized_ids = set()

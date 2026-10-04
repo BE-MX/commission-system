@@ -32,7 +32,7 @@
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </template>
-        <el-table-column v-if="visibleKeys.includes('cover')" label="封面" min-width="70">
+        <el-table-column :sortable="false" v-if="visibleKeys.includes('cover')" label="封面" min-width="70">
           <template #default="{ row }">
             <el-image v-if="row.cover_url" :src="row.thumb_url || row.cover_url" :preview-src-list="[row.cover_url]" preview-teleported fit="cover" class="cover-thumb" />
             <span v-else class="cover-empty">无</span>
@@ -40,31 +40,31 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('model-no')" prop="model_no" label="型号" min-width="110" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="名称" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('series')" label="系列" min-width="100">
+        <el-table-column prop="series" v-if="visibleKeys.includes('series')" label="系列" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.series === 'zhizhen'" size="small" class="tag-zhizhen">至臻</StatusBadge>
             <StatusBadge v-else size="small" effect="plain">经典</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('fit-tags')" label="适配标签" min-width="220">
+        <el-table-column :sort-by="row => [...(row.fit_tags?.face_shapes || []).map(value => labelOf(FACE_SHAPES, value)), ...(row.fit_tags?.needs || []).map(value => labelOf(NEEDS, value))].join('、')" v-if="visibleKeys.includes('fit-tags')" label="适配标签" min-width="220">
           <template #default="{ row }">
             <StatusBadge v-for="f in row.fit_tags?.face_shapes || []" :key="'f-' + f" size="small" effect="plain" class="fit-tag">{{ labelOf(FACE_SHAPES, f) }}</StatusBadge>
             <StatusBadge v-for="n in row.fit_tags?.needs || []" :key="'n-' + n" size="small" effect="plain" type="warning" class="fit-tag">{{ labelOf(NEEDS, n) }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('sell-positions')" label="销售定位" min-width="160">
+        <el-table-column :sort-by="row => (row.fit_tags?.sell_positions || []).join('、')" v-if="visibleKeys.includes('sell-positions')" label="销售定位" min-width="160">
           <template #default="{ row }">
             <StatusBadge v-for="p in row.fit_tags?.sell_positions || []" :key="'p-' + p" size="small" effect="plain" type="success" class="fit-tag">{{ p }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('priority')" prop="priority" label="优先级" min-width="80" sortable />
-        <el-table-column v-if="visibleKeys.includes('must-recommend')" label="主推" min-width="100">
+        <el-table-column prop="must_recommend" v-if="visibleKeys.includes('must-recommend')" label="主推" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.must_recommend" type="danger" effect="plain" size="small">主推</StatusBadge>
             <span v-else style="color: var(--text-muted)">—</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('is-active')" label="启用" min-width="80">
+        <el-table-column prop="is_active" v-if="visibleKeys.includes('is-active')" label="启用" min-width="80">
           <template #default="{ row }">
             <el-switch :model-value="!!row.is_active" @change="(v) => toggleActive(row, v)" />
           </template>

@@ -55,7 +55,7 @@
             <template #empty><ListPageStatus v-bind="resourceStatus(deliveriesResource)" @retry="loadDeliveries"><el-empty description="暂无投递记录" /></ListPageStatus></template>
             <el-table-column v-if="visibleKeys.includes('source')" prop="source_key" label="来源" min-width="160" show-overflow-tooltip />
             <el-table-column v-if="visibleKeys.includes('sequence')" prop="sequence" label="分片" min-width="70" />
-            <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120"><template #default="{ row }"><StatusBadge :value="row.status" :dictionary="DELIVERY_STATUS" /></template></el-table-column>
+            <el-table-column prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="120"><template #default="{ row }"><StatusBadge :value="row.status" :dictionary="DELIVERY_STATUS" /></template></el-table-column>
             <el-table-column v-if="visibleKeys.includes('error')" prop="error" label="处理说明" min-width="180" show-overflow-tooltip />
             <el-table-column label="操作" min-width="230" class-name="table-action-column"><template #default="{ row }">
               <el-button v-if="row.status === 'failed'" :icon="Refresh" link type="primary" @click="retry(row)">重试</el-button>

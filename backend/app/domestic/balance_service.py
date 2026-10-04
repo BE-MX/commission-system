@@ -8,6 +8,8 @@
 
 from decimal import Decimal, ROUND_HALF_UP
 
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -271,14 +273,14 @@ def list_customer_ledger(
     customer_id: int,
     page: int = 1,
     page_size: int = 20,
+    sort_field: str = "",
+    sort_order: str = "",
 ) -> tuple[list[dict], int]:
     if not db.query(DomesticCustomer.id).filter(DomesticCustomer.id == customer_id).first():
         raise ValueError("客户不存在")
     q = db.query(DomesticCustomerLedger).filter(DomesticCustomerLedger.customer_id == customer_id)
     total = q.count()
-    rows = q.order_by(
-        DomesticCustomerLedger.created_at.desc(), DomesticCustomerLedger.id.desc()
-    ).offset((page - 1) * page_size).limit(page_size).all()
+    rows = apply_list_sort(q, sort_field, sort_order, {"created_at": DomesticCustomerLedger.created_at, "transaction_type": DomesticCustomerLedger.transaction_type, "amount": DomesticCustomerLedger.amount, "balance_after": DomesticCustomerLedger.balance_after, "remark": DomesticCustomerLedger.remark, "domestic_no": db.query(DomesticOrder.domestic_no).filter(DomesticOrder.id == DomesticCustomerLedger.order_id).correlate(DomesticCustomerLedger).scalar_subquery(), "created_by_name": db.query(ArkUser.real_name).filter(ArkUser.id == DomesticCustomerLedger.created_by).correlate(DomesticCustomerLedger).scalar_subquery()}, default=(DomesticCustomerLedger.created_at.desc(), DomesticCustomerLedger.id.desc()), tie_breakers=(DomesticCustomerLedger.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()
     user_names = dict(db.query(ArkUser.id, ArkUser.real_name).filter(
         ArkUser.id.in_({row.created_by for row in rows} or {0})
     ).all())

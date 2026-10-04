@@ -5,11 +5,11 @@
     <section class="lg-card panel">
       <h3>会话 <span class="hint">AI 摘要待启用</span></h3>
       <ListPageStatus :error="conversationState.errorMessage.value" :loading="conversationState.loading.value" :has-data="conversationState.hasData.value" :data-page="conversationState.dataPage.value" @retry="conversationState.fetchList"><el-empty v-if="!conversations.length" description="暂无已绑定会话" :image-size="96" /></ListPageStatus>
-      <el-table class="list-table" v-if="conversations.length" :data="conversations" size="small" border @row-click="selectConversation">
-        <el-table-column prop="channel" label="渠道" min-width="110" />
-        <el-table-column prop="contact_name" label="联系人" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="message_count" label="消息数" min-width="90" />
-        <el-table-column label="最近消息（北京时间）" min-width="170"><template #default="{row}">{{ date(row.last_message_at) }}</template></el-table-column>
+      <el-table class="list-table" v-if="conversations.length" :data="conversations" size="small" border @row-click="selectConversation" @sort-change="conversationState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+        <el-table-column sortable="custom" prop="channel" label="渠道" min-width="110" />
+        <el-table-column sortable="custom" prop="contact_name" label="联系人" min-width="120" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="message_count" label="消息数" min-width="90" />
+        <el-table-column sortable="custom" prop="last_message_at" label="最近消息（北京时间）" min-width="170"><template #default="{row}">{{ date(row.last_message_at) }}</template></el-table-column>
       </el-table>
       <el-pagination class="pager" v-model:current-page="conversationPage" v-model:page-size="conversationSize" :page-sizes="[20, 50, 100]" :total="conversationTotal" layout="total, sizes, prev, pager, next" @current-change="conversationState.handlePageChange" @size-change="conversationState.handleSizeChange" />
     </section>
@@ -30,11 +30,11 @@
     <section class="lg-card panel">
       <h3>待绑定会话 <span class="hint">同名/相似手机号不自动归并</span></h3>
       <ListPageStatus :error="pendingState.errorMessage.value" :loading="pendingState.loading.value" :has-data="pendingState.hasData.value" :data-page="pendingState.dataPage.value" @retry="pendingState.fetchList"><el-empty v-if="!pendingBindings.length" description="没有待绑定会话" :image-size="96" /></ListPageStatus>
-      <el-table class="list-table" v-if="pendingBindings.length" :data="pendingBindings" size="small" border>
-        <el-table-column prop="contact_name" label="来源联系人" min-width="120" />
-        <el-table-column prop="contact_phone" label="电话" min-width="130" />
-        <el-table-column prop="message_count" label="消息数" min-width="90" />
-        <el-table-column label="候选客户" min-width="140">
+      <el-table class="list-table" v-if="pendingBindings.length" :data="pendingBindings" size="small" border @sort-change="pendingState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+        <el-table-column sortable="custom" prop="contact_name" label="来源联系人" min-width="120" />
+        <el-table-column sortable="custom" prop="contact_phone" label="电话" min-width="130" />
+        <el-table-column sortable="custom" prop="message_count" label="消息数" min-width="90" />
+        <el-table-column sortable="custom" prop="candidate_customer_id" label="候选客户" min-width="140">
           <template #default="{ row }">
             <span v-if="row.candidate_customers?.length">{{ row.candidate_customers.map(c => c.customer_id).join(', ') }}</span>
             <span v-else class="hint">需人工核验</span>

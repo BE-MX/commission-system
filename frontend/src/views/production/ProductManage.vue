@@ -39,7 +39,7 @@
       </div>
 
       <ListPageStatus v-if="hasData && errorMessage" :error="errorMessage" :loading="loading" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
-      <el-table :data="items" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="onSelectionChange">
+      <el-table :data="items" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="onSelectionChange" @sort-change="sortTable0">
         <template #empty>
           <ListPageStatus :error="errorMessage" :loading="loading" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -48,10 +48,10 @@
           </ListPageStatus>
         </template>
         <el-table-column type="selection" min-width="40" />
-        <el-table-column v-if="visibleKeys.includes('product-no')" prop="product_no" label="产品编号" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品名称" min-width="200" max-width="300" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('model')" prop="model" label="型号" min-width="100" max-width="150" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('process-route')" label="工序路线" min-width="200" max-width="300">
+        <el-table-column v-if="visibleKeys.includes('product-no')" prop="product_no" label="产品编号" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品名称" min-width="200" max-width="300" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('model')" prop="model" label="型号" min-width="100" max-width="150" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('process-route')" label="工序路线" min-width="200" max-width="300" prop="route_name" sortable="custom">
           <template #default="{ row }">
             <template v-if="row.process_route">
               <span>{{ row.process_route.route_name }}</span>
@@ -63,7 +63,7 @@
             </template>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="120">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="120" prop="disable_flag" sortable="custom">
           <template #default="{ row }">
             <StatusBadge :type="row.disable_flag === 0 ? 'success' : 'info'" size="small" effect="plain">
               {{ row.disable_flag === 0 ? '正常' : '禁用' }}
@@ -265,6 +265,7 @@ onMounted(() => {
   loadFilterOptions()
   loadActiveRoutes()
 })
+function sortTable0({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped>

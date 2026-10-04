@@ -5,7 +5,8 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from sqlalchemy import func
+from sqlalchemy import func, select, case
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -95,6 +96,8 @@ def list_customers(
     keyword: str = Query("", max_length=64),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query(""),
+    sort_order: str = Query(""),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("card:read")),
 ):
@@ -110,7 +113,12 @@ def list_customers(
         )
     total = q.count()
     rows = (
-        q.order_by(CardCustomer.id.desc())
+        apply_list_sort(q, sort_field, sort_order, {
+            "display_name": CardCustomer.display_name, "email_norm": CardCustomer.email_norm,
+            "whatsapp_norm": CardCustomer.whatsapp_norm, "expo_code": CardCustomer.expo_code,
+            "created_at": CardCustomer.created_at,
+            "entry_count": select(func.count(CardEntry.id)).where(CardEntry.customer_id == CardCustomer.id).correlate(CardCustomer).scalar_subquery(),
+        }, default=(CardCustomer.id.desc(),), tie_breakers=(CardCustomer.id.asc(),))
         .offset((page - 1) * page_size).limit(page_size).all()
     )
     counts = dict(
@@ -275,6 +283,8 @@ def list_inquiries(
     salesperson_id: int | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query(""),
+    sort_order: str = Query(""),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("card:read")),
 ):
@@ -285,7 +295,12 @@ def list_inquiries(
         q = q.filter(CardInquiry.salesperson_id == salesperson_id)
     total = q.count()
     rows = (
-        q.order_by(CardInquiry.id.desc())
+        apply_list_sort(q, sort_field, sort_order, {
+            "salesperson": select(CardSalesperson.name).where(CardSalesperson.id == CardInquiry.salesperson_id).correlate(CardInquiry).scalar_subquery(),
+            "contact": CardInquiry.contact, "message": CardInquiry.message,
+            "customer_id": case((CardInquiry.customer_id.is_not(None), 1), else_=0),
+            "created_at": CardInquiry.created_at, "status": CardInquiry.status,
+        }, default=(CardInquiry.id.desc(),), tie_breakers=(CardInquiry.id.asc(),))
         .offset((page - 1) * page_size).limit(page_size).all()
     )
     sp_names = dict(db.query(CardSalesperson.id, CardSalesperson.name).all())

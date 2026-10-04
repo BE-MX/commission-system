@@ -49,7 +49,7 @@
         <el-table :data="filteredProviders" border class="list-table" :class="providerDensityClass" :max-height="providerIsFullscreen ? undefined : 640" v-loading="providerLoading">
           <template #empty><ListPageStatus :error="providerResource.errorMessage.value" :loading="providerLoading" @retry="fetchProviders"><el-empty description="暂无数据" :image-size="96" /></ListPageStatus></template>
           <el-table-column v-if="providerVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
-          <el-table-column v-if="providerVisibleKeys.includes('name')" label="名称" min-width="160">
+          <el-table-column :sort-by="row => row.name" v-if="providerVisibleKeys.includes('name')" label="名称" min-width="160">
             <template #default="{ row }">
               <div class="cell-with-icon">
                 <el-icon :size="16" :color="row.provider_type === 'direct' ? '#2563eb' : '#059669'">
@@ -59,14 +59,14 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="providerVisibleKeys.includes('type')" label="类型" min-width="110">
+          <el-table-column prop="provider_type" v-if="providerVisibleKeys.includes('type')" label="类型" min-width="110">
             <template #default="{ row }">
               <StatusBadge :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
                 {{ row.provider_type === 'direct' ? '直连' : 'ACCIO' }}
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="providerVisibleKeys.includes('protocol')" label="协议" min-width="140">
+          <el-table-column prop="api_type" v-if="providerVisibleKeys.includes('protocol')" label="协议" min-width="140">
             <template #default="{ row }">
               <StatusBadge v-if="row.provider_type === 'direct'" :type="row.api_type === 'anthropic' ? 'warning' : 'info'" size="small" effect="plain">
                 {{ row.api_type === 'anthropic' ? 'Anthropic' : 'OpenAI' }}
@@ -74,7 +74,7 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="providerVisibleKeys.includes('api')" label="API Base / Key" min-width="220">
+          <el-table-column prop="api_base" v-if="providerVisibleKeys.includes('api')" label="API Base / Key" min-width="220">
             <template #default="{ row }">
               <div class="mono-text">{{ row.api_base }}</div>
               <div class="key-row">
@@ -87,7 +87,7 @@
           </el-table-column>
           <el-table-column v-if="providerVisibleKeys.includes('timeout')" prop="timeout_sec" label="超时" min-width="70" />
           <el-table-column v-if="providerVisibleKeys.includes('remark')" prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-          <el-table-column v-if="providerVisibleKeys.includes('status')" label="状态" min-width="80">
+          <el-table-column prop="is_enabled" v-if="providerVisibleKeys.includes('status')" label="状态" min-width="80">
             <template #default="{ row }">
               <el-switch v-model="row.is_enabled" @change="toggleProvider(row)" />
             </template>
@@ -127,7 +127,7 @@
         <el-table :data="filteredPresets" border class="list-table" :class="presetDensityClass" :max-height="presetIsFullscreen ? undefined : 640" v-loading="presetLoading">
           <template #empty><ListPageStatus :error="presetResource.errorMessage.value" :loading="presetLoading" @retry="fetchPresets"><el-empty description="暂无数据" :image-size="96" /></ListPageStatus></template>
           <el-table-column v-if="presetVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
-          <el-table-column v-if="presetVisibleKeys.includes('name')" label="预设名称" min-width="180">
+          <el-table-column :sort-by="row => row.preset_name" v-if="presetVisibleKeys.includes('name')" label="预设名称" min-width="180">
             <template #default="{ row }">
               <div>
                 <span class="cell-title">{{ row.preset_name }}</span>
@@ -135,7 +135,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="presetVisibleKeys.includes('provider')" label="绑定提供商" min-width="140">
+          <el-table-column prop="provider_name" v-if="presetVisibleKeys.includes('provider')" label="绑定提供商" min-width="140">
             <template #default="{ row }">
               <div class="cell-with-icon">
                 <el-icon :size="14" color="#2563eb"><Position /></el-icon>
@@ -148,7 +148,7 @@
               <span class="mono-text">{{ row.model || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="presetVisibleKeys.includes('status')" label="状态" min-width="110">
+          <el-table-column prop="is_enabled" v-if="presetVisibleKeys.includes('status')" label="状态" min-width="110">
             <template #default="{ row }">
               <StatusBadge :type="row.is_enabled ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.is_enabled ? '启用' : '禁用' }}
@@ -228,8 +228,8 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="logVisibleKeys.includes('id')" prop="id" label="ID" min-width="70" />
-          <el-table-column v-if="logVisibleKeys.includes('module')" label="模块 / Preset" min-width="160">
+          <el-table-column sortable="custom" v-if="logVisibleKeys.includes('id')" prop="id" label="ID" min-width="70" />
+          <el-table-column sortable="custom" v-if="logVisibleKeys.includes('module')" prop="caller_module" label="模块 / Preset" min-width="160">
             <template #default="{ row }">
               <div>
                 <span>{{ moduleLabel(row.caller_module) }}</span>
@@ -237,34 +237,34 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="logVisibleKeys.includes('type')" label="类型" min-width="110">
+          <el-table-column sortable="custom" v-if="logVisibleKeys.includes('type')" prop="provider_type" label="类型" min-width="110">
             <template #default="{ row }">
               <StatusBadge :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
                 {{ row.provider_type === 'direct' ? '直连' : 'ACCIO' }}
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="logVisibleKeys.includes('model')" prop="model" label="模型" min-width="120" sortable="custom">
+          <el-table-column sortable="custom" v-if="logVisibleKeys.includes('model')" prop="model" label="模型" min-width="120">
             <template #default="{ row }"><span class="mono-text">{{ row.model || '-' }}</span></template>
           </el-table-column>
-          <el-table-column v-if="logVisibleKeys.includes('tokens')" prop="tokens_used" label="Token" min-width="80" align="right">
+          <el-table-column sortable="custom" v-if="logVisibleKeys.includes('tokens')" prop="tokens_used" label="Token" min-width="80" align="right">
             <template #default="{ row }">
               <span class="mono-text">{{ row.tokens_used != null ? row.tokens_used.toLocaleString() : '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="logVisibleKeys.includes('duration')" prop="duration_ms" label="耗时" min-width="90" align="right">
+          <el-table-column sortable="custom" v-if="logVisibleKeys.includes('duration')" prop="duration_ms" label="耗时" min-width="90" align="right">
             <template #default="{ row }">
               <span class="mono-text">{{ row.duration_ms != null ? formatDuration(row.duration_ms) : '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="logVisibleKeys.includes('status')" label="状态" min-width="110">
+          <el-table-column sortable="custom" v-if="logVisibleKeys.includes('status')" prop="status" label="状态" min-width="110">
             <template #default="{ row }">
               <StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">
                 {{ statusLabel(row.status) }}
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="logVisibleKeys.includes('created')" prop="created_at" label="时间" min-width="150" sortable="custom" />
+          <el-table-column sortable="custom" v-if="logVisibleKeys.includes('created')" prop="created_at" label="时间" min-width="150" />
         </el-table>
 
         <el-pagination v-model:current-page="logPage" v-model:page-size="logPageSize" :page-sizes="[20, 50, 100]" :total="logTotal" layout="total, sizes, prev, pager, next" class="pager" @current-change="changeLogPage" @size-change="changeLogSize" />

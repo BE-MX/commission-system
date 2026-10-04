@@ -41,10 +41,12 @@ def list_processes(
     page_size: int = Query(20, ge=1, le=100),
     name: str | None = Query(None),
     status: int | None = Query(None),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     _user=Depends(require_permission("production:read")),
 ):
-    items, total = process_service.list_processes(db, page=page, page_size=page_size, name=name, status=status)
+    items, total = process_service.list_processes(db, page=page, page_size=page_size, name=name, status=status, sort_field=sort_field, sort_order=sort_order)
     return {
         "total": total, "page": page, "page_size": page_size,
         "items": [
@@ -126,11 +128,13 @@ def list_routes(
     page_size: int = Query(20, ge=1, le=500),
     name: str | None = Query(None),
     status: int | None = Query(None),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     # production_route:read=工序路线页面码（063 拆分），保留 production:read 兼容
     _user=Depends(require_any_permission("production_route:read", "production:read")),
 ):
-    items, total = route_service.list_routes(db, page=page, page_size=page_size, name=name, status=status)
+    items, total = route_service.list_routes(db, page=page, page_size=page_size, name=name, status=status, sort_field=sort_field, sort_order=sort_order)
     return {"total": total, "items": items}
 
 
@@ -231,6 +235,8 @@ def list_products(
     group_name: str | None = Query(None),
     route_bound: str = Query("all"),
     show_disabled: bool = Query(False),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     # production_product:read=产品管理页面码（063 拆分），保留 production:read 兼容
     _user=Depends(require_any_permission("production_product:read", "production:read")),
@@ -238,7 +244,7 @@ def list_products(
     items, total = binding_service.list_products(
         db, page=page, page_size=page_size, keyword=keyword,
         model=model, group_name=group_name, route_bound=route_bound,
-        show_disabled=show_disabled,
+        show_disabled=show_disabled, sort_field=sort_field, sort_order=sort_order,
     )
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 

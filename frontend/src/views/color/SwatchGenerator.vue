@@ -103,16 +103,16 @@
       </div>
       <ListPageStatus v-if="historyState.hasData.value" :error="historyState.errorMessage.value" :loading="historyLoading" :has-data="true" :data-page="historyState.dataPage.value" @retry="loadHistory" />
       <el-table :data="historyList" v-loading="historyLoading" @sort-change="handleHistorySort" border class="list-table" :class="historyDensityClass" :max-height="historyIsFullscreen ? undefined : 640">
-        <el-table-column v-if="historyVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
-        <el-table-column v-if="historyVisibleKeys.includes('color')" label="色号" min-width="100">
+        <el-table-column sortable="custom" v-if="historyVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
+        <el-table-column sortable="custom" v-if="historyVisibleKeys.includes('color')" prop="color_id" label="色号" min-width="100">
           <template #default="{ row }">
             <span v-if="row.palette_id">#{{ row.palette_id }}</span>
             <span v-else-if="row.blend_id">混#{{ row.blend_id }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="historyVisibleKeys.includes('target')" prop="target_hex" label="目标色" min-width="100" />
-        <el-table-column v-if="historyVisibleKeys.includes('model')" prop="model_used" label="模型" min-width="120" />
-        <el-table-column v-if="historyVisibleKeys.includes('delta')" label="ΔE" min-width="100">
+        <el-table-column sortable="custom" v-if="historyVisibleKeys.includes('target')" prop="target_hex" label="目标色" min-width="100" />
+        <el-table-column sortable="custom" v-if="historyVisibleKeys.includes('model')" prop="model_used" label="模型" min-width="120" />
+        <el-table-column sortable="custom" v-if="historyVisibleKeys.includes('delta')" prop="delta_e" label="ΔE" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.delta_e !== null" :type="row.pass_check ? 'success' : 'warning'" size="small">
               {{ row.delta_e }}
@@ -120,12 +120,12 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="historyVisibleKeys.includes('status')" prop="status" label="状态" min-width="110">
+        <el-table-column sortable="custom" v-if="historyVisibleKeys.includes('status')" prop="status" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="historyVisibleKeys.includes('created')" prop="created_at" label="创建时间" min-width="160" sortable="custom" />
+        <el-table-column sortable="custom" v-if="historyVisibleKeys.includes('created')" prop="created_at" label="创建时间" min-width="160" />
         <template #empty><ListPageStatus :error="historyState.errorMessage.value" :loading="historyLoading" :has-data="false" @retry="loadHistory"><el-empty description="暂无数据" /></ListPageStatus></template>
       </el-table>
       <el-pagination

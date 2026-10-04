@@ -2,6 +2,7 @@
 
 from typing import Optional
 
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session
 
 from app.ai.models import AiCallLog
@@ -19,7 +20,6 @@ def list_logs(
     sort_field: str = "created_at",
     sort_order: str = "desc",
 ) -> dict:
-    from sqlalchemy import desc as _desc
     query = db.query(AiCallLog)
     if caller_module:
         query = query.filter(AiCallLog.caller_module == caller_module)
@@ -37,13 +37,17 @@ def list_logs(
         "model": AiCallLog.model,
         "tokens_used": AiCallLog.tokens_used,
         "duration_ms": AiCallLog.duration_ms,
+        "id": AiCallLog.id,
+        "caller_module": AiCallLog.caller_module,
+        "provider_type": AiCallLog.provider_type,
+        "status": AiCallLog.status,
     }
-    sort_col = SORT_MAP.get(sort_field, AiCallLog.created_at)
-    order_fn = _desc if sort_order == "desc" else lambda c: c
+    query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
+        default=(AiCallLog.created_at.desc(),), tie_breakers=(AiCallLog.id.asc(),))
 
     total = query.count()
     items = (
-        query.order_by(order_fn(sort_col))
+        query
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

@@ -120,33 +120,33 @@
           <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
         </el-empty>
       </ListPageStatus></template>
-      <el-table-column v-if="visibleKeys.includes('waybill-no')" prop="waybill_no" label="运单号" min-width="140" max-width="200" show-overflow-tooltip sortable="custom">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('waybill-no')" prop="waybill_no" label="运单号" min-width="140" max-width="200" show-overflow-tooltip>
         <template #default="{ row }">
           <GlassButton variant="link" class="primary-link" @click="goDetail(row)">{{ row.waybill_no }}</GlassButton>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('carrier-name')" prop="carrier_name" label="物流商" min-width="100" max-width="140" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('receiver-name')" prop="receiver_name" label="收件人" min-width="110" max-width="170" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('receiver-country')" prop="receiver_country" label="国家" min-width="90" max-width="130" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('current-status')" prop="current_status" label="状态" min-width="120" max-width="150" sortable="custom">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('carrier-name')" prop="carrier_name" label="物流商" min-width="100" max-width="140" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('receiver-name')" prop="receiver_name" label="收件人" min-width="110" max-width="170" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('receiver-country')" prop="receiver_country" label="国家" min-width="90" max-width="130" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('current-status')" prop="current_status" label="状态" min-width="120" max-width="150">
         <template #default="{ row }">
           <StatusBadge :type="statusTagType(row.current_status)" size="small" effect="plain">
             {{ statusText(row.current_status) }}
           </StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('current-status-text')" prop="current_status_text" label="最新动态" min-width="190" max-width="340" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('current-location')" prop="current_location" label="当前位置" min-width="130" max-width="220" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('estimated-delivery')" label="预计送达" min-width="90" max-width="130" show-overflow-tooltip>
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('current-status-text')" prop="current_status_text" label="最新动态" min-width="190" max-width="340" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('current-location')" prop="current_location" label="当前位置" min-width="130" max-width="220" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('estimated-delivery')" prop="estimated_delivery_date" label="预计送达" min-width="90" max-width="130" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.estimated_delivery_date ? fmtDateShort(row.estimated_delivery_date) : '-' }}
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('last-event-time')" label="最新时间" min-width="160" max-width="200" show-overflow-tooltip>
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('last-event-time')" prop="last_event_time" label="最新时间" min-width="160" max-width="200" show-overflow-tooltip>
         <template #default="{ row }">{{ row.last_event_time || '-' }}</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('dingtalk-user-name')" prop="dingtalk_user_name" label="提交人" min-width="100" max-width="140" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('short-link')" label="短链接" min-width="100" max-width="140">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('dingtalk-user-name')" prop="dingtalk_user_name" label="提交人" min-width="100" max-width="140" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('short-link')" prop="short_code" label="短链接" min-width="100" max-width="140">
         <template #default="{ row }">
           <GlassButton v-if="row.short_link" variant="link" left-icon="CopyDocument" @click="copyLink(row.short_link)">
             复制
@@ -154,7 +154,7 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('tracking-active')" label="跟踪" min-width="110" max-width="150">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('tracking-active')" prop="is_active" label="跟踪" min-width="110" max-width="150">
         <template #default="{ row }">
           <StatusBadge :type="row.is_active ? 'success' : 'info'" size="small" effect="plain">
             {{ row.is_active ? '进行中' : '已结束' }}

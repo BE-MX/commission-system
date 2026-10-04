@@ -42,12 +42,12 @@
         </template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('url')" prop="url" label="URL" min-width="240" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('pipeline')" label="管线" min-width="100">
+      <el-table-column prop="pipeline" v-if="visibleKeys.includes('pipeline')" label="管线" min-width="100">
         <template #default="{ row }">
           <StatusBadge size="small" :type="row.pipeline === 'external' ? 'info' : 'success'">{{ row.pipeline === 'external' ? '外部' : '内部' }}</StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('fetch-interval')" label="抓取间隔" min-width="100">
+      <el-table-column prop="fetch_interval_hours" v-if="visibleKeys.includes('fetch-interval')" label="抓取间隔" min-width="100">
         <template #default="{ row }">{{ row.fetch_interval_hours }}h</template>
       </el-table-column>
       <el-table-column v-if="visibleKeys.includes('is-active')" prop="is_active" label="状态" min-width="100" sortable>
@@ -55,13 +55,13 @@
           <StatusBadge :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('health')" label="健康度" min-width="120">
+      <el-table-column prop="consecutive_failures" v-if="visibleKeys.includes('health')" label="健康度" min-width="120">
         <template #default="{ row }">
           <span v-if="row.consecutive_failures === 0" class="health ok">正常</span>
           <span v-else class="health bad">连续失败 {{ row.consecutive_failures }} 次</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('last-fetched')" label="最近抓取" min-width="160">
+      <el-table-column :sort-by="row => row.last_fetched_at" v-if="visibleKeys.includes('last-fetched')" label="最近抓取" min-width="160">
         <template #default="{ row }">
           <div class="last-fetched">
             <span>{{ row.last_fetched_at ? formatTime(row.last_fetched_at) : '从未' }}</span>

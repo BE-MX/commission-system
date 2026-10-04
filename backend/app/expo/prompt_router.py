@@ -74,9 +74,12 @@ def preview(body: PromptPreviewRequest, db: Session = Depends(get_db), _user=Dep
 
 @router.get("/prompt-versions")
 def list_versions(keyword: str = "", page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-                  db: Session = Depends(get_db), _user=Depends(require_permission("expo:admin"))):
+                  db: Session = Depends(get_db), _user=Depends(require_permission("expo:admin")),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+):
     with prompt_transaction(db):
-        rows, total = service.list_versions(db, keyword=keyword, page=page, page_size=page_size)
+        rows, total = service.list_versions(db, keyword=keyword, page=page, page_size=page_size, sort_field=sort_field, sort_order=sort_order)
         return ok(page_result([service.serialize_version(row) for row in rows], total, page, page_size))
 
 
@@ -120,9 +123,11 @@ def snapshot(result_id: int, db: Session = Depends(get_db), _user=Depends(requir
 def list_beautify_versions(
     keyword: str = "", page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db), _user=Depends(require_permission("expo:admin")),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     with prompt_transaction(db):
-        rows, total = beautify_prompts.list_versions(db, keyword=keyword, page=page, page_size=page_size)
+        rows, total = beautify_prompts.list_versions(db, keyword=keyword, page=page, page_size=page_size, sort_field=sort_field, sort_order=sort_order)
         return ok(page_result([beautify_prompts.serialize(row) for row in rows], total, page, page_size))
 
 

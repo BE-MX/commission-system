@@ -36,16 +36,16 @@
         </template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="方案名称" min-width="170" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('preset')" prop="preset_name" label="AI Preset" min-width="170" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('scope')" label="知识范围" min-width="180">
+        <el-table-column prop="source_library_ids.length" v-if="visibleKeys.includes('scope')" label="知识范围" min-width="180">
           <template #default="{ row }">来源 {{ row.source_library_ids.length }} 个 · 目标 {{ row.target_library_ids.length }} 个</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('security')" label="安全设置" min-width="190">
+        <el-table-column prop="allow_cross_library" v-if="visibleKeys.includes('security')" label="安全设置" min-width="190">
           <template #default="{ row }">
             <StatusBadge size="small" effect="plain">{{ row.allow_cross_library ? '允许跨库' : '仅同库' }}</StatusBadge>
             <StatusBadge size="small" effect="plain" :type="row.require_citations ? 'success' : 'info'">{{ row.require_citations ? '要求引用' : '引用可选' }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('version-status')" label="版本/状态" min-width="130">
+        <el-table-column prop="config_version" v-if="visibleKeys.includes('version-status')" label="版本/状态" min-width="130">
           <template #default="{ row }">v{{ row.config_version }} · {{ row.is_enabled ? '启用' : '停用' }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="240">

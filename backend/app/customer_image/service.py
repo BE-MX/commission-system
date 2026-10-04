@@ -6,7 +6,7 @@ import json
 
 from app.core.time import beijing_now, utc_now_naive
 
-from sqlalchemy import String, cast, column, exists, func, or_, select, table, update
+from sqlalchemy import case, String, cast, column, exists, func, or_, select, table, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -34,6 +34,7 @@ from app.customer_image.schemas import (
     CustomerImageProductUpsert,
 )
 from app.customer_image.token_service import issue_invite_token
+from app.core.list_sort import apply_list_sort
 
 
 _customer_contacts = table(
@@ -524,13 +525,26 @@ def list_invites(
     is_admin: bool,
     page: int,
     page_size: int,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> tuple[list[CustomerImageInvite], int]:
     statement = select(CustomerImageInvite)
     if not is_admin:
         statement = statement.where(CustomerImageInvite.created_by == creator_id)
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     rows = list(db.scalars(
-        statement.order_by(CustomerImageInvite.created_at.desc(), CustomerImageInvite.id.desc())
+        apply_list_sort(
+            statement, sort_field, sort_order, {
+                "token_suffix": CustomerImageInvite.token_suffix,
+                "quota_used": CustomerImageInvite.quota_used,
+                "quota_total": CustomerImageInvite.quota_total,
+                "expires_at": CustomerImageInvite.expires_at,
+                "customer_name": CustomerImageInvite.customer_name_snapshot,
+                "invite_status": case((CustomerImageInvite.revoked_at.isnot(None), 3), (CustomerImageInvite.expires_at <= utc_now_naive(), 2), (CustomerImageInvite.quota_used >= CustomerImageInvite.quota_total, 1), else_=0),
+            },
+            default=(CustomerImageInvite.created_at.desc(), CustomerImageInvite.id.desc(),),
+            tie_breakers=(CustomerImageInvite.id.asc(),),
+        )
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all())
@@ -562,6 +576,8 @@ def list_generations(
     is_admin: bool,
     page: int,
     page_size: int,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> tuple[list[CustomerImageGeneration], int]:
     statement = select(CustomerImageGeneration).join(
         CustomerImageInvite,
@@ -571,9 +587,19 @@ def list_generations(
         statement = statement.where(CustomerImageInvite.created_by == creator_id)
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     rows = list(db.scalars(
-        statement.order_by(
-            CustomerImageGeneration.created_at.desc(),
-            CustomerImageGeneration.id.desc(),
+        apply_list_sort(
+            statement, sort_field, sort_order, {
+                "id": CustomerImageGeneration.id,
+                "invite_id": CustomerImageGeneration.invite_id,
+                "status": CustomerImageGeneration.status,
+                "total_tokens": CustomerImageGeneration.total_tokens,
+                "estimated_cost_microusd": CustomerImageGeneration.estimated_cost_microusd,
+                "created_at": CustomerImageGeneration.created_at,
+                "error_message": CustomerImageGeneration.error_message,
+                "product_name": CustomerImageGeneration.product_name_snapshot,
+            },
+            default=(CustomerImageGeneration.created_at.desc(), CustomerImageGeneration.id.desc(),),
+            tie_breakers=(CustomerImageGeneration.id.asc(),),
         ).offset((page - 1) * page_size).limit(page_size)
     ).all())
     return rows, total

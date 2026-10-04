@@ -89,7 +89,7 @@
           </el-button>
         </div>
         <el-table :data="filteredAnomalies" border class="list-table" max-height="380">
-          <el-table-column label="严重度" min-width="120">
+          <el-table-column prop="severity" label="严重度" min-width="120">
             <template #default="{ row }">
               <StatusBadge size="small" effect="dark"
                       :type="row.severity === 'blocking' ? 'danger' : 'info'">
@@ -166,7 +166,7 @@
           <el-table :data="attendance.items" border class="list-table" max-height="460">
             <el-table-column prop="emp_no" label="工号" min-width="80" />
             <el-table-column prop="name" label="姓名" min-width="90" />
-            <el-table-column label="应出" min-width="80" align="right">
+            <el-table-column :sort-by="row => row.due_days_manual ?? row.due_days" label="应出" min-width="80" align="right">
               <template #default="{ row }">
                 <!-- 钉值优先于规则推导（后端引擎同样优先取它），星号 + tooltip 标明 -->
                 <el-tooltip v-if="row.due_days_manual !== null && row.due_days_manual !== undefined"
@@ -176,7 +176,7 @@
                 <template v-else>{{ money(row.due_days) }}</template>
               </template>
             </el-table-column>
-            <el-table-column label="实出" min-width="80" align="right">
+            <el-table-column prop="actual_days" label="实出" min-width="80" align="right">
               <template #default="{ row }">
                 <span v-if="row.actual_days !== null">{{ money(row.actual_days) }}</span>
                 <el-tooltip v-else content="请假小时没录，算不出实出天数">
@@ -184,7 +184,7 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="事假(h)" min-width="96" align="right">
+            <el-table-column prop="personal_leave_hours" label="事假(h)" min-width="96" align="right">
               <template #default="{ row }">
                 {{ hours(row.personal_leave_hours) }}
                 <el-tooltip v-if="row.leave_source === 'manual'"
@@ -193,7 +193,7 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="病假(h)" min-width="96" align="right">
+            <el-table-column prop="sick_leave_hours" label="病假(h)" min-width="96" align="right">
               <template #default="{ row }">
                 {{ hours(row.sick_leave_hours) }}
                 <el-tooltip v-if="row.leave_source === 'manual'"
@@ -202,16 +202,16 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="年假" min-width="70" align="right">
+            <el-table-column prop="annual_leave_days" label="年假" min-width="70" align="right">
               <template #default="{ row }">{{ money(row.annual_leave_days) }}</template>
             </el-table-column>
             <el-table-column label="迟到" prop="late_count" min-width="60" align="right" />
             <el-table-column label="早退" prop="early_leave_count" min-width="60" align="right" />
             <el-table-column label="漏卡" prop="miss_punch_count" min-width="60" align="right" />
-            <el-table-column label="旷工" min-width="70" align="right">
+            <el-table-column prop="absent_count" label="旷工" min-width="70" align="right">
               <template #default="{ row }">{{ money(row.absent_count) }}</template>
             </el-table-column>
-            <el-table-column label="全勤" min-width="100">
+            <el-table-column prop="full_attendance" label="全勤" min-width="100">
               <template #default="{ row }">
                 <StatusBadge size="small" :type="row.full_attendance ? 'success' : 'info'" effect="plain">
                   {{ row.full_attendance ? '是' : '否' }}

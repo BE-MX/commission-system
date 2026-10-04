@@ -29,33 +29,33 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchStores" />
-<el-table :data="stores" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+<el-table :data="stores" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchStores">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="门店名称" min-width="140" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('code')" prop="code" label="编码" min-width="100" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('name')" prop="name" label="门店名称" min-width="140" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('code')" prop="code" label="编码" min-width="100" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge size="small" :value="row.status" :dictionary="ENABLED_STATUS" />
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('remaining')" label="剩余额度" min-width="110" align="right">
+        <el-table-column sortable="custom" prop="remaining" v-if="visibleKeys.includes('remaining')" label="剩余额度" min-width="110" align="right">
           <template #default="{ row }">
             <span :class="{ 'quota-zero': row.remaining === 0 }">{{ row.remaining }} 张</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('usage')" label="已用 / 累计" min-width="110" align="right">
+        <el-table-column sortable="custom" prop="used_quota" v-if="visibleKeys.includes('usage')" label="已用 / 累计" min-width="110" align="right">
           <template #default="{ row }">{{ row.used_quota }} / {{ row.total_quota }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('contact')" label="联系人" min-width="110" show-overflow-tooltip>
+        <el-table-column sortable="custom" prop="contact_name" v-if="visibleKeys.includes('contact')" label="联系人" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.contact_name || '-' }}<span v-if="row.contact_phone" class="muted">（{{ row.contact_phone }}）</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="150" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="150" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right">
           <template #default="{ row }">
             <GlassButton v-any-permission="['expo_store:admin', 'expo_store:recharge']" variant="link" left-icon="Coin" @click="openQuota(row)">额度</GlassButton>
@@ -121,7 +121,7 @@
         <template #empty><ListPageStatus :paged="false" :error="usersResource.errorMessage.value" :loading="usersLoading" @retry="fetchStoreUsers"><el-empty v-if="usersResource.isEmpty.value" description="暂无绑定人员" /></ListPageStatus></template>
         <el-table-column prop="username" label="账号" min-width="100" show-overflow-tooltip />
         <el-table-column prop="real_name" label="姓名" min-width="100" show-overflow-tooltip />
-        <el-table-column label="角色" min-width="100">
+        <el-table-column prop="is_primary" label="角色" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.is_primary" size="small" type="warning">店长</StatusBadge>
             <span v-else class="muted">导购</span>
@@ -166,7 +166,7 @@ import StoreQuotaDrawer from './StoreQuotaDrawer.vue'
 
 const listPageState = useListPage(
   async ({ page, page_size, ...form }, { signal, isCurrent }) => {
-    const params = { offset: (page - 1) * page_size, limit: page_size }
+    const params = { offset: (page - 1) * page_size, limit: page_size, sort_field: form.sort_field, sort_order: form.sort_order }
     if (form.keyword) params.keyword = form.keyword
     if (form.status !== '' && form.status !== null && form.status !== undefined) params.status = form.status
     const res = await getStores(params, { signal, suppressToast: true })

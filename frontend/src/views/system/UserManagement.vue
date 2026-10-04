@@ -35,28 +35,28 @@
           <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
         </el-empty>
       </ListPageStatus></template>
-      <el-table-column v-if="visibleKeys.includes('username')" prop="username" label="用户名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('real-name')" prop="real_name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('email')" prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('phone')" prop="phone" label="手机号" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('dingtalk-bind')" label="钉钉绑定" min-width="120" max-width="180">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('username')" prop="username" label="用户名" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('real-name')" prop="real_name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('email')" prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('phone')" prop="phone" label="手机号" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('dingtalk-bind')" prop="dingtalk_id" label="钉钉绑定" min-width="120" max-width="180">
         <template #default="{ row }">
           <StatusBadge v-if="row.dingtalk_id" type="success" size="small" effect="plain">已绑定</StatusBadge>
           <StatusBadge v-else type="info" size="small" effect="plain">未绑定</StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('roles')" label="角色" min-width="160" max-width="240">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('roles')" prop="roles" label="角色" min-width="160" max-width="240">
         <template #default="{ row }">
           <StatusBadge v-for="r in row.roles" :key="r" size="small" effect="plain" style="margin-right: 4px">{{ r }}</StatusBadge>
           <span v-if="!row.roles?.length" style="color: var(--text-muted)">未分配</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="120">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('status')" prop="is_active" label="状态" min-width="100" max-width="120">
         <template #default="{ row }">
           <StatusBadge :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '正常' : '禁用' }}</StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('last-login')" prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('last-login')" prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip />
       <el-table-column class-name="table-action-column" label="操作" min-width="340" max-width="480" fixed="right">
         <template #default="{ row }">
           <GlassButton v-permission="'user:write'" variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>

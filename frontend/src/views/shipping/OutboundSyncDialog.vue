@@ -14,13 +14,13 @@
         <div v-if="preview.serial_changed" class="sync-remark"><strong>出库单号</strong><p>当前：{{ preview.serial_before }}</p><p>同步后：{{ preview.serial_after }}</p></div>
         <el-table v-if="preview.changes?.length" :data="preview.changes" border class="list-table sync-changes" max-height="360">
           <el-table-column prop="action" label="操作" min-width="68" />
-          <el-table-column label="当前出库明细" min-width="240">
+          <el-table-column prop="before.name" label="当前出库明细" min-width="240">
             <template #default="{ row: change }">
               <template v-if="change.before">{{ change.before.name }}<br>{{ change.before.quantity }} {{ change.before.unit }} · 单价 {{ formatMoney(change.before.price, { missing: '—' }) }}</template>
               <span v-else>—</span>
             </template>
           </el-table-column>
-          <el-table-column label="同步后" min-width="240">
+          <el-table-column prop="after.name" label="同步后" min-width="240">
             <template #default="{ row: change }">
               <template v-if="change.after">{{ change.after.name }}<br>{{ change.after.quantity }} {{ change.after.unit }} · 单价 {{ formatMoney(change.after.price, { missing: '—' }) }}</template>
               <span v-else>删除该明细</span>

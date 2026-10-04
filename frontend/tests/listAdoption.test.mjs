@@ -267,6 +267,8 @@ test('actual directory table empty slot shows the first failure and retry; stale
   const listStatus = loadComponent('../../src/components/ListPageStatus.vue', { '@element-plus/icons-vue': {}, './GlassButton.vue': { default: slotShell } })
   const component = loadComponent('../../src/views/customer_hub/CustomerDirectory.vue', {
     vue: { ...Vue, resolveDirective: () => ({}) },
+    '@element-plus/icons-vue': Object.fromEntries(['Refresh', 'UserFilled', 'Sunrise', 'Bell', 'Moon', 'Search'].map(name => [name, slotShell])),
+    '@/components/OverviewMetricCard.vue': { default: slotShell },
     'vue-router': { useRoute: () => ({ query: {} }), useRouter: () => ({ replace() {} }) },
     '@/api/customerHub': { listCustomers: async () => { if (fail) throw new Error('directory unavailable'); return { data: { items: [{ customer_id: 1, name: 'Retained directory row' }], total: 1 } } } },
     '@/composables/useListPage': { useListPage: (...args) => (state = useListPage(...args)) },

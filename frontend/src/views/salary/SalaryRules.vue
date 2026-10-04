@@ -26,21 +26,21 @@
             <TableTools v-model:visible-keys="gradeVisibleKeys" v-model:density="gradeDensity" :columns="gradeColumnDefs" :fullscreen="gradeIsFullscreen" @refresh="fetchAll" @fullscreen="toggleGradeFullscreen" />
           </div>
           <el-table :data="filteredGrades" v-loading="loading" border class="list-table" :class="gradeDensityClass" :max-height="gradeIsFullscreen ? undefined : 640">
-            <el-table-column v-if="gradeVisibleKeys.includes('scheme')" label="赛道" min-width="130">
+            <el-table-column :sort-by="row => (schemeLabels[row.scheme] || row.scheme)" v-if="gradeVisibleKeys.includes('scheme')" label="赛道" min-width="130">
               <template #default="{ row }">{{ schemeLabels[row.scheme] || row.scheme }}</template>
             </el-table-column>
             <el-table-column v-if="gradeVisibleKeys.includes('grade')" prop="grade_code" label="职级" min-width="80" sortable />
-            <el-table-column v-if="gradeVisibleKeys.includes('salary')" label="底薪 / 标准工资" min-width="130" align="right">
+            <el-table-column :sort-by="row => salaryOf(row)" v-if="gradeVisibleKeys.includes('salary')" label="底薪 / 标准工资" min-width="130" align="right">
               <template #default="{ row }">{{ money(salaryOf(row)) }}</template>
             </el-table-column>
             <el-table-column v-if="gradeVisibleKeys.includes('target')" prop="perf_target_monthly" label="月业绩目标($)" min-width="130" align="right" sortable />
             <el-table-column v-if="gradeVisibleKeys.includes('perf')" prop="perf_full" label="绩效满额" min-width="100" align="right" />
             <el-table-column v-if="gradeVisibleKeys.includes('new-sign')" prop="new_sign_min" label="新签下限(单)" min-width="110" align="right" />
-            <el-table-column v-if="gradeVisibleKeys.includes('rate')" label="团队提成率" min-width="100" align="right">
+            <el-table-column :sort-by="row => row.team_rate" v-if="gradeVisibleKeys.includes('rate')" label="团队提成率" min-width="100" align="right">
               <template #default="{ row }">{{ row.team_rate !== null && row.team_rate !== undefined ? `${(row.team_rate * 100).toFixed(2)}%` : '-' }}</template>
             </el-table-column>
             <el-table-column v-if="gradeVisibleKeys.includes('effective')" prop="effective_from" label="生效日" min-width="110" sortable />
-            <el-table-column v-if="gradeVisibleKeys.includes('expires')" label="失效日" min-width="110">
+            <el-table-column prop="effective_to" v-if="gradeVisibleKeys.includes('expires')" label="失效日" min-width="110">
               <template #default="{ row }">
                 <span v-if="row.effective_to">{{ row.effective_to }}</span>
                 <StatusBadge v-else size="small" type="success" effect="plain">现行</StatusBadge>
@@ -63,7 +63,7 @@
           </div>
           <el-table :data="params" v-loading="loading" border class="list-table" :class="paramDensityClass" :max-height="paramIsFullscreen ? undefined : 640">
             <el-table-column v-if="paramVisibleKeys.includes('key')" prop="param_key" label="参数键" min-width="200" show-overflow-tooltip />
-            <el-table-column v-if="paramVisibleKeys.includes('value')" label="参数值" min-width="160">
+            <el-table-column prop="param_value" v-if="paramVisibleKeys.includes('value')" label="参数值" min-width="160">
               <template #default="{ row }">
                 <el-input v-if="editingParamId === row.id" v-model="paramDraft.param_value" size="small" />
                 <strong v-else>{{ row.param_value }}</strong>
@@ -71,7 +71,7 @@
             </el-table-column>
             <el-table-column v-if="paramVisibleKeys.includes('type')" prop="value_type" label="类型" min-width="80" />
             <el-table-column v-if="paramVisibleKeys.includes('category')" prop="category" label="分类" min-width="100" />
-            <el-table-column v-if="paramVisibleKeys.includes('description')" label="用途说明" min-width="280" show-overflow-tooltip>
+            <el-table-column prop="description" v-if="paramVisibleKeys.includes('description')" label="用途说明" min-width="280" show-overflow-tooltip>
               <template #default="{ row }">
                 <el-input v-if="editingParamId === row.id" v-model="paramDraft.description" size="small" />
                 <span v-else>{{ row.description || '-' }}</span>
@@ -105,7 +105,7 @@
           </div>
           <el-table :data="deptMappings" v-loading="loading" border class="list-table" :class="deptDensityClass" :max-height="deptIsFullscreen ? undefined : 640">
             <el-table-column v-if="deptVisibleKeys.includes('detail')" prop="dept_detail" label="明细部门" min-width="160" sortable />
-            <el-table-column v-if="deptVisibleKeys.includes('group')" label="汇总大部门" min-width="160">
+            <el-table-column prop="dept_group" v-if="deptVisibleKeys.includes('group')" label="汇总大部门" min-width="160">
               <template #default="{ row }"><StatusBadge size="small" effect="plain">{{ row.dept_group }}</StatusBadge></template>
             </el-table-column>
             <el-table-column v-if="deptVisibleKeys.includes('sort')" prop="sort_order" label="排序" min-width="80" sortable />

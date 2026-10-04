@@ -31,6 +31,7 @@ from app.expo.schemas import (
     WigColorImagesUpsert,
     WigUpsert,
 )
+from app.core.list_sort import apply_items_sort
 
 logger = logging.getLogger("commission.expo")
 
@@ -975,6 +976,8 @@ def list_leads(
     intent_level: str | None = None,
     keyword: str | None = None,
     store_ids: list[int] | None = None,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> tuple[list[dict], int]:
     # store_ids：None=不限门店（read_all/超管）；[]=无门店绑定，直接空集
     if store_ids is not None and not store_ids:
@@ -1030,6 +1033,7 @@ def list_leads(
             "next_action": fb.next_action if fb else None,
         })
 
+    rows = apply_items_sort(rows, sort_field, sort_order, {key: key for key in ("name", "phone", "primary_need", "session_count", "intent_level", "next_action", "created_at")}, tie_breaker="id")
     total = len(rows)
     start = (page - 1) * page_size
     return rows[start : start + page_size], total

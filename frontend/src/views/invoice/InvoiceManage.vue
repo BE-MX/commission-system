@@ -75,7 +75,7 @@
       </div>
 
       <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="loadInvoices" />
-      <el-table v-loading="loading" :data="invoices" border class="list-table invoice-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="invoices" @sort-change="handleTableSort" border class="list-table invoice-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty>
           <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="loadInvoices">
             <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的发票' : '暂无发票，新建一张发票后会显示在这里'">
@@ -86,7 +86,7 @@
         <el-table-column
           v-for="column in visibleColumns"
           :key="column.key"
-          :prop="column.prop"
+          :prop="column.prop || (column.key === 'created_by' ? 'created_by_name' : column.key)" sortable="custom"
           :label="column.label"
           :min-width="column.minWidth"
           :max-width="column.maxWidth"
@@ -410,7 +410,7 @@ import ListPageStatus from '@/components/ListPageStatus.vue'
 const { shipmentInvoice, shipmentCapabilities } = useInvoiceShipments()
 const listPage = useInvoiceManagePage()
 const {
-  actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
+  handleTableSort, actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
   loading, money, money4, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
   listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch, handleSearch, handlePageChange, handleSaved, refreshUpdate,
   summary, summaryDateRange, summaryError, summaryLoading, loadSummary,

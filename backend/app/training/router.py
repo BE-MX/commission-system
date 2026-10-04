@@ -47,6 +47,8 @@ def list_digests(
     tag: str = Query(""),
     status: str = Query("", pattern="^(draft|published)?$"),
     mine: bool = Query(False),
+    sort_field: str = Query("trained_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
 ):
@@ -59,6 +61,7 @@ def list_digests(
         tag=tag,
         status=status,
         mine=mine,
+        sort_field=sort_field, sort_order=sort_order,
     )
     return ok(data)
 

@@ -5,6 +5,8 @@ from app.core.time import beijing_today
 from decimal import Decimal
 from uuid import uuid4
 
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
@@ -82,7 +84,7 @@ def create_order(
     return order
 
 
-def list_orders(db: Session, page: int, page_size: int, status: str | None, keyword: str | None) -> dict:
+def list_orders(db: Session, page: int, page_size: int, status: str | None, keyword: str | None, sort_field: str = "", sort_order: str = "") -> dict:
     totals = (
         db.query(
             SemifinishedOrderItem.order_id,
@@ -107,7 +109,7 @@ def list_orders(db: Session, page: int, page_size: int, status: str | None, keyw
         like = f"%{keyword.strip()}%"
         query = query.filter((SemifinishedOrder.order_no.like(like)) | (SemifinishedOrder.batch_no.like(like)))
     total = query.count()
-    rows = query.order_by(SemifinishedOrder.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    rows = apply_list_sort(query, sort_field, sort_order, {"order_no": SemifinishedOrder.order_no, "batch_no": SemifinishedOrder.batch_no, "source_type": SemifinishedOrder.source_type, "status": SemifinishedOrder.status, "expected_delivery_date": SemifinishedOrder.expected_delivery_date, "created_at": SemifinishedOrder.created_at, "item_count": totals.c.item_count, "order_qty_grams": totals.c.order_qty, "received_qty_grams": totals.c.received_qty}, default=(SemifinishedOrder.id.desc(),), tie_breakers=(SemifinishedOrder.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()
     return {
         "items": [{
             "id": order.id,

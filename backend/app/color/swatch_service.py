@@ -1,6 +1,8 @@
 """色板图生成服务 — 复用 AI 接入模块"""
-
 from __future__ import annotations
+
+from sqlalchemy import func
+from app.core.list_sort import apply_list_sort
 
 import asyncio
 import logging
@@ -40,6 +42,8 @@ def list_swatches(
     status: Optional[str] = None,
     palette_id: Optional[int] = None,
     blend_id: Optional[int] = None,
+    sort_field: str = "id",
+    sort_order: str = "desc",
 ) -> dict:
     q = db.query(ColorSwatchImage)
     if status:
@@ -49,9 +53,20 @@ def list_swatches(
     if blend_id:
         q = q.filter(ColorSwatchImage.blend_id == blend_id)
 
+    columns = {
+        "id": ColorSwatchImage.id,
+        "target_hex": ColorSwatchImage.target_hex,
+        "model_used": ColorSwatchImage.model_used,
+        "delta_e": ColorSwatchImage.delta_e,
+        "status": ColorSwatchImage.status,
+        "created_at": ColorSwatchImage.created_at,
+        "color_id": func.coalesce(ColorSwatchImage.palette_id, ColorSwatchImage.blend_id),
+    }
+    q = apply_list_sort(q, sort_field, sort_order, columns,
+        default=(ColorSwatchImage.id.desc(),), tie_breakers=(ColorSwatchImage.id.asc(),))
     total = q.count()
     items = (
-        q.order_by(ColorSwatchImage.id.desc())
+        q
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

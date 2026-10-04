@@ -19,17 +19,17 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+<el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="版本名称" min-width="190" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140"><template #default="{ row }"><StatusBadge :type="statusType(row.status)">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="80" />
-        <el-table-column v-if="visibleKeys.includes('published-at')" label="发布时间" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.published_at) || '—' }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('updated-at')" label="最后更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('name')" prop="name" label="版本名称" min-width="190" />
+        <el-table-column sortable="custom" prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="140"><template #default="{ row }"><StatusBadge :type="statusType(row.status)">{{ statusLabel(row.status) }}</StatusBadge></template></el-table-column>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="80" />
+        <el-table-column sortable="custom" prop="published_at" v-if="visibleKeys.includes('published-at')" label="发布时间" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.published_at) || '—' }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="updated_at" v-if="visibleKeys.includes('updated-at')" label="最后更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right"><template #default="{ row }">
           <GlassButton left-icon="Edit" variant="link" @click="openVersion(row.id)">查看{{ row.status === 'draft' ? ' / 编辑' : '' }}</GlassButton>
           <GlassButton left-icon="CopyDocument" variant="link" @click="copyVersion(row.id)">复制草稿</GlassButton>

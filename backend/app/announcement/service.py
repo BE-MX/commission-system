@@ -1,7 +1,9 @@
 """Announcement transactions reuse knowledge revisions, ACL and approval logic."""
 import hashlib
 import json
-from sqlalchemy import or_
+from sqlalchemy import or_, case, select, func, literal
+from sqlalchemy.orm import aliased
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.exc import IntegrityError
 
 from app.core.time import beijing_now, to_beijing_naive
@@ -240,7 +242,7 @@ def detail(db, identity, document_id, *, edit=False):
             'effective_at': meta.effective_at, 'expires_at': meta.expires_at, 'change_note': meta.change_note}
 
 
-def list_announcements(db, identity, *, q='', category_id=None, status=None, page=1, page_size=20):
+def list_announcements(db, identity, *, q='', category_id=None, status=None, page=1, page_size=20, sort_field='', sort_order=''):
     config = config_for(db, identity)
     permissions = set(identity.get('permissions', []))
     manager = access.is_super_admin(identity) or (
@@ -265,7 +267,19 @@ def list_announcements(db, identity, *, q='', category_id=None, status=None, pag
         elif status != 'published':
             return {'items': [], 'total': 0}
     total = query.count()
-    rows = query.order_by(Announcement.pinned.desc(), Announcement.published_at.desc(), KnowledgeDocument.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    latest_delivery = aliased(Delivery)
+    latest_publication = aliased(Publication)
+    latest_key = select(latest_delivery.source_key).join(latest_publication, latest_publication.id == latest_delivery.publication_id).where(latest_publication.document_id == KnowledgeDocument.id).order_by(latest_delivery.id.desc()).limit(1).correlate(KnowledgeDocument).scalar_subquery()
+    delivery_priority = case(*[(Delivery.status == state, index) for index, state in enumerate(('uncertain', 'failed', 'sending', 'preparing', 'retry', 'queued', 'cancelled'))], else_=7)
+    delivery_sort = select(func.min(delivery_priority)).where(Delivery.source_key == latest_key).correlate(KnowledgeDocument).scalar_subquery()
+    rows = apply_list_sort(query, sort_field, sort_order, {
+        'title': case((Announcement.withdrawn_at.is_not(None), '公告已撤回'), else_=KnowledgeRevision.title),
+        'flags': case((Announcement.pinned.is_(True), 2), else_=0) + case((AnnouncementMeta.important.is_(True), 1), else_=0),
+        'category_name': AnnouncementMeta.category_name, 'published_at': Announcement.published_at,
+        'expires_at': AnnouncementMeta.expires_at,
+        'status': case((Announcement.withdrawn_at.is_not(None), 'withdrawn'), else_=KnowledgeDocument.status) if manager else literal('published'),
+        'delivery': delivery_sort if manager else None,
+    }, default=(Announcement.pinned.desc(), Announcement.published_at.desc()), tie_breakers=(KnowledgeDocument.id.desc(),)).offset((page - 1) * page_size).limit(page_size).all()
     items = []
     for item, document in rows:
         data = detail(db, identity, document.id, edit=manager)

@@ -1050,6 +1050,8 @@ def get_customer_actions(
     country: str | None = None,
     analysis_filters: AnalysisFilters | None = None,
     date_from: date | None = None,
+    sort_field: str = "",
+    sort_order: str = "",
 ) -> dict:
     analysis_filters = analysis_filters or AnalysisFilters()
     window_start = date_from or (as_of - timedelta(days=364))
@@ -1102,7 +1104,23 @@ def get_customer_actions(
         })
         items.append(customer)
     priority = {"abnormal": 0, "due": 1, "insufficient_data": 2, "healthy": 3}
-    items.sort(key=lambda item: (priority[item["risk_status"]], -item["lifetime_amount_usd"]))
+    items.sort(key=lambda item: (priority[item["risk_status"]], -item["lifetime_amount_usd"], item["company_id"]))
+    from app.core.list_sort import apply_items_sort
+    fields = {key: key for key in ("company_name", "country", "user_name", "risk_status", "profile_label", "typical_cycle_days", "last_order_date", "expected_order_date", "abnormal_date", "overdue_days", "lifetime_amount_usd", "recommended_action")}
+    def preference_text(item):
+        values = [*(item.get("top_models") or []), *(item.get("top_colors") or [])][:4]
+        parts = []
+        for value in values:
+            if "previous_quantity" in value:
+                growth = value.get("quantity_growth")
+                metric = "新增" if growth is None else f"{'+' if growth > 0 else ''}{growth}%"
+            else:
+                quantity = format(float(value.get("quantity") or 0), ",.3f").rstrip("0").rstrip(".")
+                metric = f"{quantity} 件"
+            parts.append(f"{value.get('name') or ''} {metric}")
+        return " / ".join(parts) or "暂无稳定偏好"
+    fields["preference"] = preference_text
+    items = apply_items_sort(items, sort_field, sort_order, fields, tie_breaker="company_id")
     total = len(items)
     start = (page - 1) * page_size
     return {

@@ -43,36 +43,36 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
+<el-table @sort-change="event => listPageState.handleSortChange(tableSortParams(event))" v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('title')" label="公告标题" min-width="260" show-overflow-tooltip>
+        <el-table-column sortable="custom" prop="title" v-if="visibleKeys.includes('title')" label="公告标题" min-width="260" show-overflow-tooltip>
           <template #default="{ row }">
             <el-button link type="primary" @click="openEditor(row.id)"><el-icon><Document /></el-icon>{{ row.title }}</el-button>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('flags')" label="标记" min-width="130">
+        <el-table-column sortable="custom" prop="flags" v-if="visibleKeys.includes('flags')" label="标记" min-width="130">
           <template #default="{ row }">
             <StatusBadge v-if="row.pinned" size="small" effect="plain">置顶</StatusBadge>
             <StatusBadge v-if="row.important" size="small" effect="plain" type="warning">重要</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('category')" prop="category_name" label="类别" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('published-at')" label="发布时间" min-width="180">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('category')" prop="category_name" label="类别" min-width="130" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="published_at" v-if="visibleKeys.includes('published-at')" label="发布时间" min-width="180">
           <template #default="{ row }">{{ formatBeijingDateTime(row.published_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('expires-at')" label="截止时间" min-width="180">
+        <el-table-column sortable="custom" prop="expires_at" v-if="visibleKeys.includes('expires-at')" label="截止时间" min-width="180">
           <template #default="{ row }">{{ formatBeijingDateTime(row.expires_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="发布状态" min-width="120">
+        <el-table-column sortable="custom" prop="status" v-if="visibleKeys.includes('status')" label="发布状态" min-width="120">
           <template #default="{ row }">
             <StatusBadge size="small" effect="plain">{{ statuses[row.status] || row.status }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('delivery')" label="群推送" min-width="135">
+        <el-table-column sortable="custom" prop="delivery" v-if="visibleKeys.includes('delivery')" label="群推送" min-width="135">
           <template #default="{ row }">{{ deliveryLabel(row.deliveries) }}</template>
         </el-table-column>
         <el-table-column label="操作" min-width="260" class-name="table-action-column" fixed="right">
@@ -102,7 +102,9 @@
   </div>
 </template>
 
-<script setup>import { confirmAction, promptAction, confirmDanger, msgSuccess } from '@/utils/feedback'
+<script setup>
+import { tableSortParams } from "@/utils/tableSort"
+import { confirmAction, promptAction, confirmDanger, msgSuccess } from '@/utils/feedback'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 

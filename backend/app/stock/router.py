@@ -60,7 +60,7 @@ def get_overview(
     status: Optional[str] = Query(None, description="shortage,warning,sufficient,unset 逗号分隔"),
     sort: str = Query(
         "sales_30d",
-        pattern="^(model|color|sales_30d|sales_90d|avg_daily_sales_30d|enable_count|real_count|effective_enable_count|production_in_transit|safety_stock)$",
+        pattern="^(model|type|size|color|weight|sales_30d|sales_90d|avg_daily_sales_30d|enable_count|real_count|effective_enable_count|production_in_transit|safety_stock|status|safety_stock_source|suggested_qty|stock_status)$",
     ),
     order: str = Query("desc", pattern="^(desc|asc)$"),
     keyword: Optional[str] = Query(None, max_length=200),
@@ -108,7 +108,7 @@ def get_safety_list(
     size: Optional[str] = Query(None, max_length=500, description="逗号分隔，支持多选"),
     color: Optional[str] = Query(None, max_length=500, description="逗号分隔，支持多选"),
     weight: Optional[str] = Query(None, max_length=500, description="逗号分隔，支持多选"),
-    sort: str = Query("product_id", pattern="^(product_id|sales_30d|enable_count|safety_stock|color)$"),
+    sort: str = Query("product_id", pattern="^(product_id|model|type|size|weight|sales_30d|enable_count|safety_stock|color|production_in_transit|avg_daily_sales_30d|suggested_qty|stock_status)$"),
     order: str = Query("asc", pattern="^(asc|desc)$"),
     has_in_transit: Optional[bool] = Query(None, description="仅显示有生产在途的产品"),
     has_safety_stock: Optional[bool] = Query(None, description="仅显示已设置安全库存的产品"),

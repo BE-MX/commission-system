@@ -39,7 +39,8 @@ def _parse_name(name: str) -> dict:
 # ── 排序列映射 ─────────────────────────────────────────────
 # 主查询 derived table 内字段,可在外层 ORDER BY 直接引用
 # 从产品名提取颜色段: 先去掉前两段(TYPE/SIZE/),再去掉末段(/WEIGHT),最后去 # 和 /
-_COLOR_SORT_EXPR = "REPLACE(REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(p.name, '^([^/]+/){2}', ''), '/[^/]+$', ''), '#', ''), '/', '')"
+_DISPLAY_NAME_EXPR = "COALESCE(NULLIF(p.name, ''), p.cn_name, '')"
+_COLOR_SORT_EXPR = f"REPLACE(REPLACE(REGEXP_REPLACE(REGEXP_REPLACE({_DISPLAY_NAME_EXPR}, '^([^/]+/){2}', ''), '/[^/]+$', ''), '#', ''), '/', '')"
 
 _SORT_MAP = {
     "sales_30d": "sales_30d",
@@ -53,6 +54,13 @@ _SORT_MAP = {
     "model": "model",
     "product_id": "product_id",
     "color": "_color_sort",
+    "type": "NULLIF(SUBSTRING_INDEX(_display_name, '/', 1), '')",
+    "size": "CASE WHEN LOCATE('/', _display_name) > 0 THEN NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(_display_name, '/', 2), '/', -1), '') END",
+    "weight": "NULLIF(SUBSTRING_INDEX(_display_name, '/', -1), '')",
+    "status": "status",
+    "safety_stock_source": "source",
+    "suggested_qty": "GREATEST(0, safety_stock * 2 - TRUNCATE(effective_enable_count, 0))",
+    "stock_status": "CASE WHEN has_urgent > 0 THEN 2 WHEN stocking_count > 0 THEN 1 ELSE 0 END",
 }
 
 
@@ -112,7 +120,8 @@ def query_stock_overview(
         LEFT JOIN (
             SELECT i.product_id,
                    SUM(i.order_qty - i.received_qty) AS in_transit_qty,
-                   MAX(i.is_urgent)                  AS has_urgent
+                   MAX(i.is_urgent)                  AS has_urgent,
+                   COUNT(i.id) AS stocking_count
             FROM ark_production_order_items i
             JOIN ark_production_orders o ON o.id = i.order_id
             WHERE i.status = 0 AND o.status = 0 AND o.deleted_flag = 0
@@ -168,6 +177,7 @@ def query_stock_overview(
             SELECT
                 p.product_id                                AS product_id,
                 p.name                                      AS product_name,
+                {_DISPLAY_NAME_EXPR}                        AS _display_name,
                 p.cn_name                                   AS cn_name,
                 p.model                                     AS model,
                 {_COLOR_SORT_EXPR}                          AS _color_sort,
@@ -180,6 +190,7 @@ def query_stock_overview(
                 ss.updated_at                               AS safety_stock_updated_at,
                 COALESCE(it.in_transit_qty, 0)              AS production_in_transit,
                 COALESCE(it.has_urgent, 0)                  AS has_urgent,
+                COALESCE(it.stocking_count, 0) AS stocking_count,
                 COALESCE(inv.enable_count, 0) + COALESCE(it.in_transit_qty, 0) AS effective_enable_count,
                 COALESCE(sales.sales_30d, 0)                AS sales_30d,
                 COALESCE(sales.sales_90d, 0)                AS sales_90d,
@@ -201,7 +212,7 @@ def query_stock_overview(
               {name_clause}
         ) t
         {status_in_clause}
-        ORDER BY {sort_col} {sort_dir}, product_id ASC
+        ORDER BY ({sort_col} IS NULL) ASC, {sort_col} {sort_dir}, product_id ASC
         LIMIT :limit OFFSET :offset
     """
     data_params = {

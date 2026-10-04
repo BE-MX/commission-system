@@ -19,21 +19,21 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="load" />
-      <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="sortTable0">
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
           <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
           </el-empty>
         </template>
-        <el-table-column v-if="visibleKeys.includes('material')" label="半成品" min-width="190"><template #default="{ row }"><div class="sf-material"><strong>{{ row.size }}/{{ row.color_code }}</strong><small>{{ row.material_code }}</small></div></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('on-hand')" label="实存(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.on_hand_grams) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('reserved')" label="占用(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.reserved_grams) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('available')" label="可用(g)" min-width="120" align="right"><template #default="{ row }"><strong>{{ grams(row.available_grams) }}</strong></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('in-progress')" label="在制(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.in_progress_grams) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('safety-stock')" label="安全库存(g)" min-width="130" align="right"><template #default="{ row }">{{ grams(row.safety_stock_grams) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('stock-status')" label="库存状态" min-width="100"><template #default="{ row }"><StatusBadge :type="stockType(row.stock_status)" effect="plain">{{ stockText(row.stock_status) }}</StatusBadge></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('updated-at')" label="更新时间" min-width="170" prop="updated_at" />
+        <el-table-column v-if="visibleKeys.includes('material')" label="半成品" min-width="190" prop="material_code" sortable="custom"><template #default="{ row }"><div class="sf-material"><strong>{{ row.size }}/{{ row.color_code }}</strong><small>{{ row.material_code }}</small></div></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('on-hand')" label="实存(g)" min-width="120" align="right" prop="on_hand_grams" sortable="custom"><template #default="{ row }">{{ grams(row.on_hand_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('reserved')" label="占用(g)" min-width="120" align="right" prop="reserved_grams" sortable="custom"><template #default="{ row }">{{ grams(row.reserved_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('available')" label="可用(g)" min-width="120" align="right" prop="available_grams" sortable="custom"><template #default="{ row }"><strong>{{ grams(row.available_grams) }}</strong></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('in-progress')" label="在制(g)" min-width="120" align="right" prop="in_progress_grams" sortable="custom"><template #default="{ row }">{{ grams(row.in_progress_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('safety-stock')" label="安全库存(g)" min-width="130" align="right" prop="safety_stock_grams" sortable="custom"><template #default="{ row }">{{ grams(row.safety_stock_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('stock-status')" label="库存状态" min-width="100" prop="stock_status" sortable="custom"><template #default="{ row }"><StatusBadge :type="stockType(row.stock_status)" effect="plain">{{ stockText(row.stock_status) }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('updated-at')" label="更新时间" min-width="170" prop="updated_at" sortable="custom" />
         <el-table-column class-name="table-action-column" label="操作" min-width="150" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openLedger(row)"><el-icon><Document /></el-icon>流水</el-button><el-button v-permission="'semifinished:admin'" link type="warning" @click="openAdjust(row)"><el-icon><Edit /></el-icon>调整</el-button></template></el-table-column>
       </el-table>
 
@@ -51,15 +51,15 @@
 
     <DetailDrawer v-model="ledgerVisible" :title="`${ledgerMaterial?.size}/${ledgerMaterial?.color_code} 库存流水`" width="760px">
       <ListPageStatus v-if="ledgerState.hasData.value" :error="ledgerState.errorMessage.value" :loading="ledgerState.loading.value" :has-data="true" :data-page="ledgerState.dataPage.value" @retry="ledgerState.fetchList" />
-      <el-table :data="ledgerRows" v-loading="ledgerState.loading.value" border class="list-table">
+      <el-table :data="ledgerRows" v-loading="ledgerState.loading.value" border class="list-table" @sort-change="sortTable1">
         <template #empty><ListPageStatus :error="ledgerState.errorMessage.value" :loading="ledgerState.loading.value" @retry="ledgerState.fetchList" /></template>
-        <el-table-column prop="created_at" label="时间" min-width="165" />
-        <el-table-column label="类型" min-width="110"><template #default="{ row }">{{ movementText(row.movement_type) }}</template></el-table-column>
-        <el-table-column label="数量(g)" min-width="110" align="right"><template #default="{ row }"><span :class="Number(row.quantity_grams) < 0 ? 'sf-danger' : 'sf-success'">{{ signed(row.quantity_grams) }}</span></template></el-table-column>
-        <el-table-column label="实存后" min-width="110" align="right"><template #default="{ row }">{{ grams(row.on_hand_after) }}</template></el-table-column>
-        <el-table-column label="占用后" min-width="110" align="right"><template #default="{ row }">{{ grams(row.reserved_after) }}</template></el-table-column>
-        <el-table-column prop="business_type" label="业务来源" min-width="140" />
-        <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="created_at" label="时间" min-width="165" sortable="custom" />
+        <el-table-column label="类型" prop="movement_type" sortable="custom" min-width="110"><template #default="{ row }">{{ movementText(row.movement_type) }}</template></el-table-column>
+        <el-table-column label="数量(g)" prop="quantity_grams" sortable="custom" min-width="110" align="right"><template #default="{ row }"><span :class="Number(row.quantity_grams) < 0 ? 'sf-danger' : 'sf-success'">{{ signed(row.quantity_grams) }}</span></template></el-table-column>
+        <el-table-column label="实存后" prop="on_hand_after" sortable="custom" min-width="110" align="right"><template #default="{ row }">{{ grams(row.on_hand_after) }}</template></el-table-column>
+        <el-table-column label="占用后" prop="reserved_after" sortable="custom" min-width="110" align="right"><template #default="{ row }">{{ grams(row.reserved_after) }}</template></el-table-column>
+        <el-table-column prop="business_type" label="业务来源" min-width="140" sortable="custom" />
+        <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip sortable="custom" />
       </el-table>
       <el-pagination v-model:current-page="ledgerPagination.page" v-model:page-size="ledgerPagination.page_size" :total="ledgerPagination.total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="ledgerState.handlePageChange" @size-change="ledgerState.handleSizeChange" />
     </DetailDrawer>
@@ -122,6 +122,8 @@ const handleSizeChange = listState.handleSizeChange
 async function openLedger(row) { ledgerMaterial.value = row; ledgerVisible.value = true; ledgerState.searchForm.material_id = row.material_id; return ledgerState.handleSearch() }
 function openAdjust(row) { currentMaterial.value = row; Object.assign(adjustForm, { quantity_grams: 0, remark: '' }); adjustIdempotencyKey.value = crypto.randomUUID(); adjustVisible.value = true }
 async function submitAdjust() { if (!Number(adjustForm.quantity_grams)) return msgWarning('调整数量不能为0'); if (!adjustForm.remark.trim()) return msgWarning('请填写调整原因'); const materialId = currentMaterial.value.material_id; adjustSubmitting.value = true; try { await adjustSemifinishedInventory(materialId, { ...adjustForm, idempotency_key: adjustIdempotencyKey.value }); msgSuccessText('库存调整成功'); adjustVisible.value = false; listState.refreshUpdate(); if (ledgerVisible.value && ledgerState.appliedSearchForm.value.material_id === materialId) ledgerState.refreshUpdate() } finally { adjustSubmitting.value = false } }
+function sortTable0({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
+function sortTable1({ prop, order }) { return ledgerState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped src="./semifinished.css"></style>

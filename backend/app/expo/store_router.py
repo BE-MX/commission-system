@@ -93,10 +93,12 @@ def list_stores(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _user=Depends(require_any_permission("expo_store:admin", "expo_store:recharge")),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     rows, total = store_service.list_stores(
         db, keyword=keyword, status=status, limit=limit, offset=offset
-    )
+    , sort_field=sort_field, sort_order=sort_order)
     page = offset // limit + 1 if limit > 0 else 1
     return ok(page_result([_serialize_store(r) for r in rows], total, page, limit))
 
@@ -299,6 +301,8 @@ def list_store_quota_records(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _user=Depends(require_any_permission("expo_store:admin", "expo_store:recharge")),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     store = store_service.get_store_by_id(db, store_id)
     if store is None:
@@ -306,7 +310,7 @@ def list_store_quota_records(
     try:
         rows, total = quota_service.list_quota_records(
             db, store_id, type_=type_, limit=limit, offset=offset
-        )
+        , sort_field=sort_field, sort_order=sort_order)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     page = offset // limit + 1 if limit > 0 else 1

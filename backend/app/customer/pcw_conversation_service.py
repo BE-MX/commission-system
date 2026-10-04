@@ -36,7 +36,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable, Iterable, Mapping
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import select, and_, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -54,6 +54,7 @@ from app.customer.identity_service import CustomerDomainError
 from app.customer.logical_customer_service import resolve_canonical_customer_id
 from app.customer.models import (
     CustomerAccount,
+    CustomerContact,
     CustomerContactPoint,
     CustomerContactRelationship,
     CustomerConversation,
@@ -84,6 +85,8 @@ from app.whatsapp.models import (
     WhatsAppConversation,
     WhatsAppMessage,
 )
+from app.core.list_sort import apply_list_sort
+from app.core.list_sort import apply_items_sort
 
 logger = logging.getLogger(__name__)
 
@@ -431,6 +434,8 @@ def list_pending_bindings(
     actor_permissions: Iterable[str] | None,
     page: int = 1,
     page_size: int = 20,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> dict:
     """WhatsApp 会话待绑定队列；待绑定会话保留源域，不创建占位客户。"""
     perms = _perms(actor_permissions)
@@ -458,15 +463,18 @@ def list_pending_bindings(
         ~active_binding.exists(),
     )
     total = base.count()
-    rows = (
-        base.order_by(
-            WhatsAppConversation.last_message_at.desc(),
-            WhatsAppConversation.id.desc(),
-        )
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
+    candidate_sort = sort_field == "candidate_customer_id" and sort_order in ("asc", "desc")
+    ordered = apply_list_sort(
+        base, sort_field, sort_order, {
+            "contact_name": WhatsAppConversation.contact_name,
+            "contact_phone": WhatsAppConversation.contact_phone,
+            "last_message_at": WhatsAppConversation.last_message_at,
+            "message_count": select(func.count(WhatsAppMessage.id)).where(WhatsAppMessage.conversation_uid == WhatsAppConversation.conversation_uid).scalar_subquery(),
+        },
+        default=(WhatsAppConversation.last_message_at.desc(), WhatsAppConversation.id.desc(),),
+        tie_breakers=(WhatsAppConversation.id.asc(),),
     )
+    rows = ordered.all() if candidate_sort else ordered.offset((page - 1) * page_size).limit(page_size).all()
     counts: dict[str, int] = {}
     if rows:
         counts = {
@@ -507,6 +515,11 @@ def list_pending_bindings(
         }
         for row in rows
     ]
+    if candidate_sort:
+        items = apply_items_sort(items, sort_field, sort_order, {
+            "candidate_customer_id": lambda item: tuple(candidate["customer_id"] for candidate in item["candidate_customers"]) or None,
+        }, tie_breaker=lambda item: (item["source_account_key"], item["source_conversation_id"]))
+        items = items[(page - 1) * page_size:page * page_size]
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
@@ -1248,6 +1261,8 @@ def list_conversations(
     date_to: datetime | str | None = None,
     page: int = 1,
     page_size: int = 20,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> dict:
     """客户已绑定投影会话列表；按当前 active 绑定归属过滤（重绑后旧客户不可见）。"""
     roles, live_permissions = get_live_user_authorization(db, int(actor_user_id))
@@ -1284,9 +1299,15 @@ def list_conversations(
         query = query.filter(CustomerConversation.last_message_at <= date_to)
     total = query.count()
     rows = (
-        query.order_by(
-            CustomerConversation.last_message_at.desc(),
-            CustomerConversation.id.desc(),
+        apply_list_sort(
+            query, sort_field, sort_order, {
+                "channel": CustomerConversation.channel,
+                "last_message_at": CustomerConversation.last_message_at,
+                "message_count": select(func.count(CustomerMessage.id)).where(CustomerMessage.conversation_id == CustomerConversation.id).scalar_subquery(),
+                "contact_name": select(CustomerContact.display_name).where(CustomerContact.id == ConversationBinding.contact_id).scalar_subquery(),
+            },
+            default=(CustomerConversation.last_message_at.desc(), CustomerConversation.id.desc(),),
+            tie_breakers=(CustomerConversation.id.asc(),),
         )
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -1318,10 +1339,13 @@ def list_conversations(
             .group_by(ConversationAnalysisJob.conversation_id)
             .all()
         }
+    contact_ids = {binding.contact_id for _conversation, binding in rows if binding.contact_id is not None}
+    contact_names = {contact.id: contact.display_name for contact in db.query(CustomerContact).filter(CustomerContact.id.in_(contact_ids)).all()} if contact_ids else {}
     items = [
         {
             "conversation_id": int(conversation.id),
             "channel": conversation.channel,
+            "contact_name": contact_names.get(binding.contact_id),
             "source_system": conversation.source_system,
             "contact_id": (
                 int(binding.contact_id) if binding.contact_id is not None else None

@@ -34,13 +34,13 @@
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('salesperson-id')" prop="salesperson_id" label="业务员ID" min-width="200" max-width="300" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('supervisor-id')" prop="supervisor_id" label="一级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('supervisor-name')" prop="supervisor_name" label="一级主管姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('second-supervisor-id')" prop="second_supervisor_id" label="二级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('second-supervisor-name')" prop="second_supervisor_name" label="二级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('effective-start')" prop="effective_start" label="生效日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-id')" prop="salesperson_id" label="业务员ID" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员姓名" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('supervisor-id')" prop="supervisor_id" label="一级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('supervisor-name')" prop="supervisor_name" label="一级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('second-supervisor-id')" prop="second_supervisor_id" label="二级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('second-supervisor-name')" prop="second_supervisor_name" label="二级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('effective-start')" prop="effective_start" label="生效日期" min-width="120" max-width="180" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="操作" min-width="160" max-width="240">
           <template #default="{ row }">
             <GlassButton v-permission="'supervisor:write'" variant="link" left-icon="Edit" @click="openSetDialog(row)">变更主管</GlassButton>
@@ -271,7 +271,6 @@ async function submitImport() {
 /* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
    el-drawer/el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
    .el-overlay 的 position: fixed，抽屉/弹窗打开后看不见 */
-.supervisor-rel-page .toolbar,
 .supervisor-rel-page .table-card,
 .supervisor-rel-page .pagination {
   position: relative;
@@ -295,7 +294,6 @@ async function submitImport() {
   background: transparent;
 }
 
-.toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .history-range { color: var(--text-muted); font-size: 12px; margin-left: 4px; }
 </style>

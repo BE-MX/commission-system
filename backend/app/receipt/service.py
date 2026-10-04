@@ -3,6 +3,8 @@ import hashlib
 from uuid import uuid4
 
 from fastapi import HTTPException
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy import func, or_
 
 from app.core.time import beijing_now
@@ -63,7 +65,7 @@ def describe(db, row, invoice=None, *, detail=False):
 
 
 def list_receipts(db, user, page=1, page_size=20, keyword="", sync_status="", source="", status="",
-                  date_from=None, date_to=None, order_id=None):
+                  date_from=None, date_to=None, order_id=None, sort_field="", sort_order=""):
     query = access.scope(db.query(Receipt, Invoice).join(Invoice, Invoice.id == Receipt.invoice_id), db, user)
     if keyword:
         term = f"%{keyword}%"
@@ -79,8 +81,7 @@ def list_receipts(db, user, page=1, page_size=20, keyword="", sync_status="", so
         query = query.filter(Receipt.collection_date >= date_from)
     if date_to:
         query = query.filter(Receipt.collection_date <= date_to)
-    return {"total": query.count(), "items": [describe(db, r, i) for r, i in query.order_by(
-        Receipt.id.desc()).offset((page - 1) * page_size).limit(page_size).all()]}
+    return {"total": query.count(), "items": [describe(db, r, i) for r, i in apply_list_sort(query, sort_field, sort_order, {**{name: getattr(Receipt, name) for name in ("receipt_no", "amount", "collection_date", "source", "sync_status", "collect_status", "created_at", "remark")}, "attachment_count": func.json_length(Receipt.attachment_ids), "invoice_no": Invoice.invoice_no, "customer_name": Invoice.customer_name, "order_id": func.coalesce(Receipt.xiaoman_order_id, Invoice.xiaoman_order_id)}, default=(Receipt.id.desc(),), tie_breakers=(Receipt.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()]}
 
 
 def order_options(db, user, keyword="", page=1, customer_id="", currency=""):

@@ -28,6 +28,8 @@ def list_products(
     group_name: str | None = None,
     route_bound: str = "all",
     show_disabled: bool = False,
+    sort_field: str = "",
+    sort_order: str = "",
 ) -> tuple[list[dict], int]:
     """产品列表，跨库 JOIN okki_products"""
     biz = settings.BUSINESS_DB_NAME
@@ -62,6 +64,9 @@ def list_products(
     """
     total = db.execute(text(count_sql), params).scalar()
 
+    sort_columns = {"product_no": "p.product_no", "name": "p.name", "model": "p.model", "route_name": "pr.name", "disable_flag": "p.disable_flag"}
+    sort_col = sort_columns.get(sort_field, "p.product_id")
+    sort_dir = sort_order.upper() if sort_field in sort_columns and sort_order in ("asc", "desc") else "DESC"
     data_sql = f"""
         SELECT p.product_id, p.product_no, p.name, p.model,
                p.disable_flag,
@@ -70,7 +75,7 @@ def list_products(
         LEFT JOIN product_process_route ppr ON ppr.product_id = p.product_id
         LEFT JOIN process_route pr ON pr.id = ppr.route_id
         WHERE 1=1 {where_sql}
-        ORDER BY p.product_id DESC
+        ORDER BY ({sort_col} IS NULL) ASC, {sort_col} {sort_dir}, p.product_id ASC
         LIMIT :limit OFFSET :offset
     """
     params["limit"] = page_size

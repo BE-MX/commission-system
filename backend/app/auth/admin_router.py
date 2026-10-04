@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from fastapi import APIRouter, Depends, Query, UploadFile, File
 from sqlalchemy import or_, func
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db
@@ -55,7 +56,6 @@ def list_users(
             ArkUser.real_name.like(like),
         ))
 
-    from sqlalchemy import desc as _desc
     SORT_MAP = {
         "username": ArkUser.username,
         "real_name": ArkUser.real_name,
@@ -63,14 +63,17 @@ def list_users(
         "phone": ArkUser.phone,
         "last_login_at": ArkUser.last_login_at,
         "created_at": ArkUser.created_at,
+        "dingtalk_id": ArkUser.dingtalk_id,
+        "is_active": ArkUser.is_active,
+        "roles": db.query(func.min(ArkRole.label)).join(ArkUserRole, ArkRole.id == ArkUserRole.role_id).filter(ArkUserRole.user_id == ArkUser.id).correlate(ArkUser).scalar_subquery(),
     }
-    sort_col = SORT_MAP.get(sort_field, ArkUser.created_at)
-    order_fn = _desc if sort_order == "desc" else lambda c: c
 
     total = db.query(func.count(ArkUser.id)).filter(*base_filter).scalar()
-    rows = db.query(ArkUser).options(
+    query = db.query(ArkUser).options(
         joinedload(ArkUser.roles),
-    ).filter(*base_filter).order_by(order_fn(sort_col)).offset(
+    ).filter(*base_filter)
+    rows = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
+        default=(ArkUser.created_at.desc(),), tie_breakers=(ArkUser.id.asc(),)).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
 

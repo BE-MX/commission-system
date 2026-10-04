@@ -250,8 +250,10 @@ def list_search_jobs(
     status_filter: str | None = Query(None, alias="status"),
     db: Session = Depends(get_db),
     _user=Depends(require_any_permission(*READ_PERMISSIONS)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
-    rows, total = service.list_search_jobs(db, page, page_size, status_filter)
+    rows, total = service.list_search_jobs(db, page, page_size, status_filter, sort_field=sort_field, sort_order=sort_order)
     return ok(page_result([_job(row) for row in rows], total, page, page_size))
 
 
@@ -277,8 +279,10 @@ def list_search_results(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     _user=Depends(require_any_permission(*READ_PERMISSIONS)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
-    rows, total = _call(service.list_search_results, db, job_id, page, page_size)
+    rows, total = _call(service.list_search_results, db, job_id, page, page_size, sort_field=sort_field, sort_order=sort_order)
     return ok(page_result([_result(row) for row in rows], total, page, page_size))
 
 

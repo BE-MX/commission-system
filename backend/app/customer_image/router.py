@@ -503,10 +503,12 @@ def list_invites(
     payload: dict = Depends(require_any_permission(
         "customer_image:read", "customer_image:write", "customer_image:admin"
     )),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     rows, total = service.list_invites(
         db, _user_id(payload), _is_admin(payload), page, page_size
-    )
+    , sort_field=sort_field, sort_order=sort_order)
     return ok(page_result([_invite(row) for row in rows], total, page, page_size))
 
 
@@ -546,8 +548,10 @@ def list_generations(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission("customer_image:read", "customer_image:admin")),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     rows, total = service.list_generations(
         db, _user_id(payload), _is_admin(payload), page, page_size
-    )
+    , sort_field=sort_field, sort_order=sort_order)
     return ok(page_result([_generation(row) for row in rows], total, page, page_size))

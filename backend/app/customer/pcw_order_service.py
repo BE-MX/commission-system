@@ -62,6 +62,7 @@ from app.customer.pcw_models import (
     ReorderWindow,
 )
 from app.order_intelligence.service import ORDER_STATUS_TERMINATED
+from app.core.list_sort import apply_items_sort
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,8 @@ def list_customer_orders(
     product_family: str | None = None,
     page: int = 1,
     page_size: int = 20,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> dict:
     """客户订单只读列表（api-contracts §3 orders 行）。逻辑客户解析合并客户。
 
@@ -270,6 +273,7 @@ def list_customer_orders(
     rows.sort(
         key=lambda row: (row["effective_date"] or "", row["id"]), reverse=True
     )
+    rows = apply_items_sort(rows, sort_field, sort_order, {**{key: key for key in ("order_no", "effective_date", "order_type", "status")}, "amount": lambda row: Decimal(row["amount"]) if row["amount"] is not None else None}, tie_breaker="id")
     total = len(rows)
     start = (page - 1) * page_size
     return {

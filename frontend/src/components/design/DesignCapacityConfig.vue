@@ -86,20 +86,20 @@
       <!-- Table of existing specific dates -->
       <el-table :data="specificDates" border style="width: 100%; margin-top: 12px;" empty-text="暂无特定日期容量配置" class="list-table">
         <el-table-column prop="config_date" label="日期" min-width="160" sortable />
-        <el-table-column label="时段" min-width="100">
+        <el-table-column prop="period" label="时段" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.period === 'am'" size="small" effect="plain">上午</StatusBadge>
             <StatusBadge v-else-if="row.period === 'pm'" size="small" effect="plain">下午</StatusBadge>
             <StatusBadge v-else size="small" type="info" effect="plain">全天</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column label="星期" min-width="100">
+        <el-table-column prop="config_date" label="星期" min-width="100">
           <template #default="{ row }">
             {{ getWeekday(row.config_date) }}
           </template>
         </el-table-column>
         <el-table-column prop="max_parallel_tasks" label="最大并行任务" min-width="140" />
-        <el-table-column label="与默认值差异" min-width="140">
+        <el-table-column :sort-by="row => row.max_parallel_tasks" label="与默认值差异" min-width="140">
           <template #default="{ row }">
             <StatusBadge
               v-if="row.max_parallel_tasks !== globalCapacity"

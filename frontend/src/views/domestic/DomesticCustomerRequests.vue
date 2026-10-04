@@ -28,25 +28,25 @@
         />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" @sort-change="sortTable">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasRequestFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasRequestFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('created_at')" prop="created_at" label="申请时间" min-width="150" />
-        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="80">
+        <el-table-column v-if="visibleKeys.includes('created_at')" prop="created_at" label="申请时间" min-width="150" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="80" prop="request_type" sortable="custom">
           <template #default="{ row }">{{ REQUEST_TYPE_LABELS[row.request_type] || row.request_type }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('amount')" label="金额/调整" min-width="110" align="right">
+        <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="140" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('amount')" label="金额/调整" min-width="110" align="right" prop="amount" sortable="custom">
           <template #default="{ row }">{{ amountText(row) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="100" prop="membership_level" sortable="custom">
           <template #default="{ row }">{{ membershipText(row) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="申请说明" min-width="160" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('voucher')" label="凭证" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="申请说明" min-width="160" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('voucher')" :sortable="false" label="凭证" min-width="90">
           <template #default="{ row }">
             <el-link v-if="row.has_voucher" type="primary" :disabled="voucherLoadingId === row.id" @click="openVoucher(row)">
               {{ voucherLoadingId === row.id ? '加载中' : '查看凭证' }}
@@ -54,13 +54,13 @@
             <span v-else>—</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('created_by')" prop="created_by_name" label="申请人" min-width="100" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
+        <el-table-column v-if="visibleKeys.includes('created_by')" prop="created_by_name" label="申请人" min-width="100" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" prop="status" sortable="custom">
           <template #default="{ row }">
             <StatusBadge size="small" :type="REQUEST_STATUS_MAP[row.status]?.tag">{{ REQUEST_STATUS_MAP[row.status]?.label || row.status }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('review')" label="审核信息" min-width="180" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('review')" label="审核信息" min-width="180" show-overflow-tooltip prop="review_remark" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.status === 'pending'">—</span>
             <span v-else>{{ row.reviewed_by_name || '—' }} · {{ row.reviewed_at || '' }}<template v-if="row.review_remark"> · {{ row.review_remark }}</template></span>
@@ -115,6 +115,7 @@ const {
 const hasRequestFilters = computed(() => Boolean(
   searchForm.keyword || searchForm.request_type || searchForm.status !== 'pending',
 ))
+function sortTable({ prop, order }) { return listPageState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped>

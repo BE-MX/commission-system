@@ -3,7 +3,7 @@
 from datetime import datetime
 from app.core.time import beijing_now
 
-from sqlalchemy import desc, false, or_
+from sqlalchemy import func, select, desc, false, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.customer.models import CustomerAgentRunScope
 from app.customer.access_service import CustomerAccessDenied, require_customer_access
 from app.customer.logical_customer_service import resolve_canonical_customer_id
+from app.core.list_sort import apply_list_sort
 
 
 _CUSTOMER_PROFILE_KEYS = {"customer_order_copilot", "repurchase_risk_analyst"}
@@ -368,6 +369,8 @@ def list_runs(
     runtime: str | None,
     page: int,
     page_size: int,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> tuple[list[AgentRun], int]:
     query = db.query(AgentRun)
     if not can_read_all:
@@ -378,7 +381,18 @@ def list_runs(
         query = query.filter(AgentRun.source_runtime == runtime)
     query = _visible_delegation_runs(db, query, user_id)
     total = query.count()
-    rows = query.order_by(desc(AgentRun.created_at), desc(AgentRun.id)).offset(
+    rows = apply_list_sort(
+        query, sort_field, sort_order, {
+            "status": AgentRun.status,
+            "source_runtime": AgentRun.source_runtime,
+            "business_ref_type": AgentRun.business_ref_type,
+            "steps_used": AgentRun.steps_used,
+            "created_at": AgentRun.created_at,
+            "task_title": func.coalesce(func.nullif(AgentRun.input_json['question'].as_string(), ''), select(AgentProfile.name).where(AgentProfile.id == AgentRun.profile_id).scalar_subquery()),
+        },
+        default=(desc(AgentRun.created_at), desc(AgentRun.id),),
+        tie_breakers=(AgentRun.id.asc(),),
+    ).offset(
         (page - 1) * page_size).limit(page_size).all()
     return rows, total
 

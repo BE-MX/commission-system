@@ -21,10 +21,12 @@ def list_public_products(
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None, max_length=200, description="搜索产品名/型号"),
     in_stock_only: bool = Query(False, description="只显示有库存的产品"),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
 ):
     result = public_service.query_public_inventory(
-        db, page=page, page_size=page_size, keyword=keyword, in_stock_only=in_stock_only,
+        db, page=page, page_size=page_size, keyword=keyword, in_stock_only=in_stock_only, sort_field=sort_field, sort_order=sort_order,
     )
     return ok({
         "total": result["total"],

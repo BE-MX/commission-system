@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import func
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session
 
 from app.governance.models import (
@@ -102,12 +103,12 @@ def list_concepts(
         "created_at": DataConcept.created_at,
         "status": DataConcept.status,
         "layer": DataConcept.layer,
+        "name_en": DataConcept.name_en,
+        "confidence": DataConcept.confidence,
+        "owner": DataConcept.owner,
     }
-    sort_col = sort_map.get(sort_field, DataConcept.updated_at)
-    if sort_order == "asc":
-        q = q.order_by(sort_col.asc())
-    else:
-        q = q.order_by(sort_col.desc())
+    q = apply_list_sort(q, sort_field, sort_order, sort_map,
+        default=(DataConcept.updated_at.desc(),), tie_breakers=(DataConcept.id.asc(),))
 
     total = q.count()
     items = q.offset((page - 1) * page_size).limit(page_size).all()

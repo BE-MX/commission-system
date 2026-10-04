@@ -29,27 +29,27 @@
         />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchJobs" />
-<el-table v-loading="loading" :data="jobs" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+<el-table v-loading="loading" :data="jobs" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchJobs">
           <el-empty :image-size="96" :description="filters.status ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="filters.status" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('task')" prop="name" label="任务" min-width="190" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('task')" prop="name" label="任务" min-width="190" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="120">
           <template #default="{ row }"><StatusBadge :type="statusMeta(row.status).type" effect="light">{{ statusMeta(row.status).label }}</StatusBadge></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('target-result')" label="目标 / 已发现" min-width="130">
+        <el-table-column sortable="custom" prop="target_count" v-if="visibleKeys.includes('target-result')" label="目标 / 已发现" min-width="130">
           <template #default="{ row }">{{ row.target_count }} / {{ row.result_count }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('created-count')" prop="created_count" label="新客户" min-width="90" />
-        <el-table-column v-if="visibleKeys.includes('deduplicated-count')" prop="deduplicated_count" label="已去重" min-width="90" />
-        <el-table-column v-if="visibleKeys.includes('public-pool-dedup')" prop="public_pool_deduplicated_count" label="公海去重" min-width="100" />
-        <el-table-column v-if="visibleKeys.includes('attempt-count')" prop="attempt_count" label="执行次数" min-width="90" />
-        <el-table-column v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="155">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('created-count')" prop="created_customer_count" label="新客户" min-width="90" />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('deduplicated-count')" prop="deduplicated_count" label="已去重" min-width="90" />
+        <el-table-column  :sortable="false" v-if="visibleKeys.includes('public-pool-dedup')" prop="public_pool_deduplicated_count" label="公海去重" min-width="100" />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('attempt-count')" prop="attempt_count" label="执行次数" min-width="90" />
+        <el-table-column sortable="custom" prop="created_at" v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="155">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('result')" label="结果" min-width="180" show-overflow-tooltip>
+        <el-table-column sortable="custom" prop="error_message" v-if="visibleKeys.includes('result')" label="结果" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.error_message" class="error-text">{{ row.error_message }}</span>
             <span v-else class="muted">{{ resultText(row) }}</span>
@@ -131,7 +131,7 @@ const STATUS_OPTIONS = [
 ]
 const statusMeta = value => STATUS_OPTIONS.find(item => item.value === value) || { label: value || '-', type: 'info' }
 const formatTime = value => formatBeijingDateTime(value)
-const resultText = row => row.status === 'completed' ? `新增 ${row.created_count}，去重 ${row.deduplicated_count}（公海 ${row.public_pool_deduplicated_count || 0}）` : '等待结果'
+const resultText = row => row.status === 'completed' ? `新增 ${row.created_customer_count}，去重 ${row.deduplicated_count}（公海 ${row.public_pool_deduplicated_count || 0}）` : '等待结果'
 
 const listPageState = useListPage(async (params, { signal, isCurrent }) => {
   const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== ''))

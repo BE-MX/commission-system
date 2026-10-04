@@ -45,19 +45,19 @@
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-      <el-table-column v-if="visibleKeys.includes('preview')" label="综合色" min-width="80">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('preview')" prop="computed_hex" label="综合色" min-width="80">
         <template #default="{ row }">
           <div class="blend-preview" :style="{ backgroundColor: row.computed_hex }"></div>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('blend-code')" prop="blend_code" label="编码" min-width="120" sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('display-name')" prop="display_name" label="名称" sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('blend-type')" prop="blend_type" label="类型" min-width="120" sortable="custom">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('blend-code')" prop="blend_code" label="编码" min-width="120" />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('display-name')" prop="display_name" label="名称" />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('blend-type')" prop="blend_type" label="类型" min-width="120">
         <template #default="{ row }">
           <StatusBadge size="small">{{ blendTypeLabel(row.blend_type) }}</StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('components')" label="成分" min-width="200">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('components')" prop="components" label="成分" min-width="200">
         <template #default="{ row }">
           <div class="component-tags">
             <StatusBadge
@@ -71,7 +71,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('source')" prop="source" label="来源" min-width="120">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('source')" prop="source" label="来源" min-width="120">
         <template #default="{ row }">
           {{ sourceLabel(row.source) }}
         </template>
@@ -200,7 +200,7 @@
         <div class="components-detail">
           <p class="section-title">成分明细</p>
           <el-table :data="detailData.components" size="small" border class="list-table">
-            <el-table-column label="色块" min-width="60">
+            <el-table-column :sortable="false" label="色块" min-width="60">
               <template #default="{ row }">
                 <div class="mini-color" :style="{ backgroundColor: row.palette?.hex_code }"></div>
               </template>

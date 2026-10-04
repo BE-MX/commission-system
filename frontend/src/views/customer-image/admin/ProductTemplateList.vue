@@ -30,7 +30,7 @@
       <ListPageStatus v-if="listResource.hasData.value" :paged="false" :error="listResource.errorMessage.value" :loading="loading" :has-data="true" @retry="load()" />
       <el-table v-loading="loading" :data="products" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty><ListPageStatus :paged="false" :error="listResource.errorMessage.value" :loading="loading" @retry="load()"><el-empty v-if="listResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('cover')" label="封面" min-width="86">
+        <el-table-column :sortable="false" v-if="visibleKeys.includes('cover')" label="封面" min-width="86">
           <template #default="{ row }">
             <img v-if="productCoverUrls[row.id]" :src="productCoverUrls[row.id]" :alt="row.name" class="product-cover">
             <GlassButton v-else-if="productCoverErrors[row.id]" variant="link" :loading="productCoverLoading[row.id]" @click="state.retryProductCovers()">封面失败，重试</GlassButton>
@@ -39,13 +39,13 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="产品" min-width="180" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('category')" prop="category" label="分类" min-width="120" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('options')" label="参数" min-width="84">
+        <el-table-column :sort-by="row => row.options?.length || 0" v-if="visibleKeys.includes('options')" label="参数" min-width="84">
           <template #default="{ row }">{{ row.options?.length || 0 }} 项</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('config-version')" label="配置版本" min-width="100">
+        <el-table-column prop="config_version" v-if="visibleKeys.includes('config-version')" label="配置版本" min-width="100">
           <template #default="{ row }">v{{ row.config_version }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
+        <el-table-column prop="is_published" v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge :type="row.is_published ? 'success' : 'info'" effect="plain">
               {{ row.is_published ? '已发布' : '草稿' }}

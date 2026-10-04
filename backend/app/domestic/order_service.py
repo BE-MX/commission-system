@@ -7,9 +7,11 @@ from datetime import date
 from types import SimpleNamespace
 from app.core.time import beijing_now, beijing_today
 
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import aliased, Session
 from pydantic import ValidationError
 
 from app.auth.models import ArkUser
@@ -849,15 +851,24 @@ def list_orders(
 
     total = q.count()
 
-    sortable = {
-        "order_date": DomesticOrder.order_date,
-        "required_ship_date": DomesticOrder.required_ship_date,
-        "domestic_no": DomesticOrder.domestic_no,
-        "status": DomesticOrder.status,
-        "created_at": DomesticOrder.created_at,
+    previous = aliased(DomesticOrder)
+    previous_date = db.query(previous.order_date).filter(
+        previous.customer_id == DomesticOrder.customer_id, previous.deleted_flag == 0,
+        previous.status.notin_(C.ORDER_INACTIVE_STATUSES), previous.order_kind == "business",
+        (previous.order_date < DomesticOrder.order_date) | ((previous.order_date == DomesticOrder.order_date) & (previous.id < DomesticOrder.id)),
+        DomesticOrder.status.notin_(C.ORDER_INACTIVE_STATUSES), DomesticOrder.order_kind == "business",
+    ).order_by(previous.order_date.desc(), previous.id.desc()).limit(1).correlate(DomesticOrder).scalar_subquery()
+    customer_name = db.query(DomesticCustomer.shop_name).filter(DomesticCustomer.id == DomesticOrder.customer_id).correlate(DomesticOrder).scalar_subquery()
+    source = db.query(DomesticCustomer.customer_source).filter(DomesticCustomer.id == DomesticOrder.customer_id).correlate(DomesticOrder).scalar_subquery()
+    owner = db.query(ArkUser.real_name).join(DomesticCustomer, DomesticCustomer.owner_user_id == ArkUser.id).filter(DomesticCustomer.id == DomesticOrder.customer_id).correlate(DomesticOrder).scalar_subquery()
+    sortable = {**{name: getattr(DomesticOrder, name) for name in ("order_date", "required_ship_date", "domestic_no", "status", "created_at", "order_kind", "order_type", "order_channel", "remark")},
+        "customer_name": customer_name, "customer_source_label": source, "owner_name": owner,
+        "order_kind_label": DomesticOrder.order_kind, "order_type_label": DomesticOrder.order_type, "order_channel_label": DomesticOrder.order_channel,
+        "total_qty": db.query(func.coalesce(func.sum(DomesticOrderItem.order_qty), 0)).filter(DomesticOrderItem.order_id == DomesticOrder.id).correlate(DomesticOrder).scalar_subquery(),
+        "actual_ship_date": db.query(func.max(DomesticOrderItem.ship_time)).filter(DomesticOrderItem.order_id == DomesticOrder.id).correlate(DomesticOrder).scalar_subquery(),
+        "last_order_date": previous_date, "repurchase_cycle": func.datediff(DomesticOrder.order_date, previous_date),
     }
-    col = sortable.get(sort_field, DomesticOrder.created_at)
-    q = q.order_by(col.asc() if sort_order == "asc" else col.desc())
+    q = apply_list_sort(q, sort_field, sort_order, sortable, default=(DomesticOrder.created_at.desc(),), tie_breakers=(DomesticOrder.id.asc(),))
     orders = q.offset((page - 1) * page_size).limit(page_size).all()
     if not orders:
         return [], total

@@ -53,34 +53,34 @@
         <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="fetchList" />
         <el-empty v-if="listState.isEmpty.value" :image-size="96" description="暂无数据" />
       </template>
-      <el-table-column v-if="visibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="90" max-width="130">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="90" max-width="130">
         <template #default="{ row }">{{ customerLevelLabel(row.customer_level) }}</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" sortable="custom" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('shoot-type')" label="拍摄类型" min-width="120" max-width="180">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('shoot-type')" prop="shoot_type" label="拍摄类型" min-width="120" max-width="180">
         <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('expect-date')" label="期望日期" min-width="230" max-width="320" prop="expect_start_date" sortable="custom">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('expect-date')" label="期望日期" min-width="230" max-width="320" prop="expect_start_date">
         <template #default="{ row }">
           {{ row.expect_start_date }} {{ row.expect_start_period === 'am' ? '上午' : row.expect_start_period === 'pm' ? '下午' : '' }}
           ~
           {{ row.expect_end_date }} {{ row.expect_end_period === 'am' ? '上午' : row.expect_end_period === 'pm' ? '下午' : '' }}
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120" prop="priority" sortable="custom">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120" prop="priority">
         <template #default="{ row }">
           <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
           </StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="提交时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('attachments')" label="附件" min-width="70" max-width="100">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('created-at')" prop="created_at" label="提交时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('attachments')" prop="attachments" label="附件" min-width="70" max-width="100">
         <template #default="{ row }">
           <GlassButton
             v-if="attachmentCount(row) > 0"
@@ -91,7 +91,7 @@
           <span v-else class="text-muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('conflict')" label="冲突" min-width="110" max-width="120">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('conflict')" prop="conflict_detail" label="冲突" min-width="110" max-width="120">
         <template #default="{ row }">
           <el-popover
             v-if="row.conflict_detail"

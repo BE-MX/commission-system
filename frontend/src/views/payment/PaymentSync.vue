@@ -99,30 +99,30 @@
             <GlassButton v-if="listState.appliedSearchForm.value.keyword" left-icon="RefreshLeft" @click="resetListFilter">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('payment-id')" prop="payment_id" label="回款ID" min-width="180" max-width="270" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单ID" min-width="180" max-width="270" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('payment-date')" prop="payment_date" label="回款日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('payment-amount')" prop="payment_amount" label="回款金额(USD)" min-width="130" max-width="200" sortable="custom">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('payment-id')" prop="payment_id" label="回款ID" min-width="180" max-width="270" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单ID" min-width="180" max-width="270" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('payment-date')" prop="payment_date" label="回款日期" min-width="110" max-width="170" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('payment-amount')" prop="payment_amount" label="回款金额(USD)" min-width="130" max-width="200">
           <template #default="{ row }">{{ formatAmount(row.payment_amount) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('service-fee')" prop="service_fee" label="服务费" min-width="110" max-width="170">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('service-fee')" prop="service_fee" label="服务费" min-width="110" max-width="170">
           <template #default="{ row }">{{ formatAmount(row.service_fee) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('exchange-rate')" prop="exchange_rate" label="汇率" min-width="90" max-width="140">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('exchange-rate')" prop="exchange_rate" label="汇率" min-width="90" max-width="140">
           <template #default="{ row }">{{ formatExchangeRate(row.exchange_rate) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('real-amount-rmb')" prop="real_amount_rmb" label="回款金额(RMB)" min-width="140" max-width="210">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('real-amount-rmb')" prop="real_amount_rmb" label="回款金额(RMB)" min-width="140" max-width="210">
           <template #default="{ row }">{{ formatAmount(row.real_amount_rmb) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('is-calculated')" label="是否已计算" min-width="100" max-width="150">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('is-calculated')" prop="is_calculated" label="是否已计算" min-width="100" max-width="150">
           <template #default="{ row }">
             <StatusBadge :type="row.is_calculated ? 'success' : 'info'" size="small" effect="plain">
               {{ row.is_calculated ? '是' : '否' }}
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('batch-id')" label="所属批次" min-width="120" max-width="180" show-overflow-tooltip>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('batch-id')" prop="batch_id" label="所属批次" min-width="120" max-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.batch_id || '-' }}</template>
         </el-table-column>
       </el-table>

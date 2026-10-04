@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.time import beijing_now
 from app.expo.models import ExpoBeautifyPromptVersion
 from app.expo.prompt_service import PromptError
+from app.core.list_sort import apply_list_sort
 
 
 def serialize(row: ExpoBeautifyPromptVersion, *, detail: bool = False) -> dict:
@@ -30,12 +31,25 @@ def serialize(row: ExpoBeautifyPromptVersion, *, detail: bool = False) -> dict:
     return data
 
 
-def list_versions(db: Session, *, keyword: str = "", page: int = 1, page_size: int = 20):
+def list_versions(db: Session, *, keyword: str = "", page: int = 1, page_size: int = 20,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+):
     query = db.query(ExpoBeautifyPromptVersion)
     if keyword.strip():
         query = query.filter(ExpoBeautifyPromptVersion.name.contains(keyword.strip(), autoescape=True))
     total = query.count()
-    rows = (query.order_by(ExpoBeautifyPromptVersion.published_slot.desc(), ExpoBeautifyPromptVersion.id.desc())
+    rows = (apply_list_sort(
+        query, sort_field, sort_order, {
+            "name": ExpoBeautifyPromptVersion.name,
+            "status": ExpoBeautifyPromptVersion.status,
+            "revision": ExpoBeautifyPromptVersion.revision,
+            "published_at": ExpoBeautifyPromptVersion.published_at,
+            "updated_at": ExpoBeautifyPromptVersion.updated_at,
+        },
+        default=(ExpoBeautifyPromptVersion.published_slot.desc(), ExpoBeautifyPromptVersion.id.desc(),),
+        tie_breakers=(ExpoBeautifyPromptVersion.id.asc(),),
+    )
             .offset((page - 1) * page_size).limit(page_size).all())
     return rows, total
 

@@ -6,9 +6,10 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import bindparam, text
 
 from app.shipping_inspection import outbound_service as records
+from app.shipping_inspection.list_sort_service import QUEUE_SORT_FIELDS, mirror_sort_value, local_sort_value
 
 
-def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id):
+def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sort_field=None):
     rm = records._record_columns(db)
     schema = records._schema()
     clauses, params = records.record_list_filters(
@@ -70,12 +71,17 @@ def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id):
     def key(expr):
         return f"CAST({expr} AS CHAR)" + (" COLLATE utf8mb4_unicode_ci" if mysql else "")
     date_col = records._col(rm, "outbound_date", "r")
+    field = sort_field if sort_field in QUEUE_SORT_FIELDS else None
+    mirror_value = mirror_sort_value(db, field, rm, im, link, schema) if field else "NULL"
+    local_value = local_sort_value(field)
+    if mysql and field in ("outbound_no", "order_id", "customer_name", "outbound_state", "status"):
+        mirror_value, local_value = key(mirror_value), key(local_value)
     query = f"""
         SELECT {key('r.' + rm['id'])} AS entry_id, 0 AS local_entry,
-               {date_col} AS sort_date, r.`{rm['id']}` AS sort_id
+               {date_col} AS sort_date, r.`{rm['id']}` AS sort_id, {mirror_value} AS sort_value
         FROM `{schema}`.`{records.RECORDS_TABLE}` r {mirror_where}
         UNION ALL
-        SELECT {key('t.id')} AS entry_id, 1 AS local_entry, DATE(t.created_at) AS sort_date, t.id AS sort_id
+        SELECT {key('t.id')} AS entry_id, 1 AS local_entry, DATE(t.created_at) AS sort_date, t.id AS sort_id, {local_value} AS sort_value
         FROM ark_okki_outbound_tasks t JOIN ark_invoices f ON f.id=t.invoice_id
         WHERE {' AND '.join(local_clauses)}
     """
@@ -141,11 +147,15 @@ def _local_rows(db, ids):
 
 
 def list_outbound_records(db, *, keyword=None, order_id=None, date_from=None, date_to=None,
-                          page=1, page_size=20, okki_user_id=None):
+                          page=1, page_size=20, okki_user_id=None, sort_field=None, sort_order=None):
     query, params = _queue_query(db, keyword=keyword, order_id=order_id, date_from=date_from,
-                               date_to=date_to, okki_user_id=okki_user_id)
+                               date_to=date_to, okki_user_id=okki_user_id,
+                               sort_field=sort_field if sort_order in ("asc", "desc") else None)
+    order_by = "sort_date DESC, local_entry DESC, sort_id DESC, entry_id DESC"
+    if sort_field in QUEUE_SORT_FIELDS and sort_order in ("asc", "desc"):
+        order_by = f"sort_value IS NULL ASC, sort_value {sort_order.upper()}, local_entry DESC, sort_id DESC, entry_id DESC"
     keys = db.execute(text(f"""SELECT q.*, COUNT(*) OVER () AS total FROM ({query}) q
-        ORDER BY sort_date DESC, local_entry DESC, sort_id DESC, entry_id DESC
+        ORDER BY {order_by}
         LIMIT :limit OFFSET :offset"""),
         {**params, "limit": page_size, "offset": (page - 1) * page_size}).mappings().all()
     # An out-of-range page has no window row to carry the total.

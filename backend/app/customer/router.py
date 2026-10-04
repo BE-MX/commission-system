@@ -111,6 +111,8 @@ def customers(
     focus: str | None = Query(None, pattern="^(commitments|needs|reorder)$"),
     preview_segments: bool = False,
     user=Depends(require_any_permission(*CUSTOMER_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     try:
         if customer_scope is not None:
@@ -122,8 +124,8 @@ def customers(
                 if "customer:admin" not in current["permissions"] and "super_admin" not in current["roles"]:
                     raise pcw_errors.forbidden("分群回放仅供客户管理员查看", error_code="SEGMENT_REPLAY_FORBIDDEN")
             return ok(list_customers(db, user, page=page, page_size=page_size, keyword=keyword,
-                customer_scope=customer_scope, tier=tier, sort=sort, focus=focus, preview=preview_segments))
-        items, total = query_service.list_customers(db, user, page=page, page_size=page_size, keyword=keyword)
+                customer_scope=customer_scope, tier=tier, sort=sort, focus=focus, preview=preview_segments, sort_field=sort_field, sort_order=sort_order))
+        items, total = query_service.list_customers(db, user, page=page, page_size=page_size, keyword=keyword, sort_field=sort_field, sort_order=sort_order)
     except CustomerAccessDenied:
         _not_found()
     return ok(page_result(items, total, page, page_size))
@@ -158,9 +160,11 @@ def research_tasks(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     review_status: str | None = Query(None, pattern="^(pending|accepted|revision_requested|rejected)$"),
     db: Session = Depends(get_db), user=Depends(require_any_permission(*RESEARCH_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     try:
-        items, total = query_service.list_research_tasks(db, user, page=page, page_size=page_size, review_status=review_status)
+        items, total = query_service.list_research_tasks(db, user, page=page, page_size=page_size, review_status=review_status, sort_field=sort_field, sort_order=sort_order)
     except CustomerAccessDenied:
         _not_found()
     return ok(page_result(items, total, page, page_size))
@@ -178,8 +182,10 @@ def search_jobs(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     status_filter: str | None = Query(None, alias="status"), db: Session = Depends(get_db),
     user=Depends(require_any_permission(*ACQUISITION_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
-    return acquisition_views.list_search_jobs(page, page_size, status_filter, db, user)
+    return acquisition_views.list_search_jobs(page, page_size, status_filter, db, user, sort_field=sort_field, sort_order=sort_order)
 
 @router.post("/search-jobs", status_code=status.HTTP_201_CREATED)
 def create_search_job(payload: SearchJobCreate, db: Session = Depends(get_db), user=Depends(require_any_permission(*ACQUISITION_WRITE))):
@@ -193,8 +199,10 @@ def requeue_search_job(job_id: int, db: Session = Depends(get_db), user=Depends(
 def search_job_results(
     job_id: int, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db), user=Depends(require_any_permission(*ACQUISITION_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
-    return acquisition_views.list_search_results(job_id, page, page_size, db, user)
+    return acquisition_views.list_search_results(job_id, page, page_size, db, user, sort_field=sort_field, sort_order=sort_order)
 
 @router.get("/public-pool/audit")
 def public_pool_audit(db: Session = Depends(get_db), user=Depends(require_any_permission(*ACQUISITION_READ))):
@@ -279,8 +287,10 @@ def qualification_queue(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None, max_length=255),
     db: Session = Depends(get_db), user=Depends(require_any_permission(*RESEARCH_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
-    return ok(qualification_service.list_queue(db, user, page=page, page_size=page_size, keyword=keyword))
+    return ok(qualification_service.list_queue(db, user, page=page, page_size=page_size, keyword=keyword, sort_field=sort_field, sort_order=sort_order))
 
 
 @router.get("/qualification-queue/{task_id}")
@@ -343,9 +353,11 @@ def submit_qualification_review(payload: QualificationReviewSubmit, db: Session 
 def opportunities(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db), user=Depends(require_any_permission(*OPPORTUNITY_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     try:
-        items, total = query_service.list_opportunities(db, user, page=page, page_size=page_size)
+        items, total = query_service.list_opportunities(db, user, page=page, page_size=page_size, sort_field=sort_field, sort_order=sort_order)
     except CustomerAccessDenied:
         _not_found()
     return ok(page_result(items, total, page, page_size))
@@ -378,9 +390,11 @@ def update_opportunity(
 def actions(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db), user=Depends(require_any_permission(*ACTION_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     try:
-        items, total = query_service.list_actions(db, user, page=page, page_size=page_size)
+        items, total = query_service.list_actions(db, user, page=page, page_size=page_size, sort_field=sort_field, sort_order=sort_order)
     except CustomerAccessDenied:
         _not_found()
     return ok(page_result(items, total, page, page_size))

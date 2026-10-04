@@ -30,7 +30,7 @@
       <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="角色标识" min-width="140" max-width="210" show-overflow-tooltip sortable />
       <el-table-column v-if="visibleKeys.includes('label')" prop="label" label="角色名称" min-width="140" max-width="210" show-overflow-tooltip sortable />
       <el-table-column v-if="visibleKeys.includes('description')" prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="110" max-width="150">
+      <el-table-column prop="is_system" v-if="visibleKeys.includes('type')" label="类型" min-width="110" max-width="150">
         <template #default="{ row }">
           <StatusBadge :type="row.is_system ? 'warning' : 'primary'" size="small" effect="plain">{{ row.is_system ? '系统' : '自定义' }}</StatusBadge>
         </template>

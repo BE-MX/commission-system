@@ -32,7 +32,7 @@
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </template>
-        <el-table-column v-if="visibleKeys.includes('swatch')" label="色板图" min-width="70">
+        <el-table-column :sortable="false" v-if="visibleKeys.includes('swatch')" label="色板图" min-width="70">
           <template #default="{ row }">
             <el-image v-if="row.swatch_url" :src="row.thumb_url || row.swatch_url" :preview-src-list="[row.swatch_url]" preview-teleported fit="cover" class="swatch-thumb" />
             <span v-else class="swatch-empty">无</span>
@@ -40,7 +40,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('code')" prop="code" label="色号" min-width="90" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="名称" min-width="120" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('hex')" label="色块" min-width="80">
+        <el-table-column :sortable="false" v-if="visibleKeys.includes('hex')" label="色块" min-width="80">
           <template #default="{ row }">
             <span v-if="row.hex" class="hex-dot" :style="{ background: row.hex }" />
             <span v-else class="swatch-empty">—</span>
@@ -48,7 +48,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('description')" prop="color_description" label="颜色描述" min-width="240" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('priority')" prop="priority" label="优先级" min-width="80" sortable />
-        <el-table-column v-if="visibleKeys.includes('is-active')" label="启用" min-width="80">
+        <el-table-column prop="is_active" v-if="visibleKeys.includes('is-active')" label="启用" min-width="80">
           <template #default="{ row }">
             <el-switch :model-value="!!row.is_active" @change="(v) => toggleActive(row, v)" />
           </template>

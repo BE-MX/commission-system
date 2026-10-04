@@ -54,8 +54,10 @@ def festival_orders(
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None, max_length=100),
     user_id: str | None = Query(None),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     current_user=Depends(require_permission(FESTIVAL_ORDER_PERMISSION)),
 ):
     scope = order_service.resolve_scope(db, current_user, user_id)
-    return ok(order_service.list_orders(db, type, scope, page, page_size, keyword))
+    return ok(order_service.list_orders(db, type, scope, page, page_size, keyword, sort_field, sort_order))

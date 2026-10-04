@@ -40,7 +40,7 @@
       :expand-row-keys="expandedRows"
       @expand-change="handleExpand"
       class="order-table list-table"
-    >
+     @sort-change="handlePrintSort">
       <template #empty><ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="loadOrders" /></template>
       <el-table-column type="expand">
         <template #default="{ row }">
@@ -89,27 +89,27 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="生产单号" prop="order_no" min-width="150">
+      <el-table-column label="生产单号" prop="order_no" min-width="150" sortable="custom">
         <template #default="{ row }">
           <span class="order-no">{{ row.order_no }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="批次号" prop="batch_no" min-width="150" />
-      <el-table-column label="状态" prop="status_label" min-width="120">
+      <el-table-column label="批次号" prop="batch_no" min-width="150" sortable="custom" />
+      <el-table-column label="状态" prop="status" min-width="120" sortable="custom">
         <template #default="{ row }">
           <StatusBadge :type="statusType(row.status)" size="small" effect="light">{{ row.status_label }}</StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column label="明细数" prop="item_count" min-width="80" />
-      <el-table-column label="总数量" prop="total_order_qty" min-width="90">
+      <el-table-column label="明细数" prop="item_count" min-width="80" sortable="custom" />
+      <el-table-column label="总数量" prop="total_order_qty" min-width="90" sortable="custom">
         <template #default="{ row }">
           <span class="qty-text">{{ row.total_order_qty }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" prop="created_at" min-width="160">
+      <el-table-column label="创建时间" prop="created_at" min-width="160" sortable="custom">
         <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
       </el-table-column>
-      <el-table-column label="最近打印" min-width="160">
+      <el-table-column label="最近打印" prop="last_order_printed_at" sortable="custom" min-width="160">
         <template #default="{ row }">
           <template v-if="row.last_order_printed_at">
             <span :class="{ 'stale-time': isStale(row.last_order_printed_at) }">{{ formatTime(row.last_order_printed_at) }}</span>
@@ -162,7 +162,7 @@ import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
 import { formatBeijingDateTime, parseApiDateTime } from '@/utils/datetime'
 
 const listState = useListPage(async (params, { signal }) => {
-  const response = await getProductionPrintOrders({ ...params, keyword: params.keyword || undefined, status: params.status ?? undefined, print_state: params.print_state || undefined, sort_field: 'created_at', sort_order: 'desc' }, { signal, suppressToast: true })
+  const response = await getProductionPrintOrders({ ...params, keyword: params.keyword || undefined, status: params.status ?? undefined, print_state: params.print_state || undefined }, { signal, suppressToast: true })
   const payload = response.data ?? response
   return { items: (payload.items || []).map(item => ({ ...item, _categories: null, _categoriesLoading: false, _categoriesError: '' })), total: payload.total || 0 }
 }, { searchForm: { keyword: '', status: null, print_state: null } })
@@ -271,6 +271,7 @@ function statusType(status) {
 }
 
 
+function handlePrintSort({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped>
@@ -293,6 +294,7 @@ function statusType(status) {
 }
 
 .toolbar {
+  top: auto;
   display: flex;
   align-items: center;
   gap: 12px;

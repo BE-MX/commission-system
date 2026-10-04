@@ -30,7 +30,7 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="load" />
-      <el-table v-if="activeTab === 'materials'" v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="selectedMaterials = $event">
+      <el-table v-if="activeTab === 'materials'" v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="selectedMaterials = $event" @sort-change="sortTable0">
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
           <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -38,30 +38,30 @@
           </el-empty>
         </template>
         <el-table-column type="selection" min-width="48" />
-        <el-table-column v-if="visibleKeys.includes('material')" label="半成品" min-width="180">
+        <el-table-column v-if="visibleKeys.includes('material')" label="半成品" min-width="180" prop="material_code" sortable="custom">
           <template #default="{ row }"><div class="sf-material"><strong>{{ row.size }}/{{ row.color_code }}</strong><small>{{ row.material_code }}</small></div></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('color-type')" prop="color_type" label="色型" min-width="100" />
-        <el-table-column v-if="visibleKeys.includes('product-count')" prop="product_count" label="关联产品" min-width="100" align="right" />
-        <el-table-column v-if="visibleKeys.includes('on-hand')" label="实存(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.on_hand_grams) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('reserved')" label="占用(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.reserved_grams) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('available')" label="可用(g)" min-width="110" align="right"><template #default="{ row }"><strong>{{ grams(row.available_grams) }}</strong></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :value="row.status === 'active'" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('color-type')" prop="color_type" label="色型" min-width="100" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('product-count')" prop="product_count" label="关联产品" min-width="100" align="right" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('on-hand')" label="实存(g)" min-width="110" align="right" prop="on_hand_grams" sortable="custom"><template #default="{ row }">{{ grams(row.on_hand_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('reserved')" label="占用(g)" min-width="110" align="right" prop="reserved_grams" sortable="custom"><template #default="{ row }">{{ grams(row.reserved_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('available')" label="可用(g)" min-width="110" align="right" prop="available_grams" sortable="custom"><template #default="{ row }"><strong>{{ grams(row.available_grams) }}</strong></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" prop="status" sortable="custom"><template #default="{ row }"><StatusBadge :value="row.status === 'active'" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
       </el-table>
 
-      <el-table v-else v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-else v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="sortTable1">
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
           <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
           </el-empty>
         </template>
-        <el-table-column v-if="visibleKeys.includes('product')" prop="product_name" label="产品" min-width="300" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('model')" prop="model" label="型号" min-width="170" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('spec')" label="规格" min-width="170"><template #default="{ row }">{{ row.size }}/{{ row.color_expression }}/{{ grams(row.unit_grams) }}g</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('components')" label="半成品组成" min-width="240"><template #default="{ row }"><StatusBadge v-for="item in row.components" :key="item.material_id" size="small" effect="plain" style="margin: 2px">{{ item.size }}/{{ item.color_code }} · {{ percent(item.ratio) }}</StatusBadge></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('review')" label="审核" min-width="110"><template #default="{ row }"><StatusBadge :type="row.parse_status === 'confirmed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status === 'confirmed' ? '已确认' : '待审核' }}</StatusBadge></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('parse-message')" label="说明" min-width="160" prop="parse_message" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('product')" prop="product_name" label="产品" min-width="300" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('model')" prop="model" label="型号" min-width="170" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('spec')" label="规格" min-width="170" prop="size" sortable="custom"><template #default="{ row }">{{ row.size }}/{{ row.color_expression }}/{{ grams(row.unit_grams) }}g</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('components')" prop="components" sortable="custom" label="半成品组成" min-width="240"><template #default="{ row }"><StatusBadge v-for="item in row.components" :key="item.material_id" size="small" effect="plain" style="margin: 2px">{{ item.size }}/{{ item.color_code }} · {{ percent(item.ratio) }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('review')" label="审核" min-width="110" prop="parse_status" sortable="custom"><template #default="{ row }"><StatusBadge :type="row.parse_status === 'confirmed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status === 'confirmed' ? '已确认' : '待审核' }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('parse-message')" label="说明" min-width="160" prop="parse_message" show-overflow-tooltip sortable="custom" />
         <el-table-column class-name="table-action-column" label="操作" min-width="90" fixed="right"><template #default="{ row }"><el-button v-permission="'semifinished:write'" link type="primary" @click="editMapping(row)"><el-icon><Setting /></el-icon>配比</el-button></template></el-table-column>
       </el-table>
 
@@ -87,7 +87,7 @@
       </div>
       <el-table :data="preview?.examples || []" max-height="360" border class="list-table">
         <el-table-column prop="product_name" label="产品" min-width="280" show-overflow-tooltip />
-        <el-table-column label="解析结果" min-width="230"><template #default="{ row }">{{ row.components.map(c => `${row.size}/${c}`).join('、') }}</template></el-table-column>
+        <el-table-column :sort-by="row => (row.components.map(c => `${row.size}/${c}`).join('、'))" label="解析结果" min-width="230"><template #default="{ row }">{{ row.components.map(c => `${row.size}/${c}`).join('、') }}</template></el-table-column>
         <el-table-column prop="message" label="说明" min-width="160" show-overflow-tooltip />
       </el-table>
     </DetailDrawer>
@@ -222,6 +222,8 @@ async function submitOrder() {
   msgSuccessText('半成品订单已创建'); orderVisible.value = false; listState.refreshUpdate()
 }
 
+function sortTable0({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
+function sortTable1({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped src="./semifinished.css"></style>

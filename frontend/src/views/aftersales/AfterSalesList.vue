@@ -52,35 +52,35 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table :data="cases" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @row-dblclick="openCase">
+<el-table :data="cases" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @row-dblclick="openCase" @sort-change="sortTable">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('case-no')" prop="case_no" label="售后单号" min-width="150" max-width="210" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('case-no')" prop="case_no" label="售后单号" min-width="150" max-width="210" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><button class="case-link" @click="openCase(row)">{{ row.case_no }}</button></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name_snapshot" label="客户" min-width="150" max-width="240" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no_snapshot" label="订单号" min-width="120" max-width="180" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('issue-type')" prop="primary_issue_type" label="问题类型" min-width="110" max-width="160" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('product')" prop="product_name_snapshot" label="产品" min-width="150" max-width="240" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('evidence')" label="证据" min-width="100" max-width="130">
+        <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name_snapshot" label="客户" min-width="150" max-width="240" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no_snapshot" label="订单号" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('issue-type')" prop="primary_issue_type" label="问题类型" min-width="110" max-width="160" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('product')" prop="product_name_snapshot" label="产品" min-width="150" max-width="240" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('evidence')" label="证据" min-width="100" max-width="130" prop="evidence_score" sortable="custom">
           <template #default="{ row }"><span class="tabular">{{ row.evidence_score }}%</span></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('responsibility')" label="责任判定" min-width="110" max-width="150">
+        <el-table-column v-if="visibleKeys.includes('responsibility')" label="责任判定" min-width="110" max-width="150" prop="responsibility_class" sortable="custom">
           <template #default="{ row }"><StatusBadge v-if="row.responsibility_class" effect="plain">{{ row.responsibility_class }} 类</StatusBadge><span v-else>—</span></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('compensation')" label="赔偿成本" min-width="120" max-width="170">
+        <el-table-column v-if="visibleKeys.includes('compensation')" label="赔偿成本" min-width="120" max-width="170" prop="estimated_compensation_usd" sortable="custom">
           <template #default="{ row }"><span class="tabular">{{ row.has_compensation ? formatMoney(row.estimated_compensation_usd, { currency: 'USD', missing: '—' }) : '无赔偿' }}</span></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('actions')" label="处理措施" min-width="160" max-width="260" show-overflow-tooltip><template #default="{ row }">{{ actionSummary(row.selected_actions_json) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="200" max-width="230">
+        <el-table-column v-if="visibleKeys.includes('actions')" label="处理措施" min-width="160" max-width="260" show-overflow-tooltip prop="selected_actions_json" sortable="custom"><template #default="{ row }">{{ actionSummary(row.selected_actions_json) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="200" max-width="230" prop="current_status" sortable="custom">
           <template #default="{ row }"><StatusBadge :value="row.current_status" :dictionary="CASE_STATUS" effect="plain" /></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('creator')" prop="creator_name_snapshot" label="业务员" min-width="100" max-width="150" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('owner')" prop="current_owner_name" label="当前责任人" min-width="110" max-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.current_owner_name || '—' }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('waiting')" label="等待时长" min-width="100" max-width="130"><template #default="{ row }"><span class="tabular">{{ row.waiting_hours }}h</span></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('creator')" prop="creator_name_snapshot" label="业务员" min-width="100" max-width="150" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('owner')" prop="current_owner_name" label="当前责任人" min-width="110" max-width="160" show-overflow-tooltip sortable="custom"><template #default="{ row }">{{ row.current_owner_name || '—' }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('waiting')" label="等待时长" min-width="100" max-width="130" prop="waiting_hours" sortable="custom"><template #default="{ row }"><span class="tabular">{{ row.waiting_hours }}h</span></template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="100" max-width="130" fixed="right">
           <template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="openCase(row)">查看</GlassButton></template>
         </el-table-column>
@@ -175,6 +175,7 @@ onMounted(async () => {
   }
   fetchList()
 })
+function sortTable({ prop, order }) { return listPageState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped>

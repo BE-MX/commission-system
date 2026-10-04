@@ -50,6 +50,8 @@ def query_public_inventory(
     page_size: int = 20,
     keyword: Optional[str] = None,
     in_stock_only: bool = False,
+    sort_field: str = "",
+    sort_order: str = "",
 ) -> dict:
     """产品四要素 + 有货标识分页查询（有货口径 = 小满可用库存 enable_count > 0）。"""
     business_db = get_settings().BUSINESS_DB_NAME
@@ -79,13 +81,31 @@ def query_public_inventory(
     if total == 0:
         return {"total": 0, "items": []}
 
+    # Only public displayed values may be sorted. Quantity ordering would leak internal stock.
+    name = "COALESCE(p.name, '')"
+    parts = f"(LENGTH({name}) - LENGTH(REPLACE({name}, '/', '')) + 1)"
+    second = f"SUBSTRING_INDEX(SUBSTRING_INDEX({name}, '/', 2), '/', -1)"
+    internal_color = f"CASE WHEN {parts} >= 5 AND SUBSTRING_INDEX(SUBSTRING_INDEX({name}, '/', -3), '/', 1) LIKE '#%' THEN SUBSTRING_INDEX(SUBSTRING_INDEX({name}, '/', -3), '/', 2) ELSE SUBSTRING_INDEX(SUBSTRING_INDEX({name}, '/', -2), '/', 1) END"
+    columns = {
+        "type": f"SUBSTRING_INDEX({name}, '/', 1)",
+        "size": f"CASE WHEN {parts} = 1 OR ({parts} < 4 AND {second} LIKE '#%') THEN '' ELSE {second} END",
+        "color": f"CASE WHEN {parts} = 1 THEN '' WHEN {parts} < 4 THEN CASE WHEN {second} LIKE '#%' THEN {second} ELSE '' END ELSE {internal_color} END",
+        "weight": f"CASE WHEN {parts} >= 4 OR {parts} = 3 THEN SUBSTRING_INDEX({name}, '/', -1) ELSE '' END",
+        "in_stock": "(COALESCE(inv.enable_count, 0) > 0)",
+    }
+    if sort_field in columns and sort_order in ("asc", "desc"):
+        sort_col = columns[sort_field]
+        order_sql = f"({sort_col} IS NULL) ASC, {sort_col} {sort_order.upper()}, p.product_id ASC"
+    else:
+        order_sql = "p.name ASC, p.product_id ASC"
+
     rows = db.execute(
         text(f"""
             SELECT p.product_id AS product_id,
                    p.name       AS name,
                    COALESCE(inv.enable_count, 0) AS available
             {base}
-            ORDER BY p.name, p.product_id
+            ORDER BY {order_sql}
             LIMIT :limit OFFSET :offset
         """),
         {**params, "limit": page_size, "offset": (page - 1) * page_size},

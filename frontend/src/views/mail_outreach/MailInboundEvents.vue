@@ -7,13 +7,13 @@
     <div class="action-bar"><TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columns" :fullscreen="isFullscreen" @refresh="fetchList" @fullscreen="toggleFullscreen" /></div>
     <ListPageStatus v-if="hasData" :error="errorMessage" :loading="loading" :has-data="hasData" @retry="fetchList" />
     <div ref="panelRef">
-      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" row-key="id">
-        <el-table-column v-if="visibleKeys.includes('from')" prop="from_address" label="发件人" min-width="180" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('subject')" prop="subject" label="主题" min-width="220" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('classification')" label="分类" min-width="100"><template #default="{ row }">{{ EVENT_CLASSIFICATION_LABELS[row.classification] || row.classification || '待分类' }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('customer')" label="客户 / 任务" min-width="140"><template #default="{ row }">{{ row.matched_customer_id ? `客户 #${row.matched_customer_id}` : '未匹配客户' }} / {{ row.matched_job_id || '-' }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('received')" label="收到时间（北京时间）" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.received_at_utc, { naiveTimeZone: 'UTC' }) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('processed')" prop="processed_status" label="处理状态" min-width="120" />
+      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" row-key="id" @sort-change="mailEventsState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('from')" prop="from_address" label="发件人" min-width="180" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('subject')" prop="subject" label="主题" min-width="220" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="classification" v-if="visibleKeys.includes('classification')" label="分类" min-width="100"><template #default="{ row }">{{ EVENT_CLASSIFICATION_LABELS[row.classification] || row.classification || '待分类' }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="matched_customer_id" v-if="visibleKeys.includes('customer')" label="客户 / 任务" min-width="140"><template #default="{ row }">{{ row.matched_customer_id ? `客户 #${row.matched_customer_id}` : '未匹配客户' }} / {{ row.matched_job_id || '-' }}</template></el-table-column>
+        <el-table-column sortable="custom" prop="received_at_utc" v-if="visibleKeys.includes('received')" label="收到时间（北京时间）" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.received_at_utc, { naiveTimeZone: 'UTC' }) }}</template></el-table-column>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('processed')" prop="processed_status" label="处理状态" min-width="120" />
         <el-table-column label="操作" min-width="120" class-name="table-action-column"><template #default="{ row }"><GlassButton v-any-permission="['mail_outreach:write','mail_outreach:admin']" variant="link" left-icon="Edit" @click="open(row)">修正分类</GlassButton></template></el-table-column>
         <template #empty><ListPageStatus :error="errorMessage" :loading="loading" :has-data="false" @retry="fetchList">暂无可见收信事件。需执行器监听收到并关联客户后才会显示。</ListPageStatus></template>
       </el-table>
@@ -41,7 +41,9 @@ import { msgSuccess } from '@/utils/feedback'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
 import { EVENT_CLASSIFICATION_LABELS } from './presentation'
-const { list, loading, total, page, pageSize, searchForm, hasPendingSearch, hasData, errorMessage, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange, refreshUpdate } = useListPage(async (params, { signal }) => (await listMailEvents(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '')), { signal, suppressToast: true })).data, { searchForm: { classification: '' } })
+const mailEventsState = useListPage(async (params, { signal }) => (await listMailEvents(Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '')), { signal, suppressToast: true })).data, { searchForm: { classification: '' } })
+const { list, loading, total, page, pageSize, searchForm, hasPendingSearch, hasData, errorMessage, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange, refreshUpdate } = mailEventsState
+
 const columns = [{ key: 'from', label: '发件人' }, { key: 'subject', label: '主题' }, { key: 'classification', label: '分类' }, { key: 'customer', label: '客户 / 任务' }, { key: 'received', label: '收到时间' }, { key: 'processed', label: '处理状态' }]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('mail-inbound-events', columns)
 const visible = ref(false), saving = ref(false), saveError = ref(null), selected = ref(null)

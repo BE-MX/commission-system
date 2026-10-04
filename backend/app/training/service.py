@@ -1,6 +1,8 @@
 """培训速递 — 核心 service：CRUD / 发布校验（★必填分区） / 有用反馈 / 删除清理"""
 
 import logging
+from sqlalchemy import String
+from app.core.list_sort import apply_list_sort
 from datetime import datetime
 from app.core.time import beijing_now
 
@@ -142,6 +144,8 @@ def list_digests(
     tag: str = "",
     status: str = "",
     mine: bool = False,
+    sort_field: str = "trained_at",
+    sort_order: str = "desc",
 ) -> dict:
     """默认只看已发布；mine=true 看自己创建的全部（含草稿）。"""
     q = db.query(TrainingDigest)
@@ -159,7 +163,18 @@ def list_digests(
             | TrainingDigest.lecturer.like(kw)
             | TrainingDigest.summary.like(kw)
         )
-    q = q.order_by(TrainingDigest.trained_at.desc(), TrainingDigest.id.desc())
+    columns = {
+        "title": TrainingDigest.title,
+        "trained_at": TrainingDigest.trained_at,
+        "read_minutes": TrainingDigest.read_minutes,
+        "useful_count": TrainingDigest.useful_count,
+        "view_count": TrainingDigest.view_count,
+        "tags": TrainingDigest.tags_json.cast(String),
+        "org_lecturer": func.coalesce(TrainingDigest.org, '') + ' / ' + func.coalesce(TrainingDigest.lecturer, ''),
+        "creator_name": db.query(func.coalesce(func.nullif(ArkUser.real_name, ''), ArkUser.username)).filter(ArkUser.id == TrainingDigest.created_by).correlate(TrainingDigest).scalar_subquery(),
+    }
+    q = apply_list_sort(q, sort_field, sort_order, columns,
+        default=(TrainingDigest.trained_at.desc(), TrainingDigest.id.desc()), tie_breakers=(TrainingDigest.id.asc(),))
     if tag.strip():
         # JSON 标签过滤：全量取回后内存过滤再分页（速递为低量数据，正确性优先；
         # JSON_CONTAINS 在 SQLite 测试库不可用，LIKE 会被 ensure_ascii 转义坑掉）

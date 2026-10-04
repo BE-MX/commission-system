@@ -46,7 +46,7 @@
           <el-table :data="stats.top_assets" size="small" class="stats-table list-table" border>
             <el-table-column type="index" min-width="40" />
             <el-table-column label="文件名" prop="file_name" show-overflow-tooltip sortable />
-            <el-table-column label="类型" min-width="100">
+            <el-table-column prop="file_type" label="类型" min-width="100">
               <template #default="{ row }">
                 <StatusBadge size="small" :type="fileTypeTag(row.file_type)">
                   {{ fileTypeLabel(row.file_type) }}
@@ -152,6 +152,7 @@ onMounted(() => {
 }
 
 .toolbar {
+  top: auto;
   margin-bottom: 20px;
 }
 

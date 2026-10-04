@@ -7,7 +7,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import func, or_
+from app.core.list_sort import apply_list_sort
+
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 
 from app.aftersales import query_service, service
@@ -255,6 +257,8 @@ def list_cases(
     date_to: date | None = None,
     assigned_to_me: bool = False,
     scope: str = "mine",
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin")),
 ):
@@ -301,7 +305,7 @@ def list_cases(
         query = query.filter(AfterSalesCase.feedback_date <= date_to)
     total = query.count()
     items = (
-        query.order_by(AfterSalesCase.created_at.desc())
+        apply_list_sort(query, sort_field, ("desc" if sort_order == "asc" else "asc") if sort_field == "waiting_hours" and sort_order in ("asc", "desc") else sort_order, {**{name: getattr(AfterSalesCase, name) for name in ("case_no", "customer_name_snapshot", "order_no_snapshot", "primary_issue_type", "product_name_snapshot", "evidence_score", "responsibility_class", "estimated_compensation_usd", "current_status", "creator_name_snapshot")}, "current_owner_name": db.query(ArkUser.real_name).filter(ArkUser.id == AfterSalesCase.current_owner_user_id).correlate(AfterSalesCase).scalar_subquery(), "waiting_hours": AfterSalesCase.updated_at, "selected_actions_json": cast(AfterSalesCase.selected_actions_json, String)}, default=(AfterSalesCase.created_at.desc(),), tie_breakers=(AfterSalesCase.id.asc(),))
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

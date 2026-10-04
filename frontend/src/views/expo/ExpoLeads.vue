@@ -33,28 +33,28 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchLeads" />
-<el-table :data="leads" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+<el-table :data="leads" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchLeads">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="姓名" min-width="100" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('phone')" prop="phone" label="电话" min-width="120" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('primary-need')" label="核心需求" min-width="100">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('name')" prop="name" label="姓名" min-width="100" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('phone')" prop="phone" label="电话" min-width="120" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="primary_need" v-if="visibleKeys.includes('primary-need')" label="核心需求" min-width="100">
           <template #default="{ row }">{{ NEED_LABELS[row.primary_need] || row.primary_need || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('usage')" label="体验 / 生成" min-width="100">
+        <el-table-column sortable="custom" prop="session_count" v-if="visibleKeys.includes('usage')" label="体验 / 生成" min-width="100">
           <template #default="{ row }">{{ row.session_count }} 次 / {{ row.result_count }} 张</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('intent-level')" label="意向等级" min-width="100">
+        <el-table-column sortable="custom" prop="intent_level" v-if="visibleKeys.includes('intent-level')" label="意向等级" min-width="100">
           <template #default="{ row }">
             <StatusBadge v-if="row.intent_level" size="small" :class="'intent-' + row.intent_level">{{ row.intent_level }} 级</StatusBadge>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('next-action')" prop="next_action" label="下一步动作" min-width="150" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="登记时间" min-width="150" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('next-action')" prop="next_action" label="下一步动作" min-width="150" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('created-at')" prop="created_at" label="登记时间" min-width="150" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>

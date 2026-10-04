@@ -42,18 +42,18 @@
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('batch-name')" prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('period-type')" label="周期类型" min-width="90" max-width="140">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('batch-name')" prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('period-type')" prop="period_type" label="周期类型" min-width="90" max-width="140">
           <template #default="{ row }">{{ periodLabel(row.period_type) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('period-start')" prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('period-end')" prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="110" max-width="140" sortable="custom">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('period-start')" prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('period-end')" prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="110" max-width="140">
           <template #default="{ row }">
             <StatusBadge :type="batchStatusType(row.status)" size="small" effect="plain">{{ batchStatusLabel(row.status) }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('confirm-progress')" label="确认进度" min-width="160" max-width="220">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('confirm-progress')" prop="confirmed_count" label="确认进度" min-width="160" max-width="220">
           <template #default="{ row }">
             <div class="confirm-progress">
               <span>{{ row.confirmed_count || 0 }}/{{ row.expected_confirm_count || 0 }}</span>
@@ -66,15 +66,15 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('confirmation-status')" label="确认状态" min-width="120" max-width="160">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('confirmation-status')" prop="confirmation_status" label="确认状态" min-width="120" max-width="160">
           <template #default="{ row }">
             <StatusBadge :type="confirmationStatusType(row.confirmation_status)" size="small" effect="plain">
               {{ confirmationStatusLabel(row.confirmation_status) }}
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('feedback-count')" prop="feedback_count" label="反馈数" min-width="80" max-width="120" align="right" />
-        <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('feedback-count')" prop="feedback_count" label="反馈数" min-width="80" max-width="120" align="right" />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
         <el-table-column class-name="table-action-column" label="操作" min-width="280" max-width="420" fixed="right">
           <template #default="{ row }">
             <!-- 草稿 -->

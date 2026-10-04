@@ -16,7 +16,9 @@ from app.core.time import beijing_today
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import func, or_
+from app.core.list_sort import apply_list_sort, apply_items_sort
+
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.salary import pii
@@ -285,8 +287,36 @@ def list_profiles(
 
     total = q.with_entities(func.count(SalaryEmployeeProfile.id)).scalar() or 0
 
-    col = _SORTABLE.get(sort_field, SalaryEmployeeProfile.emp_no)
-    q = q.order_by(col.desc() if sort_order == "desc" else col.asc())
+    profile = SalaryEmployeeProfile
+    if sort_field == "bank_card_masked" and sort_order in ("asc", "desc"):
+        # Only this explicitly requested display sort materializes the filtered
+        # identifiers and card ciphers. Retain masks only, then fetch one page.
+        masked_rows = [
+            {"id": row.id, "masked": pii.mask_pii(pii.decrypt_pii(row.bank_card_cipher), 4, 4) or None}
+            for row in q.with_entities(profile.id, profile.bank_card_cipher).all()
+        ]
+        sorted_rows = apply_items_sort(masked_rows, sort_field, sort_order, {"bank_card_masked": "masked"})
+        start = (page - 1) * page_size
+        page_ids = [row["id"] for row in sorted_rows[start:start + page_size]]
+        page_rows = {row.id: row for row in q.filter(profile.id.in_(page_ids)).all()} if page_ids else {}
+        dept_map = load_dept_group_map(db)
+        grade_map = load_grade_map(db)
+        return {
+            "items": [serialize_profile(page_rows[row_id], dept_map, grade_map) for row_id in page_ids],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+
+    department = db.query(SalaryDeptMapping.dept_group).filter(SalaryDeptMapping.dept_detail == profile.dept_detail).correlate(profile).scalar_subquery()
+    today = beijing_today()
+    grade_salary = db.query(case((SalaryGradeTable.scheme.in_(_STD_SALARY_SCHEMES), SalaryGradeTable.std_salary), else_=SalaryGradeTable.base_salary)).filter(
+        SalaryGradeTable.scheme == profile.grade_scheme, SalaryGradeTable.grade_code == profile.grade_code,
+        SalaryGradeTable.effective_from <= today,
+        or_(SalaryGradeTable.effective_to.is_(None), SalaryGradeTable.effective_to >= today),
+    ).order_by(SalaryGradeTable.effective_from.desc()).limit(1).correlate(profile).scalar_subquery()
+    columns = {**_SORTABLE, "status": profile.status, "dept_group": func.coalesce(func.nullif(profile.dept_group_override, ""), department), "base_salary_effective": func.coalesce(profile.base_salary_override, grade_salary)}
+    q = apply_list_sort(q, sort_field, sort_order, columns, default=(profile.emp_no.asc(),), tie_breakers=(profile.id.asc(),))
     rows = q.offset((page - 1) * page_size).limit(page_size).all()
 
     dept_map = load_dept_group_map(db)

@@ -16,6 +16,7 @@ from app.customer.models import (
 from app.customer.workbench_service import customer_labels
 from app.customer.workflow_service import CustomerWorkflowConflict, CustomerWorkflowNotFound
 from app.sales_automation import public_pool_service
+from app.core.list_sort import apply_list_sort
 
 
 def _ranked_research(db, user, customer_id=None):
@@ -75,16 +76,28 @@ def _queue_query(db, user, customer_id=None):
     return query, pending
 
 
-def list_queue(db, user, *, page=1, page_size=20, keyword=None):
+def list_queue(db, user, *, page=1, page_size=20, keyword=None,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+):
     query, pending = _queue_query(db, user)
-    query = query.filter(pending)
+    query = query.filter(pending).join(CustomerAccount, CustomerAccount.id == logical_owner_expression(CustomerResearchTask, "research_task"))
     if keyword and keyword.strip():
         pattern = f"%{keyword.strip()}%"
-        query = query.join(CustomerAccount, CustomerAccount.id == logical_owner_expression(CustomerResearchTask, "research_task")).filter(
+        query = query.filter(
             or_(CustomerAccount.display_name.ilike(pattern), CustomerAccount.customer_code.ilike(pattern)),
         )
     total = query.count()
-    rows = query.order_by(CustomerResearchTask.updated_at.desc(), CustomerResearchTask.id.desc()).offset(
+    rows = apply_list_sort(
+        query, sort_field, sort_order, {
+            "customer_name": func.coalesce(func.nullif(CustomerAccount.display_name, ""), func.nullif(CustomerAccount.canonical_company_name, ""), CustomerAccount.customer_code),
+            "updated_at": CustomerResearchTask.updated_at,
+            "scope_label": func.coalesce(query.column_descriptions[4]["expr"], "公海开发"),
+            "match_score": query.column_descriptions[5]["expr"],
+        },
+        default=(CustomerResearchTask.updated_at.desc(), CustomerResearchTask.id.desc(),),
+        tie_breakers=(CustomerResearchTask.id.asc(),),
+    ).offset(
         (page - 1) * page_size).limit(page_size).all()
     accesses = query_service._batch_research_access(db, user, {int(row.customer_id) for row in rows})
     labels = customer_labels(db, {int(row.customer_id) for row in rows})

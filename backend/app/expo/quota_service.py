@@ -11,8 +11,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
+from app.auth.models import ArkUser
 from app.expo.models import ExpoQuotaRecord, ExpoStore
 from app.expo.store_service import StoreNotFound
+from app.core.list_sort import apply_list_sort
 
 logger = logging.getLogger("commission.expo.quota")
 
@@ -189,6 +191,8 @@ def list_quota_records(
     type_: Optional[str] = None,
     limit: int = 20,
     offset: int = 0,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> Tuple[List[ExpoQuotaRecord], int]:
     """分页查询门店配额变动流水。
 
@@ -206,7 +210,19 @@ def list_quota_records(
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
 
     rows = db.execute(
-        stmt.order_by(ExpoQuotaRecord.created_at.desc(), ExpoQuotaRecord.id.desc())
+        apply_list_sort(
+            stmt, sort_field, sort_order, {
+                "type": ExpoQuotaRecord.type,
+                "amount": ExpoQuotaRecord.amount,
+                "balance_before": ExpoQuotaRecord.balance_before,
+                "balance_after": ExpoQuotaRecord.balance_after,
+                "remark": ExpoQuotaRecord.remark,
+                "created_at": ExpoQuotaRecord.created_at,
+            "operator_name": select(func.coalesce(func.nullif(ArkUser.real_name, ""), ArkUser.username)).where(ArkUser.id == ExpoQuotaRecord.operator_user_id).scalar_subquery(),
+            },
+            default=(ExpoQuotaRecord.created_at.desc(), ExpoQuotaRecord.id.desc(),),
+            tie_breakers=(ExpoQuotaRecord.id.asc(),),
+        )
         .options(selectinload(ExpoQuotaRecord.operator))
         .offset(offset)
         .limit(limit)

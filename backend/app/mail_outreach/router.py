@@ -5,6 +5,7 @@ worker 受限接口在后续阶段以独立子路由提供（双向隔离）。
 """
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -48,6 +49,7 @@ from app.mail_outreach.schemas import (
     SchedulePreviewRequest,
     RecipientPrepareRequest,
 )
+from app.core.list_sort import apply_list_sort
 
 router = APIRouter()
 router.include_router(worker_router)
@@ -153,6 +155,8 @@ def list_drafts(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user=Depends(require_permission("mail_outreach:read")),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     query = db.query(MailOutreachMessage).join(
         CustomerAccount, CustomerAccount.id == MailOutreachMessage.customer_id,
@@ -170,7 +174,17 @@ def list_drafts(
     if status:
         query = query.filter(MailOutreachMessage.status == status)
     total = query.count()
-    messages = query.order_by(MailOutreachMessage.id.desc()).offset(
+    messages = apply_list_sort(
+        query, sort_field, sort_order, {
+            "status": MailOutreachMessage.status,
+            "relationship_goal": MailOutreachMessage.relationship_goal,
+            "updated_at": MailOutreachMessage.updated_at,
+            "language_tag": select(MailOutreachRevision.language_tag).where(MailOutreachRevision.id == MailOutreachMessage.current_revision_id).scalar_subquery(),
+            "to_email": select(CustomerContactPoint.normalized_value).where(CustomerContactPoint.id == MailOutreachMessage.contact_point_id).scalar_subquery(),
+        },
+        default=(MailOutreachMessage.id.desc(),),
+        tie_breakers=(MailOutreachMessage.id.asc(),),
+    ).offset(
         (page - 1) * page_size,
     ).limit(page_size).all()
     revision_ids = [m.current_revision_id for m in messages if m.current_revision_id]
@@ -179,9 +193,15 @@ def list_drafts(
             MailOutreachRevision.id.in_(revision_ids),
         ).all()
     } if revision_ids else {}
-    items = [
-        serialize_message(m, revisions.get(m.current_revision_id)) for m in messages
-    ]
+    point_ids = {message.contact_point_id for message in messages if message.contact_point_id}
+    points = {point.id: point.normalized_value for point in db.query(CustomerContactPoint).filter(CustomerContactPoint.id.in_(point_ids)).all()} if point_ids else {}
+    items = []
+    for message in messages:
+        revision = revisions.get(message.current_revision_id)
+        item = serialize_message(message, revision)
+        item["language_tag"] = revision.language_tag if revision else None
+        item["to_email"] = points.get(message.contact_point_id)
+        items.append(item)
     return ok(page_result(items, total, page, page_size))
 
 
@@ -299,6 +319,8 @@ def list_jobs_route(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user=Depends(require_permission("mail_outreach:read")),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     items, total = job_service.list_jobs(
         db,
@@ -308,6 +330,8 @@ def list_jobs_route(
         page=page,
         page_size=page_size,
         user=user,
+        sort_field=sort_field,
+        sort_order=sort_order,
     )
     return ok(page_result(items, total, page, page_size))
 
@@ -337,7 +361,7 @@ def list_mailboxes(
 
 
 def _mailbox_query(db, user):
-    from sqlalchemy import or_
+    from sqlalchemy import select, or_
     query = db.query(MailMailboxBinding)
     if "super_admin" not in user.get("roles", []) and "mail_outreach:admin" not in user.get("permissions", []):
         query = query.filter(or_(MailMailboxBinding.owner_user_id == int(user["sub"]), MailMailboxBinding.owner_user_id.is_(None)))
@@ -363,7 +387,10 @@ def get_status(db: Session = Depends(get_db), user=Depends(require_permission("m
 def list_events(customer_id: int | None = Query(None, gt=0), page: int = Query(1, ge=1),
                 classification: str | None = Query(None, max_length=24),
                 page_size: int = Query(20, ge=1, le=100), db: Session = Depends(get_db),
-                user=Depends(require_permission("mail_outreach:read"))):
+                user=Depends(require_permission("mail_outreach:read")),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+):
     query = db.query(MailEvent).join(CustomerAccount, CustomerAccount.id == MailEvent.matched_customer_id)
     query = apply_customer_scope(query, user=user, read_permissions=_READ_PERMS, include_public_pool=False)
     if classification:
@@ -372,7 +399,18 @@ def list_events(customer_id: int | None = Query(None, gt=0), page: int = Query(1
         _access(db, customer_id, user)
         query = query.filter(MailEvent.matched_customer_id == customer_id)
     total = query.count()
-    rows = query.order_by(MailEvent.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    rows = apply_list_sort(
+        query, sort_field, sort_order, {
+            "from_address": MailEvent.from_address,
+            "subject": MailEvent.subject,
+            "classification": MailEvent.classification,
+            "matched_customer_id": MailEvent.matched_customer_id,
+            "received_at_utc": MailEvent.received_at_utc,
+            "processed_status": MailEvent.processed_status,
+        },
+        default=(MailEvent.id.desc(),),
+        tie_breakers=(MailEvent.id.asc(),),
+    ).offset((page - 1) * page_size).limit(page_size).all()
     return ok(page_result([event_service.serialize_event(row) for row in rows], total, page, page_size))
 
 

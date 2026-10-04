@@ -8,14 +8,16 @@
             :key="col.key"
             class="db-detail-table__th"
             :style="col.width ? { width: col.width } : {}"
+            :aria-sort="col.sortable === false ? undefined : ariaSort(col.key)"
           >
-            {{ col.label }}
+            <TableSortHeader v-if="col.sortable !== false" :label="col.label" :order="ariaSort(col.key)" @sort="toggleSort(col.key)" />
+            <template v-else>{{ col.label }}</template>
           </th>
         </tr>
       </thead>
       <tbody class="db-detail-table__body">
         <tr
-          v-for="(row, rowIdx) in rows"
+          v-for="(row, rowIdx) in sortedRows"
           :key="rowIdx"
           class="db-detail-table__tr"
         >
@@ -42,10 +44,15 @@
 </template>
 
 <script setup>
-defineProps({
+import { toRef } from 'vue'
+import TableSortHeader from '../TableSortHeader.vue'
+import { useLocalTableSort } from '../../composables/useLocalTableSort.js'
+const props = defineProps({
   columns: { type: Array, default: () => [] },
   rows:    { type: Array, default: () => [] },
 })
+const fields = Object.fromEntries(props.columns.map(column => [column.key, row => column.sortValue ? column.sortValue(row) : row[column.key]]))
+const { sortedRows, toggleSort, ariaSort } = useLocalTableSort(toRef(props, 'rows'), fields)
 </script>
 
 <style scoped>

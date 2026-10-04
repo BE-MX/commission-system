@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -79,15 +80,20 @@ def list_synced_payments(
             CustomerInfo.company_name.like(like_pattern),
         ))
 
-    from sqlalchemy import desc as _desc
     SORT_MAP = {
         "payment_date": SyncedPayment.payment_date,
         "customer_name": CustomerInfo.company_name,
         "payment_amount": SyncedPayment.payment_amount,
+        "payment_id": SyncedPayment.payment_id,
+        "order_id": SyncedPayment.order_id,
+        "service_fee": SyncedPayment.service_fee,
+        "exchange_rate": SyncedPayment.exchange_rate,
+        "real_amount_rmb": SyncedPayment.real_amount_rmb,
+        "is_calculated": PaymentCommissionStatus.batch_id.isnot(None),
+        "batch_id": PaymentCommissionStatus.batch_id,
     }
-    sort_col = SORT_MAP.get(sort_field, SyncedPayment.payment_date)
-    order_fn = _desc if sort_order == "desc" else lambda c: c
-    query = query.order_by(order_fn(sort_col))
+    query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
+        default=(SyncedPayment.payment_date.desc(),), tie_breakers=(SyncedPayment.payment_id.asc(),))
 
     total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()

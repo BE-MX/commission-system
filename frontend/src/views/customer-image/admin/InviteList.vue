@@ -22,24 +22,24 @@
       </div>
 
       <ListPageStatus v-if="listResource.hasData.value" :paged="true" :error="listResource.errorMessage.value" :loading="loading" :has-data="true" :data-page="listResource.dataPage.value" @retry="load()" />
-      <el-table v-loading="loading" :data="invites" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="invites" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="listResource.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
         <template #empty><ListPageStatus :paged="true" :error="listResource.errorMessage.value" :loading="loading" @retry="load()"><el-empty v-if="listResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="180" show-overflow-tooltip>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <strong>{{ row.customer_name }}</strong>
             <small>{{ row.customer_id }}</small>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('token')" label="链接核对码" min-width="110">
+        <el-table-column sortable="custom" prop="token_suffix" v-if="visibleKeys.includes('token')" label="链接核对码" min-width="110">
           <template #default="{ row }">••••••{{ row.token_suffix }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('quota')" label="额度" min-width="100">
+        <el-table-column sortable="custom" prop="quota_used" v-if="visibleKeys.includes('quota')" label="额度" min-width="100">
           <template #default="{ row }">{{ row.quota_used }} / {{ row.quota_total }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('expires-at')" label="失效时间" min-width="170">
+        <el-table-column sortable="custom" prop="expires_at" v-if="visibleKeys.includes('expires-at')" label="失效时间" min-width="170">
           <template #default="{ row }">{{ formatDate(row.expires_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120">
+        <el-table-column sortable="custom" prop="invite_status" v-if="visibleKeys.includes('status')" label="状态" min-width="120">
           <template #default="{ row }">
             <StatusBadge :type="statusOf(row).type" effect="plain">{{ statusOf(row).label }}</StatusBadge>
           </template>

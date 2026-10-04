@@ -7,6 +7,8 @@ balance_service.recharge_customer / customer_service.adjust_customer 执行—�
 
 from decimal import Decimal
 
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -204,6 +206,8 @@ def list_requests(
     page_size: int = 20,
     viewer_user_id: int,
     can_review_all: bool,
+    sort_field: str = "",
+    sort_order: str = "",
 ) -> tuple[list[dict], int]:
     q = db.query(DomesticCustomerRequest)
     if status:
@@ -217,9 +221,7 @@ def list_requests(
     if not can_review_all:
         q = q.filter(DomesticCustomerRequest.created_by == viewer_user_id)
     total = q.count()
-    rows = q.order_by(
-        DomesticCustomerRequest.created_at.desc(), DomesticCustomerRequest.id.desc()
-    ).offset((page - 1) * page_size).limit(page_size).all()
+    rows = apply_list_sort(q, sort_field, sort_order, {"created_at": DomesticCustomerRequest.created_at, "request_type": DomesticCustomerRequest.request_type, "amount": DomesticCustomerRequest.amount, "membership_level": DomesticCustomerRequest.membership_level, "remark": DomesticCustomerRequest.remark, "status": DomesticCustomerRequest.status, "review_remark": DomesticCustomerRequest.review_remark, "reviewed_at": DomesticCustomerRequest.reviewed_at, "customer_name": db.query(DomesticCustomer.shop_name).filter(DomesticCustomer.id == DomesticCustomerRequest.customer_id).correlate(DomesticCustomerRequest).scalar_subquery(), "created_by_name": db.query(ArkUser.real_name).filter(ArkUser.id == DomesticCustomerRequest.created_by).correlate(DomesticCustomerRequest).scalar_subquery()}, default=(DomesticCustomerRequest.created_at.desc(), DomesticCustomerRequest.id.desc()), tie_breakers=(DomesticCustomerRequest.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()
     customer_names = dict(db.query(DomesticCustomer.id, DomesticCustomer.shop_name).filter(
         DomesticCustomer.id.in_({row.customer_id for row in rows} or {0})
     ).all())

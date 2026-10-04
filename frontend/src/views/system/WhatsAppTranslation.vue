@@ -34,7 +34,7 @@
         <el-table-column v-if="visibleKeys.includes('browser')" prop="browser_name" label="浏览器" min-width="100" />
         <el-table-column v-if="visibleKeys.includes('version')" prop="extension_version" label="版本" min-width="90" />
         <el-table-column v-if="visibleKeys.includes('last-used')" prop="last_used_at" label="最近使用" min-width="140" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="90">
+        <el-table-column :sort-by="row => (deviceStatusLabel(row))" v-if="visibleKeys.includes('status')" label="状态" min-width="90">
           <template #default="{ row }">{{ deviceStatusLabel(row) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">

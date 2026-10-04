@@ -28,7 +28,7 @@ export function useDomesticCustomerRequests() {
 
   const listPageState = useListPage(
     async ({ page, page_size, ...form }, { signal, isCurrent }) => {
-      const params = { page, page_size }
+      const params = { page, page_size, sort_field: form.sort_field, sort_order: form.sort_order }
       if (form.status) params.status = form.status
       if (form.request_type) params.request_type = form.request_type
       if (form.keyword) params.keyword = form.keyword

@@ -3,7 +3,9 @@
 from decimal import Decimal
 from hashlib import sha1
 
-from sqlalchemy import func, text
+from app.core.list_sort import apply_list_sort
+
+from sqlalchemy import literal_column, func, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
@@ -210,7 +212,7 @@ def apply_sync(db: Session) -> dict:
     }
 
 
-def list_materials(db: Session, page: int, page_size: int, keyword: str | None, review_only: bool) -> dict:
+def list_materials(db: Session, page: int, page_size: int, keyword: str | None, review_only: bool, sort_field: str = "", sort_order: str = "") -> dict:
     counts = (
         db.query(ProductComponent.material_id, func.count(ProductComponent.id).label("product_count"))
         .join(ProductMapping, ProductMapping.id == ProductComponent.mapping_id)
@@ -236,7 +238,7 @@ def list_materials(db: Session, page: int, page_size: int, keyword: str | None, 
             .filter(ProductMapping.parse_status == "needs_review")
         ))
     total = query.count()
-    rows = query.order_by(SemifinishedMaterial.size, SemifinishedMaterial.color_key).offset((page - 1) * page_size).limit(page_size).all()
+    rows = apply_list_sort(query, sort_field, sort_order, {"material_code": SemifinishedMaterial.material_code, "size": SemifinishedMaterial.size, "color_code": SemifinishedMaterial.color_code, "color_type": SemifinishedMaterial.color_type, "status": SemifinishedMaterial.status, "product_count": func.coalesce(counts.c.product_count, 0), "on_hand_grams": func.coalesce(InventoryBalance.on_hand_grams, 0), "reserved_grams": func.coalesce(InventoryBalance.reserved_grams, 0), "available_grams": func.coalesce(InventoryBalance.on_hand_grams, 0) - func.coalesce(InventoryBalance.reserved_grams, 0)}, default=(SemifinishedMaterial.size.asc(), SemifinishedMaterial.color_key.asc()), tie_breakers=(SemifinishedMaterial.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()
     return {
         "items": [{
             "id": material.id,
@@ -258,7 +260,7 @@ def list_materials(db: Session, page: int, page_size: int, keyword: str | None, 
     }
 
 
-def list_mappings(db: Session, page: int, page_size: int, keyword: str | None, review_only: bool) -> dict:
+def list_mappings(db: Session, page: int, page_size: int, keyword: str | None, review_only: bool, sort_field: str = "", sort_order: str = "") -> dict:
     query = db.query(ProductMapping).options(
         selectinload(ProductMapping.components).selectinload(ProductComponent.material)
     )
@@ -272,7 +274,7 @@ def list_mappings(db: Session, page: int, page_size: int, keyword: str | None, r
     if review_only:
         query = query.filter(ProductMapping.parse_status == "needs_review")
     total = query.count()
-    rows = query.order_by(ProductMapping.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    rows = apply_list_sort(query, sort_field, sort_order, {"product_name": ProductMapping.product_name, "model": ProductMapping.model, "size": ProductMapping.size, "color_expression": ProductMapping.color_expression, "unit_grams": ProductMapping.unit_grams, "parse_status": ProductMapping.parse_status, "parse_message": ProductMapping.parse_message, "components": literal_column("(SELECT GROUP_CONCAT(CONCAT(sm.size, '/', sm.color_code, ' · ', FORMAT(sc.ratio * 100, 2), '%') ORDER BY sc.component_order SEPARATOR ' / ') FROM ark_semifinished_product_components sc JOIN ark_semifinished_materials sm ON sm.id = sc.material_id WHERE sc.mapping_id = ark_semifinished_product_mappings.id)")}, default=(ProductMapping.id.desc(),), tie_breakers=(ProductMapping.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()
     return {
         "items": [{
             "id": mapping.id,

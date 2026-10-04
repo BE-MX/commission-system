@@ -24,9 +24,9 @@
         <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="180" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('customer-id')" prop="customer_id" label="客户ID" min-width="130" />
         <el-table-column v-if="visibleKeys.includes('revision')" prop="revision" label="修订" min-width="80"><template #default="{ row }">R{{ row.revision }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('assets')" label="素材" min-width="110"><template #default="{ row }">{{ row.assets.length }} 个</template></el-table-column>
+        <el-table-column prop="assets.length" v-if="visibleKeys.includes('assets')" label="素材" min-width="110"><template #default="{ row }">{{ row.assets.length }} 个</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="送审时间" min-width="180" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default><StatusBadge type="warning" effect="plain">待审核</StatusBadge></template></el-table-column>
+        <el-table-column :sort-by="() => '待审核'" v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default><StatusBadge type="warning" effect="plain">待审核</StatusBadge></template></el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="120" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="open(row)">审核</GlassButton></template></el-table-column>
       </el-table>
     </div>

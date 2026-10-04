@@ -378,6 +378,8 @@ def list_pending_bindings(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: dict = Depends(require_any_permission(*PCW_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     from app.customer.pcw_conversation_service import list_pending_bindings as service
 
@@ -387,6 +389,8 @@ def list_pending_bindings(
         actor_permissions=_perms(user),
         page=page,
         page_size=page_size,
+        sort_field=sort_field,
+        sort_order=sort_order,
     ))
 
 
@@ -473,6 +477,8 @@ def list_customer_conversations(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: dict = Depends(require_any_permission(*PCW_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     from app.customer.pcw_conversation_service import list_conversations
 
@@ -486,6 +492,8 @@ def list_customer_conversations(
         date_to=date_to,
         page=page,
         page_size=page_size,
+        sort_field=sort_field,
+        sort_order=sort_order,
     ))
 
 
@@ -568,6 +576,8 @@ def list_customer_orders(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: dict = Depends(require_any_permission(*PCW_READ)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     from app.customer.pcw_order_service import list_customer_orders
 
@@ -582,6 +592,8 @@ def list_customer_orders(
         product_family=product_family,
         page=page,
         page_size=page_size,
+        sort_field=sort_field,
+        sort_order=sort_order,
     ))
 
 

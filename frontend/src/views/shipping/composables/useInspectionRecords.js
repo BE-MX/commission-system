@@ -36,6 +36,7 @@ export function useInspectionRecords() {
   const listApi = useListPage(
     async ({ page, page_size, ...form }, { signal, isCurrent }) => {
       const params = { page, page_size }
+      if (form.sort_field) { params.sort_field = form.sort_field; params.sort_order = form.sort_order }
       if (form.keyword) params.keyword = form.keyword
       if (form.orderId?.trim()) params.order_id = form.orderId.trim()
       if (form.submittedByName?.trim()) params.submitted_by_name = form.submittedByName.trim()

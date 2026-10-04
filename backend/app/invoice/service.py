@@ -7,6 +7,8 @@ from app.core.time import beijing_today
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy import and_, case, exists, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
@@ -46,6 +48,8 @@ def list_invoices(
     order_type: str | None = None,
     created_by: int | None = None,
     viewer_user_id: int | None = None,
+    sort_field: str = "",
+    sort_order: str = "",
 ) -> tuple[list[dict], int]:
     query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id)
     if keyword:
@@ -62,15 +66,9 @@ def list_invoices(
     if order_type:
         query = query.filter(Invoice.order_type == order_type)
     total = query.count()
+    sort_columns = {**{name: getattr(Invoice, name) for name in ("invoice_no", "customer_name", "order_type", "invoice_date", "total_amount", "status", "sync_status", "created_at")}, "item_count": func.count(InvoiceItem.id), "created_by_name": db.query(ArkUser.real_name).filter(ArkUser.id == Invoice.created_by).correlate(Invoice).scalar_subquery()}
     rows = (
-        query
-        .outerjoin(InvoiceItem)
-        .group_by(Invoice.id)
-        .with_entities(
-            Invoice,
-            func.count(InvoiceItem.id).label("item_count"),
-        )
-        .order_by(Invoice.created_at.desc())
+        apply_list_sort(query.outerjoin(InvoiceItem).group_by(Invoice.id).with_entities(Invoice, func.count(InvoiceItem.id).label("item_count")), sort_field, sort_order, sort_columns, default=(Invoice.created_at.desc(),), tie_breakers=(Invoice.id.asc(),))
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

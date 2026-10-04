@@ -53,7 +53,7 @@
       </div>
 
       <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
-      <el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="handleTableSort">
         <template #empty>
           <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="fetchList">
             <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -61,30 +61,30 @@
             </el-empty>
           </ListPageStatus>
         </template>
-        <el-table-column v-if="visibleKeys.includes('receipt-no')" label="回款单号" min-width="240" max-width="340" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('receipt-no')" label="回款单号" min-width="240" max-width="340" show-overflow-tooltip prop="receipt_no" sortable="custom">
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)"><el-icon><Document /></el-icon>{{ row.receipt_no }}</el-button>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('amount')" label="本次回款金额" min-width="150" max-width="210" align="right">
+        <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip sortable="custom"><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('amount')" label="本次回款金额" min-width="150" max-width="210" align="right" prop="amount" sortable="custom">
           <template #default="{ row }">{{ row.currency }} {{ money(row.amount) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('sync-status')" label="同步状态" min-width="160" max-width="170">
+        <el-table-column v-if="visibleKeys.includes('sync-status')" label="同步状态" min-width="160" max-width="170" prop="sync_status" sortable="custom">
           <template #default="{ row }">
             <StatusBadge size="small" effect="plain" :type="statusTone(row.sync_status)">{{ row.status === 'remote_deleted' ? '远端删除已核实' : row.status === 'voided' ? '已作废' : statusLabel(row.sync_status) }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('invoice-no')" prop="invoice_no" label="订单发票" min-width="150" max-width="210" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="170" max-width="240" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('collection-date')" prop="collection_date" label="回款日期" min-width="130" max-width="180" />
-        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="120" max-width="170">
+        <el-table-column v-if="visibleKeys.includes('invoice-no')" prop="invoice_no" label="订单发票" min-width="150" max-width="210" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="170" max-width="240" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('collection-date')" prop="collection_date" label="回款日期" min-width="130" max-width="180" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="120" max-width="170" prop="source" sortable="custom">
           <template #default="{ row }">{{ row.source === 'auto' ? '库存单自动' : '手工登记' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('collect-status')" label="财务状态" min-width="110" max-width="160">
+        <el-table-column v-if="visibleKeys.includes('collect-status')" label="财务状态" min-width="110" max-width="160" prop="collect_status" sortable="custom">
           <template #default="{ row }">{{ financeLabel(row.collect_status) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('attachments')" label="凭证" min-width="85" max-width="120">
+        <el-table-column v-if="visibleKeys.includes('attachments')" prop="attachment_count" sortable="custom" label="凭证" min-width="85" max-width="120">
           <template #default="{ row }">{{ row.attachment_count }} 张</template>
         </el-table-column>
         <el-table-column label="操作" min-width="145" max-width="300" class-name="table-action-column" fixed="right">
@@ -122,7 +122,7 @@
       <template v-if="batchDetail">
         <h2>{{ batchDetail.currency }} {{ money(batchDetail.amount) }}</h2>
         <p>{{ batchDetail.collection_date }} · {{ batchDetail.payment_type }}</p>
-        <el-table class="list-table" :data="batchDetail.items || batchDetail.receipts || batchDetail.allocations || []" border><el-table-column prop="invoice_no" label="订单发票" /><el-table-column label="分配金额"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column><el-table-column label="同步状态"><template #default="{ row }">{{ statusLabel(row.sync_status) }}</template></el-table-column></el-table>
+        <el-table class="list-table" :data="batchDetail.items || batchDetail.receipts || batchDetail.allocations || []" border><el-table-column prop="invoice_no" label="订单发票" /><el-table-column prop="amount" label="分配金额"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column><el-table-column label="同步状态" prop="sync_status"><template #default="{ row }">{{ statusLabel(row.sync_status) }}</template></el-table-column></el-table>
         <ReceiptProofs :model-value="batchDetail.attachments?.map(a => a.id) || batchDetail.attachment_ids || []" readonly />
       </template>
     </DetailDrawer>
@@ -164,7 +164,7 @@ async function showBatch(id) {
   finally { if (sequence === batchSequence) batchLoading.value = false }
 }
 const states = ['pending','syncing','synced','failed','uncertain']
-const { loading,list,total,page,pageSize,searchForm,dates,fetchList,handleSearch,handlePageChange,handleSizeChange,reset,
+const { loading,list,total,page,pageSize,searchForm,dates,fetchList,handleSearch,handleSortChange,handlePageChange,handleSizeChange,reset,
   listErrorMessage,hasLoaded,hasData,dataPage,hasPendingSearch,appliedSearchForm,refreshCreate,refreshUpdate,
   editorVisible,detailVisible,detail,saving,uploading,orders,ordersLoading,balance,balanceLoading,error,candidates,
   form,editing,selectedOrder,remainingAfter,editable,searchOrders,selectOrder,openCreate,showDetail,editCurrent,
@@ -188,6 +188,7 @@ const columnDefs = [
 // 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('receipt-manage', columnDefs)
+function handleTableSort({ prop, order }) { return handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 <style scoped>
 .receipt-page { position: relative; }

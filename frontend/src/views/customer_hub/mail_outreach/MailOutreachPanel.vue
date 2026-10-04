@@ -8,20 +8,20 @@
         <TableTools v-model:visible-keys="draftVisibleKeys" v-model:density="draftDensity" :columns="draftColumnDefs" :fullscreen="draftIsFullscreen" @refresh="fetchDrafts" @fullscreen="toggleDraftFullscreen" />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchDrafts" />
-<el-table v-loading="draftsLoading" :data="drafts" border class="list-table" :class="draftDensityClass" :max-height="draftIsFullscreen ? undefined : 640" row-key="id">
-        <el-table-column v-if="draftVisibleKeys.includes('status')" label="状态" min-width="110">
+<el-table v-loading="draftsLoading" :data="drafts" border class="list-table" :class="draftDensityClass" :max-height="draftIsFullscreen ? undefined : 640" row-key="id" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+        <el-table-column sortable="custom" prop="status" v-if="draftVisibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }"><StatusBadge :type="draftStatusTagType(row.status)">{{ draftStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
-        <el-table-column v-if="draftVisibleKeys.includes('language')" label="语言" min-width="90">
+        <el-table-column sortable="custom" prop="language_tag" v-if="draftVisibleKeys.includes('language')" label="语言" min-width="90">
           <template #default="{ row }">{{ row.language_tag || row.revision?.language_tag || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="draftVisibleKeys.includes('email')" label="收件邮箱" min-width="180" show-overflow-tooltip>
+        <el-table-column sortable="custom" prop="to_email" v-if="draftVisibleKeys.includes('email')" label="收件邮箱" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ draftEmail(row) }}</template>
         </el-table-column>
-        <el-table-column v-if="draftVisibleKeys.includes('goal')" label="关系目标" min-width="100">
+        <el-table-column sortable="custom" prop="relationship_goal" v-if="draftVisibleKeys.includes('goal')" label="关系目标" min-width="100">
           <template #default="{ row }">{{ relationshipGoalLabel(row.relationship_goal) }}</template>
         </el-table-column>
-        <el-table-column v-if="draftVisibleKeys.includes('updated')" label="更新时间（北京时间）" min-width="160">
+        <el-table-column sortable="custom" prop="updated_at" v-if="draftVisibleKeys.includes('updated')" label="更新时间（北京时间）" min-width="160">
           <template #default="{ row }">{{ row.updated_at ? formatBeijingDateTime(row.updated_at, { seconds: false }) : '-' }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">
@@ -39,17 +39,17 @@
         <TableTools v-model:visible-keys="jobVisibleKeys" v-model:density="jobDensity" :columns="jobColumnDefs" :fullscreen="jobIsFullscreen" @refresh="fetchJobs" @fullscreen="toggleJobFullscreen" />
       </div>
       <ListPageStatus v-if="listPageState1.hasData.value" :error="listPageState1.errorMessage.value" :loading="listPageState1.loading.value" :has-data="listPageState1.hasData.value" :data-page="listPageState1.dataPage.value" @retry="fetchJobs" />
-<el-table v-loading="jobsLoading" :data="jobs" border class="list-table" :class="jobDensityClass" :max-height="jobIsFullscreen ? undefined : 640" row-key="id">
-        <el-table-column v-if="jobVisibleKeys.includes('status')" label="状态" min-width="160">
+<el-table v-loading="jobsLoading" :data="jobs" border class="list-table" :class="jobDensityClass" :max-height="jobIsFullscreen ? undefined : 640" row-key="id" @sort-change="listPageState1.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+        <el-table-column sortable="custom" prop="status" v-if="jobVisibleKeys.includes('status')" label="状态" min-width="160">
           <template #default="{ row }"><StatusBadge :type="jobStatusTagType(row.status)">{{ jobStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
-        <el-table-column v-if="jobVisibleKeys.includes('email')" label="收件邮箱" min-width="180" show-overflow-tooltip>
+        <el-table-column sortable="custom" prop="to_email" v-if="jobVisibleKeys.includes('email')" label="收件邮箱" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.to_email || row.to_email_snapshot || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="jobVisibleKeys.includes('due')" label="计划发送时间（北京时间）" min-width="170">
+        <el-table-column sortable="custom" prop="due_at" v-if="jobVisibleKeys.includes('due')" label="计划发送时间（北京时间）" min-width="170">
           <template #default="{ row }">{{ row.due_at ? formatBeijingDateTime(row.due_at, { seconds: false }) : '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="jobVisibleKeys.includes('reschedule')" label="顺延次数" min-width="90">
+        <el-table-column sortable="custom" prop="reschedule_count" v-if="jobVisibleKeys.includes('reschedule')" label="顺延次数" min-width="90">
           <template #default="{ row }">{{ row.reschedule_count ?? 0 }}</template>
         </el-table-column>
         <template #empty><ListPageStatus :error="listPageState1.errorMessage.value" :loading="listPageState1.loading.value" :has-data="false" @retry="fetchJobs">暂无发送任务；草稿批准并排程后会出现在这里。</ListPageStatus></template>

@@ -88,6 +88,29 @@ def test_publish_outbox_and_update_preserves_reader_version(db):
         service.review(db, ADMIN, row.document_id, approve=True)
 
 
+def test_header_sort_uses_public_revision_and_public_status_before_pagination(db):
+    _, category = setup(db)
+    ids = []
+    for title in ('Zulu', 'Alpha', 'Middle'):
+        row = service.save_announcement(db, EDITOR, title=title, content=doc_json('Public'), category_id=category.id)
+        service.submit(db, EDITOR, row.document_id)
+        service.review(db, ADMIN, row.document_id, approve=True)
+        ids.append(row.document_id)
+    current = service.detail(db, EDITOR, ids[0], edit=True)
+    service.save_announcement(db, EDITOR, document_id=ids[0], base_revision_id=current['revision_id'],
+                              title='SECRET', content=doc_json('Private'), category_id=category.id)
+    for field in ('title', 'flags', 'category_name', 'published_at', 'expires_at', 'status', 'delivery'):
+        for direction in ('asc', 'desc'):
+            assert service.list_announcements(db, READER, sort_field=field, sort_order=direction)['total'] == 3
+            assert service.list_announcements(db, ADMIN, sort_field=field, sort_order=direction)['total'] == 3
+    actual = [service.list_announcements(db, READER, sort_field='title', sort_order='asc', page=p, page_size=1)['items'][0]['title'] for p in (1, 2, 3)]
+    assert actual == ['Alpha', 'Middle', 'Zulu']
+    for direction in ('asc', 'desc'):
+        items = service.list_announcements(db, READER, sort_field='status', sort_order=direction)['items']
+        assert [row['id'] for row in items] == list(reversed(ids))
+        assert all(row['status'] == 'published' for row in items)
+
+
 def test_rendering_keeps_long_text_and_images_in_order():
     content = doc_json('中文' * 3000)
     content['content'].append({'type': 'knowledgeImage', 'attrs': {'assetId': 42, 'alt': '图示'}})

@@ -24,7 +24,8 @@ settings = get_settings()
 
 
 # 从产品名提取颜色段: 先去掉前两段(TYPE/SIZE/),再去掉末段(/WEIGHT),最后去 # 和 /
-_COLOR_SORT_EXPR = "REPLACE(REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(p.name, '^([^/]+/){2}', ''), '/[^/]+$', ''), '#', ''), '/', '')"
+_DISPLAY_NAME_EXPR = "COALESCE(NULLIF(p.name, ''), p.cn_name, '')"
+_COLOR_SORT_EXPR = f"REPLACE(REPLACE(REGEXP_REPLACE(REGEXP_REPLACE({_DISPLAY_NAME_EXPR}, '^([^/]+/){2}', ''), '/[^/]+$', ''), '#', ''), '/', '')"
 
 _SORT_MAP = {
     "product_id": "p.product_id",
@@ -32,6 +33,14 @@ _SORT_MAP = {
     "enable_count": "enable_count",
     "safety_stock": "safety_stock",
     "color": "_color_sort",
+    "model": "p.model",
+    "type": f"NULLIF(SUBSTRING_INDEX({_DISPLAY_NAME_EXPR}, '/', 1), '')",
+    "size": f"CASE WHEN LOCATE('/', {_DISPLAY_NAME_EXPR}) > 0 THEN NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX({_DISPLAY_NAME_EXPR}, '/', 2), '/', -1), '') END",
+    "weight": f"NULLIF(SUBSTRING_INDEX({_DISPLAY_NAME_EXPR}, '/', -1), '')",
+    "production_in_transit": "COALESCE(it.in_transit_qty, 0)",
+    "avg_daily_sales_30d": "COALESCE(sales.sales_30d, 0)",
+    "suggested_qty": "GREATEST(0, COALESCE(ss.safety_stock, 0) * 2 - COALESCE(inv.enable_count, 0) - COALESCE(it.in_transit_qty, 0))",
+    "stock_status": "CASE WHEN COALESCE(it.has_urgent, 0) > 0 THEN 2 WHEN COALESCE(it.stocking_count, 0) > 0 THEN 1 ELSE 0 END",
 }
 
 
@@ -71,7 +80,7 @@ def query_safety_stock_list(
     # 排序列
     sort_col = _SORT_MAP.get(sort_by, "p.product_id")
     sort_dir = "DESC" if (order or "").lower() == "desc" else "ASC"
-    order_by = f"ORDER BY {sort_col} {sort_dir}, p.product_id ASC"
+    order_by = f"ORDER BY ({sort_col} IS NULL) ASC, {sort_col} {sort_dir}, p.product_id ASC"
 
     # 额外筛选
     extra_clauses_parts: list[str] = []
@@ -100,7 +109,7 @@ def query_safety_stock_list(
         LEFT JOIN (
             SELECT i.product_id,
                    SUM(i.order_qty - i.received_qty) AS in_transit_qty,
-                   MAX(i.is_urgent)                  AS has_urgent
+                   COUNT(i.id) AS stocking_count, MAX(i.is_urgent)                  AS has_urgent
             FROM ark_production_order_items i
             JOIN ark_production_orders o ON o.id = i.order_id
             WHERE i.status = 0 AND o.status = 0 AND o.deleted_flag = 0

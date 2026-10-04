@@ -23,6 +23,15 @@ test('customer and order queries combine with draft status, dates and advanced f
   assert.deepEqual(buildOrderListParams({ page: 1, page_size: 20, owner_user_id: 7, dateRange: [] }), { page: 1, page_size: 20, owner_user_id: 7 })
 })
 
+test('header sorting forwards both parameters and clearing omits them', () => {
+  assert.deepEqual(buildOrderListParams({ page: 1, page_size: 20, sort_field: 'order_date', sort_order: 'desc' }), {
+    page: 1, page_size: 20, sort_field: 'order_date', sort_order: 'desc',
+  })
+  assert.deepEqual(buildOrderListParams({ page: 1, page_size: 20, sort_field: '', sort_order: '' }), {
+    page: 1, page_size: 20,
+  })
+})
+
 test('advanced fields and current-query tags change only after an explicit query', async () => {
   const { form, state, filters, requests } = setup()
   form.order_channel = 'cash'

@@ -12,6 +12,7 @@ from app.expo.models import ExpoPromptVersion, ExpoResult, ExpoWig
 from app.expo.prompt_catalog import SCENES
 from app.expo.prompt_renderer import render_prompt
 from app.expo.prompt_schemas import PromptConfig
+from app.core.list_sort import apply_list_sort
 
 
 class PromptError(ValueError):
@@ -30,14 +31,27 @@ def serialize_version(row: ExpoPromptVersion, *, detail: bool = False) -> dict:
 
 
 def list_versions(db: Session, *, keyword: str = "", only_active: bool = False,
-                  page: int = 1, page_size: int = 20) -> tuple[list, int]:
+                  page: int = 1, page_size: int = 20,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+) -> tuple[list, int]:
     query = db.query(ExpoPromptVersion)
     if only_active:
         query = query.filter(ExpoPromptVersion.is_active.is_(True))
     if keyword.strip():
         query = query.filter(ExpoPromptVersion.name.contains(keyword.strip(), autoescape=True))
     total = query.count()
-    rows = (query.order_by(ExpoPromptVersion.default_slot.desc(), ExpoPromptVersion.id.asc())
+    rows = (apply_list_sort(
+        query, sort_field, sort_order, {
+            "name": ExpoPromptVersion.name,
+            "hint": ExpoPromptVersion.hint,
+            "revision": ExpoPromptVersion.revision,
+            "is_active": ExpoPromptVersion.is_active,
+            "updated_at": ExpoPromptVersion.updated_at,
+        },
+        default=(ExpoPromptVersion.default_slot.desc(), ExpoPromptVersion.id.asc(),),
+        tie_breakers=(ExpoPromptVersion.id.asc(),),
+    )
             .offset((page - 1) * page_size).limit(page_size).all())
     return rows, total
 

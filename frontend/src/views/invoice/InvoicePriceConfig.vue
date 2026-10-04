@@ -38,12 +38,12 @@
             <el-table-column v-if="stdVisibleKeys.includes('series')" prop="series_grade" label="系列 + 工艺档" min-width="280" show-overflow-tooltip />
             <el-table-column v-if="stdVisibleKeys.includes('length')" prop="length" label="长度" min-width="80" />
             <el-table-column v-if="stdVisibleKeys.includes('weight')" prop="weight_unit" label="克重" min-width="80" />
-            <el-table-column v-if="stdVisibleKeys.includes('color-type')" label="色型" min-width="190">
+            <el-table-column prop="color_type" v-if="stdVisibleKeys.includes('color-type')" label="色型" min-width="190">
               <template #default="{ row }">
                 <StatusBadge effect="plain">{{ colorTypeText(row.color_type) }}</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column v-if="stdVisibleKeys.includes('price')" label="标准价" min-width="120" align="right">
+            <el-table-column prop="price" v-if="stdVisibleKeys.includes('price')" label="标准价" min-width="120" align="right">
               <template #default="{ row }">{{ row.currency }} {{ formatMoney(row.price) }}</template>
             </el-table-column>
             <el-table-column v-if="stdVisibleKeys.includes('updated')" prop="updated_at" label="更新时间" min-width="170" show-overflow-tooltip />
@@ -81,7 +81,7 @@
           <el-table v-loading="colorLoading" :data="colorTypes" border class="list-table" :class="colorDensityClass" :max-height="colorIsFullscreen ? undefined : 640">
             <template #empty><ListPageStatus v-bind="resourceStatus(colorResource)" @retry="loadColorTypes"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="colorVisibleKeys.includes('code')" prop="color_code" label="色号" min-width="160" />
-            <el-table-column v-if="colorVisibleKeys.includes('type')" label="色型" min-width="190">
+            <el-table-column prop="color_type" v-if="colorVisibleKeys.includes('type')" label="色型" min-width="190">
               <template #default="{ row }">
                 <StatusBadge effect="plain">{{ colorTypeText(row.color_type) }}</StatusBadge>
               </template>
@@ -112,12 +112,12 @@
             <template #empty><ListPageStatus v-bind="resourceStatus(ruleResource)" @retry="loadRules"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="ruleVisibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="220" show-overflow-tooltip />
             <el-table-column v-if="ruleVisibleKeys.includes('customer-id')" prop="customer_id" label="客户 ID" min-width="140" show-overflow-tooltip />
-            <el-table-column v-if="ruleVisibleKeys.includes('adjust')" label="调价方式" min-width="200">
+            <el-table-column :sort-by="row => (ruleText(row))" v-if="ruleVisibleKeys.includes('adjust')" label="调价方式" min-width="200">
               <template #default="{ row }">
                 {{ ruleText(row) }}
               </template>
             </el-table-column>
-            <el-table-column v-if="ruleVisibleKeys.includes('enabled')" label="启用" min-width="100">
+            <el-table-column prop="enabled" v-if="ruleVisibleKeys.includes('enabled')" label="启用" min-width="100">
               <template #default="{ row }">
                 <StatusBadge :value="row.enabled" :dictionary="ENABLED_STATUS" effect="plain" />
               </template>
@@ -158,7 +158,7 @@
             <el-table-column v-if="customVisibleKeys.includes('size')" prop="size" label="Length" min-width="90" />
             <el-table-column v-if="customVisibleKeys.includes('unit')" prop="unit" label="Unit" min-width="90" />
             <el-table-column v-if="customVisibleKeys.includes('count')" prop="use_count" label="使用次数" min-width="90" align="right" />
-            <el-table-column v-if="customVisibleKeys.includes('okki')" label="OKKI 关联" min-width="150">
+            <el-table-column prop="okki_product_id" v-if="customVisibleKeys.includes('okki')" label="OKKI 关联" min-width="150">
               <template #default="{ row }">
                 <StatusBadge v-if="row.okki_product_id" type="success" effect="plain">已关联 {{ row.okki_product_id }}</StatusBadge>
                 <StatusBadge v-else type="info" effect="plain">待 OKKI 建品</StatusBadge>

@@ -416,15 +416,15 @@ const transitCols = [
   { key: 'spec_info',              label: '规格' },
   { key: 'order_qty',              label: '订单量' },
   { key: 'received_qty',           label: '已入库' },
-  { key: 'remaining',              label: '未入库', slot: true },
+  { key: 'remaining',              label: '未入库', slot: true, sortValue: row => row.order_qty - row.received_qty },
   { key: 'expected_delivery_date', label: '交货日期' },
-  { key: 'status',                 label: '状态', slot: true },
+  { key: 'status',                 label: '状态', slot: true, sortValue: row => row.is_urgent },
 ]
 const urgentCols = [
   { key: 'model',                  label: '产品型号' },
   { key: 'order_qty',              label: '订单量' },
   { key: 'received_qty',           label: '已入库' },
-  { key: 'progress',               label: '进度', slot: true },
+  { key: 'progress',               label: '进度', slot: true, sortValue: pct },
   { key: 'expected_delivery_date', label: '交货日期' },
   { key: 'days_left',              label: '剩余天数', slot: true },
 ]
@@ -439,7 +439,7 @@ const expiringCols = [
   { key: 'model',                  label: '产品型号' },
   { key: 'order_qty',              label: '订单量' },
   { key: 'current_process',        label: '当前工序' },
-  { key: 'process_pct',            label: '工序进度', slot: true },
+  { key: 'process_pct',            label: '工序进度', slot: true, sortValue: processPct },
   { key: 'expected_delivery_date', label: '交货日期' },
   { key: 'days_left',              label: '剩余天数', slot: true },
 ]
@@ -448,7 +448,7 @@ const statusDetailCols = [
   { key: 'order_id',               label: '订单号' },
   { key: 'order_qty',              label: '订单量' },
   { key: 'received_qty',           label: '已入库' },
-  { key: 'progress',               label: '进度', slot: true },
+  { key: 'progress',               label: '进度', slot: true, sortValue: pct },
   { key: 'expected_delivery_date', label: '交货日期' },
 ]
 const orderDetailCols = [
@@ -457,16 +457,16 @@ const orderDetailCols = [
   { key: 'order_qty',       label: '订单量' },
   { key: 'received_qty',    label: '已入库' },
   { key: 'current_process', label: '当前工序' },
-  { key: 'process_pct',     label: '工序进度', slot: true },
-  { key: 'urgent',          label: '加急', slot: true },
+  { key: 'process_pct',     label: '工序进度', slot: true, sortValue: processPct },
+  { key: 'urgent',          label: '加急', slot: true, sortValue: row => row.is_urgent },
 ]
 const tlDetailCols = [
   { key: 'model',        label: '产品型号' },
   { key: 'spec_info',    label: '规格' },
   { key: 'order_qty',    label: '订单量' },
   { key: 'received_qty', label: '已入库' },
-  { key: 'process_pct',  label: '工序进度', slot: true },
-  { key: 'urgent',       label: '加急', slot: true },
+  { key: 'process_pct',  label: '工序进度', slot: true, sortValue: processPct },
+  { key: 'urgent',       label: '加急', slot: true, sortValue: row => row.is_urgent },
 ]
 </script>
 

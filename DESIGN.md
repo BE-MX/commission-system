@@ -92,7 +92,7 @@
 - **Reduced motion:** 主站全局缩短 CSS 动画/过渡并关闭平滑滚动；组件中的持续 JS/Canvas 动画须自行遵循系统偏好和页面生命周期。GlassButton 在触屏、键盘聚焦及减少动态模式不产生位移；加载状态始终保留可读文字。
 
 ## Component Patterns
-- **Toolbar:** sticky top bar, card 样式（白底 + border + shadow），包含筛选和操作按钮
+- **Toolbar:** 独立筛选卡可吸顶；表格卡片内筛选区使用普通文档流，筛选区下方为独立操作行。
 - **Data table:** 无斑马纹，hover 高亮（`#fef9f0` 极浅金背景），header 用 `#fafbfe` 冷灰底色 + 13px/600 次字色（非 uppercase）。详细规范见「List Page Spec」一节
 - **Status tags:** 自定义 Element Plus tag 颜色，语义明确（info/primary/success/danger/warning）
 - **Button System:** 见下方「Button Spec」完整规范
@@ -275,6 +275,14 @@
 - **[评审]**：无法静态判定，靠 code review 与 QA 对照本节核查
 
 ### 1. 表格基础
+
+**表头排序（2026-10-04）**
+
+- 所有记录表的数据列必须支持点击表头排序，包含列表、弹窗明细、树表、原生 HTML 表格及 PM 任务表。交互统一为升序 → 降序 → 清除；清除恢复原业务默认顺序。显示排序方向，键盘可聚焦并用 Enter/Space 操作，表头提供 `aria-sort`。不增加行位移动画。**[评审]**
+- 分页表排序覆盖当前权限与已提交筛选条件内的**全部查询结果**，先排序再分页；切换排序回到第一页，翻页保持排序。不得对服务器返回的单页套用本地排序，也不得因排序提交尚未查询的筛选输入。失败保留已加载数据并提供重试。**[评审]**
+- 数字、金额、日期按原始值比较，文本按名称排序（客户端采用自然顺序，SQL 列表采用数据库排序规则）；组合列按主要展示值或明确的派生值排序。空值始终置末，服务端以唯一 ID 等字段稳定打破并列。客户端只排序已有完整数据的副本，树表在同层排序并保留父子关系，不改变业务编辑索引或源数组。**[评审]**
+- Element Plus 数据列默认通过 `SortableTableColumn` 启用本地排序；模板列必须声明 `prop`、`sort-by` 或 `sort-method`。分页列必须显式 `sortable="custom"` 并接通列表 `handleSortChange`；后端只接受字段白名单，禁止拼入用户提交的字段或方向。原生记录表复用 `TableSortHeader` / `useLocalTableSort`；生产 `DetailTable` 的计算插槽在列配置中声明 `sortValue`。静态列巡检：`node frontend/scripts/auditTableSorting.mjs`。**[可门禁]**
+- 选择、序号、展开、操作按钮、图片/凭证预览及无实际数据来源的恒空统计列不显示排序入口，显式 `:sortable="false"` 或专用列类型。字段详情的键值表、打印固定版式、权限矩阵等不是记录列表，不打乱固定结构；分组标题由其叶子数据列提供排序。**[评审]**
 
 **DOM 结构**
 
@@ -468,6 +476,8 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 ## Action Bar Spec（操作行）
 
 列表页主操作按钮的统一位置（2026-10-01 起）：**操作行位于筛选区与表格之间，同在表格卡片内**。
+
+筛选区、操作行、表格、分页必须依次占据普通文档流；窄屏控件换行后，下一行随实际高度下移。卡片内 `.toolbar` 必须清除吸顶偏移（`top: auto; bottom: auto`），页面为装饰层设置 `position: relative` 时不得保留全局 sticky 的 `top`。禁止用绝对定位或负外边距使按钮覆盖表头。桌面、768px、390px及全屏模式验收四区边界，筛选区底部 ≤ 操作行顶部，操作行底部 ≤ 表格顶部。**[评审]**
 
 **布局**
 

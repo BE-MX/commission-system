@@ -77,14 +77,14 @@
         </ListPageStatus>
         </template>
         <el-table-column type="selection" min-width="40" />
-        <el-table-column v-if="visibleKeys.includes('credibility')" label="可信度" min-width="120" prop="credibility_label" sortable="custom">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('credibility')" label="可信度" min-width="120" prop="credibility_label">
           <template #default="{ row }">
             <StatusBadge :type="credibilityType(row.credibility_label)" size="small">
               {{ credibilityLabel(row.credibility_label) }}
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('title')" label="标题" min-width="300" prop="title" sortable="custom">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('title')" label="标题" min-width="300" prop="title">
           <template #default="{ row }">
             <div class="item-title">
               <el-icon v-if="row.is_featured" class="featured-star"><Star-Filled /></el-icon>
@@ -97,12 +97,12 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('item-type')" label="类型" min-width="160">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('item-type')" prop="item_type" label="类型" min-width="160">
           <template #default="{ row }">
             <StatusBadge size="small">{{ row.item_type || '-' }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140" prop="status" sortable="custom">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('status')" label="状态" min-width="140" prop="status">
           <template #default="{ row }">
             <StatusBadge :type="statusType(row.status)" size="small">{{ row.status }}</StatusBadge>
           </template>
@@ -186,7 +186,8 @@ const libSort = useTableSort()
 
 // 状态
 const listState = useListPage(async (params, { signal }) => {
-  const { dateRange, ...query } = params
+  const { dateRange, sort_field, sort_order, ...query } = params
+  if (sort_field) { query.sort_by = sort_field; query.sort_desc = sort_order === 'desc' }
   if (dateRange?.length === 2) { query.start_date = dateRange[0]; query.end_date = dateRange[1] }
   if (query.source_types.length) query.source_types = query.source_types.join(',')
   if (query.credibility_labels.length) query.credibility_labels = query.credibility_labels.join(',')

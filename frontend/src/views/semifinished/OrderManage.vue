@@ -25,22 +25,22 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="load" />
-      <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="sortTable0">
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
           <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="reset">重置筛选</GlassButton>
           </el-empty>
         </template>
-        <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no" label="订单号" min-width="155" />
-        <el-table-column v-if="visibleKeys.includes('batch-no')" prop="batch_no" label="批次号" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="140"><template #default="{ row }"><StatusBadge effect="plain">{{ row.source_type === 'production_sync' ? '产成品联动' : '手工创建' }}</StatusBadge></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120"><template #default="{ row }"><StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge></template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('item-count')" prop="item_count" label="明细" min-width="80" align="right" />
-        <el-table-column v-if="visibleKeys.includes('order-qty')" label="下单(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('received-qty')" label="已入库(g)" min-width="120" align="right"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('expected-delivery')" prop="expected_delivery_date" label="预计交期" min-width="120" />
-        <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="165" />
+        <el-table-column v-if="visibleKeys.includes('order-no')" prop="order_no" label="订单号" min-width="155" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('batch-no')" prop="batch_no" label="批次号" min-width="130" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="140" prop="source_type" sortable="custom"><template #default="{ row }"><StatusBadge effect="plain">{{ row.source_type === 'production_sync' ? '产成品联动' : '手工创建' }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120" prop="status" sortable="custom"><template #default="{ row }"><StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('item-count')" prop="item_count" label="明细" min-width="80" align="right" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('order-qty')" label="下单(g)" min-width="120" align="right" prop="order_qty_grams" sortable="custom"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('received-qty')" label="已入库(g)" min-width="120" align="right" prop="received_qty_grams" sortable="custom"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('expected-delivery')" prop="expected_delivery_date" label="预计交期" min-width="120" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="165" sortable="custom" />
         <el-table-column class-name="table-action-column" label="操作" min-width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)"><el-icon><Document /></el-icon>详情</el-button>
@@ -91,10 +91,10 @@
           <div class="sf-summary-item"><span>来源</span><strong style="font-size: 16px">{{ detail.source_type }}</strong></div>
         </div>
         <el-table :data="detail.items" border class="list-table">
-          <el-table-column label="半成品" min-width="180"><template #default="{ row }"><div class="sf-material"><strong>{{ row.size }}/{{ row.color_code }}</strong><small>{{ row.material_code }}</small></div></template></el-table-column>
-          <el-table-column label="下单(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
-          <el-table-column label="已入库(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>
-          <el-table-column label="剩余(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.remaining_qty_grams) }}</template></el-table-column>
+          <el-table-column prop="size" label="半成品" min-width="180"><template #default="{ row }"><div class="sf-material"><strong>{{ row.size }}/{{ row.color_code }}</strong><small>{{ row.material_code }}</small></div></template></el-table-column>
+          <el-table-column prop="order_qty_grams" label="下单(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
+          <el-table-column prop="received_qty_grams" label="已入库(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>
+          <el-table-column prop="remaining_qty_grams" label="剩余(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.remaining_qty_grams) }}</template></el-table-column>
           <el-table-column class-name="table-action-column" label="操作" min-width="100"><template #default="{ row }"><el-button v-if="Number(row.remaining_qty_grams) > 0 && ['submitted','partial'].includes(detail.status)" v-permission="'semifinished:write'" link type="primary" @click="openReceive(row)"><el-icon><Box /></el-icon>入库</el-button></template></el-table-column>
         </el-table>
       </div>
@@ -166,6 +166,7 @@ async function openDetail(row) { detailOrderId.value = row.id; detailVisible.val
 async function terminate(row) { await confirmAction(`确认终止订单 ${row.order_no}？已有入库不会撤销。`, '终止订单'); await terminateSemifinishedOrder(row.id); msgSuccessText('订单已终止'); listState.refreshUpdate(); if (detailOrderId.value === row.id) detailResource.load(row.id) }
 function openReceive(row) { receivingItem.value = row; receiveForm.quantity_grams = Number(row.remaining_qty_grams); receiveForm.remark = ''; receiveIdempotencyKey.value = crypto.randomUUID(); receiveVisible.value = true }
 async function submitReceive() { const orderId = detailOrderId.value; receiveSubmitting.value = true; try { await receiveSemifinishedItem(receivingItem.value.id, { quantity_grams: receiveForm.quantity_grams, idempotency_key: receiveIdempotencyKey.value, remark: receiveForm.remark || null }); msgSuccessText('入库成功'); receiveVisible.value = false; if (detailOrderId.value === orderId) detailResource.load(orderId); listState.refreshUpdate() } finally { receiveSubmitting.value = false } }
+function sortTable0({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped src="./semifinished.css"></style>

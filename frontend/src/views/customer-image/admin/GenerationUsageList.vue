@@ -21,28 +21,28 @@
       </div>
 
       <ListPageStatus v-if="listResource.hasData.value" :paged="true" :error="listResource.errorMessage.value" :loading="loading" :has-data="true" :data-page="listResource.dataPage.value" @retry="load()" />
-      <el-table v-loading="loading" :data="generations" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="generations" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="listResource.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
         <template #empty><ListPageStatus :paged="true" :error="listResource.errorMessage.value" :loading="loading" @retry="load()"><el-empty v-if="listResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('task')" prop="id" label="任务" min-width="90">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('task')" prop="id" label="任务" min-width="90">
           <template #default="{ row }">#{{ row.id }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('product')" prop="product_name" label="产品" min-width="170" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('invite')" prop="invite_id" label="邀请" min-width="90">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('product')" prop="product_name" label="产品" min-width="170" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('invite')" prop="invite_id" label="邀请" min-width="90">
           <template #default="{ row }">#{{ row.invite_id }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
+        <el-table-column sortable="custom" prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }"><StatusBadge :type="statusType[row.status] || 'info'" effect="plain">{{ statusLabel[row.status] || row.status }}</StatusBadge></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('tokens')" label="Token" min-width="150">
+        <el-table-column sortable="custom" prop="total_tokens" v-if="visibleKeys.includes('tokens')" label="Token" min-width="150">
           <template #default="{ row }">{{ formatNumber(row.total_tokens) }} <small>（入 {{ formatNumber(row.input_tokens) }} / 出 {{ formatNumber(row.output_tokens) }}）</small></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('cost')" label="预估成本" min-width="120">
+        <el-table-column sortable="custom" prop="estimated_cost_microusd" v-if="visibleKeys.includes('cost')" label="预估成本" min-width="120">
           <template #default="{ row }">{{ formatCost(row.estimated_cost_microusd) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="170">
+        <el-table-column sortable="custom" prop="created_at" v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="170">
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('error')" prop="error_message" label="异常" min-width="180" show-overflow-tooltip>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('error')" prop="error_message" label="异常" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.error_message || '-' }}</template>
         </el-table-column>
       </el-table>

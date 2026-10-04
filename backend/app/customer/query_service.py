@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import timedelta, timezone
 
-from sqlalchemy import and_, exists, or_
+from sqlalchemy import select, func, and_, exists, or_
 from sqlalchemy.orm import Session
+from app.auth.models import ArkUser
 from app.core.time import beijing_now
 
 from app.customer.access_service import (
@@ -29,6 +30,7 @@ from app.customer.models import (
     CustomerResearchTask,
 )
 from app.customer.logical_customer_service import logical_owner_expression
+from app.core.list_sort import apply_list_sort
 
 
 BEIJING = timezone(timedelta(hours=8))
@@ -110,7 +112,10 @@ def _summary(
     }
 
 
-def list_customers(db: Session, user: dict, *, page: int, page_size: int, keyword=None):
+def list_customers(db: Session, user: dict, *, page: int, page_size: int, keyword=None,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+):
     query = scoped_customer_query(db, user)
     if keyword and keyword.strip():
         pattern = f"%{keyword.strip()}%"
@@ -126,14 +131,26 @@ def list_customers(db: Session, user: dict, *, page: int, page_size: int, keywor
         CustomerAssignment.assignment_status == "active",
         CustomerAssignment.effective_to.is_(None),
     ))
-    rows = query.outerjoin(
-        CustomerListProjection,
-        CustomerListProjection.customer_id == CustomerAccount.id,
-    ).with_entities(
-        CustomerAccount,
-        CustomerListProjection,
-        primary_exists.label("has_primary"),
-    ).order_by(CustomerAccount.updated_at.desc(), CustomerAccount.id.desc()).offset(
+    rows = apply_list_sort(
+        query.outerjoin(
+            CustomerListProjection,
+            CustomerListProjection.customer_id == CustomerAccount.id,
+        ).with_entities(
+            CustomerAccount,
+            CustomerListProjection,
+            primary_exists.label("has_primary"),
+        ), sort_field, sort_order, {
+            "identity_status": CustomerAccount.identity_status,
+            "relationship_stage": CustomerAccount.relationship_stage,
+            "profile_completeness": CustomerAccount.profile_completeness,
+            "updated_at": CustomerAccount.updated_at,
+            "customer_name": func.coalesce(func.nullif(CustomerAccount.display_name, ""), func.nullif(CustomerAccount.canonical_company_name, ""), CustomerAccount.customer_code),
+            "primary_industry": CustomerListProjection.primary_industry,
+            "is_public_pool": ~primary_exists,
+        },
+        default=(CustomerAccount.updated_at.desc(), CustomerAccount.id.desc(),),
+        tie_breakers=(CustomerAccount.id.asc(),),
+    ).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
     return [
@@ -370,7 +387,10 @@ def _batch_research_access(
     }
 
 
-def list_research_tasks(db: Session, user: dict, *, page, page_size, review_status=None):
+def list_research_tasks(db: Session, user: dict, *, page, page_size, review_status=None,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+):
     from app.customer.workbench_service import customer_labels
 
     query = scoped_research_query(db, user)
@@ -379,9 +399,21 @@ def list_research_tasks(db: Session, user: dict, *, page, page_size, review_stat
                              CustomerResearchTask.task_status == "completed")
     total = query.count()
     owner_id = logical_owner_expression(CustomerResearchTask, "research_task")
-    rows = query.with_entities(
-        CustomerResearchTask, owner_id.label("logical_customer_id"),
-    ).order_by(CustomerResearchTask.updated_at.desc()).offset(
+    rows = apply_list_sort(
+        query.with_entities(
+            CustomerResearchTask, owner_id.label("logical_customer_id"),
+        ), sort_field, sort_order, {
+            "task_type": CustomerResearchTask.task_type,
+            "tier": CustomerResearchTask.tier,
+            "task_status": CustomerResearchTask.task_status,
+            "result_review_status": CustomerResearchTask.result_review_status,
+            "data_classification": CustomerResearchTask.data_classification,
+            "updated_at": CustomerResearchTask.updated_at,
+            "customer_name": select(func.coalesce(func.nullif(CustomerAccount.display_name, ""), func.nullif(CustomerAccount.canonical_company_name, ""), CustomerAccount.customer_code)).where(CustomerAccount.id == owner_id).scalar_subquery(),
+        },
+        default=(CustomerResearchTask.updated_at.desc(), CustomerResearchTask.id.desc(),),
+        tie_breakers=(CustomerResearchTask.id.asc(),),
+    ).offset(
         (page - 1) * page_size,
     ).limit(page_size).all()
     accesses = _batch_research_access(
@@ -420,7 +452,10 @@ def get_research_task(db: Session, user: dict, task_id: int):
     return detail
 
 
-def list_opportunities(db: Session, user: dict, *, page, page_size):
+def list_opportunities(db: Session, user: dict, *, page, page_size,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+):
     from app.customer.workbench_service import enrich_rows
 
     owner_id = logical_owner_expression(CustomerOpportunity, "opportunity")
@@ -431,9 +466,21 @@ def list_opportunities(db: Session, user: dict, *, page, page_size):
         ))
     )
     total = query.count()
-    rows = query.with_entities(
-        CustomerOpportunity, owner_id.label("logical_customer_id"),
-    ).order_by(CustomerOpportunity.updated_at.desc()).offset(
+    rows = apply_list_sort(
+        query.with_entities(
+            CustomerOpportunity, owner_id.label("logical_customer_id"),
+        ), sort_field, sort_order, {
+            "title": CustomerOpportunity.title,
+            "status": CustomerOpportunity.status,
+            "priority_level": CustomerOpportunity.priority_level,
+            "due_at": CustomerOpportunity.due_at,
+            "updated_at": CustomerOpportunity.updated_at,
+            "customer_name": select(func.coalesce(func.nullif(CustomerAccount.display_name, ""), func.nullif(CustomerAccount.canonical_company_name, ""), CustomerAccount.customer_code)).where(CustomerAccount.id == owner_id).scalar_subquery(),
+            "owner_name": select(func.coalesce(ArkUser.real_name, ArkUser.username)).where(ArkUser.id == CustomerOpportunity.owner_user_id).scalar_subquery(),
+        },
+        default=(CustomerOpportunity.updated_at.desc(), CustomerOpportunity.id.desc(),),
+        tie_breakers=(CustomerOpportunity.id.asc(),),
+    ).offset(
         (page - 1) * page_size,
     ).limit(page_size).all()
     items = [serialize_opportunity(row, customer_id=int(owner)) for row, owner in rows]
@@ -453,7 +500,10 @@ def serialize_opportunity(row, *, customer_id=None) -> dict:
     }
 
 
-def list_actions(db: Session, user: dict, *, page, page_size):
+def list_actions(db: Session, user: dict, *, page, page_size,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+):
     owner_id = logical_owner_expression(CustomerAction, "action")
     query = db.query(CustomerAction).filter(
         owner_id.in_(_scoped_ids(
@@ -462,12 +512,27 @@ def list_actions(db: Session, user: dict, *, page, page_size):
         ))
     )
     total = query.count()
-    rows = query.with_entities(
-        CustomerAction, owner_id.label("logical_customer_id"),
-    ).order_by(CustomerAction.updated_at.desc()).offset(
+    rows = apply_list_sort(
+        query.with_entities(
+            CustomerAction, owner_id.label("logical_customer_id"),
+        ), sort_field, sort_order, {
+            "action_type": CustomerAction.action_type,
+            "priority": CustomerAction.priority,
+            "due_at": CustomerAction.due_at,
+            "updated_at": CustomerAction.updated_at,
+            "customer_name": select(func.coalesce(func.nullif(CustomerAccount.display_name, ""), func.nullif(CustomerAccount.canonical_company_name, ""), CustomerAccount.customer_code)).where(CustomerAccount.id == owner_id).scalar_subquery(),
+            "status": CustomerAction.status,
+        },
+        default=(CustomerAction.updated_at.desc(), CustomerAction.id.desc(),),
+        tie_breakers=(CustomerAction.id.asc(),),
+    ).offset(
         (page - 1) * page_size,
     ).limit(page_size).all()
-    return [serialize_action(row, customer_id=int(owner)) for row, owner in rows], total
+    from app.customer.workbench_service import customer_labels
+
+    labels = customer_labels(db, {int(owner) for _row, owner in rows})
+    return [{**serialize_action(row, customer_id=int(owner)), **labels.get(int(owner), {})}
+            for row, owner in rows], total
 
 
 def serialize_action(row, *, customer_id=None) -> dict:

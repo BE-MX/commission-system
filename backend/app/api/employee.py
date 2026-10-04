@@ -7,6 +7,7 @@ from app.core.time import beijing_today
 from fastapi import APIRouter, Depends, UploadFile, File, Query
 from openpyxl import load_workbook
 from sqlalchemy import or_
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -63,7 +64,6 @@ def list_employees(
     _user: dict = Depends(require_any_permission("employee:read", "employee:write")),
 ) -> ResponseModel[PageResponse[EmployeeListItem]]:
     """查询员工列表，LEFT JOIN 当前属性"""
-    from sqlalchemy import desc as _desc
     query = db.query(
         UserBasic.user_id,
         UserBasic.full_name,
@@ -87,10 +87,10 @@ def list_employees(
         "user_id": UserBasic.user_id,
         "full_name": UserBasic.full_name,
         "current_attribute": EmployeeAttributeHistory.attribute_type,
+        "nickname": UserBasic.nickname,
     }
-    sort_col = SORT_MAP.get(sort_field, UserBasic.user_id)
-    order_fn = _desc if sort_order == "desc" else lambda c: c
-    query = query.order_by(order_fn(sort_col))
+    query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
+        default=(UserBasic.user_id.asc(),), tie_breakers=(UserBasic.user_id.asc(),))
 
     total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()

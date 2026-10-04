@@ -19,6 +19,7 @@ import FilterBar from './components/FilterBar.vue'
 import ListPageStatus from './components/ListPageStatus.vue'
 import DetailDrawer from './components/DetailDrawer.vue'
 import { registerPermissionDirectives } from './directives/permission'
+import { registerSortableTables } from './components/SortableTableColumn'
 
 const app = createApp(App)
 
@@ -37,5 +38,6 @@ registerPermissionDirectives(app)   // v-permission / v-any-permission（按钮�
 
 app.use(createPinia())
 app.use(ElementPlus, { locale: zhCn })
+registerSortableTables(app)
 app.use(router)
 app.mount('#app')

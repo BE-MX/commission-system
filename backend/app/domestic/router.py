@@ -292,12 +292,14 @@ def list_customers(
     city: str = Query(""),
     customer_level: str = Query("", max_length=8),
     owner_user_id: int | None = Query(None, gt=0),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_CUSTOMER_READ)),
 ):
     customer_service.release_stale_private_customers(db)
     items, total = customer_service.list_customers(
-        db, page=page, page_size=page_size, keyword=keyword, status=status,
+        db, sort_field=sort_field, sort_order=sort_order, page=page, page_size=page_size, keyword=keyword, status=status,
         owner_scope=owner_scope, province=province, city=city,
         customer_level=customer_level, owner_user_id=owner_user_id,
     )
@@ -441,13 +443,15 @@ def list_customer_requests(
     status: str = Query("", pattern="^(pending|approved|rejected)?$"),
     request_type: str = Query("", pattern="^(recharge|adjust)?$"),
     keyword: str = Query("", max_length=120),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     current_user: dict = Depends(
         require_any_permission("domestic:review", "domestic:admin", "domestic:recharge")
     ),
 ):
     items, total = request_service.list_requests(
-        db, status=status, request_type=request_type, keyword=keyword,
+        db, sort_field=sort_field, sort_order=sort_order, status=status, request_type=request_type, keyword=keyword,
         page=page, page_size=page_size,
         viewer_user_id=_uid(current_user), can_review_all=_can_review(current_user),
     )
@@ -582,13 +586,15 @@ def list_customer_balance_ledger(
     customer_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
 ):
     _ensure_customer_owner(db, customer_id, _user)
     try:
         items, total = balance_service.list_customer_ledger(
-            db, customer_id=customer_id, page=page, page_size=page_size,
+            db, customer_id=customer_id, page=page, page_size=page_size, sort_field=sort_field, sort_order=sort_order,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

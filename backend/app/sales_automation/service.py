@@ -32,6 +32,7 @@ from app.customer.models import (
 from app.customer.logical_customer_service import logical_owner_expression, logical_root_predicate
 from app.sales_automation.identity import InvalidExternalUrl, normalize_domain, normalize_source_url
 from app.sales_automation.models import AcquisitionProfile
+from app.core.list_sort import apply_list_sort
 
 
 class SalesAutomationError(ValueError):
@@ -339,12 +340,30 @@ def list_search_jobs(
     page: int,
     page_size: int,
     status: str | None = None,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> tuple[list[SearchJob], int]:
     query = db.query(SearchJob)
     if status:
         query = query.filter(SearchJob.status == status)
     total = query.count()
-    rows = query.order_by(SearchJob.created_at.desc(), SearchJob.id.desc()).offset(
+    rows = apply_list_sort(
+        query, sort_field, sort_order, {
+            "name": SearchJob.name,
+            "status": SearchJob.status,
+            "target_count": SearchJob.target_count,
+            "result_count": SearchJob.result_count,
+            "created_customer_count": SearchJob.created_customer_count,
+            "deduplicated_count": SearchJob.deduplicated_count,
+            "attempt_count": SearchJob.attempt_count,
+            "created_at": SearchJob.created_at,
+            "policy_version": SearchJob.policy_version,
+            "error_message": SearchJob.error_message,
+            "updated_at": SearchJob.updated_at,
+        },
+        default=(SearchJob.created_at.desc(), SearchJob.id.desc(),),
+        tie_breakers=(SearchJob.id.asc(),),
+    ).offset(
         (page - 1) * page_size,
     ).limit(page_size).all()
     return rows, total
@@ -899,6 +918,8 @@ def list_search_results(
     job_id: int,
     page: int,
     page_size: int,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> tuple[list[SearchResult], int]:
     get_search_job(db, job_id)
     owner_id = logical_owner_expression(SearchResult, "search_result")
@@ -906,10 +927,16 @@ def list_search_results(
         SearchResult, owner_id.label("logical_customer_id"),
     ).filter(SearchResult.job_id == job_id)
     total = query.count()
-    results = query.order_by(
-        SearchResult.best_score.desc(),
-        SearchResult.best_rank.asc(),
-        SearchResult.id.asc(),
+    results = apply_list_sort(
+        query, sort_field, sort_order, {
+            "best_score": SearchResult.best_score,
+            "best_rank": SearchResult.best_rank,
+            "result_status": SearchResult.result_status,
+            "created_at": SearchResult.created_at,
+            "customer_id": owner_id,
+        },
+        default=(SearchResult.best_score.desc(), SearchResult.best_rank.asc(), SearchResult.id.asc(),),
+        tie_breakers=(SearchResult.id.asc(),),
     ).offset((page - 1) * page_size).limit(page_size).all()
     rows = []
     for row, logical_customer_id in results:

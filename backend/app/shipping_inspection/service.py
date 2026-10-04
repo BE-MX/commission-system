@@ -10,6 +10,7 @@ import hashlib
 
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -360,6 +361,8 @@ def list_records(
     page: int = 1,
     page_size: int = 20,
     okki_user_id: str | None = None,
+    sort_field: str = "submitted_at",
+    sort_order: str = "desc",
 ) -> tuple[list[dict], int]:
     """已提交验货单分页：keyword 匹配单号/客户，date 按提交时间过滤（含当日）。"""
     from app.shipping_inspection import record_query_service
@@ -391,9 +394,22 @@ def list_records(
     if date_to:
         from datetime import timedelta
         query = query.filter(ShippingInspection.submitted_at < date_to + timedelta(days=1))
+    from app.shipping_inspection.list_sort_service import inspection_link_sort_values
+    columns = {
+        "outbound_no": ShippingInspection.outbound_no,
+        "customer_name": ShippingInspection.customer_name,
+        "photo_count": ShippingInspection.photo_count,
+        "submitted_at": ShippingInspection.submitted_at,
+        "remark": ShippingInspection.remark,
+        "submitted_by_name": ArkUser.real_name,
+        **inspection_link_sort_values(db),
+    }
+    query = apply_list_sort(query, sort_field, sort_order, columns,
+        default=(ShippingInspection.submitted_at.desc(), ShippingInspection.id.desc()),
+        tie_breakers=(ShippingInspection.id.asc(),))
     total = query.count()
     rows = (
-        query.order_by(ShippingInspection.submitted_at.desc(), ShippingInspection.id.desc())
+        query
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

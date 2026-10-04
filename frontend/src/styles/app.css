@@ -637,6 +637,8 @@ body {
 /* 筛选区在表格卡片内时：去掉独立卡片样式与 sticky，改为卡片内的分隔行 */
 .table-card > .toolbar {
   position: static;
+  top: auto;
+  bottom: auto;
   margin-bottom: 0;
   padding: 14px;
   background: none;
@@ -671,6 +673,8 @@ body {
   gap: 8px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border-color);
+  position: relative;
+  flex-shrink: 0;
 }
 
 .table-card > .action-bar .table-tools {

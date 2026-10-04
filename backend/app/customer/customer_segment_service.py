@@ -15,6 +15,7 @@ from app.customer.logical_customer_service import logical_owner_expression, logi
 from app.customer.pcw_order_service import derive_order_type
 from app.customer.query_service import scoped_customer_query, _summary, iso_beijing
 from app.customer.pcw_overview_service import _scope_customer_ids, _collect_watermarks, WATERMARK_STALE_AFTER
+from app.core.list_sort import apply_items_sort
 
 POLICY = json.loads(Path(__file__).with_name("customer_segment_policy.json").read_text(encoding="utf-8"))
 
@@ -82,7 +83,10 @@ def prototype_comparison(*, days, covered, now, policy=POLICY):
     return center > 0 and demo["lower_ratio"]*center <= age <= demo["upper_ratio"]*center
 
 
-def list_customers(db, user, *, page, page_size, keyword=None, customer_scope="primary", tier=None, sort="value", focus=None, preview=False):
+def list_customers(db, user, *, page, page_size, keyword=None, customer_scope="primary", tier=None, sort="value", focus=None, preview=False,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
+):
     from app.customer.work_item_service import live_user
     user = live_user(db, user)
     perms = set(user.get("permissions", []))
@@ -188,6 +192,7 @@ def list_customers(db, user, *, page, page_size, keyword=None, customer_scope="p
     keys = {"value": "order_amount_usd", "order": "last_order_at", "contact": "last_interaction_at", "profile": "profile_completeness", "updated": "updated_at"}
     key = keys[sort]
     results.sort(key=lambda row: (row[key] is not None, Decimal(row[key] or 0) if sort == "value" else row[key] or "", row["customer_id"]), reverse=True)
+    results = apply_items_sort(results, sort_field, sort_order, {**{key: key for key in ("display_name", "tier", "order_count", "last_interaction_at", "profile_completeness")}, "order_amount_usd": lambda row: Decimal(row["order_amount_usd"]) if row["order_amount_usd"] is not None else None}, tie_breaker="customer_id")
     response = {"items": results[(page-1)*page_size:page*page_size], "total": len(results), "page": page, "page_size": page_size,
         "segment_summary": summary, "policy_version": POLICY["version"], "policy_status": POLICY["status"], "source_watermarks": watermarks}
     if preview:

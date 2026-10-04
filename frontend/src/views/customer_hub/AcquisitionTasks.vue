@@ -17,13 +17,13 @@
         <div class="action-bar">
           <TableTools v-model:visible-keys="resultsVisibleKeys" v-model:density="resultsDensity" :columns="resultsColumnDefs" :loading="resultsLoading" :fullscreen="resultsIsFullscreen" @refresh="loadResults" @fullscreen="toggleResultsFullscreen" />
         </div>
-        <el-table v-loading="resultsLoading" :data="results" border class="list-table" :class="resultsDensityClass" :max-height="resultsIsFullscreen ? undefined : 520">
+        <el-table v-loading="resultsLoading" :data="results" border class="list-table" :class="resultsDensityClass" :max-height="resultsIsFullscreen ? undefined : 520" @sort-change="resultsState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
 <template #empty><ListPageStatus :error="resultsError" :loading="resultsLoading" @retry="loadResults"><el-empty description="该任务没有产出候选客户；若任务已完成仍为空，请检查执行端日志或调整后重新创建任务。" /></ListPageStatus></template>
-          <el-table-column v-if="resultsVisibleKeys.includes('customer')" label="客户" min-width="110"><template #default="{ row }">#{{ row.customer_id }}</template></el-table-column>
-          <el-table-column v-if="resultsVisibleKeys.includes('rank')" prop="best_rank" label="排名" min-width="80" />
-          <el-table-column v-if="resultsVisibleKeys.includes('score')" label="匹配分" min-width="100"><template #default="{ row }">{{ row.best_score }}</template></el-table-column>
-          <el-table-column v-if="resultsVisibleKeys.includes('status')" label="结果状态" min-width="120"><template #default="{ row }"><StatusBadge size="small">{{ searchResultStatusLabel(row.result_status) }}</StatusBadge></template></el-table-column>
-          <el-table-column v-if="resultsVisibleKeys.includes('created')" label="入档时间" min-width="170"><template #default="{ row }">{{ formatResultDate(row.created_at) }}</template></el-table-column>
+          <el-table-column sortable="custom" prop="customer_id" v-if="resultsVisibleKeys.includes('customer')" label="客户" min-width="110"><template #default="{ row }">#{{ row.customer_id }}</template></el-table-column>
+          <el-table-column sortable="custom" v-if="resultsVisibleKeys.includes('rank')" prop="best_rank" label="排名" min-width="80" />
+          <el-table-column sortable="custom" prop="best_score" v-if="resultsVisibleKeys.includes('score')" label="匹配分" min-width="100"><template #default="{ row }">{{ row.best_score }}</template></el-table-column>
+          <el-table-column sortable="custom" prop="result_status" v-if="resultsVisibleKeys.includes('status')" label="结果状态" min-width="120"><template #default="{ row }"><StatusBadge size="small">{{ searchResultStatusLabel(row.result_status) }}</StatusBadge></template></el-table-column>
+          <el-table-column sortable="custom" prop="created_at" v-if="resultsVisibleKeys.includes('created')" label="入档时间" min-width="170"><template #default="{ row }">{{ formatResultDate(row.created_at) }}</template></el-table-column>
         </el-table>
         <el-pagination v-model:current-page="resultsPage" v-model:page-size="resultsPageSize" :page-sizes="[20, 50, 100]" :total="resultsTotal" layout="total, sizes, prev, pager, next" class="pager" @current-change="handlePageChange" @size-change="handleSizeChange" />
       </div>

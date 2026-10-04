@@ -198,9 +198,12 @@ def get_order_list(
     SORT_COL_MAP = {
         "order_no": "o.order_no", "batch_no": "o.batch_no",
         "created_at": "o.created_at", "status": "o.status",
+        "created_by_name": "u.real_name", "item_count": "COUNT(i.id)",
+        "total_order_qty": "COALESCE(SUM(i.order_qty), 0)", "total_received_qty": "COALESCE(SUM(i.received_qty), 0)",
+        "total_in_transit_qty": "COALESCE(SUM(i.order_qty - i.received_qty), 0)",
     }
     sort_col = SORT_COL_MAP.get(sort_field, "o.created_at")
-    sort_dir = "DESC" if sort_order == "desc" else "ASC"
+    sort_dir = sort_order.upper() if sort_field in SORT_COL_MAP and sort_order in ("asc", "desc") else "DESC"
 
     params.update({"limit": page_size, "offset": (page - 1) * page_size})
     sql = f"""
@@ -217,7 +220,7 @@ def get_order_list(
         WHERE {where_sql}
         GROUP BY o.id, o.order_no, o.batch_no, o.remark, o.status,
                  o.created_by, o.created_at, u.real_name
-        ORDER BY {sort_col} {sort_dir}
+        ORDER BY ({sort_col} IS NULL) ASC, {sort_col} {sort_dir}, o.id ASC
         LIMIT :limit OFFSET :offset
     """
     rows = db.execute(text(sql), params).mappings().all()
@@ -464,10 +467,11 @@ def get_order_item_list(
         "order_no": "o.order_no", "batch_no": "o.batch_no",
         "product_name": "i.product_name", "model": "i.model",
         "order_qty": "i.order_qty", "received_qty": "i.received_qty",
-        "created_at": "i.created_at",
+        "created_at": "i.created_at", "in_transit_qty": "(i.order_qty - i.received_qty)",
+        "status": "i.status", "order_status": "o.status", "is_urgent": "i.is_urgent", "expected_delivery_date": "i.expected_delivery_date",
     }
     sort_col = SORT_COL_MAP.get(sort_field, "i.created_at")
-    sort_dir = "DESC" if sort_order == "desc" else "ASC"
+    sort_dir = sort_order.upper() if sort_field in SORT_COL_MAP and sort_order in ("asc", "desc") else "DESC"
 
     params.update({"limit": page_size, "offset": (page - 1) * page_size})
     sql = f"""
@@ -478,7 +482,7 @@ def get_order_item_list(
         FROM ark_production_order_items i
         JOIN ark_production_orders o ON o.id = i.order_id
         WHERE {where_sql}
-        ORDER BY {sort_col} {sort_dir}
+        ORDER BY ({sort_col} IS NULL) ASC, {sort_col} {sort_dir}, i.id ASC
         LIMIT :limit OFFSET :offset
     """
     rows = db.execute(text(sql), params).mappings().all()

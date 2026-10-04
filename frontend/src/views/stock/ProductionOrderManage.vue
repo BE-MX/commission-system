@@ -72,16 +72,16 @@
             </template>
             <el-table-column v-if="orderVisibleKeys.includes('order-no')" label="生产单号" prop="order_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
             <el-table-column v-if="orderVisibleKeys.includes('batch-no')" label="生产批次号" prop="batch_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
-            <el-table-column v-if="orderVisibleKeys.includes('created-by')" label="创建人" min-width="100" max-width="150" show-overflow-tooltip>
+            <el-table-column v-if="orderVisibleKeys.includes('created-by')" label="创建人" min-width="100" max-width="150" show-overflow-tooltip prop="created_by_name" sortable="custom">
               <template #default="{ row }">{{ row.created_by_name || '-' }}</template>
             </el-table-column>
             <el-table-column v-if="orderVisibleKeys.includes('created-at')" label="创建时间" prop="created_at" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip>
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column v-if="orderVisibleKeys.includes('item-count')" label="明细数" min-width="80" max-width="120" prop="item_count" show-overflow-tooltip />
-            <el-table-column v-if="orderVisibleKeys.includes('total-order-qty')" label="总下单量" min-width="90" max-width="135" prop="total_order_qty" show-overflow-tooltip />
-            <el-table-column v-if="orderVisibleKeys.includes('total-received-qty')" label="总入库量" min-width="90" max-width="135" prop="total_received_qty" show-overflow-tooltip />
-            <el-table-column v-if="orderVisibleKeys.includes('in-transit-qty')" label="在途量" min-width="80" max-width="120">
+            <el-table-column v-if="orderVisibleKeys.includes('item-count')" label="明细数" min-width="80" max-width="120" prop="item_count" show-overflow-tooltip sortable="custom" />
+            <el-table-column v-if="orderVisibleKeys.includes('total-order-qty')" label="总下单量" min-width="90" max-width="135" prop="total_order_qty" show-overflow-tooltip sortable="custom" />
+            <el-table-column v-if="orderVisibleKeys.includes('total-received-qty')" label="总入库量" min-width="90" max-width="135" prop="total_received_qty" show-overflow-tooltip sortable="custom" />
+            <el-table-column v-if="orderVisibleKeys.includes('in-transit-qty')" label="在途量" min-width="80" max-width="120" prop="total_in_transit_qty" sortable="custom">
               <template #default="{ row }">
                 <span :class="row.total_in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.total_in_transit_qty }}</span>
               </template>
@@ -154,28 +154,28 @@
             <el-table-column v-if="itemVisibleKeys.includes('model')" label="型号" prop="model" min-width="100" max-width="150" sortable="custom" show-overflow-tooltip />
             <el-table-column v-if="itemVisibleKeys.includes('order-qty')" label="下单数量" min-width="90" max-width="135" prop="order_qty" sortable="custom" show-overflow-tooltip />
             <el-table-column v-if="itemVisibleKeys.includes('received-qty')" label="已入库" min-width="80" max-width="120" prop="received_qty" sortable="custom" show-overflow-tooltip />
-            <el-table-column v-if="itemVisibleKeys.includes('in-transit')" label="在途" min-width="70" max-width="105">
+            <el-table-column v-if="itemVisibleKeys.includes('in-transit')" label="在途" min-width="70" max-width="105" prop="in_transit_qty" sortable="custom">
               <template #default="{ row }">
                 <span :class="row.in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.in_transit_qty }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="itemVisibleKeys.includes('item-status')" label="明细状态" min-width="120" max-width="135">
+            <el-table-column v-if="itemVisibleKeys.includes('item-status')" label="明细状态" min-width="120" max-width="135" prop="status" sortable="custom">
               <template #default="{ row }">
                 <StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column v-if="itemVisibleKeys.includes('order-status')" label="订单状态" min-width="120" max-width="135">
+            <el-table-column v-if="itemVisibleKeys.includes('order-status')" label="订单状态" min-width="120" max-width="135" prop="order_status" sortable="custom">
               <template #default="{ row }">
                 <StatusBadge :type="statusTagType(row.order_status)" size="small" effect="plain">{{ row.order_status_label }}</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column v-if="itemVisibleKeys.includes('urgent')" label="加急" min-width="100" max-width="105">
+            <el-table-column v-if="itemVisibleKeys.includes('urgent')" label="加急" min-width="100" max-width="105" prop="is_urgent" sortable="custom">
               <template #default="{ row }">
                 <StatusBadge v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</StatusBadge>
                 <span v-else class="text-muted">—</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="itemVisibleKeys.includes('expected-delivery')" label="预计交期" min-width="110" max-width="165">
+            <el-table-column v-if="itemVisibleKeys.includes('expected-delivery')" label="预计交期" min-width="110" max-width="165" prop="expected_delivery_date" sortable="custom">
               <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
             </el-table-column>
             <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
@@ -220,19 +220,19 @@
           <el-table-column label="型号" prop="model" min-width="100" show-overflow-tooltip />
           <el-table-column label="下单量" min-width="80" max-width="120" prop="order_qty" show-overflow-tooltip />
           <el-table-column label="已入库" min-width="80" max-width="120" prop="received_qty" show-overflow-tooltip />
-          <el-table-column label="在途" min-width="70" max-width="105">
+          <el-table-column prop="in_transit_qty" label="在途" min-width="70" max-width="105">
             <template #default="{ row }"><span :class="row.in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.in_transit_qty }}</span></template>
           </el-table-column>
-          <el-table-column label="加急" min-width="100" max-width="105">
+          <el-table-column prop="is_urgent" label="加急" min-width="100" max-width="105">
             <template #default="{ row }">
               <StatusBadge v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</StatusBadge>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="预计交期" min-width="100" max-width="150">
+          <el-table-column prop="expected_delivery_date" label="预计交期" min-width="100" max-width="150">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
-          <el-table-column label="状态" min-width="120" max-width="120">
+          <el-table-column prop="status" label="状态" min-width="120" max-width="120">
             <template #default="{ row }"><StatusBadge :type="statusTagType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</StatusBadge></template>
           </el-table-column>
         </el-table>

@@ -50,15 +50,15 @@
 
       <ListPageStatus :error="tokenResource.errorMessage.value" :loading="tokenResource.loading.value" :has-data="tokenResource.hasData.value" @retry="reloadRows" />
       <el-table v-if="filteredRows.length || loading" v-loading="loading" :data="filteredRows" class="token-table list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border>
-        <el-table-column v-if="visibleKeys.includes('label')" label="Agent 用途" min-width="170">
+        <el-table-column prop="label" v-if="visibleKeys.includes('label')" label="Agent 用途" min-width="170">
           <template #default="{ row }"><strong class="purpose">{{ row.label }}</strong></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('owner')" label="绑定账号" min-width="180">
+        <el-table-column :sort-by="row => row.real_name || row.username" v-if="visibleKeys.includes('owner')" label="绑定账号" min-width="180">
           <template #default="{ row }">
             <div class="account-cell"><span>{{ row.real_name }}</span><small>@{{ row.username }}</small></div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('knowledge')" label="知识库访问" min-width="210">
+        <el-table-column prop="has_knowledge_read" v-if="visibleKeys.includes('knowledge')" label="知识库访问" min-width="210">
           <template #default="{ row }">
             <div class="access-tags">
               <StatusBadge :type="row.has_knowledge_read ? 'success' : 'danger'" effect="plain" size="small">
@@ -70,17 +70,17 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100">
+        <el-table-column prop="is_active" v-if="visibleKeys.includes('status')" label="状态" min-width="100">
           <template #default="{ row }">
             <span :class="['status', row.is_active ? 'is-active' : 'is-revoked']">
               <i />{{ row.is_active ? '有效' : '已吊销' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('last-used')" label="最近使用" min-width="160">
+        <el-table-column prop="last_used_at" v-if="visibleKeys.includes('last-used')" label="最近使用" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.last_used_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('created')" label="创建时间" min-width="160">
+        <el-table-column prop="created_at" v-if="visibleKeys.includes('created')" label="创建时间" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="190" fixed="right">

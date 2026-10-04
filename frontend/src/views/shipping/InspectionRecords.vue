@@ -50,22 +50,22 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="listPageState.fetchList" />
-<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+<el-table @sort-change="handleSortChange" :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="listPageState.fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的验货单' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="验货单号" min-width="140" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('photo-count')" label="照片数" min-width="80" align="right">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="验货单号" min-width="140" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('photo-count')" prop="photo_count" label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.photo_count }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="100" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('submitted-by-name')" prop="submitted_by_name" label="提交人" min-width="100" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="提交时间" min-width="150" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" show-overflow-tooltip>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="100" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('submitted-by-name')" prop="submitted_by_name" label="提交人" min-width="100" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="提交时间" min-width="150" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="280" fixed="right">
@@ -171,6 +171,7 @@ const hasActiveFilters = computed(() => Boolean(
 // 日期起止互相约束（替代原原生 date input 的 min/max）：起不晚于止，止不早于起
 const disableFromDate = d => Boolean(searchForm.dateTo) && d.getTime() > new Date(`${searchForm.dateTo}T23:59:59`).getTime()
 const disableToDate = d => Boolean(searchForm.dateFrom) && d.getTime() < new Date(`${searchForm.dateFrom}T00:00:00`).getTime()
+function handleSortChange({ prop, order }) { return listPageState.handleSortChange(order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {}) }
 </script>
 
 <style scoped>

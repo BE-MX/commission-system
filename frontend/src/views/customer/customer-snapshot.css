@@ -6,7 +6,6 @@
 /* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
    el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
    .el-overlay 的 position: fixed，弹窗打开后看不见 */
-.customer-snapshot-page .toolbar,
 .customer-snapshot-page .table-card,
 .customer-snapshot-page .pagination {
   position: relative;
@@ -36,7 +35,6 @@
 .customer-snapshot-page .table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .customer-snapshot-page .table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
-.toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 :deep(.incomplete-row) {
   background-color: #fdf6ec !important;

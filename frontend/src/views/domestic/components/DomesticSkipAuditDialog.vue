@@ -10,17 +10,17 @@
     <el-table :data="audits" v-loading="loading" border class="list-table audit-table">
       <el-table-column prop="process_name" label="工序" min-width="100" show-overflow-tooltip />
       <el-table-column prop="skipped_qty" label="数量" min-width="70" />
-      <el-table-column label="单件" min-width="130" show-overflow-tooltip>
+      <el-table-column :sort-by="row => (row.unit_codes?.join('、') || '-')" label="单件" min-width="130" show-overflow-tooltip>
         <template #default="{ row: audit }">{{ audit.unit_codes?.join('、') || '-' }}</template>
       </el-table-column>
-      <el-table-column label="原因" min-width="160" show-overflow-tooltip>
+      <el-table-column prop="reason" label="原因" min-width="160" show-overflow-tooltip>
         <template #default="{ row: audit }">{{ audit.reason }}</template>
       </el-table-column>
-      <el-table-column label="操作人" min-width="90" show-overflow-tooltip>
+      <el-table-column prop="operator_name" label="操作人" min-width="90" show-overflow-tooltip>
         <template #default="{ row: audit }">{{ audit.operator_name }}</template>
       </el-table-column>
       <el-table-column prop="created_at" label="时间" min-width="150" show-overflow-tooltip />
-      <el-table-column label="状态" min-width="110">
+      <el-table-column prop="revoked" label="状态" min-width="110">
         <template #default="{ row: audit }">
           <StatusBadge v-if="audit.revoked" size="small" type="info" effect="plain">已撤销</StatusBadge>
           <StatusBadge v-else size="small" type="warning" effect="plain">有效</StatusBadge>

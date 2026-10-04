@@ -9,8 +9,8 @@
       <p v-if="rows.length">{{ rows[0].customer_name }} · {{ rows[0].currency }}；同一笔凭证仅上传一次，按下表金额分配。</p>
       <el-table class="list-table" :data="rows" border>
         <el-table-column prop="invoice_no" label="订单发票" min-width="150" />
-        <el-table-column label="可登记余额" min-width="130"><template #default="{ row }">{{ row.balance ? money(row.balance.remaining_amount) : '未核验' }}</template></el-table-column>
-        <el-table-column label="本次分配" min-width="185"><template #default="{ row }"><el-input-number v-model="row.amount" :min="0.01" :precision="2" controls-position="right" /></template></el-table-column>
+        <el-table-column :sort-by="row => row.balance?.remaining_amount" label="可登记余额" min-width="130"><template #default="{ row }">{{ row.balance ? money(row.balance.remaining_amount) : '未核验' }}</template></el-table-column>
+        <el-table-column prop="amount" label="本次分配" min-width="185"><template #default="{ row }"><el-input-number v-model="row.amount" :min="0.01" :precision="2" controls-position="right" /></template></el-table-column>
         <el-table-column label="操作" class-name="table-action-column" min-width="120"><template #default="{ row }"><el-button link :loading="row.loading" @click="refresh(row)"><el-icon><Refresh /></el-icon>刷新</el-button><el-button link @click="remove(row)"><el-icon><Delete /></el-icon>移除</el-button></template></el-table-column>
       </el-table>
       <p>分配合计：{{ allocatedTotal }} {{ rows[0]?.currency }}</p>

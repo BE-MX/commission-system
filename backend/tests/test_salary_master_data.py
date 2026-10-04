@@ -307,6 +307,40 @@ def test_serialize_profile_never_leaks_plaintext(db):
     assert data["dept_group"] == "业务部"
 
 
+def test_masked_bank_card_sort_before_paging_filters_and_never_leaks(db, monkeypatch):
+    cards = ("6217000000000011000", "1111000000000019000", "6217999999999911000", None, "0000000000000000000")
+    profiles = []
+    for index, card in enumerate(cards):
+        row = SalaryEmployeeProfile(emp_no=f"{5 - index:02}", name="Sort employee", dept_detail="Target" if index < 4 else "Excluded", status="active", payroll_included=1)
+        service._apply_pii(row, id_card=None, bank_card=card)
+        db.add(row)
+        profiles.append(row)
+    db.flush()
+    decrypt = pii.decrypt_pii
+    decrypted_ciphers = []
+    def track_decrypt(cipher):
+        decrypted_ciphers.append(cipher)
+        return decrypt(cipher)
+    monkeypatch.setattr(pii, "decrypt_pii", track_decrypt)
+    filters = {"keyword": "Sort", "dept_detail": "Target", "status": "active", "payroll_included": 1}
+    for direction, indices in (("asc", (1, 0, 2, 3)), ("desc", (0, 2, 1, 3))):
+        pages = [service.list_profiles(db, page=page, page_size=2, sort_field="bank_card_masked", sort_order=direction, **filters) for page in (1, 2)]
+        assert all(page["total"] == 4 for page in pages)
+        rows = [row for page in pages for row in page["items"]]
+        assert [row["id"] for row in rows] == [profiles[index].id for index in indices]
+        assert rows[-1]["bank_card_masked"] == ""
+        blob = repr(pages)
+        assert all(card not in blob for card in cards if card)
+        assert all(profile.bank_card_cipher not in blob for profile in profiles if profile.bank_card_cipher)
+    assert profiles[4].bank_card_cipher not in decrypted_ciphers
+    decrypted_ciphers.clear()
+    regular = service.list_profiles(db, page_size=1, sort_field="emp_no", sort_order="asc", **filters)
+    assert regular["items"][0]["id"] == profiles[3].id
+    assert not any(cipher for cipher in decrypted_ciphers)
+    cleared = service.list_profiles(db, sort_field="bank_card_masked", sort_order="", **filters)
+    assert [row["emp_no"] for row in cleared["items"]] == ["02", "03", "04", "05"]
+
+
 def test_find_by_id_card_matches_via_hash(db):
     """M2 导入靠明文身份证接档案，走 hash 列——密文列 IV 随机，JOIN 不了。"""
     p = SalaryEmployeeProfile(emp_no="7", name="庚")

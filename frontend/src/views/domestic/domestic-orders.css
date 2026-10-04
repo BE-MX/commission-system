@@ -1,6 +1,5 @@
 .orders-page { position: relative; }
 .orders-aurora { inset: -24px -28px; }
-.orders-page .toolbar,
 .orders-page .orders-panel { position: relative; z-index: 1; }
 
 .order-kind-tabs { padding: 0 16px; --el-color-primary: var(--color-primary); }

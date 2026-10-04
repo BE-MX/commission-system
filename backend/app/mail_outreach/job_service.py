@@ -1,12 +1,14 @@
 """发送任务队列的查询与人工撤销（P1 不含认领/租约，属 worker 阶段）。"""
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.customer.models import CustomerAccount
 from app.customer.access_service import apply_customer_scope
 from app.mail_outreach.errors import conflict, not_found
 from app.mail_outreach.generation_service import _iso_bj, _iso_utc
-from app.mail_outreach.models import MailOutreachMessage, MailOutreachSendJob
+from app.mail_outreach.models import MailMailboxBinding, MailOutreachMessage, MailOutreachSendJob
+from app.core.list_sort import apply_list_sort
 
 # 可人工撤销的前置状态；sending 之后一律冲突，终态幂等返回
 _CANCELLABLE_STATUSES = ("scheduled", "claimed", "blocked", "needs_review")
@@ -48,6 +50,8 @@ def list_jobs(
     page: int = 1,
     page_size: int = 20,
     user: dict | None = None,
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ) -> tuple[list[dict], int]:
     """队列看板：状态/邮箱/客户筛选 + 分页，关联 message 取客户展示字段。"""
     query = db.query(MailOutreachSendJob).join(
@@ -69,7 +73,18 @@ def list_jobs(
             )
         )
     total = query.count()
-    jobs = query.order_by(MailOutreachSendJob.id.desc()).offset(
+    jobs = apply_list_sort(
+        query, sort_field, sort_order, {
+            "status": MailOutreachSendJob.status,
+            "due_at": MailOutreachSendJob.due_at,
+            "reschedule_count": MailOutreachSendJob.reschedule_count,
+            "customer_name": CustomerAccount.display_name,
+            "to_email": MailOutreachSendJob.to_email_snapshot,
+            "sender_email": select(MailMailboxBinding.sender_email).where(MailMailboxBinding.id == MailOutreachSendJob.mailbox_binding_id).scalar_subquery(),
+        },
+        default=(MailOutreachSendJob.id.desc(),),
+        tie_breakers=(MailOutreachSendJob.id.asc(),),
+    ).offset(
         (page - 1) * page_size,
     ).limit(page_size).all()
 

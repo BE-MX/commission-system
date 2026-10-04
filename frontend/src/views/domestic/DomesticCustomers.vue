@@ -45,21 +45,21 @@
         />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+<el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" @sort-change="sortTable">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasCustomerFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasCustomerFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column prop="shop_name" label="客户店名" min-width="160" fixed="left" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('custom_code')" prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('customer_level')" label="客户等级" min-width="120">
+        <el-table-column prop="shop_name" label="客户店名" min-width="160" fixed="left" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('custom_code')" prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('customer_level')" label="客户等级" min-width="120" prop="customer_level" sortable="custom">
           <template #default="{ row }">
             <StatusBadge v-if="row.customer_level" size="small" effect="plain" type="warning">{{ row.customer_level }}</StatusBadge>
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('lifecycle_status')" label="客户状态" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('lifecycle_status')" label="客户状态" min-width="100" prop="lifecycle_status" sortable="custom">
           <template #default="{ row }">
             <StatusBadge v-if="row.lifecycle_status" size="small" effect="plain"
               :type="{ 活跃: 'success', 潜在: 'warning', 沉默: 'info', 流失: 'danger' }[row.lifecycle_status] || 'info'">
@@ -68,30 +68,30 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('owner')" prop="owner_name" label="归属销售" min-width="100" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('owner')" prop="owner_name" label="归属销售" min-width="100" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.owner_name || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('customer_source')" prop="customer_source" label="客户来源" min-width="110" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('customer_source')" prop="customer_source" label="客户来源" min-width="110" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.customer_source || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('store_type')" prop="store_type" label="门店类型" min-width="130" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('store_type')" prop="store_type" label="门店类型" min-width="130" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.store_type || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="140">
+        <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="140" prop="membership_level" sortable="custom">
           <template #default="{ row }"><StatusBadge size="small" effect="plain">{{ row.membership_label }}</StatusBadge></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('last_recharge')" label="最近充值" min-width="120" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('last_recharge')" label="最近充值" min-width="120" show-overflow-tooltip prop="last_recharge_amount" sortable="custom">
           <template #default="{ row }">{{ row.last_recharge_amount != null ? `${formatMoney(Number(row.last_recharge_amount), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}` : '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('last_recharged_at')" label="最近充值时间" min-width="170" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('last_recharged_at')" label="最近充值时间" min-width="170" show-overflow-tooltip prop="last_recharged_at" sortable="custom">
           <template #default="{ row }">{{ row.last_recharged_at || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('region')" label="省 / 市" min-width="130" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('region')" label="省 / 市" min-width="130" show-overflow-tooltip prop="province" sortable="custom">
           <template #default="{ row }">{{ [row.province, row.city].filter(Boolean).join(' / ') || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('contact')" prop="contact" label="联系人" min-width="100" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('phone')" prop="phone" label="电话" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('totals')" label="累计订单 / 销售额" min-width="150">
+        <el-table-column v-if="visibleKeys.includes('contact')" prop="contact" label="联系人" min-width="100" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('phone')" prop="phone" label="电话" min-width="130" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('totals')" label="累计订单 / 销售额" min-width="150" prop="total_sales_amount" sortable="custom">
           <template #default="{ row }">
             <template v-if="row.total_order_count != null || row.total_sales_amount != null">
               {{ row.total_order_count ?? '-' }} 单 / {{ formatMoney(Number(row.total_sales_amount || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}
@@ -99,21 +99,21 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('order_count')" prop="order_count" label="订单数" min-width="90" />
-        <el-table-column v-if="visibleKeys.includes('settle_mode')" label="结算方式" min-width="150">
+        <el-table-column v-if="visibleKeys.includes('order_count')" prop="order_count" label="订单数" min-width="90" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('settle_mode')" label="结算方式" min-width="150" prop="settle_mode" sortable="custom">
           <template #default="{ row }">
             <StatusBadge size="small" :type="row.settle_mode === 'credit' ? 'warning' : 'info'" effect="plain">
               {{ row.settle_mode_label || '先充值后下单' }}
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('balance')" label="充值余额" min-width="110" align="right">
+        <el-table-column v-if="visibleKeys.includes('balance')" label="充值余额" min-width="110" align="right" prop="balance" sortable="custom">
           <template #default="{ row }">
             <span v-if="Number(row.balance || 0) < 0" class="debt-value">欠款 {{ formatMoney(Math.abs(Number(row.balance)), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
             <span v-else class="balance-value">{{ formatMoney(Number(row.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" prop="status" sortable="custom">
           <template #default="{ row }">
             <StatusBadge size="small" :value="row.status" :dictionary="ENABLED_STATUS" effect="plain" />
           </template>
@@ -384,21 +384,21 @@
 
     <DetailDrawer v-model="ledgerDrawer.visible" :title="`${ledgerDrawer.customer?.shop_name || ''} · 余额流水`" width="760px">
       <ListPageStatus v-if="ledgerState.hasData.value" :error="ledgerState.errorMessage.value" :loading="ledgerDrawer.loading" :has-data="true" :data-page="ledgerState.dataPage.value" @retry="loadLedger()" />
-      <el-table :data="ledgerDrawer.items" v-loading="ledgerDrawer.loading" border size="small" class="list-table">
+      <el-table :data="ledgerDrawer.items" v-loading="ledgerDrawer.loading" border size="small" class="list-table" @sort-change="listPageState.sortLedger">
         <template #empty><ListPageStatus :error="ledgerState.errorMessage.value" :loading="ledgerDrawer.loading" @retry="loadLedger()"><el-empty description="暂无余额流水" :image-size="96" /></ListPageStatus></template>
-        <el-table-column prop="created_at" label="时间" min-width="150" />
-        <el-table-column label="类型" min-width="100">
+        <el-table-column prop="created_at" label="时间" min-width="150" sortable="custom" />
+        <el-table-column label="类型" prop="transaction_type" sortable="custom" min-width="100">
           <template #default="{ row }">{{ ledgerTypeLabel[row.transaction_type] || row.transaction_type }}</template>
         </el-table-column>
-        <el-table-column label="变动" min-width="100" align="right">
+        <el-table-column label="变动" prop="amount" sortable="custom" min-width="100" align="right">
           <template #default="{ row }"><span :class="row.amount >= 0 ? 'amount-in' : 'amount-out'">{{ row.amount >= 0 ? '+' : '' }}{{ formatMoney(Number(row.amount), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span></template>
         </el-table-column>
-        <el-table-column label="余额" min-width="100" align="right">
+        <el-table-column label="余额" prop="balance_after" sortable="custom" min-width="100" align="right">
           <template #default="{ row }">{{ formatMoney(Number(row.balance_after), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</template>
         </el-table-column>
-        <el-table-column prop="domestic_no" label="关联订单" min-width="130" />
-        <el-table-column prop="remark" label="说明" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="created_by_name" label="操作人" min-width="90" />
+        <el-table-column prop="domestic_no" label="关联订单" min-width="130" sortable="custom" />
+        <el-table-column prop="remark" label="说明" min-width="180" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="created_by_name" label="操作人" min-width="90" sortable="custom" />
       </el-table>
       <el-pagination :page-sizes="[20, 50, 100]"
         v-model:current-page="ledgerDrawer.page" v-model:page-size="ledgerDrawer.pageSize" :total="ledgerDrawer.total"
@@ -449,6 +449,7 @@ const hasCustomerFilters = computed(() => Boolean(
   listPageState.appliedSearchForm.value.keyword || (listPageState.appliedSearchForm.value.status !== '' && listPageState.appliedSearchForm.value.status != null) || listPageState.appliedSearchForm.value.province || listPageState.appliedSearchForm.value.city
   || listPageState.appliedSearchForm.value.customer_level || listPageState.appliedSearchForm.value.owner_user_id,
 ))
+function sortTable({ prop, order }) { return listPageState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped>

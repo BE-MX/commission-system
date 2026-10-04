@@ -52,6 +52,23 @@ def test_normalize_email_lower_and_strip():
     assert service.normalize_passcode("  Maria@Buyer.COM ") == ("maria@buyer.com", None)
 
 
+def test_customer_header_sort_before_pagination_preserves_filters(db):
+    from app.card.router import list_customers
+    sp, other, customer = _seed(db)
+    alpha = CardCustomer(salesperson_id=sp.id, display_name='Alpha', email_norm='alpha@test.com')
+    hidden = CardCustomer(salesperson_id=other.id, display_name='AAA', email_norm='hidden@test.com')
+    db.add_all([alpha, hidden]); db.flush()
+    def query(field, direction, page=1):
+        return list_customers(salesperson_id=sp.id, keyword='', page=page, page_size=1,
+                              sort_field=field, sort_order=direction, db=db, _user={})['data']
+    assert query('display_name', 'asc')['items'][0]['id'] == alpha.id
+    assert query('display_name', 'asc', 2)['items'][0]['id'] == customer.id
+    assert query('entry_count', 'desc')['items'][0]['entry_count'] == 2
+    for field in ('email_norm', 'whatsapp_norm', 'expo_code', 'created_at'):
+        assert query(field, 'asc')['total'] == 2
+    assert query('id; DROP TABLE', 'asc')['items'][0]['id'] == alpha.id
+
+
 def test_normalize_whatsapp_digits_only():
     assert service.normalize_passcode("+86 138-0013-8000") == (None, "8613800138000")
 

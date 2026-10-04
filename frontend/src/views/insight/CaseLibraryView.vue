@@ -227,9 +227,9 @@
         <div v-if="currentCase.improvements?.length" class="detail-section">
           <h5><el-icon><WarnTriangleFilled /></el-icon> 不足与优化方向</h5>
           <table class="improve-table">
-            <thead><tr><th>优先级</th><th>问题</th><th>影响</th><th>修正方案</th><th>预期收益</th></tr></thead>
+            <thead><tr><th v-for="column in improvementColumns" :key="column.key" :aria-sort="improvementAriaSort(column.key)"><TableSortHeader :label="column.label" :order="improvementAriaSort(column.key)" @sort="toggleImprovementSort(column.key)" /></th></tr></thead>
             <tbody>
-              <tr v-for="(imp, i) in currentCase.improvements" :key="i">
+              <tr v-for="(imp, i) in sortedImprovements" :key="i">
                 <td><span class="priority-tag">{{ imp.priority }}</span></td>
                 <td>{{ imp.problem }}</td>
                 <td>{{ imp.impact }}</td>
@@ -374,6 +374,8 @@
 </template>
 
 <script setup>
+import TableSortHeader from '@/components/TableSortHeader.vue'
+import { useLocalTableSort } from '@/composables/useLocalTableSort'
 import FilterBar from '@/components/FilterBar.vue'
 import ListPageStatus from '@/components/ListPageStatus.vue'
 
@@ -403,6 +405,8 @@ const {
   confirmPublishDraft,
   toggleLike, handleDelete, deleteCurrentCase, downloadScreenshot,
 } = useCaseLibrary()
+const improvementColumns = [{ key: 'priority', label: '优先级' }, { key: 'problem', label: '问题' }, { key: 'impact', label: '影响' }, { key: 'fix', label: '修正方案' }, { key: 'benefit', label: '预期收益' }]
+const { sortedRows: sortedImprovements, toggleSort: toggleImprovementSort, ariaSort: improvementAriaSort } = useLocalTableSort(() => currentCase.value?.improvements || [])
 </script>
 
 <style scoped>

@@ -33,7 +33,7 @@
       </div>
 
       <ListPageStatus v-if="hasData && errorMessage" :error="errorMessage" :loading="loading" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
-      <el-table :data="items" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table :data="items" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="sortTable0">
         <template #empty>
           <ListPageStatus :error="errorMessage" :loading="loading" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -41,25 +41,25 @@
           </el-empty>
           </ListPageStatus>
         </template>
-        <el-table-column v-if="visibleKeys.includes('id')" prop="id" label="ID" min-width="70" max-width="100" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="工序名称" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('description')" prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('sort-order')" prop="sort_order" label="排序" min-width="80" max-width="120" />
-        <el-table-column v-if="visibleKeys.includes('customer-track')" label="客户进度页" min-width="110" max-width="140">
+        <el-table-column v-if="visibleKeys.includes('id')" prop="id" label="ID" min-width="70" max-width="100" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="工序名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('description')" prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('sort-order')" prop="sort_order" label="排序" min-width="80" max-width="120" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('customer-track')" label="客户进度页" min-width="110" max-width="140" prop="show_in_domestic_track" sortable="custom">
           <template #default="{ row }">
             <StatusBadge :type="row.show_in_domestic_track ? 'success' : 'info'" size="small" effect="plain">
               {{ row.show_in_domestic_track ? '显示' : '隐藏' }}
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="120">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="120" prop="status" sortable="custom">
           <template #default="{ row }">
             <StatusBadge :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
               {{ row.status === 1 ? '启用' : '禁用' }}
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="160" max-width="240">
+        <el-table-column v-if="visibleKeys.includes('created-at')" label="创建时间" min-width="160" max-width="240" prop="created_at" sortable="custom">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="240" max-width="360" fixed="right">
@@ -214,6 +214,7 @@ async function handleDelete(row) {
 }
 
 
+function sortTable0({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped>

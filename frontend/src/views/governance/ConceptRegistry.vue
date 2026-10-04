@@ -90,31 +90,31 @@
           </el-empty>
         </ListPageStatus>
         </template>
-        <el-table-column v-if="visibleKeys.includes('concept-id')" prop="id" label="概念 ID" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('concept-id')" prop="id" label="概念 ID" min-width="160" max-width="240" show-overflow-tooltip>
           <template #default="{ row }">
             <router-link :to="`/governance/concepts/${row.id}`" class="concept-link">
               {{ row.id }}
             </router-link>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('name-zh')" prop="name_zh" label="中文名" min-width="120" max-width="180" sortable="custom" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('name-en')" prop="name_en" label="英文名" min-width="160" max-width="240" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('layer')" prop="layer" label="层级" min-width="110" max-width="165">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('name-zh')" prop="name_zh" label="中文名" min-width="120" max-width="180" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('name-en')" prop="name_en" label="英文名" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('layer')" prop="layer" label="层级" min-width="110" max-width="165">
           <template #default="{ row }">{{ layerLabels[row.layer] || row.layer }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="120" max-width="180" sortable="custom">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="120" max-width="180">
           <template #default="{ row }">
             <StatusBadge :value="row.status" :dictionary="CONCEPT_STATUS" size="small" effect="plain" />
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('confidence')" prop="confidence" label="置信度" min-width="90" max-width="135">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('confidence')" prop="confidence" label="置信度" min-width="90" max-width="135">
           <template #default="{ row }">
             <span v-if="row.confidence">{{ confidenceLabels[row.confidence] }}</span>
             <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('owner')" prop="owner" label="负责人" min-width="100" max-width="150" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('updated-at')" prop="updated_at" label="更新时间" min-width="170" max-width="255" sortable="custom" show-overflow-tooltip>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('owner')" prop="owner" label="负责人" min-width="100" max-width="150" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('updated-at')" prop="updated_at" label="更新时间" min-width="170" max-width="255" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="200" max-width="300" fixed="right">
@@ -238,7 +238,7 @@ const activePct = computed(() => {
 // ── 加载数据 ─────────────────────────────────────────────
 function loadStats() { return statsResource.load() }
 function handleSortChange({ prop, order }) {
-  return listState.handleSortChange({ sort_field: prop || 'updated_at', sort_order: order === 'ascending' ? 'asc' : 'desc' })
+  return listState.handleSortChange(order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {})
 }
 
 function handleCreate() {

@@ -45,11 +45,11 @@
         <table class="pi-table">
           <thead>
             <tr>
-              <th>Type</th>
-              <th>Size</th>
-              <th>Color</th>
-              <th>Weight</th>
-              <th class="avail">Availability</th>
+              <th :aria-sort="sortField === 'type' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'"><button type="button" class="pi-sort" @click="sortBy('type')">Type {{ sortField === 'type' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</button></th>
+              <th :aria-sort="sortField === 'size' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'"><button type="button" class="pi-sort" @click="sortBy('size')">Size {{ sortField === 'size' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</button></th>
+              <th :aria-sort="sortField === 'color' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'"><button type="button" class="pi-sort" @click="sortBy('color')">Color {{ sortField === 'color' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</button></th>
+              <th :aria-sort="sortField === 'weight' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'"><button type="button" class="pi-sort" @click="sortBy('weight')">Weight {{ sortField === 'weight' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</button></th>
+              <th class="avail" :aria-sort="sortField === 'in_stock' ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'"><button type="button" class="pi-sort" @click="sortBy('in_stock')">Availability {{ sortField === 'in_stock' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕' }}</button></th>
             </tr>
           </thead>
           <tbody v-if="items.length">
@@ -100,7 +100,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, toRef } from 'vue'
+import { computed, onMounted, ref, toRef } from 'vue'
 import { useListPage } from '@/composables/useListPage'
 import { getPublicInventory } from '@/api/stock'
 import { currentBeijingDate } from '@/utils/datetime'
@@ -125,9 +125,16 @@ const emptyText = computed(() =>
     : 'No products available right now.',
 )
 
+const sortField = ref('')
+const sortOrder = ref('')
+function sortBy(field) {
+  const order = sortField.value !== field ? 'asc' : sortOrder.value === 'asc' ? 'desc' : ''
+  sortField.value = order ? field : ''; sortOrder.value = order
+  return listState.handleSortChange({ sort_field: order ? field : undefined, sort_order: order || undefined })
+}
 const fetchData = listState.fetchList
 const doSearch = listState.handleSearch
-const reset = listState.handleReset
+function reset() { sortField.value = ''; sortOrder.value = ''; return listState.handleReset() }
 const go = listState.handlePageChange
 
 onMounted(() => {
@@ -136,6 +143,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.pi-sort { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0; text-align: inherit; }
+.pi-sort:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
 /* Lisla 官网风格二期：暖纸底 + 墨色 + 铜金点缀 + 衬线大标题（编辑目录感）。
    刻意不用 tokens.css：本页面向外部客户，跟随客户品牌而非方舟设计系统（同 expo kiosk 例外） */
 .pi-page {

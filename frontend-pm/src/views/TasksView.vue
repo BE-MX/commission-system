@@ -116,11 +116,17 @@
       <table class="list-table">
         <thead>
           <tr>
-            <th>任务</th><th>状态</th><th>负责人</th><th>截止</th><th>Phase</th><th>关联资料</th><th>操作</th>
+            <th v-for="column in taskColumns" :key="column.key" scope="col"
+              :aria-sort="taskSort.field === column.key ? (taskSort.order === 'asc' ? 'ascending' : 'descending') : 'none'">
+              <button class="table-sort" type="button" :aria-label="sortButtonLabel(column)" @click="changeSort(column.key)">
+                {{ column.label }}<span class="sort-indicator" aria-hidden="true">{{ taskSort.field === column.key ? (taskSort.order === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </button>
+            </th>
+            <th scope="col">操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="task in tasks" :key="task.id" @click="openEdit(task)">
+          <tr v-for="task in sortedTasks" :key="task.id" @click="openEdit(task)">
             <td class="cell-title">{{ task.title }}</td>
             <td><StatusBadge :label="TASK_STATUS[task.status].label" :tone="TASK_STATUS[task.status].tone" /></td>
             <td>{{ task.assignee ? nameOf(task.assignee) : '—' }}</td>
@@ -164,6 +170,7 @@ import TaskDrawer from '../components/TaskDrawer.vue'
 import UiDropdown from '../components/UiDropdown.vue'
 import UiModal from '../components/UiModal.vue'
 import { useTasks } from '../composables/useTasks.js'
+import { nextTaskSort, sortTaskRows } from '../utils/taskTableSort.js'
 import { beijingDate, MATERIAL_STATUS, TASK_STATUS, TASK_STATUS_ORDER } from '../utils/labels.js'
 
 const { tasks, members, materialOptions, loading, filters, view, load, save, changeStatus, remove } = useTasks()
@@ -183,6 +190,19 @@ const columns = computed(() =>
 )
 
 const nameOf = (username) => members.value.find((m) => m.username === username)?.display_name || username
+const taskColumns = [
+  { key: 'title', label: '任务' }, { key: 'status', label: '状态' },
+  { key: 'assignee', label: '负责人' }, { key: 'due_date', label: '截止' },
+  { key: 'phase', label: 'Phase' }, { key: 'materials', label: '关联资料' },
+]
+const taskSort = ref({ field: '', order: '' })
+const sortedTasks = computed(() => sortTaskRows(tasks.value, taskSort.value, nameOf))
+function changeSort(field) { taskSort.value = nextTaskSort(taskSort.value, field) }
+function sortButtonLabel(column) {
+  const next = nextTaskSort(taskSort.value, column.key)
+  return `${column.label}，${next.order === 'asc' ? '按升序排列' : next.order === 'desc' ? '按降序排列' : '恢复默认顺序'}`
+}
+
 
 function isOverdue(task) {
   if (!task.due_date || task.status === 'done') return false
@@ -383,6 +403,11 @@ function askDelete(task) {
   border-bottom: 1px solid var(--hairline-strong);
   background: var(--paper-sunken);
 }
+.table-sort { display: inline-flex; align-items: center; gap: 6px; color: inherit; font: inherit; letter-spacing: inherit; }
+.table-sort:focus-visible { outline: 2px solid var(--gold-strong); outline-offset: 4px; border-radius: var(--radius); }
+.sort-indicator { color: var(--ink-4); font-size: 12px; letter-spacing: normal; }
+th[aria-sort="ascending"] .sort-indicator, th[aria-sort="descending"] .sort-indicator { color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .table-sort:hover { color: var(--ink); } }
 .list-table td { padding: 11px 14px; border-bottom: 1px solid var(--hairline); font-size: 13px; }
 .list-table tbody tr { cursor: pointer; transition: background var(--dur-fast) var(--ease-out); }
 .list-table tbody tr:last-child td { border-bottom: none; }

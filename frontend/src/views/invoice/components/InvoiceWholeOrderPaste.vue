@@ -28,10 +28,10 @@
       <h4 class="section-heading">订单字段</h4>
       <el-table :data="fieldRows" border size="small" class="list-table">
         <el-table-column prop="label" label="字段" min-width="120" />
-        <el-table-column label="识别内容">
+        <el-table-column prop="value" label="识别内容">
           <template #default="{ row }"><span class="value-cell">{{ row.value || '—' }}</span></template>
         </el-table-column>
-        <el-table-column label="状态" min-width="160">
+        <el-table-column prop="statusText" label="状态" min-width="160">
           <template #default="{ row }"><StatusBadge :type="row.statusType" effect="plain">{{ row.statusText }}</StatusBadge></template>
         </el-table-column>
       </el-table>
@@ -63,30 +63,30 @@
             class="list-table preview-table"
           >
             <el-table-column prop="source_row" label="行" min-width="56" fixed />
-            <el-table-column label="状态" min-width="110" fixed>
+            <el-table-column prop="status" label="状态" min-width="110" fixed>
               <template #default="{ row }">
                 <StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column label="Product" min-width="200" show-overflow-tooltip>
+            <el-table-column prop="normalized.product" label="Product" min-width="200" show-overflow-tooltip>
               <template #default="{ row }">{{ row.normalized.product }}</template>
             </el-table-column>
-            <el-table-column label="Length" min-width="76">
+            <el-table-column prop="normalized.length" label="Length" min-width="76">
               <template #default="{ row }">{{ row.normalized.length }}</template>
             </el-table-column>
-            <el-table-column label="Color" min-width="86">
+            <el-table-column prop="normalized.color" label="Color" min-width="86">
               <template #default="{ row }">{{ row.normalized.color }}</template>
             </el-table-column>
-            <el-table-column label="Weight" min-width="82">
+            <el-table-column prop="normalized.weight" label="Weight" min-width="82">
               <template #default="{ row }">{{ row.normalized.weight }}</template>
             </el-table-column>
-            <el-table-column label="数量" min-width="66" align="right">
+            <el-table-column prop="normalized.quantity" label="数量" min-width="66" align="right">
               <template #default="{ row }">{{ row.normalized.quantity }}</template>
             </el-table-column>
-            <el-table-column label="Excel 成交价" min-width="106" align="right">
+            <el-table-column prop="normalized.unit_price" label="Excel 成交价" min-width="106" align="right">
               <template #default="{ row }">{{ displayUnitPrice(row.normalized.unit_price) }}</template>
             </el-table-column>
-            <el-table-column label="客户价" min-width="96" align="right">
+            <el-table-column prop="customer_price" label="客户价" min-width="96" align="right">
               <template #default="{ row }">{{ nullableMoney(row.customer_price) }}</template>
             </el-table-column>
             <el-table-column class-name="table-action-column" label="匹配结果 / 处理" min-width="280" fixed="right">
@@ -155,7 +155,7 @@
 <script setup>
 import { formatMoney } from '../../../utils/money.js'
 import { msgInfo } from '@/utils/feedback'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import { previewInvoiceImport } from '@/api/invoice'
 import { parseWholeOrderClipboard } from '../composables/useInvoiceWholeOrderPaste'
@@ -294,7 +294,7 @@ function confirmCustom(row) {
   row.status = row.warnings?.length ? 'warning' : 'passed'
 }
 
-function locateStatus(status) {
+async function locateStatus(status) {
   const index = previewRows.value.findIndex(row => row.status === status)
   if (index < 0) {
     msgInfo('当前没有该状态的明细')
@@ -302,7 +302,9 @@ function locateStatus(status) {
   }
   const row = previewRows.value[index]
   previewTable.value?.setCurrentRow(row)
-  previewTable.value?.scrollTo({ top: index * 48 })
+  await nextTick()
+  const renderedRow = previewTable.value?.$el.querySelector('.el-table__body tr.current-row')
+  if (renderedRow) previewTable.value.scrollTo({ top: renderedRow.offsetTop })
 }
 
 function statusType(status) {

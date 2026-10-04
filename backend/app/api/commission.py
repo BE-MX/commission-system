@@ -12,6 +12,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Query, Path, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, desc
+from app.core.list_sort import apply_list_sort, apply_items_sort
 from sqlalchemy.orm import Session, aliased
 
 from app.api.deps import get_db
@@ -451,6 +452,8 @@ def list_my_commission_batches(
     role: str = Query("", description="关联角色：salesperson/supervisor/second_supervisor"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_any_permission("commission_my:read", "commission:self_read", "commission:read", "commission:write")),
 ) -> ResponseModel[PageResponse[SalesCommissionBatchListItem]]:
@@ -481,9 +484,23 @@ def list_my_commission_batches(
         start, end = _month_bounds(month)
         query = query.filter(CommissionBatch.period_start <= end, CommissionBatch.period_end >= start)
 
-    query = query.order_by(desc(CommissionBatch.created_at), desc(CommissionBatch.id))
+    columns = {
+        "batch_name": CommissionBatch.batch_name,
+        "period_start": CommissionBatch.period_start,
+        "status": CommissionBatch.status,
+        "created_at": CommissionBatch.created_at,
+    }
+    derived_fields = {
+        "is_confirmed_by_me": "is_confirmed_by_me",
+        "related_roles": lambda item: tuple(item["related_roles"]),
+        "total_payment_amount": "total_payment_amount",
+        "detail_count": "detail_count",
+    }
+    materialize = sort_field in derived_fields and sort_order in ("asc", "desc")
+    query = apply_list_sort(query, sort_field, sort_order, columns,
+        default=(CommissionBatch.created_at.desc(), CommissionBatch.id.desc()), tie_breakers=(CommissionBatch.id.asc(),))
     total = query.count()
-    batches = query.offset((page - 1) * page_size).limit(page_size).all()
+    batches = query.all() if materialize else query.offset((page - 1) * page_size).limit(page_size).all()
 
     items = []
     ark_user_id = str(current_user.get("sub") or "")
@@ -492,6 +509,9 @@ def list_my_commission_batches(
         my_confirm = _my_confirmation(db, batch.id, ark_user_id, user_ids)
         items.append(_build_sales_batch_item(batch, rows, user_ids, my_confirm))
 
+    if materialize:
+        sorted_items = apply_items_sort([item.model_dump() for item in items], sort_field, sort_order, derived_fields)
+        items = [SalesCommissionBatchListItem(**item) for item in sorted_items[(page - 1) * page_size:page * page_size]]
     return ResponseModel(data=PageResponse(items=items, total=total, page=page, page_size=page_size))
 
 
@@ -724,7 +744,6 @@ def list_batches(
     _user: dict = Depends(require_any_permission("commission:read", "commission:write")),
 ) -> ResponseModel[PageResponse[CommissionBatchListItem]]:
     """查询提成批次列表"""
-    from sqlalchemy import desc as _desc
     query = db.query(CommissionBatch)
 
     if status:
@@ -736,15 +755,24 @@ def list_batches(
         "period_end": CommissionBatch.period_end,
         "status": CommissionBatch.status,
         "created_at": CommissionBatch.created_at,
+        "period_type": CommissionBatch.period_type,
     }
-    sort_col = SORT_MAP.get(sort_field, CommissionBatch.created_at)
-    order_fn = _desc if sort_order == "desc" else lambda c: c
+    query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
+        default=(CommissionBatch.created_at.desc(),), tie_breakers=(CommissionBatch.id.asc(),))
 
-    query = query.order_by(order_fn(sort_col))
     total = query.count()
-    rows = query.offset((page - 1) * page_size).limit(page_size).all()
+    derived_fields = {
+        "confirmed_count": "confirmed_count",
+        "confirmation_status": "confirmation_status",
+        "feedback_count": "feedback_count",
+    }
+    materialize = sort_field in derived_fields and sort_order in ("asc", "desc")
+    rows = query.all() if materialize else query.offset((page - 1) * page_size).limit(page_size).all()
 
     items = [_batch_list_item(db, b) for b in rows]
+    if materialize:
+        sorted_items = apply_items_sort([item.model_dump() for item in items], sort_field, sort_order, derived_fields)
+        items = [CommissionBatchListItem(**item) for item in sorted_items[(page - 1) * page_size:page * page_size]]
     page_data = PageResponse(items=items, total=total, page=page, page_size=page_size)
     return ResponseModel(data=page_data)
 
@@ -823,16 +851,25 @@ def list_commission_details(
             | CommissionDetail.payment_id.like(like_pattern)
         )
 
-    from sqlalchemy import desc as _desc
     SORT_MAP = {
         "customer_name": CustomerInfo.company_name,
         "salesperson_name": SpUser.full_name,
         "payment_amount": CommissionDetail.payment_amount,
         "commission_amount": CommissionDetail.salesperson_commission,
+        "payment_id": CommissionDetail.payment_id,
+        "order_id": CommissionDetail.order_id,
+        "salesperson_rate": CommissionDetail.salesperson_rate,
+        "salesperson_commission": CommissionDetail.salesperson_commission,
+        "supervisor_rate": CommissionDetail.supervisor_rate,
+        "supervisor_commission": CommissionDetail.supervisor_commission,
+        "second_supervisor_rate": CommissionDetail.second_supervisor_rate,
+        "second_supervisor_commission": CommissionDetail.second_supervisor_commission,
+        "calc_rule_note": CommissionDetail.calc_rule_note,
+        "supervisor_name": SvUser.full_name,
+        "second_supervisor_name": Sv2User.full_name,
     }
-    sort_col = SORT_MAP.get(sort_field, CommissionDetail.payment_amount)
-    order_fn = _desc if sort_order == "desc" else lambda c: c
-    query = query.order_by(order_fn(sort_col))
+    query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
+        default=(CommissionDetail.payment_amount.desc(),), tie_breakers=(CommissionDetail.id.asc(),))
 
     total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()

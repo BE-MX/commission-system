@@ -29,7 +29,7 @@
         />
       </div>
       <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
-      <el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+      <el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" @sort-change="sortTable">
         <template #empty>
           <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="fetchList">
             <el-empty :image-size="96" :description="hasOrderFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -37,44 +37,44 @@
             </el-empty>
           </ListPageStatus>
         </template>
-        <el-table-column :render-header="renderOrderHeader" prop="domestic_no" label="订单编号" min-width="140" fixed="left" class-name="order-number-column">
+        <el-table-column :render-header="renderOrderHeader" prop="domestic_no" label="订单编号" min-width="140" fixed="left" class-name="order-number-column" sortable="custom">
           <template #default="{ row }">
             <div>{{ row.domestic_no }}</div>
             <div v-if="row.order_no && row.order_no !== row.domestic_no" class="muted">{{ row.order_no }}</div>
           </template>
         </el-table-column>
-        <el-table-column :render-header="renderOrderHeader" prop="customer_name" label="客户 / 用途" min-width="120" fixed="left" show-overflow-tooltip>
+        <el-table-column :render-header="renderOrderHeader" prop="customer_name" label="客户 / 用途" min-width="120" fixed="left" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.customer_name || (row.order_kind === 'production' ? '公司备货' : '-') }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('customer_source')" :render-header="renderOrderHeader" prop="customer_source_label" label="客户来源" min-width="100" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('order_kind')" :render-header="renderOrderHeader" prop="order_kind_label" label="订单大类" min-width="90" />
-        <el-table-column v-if="visibleKeys.includes('order_date')" :render-header="renderOrderHeader" prop="order_date" label="下单日期" min-width="116" />
-        <el-table-column v-if="visibleKeys.includes('owner')" :render-header="renderOrderHeader" prop="owner_name" label="归属销售" min-width="95" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('customer_source')" :render-header="renderOrderHeader" prop="customer_source_label" label="客户来源" min-width="100" show-overflow-tooltip sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('order_kind')" :render-header="renderOrderHeader" prop="order_kind_label" label="订单大类" min-width="90" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('order_date')" :render-header="renderOrderHeader" prop="order_date" label="下单日期" min-width="116" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('owner')" :render-header="renderOrderHeader" prop="owner_name" label="归属销售" min-width="95" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.owner_name || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('order_type')" :render-header="renderOrderHeader" prop="order_type_label" label="订单类型" min-width="95" />
-        <el-table-column v-if="visibleKeys.includes('order_channel')" :render-header="renderOrderHeader" prop="order_channel_label" label="订单渠道" min-width="95" />
-        <el-table-column v-if="visibleKeys.includes('total_qty')" :render-header="renderOrderHeader" prop="total_qty" label="产品总数" min-width="90" align="right" />
-        <el-table-column v-if="visibleKeys.includes('status')" :render-header="renderOrderHeader" label="订单状态" min-width="120">
+        <el-table-column v-if="visibleKeys.includes('order_type')" :render-header="renderOrderHeader" prop="order_type_label" label="订单类型" min-width="95" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('order_channel')" :render-header="renderOrderHeader" prop="order_channel_label" label="订单渠道" min-width="95" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('total_qty')" :render-header="renderOrderHeader" prop="total_qty" label="产品总数" min-width="90" align="right" sortable="custom" />
+        <el-table-column v-if="visibleKeys.includes('status')" :render-header="renderOrderHeader" label="订单状态" min-width="120" prop="status" sortable="custom">
           <template #default="{ row }">
             <StatusBadge size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('required_ship_date')" :render-header="renderOrderHeader" label="要求交付日期" min-width="116">
+        <el-table-column v-if="visibleKeys.includes('required_ship_date')" :render-header="renderOrderHeader" label="要求交付日期" min-width="116" prop="required_ship_date" sortable="custom">
           <template #default="{ row }">
             <span :class="{ 'ship-date-overdue': isShipDateOverdue(row) }">{{ row.required_ship_date || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('actual_ship_date')" :render-header="renderOrderHeader" label="实际交付日期" min-width="116">
+        <el-table-column v-if="visibleKeys.includes('actual_ship_date')" :render-header="renderOrderHeader" label="实际交付日期" min-width="116" prop="actual_ship_date" sortable="custom">
           <template #default="{ row }">{{ row.actual_ship_date || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('last_order_date')" :render-header="renderOrderHeader" label="上次下单日期" min-width="116">
+        <el-table-column v-if="visibleKeys.includes('last_order_date')" :render-header="renderOrderHeader" label="上次下单日期" min-width="116" prop="last_order_date" sortable="custom">
           <template #default="{ row }">{{ row.last_order_date || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('repurchase_cycle')" :render-header="renderOrderHeader" label="复购周期/天" min-width="100" align="right">
+        <el-table-column v-if="visibleKeys.includes('repurchase_cycle')" :render-header="renderOrderHeader" label="复购周期/天" min-width="100" align="right" prop="repurchase_cycle" sortable="custom">
           <template #default="{ row }">{{ row.repurchase_cycle_days != null ? row.repurchase_cycle_days : '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('remark')" :render-header="renderOrderHeader" prop="remark" label="订单备注" min-width="140" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('remark')" :render-header="renderOrderHeader" prop="remark" label="订单备注" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" :render-header="renderOrderHeader" label="操作" min-width="270">
@@ -169,13 +169,13 @@
           <el-table v-if="item.steps.length" :data="item.steps" size="small" border class="step-table list-table">
             <el-table-column prop="step_order" label="#" min-width="46" />
             <el-table-column prop="process_name" label="工序" min-width="100" />
-            <el-table-column label="报工进度" min-width="135">
+            <el-table-column prop="completed_qty" label="报工进度" min-width="135">
               <template #default="{ row }">
                 <div>已报 {{ row.completed_qty }} / 应做 {{ row.required_qty }}</div>
                 <div v-if="row.skipped_qty" class="skip-progress">已跳过 {{ row.skipped_qty }}（不计工资）</div>
               </template>
             </el-table-column>
-            <el-table-column label="可报数量" min-width="90">
+            <el-table-column prop="reportable_qty" label="可报数量" min-width="90">
               <template #default="{ row }">
                 <span :class="{ 'qty-ready': row.reportable_qty > 0 }">{{ row.reportable_qty }}</span>
               </template>
@@ -286,12 +286,12 @@
       <el-table :data="logDialog.logs" v-loading="logDialog.loading" size="small" border style="width: 100%" class="list-table">
         <el-table-column prop="process_name" label="工序" min-width="100" />
         <el-table-column prop="report_qty" label="数量" min-width="70" />
-        <el-table-column label="单件" min-width="140" show-overflow-tooltip>
+        <el-table-column :sort-by="row => ((row.unit_codes || []).join('、') || '-')" label="单件" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ (row.unit_codes || []).join('、') || '-' }}</template>
         </el-table-column>
         <el-table-column prop="reported_by_name" label="报工人" min-width="90" />
         <el-table-column prop="reported_at" label="时间" min-width="150" show-overflow-tooltip />
-        <el-table-column label="状态" min-width="110">
+        <el-table-column prop="revoked" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge v-if="row.revoked" size="small" type="info" effect="plain">已撤销</StatusBadge>
             <StatusBadge v-else size="small" type="success" effect="plain">有效</StatusBadge>
@@ -385,6 +385,7 @@ import { attributeFieldLabel, visibleAttributeFields } from './domesticAttribute
 import { detailSectionsForKind } from './domesticOrderKinds'
 import { membershipLevelLabel } from './composables/domesticMemberPricing'
 
+const ordersPage = useDomesticOrders()
 const {
   loading, list, total, page, pageSize, searchForm, filterOptions,
   fetchList, handleSearch, handlePageChange, handleSizeChange,
@@ -403,7 +404,7 @@ const {
   canReviewOrder, reviewingOrderIds, handleReviewApprove, handleReviewReject,
   editDialog, openEdit,
   isShipDateOverdue,
-} = useDomesticOrders()
+} = ordersPage
 
 const { tableRef, filtersRef, tableHeight } = useOrderTableHeight(listErrorMessage)
 
@@ -434,6 +435,7 @@ function handleKindChange() {
   searchForm.customer_source = ''
   handleSearch()
 }
+function sortTable({ prop, order }) { return ordersPage.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>
 
 <style scoped src="./domestic-orders.css"></style>

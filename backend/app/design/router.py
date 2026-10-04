@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from sqlalchemy import func
 from datetime import date, datetime
 from app.core.time import beijing_now
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, File, UploadFile, BackgroundTasks
 from fastapi.responses import FileResponse
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -176,7 +178,6 @@ def list_requests(
         from datetime import date as _date
         query = query.filter(DesignScheduleRequest.expect_start_date <= _date.fromisoformat(expect_end_date))
 
-    from sqlalchemy import desc as _desc
     SORT_MAP = {
         "request_no": DesignScheduleRequest.request_no,
         "customer_name": DesignScheduleRequest.customer_name,
@@ -185,12 +186,17 @@ def list_requests(
         "priority": DesignScheduleRequest.priority,
         "created_at": DesignScheduleRequest.created_at,
         "status": DesignScheduleRequest.status,
+        "customer_level": DesignScheduleRequest.customer_level,
+        "shoot_type": DesignScheduleRequest.shoot_type,
+        "remark": DesignScheduleRequest.remark,
+        "conflict_detail": DesignScheduleRequest.conflict_detail,
+        "attachments": db.query(func.count(DesignRequestAttachment.id)).filter(DesignRequestAttachment.request_id == DesignScheduleRequest.id).correlate(DesignScheduleRequest).scalar_subquery(),
     }
-    sort_col = SORT_MAP.get(sort_field, DesignScheduleRequest.created_at)
-    order_fn = _desc if sort_order == "desc" else lambda c: c
+    query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
+        default=(DesignScheduleRequest.created_at.desc(),), tie_breakers=(DesignScheduleRequest.id.asc(),))
 
     total = query.count()
-    items = query.order_by(order_fn(sort_col)).offset(
+    items = query.offset(
         (page - 1) * page_size
     ).limit(page_size).all()
 
@@ -521,7 +527,6 @@ def list_tasks(
         elif statuses:
             query = query.filter(DesignScheduleTask.status.in_(statuses))
 
-    from sqlalchemy import desc as _desc
     SORT_MAP = {
         "task_no": DesignScheduleTask.task_no,
         "customer_name": DesignScheduleTask.customer_name,
@@ -530,12 +535,16 @@ def list_tasks(
         "plan_end_date": DesignScheduleTask.plan_end_date,
         "created_at": DesignScheduleTask.created_at,
         "status": DesignScheduleTask.status,
+        "shoot_type": DesignScheduleTask.shoot_type,
+        "priority": DesignScheduleTask.priority,
+        "remark": DesignScheduleTask.remark,
+        "designer_name": db.query(DesignDesigner.name).filter(DesignDesigner.id == DesignScheduleTask.designer_id).correlate(DesignScheduleTask).scalar_subquery(),
     }
-    sort_col = SORT_MAP.get(sort_field, DesignScheduleTask.created_at)
-    order_fn = _desc if sort_order == "desc" else lambda c: c
+    query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
+        default=(DesignScheduleTask.created_at.desc(),), tie_breakers=(DesignScheduleTask.id.asc(),))
 
     total = query.count()
-    items = query.order_by(order_fn(sort_col)).offset(
+    items = query.offset(
         (page - 1) * page_size
     ).limit(page_size).all()
 

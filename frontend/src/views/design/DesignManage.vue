@@ -49,13 +49,13 @@
               <GlassButton v-if="pendingHasActiveFilters" left-icon="RefreshLeft" @click="resetPendingFilters">重置筛选</GlassButton>
             </el-empty>
           </template>
-          <el-table-column v-if="pendingVisibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip />
-          <el-table-column v-if="pendingVisibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
-          <el-table-column v-if="pendingVisibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="90" max-width="130">
+          <el-table-column sortable="custom" v-if="pendingVisibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="pendingVisibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="pendingVisibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="90" max-width="130">
             <template #default="{ row }">{{ customerLevelLabel(row.customer_level) }}</template>
           </el-table-column>
-          <el-table-column v-if="pendingVisibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" sortable="custom" show-overflow-tooltip />
-          <el-table-column v-if="pendingVisibleKeys.includes('shoot-type')" label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
+          <el-table-column sortable="custom" v-if="pendingVisibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="pendingVisibleKeys.includes('shoot-type')" prop="shoot_type" label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="clickable-shoot-type" @click="openShootTypeDialog(row, 'request')">
                 {{ buildDictLabel(row.shoot_type, shootTypeMap) }}
@@ -63,7 +63,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="pendingVisibleKeys.includes('expect-date')" label="期望日期" min-width="280" max-width="420" prop="expect_start_date" sortable="custom">
+          <el-table-column sortable="custom" v-if="pendingVisibleKeys.includes('expect-date')" label="期望日期" min-width="280" max-width="420" prop="expect_start_date">
             <template #default="{ row }">
               <span class="clickable-date" @click="openEditDateDialog(row)">
                 {{ row.expect_start_date }} {{ periodLabel(row.expect_start_period) }} ~ {{ row.expect_end_date }} {{ periodLabel(row.expect_end_period) }}
@@ -71,14 +71,14 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="pendingVisibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120" prop="priority" sortable="custom">
+          <el-table-column sortable="custom" v-if="pendingVisibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120" prop="priority">
             <template #default="{ row }">
               <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="pendingVisibleKeys.includes('remark')" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+          <el-table-column sortable="custom" v-if="pendingVisibleKeys.includes('remark')" prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
             <template #default="{ row }">
               <button v-any-permission="['design:write', 'design:manage']" type="button" class="clickable-remark" aria-label="修改预约备注" @click="openRemarkDialog(row)">
                 {{ row.remark || '添加备注' }}
@@ -86,7 +86,7 @@
               </button>
             </template>
           </el-table-column>
-          <el-table-column v-if="pendingVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="pendingVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
           <el-table-column class-name="table-action-column" label="操作" min-width="180" max-width="260" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.id)">详情</GlassButton>
@@ -149,10 +149,10 @@
               <GlassButton v-if="scheduledHasActiveFilters" left-icon="RefreshLeft" @click="resetScheduledFilters">重置筛选</GlassButton>
             </el-empty>
           </template>
-          <el-table-column v-if="scheduledVisibleKeys.includes('task-no')" prop="task_no" label="任务编号" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-          <el-table-column v-if="scheduledVisibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
-          <el-table-column v-if="scheduledVisibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
-          <el-table-column v-if="scheduledVisibleKeys.includes('shoot-type')" label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('task-no')" prop="task_no" label="任务编号" min-width="170" max-width="260" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('shoot-type')" prop="shoot_type" label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="clickable-shoot-type" @click="openShootTypeDialog(row, 'task')">
                 {{ buildDictLabel(row.shoot_type, shootTypeMap) }}
@@ -160,7 +160,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="scheduledVisibleKeys.includes('designer')" label="设计师" min-width="120" max-width="170">
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('designer')" prop="designer_name" label="设计师" min-width="120" max-width="170">
             <template #default="{ row }">
               <div v-if="editingDesignerId === row.id" class="inline-edit">
                 <el-select v-model="editingDesignerValue" size="small" style="width: 100px" @change="saveDesigner(row)" @blur="cancelEditDesigner">
@@ -173,7 +173,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="scheduledVisibleKeys.includes('plan-date')" label="排期日期" min-width="280" max-width="420" prop="plan_start_date" sortable="custom">
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('plan-date')" label="排期日期" min-width="280" max-width="420" prop="plan_start_date">
             <template #default="{ row }">
               <span class="clickable-date" @click="openEditTaskDateDialog(row)">
                 {{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}
@@ -181,14 +181,14 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="scheduledVisibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120">
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('priority')" prop="priority" label="优先级" min-width="100" max-width="120">
             <template #default="{ row }">
               <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="scheduledVisibleKeys.includes('remark')" label="备注" min-width="180" max-width="300" show-overflow-tooltip>
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('remark')" prop="remark" label="备注" min-width="180" max-width="300" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="remark-mixed">
                 <div class="remark-line">
@@ -206,14 +206,14 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="scheduledVisibleKeys.includes('status')" label="状态" min-width="110" max-width="150" prop="status" sortable="custom">
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('status')" label="状态" min-width="110" max-width="150" prop="status">
             <template #default="{ row }">
               <StatusBadge :type="TASK_STATUS_TAG[row.status]" effect="plain">
                 {{ TASK_STATUS_MAP[row.status] || row.status }}
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="scheduledVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="scheduledVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
           <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="380" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
@@ -291,33 +291,33 @@
               <GlassButton v-if="completedHasActiveFilters" left-icon="RefreshLeft" @click="resetCompletedFilters">重置筛选</GlassButton>
             </el-empty>
           </template>
-          <el-table-column v-if="completedVisibleKeys.includes('task-no')" prop="task_no" label="任务编号" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-          <el-table-column v-if="completedVisibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
-          <el-table-column v-if="completedVisibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
-          <el-table-column v-if="completedVisibleKeys.includes('shoot-type')" label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
+          <el-table-column sortable="custom" v-if="completedVisibleKeys.includes('task-no')" prop="task_no" label="任务编号" min-width="170" max-width="260" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="completedVisibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="completedVisibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="completedVisibleKeys.includes('shoot-type')" prop="shoot_type" label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
           </el-table-column>
-          <el-table-column v-if="completedVisibleKeys.includes('designer')" label="设计师" min-width="100" max-width="150">
+          <el-table-column sortable="custom" v-if="completedVisibleKeys.includes('designer')" prop="designer_name" label="设计师" min-width="100" max-width="150">
             <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
           </el-table-column>
-          <el-table-column v-if="completedVisibleKeys.includes('plan-date')" label="排期日期" min-width="240" max-width="360" prop="plan_start_date" sortable="custom">
+          <el-table-column sortable="custom" v-if="completedVisibleKeys.includes('plan-date')" label="排期日期" min-width="240" max-width="360" prop="plan_start_date">
             <template #default="{ row }">
               {{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}
             </template>
           </el-table-column>
-          <el-table-column v-if="completedVisibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120">
+          <el-table-column sortable="custom" v-if="completedVisibleKeys.includes('priority')" prop="priority" label="优先级" min-width="100" max-width="120">
             <template #default="{ row }">
               <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="completedVisibleKeys.includes('status')" label="状态" min-width="110" max-width="120" prop="status" sortable="custom">
+          <el-table-column sortable="custom" v-if="completedVisibleKeys.includes('status')" label="状态" min-width="110" max-width="120" prop="status">
             <template #default="{ row }">
               <StatusBadge type="success" effect="plain">已完成</StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="completedVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column sortable="custom" v-if="completedVisibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
           <el-table-column class-name="table-action-column" label="操作" min-width="100" max-width="150" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
@@ -369,7 +369,7 @@
           <el-table-column v-if="designerVisibleKeys.includes('name')" prop="name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip />
           <el-table-column v-if="designerVisibleKeys.includes('email')" prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip />
           <el-table-column v-if="designerVisibleKeys.includes('dingtalk-id')" prop="dingtalk_id" label="钉钉ID" min-width="140" max-width="210" show-overflow-tooltip />
-          <el-table-column v-if="designerVisibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
+          <el-table-column prop="is_active" v-if="designerVisibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
               <StatusBadge :type="row.is_active ? 'success' : 'info'" effect="plain">
                 {{ row.is_active ? '在职' : '停用' }}

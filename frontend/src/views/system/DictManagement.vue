@@ -49,7 +49,7 @@
         <el-table-column v-if="visibleKeys.includes('code')" prop="code" label="字典编码" min-width="140" max-width="210" show-overflow-tooltip sortable />
         <el-table-column v-if="visibleKeys.includes('label')" prop="label" label="显示名" min-width="140" max-width="210" show-overflow-tooltip sortable />
         <el-table-column v-if="visibleKeys.includes('sort')" prop="sort" label="排序" min-width="80" max-width="120" sortable />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="120">
+        <el-table-column prop="is_active" v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="120">
           <template #default="{ row }">
             <StatusBadge :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</StatusBadge>
           </template>

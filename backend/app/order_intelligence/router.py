@@ -129,6 +129,8 @@ def customers(
     country: str | None = Query(None, max_length=100),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query(""),
+    sort_order: str = Query(""),
     user_id: str | None = Query(None, max_length=64),
     team: str | None = Query(None, max_length=100),
     analysis_filters: AnalysisFilters = Depends(_analysis_filters),
@@ -138,7 +140,7 @@ def customers(
     start, end = service.normalize_window(date_from, as_of)
     return ok(service.get_customer_actions(
         db, _scope(db, user, user_id, team), end,
-        page, page_size, risk_status, country, analysis_filters, start,
+        page, page_size, risk_status, country, analysis_filters, start, sort_field, sort_order,
     ))
 
 

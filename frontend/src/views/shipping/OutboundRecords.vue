@@ -28,16 +28,16 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+<el-table @sort-change="handleSortChange" :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的出库单' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('outbound-date')" label="出库日期" min-width="120">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('outbound-date')" prop="outbound_date" label="出库日期" min-width="120">
           <template #default="{ row }">
             <template v-if="row.record_source === 'ark_task'">
               <span class="queue-note">待出库</span><small class="queue-note">{{ row.requested_date }} 创建</small>
@@ -45,10 +45,10 @@
             <template v-else>{{ row.outbound_date }}</template>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('item-count')" label="明细 / 数量" min-width="110">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('item-count')" prop="item_count" label="明细 / 数量" min-width="110">
           <template #default="{ row }">{{ row.item_count }} 行 / {{ row.total_qty }} 件</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('outbound-state')" label="出库单状态" min-width="170">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('outbound-state')" prop="outbound_state" label="出库单状态" min-width="170">
           <template #default="{ row }">
             <StatusBadge :type="OUTBOUND_STATE_TAGS[row.outbound_state] || 'info'">
               {{ OUTBOUND_STATE_LABELS[row.outbound_state] || '状态待确认' }}
@@ -64,7 +64,7 @@
             </el-popover>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('inspection-status')" label="检验状态" min-width="140">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('inspection-status')" prop="status" label="检验状态" min-width="140">
           <template #default="{ row }">
             <span v-if="row.record_source === 'ark_task'" class="queue-note">—</span>
             <StatusBadge v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
@@ -73,7 +73,7 @@
             <StatusBadge v-if="row.recheck_status" size="small" type="warning">{{ row.recheck_status === 'pending_sync' ? '待同步重验' : '待补验' }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('photo-count')" label="照片数" min-width="80" align="right">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('photo-count')" prop="photo_count" label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right">
@@ -166,6 +166,7 @@ function canShowMore(row) {
   return auth.hasPermission('shipping_inspection:delete') ||
     (auth.hasPermission('invoice:sync') && auth.hasPermission('shipping_inspection:write'))
 }
+function handleSortChange({ prop, order }) { return listPageState.handleSortChange(order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {}) }
 </script>
 
 <style scoped>

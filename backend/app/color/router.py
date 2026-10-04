@@ -418,6 +418,8 @@ def get_swatches(
     status: Optional[str] = Query(None),
     palette_id: Optional[int] = Query(None),
     blend_id: Optional[int] = Query(None),
+    sort_field: str = Query("id"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("color:read")),
 ):
@@ -425,6 +427,7 @@ def get_swatches(
     result = swatch_service.list_swatches(
         db=db, page=page, page_size=page_size,
         status=status, palette_id=palette_id, blend_id=blend_id,
+        sort_field=sort_field, sort_order=sort_order,
     )
     return _ok(result)
 

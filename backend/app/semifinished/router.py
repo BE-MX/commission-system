@@ -53,10 +53,12 @@ def get_materials(
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None),
     review_only: bool = Query(False),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     _user=Depends(require_permission("semifinished:read")),
 ):
-    result = service.list_materials(db, page, page_size, keyword, review_only)
+    result = service.list_materials(db, page, page_size, keyword, review_only, sort_field=sort_field, sort_order=sort_order)
     return ok(page_result(result["items"], result["total"], page, page_size))
 
 
@@ -80,10 +82,12 @@ def get_mappings(
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None),
     review_only: bool = Query(False),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     _user=Depends(require_permission("semifinished:read")),
 ):
-    result = service.list_mappings(db, page, page_size, keyword, review_only)
+    result = service.list_mappings(db, page, page_size, keyword, review_only, sort_field=sort_field, sort_order=sort_order)
     return ok(page_result(result["items"], result["total"], page, page_size))
 
 
@@ -128,10 +132,12 @@ def get_orders(
     page_size: int = Query(20, ge=1, le=100),
     status: str | None = Query(None),
     keyword: str | None = Query(None),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     _user=Depends(require_permission("semifinished:read")),
 ):
-    result = service.list_orders(db, page, page_size, status, keyword)
+    result = service.list_orders(db, page, page_size, status, keyword, sort_field=sort_field, sort_order=sort_order)
     return ok(page_result(result["items"], result["total"], page, page_size))
 
 
@@ -188,10 +194,12 @@ def get_inventory(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     _user=Depends(require_permission("semifinished:read")),
 ):
-    result = service.list_inventory(db, page, page_size, keyword)
+    result = service.list_inventory(db, page, page_size, keyword, sort_field=sort_field, sort_order=sort_order)
     return ok(page_result(result["items"], result["total"], page, page_size))
 
 
@@ -200,10 +208,12 @@ def get_inventory_ledger(
     material_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = "",
+    sort_order: str = "",
     db: Session = Depends(get_db),
     _user=Depends(require_permission("semifinished:read")),
 ):
-    result = service.list_ledger(db, material_id, page, page_size)
+    result = service.list_ledger(db, material_id, page, page_size, sort_field=sort_field, sort_order=sort_order)
     return ok(page_result(result["items"], result["total"], page, page_size))
 
 

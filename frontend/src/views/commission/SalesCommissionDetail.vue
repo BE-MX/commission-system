@@ -42,13 +42,13 @@
           @row-click="selectMonth"
         >
           <el-table-column prop="month" label="月份" min-width="100" max-width="140" show-overflow-tooltip />
-          <el-table-column label="总提成（美元）" min-width="160" max-width="220" align="right">
+          <el-table-column prop="total_commission_usd" label="总提成（美元）" min-width="160" max-width="220" align="right">
             <template #default="{ row }">{{ usd(row.total_commission_usd) }}</template>
           </el-table-column>
-          <el-table-column label="月平均汇率" min-width="140" max-width="190" align="right">
+          <el-table-column prop="average_exchange_rate" label="月平均汇率" min-width="140" max-width="190" align="right">
             <template #default="{ row }">{{ exchangeRate(row.average_exchange_rate) }}</template>
           </el-table-column>
-          <el-table-column label="总提成（人民币）" min-width="170" max-width="240" align="right">
+          <el-table-column prop="total_commission_rmb" label="总提成（人民币）" min-width="170" max-width="240" align="right">
             <template #default="{ row }">{{ cny(row.total_commission_rmb) }}</template>
           </el-table-column>
         </el-table>

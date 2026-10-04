@@ -43,12 +43,12 @@
           </ListPageStatus>
         </template>
         <el-table-column v-if="visibleKeys.includes('year-month')" prop="year_month" label="月份" min-width="100" />
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="140">
+        <el-table-column prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="140">
           <template #default="{ row }">
             <StatusBadge size="small" :value="row.status" :dictionary="SALARY_STATUS" :label="row.status_label" effect="plain" />
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('workday-count')" label="工作日数" min-width="130" align="right">
+        <el-table-column prop="workday_count" v-if="visibleKeys.includes('workday-count')" label="工作日数" min-width="130" align="right">
           <template #default="{ row }">
             {{ row.workday_count ?? '-' }}
             <!-- 自动推算只按周一~五数，没扣法定节假日也没加调休。
@@ -57,7 +57,7 @@
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('natural-days')" label="自然日" prop="natural_days" min-width="80" align="right" />
-        <el-table-column v-if="visibleKeys.includes('locked')" label="锁定" min-width="150">
+        <el-table-column prop="confirmed_at" v-if="visibleKeys.includes('locked')" label="锁定" min-width="150">
           <template #default="{ row }">
             <span v-if="row.confirmed_at">{{ row.confirmed_at.slice(0, 16).replace('T', ' ') }}</span>
             <span v-else class="muted">-</span>

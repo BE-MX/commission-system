@@ -247,23 +247,23 @@
         <template #empty>
           <el-empty :image-size="96" description="暂无数据" />
         </template>
-        <el-table-column v-if="visibleKeys.includes('thumb')" label="缩略图" min-width="80">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('thumb')" prop="thumbnail_path" label="缩略图" min-width="80">
           <template #default="{ row }">
             <img v-if="row.file_type === 'image' || (row.file_type === 'video' && row.thumbnail_path)" :src="getThumbUrl(row.thumbnail_path || row.storage_path)" class="table-thumb" />
             <el-icon v-else-if="row.file_type === 'video'" size="24"><VideoPlay /></el-icon>
             <el-icon v-else size="24"><Picture /></el-icon>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('file-name')" label="文件名" prop="file_name" min-width="200" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="100">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('file-name')" label="文件名" prop="file_name" min-width="200" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('type')" prop="file_type" label="类型" min-width="100">
           <template #default="{ row }">
             <StatusBadge size="small" :type="fileTypeTag(row.file_type)">{{ fileTypeLabel(row.file_type) }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('size')" label="大小" min-width="100">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('size')" prop="file_size" label="大小" min-width="100">
           <template #default="{ row }">{{ formatSize(row.file_size) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('tags')" label="标签" min-width="200">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('tags')" prop="tags" label="标签" min-width="200">
           <template #default="{ row }">
             <div v-for="tag in row.tags" :key="tag.id" class="tag-with-thumb mr-4">
               <img v-if="tag.image_path" :src="getTagImageUrl(tag.image_path)" class="tag-thumb" />
@@ -273,7 +273,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('created-at')" label="上传时间" prop="created_at" min-width="160" sortable="custom">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('created-at')" label="上传时间" prop="created_at" min-width="160">
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">

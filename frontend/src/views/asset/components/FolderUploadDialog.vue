@@ -156,9 +156,9 @@
         <span v-if="(previewData?.files || []).length > 20" class="async-hint">，上传后转后台处理</span>
         <span v-if="Object.keys(resolutions).length">，已确认 {{ Object.keys(resolutions).length }} 个标签处理项</span>
       </div>
-      <el-table :data="(previewData?.files || []).slice(0, 50)" max-height="390" border class="list-table">
-        <el-table-column label="相对路径" prop="file_path" min-width="220" show-overflow-tooltip />
-        <el-table-column label="匹配标签" min-width="280">
+      <el-table :data="sortedPreviewFiles.slice(0, 50)" @sort-change="sortPreview" max-height="390" border class="list-table">
+        <el-table-column sortable="custom" label="相对路径" prop="file_path" min-width="220" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="tags" label="匹配标签" min-width="280">
           <template #default="{ row }">
             <StatusBadge
               v-for="tag in row.tags"
@@ -319,6 +319,7 @@
 
 <script setup>
 import { computed, ref, toRef } from 'vue'
+import { useLocalTableSort } from '@/composables/useLocalTableSort'
 import { useRouter } from 'vue-router'
 import { CircleClose, FolderOpened, Loading, WarningFilled } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
@@ -348,6 +349,11 @@ const {
   canAutoCreate,
   onUploaded: () => emit('uploaded'),
 })
+const { sortedRows: sortedPreviewFiles, sortField: previewSortField, sortOrder: previewSortOrder } = useLocalTableSort(
+  () => previewData.value?.files || [],
+  { tags: row => (row.tags || []).map(tag => `${tag.dimension_name}：${tag.tag_value}`).join('、') },
+)
+function sortPreview({ prop, order }) { previewSortField.value = prop; previewSortOrder.value = order }
 const uploadPercentage = computed(() => {
   if (!uploadProgress.value?.totalBytes) return 100
   return Math.min(100, Math.round(

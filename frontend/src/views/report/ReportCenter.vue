@@ -47,7 +47,7 @@
           <el-table-column v-if="visibleKeys.includes('report-code')" label="报表编码" prop="report_code" min-width="180" max-width="270" show-overflow-tooltip />
           <el-table-column v-if="visibleKeys.includes('name')" label="报表名称" prop="name" min-width="200" max-width="300" show-overflow-tooltip />
           <el-table-column v-if="visibleKeys.includes('version')" label="版本" prop="version" min-width="80" max-width="120" />
-          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
+          <el-table-column prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
               <el-switch
                 v-if="authStore.hasPermission('report:admin')"
@@ -59,7 +59,7 @@
               </StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleKeys.includes('updated-at')" label="更新时间" min-width="170" max-width="255" show-overflow-tooltip>
+          <el-table-column prop="updated_at" v-if="visibleKeys.includes('updated-at')" label="更新时间" min-width="170" max-width="255" show-overflow-tooltip>
             <template #default="{ row }">
               {{ formatTime(row.updated_at) }}
             </template>
@@ -171,7 +171,7 @@
     >
       <ListPageStatus :error="versionsResource.errorMessage.value" :loading="versionLoading" :has-data="versionList.length > 0" @retry="versionsResource.load()" />
       <el-table :data="versionList" v-loading="versionLoading" border class="list-table">
-        <el-table-column label="版本" min-width="80" max-width="120">
+        <el-table-column prop="version" label="版本" min-width="80" max-width="120">
           <template #default="{ row }">v{{ row.version }}</template>
         </el-table-column>
         <el-table-column label="变更说明" prop="change_summary" min-width="200" max-width="300" show-overflow-tooltip>
@@ -179,7 +179,7 @@
             {{ row.change_summary || '—' }}
           </template>
         </el-table-column>
-        <el-table-column label="保存时间" min-width="160" max-width="240" show-overflow-tooltip>
+        <el-table-column prop="created_at" label="保存时间" min-width="160" max-width="240" show-overflow-tooltip>
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>

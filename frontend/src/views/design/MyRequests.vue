@@ -89,44 +89,44 @@
           <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
         </el-empty>
       </template>
-      <el-table-column v-if="visibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('request-no')" prop="request_no" label="预约编号" min-width="160" max-width="240">
         <template #default="{ row }">
           <GlassButton variant="link" @click="toggleDetail(row)">{{ row.request_no }}</GlassButton>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="100" max-width="140" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="100" max-width="140">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson')" prop="salesperson_name" label="业务员" min-width="100" max-width="140" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-level')" prop="customer_level" label="客户等级" min-width="100" max-width="140">
         <template #default="{ row }">
           <span>{{ customerLevelLabel(row.customer_level) }}</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('shoot-type')" label="拍摄类型" min-width="100" max-width="150">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('shoot-type')" prop="shoot_type" label="拍摄类型" min-width="100" max-width="150">
         <template #default="{ row }">{{ shootTypeLabel(row.shoot_type) }}</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('expect-date')" label="期望日期" min-width="230" max-width="320" prop="expect_start_date" sortable="custom">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('expect-date')" label="期望日期" min-width="230" max-width="320" prop="expect_start_date">
         <template #default="{ row }">
           {{ formatDatePeriod(row.expect_start_date, row.expect_start_period) }}
           ~
           {{ formatDatePeriod(row.expect_end_date, row.expect_end_period) }}
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('priority')" label="优先级" min-width="100" max-width="120">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('priority')" prop="priority" label="优先级" min-width="100" max-width="120">
         <template #default="{ row }">
           <StatusBadge :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
           </StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" max-width="170" prop="status" sortable="custom">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('status')" label="状态" min-width="110" max-width="170" prop="status">
         <template #default="{ row }">
           <StatusBadge :value="row.status" :dictionary="REQUEST_STATUS" effect="plain" />
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('created-at')" prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
       <el-table-column class-name="table-action-column" label="操作" min-width="160" max-width="240" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="View" @click="toggleDetail(row)">详情</GlassButton>

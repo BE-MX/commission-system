@@ -49,7 +49,7 @@
           <template #empty>
             <ListPageStatus :paged="false" :error="accountsResource.errorMessage.value" :loading="loading" @retry="loadAccounts"><el-empty v-if="accountsResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus>
           </template>
-          <el-table-column v-if="visibleKeys.includes('account')" label="账号" min-width="180" max-width="270" show-overflow-tooltip>
+          <el-table-column :sort-by="row => row.display_name || row.phone_number || row.account_uid" v-if="visibleKeys.includes('account')" label="账号" min-width="180" max-width="270" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="account-cell">
                 <span>{{ row.display_name || row.phone_number || row.account_uid }}</span>
@@ -57,7 +57,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleKeys.includes('ark-user')" label="方舟用户" min-width="120" max-width="180" show-overflow-tooltip>
+          <el-table-column :sort-by="row => (arkUserText(row))" v-if="visibleKeys.includes('ark-user')" label="方舟用户" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="account-cell compact">
                 <span>{{ arkUserText(row) }}</span>
@@ -65,12 +65,12 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="120" max-width="150">
+          <el-table-column prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="120" max-width="150">
             <template #default="{ row }">
               <StatusBadge :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</StatusBadge>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleKeys.includes('connector')" label="Connector" min-width="150" max-width="220">
+          <el-table-column prop="connector_status" v-if="visibleKeys.includes('connector')" label="Connector" min-width="150" max-width="220">
             <template #default="{ row }">
               <el-tooltip
                 :disabled="!row.last_error"
@@ -83,10 +83,10 @@
               </el-tooltip>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleKeys.includes('last-sync-at')" label="最后同步" min-width="160" max-width="240">
+          <el-table-column prop="last_sync_at" v-if="visibleKeys.includes('last-sync-at')" label="最后同步" min-width="160" max-width="240">
             <template #default="{ row }">{{ formatTime(row.last_sync_at) }}</template>
           </el-table-column>
-          <el-table-column v-if="visibleKeys.includes('last-message-pull-at')" label="消息拉取" min-width="160" max-width="240">
+          <el-table-column prop="last_message_pull_at" v-if="visibleKeys.includes('last-message-pull-at')" label="消息拉取" min-width="160" max-width="240">
             <template #default="{ row }">{{ formatTime(row.last_message_pull_at) }}</template>
           </el-table-column>
           <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">

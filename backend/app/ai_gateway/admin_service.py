@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from sqlalchemy import func, select
+from app.core.list_sort import apply_list_sort
 
 from app.ai.models import AiPreset, AiProvider
 from app.ai.service import prepare_text_chat
@@ -92,15 +93,32 @@ def get_app(db, app_id):
     return app_dict(db, app)
 
 
-def list_apps(db, page, page_size, search=""):
+def list_apps(db, page, page_size, search="", sort_field="id", sort_order="desc"):
     query = db.query(GatewayApp)
     if search:
         query = query.filter(GatewayApp.name.contains(search, autoescape=True))
     total = query.count()
     now = beijing_now()
     start, end = day_window(now)
+    def usage_value(expression, *conditions):
+        return db.query(expression).filter(GatewayRequest.app_id == GatewayApp.id, *conditions).correlate(GatewayApp).scalar_subquery()
+
+    today_filter = (GatewayRequest.created_at >= start, GatewayRequest.created_at < end)
+    columns = {
+        "name": GatewayApp.name,
+        "owner_name": db.query(ArkUser.real_name).filter(ArkUser.id == GatewayApp.owner_user_id).correlate(GatewayApp).scalar_subquery(),
+        "is_enabled": GatewayApp.is_enabled,
+        "today_calls": usage_value(func.count(GatewayRequest.id), *today_filter),
+        "tokens_prompt": usage_value(func.coalesce(func.sum(GatewayRequest.tokens_prompt), 0), *today_filter),
+        "unknown_usage": usage_value(func.count(GatewayRequest.id), *today_filter, GatewayRequest.usage_status != "known"),
+        "failures": usage_value(func.count(GatewayRequest.id), *today_filter, GatewayRequest.status.in_(("error", "timeout", "unknown"))),
+        "occupied": usage_value(func.count(GatewayRequest.id), GatewayRequest.status.in_(OCCUPIED)),
+        "last_used_at": usage_value(func.max(GatewayRequest.created_at)),
+    }
+    query = apply_list_sort(query, sort_field, sort_order, columns,
+        default=(GatewayApp.id.desc(),), tie_breakers=(GatewayApp.id.asc(),))
     items = []
-    for app in query.order_by(GatewayApp.id.desc()).offset((page - 1) * page_size).limit(page_size):
+    for app in query.offset((page - 1) * page_size).limit(page_size):
         item = app_dict(db, app)
         today = db.query(GatewayRequest).filter(GatewayRequest.app_id == app.id,
                                                GatewayRequest.created_at >= start, GatewayRequest.created_at < end).all()
@@ -117,7 +135,7 @@ def list_apps(db, page, page_size, search=""):
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-def list_requests(db, app_id, page, page_size, status=None, date_from=None, date_to=None):
+def list_requests(db, app_id, page, page_size, status=None, date_from=None, date_to=None, sort_field="id", sort_order="desc"):
     get_app(db, app_id)
     query = db.query(GatewayRequest).filter_by(app_id=app_id)
     if status:
@@ -128,8 +146,20 @@ def list_requests(db, app_id, page, page_size, status=None, date_from=None, date
         query = query.filter(GatewayRequest.created_at < date_to + timedelta(days=1))
     total = query.count()
     now = beijing_now()
+    columns = {
+        "id": GatewayRequest.id,
+        "request_id": GatewayRequest.request_id,
+        "preset_name": GatewayRequest.preset_name,
+        "created_at": GatewayRequest.created_at,
+        "status": GatewayRequest.status,
+        "tokens_prompt": GatewayRequest.tokens_prompt,
+        "error_code": GatewayRequest.error_code,
+        "resolution_reason": GatewayRequest.resolution_reason,
+    }
+    query = apply_list_sort(query, sort_field, sort_order, columns,
+        default=(GatewayRequest.id.desc(),), tie_breakers=(GatewayRequest.id.asc(),))
     items = []
-    for row in query.order_by(GatewayRequest.id.desc()).offset((page - 1) * page_size).limit(page_size):
+    for row in query.offset((page - 1) * page_size).limit(page_size):
         item = {c.name: getattr(row, c.name) for c in row.__table__.columns}
         item["can_resolve"] = row.status in OCCUPIED and now - row.created_at >= timedelta(seconds=75)
         items.append(item)

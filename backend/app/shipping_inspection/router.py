@@ -147,6 +147,8 @@ def list_outbound_records(
     date_to: date | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
+    sort_field: str | None = Query(None),
+    sort_order: str | None = Query(None),
     db: Session = Depends(get_db),
     user: dict = Depends(require_any_permission(*_READ)),
 ):
@@ -154,6 +156,7 @@ def list_outbound_records(
     try:
         rows, total = outbound_queue_service.list_outbound_records(
             db, keyword=keyword, order_id=order_id, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            sort_field=sort_field, sort_order=sort_order,
             okki_user_id=scope_okki_user,
         )
     except outbound_service.OutboundTableError as exc:
@@ -289,6 +292,8 @@ def list_records(
     date_to: date | None = Query(None, description="提交日期止"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
+    sort_field: str | None = Query(None),
+    sort_order: str | None = Query(None),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
@@ -298,6 +303,7 @@ def list_records(
     try:
         items, total = service.list_records(
             db, keyword=keyword, order_id=order_id, submitted_by_name=submitted_by_name, salesperson_name=salesperson_name, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            sort_field=sort_field, sort_order=sort_order,
             okki_user_id=scope,
         )
     except outbound_service.OutboundTableError as exc:

@@ -13,6 +13,10 @@ export function emptyAdvancedFilters() {
 
 export function buildOrderListParams({ page, page_size, ...form }) {
   const params = { page, page_size }
+  if (form.sort_field && form.sort_order) {
+    params.sort_field = form.sort_field
+    params.sort_order = form.sort_order
+  }
   for (const key of ['keyword', 'customer_name', 'owner_user_id', 'order_kind', ...BUSINESS_FILTERS.map(f => f.key)]) {
     if (form.order_kind === 'production' && BUSINESS_FILTERS.some(f => f.key === key)) continue
     const value = typeof form[key] === 'string' ? form[key].trim() : form[key]

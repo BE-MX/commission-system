@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import HTTPException
+from app.core.list_sort import apply_items_sort
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -157,7 +159,7 @@ def _public_row(row: dict) -> dict:
 
 
 def list_orders(db: Session, order_type: OrderType, scope: FestivalOrderScope,
-                page: int, page_size: int, keyword: str | None = None) -> dict:
+                page: int, page_size: int, keyword: str | None = None, sort_field: str = "", sort_order: str = "") -> dict:
     rows = _order_rows(db, order_type, scope)
     if order_type == "new_sign":
         rows = _decorate_new_sign(rows)
@@ -165,6 +167,7 @@ def list_orders(db: Session, order_type: OrderType, scope: FestivalOrderScope,
     if term:
         rows = [row for row in rows if term in str(row.get("order_no") or "").casefold()
                 or term in str(row.get("company_name") or "").casefold()]
+    rows = apply_items_sort(rows, sort_field, sort_order, {field: field for field in ("order_no", "account_date", "amount_usd", "company_name", "user_name", "team", "camp", "points")}, tie_breaker="order_id")
     total = len(rows)
     start = (page - 1) * page_size
     return {

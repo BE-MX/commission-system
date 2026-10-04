@@ -53,20 +53,20 @@
         <el-table-column v-if="visibleKeys.includes('emp-no')" prop="emp_no" label="工号" min-width="80" sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="姓名" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('dept-detail')" prop="dept_detail" label="明细部门" min-width="110" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('dept-group')" label="汇总大部门" min-width="110">
+        <el-table-column v-if="visibleKeys.includes('dept-group')" label="汇总大部门" min-width="110" prop="dept_group" sortable="custom">
           <template #default="{ row }">
             <StatusBadge v-if="row.dept_group" size="small" effect="plain">{{ row.dept_group }}</StatusBadge>
             <span v-else class="muted">未映射</span>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('position')" prop="position" label="岗位" min-width="110" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('grade')" label="职级" min-width="130" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('grade')" label="职级" min-width="130" show-overflow-tooltip prop="grade_code" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.grade_code">{{ schemeLabels[row.grade_scheme] || row.grade_scheme }} · {{ row.grade_code }}</span>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('base-salary')" label="生效底薪" min-width="100" align="right">
+        <el-table-column v-if="visibleKeys.includes('base-salary')" label="生效底薪" min-width="100" align="right" prop="base_salary_effective" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.base_salary_effective !== null && row.base_salary_effective !== undefined">
               <!-- 后端 Decimal 经 JSON 变 float，3500.00 会显示成 3500；工资域分位必须留住 -->
@@ -78,10 +78,10 @@
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('hire-date')" prop="hire_date" label="入职日期" min-width="110" sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('bank-card')" label="银行卡" min-width="150" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('bank-card')" prop="bank_card_masked" sortable="custom" label="银行卡" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ row.bank_card_masked || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="150">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="150" prop="status" sortable="custom">
           <template #default="{ row }">
             <StatusBadge :type="row.status === 'active' ? 'success' : 'info'" size="small" effect="plain">
               {{ row.status === 'active' ? '在职' : '离职' }}

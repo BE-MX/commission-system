@@ -247,12 +247,12 @@
                 </StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column label="方向" min-width="80">
+            <el-table-column prop="direction" label="方向" min-width="80">
               <template #default="{ row }">
                 {{ row.direction === 'forward' ? '→' : '←' }}
               </template>
             </el-table-column>
-            <el-table-column label="目标概念" min-width="180">
+            <el-table-column :sort-by="row => row.direction === 'forward' ? (row.target_name_zh || row.target_concept_id) : (row.source_name_zh || row.source_concept_id)" label="目标概念" min-width="180">
               <template #default="{ row }">
                 {{ row.direction === 'forward' ? row.target_name_zh : row.source_name_zh }}
                 ({{ row.direction === 'forward' ? row.target_concept_id : row.source_concept_id }})

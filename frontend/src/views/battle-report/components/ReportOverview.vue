@@ -19,12 +19,12 @@
       <div class="battle-section-title"><h3>个人战报</h3><el-select v-model="sort" aria-label="个人排名排序"><el-option label="按累计 GMV" value="gmv" /><el-option label="按完成率" value="rate" /></el-select></div>
       <el-table :data="ranked" :max-height="PERSONAL_REPORT_TABLE_HEIGHT" class="list-table battle-personal-table" border>
         <el-table-column prop="rank" label="排名" min-width="75" max-width="100" />
-        <el-table-column label="业务员" min-width="120" max-width="160"><template #default="{ row }"><el-button link type="primary" :disabled="!row.can_view_orders" @click="$emit('review', { memberId: row.member_id })"><el-icon><ArrowRight /></el-icon>{{ row.user_name }}</el-button></template></el-table-column>
+        <el-table-column :sort-by="row => row.user_name" label="业务员" min-width="120" max-width="160"><template #default="{ row }"><el-button link type="primary" :disabled="!row.can_view_orders" @click="$emit('review', { memberId: row.member_id })"><el-icon><ArrowRight /></el-icon>{{ row.user_name }}</el-button></template></el-table-column>
         <el-table-column prop="team" label="业务组" min-width="120" max-width="180" show-overflow-tooltip />
-        <el-table-column label="目标 / USD" min-width="140" max-width="180"><template #default="{ row }">{{ row.target_usd == null ? '待填报' : money(row.target_usd) }}</template></el-table-column>
-        <el-table-column label="当前 GMV / USD" min-width="160" max-width="200"><template #default="{ row }">{{ money(row.gmv) }}{{ row.data_complete ? '' : '（待核对）' }}</template></el-table-column>
-        <el-table-column label="完成进度" min-width="190" max-width="220"><template #default="{ row }"><span>{{ rate(row.progress_percent) }}</span><ProgressPace :row="row" :time="data.workday_progress" /></template></el-table-column>
-        <el-table-column label="距目标 / USD" min-width="150" max-width="180"><template #default="{ row }">{{ Number(row.excess) > 0 ? `超额 ${money(row.excess)}` : money(row.gap) }}</template></el-table-column>
+        <el-table-column :sort-by="row => row.target_usd" label="目标 / USD" min-width="140" max-width="180"><template #default="{ row }">{{ row.target_usd == null ? '待填报' : money(row.target_usd) }}</template></el-table-column>
+        <el-table-column prop="gmv" label="当前 GMV / USD" min-width="160" max-width="200"><template #default="{ row }">{{ money(row.gmv) }}{{ row.data_complete ? '' : '（待核对）' }}</template></el-table-column>
+        <el-table-column prop="progress_percent" label="完成进度" min-width="190" max-width="220"><template #default="{ row }"><span>{{ rate(row.progress_percent) }}</span><ProgressPace :row="row" :time="data.workday_progress" /></template></el-table-column>
+        <el-table-column :sort-by="row => Number(row.excess) > 0 ? -Number(row.excess) : row.gap" label="距目标 / USD" min-width="150" max-width="180"><template #default="{ row }">{{ Number(row.excess) > 0 ? `超额 ${money(row.excess)}` : money(row.gap) }}</template></el-table-column>
         <el-table-column prop="order_count" label="订单数" min-width="95" max-width="125" />
       </el-table>
     </section>

@@ -6,6 +6,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import HTTPException
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session
 
 from app.color.calc_service import blend_colors_lab
@@ -25,7 +26,7 @@ def list_blends(
     sort_order: str = "desc",
 ) -> dict:
     """混合色列表"""
-    from sqlalchemy import desc as _desc
+    from sqlalchemy import func, desc as _desc
     q = db.query(ColorBlend)
 
     if blend_type:
@@ -45,13 +46,16 @@ def list_blends(
         "display_name": ColorBlend.display_name,
         "blend_type": ColorBlend.blend_type,
         "created_at": ColorBlend.created_at,
+        "source": ColorBlend.source,
+        "computed_hex": ColorBlend.computed_hex,
+        "components": db.query(func.count(ColorBlendComponent.id)).filter(ColorBlendComponent.blend_id == ColorBlend.id).correlate(ColorBlend).scalar_subquery(),
     }
-    sort_col = SORT_MAP.get(sort_field, ColorBlend.created_at)
-    order_fn = _desc if sort_order == "desc" else lambda c: c
+    q = apply_list_sort(q, sort_field, sort_order, SORT_MAP,
+        default=(ColorBlend.created_at.desc(),), tie_breakers=(ColorBlend.id.asc(),))
 
     total = q.count()
     items = (
-        q.order_by(order_fn(sort_col))
+        q
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

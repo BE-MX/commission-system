@@ -106,8 +106,9 @@ def retry_delivery(task_id: int, payload: RetryInput, db: Session = Depends(get_
 @router.get('')
 def list_announcements(q: str = Query('', max_length=128), category_id: int | None = None, status: str | None = None,
                        page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+                       sort_field: str = Query(""), sort_order: str = Query(""),
                        db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*READ))):
-    return ok(_call(service.list_announcements, db, user, q=q, category_id=category_id, status=status, page=page, page_size=page_size))
+    return ok(_call(service.list_announcements, db, user, q=q, category_id=category_id, status=status, page=page, page_size=page_size, sort_field=sort_field, sort_order=sort_order))
 
 
 @router.post('')

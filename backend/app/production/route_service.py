@@ -1,5 +1,7 @@
 """工序路线管理 service"""
 
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,8 @@ def list_routes(
     page_size: int = 20,
     name: str | None = None,
     status: int | None = None,
+    sort_field: str = "",
+    sort_order: str = "",
 ) -> tuple[list[dict], int]:
     """返回路线列表，含 step_count / product_count 聚合"""
     q = db.query(ProcessRoute)
@@ -23,7 +27,7 @@ def list_routes(
     if status is not None:
         q = q.filter(ProcessRoute.status == status)
     total = q.count()
-    routes = q.order_by(ProcessRoute.id.asc()).offset((page - 1) * page_size).limit(page_size).all()
+    routes = apply_list_sort(q, sort_field, sort_order, {"id": ProcessRoute.id, "name": ProcessRoute.name, "description": ProcessRoute.description, "status": ProcessRoute.status, "created_at": ProcessRoute.created_at, "step_count": db.query(func.count(ProcessRouteStep.id)).filter(ProcessRouteStep.route_id == ProcessRoute.id).correlate(ProcessRoute).scalar_subquery(), "product_count": db.query(func.count(ProductProcessRoute.id)).filter(ProductProcessRoute.route_id == ProcessRoute.id).correlate(ProcessRoute).scalar_subquery()}, default=(ProcessRoute.id.asc(),), tie_breakers=(ProcessRoute.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()
 
     route_ids = [route.id for route in routes]
     if not route_ids:

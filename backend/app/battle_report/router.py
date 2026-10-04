@@ -112,9 +112,10 @@ def daily(report_id: int, start: date | None = None, team: str | None = Query(No
 def orders(report_id: int, team: str | None = Query(None, max_length=100), member_id: int | None = None,
            day: date | None = None, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
            sort: Literal["date", "amount"] = "date", keyword: str | None = Query(None, max_length=100),
+           sort_field: str = Query(""), sort_order: str = Query(""),
            db: Session = Depends(get_db), user=Depends(_require_battle_read)):
     return ok(query_service.list_orders(db, report_id, user, team=team, member_id=member_id, day=day,
-                                       page=page, page_size=page_size, sort=sort, keyword=keyword))
+                                       page=page, page_size=page_size, sort=sort, keyword=keyword, sort_field=sort_field, sort_order=sort_order))
 
 
 @router.get("/{report_id}/orders/{order_id}")

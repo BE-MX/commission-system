@@ -1,6 +1,7 @@
 """方舟洞见 — 情报条目服务 (CRUD + 筛选 + 批量操作)"""
-
 from __future__ import annotations
+
+from app.core.list_sort import apply_list_sort
 
 import logging
 from datetime import date, datetime
@@ -68,11 +69,17 @@ def list_items(
 
     total = query.count()
 
-    order_col = getattr(InsightItem, sort_by, InsightItem.collected_at)
-    if sort_desc:
-        query = query.order_by(desc(order_col))
-    else:
-        query = query.order_by(order_col)
+    columns = {
+        "id": InsightItem.id,
+        "title": InsightItem.title,
+        "credibility_label": InsightItem.credibility_label,
+        "item_type": InsightItem.item_type,
+        "status": InsightItem.status,
+        "collected_at": InsightItem.collected_at,
+        "created_at": InsightItem.created_at,
+    }
+    query = apply_list_sort(query, sort_by, "desc" if sort_desc else "asc", columns,
+        default=(InsightItem.collected_at.desc(),), tie_breakers=(InsightItem.id.asc(),))
 
     rows = (
         query.offset((page - 1) * page_size)

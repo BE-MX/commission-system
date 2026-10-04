@@ -23,23 +23,23 @@
         />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" row-key="id">
-        <el-table-column v-if="visibleKeys.includes('customer')" label="客户" min-width="160" show-overflow-tooltip>
+<el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" row-key="id" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+        <el-table-column sortable="custom" prop="customer_name" v-if="visibleKeys.includes('customer')" label="客户" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ row.customer_name || `客户 #${row.customer_id}` }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('to-email')" label="收件邮箱" min-width="180" show-overflow-tooltip>
+        <el-table-column sortable="custom" prop="to_email" v-if="visibleKeys.includes('to-email')" label="收件邮箱" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.to_email || row.to_email_snapshot || '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('sender-email')" label="发件邮箱" min-width="180" show-overflow-tooltip>
+        <el-table-column sortable="custom" prop="sender_email" v-if="visibleKeys.includes('sender-email')" label="发件邮箱" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ senderEmailOf(row) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="160">
+        <el-table-column sortable="custom" prop="status" v-if="visibleKeys.includes('status')" label="状态" min-width="160">
           <template #default="{ row }"><StatusBadge :type="jobStatusTagType(row.status)">{{ jobStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('due-at')" label="计划发送时间（北京时间）" min-width="170">
+        <el-table-column sortable="custom" prop="due_at" v-if="visibleKeys.includes('due-at')" label="计划发送时间（北京时间）" min-width="170">
           <template #default="{ row }">{{ row.due_at ? formatBeijingDateTime(row.due_at, { seconds: false }) : '-' }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('reschedule-count')" label="顺延次数" min-width="100">
+        <el-table-column sortable="custom" prop="reschedule_count" v-if="visibleKeys.includes('reschedule-count')" label="顺延次数" min-width="100">
           <template #default="{ row }">{{ row.reschedule_count ?? 0 }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">

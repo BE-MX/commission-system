@@ -67,16 +67,16 @@
           <el-table-column type="selection" min-width="44" :selectable="() => !applied" />
           <el-table-column prop="company" label="客户名" min-width="150" show-overflow-tooltip />
           <el-table-column prop="order_no" label="订单号" min-width="120" show-overflow-tooltip />
-          <el-table-column label="订单总额" min-width="104" align="right">
+          <el-table-column prop="order_total" label="订单总额" min-width="104" align="right">
             <template #default="{ row }">{{ fmt(row.order_total) }}</template>
           </el-table-column>
-          <el-table-column label="Excel金额" min-width="104" align="right">
+          <el-table-column prop="excel_amount" label="Excel金额" min-width="104" align="right">
             <template #default="{ row }">{{ fmt(row.excel_amount) }}</template>
           </el-table-column>
-          <el-table-column label="回款单金额" min-width="104" align="right">
+          <el-table-column prop="receipt_amount" label="回款单金额" min-width="104" align="right">
             <template #default="{ row }">{{ fmt(row.receipt_amount) }}</template>
           </el-table-column>
-          <el-table-column label="当前日期 → 目标日期" min-width="200">
+          <el-table-column prop="old_date" label="当前日期 → 目标日期" min-width="200">
             <template #default="{ row }">
               <span class="old">{{ row.old_date || '（空）' }}</span>
               <el-icon class="arrow"><Right /></el-icon>
@@ -110,7 +110,7 @@
         </div>
         <el-table :data="plan.unmatched" size="small" max-height="320" border class="list-table">
           <el-table-column prop="company" label="客户名" min-width="150" show-overflow-tooltip />
-          <el-table-column label="订单总额" min-width="110" align="right">
+          <el-table-column prop="order_total" label="订单总额" min-width="110" align="right">
             <template #default="{ row }">{{ fmt(row.order_total) }}</template>
           </el-table-column>
           <el-table-column prop="reason" label="原因" min-width="200" />

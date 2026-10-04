@@ -34,10 +34,10 @@
           <GlassButton v-if="keyword" left-icon="RefreshLeft" @click="resetFilter">重置筛选</GlassButton>
         </el-empty>
       </ListPageStatus></template>
-      <el-table-column v-if="visibleKeys.includes('user-id')" prop="user_id" label="员工ID" min-width="200" max-width="300" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('full-name')" prop="full_name" label="姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('nickname')" prop="nickname" label="昵称" min-width="140" max-width="210" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('current-attribute')" prop="current_attribute" label="当前属性" min-width="120" max-width="180" sortable="custom">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('user-id')" prop="user_id" label="员工ID" min-width="200" max-width="300" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('full-name')" prop="full_name" label="姓名" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('nickname')" prop="nickname" label="昵称" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('current-attribute')" prop="current_attribute" label="当前属性" min-width="120" max-width="180">
         <template #default="{ row }">
           <span v-if="row.current_attribute === 'develop'" class="badge-dev">开发</span>
           <span v-else-if="row.current_attribute === 'distribute'" class="badge-assign">分配</span>

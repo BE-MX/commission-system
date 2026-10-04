@@ -187,7 +187,7 @@ onMounted(fetchDetail)
   z-index: 1;
 }
 
-.toolbar { margin-bottom: 16px; }
+.toolbar { top: auto; margin-bottom: 16px; }
 
 .info-banner {
   background: linear-gradient(135deg, #141210 0%, #1E1B18 60%, #141210 100%);

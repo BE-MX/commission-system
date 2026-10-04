@@ -2,7 +2,9 @@
 
 from decimal import Decimal
 
-from sqlalchemy import func
+from app.core.list_sort import apply_list_sort
+
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.semifinished.models import (
@@ -63,7 +65,7 @@ def write_ledger(
     return entry
 
 
-def list_inventory(db: Session, page: int, page_size: int, keyword: str | None = None) -> dict:
+def list_inventory(db: Session, page: int, page_size: int, keyword: str | None = None, sort_field: str = "", sort_order: str = "") -> dict:
     in_progress = (
         db.query(
             SemifinishedOrderItem.material_id.label("material_id"),
@@ -88,7 +90,7 @@ def list_inventory(db: Session, page: int, page_size: int, keyword: str | None =
             | (SemifinishedMaterial.color_code.like(like))
         )
     total = query.count()
-    rows = query.order_by(SemifinishedMaterial.size, SemifinishedMaterial.color_key).offset((page - 1) * page_size).limit(page_size).all()
+    rows = apply_list_sort(query, sort_field, sort_order, {"material_code": SemifinishedMaterial.material_code, "size": SemifinishedMaterial.size, "color_code": SemifinishedMaterial.color_code, "safety_stock_grams": SemifinishedMaterial.safety_stock_grams, "on_hand_grams": func.coalesce(InventoryBalance.on_hand_grams, 0), "reserved_grams": func.coalesce(InventoryBalance.reserved_grams, 0), "available_grams": func.coalesce(InventoryBalance.on_hand_grams, 0) - func.coalesce(InventoryBalance.reserved_grams, 0), "in_progress_grams": func.coalesce(in_progress.c.in_progress, 0), "updated_at": InventoryBalance.updated_at, "stock_status": case((func.coalesce(InventoryBalance.on_hand_grams, 0) - func.coalesce(InventoryBalance.reserved_grams, 0) < SemifinishedMaterial.safety_stock_grams, "shortage"), ((SemifinishedMaterial.safety_stock_grams > 0) & (func.coalesce(InventoryBalance.on_hand_grams, 0) - func.coalesce(InventoryBalance.reserved_grams, 0) < SemifinishedMaterial.safety_stock_grams * 2), "warning"), else_="sufficient")}, default=(SemifinishedMaterial.size.asc(), SemifinishedMaterial.color_key.asc()), tie_breakers=(SemifinishedMaterial.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()
     items = []
     for material, balance, pending in rows:
         on_hand = qty(balance.on_hand_grams if balance else 0)
@@ -113,10 +115,10 @@ def list_inventory(db: Session, page: int, page_size: int, keyword: str | None =
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-def list_ledger(db: Session, material_id: int, page: int, page_size: int) -> dict:
+def list_ledger(db: Session, material_id: int, page: int, page_size: int, sort_field: str = "", sort_order: str = "") -> dict:
     query = db.query(InventoryLedger).filter(InventoryLedger.material_id == material_id)
     total = query.count()
-    rows = query.order_by(InventoryLedger.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    rows = apply_list_sort(query, sort_field, sort_order, {"created_at": InventoryLedger.created_at, "movement_type": InventoryLedger.movement_type, "quantity_grams": InventoryLedger.quantity_grams, "on_hand_after": InventoryLedger.on_hand_after, "reserved_after": InventoryLedger.reserved_after, "business_type": InventoryLedger.business_type, "remark": InventoryLedger.remark}, default=(InventoryLedger.id.desc(),), tie_breakers=(InventoryLedger.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()
     return {
         "items": [{
             "id": row.id,

@@ -9,6 +9,7 @@ from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy import func, or_
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -99,14 +100,23 @@ def list_shipments(
         "current_status": ShipmentTracking.current_status,
         "created_at": ShipmentTracking.created_at,
         "updated_at": ShipmentTracking.updated_at,
+        "carrier_name": ShipmentTracking.carrier_name,
+        "receiver_name": ShipmentTracking.receiver_name,
+        "receiver_country": ShipmentTracking.receiver_country,
+        "current_status_text": ShipmentTracking.current_status_text,
+        "current_location": ShipmentTracking.current_location,
+        "estimated_delivery_date": ShipmentTracking.estimated_delivery_date,
+        "last_event_time": ShipmentTracking.last_event_time,
+        "dingtalk_user_name": ShipmentTracking.dingtalk_user_name,
+        "short_code": ShipmentTracking.short_code,
+        "is_active": ShipmentTracking.is_active,
     }
-    sort_col = SORT_MAP.get(sort_field, ShipmentTracking.created_at)
-    from sqlalchemy import desc as _desc
-    order_fn = _desc if sort_order == "desc" else lambda c: c
+    q = apply_list_sort(q, sort_field, sort_order, SORT_MAP,
+        default=(ShipmentTracking.created_at.desc(),), tie_breakers=(ShipmentTracking.id.asc(),))
 
     total = q.count()
     items = (
-        q.order_by(order_fn(sort_col))
+        q
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

@@ -68,10 +68,10 @@
         :max-height="isFullscreen ? undefined : 640"
         border
       >
-        <el-table-column v-if="visibleKeys.includes('name')" label="站点名称" min-width="180" show-overflow-tooltip>
+        <el-table-column prop="name" v-if="visibleKeys.includes('name')" label="站点名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }"><strong class="site-name">{{ row.name }}</strong></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('owner')" label="绑定账号" min-width="170" show-overflow-tooltip>
+        <el-table-column :sort-by="row => row.owner_real_name || row.owner_username" v-if="visibleKeys.includes('owner')" label="绑定账号" min-width="170" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="account-cell">
               <span>{{ row.owner_real_name || row.owner_username || '-' }}</span>
@@ -79,23 +79,23 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('scopes')" label="授权范围" min-width="140">
+        <el-table-column prop="scopes" v-if="visibleKeys.includes('scopes')" label="授权范围" min-width="140">
           <template #default="{ row }">
             <StatusBadge v-for="scope in row.scopes" :key="scope" type="info" effect="plain" size="small">
               {{ scope }}
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('suffix')" label="Token 尾号" min-width="120">
+        <el-table-column prop="token_suffix" v-if="visibleKeys.includes('suffix')" label="Token 尾号" min-width="120">
           <template #default="{ row }"><code class="suffix">••••••{{ row.token_suffix }}</code></template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('expires')" label="到期时间" min-width="170">
+        <el-table-column prop="expires_at" v-if="visibleKeys.includes('expires')" label="到期时间" min-width="170">
           <template #default="{ row }">{{ formatCredentialTime(row.expires_at, '长期有效') }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('last-used')" label="最近使用" min-width="170">
+        <el-table-column prop="last_used_at" v-if="visibleKeys.includes('last-used')" label="最近使用" min-width="170">
           <template #default="{ row }">{{ formatCredentialTime(row.last_used_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110">
+        <el-table-column :sort-by="row => (statusFor(row).label)" v-if="visibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge :type="statusFor(row).type" effect="plain" size="small">
               {{ statusFor(row).label }}

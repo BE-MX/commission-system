@@ -100,10 +100,10 @@
         <el-table :data="team.members" border class="member-table list-table">
           <el-table-column prop="name" label="姓名" min-width="120" />
           <el-table-column prop="okki_user_id" label="OKKI ID" min-width="120" />
-          <el-table-column label="在职" min-width="80">
+          <el-table-column prop="is_active" label="在职" min-width="80">
             <template #default="{ row }"><el-switch v-model="row.is_active" /></template>
           </el-table-column>
-          <el-table-column label="不计汇总" min-width="105">
+          <el-table-column prop="exclude_from_total" label="不计汇总" min-width="105">
             <template #default="{ row }"><el-switch v-model="row.exclude_from_total" /></template>
           </el-table-column>
           <el-table-column class-name="table-action-column" label="操作" min-width="70">

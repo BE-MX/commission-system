@@ -21,13 +21,13 @@
         <el-table-column v-if="visibleKeys.includes('name')" prop="accessory_name" label="Name" min-width="180" max-width="320" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('model')" prop="accessory_model" label="Model" min-width="150" max-width="240" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('color')" prop="accessory_color" label="Color" min-width="150" max-width="240" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('price')" label="标准价" min-width="110" max-width="150">
+        <el-table-column prop="standard_price" v-if="visibleKeys.includes('price')" label="标准价" min-width="110" max-width="150">
           <template #default="{ row }">
             {{ formatMoney(row.standard_price) }}
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('currency')" prop="currency" label="币种" min-width="90" max-width="110" />
-        <el-table-column v-if="visibleKeys.includes('updated')" label="更新时间" min-width="170" max-width="240" show-overflow-tooltip>
+        <el-table-column prop="updated_at" v-if="visibleKeys.includes('updated')" label="更新时间" min-width="170" max-width="240" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="150" max-width="190" fixed="right">

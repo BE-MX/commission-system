@@ -46,23 +46,23 @@
       </div>
       <el-table :data="runtimeInstances" class="list-table" :class="runtimeDensityClass" :max-height="runtimeIsFullscreen ? undefined : 640" border>
         <template #empty><ListPageStatus v-bind="resourceStatus(overviewResource)" @retry="loadOverview"><el-empty description="暂无记录" /></ListPageStatus></template>
-        <el-table-column v-if="runtimeVisibleKeys.includes('service')" label="服务 / 实例" min-width="220" show-overflow-tooltip>
+        <el-table-column :sort-by="row => row.service_name || row.service_id || row.instance_id" v-if="runtimeVisibleKeys.includes('service')" label="服务 / 实例" min-width="220" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.service_name }}</strong><small class="job-id">{{ row.service_id }} · {{ row.instance_id }}</small></template>
         </el-table-column>
         <el-table-column v-if="runtimeVisibleKeys.includes('environment')" prop="environment" label="环境" min-width="120" show-overflow-tooltip />
         <el-table-column v-if="runtimeVisibleKeys.includes('version')" prop="version" label="版本" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.version || '—' }}</template>
         </el-table-column>
-        <el-table-column v-if="runtimeVisibleKeys.includes('status')" label="状态" min-width="120">
+        <el-table-column prop="status" v-if="runtimeVisibleKeys.includes('status')" label="状态" min-width="120">
           <template #default="{ row }"><StatusBadge :type="statusType(row.status)" effect="plain" round>{{ statusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
-        <el-table-column v-if="runtimeVisibleKeys.includes('heartbeat')" label="最近心跳" min-width="180">
+        <el-table-column prop="last_heartbeat_at" v-if="runtimeVisibleKeys.includes('heartbeat')" label="最近心跳" min-width="180">
           <template #default="{ row }">{{ formatTime(row.last_heartbeat_at) }}<small class="job-id">{{ ageLabel(row.heartbeat_age_seconds) }}</small></template>
         </el-table-column>
-        <el-table-column v-if="runtimeVisibleKeys.includes('capabilities')" label="能力" min-width="200" show-overflow-tooltip>
+        <el-table-column :sort-by="row => (row.capabilities?.join('、') || '未声明')" v-if="runtimeVisibleKeys.includes('capabilities')" label="能力" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ row.capabilities?.join('、') || '未声明' }}</template>
         </el-table-column>
-        <el-table-column v-if="runtimeVisibleKeys.includes('dependencies')" label="依赖" min-width="180" show-overflow-tooltip>
+        <el-table-column :sort-by="row => (row.dependencies?.join('、') || '无')" v-if="runtimeVisibleKeys.includes('dependencies')" label="依赖" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.dependencies?.join('、') || '无' }}</template>
         </el-table-column>
       </el-table>
@@ -112,14 +112,14 @@
       </div>
       <el-table :data="jobRuns" class="list-table" :class="runsDensityClass" :max-height="runsIsFullscreen ? undefined : 640" border>
         <template #empty><ListPageStatus v-bind="resourceStatus(runsResource)" @retry="loadJobRuns"><el-empty description="暂无记录" /></ListPageStatus></template>
-        <el-table-column v-if="runsVisibleKeys.includes('job')" label="任务" min-width="200" show-overflow-tooltip>
+        <el-table-column :sort-by="row => row.job_name || row.name || row.id" v-if="runsVisibleKeys.includes('job')" label="任务" min-width="200" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.job_name }}</strong><small class="job-id">{{ row.domain }} · {{ row.job_id }}</small></template>
         </el-table-column>
-        <el-table-column v-if="runsVisibleKeys.includes('status')" label="状态" min-width="120">
+        <el-table-column prop="status" v-if="runsVisibleKeys.includes('status')" label="状态" min-width="120">
           <template #default="{ row }"><StatusBadge :type="jobStatusType(row.status)" effect="plain" round>{{ jobStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
-        <el-table-column v-if="runsVisibleKeys.includes('planned')" label="计划时间" min-width="175"><template #default="{ row }">{{ formatTime(row.planned_at) }}</template></el-table-column>
-        <el-table-column v-if="runsVisibleKeys.includes('duration')" label="耗时" min-width="100"><template #default="{ row }">{{ durationLabel(row.duration_ms) }}</template></el-table-column>
+        <el-table-column prop="planned_at" v-if="runsVisibleKeys.includes('planned')" label="计划时间" min-width="175"><template #default="{ row }">{{ formatTime(row.planned_at) }}</template></el-table-column>
+        <el-table-column prop="duration_ms" v-if="runsVisibleKeys.includes('duration')" label="耗时" min-width="100"><template #default="{ row }">{{ durationLabel(row.duration_ms) }}</template></el-table-column>
         <el-table-column v-if="runsVisibleKeys.includes('trigger')" prop="triggered_by" label="触发来源" min-width="110" show-overflow-tooltip />
         <el-table-column v-if="runsVisibleKeys.includes('instance')" prop="instance_id" label="执行实例" min-width="150" show-overflow-tooltip />
         <el-table-column v-if="runsVisibleKeys.includes('result')" prop="error_digest" label="结果摘要" min-width="210" show-overflow-tooltip>
@@ -138,16 +138,16 @@
       </div>
       <el-table :data="scheduler.jobs || []" class="list-table" :class="schedulerDensityClass" :max-height="schedulerIsFullscreen ? undefined : 640" border>
         <template #empty><ListPageStatus v-bind="resourceStatus(overviewResource)" @retry="loadOverview"><el-empty description="暂无记录" /></ListPageStatus></template>
-        <el-table-column v-if="schedulerVisibleKeys.includes('job')" label="任务" min-width="190" show-overflow-tooltip>
+        <el-table-column :sort-by="row => row.job_name || row.name || row.id" v-if="schedulerVisibleKeys.includes('job')" label="任务" min-width="190" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.name }}</strong><small class="job-id">{{ row.id }}</small></template>
         </el-table-column>
         <el-table-column v-if="schedulerVisibleKeys.includes('domain')" prop="domain" label="领域" min-width="110" show-overflow-tooltip />
         <el-table-column v-if="schedulerVisibleKeys.includes('owner')" prop="owner" label="责任归属" min-width="110" show-overflow-tooltip />
         <el-table-column v-if="schedulerVisibleKeys.includes('trigger')" prop="trigger" label="计划" min-width="180" show-overflow-tooltip />
-        <el-table-column v-if="schedulerVisibleKeys.includes('next')" label="下次执行" min-width="175">
+        <el-table-column prop="next_run_at" v-if="schedulerVisibleKeys.includes('next')" label="下次执行" min-width="175">
           <template #default="{ row }">{{ formatTime(row.next_run_at) }}</template>
         </el-table-column>
-        <el-table-column v-if="schedulerVisibleKeys.includes('status')" label="最近状态" min-width="120">
+        <el-table-column prop="last_status" v-if="schedulerVisibleKeys.includes('status')" label="最近状态" min-width="120">
           <template #default="{ row }"><StatusBadge :type="jobStatusType(row.last_status)" effect="plain" round>{{ jobStatusLabel(row.last_status) }}</StatusBadge></template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">

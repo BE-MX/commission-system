@@ -137,16 +137,16 @@
             <el-table-column label="新签客户" prop="new_sign_customers" min-width="104" />
             <el-table-column label="首返客户" prop="first_return_customers" min-width="104" />
             <el-table-column label="复购客户" prop="repeat_customers" min-width="104" />
-            <el-table-column label="复购金额" min-width="128"><template #default="{ row }">${{ money(row.repeat_amount_usd) }}</template></el-table-column>
-            <el-table-column label="客单中位" min-width="112"><template #default="{ row }">${{ money(row.median_order_amount_usd) }}</template></el-table-column>
-            <el-table-column label="GMV 趋势" min-width="105"><template #default="{ row }"><span :class="changeClass(row.amount_growth)">{{ changeText(row.amount_growth) }}</span></template></el-table-column>
-            <el-table-column label="下单频次变化" min-width="116"><template #default="{ row }"><span :class="changeClass(row.order_frequency_growth)">{{ changeText(row.order_frequency_growth) }}</span></template></el-table-column>
-            <el-table-column label="典型周期" min-width="104"><template #default="{ row }">{{ row.median_cycle_days ? `${row.median_cycle_days} 天` : '样本不足' }}</template></el-table-column>
+            <el-table-column prop="repeat_amount_usd" label="复购金额" min-width="128"><template #default="{ row }">${{ money(row.repeat_amount_usd) }}</template></el-table-column>
+            <el-table-column prop="median_order_amount_usd" label="客单中位" min-width="112"><template #default="{ row }">${{ money(row.median_order_amount_usd) }}</template></el-table-column>
+            <el-table-column prop="amount_growth" label="GMV 趋势" min-width="105"><template #default="{ row }"><span :class="changeClass(row.amount_growth)">{{ changeText(row.amount_growth) }}</span></template></el-table-column>
+            <el-table-column prop="order_frequency_growth" label="下单频次变化" min-width="116"><template #default="{ row }"><span :class="changeClass(row.order_frequency_growth)">{{ changeText(row.order_frequency_growth) }}</span></template></el-table-column>
+            <el-table-column :sort-by="row => row.median_cycle_days" label="典型周期" min-width="104"><template #default="{ row }">{{ row.median_cycle_days ? `${row.median_cycle_days} 天` : '样本不足' }}</template></el-table-column>
             <el-table-column label="流失风险" prop="at_risk_customers" min-width="96" />
             <el-table-column label="主要来源" prop="top_source_label" min-width="124" show-overflow-tooltip />
-            <el-table-column label="产品偏好" min-width="210"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
-            <el-table-column label="30天预测" min-width="118"><template #default="{ row }">{{ row.next_30d_amount_forecast == null ? '样本不足' : `$${money(row.next_30d_amount_forecast)}` }}</template></el-table-column>
-            <el-table-column label="投流方向建议" min-width="300">
+            <el-table-column :sort-by="row => (preferenceText(row))" label="产品偏好" min-width="210"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
+            <el-table-column :sort-by="row => row.next_30d_amount_forecast" label="30天预测" min-width="118"><template #default="{ row }">{{ row.next_30d_amount_forecast == null ? '样本不足' : `$${money(row.next_30d_amount_forecast)}` }}</template></el-table-column>
+            <el-table-column prop="marketing_advice.title" label="投流方向建议" min-width="300">
               <template #default="{ row }"><div class="oi-advice"><b>{{ row.marketing_advice.title }}</b><span>{{ row.marketing_advice.action }}</span><em>{{ evidenceLabel(row.evidence_level) }}</em></div></template>
             </el-table-column>
           </el-table>
@@ -160,21 +160,21 @@
             <template #empty><ListPageStatus :error="peopleResource.errorMessage.value" :loading="peopleResource.loading.value" :paged="false" @retry="peopleResource.load()"><el-empty description="暂无分析结果" /></ListPageStatus></template>
             <el-table-column :label="peopleDimension === 'team' ? '团队' : '业务员'" prop="name" min-width="120" fixed />
             <el-table-column v-if="peopleDimension === 'user'" label="所属团队" prop="team" min-width="110" />
-            <el-table-column label="能力标签" min-width="210"><template #default="{ row }"><div class="oi-tags"><StatusBadge v-for="tag in row.capability_labels" :key="tag" effect="plain">{{ tag }}</StatusBadge></div></template></el-table-column>
+            <el-table-column prop="capability_labels" label="能力标签" min-width="210"><template #default="{ row }"><div class="oi-tags"><StatusBadge v-for="tag in row.capability_labels" :key="tag" effect="plain">{{ tag }}</StatusBadge></div></template></el-table-column>
             <el-table-column label="新签" prop="new_sign_customers" min-width="76" />
-            <el-table-column label="新客均单" min-width="110"><template #default="{ row }">${{ money(row.new_avg_amount) }}</template></el-table-column>
+            <el-table-column prop="new_avg_amount" label="新客均单" min-width="110"><template #default="{ row }">${{ money(row.new_avg_amount) }}</template></el-table-column>
             <el-table-column label="首返" prop="first_return_customers" min-width="76" />
-            <el-table-column label="复购率" min-width="88"><template #default="{ row }">{{ row.repeat_customer_rate }}%</template></el-table-column>
-            <el-table-column label="复购金额" min-width="120"><template #default="{ row }">${{ money(row.repeat_amount_usd) }}</template></el-table-column>
-            <el-table-column label="优势国家" min-width="140"><template #default="{ row }">{{ row.top_country }} · {{ row.top_country_share }}%</template></el-table-column>
+            <el-table-column prop="repeat_customer_rate" label="复购率" min-width="88"><template #default="{ row }">{{ row.repeat_customer_rate }}%</template></el-table-column>
+            <el-table-column prop="repeat_amount_usd" label="复购金额" min-width="120"><template #default="{ row }">${{ money(row.repeat_amount_usd) }}</template></el-table-column>
+            <el-table-column prop="top_country" label="优势国家" min-width="140"><template #default="{ row }">{{ row.top_country }} · {{ row.top_country_share }}%</template></el-table-column>
             <el-table-column label="主要来源" prop="top_source" min-width="120" />
-            <el-table-column label="产品偏好" min-width="200"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
-            <el-table-column label="客户周期/风险" min-width="150"><template #default="{ row }">{{ row.median_cycle_days ? `${row.median_cycle_days} 天` : '样本不足' }} · {{ row.at_risk_customers }} 风险</template></el-table-column>
-            <el-table-column label="GMV 变化" min-width="100"><template #default="{ row }"><span :class="changeClass(row.amount_growth)">{{ changeText(row.amount_growth) }}</span></template></el-table-column>
-            <el-table-column label="下单频次变化" min-width="116"><template #default="{ row }"><span :class="changeClass(row.order_frequency_growth)">{{ changeText(row.order_frequency_growth) }}</span></template></el-table-column>
-            <el-table-column label="新签变化" min-width="94"><template #default="{ row }"><span :class="changeClass(row.new_sign_growth)">{{ changeText(row.new_sign_growth) }}</span></template></el-table-column>
-            <el-table-column label="复购额变化" min-width="104"><template #default="{ row }"><span :class="changeClass(row.repeat_amount_growth)">{{ changeText(row.repeat_amount_growth) }}</span></template></el-table-column>
-            <el-table-column label="证据等级" min-width="96"><template #default="{ row }">{{ evidenceLabel(row.evidence_level) }}</template></el-table-column>
+            <el-table-column :sort-by="row => (preferenceText(row))" label="产品偏好" min-width="200"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
+            <el-table-column :sort-by="row => row.median_cycle_days" label="客户周期/风险" min-width="150"><template #default="{ row }">{{ row.median_cycle_days ? `${row.median_cycle_days} 天` : '样本不足' }} · {{ row.at_risk_customers }} 风险</template></el-table-column>
+            <el-table-column prop="amount_growth" label="GMV 变化" min-width="100"><template #default="{ row }"><span :class="changeClass(row.amount_growth)">{{ changeText(row.amount_growth) }}</span></template></el-table-column>
+            <el-table-column prop="order_frequency_growth" label="下单频次变化" min-width="116"><template #default="{ row }"><span :class="changeClass(row.order_frequency_growth)">{{ changeText(row.order_frequency_growth) }}</span></template></el-table-column>
+            <el-table-column prop="new_sign_growth" label="新签变化" min-width="94"><template #default="{ row }"><span :class="changeClass(row.new_sign_growth)">{{ changeText(row.new_sign_growth) }}</span></template></el-table-column>
+            <el-table-column prop="repeat_amount_growth" label="复购额变化" min-width="104"><template #default="{ row }"><span :class="changeClass(row.repeat_amount_growth)">{{ changeText(row.repeat_amount_growth) }}</span></template></el-table-column>
+            <el-table-column prop="evidence_level" label="证据等级" min-width="96"><template #default="{ row }">{{ evidenceLabel(row.evidence_level) }}</template></el-table-column>
           </el-table>
         </div>
 
@@ -210,13 +210,13 @@
             <el-table-column label="型号归类说明" prop="new_sign_model_reason_summary" min-width="220" show-overflow-tooltip />
             <el-table-column label="本期客户" prop="active_customer_count" min-width="88" />
             <el-table-column label="同画像客户" prop="peer_customer_count" min-width="100" />
-            <el-table-column label="典型首返周期" min-width="122"><template #default="{ row }">{{ row.typical_first_return_cycle_days != null ? `${row.typical_first_return_cycle_days} 天` : '样本不足' }}</template></el-table-column>
+            <el-table-column :sort-by="row => row.typical_first_return_cycle_days" label="典型首返周期" min-width="122"><template #default="{ row }">{{ row.typical_first_return_cycle_days != null ? `${row.typical_first_return_cycle_days} 天` : '样本不足' }}</template></el-table-column>
             <el-table-column label="首返样本" prop="first_return_sample_count" min-width="88" />
-            <el-table-column label="典型复购周期" min-width="122"><template #default="{ row }">{{ row.typical_repeat_cycle_days ? `${row.typical_repeat_cycle_days} 天` : '样本不足' }}</template></el-table-column>
+            <el-table-column :sort-by="row => row.typical_repeat_cycle_days" label="典型复购周期" min-width="122"><template #default="{ row }">{{ row.typical_repeat_cycle_days ? `${row.typical_repeat_cycle_days} 天` : '样本不足' }}</template></el-table-column>
             <el-table-column label="复购间隔样本" prop="repeat_interval_count" min-width="110" />
             <el-table-column label="本期订单" prop="period_orders" min-width="88" />
-            <el-table-column label="本期金额" min-width="120"><template #default="{ row }">${{ money(row.period_amount_usd) }}</template></el-table-column>
-            <el-table-column label="证据等级" min-width="90"><template #default="{ row }">{{ evidenceLabel(row.evidence_level) }}</template></el-table-column>
+            <el-table-column prop="period_amount_usd" label="本期金额" min-width="120"><template #default="{ row }">${{ money(row.period_amount_usd) }}</template></el-table-column>
+            <el-table-column prop="evidence_level" label="证据等级" min-width="90"><template #default="{ row }">{{ evidenceLabel(row.evidence_level) }}</template></el-table-column>
           </el-table>
         </div>
 
@@ -231,21 +231,21 @@
           <div class="action-bar">
             <TableTools v-model:visible-keys="customerVisibleKeys" v-model:density="customerDensity" :columns="customerColumnDefs" :fullscreen="customerIsFullscreen"  :loading="customerState.loading.value" @refresh="customerState.fetchList" @fullscreen="toggleCustomerFullscreen" />
           </div>
-          <el-table :data="customers.items" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640">
+          <el-table @sort-change="event => customerState.handleSortChange(tableSortParams(event))" :data="customers.items" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640">
             <template #empty><ListPageStatus :error="customerState.errorMessage.value" :loading="customerState.loading.value" @retry="customerState.fetchList"><el-empty description="暂无客户行动" /></ListPageStatus></template>
-            <el-table-column v-if="customerVisibleKeys.includes('company')" label="客户" prop="company_name" min-width="190" show-overflow-tooltip fixed />
-            <el-table-column v-if="customerVisibleKeys.includes('country')" label="国家" prop="country" min-width="94" />
-            <el-table-column v-if="customerVisibleKeys.includes('owner')" label="负责人" prop="user_name" min-width="96" />
-            <el-table-column v-if="customerVisibleKeys.includes('risk')" label="风险" min-width="120"><template #default="{ row }"><StatusBadge effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</StatusBadge></template></el-table-column>
-            <el-table-column v-if="customerVisibleKeys.includes('profile')" label="所属画像" prop="profile_label" min-width="280" show-overflow-tooltip />
-            <el-table-column v-if="customerVisibleKeys.includes('cycle')" label="典型周期" min-width="158"><template #default="{ row }">{{ row.typical_cycle_days ? `${row.typical_cycle_days} 天` : '样本不足' }} · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
-            <el-table-column v-if="customerVisibleKeys.includes('last-order')" label="上次下单" prop="last_order_date" min-width="108" />
-            <el-table-column v-if="customerVisibleKeys.includes('expected')" label="提醒日期" prop="expected_order_date" min-width="108" />
-            <el-table-column v-if="customerVisibleKeys.includes('abnormal')" label="异常日期" prop="abnormal_date" min-width="108" />
-            <el-table-column v-if="customerVisibleKeys.includes('overdue')" label="超期" min-width="80"><template #default="{ row }">{{ row.overdue_days ? `${row.overdue_days} 天` : '—' }}</template></el-table-column>
-            <el-table-column v-if="customerVisibleKeys.includes('amount')" label="历史金额" min-width="118"><template #default="{ row }">${{ money(row.lifetime_amount_usd) }}</template></el-table-column>
-            <el-table-column v-if="customerVisibleKeys.includes('preference')" label="偏好" min-width="190"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
-            <el-table-column v-if="customerVisibleKeys.includes('action')" label="建议动作" prop="recommended_action" min-width="300" />
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('company')" label="客户" prop="company_name" min-width="190" show-overflow-tooltip fixed />
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('country')" label="国家" prop="country" min-width="94" />
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('owner')" label="负责人" prop="user_name" min-width="96" />
+            <el-table-column sortable="custom" prop="risk_status" v-if="customerVisibleKeys.includes('risk')" label="风险" min-width="120"><template #default="{ row }"><StatusBadge effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</StatusBadge></template></el-table-column>
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('profile')" label="所属画像" prop="profile_label" min-width="280" show-overflow-tooltip />
+            <el-table-column sortable="custom" prop="typical_cycle_days" v-if="customerVisibleKeys.includes('cycle')" label="典型周期" min-width="158"><template #default="{ row }">{{ row.typical_cycle_days ? `${row.typical_cycle_days} 天` : '样本不足' }} · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('last-order')" label="上次下单" prop="last_order_date" min-width="108" />
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('expected')" label="提醒日期" prop="expected_order_date" min-width="108" />
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('abnormal')" label="异常日期" prop="abnormal_date" min-width="108" />
+            <el-table-column sortable="custom" prop="overdue_days" v-if="customerVisibleKeys.includes('overdue')" label="超期" min-width="80"><template #default="{ row }">{{ row.overdue_days ? `${row.overdue_days} 天` : '—' }}</template></el-table-column>
+            <el-table-column sortable="custom" prop="lifetime_amount_usd" v-if="customerVisibleKeys.includes('amount')" label="历史金额" min-width="118"><template #default="{ row }">${{ money(row.lifetime_amount_usd) }}</template></el-table-column>
+            <el-table-column sortable="custom" prop="preference" v-if="customerVisibleKeys.includes('preference')" label="偏好" min-width="190"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('action')" label="建议动作" prop="recommended_action" min-width="300" />
           </el-table>
           <div class="oi-pagination pager"><el-pagination class="pager" v-model:current-page="customers.page" v-model:page-size="customers.page_size" :total="customers.total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="changeCustomerSize" @current-change="changeCustomerPage" /></div>
         </div>
@@ -262,6 +262,8 @@
 </template>
 
 <script setup>
+import { tableSortParams } from "@/utils/tableSort"
+
 import { formatMoney } from '../../utils/money.js'
 
 import { computed, ref } from 'vue'

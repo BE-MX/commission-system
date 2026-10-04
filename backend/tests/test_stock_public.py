@@ -109,3 +109,33 @@ def test_query_public_inventory_pagination(inventory_db):
     page2 = query_public_inventory(inventory_db, page=2, page_size=1)
     assert page1["total"] == page2["total"] == 5
     assert page1["items"][0]["product_id"] != page2["items"][0]["product_id"]
+
+
+def test_public_availability_sort_spans_pages_without_quantity_ordering(inventory_db):
+    for direction in ("asc", "desc"):
+        complete = query_public_inventory(inventory_db, page_size=100, sort_field="in_stock", sort_order=direction)["items"]
+        pages = [query_public_inventory(inventory_db, page=number, page_size=2, sort_field="in_stock", sort_order=direction)["items"] for number in (1, 2, 3)]
+        assert [row["product_id"] for page in pages for row in page] == [row["product_id"] for row in complete]
+        assert [row["in_stock"] for row in complete] == sorted([row["in_stock"] for row in complete], reverse=direction == "desc")
+        assert [row["product_id"] for row in complete if row["in_stock"]] == ["p1", "p6"]
+        assert all(set(row) == {"product_id", "type", "size", "color", "weight", "in_stock"} for row in complete)
+
+
+def test_public_private_or_untrusted_sort_restores_default(inventory_db):
+    baseline = query_public_inventory(inventory_db, page_size=100)
+    for field in ("enable_count", "available", "p.name; DROP TABLE okki_products"):
+        assert query_public_inventory(inventory_db, page_size=100, sort_field=field, sort_order="desc") == baseline
+    assert query_public_inventory(inventory_db, page_size=100, sort_field="in_stock", sort_order="invalid") == baseline
+
+
+def test_public_parsed_name_sort_uses_displayed_short_name_fields(inventory_db):
+    def substring_index(value, separator, count):
+        parts = value.split(separator)
+        return separator.join(parts[:count] if count > 0 else parts[count:])
+    inventory_db.connection().connection.driver_connection.create_function("SUBSTRING_INDEX", 3, substring_index)
+    for field in ("type", "size", "color", "weight"):
+        for direction in ("asc", "desc"):
+            complete = query_public_inventory(inventory_db, page_size=100, sort_field=field, sort_order=direction)["items"]
+            assert [row[field] for row in complete] == sorted([row[field] for row in complete], reverse=direction == "desc")
+            paged = [query_public_inventory(inventory_db, page=number, page_size=1, sort_field=field, sort_order=direction)["items"][0] for number in range(1, 6)]
+            assert paged == complete

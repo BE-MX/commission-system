@@ -36,28 +36,28 @@
 
     <div class="block-title">变动记录</div>
     <ListPageStatus v-if="recordsState.hasData.value" :error="recordsState.errorMessage.value" :loading="recordsLoading" :has-data="true" :data-page="recordsState.dataPage.value" @retry="fetchRecords" />
-    <el-table :data="records" v-loading="recordsLoading" size="small" border style="width: 100%" class="list-table">
+    <el-table :data="records" v-loading="recordsLoading" size="small" border style="width: 100%" class="list-table" @sort-change="recordsState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
       <template #empty><ListPageStatus :error="recordsState.errorMessage.value" :loading="recordsLoading" @retry="fetchRecords"><el-empty description="暂无变动记录" :image-size="96" /></ListPageStatus></template>
-      <el-table-column prop="created_at" label="时间" min-width="150" show-overflow-tooltip />
-      <el-table-column label="类型" min-width="100">
+      <el-table-column sortable="custom" prop="created_at" label="时间" min-width="150" show-overflow-tooltip />
+      <el-table-column sortable="custom" prop="type" label="类型" min-width="100">
         <template #default="{ row }">
           <StatusBadge size="small" :type="row.type === 'recharge' ? 'success' : 'warning'">
             {{ row.type === 'recharge' ? '充值' : '消耗' }}
           </StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column label="张数" min-width="80" align="right">
+      <el-table-column sortable="custom" prop="amount" label="张数" min-width="80" align="right">
         <template #default="{ row }">
           <span :class="row.amount > 0 ? 'amt-plus' : 'amt-minus'">{{ row.amount > 0 ? '+' : '' }}{{ row.amount }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="变动前 → 后" min-width="110">
+      <el-table-column sortable="custom" prop="balance_after" label="变动前 → 后" min-width="110">
         <template #default="{ row }">{{ row.balance_before }} → {{ row.balance_after }}</template>
       </el-table-column>
-      <el-table-column label="操作人" min-width="90" show-overflow-tooltip>
+      <el-table-column sortable="custom" prop="operator_name" label="操作人" min-width="90" show-overflow-tooltip>
         <template #default="{ row }">{{ row.operator_name || `#${row.operator_user_id}` }}</template>
       </el-table-column>
-      <el-table-column label="备注" min-width="110" show-overflow-tooltip>
+      <el-table-column sortable="custom" prop="remark" label="备注" min-width="110" show-overflow-tooltip>
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
     </el-table>
@@ -93,7 +93,7 @@ const emit = defineEmits(['update:modelValue', 'changed'])
 
 const quotaResource = useAsyncResource(async (id, { signal }) => id ? (await getStoreQuota(id, { signal, suppressToast: true })).data : null)
 const quota = quotaResource.data, quotaLoading = quotaResource.loading
-const recordsState = useListPage(async ({ storeId, page, page_size }, { signal }) => storeId ? (await listQuotaRecords(storeId, { offset: (page - 1) * page_size, limit: page_size }, { signal, suppressToast: true })).data : { items: [], total: 0 },
+const recordsState = useListPage(async ({ storeId, page, page_size, ...sortParams }, { signal }) => storeId ? (await listQuotaRecords(storeId, { offset: (page - 1) * page_size, limit: page_size, ...sortParams }, { signal, suppressToast: true })).data : { items: [], total: 0 },
   { searchForm: { storeId: null }, immediate: false })
 const { list: records, loading: recordsLoading, total, page, pageSize, handlePageChange, handleSizeChange } = recordsState
 watchListResourceScope(recordsState, ['storeId'])

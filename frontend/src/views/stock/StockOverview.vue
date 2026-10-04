@@ -85,16 +85,16 @@
         </template>
         <el-table-column type="index" label="#" min-width="50" />
         <el-table-column v-if="visibleKeys.includes('model')" label="型号" prop="model" min-width="120" sortable="custom" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="100" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="100" show-overflow-tooltip prop="type" sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('size')" label="尺寸" min-width="100" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('size')" label="尺寸" min-width="100" show-overflow-tooltip prop="size" sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).size }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('color')" label="颜色" prop="color" min-width="90" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).color }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('weight')" label="克重" min-width="90" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('weight')" label="克重" min-width="90" show-overflow-tooltip prop="weight" sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('sales-30d')" label="30天销量" prop="sales_30d" min-width="100" sortable="custom">
@@ -130,7 +130,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('stock-status')" label="备货状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('stock-status')" label="备货状态" min-width="90" prop="stock_status" sortable="custom">
           <template #default="{ row }">
             <span
               v-if="row.stock_status"
@@ -149,12 +149,12 @@
             <StatusBadge v-else size="small" type="info">未设置</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('suggested-qty')" label="建议备货量" min-width="100">
+        <el-table-column v-if="visibleKeys.includes('suggested-qty')" label="建议备货量" min-width="100" prop="suggested_qty" sortable="custom">
           <template #default="{ row }">
             <span :class="row.suggested_qty > 0 ? 'value-danger' : 'text-muted'">{{ row.suggested_qty > 0 ? row.suggested_qty : '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="130" fixed="right">
+        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="130" fixed="right" prop="status" sortable="custom">
           <template #default="{ row }">
             <StatusBadge :type="statusTagType(row.status)" size="small" effect="dark" class="status-tag">
               <el-icon :size="12" style="margin-right:2px"><component :is="statusIcon(row.status)" /></el-icon>
@@ -162,7 +162,7 @@
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="110">
+        <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="110" prop="safety_stock_source" sortable="custom">
           <template #default="{ row }">
             <StatusBadge v-if="row.safety_stock_source" size="small" :type="sourceTagType(row.safety_stock_source)">{{ sourceLabel(row.safety_stock_source) }}</StatusBadge>
             <span v-else class="text-muted">—</span>
@@ -194,13 +194,13 @@
           <el-table-column label="下单量" min-width="80" prop="order_qty" />
           <el-table-column label="已入库" min-width="80" prop="received_qty" />
           <el-table-column label="在途" min-width="70" prop="in_transit_qty" />
-          <el-table-column label="加急" min-width="100">
+          <el-table-column prop="is_urgent" label="加急" min-width="100">
             <template #default="{ row }">
               <StatusBadge v-if="row.is_urgent" type="danger" size="small">加急</StatusBadge>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="预计交期" min-width="110">
+          <el-table-column prop="expected_delivery_date" label="预计交期" min-width="110">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
         </el-table>

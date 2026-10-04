@@ -139,7 +139,7 @@
       <el-table :data="scheduleRules" border class="list-table">
         <el-table-column prop="rule_name" label="规则名" />
         <el-table-column prop="cron_expression" label="Cron" />
-        <el-table-column label="状态" min-width="110">
+        <el-table-column prop="is_active" label="状态" min-width="110">
           <template #default="{ row }">
             <StatusBadge :value="row.is_active" :dictionary="ENABLED_STATUS" size="small" />
           </template>

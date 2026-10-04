@@ -11,9 +11,9 @@
       </el-button>
     </div>
     <div class="line-table-wrap accessory-line-table-wrap">
-      <el-table :data="pagedItems" border class="list-table line-table accessory-line-table" max-height="560">
+      <el-table :data="pagedItems" @sort-change="sortLines" border class="list-table line-table accessory-line-table" max-height="560">
         <el-table-column label="#" type="index" :index="indexBase" min-width="48" max-width="60" fixed />
-        <el-table-column label="Name" min-width="190" max-width="300">
+        <el-table-column label="Name" min-width="190" max-width="300" prop="product_name" sortable="custom">
           <template #default="{ row }">
             <!-- 不要加 @visible-change 预取：EP 2.13 起该事件绑内部 dropdownMenuVisible
                  （随 loading/option 挂载数翻转），配合请求会形成无限刷新环；
@@ -40,20 +40,20 @@
             <div v-if="row.sku_id" class="accessory-identity">SKU {{ row.sku_id }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="Model" min-width="130" max-width="190">
+        <el-table-column label="Model" min-width="130" max-width="190" prop="model" sortable="custom">
           <template #default="{ row }"><el-input :model-value="row.model" readonly /></template>
         </el-table-column>
-        <el-table-column label="Color" min-width="130" max-width="190">
+        <el-table-column label="Color" min-width="130" max-width="190" prop="color" sortable="custom">
           <template #default="{ row }"><el-input :model-value="row.color" readonly /></template>
         </el-table-column>
-        <el-table-column label="标准价" min-width="140" max-width="170" align="right">
+        <el-table-column label="标准价" min-width="140" max-width="170" align="right" prop="standard_price" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.standard_price != null" class="std-price">{{ money4(row.standard_price) }}</span>
             <StatusBadge v-else-if="accessoryStandardPriceState(row) === 'invalid'" size="small" type="warning" effect="plain">需重新配置</StatusBadge>
             <span v-else class="std-price">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="客户价" min-width="135" max-width="175">
+        <el-table-column label="客户价" min-width="135" max-width="175" prop="price_per_piece" sortable="custom">
           <template #default="{ row }">
             <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
               <span class="customer-price-reference" :title="row.customer_price == null ? '选择客户后解析客户价' : `客户价 ${money4(row.customer_price)}`">
@@ -72,17 +72,17 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" min-width="96" max-width="125">
+        <el-table-column label="Quantity" min-width="96" max-width="125" prop="quantity" sortable="custom">
           <template #default="{ row }">
             <el-input-number v-model="row.quantity" :min="1" :precision="0" :controls="false" @change="$emit('change', row)" />
           </template>
         </el-table-column>
-        <el-table-column label="折扣" min-width="105" max-width="140">
+        <el-table-column label="折扣" min-width="105" max-width="140" prop="discount_amount" sortable="custom">
           <template #default="{ row }">
             <el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="$emit('change', row)" />
           </template>
         </el-table-column>
-        <el-table-column label="TotalPrice" min-width="100" max-width="140" align="right">
+        <el-table-column label="TotalPrice" min-width="100" max-width="140" align="right" prop="total_price" sortable="custom">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="64" max-width="80" fixed="right">
@@ -111,6 +111,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { sortTableRows } from '@/utils/tableSort'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { accessoryStandardPriceState } from '../composables/accessoryPricing.js'
 
@@ -128,7 +129,13 @@ const emit = defineEmits(['add', 'select', 'change', 'remove'])
 // 窗内分页：与产品明细同款；新增行后跳到末页
 const page = ref(1)
 const pageSize = ref(20)
-const pagedItems = computed(() => props.items.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
+const sortField = ref('')
+const sortOrder = ref('')
+function sortLines({ prop, order }) { sortField.value = prop; sortOrder.value = order; page.value = 1 }
+const sortedItems = computed(() => sortTableRows(props.items, sortField.value, sortOrder.value, row => sortField.value === 'semifinished_summary'
+  ? (row.semifinished_plan || []).map(item => `${item.size}/${item.color_code} ${item.quantity_grams}`).join(' / ')
+  : row[sortField.value]))
+const pagedItems = computed(() => sortedItems.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
 watch(() => props.items.length, (now, before) => {
   const pages = Math.max(1, Math.ceil(now / pageSize.value))

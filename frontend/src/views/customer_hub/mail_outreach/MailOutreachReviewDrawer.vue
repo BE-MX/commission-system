@@ -106,7 +106,7 @@
           <h3>证据账本</h3>
           <el-table v-if="claims.length" :data="claims" border class="list-table">
             <el-table-column prop="claim" label="主张" min-width="220" show-overflow-tooltip />
-            <el-table-column label="来源 fact_id" min-width="110">
+            <el-table-column prop="fact_id" label="来源 fact_id" min-width="110">
               <template #default="{ row }">{{ row.fact_id ?? '无来源（高风险）' }}</template>
             </el-table-column>
             <el-table-column prop="allowed_wording" label="允许措辞" min-width="200" show-overflow-tooltip />

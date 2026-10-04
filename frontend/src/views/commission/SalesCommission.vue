@@ -66,30 +66,30 @@
         :max-height="isFullscreen ? undefined : 640"
         highlight-current-row
         :row-class-name="batchRowClassName"
-        @row-click="selectBatch"
+        @row-click="selectBatch" @sort-change="changeSort"
       >
         <template #empty><ListPageStatus :error="listState.errorMessage.value" :loading="loading" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('batch-name')" prop="batch_name" label="批次名称" min-width="160" max-width="240" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('period')" label="批次周期" min-width="180" max-width="280" show-overflow-tooltip>
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('batch-name')" prop="batch_name" label="批次名称" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('period')" prop="period_start" label="批次周期" min-width="180" max-width="280" show-overflow-tooltip>
           <template #default="{ row }">{{ row.period_start }} 至 {{ row.period_end }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" max-width="130">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('status')" prop="status" label="状态" min-width="110" max-width="130">
           <template #default="{ row }">
             <StatusBadge :type="batchStatusType(row.status)" size="small" effect="plain">{{ batchStatusLabel(row.status) }}</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('my-confirmation')" label="我的确认" min-width="110" max-width="150">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('my-confirmation')" prop="is_confirmed_by_me" label="我的确认" min-width="110" max-width="150">
           <template #default="{ row }">
             <StatusBadge v-if="row.is_confirmed_by_me" type="success" size="small" effect="plain">已确认</StatusBadge>
             <StatusBadge v-else-if="row.status === 'confirming'" type="warning" size="small" effect="plain">待确认</StatusBadge>
             <StatusBadge v-else type="info" size="small" effect="plain">-</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('related-roles')" label="关联角色" min-width="150" max-width="220">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('related-roles')" prop="related_roles" label="关联角色" min-width="150" max-width="220">
           <template #default="{ row }">
             <el-space wrap>
               <StatusBadge v-for="role in row.related_roles" :key="role" size="small" effect="plain">
@@ -98,10 +98,10 @@
             </el-space>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('total-payment')" label="回款总额" min-width="130" max-width="180" align="right">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('total-payment')" prop="total_payment_amount" label="回款总额" min-width="130" max-width="180" align="right">
           <template #default="{ row }">{{ usd(row.total_payment_amount) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('detail-count')" label="回款单数量" prop="detail_count" min-width="110" max-width="150" align="right" />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('detail-count')" label="回款单数量" prop="detail_count" min-width="110" max-width="150" align="right" />
         <el-table-column class-name="table-action-column" label="操作" min-width="300" max-width="420" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
@@ -229,6 +229,7 @@ watch(currentUserKey, () => {
   page.value = 1
   fetchList()
 }, { immediate: true, flush: 'sync' })
+function changeSort({ prop, order }) { return listState.handleSortChange(order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {}) }
 </script>
 
 <style scoped src="./commission.css"></style>

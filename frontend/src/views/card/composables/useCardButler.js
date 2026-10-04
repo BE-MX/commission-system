@@ -47,6 +47,7 @@ export function useCardButler() {
   const customerPage = useListPage(async (params, { signal, isCurrent }) => {
     const res = await getCustomers({
       page: params.page, page_size: params.page_size,
+      sort_field: params.sort_field, sort_order: params.sort_order,
       salesperson_id: params.salesperson_id || undefined,
       keyword: params.keyword || undefined,
     }, { signal, suppressToast: true })
@@ -175,6 +176,7 @@ export function useCardButler() {
   const inquiryPage = useListPage(async (params, { signal, isCurrent }) => {
     const res = await getInquiries({
       page: params.page, page_size: params.page_size,
+      sort_field: params.sort_field, sort_order: params.sort_order,
       status: params.status || undefined,
       salesperson_id: params.salesperson_id || undefined,
     }, { signal, suppressToast: true })

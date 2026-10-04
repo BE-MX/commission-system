@@ -113,16 +113,16 @@
         </template>
         <el-table-column type="index" label="#" min-width="50" />
         <el-table-column v-if="visibleKeys.includes('model')" label="型号" prop="model" min-width="100" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="90" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('type')" label="类型" min-width="90" show-overflow-tooltip prop="type" sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('size')" label="尺寸" min-width="90" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('size')" label="尺寸" min-width="90" show-overflow-tooltip prop="size" sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).size }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('color')" label="颜色" prop="color" min-width="80" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).color }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('weight')" label="克重" min-width="80" show-overflow-tooltip>
+        <el-table-column v-if="visibleKeys.includes('weight')" label="克重" min-width="80" show-overflow-tooltip prop="weight" sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('sales-30d')" label="近30日销量" prop="sales_30d" min-width="95" sortable="custom">
@@ -137,14 +137,14 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('production-in-transit')" label="生产在途" min-width="85">
+        <el-table-column v-if="visibleKeys.includes('production-in-transit')" label="生产在途" min-width="85" prop="production_in_transit" sortable="custom">
           <template #default="{ row }">
             <span :class="['in-transit-value', row.production_in_transit > 0 ? 'in-transit-active' : '']">
               {{ row.production_in_transit || 0 }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('stock-status')" label="备货状态" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('stock-status')" label="备货状态" min-width="90" prop="stock_status" sortable="custom">
           <template #default="{ row }">
             <span
               v-if="row.stock_status"
@@ -167,12 +167,12 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('avg-daily-sales')" label="日均销量" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('avg-daily-sales')" label="日均销量" min-width="90" prop="avg_daily_sales_30d" sortable="custom">
           <template #default="{ row }">
             <span class="avg-daily">{{ (row.avg_daily_sales_30d||0).toFixed(1) }}</span><span class="sales-unit">/天</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('suggested-qty')" label="建议备货量" min-width="90">
+        <el-table-column v-if="visibleKeys.includes('suggested-qty')" label="建议备货量" min-width="90" prop="suggested_qty" sortable="custom">
           <template #default="{ row }">
             <span :class="row.suggested_qty > 0 ? 'value-danger' : 'text-muted'">
               {{ row.suggested_qty > 0 ? row.suggested_qty : '—' }}
@@ -247,18 +247,18 @@
         <template v-else>
           <el-table :data="cartItems" @selection-change="toggleCartSelection" style="width:100%" border class="list-table">
             <el-table-column type="selection" min-width="50" />
-            <el-table-column label="产品名称" min-width="140" show-overflow-tooltip>
+            <el-table-column :sort-by="row => row.product_name || row.model" label="产品名称" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">
                 <div class="cart-product-name">{{ row.product_name }}</div>
                 <div class="cart-product-model">{{ row.model }}</div>
               </template>
             </el-table-column>
-            <el-table-column label="下单数量" min-width="110">
+            <el-table-column prop="order_qty" label="下单数量" min-width="110">
               <template #default="{ row }">
                 <el-input-number v-model="row.order_qty" :min="1" :max="999999" :step="1" controls-position="right" size="small" style="width:90px" @change="handleCartQtyChange(row)" />
               </template>
             </el-table-column>
-            <el-table-column label="备注" min-width="100" show-overflow-tooltip>
+            <el-table-column prop="remark" label="备注" min-width="100" show-overflow-tooltip>
               <template #default="{ row }">
                 <el-input v-model="row.remark" size="small" placeholder="备注" @blur="handleCartRemarkChange(row)" />
               </template>
@@ -336,13 +336,13 @@
           <el-table-column label="下单量" min-width="80" prop="order_qty" />
           <el-table-column label="已入库" min-width="80" prop="received_qty" />
           <el-table-column label="在途" min-width="70" prop="in_transit_qty" />
-          <el-table-column label="加急" min-width="100">
+          <el-table-column prop="is_urgent" label="加急" min-width="100">
             <template #default="{ row }">
               <StatusBadge v-if="row.is_urgent" type="danger" size="small">加急</StatusBadge>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="预计交期" min-width="110">
+          <el-table-column prop="expected_delivery_date" label="预计交期" min-width="110">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
         </el-table>

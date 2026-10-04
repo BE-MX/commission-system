@@ -216,7 +216,7 @@ onMounted(fetchScripts)
   background: var(--color-warning-bg); color: var(--color-warning-text);
   border: 1px solid var(--color-gold-soft); font-size: 13px; font-weight: 600;
 }
-.toolbar { margin-bottom: 16px; }
+.toolbar { top: auto; margin-bottom: 16px; }
 .toolbar-right { display: flex; justify-content: flex-end; gap: 8px; }
 .card-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));

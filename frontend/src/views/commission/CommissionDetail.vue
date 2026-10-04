@@ -61,34 +61,34 @@
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column v-if="visibleKeys.includes('payment-id')" prop="payment_id" label="回款ID" min-width="160" max-width="240" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单ID" min-width="160" max-width="240" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('payment-amount')" prop="payment_amount" label="回款金额（美元）" min-width="130" max-width="190" align="right" sortable="custom">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('payment-id')" prop="payment_id" label="回款ID" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单ID" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('payment-amount')" prop="payment_amount" label="回款金额（美元）" min-width="130" max-width="190" align="right">
           <template #default="{ row }">{{ usdOrDash(row.payment_amount) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip sortable="custom" />
-        <el-table-column v-if="visibleKeys.includes('salesperson-rate')" label="业务员比例" min-width="100" max-width="150" align="right">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-rate')" prop="salesperson_rate" label="业务员比例" min-width="100" max-width="150" align="right">
           <template #default="{ row }">{{ commissionRate(row.salesperson_rate) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('salesperson-commission')" prop="salesperson_commission" label="业务员提成" min-width="110" max-width="160" align="right" sortable="custom">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-commission')" prop="salesperson_commission" label="业务员提成" min-width="110" max-width="160" align="right">
           <template #default="{ row }">{{ usdOrDash(row.salesperson_commission) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('supervisor-name')" prop="supervisor_name" label="一级主管" min-width="90" max-width="140" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('supervisor-rate')" label="一级主管比例" min-width="110" max-width="160" align="right">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('supervisor-name')" prop="supervisor_name" label="一级主管" min-width="90" max-width="140" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('supervisor-rate')" prop="supervisor_rate" label="一级主管比例" min-width="110" max-width="160" align="right">
           <template #default="{ row }">{{ commissionRate(row.supervisor_rate) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('supervisor-commission')" label="一级主管提成" min-width="120" max-width="180" align="right">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('supervisor-commission')" prop="supervisor_commission" label="一级主管提成" min-width="120" max-width="180" align="right">
           <template #default="{ row }">{{ usdOrDash(row.supervisor_commission) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('second-supervisor-name')" prop="second_supervisor_name" label="二级主管" min-width="90" max-width="140" show-overflow-tooltip />
-        <el-table-column v-if="visibleKeys.includes('second-supervisor-rate')" label="二级主管比例" min-width="110" max-width="160" align="right">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('second-supervisor-name')" prop="second_supervisor_name" label="二级主管" min-width="90" max-width="140" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('second-supervisor-rate')" prop="second_supervisor_rate" label="二级主管比例" min-width="110" max-width="160" align="right">
           <template #default="{ row }">{{ commissionRate(row.second_supervisor_rate) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('second-supervisor-commission')" label="二级主管提成" min-width="120" max-width="180" align="right">
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('second-supervisor-commission')" prop="second_supervisor_commission" label="二级主管提成" min-width="120" max-width="180" align="right">
           <template #default="{ row }">{{ usdOrDash(row.second_supervisor_commission) }}</template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('calc-rule-note')" prop="calc_rule_note" label="计算规则" min-width="130" max-width="200" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('calc-rule-note')" prop="calc_rule_note" label="计算规则" min-width="130" max-width="200" show-overflow-tooltip />
       </el-table>
 
       <el-pagination

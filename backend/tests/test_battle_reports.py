@@ -91,6 +91,18 @@ def test_missing_target_is_not_zero_attainment(setup):
     assert data['summary']['gmv'] == '101.00'
 
 
+def test_order_headers_sort_full_authorized_result_before_page(setup):
+    s = setup
+    for field in ('order_no', 'account_date', 'user_name', 'team', 'company_name', 'status_name', 'amount_usd', 'included_usd'):
+        response = s.client.get(s.url+'/orders', params={'sort_field': field, 'sort_order': 'asc', 'page_size': 1})
+        assert response.status_code == 200, response.text
+        assert response.json()['data']['total'] == 4
+    assert s.client.get(s.url+'/orders?sort_field=amount_usd&sort_order=asc&page_size=1&page=2').json()['data']['items'][0]['order_id'] == 'O2'
+    become(s, 2)
+    result = s.client.get(s.url+'/orders?sort_field=amount_usd&sort_order=desc&page_size=1').json()['data']
+    assert result['total'] == 1 and result['items'][0]['order_id'] == 'O3'
+
+
 def test_member_can_see_summary_but_not_colleague_orders(setup):
     s = setup; become(s, 2)
     assert len(s.client.get(s.url+'/overview').json()['data']['people']) == 3

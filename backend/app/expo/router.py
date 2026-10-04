@@ -726,6 +726,8 @@ def list_leads(
     store_id: int | None = Query(None, description="指定门店过滤（仅 expo_lead:read_all 生效）"),
     db: Session = Depends(get_db),
     current_user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     store_ids = _lead_store_scope(db, current_user)
     if store_ids is None and store_id is not None:
@@ -734,6 +736,8 @@ def list_leads(
         db, page=page, page_size=page_size,
         expo_code=expo_code, intent_level=intent_level, keyword=keyword,
         store_ids=store_ids,
+        sort_field=sort_field,
+        sort_order=sort_order,
     )
     return ok(page_result(items, total, page, page_size))
 

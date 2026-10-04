@@ -31,21 +31,21 @@
             />
           </div>
           <ListPageStatus v-if="customerPage.hasData.value" :error="customerPage.errorMessage.value" :loading="customerPage.loading.value" :has-data="customerPage.hasData.value" :data-page="customerPage.dataPage.value" @retry="customerPage.fetchList" />
-          <el-table :data="customerPage.list.value" v-loading="customerPage.loading.value" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640" style="width: 100%">
-            <el-table-column v-if="customerVisibleKeys.includes('display-name')" prop="display_name" label="客户称呼" min-width="130" show-overflow-tooltip />
-            <el-table-column v-if="customerVisibleKeys.includes('email')" label="口令（邮箱）" min-width="180" show-overflow-tooltip>
+          <el-table @sort-change="event => customerPage.handleSortChange(tableSortParams(event))" :data="customerPage.list.value" v-loading="customerPage.loading.value" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640" style="width: 100%">
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('display-name')" prop="display_name" label="客户称呼" min-width="130" show-overflow-tooltip />
+            <el-table-column sortable="custom" prop="email_norm" v-if="customerVisibleKeys.includes('email')" label="口令（邮箱）" min-width="180" show-overflow-tooltip>
               <template #default="{ row }">{{ row.email_norm || '—' }}</template>
             </el-table-column>
-            <el-table-column v-if="customerVisibleKeys.includes('whatsapp')" label="口令（WhatsApp）" min-width="150" show-overflow-tooltip>
+            <el-table-column sortable="custom" prop="whatsapp_norm" v-if="customerVisibleKeys.includes('whatsapp')" label="口令（WhatsApp）" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">{{ row.whatsapp_norm || '—' }}</template>
             </el-table-column>
-            <el-table-column v-if="customerVisibleKeys.includes('expo-code')" prop="expo_code" label="届次" min-width="100" show-overflow-tooltip />
-            <el-table-column v-if="customerVisibleKeys.includes('entries')" label="纪要" min-width="100">
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('expo-code')" prop="expo_code" label="届次" min-width="100" show-overflow-tooltip />
+            <el-table-column sortable="custom" prop="entry_count" v-if="customerVisibleKeys.includes('entries')" label="纪要" min-width="100">
               <template #default="{ row }">
                 <StatusBadge effect="plain" :type="row.entry_count ? 'success' : 'info'">{{ row.entry_count }} 条</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column v-if="customerVisibleKeys.includes('created-at')" prop="created_at" label="建档时间" min-width="140" />
+            <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('created-at')" prop="created_at" label="建档时间" min-width="140" />
             <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'card:write'" variant="link" left-icon="Notebook" @click="openEntries(row)">纪要</GlassButton>
@@ -92,18 +92,18 @@
             />
           </div>
           <ListPageStatus v-if="inquiryPage.hasData.value" :error="inquiryPage.errorMessage.value" :loading="inquiryPage.loading.value" :has-data="inquiryPage.hasData.value" :data-page="inquiryPage.dataPage.value" @retry="inquiryPage.fetchList" />
-          <el-table :data="inquiryPage.list.value" v-loading="inquiryPage.loading.value" border class="list-table" :class="inquiryDensityClass" :max-height="inquiryIsFullscreen ? undefined : 640" style="width: 100%">
-            <el-table-column v-if="inquiryVisibleKeys.includes('salesperson')" prop="salesperson" label="业务员" min-width="100" />
-            <el-table-column v-if="inquiryVisibleKeys.includes('contact')" prop="contact" label="客户联系方式" min-width="180" show-overflow-tooltip />
-            <el-table-column v-if="inquiryVisibleKeys.includes('message')" prop="message" label="内容" min-width="320" show-overflow-tooltip />
-            <el-table-column v-if="inquiryVisibleKeys.includes('customer')" label="建档客户" min-width="110">
+          <el-table @sort-change="event => inquiryPage.handleSortChange(tableSortParams(event))" :data="inquiryPage.list.value" v-loading="inquiryPage.loading.value" border class="list-table" :class="inquiryDensityClass" :max-height="inquiryIsFullscreen ? undefined : 640" style="width: 100%">
+            <el-table-column sortable="custom" v-if="inquiryVisibleKeys.includes('salesperson')" prop="salesperson" label="业务员" min-width="100" />
+            <el-table-column sortable="custom" v-if="inquiryVisibleKeys.includes('contact')" prop="contact" label="客户联系方式" min-width="180" show-overflow-tooltip />
+            <el-table-column sortable="custom" v-if="inquiryVisibleKeys.includes('message')" prop="message" label="内容" min-width="320" show-overflow-tooltip />
+            <el-table-column sortable="custom" prop="customer_id" v-if="inquiryVisibleKeys.includes('customer')" label="建档客户" min-width="110">
               <template #default="{ row }">
                 <StatusBadge v-if="row.customer_id" effect="plain" type="success">已命中</StatusBadge>
                 <StatusBadge v-else effect="plain" type="info">未建档</StatusBadge>
               </template>
             </el-table-column>
-            <el-table-column v-if="inquiryVisibleKeys.includes('created-at')" prop="created_at" label="提交时间" min-width="140" />
-            <el-table-column v-if="inquiryVisibleKeys.includes('status')" label="状态" min-width="110">
+            <el-table-column sortable="custom" v-if="inquiryVisibleKeys.includes('created-at')" prop="created_at" label="提交时间" min-width="140" />
+            <el-table-column sortable="custom" prop="status" v-if="inquiryVisibleKeys.includes('status')" label="状态" min-width="110">
               <template #default="{ row }">
                 <StatusBadge effect="plain" :type="row.status === 'new' ? 'warning' : 'success'">
                   {{ row.status === 'new' ? '未处理' : '已处理' }}
@@ -146,10 +146,10 @@
             <el-table-column v-if="salespersonVisibleKeys.includes('name')" prop="name" label="英文名" min-width="110" />
             <el-table-column v-if="salespersonVisibleKeys.includes('title')" prop="title" label="职位" min-width="130" show-overflow-tooltip />
             <el-table-column v-if="salespersonVisibleKeys.includes('email')" prop="email" label="邮箱" min-width="200" show-overflow-tooltip />
-            <el-table-column v-if="salespersonVisibleKeys.includes('whatsapp')" label="WhatsApp" min-width="140" show-overflow-tooltip>
+            <el-table-column prop="whatsapp" v-if="salespersonVisibleKeys.includes('whatsapp')" label="WhatsApp" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">{{ row.whatsapp || '—' }}</template>
             </el-table-column>
-            <el-table-column v-if="salespersonVisibleKeys.includes('status')" label="状态" min-width="110">
+            <el-table-column prop="is_active" v-if="salespersonVisibleKeys.includes('status')" label="状态" min-width="110">
               <template #default="{ row }">
                 <StatusBadge effect="plain" :value="row.is_active" :dictionary="ENABLED_STATUS" />
               </template>
@@ -245,6 +245,8 @@
 </template>
 
 <script setup>
+import { tableSortParams } from "@/utils/tableSort"
+
 import ListPageStatus from '@/components/ListPageStatus.vue'
 import { ENABLED_STATUS } from '@/utils/status'
 import { ref } from 'vue'

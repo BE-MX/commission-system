@@ -8,6 +8,8 @@ attrs_key（属性组合）就是产品身份。路线按「工艺→路线」�
 import json
 import logging
 
+from app.core.list_sort import apply_list_sort
+
 from sqlalchemy import String, and_, cast, func, literal
 from sqlalchemy.dialects.mysql import BINARY
 from sqlalchemy.exc import IntegrityError
@@ -205,13 +207,7 @@ def list_products(
 
     total = q.count()
 
-    sortable = {
-        "name": DomesticProduct.name,
-        "use_count": DomesticProduct.use_count,
-        "created_at": DomesticProduct.created_at,
-    }
-    col = sortable.get(sort_field, DomesticProduct.created_at)
-    q = q.order_by(col.asc() if sort_order == "asc" else col.desc())
+    q = apply_list_sort(q, sort_field, sort_order, {"name": DomesticProduct.name, "product_type": DomesticProduct.product_type, "craft": DomesticProduct.craft, "length": DomesticProduct.length, "net_color": DomesticProduct.net_color, "size": DomesticProduct.size, "density": DomesticProduct.density, "hair_style_series": DomesticProduct.hair_style_series, "use_count": DomesticProduct.use_count, "created_at": DomesticProduct.created_at, "status": DomesticProduct.status, "product_type_label": DomesticProduct.product_type, "original_price": DomesticBasePrice.original_price, "price_status": DomesticBasePrice.id.isnot(None), "route_name": db.query(ProcessRoute.name).filter(ProcessRoute.id == DomesticProduct.route_id).correlate(DomesticProduct).scalar_subquery()}, default=(DomesticProduct.created_at.desc(),), tie_breakers=(DomesticProduct.id.asc(),))
 
     rows = q.offset((page - 1) * page_size).limit(page_size).all()
     route_names = _route_name_map(

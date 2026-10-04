@@ -3,13 +3,13 @@
     <section class="lg-card panel">
       <h3>订单明细（只读）</h3>
       <ListPageStatus v-if="orderState.hasData.value" :error="orderState.errorMessage.value" :loading="ordersLoading" :has-data="true" :data-page="orderState.dataPage.value" @retry="loadOrders" />
-      <el-table v-loading="ordersLoading" class="list-table" :data="orders" size="small" border>
+      <el-table v-loading="ordersLoading" class="list-table" :data="orders" size="small" border @sort-change="orderState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
         <template #empty><ListPageStatus :error="orderState.errorMessage.value" :loading="ordersLoading" @retry="loadOrders"><el-empty description="暂无订单明细" :image-size="96" /></ListPageStatus></template>
-        <el-table-column prop="order_no" label="订单号" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="effective_date" label="生效日" min-width="110" />
-        <el-table-column prop="order_type" label="类型" min-width="80" />
-        <el-table-column prop="status" label="状态" min-width="90" />
-        <el-table-column label="原币金额" min-width="130">
+        <el-table-column sortable="custom" prop="order_no" label="订单号" min-width="120" show-overflow-tooltip />
+        <el-table-column sortable="custom" prop="effective_date" label="生效日" min-width="110" />
+        <el-table-column sortable="custom" prop="order_type" label="类型" min-width="80" />
+        <el-table-column sortable="custom" prop="status" label="状态" min-width="90" />
+        <el-table-column sortable="custom" prop="amount" label="原币金额" min-width="130">
           <template #default="{ row }">
             <span v-if="row.amount != null">{{ formatMoney(row.amount, { missing: '—' }) }} {{ row.currency || '' }}</span>
             <span v-else class="hint">未知 {{ row.amount_reason ? `(${row.amount_reason})` : '' }}</span>

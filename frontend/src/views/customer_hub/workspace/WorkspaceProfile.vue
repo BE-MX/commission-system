@@ -49,7 +49,7 @@
         <el-table-column prop="field_key" label="字段" min-width="140" show-overflow-tooltip />
         <el-table-column prop="value" label="修订值" min-width="110" show-overflow-tooltip />
         <el-table-column prop="reason" label="依据" min-width="160" show-overflow-tooltip />
-        <el-table-column label="时间（北京时间）" min-width="170"><template #default="{row}">{{ row.created_at ? formatBeijingDateTime(row.created_at) : '未提供' }}</template></el-table-column>
+        <el-table-column :sort-by="row => row.created_at" label="时间（北京时间）" min-width="170"><template #default="{row}">{{ row.created_at ? formatBeijingDateTime(row.created_at) : '未提供' }}</template></el-table-column>
       </el-table>
     </section>
 

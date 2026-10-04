@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Query, Path
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from sqlalchemy import or_, func
+from app.core.list_sort import apply_list_sort
 from sqlalchemy.orm import Session, aliased
 
 from app.api.deps import get_db
@@ -98,21 +99,25 @@ def list_customer_snapshots(
         ))
 
     total = query.count()
-    from sqlalchemy import desc as _desc
     SORT_MAP = {
         "customer_name": CustomerInfo.company_name,
         "salesperson_name": SpUser.full_name,
+        "supervisor_name": SvUser.full_name,
+        "second_supervisor_name": Sv2User.full_name,
         "first_receipt_date": first_receipt_sub.c.first_receipt_date,
+        "customer_id": CustomerCommissionSnapshot.customer_id,
+        "salesperson_attribute": CustomerCommissionSnapshot.salesperson_attribute,
+        "salesperson_rate": CustomerCommissionSnapshot.salesperson_rate,
+        "supervisor_attribute": CustomerCommissionSnapshot.supervisor_attribute,
+        "supervisor_rate": CustomerCommissionSnapshot.supervisor_rate,
+        "second_supervisor_rate": CustomerCommissionSnapshot.second_supervisor_rate,
+        "remark": CustomerCommissionSnapshot.remark,
+        "is_complete": CustomerCommissionSnapshot.is_complete,
+        "source": CustomerCommissionSnapshot.source,
     }
-    sort_col = SORT_MAP.get(sort_field)
-    if sort_col is not None:
-        order_fn = _desc if sort_order == "desc" else lambda c: c
-        rows = query.order_by(order_fn(sort_col)).offset((page - 1) * page_size).limit(page_size).all()
-    else:
-        rows = query.order_by(
-            CustomerCommissionSnapshot.is_complete.asc(),
-            SpUser.full_name.asc(),
-        ).offset((page - 1) * page_size).limit(page_size).all()
+    query = apply_list_sort(query, sort_field, sort_order, SORT_MAP,
+        default=(CustomerInfo.company_name.asc(),), tie_breakers=(CustomerCommissionSnapshot.id.asc(),))
+    rows = query.offset((page - 1) * page_size).limit(page_size).all()
 
     items = []
     for snap, customer_name, sp_name, sv_name, sv2_name, first_receipt_date in rows:

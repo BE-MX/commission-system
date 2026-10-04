@@ -27,7 +27,7 @@
       </div>
       <h4>三个方案，同一口径比较</h4>
       <p class="muted">预计人民币总额包含即时结汇及等待部分，以最晚结汇日为比较时点；情景不是预测。</p>
-      <div class="table-wrap"><table><thead><tr><th>方案</th><th>现在结汇 USD</th><th>跌 {{ result.input.stress_drop_pct }}%</th><th>持平</th><th>涨 {{ result.input.stress_drop_pct }}%</th></tr></thead><tbody><tr v-for="candidate in result.candidates" :key="candidate.id" :class="{ selected: candidate.id === selected.id }"><th>{{ candidate.label }}{{ candidate.id === selected.id ? ' ✓' : '' }}</th><td>{{ money(candidate.now_usd) }}</td><td v-for="scenario in candidate.scenarios" :key="scenario.label">¥{{ money(scenario.total_cny) }}</td></tr></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th v-for="column in comparisonColumns" :key="column.key" :aria-sort="ariaSort(column.key)"><TableSortHeader :label="column.label" :order="ariaSort(column.key)" @sort="toggleSort(column.key)" /></th></tr></thead><tbody><tr v-for="candidate in sortedRows" :key="candidate.id" :class="{ selected: candidate.id === selected.id }"><th>{{ candidate.label }}{{ candidate.id === selected.id ? ' ✓' : '' }}</th><td>{{ money(candidate.now_usd) }}</td><td v-for="scenario in candidate.scenarios" :key="scenario.label">¥{{ money(scenario.total_cny) }}</td></tr></tbody></table></div>
       <div class="scenario-cards">
         <article v-for="candidate in result.candidates" :key="candidate.id" :class="{ selected: candidate.id === selected.id }">
           <div class="candidate-heading"><h4>{{ candidate.label }}</h4><span v-if="candidate.id === selected.id">当前方案</span></div>
@@ -45,8 +45,12 @@
 import { formatMoney } from '../../utils/money.js'
 
 import { computed } from 'vue'
+import TableSortHeader from '@/components/TableSortHeader.vue'
+import { useLocalTableSort } from '@/composables/useLocalTableSort'
 import { formatBeijingDateTime } from '@/utils/datetime'
 const props = defineProps({ result: Object, stale: Boolean })
+const comparisonColumns = computed(() => [{ key: 'label', label: '方案' }, { key: 'now_usd', label: '现在结汇 USD' }, { key: 'down', label: `跌 ${props.result?.input.stress_drop_pct}%` }, { key: 'flat', label: '持平' }, { key: 'up', label: `涨 ${props.result?.input.stress_drop_pct}%` }])
+const { sortedRows, toggleSort, ariaSort } = useLocalTableSort(() => props.result?.candidates || [], Object.fromEntries(['down', 'flat', 'up'].map((key, index) => [key, row => row.scenarios[index]?.total_cny])))
 const selected = computed(() => props.result?.candidates.find(row => row.id === props.result.selected_id))
 const money = value => formatMoney(value)
 </script>

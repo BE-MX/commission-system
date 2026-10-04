@@ -47,7 +47,7 @@ def get_daily(db, report_id, user, start=None, team=None):
 
 
 def list_orders(db, report_id, user, *, team=None, member_id=None, day=None, page=1, page_size=20,
-                sort="date", keyword=None):
+                sort="date", keyword=None, sort_field="", sort_order=""):
     report, members, orders, issues, now, _ = context(db, report_id, user, details=True, team=team, member_id=member_id)
     if day and not report.start_date <= day <= min(report.end_date, now.date()):
         raise HTTPException(422, "请选择周期内已到达的日期")
@@ -57,6 +57,10 @@ def list_orders(db, report_id, user, *, team=None, member_id=None, day=None, pag
         selected = [o for o in selected if term in o["order_no"].casefold() or term in o["company_name"].casefold()]
     selected.sort(key=lambda o: (Decimal(o["included_usd"]), o["order_id"]) if sort == "amount"
                   else (o["account_date"], o["order_id"]), reverse=True)
+    from app.core.list_sort import apply_items_sort
+    fields = {key: key for key in ("order_no", "account_date", "user_name", "team", "company_name", "status_name")}
+    fields.update({key: lambda item, key=key: Decimal(item[key]) for key in ("amount_usd", "included_usd")})
+    selected = apply_items_sort(selected, sort_field, sort_order, fields, tie_breaker="order_id")
     start = (page - 1) * page_size
     return {"items": selected[start:start + page_size], "total": len(selected), "page": page,
             "page_size": page_size, "gmv": money(sum((Decimal(o["included_usd"]) for o in selected), Decimal(0))),

@@ -107,7 +107,7 @@
       <div class="line-table-wrap">
         <el-table :data="preview.import_preview?.rows || []" border class="list-table">
           <el-table-column prop="source_row" label="#" min-width="48" max-width="60" />
-          <el-table-column label="截图产品" min-width="220" max-width="340" show-overflow-tooltip>
+          <el-table-column prop="normalized.product" label="截图产品" min-width="220" max-width="340" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="product-source">
                 <strong>{{ row.normalized.product }}</strong>
@@ -115,13 +115,13 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="数量" min-width="68" max-width="88">
+          <el-table-column prop="normalized.quantity" label="数量" min-width="68" max-width="88">
             <template #default="{ row }">{{ row.normalized.quantity }}</template>
           </el-table-column>
-          <el-table-column label="单价" min-width="86" max-width="110">
+          <el-table-column prop="normalized.unit_price" label="单价" min-width="86" max-width="110">
             <template #default="{ row }">{{ money4(row.normalized.unit_price) }}</template>
           </el-table-column>
-          <el-table-column label="系统产品匹配" min-width="260" max-width="380">
+          <el-table-column prop="matched_product.product_name" label="系统产品匹配" min-width="260" max-width="380">
             <template #default="{ row }">
               <div class="resolution-cell">
                 <el-select
@@ -151,7 +151,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="110" max-width="110">
+          <el-table-column prop="status" label="状态" min-width="110" max-width="110">
             <template #default="{ row }">
               <StatusBadge :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
             </template>

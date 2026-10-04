@@ -57,39 +57,39 @@
           <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
         </el-empty>
       </ListPageStatus></template>
-      <el-table-column v-if="visibleKeys.includes('customer-id')" prop="customer_id" label="客户ID" min-width="160" max-width="240" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="100" max-width="150" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('salesperson-attribute')" label="业务员属性" min-width="100" max-width="150">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-id')" prop="customer_id" label="客户ID" min-width="160" max-width="240" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="100" max-width="150" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-attribute')" prop="salesperson_attribute" label="业务员属性" min-width="100" max-width="150">
         <template #default="{ row }">
           <span>{{ attrLabel(row.salesperson_attribute) }}</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('salesperson-rate')" label="业务员比例" min-width="100" max-width="150">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-rate')" prop="salesperson_rate" label="业务员比例" min-width="100" max-width="150">
         <template #default="{ row }">{{ rateStr(row.salesperson_rate) }}</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('supervisor-name')" prop="supervisor_name" label="一级主管" min-width="100" max-width="150" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('supervisor-attribute')" label="一级主管属性" min-width="110" max-width="170">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('supervisor-name')" prop="supervisor_name" label="一级主管" min-width="100" max-width="150" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('supervisor-attribute')" prop="supervisor_attribute" label="一级主管属性" min-width="110" max-width="170">
         <template #default="{ row }">
           <span>{{ attrLabel(row.supervisor_attribute) }}</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('supervisor-rate')" label="一级主管比例" min-width="110" max-width="170">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('supervisor-rate')" prop="supervisor_rate" label="一级主管比例" min-width="110" max-width="170">
         <template #default="{ row }">{{ rateStr(row.supervisor_rate) }}</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('second-supervisor-name')" prop="second_supervisor_name" label="二级主管" min-width="100" max-width="150" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('second-supervisor-rate')" label="二级主管比例" min-width="110" max-width="170">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('second-supervisor-name')" prop="second_supervisor_name" label="二级主管" min-width="100" max-width="150" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('second-supervisor-rate')" prop="second_supervisor_rate" label="二级主管比例" min-width="110" max-width="170">
         <template #default="{ row }">{{ rateStr(row.second_supervisor_rate) }}</template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="120" max-width="240" show-overflow-tooltip />
-      <el-table-column v-if="visibleKeys.includes('first-receipt-date')" prop="first_receipt_date" label="首次成交日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
-      <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110" max-width="140">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="120" max-width="240" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('first-receipt-date')" prop="first_receipt_date" label="首次成交日期" min-width="120" max-width="180" show-overflow-tooltip />
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('status')" prop="is_complete" label="状态" min-width="110" max-width="140">
         <template #default="{ row }">
           <StatusBadge v-if="row.is_complete" type="success" size="small" effect="plain">已完整</StatusBadge>
           <StatusBadge v-else type="warning" size="small" effect="plain">待补充</StatusBadge>
         </template>
       </el-table-column>
-      <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="70" max-width="110">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('source')" prop="source" label="来源" min-width="70" max-width="110">
         <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
       </el-table-column>
       <el-table-column class-name="table-action-column" label="操作" min-width="180" max-width="270" fixed="right">

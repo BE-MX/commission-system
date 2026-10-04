@@ -270,6 +270,8 @@ def get_agent_tasks(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_any_permission(*READ_PERMISSIONS)),
+    sort_field: str | None = None,
+    sort_order: str | None = None,
 ):
     rows, total = _call(
         service.list_runs,
@@ -280,6 +282,8 @@ def get_agent_tasks(
         runtime=runtime,
         page=page,
         page_size=page_size,
+        sort_field=sort_field,
+        sort_order=sort_order,
     )
     return ok(page_result([presenters.run_view(row) for row in rows], total, page, page_size))
 

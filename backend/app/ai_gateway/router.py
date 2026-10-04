@@ -84,8 +84,9 @@ def options(db: Session = Depends(get_db)):
 
 @admin_router.get("/apps")
 def list_apps(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-              search: str = Query("", max_length=100), db: Session = Depends(get_db)):
-    return admin_action(db, admin_service.list_apps, page, page_size, search)
+              search: str = Query("", max_length=100), sort_field: str = Query("id"),
+              sort_order: str = Query("desc"), db: Session = Depends(get_db)):
+    return admin_action(db, admin_service.list_apps, page, page_size, search, sort_field, sort_order)
 
 
 @admin_router.post("/apps")
@@ -111,10 +112,11 @@ def rotate_key(app_id: int, db: Session = Depends(get_db), actor=Depends(require
 @admin_router.get("/apps/{app_id}/requests")
 def list_requests(app_id: int, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
                   status: Literal["pending", "success", "error", "timeout", "unknown"] | None = None,
-                  date_from: date | None = None, date_to: date | None = None, db: Session = Depends(get_db)):
+                  date_from: date | None = None, date_to: date | None = None,
+                  sort_field: str = Query("id"), sort_order: str = Query("desc"), db: Session = Depends(get_db)):
     if date_from and date_to and date_from > date_to:
         raise GatewayError(422, "invalid_request", "开始日期不能晚于结束日期")
-    return admin_action(db, admin_service.list_requests, app_id, page, page_size, status, date_from, date_to)
+    return admin_action(db, admin_service.list_requests, app_id, page, page_size, status, date_from, date_to, sort_field, sort_order)
 
 
 @admin_router.post("/apps/{app_id}/requests/{request_id}/resolve")
