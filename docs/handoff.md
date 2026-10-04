@@ -1,17 +1,18 @@
-## 2026-10-03 客户邮件 MVP（Codex，真实收发闭环验收通过）
+## 2026-10-04 客户邮件 MVP（Codex，已合并推送部署）
 
 - 分支 `codex/customer-mail-mvp`；主功能及内部试发版本已正式发布，office/cloud 同版、schema 173 无迁移，邮箱 OAuth 与 Worker 健康。时间精度修复 `1542e47e` 已完成正式切换及两端/Worker 同版核验。
 - 发件 `leshinehair@agent.qq.com`，仅允许 `86muliang@163.com`。真实 AI 生成、修改、审批、排程、临发授权、回执均已跑通；message=1/revision=3/job=2 为 provider_accepted，sent 查到唯一邮件 `msg_A06MkNfpqfCI-qcLMaPQLqZSnYH3IBdtPmDCsvnuuip4lg`，主题 `[ARK INTERNAL TEST] Ark acceptance 20261003-0922`。
 - 首次 job=1 被毫秒/数据库整秒摘要差异安全拦截，未发信，已撤销；修复已补先失败后通过的精度回归。内部收件人 contact=1/point=1 明确非样例客户联系人，发信后已取消可联系标记；内部试发不记客户经营时间线。
 - 北京时间 11:00:30 收到用户真实回信“方舟验收收到”，官方邮箱已读信确认；Worker 自动建立 event=1 并关联 job=2，页面人工确认分类后为 human_reply/processed。只读复核没有待发送任务，内部测试未写入客户经营时间线，测试联系人仍不可联系。真实收发闭环验收完成，外部客户发送白名单未开放。
-- 相关后端邮件 65 项、时间精度审批/Worker 28 项、前端 46 项及构建通过；原部署 57 项和 Worker 15 项通过。未推送 origin、未合并 main。见 [使用说明](customer-mail-outreach.md) 与 [验收记录](reports/2026-10-03-customer-mail-mvp-progress.md)。
+- 2026-10-04 已合并并推送 main，应用提交 `acdec9d9067b91d8bb8ff4ab25daa94f61bd025e` 经统一入口完成办公室与云端发布，release_id=`2cdfa6e9d3e542d68c94f8f965f34841`，deferred 为空。办公室和邮件 Worker 使用本次 revision；北京后端源码未变，部署器复用 `1542e47e`，健康 ok/connected。出库调度保持 active/enabled=true，无数据库迁移。
+- 合并后后端邮件 66 项、前端邮件 10 项、Worker 15 项及主站构建通过；两地主站 10 项公网资源摘要匹配候选。原有 23 个未提交/未跟踪文件保留。见 [使用说明](customer-mail-outreach.md)、[验收记录](reports/2026-10-03-customer-mail-mvp-progress.md) 与 [发布记录](reports/2026-10-04-customer-mail-mvp-release.md)。
 
 # 当前交接与待办
 
-## 2026-10-03 客户工作台看板卡片（Codex，已合并，未部署）
+## 2026-10-03 客户工作台看板卡片（Codex，已合并，10-04 随 main 部署）
 
 - 分支 `codex/customer-board-style`，独立工作树 `C:/Users/windb/.codex/worktrees/customer-board-style/commission-system`，基点 `b84dc534`。客户事项 4 卡、客户组合 6 卡共用 `OverviewMetricCard.vue`，按订单发票页统一浅色语义渐变、SVG 图标、右下淡水印，并保留筛选/统计口径；根目录 `DESIGN.md` 已加入全局看板卡片规范。
-- 主站构建、事项 Node 13/13、Chrome 9 组渲染 + 触屏、键盘筛选、0/缺失/长数字、桌面/900px/390px/320px、约定和 diff 检查通过；浏览器使用拦截样例数据，无真实业务请求。Git 巡检为 no-fetch 本地快照。按 2026-10-03 授权，应用提交 `059302c3` 已无冲突合入 main；合并后事项 13/13 与 `check_conventions.py --base b84dc534` 通过，前端及 DESIGN.md 与已验收版本一致。未执行部署。见[验收与预览](reports/2026-10-02-customer-board-style.md)。
+- 主站构建、事项 Node 13/13、Chrome 9 组渲染 + 触屏、键盘筛选、0/缺失/长数字、桌面/900px/390px/320px、约定和 diff 检查通过；浏览器使用拦截样例数据，无真实业务请求。Git 巡检为 no-fetch 本地快照。按 2026-10-03 授权，应用提交 `059302c3` 已无冲突合入 main；合并后事项 13/13 与 `check_conventions.py --base b84dc534` 通过，前端及 DESIGN.md 与已验收版本一致。2026-10-04 已随合并后的 main `acdec9d9` 完成两地主站发布，见[发布记录](reports/2026-10-04-customer-mail-mvp-release.md)。见[验收与预览](reports/2026-10-02-customer-board-style.md)。
 
 ## 2026-10-02 顶栏与标签栏毛玻璃（Codex，已合并推送部署）
 

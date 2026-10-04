@@ -34,4 +34,4 @@
 
 内部邮件链路验收完成；真实客户发送仍未开放，白名单保持仅测试地址。页面入口：`https://leshine.cloud/mail-outreach`。
 
-未推送 origin、未合并 main。保留任务工作树、受管候选、发布回执、配置备份和构建证据供继续。
+2026-10-04 已合并并推送 main，应用提交 `acdec9d9` 完成正式发布，见 [发布记录](2026-10-04-customer-mail-mvp-release.md)。验收日志与截图保存在主目录 `.deploy_state/mail-mvp-main-integration/evidence/`；生产受管候选、回执和配置备份保留。
