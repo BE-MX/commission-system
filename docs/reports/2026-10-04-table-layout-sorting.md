@@ -31,4 +31,4 @@
 
 设计规范见根目录 [DESIGN.md](../../DESIGN.md) 的 List Page Spec 与 Action Bar Spec；API 参数见 [API 参考](../api-reference.md)。
 
-随后已获授权合并推送部署：应用候选 `4bcde7c2` 已合并推送，部署受邮件平台 HTTP 429 限流阻断，尚未切换线上服务。合并验证与恢复证据见[发布报告](2026-10-04-table-sorting-release.md)。
+随后已获授权合并推送部署：应用候选 `4bcde7c2` 已正式发布到办公室和已登记云端目标。首次预检受邮件平台 HTTP 429 限流阻断；用户授权停止持续请求后，保持邮件 Worker 停用完成全范围发布，两地健康正常，三域 31 项公网文件 SHA256 与候选一致。合并验证、发布与邮件暂停证据见[发布报告](2026-10-04-table-sorting-release.md)。
