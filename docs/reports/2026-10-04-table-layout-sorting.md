@@ -30,3 +30,5 @@
 本地数据库验证为隔离 SQLite；MySQL 专用镜像/聚合 SQL 做表达式及语句形状验证，未对共享 MySQL 或生产环境运行写入验证。构建的既有大 chunk / auth 动静态混合导入警告仍存在，不影响构建。
 
 设计规范见根目录 [DESIGN.md](../../DESIGN.md) 的 List Page Spec 与 Action Bar Spec；API 参数见 [API 参考](../api-reference.md)。
+
+随后已获授权合并推送部署：应用候选 `4bcde7c2` 已合并推送，部署受邮件平台 HTTP 429 限流阻断，尚未切换线上服务。合并验证与恢复证据见[发布报告](2026-10-04-table-sorting-release.md)。
