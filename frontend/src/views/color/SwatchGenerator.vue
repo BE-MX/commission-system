@@ -102,7 +102,7 @@
         <TableTools v-model:visible-keys="historyVisibleKeys" v-model:density="historyDensity" :columns="historyColumnDefs" :fullscreen="historyIsFullscreen" @refresh="loadHistory" @fullscreen="toggleHistoryFullscreen" />
       </div>
       <ListPageStatus v-if="historyState.hasData.value" :error="historyState.errorMessage.value" :loading="historyLoading" :has-data="true" :data-page="historyState.dataPage.value" @retry="loadHistory" />
-      <el-table :data="historyList" v-loading="historyLoading" @sort-change="handleHistorySort" border class="list-table" :class="historyDensityClass" :max-height="historyIsFullscreen ? undefined : 640">
+      <el-table :data="historyList" v-loading="historyLoading" @sort-change="handleHistorySort" border class="list-table" :class="historyDensityClass" :max-height="historyIsFullscreen ? undefined : 640" v-sticky-scrollbar>
         <el-table-column sortable="custom" v-if="historyVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
         <el-table-column sortable="custom" v-if="historyVisibleKeys.includes('color')" prop="color_id" label="色号" min-width="100">
           <template #default="{ row }">

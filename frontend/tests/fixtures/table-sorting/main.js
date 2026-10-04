@@ -10,6 +10,7 @@ import '../../../src/styles/app.css'
 import '../../../src/styles/table-actions.css'
 import { registerSortableTables } from '../../../src/components/SortableTableColumn'
 import { registerPermissionDirectives } from '../../../src/directives/permission'
+import { registerStickyScrollbarDirective } from '../../../src/directives/stickyScrollbar'
 import { useAuthStore } from '../../../src/stores/auth'
 import GlassButton from '../../../src/components/GlassButton.vue'
 import StatusBadge from '../../../src/components/StatusBadge.vue'
@@ -30,6 +31,7 @@ const app = createApp({ render: () => h('main', { style: 'padding:24px;--navigat
 app.use(createPinia()).use(router).use(ElementPlus, { locale: zhCn })
 registerSortableTables(app)
 registerPermissionDirectives(app)
+registerStickyScrollbarDirective(app)
 for (const [name, component] of Object.entries({ GlassButton, StatusBadge, FilterBar, ListPageStatus, DetailDrawer })) app.component(name, component)
 const auth = useAuthStore()
 auth.accessToken = 'isolated-qa-token'

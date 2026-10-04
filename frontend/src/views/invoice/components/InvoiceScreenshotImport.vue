@@ -105,7 +105,7 @@
       </div>
 
       <div class="line-table-wrap">
-        <el-table :data="preview.import_preview?.rows || []" border class="list-table">
+        <el-table :data="preview.import_preview?.rows || []" border class="list-table" v-sticky-scrollbar>
           <el-table-column prop="source_row" label="#" min-width="48" max-width="60" />
           <el-table-column prop="normalized.product" label="截图产品" min-width="220" max-width="340" show-overflow-tooltip>
             <template #default="{ row }">

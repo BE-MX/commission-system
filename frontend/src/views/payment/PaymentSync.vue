@@ -93,7 +93,7 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value && listState.errorMessage.value" :error="listState.errorMessage.value" :loading="listLoading" :has-data="true" :data-page="listState.dataPage.value" @retry="fetchPayments" />
-<el-table :data="paymentList" v-loading="listLoading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="changeSort">
+<el-table :data="paymentList" v-loading="listLoading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="changeSort" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="listState.errorMessage.value" :loading="listLoading" :has-data="false" @retry="fetchPayments">
           <el-empty :image-size="96" :description="listState.appliedSearchForm.value.keyword ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="listState.appliedSearchForm.value.keyword" left-icon="RefreshLeft" @click="resetListFilter">重置筛选</GlassButton>

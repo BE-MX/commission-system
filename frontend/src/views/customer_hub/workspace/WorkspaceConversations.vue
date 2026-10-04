@@ -5,7 +5,7 @@
     <section class="lg-card panel">
       <h3>会话 <span class="hint">AI 摘要待启用</span></h3>
       <ListPageStatus :error="conversationState.errorMessage.value" :loading="conversationState.loading.value" :has-data="conversationState.hasData.value" :data-page="conversationState.dataPage.value" @retry="conversationState.fetchList"><el-empty v-if="!conversations.length" description="暂无已绑定会话" :image-size="96" /></ListPageStatus>
-      <el-table class="list-table" v-if="conversations.length" :data="conversations" size="small" border @row-click="selectConversation" @sort-change="conversationState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+      <el-table class="list-table" v-if="conversations.length" :data="conversations" size="small" border @row-click="selectConversation" @sort-change="conversationState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
         <el-table-column sortable="custom" prop="channel" label="渠道" min-width="110" />
         <el-table-column sortable="custom" prop="contact_name" label="联系人" min-width="120" show-overflow-tooltip />
         <el-table-column sortable="custom" prop="message_count" label="消息数" min-width="90" />
@@ -30,7 +30,7 @@
     <section class="lg-card panel">
       <h3>待绑定会话 <span class="hint">同名/相似手机号不自动归并</span></h3>
       <ListPageStatus :error="pendingState.errorMessage.value" :loading="pendingState.loading.value" :has-data="pendingState.hasData.value" :data-page="pendingState.dataPage.value" @retry="pendingState.fetchList"><el-empty v-if="!pendingBindings.length" description="没有待绑定会话" :image-size="96" /></ListPageStatus>
-      <el-table class="list-table" v-if="pendingBindings.length" :data="pendingBindings" size="small" border @sort-change="pendingState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+      <el-table class="list-table" v-if="pendingBindings.length" :data="pendingBindings" size="small" border @sort-change="pendingState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
         <el-table-column sortable="custom" prop="contact_name" label="来源联系人" min-width="120" />
         <el-table-column sortable="custom" prop="contact_phone" label="电话" min-width="130" />
         <el-table-column sortable="custom" prop="message_count" label="消息数" min-width="90" />

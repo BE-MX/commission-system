@@ -50,6 +50,9 @@ def _normalize_table(match: re.Match[str]) -> str:
     tag = re.sub(r"\s+stripe(?=\s|=|>)", "", tag)
     if not re.search(r"(?<!:)\bborder(?=\s|=|>)", tag):
         tag = tag[:-1].rstrip() + " border>"
+    # 宽表规范（DESIGN.md）：悬浮横向滚动条全局指令，audit_frontend_ui.py 硬门禁
+    if not re.search(r"\bv-sticky-scrollbar(?=\s|=|>)", tag):
+        tag = tag[:-1].rstrip() + " v-sticky-scrollbar>"
     class_match = re.search(r'\bclass\s*=\s*(["\'])(.*?)\1', tag, re.S)
     if class_match:
         classes = class_match.group(2).split()

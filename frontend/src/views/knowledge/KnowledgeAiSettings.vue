@@ -29,7 +29,7 @@
         />
       </div>
       <ListPageStatus v-if="profilesResource.hasData.value" :paged="false" :error="profilesResource.errorMessage.value" :loading="loading" :has-data="true" @retry="profilesResource.load()" />
-      <el-table :data="profiles" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border v-loading="loading">
+      <el-table :data="profiles" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border v-loading="loading" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :paged="false" :error="profilesResource.errorMessage.value" :loading="loading" :has-data="false" @retry="profilesResource.load()" />
           <el-empty v-if="profilesResource.isEmpty.value" :image-size="96" description="暂无数据" />

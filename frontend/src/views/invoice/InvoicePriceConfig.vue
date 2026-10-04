@@ -33,7 +33,7 @@
             <TableTools v-model:visible-keys="stdVisibleKeys" v-model:density="stdDensity" :columns="stdColumnDefs" :fullscreen="stdIsFullscreen" :loading="stdLoading" @refresh="loadStdPrices" @fullscreen="toggleStdFullscreen" />
           </div>
           <ListPageStatus v-if="stdResource.error.value && stdPrices.length" v-bind="resourceStatus(stdResource)" @retry="loadStdPrices" />
-          <el-table v-loading="stdLoading" :data="stdPrices" border class="list-table" :class="stdDensityClass" :max-height="stdIsFullscreen ? undefined : 640">
+          <el-table v-loading="stdLoading" :data="stdPrices" border class="list-table" :class="stdDensityClass" :max-height="stdIsFullscreen ? undefined : 640" v-sticky-scrollbar>
             <template #empty><ListPageStatus v-bind="resourceStatus(stdResource)" @retry="loadStdPrices"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="stdVisibleKeys.includes('series')" prop="series_grade" label="系列 + 工艺档" min-width="280" show-overflow-tooltip />
             <el-table-column v-if="stdVisibleKeys.includes('length')" prop="length" label="长度" min-width="80" />
@@ -78,7 +78,7 @@
             <TableTools v-model:visible-keys="colorVisibleKeys" v-model:density="colorDensity" :columns="colorColumnDefs" :fullscreen="colorIsFullscreen" :loading="colorLoading" @refresh="loadColorTypes" @fullscreen="toggleColorFullscreen" />
           </div>
           <ListPageStatus v-if="colorResource.error.value && colorTypes.length" v-bind="resourceStatus(colorResource)" @retry="loadColorTypes" />
-          <el-table v-loading="colorLoading" :data="colorTypes" border class="list-table" :class="colorDensityClass" :max-height="colorIsFullscreen ? undefined : 640">
+          <el-table v-loading="colorLoading" :data="colorTypes" border class="list-table" :class="colorDensityClass" :max-height="colorIsFullscreen ? undefined : 640" v-sticky-scrollbar>
             <template #empty><ListPageStatus v-bind="resourceStatus(colorResource)" @retry="loadColorTypes"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="colorVisibleKeys.includes('code')" prop="color_code" label="色号" min-width="160" />
             <el-table-column prop="color_type" v-if="colorVisibleKeys.includes('type')" label="色型" min-width="190">
@@ -108,7 +108,7 @@
             <TableTools v-model:visible-keys="ruleVisibleKeys" v-model:density="ruleDensity" :columns="ruleColumnDefs" :fullscreen="ruleIsFullscreen" :loading="ruleLoading" @refresh="loadRules" @fullscreen="toggleRuleFullscreen" />
           </div>
           <ListPageStatus v-if="ruleResource.error.value && rules.length" v-bind="resourceStatus(ruleResource)" @retry="loadRules" />
-          <el-table v-loading="ruleLoading" :data="rules" border class="list-table" :class="ruleDensityClass" :max-height="ruleIsFullscreen ? undefined : 640">
+          <el-table v-loading="ruleLoading" :data="rules" border class="list-table" :class="ruleDensityClass" :max-height="ruleIsFullscreen ? undefined : 640" v-sticky-scrollbar>
             <template #empty><ListPageStatus v-bind="resourceStatus(ruleResource)" @retry="loadRules"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="ruleVisibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="220" show-overflow-tooltip />
             <el-table-column v-if="ruleVisibleKeys.includes('customer-id')" prop="customer_id" label="客户 ID" min-width="140" show-overflow-tooltip />
@@ -150,7 +150,7 @@
             <TableTools v-model:visible-keys="customVisibleKeys" v-model:density="customDensity" :columns="customColumnDefs" :fullscreen="customIsFullscreen" :loading="customLoading" @refresh="loadCustom" @fullscreen="toggleCustomFullscreen" />
           </div>
           <ListPageStatus v-if="customResource.error.value && customProducts.length" v-bind="resourceStatus(customResource)" @retry="loadCustom" />
-          <el-table v-loading="customLoading" :data="customProducts" border class="list-table" :class="customDensityClass" :max-height="customIsFullscreen ? undefined : 640">
+          <el-table v-loading="customLoading" :data="customProducts" border class="list-table" :class="customDensityClass" :max-height="customIsFullscreen ? undefined : 640" v-sticky-scrollbar>
             <template #empty><ListPageStatus v-bind="resourceStatus(customResource)" @retry="loadCustom"><el-empty description="暂无配置记录" /></ListPageStatus></template>
             <el-table-column v-if="customVisibleKeys.includes('name')" prop="product_name" label="产品名" min-width="300" show-overflow-tooltip />
             <el-table-column v-if="customVisibleKeys.includes('model')" prop="model" label="Model" min-width="140" show-overflow-tooltip />

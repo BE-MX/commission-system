@@ -17,7 +17,7 @@
         />
       </div>
       <ListPageStatus :error="reviewsResource.errorMessage.value" :loading="loading" :has-data="rows.length > 0" @retry="load" />
-      <el-table :data="rows" v-loading="loading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640">
+      <el-table :data="rows" v-loading="loading" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty>
           <el-empty v-if="!loading && !reviewsResource.error.value" :image-size="96" description="暂无数据" />
         </template>

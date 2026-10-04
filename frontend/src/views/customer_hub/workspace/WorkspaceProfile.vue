@@ -25,7 +25,7 @@
     <section class="lg-card panel">
       <h3>AI 建议审核</h3>
       <el-empty v-if="!suggestions.length" description="暂无待处理建议" :image-size="60" />
-      <el-table class="list-table" v-else :data="suggestions" size="small" border>
+      <el-table class="list-table" v-else :data="suggestions" size="small" border v-sticky-scrollbar>
         <el-table-column prop="field_key" label="字段" min-width="140" show-overflow-tooltip />
         <el-table-column prop="value" label="建议值" min-width="110" show-overflow-tooltip />
         <el-table-column prop="confidence" label="置信" min-width="70" />
@@ -45,7 +45,7 @@
 
     <section class="lg-card panel">
       <h3>修订历史</h3>
-      <el-table class="list-table" :data="revisions" size="small" border>
+      <el-table class="list-table" :data="revisions" size="small" border v-sticky-scrollbar>
         <el-table-column prop="field_key" label="字段" min-width="140" show-overflow-tooltip />
         <el-table-column prop="value" label="修订值" min-width="110" show-overflow-tooltip />
         <el-table-column prop="reason" label="依据" min-width="160" show-overflow-tooltip />

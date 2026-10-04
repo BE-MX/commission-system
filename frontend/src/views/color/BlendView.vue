@@ -39,7 +39,7 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="loading" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="loadData" />
-      <el-table v-loading="loading" :data="blendList" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="handleSortChange" border>
+      <el-table v-loading="loading" :data="blendList" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="handleSortChange" border v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="loading" :has-data="false" @retry="loadData">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" :left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
@@ -199,7 +199,7 @@
         </div>
         <div class="components-detail">
           <p class="section-title">成分明细</p>
-          <el-table :data="detailData.components" size="small" border class="list-table">
+          <el-table :data="detailData.components" size="small" border class="list-table" v-sticky-scrollbar>
             <el-table-column :sortable="false" label="色块" min-width="60">
               <template #default="{ row }">
                 <div class="mini-color" :style="{ backgroundColor: row.palette?.hex_code }"></div>

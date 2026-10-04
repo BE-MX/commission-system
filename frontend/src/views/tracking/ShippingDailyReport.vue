@@ -195,7 +195,7 @@
               <el-icon><List /></el-icon>
               运单明细
             </h4>
-            <el-table :data="reportShipments" size="small" class="shipment-table list-table" border>
+            <el-table :data="reportShipments" size="small" class="shipment-table list-table" border v-sticky-scrollbar>
               <el-table-column prop="waybill_no" label="运单号" min-width="130" show-overflow-tooltip sortable>
                 <template #default="{ row }">
                   <strong>{{ row.waybill_no }}</strong>

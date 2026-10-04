@@ -29,7 +29,7 @@
         />
       </div>
       <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
-      <el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" @sort-change="sortTable">
+      <el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" @sort-change="sortTable" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="fetchList">
             <el-empty :image-size="96" :description="hasOrderFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -166,7 +166,7 @@
             <GlassButton v-if="detail.order_kind !== 'production' && item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
           </div>
 
-          <el-table v-if="item.steps.length" :data="item.steps" size="small" border class="step-table list-table">
+          <el-table v-if="item.steps.length" :data="item.steps" size="small" border class="step-table list-table" v-sticky-scrollbar>
             <el-table-column prop="step_order" label="#" min-width="46" />
             <el-table-column prop="process_name" label="工序" min-width="100" />
             <el-table-column prop="completed_qty" label="报工进度" min-width="135">
@@ -283,7 +283,7 @@
     </el-dialog>
 
     <el-dialog v-model="logDialog.visible" title="报工流水" width="760px">
-      <el-table :data="logDialog.logs" v-loading="logDialog.loading" size="small" border style="width: 100%" class="list-table">
+      <el-table :data="logDialog.logs" v-loading="logDialog.loading" size="small" border style="width: 100%" class="list-table" v-sticky-scrollbar>
         <el-table-column prop="process_name" label="工序" min-width="100" />
         <el-table-column prop="report_qty" label="数量" min-width="70" />
         <el-table-column :sort-by="row => ((row.unit_codes || []).join('、') || '-')" label="单件" min-width="140" show-overflow-tooltip>

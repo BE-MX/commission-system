@@ -26,7 +26,7 @@
 
     <div v-else class="preview-stage">
       <h4 class="section-heading">订单字段</h4>
-      <el-table :data="fieldRows" border size="small" class="list-table">
+      <el-table :data="fieldRows" border size="small" class="list-table" v-sticky-scrollbar>
         <el-table-column prop="label" label="字段" min-width="120" />
         <el-table-column prop="value" label="识别内容">
           <template #default="{ row }"><span class="value-cell">{{ row.value || '—' }}</span></template>
@@ -60,8 +60,7 @@
             border
             max-height="380"
             highlight-current-row
-            class="list-table preview-table"
-          >
+            class="list-table preview-table" v-sticky-scrollbar>
             <el-table-column prop="source_row" label="行" min-width="56" fixed />
             <el-table-column prop="status" label="状态" min-width="110" fixed>
               <template #default="{ row }">

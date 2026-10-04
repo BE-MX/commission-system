@@ -8,7 +8,7 @@
         <el-button type="primary" v-permission="'customer_pcw:write'" @click="dialogVisible = true">新增订阅</el-button>
       </div>
       <el-empty v-if="!subscriptions.length" description="未配置监控来源" :image-size="60" />
-      <el-table class="list-table" v-else :data="subscriptions" size="small" border>
+      <el-table class="list-table" v-else :data="subscriptions" size="small" border v-sticky-scrollbar>
         <el-table-column prop="channel" label="渠道" min-width="100" />
         <el-table-column prop="url" label="URL" min-width="180" show-overflow-tooltip />
         <el-table-column :sort-by="row => (MONITOR_COLLECTION_STATUS_LABELS[row.collection_status] || row.collection_status)" label="采集状态" min-width="150">
@@ -34,7 +34,7 @@
     <section class="lg-card panel">
       <h3>变化事件</h3>
       <el-empty v-if="!events.length" description="暂无事件（首次采集只建基线）" :image-size="60" />
-      <el-table class="list-table" v-else :data="events" size="small" border>
+      <el-table class="list-table" v-else :data="events" size="small" border v-sticky-scrollbar>
         <el-table-column prop="event_type" label="类型" min-width="110" />
         <el-table-column prop="title" label="标题" min-width="150" show-overflow-tooltip />
         <el-table-column prop="discovered_at" label="发现时间（北京时间）" min-width="170"><template #default="{row}">{{ date(row.discovered_at) }}</template></el-table-column>

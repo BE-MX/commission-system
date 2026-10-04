@@ -4,7 +4,7 @@
       <el-alert title="首笔定金保留至最后一批抵扣。提交生成本地结算单，实际出库以同步结果为准。" type="info" :closable="false" />
       <el-alert v-if="activeShipment" title="当前已有未完成的出库结算，请先处理下方记录后再创建下一批。" type="warning" :closable="false" />
       <el-form label-position="top" :disabled="saving">
-        <el-table class="list-table" :data="lines" border>
+        <el-table class="list-table" :data="lines" border v-sticky-scrollbar>
           <el-table-column :sort-by="row => (row.product_name || row.product_display)" label="产品" min-width="220"><template #default="{ row }">{{ row.product_name || row.product_display }} {{ row.model }} {{ row.color }} {{ row.length }}</template></el-table-column>
           <el-table-column prop="quantity" label="订单数量" min-width="110" /><el-table-column prop="remaining" label="可出库数量" min-width="110" />
           <el-table-column prop="requested" label="本批数量" min-width="200"><template #default="{ row }"><el-input-number v-model="row.requested" :precision="0" :min="0" :max="row.remaining" :disabled="activeShipment" controls-position="right" /></template></el-table-column>
@@ -31,7 +31,7 @@
       </ResponsiveDescriptions>
       <el-alert v-if="selectedSettlement?.outbound?.last_error" :title="selectedSettlement.outbound.last_error" type="error" :closable="false" />
       <h3>出库结算记录</h3>
-      <el-table class="list-table" :data="settlements" border empty-text="暂无出库结算记录">
+      <el-table class="list-table" :data="settlements" border empty-text="暂无出库结算记录" v-sticky-scrollbar>
         <el-table-column prop="settlement_no" label="结算单号" min-width="180"><template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.settlement_no }}</el-button></template></el-table-column>
         <el-table-column prop="state" label="状态" min-width="160"><template #default="{ row }">{{ stateLabel(row.state) }}</template></el-table-column>
         <el-table-column label="操作" class-name="table-action-column" min-width="200"><template #default="{ row }">

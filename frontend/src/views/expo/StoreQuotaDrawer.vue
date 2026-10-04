@@ -36,7 +36,7 @@
 
     <div class="block-title">变动记录</div>
     <ListPageStatus v-if="recordsState.hasData.value" :error="recordsState.errorMessage.value" :loading="recordsLoading" :has-data="true" :data-page="recordsState.dataPage.value" @retry="fetchRecords" />
-    <el-table :data="records" v-loading="recordsLoading" size="small" border style="width: 100%" class="list-table" @sort-change="recordsState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+    <el-table :data="records" v-loading="recordsLoading" size="small" border style="width: 100%" class="list-table" @sort-change="recordsState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
       <template #empty><ListPageStatus :error="recordsState.errorMessage.value" :loading="recordsLoading" @retry="fetchRecords"><el-empty description="暂无变动记录" :image-size="96" /></ListPageStatus></template>
       <el-table-column sortable="custom" prop="created_at" label="时间" min-width="150" show-overflow-tooltip />
       <el-table-column sortable="custom" prop="type" label="类型" min-width="100">

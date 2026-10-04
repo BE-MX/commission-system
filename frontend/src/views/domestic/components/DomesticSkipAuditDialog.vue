@@ -7,7 +7,7 @@
       type="warning" :closable="false" show-icon
       title="这里只显示主管人工跳过；自动分流和可选工序放行不在此处撤销。"
     />
-    <el-table :data="audits" v-loading="loading" border class="list-table audit-table">
+    <el-table :data="audits" v-loading="loading" border class="list-table audit-table" v-sticky-scrollbar>
       <el-table-column prop="process_name" label="工序" min-width="100" show-overflow-tooltip />
       <el-table-column prop="skipped_qty" label="数量" min-width="70" />
       <el-table-column :sort-by="row => (row.unit_codes?.join('、') || '-')" label="单件" min-width="130" show-overflow-tooltip>

@@ -39,8 +39,7 @@
           empty-text="暂无月度数据"
           highlight-current-row
           :row-class-name="monthRowClassName"
-          @row-click="selectMonth"
-        >
+          @row-click="selectMonth" v-sticky-scrollbar>
           <el-table-column prop="month" label="月份" min-width="100" max-width="140" show-overflow-tooltip />
           <el-table-column prop="total_commission_usd" label="总提成（美元）" min-width="160" max-width="220" align="right">
             <template #default="{ row }">{{ usd(row.total_commission_usd) }}</template>

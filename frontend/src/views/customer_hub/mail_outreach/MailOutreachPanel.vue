@@ -8,7 +8,7 @@
         <TableTools v-model:visible-keys="draftVisibleKeys" v-model:density="draftDensity" :columns="draftColumnDefs" :fullscreen="draftIsFullscreen" @refresh="fetchDrafts" @fullscreen="toggleDraftFullscreen" />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchDrafts" />
-<el-table v-loading="draftsLoading" :data="drafts" border class="list-table" :class="draftDensityClass" :max-height="draftIsFullscreen ? undefined : 640" row-key="id" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+<el-table v-loading="draftsLoading" :data="drafts" border class="list-table" :class="draftDensityClass" :max-height="draftIsFullscreen ? undefined : 640" row-key="id" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
         <el-table-column sortable="custom" prop="status" v-if="draftVisibleKeys.includes('status')" label="状态" min-width="110">
           <template #default="{ row }"><StatusBadge :type="draftStatusTagType(row.status)">{{ draftStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>
@@ -39,7 +39,7 @@
         <TableTools v-model:visible-keys="jobVisibleKeys" v-model:density="jobDensity" :columns="jobColumnDefs" :fullscreen="jobIsFullscreen" @refresh="fetchJobs" @fullscreen="toggleJobFullscreen" />
       </div>
       <ListPageStatus v-if="listPageState1.hasData.value" :error="listPageState1.errorMessage.value" :loading="listPageState1.loading.value" :has-data="listPageState1.hasData.value" :data-page="listPageState1.dataPage.value" @retry="fetchJobs" />
-<el-table v-loading="jobsLoading" :data="jobs" border class="list-table" :class="jobDensityClass" :max-height="jobIsFullscreen ? undefined : 640" row-key="id" @sort-change="listPageState1.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+<el-table v-loading="jobsLoading" :data="jobs" border class="list-table" :class="jobDensityClass" :max-height="jobIsFullscreen ? undefined : 640" row-key="id" @sort-change="listPageState1.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
         <el-table-column sortable="custom" prop="status" v-if="jobVisibleKeys.includes('status')" label="状态" min-width="160">
           <template #default="{ row }"><StatusBadge :type="jobStatusTagType(row.status)">{{ jobStatusLabel(row.status) }}</StatusBadge></template>
         </el-table-column>

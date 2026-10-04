@@ -10,8 +10,7 @@
     :row-class-name="rowClassName"
     :tree-props="{ children: 'children' }"
     :max-height="560"
-    @sort-change="changeSort"
-  >
+    @sort-change="changeSort" v-sticky-scrollbar>
     <el-table-column sortable="custom" prop="collection_date" label="回款日期" min-width="104" max-width="140" show-overflow-tooltip>
       <template #default="{ row }">{{ row.isMonthGroup ? `${row.month}（${row.children.length} 笔）` : row.collection_date }}</template>
     </el-table-column>

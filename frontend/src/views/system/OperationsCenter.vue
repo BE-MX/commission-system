@@ -44,7 +44,7 @@
       <div class="action-bar">
         <TableTools v-model:visible-keys="runtimeVisibleKeys" v-model:density="runtimeDensity" :columns="runtimeColumnDefs" :fullscreen="runtimeIsFullscreen" @refresh="loadDashboard" @fullscreen="toggleRuntimeFullscreen" />
       </div>
-      <el-table :data="runtimeInstances" class="list-table" :class="runtimeDensityClass" :max-height="runtimeIsFullscreen ? undefined : 640" border>
+      <el-table :data="runtimeInstances" class="list-table" :class="runtimeDensityClass" :max-height="runtimeIsFullscreen ? undefined : 640" border v-sticky-scrollbar>
         <template #empty><ListPageStatus v-bind="resourceStatus(overviewResource)" @retry="loadOverview"><el-empty description="暂无记录" /></ListPageStatus></template>
         <el-table-column :sort-by="row => row.service_name || row.service_id || row.instance_id" v-if="runtimeVisibleKeys.includes('service')" label="服务 / 实例" min-width="220" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.service_name }}</strong><small class="job-id">{{ row.service_id }} · {{ row.instance_id }}</small></template>
@@ -110,7 +110,7 @@
       <div class="action-bar">
         <TableTools v-model:visible-keys="runsVisibleKeys" v-model:density="runsDensity" :columns="runsColumnDefs" :fullscreen="runsIsFullscreen" :loading="runsResource.loading.value" @refresh="loadJobRuns" @fullscreen="toggleRunsFullscreen" />
       </div>
-      <el-table :data="jobRuns" class="list-table" :class="runsDensityClass" :max-height="runsIsFullscreen ? undefined : 640" border>
+      <el-table :data="jobRuns" class="list-table" :class="runsDensityClass" :max-height="runsIsFullscreen ? undefined : 640" border v-sticky-scrollbar>
         <template #empty><ListPageStatus v-bind="resourceStatus(runsResource)" @retry="loadJobRuns"><el-empty description="暂无记录" /></ListPageStatus></template>
         <el-table-column :sort-by="row => row.job_name || row.name || row.id" v-if="runsVisibleKeys.includes('job')" label="任务" min-width="200" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.job_name }}</strong><small class="job-id">{{ row.domain }} · {{ row.job_id }}</small></template>
@@ -136,7 +136,7 @@
       <div class="action-bar">
         <TableTools v-model:visible-keys="schedulerVisibleKeys" v-model:density="schedulerDensity" :columns="schedulerColumnDefs" :fullscreen="schedulerIsFullscreen" @refresh="loadDashboard" @fullscreen="toggleSchedulerFullscreen" />
       </div>
-      <el-table :data="scheduler.jobs || []" class="list-table" :class="schedulerDensityClass" :max-height="schedulerIsFullscreen ? undefined : 640" border>
+      <el-table :data="scheduler.jobs || []" class="list-table" :class="schedulerDensityClass" :max-height="schedulerIsFullscreen ? undefined : 640" border v-sticky-scrollbar>
         <template #empty><ListPageStatus v-bind="resourceStatus(overviewResource)" @retry="loadOverview"><el-empty description="暂无记录" /></ListPageStatus></template>
         <el-table-column :sort-by="row => row.job_name || row.name || row.id" v-if="schedulerVisibleKeys.includes('job')" label="任务" min-width="190" show-overflow-tooltip>
           <template #default="{ row }"><strong class="job-name">{{ row.name }}</strong><small class="job-id">{{ row.id }}</small></template>

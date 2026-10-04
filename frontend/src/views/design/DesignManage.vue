@@ -41,8 +41,7 @@
           :class="pendingDensityClass"
           border
           :max-height="pendingIsFullscreen ? undefined : tabMaxHeight"
-          @sort-change="handlePendingSortChange"
-        >
+          @sort-change="handlePendingSortChange" v-sticky-scrollbar>
           <template #empty>
             <ListPageStatus :error="pendingState.errorMessage.value" :loading="pendingLoading" @retry="fetchPending" />
             <el-empty v-if="pendingState.isEmpty.value" :image-size="96" :description="pendingHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -141,8 +140,7 @@
           :class="scheduledDensityClass"
           border
           :max-height="scheduledIsFullscreen ? undefined : tabMaxHeight"
-          @sort-change="handleScheduledSortChange"
-        >
+          @sort-change="handleScheduledSortChange" v-sticky-scrollbar>
           <template #empty>
             <ListPageStatus :error="scheduledState.errorMessage.value" :loading="scheduledLoading" @retry="fetchScheduled" />
             <el-empty v-if="scheduledState.isEmpty.value" :image-size="96" :description="scheduledHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -283,8 +281,7 @@
           :class="completedDensityClass"
           border
           :max-height="completedIsFullscreen ? undefined : tabMaxHeight"
-          @sort-change="handleCompletedSortChange"
-        >
+          @sort-change="handleCompletedSortChange" v-sticky-scrollbar>
           <template #empty>
             <ListPageStatus :error="completedState.errorMessage.value" :loading="completedLoading" @retry="fetchCompleted" />
             <el-empty v-if="completedState.isEmpty.value" :image-size="96" :description="completedHasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -360,8 +357,7 @@
           class="list-table"
           :class="designerDensityClass"
           border
-          :max-height="designerIsFullscreen ? undefined : tabMaxHeight"
-        >
+          :max-height="designerIsFullscreen ? undefined : tabMaxHeight" v-sticky-scrollbar>
           <template #empty>
             <el-empty v-if="!designerLoading && !designerResource.error.value" :image-size="96" description="暂无数据" />
           </template>
@@ -454,7 +450,7 @@
                 <StatusBadge type="danger" size="small">{{ importResult.failed }}</StatusBadge>
               </el-descriptions-item>
             </ResponsiveDescriptions>
-            <el-table v-if="importResult.errors?.length" :data="importResult.errors" border size="small" max-height="300" class="list-table">
+            <el-table v-if="importResult.errors?.length" :data="importResult.errors" border size="small" max-height="300" class="list-table" v-sticky-scrollbar>
               <el-table-column prop="row" label="行号" min-width="80" />
               <el-table-column prop="reason" label="失败原因" />
             </el-table>

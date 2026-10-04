@@ -20,6 +20,7 @@ import ListPageStatus from './components/ListPageStatus.vue'
 import DetailDrawer from './components/DetailDrawer.vue'
 import { registerPermissionDirectives } from './directives/permission'
 import { registerSortableTables } from './components/SortableTableColumn'
+import { registerStickyScrollbarDirective } from './directives/stickyScrollbar'
 
 const app = createApp(App)
 
@@ -35,6 +36,7 @@ app.component('FilterBar', FilterBar)
 app.component('ListPageStatus', ListPageStatus)
 app.component('DetailDrawer', DetailDrawer)
 registerPermissionDirectives(app)   // v-permission / v-any-permission（按钮级权限）
+registerStickyScrollbarDirective(app) // v-sticky-scrollbar（宽表悬浮横向滚动条，DESIGN.md 宽表规范）
 
 app.use(createPinia())
 app.use(ElementPlus, { locale: zhCn })

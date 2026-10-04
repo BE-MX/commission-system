@@ -3,7 +3,7 @@
     <section class="lg-card panel">
       <h3>订单明细（只读）</h3>
       <ListPageStatus v-if="orderState.hasData.value" :error="orderState.errorMessage.value" :loading="ordersLoading" :has-data="true" :data-page="orderState.dataPage.value" @retry="loadOrders" />
-      <el-table v-loading="ordersLoading" class="list-table" :data="orders" size="small" border @sort-change="orderState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+      <el-table v-loading="ordersLoading" class="list-table" :data="orders" size="small" border @sort-change="orderState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="orderState.errorMessage.value" :loading="ordersLoading" @retry="loadOrders"><el-empty description="暂无订单明细" :image-size="96" /></ListPageStatus></template>
         <el-table-column sortable="custom" prop="order_no" label="订单号" min-width="120" show-overflow-tooltip />
         <el-table-column sortable="custom" prop="effective_date" label="生效日" min-width="110" />
@@ -36,7 +36,7 @@
       <div v-for="group in analytics.groups" :key="group.key" class="bucket-group">
         <strong v-if="group.currency">币种 {{ group.currency }}</strong>
         <strong v-else-if="group.unit">单位 {{ group.unit }}</strong>
-        <el-table class="list-table" :data="group.rows" size="small" border>
+        <el-table class="list-table" :data="group.rows" size="small" border v-sticky-scrollbar>
           <el-table-column prop="label" label="值" min-width="120" />
           <el-table-column prop="value" label="数值" min-width="100" />
           <el-table-column prop="sharePercent" label="占比（服务端口径）" min-width="150">

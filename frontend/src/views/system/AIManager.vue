@@ -46,7 +46,7 @@
         </div>
 
         <ListPageStatus v-if="providerResource.hasData.value" :error="providerResource.errorMessage.value" :loading="providerLoading" :has-data="true" @retry="fetchProviders" />
-        <el-table :data="filteredProviders" border class="list-table" :class="providerDensityClass" :max-height="providerIsFullscreen ? undefined : 640" v-loading="providerLoading">
+        <el-table :data="filteredProviders" border class="list-table" :class="providerDensityClass" :max-height="providerIsFullscreen ? undefined : 640" v-loading="providerLoading" v-sticky-scrollbar>
           <template #empty><ListPageStatus :error="providerResource.errorMessage.value" :loading="providerLoading" @retry="fetchProviders"><el-empty description="暂无数据" :image-size="96" /></ListPageStatus></template>
           <el-table-column v-if="providerVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
           <el-table-column :sort-by="row => row.name" v-if="providerVisibleKeys.includes('name')" label="名称" min-width="160">
@@ -124,7 +124,7 @@
         </div>
 
         <ListPageStatus v-if="presetResource.hasData.value" :error="presetResource.errorMessage.value" :loading="presetLoading" :has-data="true" @retry="fetchPresets" />
-        <el-table :data="filteredPresets" border class="list-table" :class="presetDensityClass" :max-height="presetIsFullscreen ? undefined : 640" v-loading="presetLoading">
+        <el-table :data="filteredPresets" border class="list-table" :class="presetDensityClass" :max-height="presetIsFullscreen ? undefined : 640" v-loading="presetLoading" v-sticky-scrollbar>
           <template #empty><ListPageStatus :error="presetResource.errorMessage.value" :loading="presetLoading" @retry="fetchPresets"><el-empty description="暂无数据" :image-size="96" /></ListPageStatus></template>
           <el-table-column v-if="presetVisibleKeys.includes('id')" prop="id" label="ID" min-width="60" />
           <el-table-column :sort-by="row => row.preset_name" v-if="presetVisibleKeys.includes('name')" label="预设名称" min-width="180">
@@ -210,7 +210,7 @@
         </div>
 
         <ListPageStatus v-if="logState.hasData.value" :error="logState.errorMessage.value" :loading="logsLoading" :has-data="true" @retry="fetchLogs" />
-        <el-table :data="logsData" border class="list-table" :class="logDensityClass" :max-height="logIsFullscreen ? undefined : 640" v-loading="logsLoading" @expand-change="onLogExpand" @sort-change="sortLogs">
+        <el-table :data="logsData" border class="list-table" :class="logDensityClass" :max-height="logIsFullscreen ? undefined : 640" v-loading="logsLoading" @expand-change="onLogExpand" @sort-change="sortLogs" v-sticky-scrollbar>
           <template #empty><ListPageStatus :error="logState.errorMessage.value" :loading="logsLoading" @retry="fetchLogs"><el-empty description="暂无数据" :image-size="96" /></ListPageStatus></template>
           <el-table-column type="expand">
             <template #default="{ row }">

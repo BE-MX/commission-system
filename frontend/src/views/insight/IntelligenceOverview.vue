@@ -136,7 +136,7 @@
       <div class="schedule-header">
         <el-button type="primary" @click="showAddRule = true">+ 新建规则</el-button>
       </div>
-      <el-table :data="scheduleRules" border class="list-table">
+      <el-table :data="scheduleRules" border class="list-table" v-sticky-scrollbar>
         <el-table-column prop="rule_name" label="规则名" />
         <el-table-column prop="cron_expression" label="Cron" />
         <el-table-column prop="is_active" label="状态" min-width="110">

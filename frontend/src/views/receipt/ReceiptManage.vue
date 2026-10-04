@@ -53,7 +53,7 @@
       </div>
 
       <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
-      <el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="handleTableSort">
+      <el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="handleTableSort" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="fetchList">
             <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -122,7 +122,7 @@
       <template v-if="batchDetail">
         <h2>{{ batchDetail.currency }} {{ money(batchDetail.amount) }}</h2>
         <p>{{ batchDetail.collection_date }} · {{ batchDetail.payment_type }}</p>
-        <el-table class="list-table" :data="batchDetail.items || batchDetail.receipts || batchDetail.allocations || []" border><el-table-column prop="invoice_no" label="订单发票" /><el-table-column prop="amount" label="分配金额"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column><el-table-column label="同步状态" prop="sync_status"><template #default="{ row }">{{ statusLabel(row.sync_status) }}</template></el-table-column></el-table>
+        <el-table class="list-table" :data="batchDetail.items || batchDetail.receipts || batchDetail.allocations || []" border v-sticky-scrollbar><el-table-column prop="invoice_no" label="订单发票" /><el-table-column prop="amount" label="分配金额"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column><el-table-column label="同步状态" prop="sync_status"><template #default="{ row }">{{ statusLabel(row.sync_status) }}</template></el-table-column></el-table>
         <ReceiptProofs :model-value="batchDetail.attachments?.map(a => a.id) || batchDetail.attachment_ids || []" readonly />
       </template>
     </DetailDrawer>

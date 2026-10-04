@@ -31,7 +31,7 @@
             />
           </div>
           <ListPageStatus v-if="customerPage.hasData.value" :error="customerPage.errorMessage.value" :loading="customerPage.loading.value" :has-data="customerPage.hasData.value" :data-page="customerPage.dataPage.value" @retry="customerPage.fetchList" />
-          <el-table @sort-change="event => customerPage.handleSortChange(tableSortParams(event))" :data="customerPage.list.value" v-loading="customerPage.loading.value" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640" style="width: 100%">
+          <el-table @sort-change="event => customerPage.handleSortChange(tableSortParams(event))" :data="customerPage.list.value" v-loading="customerPage.loading.value" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640" style="width: 100%" v-sticky-scrollbar>
             <el-table-column sortable="custom" v-if="customerVisibleKeys.includes('display-name')" prop="display_name" label="客户称呼" min-width="130" show-overflow-tooltip />
             <el-table-column sortable="custom" prop="email_norm" v-if="customerVisibleKeys.includes('email')" label="口令（邮箱）" min-width="180" show-overflow-tooltip>
               <template #default="{ row }">{{ row.email_norm || '—' }}</template>
@@ -92,7 +92,7 @@
             />
           </div>
           <ListPageStatus v-if="inquiryPage.hasData.value" :error="inquiryPage.errorMessage.value" :loading="inquiryPage.loading.value" :has-data="inquiryPage.hasData.value" :data-page="inquiryPage.dataPage.value" @retry="inquiryPage.fetchList" />
-          <el-table @sort-change="event => inquiryPage.handleSortChange(tableSortParams(event))" :data="inquiryPage.list.value" v-loading="inquiryPage.loading.value" border class="list-table" :class="inquiryDensityClass" :max-height="inquiryIsFullscreen ? undefined : 640" style="width: 100%">
+          <el-table @sort-change="event => inquiryPage.handleSortChange(tableSortParams(event))" :data="inquiryPage.list.value" v-loading="inquiryPage.loading.value" border class="list-table" :class="inquiryDensityClass" :max-height="inquiryIsFullscreen ? undefined : 640" style="width: 100%" v-sticky-scrollbar>
             <el-table-column sortable="custom" v-if="inquiryVisibleKeys.includes('salesperson')" prop="salesperson" label="业务员" min-width="100" />
             <el-table-column sortable="custom" v-if="inquiryVisibleKeys.includes('contact')" prop="contact" label="客户联系方式" min-width="180" show-overflow-tooltip />
             <el-table-column sortable="custom" v-if="inquiryVisibleKeys.includes('message')" prop="message" label="内容" min-width="320" show-overflow-tooltip />
@@ -138,7 +138,7 @@
             <TableTools v-model:visible-keys="salespersonVisibleKeys" v-model:density="salespersonDensity" :columns="salespersonColumnDefs" :fullscreen="salespersonIsFullscreen" :loading="salespersonsResource.loading.value" @refresh="fetchSalespersons" @fullscreen="toggleSalespersonFullscreen" />
           </div>
           <ListPageStatus v-if="salespersonsResource.error.value && salespersons.length" v-bind="resourceStatus(salespersonsResource)" @retry="fetchSalespersons" />
-          <el-table :data="salespersons" border class="list-table" :class="salespersonDensityClass" :max-height="salespersonIsFullscreen ? undefined : 640" style="width: 100%">
+          <el-table :data="salespersons" border class="list-table" :class="salespersonDensityClass" :max-height="salespersonIsFullscreen ? undefined : 640" style="width: 100%" v-sticky-scrollbar>
             <template #empty><ListPageStatus v-bind="resourceStatus(salespersonsResource)" @retry="fetchSalespersons"><el-empty description="暂无业务员档案" /></ListPageStatus></template>
             <el-table-column v-if="salespersonVisibleKeys.includes('slug')" prop="slug" label="主页地址" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">leshine.work/card/{{ row.slug }}/</template>

@@ -66,8 +66,7 @@
         class="integration-table list-table"
         :class="densityClass"
         :max-height="isFullscreen ? undefined : 640"
-        border
-      >
+        border v-sticky-scrollbar>
         <el-table-column prop="name" v-if="visibleKeys.includes('name')" label="站点名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }"><strong class="site-name">{{ row.name }}</strong></template>
         </el-table-column>

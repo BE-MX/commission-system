@@ -67,8 +67,7 @@
           border
           max-height="440"
           highlight-current-row
-          class="list-table preview-table"
-        >
+          class="list-table preview-table" v-sticky-scrollbar>
           <el-table-column prop="source_row" label="Excel 行" min-width="78" fixed />
           <el-table-column prop="status" label="状态" min-width="110" fixed>
             <template #default="{ row }">

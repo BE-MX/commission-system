@@ -15,7 +15,7 @@
 <template>
   <el-table :data="records.items" border class="list-table records-grid" max-height="560"
             v-loading="loading" :row-class-name="rowClass"
-            :show-summary="records.items.length > 0" :summary-method="summaryRow">
+            :show-summary="records.items.length > 0" :summary-method="summaryRow" v-sticky-scrollbar>
     <el-table-column v-for="col in COLUMNS" :key="col.prop" :prop="col.prop" :label="col.label"
                      :width="col.width" :fixed="col.fixed" :align="col.align"
                      :show-overflow-tooltip="col.tooltip">

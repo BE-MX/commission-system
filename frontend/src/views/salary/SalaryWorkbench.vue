@@ -88,7 +88,7 @@
             显示全部
           </el-button>
         </div>
-        <el-table :data="filteredAnomalies" border class="list-table" max-height="380">
+        <el-table :data="filteredAnomalies" border class="list-table" max-height="380" v-sticky-scrollbar>
           <el-table-column prop="severity" label="严重度" min-width="120">
             <template #default="{ row }">
               <StatusBadge size="small" effect="dark"
@@ -163,7 +163,7 @@
             那一行的实出天数和全勤都算不出来。
           </el-alert>
 
-          <el-table :data="attendance.items" border class="list-table" max-height="460">
+          <el-table :data="attendance.items" border class="list-table" max-height="460" v-sticky-scrollbar>
             <el-table-column prop="emp_no" label="工号" min-width="80" />
             <el-table-column prop="name" label="姓名" min-width="90" />
             <el-table-column :sort-by="row => row.due_days_manual ?? row.due_days" label="应出" min-width="80" align="right">

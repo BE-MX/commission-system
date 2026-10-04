@@ -7,7 +7,7 @@
         </el-select>
       </el-form-item>
       <p v-if="rows.length">{{ rows[0].customer_name }} · {{ rows[0].currency }}；同一笔凭证仅上传一次，按下表金额分配。</p>
-      <el-table class="list-table" :data="rows" border>
+      <el-table class="list-table" :data="rows" border v-sticky-scrollbar>
         <el-table-column prop="invoice_no" label="订单发票" min-width="150" />
         <el-table-column :sort-by="row => row.balance?.remaining_amount" label="可登记余额" min-width="130"><template #default="{ row }">{{ row.balance ? money(row.balance.remaining_amount) : '未核验' }}</template></el-table-column>
         <el-table-column prop="amount" label="本次分配" min-width="185"><template #default="{ row }"><el-input-number v-model="row.amount" :min="0.01" :precision="2" controls-position="right" /></template></el-table-column>

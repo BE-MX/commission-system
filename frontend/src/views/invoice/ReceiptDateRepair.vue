@@ -63,7 +63,7 @@
           :data="changeRows"
           size="small"
           row-key="cash_collection_id"
-          @selection-change="selected = $event" border class="list-table">
+          @selection-change="selected = $event" border class="list-table" v-sticky-scrollbar>
           <el-table-column type="selection" min-width="44" :selectable="() => !applied" />
           <el-table-column prop="company" label="客户名" min-width="150" show-overflow-tooltip />
           <el-table-column prop="order_no" label="订单号" min-width="120" show-overflow-tooltip />
@@ -108,7 +108,7 @@
             effect="plain"
           >{{ REASON_LABELS[code] || code }}：{{ cnt }}</StatusBadge>
         </div>
-        <el-table :data="plan.unmatched" size="small" max-height="320" border class="list-table">
+        <el-table :data="plan.unmatched" size="small" max-height="320" border class="list-table" v-sticky-scrollbar>
           <el-table-column prop="company" label="客户名" min-width="150" show-overflow-tooltip />
           <el-table-column prop="order_total" label="订单总额" min-width="110" align="right">
             <template #default="{ row }">{{ fmt(row.order_total) }}</template>

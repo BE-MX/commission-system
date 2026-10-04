@@ -778,3 +778,35 @@ body {
   align-items: center;
   justify-content: center;
 }
+
+/* ===== 悬浮横向滚动条（v-sticky-scrollbar 指令注入，宽表规范见 DESIGN.md） =====
+ * 挂在 body 下的 fixed 滚动条，与表体 scrollLeft 同步；仅当表格底边滚出视口时显示。
+ * z-index 低于 el-dialog/el-drawer 遮罩（2000+），弹层场景不抢焦点。 */
+
+.v-sticky-scrollbar {
+  position: fixed;
+  bottom: 0;
+  z-index: 1500;
+  height: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.v-sticky-scrollbar::-webkit-scrollbar {
+  height: 8px;
+}
+
+.v-sticky-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 4px;
+}
+
+.v-sticky-scrollbar::-webkit-scrollbar-track {
+  background: var(--table-header-bg);
+}
+
+@media print {
+  .v-sticky-scrollbar {
+    display: none !important;
+  }
+}

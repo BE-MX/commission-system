@@ -23,7 +23,7 @@
       </div>
 
     <ListPageStatus v-if="roleResource.hasData.value" :error="roleResource.errorMessage.value" :loading="roleResource.loading.value" :has-data="roleResource.hasData.value" @retry="reloadRows" />
-      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
       <template #empty><ListPageStatus :error="roleResource.errorMessage.value" :loading="loading" @retry="reloadRows">
         <el-empty :image-size="96" description="暂无数据" />
       </ListPageStatus></template>

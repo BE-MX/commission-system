@@ -104,7 +104,7 @@
 
         <section class="review-section">
           <h3>证据账本</h3>
-          <el-table v-if="claims.length" :data="claims" border class="list-table">
+          <el-table v-if="claims.length" :data="claims" border class="list-table" v-sticky-scrollbar>
             <el-table-column prop="claim" label="主张" min-width="220" show-overflow-tooltip />
             <el-table-column prop="fact_id" label="来源 fact_id" min-width="110">
               <template #default="{ row }">{{ row.fact_id ?? '无来源（高风险）' }}</template>

@@ -76,7 +76,7 @@
       <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="loadData" />
       <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading"
         :row-class-name="rowClassName" @sort-change="handleSortChange" border class="list-table" :class="densityClass"
-        :max-height="isFullscreen ? undefined : 640">
+        :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="loadData" />
           <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -183,7 +183,7 @@
             {{ currentStockStatusRow.stock_status }}
           </StatusBadge>
         </div>
-        <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table">
+        <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table" v-sticky-scrollbar>
           <el-table-column class-name="table-action-column" label="操作" min-width="70">
             <template #default="{ row }">
               <el-button link type="primary" @click="openProgressDialog(row)"><el-icon><TrendCharts /></el-icon>进度</el-button>

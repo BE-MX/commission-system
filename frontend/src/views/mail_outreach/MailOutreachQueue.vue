@@ -23,7 +23,7 @@
         />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" row-key="id" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+<el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" row-key="id" @sort-change="listPageState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
         <el-table-column sortable="custom" prop="customer_name" v-if="visibleKeys.includes('customer')" label="客户" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ row.customer_name || `客户 #${row.customer_id}` }}</template>
         </el-table-column>

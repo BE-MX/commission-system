@@ -17,7 +17,7 @@
         <div class="action-bar">
           <TableTools v-model:visible-keys="resultsVisibleKeys" v-model:density="resultsDensity" :columns="resultsColumnDefs" :loading="resultsLoading" :fullscreen="resultsIsFullscreen" @refresh="loadResults" @fullscreen="toggleResultsFullscreen" />
         </div>
-        <el-table v-loading="resultsLoading" :data="results" border class="list-table" :class="resultsDensityClass" :max-height="resultsIsFullscreen ? undefined : 520" @sort-change="resultsState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+        <el-table v-loading="resultsLoading" :data="results" border class="list-table" :class="resultsDensityClass" :max-height="resultsIsFullscreen ? undefined : 520" @sort-change="resultsState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
 <template #empty><ListPageStatus :error="resultsError" :loading="resultsLoading" @retry="loadResults"><el-empty description="该任务没有产出候选客户；若任务已完成仍为空，请检查执行端日志或调整后重新创建任务。" /></ListPageStatus></template>
           <el-table-column sortable="custom" prop="customer_id" v-if="resultsVisibleKeys.includes('customer')" label="客户" min-width="110"><template #default="{ row }">#{{ row.customer_id }}</template></el-table-column>
           <el-table-column sortable="custom" v-if="resultsVisibleKeys.includes('rank')" prop="best_rank" label="排名" min-width="80" />

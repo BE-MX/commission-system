@@ -21,7 +21,7 @@
       </div>
 
       <ListPageStatus v-if="listResource.hasData.value" :paged="true" :error="listResource.errorMessage.value" :loading="loading" :has-data="true" :data-page="listResource.dataPage.value" @retry="load()" />
-      <el-table v-loading="loading" :data="generations" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="listResource.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+      <el-table v-loading="loading" :data="generations" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="listResource.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
         <template #empty><ListPageStatus :paged="true" :error="listResource.errorMessage.value" :loading="loading" @retry="load()"><el-empty v-if="listResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus></template>
         <el-table-column sortable="custom" v-if="visibleKeys.includes('task')" prop="id" label="任务" min-width="90">
           <template #default="{ row }">#{{ row.id }}</template>

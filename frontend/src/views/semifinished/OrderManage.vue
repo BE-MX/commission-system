@@ -25,7 +25,7 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="load" />
-      <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="sortTable0">
+      <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @sort-change="sortTable0" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
           <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -90,7 +90,7 @@
           <div class="sf-summary-item"><span>批次号</span><strong style="font-size: 16px">{{ detail.batch_no || '—' }}</strong></div>
           <div class="sf-summary-item"><span>来源</span><strong style="font-size: 16px">{{ detail.source_type }}</strong></div>
         </div>
-        <el-table :data="detail.items" border class="list-table">
+        <el-table :data="detail.items" border class="list-table" v-sticky-scrollbar>
           <el-table-column prop="size" label="半成品" min-width="180"><template #default="{ row }"><div class="sf-material"><strong>{{ row.size }}/{{ row.color_code }}</strong><small>{{ row.material_code }}</small></div></template></el-table-column>
           <el-table-column prop="order_qty_grams" label="下单(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.order_qty_grams) }}</template></el-table-column>
           <el-table-column prop="received_qty_grams" label="已入库(g)" min-width="110" align="right"><template #default="{ row }">{{ grams(row.received_qty_grams) }}</template></el-table-column>

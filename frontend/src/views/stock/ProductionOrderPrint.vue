@@ -40,7 +40,7 @@
       :expand-row-keys="expandedRows"
       @expand-change="handleExpand"
       class="order-table list-table"
-     @sort-change="handlePrintSort">
+     @sort-change="handlePrintSort" v-sticky-scrollbar>
       <template #empty><ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="loadOrders" /></template>
       <el-table-column type="expand">
         <template #default="{ row }">

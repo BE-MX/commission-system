@@ -3,7 +3,7 @@
     <div class="battle-section-title"><h3>周期目标填报</h3><span>{{ report.start_date }} — {{ report.end_date }} · USD</span></div>
     <el-alert type="info" :closable="false" :title="`截止时间：${formatBeijingDateTime(report.target_deadline)}（北京时间）。${report.can_admin ? '管理员可代录，截止后更正需填写原因。' : '仅可修改本人目标；小组目标自动汇总。'}`" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
-    <el-table :data="members" class="list-table" border>
+    <el-table :data="members" class="list-table" border v-sticky-scrollbar>
       <el-table-column prop="user_name" label="业务员" min-width="110" max-width="160" show-overflow-tooltip />
       <el-table-column prop="team" label="业务组" min-width="120" max-width="160" show-overflow-tooltip />
       <el-table-column :sort-by="row => row.can_edit ? values[row.id] : row.target_usd" label="目标 / USD" min-width="200" max-width="260"><template #default="{ row }"><el-input v-if="row.can_edit" v-model="values[row.id]" :disabled="saving" :aria-label="`${row.user_name}的目标`" placeholder="填写金额" inputmode="decimal" /><span v-else>{{ row.target_usd == null ? '待填报' : money(row.target_usd) }}</span></template></el-table-column>

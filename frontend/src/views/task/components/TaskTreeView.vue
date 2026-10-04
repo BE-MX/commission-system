@@ -9,8 +9,7 @@
       :tree-props="{ children: 'children' }"
       :row-class-name="rowClass"
       @row-click="row => emit('open', row.id)"
-      @sort-change="changeSort"
-    >
+      @sort-change="changeSort" v-sticky-scrollbar>
       <el-table-column sortable="custom" prop="title" label="任务" min-width="380">
         <template #default="{ row }">
           <span class="tt-cell">

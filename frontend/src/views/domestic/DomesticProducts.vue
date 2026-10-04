@@ -18,7 +18,7 @@
           <div class="panel-actions">
             <GlassButton v-permission="'domestic:admin'" variant="primary" left-icon="Plus" @click="openMapping()">新增映射</GlassButton>
           </div>
-          <el-table :data="craftRoutes" v-loading="mappingLoading" border class="list-table" style="width: 100%">
+          <el-table :data="craftRoutes" v-loading="mappingLoading" border class="list-table" style="width: 100%" v-sticky-scrollbar>
             <el-table-column prop="product_type_label" label="产品类型" min-width="100" />
             <el-table-column prop="craft" label="工艺" min-width="150" show-overflow-tooltip />
             <el-table-column prop="route_name" label="工艺路线" min-width="160" show-overflow-tooltip />
@@ -69,7 +69,7 @@
           </div>
 
           <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" @sort-change="sortTable">
+<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" @sort-change="sortTable" v-sticky-scrollbar>
             <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
               <el-empty :image-size="96" :description="hasProductFilters ? '没有符合条件的记录' : '暂无数据'">
                 <GlassButton v-if="hasProductFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>

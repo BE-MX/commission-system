@@ -71,8 +71,7 @@
       class="list-table"
       :class="densityClass"
       border
-      :max-height="isFullscreen ? undefined : 640"
-    >
+      :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
       <template #empty>
         <el-empty :image-size="96" description="暂无数据" />
       </template>

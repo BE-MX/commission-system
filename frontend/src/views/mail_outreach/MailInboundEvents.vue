@@ -7,7 +7,7 @@
     <div class="action-bar"><TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columns" :fullscreen="isFullscreen" @refresh="fetchList" @fullscreen="toggleFullscreen" /></div>
     <ListPageStatus v-if="hasData" :error="errorMessage" :loading="loading" :has-data="hasData" @retry="fetchList" />
     <div ref="panelRef">
-      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" row-key="id" @sort-change="mailEventsState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})">
+      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" row-key="id" @sort-change="mailEventsState.handleSortChange($event.order ? { sort_field: $event.prop, sort_order: $event.order === 'ascending' ? 'asc' : 'desc' } : {})" v-sticky-scrollbar>
         <el-table-column sortable="custom" v-if="visibleKeys.includes('from')" prop="from_address" label="发件人" min-width="180" show-overflow-tooltip />
         <el-table-column sortable="custom" v-if="visibleKeys.includes('subject')" prop="subject" label="主题" min-width="220" show-overflow-tooltip />
         <el-table-column sortable="custom" prop="classification" v-if="visibleKeys.includes('classification')" label="分类" min-width="100"><template #default="{ row }">{{ EVENT_CLASSIFICATION_LABELS[row.classification] || row.classification || '待分类' }}</template></el-table-column>

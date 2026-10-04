@@ -25,7 +25,7 @@
         </div>
         <h3>最近推送记录</h3>
         <el-empty v-if="!config.history.length" description="暂无推送记录" :image-size="60" />
-        <el-table v-else :data="config.history" class="list-table" border>
+        <el-table v-else :data="config.history" class="list-table" border v-sticky-scrollbar>
           <el-table-column prop="date" label="推送时段" min-width="160"><template #default="{ row }">{{ row.date }} {{ row.slot }}</template></el-table-column>
           <el-table-column :sort-by="row => (statusLabels[row.deliveries[kind].status] || row.deliveries[kind].status)" v-for="kind in ['team', 'personal']" :key="kind" :label="kind === 'team' ? '团队海报' : '个人海报'" min-width="180"><template #default="{ row }"><StatusBadge :type="statusType(row.deliveries[kind].status)">{{ statusLabels[row.deliveries[kind].status] || row.deliveries[kind].status }}</StatusBadge><p v-if="row.deliveries[kind].error" class="poster-help">{{ row.deliveries[kind].error }}</p></template></el-table-column>
         </el-table>
