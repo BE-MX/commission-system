@@ -28,7 +28,7 @@
       </div>
     </div>
     <div class="line-table-wrap">
-      <el-table :data="pagedItems" border class="list-table line-table" max-height="560">
+      <el-table :data="pagedItems" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
         <el-table-column label="#" type="index" :index="indexBase" min-width="48" max-width="60" fixed />
         <el-table-column v-if="isProduction" label="Product" min-width="190" max-width="260">
           <template #default="{ row }">

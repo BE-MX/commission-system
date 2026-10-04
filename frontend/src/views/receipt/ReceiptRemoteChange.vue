@@ -6,7 +6,7 @@
       <template v-if="proof">
         <p>小满回款 ID：{{ proof.remote_id }}</p>
         <p v-if="!proof.after">已查询到原回款不存在；确认后释放该笔登记额度。</p>
-        <el-table :data="rows" class="list-table" border>
+        <el-table :data="rows" class="list-table" border v-sticky-scrollbar>
           <el-table-column prop="label" label="项目" />
           <el-table-column prop="before" label="方舟原记录" />
           <el-table-column prop="after" label="核对后方舟记录" />

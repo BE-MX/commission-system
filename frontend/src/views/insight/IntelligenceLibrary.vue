@@ -68,7 +68,7 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="loadItems" />
-      <el-table :data="items" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="handleSortChange" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table :data="items" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="handleSortChange" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="loadItems">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">

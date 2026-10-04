@@ -21,7 +21,7 @@
         />
       </div>
       <ListPageStatus :error="listResource.errorMessage.value" :loading="loading" :has-data="versions.length > 0" @retry="fetchVersions" />
-      <el-table :data="versions" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table :data="versions" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty><el-empty v-if="!loading && !listResource.error.value" :image-size="96" description="暂无数据" /></template>
         <el-table-column v-if="visibleKeys.includes('version-no')" prop="version_no" label="版本号" min-width="130" max-width="190" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('filename')" prop="original_filename" label="文件名" min-width="190" max-width="320" show-overflow-tooltip />

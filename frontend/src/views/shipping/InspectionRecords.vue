@@ -50,7 +50,7 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="listPageState.fetchList" />
-<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+<el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="listPageState.fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的验货单' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
@@ -99,7 +99,7 @@
 
         <InspectionEvents :events="detail.events || []" />
         <div class="section-title">出库明细</div>
-        <el-table :data="detail.items || []" size="small" border class="list-table" style="width: 100%">
+        <el-table :data="detail.items || []" size="small" border class="list-table" style="width: 100%" v-sticky-scrollbar>
           <el-table-column type="index" label="#" min-width="46" />
           <el-table-column prop="product_name" label="产品名称" min-width="130" show-overflow-tooltip />
           <el-table-column prop="spec" label="规格" min-width="100" show-overflow-tooltip />

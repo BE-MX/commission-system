@@ -45,7 +45,7 @@
         </div>
 
         <ListPageStatus v-if="accountsResource.hasData.value" :paged="false" :error="accountsResource.errorMessage.value" :loading="loading" :has-data="true" @retry="loadAccounts" />
-        <el-table :data="accounts" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+        <el-table :data="accounts" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
           <template #empty>
             <ListPageStatus :paged="false" :error="accountsResource.errorMessage.value" :loading="loading" @retry="loadAccounts"><el-empty v-if="accountsResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus>
           </template>

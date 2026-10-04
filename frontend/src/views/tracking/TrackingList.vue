@@ -113,8 +113,7 @@
       @sort-change="changeSort"
       class="list-table"
       :class="densityClass"
-      border
-    >
+      border v-sticky-scrollbar>
       <template #empty><ListPageStatus :error="errorMessage" :loading="loading" @retry="fetchList">
         <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的运单' : '暂无数据'">
           <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>

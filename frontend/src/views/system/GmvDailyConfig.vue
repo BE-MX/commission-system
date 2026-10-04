@@ -97,7 +97,7 @@
           <strong>在职成员</strong>
           <span>零 GMV 也会显示；排除只作用于本队汇总。</span>
         </div>
-        <el-table :data="team.members" border class="member-table list-table">
+        <el-table :data="team.members" border class="member-table list-table" v-sticky-scrollbar>
           <el-table-column prop="name" label="姓名" min-width="120" />
           <el-table-column prop="okki_user_id" label="OKKI ID" min-width="120" />
           <el-table-column label="在职" min-width="80">

@@ -45,7 +45,7 @@
         />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%">
+<el-table ref="tableRef" :data="list" :height="isFullscreen ? undefined : tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" :class="densityClass" style="width: 100%" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasCustomerFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasCustomerFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
@@ -384,7 +384,7 @@
 
     <DetailDrawer v-model="ledgerDrawer.visible" :title="`${ledgerDrawer.customer?.shop_name || ''} · 余额流水`" width="760px">
       <ListPageStatus v-if="ledgerState.hasData.value" :error="ledgerState.errorMessage.value" :loading="ledgerDrawer.loading" :has-data="true" :data-page="ledgerState.dataPage.value" @retry="loadLedger()" />
-      <el-table :data="ledgerDrawer.items" v-loading="ledgerDrawer.loading" border size="small" class="list-table">
+      <el-table :data="ledgerDrawer.items" v-loading="ledgerDrawer.loading" border size="small" class="list-table" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="ledgerState.errorMessage.value" :loading="ledgerDrawer.loading" @retry="loadLedger()"><el-empty description="暂无余额流水" :image-size="96" /></ListPageStatus></template>
         <el-table-column prop="created_at" label="时间" min-width="150" />
         <el-table-column label="类型" min-width="100">

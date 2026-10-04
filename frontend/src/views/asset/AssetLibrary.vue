@@ -242,8 +242,7 @@
       <el-table
         v-else :data="assets" class="asset-list-table list-table" :class="densityClass" style="width: 100%"
         :max-height="isFullscreen ? undefined : 640"
-        border @row-click="openPreview" @sort-change="handleSortChange"
-      >
+        border @row-click="openPreview" @sort-change="handleSortChange" v-sticky-scrollbar>
         <template #empty>
           <el-empty :image-size="96" description="暂无数据" />
         </template>

@@ -1,6 +1,6 @@
 <template>
   <el-dialog v-model="visible" :title="title" width="760px">
-    <el-table v-loading="loading" :data="rows" border class="list-table" max-height="420">
+    <el-table v-loading="loading" :data="rows" border class="list-table" max-height="420" v-sticky-scrollbar>
       <el-table-column label="时间" min-width="150" max-width="170" show-overflow-tooltip>
         <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
       </el-table-column>

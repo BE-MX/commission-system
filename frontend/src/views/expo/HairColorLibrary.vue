@@ -26,7 +26,7 @@
       </div>
 
       <ListPageStatus :error="listResource.errorMessage.value" :loading="loading" :has-data="colors.length > 0" @retry="fetchColors" />
-      <el-table :data="filteredColors" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+      <el-table :data="filteredColors" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%" v-sticky-scrollbar>
         <template #empty>
           <el-empty v-if="!loading && !listResource.error.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>

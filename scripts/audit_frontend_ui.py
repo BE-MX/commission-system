@@ -45,6 +45,8 @@ DEEP_EL_OVERRIDE = re.compile(r":deep\(\s*\.el-")
 EMPTY_TEXT_ATTR = re.compile(r"\bempty-text\s*=")
 SIZE_SMALL = re.compile(r'\bsize\s*=\s*["\']small')
 INLINE_WIDTH = re.compile(r'\bstyle\s*=\s*(["\'])[^"\']*\bwidth\s*:')
+# 宽表规范（DESIGN.md List Page Spec）：悬浮横向滚动条指令必须显式声明
+STICKY_SCROLLBAR = re.compile(r"\bv-sticky-scrollbar(?=\s|=|>)")
 
 
 def _tags(text: str, name: str) -> list[str]:
@@ -202,6 +204,8 @@ def scan() -> tuple[list[str], dict[str, dict[str, int]]]:
                     static_class = re.search(r'\bclass\s*=\s*(["\'])(.*?)\1', tag, re.S)
                     if not static_class or "list-table" not in static_class.group(2).split():
                         failures.append(f"{relative}: table {index} misses list-table class")
+                    if not STICKY_SCROLLBAR.search(tag):
+                        failures.append(f"{relative}: table {index} misses v-sticky-scrollbar")
                 for index, tag in enumerate(columns, 1):
                     if re.search(r'(?<![-:])\bwidth\s*=\s*["\']\d+', tag):
                         failures.append(f"{relative}: column {index} uses fixed width")

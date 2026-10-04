@@ -29,7 +29,7 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchStores" />
-<el-table :data="stores" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+<el-table :data="stores" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchStores">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="resetFilters">重置筛选</GlassButton>
@@ -117,7 +117,7 @@
       </el-form>
       <ListPageStatus :paged="false" :error="userResource.errorMessage.value" :loading="userSearching" :has-data="userResource.hasLoaded.value" @retry="searchUsers(userQuery)" />
       <ListPageStatus v-if="usersResource.hasLoaded.value" :paged="false" :error="usersResource.errorMessage.value" :loading="usersLoading" :has-data="usersResource.hasLoaded.value" @retry="fetchStoreUsers" />
-      <el-table :data="storeUsers" v-loading="usersLoading" size="small" border style="width: 100%" class="list-table">
+      <el-table :data="storeUsers" v-loading="usersLoading" size="small" border style="width: 100%" class="list-table" v-sticky-scrollbar>
         <template #empty><ListPageStatus :paged="false" :error="usersResource.errorMessage.value" :loading="usersLoading" @retry="fetchStoreUsers"><el-empty v-if="usersResource.isEmpty.value" description="暂无绑定人员" /></ListPageStatus></template>
         <el-table-column prop="username" label="账号" min-width="100" show-overflow-tooltip />
         <el-table-column prop="real_name" label="姓名" min-width="100" show-overflow-tooltip />

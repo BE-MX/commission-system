@@ -32,7 +32,7 @@
         </template>
       </FilterBar>
       <ListPageStatus v-if="hasData && errorMessage" :error="errorMessage" :loading="loading" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
-      <el-table class="list-table" border v-loading="loading" :data="list" :class="densityClass" @row-dblclick="openDetail">
+      <el-table class="list-table" border v-loading="loading" :data="list" :class="densityClass" @row-dblclick="openDetail" v-sticky-scrollbar>
         <el-table-column v-if="visibleKeys.includes('name')" prop="name" label="名称" min-width="220" />
         <el-table-column v-if="visibleKeys.includes('owner')" prop="owner" label="负责人" min-width="110" />
         <el-table-column v-if="visibleKeys.includes('amount')" label="金额" min-width="130"><template #default="{ row }">{{ formatMoney(row.amount, { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</template></el-table-column>

@@ -51,7 +51,7 @@
           <div class="action-bar">
             <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" :loading="deliveriesResource.loading.value" @refresh="loadDeliveries" @fullscreen="toggleFullscreen" />
           </div>
-          <el-table :data="deliveries" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border>
+          <el-table :data="deliveries" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border v-sticky-scrollbar>
             <template #empty><ListPageStatus v-bind="resourceStatus(deliveriesResource)" @retry="loadDeliveries"><el-empty description="暂无投递记录" /></ListPageStatus></template>
             <el-table-column v-if="visibleKeys.includes('source')" prop="source_key" label="来源" min-width="160" show-overflow-tooltip />
             <el-table-column v-if="visibleKeys.includes('sequence')" prop="sequence" label="分片" min-width="70" />

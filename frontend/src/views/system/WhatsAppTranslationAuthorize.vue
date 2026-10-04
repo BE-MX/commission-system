@@ -27,7 +27,7 @@
 
       <div v-if="devices.length" class="devices">
         <h2>我的设备</h2>
-        <el-table :data="devices" size="small" border class="list-table">
+        <el-table :data="devices" size="small" border class="list-table" v-sticky-scrollbar>
           <el-table-column prop="device_name" label="设备" min-width="120" />
           <el-table-column prop="browser_name" label="浏览器" min-width="100" />
           <el-table-column prop="extension_version" label="扩展版本" min-width="90" />

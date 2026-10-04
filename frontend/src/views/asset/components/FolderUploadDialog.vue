@@ -156,7 +156,7 @@
         <span v-if="(previewData?.files || []).length > 20" class="async-hint">，上传后转后台处理</span>
         <span v-if="Object.keys(resolutions).length">，已确认 {{ Object.keys(resolutions).length }} 个标签处理项</span>
       </div>
-      <el-table :data="(previewData?.files || []).slice(0, 50)" max-height="390" border class="list-table">
+      <el-table :data="(previewData?.files || []).slice(0, 50)" max-height="390" border class="list-table" v-sticky-scrollbar>
         <el-table-column label="相对路径" prop="file_path" min-width="220" show-overflow-tooltip />
         <el-table-column label="匹配标签" min-width="280">
           <template #default="{ row }">
@@ -254,8 +254,7 @@
         v-if="uploadReport?.failed?.length"
         :data="uploadReport.failed"
         border
-        class="list-table"
-      >
+        class="list-table" v-sticky-scrollbar>
         <el-table-column label="文件" prop="file_name" min-width="180" show-overflow-tooltip />
         <el-table-column label="原因" prop="reason" min-width="280" show-overflow-tooltip />
       </el-table>

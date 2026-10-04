@@ -1,6 +1,6 @@
 """Negative examples for the UI gate; no browser or production service required."""
 import unittest
-from audit_frontend_ui import _vue_metrics, _js_metrics, _tags, apply_exceptions, baseline_increases
+from audit_frontend_ui import _vue_metrics, _js_metrics, _tags, apply_exceptions, baseline_increases, STICKY_SCROLLBAR
 
 
 class UiGateTests(unittest.TestCase):
@@ -40,6 +40,16 @@ class UiGateTests(unittest.TestCase):
 
     def test_tag_parser_preserves_quoted_comparisons_and_distinguishes_columns(self):
         self.assertEqual(len(_tags('<el-table v-if="rows.length > 0"><el-table-column /></el-table>', 'el-table')), 1)
+
+    def test_sticky_scrollbar_directive_detection(self):
+        good = '<el-table :data="rows" border class="list-table" v-sticky-scrollbar>'
+        self.assertIsNotNone(STICKY_SCROLLBAR.search(good))
+        # 显式关闭是刻意的评审豁口，存在即视为已声明
+        self.assertIsNotNone(STICKY_SCROLLBAR.search('<el-table v-sticky-scrollbar="false">'))
+        for tag in ('<el-table :data="rows" border class="list-table">', '<el-table>'):
+            self.assertIsNone(STICKY_SCROLLBAR.search(tag))
+        # el-table-column 不能冒充表格声明
+        self.assertIsNone(STICKY_SCROLLBAR.search('<el-table-column prop="name" />'))
 
 
 if __name__ == '__main__':

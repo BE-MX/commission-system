@@ -16,7 +16,7 @@
       <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" :loading="loading" @refresh="loadRows" @fullscreen="toggleFullscreen" />
     </div>
       <ListPageStatus v-if="listError && rows.length" :error="listErrorMessage" :loading="loading" :has-data="hasLoaded" :paged="false" @retry="loadRows" />
-      <el-table v-loading="loading" :data="rows" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border>
+      <el-table v-loading="loading" :data="rows" class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="listErrorMessage" :loading="loading" :paged="false" @retry="loadRows"><el-empty description="暂无配件价格" /></ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('name')" prop="accessory_name" label="Name" min-width="180" max-width="320" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('model')" prop="accessory_model" label="Model" min-width="150" max-width="240" show-overflow-tooltip />

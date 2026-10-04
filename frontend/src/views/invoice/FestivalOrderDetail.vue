@@ -84,7 +84,7 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value" :error="error" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="loadPage()" />
-      <el-table v-loading="loading" :data="orders" border class="list-table festival-order-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="orders" border class="list-table festival-order-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="error" :loading="loading" @retry="loadPage()">
           <el-empty :image-size="96" :description="listState.appliedSearchForm.value.keyword ? '没有符合条件的记录' : `当前范围暂无${activeLabel}，可切换标签继续查看`">

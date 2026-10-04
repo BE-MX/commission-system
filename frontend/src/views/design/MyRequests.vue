@@ -81,8 +81,7 @@
       :class="densityClass"
       border
       :max-height="isFullscreen ? undefined : 640"
-      @sort-change="handleSortChange"
-    >
+      @sort-change="handleSortChange" v-sticky-scrollbar>
       <template #empty>
         <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="fetchList" />
         <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">

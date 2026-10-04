@@ -63,7 +63,7 @@
             />
           </div>
           <ListPageStatus v-if="orderState.hasData.value" :error="orderState.errorMessage.value" :loading="orderLoading" :has-data="true" :data-page="orderState.dataPage.value" @retry="loadOrderList" />
-          <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" border class="list-table" :class="orderDensityClass" :max-height="orderIsFullscreen ? undefined : 640" @sort-change="handleOrderSortChange">
+          <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" border class="list-table" :class="orderDensityClass" :max-height="orderIsFullscreen ? undefined : 640" @sort-change="handleOrderSortChange" v-sticky-scrollbar>
             <template #empty>
               <ListPageStatus :error="orderState.errorMessage.value" :loading="orderLoading" @retry="loadOrderList" />
               <el-empty v-if="orderState.isEmpty.value" :image-size="96" :description="hasActiveOrderFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -141,7 +141,7 @@
             />
           </div>
           <ListPageStatus v-if="itemState.hasData.value" :error="itemState.errorMessage.value" :loading="itemLoading" :has-data="true" :data-page="itemState.dataPage.value" @retry="loadItemList" />
-          <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" border class="list-table" :class="itemDensityClass" :max-height="itemIsFullscreen ? undefined : 640" @sort-change="handleItemSortChange">
+          <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" border class="list-table" :class="itemDensityClass" :max-height="itemIsFullscreen ? undefined : 640" @sort-change="handleItemSortChange" v-sticky-scrollbar>
             <template #empty>
               <ListPageStatus :error="itemState.errorMessage.value" :loading="itemLoading" @retry="loadItemList" />
               <el-empty v-if="itemState.isEmpty.value" :image-size="96" :description="hasActiveItemFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -209,7 +209,7 @@
         </div>
         <el-divider />
         <div class="detail-subtitle">产品明细</div>
-        <el-table :data="currentOrder.items || []" border class="list-table">
+        <el-table :data="currentOrder.items || []" border class="list-table" v-sticky-scrollbar>
           <el-table-column class-name="table-action-column" label="操作" min-width="140" max-width="210">
             <template #default="{ row }">
               <GlassButton link-tone="primary" variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>

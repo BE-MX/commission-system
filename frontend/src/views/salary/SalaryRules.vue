@@ -25,7 +25,7 @@
             <GlassButton v-permission="'salary:write'" variant="primary" left-icon="Plus" @click="openGrade(null)">新增职级行</GlassButton>
             <TableTools v-model:visible-keys="gradeVisibleKeys" v-model:density="gradeDensity" :columns="gradeColumnDefs" :fullscreen="gradeIsFullscreen" @refresh="fetchAll" @fullscreen="toggleGradeFullscreen" />
           </div>
-          <el-table :data="filteredGrades" v-loading="loading" border class="list-table" :class="gradeDensityClass" :max-height="gradeIsFullscreen ? undefined : 640">
+          <el-table :data="filteredGrades" v-loading="loading" border class="list-table" :class="gradeDensityClass" :max-height="gradeIsFullscreen ? undefined : 640" v-sticky-scrollbar>
             <el-table-column v-if="gradeVisibleKeys.includes('scheme')" label="赛道" min-width="130">
               <template #default="{ row }">{{ schemeLabels[row.scheme] || row.scheme }}</template>
             </el-table-column>
@@ -61,7 +61,7 @@
           <div class="action-bar">
             <TableTools v-model:visible-keys="paramVisibleKeys" v-model:density="paramDensity" :columns="paramColumnDefs" :fullscreen="paramIsFullscreen" @refresh="fetchAll" @fullscreen="toggleParamFullscreen" />
           </div>
-          <el-table :data="params" v-loading="loading" border class="list-table" :class="paramDensityClass" :max-height="paramIsFullscreen ? undefined : 640">
+          <el-table :data="params" v-loading="loading" border class="list-table" :class="paramDensityClass" :max-height="paramIsFullscreen ? undefined : 640" v-sticky-scrollbar>
             <el-table-column v-if="paramVisibleKeys.includes('key')" prop="param_key" label="参数键" min-width="200" show-overflow-tooltip />
             <el-table-column v-if="paramVisibleKeys.includes('value')" label="参数值" min-width="160">
               <template #default="{ row }">
@@ -103,7 +103,7 @@
             <GlassButton v-permission="'salary:write'" variant="primary" left-icon="Plus" @click="openDept(null)">新增映射</GlassButton>
             <TableTools v-model:visible-keys="deptVisibleKeys" v-model:density="deptDensity" :columns="deptColumnDefs" :fullscreen="deptIsFullscreen" @refresh="fetchAll" @fullscreen="toggleDeptFullscreen" />
           </div>
-          <el-table :data="deptMappings" v-loading="loading" border class="list-table" :class="deptDensityClass" :max-height="deptIsFullscreen ? undefined : 640">
+          <el-table :data="deptMappings" v-loading="loading" border class="list-table" :class="deptDensityClass" :max-height="deptIsFullscreen ? undefined : 640" v-sticky-scrollbar>
             <el-table-column v-if="deptVisibleKeys.includes('detail')" prop="dept_detail" label="明细部门" min-width="160" sortable />
             <el-table-column v-if="deptVisibleKeys.includes('group')" label="汇总大部门" min-width="160">
               <template #default="{ row }"><StatusBadge size="small" effect="plain">{{ row.dept_group }}</StatusBadge></template>

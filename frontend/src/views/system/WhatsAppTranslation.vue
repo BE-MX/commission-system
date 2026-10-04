@@ -29,7 +29,7 @@
         <span />
         <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="load" @fullscreen="toggleFullscreen" />
       </div>
-      <el-table :data="visibleDevices" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table :data="visibleDevices" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <el-table-column v-if="visibleKeys.includes('device')" prop="device_name" label="设备" min-width="140" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('browser')" prop="browser_name" label="浏览器" min-width="100" />
         <el-table-column v-if="visibleKeys.includes('version')" prop="extension_version" label="版本" min-width="90" />

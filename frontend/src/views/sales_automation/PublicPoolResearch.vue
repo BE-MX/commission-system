@@ -61,7 +61,7 @@
           </div>
 
           <div class="table-card batch-table-card">
-            <el-table v-loading="batchTasksLoading[batch.id]" :data="visibleBatchTasks(batch.id)" row-key="id" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="setBatchSelection(batch.id, $event)">
+            <el-table v-loading="batchTasksLoading[batch.id]" :data="visibleBatchTasks(batch.id)" row-key="id" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="setBatchSelection(batch.id, $event)" v-sticky-scrollbar>
               <el-table-column v-if="activeStatusByBatch[batch.id] === 'pending_review'" type="selection" min-width="52" />
               <el-table-column v-if="visibleKeys.includes('company')" label="客户" min-width="210" show-overflow-tooltip>
                 <template #default="{ row }"><div class="company-cell"><strong>{{ row.subject.display_name }}</strong><span>{{ row.subject.country || '地区未知' }} · {{ sourceLabel(row.subject) }}</span></div></template>

@@ -5,7 +5,7 @@
 <GlassButton @click="fetchList">刷新</GlassButton><GlassButton v-permission="'ai:admin'" variant="primary" left-icon="Plus" @click="openEditor()">创建站点应用</GlassButton></FilterBar>
     <div class="table-card">
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table :data="list" v-loading="loading" border class="list-table"><template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
+<el-table :data="list" v-loading="loading" border class="list-table" v-sticky-scrollbar><template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
         <el-table-column prop="name" label="应用名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="owner_name" label="负责人" min-width="100" />
         <el-table-column label="状态" min-width="110">
@@ -67,7 +67,7 @@
 <GlassButton @click="requests.fetchList">刷新</GlassButton></FilterBar>
       <p class="hint">待核查请求继续占用并发。解除前请确认本地执行已结束并核查供应商结果；解除不退还次数，也不会重发请求。</p>
       <ListPageStatus v-if="requests.hasData.value" :error="requests.errorMessage.value" :loading="requests.loading.value" :has-data="requests.hasData.value" :data-page="requests.dataPage.value" @retry="requests.fetchList" />
-<el-table :data="requests.list.value" v-loading="requests.loading.value" border class="list-table"><template #empty><ListPageStatus :error="requests.errorMessage.value" :loading="requests.loading.value" :has-data="false" @retry="requests.fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
+<el-table :data="requests.list.value" v-loading="requests.loading.value" border class="list-table" v-sticky-scrollbar><template #empty><ListPageStatus :error="requests.errorMessage.value" :loading="requests.loading.value" :has-data="false" @retry="requests.fetchList"><el-empty description="暂无数据" :image-size="72" /></ListPageStatus></template>
         <el-table-column prop="request_id" label="Request ID" min-width="200" show-overflow-tooltip />
         <el-table-column prop="preset_name" label="能力" min-width="130" />
         <el-table-column label="时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>

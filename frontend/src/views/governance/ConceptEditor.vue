@@ -239,7 +239,7 @@
         <!-- 7. 关联（Phase 2 完整实现，Phase 1 只读展示） -->
         <section id="sec-relationships" class="form-section lg-card is-static">
           <h3>🔗 关联关系</h3>
-          <el-table :data="relationships" style="width: 100%" border class="list-table">
+          <el-table :data="relationships" style="width: 100%" border class="list-table" v-sticky-scrollbar>
             <el-table-column prop="relation_type" label="关系类型" min-width="150">
               <template #default="{ row }">
                 <StatusBadge size="small" :color="relTypeColor(row.relation_type)" effect="dark" style="border: none">

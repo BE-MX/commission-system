@@ -19,7 +19,7 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="load" />
-      <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
           <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -51,7 +51,7 @@
 
     <DetailDrawer v-model="ledgerVisible" :title="`${ledgerMaterial?.size}/${ledgerMaterial?.color_code} 库存流水`" width="760px">
       <ListPageStatus v-if="ledgerState.hasData.value" :error="ledgerState.errorMessage.value" :loading="ledgerState.loading.value" :has-data="true" :data-page="ledgerState.dataPage.value" @retry="ledgerState.fetchList" />
-      <el-table :data="ledgerRows" v-loading="ledgerState.loading.value" border class="list-table">
+      <el-table :data="ledgerRows" v-loading="ledgerState.loading.value" border class="list-table" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="ledgerState.errorMessage.value" :loading="ledgerState.loading.value" @retry="ledgerState.fetchList" /></template>
         <el-table-column prop="created_at" label="时间" min-width="165" />
         <el-table-column label="类型" min-width="110"><template #default="{ row }">{{ movementText(row.movement_type) }}</template></el-table-column>

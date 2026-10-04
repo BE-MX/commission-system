@@ -12,7 +12,7 @@
           type="warning" :closable="false" show-icon />
         <el-alert title="同步发制品及配件的增删、规格、数量、价格和备注。同步后请重新打印旧纸单。" type="info" :closable="false" show-icon />
         <div v-if="preview.serial_changed" class="sync-remark"><strong>出库单号</strong><p>当前：{{ preview.serial_before }}</p><p>同步后：{{ preview.serial_after }}</p></div>
-        <el-table v-if="preview.changes?.length" :data="preview.changes" border class="list-table sync-changes" max-height="360">
+        <el-table v-if="preview.changes?.length" :data="preview.changes" border class="list-table sync-changes" max-height="360" v-sticky-scrollbar>
           <el-table-column prop="action" label="操作" min-width="68" />
           <el-table-column label="当前出库明细" min-width="240">
             <template #default="{ row: change }">

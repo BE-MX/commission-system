@@ -7,7 +7,7 @@
     <div class="action-bar"><TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columns" :fullscreen="isFullscreen" @refresh="fetchList" @fullscreen="toggleFullscreen" /></div>
     <ListPageStatus v-if="hasData" :error="errorMessage" :loading="loading" :has-data="hasData" @retry="fetchList" />
     <div ref="panelRef">
-      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" row-key="id">
+      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" row-key="id" v-sticky-scrollbar>
         <el-table-column v-if="visibleKeys.includes('from')" prop="from_address" label="发件人" min-width="180" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('subject')" prop="subject" label="主题" min-width="220" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('classification')" label="分类" min-width="100"><template #default="{ row }">{{ EVENT_CLASSIFICATION_LABELS[row.classification] || row.classification || '待分类' }}</template></el-table-column>

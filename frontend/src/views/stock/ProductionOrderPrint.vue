@@ -39,8 +39,7 @@
       row-key="id"
       :expand-row-keys="expandedRows"
       @expand-change="handleExpand"
-      class="order-table list-table"
-    >
+      class="order-table list-table" v-sticky-scrollbar>
       <template #empty><ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="loadOrders" /></template>
       <el-table-column type="expand">
         <template #default="{ row }">

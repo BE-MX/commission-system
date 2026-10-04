@@ -84,7 +84,7 @@
       </div>
 
       <!-- Table of existing specific dates -->
-      <el-table :data="specificDates" border style="width: 100%; margin-top: 12px;" empty-text="暂无特定日期容量配置" class="list-table">
+      <el-table :data="specificDates" border style="width: 100%; margin-top: 12px;" empty-text="暂无特定日期容量配置" class="list-table" v-sticky-scrollbar>
         <el-table-column prop="config_date" label="日期" min-width="160" sortable />
         <el-table-column label="时段" min-width="100">
           <template #default="{ row }">

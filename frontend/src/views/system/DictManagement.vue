@@ -42,7 +42,7 @@
       </div>
 
       <ListPageStatus v-if="itemsResource.hasData.value" :error="itemsResource.errorMessage.value" :loading="itemsResource.loading.value" :has-data="itemsResource.hasData.value" @retry="reloadRows" />
-      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table :data="tableData" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="itemsResource.errorMessage.value" :loading="loading" @retry="reloadRows">
           <el-empty :image-size="96" description="暂无数据" />
         </ListPageStatus></template>

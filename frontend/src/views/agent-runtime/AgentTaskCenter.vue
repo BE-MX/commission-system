@@ -74,7 +74,7 @@
         <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" @refresh="fetchTasks" @fullscreen="toggleFullscreen" />
       </div>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchTasks" />
-<el-table :data="tasks" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+<el-table :data="tasks" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <el-table-column v-if="visibleKeys.includes('task')" label="任务" min-width="250" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="task-title">{{ taskTitle(row) }}</div>
@@ -133,7 +133,7 @@
           <el-option v-for="category in evaluationCategories" :key="category" :label="category" :value="category" />
         </el-select>
       </div>
-      <el-table :data="filteredEvaluationCases" border max-height="520" class="list-table" empty-text="暂无标准评测题">
+      <el-table :data="filteredEvaluationCases" border max-height="520" class="list-table" empty-text="暂无标准评测题" v-sticky-scrollbar>
         <el-table-column label="题目" min-width="300">
           <template #default="{ row }">
             <div class="case-title"><StatusBadge size="small" effect="plain">{{ row.case_id }}</StatusBadge><strong>{{ row.title }}</strong></div>

@@ -28,7 +28,7 @@
       </div>
 
       <ListPageStatus v-if="listResource.hasData.value" :paged="false" :error="listResource.errorMessage.value" :loading="loading" :has-data="true" @retry="load()" />
-      <el-table v-loading="loading" :data="products" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-loading="loading" :data="products" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty><ListPageStatus :paged="false" :error="listResource.errorMessage.value" :loading="loading" @retry="load()"><el-empty v-if="listResource.isEmpty.value" :image-size="96" description="暂无数据" /></ListPageStatus></template>
         <el-table-column v-if="visibleKeys.includes('cover')" label="封面" min-width="86">
           <template #default="{ row }">

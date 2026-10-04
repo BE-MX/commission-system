@@ -8,8 +8,7 @@
       class="list-table task-tree-table"
       :tree-props="{ children: 'children' }"
       :row-class-name="rowClass"
-      @row-click="row => emit('open', row.id)"
-    >
+      @row-click="row => emit('open', row.id)" v-sticky-scrollbar>
       <el-table-column label="任务" min-width="380">
         <template #default="{ row }">
           <span class="tt-cell">

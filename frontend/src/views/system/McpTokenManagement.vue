@@ -49,7 +49,7 @@
       </div>
 
       <ListPageStatus :error="tokenResource.errorMessage.value" :loading="tokenResource.loading.value" :has-data="tokenResource.hasData.value" @retry="reloadRows" />
-      <el-table v-if="filteredRows.length || loading" v-loading="loading" :data="filteredRows" class="token-table list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border>
+      <el-table v-if="filteredRows.length || loading" v-loading="loading" :data="filteredRows" class="token-table list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" border v-sticky-scrollbar>
         <el-table-column v-if="visibleKeys.includes('label')" label="Agent 用途" min-width="170">
           <template #default="{ row }"><strong class="purpose">{{ row.label }}</strong></template>
         </el-table-column>

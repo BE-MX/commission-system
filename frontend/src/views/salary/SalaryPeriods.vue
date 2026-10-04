@@ -34,7 +34,7 @@
       </div>
 
       <ListPageStatus v-if="periodsResource.error.value && list.length" v-bind="resourceStatus(periodsResource)" @retry="fetchList" />
-      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%">
+      <el-table :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" style="width: 100%" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus v-bind="resourceStatus(periodsResource)" @retry="fetchList">
           <el-empty :image-size="96" :description="appliedStatus ? '没有符合条件的记录' : '暂无数据'">

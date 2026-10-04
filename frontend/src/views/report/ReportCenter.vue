@@ -39,8 +39,7 @@
           class="list-table"
           :class="densityClass"
           :max-height="isFullscreen ? undefined : 640"
-          style="width: 100%"
-        >
+          style="width: 100%" v-sticky-scrollbar>
           <template #empty>
             <el-empty v-if="!loading && !templatesResource.error.value" :image-size="96" description="暂无数据" />
           </template>
@@ -170,7 +169,7 @@
       destroy-on-close
     >
       <ListPageStatus :error="versionsResource.errorMessage.value" :loading="versionLoading" :has-data="versionList.length > 0" @retry="versionsResource.load()" />
-      <el-table :data="versionList" v-loading="versionLoading" border class="list-table">
+      <el-table :data="versionList" v-loading="versionLoading" border class="list-table" v-sticky-scrollbar>
         <el-table-column label="版本" min-width="80" max-width="120">
           <template #default="{ row }">v{{ row.version }}</template>
         </el-table-column>

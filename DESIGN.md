@@ -270,7 +270,7 @@
 
 规范条目用以下标注区分执行方式（2026-09-30 起，适用于 List Page Spec 及其后各组件规范节）：
 
-- **[门禁]**：已由 `scripts/audit_frontend_ui.py` / `check_conventions.py` 机器强制，提交即检查。现有表格门禁：`stripe` / `border` / `list-table` 类 / 固定 `width` / `align="center"` / 按钮 `size="small"`
+- **[门禁]**：已由 `scripts/audit_frontend_ui.py` / `check_conventions.py` 机器强制，提交即检查。现有表格门禁：`stripe` / `border` / `list-table` 类 / 固定 `width` / `align="center"` / 按钮 `size="small"` / `v-sticky-scrollbar`（宽表悬浮横滚条）
 - **[可门禁]**：可静态判定的条目，已全部接入 `scripts/audit_frontend_ui.py`（2026-09-30，15 项度量）：存量计数冻结进债务基线、变动即报 stale，白名单项按违例计数冻结；标注保留，用于区分其「冻结存量、渐进消化」与 **[门禁]** 「硬失败」的性质差异
 - **[评审]**：无法静态判定，靠 code review 与 QA 对照本节核查
 
@@ -288,6 +288,7 @@
     :max-height="maxHeight"
     class="list-table"
     border
+    v-sticky-scrollbar
   >
     ...
   </el-table>
@@ -311,6 +312,17 @@
 | 默认左对齐 | **禁止**使用 `align="center"`，全表左对齐 |
 
 估算公式（13px 字体）：中文每字 ≈ 13px；cell 左右 padding 共 24px；`min-width = 字数 × 13 + 24 + 20(余量)`。
+
+**横向滚动（宽表，2026-10-04 起）**
+
+| 规则 | 说明 |
+|------|------|
+| 悬浮横滚条 **[门禁]** | 所有 `el-table` 必须声明 `v-sticky-scrollbar`（`frontend/src/directives/stickyScrollbar.js` 全局注册，样式在 `app.css`）；表格底边滚出视口时横滚条固定到视口底部，与表体 `scrollLeft` 双向同步 |
+| 自动隐藏 | 无横向溢出、表底可见（原生滚动条可达）或表格不可见时悬浮条不显示；小表格、弹窗内表格、固定高度表格零影响 |
+| 评审豁口 | 特殊表格可显式 `v-sticky-scrollbar="false"` 关闭，必须在 code review 说明理由 |
+| 输入习惯 | 不拦截默认行为，保留 `Shift+滚轮` 横滚与触控板双指横滑 |
+
+列多优先做减法：高频关键列留表内（左冻结定位列、右冻结操作列），低频字段入行内展开或详情抽屉；列显隐由 TableTools 提供（见 Action Bar Spec）。悬浮条是最后兜底，不是堆列的理由。
 
 **行高**
 
@@ -437,6 +449,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 - [ ] 表格包裹在 `.table-card` 中
 - [ ] 表格有 `class="list-table"` + `border`，无 `stripe` **[门禁]**
 - [ ] 列宽用 `min-width` + `max-width`，无固定 `width`、无 `align="center"` **[门禁]**
+- [ ] 表格声明 `v-sticky-scrollbar`（宽表悬浮横滚条） **[门禁]**
 - [ ] 纯文本列有 `show-overflow-tooltip`
 - [ ] 操作按钮无 `size="small"`，带图标 **[门禁]**
 - [ ] 筛选区在 `.toolbar` 内，控件无内联宽度、无 `size="small"`
@@ -639,6 +652,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-10-04 | 宽表交互规范：全站 `el-table` 统一 `v-sticky-scrollbar` 悬浮横向滚动条并纳入表格硬门禁 | 长表格原生横滚条在表底不可达（要先滚到底、拖条、再滚回）；指令全局注册 + `normalize_list_tables.py` 一次铺满 + `audit_frontend_ui.py` 硬门禁防回流；列宽继续沿用 `min-width`/`max-width` 既有门禁，两者合并为宽表规范 |
 | 2026-10-02 | 科技轻快按钮与操作列组件规范收口 | 主站/PM 按钮 token 对齐；link 深色语义文字、24px/触屏44px、无圆角/阴影/缩放、显式图标；新增 warning tone，静态扫描与浏览器状态验收 |
 | 2026-04-29 | 统一 DESIGN.md，提取现有设计系统 | 之前设计变量分散在 App.vue 和各组件 scoped 样式中，需要集中管理 |
 | 2026-04-29 | 字体 Outfit + DM Sans 已确认 | 系统已在使用，直接记录为正式方案 |

@@ -30,7 +30,7 @@
       </div>
 
       <ListPageStatus v-if="listState.hasData.value" :error="listState.errorMessage.value" :loading="loading" :has-data="true" :data-page="listState.dataPage.value" @retry="load" />
-      <el-table v-if="activeTab === 'materials'" v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="selectedMaterials = $event">
+      <el-table v-if="activeTab === 'materials'" v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" @selection-change="selectedMaterials = $event" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
           <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -49,7 +49,7 @@
         <el-table-column v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :value="row.status === 'active'" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
       </el-table>
 
-      <el-table v-else v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640">
+      <el-table v-else v-loading="loading" :data="rows" border class="list-table sf-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="listState.errorMessage.value" :loading="loading" @retry="load" />
           <el-empty v-if="listState.isEmpty.value" :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -85,7 +85,7 @@
         <div class="sf-summary-item"><span>新增关联</span><strong>{{ preview.new_mappings }}</strong></div>
         <div class="sf-summary-item"><span>待审核</span><strong>{{ preview.needs_review }}</strong></div>
       </div>
-      <el-table :data="preview?.examples || []" max-height="360" border class="list-table">
+      <el-table :data="preview?.examples || []" max-height="360" border class="list-table" v-sticky-scrollbar>
         <el-table-column prop="product_name" label="产品" min-width="280" show-overflow-tooltip />
         <el-table-column label="解析结果" min-width="230"><template #default="{ row }">{{ row.components.map(c => `${row.size}/${c}`).join('、') }}</template></el-table-column>
         <el-table-column prop="message" label="说明" min-width="160" show-overflow-tooltip />

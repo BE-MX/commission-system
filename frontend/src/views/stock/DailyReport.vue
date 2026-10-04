@@ -97,7 +97,7 @@
         </div>
       </div>
       <div class="card" style="border-radius:0 0 16px 16px;">
-        <el-table :data="reportData.shortage_skus" style="width:100%" :header-cell-style="shortageHeaderStyle" border class="list-table">
+        <el-table :data="reportData.shortage_skus" style="width:100%" :header-cell-style="shortageHeaderStyle" border class="list-table" v-sticky-scrollbar>
           <el-table-column type="index" label="#" min-width="50" />
           <el-table-column label="产品名" prop="product_name" min-width="180" show-overflow-tooltip sortable>
             <template #default="{ row }">
@@ -139,7 +139,7 @@
         </div>
       </div>
       <div class="card" style="border-radius:0 0 16px 16px;">
-        <el-table :data="reportData.warning_skus" style="width:100%" :header-cell-style="warningHeaderStyle" border class="list-table">
+        <el-table :data="reportData.warning_skus" style="width:100%" :header-cell-style="warningHeaderStyle" border class="list-table" v-sticky-scrollbar>
           <el-table-column type="index" label="#" min-width="50" />
           <el-table-column label="产品名" prop="product_name" min-width="180" show-overflow-tooltip sortable>
             <template #default="{ row }">

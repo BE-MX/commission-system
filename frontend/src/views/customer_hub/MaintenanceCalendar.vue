@@ -13,7 +13,7 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
     <section v-for="group in groups" :key="group.date ?? 'unknown'" class="lg-card day-group">
       <h3>{{ group.date || '日期未知' }} <span class="hint">{{ group.items.length }} 项</span></h3>
-      <el-table class="list-table" :data="group.items" size="small" border>
+      <el-table class="list-table" :data="group.items" size="small" border v-sticky-scrollbar>
         <el-table-column prop="plan_type" label="类型" min-width="90" />
         <el-table-column prop="title" label="事项" min-width="150" show-overflow-tooltip />
         <el-table-column prop="customer_id" label="客户" min-width="110">

@@ -120,7 +120,7 @@
           <div class="oi-section-note"><b>国家机会评分</b><span>{{ countries.score_definition }}</span></div>
           <ListPageStatus v-if="countriesResource.error.value && countries.items.length" :error="countriesResource.errorMessage.value"
             :loading="countriesResource.loading.value" :has-data="true" :paged="false" @retry="countriesResource.load()" />
-          <el-table :data="countries.items" border class="list-table">
+          <el-table :data="countries.items" border class="list-table" v-sticky-scrollbar>
             <template #empty><ListPageStatus :error="countriesResource.errorMessage.value" :loading="countriesResource.loading.value" :paged="false" @retry="countriesResource.load()"><el-empty description="暂无分析结果" /></ListPageStatus></template>
             <el-table-column type="expand" min-width="48">
               <template #default="{ row }">
@@ -156,7 +156,7 @@
           <div class="oi-section-note"><b>能力评估</b><span>{{ people.evaluation_note }}</span><el-radio-group v-model="peopleDimension" size="small" @change="changePeopleDimension"><el-radio-button label="user">个人</el-radio-button><el-radio-button label="team">团队</el-radio-button></el-radio-group></div>
           <ListPageStatus v-if="peopleResource.error.value && people.items.length" :error="peopleResource.errorMessage.value"
             :loading="peopleResource.loading.value" :has-data="true" :paged="false" @retry="peopleResource.load()" />
-          <el-table :data="people.items" border class="list-table">
+          <el-table :data="people.items" border class="list-table" v-sticky-scrollbar>
             <template #empty><ListPageStatus :error="peopleResource.errorMessage.value" :loading="peopleResource.loading.value" :paged="false" @retry="peopleResource.load()"><el-empty description="暂无分析结果" /></ListPageStatus></template>
             <el-table-column :label="peopleDimension === 'team' ? '团队' : '业务员'" prop="name" min-width="120" fixed />
             <el-table-column v-if="peopleDimension === 'user'" label="所属团队" prop="team" min-width="110" />
@@ -189,7 +189,7 @@
           </div>
           <ListPageStatus v-if="profilesResource.error.value && profiles.items.length" :error="profilesResource.errorMessage.value"
             :loading="profilesResource.loading.value" :has-data="true" :paged="false" @retry="profilesResource.load()" />
-          <el-table :data="profiles.items" border class="list-table">
+          <el-table :data="profiles.items" border class="list-table" v-sticky-scrollbar>
             <template #empty><ListPageStatus :error="profilesResource.errorMessage.value" :loading="profilesResource.loading.value" :paged="false" @retry="profilesResource.load()"><el-empty description="暂无分析结果" /></ListPageStatus></template>
             <el-table-column type="expand" min-width="48">
               <template #default="{ row }">
@@ -231,7 +231,7 @@
           <div class="action-bar">
             <TableTools v-model:visible-keys="customerVisibleKeys" v-model:density="customerDensity" :columns="customerColumnDefs" :fullscreen="customerIsFullscreen"  :loading="customerState.loading.value" @refresh="customerState.fetchList" @fullscreen="toggleCustomerFullscreen" />
           </div>
-          <el-table :data="customers.items" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640">
+          <el-table :data="customers.items" border class="list-table" :class="customerDensityClass" :max-height="customerIsFullscreen ? undefined : 640" v-sticky-scrollbar>
             <template #empty><ListPageStatus :error="customerState.errorMessage.value" :loading="customerState.loading.value" @retry="customerState.fetchList"><el-empty description="暂无客户行动" /></ListPageStatus></template>
             <el-table-column v-if="customerVisibleKeys.includes('company')" label="客户" prop="company_name" min-width="190" show-overflow-tooltip fixed />
             <el-table-column v-if="customerVisibleKeys.includes('country')" label="国家" prop="country" min-width="94" />
