@@ -1,10 +1,10 @@
-## 2026-10-05 订单发票一次确认自动删除（Codex，本地实现，未发布）
+## 2026-10-05 订单发票一次确认自动删除（Codex，已合并推送部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/invoice-cascade-delete/commission-system`，分支 `codex/invoice-cascade-delete`。订单发票页一次确认关联范围后，自动处理对应待出库、小满回款、未发送本地回款和小满订单；已进入人工取消的普通订单可接续。原发票、回款金额、手续费、凭证、验货与审计资料取消归档保留，不执行退款。
 - 完整范围/权限预检、确认版本、发送前关联内容复核、逐步持久意图与恢复；未知结果只核对，不重发。预售/批次、共享出库、已出库、库存预占及其他执行中/未知任务明确阻断。后端隔离联合回归89项、前端Node16项、真实组件浏览器模拟5场景、最终前端构建23.21s、约定与diff检查通过。独立审查3项修复闭环，并独立重跑8项回归；软删除有效列表、父单业务字段变更、陈旧出库镜像跨单影响均已覆盖。API 和生命周期文档同步，无数据库迁移。
-- 本地证据在该工作树 `tmp/invoice-deletion-frontend-build.log`、`tmp/invoice-deletion-browser-result.json` 与 `tmp/invoice-deletion-confirmation.png`；浏览器API全部拦截为示例数据，无真实业务写请求。no-fetch Git巡检为本地快照，未据此处理其他分支。临时Vite预览已停止。
-- 依赖复用链接 `frontend/node_modules`（junction，目标主目录现有依赖）清理被工具策略拒绝，已保留，不递归删除；主目录依赖未改动。
-- 尚未合并、推送、部署，也未对 `Rina-KC-1001` 或其他真实单据执行删除。主目录已有改动保持原样。
+- 应用候选 `8cbde90d` 已合入并推送 main，办公室统一入口准备与完整发布均退出0，release_id=`10690e46a8944b37b9770c52ba89870e`。两地实际HEAD一致、健康ok/connected，运行OpenAPI均含删除GET/POST；三域9项公网文件SHA256匹配候选。共享schema仍173，无DDL；出库timer恢复active/enabled，邮件Worker仍inactive/disabled、MainPID=0。见[发布报告](reports/2026-10-05-invoice-deletion-release.md)。
+- 浏览器API全部拦截为示例数据，无真实业务写请求；临时Vite已停止。准备/发布日志、生产核验及浏览器证据已保存在主目录 `.deploy_state/invoice-deletion-release/`。依赖复用junction的单独清理曾被工具策略拒绝，未递归删除目标依赖。
+- 未对 `Rina-KC-1001` 或其他真实单据执行删除。主目录原有23项改动独立备份恢复，不夹带入提交；no-fetch Git巡检仅为本地快照，不据此处理其他分支。
 
 ## 2026-10-04 列表布局与表头排序（Codex，已合并推送部署，邮件暂停）
 
