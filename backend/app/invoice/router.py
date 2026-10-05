@@ -1262,3 +1262,6 @@ def resolve_linked(invoice_id: int, identity: str, body: LinkedResolutionPayload
 
 from app.invoice.lifecycle_router import router as lifecycle_router
 router.include_router(lifecycle_router)
+
+from app.invoice.deletion_router import router as deletion_router
+router.include_router(deletion_router)

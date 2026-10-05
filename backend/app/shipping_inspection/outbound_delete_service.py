@@ -71,8 +71,9 @@ def _mirror_order_ids(db, invoice_id):
         'WHERE outbound_invoice_id=:id AND order_id IS NOT NULL'), {'id': invoice_id}).scalars()]
 
 
-def delete_outbound(db, record, user_id):
-    return _delete_outbound(db, record, user_id)
+def delete_outbound(db, record, user_id, *, expected_order_id=None, expected_snapshot=None):
+    return _delete_outbound(db, record, user_id, expected_order_id=expected_order_id,
+                            expected_snapshot=expected_snapshot)
 
 
 def task_version(task):
@@ -87,7 +88,8 @@ def sync_absent_outbound(db, record, active_ids, task_versions, retained_orders)
                             retained_orders=retained_orders)
 
 
-def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, retained_orders=()):
+def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, retained_orders=(),
+                     expected_order_id=None, expected_snapshot=None):
     invoice_id = str(record.get('outbound_invoice_id') or '')
     if not invoice_id.isdigit() or int(invoice_id) <= 0:
         raise OutboundDeleteError('该记录尚未生成有效的小满出库单，不能删除')
@@ -115,9 +117,15 @@ def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, 
             raise OutboundDeleteError('仅支持删除待出库单；已出库单请在小满处理')
         if not isinstance(current.get('record_list'), list):
             raise OutboundDeleteError('小满明细不完整，未删除')
+        if expected_order_id is not None and (not current['record_list'] or any(
+                str(row.get('order_id')) != str(expected_order_id) for row in current['record_list'])):
+            raise OutboundDeleteError('出库单已关联其他订单，不能随当前订单整张删除')
+        if expected_snapshot is not None and current != expected_snapshot:
+            raise OutboundDeleteError('出库单资料在确认后变化，请刷新后重新确认删除')
     order_ids = sorted({str(row['order_id']) for row in (current or {}).get('record_list', []) if row.get('order_id')})
     if current is None:
-        order_ids = sorted(_mirror_order_ids(db, invoice_id))
+        order_ids = ([str(expected_order_id)] if expected_order_id is not None
+                     else sorted(_mirror_order_ids(db, invoice_id)))
     # A replacement/partial live outbound still owns its existing task. Preserve
     # it when retiring an old mirror row for the same order.
     order_ids = [identity for identity in order_ids if identity not in retained_orders]

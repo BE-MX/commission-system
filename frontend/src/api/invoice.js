@@ -121,6 +121,16 @@ export function deleteInvoice(id) {
   return unwrap(request.delete(`/invoices/${id}`, { loadingText: '正在删除发票...' }))
 }
 
+export function previewInvoiceDeletion(id) {
+  return unwrap(request.get(`/invoices/${id}/deletion`, { showLoading: false, timeout: 300000 }))
+}
+
+export function deleteInvoiceWithRelated(id, data) {
+  return unwrap(request.post(`/invoices/${id}/deletion`, data, {
+    showLoading: false, suppressToast: true, timeout: 300000,
+  }))
+}
+
 export function validateInvoice(id) {
   return unwrap(request.post(`/invoices/${id}/validate`, null, { loadingText: '正在校验发票...' }))
 }

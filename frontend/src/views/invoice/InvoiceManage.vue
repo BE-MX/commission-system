@@ -108,7 +108,7 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="300" max-width="360" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
-              <el-button v-permission="'invoice:write'" link type="primary" :disabled="['cancel_pending','cancelled'].includes(row.status)" @click="openEdit(row.id)">
+              <el-button v-permission="'invoice:write'" link type="primary" :disabled="isInvoiceDeleting(row.id) || ['cancel_pending','cancelled'].includes(row.status)" @click="openEdit(row.id)">
                 <el-icon><Edit /></el-icon>
                 编辑
               </el-button>
@@ -117,7 +117,7 @@
                 link
                 type="warning"
                 :loading="isInvoiceSyncing(row.id)"
-                :disabled="['cancel_pending','cancelled'].includes(row.status)"
+                :disabled="isInvoiceDeleting(row.id) || ['cancel_pending','cancelled'].includes(row.status)"
                 @click="validateAndSync(row.id)"
               >
                 <el-icon><Refresh /></el-icon>
@@ -150,12 +150,16 @@
                       <el-dropdown-item :icon="Document" @click="openSyncLogs(row)">日志</el-dropdown-item>
                     </div>
                     <div v-permission="'invoice:admin'" role="none">
-                      <el-dropdown-item @click="openLifecycle(row)">取消 / 恢复</el-dropdown-item>
+                      <el-dropdown-item :disabled="isInvoiceDeleting(row.id)" @click="openLifecycle(row)">取消 / 恢复</el-dropdown-item>
                     </div>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button v-if="!row.xiaoman_order_id && !['cancel_pending','cancelled'].includes(row.status)" v-permission="'invoice:write'" link type="danger" @click="removeInvoice(row)">
+              <el-button v-if="usesRelatedInvoiceDeletion(row) && row.status !== 'cancelled'" v-permission="'invoice:admin'" link type="danger" :loading="isInvoiceDeleting(row.id)" :disabled="isInvoiceSyncing(row.id)" @click="removeInvoice(row)">
+                <el-icon><Delete /></el-icon>
+                {{ isInvoiceDeleting(row.id) ? '处理中' : row.status === 'cancel_pending' ? '继续删除' : '删除' }}
+              </el-button>
+              <el-button v-if="!usesRelatedInvoiceDeletion(row) && !['cancel_pending','cancelled'].includes(row.status)" v-permission="'invoice:write'" link type="danger" :loading="isInvoiceDeleting(row.id)" :disabled="isInvoiceSyncing(row.id)" @click="removeInvoice(row)">
                 <el-icon><Delete /></el-icon>
                 删除
               </el-button>
@@ -416,6 +420,7 @@ const {
   summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
   syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
   isInvoiceSyncing, resolveUncertain, validateAndSync,
+  isInvoiceDeleting, usesRelatedInvoiceDeletion,
   hasActiveFilters, handleSizeChange, orderTypeTone, resetFilters, statusOptions,
   columnDefs, density, densityClass, isFullscreen, panelRef, toggleFullscreen, visibleColumns, visibleKeys,
 } = listPage

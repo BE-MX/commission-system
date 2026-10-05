@@ -1,11 +1,13 @@
-import { promptAction, msgSuccess, confirmDanger } from '@/utils/feedback'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { promptAction, msgSuccess, confirmDanger, confirmAction, alertAction, notifyFeedback, isFeedbackCancelled } from '@/utils/feedback'
+import { computed, h, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 import { formatMoney } from '@/utils/money'
 import { useTableView } from '@/composables/useTableView'
 import { useListPage } from '@/composables/useListPage'
 import {
   deleteInvoice,
+  deleteInvoiceWithRelated,
+  previewInvoiceDeletion,
   downloadInvoiceExcel,
   downloadInvoicePdf,
   fetchInvoicePrintHtml,
@@ -15,6 +17,8 @@ import {
   resolveInvoiceSyncUncertain,
 } from '@/api/invoice'
 import { INVOICE_SYNC_OUTCOME, isInvoiceSyncing, validateThenSync } from './invoiceSyncFlow'
+import { createInvoiceSubmissionGuard } from './invoiceSubmissionGuard'
+import { runRelatedInvoiceDeletion, usesRelatedInvoiceDeletion } from './invoiceDeletionFlow'
 import { formatInvoiceDateTime } from './invoiceDateTime'
 import { currentBeijingDate } from '@/utils/datetime'
 
@@ -63,6 +67,8 @@ export function useInvoiceManagePage() {
   const syncLogs = ref([])
   const syncLogsTitle = ref('')
   let showIssues = () => {}
+  const deletionGuard = createInvoiceSubmissionGuard(reactive(new Set()))
+  const isInvoiceDeleting = id => deletionGuard.isPending(id)
 
   async function loadSummary() {
     const [dateFrom, dateTo] = summaryDateRange.value || []
@@ -176,10 +182,30 @@ export function useInvoiceManagePage() {
   }
 
   async function removeInvoice(row) {
-    await confirmDanger('删除', `发票 ${row.invoice_no}`)
-    await deleteInvoice(row.id)
-    msgSuccess('删除')
-    await Promise.all([listPage.refreshRemove(), loadSummary()])
+    if (row.status === 'cancelled' || isInvoiceSyncing(row.id)) return
+    try {
+      await deletionGuard.run(row.id, async () => {
+        if (usesRelatedInvoiceDeletion(row)) {
+          return runRelatedInvoiceDeletion(row.id, {
+            preview: previewInvoiceDeletion,
+            remove: deleteInvoiceWithRelated,
+            refresh: refreshUpdate,
+            notify: notifyFeedback,
+            isCancelled: isFeedbackCancelled,
+            showBlockers: message => alertAction(h('div', message.split('\n').map(line => h('p', line))), '暂时无法删除', { type: 'warning', confirmButtonText: '知道了' }),
+            confirm: message => confirmAction(h('div', message.split('\n').map(line => h('p', line))), '删除订单及关联单据', {
+              type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger',
+            }),
+          })
+        }
+        await confirmDanger('删除', `发票 ${row.invoice_no}`)
+        await deleteInvoice(row.id)
+        msgSuccess('删除')
+        await Promise.all([listPage.refreshRemove(), loadSummary()])
+      })
+    } catch (error) {
+      if (!isFeedbackCancelled(error)) throw error
+    }
   }
 
   function bindIssueHandler(handler) { showIssues = handler }
@@ -224,6 +250,7 @@ export function useInvoiceManagePage() {
     summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
     syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
     isInvoiceSyncing, resolveUncertain, validateAndSync,
+    isInvoiceDeleting, usesRelatedInvoiceDeletion,
     hasActiveFilters, handleSizeChange, orderTypeTone, resetFilters, statusOptions,
     columnDefs, density, densityClass, isFullscreen, panelRef, toggleFullscreen, visibleColumns, visibleKeys,
   }

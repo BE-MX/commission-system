@@ -40,6 +40,8 @@ def apply(invoice_id: int, body: LifecycleAction, db: Session = Depends(get_db),
     invoice = scope(db, invoice_id, user)
     actor = int(user["sub"])
     try:
+        if (invoice.cancellation or {}).get("deletion") and (invoice.cancellation or {}).get("status") != "remote_deleted":
+            raise ValueError("此订单已进入自动删除，请从订单发票列表的删除入口核对或继续原任务")
         if not body.confirmed:
             raise ValueError("请确认处理范围及核对依据")
         if body.action == "begin":
