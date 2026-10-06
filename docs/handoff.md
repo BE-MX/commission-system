@@ -1,3 +1,9 @@
+## 2026-10-07 私海与冻结列发布（Codex，已合并推送，部署待恢复 SSH）
+
+- 用户授权“合并推送部署”。私海修复候选 `e12cb42acd8afeb7c64711a05fa554e026828ab2` 已合入并推送 main，远端回读一致，包含先前冻结列提交 `1c839bbe`。严格增量约定及 diff 检查通过；主目录原23项未提交内容逐文件校验保留。
+- 办公室 `office-prod` 本机2223拒绝连接、2233也未监听，未进入统一部署入口，未切换生产或执行DDL。需恢复既有GameViewer办公室22端口转发，随后按固定候选继续prepare/publish；本机启动器与保留证据在 `.deploy_state/private-customer-release/`，任务worktree暂保留。
+- 实时只读后检：北京仍运行 `8cbde90d`，health=ok/connected，共享schema173；邮件Worker inactive/disabled、MainPID0，出库timer active/enabled。Derek线上查询126客户。数据修复已生效，冻结列及档案编译代码尚待发布；详见[修复与集成报告](reports/2026-10-07-private-customer-visibility-repair.md)。
+
 ## 2026-10-07 业务员私海客户可见性修复（Codex，数据修复完成，代码待集成）
 
 - 分支 `codex/customer-private-visibility-repair`。Derek 原有有效 OKKI 绑定，但 salesperson 缺 `customer:read`，且镜像中 126 个私海客户未进入统一客户域。已只加授该读取权限，保留原 59 项权限，不加 `customer:read_all`；权限审计 ID 71。Derek 126 个客户已完成归属、档案与列表投影回填，实际工作台查询及线上 GET 均确认 126 个，跨业务员访问拒绝。

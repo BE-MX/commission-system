@@ -26,8 +26,20 @@ Derek 已完成 126 个客户。只读数据库核验确认全部有效归属、
 
 联合隔离回归 `pytest tests/test_repair_private_customer_visibility.py tests/test_sync_okki_private_pool.py tests/test_customer_workflow.py tests/test_private_enrichment.py tests/test_customer_profile_compiler.py -q`：141 通过、1 跳过。MySQL 并发专用测试因未提供明确可销毁隔离库而跳过。新增回归覆盖权限增量审计和幂等、共享主负责决策、镜像归属变化阻断、失败回滚、非规范研究任务引用、行业和产品长度 128/129/512 及完整档案保留。独立 agent 审查已完成。早期曾产生 4 条截断产品标签的当前投影，已锁定账户并使用现有列表投影服务从不可变档案重建为未分类，原档案版本保留；再次核验无截断产品标签，超长市场值为 0。
 
-数据修复直接生效，不依赖应用部署。修复代码、测试与文档当前保留在本任务 worktree，未合并、推送或部署。此次未建立持续自动同步；后续新增客户需要复用受控回填入口，不能把一次回填当作自动同步水位。
+数据修复直接生效，不依赖应用部署。实现验收时修复代码、测试与文档保留在本任务 worktree；后续集成与发布状态见下节。此次未建立持续自动同步；后续新增客户需要复用受控回填入口，不能把一次回填当作自动同步水位。
 
 增量约定检查、暂存及未暂存差异检查通过；Git巡检采用 `--no-fetch`，仅为本地远端快照。主目录原有10项已跟踪改动及13项未跟踪内容保留，本任务7个文件在独立 worktree 内，不夹带其他代理成果。
 
 原始预览、回执、线上及只读验证、恢复启动器保留于 `D:/MyProgram/commission-system/backend/tmp/customer-private-visibility-repair/`；主目录与其他代理的无关改动保留。
+
+## 合并推送与部署阻塞
+
+用户随后授权“合并推送部署”。修复提交 `e12cb42acd8afeb7c64711a05fa554e026828ab2` 已在 Codex worktree 提交，在主目录快进 main 并推送 origin/main；远端 SHA 回读一致。候选同时包含 `1c839bbe` 的订单发票/出库列表冻结列修复。严格增量约定检查以 `1c839bbe` 为基点通过，提交差异检查通过。
+
+主目录原有10项已跟踪改动和13项未跟踪文件共23项已备份，合并后逐文件 SHA256 校验全部保留；交接文档只追加本任务前缀，原内容字节保留。集成后 Git 巡检 `--no-fetch` 确认 main 与本地 origin/main 同步，其余 worktree、分支和 stash 未清理。
+
+办公室统一入口准备命令已固定候选，但 SSH `office-prod` 所用本机2223端口拒绝连接；文档中的2233端口也未监听，未到达办公室部署入口。本次未执行生产服务切换或 DDL，不能将推送视为已部署。需要恢复既有 GameViewer 到办公室22端口的转发，再使用 `.deploy_state/private-customer-release/remote_release.py prepare` 和 `publish` 继续统一入口发布。
+
+阻塞期间实时只读核验：北京实际运行 HEAD=`8cbde90d9c4606e0bc1cf3e5116ff5724021e3f6`，本机后端 health=ok/database=connected；共享 schema=`173_task_center`。邮件 Worker 仍 inactive/disabled、MainPID=0，出库 timer active/enabled。Derek 线上查询再次 HTTP200/code200，total=126、首页20行。以上仅是当前状态核验，不能替代新候选发布后的验证。
+
+发布准备日志、固定命令及主目录保留核验在主目录 `.deploy_state/private-customer-release/`；客户数据与修复回执仍在上述忽略目录。任务 worktree 暂保留供发布恢复与验证。
