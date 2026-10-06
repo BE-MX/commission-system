@@ -284,6 +284,34 @@ def test_first_compile_publishes_immutable_version_and_current_projections(db):
     assert result.projections["list_projection"].status == "current"
 
 
+@pytest.mark.parametrize('length', [128, 129, 512])
+def test_long_industry_is_only_shortened_in_list_summary(db, length):
+    customer = _customer(db, f'long-industry-{length}')
+    value = '发' * length
+    fact = _fact(db, customer, key='business.industry', value=value, layer='source')
+    result = compile_customer_profile(db, customer.id)
+    version = db.get(CustomerProfileVersion, result.profile_version_id)
+    projection = db.get(CustomerListProjection, customer.id)
+    assert version.profile_json['business']['industry']['value'] == value
+    assert fact.value_json['value'] == value
+    assert projection.primary_industry == (value if length <= 128 else value[:127] + '…')
+    assert result.projections['list_projection'].status == 'current'
+
+
+@pytest.mark.parametrize('length', [128, 129, 512])
+def test_long_product_preference_is_not_fabricated_into_campaign_label(db, length):
+    customer = _customer(db, f'long-product-{length}')
+    value = '发' * length
+    fact = _fact(db, customer, key='preference.expressed.product_family', value=value, layer='source')
+    result = compile_customer_profile(db, customer.id)
+    version = db.get(CustomerProfileVersion, result.profile_version_id)
+    projection = db.get(CustomerListProjection, customer.id)
+    assert profile_service._primary_product(version.profile_json, safe_only=True) == value
+    assert fact.value_json['value'] == value
+    assert projection.primary_product_family == (value if length <= 128 else None)
+    assert result.projections['list_projection'].status == 'current'
+
+
 def test_profile_json_converts_business_datetimes_to_canonical_strings(db):
     customer = _customer(db, "json-datetimes")
     now = beijing_now()

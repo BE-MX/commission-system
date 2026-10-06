@@ -146,6 +146,20 @@ def test_snapshot_excludes_restricted_facts(db):
     assert [item["id"] for item in facts] == [public.id]
 
 
+@pytest.mark.parametrize('reference', ['not-a-task', '000', None])
+def test_profile_review_filter_requires_exact_task_reference(db, reference):
+    task = _task(db, policy=POLICY_VERSION, customer_code='reference-test')
+    public_pool_service.claim_task(db, task.id, 1, 'research-agent')
+    run = _governed_run(db, task)
+    task.agent_run_id = run.id
+    db.flush()
+    fact = _research_fact(db, task, run, suffix='reference')
+    run.business_ref_id = reference if reference != '000' else '000' + str(task.id)
+    db.flush()
+    snapshot = profile_service._load_snapshot(db, db.get(CustomerAccount, task.customer_id), beijing_now())
+    assert fact.id in {row['id'] for row in snapshot.facts}
+
+
 def test_snapshot_uses_latest_visible_manual_revision(db):
     customer = seeded(db)
     for value, visibility in [("old", "customer_team"), ("current", "customer_team"), ("secret", "management")]:

@@ -11,7 +11,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Callable, Mapping, Protocol
 
-from sqlalchemy import String, cast, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
@@ -379,13 +379,19 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     fact_by_id = {row.id: row for row in fact_rows}
     # Enrichment quality review never authorizes replacing the customer's existing profile.
     # Join through historical Runs: a task's current agent_run_id changes on retry.
-    review_only_runs = {row[0] for row in db.query(AgentRun.id).join(
-        CustomerResearchTask, AgentRun.business_ref_id == cast(CustomerResearchTask.id, String),
-    ).filter(
-        AgentRun.id.in_({row.agent_run_id for row in fact_rows if row.agent_run_id is not None}),
+    fact_run_ids = {row.agent_run_id for row in fact_rows if row.agent_run_id is not None}
+    referenced_runs = db.query(AgentRun.id, AgentRun.business_ref_id).filter(
+        AgentRun.id.in_(fact_run_ids),
         AgentRun.business_ref_type == "research_task",
+    ).all() if fact_run_ids else []
+    # Compare canonical reference strings in Python: MySQL CAST(id AS CHAR)
+    # inherits the connection collation, which can differ from business_ref_id.
+    task_ids = {int(ref) for _, ref in referenced_runs if ref and ref.isascii() and ref.isdecimal()}
+    review_task_ids = {str(row[0]) for row in db.query(CustomerResearchTask.id).filter(
+        CustomerResearchTask.id.in_(task_ids),
         CustomerResearchTask.research_policy_version == "private-enrichment-v1",
-    ).all()}
+    ).all()} if task_ids else set()
+    review_only_runs = {run_id for run_id, ref in referenced_runs if ref in review_task_ids}
     for row in fact_rows:
         if row.agent_run_id in review_only_runs:
             continue
@@ -1786,6 +1792,17 @@ def _upsert_list_projection(db: Session, version: CustomerProfileVersion, now: d
         "profile_version_id": version.id,
         "compiled_at": now,
     }
+    # Industry is a list summary; keep the full value in immutable profiles.
+    industry_limit = CustomerListProjection.__table__.columns.primary_industry.type.length
+    industry_label = values["primary_industry"]
+    if isinstance(industry_label, str) and len(industry_label) > industry_limit:
+        values["primary_industry"] = industry_label[:industry_limit - 1] + "…"
+    # Product labels also drive exact campaign matching. An overlong free-text
+    # preference cannot be represented as a standard label; do not invent one.
+    product_limit = CustomerListProjection.__table__.columns.primary_product_family.type.length
+    product_label = values["primary_product_family"]
+    if isinstance(product_label, str) and len(product_label) > product_limit:
+        values["primary_product_family"] = None
     if row is None:
         db.add(CustomerListProjection(customer_id=version.customer_id, **values))
     else:
