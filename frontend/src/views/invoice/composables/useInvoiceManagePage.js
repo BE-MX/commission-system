@@ -48,8 +48,8 @@ export function useInvoiceManagePage() {
 
   // 列配置数组：TableTools 列显隐的数据源 + 表格渲染驱动（Action Bar Spec / List Page Spec 第 9 节）
   const columnDefs = [
-    { key: 'invoice_no', label: '发票号', prop: 'invoice_no', minWidth: 220, maxWidth: 320, className: 'invoice-number-column' },
-    { key: 'customer_name', label: '客户', prop: 'customer_name', minWidth: 180, maxWidth: 260, tooltip: true },
+    { key: 'invoice_no', label: '发票号', prop: 'invoice_no', minWidth: 220, maxWidth: 320, className: 'invoice-number-column', fixed: 'left' },
+    { key: 'customer_name', label: '客户', prop: 'customer_name', minWidth: 180, maxWidth: 260, tooltip: true, fixed: 'left' },
     { key: 'order_type', label: '类型', minWidth: 110, maxWidth: 130 },
     { key: 'invoice_date', label: '日期', prop: 'invoice_date', minWidth: 116, maxWidth: 150 },
     { key: 'item_count', label: '明细', prop: 'item_count', minWidth: 80, maxWidth: 120, align: 'right' },

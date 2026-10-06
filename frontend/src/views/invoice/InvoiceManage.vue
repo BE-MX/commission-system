@@ -90,6 +90,7 @@
           :label="column.label"
           :min-width="column.minWidth"
           :max-width="column.maxWidth"
+          :fixed="column.fixed"
           :align="column.align"
           :class-name="column.className"
           :show-overflow-tooltip="Boolean(column.tooltip)"

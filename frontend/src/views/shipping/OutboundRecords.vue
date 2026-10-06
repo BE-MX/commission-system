@@ -34,9 +34,8 @@
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
           </el-empty>
         </ListPageStatus></template>
-        <el-table-column sortable="custom" v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip />
-        <el-table-column sortable="custom" v-if="visibleKeys.includes('order-id')" prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
-        <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('outbound-no')" prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip fixed="left" />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('customer-name')" prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip fixed="left" />
         <el-table-column sortable="custom" v-if="visibleKeys.includes('outbound-date')" prop="outbound_date" label="出库日期" min-width="120">
           <template #default="{ row }">
             <template v-if="row.record_source === 'ark_task'">
@@ -147,7 +146,6 @@ const auth = useAuthStore()
 // 列配置数组：TableTools 列显隐的数据源；模板列保持静态 + v-if（推广期约定，不做配置化渲染）
 const columnDefs = [
   { key: 'outbound-no', label: '出库单号' },
-  { key: 'order-id', label: '订单 ID' },
   { key: 'customer-name', label: '客户名称' },
   { key: 'outbound-date', label: '出库日期' },
   { key: 'item-count', label: '明细 / 数量' },
@@ -189,9 +187,9 @@ function handleSortChange({ prop, order }) { return listPageState.handleSortChan
   background: transparent;
 }
 
-.outbound-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.outbound-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.outbound-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+.outbound-panel :deep(.el-table :where(.el-table-fixed-column--left, .el-table-fixed-column--right)) { background-color: rgba(249, 244, 234, 0.97); }
+.outbound-panel :deep(th:is(.el-table-fixed-column--left, .el-table-fixed-column--right)) { background-color: rgba(246, 239, 226, 0.98); }
+.outbound-panel :deep(.el-table__body tr:hover > td:is(.el-table-fixed-column--left, .el-table-fixed-column--right)) { background-color: rgba(245, 236, 220, 0.98); }
 
 .queue-note { color: var(--text-secondary); }
 small.queue-note { display: block; margin-top: 4px; }

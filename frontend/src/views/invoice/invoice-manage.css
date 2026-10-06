@@ -90,16 +90,16 @@
   background: transparent;
 }
 
-/* 右侧固定操作列：Element 2.13 起是 sticky 单元格 + background: inherit，
+/* 两侧固定列：Element 2.13 起是 sticky 单元格 + background: inherit，
    行透明时滑到它下面的内容会透上来重影。改成磨砂但不透明的暖白，
    表头/hover 态同步（Element 的 hover 规则会把固定列刷成半透明白，必须覆盖） */
-.invoice-panel :deep(.el-table-fixed-column--right) {
+.invoice-panel :deep(.el-table :where(.el-table-fixed-column--left, .el-table-fixed-column--right)) {
   background-color: rgba(249, 244, 234, 0.97);
 }
-.invoice-panel :deep(th.el-table-fixed-column--right) {
+.invoice-panel :deep(th:is(.el-table-fixed-column--left, .el-table-fixed-column--right)) {
   background-color: rgba(246, 239, 226, 0.98);
 }
-.invoice-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+.invoice-panel :deep(.el-table__body tr:hover > td:is(.el-table-fixed-column--left, .el-table-fixed-column--right)) {
   background-color: rgba(245, 236, 220, 0.98);
 }
 

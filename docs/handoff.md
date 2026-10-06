@@ -1,3 +1,9 @@
+## 2026-10-07 订单发票与出库列表冻结列（Codex，已验证）
+
+- 分支 `codex/invoice-outbound-frozen-columns`，工作树 `C:/Users/windb/.codex/worktrees/invoice-outbound-frozen-columns/commission-system`。订单发票列表固定左侧发票号、客户；出库单打印列表固定现有出库单号、客户名称，移除订单 ID 表格列及列设置项。旧列偏好自动剔除已移除键，保留订单 ID 搜索。
+- 固定列沿用原右侧操作列底色并扩展到左侧，防止透明表格横向滚动重影。25 项既有前端检查、前端构建、增量约定与 diff 检查通过；真实 Vue 页面使用拦截 API 的示例数据验证两列保持固定、其余列滚动及旧偏好清理。独立代码审查通过。无后端、打印文档或数据库变更。
+- 用户已授权合并并推送 main，本轮不部署。Git 巡检使用 `--no-fetch`，仅为本地快照；浏览器与构建证据交付至主目录 `tmp/invoice-outbound-frozen-columns/`，任务工作树在集成后清理。
+
 ## 2026-10-05 订单发票一次确认自动删除（Codex，已合并推送部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/invoice-cascade-delete/commission-system`，分支 `codex/invoice-cascade-delete`。订单发票页一次确认关联范围后，自动处理对应待出库、小满回款、未发送本地回款和小满订单；已进入人工取消的普通订单可接续。原发票、回款金额、手续费、凭证、验货与审计资料取消归档保留，不执行退款。
