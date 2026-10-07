@@ -43,3 +43,7 @@ Derek 已完成 126 个客户。只读数据库核验确认全部有效归属、
 阻塞期间实时只读核验：北京实际运行 HEAD=`8cbde90d9c4606e0bc1cf3e5116ff5724021e3f6`，本机后端 health=ok/database=connected；共享 schema=`173_task_center`。邮件 Worker 仍 inactive/disabled、MainPID=0，出库 timer active/enabled。Derek 线上查询再次 HTTP200/code200，total=126、首页20行。以上仅是当前状态核验，不能替代新候选发布后的验证。
 
 发布准备日志、固定命令及主目录保留核验在主目录 `.deploy_state/private-customer-release/`；客户数据与修复回执仍在上述忽略目录。任务 worktree 暂保留供发布恢复与验证。
+
+## 部署恢复与完成
+
+用户恢复办公室转发并要求重试后，固定候选`e12cb42acd8afeb7c64711a05fa554e026828ab2`已完成统一入口准备及完整发布，release_id=`accce2153fc74dac919366034e4afd0c`。两地版本与健康、三域18项静态摘要和两地Derek126客户查询均通过，schema仍173，无DDL。上节连接阻塞已解除；详见[生产发布报告](2026-10-07-private-customer-release.md)。

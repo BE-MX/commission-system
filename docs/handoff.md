@@ -1,3 +1,9 @@
+## 2026-10-07 私海与冻结列发布完成（Codex，已合并推送部署）
+
+- 办公室SSH转发恢复后按用户要求重试，固定应用候选`e12cb42acd8afeb7c64711a05fa554e026828ab2`准备与完整发布均退出0，release_id=`accce2153fc74dac919366034e4afd0c`，scope=office-and-cloud，deferred=[]。两地实际HEAD一致、health=ok/connected，共享schema173，无DDL。
+- 三域18项公网入口/JS/CSS摘要匹配，包含发票与出库冻结列资源。Derek在.work与.cloud只读查询均126客户；2432回填客户实时归属及投影核验无异常，42共享客户仍待核对，原有主负责保留。邮件Worker仍inactive/disabled/MainPID0，出库timer恢复active/enabled。
+- 原23项主目录改动校验保留。发布证据在`.deploy_state/private-customer-release/`；详见[生产发布报告](reports/2026-10-07-private-customer-release.md)。以下SSH阻塞记录作为历史过程保留，当前已解除。
+
 ## 2026-10-07 私海与冻结列发布（Codex，已合并推送，部署待恢复 SSH）
 
 - 用户授权“合并推送部署”。私海修复候选 `e12cb42acd8afeb7c64711a05fa554e026828ab2` 已合入并推送 main，远端回读一致，包含先前冻结列提交 `1c839bbe`。严格增量约定及 diff 检查通过；主目录原23项未提交内容逐文件校验保留。
