@@ -1602,6 +1602,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - `GET /api/invoice/invoices/{id}/deletion`：`invoice:admin` + 发票范围；只读预览完整关联出库、回款、金额、阻碍和执行进度，返回 `version`、`invoice_no`、`outbounds`、`receipts`、`local_receipt_count`、`blockers`、`progress`、`complete`。
 - `POST /api/invoice/invoices/{id}/deletion`：同入口权限；请求 `{expected_version, confirmed:true}`，无需另填原因。先验证完整确认范围与全部下游权限，再冻结并按待出库→回款→订单顺序删除；返回 `{status,message,steps}`，`status` 为 `remote_deleted/blocked/uncertain/running`。未确认或版本变化返回409；权限不足403、范围不可见404。
 - 有出库时要求 `shipping_inspection:delete` + 出库数据范围；有回款时要求 `receipt:admin` + 回款数据范围。预售、批次回款、共享出库、已出库、库存未恢复及执行中/未知结果的其他任务不自动删除。步骤意图与原始依据写入现有取消 JSON 和审计日志；未知删除不重发，再次提交仅核对原结果并接续未发送步骤。小满删单后方舟保留取消归档、回款凭证和审计，不执行退款。详见 [单据生命周期](invoice-lifecycle.md)。
+- 回款详情仍可读时，以同秒完整窗口的有效/删除列表双轮一致证据及原单关联回读判定软删除，不能用财务生效状态代替删除状态。列表不完整、超过100条、重复ID、原单变化或读取失败仍阻断；已发送的未知删除仅核验，不重发。
 
 |方法|路径（/api/invoice前缀）|说明|
 |---|---|---|

@@ -12,7 +12,7 @@ from app.core.time import beijing_now
 from app.invoice import cancellation_service, lifecycle_remote, linked_outbound_service, okki_client, service
 from app.invoice.linked_sync_service import edit_version
 from app.invoice.models import OkkiOutboundTask
-from app.receipt import access, remote, service as receipts
+from app.receipt import access, deletion_evidence, remote, service as receipts
 from app.receipt.models import Receipt, ReceiptIntent
 from app.semifinished.models import InvoiceAllocation
 from app.shipping_inspection import outbound_delete_service, outbound_service, outbound_sync_state
@@ -156,8 +156,7 @@ def collect(db, invoice, user):
         elif row.sync_status == "syncing":
             blockers.append("回款正在发送，请稍后再删除")
         if row.xiaoman_receipt_id and row.xiaoman_receipt_id not in remote_ids:
-            # A missing detail AND a complete active index are required to release it.
-            if lifecycle_remote.read(db, "receipt", row.xiaoman_receipt_id) is not None:
+            if not _receipt_absent(db, invoice.xiaoman_order_id, row.xiaoman_receipt_id, invoice.currency):
                 blockers.append(f"回款 {row.receipt_no} 详情与有效列表不一致")
         if not row.xiaoman_receipt_id and row.sync_status not in {"pending", "failed"}:
             blockers.append(f"回款 {row.receipt_no} 尚未明确远端结果")
@@ -210,10 +209,8 @@ def _step(db, identity, token, key, value, actor):
     return flow
 
 
-def _receipt_absent(db, order_id, identity):
-    if lifecycle_remote.read(db, "receipt", identity) is not None:
-        return False
-    return not any(str(r["cash_collection_id"]) == identity for r in remote.order_receipts(db, order_id))
+def _receipt_absent(db, order_id, identity, currency):
+    return deletion_evidence.absent(db, order_id, identity, currency)
 
 
 def _delete_receipt(db, invoice_id, token, row, actor):
@@ -225,7 +222,7 @@ def _delete_receipt(db, invoice_id, token, row, actor):
     if state == "done":
         return
     if state in {"sending", "uncertain"}:
-        if not _receipt_absent(db, invoice.xiaoman_order_id, identity):
+        if not _receipt_absent(db, invoice.xiaoman_order_id, identity, invoice.currency):
             raise ValueError("原回款删除结果待核对，未重复发送删除")
     else:
         api_token = okki_client.ensure_access_token(db)
@@ -241,10 +238,10 @@ def _delete_receipt(db, invoice_id, token, row, actor):
                 lifecycle_remote.request(api_token, "receipt", identity, remove=True)
             except okki_client.OkkiApiError as exc:
                 _warn(exc)
-            if not _receipt_absent(db, invoice.xiaoman_order_id, identity):
+            if not _receipt_absent(db, invoice.xiaoman_order_id, identity, invoice.currency):
                 _step(db, invoice_id, token, key, {"status": "uncertain", "before": row}, actor)
                 raise ValueError("小满回款删除结果待核对，未继续删除订单")
-        elif not _receipt_absent(db, invoice.xiaoman_order_id, identity):
+        elif not _receipt_absent(db, invoice.xiaoman_order_id, identity, invoice.currency):
             raise ValueError("回款删除证据不一致")
     _step(db, invoice_id, token, key, {"status": "done", "before": row}, actor)
 
@@ -301,7 +298,7 @@ def run(db, identity, user, expected_version):
             if row.status != "active":
                 continue
             if row.xiaoman_receipt_id:
-                if not _receipt_absent(db, invoice.xiaoman_order_id, row.xiaoman_receipt_id):
+                if not _receipt_absent(db, invoice.xiaoman_order_id, row.xiaoman_receipt_id, invoice.currency):
                     raise ValueError("仍有有效回款，未继续删除订单")
                 invoice = _owned(db, identity, token)
                 db.refresh(row, with_for_update=True)

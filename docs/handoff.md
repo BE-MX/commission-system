@@ -1,3 +1,9 @@
+## 2026-10-07 回款软删除核验修复（Codex，发布准备中）
+
+- `Rina-KC-1001` 的关联出库已删除，回款 `105824479304117` 也在小满删除列表，但详情仍可读；旧判断把它当成删除结果未知，导致预览和接续同时阻断。现在增加原单绑定、同秒完整有效/删除列表双轮一致和详情回读核验。未知请求只核验，不重发；金额、手续费、凭证保留，无数据库迁移。
+- 工作树 `C:/Users/windb/.codex/worktrees/receipt-soft-delete/commission-system`、分支 `codex/receipt-soft-delete`。两条先失败后通过的软删除回归及相关删除联合测试106通过，严格约定和diff检查通过；候选helper已通过真实回款只读核验，未执行业务写入。独立审查与用户已授权的合并推送部署正在收尾。
+- 生产诊断证据在主目录 `.deploy_state/rina-deletion-debug/`；主目录原23项改动完整备份在 `.deploy_state/receipt-soft-delete-release/`，不夹带入修复提交。
+
 ## 2026-10-07 私海与冻结列发布完成（Codex，已合并推送部署）
 
 - 办公室SSH转发恢复后按用户要求重试，固定应用候选`e12cb42acd8afeb7c64711a05fa554e026828ab2`准备与完整发布均退出0，release_id=`accce2153fc74dac919366034e4afd0c`，scope=office-and-cloud，deferred=[]。两地实际HEAD一致、health=ok/connected，共享schema173，无DDL。
