@@ -1,8 +1,9 @@
-## 2026-10-07 提成批次计算排序规则修复（Codex，本地完成，已授权合并推送部署）
+## 2026-10-07 提成批次计算排序规则修复（Codex，已合并推送部署）
 
 - 批次 `2026-3`（ID 10，2026-07-01 至 2026-09-30）点击计算提示数据库连接失败。共享库只读复现实际错误为 MySQL 1267：订单 ID 的多余 `CAST AS CHAR` 引入连接排序规则，与运费应收订单 ID 列冲突。直接比较同类型、同排序规则的列即可修复，无数据库迁移，不改提成规则。
-- 工作树 `C:/Users/windb/.codex/worktrees/commission-batch-collation/commission-system`，分支 `codex/commission-batch-collation`。MySQL 查询编译回归先失败后通过，提成计算、批次状态、回款同步隔离测试 48 项通过；独立审查无阻断问题，增量约定和 diff 检查通过。排查说明同步至 `docs/runbook.md`；已执行 `git_sweep.py --no-fetch`，巡检仅为本地快照，不据此处理其他任务。
-- 修复候选读取真实数据得到 2,045 条待计算回款、1,125 条候选明细，在首条写 SQL 发送前拦截；只读事务和应用写拦截双重约束。复核批次仍为草稿，明细和已计算标记均为 0。用户已授权合并、推送和部署，正在按统一入口准备固定候选；生产切换尚未完成。
+- 实现分支 `codex/commission-batch-collation`。MySQL 查询编译回归先失败后通过，提成计算、批次状态、回款同步隔离测试 48 项通过，合并后再验证 48 项通过；独立审查无阻断问题，增量约定和 diff 检查通过。排查说明同步至 `docs/runbook.md`；Git 巡检采用 `--no-fetch`，仅为本地快照。
+- 应用候选 `77fec60c` 已合入并推送 main，通过办公室统一入口完成准备和正式发布，均退出0，release_id=`e377cc72330848fa9beb9c9054cdd6a0`。两地实际HEAD一致、health=ok/connected、计算POST路由存在；schema173无DDL，三域9项公网文件摘要匹配。出库timer恢复active/enabled，邮件Worker保持inactive/disabled/MainPID0。
+- 两端运行源码摘要与候选一致，真实批次只读验证均得到 2,045 条待计算回款、1,125 条候选明细、920 条归属不完整跳过、计算错误0；第一条写SQL发送前被拦截。批次仍为草稿，明细和已计算标记均为0，可从页面再次执行计算。原23项主目录改动保留，发布及核验证据在 `.deploy_state/commission-collation-release/`；详见[发布记录](reports/2026-10-07-commission-collation-release.md)。
 
 ## 2026-10-07 回款软删除核验修复（Codex，已合并推送部署）
 
