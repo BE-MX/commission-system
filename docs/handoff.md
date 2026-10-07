@@ -1,14 +1,15 @@
-## 2026-10-07 提成批次计算排序规则修复（Codex，本地完成，待发布授权）
+## 2026-10-07 提成批次计算排序规则修复（Codex，本地完成，已授权合并推送部署）
 
 - 批次 `2026-3`（ID 10，2026-07-01 至 2026-09-30）点击计算提示数据库连接失败。共享库只读复现实际错误为 MySQL 1267：订单 ID 的多余 `CAST AS CHAR` 引入连接排序规则，与运费应收订单 ID 列冲突。直接比较同类型、同排序规则的列即可修复，无数据库迁移，不改提成规则。
 - 工作树 `C:/Users/windb/.codex/worktrees/commission-batch-collation/commission-system`，分支 `codex/commission-batch-collation`。MySQL 查询编译回归先失败后通过，提成计算、批次状态、回款同步隔离测试 48 项通过；独立审查无阻断问题，增量约定和 diff 检查通过。排查说明同步至 `docs/runbook.md`；已执行 `git_sweep.py --no-fetch`，巡检仅为本地快照，不据此处理其他任务。
-- 修复候选读取真实数据得到 2,045 条待计算回款、1,125 条候选明细，在首条写 SQL 发送前拦截；只读事务和应用写拦截双重约束。复核批次仍为草稿，明细和已计算标记均为 0。未提交、合并、推送或部署，待具体发布授权。
+- 修复候选读取真实数据得到 2,045 条待计算回款、1,125 条候选明细，在首条写 SQL 发送前拦截；只读事务和应用写拦截双重约束。复核批次仍为草稿，明细和已计算标记均为 0。用户已授权合并、推送和部署，正在按统一入口准备固定候选；生产切换尚未完成。
 
-## 2026-10-07 回款软删除核验修复（Codex，发布准备中）
+## 2026-10-07 回款软删除核验修复（Codex，已合并推送部署）
 
 - `Rina-KC-1001` 的关联出库已删除，回款 `105824479304117` 也在小满删除列表，但详情仍可读；旧判断把它当成删除结果未知，导致预览和接续同时阻断。现在增加原单绑定、同秒完整有效/删除列表双轮一致和详情回读核验。未知请求只核验，不重发；金额、手续费、凭证保留，无数据库迁移。
-- 工作树 `C:/Users/windb/.codex/worktrees/receipt-soft-delete/commission-system`、分支 `codex/receipt-soft-delete`。两条先失败后通过的软删除回归及相关删除联合测试106通过，严格约定和diff检查通过；候选helper已通过真实回款只读核验，未执行业务写入。独立审查与用户已授权的合并推送部署正在收尾。
-- 生产诊断证据在主目录 `.deploy_state/rina-deletion-debug/`；主目录原23项改动完整备份在 `.deploy_state/receipt-soft-delete-release/`，不夹带入修复提交。
+- 应用候选 `9e7b3876` 已合入并推送 main，办公室统一入口准备与完整发布均退出0，release_id=`a9f06404f03b497b9452a4f547fb0770`。两地实际HEAD一致、health=ok/connected，schema173无DDL；三域9项公网文件摘要匹配。出库timer恢复active/enabled，邮件Worker仍inactive/disabled/MainPID0。
+- 两条先失败后通过的软删除回归及相关联合测试106通过，合并后复验106通过，独立审查及新增17项复验通过，严格约定和diff检查通过。生产真实订单只读预览blockers为空，保留原步骤与账本，未发送任何删除POST；可在订单发票点击“继续删除”接续。详见[发布记录](reports/2026-10-07-receipt-soft-delete-release.md)。
+- 生产诊断证据在主目录 `.deploy_state/rina-deletion-debug/`；发布、核验及原23项改动备份恢复材料在 `.deploy_state/receipt-soft-delete-release/`，不夹带入提交。
 
 ## 2026-10-07 私海与冻结列发布完成（Codex，已合并推送部署）
 
