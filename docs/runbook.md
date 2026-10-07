@@ -39,6 +39,14 @@ Settings：`AI_GATEWAY_MAX_OUTPUT_TOKENS=4096`、`AI_GATEWAY_TIMEOUT_SEC=60`（�
 > **文档口径核对**：2026-09-17（不代表本文所有专题已重新生产验收）
 > **目标读者**：运维人员、项目交接人员
 
+## 提成批次计算提示数据库连接失败
+
+该提示来自全局 `OperationalError` 处理，不能单凭文案判断数据库断线。2026-10-07 对批次 `2026-3`（2026-07-01 至 2026-09-30）的只读核验复现 MySQL 1267：运费回款排除查询将 `synced_payment.order_id` 做 `CAST AS CHAR`，结果继承连接的 `utf8mb4_0900_ai_ci`，与 `ark_receivables.remote_order_id` 的 `utf8mb4_unicode_ci` 冲突。[MySQL 文档](https://dev.mysql.com/doc/refman/8.0/en/cast-functions.html)说明了字符串转换继承连接排序规则的行为。
+
+两个字段实际均为 `VARCHAR(64)`、`utf8mb4_unicode_ci`，修复为直接比较列，保留运费排除、日期范围和已计算回款去重；无需更改数据库排序规则或迁移。SQLite 无法复现此 MySQL 错误，回归测试额外捕获实际计算查询并按 MySQL 编译，防止重新引入转换；同时验证普通回款照常计提、运费回款不写明细或已计算标记。
+
+重试计算前先只读检查批次状态、明细和已计算标记，确认前次执行是否已经提交，不手工删除业务数据。此批次在本次排查后仍为 `draft`，两类记录均为 0。修复候选只读验证查询返回 2,045 条待计算回款，生成 1,125 条候选明细后在第一条写 SQL 发送前拦截，未执行真实计算写入。上线状态以 `handoff.md` 和发布证据为准。
+
 ## 环境准备
 
 ### DHL 物流刷新鉴权失败

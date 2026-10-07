@@ -6,7 +6,7 @@ from datetime import datetime
 from app.core.time import beijing_now
 from decimal import Decimal
 
-from sqlalchemy import cast, exists, String
+from sqlalchemy import exists
 from sqlalchemy.orm import Session
 
 from app.models.commission import (
@@ -71,7 +71,9 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
             ),
             ~exists().where(
                 Receivable.kind == "freight",
-                Receivable.remote_order_id == cast(SyncedPayment.order_id, String),
+                # Both IDs are VARCHAR(64) with the same column collation.
+                # CAST AS CHAR uses the connection collation and can cause MySQL 1267.
+                Receivable.remote_order_id == SyncedPayment.order_id,
             ),
         )
         .all()

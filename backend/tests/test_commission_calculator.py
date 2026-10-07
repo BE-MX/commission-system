@@ -2,7 +2,8 @@
 
 from datetime import date
 from decimal import Decimal
-from sqlalchemy import text
+from sqlalchemy import event, text
+from sqlalchemy.dialects import mysql
 
 from app.models.commission import (
     CommissionBatch, CommissionDetail, SyncedPayment, PaymentCommissionStatus,
@@ -15,6 +16,30 @@ from app.services.commission_calculator import (
 
 class TestCommissionCalculator:
     """提成计算测试"""
+
+    def test_pending_order_comparison_preserves_column_collation(
+        self, db, seed_employees, seed_synced_payments, seed_complete_snapshot, seed_draft_batch,
+    ):
+        # SQLite cannot reproduce MySQL 1267. Capture the actual calculation query
+        # and compile it for MySQL: CAST AS CHAR would replace the column's
+        # utf8mb4_unicode_ci with the connection's utf8mb4_0900_ai_ci.
+        queries = []
+
+        def capture_query(_conn, _cursor, _statement, _parameters, context, _executemany):
+            if context.compiled is not None and context.compiled.statement.is_select:
+                queries.append(str(context.compiled.statement.compile(dialect=mysql.dialect())))
+
+        connection = db.connection()
+        event.listen(connection, "before_cursor_execute", capture_query)
+        try:
+            result = calculate_commission(db, seed_draft_batch.id)
+        finally:
+            event.remove(connection, "before_cursor_execute", capture_query)
+
+        pending_query = next(q for q in queries if "ark_receivables" in q)
+        assert "ark_receivables.remote_order_id = synced_payment.order_id" in pending_query
+        assert result.total_payments == 3
+        assert db.query(PaymentCommissionStatus).filter_by(batch_id=seed_draft_batch.id).count() == 3
 
     def test_existing_freight_payment_is_excluded_from_calculation(
         self, db, seed_employees, seed_synced_payments, seed_complete_snapshot, seed_draft_batch,
@@ -30,8 +55,14 @@ class TestCommissionCalculator:
                              customer_id="CUST001", payment_date=date(2026, 4, 2),
                              payment_amount=Decimal("1.00"), service_fee=Decimal("0")))
         db.flush()
-        calculate_commission(db, seed_draft_batch.id)
+        result = calculate_commission(db, seed_draft_batch.id)
+        assert result.total_payments == 3
+        assert result.total_salesperson_commission == Decimal("200.00")
+        assert {row.payment_id for row in db.query(CommissionDetail).all()} == {
+            "PAY001", "PAY002", "PAY003",
+        }
         assert db.query(CommissionDetail).filter_by(payment_id="FREIGHT-R1").first() is None
+        assert db.query(PaymentCommissionStatus).filter_by(payment_id="FREIGHT-R1").first() is None
 
     def test_dual_develop(self, db, seed_employees, seed_synced_payments,
                           seed_complete_snapshot, seed_draft_batch):
