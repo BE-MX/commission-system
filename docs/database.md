@@ -640,3 +640,22 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 | `ark_customer_work_item_source_deliveries` | 来源观察的持久去重水位；重复或乱序通知以实时源对象重新观察，不将旧载荷覆盖新状态。 |
 
 网站、选品页等服务入口复用已有 `ark_customer_annotations` 的受治理备注：`content_schema_version=v1`、`content_json.kind=service_asset_v1`，保留登记和撤销记录，不新增网站效果指标表。客户合并/拆分继续由现有 annotation 逻辑归属和隐私裁剪处理。
+
+
+## 174_domestic_decision（父173_task_center，本地未部署）
+
+新增七张分析域表，原内贸订单/账本作为事实源，没有复制生产业务库或改写历史。
+
+| 表 | 用途及约束 |
+| --- | --- |
+| `ark_domestic_analysis_attr_mappings` | 人工标准属性；property/product_type/raw_value唯一，版本避免覆盖修改，不回写原单。 |
+| `ark_domestic_analysis_config` | key主键，JSON值、版本、维护人；迁移仅登记受控AI假设模板，不伪造历史覆盖起点。 |
+| `ark_domestic_analysis_events` | 原业务事务内必要before/after，稳定source_event_key唯一，实体/客户/订单/归属/操作人/业务日/北京时间；删除明细保留必要快照，不含联系方式或凭证。 |
+| `ark_domestic_analysis_runs` | UUID、本人、查询、结果、授权客户集合、资金标识、数据指纹、创建/到期；交互证据1天，读取重复鉴权，下钻检查来源版本。 |
+| `ark_domestic_analysis_views` | 本人查询与rolling/fixed时间模式；共享仅过滤条件，乐观版本。 |
+| `ark_domestic_analysis_actions` | 当前客户内部行动、来源/请求指纹、固定证据、负责人、期限、状态、实际结果与条件变化；(owner,source_key)和(owner,request_key)唯一，转交查重在客户锁内完成。 |
+| `ark_domestic_analysis_jobs` | 本人brief/export/plan任务、请求指纹、固定run引用、queued/running/succeeded/failed、开始/结束与结果；(owner,kind,request_key)唯一，下载24小时有效且重复鉴权。 |
+
+所有用户FK为unsigned INT，账本源entity_id支持BIGINT；时间统一北京时间。六项新权限只登记，旧角色不自动获得读取、资金或全量范围。权限撤销/客户转移立即作用于新请求的结果读取、任务、证据和下载。迁移降级明确拒绝删除审计/报告/行动数据，修复采用前向迁移。
+
+迁移已在内存SQLite隔离验证，不等于MySQL线上迁移。生产依[统一发布入口](../deploy/README.md)部署并核验容量；数据库约束、MySQL并发及大样本性能还需目标环境验证。详见[模块说明](domestic-decision.md)。

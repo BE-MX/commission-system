@@ -1,0 +1,35 @@
+/* Standalone prototype snapshot of the Ark palette. No production imports. */
+:root {
+  --gold: #d4941c;
+  --gold-strong: #976211;
+  --gold-button: #e0a50b;
+  --gold-soft: #fdf4dc;
+  --gold-line: #edddb8;
+  --teal: #0f8479;
+  --teal-soft: #eaf6f2;
+  --red: #bf5549;
+  --red-soft: #fcf0ec;
+  --blue: #527da5;
+  --blue-soft: #eef3f8;
+  --purple: #877c9c;
+  --ink: #262a32;
+  --secondary: #636b77;
+  --muted: #89909a;
+  --border: #e8e9ec;
+  --surface: #ffffff;
+  --background: #f6f7f9;
+  --table: #fafbfc;
+  --nav: #191916;
+  --nav-text: #a2a49c;
+  --nav-active: #f5cb5c;
+  --nav-active-bg: #343022;
+  --nav-border: #33342f;
+  --on-dark: #f9f9f5;
+  --track: #f0f1f3;
+  --overlay: #161a234d;
+  --shadow: 0 4px 20px #282d3b04;
+  --drawer-shadow: -16px 0 64px #1d233216;
+  --ease-out: cubic-bezier(.23,1,.32,1);
+  --font: "DM Sans", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --heading: "Outfit", "Segoe UI", "Microsoft YaHei", sans-serif;
+}

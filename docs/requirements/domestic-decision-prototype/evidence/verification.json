@@ -1,0 +1,50 @@
+[
+  {
+    "case": "order and ledger reconciliation",
+    "result": "pass",
+    "counts": {
+      "errors": [],
+      "orders": 353,
+      "customers": 18,
+      "ledger": 502
+    }
+  },
+  {
+    "case": "all seven pages and desktop overflow",
+    "result": "pass"
+  },
+  {
+    "case": "same-line multi-attribute filters and heatmap evidence",
+    "result": "pass"
+  },
+  {
+    "case": "customer search, profile, task persistence and completion",
+    "result": "pass"
+  },
+  {
+    "case": "saved views, simulated AI brief and CSV export",
+    "result": "pass"
+  },
+  {
+    "case": "incompatible attribute empty state",
+    "result": "pass"
+  },
+  {
+    "case": "review regressions: financial scope, matched evidence, missing history and modal focus",
+    "result": "pass"
+  },
+  {
+    "case": "390px mobile layout, navigation and drawer with reduced motion",
+    "result": "pass"
+  },
+  {
+    "case": "offline file opening without dependencies",
+    "result": "pass",
+    "standalone_html": "pass: overview and products, no runtime errors"
+  },
+  {
+    "case": "browser runtime errors",
+    "result": "pass",
+    "errors": []
+  }
+]

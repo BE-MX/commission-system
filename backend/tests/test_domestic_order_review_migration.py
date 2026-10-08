@@ -153,7 +153,9 @@ def test_complete_validation_is_read_only_and_rejects_missing_objects(monkeypatc
 def test_revision_graph_has_one_head_and_ids_fit_version_column():
     scripts = ScriptDirectory(str(ROOT / "alembic"))
     revisions = list(scripts.walk_revisions())
-    assert scripts.get_heads() == ["149_dom_order_review_columns"]
+    heads = scripts.get_heads()
+    assert len(heads) == 1
+    assert "149_dom_order_review_columns" in {item.revision for item in scripts.iterate_revisions(heads[0], "base")}
     assert all(len(item.revision) <= 32 for item in revisions)
     assert len({item.revision for item in revisions}) == len(revisions)
     assert scripts.get_revision("149_dom_order_review_columns").down_revision == "148_domestic_customer_requests"

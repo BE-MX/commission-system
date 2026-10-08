@@ -633,3 +633,7 @@ class DomesticSkipUnit(Base):
     __table_args__ = (
         UniqueConstraint("skip_log_id", "unit_id", name="uq_dom_skip_log_unit"),
     )
+
+
+# Register transactional evidence capture after all business models exist.
+from app.domestic_decision import event_hooks as _analysis_event_hooks  # noqa: E402,F401

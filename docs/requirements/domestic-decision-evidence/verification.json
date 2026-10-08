@@ -1,0 +1,70 @@
+{
+  "results": [
+    {
+      "case": "real API page and independent order/ledger reconciliation",
+      "result": "pass",
+      "orders": 14,
+      "amount": 34500
+    },
+    {
+      "case": "all seven tabs and desktop overflow",
+      "result": "pass"
+    },
+    {
+      "case": "chart PNG exports title, period and scope metadata",
+      "result": "pass"
+    },
+    {
+      "case": "server sorts complete evidence pool and retains accessible sort state",
+      "result": "pass"
+    },
+    {
+      "case": "same-line product AND filters, whole-order distinction and quantity bins",
+      "result": "pass",
+      "matched": 24300,
+      "whole": 32700
+    },
+    {
+      "case": "personal rolling view persists filters on server",
+      "result": "pass"
+    },
+    {
+      "case": "customer profile uses full commercial history and factual preferences",
+      "result": "pass"
+    },
+    {
+      "case": "internal action creation and actual-result closure",
+      "result": "pass"
+    },
+    {
+      "case": "rule brief survives refresh with persistent job recovery",
+      "result": "pass"
+    },
+    {
+      "case": "private asynchronous CSV download excludes historical evidence",
+      "result": "pass"
+    },
+    {
+      "case": "natural-language plan previews before user application",
+      "result": "pass"
+    },
+    {
+      "case": "data quality, reconciliation and versioned admin configuration load",
+      "result": "pass"
+    },
+    {
+      "case": "390px layout with contained table scrolling",
+      "result": "pass"
+    },
+    {
+      "case": "sales role removes financial fields at API and UI boundaries",
+      "result": "pass"
+    },
+    {
+      "case": "browser runtime has no uncaught errors",
+      "result": "pass"
+    }
+  ],
+  "uncaught_errors": [],
+  "complete": true
+}

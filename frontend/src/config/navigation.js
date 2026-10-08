@@ -118,7 +118,7 @@ export const MENU_GROUPS = {
   domestic: {
     title: '内贸订单',
     icon: Tickets,
-    anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin'],
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin', 'domestic_decision:read'],
   },
   shipping: {
     title: '发货检验',
@@ -909,6 +909,14 @@ export const NAV_ENTRIES = [
   },
 
   // ── 内贸订单 ───────────────────────────────────────────
+  {
+    path: '/domestic/decision',
+    name: 'DomesticDecision',
+    component: () => import('@/views/domestic_decision/DomesticDecision.vue'),
+    title: '内贸经营决策台',
+    permission: 'domestic_decision:read',
+    menu: { group: 'domestic', title: '内贸经营决策台', icon: DataAnalysis, order: 9, permission: 'domestic_decision:read' },
+  },
   {
     path: '/domestic/orders',
     name: 'DomesticOrders',

@@ -384,6 +384,7 @@ def _prepare_order_products(
     user_id: int,
     order_kind: str = "business",
 ) -> list[tuple[OrderItemInput, DomesticProduct]]:
+    db.info["domestic_actor_id"] = user_id
     prepared = []
     for line_no, payload in enumerate(payloads, start=1):
         if order_kind == "production":
@@ -456,6 +457,7 @@ def _ensure_order_creator(order: DomesticOrder, user_id: int | None) -> None:
 
 def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
     """保存草稿或正式下单；正式单与余额扣款在同一事务完成。"""
+    db.info["domestic_actor_id"] = user_id
     try:
         request_hash = _order_request_hash(payload) if payload.request_id else None
         if payload.request_id:
@@ -1276,6 +1278,7 @@ def update_order(
     payload: OrderUpdate,
     user_id: int | None = None,
 ) -> DomesticOrder | dict:
+    db.info["domestic_actor_id"] = user_id
     try:
         if "customer_id" in payload.model_fields_set:
             _ensure_sqlite_outer_transaction(db)
@@ -1428,6 +1431,7 @@ def add_item(
     user_id: int | None = None,
     *, draft_only: bool = False,
 ) -> dict:
+    db.info["domestic_actor_id"] = user_id
     try:
         # SQLite must reserve the writer slot before reading next_line_no or
         # checking read-then-create attribute rows; otherwise two connections
@@ -1531,6 +1535,7 @@ def _apply_item_attrs(
     工艺路线只随产品类型走，而产品类型不允许在这里改（改了会让在制工序失真）；
     成交价保持下单口径，不随规格重算 —— 需要改价走 unit_price。
     """
+    db.info["domestic_actor_id"] = user_id
     production = order_kind_service.is_production(order)
     attrs_model = ProductionProductAttrs if production else ProductAttrs
     try:
@@ -1569,6 +1574,7 @@ def update_item(
     user_id: int | None = None,
 ) -> DomesticOrderItem:
     """改明细。数量不能改到低于任一工序已完成的数量 —— 那会让守恒关系失真。"""
+    db.info["domestic_actor_id"] = user_id
     order, item = _lock_order_then_item(db, item_id)
     _ensure_order_creator(order, user_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
@@ -1652,6 +1658,7 @@ def update_item(
 
 def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
     """有报工记录的明细不能删 —— 删了车间的工时就凭空消失了。"""
+    db.info["domestic_actor_id"] = user_id
     order, item = _lock_order_then_item(db, item_id)
     _ensure_order_creator(order, user_id)
     reported = db.query(func.count(DomesticReportLog.id)).filter(
@@ -1702,6 +1709,7 @@ def attach_route(
     user_id: int | None = None,
 ) -> dict:
     """给缺路线的在制明细补配工艺路线（漏配映射后的补救路径）。"""
+    db.info["domestic_actor_id"] = user_id
     order, item = _lock_order_then_item(db, item_id)
     _ensure_order_creator(order, user_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
@@ -1751,6 +1759,7 @@ def submit_draft(
     user_id: int,
 ) -> dict:
     """Reprice a saved draft and deduct the confirmed amount exactly once."""
+    db.info["domestic_actor_id"] = user_id
     try:
         _ensure_sqlite_outer_transaction(db)
         order = _get_order_or_raise(db, order_id, lock=True)
@@ -1865,6 +1874,7 @@ def review_order(
 
     待审核单从未扣款，驳回不需要退款；报价以提交时快照为准，审核不重算。
     """
+    db.info["domestic_actor_id"] = reviewer_id
     try:
         order = _get_order_or_raise(db, order_id, lock=True)
         if order.status != C.ORDER_PENDING_REVIEW:
@@ -1919,6 +1929,7 @@ def ship_item(
     user_id: int | None = None,
 ) -> DomesticOrderItem:
     """登记发货。首版要求全工序做齐才允许发货。"""
+    db.info["domestic_actor_id"] = user_id
     order, item = _lock_order_then_item(db, item_id)
     _ensure_order_creator(order, user_id)
     if order_kind_service.is_production(order):
@@ -1946,6 +1957,7 @@ def terminate_order(
     reason: str | None,
     user_id: int | None = None,
 ) -> DomesticOrder:
+    db.info["domestic_actor_id"] = user_id
     try:
         order = _get_order_or_raise(db, order_id, lock=True)
         _ensure_order_creator(order, user_id)
@@ -1972,6 +1984,7 @@ def delete_order(
     db: Session, order_id: int, user_id: int | None = None, *, allow_non_draft: bool = True,
 ) -> None:
     """软删。已有报工记录的订单只能终止，不能删。"""
+    db.info["domestic_actor_id"] = user_id
     order = _get_order_or_raise(db, order_id, lock=True)
     _ensure_order_creator(order, user_id)
     if not allow_non_draft and order.status != C.ORDER_DRAFT:

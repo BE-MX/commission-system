@@ -1,0 +1,94 @@
+﻿内贸经营决策台,当前状态重算,订单金额不等于充值或收入
+period,"{""start_date"": ""2026-10-01"", ""end_date"": ""2026-10-08""}"
+comparison_period,"{""start_date"": ""2026-09-23"", ""end_date"": ""2026-09-30""}"
+data_as_of,"""2026-10-08T12:38:10.271434"""
+metric_version,"""domestic-v1"""
+mapping_version,"{""1"": 1, ""2"": 1, ""3"": 1, ""4"": 1}"
+rule_version,"""rules-v1"""
+scope_summary,"{""mode"": ""mine"", ""customer_count"": 18, ""actor_id"": 1}"
+warnings,"[""仅为本公司内贸成交需求样本，不代表全行业市场"", ""历史订单按当前有效状态重算；未重建当时版本"", ""业务员归因采用当前客户负责人，历史业绩归属未知""]"
+
+orders
+id,domestic_no,customer_id,order_date,order_kind,order_category,order_type,order_channel,status,deleted_flag,total_amount,created_by,updated_at,charged_amount
+27,QA02009,3,2026-10-02,business,normal,normal,wechat,1,0,3300.0,2,2026-10-08T12:37:17.350071,3300.0
+47,QA04009,5,2026-10-03,business,normal,normal,wechat,1,0,2400.0,2,2026-10-08T12:37:17.374648,2400.0
+64,QA06009,7,2026-10-04,business,normal,normal,wechat,1,0,1500.0,2,2026-10-08T12:37:17.396689,1500.0
+84,QA08009,9,2026-10-02,business,normal,normal,wechat,1,0,3300.0,2,2026-10-08T12:37:17.421706,3300.0
+121,QA12009,13,2026-10-04,business,normal,normal,wechat,1,0,1500.0,2,2026-10-08T12:37:17.469761,1500.0
+141,QA14009,15,2026-10-02,business,normal,normal,wechat,1,0,3300.0,2,2026-10-08T12:37:17.495327,3300.0
+158,QA16009,17,2026-10-03,business,normal,normal,wechat,1,0,2400.0,2,2026-10-08T12:37:17.517912,2400.0
+178,QA18009,19,2026-10-04,business,normal,normal,wechat,1,0,1500.0,2,2026-10-08T12:37:17.547193,1500.0
+215,QA22009,23,2026-10-03,business,normal,normal,wechat,1,0,2400.0,2,2026-10-08T12:37:17.602788,2400.0
+235,QA24009,25,2026-10-04,business,normal,normal,wechat,1,0,1500.0,2,2026-10-08T12:37:17.628838,1500.0
+252,QA26009,27,2026-10-02,business,normal,normal,wechat,1,0,3300.0,2,2026-10-08T12:37:17.650870,3300.0
+272,QA28009,29,2026-10-03,business,normal,normal,wechat,1,0,2400.0,2,2026-10-08T12:37:17.677364,2400.0
+309,QA32009,33,2026-10-02,business,normal,normal,wechat,1,0,3300.0,2,2026-10-08T12:37:17.727456,3300.0
+329,QA34009,35,2026-10-03,business,normal,normal,wechat,1,0,2400.0,2,2026-10-08T12:37:17.752470,2400.0
+
+items
+id,order_id,product_id,line_no,product_name,attrs,raw_attrs,order_qty,unit_price,amount,original_price,labor_fee,discount_amount,membership_level_snapshot,pricing_rule,pricing_version,base_price_version_snapshot,updated_at,customer_id
+53,27,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",3,900.0,2700.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.351080,3
+54,27,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.351080,3
+93,47,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",2,900.0,1800.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.376620,5
+94,47,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.376620,5
+127,64,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",1,900.0,900.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.398703,7
+128,64,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.398703,7
+167,84,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",3,900.0,2700.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.423705,9
+168,84,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.423705,9
+241,121,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",1,900.0,900.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.471774,13
+242,121,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.471774,13
+281,141,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",3,900.0,2700.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.497340,15
+282,141,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.497340,15
+315,158,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",2,900.0,1800.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.518903,17
+316,158,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.518903,17
+355,178,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",1,900.0,900.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.550181,19
+356,178,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.550181,19
+429,215,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",2,900.0,1800.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.603800,23
+430,215,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.603800,23
+469,235,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",1,900.0,900.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.630851,25
+470,235,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.630851,25
+503,252,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",3,900.0,2700.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.652857,27
+504,252,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.652857,27
+543,272,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",2,900.0,1800.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.679378,29
+544,272,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.679378,29
+617,309,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",3,900.0,2700.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.728462,33
+618,309,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.728462,33
+657,329,1,1,验收头套,"{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""黑色""}","{""product_type"": ""cap"", ""craft"": ""蕾丝"", ""net_color"": ""棕网"", ""size"": ""M"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""black""}",2,900.0,1800.0,900.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.754462,35
+658,329,2,2,验收发块,"{""product_type"": ""piece"", ""craft"": ""U型"", ""net_color"": ""不适用"", ""size"": ""13*15"", ""length"": ""15厘米"", ""density"": ""不适用"", ""hair_style_series"": ""不适用"", ""color"": ""红色""}","{""product_type"": ""piece"", ""craft"": ""U型13*15"", ""net_color"": ""棕网"", ""size"": ""U型13*15"", ""length"": ""15厘米"", ""density"": ""120"", ""hair_style_series"": ""直发"", ""color"": ""red""}",1,600.0,600.0,600.0,0.0,0.0,silver,base_price,qa-v1,1,2026-10-08T12:37:17.754462,35
+
+ledger
+id,customer_id,order_id,transaction_type,amount,balance_before,balance_after,created_at,operator_user_id
+30,3,27,order_charge,-3300.0,13050.0,9750.0,2026-10-02T10:00:00,1
+31,3,,recharge,1000.0,9750.0,10750.0,2026-10-06T10:00:00,1
+54,5,47,order_charge,-2400.0,13050.0,10650.0,2026-10-03T10:00:00,1
+55,5,,recharge,1000.0,10650.0,11650.0,2026-10-06T10:00:00,1
+75,7,64,order_charge,-1500.0,13200.0,11700.0,2026-10-04T10:00:00,1
+76,7,,recharge,1000.0,11700.0,12700.0,2026-10-06T10:00:00,1
+97,9,84,order_charge,-3300.0,13050.0,9750.0,2026-10-02T10:00:00,1
+98,9,,recharge,1000.0,9750.0,10750.0,2026-10-06T10:00:00,1
+119,11,,recharge,1000.0,18100.0,19100.0,2026-10-06T10:00:00,1
+142,13,121,order_charge,-1500.0,13200.0,11700.0,2026-10-04T10:00:00,1
+143,13,,recharge,1000.0,11700.0,12700.0,2026-10-06T10:00:00,1
+165,15,141,order_charge,-3300.0,-21950.0,-25250.0,2026-10-02T10:00:00,1
+185,17,158,order_charge,-2400.0,13050.0,10650.0,2026-10-03T10:00:00,1
+186,17,,recharge,1000.0,10650.0,11650.0,2026-10-06T10:00:00,1
+209,19,178,order_charge,-1500.0,13200.0,11700.0,2026-10-04T10:00:00,1
+210,19,,recharge,1000.0,11700.0,12700.0,2026-10-06T10:00:00,1
+231,21,,recharge,1000.0,16950.0,17950.0,2026-10-06T10:00:00,1
+252,23,215,order_charge,-2400.0,13050.0,10650.0,2026-10-03T10:00:00,1
+253,23,,recharge,1000.0,10650.0,11650.0,2026-10-06T10:00:00,1
+276,25,235,order_charge,-1500.0,13200.0,11700.0,2026-10-04T10:00:00,1
+277,25,,recharge,1000.0,11700.0,12700.0,2026-10-06T10:00:00,1
+297,27,252,order_charge,-3300.0,13050.0,9750.0,2026-10-02T10:00:00,1
+298,27,,recharge,1000.0,9750.0,10750.0,2026-10-06T10:00:00,1
+320,29,272,order_charge,-2400.0,-21950.0,-24350.0,2026-10-03T10:00:00,1
+341,31,,recharge,1000.0,18950.0,19950.0,2026-10-06T10:00:00,1
+364,33,309,order_charge,-3300.0,13050.0,9750.0,2026-10-02T10:00:00,1
+365,33,,recharge,1000.0,9750.0,10750.0,2026-10-06T10:00:00,1
+388,35,329,order_charge,-2400.0,13050.0,10650.0,2026-10-03T10:00:00,1
+389,35,,recharge,1000.0,10650.0,11650.0,2026-10-06T10:00:00,1
+
+requests
+id,customer_id,request_type,amount,status,created_at,reviewed_at
+1,1,recharge,3000.0,pending,2026-10-08T12:37:17.322581,
+3,19,recharge,3000.0,pending,2026-10-08T12:37:17.550181,

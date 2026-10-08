@@ -221,11 +221,13 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"receipt:read_all", "tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
+_DATA_KIND_CODES = {"receipt:read_all", "tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "domestic_decision:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
 def _perm_kind(code: str, action: str) -> str:
+    if code == "domestic_decision_finance:read":
+        return "action"
     if code in _DATA_KIND_CODES:
         return "data"
     if action == "read" or code in _PAGE_KIND_EXTRA:
@@ -360,6 +362,12 @@ def seed_role_permissions(db: Session):
         ("domestic:read_all",     "domestic", "read_all",     "查看全部内贸订单（数据范围）"),
         ("domestic:recharge",     "domestic", "recharge",     "内贸客户充值 / 余额与等级初始化 / 临时调整 / 余额流水"),
         ("domestic:review",       "domestic", "review",       "审核内贸充值/调整申请与优惠价订单"),
+        ("domestic_decision:read", "domestic_decision", "read", "内贸经营决策台"),
+        ("domestic_decision:read_all", "domestic_decision", "read_all", "全部内贸客户经营范围"),
+        ("domestic_decision_finance:read", "domestic_decision_finance", "read", "内贸经营资金阅读"),
+        ("domestic_decision_action:write", "domestic_decision_action", "write", "内贸经营行动记录"),
+        ("domestic_decision_report:write", "domestic_decision_report", "write", "内贸经营简报与导出"),
+        ("domestic_decision:admin", "domestic_decision", "admin", "内贸分析规则与映射"),
         ("domestic_customer:admin", "domestic", "admin", "管理员可以显示所有客户的操作按钮"),
         ("domestic_quantity_report:write", "domestic", "write", "内贸小程序：输入数量报工模式"),
         ("domestic_unit_report:write",     "domestic", "write", "内贸小程序：逐件二维码报工模式"),
@@ -620,6 +628,8 @@ def seed_role_permissions(db: Session):
 
     # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
     manual_grant_codes = {
+        "domestic_decision:read", "domestic_decision:read_all", "domestic_decision:admin",
+        "domestic_decision_finance:read", "domestic_decision_action:write", "domestic_decision_report:write",
         "mini_export:write", "mini_domestic:write", "mini_lookup:read", "mini_shipping:write",
         "domestic_customer:admin",
         "operations:admin",

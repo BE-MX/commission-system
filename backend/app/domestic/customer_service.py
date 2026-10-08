@@ -147,10 +147,13 @@ def release_stale_private_customers(db: Session) -> int:
     if not stale_ids:
         return 0
 
-    released = db.query(DomesticCustomer).filter(
-        DomesticCustomer.id.in_(stale_ids),
-        DomesticCustomer.owner_user_id.isnot(None),
-    ).update({"owner_user_id": None}, synchronize_session=False)
+    # ORM changes let the analysis event hook preserve before/after ownership
+    # in this transaction, including automatic public-pool release.
+    released = 0
+    for customer in locked_rows:
+        if customer.id in stale_ids and customer.owner_user_id is not None:
+            customer.owner_user_id = None
+            released += 1
     db.commit()
     return released
 
@@ -270,6 +273,7 @@ def list_customers(
 
 def find_or_create_by_shop_name(db: Session, shop_name: str, user_id: int) -> DomesticCustomer:
     """下单时就地新建客户走这里。同名视为同一客户。"""
+    db.info["domestic_actor_id"] = user_id
     name = (shop_name or "").strip()
     if not name:
         raise ValueError("客户店名不能为空")
@@ -311,6 +315,7 @@ def _validate_owner(db: Session, owner_user_id: int | None) -> None:
 
 
 def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> DomesticCustomer:
+    db.info["domestic_actor_id"] = user_id
     if db.query(DomesticCustomer).filter(DomesticCustomer.shop_name == payload.shop_name).first():
         raise ValueError(f"客户「{payload.shop_name}」已存在")
     if payload.custom_code and db.query(DomesticCustomer).filter(
@@ -348,6 +353,7 @@ def update_customer(
     *,
     can_operate_all: bool = False,
 ) -> DomesticCustomer:
+    db.info["domestic_actor_id"] = operator_id
     customer = db.query(DomesticCustomer).filter(
         DomesticCustomer.id == customer_id
     ).with_for_update().first()
@@ -386,6 +392,7 @@ def delete_customer(
     *, can_operate_all: bool = False,
 ) -> None:
     """有订单的客户不删只停用 —— 删了历史订单就查不到客户名了。"""
+    db.info["domestic_actor_id"] = operator_id
     customer = db.query(DomesticCustomer).filter(
         DomesticCustomer.id == customer_id
     ).with_for_update().first()
@@ -450,6 +457,7 @@ def initialize_customer(
     等级在这里是显式指定而非充值派生——老客户线下已有余额/约定等级，
     建档时一次写入；之后的充值仍按金额重新核定等级。
     """
+    db.info["domestic_actor_id"] = user_id
     customer = _lock_customer_row(db, customer_id)
     _ensure_customer_operator(customer, user_id, can_operate_all=can_operate_all)
     amount = balance_service.money(payload.balance)
@@ -493,6 +501,7 @@ def adjust_customer(
     等级覆盖是临时的——下一次成功充值仍按当次金额重新核定等级。
     幂等：同一 request_id 重放返回首个结果，不重复入账、不重复写审计行。
     """
+    db.info["domestic_actor_id"] = user_id
     customer = _lock_customer_row(db, customer_id)
     _ensure_customer_operator(customer, user_id, can_operate_all=can_operate_all)
     amount = balance_service.money(payload.amount)

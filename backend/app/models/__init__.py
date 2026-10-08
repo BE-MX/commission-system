@@ -308,3 +308,5 @@ __all__ = [
     "IntegrationApp",
     "InvoiceIngestRequest",
 ]
+
+from app.domestic_decision import models as _domestic_decision_models  # noqa: F401

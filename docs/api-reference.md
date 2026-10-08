@@ -1684,3 +1684,36 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - 管理员批量入口：在 backend 目录执行 `python -m scripts.private_customer_research create --all-private --enrichment --run-tag <稳定批次标识> --dry-run`，检查范围后去掉 `--dry-run` 创建。`--owners` 与 `--all-private` 互斥。禁止开发、不可解析客户分别计入跳过回执；写入前须确认所有档案编译实例已发布本策略的候选隔离。
 
 邮件草稿 `POST /api/mail-outreach/drafts` 可传 `internal_test: true`（默认 false），仅邮件管理员且收件地址明确列入白名单时可用。模式保存在 revision evidence_snapshot；后续编辑、再生成、审批和临发保持并复查；试发不写客户触达/分类时间线。
+
+
+## 内贸经营决策台（本地实现，未部署）
+
+统一前缀 `/api/domestic-decision`；JSON 使用标准 `ok()` 信封，文件下载返回原始 CSV/JSON。口径及上线配置见 [模块说明](domestic-decision.md)。基础权限 `domestic_decision:read`，数据范围按当前客户负责人；全量还需 `domestic_decision:read_all`。服务端重新从数据库读取权限，旧 JWT 声明不能扩大范围。
+
+| 方法 | 相对路径 | 请求与结果 |
+| --- | --- | --- |
+| GET | `/filters` | 当前可见客户、业务员、运行时选项和能力；无资金权限无结算/会员选项。 |
+| POST | `/analysis-runs` | `AnalysisRequest` → 一致性结果、`meta.run_id`、数据/指标/映射/配置版本、覆盖率及固定证据。 |
+| GET | `/analysis-runs/{id}` | 本人固定结果；每次复核当前权限/归属。 |
+| GET | `/analysis-runs/{id}/rows` | `kind=orders/items/customers/ledger/requests`，`page`、`page_size<=200`，可传 `customer_id/order_id/dimension/value`；`sort_field`按kind白名单，`sort_order=asc/desc`，完整筛选快照先排序再分页、空值末尾；非法排序422，来源变化409，过期410。 |
+| POST | `/finance-runs` | 同查询，基础+资金阅读权限；返回meta及资金桥接。 |
+| GET | `/customers/{id}/profile` | `start_date/end_date`，当前画像+完整授权购买历史、成熟cohort、偏好与推荐。 |
+| GET | `/salespeople/{id}/profile` | 同日期，当前负责人组合及比较窗口；不假称历史业绩。 |
+| GET | `/evidence/{kind}/{id}` | `order/item/ledger/request`（兼容复数路径值）；必要字段白名单，资金证据需资金权限。 |
+| POST | `/data-quality` | 同查询，返回质量/加权覆盖/对账问题，未改原数据。 |
+| GET/POST | `/views` | 本人/已分享条件；创建 `{name,query,time_mode:rolling/fixed,shared}`。 |
+| PATCH/DELETE | `/views/{id}` | 仅本人，更新需 `expected_version`。分享不分享客户数据权限。 |
+| GET/POST | `/actions` | 当前客户内部行动；创建需行动权限及 `{run_id,customer_id,rule_key,request_key,due_date}`，服务端查真实建议和去重。 |
+| PATCH | `/actions/{id}` | 行动权限+本人当前负责；`expected_version,status,result,result_type`。完成需真实结果，状态为todo/in_progress/done/dismissed。 |
+| POST | `/briefs`、`/exports` | 报告权限；`{run_id,request_key,focus,format}` 返回持久任务。focus=executive/customer/product/finance，format=csv/json；资金focus需资金权限。 |
+| POST | `/query-plans` | 报告权限，同任务请求加 `question`（3–500字）；结果为受控查询预览，需用户应用，不自动执行。 |
+| GET | `/briefs` | 本人最近50项简报，已失权结果剔除。 |
+| GET | `/briefs/{id}`、`/exports/{id}`、`/query-plans/{id}` | 当前任务状态queued/running/succeeded/failed；复核基础/报告/资金权限和生成时客户集合。 |
+| GET | `/exports/{id}/download` | 本人成功任务，24小时私有有效期，下载时重复授权校验；默认导出当前筛选事实，历史证据不混入。 |
+| GET/POST | `/mappings` | 管理权限；`property=color/craft/size,product_type,raw_value,standard_value,expected_version`；映射仅用于分析。 |
+| GET | `/settings` | 管理权限；当前版本配置。 |
+| PUT | `/settings/{key}` | 管理权限；`{expected_version,value}`，支持coverage_start、aftersales_order_types、quality_threshold、dormant_days、ai_daily_limit、inactive_lifecycle_statuses、coverage_refund_ratio_limit。 |
+
+`AnalysisRequest`：`start_date/end_date`（含首尾，北京业务日，1–1096天）、`comparison_mode=previous/year/none`、`scope=mine/all`、`customer_ids`、`owner_ids`、`filters`（字段→字符串值列表）、`dimensions`（最多2个白名单字段）、`metric=amount/quantity/order_count/customer_count`、`finance_related_customers`（默认false）。所有规格过滤以同一明细AND命中；资金默认不继承产品过滤。无资金权限禁止结算/会员过滤和分组。
+
+409表示来源、版本或幂等内容冲突，需刷新或使用与原内容一致的请求号；429为每日AI预算超限。简报/查询计划模型输出必须通过程序事实和范围校验；未配置或无效输出降级为真实规则事实。后台任务中断十分钟后显式失败，不把排队说成已生成。

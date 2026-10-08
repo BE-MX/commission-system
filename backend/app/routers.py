@@ -36,6 +36,7 @@ from app.mcp.token_admin import router as mcp_token_router
 from app.pm.router import router as pm_router
 from app.dashboard.router import router as dashboard_router
 from app.domestic.router import router as domestic_router
+from app.domestic_decision.router import router as domestic_decision_router
 from app.festival.public_router import router as festival_public_router
 from app.festival.router import router as festival_router
 from app.card.router import router as card_admin_router
@@ -76,6 +77,7 @@ from app.fx_settlement.router import router as fx_settlement_router
 def register_routers(app: FastAPI) -> None:
     """注册所有业务路由到 FastAPI app"""
     app.add_middleware(PublicSecurityHeadersMiddleware)
+    app.include_router(domestic_decision_router, prefix="/api/domestic-decision", tags=["内贸经营决策"])
     app.include_router(fx_settlement_router, prefix="/api/fx-settlement", tags=["结汇决策"])
     app.add_middleware(PortalSecurityHeadersMiddleware)
     app.include_router(auth_router, prefix="/api/auth", tags=["认证"])

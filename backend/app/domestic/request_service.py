@@ -31,6 +31,7 @@ def _validate_request_id(request_id: str | None, action: str) -> str:
 
 
 def _lock_customer(db: Session, customer_id: int, user_id: int, can_operate_all: bool) -> DomesticCustomer:
+    db.info["domestic_actor_id"] = user_id
     customer = db.query(DomesticCustomer).filter(
         DomesticCustomer.id == customer_id,
     ).populate_existing().with_for_update().first()
@@ -87,6 +88,7 @@ def create_recharge_request(
     can_operate_all: bool = False,
 ) -> dict:
     """充值申请：必须附银行流水/转账截图；审核通过前余额不变。"""
+    db.info["domestic_actor_id"] = user_id
     request_id = _validate_request_id(request_id, "充值")
     amount = balance_service.money(amount)
     if amount <= 0:
@@ -130,6 +132,7 @@ def create_adjust_request(
     can_operate_all: bool = False,
 ) -> dict:
     """调整申请：余额增减与/或会员等级覆盖，审核通过才生效。"""
+    db.info["domestic_actor_id"] = user_id
     request_id = _validate_request_id(payload.request_id, "调整")
     amount = balance_service.money(payload.amount)
     change_membership = "membership_level" in payload.model_fields_set
@@ -270,6 +273,7 @@ def approve_request(
     后到者看到状态已变直接报错，不会出现「钱已入账但申请被驳回」的交错。
     账本侧另有 recharge:/adjust: 幂等键兜底，重复执行不重复入账。
     """
+    db.info["domestic_actor_id"] = reviewer_id
     req = _lock_pending_request(db, request_id)
     _ensure_reviewer(req, reviewer_id, can_admin)
     if req.request_type == C.REQUEST_TYPE_RECHARGE:
@@ -311,6 +315,7 @@ def reject_request(
     can_admin: bool,
     remark: str | None = None,
 ) -> dict:
+    db.info["domestic_actor_id"] = reviewer_id
     req = _lock_pending_request(db, request_id)
     _ensure_reviewer(req, reviewer_id, can_admin)
     remark = (remark or "").strip()

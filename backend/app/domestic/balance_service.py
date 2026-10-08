@@ -53,6 +53,7 @@ def apply_balance_change(
     business_key: str | None = None,
 ) -> DomesticCustomerLedger | None:
     """Apply one signed balance change. Positive adds funds; negative deducts."""
+    db.info["domestic_actor_id"] = user_id
     amount = money(amount)
     if amount == 0:
         return None
@@ -114,6 +115,7 @@ def recharge_customer(
     can_operate_all: bool = False,
     commit: bool = True,
 ) -> dict:
+    db.info["domestic_actor_id"] = user_id
     request_id = request_id.strip() if isinstance(request_id, str) else ""
     if not request_id:
         raise ValueError("充值幂等键不能为空")
@@ -181,6 +183,7 @@ def sync_order_finance(
     reason: str,
 ) -> Decimal:
     """Recalculate total and, for submitted orders, settle the charge delta."""
+    db.info["domestic_actor_id"] = user_id
     if order.order_kind == "production":
         order.total_amount = money(0)
         order.charged_amount = money(0)
@@ -216,6 +219,7 @@ def refund_order_charge(
     user_id: int,
     reason: str,
 ) -> Decimal:
+    db.info["domestic_actor_id"] = user_id
     if order.order_kind == "production":
         return money(0)
     charged = money(order.charged_amount)
