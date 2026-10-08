@@ -15,8 +15,9 @@ def authorization_db(binding_db):
     from app.portal.identity_models import AuthorityBarrier
 
     for model in (ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, AuthorityBarrier):
-        model.__table__.to_metadata(metadata)
-    metadata.create_all(db.get_bind())
+        if model.__tablename__ not in metadata.tables:
+            model.__table__.to_metadata(metadata)
+    metadata.create_all(db.get_bind(), checkfirst=True)
     role = ArkRole(id=1, name="sales", label="Sales")
     permission = ArkPermission(id=1, code="portal_access:admin", module="portal_access",
                                action="admin", label="Portal", kind="action", is_legacy=False, sort=10)

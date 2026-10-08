@@ -17,12 +17,9 @@ from app.portal.upstream_authority import begin_employee_authority_write
 
 @pytest.fixture
 def upstream_db(authorization_db, monkeypatch):
-    db = authorization_db
-    AuthorityBarrier.__table__.create(db.get_bind())
-    db.add(AuthorityBarrier(code="authority"))
-    db.commit()
+    # authorization_db already creates and seeds the authority barrier.
     monkeypatch.setattr(authority, "get_settings", lambda: SimpleNamespace(PORTAL_ENABLED=True))
-    return db
+    return authorization_db
 
 
 def test_disabled_portal_retains_installed_authority_checks(upstream_db, monkeypatch):
