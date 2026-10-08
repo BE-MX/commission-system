@@ -19,12 +19,13 @@ export async function lockInspection(conn, invoiceId, schema) {
 function snapshotMatches(result, inv, records) {
   const verified = result.verified;
   if (!verified || verified.update_time !== inv.update_time || verified.serial_id !== inv.serial_id || (verified.remark || '') !== (inv.remark || '')) return false;
-  const signature = rows => rows.map(row => JSON.stringify([
+  const signature = (rows, remote) => rows.map(row => JSON.stringify([
+    remote ? 'okki:' + String(row.outbound_record_id) : row.item_id,
     String(row.product_id || ''), row.product_name || '', row.sku ?? row.sku_code ?? '',
     row.unit ?? row.product_unit ?? '', row.spec ?? row.product_model ?? '',
     Number(row.qty ?? row.outbound_count),
   ])).sort();
-  return JSON.stringify(signature(verified.items || [])) === JSON.stringify(signature(records));
+  return JSON.stringify(signature(verified.items || [], false)) === JSON.stringify(signature(records, true));
 }
 
 export async function invalidateInspection(conn, state, inv, records, materialChanged, wholeChanged, localIds) {

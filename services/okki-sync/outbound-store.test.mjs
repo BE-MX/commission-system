@@ -249,3 +249,14 @@ test('product metadata differences preserve the remote verified identity while p
   assert.equal(db.event.result.verified.items[0].item_id, 'okki:600');
   assert.equal(db.photos[0].item_id, String(db.rows[0].id));
 });
+
+
+test('same-second replacement of remote identity requires fresh evidence even with identical product fields', async () => {
+  const { db, save } = await seeded(); inspected(db); verifiedEvent(db);
+  await save(inv, { record_list: [item('999'), item('601')] });
+  assert.equal(db.inspection.status, 'draft');
+  assert.equal(db.inspection.edit_version, 1);
+  assert.deepEqual(db.event.result.stale_media_ids, [1, 2]);
+  assert.equal(db.event.result.verified, undefined);
+  assert.equal(db.audits.length, 1);
+});
