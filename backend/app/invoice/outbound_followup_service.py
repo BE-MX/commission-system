@@ -15,6 +15,23 @@ from app.shipping_inspection import outbound_service, outbound_sync_service, out
 
 logger = logging.getLogger(__name__)
 DESTINATION_WAREHOUSE_ID = '8193514242746'  # Same warehouse as deploy/okki_outbound_creator.mjs.
+GENERATING_MESSAGE = '出库单正在自动生成，请稍后刷新查看。'
+
+
+def _failed_task_result(task):
+    # The worker owns the retry policy; never infer its limit from a default.
+    try:
+        evidence = json.loads(task.last_error or '')
+    except (ValueError, TypeError):
+        evidence = None
+    if (not isinstance(evidence, dict) or evidence.get('outcome') != 'pre_submit_failed'
+            or type(evidence.get('attempts')) is not int or evidence['attempts'] != task.attempts
+            or evidence['attempts'] < 0 or type(evidence.get('max_attempts')) is not int
+            or evidence['max_attempts'] <= 0):
+        return {'status': 'manual', 'message': '出库单暂未生成，自动重试状态待核对；请稍后刷新，若仍未生成请管理员核对'}
+    if task.attempts < evidence['max_attempts']:
+        return {'status': 'pending', 'message': GENERATING_MESSAGE}
+    return {'status': 'manual', 'message': '出库单自动生成重试已耗尽；请由管理员在订单“取消 / 恢复”中选择“恢复漏建 / 未发送出库”核对处理'}
 
 
 def _stock_shortages(db, order):
@@ -96,7 +113,7 @@ def _queue_missing_after_sync(db, invoice, task, order, invoice_version):
     current.outbound_auto_requested = 1
     task.status, task.reason, task.last_error, task.attempts = 'pending', f'regenerate:{latest.id}', None, 0
     db.commit()
-    return {'status': 'pending', 'message': '已确认小满无关联出库单，正在自动生成新单；请稍后刷新出库列表'}
+    return {'status': 'pending', 'message': GENERATING_MESSAGE}
 
 
 def _refresh_pending_generation(db, invoice, order, invoice_version):
@@ -111,7 +128,7 @@ def _refresh_pending_generation(db, invoice, order, invoice_version):
     if latest and (task.reason or '').startswith('regenerate:') and task.reason != f'regenerate:{latest.id}':
         task.reason = f'regenerate:{latest.id}'
         db.commit()
-    return {'status': 'pending', 'message': '订单已更新，出库任务将按最新订单及库存核对后生成'}
+    return {'status': 'pending', 'message': GENERATING_MESSAGE}
 
 
 def run(db, invoice, user):
@@ -123,7 +140,7 @@ def run(db, invoice, user):
     invoice_version = edit_version(invoice)
     task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice.id).with_for_update().first()
     if task and task.status == 'running':
-        return {'status': 'pending', 'message': '订单已更新，出库任务正在核对中'}
+        return {'status': 'pending', 'message': GENERATING_MESSAGE}
     if task and task.status == 'uncertain':
         return {'status': 'manual', 'message': '出库提交结果待核对，不能自动重发'}
 
@@ -135,7 +152,7 @@ def run(db, invoice, user):
         if task and task.status == 'pending':
             return (_refresh_pending_generation(db, invoice, order, invoice_version)
                     if (task.reason or '').startswith('regenerate:') else
-                    {'status': 'pending', 'message': '订单已更新，出库任务将按最新订单及库存核对后生成'})
+                    {'status': 'pending', 'message': GENERATING_MESSAGE})
         if task and task.status == 'skipped' and not (task.reason or '').startswith('deleted:'):
             return {'status': 'manual', 'message': task.reason or '该订单不自动生成出库单，请人工核对'}
         if task and task.status == 'waiting_stock':
@@ -154,7 +171,7 @@ def run(db, invoice, user):
                     return {'status': 'manual', 'message': '核对期间任务或订单发生变化，请刷新后核对'}
                 task.status, task.reason, task.last_error, task.attempts = 'pending', f'regenerate:{latest.id}', None, 0
                 db.commit()
-                return {'status': 'pending', 'message': '订单已重新同步，出库任务将重新核对最新库存并生成'}
+                return {'status': 'pending', 'message': GENERATING_MESSAGE}
             shortages = _stock_shortages(db, order)
             fresh_order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
             if fresh_order != order:
@@ -188,7 +205,15 @@ def run(db, invoice, user):
             task.reason = generation or None
             task.last_error = None
             db.commit()
-            return {'status': 'pending', 'message': '订单已更新，当前核查库存已齐；执行端将再次核对并生成出库单'}
+            return {'status': 'pending', 'message': GENERATING_MESSAGE}
+        if task and task.status == 'failed':
+            return _failed_task_result(task)
+        if task is None:
+            return {'status': 'manual', 'message': '尚未登记自动出库任务；请由管理员在订单“取消 / 恢复”中选择“恢复漏建 / 未发送出库”，重新核对后恢复'}
+        if task.status == 'done':
+            return {'status': 'manual', 'message': '未查到关联出库单，但原出库任务已完成；请人工核对原单，不能自动重建'}
+        if task.status != 'skipped':
+            return {'status': 'manual', 'message': '出库任务状态异常，请人工核对，不能自动重建'}
         return _queue_missing_after_sync(db, invoice, task, order, invoice_version)
     if len(related) != 1:
         return {'status': 'manual', 'message': '订单关联多张出库单，请分别核对，不能整单覆盖'}

@@ -191,6 +191,28 @@ export async function finishTask(conn, task, status, reason, error = null) {
   if (result.affectedRows !== 1) throw new Error('Task ownership changed: ' + task.id);
 }
 
+export function failureEvidence(task, error, maxAttempts = config.maxAttempts) {
+  return JSON.stringify({outcome: 'pre_submit_failed', attempts: Number(task.attempts),
+    max_attempts: maxAttempts, error: error.slice(-1500)});
+}
+
+export async function refreshFailedRetryPolicy(conn, maxAttempts = config.maxAttempts) {
+  const [rows] = await conn.query("SELECT id, attempts, last_error FROM ark_okki_outbound_tasks WHERE status='failed'");
+  for (const task of rows) {
+    let previous;
+    try { previous = JSON.parse(task.last_error || ''); } catch { /* Historical plain-text failure. */ }
+    if (previous?.outcome === 'pre_submit_failed' && previous.attempts === Number(task.attempts)
+        && previous.max_attempts === maxAttempts) continue;
+    const error = previous?.outcome === 'pre_submit_failed' && typeof previous.error === 'string'
+      ? previous.error : task.last_error || '';
+    // Preserve the backoff clock and never overwrite a concurrent claim/recovery.
+    await conn.query(
+      `UPDATE ark_okki_outbound_tasks SET last_error=?, updated_at=updated_at
+       WHERE id=? AND status='failed' AND attempts=? AND last_error <=> ?`,
+      [failureEvidence(task, error, maxAttempts), task.id, task.attempts, task.last_error]);
+  }
+}
+
 export async function advanceGeneration(conn, task, generation, status, reason) {
   if (status !== 'waiting_stock' && !(generation && status === 'failed')) return;
   const baseline = generation || task.claimedSyncLogId;
@@ -216,6 +238,7 @@ export async function advanceGeneration(conn, task, generation, status, reason) 
 }
 
 async function runOnce(conn) {
+  await refreshFailedRetryPolicy(conn);
   let ok = 0, failed = 0;
   for (let n = 0; n < config.batch; n++) {
     // Claim immediately before execution; never lease a waiting batch.
@@ -240,7 +263,8 @@ async function runOnce(conn) {
       const status = code === 1 ? (task.priorStatus === 'waiting_stock' ? 'waiting_stock' : 'failed') : 'uncertain';
       const reason = (generation && status !== 'uncertain' ? `regenerate:${generation} ` : '') + 'See last_error';
       await finishTask(conn, task, status, reason,
-        `exit=${code}\n${output}`.slice(-1500));
+        status === 'failed' ? failureEvidence(task, `exit=${code}\n${output}`)
+          : `exit=${code}\n${output}`.slice(-1500));
       if (code === 1) await advanceGeneration(conn, task, generation, status, reason);
       failed++;
       log(`task#${task.id} ${status}`, output.slice(-500));

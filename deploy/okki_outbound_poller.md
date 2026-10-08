@@ -42,7 +42,8 @@ OKKI 配置。方舟数据库参数单独存远端 `.ark-outbound.env`（root:ro
    `logs/created-outbound.jsonl`。已有意图却查不到实时关联时，不自动再次提交。
 5. 明确的 `HTTP=200 / code=404 / Operation Failed. 序号为[N]可用库存数量不足` 拒绝进入 `waiting_stock`，每15分钟复查，不受5次上限限制。其余业务错误仍按结果不确定处理。
 6. 查询失败不创建。提交超时、响应丢失、结果缺字段、验证失败、子进程被杀进入 `uncertain`，不自动重试。
-   明确的提交前错误进入 `failed`，最多尝试5次，按 (attempts+1)×5分钟退避。
+   明确的提交前错误进入 `failed`，默认最多尝试5次（`OUTBOUND_MAX_ATTEMPTS` 可调整），按 (attempts+1)×5分钟退避。
+   该失败的 `last_error` 使用 JSON 记录 `outcome=pre_submit_failed`、`attempts`、实际 `max_attempts` 及原错误文本 `error`。每轮认领前按当前配置刷新失败任务策略，覆盖历史文本和变更后的上限；CAS 复核状态、次数及原错误，显式保留 `updated_at`，不重置退避或修改任务状态。后端只有核实记录与当前次数匹配且未达到上限时才显示“出库单正在自动生成，请稍后刷新查看。”；已耗尽或结果不确定提示人工处理。应用与轮询器应作为同一候选发布，旧执行端未补齐策略记录时显示重试状态待核对。
 
 官方列表接口不支持 order_id 筛选；count 是总数、start_index 是页码、time_type=1 是更新时间：
 [OKKI 销售出库单列表](https://open.xiaoman.cn/api-3484729)。
