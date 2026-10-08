@@ -471,6 +471,43 @@ def get_record_by_outbound_invoice_id(db: Session, outbound_invoice_id: str,
     return get_outbound_record(db, str(rows[0]), okki_user_id=okki_user_id) if rows else None
 
 
+def mirror_matches_snapshot(db: Session, record_id: str, snapshot: dict) -> bool:
+    """Compare outbound identities and fields, without joined product metadata.
+
+    Product model/size/color may differ from invoice display values permanently.
+    Read the raw header too: callers may already have applied its print overlay.
+    """
+    link, rm, im = _link(db)
+    if link != "invoice" or "outbound_record_id" not in _table_columns(db, ITEMS_TABLE):
+        return False
+    schema = _schema()
+    rows = db.execute(text(f"""
+        SELECT i.outbound_record_id AS remote_item_id,
+               {_col(im, 'product_id', 'i')} AS product_id,
+               {_col(im, 'product_name', 'i')} AS product_name,
+               {_col(im, 'spec', 'i')} AS spec, {_col(im, 'sku', 'i')} AS sku,
+               {_col(im, 'quantity', 'i')} AS qty, {_col(im, 'unit', 'i')} AS unit,
+               {_col(rm, 'remark', 'r')} AS remark, {_col(rm, 'outbound_no', 'r')} AS outbound_no
+        FROM `{schema}`.`{ITEMS_TABLE}` i
+        JOIN `{schema}`.`{RECORDS_TABLE}` r ON i.`{im['invoice_id']}` = r.`{rm['invoice_id']}`
+        WHERE r.`{rm['id']}` = :rid
+    """),
+        {"rid": record_id}).mappings().all()
+    if not rows or any(row['remote_item_id'] is None or row['qty'] is None for row in rows):
+        return False
+    if ((rows[0]['remark'] or '') != (snapshot.get('remark') or '')
+            or rows[0]['outbound_no'] != snapshot.get('serial_id')):
+        return False
+    keys = ('product_id', 'product_name', 'sku', 'unit', 'spec')
+
+    def signature(items):
+        return sorted((str(row['item_id']),) + tuple(str(row.get(k) or '') for k in keys)
+                      + (float(row['qty']),) for row in items)
+
+    items = [{**row, 'item_id': 'okki:' + str(row['remote_item_id'])} for row in rows]
+    return signature(items) == signature(snapshot['items'])
+
+
 def list_outbound_items(db: Session, record_id: str, *, use_overlay=True, sync_event=None) -> list[dict]:
     """出库明细附产品表 model/size/color；LEFT JOIN 保留产品缺失的原始明细。"""
     from app.shipping_inspection.outbound_sync_state import overlay
