@@ -1,4 +1,4 @@
-export const COLOR_TYPE_TEXT = { solid: '纯色 Solid', piano: '钢琴色 Piano', ombre: '渐变 Ombre', balayage: '巴拉雅奇 Balayage' }
+export const COLOR_TYPE_TEXT = { solid: '纯色 Solid', piano: '钢琴色 Piano', ombre: '渐变 Ombre', balayage: '巴黎画染 Balayage' }
 
 export const stdColumnDefs = [
   { key: 'series', label: '系列 + 工艺档' }, { key: 'length', label: '长度' },
