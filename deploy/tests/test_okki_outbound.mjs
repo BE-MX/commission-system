@@ -164,7 +164,39 @@ test('concurrent creators share exclusive intent; only one POST',async t=> {
   assert.equal(posts,1);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
 });
 
-const {resultFromOutput, finishTask, claimBatch, generationFromReason, advanceGeneration} = await import('../okki_outbound_poller.js');
+const {resultFromOutput, finishTask, claimBatch, generationFromReason, advanceGeneration,
+  failureEvidence, refreshFailedRetryPolicy} = await import('../okki_outbound_poller.js');
+
+test('failure evidence records actual retry limit and keeps long logs valid JSON', () => {
+  const raw = '"\\\n'.repeat(1500);
+  const evidence = JSON.parse(failureEvidence({attempts: 5}, raw, 8));
+  assert.equal(evidence.outcome, 'pre_submit_failed');
+  assert.equal(evidence.attempts, 5);
+  assert.equal(evidence.max_attempts, 8);
+  assert.equal(evidence.error, raw.slice(-1500));
+});
+
+test('retry policy refresh covers legacy logs and changed limits without resetting backoff or overwriting claims', async () => {
+  const old = JSON.stringify({outcome: 'pre_submit_failed', attempts: 5, max_attempts: 5, error: 'before submit'});
+  const current = JSON.stringify({outcome: 'pre_submit_failed', attempts: 1, max_attempts: 8, error: 'current'});
+  const writes = [];
+  await refreshFailedRetryPolicy({query: async (sql, params) => {
+    if (sql.startsWith('SELECT')) return [[
+      {id: 1, attempts: 1, last_error: 'exit=1\nlegacy failure'},
+      {id: 2, attempts: 5, last_error: old}, {id: 3, attempts: 1, last_error: current}]];
+    writes.push({sql, params});
+    return [{affectedRows: 0}]; // A concurrent claim can win; do not retry the write.
+  }}, 8);
+  assert.equal(writes.length, 2);
+  for (const {sql, params} of writes) {
+    assert.match(sql, /updated_at=updated_at/);
+    assert.match(sql, /WHERE id=\? AND status='failed' AND attempts=\? AND last_error <=> \?/);
+    assert.doesNotMatch(sql, /SET\s+status\s*=|(?:SET|,)\s*attempts\s*=/);
+    assert.equal(JSON.parse(params[0]).max_attempts, 8);
+  }
+  assert.deepEqual(writes[0].params.slice(1), [1, 1, 'exit=1\nlegacy failure']);
+  assert.equal(JSON.parse(writes[1].params[0]).error, 'before submit');
+});
 test('claimed generation marker survives stock wait and invalid reasons do not trigger it',()=>{
   assert.equal(generationFromReason('regenerate:824 Insufficient warehouse stock'),'824');
   assert.equal(generationFromReason('regenerate:824'), '824');
