@@ -755,12 +755,14 @@ def test_admin_resolves_uncertain_sync_with_audit_log(db):
             f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
             json={
                 "resolution": "bind_order",
-                "xiaoman_order_id": "105724678099999",
+                "xiaoman_order_no": " 260825 ",
                 "reason": "已在 OKKI 后台找到订单",
             },
         )
     assert bound.status_code == 200
     assert invoice.xiaoman_order_id == "105724678099999"
+    assert invoice.xiaoman_order_no == "260825"
+    assert invoice.outbound_auto_requested == 1
     assert invoice.sync_status == "not_synced"
     actions = [
         row.action
@@ -800,27 +802,59 @@ def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(d
     """))
     db.commit()
 
-    def bind(order_id):
+    def bind(order_no):
         with _api_client(db, ["invoice:admin"]) as client:
             return client.post(
                 f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
                 json={
                     "resolution": "bind_order",
-                    "xiaoman_order_id": order_id,
+                    "xiaoman_order_no": order_no,
                     "reason": "人工核对测试",
                 },
             )
 
-    missing = bind("700000")
+    missing = bind("missing-order-number")
     assert missing.status_code == 400
     assert "查不到" in missing.json()["detail"]
-    wrong_customer = bind("700001")
+    wrong_customer = bind("wrong-customer")
     assert wrong_customer.status_code == 400
     assert "不属于" in wrong_customer.json()["detail"]
-    wrong_name = bind("700002")
+    wrong_name = bind("wrong-name")
     assert wrong_name.status_code == 400
     assert "名称" in wrong_name.json()["detail"]
     assert invoice.xiaoman_order_id is None
+
+
+
+@pytest.mark.parametrize("order_no,expected", [
+    ("duplicate-no", "不唯一"),
+    ("already-bound", "已绑定"),
+    ("700001", "查不到"),
+    ("   ", "订单号"),
+])
+def test_uncertain_binding_uses_unique_order_number_not_internal_id(db, order_no, expected):
+    _seed_example(db)
+    invoice = Invoice(invoice_no="binding-guards", customer_id="105720449849411",
+        customer_name="hair_madebymads", invoice_date=date(2026, 10, 8),
+        status="sync_uncertain", sync_status="sync_uncertain", sales_user_id=27, created_by=27)
+    other = Invoice(invoice_no="other-local", customer_id="105720449849411",
+        customer_name="hair_madebymads", invoice_date=date(2026, 10, 8), xiaoman_order_id="700003")
+    db.add_all([invoice, other])
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_orders (order_id, order_no, name, company_id)
+        VALUES ('700001', 'duplicate-no', 'binding-guards', '105720449849411'),
+               ('700002', 'duplicate-no', 'different-name', 'another-customer'),
+               ('700003', 'already-bound', 'binding-guards', '105720449849411')
+    """))
+    db.commit()
+    with _api_client(db, ["invoice:admin"]) as client:
+        response = client.post(f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+            json={"resolution": "bind_order", "xiaoman_order_no": order_no, "reason": "已核对原小满订单号"})
+    assert response.status_code == 400
+    assert expected in response.json()["detail"]
+    assert invoice.xiaoman_order_id is None
+    assert not invoice.outbound_auto_requested
+    assert db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id).count() == 0
 
 
 def test_ai_boundary_hashes_original_and_uses_metadata_snapshot(db, monkeypatch):

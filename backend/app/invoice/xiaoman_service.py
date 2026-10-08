@@ -72,7 +72,7 @@ def sync_invoice(
             "message": "上次首推结果待核对，禁止自动重试以免重复建单",
             "issues": [{
                 "field": "sync_status",
-                "message": "请先到 OKKI 确认订单是否已生成，并由管理员补录订单 ID 或处理待核对状态",
+                "message": "请先到小满确认订单是否已生成，并由管理员按小满订单号绑定或处理待核对状态",
             }],
         }
     from app.receipt.invoice_link import preflight
@@ -117,6 +117,10 @@ def sync_invoice(
         # Durable uncertainty before every POST, including production orders.
         # A killed process cannot roll back to a retryable first-create state.
         from app.invoice import push_attempt
+        # Persist enrollment with the send fence, even if the create response
+        # is lost. No outbound may run until a later full sync is committed.
+        if action == "create" and get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
+            invoice.outbound_auto_requested = int(invoice.order_type != "presale")
         send_token = push_attempt.begin(db, invoice)
         def fence():
             push_attempt.ensure(db, invoice, send_token)
@@ -143,9 +147,6 @@ def sync_invoice(
         message = "OKKI 响应异常（未返回 order_id）：订单可能已生成，请先到 OKKI 后台确认，禁止直接重试"
         _mark_sync_uncertain(db, invoice, message, action, payload, operator_id, response=data)
         return {"ok": False, "message": message, "issues": []}
-
-    if action == "create" and get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
-        invoice.outbound_auto_requested = int(invoice.order_type != "presale")
 
     # 第一段落库：order_id + 审计日志立即固化（此后任何回写失败都不会丢单号）
     if order_id:
@@ -189,10 +190,10 @@ def sync_invoice(
             .where(Invoice.id == invoice.id, Invoice.xiaoman_removed_lines == removed_snapshot)
             .values(xiaoman_removed_lines=None)
         )
-    # 首推入队；编辑成功则唤醒已有的等待库存任务，由执行端按新版订单重新核库存。
-    # 只改 waiting_stock，已建单、执行中和结果不确定的任务不能重发。
+    # 已登记首推/绑定恢复意图的订单，首次完整成功时幂等入队；不追建历史未登记订单。
+    # 已有任务保持原状态，编辑成功只另行唤醒 waiting_stock。
     # 状态转换随上层最终 commit 落库；半成品收尾失败时一起回滚。
-    if action == "create" and get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
+    if invoice.outbound_auto_requested and get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
         try:
             task = outbound_task_service.enqueue_outbound_task(db, invoice)
             if task is not None and task.status == outbound_task_service.STATUS_SKIPPED:
@@ -200,7 +201,7 @@ def sync_invoice(
         except Exception as exc:  # noqa: BLE001 - 出库触发失败不允许影响已受理的同步结果
             logger.warning("outbound task enqueue failed invoice=%s: %s", invoice.id, exc)
             print(f"[outbound] enqueue failed invoice={invoice.id}: {exc}", flush=True)
-    elif action == "update":
+    if action == "update":
         outbound_task_service.requeue_waiting_stock_after_invoice_sync(db, invoice)
     return {
         "ok": True,
@@ -283,7 +284,7 @@ def resolve_sync_uncertain(
     resolution: str,
     reason: str,
     operator_id: int | None,
-    xiaoman_order_id: str | None = None,
+    xiaoman_order_no: str | None = None,
 ) -> Invoice:
     from app.invoice.push_attempt import allow_recovery, finish
     allow_recovery(invoice)
@@ -297,23 +298,29 @@ def resolve_sync_uncertain(
         raise ValueError("请填写人工核对原因")
 
     if resolution == "bind_order":
-        order_id = str(xiaoman_order_id or "").strip()
-        if not order_id.isdigit():
-            raise ValueError("请填写有效的 OKKI 数字订单 ID")
+        order_no = str(xiaoman_order_no or "").strip()
+        if not order_no:
+            raise ValueError("请填写小满订单号（order_no）")
 
         columns = product_service._table_columns(db, "okki_orders")
         required_columns = {"order_id", "order_no", "name", "company_id"}
         if not required_columns.issubset(columns):
             raise ValueError("本系统 OKKI 订单投影字段不完整，暂时无法安全绑定")
         schema = product_service._schema()
-        projected_order = db.execute(text(f"""
+        projected_orders = db.execute(text(f"""
             SELECT order_id, order_no, name, company_id
             FROM `{schema}`.okki_orders
-            WHERE order_id = :order_id
-            LIMIT 1
-        """), {"order_id": order_id}).mappings().first()
-        if not projected_order:
-            raise ValueError("本系统 OKKI 订单投影中查不到该订单 ID，请等待投影更新后再绑定")
+            WHERE order_no = :order_no
+            LIMIT 2
+        """), {"order_no": order_no}).mappings().all()
+        if not projected_orders:
+            raise ValueError("本系统小满订单投影中查不到该订单号，请核对订单号或等待投影更新后再绑定")
+        if len(projected_orders) != 1:
+            raise ValueError("该小满订单号不唯一，不能安全绑定，请先核对小满原单")
+        projected_order = projected_orders[0]
+        order_id = str(projected_order["order_id"] or "").strip()
+        if not order_id.isdigit():
+            raise ValueError("该小满订单号对应的订单标识无效，已拒绝绑定")
         if str(projected_order["company_id"] or "").strip() != str(invoice.customer_id or "").strip():
             raise ValueError("该 OKKI 订单不属于当前发票客户，已拒绝绑定")
         if normalize_order_name(projected_order["name"]) != normalize_order_name(invoice.invoice_no):
@@ -324,17 +331,23 @@ def resolve_sync_uncertain(
             Invoice.id != invoice.id,
         ).first()
         if duplicate:
-            raise ValueError("该 OKKI 订单 ID 已绑定其他发票")
+            raise ValueError("该小满订单号对应的订单已绑定其他发票")
         try:
             # 数据库唯一索引是并发管理员绑定的最终防线。
             with db.begin_nested():
                 invoice.xiaoman_order_id = order_id
+                invoice.xiaoman_order_no = str(projected_order["order_no"]).strip()
                 db.flush()
         except IntegrityError as exc:
-            raise ValueError("该 OKKI 订单 ID 已绑定其他发票") from exc
+            raise ValueError("该小满订单号对应的订单已绑定其他发票") from exc
+        # Recover first creates from older versions that did not persist intent.
+        # Binding still does not enqueue: the next full sync must verify lines.
+        if get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
+            invoice.outbound_auto_requested = int(invoice.order_type != "presale")
         action = "uncertain_bind"
-        audit_payload = {"resolution": resolution, "xiaoman_order_id": order_id, "reason": note}
-        invoice.sync_error = f"管理员已绑定 OKKI 订单 {order_id}，待重新同步核对：{note}"
+        audit_payload = {"resolution": resolution, "xiaoman_order_no": invoice.xiaoman_order_no,
+                         "xiaoman_order_id": order_id, "reason": note}
+        invoice.sync_error = f"管理员已绑定小满订单 {invoice.xiaoman_order_no}，待重新同步核对：{note}"
     elif resolution == "confirm_not_created":
         action = "uncertain_clear"
         audit_payload = {"resolution": resolution, "reason": note}
