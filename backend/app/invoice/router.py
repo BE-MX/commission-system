@@ -44,6 +44,8 @@ _MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024
 _UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 router = APIRouter()
+from app.invoice.detail_router import router as detail_router
+router.include_router(detail_router)
 
 _READ_OR_WRITE = require_any_permission("invoice:read", "invoice:write")
 # 价格与产品配置页读端点（063 拆分）：页面码 + 旧读写码兼容（发票编辑器也调这批端点）
@@ -769,6 +771,8 @@ def list_invoices(
         created_by=created_by if _can_read_all(current_user) else None,
         viewer_user_id=None if _can_read_all(current_user) else viewer_user_id,
     )
+    from app.invoice.document_anomalies import annotate
+    annotate(db, current_user, items)
     return ok({"total": total, "page": page, "page_size": page_size, "items": items})
 
 

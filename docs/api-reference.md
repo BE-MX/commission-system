@@ -1,5 +1,24 @@
 # 莱莎方舟 API 参考
 
+## 订单发票关联详情与异常概要（2026-10-08）
+
+基址 `/api/invoice`，响应沿用 `ok(data)`。无新增写入接口或权限。以下三项详情均先要求 `invoice:read/write/sync` 任一权限，并校验现有发票本人、代创建或全量数据范围；订单可见不自动授予关联单据权限。
+
+| 方法 | 路径 | 返回与权限 |
+| --- | --- | --- |
+| GET | `/invoices/{invoice_id}/related-detail` | `{order,checked_at}`；保存的订单信息、商品明细、同步/取消状态与按权限裁剪的 `anomalies`。不返回编辑器回款草稿或内部资金快照 |
+| GET | `/invoices/{invoice_id}/related-detail/receipts` | `{state,items,summary,freight,batch_balance,checked_at,message}`；独立校验 `receipt:read/write/admin` 和回款归属，混合归属批次按私有凭证范围整体阻断 |
+| GET | `/invoices/{invoice_id}/related-detail/outbounds` | `{state,items,tasks,batches,summary,checked_at,message}`；独立校验 `shipping_inspection:read/write/admin`、小满绑定和出库归属。预售批次另校验发货与回款归属；检验状态另按检验范围，冻结金额另按回款范围裁剪 |
+| GET | `/document-anomalies` | `{domains:{order,outbound,receipt},checked_at}`；至少具有上述任一功能权限。各域 `{state,has_anomaly,count}`，聚合其完整可见范围，不受当前列表页限制；无权限域不返回异常数量 |
+
+详情来源状态为 `ready/restricted/unverified`，核验失败保持已知本地明细、`summary=null` 和未核验时间，不伪造 0% 或缓存时点。订单不存在或不可见为 404；关联域范围不足在成功信封内返回 `restricted`，不暴露单据数量。
+
+回款 `summary` 使用原币 `total_amount/effective_amount/registered_amount/pending_amount/remaining_amount`，并增加 `unpaid_amount/overpaid_amount`。远端净额按唯一远端 ID 与方舟含费记录匹配，手续费仅恢复一次；独立运费位于 `freight`，不进入主单进度。未知财务状态、金额或关联变化返回待核验。预付款抵扣不新增回款。远端独有记录 `source=remote,id=null`，不提供本地凭证。
+
+出库 `summary` 为 `{ordered_quantity,shipped_quantity,by_item}`，实时完整关联核验后仅远端状态 2 计入实际出库，状态 1 仅表示生成。匹配订单 ID、远端行 ID、产品 ID、SKU；预售还要求本地出库状态/冻结数量一致。任务数量、计划批次数量及缺货记录不计进度。制单人来自精确关联镜像；无镜像时仅显示待刷新。
+
+发票列表每项新增 `anomalies`（`order/outbound/receipt`）与 `anomaly_states`。异常定义复用 `document_anomalies.py`：活动失败/结果不明、需要重新核验的出库事件等；已证实可自动重试的出库任务、普通等待、作废及已核实删除回款不作为异常。导航读取失败可保留此前已确认角标，权限或账号变化立即清空。详见[实现及验收](requirements/2026-10-08-invoice-detail-implementation.md)。
+
 ## 列表表头排序（2026-10-04）
 
 记录列表的分页排序统一接受可选 `sort_field`（表头对应的公开字段白名单）和 `sort_order=asc|desc`。不传、清除、未知字段或方向恢复原业务默认顺序；排序在权限、筛选之后，`offset/limit` 之前，空值末尾，并以唯一标识稳定处理并列。响应信封、筛选、总条数与数据权限不变。

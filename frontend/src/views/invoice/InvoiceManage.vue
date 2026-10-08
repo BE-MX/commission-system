@@ -96,7 +96,7 @@
           :show-overflow-tooltip="Boolean(column.tooltip)"
         >
           <template #default="{ row }">
-            <span v-if="column.key === 'invoice_no'" class="invoice-number">{{ row.invoice_no }}</span>
+            <span v-if="column.key === 'invoice_no'" class="invoice-detail-entry"><button type="button" class="invoice-number invoice-number-button" @click="invoiceDetailRef.open(row)">{{ row.invoice_no }} ↗</button><InvoiceAnomalyBadge :anomalies="row.anomalies || []" /></span>
             <StatusBadge v-else-if="column.key === 'order_type'" size="small" :type="orderTypeTone(row.order_type)" effect="plain">{{ orderTypeLabel(row.order_type) }}</StatusBadge>
             <template v-else-if="column.key === 'total_amount'">{{ row.currency === 'USD' ? '' : `${row.currency} ` }}{{ money(row.total_amount) }}</template>
             <StatusBadge v-else-if="column.key === 'status'" size="small" :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</StatusBadge>
@@ -373,6 +373,7 @@
 
     <InvoiceLifecycle v-if="lifecycleInvoiceId !== null" :key="lifecycleInvoiceId" ref="lifecycleRef" :invoice-id="lifecycleInvoiceId" @changed="refreshUpdate" />
 
+    <InvoiceDetailDialog ref="invoiceDetailRef" @print="row => handleExport('print', row)" />
     <InvoiceSyncLogsDialog
       v-model="syncLogsVisible"
       :title="syncLogsTitle"
@@ -386,6 +387,8 @@
 
 <script setup>
 import ShipmentSettlementDialog from './components/ShipmentSettlementDialog.vue'
+import InvoiceDetailDialog from './components/InvoiceDetailDialog.vue'
+import InvoiceAnomalyBadge from './components/InvoiceAnomalyBadge.vue'
 import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShipments'
 import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
@@ -414,6 +417,7 @@ import ListPageStatus from '@/components/ListPageStatus.vue'
 
 const { shipmentInvoice, shipmentCapabilities } = useInvoiceShipments()
 const listPage = useInvoiceManagePage()
+const invoiceDetailRef = ref(null)
 const {
   handleTableSort, actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
   loading, money, money4, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
