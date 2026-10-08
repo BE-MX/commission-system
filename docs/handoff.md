@@ -1,8 +1,9 @@
-## 2026-10-08 订单改单后的回款修正（Codex，已授权合并推送部署）
+## 2026-10-08 订单改单后的回款修正（Codex，已合并推送部署）
 
 - 分支 `codex/invoice-receipt-correction`，独立 worktree。订单约定预付款与实际资金分开；编辑页提供未发送普通回款修正、明确重试、补登记、资金汇总和小满变更核对入口。订单未保存/未同步或资金核验异常时普通写入受阻；已同步金额保留，超收只提示核实。
 - 发票回显和冻结校验使用当前真实回款，保持生成意图及原单 ID；修正自动手续费按新金额分摊并排除原单，保留版本与审计。截图版本和多凭证顺序同步，预售/批次沿用原流程。无 schema 迁移。
-- 后端隔离联合回归 202 项、前端 43 项回归、构建、本地模拟页面关键路径及窄屏验证通过；独立审查问题已修复并复核，约定和 diff 检查通过。详见[实现与验收记录](reports/2026-10-08-invoice-receipt-correction.md)。Git 巡检使用 `--no-fetch` 本地快照。用户已授权合并、推送和统一部署；最终生产版本与健康核验另行记录。
+- 应用候选 `45e57ca8` 已合入并推送 main，办公室统一入口准备与正式发布均退出 0，release_id=`d59340745c1c43cc9f49f463ae0f9309`，scope=office-and-cloud、deferred=[]。两地实际 HEAD 一致、health=ok/connected，新回款汇总 GET 路由存在；schema173 无 DDL，三个回款源码文件与候选一致，三域 16 项公网制品摘要匹配。出库 timer 恢复 active/enabled，邮件 Worker 保持 inactive/disabled/MainPID0。
+- 合并后后端隔离联合回归 202 项、前端 43 项再次通过；构建、本地模拟页面关键路径、窄屏及独立审查通过，严格增量约定与 diff 检查通过。主目录原 24 项改动恢复并逐项验证；备份和证据在 `.deploy_state/invoice-receipt-correction-release/`。本次未登记真实回款、修改生产订单或执行退款；详见[实现验收](reports/2026-10-08-invoice-receipt-correction.md)与[发布记录](reports/2026-10-08-invoice-receipt-correction-release.md)。Git 巡检为 `--no-fetch` 本地快照。
 
 ## 2026-10-08 出库检验照片恢复与镜像修复（Codex，已合并推送部署）
 
