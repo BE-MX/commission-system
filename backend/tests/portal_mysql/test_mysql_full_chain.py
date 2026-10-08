@@ -27,7 +27,7 @@ def test_empty_database_full_alembic_chain(request, monkeypatch):
         with engine.begin() as connection:
             for statement in statements: connection.exec_driver_sql(statement)
     config = Config(); config.set_main_option('script_location', str(backend / 'alembic'))
-    assert ScriptDirectory.from_config(config).get_heads() == ['176_portal_pi_header']
+    assert ScriptDirectory.from_config(config).get_heads() == ['177_portal_pi_header']
     settings = application_config.get_settings().model_copy(update={
         'COMMISSION_DB_HOST':engine.url.host, 'COMMISSION_DB_PORT':engine.url.port,
         'COMMISSION_DB_USER':engine.url.username, 'COMMISSION_DB_PASSWORD':engine.url.password,
@@ -40,7 +40,7 @@ def test_empty_database_full_alembic_chain(request, monkeypatch):
     try:
         command.upgrade(config, 'head')
         with engine.connect() as connection:
-            assert connection.execute(text('SELECT version_num FROM alembic_version')).scalars().all() == ['176_portal_pi_header']
+            assert connection.execute(text('SELECT version_num FROM alembic_version')).scalars().all() == ['177_portal_pi_header']
             assert connection.scalar(text("SELECT version FROM ark_order_portal_auth_barriers WHERE code='authority'")) == 1
         succeeded = True
     finally:

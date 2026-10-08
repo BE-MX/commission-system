@@ -9,13 +9,13 @@ from app.shipping_inspection import outbound_service as records
 from app.shipping_inspection.list_sort_service import QUEUE_SORT_FIELDS, mirror_sort_value, local_sort_value, local_retry_at
 
 
-def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sort_field=None):
+def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sort_field=None,
+                 outbound_state=None, inspection_status=None):
     rm = records._record_columns(db)
     schema = records._schema()
     clauses, params = records.record_list_filters(
         db, rm, keyword=keyword, order_id=order_id, date_from=date_from, date_to=date_to, okki_user_id=okki_user_id,
     )
-    mirror_where = "WHERE " + " AND ".join(clauses) if clauses else ""
     local_clauses = [
         "t.order_id = f.xiaoman_order_id",
         "(t.status IN ('pending','running','waiting_stock','done','failed','uncertain') "
@@ -51,6 +51,18 @@ def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sor
         dedup_clauses.append(f"""NOT EXISTS (SELECT 1 FROM `{schema}`.`{records.RECORDS_TABLE}` r
             WHERE {number}=f.invoice_no AND r.`{rm['company_id']}`=f.customer_id{visible})""")
     link, _, im = records._link(db)
+    # Match the same state expressions used for display/sorting, before COUNT/LIMIT.
+    if outbound_state:
+        clauses.append("'ready' = :outbound_state")
+        local_clauses.append(f"({local_sort_value('outbound_state', db)}) = :outbound_state")
+        params['outbound_state'] = outbound_state
+    if inspection_status:
+        status_value = mirror_sort_value(db, 'status', rm, im, link, schema)
+        clauses.append(f"({status_value}) = :inspection_status")
+        params['inspection_status'] = inspection_status
+        # Local tasks display an em dash, not an uninspected outbound document.
+        local_clauses.append('1=0')
+    mirror_where = "WHERE " + " AND ".join(clauses) if clauses else ""
     if link and "order_id" in records._table_columns(db, records.ITEMS_TABLE):
         ik = im["invoice_id"] if link == "invoice" else im["record_id"]
         rk = rm["invoice_id"] if link == "invoice" else rm["id"]
@@ -151,9 +163,11 @@ def _local_rows(db, ids):
 
 
 def list_outbound_records(db, *, keyword=None, order_id=None, date_from=None, date_to=None,
-                          page=1, page_size=20, okki_user_id=None, sort_field=None, sort_order=None):
+                          page=1, page_size=20, okki_user_id=None, sort_field=None, sort_order=None,
+                          outbound_state=None, inspection_status=None):
     query, params = _queue_query(db, keyword=keyword, order_id=order_id, date_from=date_from,
                                date_to=date_to, okki_user_id=okki_user_id,
+                               outbound_state=outbound_state, inspection_status=inspection_status,
                                sort_field=sort_field if sort_order in ("asc", "desc") else None)
     order_by = "sort_date DESC, local_entry DESC, sort_id DESC, entry_id DESC"
     if sort_field in QUEUE_SORT_FIELDS and sort_order in ("asc", "desc"):

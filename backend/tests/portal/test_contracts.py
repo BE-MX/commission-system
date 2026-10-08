@@ -84,7 +84,7 @@ def test_launch_fails_closed_without_separate_keys():
 
 
 def test_migration_emits_mysql_sql_without_connecting():
-    path = Path(__file__).resolve().parents[2] / "alembic/versions/175_customer_order_portal.py"
+    path = Path(__file__).resolve().parents[2] / "alembic/versions/176_customer_order_portal.py"
     spec = importlib.util.spec_from_file_location("portal_migration_172", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

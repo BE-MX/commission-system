@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, text
 
 def migration():
     backend = Path(__file__).resolve().parents[2]
-    spec = spec_from_file_location("portal_pi_header_migration",backend/"alembic/versions/176_portal_pi_header.py")
+    spec = spec_from_file_location("portal_pi_header_migration",backend/"alembic/versions/177_portal_pi_header.py")
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
     return backend,module
@@ -22,7 +22,7 @@ def test_additive_migration_preserves_existing_evidence_and_has_single_head(monk
     config = Config()
     config.set_main_option("script_location",str(backend/"alembic"))
     assert ScriptDirectory.from_config(config).get_heads() == [module.revision]
-    assert module.down_revision == "175_customer_order_portal" and len(module.revision) <= 32
+    assert module.down_revision == "176_customer_order_portal" and len(module.revision) <= 32
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE ark_order_portal_revisions (id INTEGER PRIMARY KEY, content_hash TEXT NOT NULL)"))

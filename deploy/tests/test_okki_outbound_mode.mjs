@@ -78,11 +78,11 @@ for(const [name,error] of [
 });
 
 for(const [name,heads] of [
-  ['empty',[]],['multiple',[{version_num:PARENT},{version_num:'175_customer_order_portal'}]],
+  ['empty',[]],['multiple',[{version_num:PARENT},{version_num:'176_customer_order_portal'}]],
   ['duplicate parent',[{version_num:PARENT},{version_num:PARENT}]],
   ['missing value',[{}]],['null row',[null]],['non-array',{}],['undefined',undefined],
-  ['portal migration',[{version_num:'175_customer_order_portal'}]],
-  ['PI migration',[{version_num:'176_portal_pi_header'}]],['unknown',[{version_num:'999_unknown'}]],
+  ['portal migration',[{version_num:'176_customer_order_portal'}]],
+  ['PI migration',[{version_num:'177_portal_pi_header'}]],['unknown',[{version_num:'999_unknown'}]],
   ['older unverified',[{version_num:'170_order_channel'}]],['whitespace',[{version_num:PARENT+' '}]],
 ]) test('missing mode table with '+name+' head fails closed',async()=>{
   let calls=0;

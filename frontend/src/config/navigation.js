@@ -426,6 +426,7 @@ export const NAV_ENTRIES = [
     anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
     menu: {
       group: 'invoice', title: '订单发票管理', icon: Document, order: 10,
+      anomalyDomain: 'order',
       anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
     },
   },
@@ -436,6 +437,7 @@ export const NAV_ENTRIES = [
     title: '回款单管理',
     anyPermission: ['receipt:read', 'receipt:write', 'receipt:admin'],
     menu: { group: 'invoice', title: '回款单管理', icon: Document, order: 15,
+      anomalyDomain: 'receipt',
       anyPermission: ['receipt:read', 'receipt:write', 'receipt:admin'] },
   },
   {
@@ -1002,6 +1004,7 @@ export const NAV_ENTRIES = [
     anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     menu: {
       group: 'invoice', title: '出库单打印', icon: Printer, order: 11,
+      anomalyDomain: 'outbound',
       anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     },
   },

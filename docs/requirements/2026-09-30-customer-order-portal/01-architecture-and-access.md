@@ -276,7 +276,7 @@ PORTAL_ENABLED、PORTAL_OUTBOUND_WORKER_ENABLED、OKKI_OUTBOUND_AUTO_ENABLED 三
 
 PORTAL_ENABLED只控制客户入口可用性，不能解除已安装屏障。默认与force调用均使用实际AuthorityBarrier mapper Connection，对该连接设置有限MySQL锁等待，再执行authority FOR UPDATE；当前根/nested已持屏障才复用缓存。调用方事务不会被helper提交、回滚或autoflush。已安装表缺authority行也拒绝，不按空出库mode回到legacy。
 
-唯一旧业务例外为OFF/nonforce，且屏障SELECT自身实际1146；在同物理连接FOR UPDATE查询alembic_version，唯一精确171_customer_tag_display_value才返回None。连接取得、@@/SET、父版本查询失败及权限不可见不满足缺表资格；ON/force、未知/175/176/多head、缺版本表均拒绝。该分支不写head、不stamp或补表，仍须生产迁移冻结所有writer，不能把它当在线迁移协议。
+唯一旧业务例外为OFF/nonforce，且屏障SELECT自身实际1146；在同物理连接FOR UPDATE查询alembic_version，唯一精确171_customer_tag_display_value才返回None。连接取得、@@/SET、父版本查询失败及权限不可见不满足缺表资格；ON/force、未知/176/177/多head、缺版本表均拒绝。该分支不写head、不stamp或补表，仍须生产迁移冻结所有writer，不能把它当在线迁移协议。
 
 legacy能力绑定验证它的根事务，根结束、新验证或失败force后不可借用；suspend/review只有此能力可跳过无表路径，已安装协议仍要求调用方先拿屏障，否则拒绝，不能在客户行锁后补拿。OFF下归属/身份变化同步暂停access、递增版本、撤session/邀请和有效quote，重新ON不得复活。原已接入employee/role/seed/delegation/ownership使用共同helper，不代表raw SQL、未登记脚本或全部旧writer已参与。
 

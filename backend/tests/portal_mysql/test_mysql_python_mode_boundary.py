@@ -6,8 +6,8 @@ from test_mysql_outbound_mode import boot,install_record,MODE,TABLE  # noqa: F40
 
 
 @pytest.mark.parametrize('heads',[
-    [],['176_portal_pi_header'],['unknown_future'],
-    ['171_customer_tag_display_value','176_portal_pi_header']])
+    [],['177_portal_pi_header'],['unknown_future'],
+    ['171_customer_tag_display_value','177_portal_pi_header']])
 def test_missing_mode_table_with_unconfirmed_head_never_enables_legacy(boot,heads):
     boot.settings.PORTAL_ENABLED=False
     with boot.engine.begin() as connection:
@@ -56,8 +56,8 @@ def test_actual_low_privilege_off_bootstrap_cannot_use_hidden_mode_as_legacy(boo
 
 
 @pytest.mark.parametrize('mapper_head,default_head,allowed',[
-    ('176_portal_pi_header','171_customer_tag_display_value',False),
-    ('171_customer_tag_display_value','176_portal_pi_header',True)])
+    ('177_portal_pi_header','171_customer_tag_display_value',False),
+    ('171_customer_tag_display_value','177_portal_pi_header',True)])
 def test_mode_and_parent_evidence_use_actual_mapper_connection(boot,mapper_head,default_head,allowed):
     from app.portal.models import AuthorityBarrier
     from app.invoice.outbound_mode import initialize

@@ -61,6 +61,17 @@
 
 时间列均为北京时间。客户素材继续使用原表的 `storage_provider/object_key`，仅在完整回读校验后受控切换provider。159依赖158，禁止开发机升级共享生产库；downgrade不自动删除队列或引用数据。
 
+## 回款同步恢复（175_receipt_recovery，本地实现，未部署）
+
+`ark_receipts` 新增可空 `send_phase`、`recovery_kind`、`next_attempt_at` 和默认 0 的 `recovery_attempts`；后两类调度字段有索引。历史阶段保持 NULL，不能推测未发送。
+
+| 表 | 责任与关键约束 |
+| --- | --- |
+| `ark_receipt_attempts` | token 主键、receipt_id BIGINT FK/索引、发送摘要、准确远端 ID/编号、handled_at 与创建时间；先保存返回证据，再接纳唯一映射 |
+| `ark_receipt_index_states` | 租户摘要 source 主键、最小完整快照/校验摘要 JSON、租约令牌/截止、发布时间；跨实例租约与事务原子发布 |
+
+新增时间均为北京时间。父 revision 为 174，迁移只新增字段/表；保留历史金额、费用、财务状态，不进行发送阶段回填，downgrade 拒绝删除证据。详见[实现与验收](requirements/2026-10-08-receipt-sync-recovery.md)。
+
 ## 回款管理（156_receipt_management，生产迁移已完成）
 
 | 表 | 责任与关键约束 |
@@ -660,9 +671,9 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 迁移已在内存SQLite隔离验证，不等于MySQL线上迁移。生产依[统一发布入口](../deploy/README.md)部署并核验容量；数据库约束、MySQL并发及大样本性能还需目标环境验证。详见[模块说明](domestic-decision.md)。
 
-## 客户下单门户（迁移175/176，开发中未部署）
+## 客户下单门户（迁移176/177，开发中未部署）
 
-新增模型位于 `backend/app/portal/`，统一前缀 `ark_order_portal_`，不复用客户素材门户账号。冻结迁移 `175_customer_order_portal` 当前仅完成离线SQL验证，尚未在MySQL执行或部署。
+新增模型位于 `backend/app/portal/`，统一前缀 `ark_order_portal_`，不复用客户素材门户账号。冻结迁移 `176_customer_order_portal` 当前仅完成离线SQL验证，尚未在MySQL执行或部署。
 
 | 分组 | 表后缀 |
 | --- | --- |
@@ -676,6 +687,6 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 字段设计见[门户数据模型](requirements/2026-09-30-customer-order-portal/02-data-model.md)，实施进展见[交接记录](handoff.md)。状态列统一为status；quotes不保存冗余consumed_request_id，由requests.quote_id唯一键回查结果。
 
 
-## 176_portal_pi_header（开发中，未部署）
+## 177_portal_pi_header（开发中，未部署）
 
-父迁移175_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；MySQL离线DDL和隔离SQLite保留旧行测试通过，尚未在真实MySQL执行。迁移已按项目规则暂存，未commit/push/部署。
+父迁移176_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；MySQL离线DDL和隔离SQLite保留旧行测试通过，尚未在真实MySQL执行。迁移已按项目规则暂存，未commit/push/部署。

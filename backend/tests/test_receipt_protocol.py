@@ -58,7 +58,7 @@ def test_real_helper_unwraps_types_fields_and_preserves_rate(monkeypatch, payloa
         return httpx.Response(200, json={"code": 200, "data": {"cash_collection_id": 700, "cash_collection_no": "HK700"}})
     monkeypatch.setattr(httpx, "post", post)
     fence = []
-    result = remote.push(None, payload_row, {"exchange_rate": 725}, lambda: fence.append(True))
+    result = remote.push(None, payload_row, {"exchange_rate": 725}, lambda payload: fence.append(True))
     assert result["cash_collection_id"] == 700 and fence == [True]
     assert calls[0]["amount"] == calls[0]["real_amount"] == "121.11"
     assert all(calls[0][key] == "0" for key in ("bank_charge", "bank_charge_rmb", "bank_charge_usd"))
@@ -79,7 +79,7 @@ def test_ambiguous_http_result_never_becomes_retryable(monkeypatch, payload_row,
 
 def test_fence_after_all_read_preparation_prevents_post(monkeypatch, payload_row):
     prepare(monkeypatch)
-    def lost():
+    def lost(payload):
         raise ValueError("lease lost")
     with pytest.raises(ValueError, match="lease lost"):
         remote.push(None, payload_row, {"exchange_rate": 725}, lost)
@@ -174,7 +174,8 @@ def test_worker_does_not_post_after_lease_expires_during_read(db, monkeypatch):
     monkeypatch.setattr(attachments, "bind", lambda *a: [])
     prepare(monkeypatch)
     sync_service.deliver(db, row.id); db.refresh(row)
-    assert row.sync_status == "uncertain" and row.xiaoman_receipt_id is None
+    assert row.sync_status == "failed" and row.xiaoman_receipt_id is None
+    assert row.send_phase == "preparing" and row.recovery_kind == "prepare_retry"
 
 
 @pytest.mark.parametrize("kind", ["unrelated", "target", "moved"])

@@ -35,7 +35,7 @@ def target(node_runtime,migrated):
         connection.execute(text(f"DELETE FROM {TABLE} WHERE code LIKE 'outbound-worker-%'"))
         connection.execute(text('CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(64) PRIMARY KEY)'))
         connection.execute(text('DELETE FROM alembic_version'))
-        connection.execute(text('INSERT INTO alembic_version(version_num) VALUES (:revision)'),{'revision':'176_portal_pi_header'})
+        connection.execute(text('INSERT INTO alembic_version(version_num) VALUES (:revision)'),{'revision':'177_portal_pi_header'})
         uuid=connection.scalar(text('SELECT @@server_uuid'))
     def probe(user='root'):
         node,driver=node_runtime
@@ -95,7 +95,7 @@ def test_actual_privileged_node_reads_known_mode_or_initial_empty_table(target,i
     assert target.rows()==before
 
 
-@pytest.mark.parametrize('revision',[PARENT,'175_customer_order_portal','176_portal_pi_header','999_unknown'])
+@pytest.mark.parametrize('revision',[PARENT,'176_customer_order_portal','177_portal_pi_header','999_unknown'])
 def test_missing_mode_table_requires_exact_trusted_preportal_head(target,revision):
     with target.engine.begin() as connection:
         connection.execute(text('UPDATE alembic_version SET version_num=:revision'),{'revision':revision})
@@ -132,7 +132,7 @@ def test_actual_missing_mode_table_with_unconfirmed_head_is_rejected(target,head
     with target.engine.begin() as connection:
         connection.execute(text('DELETE FROM alembic_version'))
         if head_state=='multiple':
-            for revision in (PARENT,'176_portal_pi_header'):
+            for revision in (PARENT,'177_portal_pi_header'):
                 connection.execute(text('INSERT INTO alembic_version VALUES (:revision)'),{'revision':revision})
         if head_state=='missing':
             connection.execute(text('RENAME TABLE alembic_version TO owned_head_backup'))

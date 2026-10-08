@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>订单发票详情 · 莱莎方舟</title>
+  <link rel="stylesheet" href="../../../frontend/src/styles/tokens.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="fixtures.js" defer></script>
+  <script src="anomalies.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="preview-bar">
+    <div><span class="preview-dot"></span><strong>交互设计预览</strong><span class="preview-note">订单发票详情 / 示例数据</span></div>
+    <label>演示场景 <select id="scenario" aria-label="演示场景">
+      <option value="partial">预售单 · 分批出库 / 部分回款</option>
+      <option value="complete">库存单 · 已出库 / 已结清</option>
+      <option value="generated">库存单 · 已生成 / 待实际出库</option>
+      <option value="draft">生产单 · 草稿 / 无关联单据</option>
+      <option value="exception">核验异常 · 进度待核对</option>
+      <option value="order_failed">订单异常 · 同步失败</option>
+      <option value="outbound_issue">出库单异常 · 待核对</option>
+      <option value="receipt_failed">回款异常 · 同步失败</option>
+      <option value="exception_all">多项异常 · 订单 / 出库单 / 回款</option>
+      <option value="restricted">权限受限 · 仅查看订单</option>
+    </select></label>
+  </div>
+  <div class="workspace">
+    <aside class="sidebar" aria-label="平台导航预览">
+      <div class="brand"><span class="brand-mark">A</span><div>莱莎方舟<small>LeShine Ark</small></div></div>
+      <div class="nav-caption">业务工作台</div>
+      <div class="nav-row">⌂ <span>工作台</span></div>
+      <div class="nav-row">♧ <span>客户管理</span></div>
+      <div class="nav-caption">订单与履约</div>
+      <div class="nav-row active">▤ <span class="nav-label">订单发票管理<span class="nav-anomaly" data-nav-anomaly="order" hidden>!</span></span><span class="nav-active-dot"></span></div>
+      <div class="nav-row">▱ <span class="nav-label">出库单<span class="nav-anomaly" data-nav-anomaly="outbound" hidden>!</span></span></div>
+      <div class="nav-row">▥ <span class="nav-label">回款单<span class="nav-anomaly" data-nav-anomaly="receipt" hidden>!</span></span></div>
+      <div class="nav-row">✓ <span>发货检验</span></div>
+      <div class="sidebar-bottom"><span class="avatar">D</span><div>Derek<small>外贸业务部</small></div><span>⌄</span></div>
+    </aside>
+    <div class="workspace-content">
+      <header class="app-header"><span>☰</span><div>订单与履约 <span class="muted">/</span> <strong>订单发票管理</strong></div><span class="header-right">莱莎发制品 <span class="avatar small">D</span></span></header>
+      <main class="list-page">
+        <div class="page-heading"><div><h1>订单发票管理</h1><p>客户发票、产品明细与关联单据集中查看。</p></div><span class="tag gold">2026 年 10 月</span></div>
+        <div class="list-metrics"><div><span>订单金额</span><strong>USD 6,045.00</strong><small>本页 3 张示例发票</small></div><div><span>库存单</span><strong>1</strong><small>订单与履约</small></div><div><span>生产单</span><strong>1</strong><small>客户定制订单</small></div><div><span>预售单</span><strong>1</strong><small>分批交付</small></div></div>
+        <section class="list-card"><div class="list-filter"><span class="filter-display">⌕　搜索发票号 / 客户</span><span class="filter-display">订单类型　⌄</span><span class="filter-display">发票状态　⌄</span></div><div class="list-action-note">点击发票号，查看订单、出库与回款详情 <span>3 张示例发票</span></div><div class="table-scroll"><table><thead><tr><th>发票号</th><th>客户</th><th>类型</th><th>日期</th><th class="num">金额（USD）</th><th>同步状态</th></tr></thead><tbody id="invoice-list"></tbody></table></div><div class="list-pagination">共 3 条 <span class="page-number">1</span></div></section>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="detail-dialog" aria-labelledby="dialog-title">
+    <div class="detail-shell">
+      <header class="dialog-header"><div class="document-icon" aria-hidden="true">▤</div><div class="dialog-title-group"><div class="eyebrow">订单发票详情</div><div class="invoice-title-line"><h2 id="dialog-title"></h2><span id="dialog-anomaly"></span></div></div><div id="header-tags" class="header-tags"></div><div class="header-controls"><button id="expand-dialog" class="icon-button" aria-label="切换宽屏" title="切换宽屏">⛶</button><button id="close-top" class="icon-button" aria-label="关闭详情" title="关闭详情">×</button></div></header>
+      <section class="shared-summary" aria-label="订单及履约概览">
+        <div class="customer-strip"><div id="customer-line"></div><div id="order-meta"></div></div>
+        <div class="progress-grid" id="progress-grid"></div>
+        <div id="summary-notice"></div>
+      </section>
+      <div class="tab-bar" role="tablist" aria-label="订单关联详情"><button id="tab-order" role="tab" aria-controls="detail-panel" data-tab="order" aria-selected="true">订单详情</button><button id="tab-outbound" role="tab" aria-controls="detail-panel" data-tab="outbound" aria-selected="false">出库单详情 <span id="outbound-count" class="tab-count"></span></button><button id="tab-receipt" role="tab" aria-controls="detail-panel" data-tab="receipt" aria-selected="false">回款单详情 <span id="receipt-count" class="tab-count"></span></button><span class="tab-help">单据随订单自动关联</span></div>
+      <main id="detail-panel" class="detail-panel" role="tabpanel" aria-labelledby="tab-order" tabindex="0"></main>
+      <footer class="dialog-footer"><span id="footer-context"></span><div><button id="print-preview" class="button secondary">打印订单预览</button><button id="close-bottom" class="button primary">关闭详情</button></div></footer>
+    </div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

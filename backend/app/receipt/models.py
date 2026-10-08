@@ -38,10 +38,36 @@ class Receipt(Base):
     attempts = Column(Integer, nullable=False, default=0, comment='发送尝试次数')
     lease_until = Column(DateTime, comment='任务租约到期时间，北京时间')
     attempt_token = Column(String(64), comment='当前任务执行令牌，防止旧任务覆盖')
+    send_phase = Column(String(16), comment='NULL历史未知/preparing/sending/accepted/verified/rejected')
+    recovery_kind = Column(String(24), index=True, comment='prepare_retry/verify/blocked/unknown/exhausted')
+    next_attempt_at = Column(DateTime, index=True, comment='下次恢复时间，北京时间')
+    recovery_attempts = Column(Integer, nullable=False, default=0, server_default="0", comment='连续准备恢复或详情回读失败次数')
     created_by = Column(Integer, nullable=False, comment='创建或操作人，ark_users.id')
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment='创建时间，北京时间')
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment='最近更新时间，北京时间')
     synced_at = Column(DateTime, comment='最近确认小满结果时间，北京时间')
+
+
+class ReceiptAttempt(Base):
+    """Append-only identities of sending attempts, including fenced late results."""
+    __tablename__ = "ark_receipt_attempts"
+    token = Column(String(64), primary_key=True)
+    receipt_id = Column(BigInteger, ForeignKey("ark_receipts.id"), nullable=False, index=True)
+    payload_hash = Column(String(64), comment='发送内容摘要，不保存客户备注或凭证')
+    remote_id = Column(String(64), comment='小满返回 ID；迟到响应也持久保存')
+    remote_no = Column(String(64), comment='小满返回编号')
+    handled_at = Column(DateTime, comment='返回证据处理时间，北京时间')
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment='创建时间，北京时间')
+
+
+class ReceiptIndexState(Base):
+    """Shared complete index and cross-process refresh lease, one row per tenant."""
+    __tablename__ = "ark_receipt_index_states"
+    source = Column(String(64), primary_key=True, comment='接口租户摘要，不含密钥')
+    snapshot = Column(JSON, comment='完整最小回款索引及校验摘要，事务原子发布')
+    lease_token = Column(String(64), comment='索引刷新执行令牌')
+    lease_until = Column(DateTime, comment='刷新租约截止，北京时间')
+    updated_at = Column(DateTime, comment='完整索引发布时间，北京时间')
 
 
 class ReceiptIntent(Base):

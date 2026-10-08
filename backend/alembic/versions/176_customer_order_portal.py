@@ -6,8 +6,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
-revision = "175_customer_order_portal"
-down_revision = "174_domestic_decision"
+revision = "176_customer_order_portal"
+down_revision = "175_receipt_recovery"
 branch_labels = None
 depends_on = None
 

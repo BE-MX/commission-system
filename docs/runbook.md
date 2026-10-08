@@ -1,5 +1,13 @@
 # 莱莎方舟平台 运维手册
 
+## 回款自动恢复与索引（175，待部署）
+
+发送前临时故障最多连续恢复 5 次；已知 ID 详情读取失败最多连续 8 次。`exhausted` 须检查网络、权限、字段或索引任务后由原回款操作重试/刷新。`unknown` 没有确切远端 ID 时不能直接重发；`blocked` 金额/费用/身份冲突须核对原单，程序不会自动改金额或手续费。
+
+`receipt_index_refresh` 每 30 秒独立运行。查看 `[receipt-index]` 日志和 `ark_receipt_index_states` 的发布时间/租约。缺失或不完整索引会阻止发送；后台扫描失败保留旧快照，但发送仍须实时核验，不通过则拒绝。不得手工修改 checksum、水位、发送阶段或清空待核对状态强行放行。
+
+`ark_receipt_attempts` 保留准确响应 ID 与处理时间，可核查迟到响应和重复 ID 冲突。详情恢复仅 GET，发送开关关闭仍可运行；不应因为显示“同步成功”就将财务未生效当成已结清。发布须通过统一入口应用迁移 175，保留全部恢复证据。详见[状态与验收说明](requirements/2026-10-08-receipt-sync-recovery.md)。
+
 ## 色卡工作台备份容量控制
 
 北京 `ark-colorwork-backup-retention.timer` 每小时保留最近两份备份及当前成功恢复点。发布锁忙时跳过；发布失败、服务异常或保留备份验证失败时不删除，查看 `journalctl -u ark-colorwork-backup-retention.service`。脚本仅管理 `/home/ubuntu/commission-system/.deploy_state/colorwork/backups`，运行数据 `colorwork/data` 不在删除范围。安装/更新从 `deploy.bat --colorwork-backup-policy` 进入，详见 [部署说明](../deploy/README.md)。

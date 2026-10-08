@@ -7,7 +7,7 @@
 - 建票不再创建 ReceiptIntent 草稿。`create_invoice` 对 `source_type="portal"` 跳过既有 `save_draft(new=True)` 钩子；门户 PI 与历史发票一致，回款经既有手工回款或发票编辑入口（编辑时惰性创建 eligible=0 草稿）处理，其他来源发票行为不变。
 - v1.96/v1.97 价格写入口当前权限屏障保留，不再向回款/出库 writer 扩展。
 - 旧自动回款 `generate_ready` 执行主体政策与接入、显式回款生成内核接线、后台自动出库执行器切换与发布围栏（C01–C06）、全部 writer 共同协议（T64 相关部分）整体划入独立加固专项，从门户上线门禁移出；相应 OPEN 项不再阻断门户发布，原测试与证据保留供该专项复用。
-- 收窄后的门户上线门禁：迁移 126 链与 175/176 真实库演练及单 head、库存来源/合同价/SMTP/存储真实联调、边界内 64T 子集（身份/隔离/目录/报价/提案/接受/唯一建票）、B01–B07 经营参数、双客户双业务员试点、统一部署入口发布与恢复演练。
+- 收窄后的门户上线门禁：迁移 126 链与 176/177 真实库演练及单 head、库存来源/合同价/SMTP/存储真实联调、边界内 64T 子集（身份/隔离/目录/报价/提案/接受/唯一建票）、B01–B07 经营参数、双客户双业务员试点、统一部署入口发布与恢复演练。
 
 本机验证（2026-10-08）：`tests/portal` SQLite 套件 717 passed / 1 failed（test_portal_permission_seed_is_repeatable_and_preserves_kind，失败在 seed_role_permissions→lock_authority 缺 ark_order_portal_auth_barriers 表，不经过 create_invoice，与本次改动无关的既有问题）/ 2 skipped（live browser 需显式 opt-in）；既有回款套件 test_receipt_management/protocol/batches/preflight_fields 129 passed。portal_mysql 断言已同步更新，本机无 --portal-mysqld 未执行。实际命令与终态见[交接](../../handoff.md)。以下 v1.72 及更早章节按历史时点阅读；其中"建票生成 ReceiptIntent 草稿"及把全 writer 协议列为门户上线门禁的表述以本节为准。
 

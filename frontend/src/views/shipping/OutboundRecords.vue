@@ -7,13 +7,23 @@
     </div>
 
     <div ref="panelRef" class="table-card outbound-panel">
-      <FilterBar  class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="handleReset"><el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" class="filter-w-lg"   />
-<el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable class="filter-w-md"   />
-<el-date-picker
+      <FilterBar class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value"
+        :advanced-count="advancedFilterCount" @search="handleSearch" @reset="handleReset">
+        <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" class="filter-w-lg" />
+        <el-select v-model="searchForm.outboundState" placeholder="出库单状态" aria-label="出库单状态" clearable class="filter-w-sm">
+          <el-option v-for="(label, value) in OUTBOUND_STATE_LABELS" :key="value" :label="label" :value="value" />
+        </el-select>
+        <el-select v-model="searchForm.inspectionStatus" placeholder="检验状态" aria-label="检验状态" clearable class="filter-w-sm">
+          <el-option v-for="(label, value) in INSPECTION_STATUS_LABELS" :key="value" :label="label" :value="value" />
+        </el-select>
+        <el-date-picker
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
           start-placeholder="出库起" end-placeholder="出库止" class="filter-w-lg"
         />
-</FilterBar>
+        <template #advanced>
+          <el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable class="filter-w-md" />
+        </template>
+      </FilterBar>
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
@@ -160,7 +170,8 @@ const columnDefs = [
 // 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec）
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('outbound-records', columnDefs)
-const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.orderId || searchForm.dateRange?.length))
+const advancedFilterCount = computed(() => Number(Boolean(listPageState.appliedSearchForm.value.orderId)))
+const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.orderId || searchForm.dateRange?.length || searchForm.outboundState || searchForm.inspectionStatus))
 function canShowMore(row) {
   if (row.record_source !== 'okki') return false
   if (auth.hasPermission('shipping_inspection:admin')) return true

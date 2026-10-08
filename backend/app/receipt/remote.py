@@ -45,11 +45,13 @@ def order_receipts(db, order_id):
     return [row for row in verified_rows(db) if str(row["order_id"]) == str(order_id)]
 
 
-def _window_order_receipts(db, order_id, *, include_watermark=False):
+def _window_order_receipts(db, order_id, *, include_watermark=False, heartbeat=None):
     """Walk descending update-time windows, replacing each tied boundary in full."""
     upper = beijing_now().replace(microsecond=0)
     lower = "1970-01-01 00:00:00"
     def fetch(start=None, end=None):
+        if heartbeat:
+            heartbeat()
         params = {"start_index": 1, "count": 100, "removed": "0"}
         if start is not None:
             params.update(start_time=start, end_time=end)
@@ -107,11 +109,27 @@ def _window_order_receipts(db, order_id, *, include_watermark=False):
             if delta_end < upper.strftime("%Y-%m-%d %H:%M:%S"):
                 raise ValueError("回款核验时钟异常")
             def delta():
-                changes, total = fetch(delta_start, delta_end)
-                validate(changes, delta_start, delta_end)
-                identities = {str(row["cash_collection_id"]) for row in changes}
-                if total > 100 or len(identities) != total:
-                    raise ValueError("回款增量窗口不完整，请刷新后重试")
+                pending, changes, calls = [(delta_start, delta_end)], [], 0
+                while pending:
+                    if calls >= 128:
+                        raise ValueError("回款增量窗口过多，请稍后重试")
+                    start, finish = pending.pop()
+                    rows, total = fetch(start, finish)
+                    calls += 1
+                    validate(rows, start, finish)
+                    if total > 100:
+                        if start == finish:
+                            raise ValueError("同秒回款过多，无法完整核验")
+                        a, b = (datetime.strptime(s, "%Y-%m-%d %H:%M:%S") for s in (start, finish))
+                        middle = a + timedelta(seconds=int((b - a).total_seconds()) // 2)
+                        pending.extend([(start, middle.strftime("%Y-%m-%d %H:%M:%S")),
+                            ((middle + timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S"), finish)])
+                    else:
+                        if len({str(row["cash_collection_id"]) for row in rows}) != total:
+                            raise ValueError("回款增量窗口ID重复")
+                        changes.extend(rows)
+                if len({str(row["cash_collection_id"]) for row in changes}) != len(changes):
+                    raise ValueError("回款增量跨窗重复，请刷新后重试")
                 return changes
             changes, confirmed = delta(), delta()
             canonical = lambda rows: json.dumps(sorted(rows, key=lambda r: str(r["cash_collection_id"])), sort_keys=True)
@@ -269,7 +287,7 @@ def push(db, receipt, snapshot, before_send=None):
     for force in (False, True):
         token = okki_client.ensure_access_token(db, force=force)
         if before_send:
-            before_send()  # fence after ALL read-only preparation, immediately before POST
+            before_send(payload)  # freeze and fence immediately before each POST
         result = okki_client._post_json("/v1/invoices/receipt/push", token, payload, context="回款推送")
         if result is not None:
             if not isinstance(result, dict) or not str(result.get("cash_collection_id") or "").isdigit() or not result.get("cash_collection_no"):

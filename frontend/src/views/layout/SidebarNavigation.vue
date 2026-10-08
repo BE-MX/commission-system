@@ -104,7 +104,7 @@
               <el-badge v-if="item.badge === 'domesticReviews'" :value="pendingReviews" :max="Number.MAX_SAFE_INTEGER" :hidden="pendingReviews === 0" class="nav-review-badge" :aria-label="`${item.title}，${pendingReviews}笔待审核`">
                 <span>{{ item.title }}</span>
               </el-badge>
-              <span v-else>{{ item.title }}</span>
+              <span v-else class="nav-document-label" :title="documentBadgeTitle(item)">{{ item.title }}<span v-if="documentAnomalies[item.anomalyDomain]?.has_anomaly" class="nav-document-anomaly" :aria-label="documentBadgeTitle(item)">!</span></span>
               <button
                 v-if="!collapsed && item.name"
                 v-permission="'task:write'"
@@ -134,6 +134,7 @@
 
 <script setup>
 import { useDomesticReviewBadge } from './useDomesticReviewBadge'
+import { useDocumentAnomalyBadge } from './useDocumentAnomalyBadge'
 import { computed, nextTick, ref, watch } from 'vue'
 import { Search, TopRight } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
@@ -147,6 +148,13 @@ const props = defineProps({
 })
 
 const pendingReviews = useDomesticReviewBadge()
+const documentAnomalies = useDocumentAnomalyBadge()
+function documentBadgeTitle(item) {
+  const domain = documentAnomalies.value[item.anomalyDomain]
+  if (!domain || domain.state === 'restricted') return ''
+  if (domain.state === 'unavailable') return `${item.title}异常状态待核验${domain.has_anomaly ? '，保留上次异常提示' : ''}`
+  return domain.has_anomaly ? `${item.title}存在异常单据，请查看核对` : ''
+}
 const route = useRoute()
 const authStore = useAuthStore()
 const { openQuickTask } = useQuickTask()
@@ -190,6 +198,7 @@ const accessibleGroups = computed(() => Object.entries(MENU_GROUPS)
         icon: entry.menu.icon,
         external: entry.external === true,
         badge: entry.menu.badge,
+        anomalyDomain: entry.menu.anomalyDomain,
       }))
     return { key, ...group, items }
   })
@@ -259,6 +268,8 @@ function rememberClosedGroup(key) {
 </script>
 
 <style scoped>
+.nav-document-label{position:relative;overflow:visible;margin-right:14px}
+.nav-document-anomaly{position:absolute;right:-14px;top:-8px;width:14px;height:14px;display:grid;place-items:center;border-radius:50%;background:var(--color-gold);color:var(--sidebar-bg-from);font-size:10px;font-weight:800;line-height:1;box-shadow:0 0 6px var(--sidebar-glow-gold)}
 .nav-review-badge { line-height: 20px; margin-right: 22px; }
 .nav-review-badge :deep(.el-badge__content) { font-variant-numeric: tabular-nums; }
 

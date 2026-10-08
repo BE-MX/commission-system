@@ -3,11 +3,40 @@
 ## 2026-10-08 客户下单门户合并推送（Kimi 执行，已授权）
 
 - 亮哥决定：客户下单门户功能边界止于生成方舟正式 PI，回款/出库/履约由方舟既有模块处理；随后授权合并推送。门户全部成果以未提交状态保存在 `codex/customer-portal-dev-docs` worktree，本次经 `kimi/customer-order-portal-merge`（基点 `54f77438`，提交见 git log）合并入 main 并推送 origin；原 codex worktree 未做任何 git 写操作，其工作区原样保留。
-- 迁移撞号处理：门户迁移原编号 172/173 与 main 的 `172_workbench_lifecycle`/`173_task_center` 冲突，按 AGENTS.md 迁移规则重编号为 `175_customer_order_portal`（父 `174_domestic_decision`）与 `176_portal_pi_header`（父 175），代码/测试/文档引用同步更新；下方门户专题记录中历史上的"172/173"均指重编号前的门户迁移文件。
+- 迁移撞号处理：门户迁移原编号 172/173 与 main 的 `172_workbench_lifecycle`/`173_task_center` 冲突，按 AGENTS.md 迁移规则重编号；推送前 main 又落地 `175_receipt_recovery`，最终定为 `176_customer_order_portal`（父 `175_receipt_recovery`）与 `177_portal_pi_header`（父 176），代码/测试/文档引用同步更新；下方门户专题记录中历史上的"172/173"均指重编号前的门户迁移文件。
 - 范围剥离（专题契约 v1.73）：门户建票不再创建 ReceiptIntent 草稿（`create_invoice` 对 `source_type="portal"` 跳过 `save_draft(new=True)`），回款完全复用方舟既有发票→回款入口；价格写屏障保留但不向回款/出库 writer 扩展；全 writer 协议、回款内核接线、出库执行器切换与发布围栏划入独立加固专项，不阻断门户上线。
 - 合并冲突 22 个文件全部人工解决：receipt/service.py 保留门户当前授权架构并迁入 main 已发布的回款修正（invoice_summary 端点、auto 回款编辑费用重算、_receipt_basis 复核、附件顺序保留）；main.py 保留门户 ExitStack 生命周期并补回 main 的 seed_task_modules；ownership_service 同时保留客户转移时的门户访问暂停与工作项委派阻断；前端 7 个文件保留 main 设计体系并叠加门户入口。
 - 合并后验证（隔离 worktree 干净检出，无 backend/.env）：后端全量（排除本机缺 mcp/jinja2 依赖的 19 个收集错误模块与需专用 mysqld 的 portal_mysql）7237 passed / 47 failed / 7 errors，失败与错误集合逐条等同于 origin/main 基线（47 项既有失败原样保留）；门户 SQLite 套件 718 passed / 2 skipped / 0 failed；回款修正、发票生命周期/删除/委派/配件/关联同步等相关套件 189 passed；alembic 单 head `176_portal_pi_header`；`check_conventions --base 0c51bf1f` 增量无违规（UI 门禁 80 项已清零）。门户 MySQL 套件（123 处 ReceiptIntent 断言已同步新边界）与前端双端构建因本机无 mysqld/node 未执行，发布前须在有专用 mysqld 与 Node 的环境补跑。
 - 门户开关 PORTAL_ENABLED/PORTAL_WRITES_ENABLED/PORTAL_INVOICE_ENABLED 全部默认关闭，本次不部署。
+
+## 2026-10-08 出库单打印状态筛选（Codex，已合并推送部署）
+
+- 分支 `codex/outbound-status-filters`，独立工作树 `C:/Users/windb/.codex/worktrees/outbound-status-filters/commission-system`。出库单打印页新增可清空的「出库单状态」「检验状态」下拉，复用列表状态文案；两个状态与关键词、日期直接展示，订单 ID 移入展开筛选。
+- 查询提交条件并回到第一页，翻页/排序保留已提交条件，重置恢复默认。后端新增 `outbound_state` / `inspection_status` 参数并在计数、排序、分页前组合过滤，沿用原数据范围与去重。检验状态不匹配尚未生成单据、检验栏为“—”的本地任务；`retrying` 沿用既有自动重试判定，和最终失败区分。
+- 独立 agent 审查未发现阻塞项，确认前后端状态口径、分页前过滤、权限、去重及查询重置契约；MySQL 做静态兼容检查，未执行真实 MySQL 验证。
+- 验证：隔离 SQLite 后端状态筛选、出库队列、排序测试 71 项通过；前端筛选、操作与 useListPage 测试 17 项通过；前端构建通过（保留既有分包告警），增量约定/UI 门禁与 `git diff --check` 通过。Git 巡检已运行 `--no-fetch`，为本地远端引用快照。
+- 按本轮授权，功能提交 `c5c03bea` 已合并推送 `origin/main`，办公室统一部署入口先准备后发布，范围 `office-and-cloud`，回执 succeeded、deferred=[]，无数据库迁移。两地版本、健康、两个筛选参数枚举与两文件源码摘要一致；11 组生产只读筛选查询及 11 项公网制品核验通过。原主目录 24 项改动保留；浏览器连接不可用，未做登录态界面验收。详见[发布记录](reports/2026-10-08-outbound-status-filters-release.md)。
+
+## 2026-10-08 订单发票关联详情（Codex，已合并推送部署）
+
+- 独立 worktree / 分支 `codex/invoice-detail-prototype`，基于 main `fbb63182`。发票号打开订单/出库/回款三页签只读弹框；顶部原币财务生效与实际出库独立进度，关联单据、检验状态、预售冻结批次与私有回款凭证按各域权限展示。
+- 发票号红色静态荧光异常框与对应左侧导航黄色 `!` 复用完整可见范围异常投影；正常等待与已证明可自动重试不误报。核验失败保留明细并隐藏汇总，权限/身份变化清空旧数据；没有新增业务写入接口、权限或迁移。
+- 后端相关隔离回归 182 项、前端状态/请求回归 3 项通过；真实组件浏览器验证三页签/异常跳转/搜索/展开/Escape焦点及手机/短屏通过。构建、增量约定、diff 检查与独立审查通过，Git巡检为 `--no-fetch` 本地快照。
+- 应用候选 `ddc4a5a5` 已合入推送 main；办公室统一入口 prepare-only 与正式发布均退出 0，release_id=`444e65ef05d5472084a1471ff15567b9`，scope=office-and-cloud、deferred=[]。两地 HEAD 一致、health=ok/connected，四个 GET 端点已注册，前端制品及六个详情源码文件按候选核验。
+- 本次统一发布同时包含主线回款恢复迁移 `174→175_receipt_recovery`，共享迁移日志 completed；四列、两表及三索引只读核验通过，原出库 timer 与停用邮件 Worker 基线保留。合并候选后端 182 项、前端 8 项回归和构建再次通过；主目录原 24 项改动逐项保留，证据在 `.deploy_state/invoice-detail-release/`。
+- [实现与验收](requirements/2026-10-08-invoice-detail-implementation.md)、[发布记录](reports/2026-10-08-invoice-detail-release.md)及 API/模块笔记已同步。隔离验证没有真实小满或共享库业务写入；发布后仅做版本、接口、结构与制品核验。此前静态原型保留为历史设计参考。
+
+## 2026-10-08 出库单自动重试状态文案（Codex，已验收，授权合并推送，未部署）
+
+- 独立分支 `codex/outbound-retry-label`：出库列表已核实仍会自动重试的 `retrying` 显示“重新生成中”，操作提示改为“系统正在重新生成，请稍后刷新查看”；保留最早重试时间和尝试次数，最终失败仍为“生成失败”，不确定结果仍为“待核对”。仅调整展示文案，不改重试资格和打印保护。
+- 已同步接口说明及既有文案断言。出库列表5项Node测试、前端生产构建、严格增量约定与diff检查通过；Git巡检为 `--no-fetch` 本地快照。亮哥已授权提交、合并及推送 `origin/main`，本轮不部署。
+
+## 2026-10-08 回款同步恢复 1/2/4 项（Codex，授权合并推送，未部署）
+
+- 分支 `codex/receipt-sync-recovery`：持久 preparing/sending 阶段和发送摘要、迟到响应证据；发送前临时故障有限退避，已知 ID 自动严格回读和财务生效轮询。历史未知阶段/无 ID 结果不明保持人工核对，不自动改金额或手续费。
+- 迁移 `175_receipt_recovery`，父 174：新增恢复字段、发送证据表与共享索引表。独立索引后台使用跨实例数据库租约和原子发布，增量超过 100 条分窗；单笔任务不全量重建，不凭陈旧余额发送。
+- 亮哥已授权合并推送；仅隔离测试与离线 DDL 核验，未运行共享库迁移或发布。实现边界和验收见[回款恢复说明](requirements/2026-10-08-receipt-sync-recovery.md)。
+- 验收：关联回款、预售、生命周期、删除保护等 339 项隔离测试通过；独立 agent 审查发现的回读乱序、迟到异 ID、证据回滚、持续高增量和核对绕过问题已修复并复审通过。约定检查、diff 检查通过；Git 巡检为 --no-fetch 本地快照。
 
 ## 2026-10-08 内贸经营决策台实现（Codex，已验收，授权合并推送，未发布）
 
@@ -237,12 +266,12 @@
 ## 客户门户 v1.73 范围剥离：门户边界止于方舟 PI（2026-10-08，Kimi 执行）
 
 - 业务决定（亮哥）：门户功能边界到生成方舟正式 PI 为止；回款、出库与履约完全由方舟既有模块按原有流程处理。ReceiptIntent 创建期草稿移除（完全复用方舟现有发票→回款入口）；v1.96/v1.97 价格写屏障保留、不再向回款/出库 writer 扩展；旧自动回款 generate_ready 主体政策与接入、显式回款内核接线、后台出库执行器切换与发布围栏、全部 writer 共同协议划入独立加固专项，移出门户上线门禁。
-- 方案验证（先于改动）：审批链路 approval_service→invoice_adapter→create_invoice 无门户专用 ReceiptIntent 代码，草稿来自 create_invoice 内既有 save_draft(new=True) 钩子；手工回款 create_service 不依赖 intent；guard_edit/guard_delete/describe/preflight/pi_void 均兼容 row is None（同步小满缺回款资料的拦截提示与无 intent 的普通发票一致）；迁移 172/173（合并时重编号为 175/176，父 174_domestic_decision）无 ReceiptIntent 结构；双前端无 ReceiptIntent 引用。
+- 方案验证（先于改动）：审批链路 approval_service→invoice_adapter→create_invoice 无门户专用 ReceiptIntent 代码，草稿来自 create_invoice 内既有 save_draft(new=True) 钩子；手工回款 create_service 不依赖 intent；guard_edit/guard_delete/describe/preflight/pi_void 均兼容 row is None（同步小满缺回款资料的拦截提示与无 intent 的普通发票一致）；迁移 172/173（合并时重编号为 176/177，最终父版本 175_receipt_recovery）无 ReceiptIntent 结构；双前端无 ReceiptIntent 引用。
 - 代码改动（唯一产品改动）：`backend/app/invoice/service.py` create_invoice 对 source_type=="portal" 跳过 save_draft(new=True)；update_invoice 既有 save_draft(new=False) 惰性入口保留（与历史发票同口径）。无迁移、无 schema、无 API 变更。
 - 测试更新：tests/portal 三文件（approval/live_browser_trade/pi_void；pi_void 的 intent 阻拦与保留场景改显式 fixture）；tests/portal_mysql 14 文件（审批副作用断言改"无 intent"，需要 intent 的场景改显式 db.add；receipt/shipment 子树经 setup_push/read_app 两处 fixture 覆盖；test_mysql_incomplete_pi_http 的 count==1 因 update_invoice 惰性建 eligible=0 草稿而有意保留）；portal_mysql README 与 pi-writer-inventory.json sources_sha256 同步。
 - 文档：README/00 新增 v1.73 顶段；04 建票事务顺序与自动回款门禁框架、03 回款旧入口接入边界、06 T37 与 1.31 链路断言、08 门禁重分类（门户门禁收窄、移出项保留为独立专项）已更新；docs/api-reference.md 审批描述同步；历史 v1.xx 段落保持原时点。
 - 验证（本机，解释器 D:/commission-system/tmp/okki-test-venv/Scripts/python.exe，TMPDIR 指向可写目录规避默认 Temp 拒绝）：tests/portal SQLite 717 passed / 1 failed / 2 skipped（唯一失败为既有 test_portal_permission_seed_is_repeatable_and_preserves_kind，失败点在 seed_role_permissions→lock_authority 缺 ark_order_portal_auth_barriers 表，不经过 create_invoice，与本改动无关）；既有回款套件 test_receipt_management/protocol/batches/preflight_fields 129 passed；tests/portal_mysql 收集干净，29 passed / 2705 skipped（本机无 --portal-mysqld，MySQL 用例全部干净 skip，未执行；14 个改动文件 py_compile 通过）。
-- 未 commit/push/merge/部署，改动保留在本 worktree 供审阅（AGENTS.md：该 worktree 归属 codex，本轮未做任何 git 写操作）。待办：14 个 MySQL 套件文件需在有专用 mysqld 的环境重跑；收窄后的门户上线门禁（迁移 126 链与 175/176 真实库演练、库存/合同价/SMTP/存储真实联调、边界内 64T、B01–B07、双客户双业务员试点、统一入口发布演练）仍 OPEN；独立加固专项各项原证据保留、不阻断门户发布。
+- 未 commit/push/merge/部署，改动保留在本 worktree 供审阅（AGENTS.md：该 worktree 归属 codex，本轮未做任何 git 写操作）。待办：14 个 MySQL 套件文件需在有专用 mysqld 的环境重跑；收窄后的门户上线门禁（迁移 126 链与 176/177 真实库演练、库存/合同价/SMTP/存储真实联调、边界内 64T、B01–B07、双客户双业务员试点、统一入口发布演练）仍 OPEN；独立加固专项各项原证据保留、不阻断门户发布。
 
 ## 客户门户 v1.97 真实 HTTP 改价、客户接受与员工审批的提交顺序（2026-10-07）
 
@@ -4668,14 +4697,14 @@ I18独立源码审查指出窄续体窗口后，170真实旧构建 Chrome 在受
 
 上一 goal turn 属 progress：I15–I18修复与171/172最终验证落地。本轮新增 frontend-portal/tests/account-switch.browser.mjs 和 backend/tests/portal/test_session_surfaces.py，未改产品源码、业务/表/迁移或鉴权规则。继续实现验收，不将文档完成当整体goal完成。
 
-173首次五场景脚本在catalog等待B_PRIVATE_COMPANY exact超时；菜单span同时含small的Private partner access，已真实两次Bverify但body未释放，属于定位夹具错误。改限定 .account-menu > span 后174完整五场景通过。联系人一度观察为等待中，后来同86955句柄确认为exit0并有contact.png/result.json，未擅自重启或将观测超时当终态。175新增heldPrivateA必须true与B目录/条款/报价/联系人/地址完整保留；176再补A价格 USD71.25不可见、B正常下载实际合成PDF字节含B_PRIVATE_PI且无A_PRIVATE_PI，五场景最终通过。D:/commission-system/tmp/portal-account-switch-176/result.json、5PNG及B-synthetic.pdf为最终证据；174/175/176重叠不相加。173失败JSON/截图保留。
+173首次五场景脚本在catalog等待B_PRIVATE_COMPANY exact超时；菜单span同时含small的Private partner access，已真实两次Bverify但body未释放，属于定位夹具错误。改限定 .account-menu > span 后174完整五场景通过。联系人一度观察为等待中，后来同86955句柄确认为exit0并有contact.png/result.json，未擅自重启或将观测超时当终态。175新增heldPrivateA必须true与B目录/条款/报价/联系人/地址完整保留；176再补A价格 USD71.25不可见、B正常下载实际合成PDF字节含B_PRIVATE_PI且无A_PRIVATE_PI，五场景最终通过。D:/commission-system/tmp/portal-account-switch-176/result.json、5PNG及B-synthetic.pdf为最终证据；174/176/177重叠不相加。173失败JSON/截图保留。
 
 真实Chrome同context两页面、真实构建App/client与未替换的原生BroadcastChannel，peer退出→原tab登录页/another-tab通知/弹窗卸载→peer登录B→原tab登录B→peer收到登录页。各A目录/订单/报价/PDF/联系人JSON/Blob的native读取完成，受控后续Promise暂停；fetch wrapper只去掉signal以模拟不合作transport，真实client的scope/controller断言保留。B当前页面和新B报价已建立再release A body，跨宏任务后断言body-return真实发生、held数据含合成A标记、批次DOM未见A、最终DOM/输入/金额无A/旧价。B内容完整仍可用；旧PDFURL/click0、新B实际download事件与字节正确。每模式API14/16/15/17/15；原tabfetch options记录7/9/8/9/8均same-origin/no-store；pageerror0。local/session storage合成私密标记无残留，CacheStorage空、service worker0；不是任意敏感字段/浏览器HTTPcache/CDN缓存证明。1440截图contact已实际查看。本批不是完整键盘/字体/移动端验收，不增加UI条目总数。
 
 177隔离实际pytest tests/portal/test_session_surfaces.py tests/portal/test_customer_preview.py --confcutdir=tests/portal -p no:cacheprovider --basetemp=D:/commission-system/tmp/portal-session-surfaces-177 -q --tb=short -x；日志portal-session-surfaces-177.log，3 passed/2条既有jose.utcnow弃用警告0.83s、exit0。新增凭证表面1项+既有只读预览2项，不计为三项新场景。真实JWT签发/解码、真实客户OTP/opaque会话和binding validate，真实ASGI HTTP/SQLite，客户及员工依赖无override（仅get_db隔离）；employee_principal仍managed权限替身。有效员工JWT先后台列表200/no-store以排除无效token的假反例，再单Bearer客户401、JWT装客户Cookie401、真opaqueCookie客户200、另一super_adminJWT不改变该customer、客户Cookie员工403/AUTH_REQUIRED、opaqueBearer员工401。预览200/private no-store/无Set-Cookie，PortalSession/Quote/MappingRevision/AuditEvent/OutboxEvent计数不增，去Cookie后单JWT客户仍401。未打印合成JWT/OTP/session，也未读.env、连接MySQL/生产或真实发信。
 
 原生BroadcastChannel两标签与合成服务端身份明确分开；HTTP鉴权和真实角色授权分开；客户端no-store参数与真实所测路由no-store响应分开。MutationObserver不能证明所有同批次瞬时DOM或input.value孤立写入，最终值有另验，不扩大承诺。T49/T53本组客户端及路由子契约补证，不宣布整条真实新账号/经营数据/代理共享缓存全通过。其他T48/T50/T51配置UI、T52北京时间、T54回退、T62PI全入口、T64慢IO/锁超时性能及完整迁移/B01–B07/真实SMTP/COS/试点发布保持独立待验。无产品新修改，不重复当前171客户构建或已通过数据库矩阵；整体goal仍active，未commit/push/merge或部署。
-本批独立定向复核已完成：账号切换续体/原生两标签/B保留和新增同域凭证/预览测试无剩余具体P1/P2；177实际日志3pass0.83s、176最终五场景结果已核。真实JWT/OTP/binding与managed员工权限替身的边界明确，不能称真实RBAC完整。最终strict、git diff --check、文档静态校验均exit0（8篇/24链接锚点/3JSON/64规格/19设计发现；保留既有LF/CRLF提示）。15:01北京时间 git_sweep --no-fetch exit0，仅本地快照：主目录0修改/1未跟踪，任务42修改/42未跟踪统计项、无upstream，未fetch。91084客户预览Ctrl+C终态exit1（主动停止），173/174/175/176浏览器及177Python均已终态，拥有的Chrome/HTTP/SQLite测试过程已结束，无MySQL或真实外部服务。保留仓库两新测试、173失败、174/175历史与176/177最终证据；本批无过时scratch脚本需清理。整体goal仍active，下一步继续北京时间跨日与隔离回退等尚未满足本地验收，不把本批客户端/路由补证替代生产试点。
+本批独立定向复核已完成：账号切换续体/原生两标签/B保留和新增同域凭证/预览测试无剩余具体P1/P2；177实际日志3pass0.83s、176最终五场景结果已核。真实JWT/OTP/binding与managed员工权限替身的边界明确，不能称真实RBAC完整。最终strict、git diff --check、文档静态校验均exit0（8篇/24链接锚点/3JSON/64规格/19设计发现；保留既有LF/CRLF提示）。15:01北京时间 git_sweep --no-fetch exit0，仅本地快照：主目录0修改/1未跟踪，任务42修改/42未跟踪统计项、无upstream，未fetch。91084客户预览Ctrl+C终态exit1（主动停止），173/174/176/177浏览器及177Python均已终态，拥有的Chrome/HTTP/SQLite测试过程已结束，无MySQL或真实外部服务。保留仓库两新测试、173失败、174/175历史与176/177最终证据；本批无过时scratch脚本需清理。整体goal仍active，下一步继续北京时间跨日与隔离回退等尚未满足本地验收，不把本批客户端/路由补证替代生产试点。
 
 ## 详细开发文档与对抗审查交付补充（2026-10-04 15:15 北京时间）
 

@@ -177,7 +177,7 @@ revision 的 payment_terms_snapshot 结构固定为 `{code, display_text, deposi
 
 后续 PI revision.invoice_presentation_json 保存客户实际确认的 invoice_no、customer_name、invoice_date、express_channel、contact_email、sales_user_name、sales_phone、sales_email、packaging_quantity；不得包含内部用户/商品/来源 ID。非空快照纳入 content_hash，按不可变证据保护。提案显示完整头部及相对历史修订/发布的差异，发布和 PDF 只使用已接受快照，并在发布前核对实际 PI。
 
-历史实施批次在本地分支使用176_portal_pi_header迁移（父175_customer_order_portal），仅添加可空JSON列；此编号记录不是线上revision或可直接执行授权，继续实施仍须检查所有分支和隔离目标schema。历史NULL不从当前PI回填、不重写旧hash。缺少该字段的旧开发PI后续提案必须重新生成并取得确认。首次建票publication同步保存商业头部，用作下一版的比较基线；首次编号在建票时生成。
+历史实施批次在本地分支使用177_portal_pi_header迁移（父176_customer_order_portal），仅添加可空JSON列；此编号记录不是线上revision或可直接执行授权，继续实施仍须检查所有分支和隔离目标schema。历史NULL不从当前PI回填、不重写旧hash。缺少该字段的旧开发PI后续提案必须重新生成并取得确认。首次建票publication同步保存商业头部，用作下一版的比较基线；首次编号在建票时生成。
 
 
 ## 业务通知投递模型补充
@@ -269,7 +269,7 @@ STATE 保存可信 checkpoint 指针，业务比较包括 PI/产品/财务/回�
 
 INFORMATION_SCHEMA只展示当前账号有相应权限的对象；COUNT=0可能是权限不足，不能作为模式表不存在的证据。[MySQL官方元数据权限说明](https://dev.mysql.com/doc/refman/8.0/en/information-schema-introduction.html)。因此Node reader直接SELECT完整outbound-worker-%命名空间；1142/1044、连接失败、坏结果或未知记录返回固定安全错误，不读取其他配置以降级。
 
-唯一缺表兼容是：模式SELECT失败同时具备ER_NO_SUCH_TABLE、数值errno=1146及sqlState=42S02；随后在同一连接、同一默认schema读取alembic_version，结果唯一一行且version_num精确为171_customer_tag_display_value。该值是实际172迁移的已核证parent；不接受175/176、其他更旧或未知值、空表、多head、版本表缺失/无权限。兼容检查不写入或stamp迁移版本。模式表可读且命名空间为空仍允许初始legacy；已知v1/version1、未知版本及多记录原规则不变。
+唯一缺表兼容是：模式SELECT失败同时具备ER_NO_SUCH_TABLE、数值errno=1146及sqlState=42S02；随后在同一连接、同一默认schema读取alembic_version，结果唯一一行且version_num精确为171_customer_tag_display_value。该值是实际172迁移的已核证parent；不接受176/177、其他更旧或未知值、空表、多head、版本表缺失/无权限。兼容检查不写入或stamp迁移版本。模式表可读且命名空间为空仍允许初始legacy；已知v1/version1、未知版本及多记录原规则不变。
 
 本修订落实Node reader权限边界，未改Python reader或宣称所有旧writer已覆盖。隔离测试手工设置head仅验证分支条件，不证明从171或完整历史迁移链部署成功；生产现场版本、权限配置、回退兼容及其他写入实例仍需各自核证。
 

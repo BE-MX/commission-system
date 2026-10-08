@@ -49,9 +49,9 @@ def off_schema(migrated,monkeypatch):
 
 @pytest.mark.parametrize('heads,enabled,force,allowed',[
     ([PARENT],False,False,True),([],False,False,False),
-    (['175_customer_order_portal'],False,False,False),
-    (['176_portal_pi_header'],False,False,False),(['unknown_future'],False,False,False),
-    ([PARENT,'176_portal_pi_header'],False,False,False),
+    (['176_customer_order_portal'],False,False,False),
+    (['177_portal_pi_header'],False,False,False),(['unknown_future'],False,False,False),
+    ([PARENT,'177_portal_pi_header'],False,False,False),
     ([PARENT],True,False,False),([PARENT],False,True,False),
 ])
 def test_only_exact_missing_parent_allows_legacy_without_committing_caller(off_schema,heads,enabled,force,allowed):
@@ -106,7 +106,7 @@ def test_installed_table_without_authority_is_not_legacy(off_schema):
 
 
 @pytest.mark.parametrize('mapper_head,default_head,allowed',[
-    (PARENT,'176_portal_pi_header',True),('176_portal_pi_header',PARENT,False)])
+    (PARENT,'177_portal_pi_header',True),('177_portal_pi_header',PARENT,False)])
 def test_parent_and_timeout_share_actual_authority_mapper_connection(off_schema,mapper_head,default_head,allowed):
     engine,_=off_schema;seen=[];alternate=None
     with engine.begin() as connection:
@@ -218,7 +218,7 @@ def test_stale_parent_snapshot_does_not_authorize_legacy(off_schema):
         with Session(engine) as db:
             assert db.scalar(text('SELECT version_num FROM alembic_version'))==PARENT
             with engine.begin() as newer:
-                newer.execute(text("UPDATE alembic_version SET version_num='176_portal_pi_header'"))
+                newer.execute(text("UPDATE alembic_version SET version_num='177_portal_pi_header'"))
             # RR still sees the old parent before the helper's current lock read.
             assert db.scalar(text('SELECT version_num FROM alembic_version'))==PARENT
             with pytest.raises(PortalError) as rejected:authority.lock_authority(db)

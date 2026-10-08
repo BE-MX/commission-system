@@ -1,5 +1,24 @@
 # 莱莎方舟 API 参考
 
+## 订单发票关联详情与异常概要（2026-10-08）
+
+基址 `/api/invoice`，响应沿用 `ok(data)`。无新增写入接口或权限。以下三项详情均先要求 `invoice:read/write/sync` 任一权限，并校验现有发票本人、代创建或全量数据范围；订单可见不自动授予关联单据权限。
+
+| 方法 | 路径 | 返回与权限 |
+| --- | --- | --- |
+| GET | `/invoices/{invoice_id}/related-detail` | `{order,checked_at}`；保存的订单信息、商品明细、同步/取消状态与按权限裁剪的 `anomalies`。不返回编辑器回款草稿或内部资金快照 |
+| GET | `/invoices/{invoice_id}/related-detail/receipts` | `{state,items,summary,freight,batch_balance,checked_at,message}`；独立校验 `receipt:read/write/admin` 和回款归属，混合归属批次按私有凭证范围整体阻断 |
+| GET | `/invoices/{invoice_id}/related-detail/outbounds` | `{state,items,tasks,batches,summary,checked_at,message}`；独立校验 `shipping_inspection:read/write/admin`、小满绑定和出库归属。预售批次另校验发货与回款归属；检验状态另按检验范围，冻结金额另按回款范围裁剪 |
+| GET | `/document-anomalies` | `{domains:{order,outbound,receipt},checked_at}`；至少具有上述任一功能权限。各域 `{state,has_anomaly,count}`，聚合其完整可见范围，不受当前列表页限制；无权限域不返回异常数量 |
+
+详情来源状态为 `ready/restricted/unverified`，核验失败保持已知本地明细、`summary=null` 和未核验时间，不伪造 0% 或缓存时点。订单不存在或不可见为 404；关联域范围不足在成功信封内返回 `restricted`，不暴露单据数量。
+
+回款 `summary` 使用原币 `total_amount/effective_amount/registered_amount/pending_amount/remaining_amount`，并增加 `unpaid_amount/overpaid_amount`。远端净额按唯一远端 ID 与方舟含费记录匹配，手续费仅恢复一次；独立运费位于 `freight`，不进入主单进度。未知财务状态、金额或关联变化返回待核验。预付款抵扣不新增回款。远端独有记录 `source=remote,id=null`，不提供本地凭证。
+
+出库 `summary` 为 `{ordered_quantity,shipped_quantity,by_item}`，实时完整关联核验后仅远端状态 2 计入实际出库，状态 1 仅表示生成。匹配订单 ID、远端行 ID、产品 ID、SKU；预售还要求本地出库状态/冻结数量一致。任务数量、计划批次数量及缺货记录不计进度。制单人来自精确关联镜像；无镜像时仅显示待刷新。
+
+发票列表每项新增 `anomalies`（`order/outbound/receipt`）与 `anomaly_states`。异常定义复用 `document_anomalies.py`：活动失败/结果不明、需要重新核验的出库事件等；已证实可自动重试的出库任务、普通等待、作废及已核实删除回款不作为异常。导航读取失败可保留此前已确认角标，权限或账号变化立即清空。详见[实现及验收](requirements/2026-10-08-invoice-detail-implementation.md)。
+
 ## 列表表头排序（2026-10-04）
 
 记录列表的分页排序统一接受可选 `sort_field`（表头对应的公开字段白名单）和 `sort_order=asc|desc`。不传、清除、未知字段或方向恢复原业务默认顺序；排序在权限、筛选之后，`offset/limit` 之前，空值末尾，并以唯一标识稳定处理并列。响应信封、筛选、总条数与数据权限不变。
@@ -1295,7 +1314,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 正式出库单与方舟待出库记录的统一分页列表，含出库状态、缺货详情、检验状态与照片数；按业务员归属过滤（见下） |
+| GET | `/outbound-records?keyword=&order_id=&outbound_state=&inspection_status=&date_from=&date_to=&page=&page_size=` | 正式出库单与方舟待出库记录的统一分页列表，含出库状态、缺货详情、检验状态与照片数；按业务员归属过滤（见下）。可选 `outbound_state`：`ready/waiting_stock/pending/running/retrying/awaiting_sync/failed/uncertain`；可选 `inspection_status`：`none/draft/submitted`。两者可叠加，在分页和计数前过滤；不传表示全部，非法值返回 422。检验状态只筛正式出库单，排除检验栏为“—”的待生成记录。 |
 | DELETE | `/outbound-records/{record_id}` | 删除小满待出库单；需 `shipping_inspection:delete` 且满足出库单数据范围。使用镜像记录 ID 定位真实 outbound_invoice_id；明确 Not Found 或两轮完整有效列表均不含原 ID 后返回 `{outbound_record_id, deleted:true}`，即使详情仍显示旧“待出库”。锁定、有效已出库、自动任务执行中、关联同步中或结果待核对返回409；无权限403、不可见404。 |
 | GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`）；同样按归属过滤，不可见返回 404 |
 | GET | `/outbound-records/{record_id}/word` | 下载可编辑 DOCX，保持当前 A4 版式、列宽、二维码及灰色斑马纹；数据范围同 print-data；二进制响应 |
@@ -1315,7 +1334,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
 
-2026-10-08 自动重试状态：本地待出库记录 `outbound_state` 新增 `retrying`（等待自动重试）。仅执行端已记录 `pre_submit_failed`、认领次数与重试策略吻合、尚未耗尽上限，且发票仍同步成功、未取消、无关联同步任务时返回此状态。相应本地行新增 `retry_next_at`（无时区北京时间字符串，最早认领时间）、`retry_attempt`（下一次尝试序号）；其他本地状态两字段为 `null`。排序在分页前使用相同的显示状态。重试行仍为 `can_print=false`，不能打印、下载或扫码验货；不向客户端返回执行日志及业务差异原值。缺少已核实策略、最终失败及提交不确定任务仍须管理员核对。生成端按实际出库业务快照核对变化，说明见 `deploy/okki_outbound_poller.md`。
+2026-10-08 自动重试状态：本地待出库记录 `outbound_state` 新增 `retrying`（前端显示“重新生成中”，包括等待自动重试的退避阶段）。仅执行端已记录 `pre_submit_failed`、认领次数与重试策略吻合、尚未耗尽上限，且发票仍同步成功、未取消、无关联同步任务时返回此状态。相应本地行新增 `retry_next_at`（无时区北京时间字符串，最早认领时间）、`retry_attempt`（下一次尝试序号）；其他本地状态两字段为 `null`。排序在分页前使用相同的显示状态。重试行仍为 `can_print=false`，不能打印、下载或扫码验货；不向客户端返回执行日志及业务差异原值。缺少已核实策略、最终失败及提交不确定任务仍须管理员核对。生成端按实际出库业务快照核对变化，说明见 `deploy/okki_outbound_poller.md`。
 
 2026-09-18：手机网页和小程序的扫码、刷新响应 `items` 与出库单打印、Word 共用排序函数：规格自然升序，同规格按尺寸数值升序；相同排序键保持原相对顺序。数量及照片/视频的 `item_id` 归属不变。
 

@@ -38,8 +38,8 @@ def migrated(mysql_engine):
         connection.execute(text("INSERT INTO ark_invoices (id, invoice_no) VALUES (7, 'PI-LEGACY')"))
     backend = Path(__file__).resolve().parents[2]
     config = Config(); config.set_main_option('script_location', str(backend / 'alembic'))
-    assert ScriptDirectory.from_config(config).get_heads() == ['176_portal_pi_header']
-    for filename in ('175_customer_order_portal.py', '176_portal_pi_header.py'):
+    assert ScriptDirectory.from_config(config).get_heads() == ['177_portal_pi_header']
+    for filename in ('176_customer_order_portal.py', '177_portal_pi_header.py'):
         spec = spec_from_file_location('migration_' + filename[:-3], backend / 'alembic/versions' / filename)
         module = module_from_spec(spec); spec.loader.exec_module(module)
         with engine.begin() as connection:

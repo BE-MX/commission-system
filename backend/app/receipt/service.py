@@ -12,7 +12,7 @@ from app.core.time import beijing_now
 from app.invoice.models import Invoice
 from app.invoice.service import get_invoice
 from app.receipt import access, attachments, balance, fees, remote
-from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent, ReceiptLog
+from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent, ReceiptLog, ReceiptAttempt
 
 
 def log(db, receipt, action, message, actor=None):
@@ -235,8 +235,26 @@ def _receipt_basis(db, invoice_id):
                   for identity, version, amount, charge, state, remote_id in rows)
 
 
+def ensure_no_returned_result(db, row):
+    if db.query(ReceiptAttempt.token).filter(ReceiptAttempt.receipt_id == row.id,
+            ReceiptAttempt.remote_id.isnot(None)).with_for_update().first():
+        raise ValueError("发送任务已取得小满回款 ID，请先核对原单，不能修改、作废或再次创建")
+
+
+class ReturnedIdentityConflict(ValueError):
+    """Exact response identities disagree; current-ID readback cannot resolve this."""
+
+
+def ensure_result_identity(db, row, identity):
+    identities = {remote_id for (remote_id,) in db.query(ReceiptAttempt.remote_id).filter(
+        ReceiptAttempt.receipt_id == row.id, ReceiptAttempt.remote_id.isnot(None)).with_for_update().all()}
+    if identities and identities != {str(identity)}:
+        raise ReturnedIdentityConflict("发送任务返回了不同的小满 ID，须核对全部冲突原单，不能只核对当前单号解除冻结")
+
+
 def change(db, row, invoice, body, actor):
     _ensure_editable(row, body.version)
+    ensure_no_returned_result(db, row)
     ensure_order_ready(db, invoice)
     binding = remote.invoice_binding(invoice)
     receipt_basis = _receipt_basis(db, invoice.id)
@@ -248,6 +266,7 @@ def change(db, row, invoice, body, actor):
     db.refresh(invoice)
     db.refresh(row, with_for_update=True)
     _ensure_editable(row, body.version)
+    ensure_no_returned_result(db, row)
     ensure_order_ready(db, invoice)
     if remote.invoice_binding(invoice) != binding:
         raise HTTPException(409, "订单金额或手续费已变化，请刷新后修正回款")
@@ -265,6 +284,7 @@ def change(db, row, invoice, body, actor):
     row.version += 1
     # Correcting data does not silently send; the explicit retry action does.
     row.sync_status = "failed"
+    row.send_phase, row.recovery_kind, row.next_attempt_at, row.recovery_attempts = None, "blocked", None, 0
     row.last_error = "资料已修改，请重试同步"
     after = {key: str(getattr(row, key)) for key in before}
     log(db, row, "edited", json.dumps({"message": "已修正回款资料，待重新同步", "before": before, "after": after}, ensure_ascii=False), actor)
@@ -294,6 +314,7 @@ def _change_proofs(db, row, invoice, body, actor, proof_evidence):
 def _retry(db, row, invoice, actor, evidence):
     if row.status != "active" or row.sync_status != "failed" or row.xiaoman_receipt_id:
         raise ValueError("仅明确失败且未取得小满单号的回款可重试；待核对不能重发")
+    ensure_no_returned_result(db, row)
     from app.invoice.settlement_guard import ensure_receipt_sendable
     ensure_receipt_sendable(db, row, current=True)
     if row.source == "auto" and row.bank_charge == 0:
@@ -304,6 +325,7 @@ def _retry(db, row, invoice, actor, evidence):
                 exclude_receipt=row.id, current=True)
             log(db, row, "fee_allocated", f"重试前按比例分摊手续费：{row.bank_charge}", actor)
     row.sync_status, row.last_error = "pending", None
+    row.send_phase, row.recovery_kind, row.next_attempt_at, row.recovery_attempts = None, None, None, 0
     row.version += 1
     log(db, row, "retry", "重试原回款单", actor)
 
@@ -321,6 +343,7 @@ def _void(db, row, reason, actor):
         raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
     if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:
         raise ValueError("只有确认未在小满创建的本地回款可以作废")
+    ensure_no_returned_result(db, row)
     row.status = "voided"
     row.version += 1
     log(db, row, "voided", reason, actor)

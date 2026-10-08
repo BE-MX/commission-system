@@ -51,13 +51,13 @@ def activation(request,tmp_path,monkeypatch):
         monkeypatch.setattr(office,'health',Mock(side_effect=RuntimeError('Candidate startup failed')))
         prepared={'nssm':'owned-nssm','live':live,'python':Path('owned-python'),
             'application':Path('old-python.exe'),'parameters':'old args','port':8001,
-            'schema':'176_portal_pi_header','schema_changed':False,'backend_changed':True,
+            'schema':'177_portal_pi_header','schema_changed':False,'backend_changed':True,
             'connector_changed':False,'static':[],'revision':revision,'previous':previous}
         call=lambda:office.activate_locked(prepared)
     else:
         monkeypatch.setattr(backend,'schema_check',Mock())
         monkeypatch.setattr(backend,'healthy',Mock(side_effect=RuntimeError('Candidate startup failed')))
-        info={'revision':revision,'previous':previous,'schema':'176_portal_pi_header',
+        info={'revision':revision,'previous':previous,'schema':'177_portal_pi_header',
               'schema_changed':False,'changed':True,'environment':None}
         (state/('backend-prepared-'+revision+'.json')).write_text(json.dumps(info))
         call=lambda:backend.activate_locked(revision)
