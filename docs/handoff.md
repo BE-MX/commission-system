@@ -6,7 +6,8 @@
 - 迁移撞号处理：门户迁移原编号 172/173 与 main 的 `172_workbench_lifecycle`/`173_task_center` 冲突，按 AGENTS.md 迁移规则重编号为 `175_customer_order_portal`（父 `174_domestic_decision`）与 `176_portal_pi_header`（父 175），代码/测试/文档引用同步更新；下方门户专题记录中历史上的"172/173"均指重编号前的门户迁移文件。
 - 范围剥离（专题契约 v1.73）：门户建票不再创建 ReceiptIntent 草稿（`create_invoice` 对 `source_type="portal"` 跳过 `save_draft(new=True)`），回款完全复用方舟既有发票→回款入口；价格写屏障保留但不向回款/出库 writer 扩展；全 writer 协议、回款内核接线、出库执行器切换与发布围栏划入独立加固专项，不阻断门户上线。
 - 合并冲突 22 个文件全部人工解决：receipt/service.py 保留门户当前授权架构并迁入 main 已发布的回款修正（invoice_summary 端点、auto 回款编辑费用重算、_receipt_basis 复核、附件顺序保留）；main.py 保留门户 ExitStack 生命周期并补回 main 的 seed_task_modules；ownership_service 同时保留客户转移时的门户访问暂停与工作项委派阻断；前端 7 个文件保留 main 设计体系并叠加门户入口。
-- 验证结果见本条末尾补充与门户专题记录 v1.73 节；门户开关 PORTAL_ENABLED/PORTAL_WRITES_ENABLED/PORTAL_INVOICE_ENABLED 全部默认关闭，本次不部署。
+- 合并后验证（隔离 worktree 干净检出，无 backend/.env）：后端全量（排除本机缺 mcp/jinja2 依赖的 19 个收集错误模块与需专用 mysqld 的 portal_mysql）7237 passed / 47 failed / 7 errors，失败与错误集合逐条等同于 origin/main 基线（47 项既有失败原样保留）；门户 SQLite 套件 718 passed / 2 skipped / 0 failed；回款修正、发票生命周期/删除/委派/配件/关联同步等相关套件 189 passed；alembic 单 head `176_portal_pi_header`；`check_conventions --base 0c51bf1f` 增量无违规（UI 门禁 80 项已清零）。门户 MySQL 套件（123 处 ReceiptIntent 断言已同步新边界）与前端双端构建因本机无 mysqld/node 未执行，发布前须在有专用 mysqld 与 Node 的环境补跑。
+- 门户开关 PORTAL_ENABLED/PORTAL_WRITES_ENABLED/PORTAL_INVOICE_ENABLED 全部默认关闭，本次不部署。
 
 ## 2026-10-08 内贸经营决策台实现（Codex，已验收，授权合并推送，未发布）
 
