@@ -83,6 +83,20 @@ def test_snapshot_row_order_does_not_affect_catch_up(db, caught_up):
     assert state.overlay(db, outbound_service.get_outbound_record(db, 'OB001'), event=event) is None
 
 
+def test_new_snapshot_sku_identity_must_match_even_when_display_code_does(db, caught_up):
+    _, event = caught_up
+    db.execute(text('ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN sku_id TEXT'))
+    db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET sku_id='11' WHERE id='LOCAL1'"))
+    snapshot = deepcopy(event.result['verified'])
+    snapshot['items'][0]['sku_id'] = '22'
+    event.result = {'verified': snapshot}
+    db.commit()
+    assert state.overlay(db, outbound_service.get_outbound_record(db, 'OB001'), event=event)
+    db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET sku_id='22' WHERE id='LOCAL1'"))
+    db.commit()
+    assert state.overlay(db, outbound_service.get_outbound_record(db, 'OB001'), event=event) is None
+
+
 @pytest.mark.parametrize('action', state.BLOCKED)
 def test_sync_in_progress_still_blocks_caught_up_mirror(db, caught_up, action):
     user, event = caught_up

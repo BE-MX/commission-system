@@ -505,7 +505,35 @@ def mirror_matches_snapshot(db: Session, record_id: str, snapshot: dict) -> bool
                       + (float(row['qty']),) for row in items)
 
     items = [{**row, 'item_id': 'okki:' + str(row['remote_item_id'])} for row in rows]
-    return signature(items) == signature(snapshot['items'])
+    if signature(items) != signature(snapshot['items']):
+        return False
+    extra = ('sku_id', 'order_id', 'order_record_id', 'product_cn_name')
+    if any(any(key in row for key in extra) for row in snapshot['items']):
+        raw = {'okki:' + str(row['remote_item_id']): row for row in inspection_item_links(db, record_id)}
+        return all(row['item_id'] in raw and all(key not in row or (
+            key in raw[row['item_id']] and str(row[key] or '') == str(raw[row['item_id']][key] or ''))
+            for key in extra) for row in snapshot['items'])
+    return True
+
+
+def inspection_item_links(db: Session, record_id: str) -> list[dict]:
+    """Raw detail identities for evidence; never infer links from product labels."""
+    link, rm, im = _link(db)
+    if link != 'invoice' or 'outbound_record_id' not in _table_columns(db, ITEMS_TABLE):
+        return []
+    rows = db.execute(text(f"""
+        SELECT i.*, i.`{im['id']}` AS local_item_id,
+               i.outbound_record_id AS remote_item_id,
+               {_col(im, 'quantity', 'i')} AS outbound_count,
+               {_col(im, 'unit', 'i')} AS product_unit,
+               {_col(im, 'spec', 'i')} AS product_model,
+               {_col(im, 'sku', 'i')} AS sku_code
+        FROM `{_schema()}`.`{ITEMS_TABLE}` i
+        WHERE i.`{im['invoice_id']}` = (
+            SELECT r.`{rm['invoice_id']}` FROM `{_schema()}`.`{RECORDS_TABLE}` r
+            WHERE r.`{rm['id']}` = :rid)
+    """), {'rid': record_id}).mappings().all()
+    return [dict(row) for row in rows]
 
 
 def list_outbound_items(db: Session, record_id: str, *, use_overlay=True, sync_event=None) -> list[dict]:
