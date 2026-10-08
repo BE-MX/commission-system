@@ -9,7 +9,7 @@ import time
 import urllib.request
 
 from publish import ROOT, STATE, atomic_json, input_digest, marker, npm_command, run
-from remote_backend import schema_check, database_lock
+from remote_backend import schema_check, database_lock, protocol_observation, rollback_guard
 from static_sync import manifest
 from remote_static import retain_assets
 
@@ -120,6 +120,7 @@ def activate_locked(prepared):
         health(prepared["port"])
         run(["git", "merge", "--ff-only", revision], cwd=live)
         return {"status": "unchanged", "revision": revision}
+    protocol_before=protocol_observation(ROOT,prepared['python'])
     backups = []
     services = (["CommissionSystem"] if backend_changed else []) + (["WhatsAppConnector"] if connector_changed or prepared.get("schema_changed") else [])
     # Stopping is inside the recovery block: a partial stop must not strand services.
@@ -167,16 +168,23 @@ def activate_locked(prepared):
                 run([nssm, "stop", service])
         if prepared.get("schema_changed"):
             raise RuntimeError("Office activation failed after schema change; writers held stopped, no automatic code downgrade") from None
-        run(["git", "reset", "--keep", previous], cwd=live)
-        for destination, backup in reversed(backups):
-            if destination.exists():
-                destination.rename(STATE / ("office-failed-" + str(time.time_ns())))
-            if backup.exists():
-                backup.rename(destination)
-        run([nssm, "set", "CommissionSystem", "Application", prepared["application"]])
-        run([nssm, "set", "CommissionSystem", "AppParameters", prepared["parameters"]])
-        for service in services:
-            run([nssm, "start", service])
+        try:
+            with rollback_guard(ROOT,prepared['python'],protocol_before) as guard:
+                run(["git", "reset", "--keep", previous], cwd=live)
+                for destination, backup in reversed(backups):
+                    if destination.exists():
+                        destination.rename(STATE / ("office-failed-" + str(time.time_ns())))
+                    if backup.exists():
+                        backup.rename(destination)
+                run([nssm, "set", "CommissionSystem", "Application", prepared["application"]])
+                run([nssm, "set", "CommissionSystem", "AppParameters", prepared["parameters"]])
+                for service in services:
+                    run([nssm, "start", service])
+                health(prepared['port']);guard.check()
+        except Exception:
+            for service in services:
+                if run([nssm,'status',service],capture=True)!='SERVICE_STOPPED':run([nssm,'stop',service])
+            raise RuntimeError('Office rollback unverified; services held stopped, inspect protocol compatibility') from None
         raise
     for name, _, _, files in prepared["static"]:
         atomic_json(STATE / ("office-" + name + ".json"), {"files": files})

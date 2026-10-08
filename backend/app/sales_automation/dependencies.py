@@ -20,3 +20,24 @@ def require_sales_agent(
     if "sales_automation:invoke" not in identity.get("permissions", []):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Agent token 缺少 sales_automation:invoke")
     return identity
+
+
+def require_sales_agent_for_identity_write(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Acquire portal authority before token resolution opens a read snapshot."""
+    from app.portal.authority import lock_authority
+    from app.portal.errors import PortalError
+
+    try:
+        lock_authority(db)
+    except PortalError as exc:
+        raise HTTPException(503, "授权服务暂不可用") from exc
+    try:
+        identity = resolve_token(db, credentials.credentials, commit_usage=False)
+    except MCPAuthError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
+    if "sales_automation:invoke" not in identity.get("permissions", []):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Agent token 缺少 sales_automation:invoke")
+    return identity

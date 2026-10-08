@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from app.portal.authority import lock_authority, suspend_customer_access
 from sqlalchemy import func, or_, tuple_
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
@@ -223,6 +224,7 @@ def _cas(
     change_proposal_id: int,
     action_type: str,
 ):
+    lock_authority(db)
     if action_type not in {"merge", "split"}:
         raise CustomerOwnershipError("OWNERSHIP_ACTION_TYPE_INVALID")
     if type(expected_version) is not int or expected_version < 0:
@@ -303,6 +305,8 @@ def _cas(
         overlay.last_change_proposal_id = change_proposal_id
         overlay.last_action_type = action_type
         overlay.updated_at = beijing_now()
+    if expected_current_customer_id != current_customer_id:
+        suspend_customer_access(db, {expected_current_customer_id, current_customer_id})
     if object_type == "work_item" and expected_current_customer_id != current_customer_id:
         from app.customer.workbench_models import CustomerDelegation
         from app.agent_runtime.models import AgentRun

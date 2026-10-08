@@ -7,7 +7,7 @@ from app.receipt import remote
 from app.receipt.models import Receipt, ReceiptIntent
 
 
-def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=False):
+def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=False, current=False):
     if snapshot.get("invoice_binding") and snapshot["invoice_binding"] != remote.invoice_binding(invoice):
         raise ValueError("订单信息已变化，请重新核验余额")
     remote_rows = snapshot["rows"]
@@ -21,7 +21,10 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
         registered += value
         if str(row.get("collect_status")) == "1":
             effective += value
-    local = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active", Receipt.purpose != "freight").all()
+    query = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active", Receipt.purpose != "freight")
+    if current:
+        query = query.order_by(Receipt.id).populate_existing().with_for_update()
+    local = query.all()
     for row in local:
         if row.currency != invoice.currency or row.customer_id != invoice.customer_id:
             raise ValueError("方舟回款与订单身份不一致，请核对")
@@ -41,7 +44,10 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
         if row.id == exclude_receipt:
             continue
         registered += row.amount
-    intent = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice.id).first()
+    query = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice.id)
+    if current:
+        query = query.populate_existing().with_for_update()
+    intent = query.first()
     if not exclude_intent and intent and intent.eligible and intent.status in {"armed", "ready"}:
         registered += intent.amount or Decimal("0")
     fingerprint = {
@@ -62,14 +68,17 @@ def ensure_available(summary, amount):
         raise ValueError("本次回款超过可登记余额，请刷新金额；待同步、失败和待核对单仍占用余额")
 
 
-def calculate_target(db, target, snapshot, *, exclude_receipt=None):
+def calculate_target(db, target, snapshot, *, exclude_receipt=None, current=False):
     """Freight has its own order cap; it never consumes the goods invoice cap."""
     binding = [target.id, target.remote_order_id, str(target.amount),
                target.currency, target.customer_id, target.version]
     if snapshot.get("target_binding") != binding:
         raise ValueError("运费目标身份已变化，请重新核验余额")
-    local = db.query(Receipt).filter(Receipt.receivable_id == target.id,
-        Receipt.status == "active").all()
+    query = db.query(Receipt).filter(Receipt.receivable_id == target.id,
+        Receipt.status == "active")
+    if current:
+        query = query.order_by(Receipt.id).populate_existing().with_for_update()
+    local = query.all()
     by_remote = {str(row.xiaoman_receipt_id): row for row in local if row.xiaoman_receipt_id}
     registered = effective = Decimal(0)
     seen = set()

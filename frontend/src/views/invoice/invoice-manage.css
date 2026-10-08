@@ -28,6 +28,8 @@
 .invoice-page .page-header,
 .invoice-page .summary-section,
 .invoice-page .invoice-panel {
+.invoice-page .invoice-panel,
+.invoice-page .pagination-bar {
   position: relative;
   z-index: 1;
 }
@@ -54,6 +56,17 @@
   font-size: 14px;
   font-weight: 500;
   color: var(--invoice-muted);
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.primary-action {
+  min-width: 112px;
 }
 
 /* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
@@ -110,6 +123,24 @@
 .invoice-number {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* 列表全局样式对 .cell 强制单行省略；发票号需要完整换行。 */
+.invoice-panel :deep(.invoice-number-column .cell) {
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.empty-state {
+  display: flex;
+  min-height: 180px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--invoice-muted);
 }
 
 /* 列表全局样式对 .cell 强制单行省略；发票号需要完整换行。 */

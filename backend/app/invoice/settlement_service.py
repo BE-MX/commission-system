@@ -4,7 +4,7 @@ import json
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, select
 from app.invoice.models import Invoice
 from app.invoice.service import get_invoice
 from app.invoice.settlement_models import (ShipmentSettlement, SettlementItem, Receivable,
@@ -33,21 +33,30 @@ def get_order(db, identity, user, *, lock=False, writable=True):
     return invoice
 
 
-def deposit_for(db, invoice):
-    rows = db.query(Receipt).filter(Receipt.invoice_id == invoice.id,
-        Receipt.purpose == "presale_deposit", Receipt.status == "active").all()
+def _current(query, enabled, *order):
+    if enabled:
+        return query.order_by(*order).populate_existing().with_for_update()
+    return query
+
+
+def deposit_for(db, invoice, *, current=False):
+    query = db.query(Receipt).filter(Receipt.invoice_id == invoice.id,
+        Receipt.purpose == "presale_deposit", Receipt.status == "active")
+    rows = _current(query, current, Receipt.id).all()
     if len(rows) != 1:
         raise ValueError("预售首款尚未生成或身份异常，请先核对预付款")
     return rows[0]
 
 
-def goods_balance(db, invoice, snapshot):
+def goods_balance(db, invoice, snapshot, *, current=False):
     """An unallocated remote payment cannot silently become batch funding."""
     from app.receipt.balance import calculate
-    result = calculate(db, invoice, snapshot)
-    mapped = {r.xiaoman_receipt_id for r in db.query(Receipt).filter(
-        Receipt.invoice_id == invoice.id, Receipt.status == "active",
-        Receipt.purpose != "freight", Receipt.xiaoman_receipt_id.isnot(None)).all()}
+    result = calculate(db, invoice, snapshot, current=current)
+    query = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active",
+        Receipt.purpose != "freight", Receipt.xiaoman_receipt_id.isnot(None))
+    if current:
+        query = query.order_by(Receipt.id).populate_existing().with_for_update()
+    mapped = {r.xiaoman_receipt_id for r in query.all()}
     if any(str(r["cash_collection_id"]) not in mapped for r in snapshot["rows"]):
         raise ValueError("预售主单存在未分配的远端回款，请先核对，不能重复登记")
     if Decimal(result["remaining_amount"]) < 0:
@@ -71,24 +80,25 @@ def fetch_evidence(db, invoice):
     return evidence
 
 
-def check_shipped_funding(db, invoice, evidence, shipped):
+def check_shipped_funding(db, invoice, evidence, shipped, *, current=False):
     """Prior physically shipped batches must retain their exact active funding."""
     from app.receipt.balance import calculate_target
 
     goods_rows = {str(row["cash_collection_id"]): row for row in evidence["receipt"]["rows"]}
     for settlement in shipped:
-        freight = db.query(Receivable).filter_by(settlement_id=settlement.id, kind="freight").first()
+        freight = _current(db.query(Receivable).filter_by(settlement_id=settlement.id, kind="freight"), current, Receivable.id).first()
         freight_rows = {}
         if freight:
             snapshot = evidence.get("freight", {}).get(settlement.id)
             if snapshot is None:
                 raise ValueError("历史运费回款尚未实时核验，不能继续安排")
-            calculate_target(db, freight, snapshot)
+            calculate_target(db, freight, snapshot, current=current)
             freight_rows = {str(row["cash_collection_id"]): row for row in snapshot["rows"]}
         applications = db.query(SettlementApplication, Receipt).join(
             Receipt, Receipt.id == SettlementApplication.receipt_id).filter(
             SettlementApplication.settlement_id == settlement.id,
-            SettlementApplication.status != "released").all()
+            SettlementApplication.status != "released")
+        applications = _current(applications, current, SettlementApplication.id, Receipt.id).all()
         expected = Decimal(settlement.quote["new_payment_due"]) + Decimal(settlement.quote["deposit_applied"])
         if sum((Decimal(app.amount) for app, _ in applications), Decimal(0)) != expected:
             raise ValueError("历史已出库批次的资金分配已变化，不能继续安排")
@@ -100,15 +110,16 @@ def check_shipped_funding(db, invoice, evidence, shipped):
                     or receipt.last_error or not remote_row
                     or str(remote_row.get("collect_status")) != "1"):
                 raise ValueError("历史已出库批次的回款已失效，不能继续安排")
-        balance = funding_balance(db, settlement)
+        balance = funding_balance(db, settlement, current=current)
         if (Decimal(balance["remaining_amount"]) != 0
                 or Decimal(balance["effective_amount"]) != expected):
             raise ValueError("历史已出库批次回款不足，不能继续安排")
 
 
-def check_outbounds(db, invoice, evidence, *, pending=None):
+def check_outbounds(db, invoice, evidence, *, pending=None, current=False):
     known = db.query(ShipmentOutbound).filter(ShipmentOutbound.invoice_id == invoice.id,
-        ShipmentOutbound.remote_id.isnot(None)).all()
+        ShipmentOutbound.remote_id.isnot(None))
+    known = _current(known, current, ShipmentOutbound.id).all()
     live = {str(x["outbound_invoice_id"]): x for x in evidence["outbounds"]}
     if set(live) != {x.remote_id for x in known}:
         raise ValueError("存在尚未核对的远端出库，请先核对出库数量，不能继续安排")
@@ -128,7 +139,7 @@ def check_outbounds(db, invoice, evidence, *, pending=None):
             raise ValueError("远端出库数量已变化")
 
 
-def build_quote(db, invoice, body, evidence):
+def build_quote(db, invoice, body, evidence, *, current=False):
     remote_line_ids = set()
     for item in invoice.items:
         if not item.product_id or not item.sku_id or not item.xiaoman_unique_id:
@@ -138,19 +149,26 @@ def build_quote(db, invoice, body, evidence):
             raise ValueError("预售分批出库暂不支持共享 OKKI 明细的通用产品合并行")
         remote_line_ids.add(identity)
     active = db.query(ShipmentSettlement.id).filter(ShipmentSettlement.invoice_id == invoice.id,
-        ShipmentSettlement.state.notin_(["shipped", "cancelled"])).first()
+        ShipmentSettlement.state.notin_(["shipped", "cancelled"]))
+    active = _current(active, current, ShipmentSettlement.id).first()
     if active:
         raise ValueError("已有未完成的活动发货结算，请先处理原批次")
-    check_outbounds(db, invoice, evidence)
-    deposit = deposit_for(db, invoice)
+    check_outbounds(db, invoice, evidence, current=current)
+    deposit = deposit_for(db, invoice, current=current)
     # A changed/missing remote payment freezes new allocations too.
-    available = goods_balance(db, invoice, evidence["receipt"])
-    shipped = db.query(ShipmentSettlement).filter_by(invoice_id=invoice.id, state="shipped").all()
-    check_shipped_funding(db, invoice, evidence, shipped)
-    quantities = dict(db.query(SettlementItem.invoice_item_id, func.sum(SettlementItem.quantity)).join(
-        ShipmentSettlement, ShipmentSettlement.id == SettlementItem.settlement_id).filter(
-        ShipmentSettlement.invoice_id == invoice.id, ShipmentSettlement.state == "shipped"
-    ).group_by(SettlementItem.invoice_item_id).all())
+    available = goods_balance(db, invoice, evidence["receipt"], current=current)
+    shipped = _current(db.query(ShipmentSettlement).filter_by(invoice_id=invoice.id, state="shipped"), current, ShipmentSettlement.id).all()
+    check_shipped_funding(db, invoice, evidence, shipped, current=current)
+    if current:
+        quantities = {}
+        prior_items = _current(db.query(SettlementItem).filter(SettlementItem.settlement_id.in_([row.id for row in shipped])), True, SettlementItem.id).all()
+        for item in prior_items:
+            quantities[item.invoice_item_id] = quantities.get(item.invoice_item_id, 0) + item.quantity
+    else:
+        quantities = dict(db.query(SettlementItem.invoice_item_id, func.sum(SettlementItem.quantity)).join(
+            ShipmentSettlement, ShipmentSettlement.id == SettlementItem.settlement_id).filter(
+            ShipmentSettlement.invoice_id == invoice.id, ShipmentSettlement.state == "shipped"
+        ).group_by(SettlementItem.invoice_item_id).all())
     requested = {x.invoice_item_id: x.quantity for x in body.items}
     if set(requested) - {x.id for x in invoice.items}:
         raise ValueError("产品明细不属于本订单")
@@ -172,14 +190,16 @@ def build_quote(db, invoice, body, evidence):
 
 
 def quote(db, invoice_id, body, user):
-    require_enabled()
-    invoice = get_order(db, invoice_id, user)
-    return build_quote(db, invoice, body, fetch_evidence(db, invoice))
+    from app.invoice.shipment_quote_service import quote as current_quote
+    return current_quote(db,invoice_id,body,user)
 
 
-def target(db, invoice, settlement=None):
+def target(db, invoice, settlement=None, *, current=False):
     key = f"settlement:{settlement.id}:freight" if settlement else f"invoice:{invoice.id}:goods"
-    row = db.query(Receivable).filter_by(business_key=key).first()
+    query = db.query(Receivable).filter_by(business_key=key)
+    if current:
+        query = query.populate_existing().with_for_update()
+    row = query.first()
     if row is None:
         row = Receivable(invoice_id=invoice.id, settlement_id=settlement.id if settlement else None,
             business_key=key, kind="freight" if settlement else "goods", currency=invoice.currency,
@@ -193,9 +213,11 @@ def target(db, invoice, settlement=None):
 
 
 def application(db, settlement, row, component, amount, charge):
-    reserved = db.query(func.coalesce(func.sum(SettlementApplication.amount), 0),
-        func.coalesce(func.sum(SettlementApplication.bank_charge), 0)).filter(
-        SettlementApplication.receipt_id == row.id, SettlementApplication.status != "released").one()
+    reserved_rows = db.scalars(select(SettlementApplication).where(
+        SettlementApplication.receipt_id == row.id, SettlementApplication.status != "released")
+        .order_by(SettlementApplication.id).with_for_update().execution_options(populate_existing=True)).all()
+    reserved = (sum((app.amount for app in reserved_rows), Decimal(0)),
+                sum((app.bank_charge for app in reserved_rows), Decimal(0)))
     if Decimal(reserved[0]) + Decimal(amount) > row.amount or Decimal(reserved[1]) + Decimal(charge) > row.bank_charge:
         raise ValueError("资金已被其他结算占用")
     db.add(SettlementApplication(settlement_id=settlement.id, receipt_id=row.id, component=component,
@@ -204,30 +226,19 @@ def application(db, settlement, row, component, amount, charge):
 
 
 def create(db, invoice_id, body, user):
-    require_enabled()
+    from app.invoice.shipment_create_service import create as authorized_create
+    return authorized_create(db, invoice_id, body, user)
+
+
+def _create_verified(db, invoice, body, user, evidence, proof_evidence):
+    """Local application only; current authority and immutable evidence held by caller."""
     from app.receipt import batch_service
     actor, fingerprint = access.user_id(user), digest(body.model_dump(mode="json"))
-    existing = db.query(ShipmentSettlement).filter_by(request_key=body.request_key).first()
-    if existing:
-        get_order(db, existing.invoice_id, user)
-        if existing.invoice_id != invoice_id or existing.created_by != actor or existing.request_hash != fingerprint:
-            raise ValueError("提交标识已用于其他发货结算")
-        return existing
-    invoice = get_order(db, invoice_id, user)
-    evidence = fetch_evidence(db, invoice)
-    if body.payment and body.payment.payment_type not in remote.receipt_types(db):
-        raise ValueError("请选择有效的回款方式")
-    db.commit()  # token-refresh/read transaction ends before taking the order lock
-    invoice = get_order(db, invoice_id, user, lock=True)
-    existing = db.query(ShipmentSettlement).filter_by(request_key=body.request_key).first()
-    if existing:
-        if existing.invoice_id != invoice_id or existing.created_by != actor or existing.request_hash != fingerprint:
-            raise ValueError("提交标识已用于其他发货结算")
-        return existing
-    calculated = build_quote(db, invoice, body, evidence)
+    calculated = build_quote(db, invoice, body, evidence, current=True)
     if calculated["quote_hash"] != body.quote_hash:
         raise ValueError("QUOTE_STALE：订单或余额已变化，请刷新报价")
-    sequence = (db.query(func.max(ShipmentSettlement.sequence)).filter_by(invoice_id=invoice.id).scalar() or 0) + 1
+    prior = _current(db.query(ShipmentSettlement).filter_by(invoice_id=invoice.id), True, ShipmentSettlement.id).all()
+    sequence = max((item.sequence for item in prior), default=0) + 1
     row = ShipmentSettlement(invoice_id=invoice.id, sequence=sequence,
         settlement_no=f"{invoice.invoice_no}-{sequence:02d}", is_final=int(calculated["is_final"]),
         quote=calculated, quote_hash=body.quote_hash, request_key=body.request_key,
@@ -249,20 +260,23 @@ def create(db, invoice_id, body, user):
     if body.freight_amount:
         target(db, invoice, row)
     if row.is_final:
-        deposit = deposit_for(db, invoice)
+        deposit = deposit_for(db, invoice, current=True)
         application(db, row, deposit, "deposit", deposit.amount, deposit.bank_charge)
     db.add(SettlementEvent(settlement_id=row.id, action="created", actor_id=actor))
     if body.payment:
         if body.payment.bank_charge:
             raise ValueError("手续费由本批自动分摊，请勿重复填写")
-        batch_service.register_shipment_payment(db, invoice, row, body.payment, actor, body.request_key)
+        batch_service._register_shipment_payment_verified(db, invoice, row, body.payment, actor, body.request_key, proof_evidence)
     return row
 
 
-def funding_balance(db, row):
-    applications = db.query(SettlementApplication, Receipt).join(Receipt,
+def funding_balance(db, row, *, current=False):
+    query = db.query(SettlementApplication, Receipt).join(Receipt,
         Receipt.id == SettlementApplication.receipt_id).filter(SettlementApplication.settlement_id == row.id,
-        SettlementApplication.status != "released").all()
+        SettlementApplication.status != "released")
+    if current:
+        query = query.order_by(SettlementApplication.id, Receipt.id).populate_existing().with_for_update()
+    applications = query.all()
     goods = freight = charge = effective = Decimal(0)
     for app, receipt in applications:
         if receipt.status != "active":
@@ -298,50 +312,58 @@ def get(db, identity, user, *, lock=False):
     return row
 
 
-def describe(db, row):
-    outbound = db.query(ShipmentOutbound).filter_by(settlement_id=row.id).first()
-    freight = db.query(Receivable).filter_by(settlement_id=row.id, kind="freight").first()
-    return {"id": row.id, "invoice_id": row.invoice_id, "settlement_no": row.settlement_no,
-        "state": row.state, "version": row.version, "quote": row.quote, "balance": funding_balance(db, row),
+def describe(db, row, *, current=False):
+    outbound = _current(db.query(ShipmentOutbound).filter_by(settlement_id=row.id), current, ShipmentOutbound.id).first()
+    freight = _current(db.query(Receivable).filter_by(settlement_id=row.id, kind="freight"), current, Receivable.id).first()
+    invalid_funding=False
+    if outbound and outbound.status=="shipped_unfunded":
+        query=db.query(SettlementApplication,Receipt).join(Receipt,Receipt.id==SettlementApplication.receipt_id).filter(
+            SettlementApplication.settlement_id==row.id,SettlementApplication.status!="released")
+        if current:query=query.order_by(SettlementApplication.id,Receipt.id).populate_existing().with_for_update()
+        invalid_funding=any(receipt.status!="active" for _,receipt in query.all())
+    summary=None if invalid_funding else funding_balance(db,row,current=current)
+    result={"id": row.id, "invoice_id": row.invoice_id, "settlement_no": row.settlement_no,
+        "state": row.state, "version": row.version, "quote": row.quote, "balance": summary,
         "outbound": {"id": outbound.id, "status": outbound.status, "number": outbound.outbound_no,
                      "remote_id": outbound.remote_id, "last_error": outbound.last_error} if outbound else None,
         "freight_target": {"id": freight.id, "status": freight.remote_status,
                            "remote_order_id": freight.remote_order_id,
                            "last_error": freight.last_error} if freight else None,
         "capabilities": capabilities()}
+    if outbound:
+        from app.invoice import shipment_confirmation_recovery
+        result["outbound"]["confirmation"] = shipment_confirmation_recovery.summary(db,outbound,current=current)
+    if invalid_funding:
+        result["balance_error"]="本批关联回款已失效，余额暂不可计算，请核对原单"
+    return result
 
 
-def change_state(db, row, user, action, version, reason):
+def _change_state_verified(db, row, user, action, version, reason, graph):
+    """Pure local state algorithm; current authority/bindings are caller-owned."""
     if row.version != version:
         raise ValueError("结算已变化，请刷新")
     if row.state in {"shipped", "cancelled", "outbound_uncertain", "review_required"}:
         raise ValueError("当前结算状态不能执行此操作")
-    outbound = db.query(ShipmentOutbound).filter_by(settlement_id=row.id).first()
-    if outbound:
+    if graph.outbound:
         raise ValueError("已有出库任务，请先核实远端效果")
-    freight = db.query(Receivable).filter_by(settlement_id=row.id, kind="freight").first()
+    freight = graph.freight
     if freight and freight.remote_status in {"sending", "verifying", "uncertain"}:
         raise ValueError("运费目标正在发送或结果待核对，请先核实远端效果")
-    active_receipt = db.query(Receipt.id).join(
-        SettlementApplication, SettlementApplication.receipt_id == Receipt.id).filter(
-        SettlementApplication.settlement_id == row.id,
-        SettlementApplication.status != "released",
-        Receipt.sync_status.in_(["syncing", "uncertain"]),
-    ).first()
-    if active_receipt:
+    if any(app.status != "released" and graph.receipts[app.receipt_id].sync_status in {"syncing", "uncertain"}
+            for app in graph.applications):
         raise ValueError("本批回款正在发送或结果待核对，请先核实远端效果")
     if action == "cancel":
-        paid = db.query(SettlementApplication.id).filter(SettlementApplication.settlement_id == row.id,
-            SettlementApplication.component != "deposit", SettlementApplication.status != "released").first()
+        paid = any(app.component != "deposit" and app.status != "released" for app in graph.applications)
         if paid or (freight and (freight.remote_order_id or freight.remote_status in {
                 "sending", "verifying", "uncertain", "bound"})):
             raise ValueError("已有真实付款或运费目标，仅支持原批暂停/恢复")
-        db.query(SettlementApplication).filter_by(settlement_id=row.id).update({"status": "released"})
+        for app in graph.applications:
+            app.status = "released"
         row.state = "cancelled"
     elif action == "pause":
         row.state = "paused"
     elif action == "resume" and row.state == "paused":
-        row.state = "awaiting_verification" if Decimal(funding_balance(db, row)["remaining_amount"]) == 0 else "awaiting_payment"
+        row.state = "awaiting_verification" if Decimal(graph.balance["remaining_amount"]) == 0 else "awaiting_payment"
     else:
         raise ValueError("无效的结算状态变更")
     row.version += 1

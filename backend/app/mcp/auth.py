@@ -37,10 +37,10 @@ def build_current_user(user: ArkUser) -> dict:
     }
 
 
-def resolve_token(db: Session, raw_token: str) -> dict:
+def resolve_token(db: Session, raw_token: str, *, commit_usage: bool = True) -> dict:
     """校验 token 并返回 current_user dict；失败抛 MCPAuthError。
 
-    成功时顺带刷新 last_used_at（best-effort，失败不阻断）。
+    默认提交 last_used_at（best-effort）；commit_usage=False 时由调用方提交，保留其事务锁。
     """
     if not raw_token or not raw_token.strip():
         raise MCPAuthError("缺少 access token：请在 Authorization: Bearer <token> 头中携带个人 token")
@@ -59,6 +59,11 @@ def resolve_token(db: Session, raw_token: str) -> dict:
         raise MCPAuthError("token 对应的账号不存在或已被禁用")
 
     identity = build_current_user(user)
+
+    if not commit_usage:
+        # Authority-locked callers own the transaction; never release their lock.
+        row.last_used_at = beijing_now()
+        return identity
 
     # best-effort 更新最后使用时间
     try:

@@ -1,6 +1,7 @@
 """Human-facing routes for governed customer change proposals."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from app.portal.authority import lock_authority
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_permission
@@ -210,6 +211,7 @@ def execute_change_proposal(
     proposal_id: int, payload: ProposalExecute, db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    lock_authority(db)
     candidate = db.query(CustomerChangeProposal).filter(
         CustomerChangeProposal.id == proposal_id,
     ).one_or_none()

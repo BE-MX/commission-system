@@ -132,6 +132,11 @@ def _refresh_pending_generation(db, invoice, order, invoice_version):
 
 
 def run(db, invoice, user):
+    from app.portal import authority
+    enabled = authority.get_settings().PORTAL_ENABLED
+    if enabled and (db.in_transaction() or db.new or db.dirty or db.deleted):
+        from fastapi import HTTPException
+        raise HTTPException(409, '出库取证必须从新事务开始', headers={'Cache-Control': 'private, no-store'})
     if invoice.order_type == "presale":
         return {"status": "manual", "message": "预售单由发货结算按批次安排，不执行整单自动出库"}
     """Never create an outbound here: the fenced worker owns that operation."""
@@ -217,7 +222,26 @@ def run(db, invoice, user):
         return _queue_missing_after_sync(db, invoice, task, order, invoice_version)
     if len(related) != 1:
         return {'status': 'manual', 'message': '订单关联多张出库单，请分别核对，不能整单覆盖'}
+    if enabled:
+        from types import SimpleNamespace
+        invoice = SimpleNamespace(id=invoice.id, invoice_no=invoice.invoice_no)
+        db.rollback()  # Discard only run's own read-only supplier/mirror phase.
+        db.expire_all()
+    return _follow_existing(db, invoice, user, related, force_authority=enabled)
+
+
+def _follow_existing(db, invoice, user, related, *, force_authority=False):
     from app.invoice.linked_sync_service import latest
+    from app.invoice import edit_authority
+    from app.portal import authority
+    enabled = force_authority or authority.get_settings().PORTAL_ENABLED
+    if enabled:
+        # Reject at the boundary before any ORM query can autoflush caller writes.
+        if db.in_transaction() or db.new or db.dirty or db.deleted:
+            from fastapi import HTTPException
+            raise HTTPException(409, '出库取证必须从新事务开始', headers={'Cache-Control': 'private, no-store'})
+        invoice, user = edit_authority.prepare_recovery(db, invoice.id, user, 'invoice:sync')
+        user = {**user, 'sub': str(user['id'])}
     linked = latest(db, invoice.id)
     desired_serial_id = (invoice.invoice_no if linked and linked.status in {'done', 'manual'}
                          and linked.steps.get('order', {}).get('status') == 'done'
@@ -233,17 +257,20 @@ def run(db, invoice, user):
         return {'status': 'manual', 'message': '小满出库单已存在，方舟镜像尚未更新；镜像到达后可重新核对'}
     if str(record['outbound_invoice_id']) != str(live['outbound_invoice_id']):
         raise ValueError('出库镜像与小满单据身份不一致，出库未处理')
-    preview = outbound_sync_service.preview(db, record, user, desired_serial_id=desired_serial_id)
+    if enabled:
+        db.commit()  # Only this method's freshly authorized read-only capture.
+    preview = outbound_sync_service.preview(db, record, user, desired_serial_id=desired_serial_id,
+                                            force_authority=enabled)
     if preview.get('recover'):
         result = outbound_sync_service.synchronize(db, record, user, None, check_only=True,
-                                                    desired_serial_id=desired_serial_id)
+                                                    desired_serial_id=desired_serial_id, force_authority=enabled)
     elif preview.get('requires_recheck'):
         result = outbound_sync_service.synchronize(db, record, user, preview['version'],
                                                     confirm_recheck=True, desired_serial_id=desired_serial_id,
-                                                    auto_recall=True, source='invoice_sync')
+                                                    auto_recall=True, source='invoice_sync', force_authority=enabled)
     else:
         result = outbound_sync_service.synchronize(db, record, user, preview['version'],
-                                                    desired_serial_id=desired_serial_id, source='invoice_sync')
+                                                    desired_serial_id=desired_serial_id, source='invoice_sync', force_authority=enabled)
     if result['status'] == 'sync_done':
         if outbound_sync_state.evidence(db, record['outbound_record_id'])[1]:
             return {'status': 'manual', 'category': 'inspection_recheck', 'outbound_updated': True,
@@ -253,8 +280,11 @@ def run(db, invoice, user):
     return {'status': 'manual', 'message': result.get('message') or '出库同步结果待核对，请在出库单查看'}
 
 
-def safely_run(db, invoice, user):
+def safely_run(db, invoice, user, *, force_authority=False):
     """The remote order is already committed; report downstream failure separately."""
+    if force_authority:
+        from app.invoice import outbound_followup_execution
+        return outbound_followup_execution.run(db, invoice.id, user)
     try:
         return run(db, invoice, user)
     except Exception as exc:  # noqa: BLE001 - order success must remain visible after downstream failure

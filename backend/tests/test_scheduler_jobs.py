@@ -83,7 +83,7 @@ class TestSchedulerRegistration:
         policies = MagicMock()
         monkeypatch.setattr("app.operations.observability.recover_stale_job_runs", recovery)
         monkeypatch.setattr("app.schedulers.registry._apply_persisted_job_policies", policies)
-        scheduler = start_scheduler()
+        scheduler = start_scheduler(outbound_mode="legacy")
         try:
             assert scheduler is not None
             recovery.assert_called_once()
@@ -182,7 +182,7 @@ class TestSchedulerRegistration:
         monkeypatch.setattr(real_settings, "SCHEDULER_ENABLED", False)
 
         from app.schedulers.registry import start_scheduler
-        assert start_scheduler() is None
+        assert start_scheduler(outbound_mode="legacy") is None
 
 
 # ── 单 job smoke tests ───────────────────────────────

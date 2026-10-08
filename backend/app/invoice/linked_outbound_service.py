@@ -33,6 +33,8 @@ def _read_details(db, identities):
 
 
 def find_related(db, order):
+    if not isinstance(order, dict) or not order.get("order_id"):
+        raise ValueError("关联订单身份不完整")
     stamp = str(order.get("create_time") or "")[:10]
     datetime.strptime(stamp, "%Y-%m-%d")
     # Match the existing managed creator: time_type=1 is update time, including
@@ -41,6 +43,8 @@ def find_related(db, order):
     seen, found, expected = set(), [], None
     for page in range(1, 501):
         data = remote.read(db, "/v1/invoices/outbound/list", {**params, "start_index": page})
+        if not isinstance(data, dict):
+            raise ValueError("出库单列表格式不完整")
         rows, count = data.get("list"), data.get("count")
         if not isinstance(rows, list) or not str(count).isdigit():
             raise ValueError("出库单列表不完整，请稍后重新核对")
@@ -50,20 +54,26 @@ def find_related(db, order):
         expected = count
         identities = []
         for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("出库单列表记录无效")
             identity = str(row.get("outbound_invoice_id") or "")
             if not identity or identity in seen:
                 raise ValueError("出库单分页重复或缺少ID，请重新核对")
             seen.add(identity)
             identities.append(identity)
         for identity, detail in zip(identities, _read_details(db, identities)):
+            if not isinstance(detail, dict):
+                raise ValueError("出库单详情格式不完整")
             records = detail.get("record_list")
-            if str(detail.get("outbound_invoice_id")) != identity or not isinstance(records, list):
+            if str(detail.get("outbound_invoice_id")) != identity or not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
                 raise ValueError("出库单详情不完整")
-            if any(str(r.get("order_id")) == str(order["order_id"]) for r in records):
+            if any("order_id" not in record or not str(record["order_id"]).isdigit() for record in records):
+                raise ValueError("出库明细关联订单身份不完整，不能判定无关联")
+            if any(str(r["order_id"]) == str(order["order_id"]) for r in records):
                 found.append(detail)
         if len(seen) == expected:
             latest = remote.read(db, "/v1/invoices/outbound/list", {**params, "start_index": 1})
-            if int(latest.get("count", -1)) != expected:
+            if not isinstance(latest, dict) or int(latest.get("count", -1)) != expected:
                 raise ValueError("出库单数量已变化，请重新核对")
             return found
         if not rows or len(seen) > expected:
@@ -73,17 +83,22 @@ def find_related(db, order):
 
 def summarize(db, invoice, order):
     related = find_related(db, order)
-    wanted, actual = defaultdict(Decimal), defaultdict(Decimal)
     from app.invoice import xiaoman_service
     rows, _, issues, _ = xiaoman_service._build_product_rows(
         db, invoice, xiaoman_service.get_settings_row(db), editing=True)
     if issues:
         raise ValueError("订单产品映射尚未完整核对")
+    return summarize_documents(rows, related, order["order_id"])
+
+
+def summarize_documents(rows, related, order_id):
+    """Compare frozen local lines with verified external documents, without DB I/O."""
+    wanted, actual = defaultdict(Decimal), defaultdict(Decimal)
     for item in rows:
         wanted[(str(item.get("unique_id") or ""), str(item["product_id"]), str(item["sku_id"]))] += Decimal(str(item["count"]))
     for document in related:
         for row in document["record_list"]:
-            if str(row.get("order_id")) == str(order["order_id"]):
+            if str(row.get("order_id")) == str(order_id):
                 actual[(str(row.get("order_record_id") or ""), str(row.get("product_id")), str(row.get("sku_id")))] += remote.money(row.get("outbound_count"))
     difference = [{"order_record_id": key[0], "product_id": key[1], "sku_id": key[2], "ordered": str(wanted[key]),
                    "outbound": str(actual[key]), "difference": str(wanted[key] - actual[key])}

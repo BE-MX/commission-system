@@ -1,10 +1,11 @@
 """Scoped manual outbound synchronization endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
+from app.portal import authority
 from app.invoice.okki_client import OkkiApiError
 from app.shipping_inspection import outbound_service, outbound_sync_service, outbound_sync_state
 
@@ -31,10 +32,13 @@ def _record(db, record_id, user):
 
 
 @router.post('/outbound-records/{record_id}/invoice-sync/preview', summary='预览最新方舟发票与出库单的差异')
-def preview(record_id: str, db: Session = Depends(get_db),
+def preview(record_id: str, response: Response, db: Session = Depends(get_db),
             user=Depends(require_permission('shipping_inspection:write')),
             _sync=Depends(require_permission('invoice:sync'))):
     try:
+        response.headers['Cache-Control'] = 'private, no-store'
+        if authority.get_settings().PORTAL_ENABLED:
+            return ok(outbound_sync_service.preview(db, record_id, user, force_authority=True, warehouse=True))
         return ok(outbound_sync_service.preview(db, _record(db, record_id, user), user))
     except (ValueError, OkkiApiError) as exc:
         db.rollback()
@@ -42,10 +46,15 @@ def preview(record_id: str, db: Session = Depends(get_db),
 
 
 @router.post('/outbound-records/{record_id}/invoice-sync', summary='同步待出库单并核对或补齐缺失明细')
-def synchronize(record_id: str, body: SyncRequest, db: Session = Depends(get_db),
+def synchronize(record_id: str, body: SyncRequest, response: Response, db: Session = Depends(get_db),
                 user=Depends(require_permission('shipping_inspection:write')),
                 _sync=Depends(require_permission('invoice:sync'))):
     try:
+        response.headers['Cache-Control'] = 'private, no-store'
+        if authority.get_settings().PORTAL_ENABLED:
+            return ok(outbound_sync_service.synchronize(db, record_id, user, body.expected_version,
+                check_only=body.check_only, confirm_recheck=body.confirm_recheck, repair=body.repair,
+                force_authority=True, warehouse=True))
         return ok(outbound_sync_service.synchronize(db, _record(db, record_id, user), user, body.expected_version,
                                                     check_only=body.check_only, confirm_recheck=body.confirm_recheck,
                                                     repair=body.repair))

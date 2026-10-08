@@ -54,8 +54,17 @@ def execute(request):
             raise RuntimeError('Unexpected runtime executable')
         checked = schema.schema_check(root, python)
         office_release.health(8001)
+        candidate = root / '.deploy_state/sources' / revision
+        if p.run(['git', 'rev-parse', 'HEAD'], cwd=candidate, capture=True) != revision or p.run(
+                ['git', 'status', '--porcelain', '--untracked-files=no'], cwd=candidate, capture=True):
+            raise RuntimeError('Prepared candidate source drift')
+        import okki_outbound_release as outbound_release
+        outbound = outbound_release.completion_context(candidate, journal)
+        journal['outbound'] = outbound_release.verify_completion(outbound, journal)
         for writer in migration['writers']:
-            if schema.writer_state(writer['writer'], nssm) != writer['before']:
+            target = ('running' if journal['outbound']['schedule']['active'] else 'stopped') if (
+                writer['writer'] == schema.registered_writer('ark-okki-outbound-poller')) else writer['before']
+            if schema.writer_state(writer['writer'], nssm) != target:
                 raise RuntimeError('Writer baseline has not recovered')
         if request.get('prepare_only'):
             return {'status': 'prepared', 'revision': revision, 'schema': checked}
@@ -91,9 +100,11 @@ def execute(request):
             transferred += item['bytes']
             journal['completed'].append(item['target'] + ':' + item['request']['root'])
             p.atomic_json(p.STATE / 'publish-current.json', journal)
+        journal['outbound'] = outbound_release.verify_completion(outbound, journal)
         schema.complete({'schema_changed': True, 'schema': migration['schema']})
         p.atomic_json(p.STATE / 'publish-success.json', {'revision': revision,
-            'scope': 'office-and-cloud', 'schema': checked, 'transfer_bytes': transferred, 'deferred': []})
+            'scope': 'office-and-cloud', 'schema': checked, 'transfer_bytes': transferred, 'deferred': [],
+            'outbound': journal['outbound']})
         journal.update(status='succeeded', recovered_from='colorwork-health-maintenance-503')
         p.atomic_json(p.STATE / 'publish-current.json', journal)
         return {'status': 'succeeded', 'revision': revision, 'schema': checked}

@@ -1,0 +1,23 @@
+:root {
+  --portal-yellow: #ffdf52;
+  --portal-gold: #966719;
+  --portal-gold-light: #f5cb5c;
+  --portal-ink: #211f1b;
+  --portal-dark: #191714;
+  --portal-muted: #716b62;
+  --portal-page: #f7f5ef;
+  --portal-white: #ffffff;
+  --portal-border: #dedbd2;
+  --portal-soft: #eeebe3;
+  --portal-success: #276044;
+  --portal-error: #9b342d;
+  --portal-error-bg: #fff1ed;
+  --portal-dark-wash: rgba(25, 23, 20, .69);
+  --portal-light-text: #e4dfd4;
+  --portal-backdrop: rgba(25, 23, 20, .52);
+  --portal-shadow: 0 20px 80px rgba(25, 23, 20, .16);
+  --portal-focus: #986411;
+  --portal-ease-out: cubic-bezier(.23, 1, .32, 1);
+  --portal-font: 'DM Sans', 'Segoe UI', Arial, sans-serif;
+  --portal-display: 'Outfit', 'Segoe UI', Arial, sans-serif;
+}

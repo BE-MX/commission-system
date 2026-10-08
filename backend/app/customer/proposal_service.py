@@ -5,6 +5,7 @@ from __future__ import annotations
 import secrets
 from collections.abc import Mapping
 
+from app.portal.authority import lock_authority
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -382,6 +383,7 @@ def _execute_ownership(
 def execute_proposal(
     db: Session, *, proposal_id: int, actor_user_id: int, idempotency_key: str,
 ) -> CustomerChangeProposal:
+    lock_authority(db)
     row = _locked(db, proposal_id)
     _require_current_action_hash(row, require_approval=True)
     _require_active_human(db, actor_user_id)
