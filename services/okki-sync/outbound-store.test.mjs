@@ -108,7 +108,7 @@ test('changed product preserves photo history but requires fresh inspection', as
   assert.equal(db.rows.find(row => row.outbound_record_id === '600').id, photoId);
   assert.equal(db.inspection.status, 'draft'); assert.equal(db.inspection.edit_version, 1);
   assert.deepEqual(db.event.result.stale_media_ids, [1, 2]);
-  assert.deepEqual(db.event.result.required_recheck_ids, ['__all_items__']);
+  assert.deepEqual(db.event.result.required_recheck_ids, ['okki:600', '__whole__']);
   assert.equal(db.audits.length, 1);
 });
 
@@ -143,7 +143,7 @@ test('quantity change invalidates submitted evidence without losing photos or th
   await save(inv, { record_list: [item('600', { outbound_count: 5 }), item('601')] });
   assert.equal(db.rows[0].id, id); assert.equal(db.photos.length, 2);
   assert.equal(db.inspection.status, 'draft'); assert.equal(db.inspection.edit_version, 1);
-  assert.deepEqual(db.event.result.required_recheck_ids, ['__all_items__']);
+  assert.deepEqual(db.event.result.required_recheck_ids, ['okki:600', '__whole__']);
 });
 
 test('unchanged inspected details preserve submitted status and manual audit/grant', async () => {
@@ -271,4 +271,97 @@ test('zero unassigned foreign reference matches the NULL persisted by the API mi
   await save(inv, { record_list: [item('600', { order_record_id: 0 }), item('601')] });
   assert.deepEqual({ inspection: db.inspection, event: db.event, photos: db.photos }, before);
   assert.equal(db.audits.length, 0);
+});
+
+test('only changed detail photos expire and successive edits accumulate requirements', async () => {
+  const { db, save } = await seeded(); inspected(db);
+  db.photos.push({ id: 3, item_id: String(db.rows[1].id) });
+  await save(inv, { record_list: [item('600', { outbound_count: 5 }), item('601')] });
+  assert.deepEqual(db.event.result.stale_media_ids, [1, 2]);
+  db.photos.push({ id: 4, item_id: String(db.rows[0].id) }, { id: 5, item_id: null });
+  await save(inv, { record_list: [item('600', { outbound_count: 5 }), item('601', { outbound_count: 3 })] });
+  assert.deepEqual(db.event.result.stale_media_ids, [1, 2, 3, 5]);
+  assert.deepEqual(new Set(db.event.result.required_recheck_ids), new Set(['okki:600', 'okki:601', '__whole__']));
+});
+
+test('removed pending detail leaves no impossible photo requirement', async () => {
+  const { db, save } = await seeded(); inspected(db);
+  db.event.result = { required_recheck_ids: ['okki:600', String(db.rows[0].id)] };
+  db.photos.push({ id: 3, item_id: String(db.rows[1].id) });
+  await save(inv, { record_list: [item('601')] });
+  assert.deepEqual(db.event.result.stale_media_ids, [1, 2]);
+  assert.deepEqual(db.event.result.required_recheck_ids, ['__whole__']);
+});
+
+test('fee changes require whole evidence and physical-to-fee clears previous product requirement', async () => {
+  const { db, save } = await seeded(); inspected(db);
+  db.event.result = { required_recheck_ids: ['okki:600', String(db.rows[0].id)] };
+  db.photos.push({ id: 3, item_id: String(db.rows[1].id) });
+  await save(inv, { record_list: [item('600', { product_name: ' Other Items ' }), item('601')] });
+  assert.deepEqual(db.event.result.required_recheck_ids, ['__whole__']);
+  assert.deepEqual(db.event.result.stale_media_ids, [1, 2]);
+  await save(inv, { record_list: [item('600', { product_name: 'Hair' }), item('601')] });
+  assert.ok(db.event.result.required_recheck_ids.includes('okki:600'));
+});
+
+test('price-only edits preserve product and whole photos and submitted state', async () => {
+  const { db, save } = await seeded(); inspected(db);
+  await save(inv, { record_list: [item('600', { sale_price: 50 }), item('601')] });
+  assert.equal(db.inspection.status, 'submitted');
+  assert.deepEqual(db.event.result, {});
+});
+
+test('external remark edit uses verified product baseline before the mirror catches up', async () => {
+  const { db, save } = await seeded(); inspected(db); verifiedEvent(db);
+  db.event.result.verified.items[0].qty = 5;
+  db.event.result.stale_media_ids = [1, 2];
+  db.photos.push({ id: 3, item_id: 'okki:600' }, { id: 4, item_id: null });
+  await save({ ...inv, update_time: '2026-10-08 11:00:00', remark: 'new note' },
+    { record_list: [item('600', { outbound_count: 5 }), item('601')] });
+  assert.deepEqual(db.event.result.stale_media_ids, [1, 2, 4]);
+  assert.deepEqual(db.event.result.required_recheck_ids, ['__whole__']);
+  assert.equal(db.photos[2].item_id, String(db.rows[0].id));
+});
+
+test('external revert is detected against verified evidence even when old mirror already equals reverted values', async () => {
+  const { db, save } = await seeded(); inspected(db); verifiedEvent(db);
+  db.event.result.verified.items[0].qty = 5;
+  db.photos.push({ id: 3, item_id: 'okki:600' });
+  await save({ ...inv, update_time: '2026-10-08 11:00:00' }, { record_list: [item('600'), item('601')] });
+  assert.deepEqual(db.event.result.stale_media_ids, [1, 2, 3]);
+  assert.ok(db.event.result.required_recheck_ids.includes('okki:600'));
+});
+
+test('price edit while mirror lags retires overlay without expiring newly verified photos', async () => {
+  const { db, save } = await seeded(); inspected(db); verifiedEvent(db);
+  db.event.result.verified.items[0].qty = 5;
+  db.event.result.stale_media_ids = [1, 2];
+  db.event.result.required_recheck_ids = ['__whole__'];
+  db.event.result.print_before_recheck = { verified_update_time: inv.update_time, inspection_id: 5 };
+  db.photos.push({ id: 3, item_id: 'okki:600' }, { id: 4, item_id: null });
+  await save({ ...inv, update_time: '2026-10-08 11:00:00' },
+    { record_list: [item('600', { outbound_count: 5, sale_price: 50 }), item('601')] });
+  assert.equal(db.inspection.status, 'submitted');
+  assert.equal(db.inspection.edit_version, 0);
+  assert.deepEqual(db.event.result.stale_media_ids, [1, 2]);
+  assert.deepEqual(db.event.result.required_recheck_ids, ['__whole__']);
+  assert.equal(db.event.result.print_before_recheck.verified_update_time, '2026-10-08 11:00:00');
+  assert.equal(db.event.result.verified.update_time, '2026-10-08 11:00:00');
+});
+
+test('large remote string identity stays exact and unsafe numeric identity aborts', async () => {
+  const db = new MemoryConnection(), save = await saver(db);
+  const key = '9007199254740993';
+  await save(inv, { record_list: [item(key)] });
+  assert.equal(db.rows[0].outbound_record_id, key);
+  await assert.rejects(save(inv, { record_list: [item(Number(key))] }), /unsafe/);
+  assert.equal(db.rows[0].outbound_record_id, key);
+});
+
+test('verified SKU identity change requires recheck despite identical display code', async () => {
+  const { db, save } = await seeded(); inspected(db); verifiedEvent(db);
+  db.event.result.verified.items[0].sku_id = '800';
+  await save(inv, { record_list: [item('600', { sku_id: '801' }), item('601')] });
+  assert.deepEqual(db.event.result.stale_media_ids, [1, 2]);
+  assert.deepEqual(db.event.result.required_recheck_ids, ['okki:600', '__whole__']);
 });

@@ -1,9 +1,72 @@
 /** Managed outbound creation: live association check + durable submission intent. */
 import fs from 'node:fs';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 export const now = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+
+export function assertOrderUnchanged(original, fresh, invoiceNo, invoiceRemark) {
+  const before = orderSnapshot(original, invoiceNo, invoiceRemark);
+  const after = orderSnapshot(fresh, invoiceNo, invoiceRemark);
+  const changed = [];
+  const visit = (a, b, field = '') => {
+    if (JSON.stringify(a) === JSON.stringify(b)) return;
+    if (a && b && typeof a === 'object' && typeof b === 'object') {
+      for (const key of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+        visit(a[key], b[key], field ? field + '.' + key : key);
+      }
+    } else changed.push(field);
+  };
+  visit(before, after);
+  if (!changed.length) return;
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  throw Object.assign(new Error('Order changed before outbound submission; no creation attempted'), {
+    failure: {code: 'order_changed', changed_fields: changed.slice(0, 20),
+      before_digest: digest(before), after_digest: digest(after)},
+  });
+}
+
+function identifier(value) {
+  if ((typeof value === 'number' && !Number.isSafeInteger(value)) || !/^\d+$/.test(String(value))) {
+    throw new Error('Invalid outbound snapshot identifier');
+  }
+  const result = BigInt(String(value)).toString();
+  if (result === '0' || BigInt(result) > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Invalid outbound snapshot identifier');
+  return result;
+}
+
+// Compare decimal text exactly: formatting may differ, monetary precision may not.
+function decimal(value) {
+  const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(String(value));
+  if (!match || !Number.isFinite(Number(value))) throw new Error('Invalid outbound snapshot number');
+  const exponent = Number(match[4] || 0);
+  if (Math.abs(exponent) > 100) throw new Error('Invalid outbound snapshot number');
+  const digits = match[2] + (match[3] || '');
+  const position = match[2].length + exponent;
+  const whole = (position > 0 ? digits.slice(0, position).padEnd(position, '0') : '0').replace(/^0+(?=\d)/, '');
+  const fraction = (position < 0 ? '0'.repeat(-position) + digits : digits.slice(Math.max(0, position))).replace(/0+$/, '');
+  const result = whole + (fraction ? '.' + fraction : '');
+  return (match[1] === '-' && result !== '0' ? '-' : '') + result;
+}
+
+function orderSnapshot(order, invoiceNo, invoiceRemark) {
+  const payload = buildPayload(order, invoiceNo, invoiceRemark);
+  const rows = payload.record_list.map((row, index) => {
+    const source = order.product_list[index];
+    return [identifier(source.unique_id), {...row,
+      order_id: identifier(order.order_id), product_id: identifier(source.product_id), sku_id: identifier(source.sku_id),
+      order_record_id: identifier(source.unique_id), outbound_count: decimal(source.count),
+      sale_price: decimal(source.unit_price ?? 0)}];
+  }).sort(([a], [b]) => a.localeCompare(b));
+  if (new Set(rows.map(([id]) => id)).size !== rows.length) throw new Error('Duplicate order row ID; no creation attempted');
+  // Preserve every transmitted field. Only unrelated API metadata is excluded.
+  return {...payload, order_id: identifier(order.order_id), company_id: identifier(order.company_id),
+    handler: payload.handler.map(identifier).sort(), exchange_rate: decimal(order.exchange_rate ?? 0),
+    exchange_rate_usd: decimal(order.exchange_rate_usd ?? 0),
+    order_status: order.status == null ? null : String(order.status),
+    removed: order.removed == null ? null : String(order.removed), record_list: Object.fromEntries(rows)};
+}
 
 export function buildPayload(order, invoiceNo, invoiceRemark) {
   if (invoiceRemark != null && typeof invoiceRemark !== 'string') throw new Error('Invalid Ark invoice remark');
@@ -172,7 +235,7 @@ export async function createOne(orderId, options) {
       try {
         if (nextSubmissionIntent(base, orderId).retry > 0) {
           console.warn('[outbound] stock retry deferred: ' + error.message);
-          return {outcome: 'waiting_stock', order_id: orderId, reason: 'Stock retry deferred: ' + error.message};
+          return {outcome: 'waiting_stock', order_id: orderId, reason: 'Stock retry deferred: ' + error.message, failure: error.failure};
         }
       } catch { error.uncertain = true; }
     }
@@ -298,6 +361,7 @@ export function assertClaimedTask(task, syncLogId, attempt, generation = null) {
       task?.status !== 'running' || String(task.attempts) !== String(attempt) ||
       String(task.latest_sync_log_id) !== String(syncLogId) || task.sync_status !== 'synced' ||
       task.linked_sync_id || task.order_type === 'presale' ||
+      ['cancel_pending', 'cancelled'].includes(task.invoice_status) ||
       (!generation && String(task.reason || '').startsWith('regenerate:'))) {
     throw new Error('Claimed outbound task or successful sync changed; no creation attempted');
   }
@@ -324,7 +388,7 @@ async function main() {
     knownIds = rows.map(row => String(row.outbound_invoice_id));
     invoice = await loadInvoiceForOrder(conn, process.argv[2]);
     const [[task]] = await conn.query(
-      `SELECT t.invoice_id, t.status, t.reason, t.attempts, i.sync_status, i.linked_sync_id, i.order_type,
+      `SELECT t.invoice_id, t.status, t.reason, t.attempts, i.sync_status, i.linked_sync_id, i.order_type, i.status AS invoice_status,
               (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1) AS latest_sync_log_id
          FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=?`,
       [process.argv[2]]);
@@ -352,14 +416,14 @@ async function main() {
         'SELECT id FROM ark_invoices WHERE id=? FOR UPDATE', [invoiceId]);
       if (!lockedInvoice) throw new Error('Claimed invoice missing; no creation attempted');
       const [[current]] = await check.query(
-        `SELECT t.status, t.reason, t.attempts, i.sync_status, i.linked_sync_id, i.order_type,
+        `SELECT t.status, t.reason, t.attempts, i.sync_status, i.linked_sync_id, i.order_type, i.status AS invoice_status,
                 (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1) AS latest_sync_log_id
            FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=? FOR UPDATE`,
         [process.argv[2]]);
       if (managedClaim) assertClaimedTask(current, claimedSyncLogId, claimedAttempt, generation);
       else assertRegenerationTask(current, generation);
       const fresh = await api('/v1/invoices/order/info?order_id=' + process.argv[2]);
-      if (JSON.stringify(fresh) !== JSON.stringify(original)) throw new Error('Order changed before outbound submission; no creation attempted');
+      assertOrderUnchanged(original, fresh, invoice.invoiceNo, invoice.invoiceRemark);
       return async () => {
         try { await check.query('ROLLBACK'); }
         catch (error) { error.uncertain = true; throw error; }
@@ -375,5 +439,9 @@ async function main() {
   console.log('ARK_OUTBOUND_RESULT=' + JSON.stringify(result));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(error => { console.error(error.message); process.exitCode = error.uncertain ? 3 : 1; });
+  main().catch(error => {
+    console.error(error.message);
+    if (error.failure && !error.uncertain) console.error('ARK_OUTBOUND_FAILURE=' + JSON.stringify(error.failure));
+    process.exitCode = error.uncertain ? 3 : 1;
+  });
 }

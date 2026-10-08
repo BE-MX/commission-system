@@ -178,7 +178,7 @@ test('failure evidence records actual retry limit and keeps long logs valid JSON
 
 test('retry policy refresh covers legacy logs and changed limits without resetting backoff or overwriting claims', async () => {
   const old = JSON.stringify({outcome: 'pre_submit_failed', attempts: 5, max_attempts: 5, error: 'before submit'});
-  const current = JSON.stringify({outcome: 'pre_submit_failed', attempts: 1, max_attempts: 8, error: 'current'});
+  const current = JSON.stringify({outcome: 'pre_submit_failed', attempts: 1, max_attempts: 8, retry_delay_minutes: 10, error: 'current'});
   const writes = [];
   await refreshFailedRetryPolicy({query: async (sql, params) => {
     if (sql.startsWith('SELECT')) return [[

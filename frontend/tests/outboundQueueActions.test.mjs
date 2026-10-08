@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { useListPage } from '../src/composables/useListPage.js'
 import { ref } from 'vue'
-import { OUTBOUND_STATE_LABELS } from '../src/views/shipping/composables/outboundStates.js'
+import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from '../src/views/shipping/composables/outboundStates.js'
+import { formatBeijingDateTime } from '../src/utils/datetime.js'
 
 const source = readFileSync(new URL('../src/views/shipping/composables/useOutboundRecords.js', import.meta.url), 'utf8')
   .replace(/^import .*\r?\n/gm, '').replace('export function', 'function')
@@ -14,7 +15,7 @@ test('local shortage and sync-wait records never invoke export APIs', async () =
   let calls = 0
   const api = factory(ref, () => ({query:{}}), () => ({}), async () => { calls++; return {data:{}} },
     async () => { calls++; return {} }, () => '', () => {}, () => {}, ()=>{})()
-  for (const outbound_state of ['waiting_stock','running','awaiting_sync','uncertain']) {
+  for (const outbound_state of ['waiting_stock','running','retrying','failed','awaiting_sync','uncertain']) {
     const row = {outbound_record_id:'task:1',outbound_state,can_print:false}
     await api.openPrint(row)
     await api.downloadWord(row)
@@ -24,6 +25,22 @@ test('local shortage and sync-wait records never invoke export APIs', async () =
   await api.downloadWord({outbound_record_id:'111',can_print:true})
   assert.equal(calls, 2)
   assert.equal(OUTBOUND_STATE_LABELS.waiting_stock, '部分库存不足')
+})
+
+test('retrying shows a safe next step and Beijing midnight even on another client timezone', () => {
+  const previous = process.env.TZ
+  process.env.TZ = 'America/Los_Angeles'
+  try {
+    assert.equal(OUTBOUND_STATE_LABELS.retrying, '等待自动重试')
+    assert.equal(OUTBOUND_STATE_TAGS.retrying, 'warning')
+    assert.equal(outboundPendingHint('retrying'), '系统将自动重试，请稍后刷新')
+    assert.equal(outboundPendingHint('failed'), '请联系管理员核对')
+    assert.equal(outboundPendingHint('uncertain'), '请联系管理员核对')
+    assert.equal(formatBeijingDateTime('2026-10-09 00:05:00'), '2026-10-09 00:05:00')
+  } finally {
+    if (previous === undefined) delete process.env.TZ
+    else process.env.TZ = previous
+  }
 })
 
 function deletionApi({confirm = async () => {}, remove = async () => {}} = {}) {

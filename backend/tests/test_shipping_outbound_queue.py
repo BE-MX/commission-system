@@ -153,6 +153,79 @@ def test_nonstandard_skipped_task_is_not_presented_as_stock_waiting(db, waiting)
     assert queue.list_outbound_records(db, keyword="WAIT")[1] == 0
 
 
+def test_pre_submit_failure_shows_retry_time_in_beijing_across_midnight(db, waiting, monkeypatch):
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    task = waiting[2]
+    task.status, task.attempts = "failed", 1
+    task.updated_at = datetime(2026, 10, 8, 23, 55)
+    task.last_error = json.dumps({"outcome": "pre_submit_failed", "attempts": 1,
+        "max_attempts": 5, "retry_delay_minutes": 10, "error": "internal information"})
+    db.commit()
+    with _pc_client(db, waiting[0], ["shipping_inspection:read"]) as client:
+        row = client.get("/api/shipping-inspection/outbound-records", params={"keyword": "WAIT"}).json()["data"]["items"][0]
+    assert row["outbound_state"] == "retrying"
+    assert row["retry_next_at"] == "2026-10-09 00:05:00"
+    assert row["retry_attempt"] == 2
+    assert row["can_print"] is False
+    assert "internal information" not in json.dumps(row)
+
+
+@pytest.mark.parametrize("change", [
+    {"status": "uncertain"}, {"attempts": 5}, {"attempts": 2},
+    {"last_error": "invalid"},
+    {"last_error": '{"outcome":"pre_submit_failed","attempts":1,"max_attempts":5}'},
+    {"last_error": '{"outcome":"pre_submit_failed","attempts":true,"max_attempts":5,"retry_delay_minutes":10}'},
+    {"last_error": '{"outcome":"pre_submit_failed","attempts":1,"max_attempts":"5","retry_delay_minutes":10}'},
+    {"last_error": '{"outcome":"pre_submit_failed","attempts":1,"max_attempts":5,"retry_delay_minutes":1}'},
+])
+def test_unproven_or_exhausted_retries_are_never_shown_as_automatic(db, waiting, change):
+    task = waiting[2]
+    task.status, task.attempts = "failed", 1
+    task.last_error = json.dumps({"outcome": "pre_submit_failed", "attempts": 1,
+        "max_attempts": 5, "retry_delay_minutes": 10})
+    for field, value in change.items():
+        setattr(task, field, value)
+    db.commit()
+    row = queue.list_outbound_records(db, keyword="WAIT")[0][0]
+    assert row["outbound_state"] == task.status
+    assert row["retry_next_at"] is None and row["retry_attempt"] is None
+
+
+@pytest.mark.parametrize("status,sync_status,linked", [
+    ("cancel_pending", "synced", None), ("cancelled", "synced", None),
+    ("synced", "not_synced", None), ("synced", "synced", "active-change"),
+])
+def test_frozen_invoice_does_not_promise_an_automatic_retry(db, waiting, status, sync_status, linked):
+    task = waiting[2]
+    task.status, task.attempts = "failed", 1
+    task.last_error = json.dumps({"outcome": "pre_submit_failed", "attempts": 1,
+        "max_attempts": 5, "retry_delay_minutes": 10})
+    invoice = db.get(Invoice, task.invoice_id)
+    invoice.status, invoice.sync_status, invoice.linked_sync_id = status, sync_status, linked
+    db.commit()
+    row = queue.list_outbound_records(db, keyword="WAIT")[0][0]
+    assert row["outbound_state"] == "failed" and row["retry_next_at"] is None
+
+
+def test_retry_display_state_sorts_before_pagination_and_invalid_json_stays_failed(db, waiting):
+    task = waiting[2]
+    task.status, task.attempts = "failed", 1
+    task.last_error = json.dumps({"outcome": "pre_submit_failed", "attempts": 1,
+        "max_attempts": 5, "retry_delay_minutes": 10})
+    other = Invoice(invoice_no="FAILED-1008", customer_id="C3", customer_name="Waiting Customer",
+        invoice_date=date(2026, 10, 8), sales_user_id=waiting[0].id, xiaoman_order_id="ORDER-FAIL", sync_status="synced")
+    db.add(other)
+    db.flush()
+    failed = OkkiOutboundTask(invoice_id=other.id, order_id="ORDER-FAIL", status="failed", attempts=1, last_error="invalid JSON")
+    db.add(failed)
+    db.commit()
+    pages = [queue.list_outbound_records(db, keyword="Waiting Customer", page=page, page_size=1,
+        sort_field="outbound_state", sort_order="asc", okki_user_id="9001") for page in (1, 2)]
+    assert [total for _, total in pages] == [2, 2]
+    assert [rows[0]["outbound_state"] for rows, _ in pages] == ["failed", "retrying"]
+    assert pages[0][0][0]["outbound_record_id"] == f"task:{failed.id}"
+
+
 def test_header_only_sync_keeps_preview_until_formal_row_is_visible_to_owner(db, waiting):
     db.execute(text("""INSERT INTO lsordertest.okki_outbound_records
         (id,outbound_no,company_id,customer_name,outbound_date)

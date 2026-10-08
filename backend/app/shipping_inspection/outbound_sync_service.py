@@ -149,6 +149,8 @@ def _snapshot(plan, after):
     for row in after['record_list']:
         local = source[str(row['order_record_id'])]
         items.append({'item_id': 'okki:' + str(row['outbound_record_id']), 'product_id': str(row['product_id']),
+            'sku_id': str(row['sku_id']), 'order_id': str(row['order_id']),
+            'order_record_id': str(row['order_record_id']), 'product_cn_name': row.get('product_cn_name') or '',
             'product_name': row['product_name'], 'model': local['model'] or row.get('product_model'),
             'size': local['size'], 'color': local['color'], 'spec': row.get('product_model'),
             'sku': row.get('sku_code'), 'qty': float(row['outbound_count']), 'unit': row['product_unit']})
@@ -196,15 +198,10 @@ def _verify_finish(db, event):
         if plan.get('serial_changed'):
             inspection.outbound_no = after['serial_id']
         if media:
-            # Business-mirror item IDs are not guaranteed to equal OKKI outbound_record_id.
-            # For changed item sets, invalidate all old evidence and recheck the current mirror rows.
-            if plan['material_order_ids'] or plan['removed_order_ids']:
-                stale_ids.update(photo.id for photo in media)
-                required_ids.add('__all_items__')
-            elif plan['remark_changed']:
-                stale_ids.update(photo.id for photo in media if photo.item_id is None)
-            if plan['requires_whole_recheck']:
-                required_ids.add('__whole__')
+            from app.shipping_inspection.outbound_recheck import changes
+            from app.shipping_inspection.outbound_service import inspection_item_links
+            stale, required = changes(plan, after, inspection_item_links(db, inspection.outbound_record_id), media, previous)
+            stale_ids, required_ids = set(stale), set(required)
     verified = _snapshot(plan, after)
     event.action = 'sync_done'
     event.result = {'verified': verified, 'checked_at': str(beijing_now()),

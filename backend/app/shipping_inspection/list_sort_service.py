@@ -51,12 +51,34 @@ def mirror_sort_value(db, field, rm, im, link, schema):
     return f"CASE WHEN {eligible} THEN COALESCE({count}, 0) ELSE {base} END"
 
 
-def local_sort_value(field):
+def local_retry_at(db):
+    """Only worker-proven unsent failures may advertise a retry, using its clock."""
+    raw = "CASE WHEN JSON_VALID(t.last_error) THEN t.last_error ELSE '{}' END"
+    mysql = db.get_bind().dialect.name == "mysql"
+    def value(path):
+        return _json(db, raw, '$.' + path)
+    def integer(path):
+        return (f"JSON_TYPE(JSON_EXTRACT({raw}, '$.{path}'))='INTEGER'" if mysql
+                else f"JSON_TYPE({raw}, '$.{path}')='integer'")
+    delay = value('retry_delay_minutes')
+    scheduled = (f"TIMESTAMPADD(MINUTE, {delay}, t.updated_at)" if mysql
+                 else f"DATETIME(t.updated_at, '+' || {delay} || ' minutes')")
+    eligible = f"""t.status='failed' AND t.attempts>=0 AND t.updated_at IS NOT NULL
+        AND f.sync_status='synced' AND f.status NOT IN ('cancel_pending','cancelled') AND f.linked_sync_id IS NULL
+        AND {value('outcome')}='pre_submit_failed'
+        AND {integer('attempts')} AND {value('attempts')}=t.attempts
+        AND {integer('max_attempts')} AND {value('max_attempts')}>t.attempts
+        AND {integer('retry_delay_minutes')} AND {delay}=(t.attempts+1)*5"""
+    return f"CASE WHEN {eligible} THEN {scheduled} ELSE NULL END"
+
+
+def local_sort_value(field, db):
     return {
         "outbound_no": "f.invoice_no", "order_id": "CAST(t.order_id AS CHAR)",
         "customer_name": "f.customer_name", "outbound_date": "DATE(t.created_at)",
         "item_count": "(SELECT COUNT(*) FROM ark_invoice_items i WHERE i.invoice_id=f.id)",
-        "outbound_state": "CASE WHEN t.status IN ('done','skipped') THEN 'awaiting_sync' ELSE t.status END",
+        "outbound_state": ("CASE WHEN t.status IN ('done','skipped') THEN 'awaiting_sync' "
+                           f"WHEN ({local_retry_at(db)}) IS NOT NULL THEN 'retrying' ELSE t.status END"),
         "status": "NULL", "photo_count": "NULL",
     }.get(field, "NULL")
 

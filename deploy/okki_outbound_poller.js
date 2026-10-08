@@ -191,9 +191,25 @@ export async function finishTask(conn, task, status, reason, error = null) {
   if (result.affectedRows !== 1) throw new Error('Task ownership changed: ' + task.id);
 }
 
-export function failureEvidence(task, error, maxAttempts = config.maxAttempts) {
+function changeEvidence(error) {
+  const lines = error.split(/\r?\n/).filter(line => line.startsWith('ARK_OUTBOUND_FAILURE='));
+  if (lines.length !== 1) return undefined;
+  let value;
+  try { value = JSON.parse(lines[0].slice('ARK_OUTBOUND_FAILURE='.length)); } catch { return undefined; }
+  if (value?.code !== 'order_changed' || !/^[a-f0-9]{64}$/.test(value.before_digest || '') ||
+      !/^[a-f0-9]{64}$/.test(value.after_digest || '') || !Array.isArray(value.changed_fields) ||
+      !value.changed_fields.length || value.changed_fields.length > 20 ||
+      value.changed_fields.some(field => typeof field !== 'string' ||
+        !/^(order_id|company_id|currency|exchange_rate|exchange_rate_usd|order_status|removed|handler(?:\.\d+)?|record_list\.\d+(?:\.(order_id|order_record_id|product_id|sku_id|outbound_count|sale_price|product_unit|product_name|product_model|product_cn_name))?)$/.test(field))) return undefined;
+  return {code: value.code, changed_fields: value.changed_fields,
+    before_digest: value.before_digest, after_digest: value.after_digest};
+}
+
+export function failureEvidence(task, error, maxAttempts = config.maxAttempts, previous = null) {
+  const failure = changeEvidence(previous ? 'ARK_OUTBOUND_FAILURE=' + JSON.stringify(previous) : error);
   return JSON.stringify({outcome: 'pre_submit_failed', attempts: Number(task.attempts),
-    max_attempts: maxAttempts, error: error.slice(-1500)});
+    max_attempts: maxAttempts, retry_delay_minutes: (Number(task.attempts) + 1) * 5,
+    failure, error: error.slice(-1500)});
 }
 
 export async function refreshFailedRetryPolicy(conn, maxAttempts = config.maxAttempts) {
@@ -202,14 +218,14 @@ export async function refreshFailedRetryPolicy(conn, maxAttempts = config.maxAtt
     let previous;
     try { previous = JSON.parse(task.last_error || ''); } catch { /* Historical plain-text failure. */ }
     if (previous?.outcome === 'pre_submit_failed' && previous.attempts === Number(task.attempts)
-        && previous.max_attempts === maxAttempts) continue;
+        && previous.max_attempts === maxAttempts && previous.retry_delay_minutes === (Number(task.attempts) + 1) * 5) continue;
     const error = previous?.outcome === 'pre_submit_failed' && typeof previous.error === 'string'
       ? previous.error : task.last_error || '';
     // Preserve the backoff clock and never overwrite a concurrent claim/recovery.
     await conn.query(
       `UPDATE ark_okki_outbound_tasks SET last_error=?, updated_at=updated_at
        WHERE id=? AND status='failed' AND attempts=? AND last_error <=> ?`,
-      [failureEvidence(task, error, maxAttempts), task.id, task.attempts, task.last_error]);
+      [failureEvidence(task, error, maxAttempts, previous?.failure), task.id, task.attempts, task.last_error]);
   }
 }
 

@@ -1291,6 +1291,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
 
+2026-10-08 自动重试状态：本地待出库记录 `outbound_state` 新增 `retrying`（等待自动重试）。仅执行端已记录 `pre_submit_failed`、认领次数与重试策略吻合、尚未耗尽上限，且发票仍同步成功、未取消、无关联同步任务时返回此状态。相应本地行新增 `retry_next_at`（无时区北京时间字符串，最早认领时间）、`retry_attempt`（下一次尝试序号）；其他本地状态两字段为 `null`。排序在分页前使用相同的显示状态。重试行仍为 `can_print=false`，不能打印、下载或扫码验货；不向客户端返回执行日志及业务差异原值。缺少已核实策略、最终失败及提交不确定任务仍须管理员核对。生成端按实际出库业务快照核对变化，说明见 `deploy/okki_outbound_poller.md`。
+
 2026-09-18：手机网页和小程序的扫码、刷新响应 `items` 与出库单打印、Word 共用排序函数：规格自然升序，同规格按尺寸数值升序；相同排序键保持原相对顺序。数量及照片/视频的 `item_id` 归属不变。
 
 2026-09-22 出库单打印分表：`print-data` 与 Word 的 `items[]` 增加 `product_kind`（`hair`/`accessory`，按 `ark_std_prices`/`ark_invoice_items` 的 accessory 身份匹配 `product_id`，未命中默认 `hair`）；Name 为 `Other Items` 的配件行从打印/Word 明细中剔除（扫码/验货仍含全部行；名为 `Other` 的配件仍打印）。HTML 打印与 Word 均拆为「产品明细」「配件明细」上下两表，每表末行数量合计；无对应类别时不渲染该表。列结构不变。
@@ -1301,7 +1303,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 2026-09-07 显示字段：扫码及出库打印数据的 `record.remark` 来自 `okki_outbound_records.remark`；`items[].model/size/color` 通过明细 `product_id` 左连 `okki_products.product_id` 读取，同一产品的多条出库明细保留各自数量和照片归属。产品未匹配或字段为空时返回 `null`，不以名称或明细旧规格替代型号。小程序首行用深绿色 40rpx/800 显示型号（缺失提示“未维护型号”），次行 32rpx 显示 `size / color`；顶部发货备注与底部提交的检验备注独立。出库单打印新增发货备注并移除 SKU 列，验货单打印保持原样。
 
-2026-09-23 验货中订单变更：`POST /outbound-records/{record_id}/invoice-sync/preview` 返回 `requires_recheck`、`inspection_status`；已有验货媒体且实物或出库备注变化时保存待重验状态，出库列表 `recheck_status=pending_sync`。`POST /outbound-records/{record_id}/invoice-sync` 新增布尔 `confirm_recheck`，只有仓库在差异预览后显式确认且验货单未提交才更新出库。成功后列表 `recheck_status=pending_inspection`，扫码及验货详情返回 `required_recheck_ids`，媒体返回 `stale`；产品/数量等明细变化时要求镜像中每条现存明细有新照片，备注变化或删除明细要求整单新照片。待同步/待补验期间不允许出库单及验货单打印、验货提交；旧媒体保留归档，不进入新验货打印。无媒体草稿、纯价格改动仍自动同步；已出库和已提交的实物变更不覆盖。
+2026-09-23 验货中订单变更（2026-10-08 补验规则更新）：`POST /outbound-records/{record_id}/invoice-sync/preview` 返回 `requires_recheck`、`inspection_status`；已有媒体且实物或备注变化时列表显示 `pending_sync`。仓库同步接口使用 `confirm_recheck` 确认，验货须为草稿；发票同步自动更新并在回读成功后撤回已提交验货。成功后列表显示 `pending_inspection`，扫码/刷新/详情返回 `required_recheck_ids`，媒体返回 `stale`。稳定远端身份只使变更/删除明细的旧媒体失效，未变产品照片保留有效；变更/新增实物和整单需新照片，备注变化也需整单，删除行清除该行要求。持久要求使用 `okki:<远端ID>`，API 转成当前本地明细 ID；`Other Items` 不要求产品照片，明细下发 `requires_recheck_photo=false`，其他明细为 true。已有 `__all_items__` 排除费用行；完整单轮审计、媒体集合、版本及当前原始明细均可证明时，旧整单失效记录可按实际变更收窄，读取不写状态，成功提交同事务记录恢复审计并清除要求。无法证明时保守保护。待补验打印沿用既有单张授权规则，失效原件保留归档，不进入正式验货打印；纯价格变化不使照片失效，实物版本不变时打印例外随核验时间更新。
 
 2026-09-28 单张先打印例外：管理员可对已同步、待补验且验货单仍为草稿的正式出库单调用 `POST /outbound-records/{record_id}/allow-print-before-recheck`，提交 `{"reason":"至少8个字符的处理依据"}`。接口按当前已核实的小满出库版本落审计，返回 `print_before_recheck=true`、`recheck_required=true`；列表同步返回 `print_before_recheck`，允许该单打印出库单或下载 Word，同时继续显示“待补验”。后续出库资料再次变化时例外失效。旧照片仍标记过期，补拍要求、验货提交校验及验货单打印限制保持有效；`pending_sync` 和不确定状态不能使用例外。
 

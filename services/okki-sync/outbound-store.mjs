@@ -115,16 +115,22 @@ export async function saveOutboundSnapshot(pool, inv, detail, { parseTs, num, in
     const [existing] = await conn.query('SELECT * FROM okki_outbound_record_items WHERE outbound_invoice_id=? FOR UPDATE', [inv.outbound_invoice_id]);
     const old = index(existing);
     const localIds = new Map();
+    const changedRemoteIds = new Set(), invalidItemIds = new Set(), removedItemIds = new Set();
     let materialChanged = old.size !== wanted.size;
     for (const [key, row] of wanted) {
       const before = old.get(key);
       const params = values(row, inv.outbound_invoice_id, num);
       if (before) {
         localIds.set(key, before.id);
-        materialChanged ||= !materialEqual(before, row);
+        if (!materialEqual(before, row)) {
+          materialChanged = true;
+          changedRemoteIds.add(key);
+          invalidItemIds.add(String(before.id)); invalidItemIds.add('okki:' + key);
+        }
         await conn.query(`UPDATE okki_outbound_record_items SET ${FIELDS.map(field => '`' + field + '`=?').join(',')},synced_at=CURRENT_TIMESTAMP WHERE id=? AND outbound_invoice_id=?`, [...params, before.id, inv.outbound_invoice_id]);
       } else {
         materialChanged = true;
+        changedRemoteIds.add(key);
         const [inserted] = await conn.query(`INSERT INTO okki_outbound_record_items (${FIELDS.map(field => '`' + field + '`').join(',')}) VALUES (${FIELDS.map(() => '?').join(',')})`, params);
         localIds.set(key, inserted.insertId);
       }
@@ -132,10 +138,15 @@ export async function saveOutboundSnapshot(pool, inv, detail, { parseTs, num, in
     const removed = existing.filter(row => !wanted.has(identity(row.outbound_record_id))).map(row => row.id);
     if (removed.length) {
       materialChanged = true;
+      for (const row of existing.filter(row => !wanted.has(identity(row.outbound_record_id)))) {
+        removedItemIds.add(String(row.id)); removedItemIds.add('okki:' + identity(row.outbound_record_id));
+        invalidItemIds.add(String(row.id)); invalidItemIds.add('okki:' + identity(row.outbound_record_id));
+      }
       await conn.query('DELETE FROM okki_outbound_record_items WHERE outbound_invoice_id=? AND id IN (?)', [inv.outbound_invoice_id, removed]);
     }
     const wholeChanged = previous && ((previous.remark || '') !== (inv.remark || '') || previous.serial_id !== inv.serial_id);
-    await invalidateInspection(conn, inspection, inv, detail.record_list, materialChanged, Boolean(wholeChanged), localIds);
+    await invalidateInspection(conn, inspection, inv, detail.record_list, materialChanged, Boolean(wholeChanged), localIds,
+      { changedRemoteIds, invalidItemIds, removedItemIds });
     await conn.commit();
   } catch (error) {
     try { await conn.rollback(); } catch (rollbackError) { console.warn('Outbound rollback failed:', rollbackError.code || rollbackError.name); conn.destroy?.(); }

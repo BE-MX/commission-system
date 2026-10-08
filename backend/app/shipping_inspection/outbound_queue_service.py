@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import bindparam, text
 
 from app.shipping_inspection import outbound_service as records
-from app.shipping_inspection.list_sort_service import QUEUE_SORT_FIELDS, mirror_sort_value, local_sort_value
+from app.shipping_inspection.list_sort_service import QUEUE_SORT_FIELDS, mirror_sort_value, local_sort_value, local_retry_at
 
 
 def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sort_field=None):
@@ -73,7 +73,7 @@ def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sor
     date_col = records._col(rm, "outbound_date", "r")
     field = sort_field if sort_field in QUEUE_SORT_FIELDS else None
     mirror_value = mirror_sort_value(db, field, rm, im, link, schema) if field else "NULL"
-    local_value = local_sort_value(field)
+    local_value = local_sort_value(field, db)
     if mysql and field in ("outbound_no", "order_id", "customer_name", "outbound_state", "status"):
         mirror_value, local_value = key(mirror_value), key(local_value)
     query = f"""
@@ -118,7 +118,8 @@ def _shortages(raw, items):
 def _local_rows(db, ids):
     if not ids:
         return {}
-    query = text("""SELECT t.id, t.invoice_id, t.order_id, t.status, t.last_error, t.processed_at,
+    query = text(f"""SELECT t.id, t.invoice_id, t.order_id, t.status, t.last_error, t.processed_at, t.attempts,
+        ({local_retry_at(db)}) AS retry_next_at,
         t.created_at, f.invoice_no, f.customer_name, f.sales_user_name
         FROM ark_okki_outbound_tasks t JOIN ark_invoices f ON f.id=t.invoice_id
         WHERE t.id IN :ids""").bindparams(bindparam("ids", expanding=True))
@@ -131,7 +132,8 @@ def _local_rows(db, ids):
     result = {}
     for task in tasks:
         items = items_by_invoice.get(task["invoice_id"], [])
-        state = "awaiting_sync" if task["status"] in ("done", "skipped") else task["status"]
+        state = ("awaiting_sync" if task["status"] in ("done", "skipped") else
+                 "retrying" if task["retry_next_at"] is not None else task["status"])
         result[str(task["id"])] = {
             "outbound_record_id": f"task:{task['id']}", "outbound_invoice_id": None,
             "outbound_no": task["invoice_no"], "customer_name": task["customer_name"],
@@ -140,6 +142,8 @@ def _local_rows(db, ids):
             "owner_name": task["sales_user_name"], "remark": None,
             "item_count": len(items), "total_qty": sum(i["quantity"] for i in items),
             "record_source": "ark_task", "outbound_state": state, "can_print": False,
+            "retry_next_at": str(task["retry_next_at"]) if task["retry_next_at"] is not None else None,
+            "retry_attempt": task["attempts"] + 1 if state == "retrying" else None,
             "stock_shortages": _shortages(task["last_error"], items) if state in ("waiting_stock", "running") else [],
             "stock_checked_at": str(task["processed_at"]) if task["processed_at"] else None,
         }

@@ -256,6 +256,9 @@ def submit(
     count = _photo_count(db, inspection.id) if inspection is not None else 0
     if count < 1:
         raise ValueError("每个发货单至少上传一张照片")
+    if sync_event:
+        from app.shipping_inspection.outbound_sync_state import persist_recovered_evidence
+        persist_recovered_evidence(db, sync_event, user_id, inspection)
     inspection.status = C.STATUS_SUBMITTED
     inspection.photo_count = count
     inspection.submitted_at = beijing_now()
@@ -315,12 +318,12 @@ def scan_payload(db: Session, outbound_record_id: str) -> dict:
     inspection = _get_by_outbound_id(db, outbound_record_id)
     photos = list_photos(db, inspection.id) if inspection is not None else []
     videos = list_photos(db, inspection.id, "video") if inspection is not None else []
-    from app.shipping_inspection.outbound_sync_state import evidence, BLOCKED
+    from app.shipping_inspection.outbound_sync_state import evidence, BLOCKED, requires_recheck_photo
     stale_ids, required_ids = evidence(db, outbound_record_id)
     sync_event = db.query(ShippingOperationEvent).filter_by(scope='outbound-invoice-sync', request_id=str(outbound_record_id)).first()
     return {
         "record": record,
-        "items": items,
+        "items": [{**item, "requires_recheck_photo": requires_recheck_photo(item)} for item in items],
         "inspection": (
             {"id": inspection.id, "status": inspection.status, "photo_count": len(photos),
              "edit_version": inspection.edit_version, "remark": inspection.remark}
@@ -438,7 +441,7 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
     if inspection is None:
         return None
     photos = list_photos(db, inspection.id)
-    from app.shipping_inspection.outbound_sync_state import evidence, BLOCKED
+    from app.shipping_inspection.outbound_sync_state import evidence, BLOCKED, requires_recheck_photo
     stale_ids, required_ids = evidence(db, inspection.outbound_record_id)
     sync_event = db.query(ShippingOperationEvent).filter_by(scope='outbound-invoice-sync', request_id=inspection.outbound_record_id).first()
     try:
@@ -459,7 +462,7 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
         "remark": inspection.remark,
         "submitted_at": inspection.submitted_at,
         "submitted_by_name": submitter.real_name if submitter else None,
-        "items": items,
+        "items": [{**item, "requires_recheck_photo": requires_recheck_photo(item)} for item in items],
         "photos": [_photo_to_dict(p, stale_ids) for p in photos],
         "videos": [_photo_to_dict(p, stale_ids) for p in list_photos(db, inspection.id, "video")],
         "required_recheck_ids": required_ids,

@@ -68,6 +68,18 @@ journalctl -u ark-okki-outbound-poller.service -n 80 --no-pager
 验证：`node --test deploy/tests/test_okki_outbound.mjs`，覆盖人工/部分已有单、查询失败、
 响应丢失、意图防重、真实结果验证、分页、并发认领和旧 worker 回写。
 
+## 2026-10-08 提交前业务快照与自动重试显示
+
+受管执行端提交前不再比较完整订单接口 JSON，而按实际出库 payload 的业务字段比较：客户、处理人、币种及汇率、每行订单明细 ID、产品、SKU、数量、单价、单位与产品名称/型号；另保留订单状态及删除标记检查。忽略更新时间、库存等不进入出库请求的动态元数据。数字格式归一化不舍入小数，明细按唯一 ID 比较，保留同 SKU 多行；重复明细 ID、非法数字或无法精确表示的 ID 在提交前拦截。
+
+业务内容发生变化时，本次不写提交意图、不发送出库请求。保留现有有上限退避机制；每次重试重新读取最新订单、核实任务认领次数及方舟最新成功同步日志、重新查关联出库和全局单号。取消、关联同步冻结和非同步状态仍阻止创建。提交后的超时、响应丢失或回读异常继续进入 `uncertain`，禁止自动重发。
+
+变化失败输出 `ARK_OUTBOUND_FAILURE`：仅包含 `order_changed`、至多20个字段路径与前后快照 SHA-256，不输出原始订单快照或字段值。轮询器将其保存在 `last_error.failure`，刷新重试上限时保留该证据；`retry_delay_minutes` 记录本次实际退避 `(attempts+1)×5` 分钟，刷新政策不修改 `updated_at` 或任务次数。
+
+出库列表对执行端已证明尚未提交、未耗尽重试、同步状态允许执行的失败任务显示 `retrying`（等待自动重试），提供 `retry_next_at`、`retry_attempt`，展示和排序共用资格表达式。时间是按数据库北京时间 `updated_at` 计算的最早认领时间，实际执行可能受轮询或其他任务影响。缺少有效执行端策略、次数不匹配、订单冻结或结果不确定时，不承诺自动重试。新代码应通过统一发布入口同时更新后端、前端和出库执行端；本节描述实现，不表示已生产发布。
+
+回归：`node --test deploy/tests/test_okki_outbound_order_guard.mjs deploy/tests/test_okki_outbound.mjs deploy/tests/test_okki_outbound_isolation.mjs deploy/tests/test_okki_outbound_remarks.mjs`；后端 `tests/test_shipping_outbound_queue.py` 与 `tests/test_shipping_table_sorting.py`，前端 `tests/outboundQueueActions.test.mjs`。
+
 ## 等待库存恢复
 
 等待任务每15分钟认领一次，按最久未处理优先，不限制等待次数。每轮先实时核对已有出库单，再按 SKU 合并需求量，查询 `/v1/product/inventory-list`，只使用目标仓库 `8193514242746` 的启用库存 `enable_count`。其他仓库库存、实物库存 `real_count` 和订单详情库存字段不作替代；列表不完整、字段异常或查询失败时不提交。库存足够才提交整单，若检查后库存又被占用，明确的库存拒绝会重新等待。

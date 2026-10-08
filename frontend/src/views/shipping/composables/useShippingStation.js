@@ -23,10 +23,15 @@ export function useShippingStation(api = stationApi) {
     const required = view.value?.required_recheck_ids || []
     const fresh = photos.value.filter(photo => !photo.stale)
     const missing = []
-    if (required.includes('__all_items__')) {
-      for (const item of view.value?.items || []) {
-        if (!fresh.some(photo => photo.item_id === item.item_id)) missing.push(item.product_name || item.item_id)
+    const items = view.value?.items || []
+    for (const item of items) {
+      if (required.includes('__all_items__') || required.includes(String(item.item_id))) {
+        if (item.requires_recheck_photo === false) continue
+        if (!fresh.some(photo => String(photo.item_id) === String(item.item_id))) missing.push(item.product_name || item.item_id)
       }
+    }
+    for (const key of required) {
+      if (!key.startsWith('__') && !items.some(item => String(item.item_id) === key)) missing.push('待刷新明细')
     }
     if (required.includes('__whole__') && !fresh.some(photo => photo.item_id == null)) missing.push('整单')
     return missing

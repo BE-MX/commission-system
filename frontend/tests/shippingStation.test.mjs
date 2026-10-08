@@ -69,6 +69,50 @@ test('old evidence never satisfies recheck; each current item and whole order ne
   assert.deepEqual(Array.from(s.missingRecheck.value), [])
 })
 
+test('fee rows do not disable recheck submission and physical rows still need fresh evidence', async () => {
+  const { s, people, calls } = setup(); await flush()
+  s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  s.view.value = { ...s.view.value, items: [
+    { item_id: 'HAIR', product_name: 'Hair', requires_recheck_photo: true },
+    { item_id: 'FEE', product_name: 'Other Items', requires_recheck_photo: false },
+  ], required_recheck_ids: ['__all_items__'], photos: [] }
+  assert.deepEqual(Array.from(s.missingRecheck.value), ['Hair'])
+  await s.submit()
+  assert.equal(calls.some(call => call[0] === 'submit'), false)
+  s.view.value.photos.push({ id: 6, item_id: 'HAIR', stale: false })
+  assert.deepEqual(Array.from(s.missingRecheck.value), [])
+  await s.submit()
+  assert.equal(calls.some(call => call[0] === 'submit'), true)
+})
+
+test('explicit changed detail alone needs new photos and unchanged evidence remains usable', async () => {
+  const { s, people, calls } = setup(); await flush()
+  s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  s.view.value = { ...s.view.value, items: [
+    { item_id: 'UNCHANGED', product_name: 'Cookies Cream' },
+    { item_id: 'CHANGED', product_name: '#P2/8' },
+    { item_id: 'FEE', product_name: 'Other Items', requires_recheck_photo: false },
+  ], required_recheck_ids: ['CHANGED', 'FEE', '__whole__'], photos: [
+    { id: 1, item_id: 'UNCHANGED', stale: false }, { id: 2, item_id: 'CHANGED', stale: true },
+  ] }
+  assert.deepEqual(Array.from(s.missingRecheck.value), ['#P2/8', '整单'])
+  await s.submit()
+  assert.equal(calls.some(call => call[0] === 'submit'), false)
+  s.view.value.photos.push({ id: 3, item_id: 'CHANGED', stale: false }, { id: 4, item_id: null, stale: false })
+  assert.deepEqual(Array.from(s.missingRecheck.value), [])
+  await s.submit()
+  assert.equal(calls.some(call => call[0] === 'submit'), true)
+})
+
+test('unresolved explicit detail cannot silently enable submission', async () => {
+  const { s, people, calls } = setup(); await flush()
+  s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  s.view.value.required_recheck_ids = ['okki:UNKNOWN']
+  assert.deepEqual(Array.from(s.missingRecheck.value), ['待刷新明细'])
+  await s.submit()
+  assert.equal(calls.some(call => call[0] === 'submit'), false)
+})
+
 test('uncertain upload retry keeps the same request id and version', async () => {
   const intents = []
   const { s, people } = setup({ upload: async (id, type, form) => { intents.push([form.get('request_id'), form.get('edit_version')]); if (intents.length === 1) throw new Error('lost response') } })
