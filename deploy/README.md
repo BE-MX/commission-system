@@ -342,3 +342,7 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 激活前核实现存媒体的实际存储、办公室后端版本/健康及云端已无独有媒体，再经同一入口 prepare-only、正式激活。本入口不迁移文件或修改数据库。候选渲染替换既有受管 shipping 块，发现未知块外 shipping 路由即拒绝；激活前检查配置摘要，失败恢复原配置，备份保留在各机 `/etc/nginx/.ark-backups/shipping-video/`。
 
 办公室已有独立的 exact `/api/mini/shipping-inspection/photos` 规则保留原文：21m、办公室 8002、120 秒超时。渲染器只允许该完整固定内容且仅出现一次；其他内容、重复规则或云端同类规则仍阻断。上述 300 秒、禁缓存/重试保证仅适用于本次受管规则。
+
+## 出库镜像同步专项
+
+`deploy\deploy.bat --okki-sync-only PLAN_JSON --prepare-only` 准备北京三文件固定候选；正式激活须用户授权后使用同计划去掉 `--prepare-only`。既有 cron 和主应用保持现有配置，入口有独立发布锁、原版漂移核验及回滚备份。详见 [出库镜像更新说明](okki-sync.md)。

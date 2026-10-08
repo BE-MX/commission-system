@@ -300,6 +300,7 @@ if __name__ == "__main__":
     parser.add_argument('--storage-cutover', metavar='PLAN_JSON', help='Execute a journalled COS cutover phase')
     parser.add_argument("--storage-routing-only", metavar="PROBES_JSON", help="Prepare/activate public COS routing with explicit cloud object probes")
     parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Beijing outbound worker")
+    parser.add_argument('--okki-sync-only', metavar='PLAN_JSON', help='Prepare/activate only the reviewed Beijing outbound mirror')
     parser.add_argument('--mail-worker-stage', choices=['prepare', 'provision', 'configure', 'oauth', 'enable-sending'], help='Prepare Beijing mail service/OAuth without activating application code')
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
@@ -321,6 +322,12 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if args.okki_sync_only:
+            if any(value for key, value in vars(args).items() if key not in {'okki_sync_only', 'prepare_only'}):
+                raise RuntimeError('Outbound mirror release only accepts its plan and --prepare-only')
+            from okki_sync_release import execute
+            execute(args.okki_sync_only, args.prepare_only)
+            sys.exit(0)
         if args.recover_migration_168 and any(value for key, value in vars(args).items() if key not in {"recover_migration_168", "prepare_only", "revision", "live_root", "no_pull", "migration_credentials"}):
             raise RuntimeError("Recovery 168 only accepts a pinned full release")
         if args.mail_worker_stage:
@@ -427,7 +434,7 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if any(getattr(locals().get('args'), key, None) for key in ['mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
+        if any(getattr(locals().get('args'), key, None) for key in ['okki_sync_only', 'mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
         if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):

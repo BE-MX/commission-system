@@ -157,6 +157,18 @@
       "source": "/etc/cron.d/ark-agent-sync",
       "jobs": 10,
       "migration_status": "verified-2026-09-26"
+    },
+    {
+      "host": "beijing",
+      "name": "ark-okki-outbound-mirror",
+      "manager": "cron",
+      "source": "services/okki-sync/sync-outbound.js",
+      "runtime": "/root/.openclaw/workspace/okki-sync",
+      "staging": "/root/.openclaw/workspace/okki-sync/.deploy-state/ark-sync",
+      "schedule": "/etc/cron.d/ark-agent-sync; every minute",
+      "lock": "/tmp/okki-outbound.lock",
+      "database_writer": "lsordertest.okki_outbound_records/items and commission_db shipping inspection contract",
+      "deploy": "deploy/deploy.bat --okki-sync-only PLAN_JSON; explicit three-file scope"
     }
   ],
   "terminals": [
