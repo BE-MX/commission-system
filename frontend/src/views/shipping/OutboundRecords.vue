@@ -52,6 +52,9 @@
             <StatusBadge :type="OUTBOUND_STATE_TAGS[row.outbound_state] || 'info'">
               {{ OUTBOUND_STATE_LABELS[row.outbound_state] || '状态待确认' }}
             </StatusBadge>
+            <small v-if="row.outbound_state === 'retrying' && row.retry_next_at" class="queue-note">
+              最早重试：{{ formatBeijingDateTime(row.retry_next_at) }}（第 {{ row.retry_attempt }} 次尝试）
+            </small>
             <el-popover v-if="row.stock_shortages?.length" trigger="click" placement="bottom" :width="360">
               <template #reference><GlassButton variant="link">缺货详情</GlassButton></template>
               <p v-for="item in row.stock_shortages" :key="item.sku_id" class="shortage-item">
@@ -132,6 +135,7 @@ import { useOutboundRecords } from './composables/useOutboundRecords'
 import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
 import OutboundSyncDialog from './OutboundSyncDialog.vue'
 import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from './composables/outboundStates'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const listPageState = useOutboundRecords()
 const {
