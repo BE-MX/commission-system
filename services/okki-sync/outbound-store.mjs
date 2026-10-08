@@ -18,7 +18,8 @@ function index(rows) {
   return map;
 }
 function materialEqual(before, after) {
-  return MATERIAL.every(key => String(before[key] ?? '') === String(after[key] ?? ''))
+  // Compare the same nullable value we persist (OKKI uses numeric 0 for unset references).
+  return MATERIAL.every(key => String(before[key] ?? '') === String(after[key] || ''))
     && Number(before.outbound_count) === Number(after.outbound_count);
 }
 function values(row, invoice, num) {

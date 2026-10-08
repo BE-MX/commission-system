@@ -260,3 +260,15 @@ test('same-second replacement of remote identity requires fresh evidence even wi
   assert.equal(db.event.result.verified, undefined);
   assert.equal(db.audits.length, 1);
 });
+
+
+test('zero unassigned foreign reference matches the NULL persisted by the API mirror', async () => {
+  const db = new MemoryConnection(), save = await saver(db);
+  await save(inv, { record_list: [item('600', { order_record_id: 0 }), item('601')] });
+  assert.equal(db.rows[0].order_record_id, null);
+  inspected(db);
+  const before = structuredClone({ inspection: db.inspection, event: db.event, photos: db.photos });
+  await save(inv, { record_list: [item('600', { order_record_id: 0 }), item('601')] });
+  assert.deepEqual({ inspection: db.inspection, event: db.event, photos: db.photos }, before);
+  assert.equal(db.audits.length, 0);
+});
