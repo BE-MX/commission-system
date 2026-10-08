@@ -1,5 +1,7 @@
 """Durable, at-most-one concurrent sender. Unknown outcomes are never retried."""
 import logging
+import hashlib
+import json
 from datetime import timedelta
 from uuid import uuid4
 
@@ -11,8 +13,8 @@ from app.invoice import okki_client
 from app.invoice.models import Invoice
 from app.invoice.settlement_guard import ensure_receipt_sendable
 from app.invoice.settlement_models import Receivable
-from app.receipt import attachments, balance, fees, remote, service
-from app.receipt.models import Receipt, ReceiptIntent
+from app.receipt import attachments, balance, fees, remote, service, recovery
+from app.receipt.models import Receipt, ReceiptIntent, ReceiptAttempt
 from app.receipt.schemas import ReceiptFields
 
 logger = logging.getLogger(__name__)
@@ -78,14 +80,7 @@ def generate_ready(db):
 
 
 def recover_expired(db):
-    rows = db.query(Receipt).filter(Receipt.sync_status == "syncing", Receipt.lease_until < beijing_now()).all()
-    for candidate in rows:
-        count = db.execute(update(Receipt).where(Receipt.id == candidate.id, Receipt.sync_status == "syncing",
-                             Receipt.lease_until < beijing_now()).values(sync_status="uncertain",
-                             last_error="同步进程中断，结果待核对，禁止重复发送", version=Receipt.version + 1)).rowcount
-        if count:
-            service.log(db, candidate, "uncertain", "任务租约过期，需要核对小满结果")
-    db.commit()
+    recovery.recover_expired(db)
 
 
 def deliver(db, receipt_id):
@@ -118,21 +113,48 @@ def deliver(db, receipt_id):
             return
     token = uuid4().hex
     count = db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.status == "active",
-        Receipt.sync_status == "pending").values(sync_status="syncing", attempt_token=token,
+        Receipt.sync_status == "pending", Receipt.xiaoman_receipt_id.is_(None)).values(
+        sync_status="syncing", send_phase="preparing", recovery_kind=None, next_attempt_at=None, attempt_token=token,
         lease_until=beijing_now() + timedelta(minutes=30), attempts=Receipt.attempts + 1,
         version=Receipt.version + 1)).rowcount
+    if count:
+        db.add(ReceiptAttempt(token=token, receipt_id=receipt_id))
     db.commit()
     if not count:
         return
     sent = False
-    def before_send():
+    def before_send(payload):
         nonlocal sent
+        # Token refresh and all remote reads may commit/release the initial locks.
+        # Recheck the frozen local inputs under the normal invoice -> receipt lock order.
+        db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
+        db.refresh(invoice)
+        db.refresh(row, with_for_update=True)
+        service.ensure_order_ready(db, invoice)
+        ensure_receipt_sendable(db, row)
+        if db.query(ReceiptAttempt.token).filter(ReceiptAttempt.receipt_id == receipt_id,
+                ReceiptAttempt.remote_id.isnot(None)).with_for_update().first():
+            raise ValueError("已有发送任务取得小满 ID，等待恢复原单，禁止再次创建")
+        if row.version != prepared_version or remote.invoice_binding(invoice) != prepared_binding:
+            raise ValueError("发送前订单或回款已变化，停止发送，请重新核验")
+        if target:
+            db.refresh(target, with_for_update=True)
+            if target.kind == "freight":
+                balance.calculate_target(db, target, snapshot, exclude_receipt=row.id)
+            elif target.remote_status != "bound" or row.xiaoman_order_id != target.remote_order_id:
+                raise ValueError("回款目标已变化，停止发送")
+        digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        attempt = db.get(ReceiptAttempt, token)
+        if attempt.payload_hash and attempt.payload_hash != digest:
+            raise ValueError("发送内容已变化，停止发送")
         count = db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.attempt_token == token,
             Receipt.sync_status == "syncing", Receipt.lease_until > beijing_now()).values(
-            lease_until=beijing_now() + timedelta(minutes=5))).rowcount
-        db.commit()
+            send_phase="sending", lease_until=beijing_now() + timedelta(minutes=5))).rowcount
         if not count:
+            db.rollback()
             raise ValueError("回款同步任务已失效，停止发送并等待核对")
+        attempt.payload_hash = digest
+        db.commit()  # A crash from this point onwards has an unknown POST outcome.
         sent = True
     try:
         db.expire_all()
@@ -155,17 +177,23 @@ def deliver(db, receipt_id):
         else:
             attachments.bind(db, row.attachment_ids, row.created_by, invoice.id, row.id)
         db.commit()
+        prepared_version, prepared_binding = row.version, remote.invoice_binding(invoice)
         result = remote.push(db, row, snapshot, before_send)
         # Remote ID is persisted immediately; any DB failure leaves syncing,
         # which expires to uncertain rather than invoking the POST again.
+        attempt = db.get(ReceiptAttempt, token)
+        attempt.remote_id, attempt.remote_no = str(result["cash_collection_id"]), str(result["cash_collection_no"])
+        db.commit()  # Preserve identity evidence even if accepting its unique mapping fails.
         count = db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.attempt_token == token,
             Receipt.sync_status == "syncing").values(xiaoman_receipt_id=str(result["cash_collection_id"]),
             xiaoman_receipt_no=str(result["cash_collection_no"]), sync_status="synced", last_error=None,
+            send_phase="accepted", recovery_kind="verify", next_attempt_at=beijing_now(), recovery_attempts=0,
             collect_status=None, synced_at=beijing_now(), version=Receipt.version + 1)).rowcount
         if not count:
             service.log(db, row, "late_result", f"旧任务返回小满回款 ID {result['cash_collection_id']}，请核对，未覆盖当前处理结果")
             db.commit()
             return
+        attempt.handled_at = beijing_now()
         service.log(db, row, "synced", "小满已返回回款编号；截图仅方舟留存")
         db.commit()
         refresh_accepted(db, receipt_id)
@@ -173,14 +201,21 @@ def deliver(db, receipt_id):
         db.rollback()
         logger.warning("receipt delivery failed id=%s (%s)", receipt_id, type(exc).__name__)
         print(f"[receipt] delivery failed id={receipt_id} ({type(exc).__name__})", flush=True)
-        uncertain = isinstance(exc, okki_client.OkkiOutcomeUncertainError) or (sent and not isinstance(exc, (ValueError, okki_client.OkkiApiError)))
+        current = db.get(Receipt, receipt_id)
+        sent = sent or current.send_phase == "sending"
+        uncertain = isinstance(exc, okki_client.OkkiOutcomeUncertainError) or (sent and not isinstance(exc, okki_client.OkkiApiError))
         state = "uncertain" if uncertain else "failed"
         # API responses may contain customer data; do not persist raw payloads.
+        retryable = not sent and recovery.transient_preparation(exc)
         message = ("小满结果待核对，禁止重新创建；请在小满核验" if uncertain else
+                   "发送前临时故障，等待自动恢复；尚未发送回款" if retryable else
                    str(exc)[:500] if isinstance(exc, ValueError) and not isinstance(exc, okki_client.OkkiApiError)
                    else "小满拒绝回款请求，请检查应用权限和回款字段后重试")
+        values = recovery.retry_values(current.recovery_attempts, "prepare_retry") if retryable else dict(
+            recovery_kind="unknown" if uncertain else "blocked", next_attempt_at=None)
         count = db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.attempt_token == token,
             Receipt.sync_status == "syncing").values(sync_status=state, last_error=message,
+            send_phase="sending" if uncertain else "preparing" if not sent else "rejected", **values,
             version=Receipt.version + 1)).rowcount
         if count:
             service.log(db, db.get(Receipt, receipt_id), state, message)
@@ -189,13 +224,23 @@ def deliver(db, receipt_id):
 
 def refresh_accepted(db, receipt_id):
     # Once an ID is committed, a failed read must never requeue the POST.
+    identity, version = None, None
     try:
         row = db.get(Receipt, receipt_id)
-        data = remote.receipt_info(db, row.xiaoman_receipt_id)
+        if not row or row.status != "active" or not row.xiaoman_receipt_id:
+            db.rollback()
+            return
+        identity, version = row.xiaoman_receipt_id, row.version
+        data = remote.receipt_info(db, identity)
         db.query(Invoice).filter(Invoice.id == row.invoice_id).with_for_update().one()
         db.refresh(row, with_for_update=True)
+        if row.status != "active" or row.xiaoman_receipt_id != identity or row.version != version:
+            db.rollback()
+            return
         if not matches(row, data):
             row.sync_status = "uncertain"
+            row.recovery_kind, row.next_attempt_at = "blocked", None
+            row.version += 1
             row.last_error = "小满已创建回款，但金额、手续费、实到账金额、币种或关联订单不匹配，请核对远端原单"
             service.log(db, row, "uncertain", row.last_error)
         else:
@@ -205,8 +250,19 @@ def refresh_accepted(db, receipt_id):
         db.rollback()
         logger.warning("receipt read-back failed id=%s (%s)", receipt_id, type(exc).__name__)
         print(f"[receipt] read-back failed id={receipt_id} ({type(exc).__name__})", flush=True)
-        db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.sync_status == "synced").values(
-            last_error="小满已返回单号，但详情核验暂未完成，请刷新小满结果", version=Receipt.version + 1))
+        if identity is None:
+            return
+        current = db.get(Receipt, receipt_id)
+        if current is None:
+            return
+        conflict = isinstance(exc, service.ReturnedIdentityConflict)
+        values = dict(sync_status="uncertain", recovery_kind="blocked", next_attempt_at=None) if conflict else recovery.retry_values(
+            current.recovery_attempts, "verify")
+        count = db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.xiaoman_receipt_id == identity,
+            Receipt.version == version, Receipt.status == "active").values(**values,
+            last_error=str(exc) if conflict else "小满已返回单号，详情核验暂未完成；仅回读核验，不重新创建", version=Receipt.version + 1)).rowcount
+        if count and conflict:
+            service.log(db, current, "identity_conflict", str(exc))
         db.commit()
 
 
@@ -238,6 +294,7 @@ def bind_remote(db, row, data, actor):
     if not matches(row, data):
         raise ValueError("小满回款的订单、金额、手续费、实到账金额、币种或日期不匹配，禁止绑定")
     identity = str(data["cash_collection_id"])
+    service.ensure_result_identity(db, row, identity)
     if row.xiaoman_receipt_id and row.xiaoman_receipt_id != identity:
         raise ValueError("已取得小满回款 ID，不能改绑其他回款，请核对远端原单")
     other = db.query(Receipt.id).filter(Receipt.xiaoman_receipt_id == identity, Receipt.id != row.id).first()
@@ -248,6 +305,9 @@ def bind_remote(db, row, data, actor):
         raise ValueError("小满财务状态缺失或异常，请稍后核对")
     row.collect_status = int(data["collect_status"])
     row.sync_status, row.last_error, row.synced_at = "synced", None, beijing_now()
+    row.send_phase, row.recovery_attempts = "verified", 0
+    row.recovery_kind = "verify" if row.collect_status == 0 else None
+    row.next_attempt_at = beijing_now() + timedelta(minutes=30) if row.collect_status == 0 else None
     row.version += 1
     service.log(db, row, "reconciled", "已核对并绑定小满回款", actor)
 
@@ -275,9 +335,11 @@ def resolve(db, row, body, actor):
     else:
         if row.xiaoman_receipt_id:
             raise ValueError("已取得小满回款 ID，不能确认未创建，请核对远端原单")
+        service.ensure_no_returned_result(db, row)
         candidates = [r for r in remote.order_receipts(db, row.xiaoman_order_id) if candidate_matches(row, r)]
         if candidates:
             raise ValueError("小满存在同订单同额回款候选，不能确认未创建，请核对后绑定")
         row.sync_status, row.last_error = "pending", None
+        row.send_phase, row.recovery_kind, row.next_attempt_at, row.recovery_attempts = None, None, None, 0
         row.version += 1
     service.log(db, row, body.resolution, body.reason, actor)

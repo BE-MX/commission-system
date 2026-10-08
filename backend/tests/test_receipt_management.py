@@ -40,7 +40,10 @@ def no_real_remote(monkeypatch, tmp_path):
     def forbidden(*a, **k):
         raise AssertionError("Unexpected real remote call")
     monkeypatch.setattr(okki_client, "ensure_access_token", forbidden)
-    monkeypatch.setattr(remote, "push", lambda *a: {"cash_collection_id": 701, "cash_collection_no": "REMOTE-701"})
+    def push(db, row, snapshot, fence):
+        fence({"order_id": row.xiaoman_order_id, **remote.amount_fields(row)})
+        return {"cash_collection_id": 701, "cash_collection_no": "REMOTE-701"}
+    monkeypatch.setattr(remote, "push", push)
 
 
 def proof(db):
@@ -376,7 +379,7 @@ def test_delegate_cannot_list_other_salespersons_receipts(db, order):
 def test_old_success_cannot_overwrite_new_attempt(db, order, monkeypatch):
     row, _ = register(db, order)
     def old_sender(db, row, snapshot, fence):
-        fence()
+        fence({"order_id": row.xiaoman_order_id, **remote.amount_fields(row)})
         row.sync_status, row.attempt_token = "uncertain", "replaced-token"
         db.commit()
         return {"cash_collection_id": "99", "cash_collection_no": "HK99"}

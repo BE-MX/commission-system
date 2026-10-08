@@ -1,7 +1,8 @@
 """Administrator-reviewed remote changes; original facts remain in the audit log."""
 import hashlib
 import json
-from datetime import date
+from datetime import date, timedelta
+from app.core.time import beijing_now
 from app.invoice import lifecycle_remote
 from app.invoice.service import get_invoice
 from app.receipt import remote, service
@@ -10,6 +11,7 @@ from app.receipt import remote, service
 def evidence(db, row):
     if row.status != "active" or not row.xiaoman_receipt_id or row.sync_status not in {"synced", "uncertain"}:
         raise ValueError("仅已绑定小满的有效回款可核实远端变更")
+    service.ensure_result_identity(db, row, row.xiaoman_receipt_id)
     data = lifecycle_remote.read(db, "receipt", row.xiaoman_receipt_id)
     if data is None:
         # Verify the active index as well: a transient detail absence alone must
@@ -56,6 +58,7 @@ def accept(db, row, body, actor):
         raise ValueError("回款或远端证据已变化，请重新预览后确认")
     if row.status != "active" or row.sync_status not in {"synced", "uncertain"}:
         raise ValueError("回款状态已变化，请刷新")
+    service.ensure_result_identity(db, row, row.xiaoman_receipt_id)
     if proof["after"] is None:
         row.status = "remote_deleted"
         row.collect_status = None
@@ -66,5 +69,8 @@ def accept(db, row, body, actor):
         row.collection_date = date.fromisoformat(data["collection_date"])
         row.collect_status = data["collect_status"]
         row.sync_status, row.last_error = "synced", None
+        row.send_phase, row.recovery_attempts = "verified", 0
+        row.recovery_kind = "verify" if row.collect_status == 0 else None
+        row.next_attempt_at = beijing_now() + timedelta(minutes=30) if row.collect_status == 0 else None
     row.version += 1
     service.log(db, row, "remote_change", json.dumps({"evidence": proof, "reason": body.reason.strip()}, ensure_ascii=False), actor)

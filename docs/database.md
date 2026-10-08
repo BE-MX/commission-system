@@ -61,6 +61,17 @@
 
 时间列均为北京时间。客户素材继续使用原表的 `storage_provider/object_key`，仅在完整回读校验后受控切换provider。159依赖158，禁止开发机升级共享生产库；downgrade不自动删除队列或引用数据。
 
+## 回款同步恢复（175_receipt_recovery，本地实现，未部署）
+
+`ark_receipts` 新增可空 `send_phase`、`recovery_kind`、`next_attempt_at` 和默认 0 的 `recovery_attempts`；后两类调度字段有索引。历史阶段保持 NULL，不能推测未发送。
+
+| 表 | 责任与关键约束 |
+| --- | --- |
+| `ark_receipt_attempts` | token 主键、receipt_id BIGINT FK/索引、发送摘要、准确远端 ID/编号、handled_at 与创建时间；先保存返回证据，再接纳唯一映射 |
+| `ark_receipt_index_states` | 租户摘要 source 主键、最小完整快照/校验摘要 JSON、租约令牌/截止、发布时间；跨实例租约与事务原子发布 |
+
+新增时间均为北京时间。父 revision 为 174，迁移只新增字段/表；保留历史金额、费用、财务状态，不进行发送阶段回填，downgrade 拒绝删除证据。详见[实现与验收](requirements/2026-10-08-receipt-sync-recovery.md)。
+
 ## 回款管理（156_receipt_management，生产迁移已完成）
 
 | 表 | 责任与关键约束 |

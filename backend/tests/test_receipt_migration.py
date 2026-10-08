@@ -28,7 +28,11 @@ def test_migration_restart_preserves_rows_and_matches_model(monkeypatch):
         module.upgrade()
         assert conn.execute(sa.text("SELECT message FROM ark_receipt_logs WHERE id=1")).scalar() == "preserved"
         for model, table in zip((Receipt, ReceiptIntent, ReceiptAttachment, ReceiptLog), module.TABLES):
-            assert set(table.columns.keys()) == set(model.__table__.columns.keys())
+            # 156 is a historical schema; 169/175 add ledger columns later.
+            # Keep the comparison exact, with the later additions explicitly accounted for.
+            later = {"batch_id", "receivable_id", "purpose", "send_phase", "recovery_kind",
+                     "next_attempt_at", "recovery_attempts"} if model is Receipt else set()
+            assert set(table.columns.keys()) | later == set(model.__table__.columns.keys())
             ddl = str(sa.schema.CreateTable(table).compile(dialect=mysql.dialect()))
             assert "ENGINE=InnoDB" in ddl and "CHARSET=utf8mb4" in ddl
         conn.execute(sa.text("ALTER TABLE ark_receipts RENAME COLUMN amount TO missing_amount"))
