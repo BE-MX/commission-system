@@ -335,12 +335,8 @@ def _resolve(db, row, body, evidence, actor):
     else:
         if row.xiaoman_receipt_id:
             raise ValueError("已取得小满回款 ID，不能确认未创建，请核对远端原单")
-<<<<<<< HEAD
-        candidates = [r for r in evidence if candidate_matches(row, r)]
-=======
         service.ensure_no_returned_result(db, row)
-        candidates = [r for r in remote.order_receipts(db, row.xiaoman_order_id) if candidate_matches(row, r)]
->>>>>>> origin/main
+        candidates = [r for r in evidence if candidate_matches(row, r)]
         if candidates:
             raise ValueError("小满存在同订单同额回款候选，不能确认未创建，请核对后绑定")
         row.sync_status, row.last_error = "pending", None

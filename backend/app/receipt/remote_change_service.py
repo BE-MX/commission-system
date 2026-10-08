@@ -1,24 +1,18 @@
 """Current-authorized remote changes; financial evidence never holds business locks."""
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 import hashlib
 import json
-<<<<<<< HEAD
 
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.time import beijing_now
 from app.invoice import lifecycle_remote, okki_client
+from app.invoice.service import get_invoice
 from app.receipt import access, authority, receipt_index, reconciliation_service, remote, service
 from app.receipt.models import ReceiptLog
-=======
-from datetime import date, timedelta
-from app.core.time import beijing_now
-from app.invoice import lifecycle_remote
-from app.invoice.service import get_invoice
-from app.receipt import remote, service
->>>>>>> origin/main
 
 
 @dataclass(frozen=True)
@@ -39,7 +33,6 @@ class RemoteEvidence:
 def _check(row, body=None):
     if row.status != "active" or not row.xiaoman_receipt_id or row.sync_status not in {"synced", "uncertain"}:
         raise ValueError("仅已绑定小满的有效回款可核实远端变更")
-<<<<<<< HEAD
     if body is not None:
         if row.batch_id or row.purpose == "presale_deposit":
             raise ValueError("预售及汇总回款的远端变更需先核对整批资金，不能单独调整")
@@ -95,16 +88,6 @@ def _evidence(target, evidence):
     if evidence.detail is None:
         if any(identity == target.receipt_id for identity, _ in evidence.index):
             raise ValueError("小满完整索引仍存在原回款，删除证据不一致，请核对原关联")
-=======
-    service.ensure_result_identity(db, row, row.xiaoman_receipt_id)
-    data = lifecycle_remote.read(db, "receipt", row.xiaoman_receipt_id)
-    if data is None:
-        # Verify the active index as well: a transient detail absence alone must
-        # never release the reservation of a still-indexed receipt.
-        if any(str(r["cash_collection_id"]) == row.xiaoman_receipt_id
-               for r in remote.order_receipts(db, row.xiaoman_order_id)):
-            raise ValueError("小满列表仍存在原回款，删除证据不一致，请稍后核对")
->>>>>>> origin/main
         current = None
     else:
         data = dict(evidence.detail)
@@ -144,12 +127,6 @@ def _apply(db, row, body, proof, actor):
     _check(row, body)
     if proof["version"] != row.version or proof["evidence_hash"] != body.evidence_hash:
         raise ValueError("回款或远端证据已变化，请重新预览后确认")
-<<<<<<< HEAD
-=======
-    if row.status != "active" or row.sync_status not in {"synced", "uncertain"}:
-        raise ValueError("回款状态已变化，请刷新")
-    service.ensure_result_identity(db, row, row.xiaoman_receipt_id)
->>>>>>> origin/main
     if proof["after"] is None:
         row.status = "remote_deleted"
         row.collect_status = None
@@ -196,6 +173,7 @@ def accept(db, identity, body, user):
     row, invoice, current, actual, actual_target = _capture(db, identity, user, body)
     if actual != expected or actual_target != target:
         raise HTTPException(409, "回款关联或已知发送结果在取证期间变化，请重新读取")
+    service.ensure_result_identity(db, row, row.xiaoman_receipt_id)
     proof = _evidence(target, evidence)  # Only disclose commercial evidence after final authorization.
     _apply(db, row, body, proof, access.user_id(current))
     return row, invoice

@@ -123,7 +123,6 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     from app.customer.work_item_source_service import reconcile_sources_job
 
     settings = get_settings()
-<<<<<<< HEAD
     if outbound_mode not in {'legacy', 'outbound-worker-v1'} or (settings.PORTAL_ENABLED and outbound_mode == 'legacy'):
         raise RuntimeError('Outbound mode must be confirmed before scheduler registration')
 
@@ -148,10 +147,7 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
         scheduler.add_job(process_portal_outbound, trigger="interval", seconds=30,
             id=JOB_PORTAL_OUTBOUND, replace_existing=True, max_instances=1, coalesce=True,
             misfire_grace_time=30)
-    from app.receipt.scheduler import process_receipts
-=======
     from app.receipt.scheduler import process_receipts, refresh_receipt_index
->>>>>>> origin/main
     scheduler.add_job(process_receipts, trigger="interval", seconds=30,
                       id="receipt_delivery", replace_existing=True, max_instances=1, coalesce=True)
     scheduler.add_job(refresh_receipt_index, trigger="interval", seconds=30,

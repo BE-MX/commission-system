@@ -122,6 +122,7 @@ class TestSchedulerRegistration:
                 "domestic_public_sea_daily",
                 "okki_outbound_reconcile",
                 "receipt_delivery",
+                "receipt_index_refresh",
                 "okki_outbound_delete_reconcile",
             }
             task_brief = scheduler.get_job("task_daily_brief")
