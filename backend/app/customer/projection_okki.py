@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Mapping
 
+from app.portal.authority import lock_authority
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -50,6 +51,7 @@ def project_okki_customer(
     sync_cursor: str | None = None,
     captured_at: datetime | None = None,
 ) -> ProjectionReceipt:
+    lock_authority(db)
     try:
         return _project_okki_customer_from_source(
             db,
@@ -150,6 +152,7 @@ def project_okki_contact(
     sync_cursor: str | None = None,
     captured_at: datetime | None = None,
 ) -> ProjectionReceipt:
+    lock_authority(db)
     try:
         return _project_okki_contact_from_source(
             db,

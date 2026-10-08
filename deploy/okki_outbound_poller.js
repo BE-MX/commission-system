@@ -13,6 +13,7 @@
  * SQL timestamps are Beijing wall time. systemd triggers once per minute.
  */
 import { spawn } from 'node:child_process';
+import {assertLegacyMode} from './okki_outbound_mode.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -138,13 +139,14 @@ export function generationFromReason(reason) {
   return /^regenerate:([1-9]\d*)(?:\s|$)/.exec(reason || '')?.[1] || null;
 }
 
-function runCreateOutbound(task, generationSyncLogId) {
+function runCreateOutbound(task, generationSyncLogId, lockOwner) {
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
       [path.join(config.scriptDir, 'okki_outbound_creator.mjs'), String(task.order_id), '--run',
         '--claimed-sync-log=' + String(task.claimedSyncLogId ?? ''),
         '--claimed-attempt=' + String(task.attempts),
+        '--poller-lock-owner=' + String(lockOwner),
         ...(generationSyncLogId ? ['--regeneration-sync-log=' + generationSyncLogId] : [])],
       { cwd: config.scriptDir, env: process.env },
     );
@@ -219,11 +221,13 @@ async function runOnce(conn) {
   let ok = 0, failed = 0;
   for (let n = 0; n < config.batch; n++) {
     // Claim immediately before execution; never lease a waiting batch.
+    await assertLegacyMode(conn);
+    const [[owner]] = await conn.query('SELECT CONNECTION_ID() AS id');
     const [task] = await claimBatch(conn);
     if (!task) break;
     log(`start task#${task.id} order=${task.order_id} attempt=${task.attempts}`);
     const generation = generationFromReason(task.reason);
-    const {code, output} = await runCreateOutbound(task, generation);
+    const {code, output} = await runCreateOutbound(task, generation, owner.id);
     const result = resultFromOutput(code, output, task.order_id);
     if (result) {
       const status = result.outcome === 'waiting_stock' ? 'waiting_stock' : result.outcome === 'existing' ? 'skipped' : 'done';

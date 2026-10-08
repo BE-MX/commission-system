@@ -91,7 +91,26 @@ def npm_install(folder):
         atomic_json(STATE / (name + ".json"), {"digest": stamp})
 
 
-def build_frontends():
+def pnpm_command():
+    executable = shutil.which("pnpm.cmd" if os.name == "nt" else "pnpm")
+    if not executable:
+        raise RuntimeError("Registered customer portal requires pnpm on the publishing machine")
+    return executable
+
+
+def portal_install(folder):
+    if not (folder / "pnpm-lock.yaml").is_file():
+        raise RuntimeError("Customer portal requires its committed pnpm lockfile")
+    executable = pnpm_command()
+    stamp = input_digest([folder / "package.json", folder / "pnpm-lock.yaml"],
+                         run(["node", "--version"], capture=True) + run([executable, "--version"], capture=True))
+    name = "deps-" + folder.name
+    if marker(name).get("digest") != stamp or not (folder / "node_modules").exists():
+        run([executable, "install", "--frozen-lockfile", "--ignore-scripts"], cwd=folder)
+        atomic_json(STATE / (name + ".json"), {"digest": stamp})
+
+
+def build_frontends(include_portal=False):
     extension = ROOT / "extensions/whatsapp-translation"
     downloads = ROOT / "frontend/public/downloads/whatsapp-translation"
     stamp = input_digest([extension])
@@ -106,13 +125,17 @@ def build_frontends():
     shutil.copytree(packaged, downloads, dirs_exist_ok=True)
     outputs = {}
     node = run(["node", "--version"], capture=True)
-    for name in ["frontend", "frontend-pm"]:
+    for name in ["frontend", "frontend-pm"] + (["frontend-portal"] if include_portal else []):
         folder = ROOT / name
         stamp = input_digest([folder], node)
         dist = STATE / "builds" / (name + "-" + stamp)
         if not (dist / "index.html").exists() or marker("build-" + name).get("digest") != stamp:
-            npm_install(folder)
-            run([npm_command(), "run", "build", "--", "--outDir", dist], cwd=folder)
+            if name == "frontend-portal":
+                portal_install(folder)
+                run([pnpm_command(), "exec", "vite", "build", "--outDir", dist], cwd=folder)
+            else:
+                npm_install(folder)
+                run([npm_command(), "run", "build", "--", "--outDir", dist], cwd=folder)
             atomic_json(STATE / ("build-" + name + ".json"), {"digest": stamp, "files": static_sync.manifest(dist)})
         elif static_sync.manifest(dist) != marker("build-" + name)["files"]:
             raise RuntimeError("Cached build is corrupt: " + name)
@@ -195,9 +218,10 @@ def publish(args):
         outbound = step("outbound-prepare", "准备已登记的出库轮询器", outbound_release.prepare, ROOT, outbound_revision, release_id, allow_pending=bool(office and office.get('pending')))
         journal['outbound'] = outbound['receipt']
         atomic_json(STATE / "publish-current.json", journal)
-        outputs = step("build", "构建主站、PM 站与浏览器扩展", build_frontends)
+        outputs = step("build", "构建已登记站点与浏览器扩展", build_frontends,
+                       include_portal=any(target["component"] == "frontend-portal" for target in inventory["static_targets"]))
         if office:
-            step("office-static", "准备办公室静态文件与内网 PM 站", stage_static, {**outputs, "pm-lan": build_lan()}, office)
+            step("office-static", "准备办公室静态文件与内网 PM 站", stage_static, {**{name: dist for name, dist in outputs.items() if name in {"frontend", "frontend-pm"}}, "pm-lan": build_lan()}, office)
         backend = step("beijing-prepare", "准备北京后端与色块服务", cloud_backend.prepare, ROOT, revision, allow_pending=bool(office), **office_options)
         import colorwork_routing
         colorwork_routes = step("routing-prepare", "校验色块路由配置", colorwork_routing.prepare, ROOT / "deploy")
@@ -227,6 +251,8 @@ def publish(args):
             raise RuntimeError('Recovery 168 outbound baseline drift')
         atomic_json(STATE / "publish-current.json", journal)
         stopped = step("migration", "共享数据库迁移（无变更则跳过）", schema_release.migrate, office, inventory, args.migration_credentials) if office else []
+        journal['outbound'] = step("outbound-install", "安装完整出库制品并保持调度暂停", outbound_release.phase, outbound, 'install')
+        atomic_json(STATE / "publish-current.json", journal)
         if office:
             print(json.dumps(step("office-activate", "切换并验证办公室应用及静态文件", office_activate, office)), flush=True)
             journal["completed"].append("office")
@@ -247,11 +273,11 @@ def publish(args):
             print(json.dumps(step("static-activate:" + item["request"].get("host", item["target"]), "切换并验证静态站 " + item["request"].get("host", item["target"]), static_sync.activate, item)), flush=True)
             journal["completed"].append(item["target"] + ":" + item["request"]["root"])
             atomic_json(STATE / "publish-current.json", journal)
-        journal['outbound'] = step("outbound-activate", "更新已登记的出库脚本并恢复原调度状态", outbound_release.phase, outbound, 'activate')
+        journal['outbound'] = step("outbound-activate", "更新已登记的出库脚本并核验模式目标", outbound_release.phase, outbound, 'activate')
         atomic_json(STATE / "publish-current.json", journal)
         if stopped:
-            step("writers-resume", "恢复原本运行的关联写入服务", schema_release.resume_external, stopped, office)
-        journal['outbound'] = step("outbound-verify", "核验出库版本摘要与调度状态", outbound_release.phase, outbound, 'verify')
+            step("writers-resume", "恢复原本运行的关联写入服务", schema_release.resume_external, stopped, office, outbound=outbound, journal=journal)
+        journal['outbound'] = step("outbound-verify", "核验出库版本摘要与调度状态", outbound_release.verify_completion, outbound, journal)
         journal['completed'].append('singapore-outbound')
         atomic_json(STATE / "publish-current.json", journal)
         if office:

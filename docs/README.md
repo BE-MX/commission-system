@@ -17,6 +17,7 @@
 
 | 文档 | 用途 | 适合谁 |
 |------|------|--------|
+| [客户下单门户开发文档（2026-09-30）](requirements/2026-09-30-customer-order-portal/README.md) | 权限、映射、订单/PI、接口、迁移、64项验收规格及对抗审查；待开发设计 | 产品、前后端、测试 |
 | [architecture.md](architecture.md) | 系统架构、数据流、鉴权边界与已核验拓扑 | 技术接手人、新后端开发 |
 | [api-reference.md](api-reference.md) | 全模块 API 端点清单（新端点同步更新） | 前后端开发、AI 协作 |
 | [database.md](database.md) | 数据库表结构清单（新表同步更新） | 后端开发、DBA |

@@ -126,7 +126,17 @@ def requeue_waiting_stock_after_invoice_sync(db: Session, invoice: Invoice) -> O
     return task
 
 
-def reconcile_missing_outbound_tasks(
+def reconcile_missing_outbound_tasks(factory, *, limit: int = RECONCILE_LIMIT) -> dict:
+    """Own the queue transaction and shared fence; never accept a caller Session."""
+    if not callable(factory):
+        raise RuntimeError('Legacy reconciliation requires an owned session factory')
+    if type(limit) is not int or not 1 <= limit <= RECONCILE_LIMIT:
+        raise ValueError('Invalid legacy reconciliation limit')
+    from app.invoice.outbound_mode import reconcile_legacy
+    return reconcile_legacy(factory, limit=limit)
+
+
+def _reconcile_missing_outbound_tasks(
     db: Session,
     *,
     limit: int = RECONCILE_LIMIT,

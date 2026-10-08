@@ -1,7 +1,7 @@
 """FastAPI 应用入口"""
 
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.core.database import engine
 from app.core.storage.cos import ObjectMissing, StorageError
 from app.bootstrap import (
-    check_database_connection, load_business_rules,
+    check_database_connection, load_business_rules, initialize_portal_outbound,
     seed_admin_and_permissions, auto_init_ai_presets,
     seed_asset_dimensions, seed_salary_rules, seed_agent_runtime_profiles,
     seed_whatsapp_translation_glossary,
@@ -24,6 +24,7 @@ from app.routers import register_routers
 from app.whatsapp_translation.errors import register_whatsapp_translation_error_handler
 from app.mail_outreach.errors import register_mail_outreach_error_handler
 from app.customer.pcw_errors import register_pcw_error_handler
+from app.portal.errors import register_portal_error_handler
 from app.mcp.server import mount_mcp, mcp_session_lifespan
 from app.schedulers import start_scheduler, shutdown_scheduler
 
@@ -36,34 +37,59 @@ _scheduler = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # MCP streamable-http session manager 需在整个 app 生命周期内运行
-    async with mcp_session_lifespan():
-        # --- 启动 ---
-        check_pdf_export_resources()
-        check_expo_watermark()   # 缺失只告警不阻断：没水印 ≪ 展位后端起不来
-        check_database_connection()
-        load_business_rules()
-        seed_admin_and_permissions()
-        seed_asset_dimensions()
-        seed_salary_rules()
-        seed_agent_runtime_profiles()
-        seed_whatsapp_translation_glossary()
-
-        global _scheduler
-        _scheduler = start_scheduler()
-
-        auto_init_ai_presets()
-
-        from app.pm.bootstrap import init_pm_module
-        init_pm_module()  # PM 协作站：存储目录自检 + pm_diff preset + 差异看门狗
-        from app.core.storage.worker import start_worker, stop_worker
-        storage_worker = start_worker()
+    # Register acquired resources immediately and preserve every cleanup error.
+    # ExitStack continues unwinding, but implicit exception contexts can lose
+    # earlier failures across independent callbacks and SDK task groups.
+    cleanup_errors: list[BaseException] = []
+    def cleanup(callback, *args):
         try:
+            callback(*args)
+        except BaseException as error:
+            cleanup_errors.append(error)
+
+    try:
+        async with AsyncExitStack() as resources:
+            resources.callback(cleanup, engine.dispose)
+            await resources.enter_async_context(mcp_session_lifespan())
+            check_pdf_export_resources()
+            check_expo_watermark()
+            check_database_connection()
+            outbound_mode = initialize_portal_outbound()
+            load_business_rules()
+            seed_admin_and_permissions()
+            seed_asset_dimensions()
+            seed_salary_rules()
+            seed_agent_runtime_profiles()
+            seed_whatsapp_translation_glossary()
+
+            global _scheduler
+            scheduler = start_scheduler(outbound_mode=outbound_mode)
+            _scheduler = scheduler
+            def stop_owned_scheduler():
+                global _scheduler
+                try:
+                    shutdown_scheduler(scheduler)
+                finally:
+                    if _scheduler is scheduler:
+                        _scheduler = None
+            resources.callback(cleanup, stop_owned_scheduler)
+
+            auto_init_ai_presets()
+            from app.pm.bootstrap import init_pm_module
+            init_pm_module()
+            from app.core.storage.worker import start_worker, stop_worker
+            storage_worker = start_worker()
+            resources.callback(cleanup, stop_worker, storage_worker)
             yield
-        finally:
-            stop_worker(storage_worker)
-            shutdown_scheduler(_scheduler)
-    engine.dispose()
+    except BaseException as error:
+        if cleanup_errors:
+            raise BaseExceptionGroup(
+                "Application lifecycle and cleanup failures", [error, *cleanup_errors],
+            ) from None
+        raise
+    else:
+        if cleanup_errors:
+            raise BaseExceptionGroup("Application cleanup failures", cleanup_errors)
 
 
 app = FastAPI(
@@ -86,6 +112,7 @@ app.add_middleware(
 register_whatsapp_translation_error_handler(app)
 register_mail_outreach_error_handler(app)
 register_pcw_error_handler(app)
+register_portal_error_handler(app)
 
 # 全局异常处理
 @app.exception_handler(ValueError)

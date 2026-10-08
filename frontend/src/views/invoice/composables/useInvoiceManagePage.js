@@ -1,4 +1,4 @@
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, onScopeDispose, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import {
@@ -7,15 +7,27 @@ import {
   downloadInvoicePdf,
   fetchInvoicePrintHtml,
   getInvoiceSyncLogs,
+  getInvoiceSummary,
   listInvoices,
   resolveInvoiceSyncUncertain,
 } from '@/api/invoice'
 import { INVOICE_SYNC_OUTCOME, isInvoiceSyncing, validateThenSync } from './invoiceSyncFlow'
 import { formatInvoiceDateTime } from './invoiceDateTime'
+import { currentBeijingDate } from '@/utils/datetime'
+import { useAuthStore } from '@/stores/auth'
 
 export function useInvoiceManagePage() {
   const loading = ref(false)
   const invoices = ref([])
+  const today = currentBeijingDate()
+  const month = today.slice(0, 7)
+  const [yearNumber, monthNumber] = month.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(yearNumber, monthNumber, 0)).getUTCDate()
+  const summaryDateRange = ref([`${month}-01`, `${month}-${lastDay}`])
+  const summary = ref(null)
+  const summaryLoading = ref(false)
+  const summaryError = ref('')
+  let summaryRequestId = 0
   const filters = reactive({ keyword: '', order_id: '', status: '', order_type: '' })
   const pagination = reactive({ page: 1, page_size: 20, total: 0 })
   const syncLogsVisible = ref(false)
@@ -24,15 +36,82 @@ export function useInvoiceManagePage() {
   const syncLogsTitle = ref('')
   let showIssues = () => {}
 
-  const summary = computed(() => invoices.value.reduce((acc, invoice) => {
-    acc.total += 1
-    acc.amount += Number(invoice.total_amount || 0)
-    if (invoice.status === 'ready') acc.ready += 1
-    if (invoice.status === 'draft') acc.draft += 1
-    return acc
-  }, { total: 0, ready: 0, draft: 0, amount: 0 }))
+  const auth = useAuthStore()
+  let alive = true
+  let readGeneration = 0
+  let invoiceRequestId = 0
+  let logRequestId = 0
+
+  function readerKey() {
+    if (!auth.user?.id || !auth.accessToken) return null
+    return JSON.stringify([String(auth.user.id), [...auth.roles].sort(), [...auth.permissions].sort()])
+  }
+
+  function readTicket() { return { key: readerKey(), generation: readGeneration } }
+  function currentRead(ticket) {
+    return alive && ticket.key !== null && ticket.key === readerKey() && ticket.generation === readGeneration
+  }
+
+  function clearReadViews() {
+    readGeneration += 1
+    invoiceRequestId += 1
+    summaryRequestId += 1
+    logRequestId += 1
+    invoices.value = []
+    pagination.total = 0
+    summary.value = null
+    summaryError.value = ''
+    syncLogs.value = []
+    syncLogsTitle.value = ''
+    syncLogsVisible.value = false
+    loading.value = false
+    summaryLoading.value = false
+    syncLogsLoading.value = false
+  }
+
+  function deniedRead(error) {
+    if (![401, 403].includes(error?.response?.status)) return false
+    clearReadViews()
+    summaryError.value = '订单读取权限已变化，请刷新订单或重新登录'
+    return true
+  }
+
+  watch(readerKey, () => {
+    clearReadViews()
+    if (readerKey()) summaryError.value = '账号或权限已变化，请刷新订单'
+  }, { flush: 'sync' })
+  onScopeDispose(() => { alive = false; clearReadViews() })
+
+  async function loadSummary() {
+    const ticket = readTicket()
+    const [dateFrom, dateTo] = summaryDateRange.value || []
+    if (!currentRead(ticket) || !dateFrom || !dateTo) return
+    const requestId = ++summaryRequestId
+    summary.value = null
+    summaryLoading.value = true
+    summaryError.value = ''
+    try {
+      const result = await getInvoiceSummary({ date_from: dateFrom, date_to: dateTo })
+      if (currentRead(ticket) && requestId === summaryRequestId) summary.value = result
+    } catch (error) {
+      if (!currentRead(ticket) || requestId !== summaryRequestId) return
+      if (deniedRead(error)) return
+      if (requestId === summaryRequestId) {
+        summary.value = null
+        summaryError.value = '订单概览加载失败，请重试'
+      }
+    } finally {
+      if (currentRead(ticket) && requestId === summaryRequestId) summaryLoading.value = false
+    }
+  }
 
   async function loadInvoices() {
+    const ticket = readTicket()
+    if (!currentRead(ticket)) return
+    const requestId = ++invoiceRequestId
+    const summaryRequest = loadSummary()
+    invoices.value = []
+    pagination.total = 0
     loading.value = true
     try {
       const params = { ...filters, page: pagination.page, page_size: pagination.page_size }
@@ -40,10 +119,21 @@ export function useInvoiceManagePage() {
       if (!params.order_id) delete params.order_id
       if (!params.order_type) delete params.order_type
       const result = await listInvoices(params)
-      invoices.value = result.items || []
-      pagination.total = result.total || 0
+      if (currentRead(ticket) && requestId === invoiceRequestId) {
+        invoices.value = result.items || []
+        pagination.total = result.total || 0
+      }
+    } catch (error) {
+      if (!currentRead(ticket) || requestId !== invoiceRequestId) return
+      if (deniedRead(error)) throw error
+      if (requestId === invoiceRequestId) {
+        invoices.value = []
+        pagination.total = 0
+      }
+      throw error
     } finally {
-      loading.value = false
+      if (currentRead(ticket) && requestId === invoiceRequestId) loading.value = false
+      await summaryRequest
     }
   }
 
@@ -81,14 +171,28 @@ export function useInvoiceManagePage() {
   }
 
   async function openSyncLogs(row) {
+    const ticket = readTicket()
+    if (!currentRead(ticket)) return
+    const requestId = ++logRequestId
+    const invoiceId = row.id
+    syncLogs.value = []
     syncLogsTitle.value = `同步日志 - ${row.invoice_no}`
     syncLogsVisible.value = true
     syncLogsLoading.value = true
     try {
-      const result = await getInvoiceSyncLogs(row.id)
-      syncLogs.value = result.items || []
+      const result = await getInvoiceSyncLogs(invoiceId)
+      if (currentRead(ticket) && requestId === logRequestId) syncLogs.value = result.items || []
+    } catch (error) {
+      if (!currentRead(ticket) || requestId !== logRequestId) return
+      if (deniedRead(error)) throw error
+      if (requestId === logRequestId) {
+        syncLogs.value = []
+        syncLogsTitle.value = ''
+        syncLogsVisible.value = false
+      }
+      throw error
     } finally {
-      syncLogsLoading.value = false
+      if (currentRead(ticket) && requestId === logRequestId) syncLogsLoading.value = false
     }
   }
 
@@ -99,7 +203,15 @@ export function useInvoiceManagePage() {
   }
 
   async function exportFile(row, download, extension) {
-    const response = await download(row.id)
+    const ticket = readTicket()
+    if (!currentRead(ticket)) return
+    let response
+    try { response = await download(row.id) } catch (error) {
+      if (!currentRead(ticket)) return
+      deniedRead(error)
+      throw error
+    }
+    if (!currentRead(ticket)) return
     const blob = new Blob([response.data], { type: response.headers['content-type'] })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -110,7 +222,15 @@ export function useInvoiceManagePage() {
   }
 
   async function openPrint(id) {
-    const html = await fetchInvoicePrintHtml(id)
+    const ticket = readTicket()
+    if (!currentRead(ticket)) return
+    let html
+    try { html = await fetchInvoicePrintHtml(id) } catch (error) {
+      if (!currentRead(ticket)) return
+      deniedRead(error)
+      throw error
+    }
+    if (!currentRead(ticket)) return
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 60000)
@@ -137,7 +257,8 @@ export function useInvoiceManagePage() {
   return {
     actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
     loading, money, money4, openSyncLogs, pagination, removeInvoice, statusText, statusType,
-    summary, syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
+    summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
+    syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
     isInvoiceSyncing, resolveUncertain, validateAndSync,
   }
 }

@@ -1,5 +1,7 @@
 # 统一部署入口
 
+客户下单门户目前仅准备接入、未登记活跃目标；构建、HTTPS与经营门禁见[客户下单门户发布接入](customer-orders.md)。
+
 OpenClaw、MCP、中继及配套同步已于 2026-09-26 统一到北京 `leshine.cloud`；后续新增 Agent 服务同样部署北京。部署归属、迁移入口、回滚和验证见 [Agent 服务部署](agent-cloud-migration.md)。出库发布与 DDL writer 必须使用本次主机调整后的部署器，旧新加坡 unit 已 mask。
 
 ## Windows 远程更新界面
@@ -36,9 +38,11 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 普通完整发布和 `--cloud-only` 现在都包含北京出库轮询器。脚本及 systemd 配置从本次候选源码取件，与应用绑定同一 revision；不再依赖另跑专项命令。发布成功回执包含出库制品摘要，缺少部署登记、准备失败、更新失败或版本核验不一致均阻断整体成功。
 
-顺序为：准备所有制品 → 保存出库 timer 原始启用/运行状态并暂停、排空在途任务 → 迁移与应用/静态站切换 → 替换出库脚本并校验所需数据库字段 → 恢复 timer 原状态 → 核验线上摘要与调度状态 → 写整体成功标记。普通发布不会把原本停用或暂停的 timer 启用；未变化文件不替换。`--prepare-only` 不暂停服务、不切换代码；有待执行迁移时，新增字段检查延迟至激活阶段，激活前必须通过。
+顺序为：准备完整五制品并在无配置staging实际加载三个JS模块 → 保存timer原启用/运行状态、禁用调度并排空service/MainPID → 迁移 → 安装五制品且保持inactive/disabled → 应用/静态站切换 → 激活及核验摘要/调度 → 写整体成功标记。协调activate要求已完成installed_paused；安装回执绑定候选revision/release_id/digest和严格布尔暂停状态。同身份重试保留原基线和已安装阶段；文件替换或回执失败保持暂停及备份。`--prepare-only`不暂停服务、不切换代码；待迁移时新列检查仅prepare/freeze可延期，install必须通过。这里的安装暂停不证明持久mode已建立或新worker接管。
 
 独立维修仍可用 `deploy\deploy.bat --okki-outbound-only --prepare-only` 预检，去掉 `--prepare-only` 仅更新并启用该服务，不做应用发布或迁移。此专项入口显式启用调度，与普通发布保留原状态不同；存在未完成的协调发布时拒绝穿越其暂停边界。
+
+上述激活和基线恢复目前仍是legacy初始兼容行为。门户持久模式切换不得据此上线：同步bootstrap、按mode选择目标schedule、专项启用拒绝、兼容回退、finalize共同核验和旧调度门禁尚未闭环，详见客户门户开发文档1.19/1.20。三个模块的静态import不验证main内动态auth.js/mysql2、真实远端子进程或供应商合同。
 
 普通发布中途失败，出库可能保持暂停。先检查本机 `.deploy_state/publish-current.json` 的 `outbound` 阶段及北京 `.deploy-state/ark-outbound/release-current.json`，核实应用/schema状态后从同一本地发布目录、同一完整 revision 和发布范围重试；本地持久 `release_id` 与原调度基线会被保留。不同机器、发布范围、revision 或专项发布不能覆盖未完成的恢复记录，即使脚本摘要相同也不能接管；不要删除日志或直接启动旧脚本来绕过恢复。迁移自身失败仍遵循下方数据库恢复规则。
 
@@ -340,3 +344,8 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 激活前核实现存媒体的实际存储、办公室后端版本/健康及云端已无独有媒体，再经同一入口 prepare-only、正式激活。本入口不迁移文件或修改数据库。候选渲染替换既有受管 shipping 块，发现未知块外 shipping 路由即拒绝；激活前检查配置摘要，失败恢复原配置，备份保留在各机 `/etc/nginx/.ark-backups/shipping-video/`。
 
 办公室已有独立的 exact `/api/mini/shipping-inspection/photos` 规则保留原文：21m、办公室 8002、120 秒超时。渲染器只允许该完整固定内容且仅出现一次；其他内容、重复规则或云端同类规则仍阻断。上述 300 秒、禁缓存/重试保证仅适用于本次受管规则。
+
+
+## 开发分支1.25发布恢复共同凭据
+
+受管publish、migration resume及历史159/160 finalizer现共用outbound回执/候选/实际verify核验。managed timer不再按原running记录无条件start；已知v1目标暂停，初始legacy按经核验baseline。缺receipt或仅installed_paused不能finalize，历史凭据不补造，需受审协调发布。fresh mode floor不能由历史legacy降低。共同guard失败只向受信登记目标请求pause，保留active service/字节/mode/业务事实；SSH/IO/审计/状态不明固定报未确认，不宣称已排空。success摘要含最新绑定outbound，静态后再check。当前本地替身/实际函数体证据不代表生产、真实systemd/cgroup或完整协议回退；I78/I79/I80现场门禁保持，具体终态见docs/handoff.md。

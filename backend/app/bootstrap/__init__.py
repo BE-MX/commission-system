@@ -8,9 +8,11 @@ from app.bootstrap.seed_salary import seed_salary_rules
 from app.bootstrap.seed_agent_runtime import seed_agent_runtime_profiles
 from app.bootstrap.seed_whatsapp_translation import seed_whatsapp_translation_glossary
 from app.bootstrap.static_files import mount_uploads, mount_frontend
+from app.bootstrap.portal_outbound import initialize_portal_outbound
 from app.bootstrap.resources import check_pdf_export_resources, check_expo_watermark
 
 __all__ = [
+    "initialize_portal_outbound",
     "check_expo_watermark",
     "check_database_connection",
     "load_business_rules",

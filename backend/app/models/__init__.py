@@ -308,3 +308,6 @@ __all__ = [
     "IntegrationApp",
     "InvoiceIngestRequest",
 ]
+
+# Customer order portal metadata for Alembic and bootstrap.
+from app.portal import models as _order_portal_models  # noqa: F401

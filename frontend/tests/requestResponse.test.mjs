@@ -32,6 +32,7 @@ function loadResponseHandlers(axiosOverride) {
     'ElMessage',
     'useLoading',
     'getAccessToken',
+    'getAuthEpoch',
     'clearAuthState',
     'loading',
     `${body}; return createApiClient`,
@@ -40,6 +41,7 @@ function loadResponseHandlers(axiosOverride) {
     { error(message) { messages.push(typeof message === 'string' ? message : message.message) } },
     () => ({ show() {}, hide() {} }),
     () => null,
+    () => 0,
     () => {},
     loadingState,
   )

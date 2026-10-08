@@ -14,6 +14,10 @@ import remote_backend
 
 
 class BackendReleaseTests(unittest.TestCase):
+    def setUp(self):
+        probe=patch.object(remote_backend,'protocol_observation',return_value={
+            'mode':'legacy','database_fingerprint':'e'*64})
+        probe.start();self.addCleanup(probe.stop)
     def test_readiness_uses_real_health_contract(self):
         response = io.BytesIO(b'{"status":"ok","database":"connected"}')
         response.status = 200

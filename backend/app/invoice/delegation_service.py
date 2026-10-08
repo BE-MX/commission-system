@@ -1,6 +1,7 @@
 """订单代创建授权与候选业务员。"""
 
 from fastapi import HTTPException
+from app.portal.authority import authority_changed
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
@@ -133,6 +134,7 @@ def replace_grants(
     *,
     operator_id: int | None,
 ) -> None:
+    authority_changed(db)
     unique_ids = set(sales_user_ids)
     if delegate_user_id in unique_ids:
         raise ValueError("不能授权自己；用户默认可以为自己创建订单")

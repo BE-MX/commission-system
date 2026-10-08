@@ -1,5 +1,6 @@
 /** Managed outbound creation: live association check + durable submission intent. */
 import fs from 'node:fs';
+import {assertLegacyMode,acquireCreatorFence} from './okki_outbound_mode.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -312,6 +313,11 @@ async function main() {
   const mysql = await import('mysql2/promise');
   const conn = await mysql.createConnection({host: process.env.ARK_DB_HOST, port: Number(process.env.ARK_DB_PORT || 3306),
     user: process.env.ARK_DB_USER, password: process.env.ARK_DB_PASSWORD, database: process.env.ARK_DB_NAME});
+  const parentOwner = process.argv.find(value => value.startsWith('--poller-lock-owner='))?.split('=')[1];
+  let releaseExecutor;
+  try {
+  releaseExecutor = await acquireCreatorFence(conn, parentOwner);
+  await assertLegacyMode(conn);
   let knownIds, invoice, generation, invoiceId;
   const claimedSyncLogId = process.argv.find(value => value.startsWith('--claimed-sync-log='))?.split('=')[1];
   const claimedAttempt = process.argv.find(value => value.startsWith('--claimed-attempt='))?.split('=')[1];
@@ -340,13 +346,14 @@ async function main() {
       throw new Error('Regeneration generation missing; no creation attempted');
     }
     if (managedClaim) assertClaimedTask(task, claimedSyncLogId, claimedAttempt, generation);
-  } finally { await conn.end(); }
+  } finally { /* Keep the advisory executor fence until the creator exits. */ }
   const directory = generation ? regenerationDirectory(root, generation) : root;
   if (generation) fs.mkdirSync(path.join(directory, 'logs'), {recursive: true, mode: 0o700});
   const beforeSubmit = (generation || managedClaim) ? async original => {
     const check = await mysql.createConnection({host: process.env.ARK_DB_HOST, port: Number(process.env.ARK_DB_PORT || 3306),
       user: process.env.ARK_DB_USER, password: process.env.ARK_DB_PASSWORD, database: process.env.ARK_DB_NAME});
     try {
+      await assertLegacyMode(check);
       await check.query('START TRANSACTION');
       const [[lockedInvoice]] = await check.query(
         'SELECT id FROM ark_invoices WHERE id=? FOR UPDATE', [invoiceId]);
@@ -373,6 +380,7 @@ async function main() {
   const result = await createOne(process.argv[2], {api, directory, ...invoice, knownIds,
     dryRun: !process.argv.includes('--run'), beforeSubmit, regeneration: Boolean(generation)});
   console.log('ARK_OUTBOUND_RESULT=' + JSON.stringify(result));
+  } finally { try { if (releaseExecutor) await releaseExecutor(); } finally { await conn.end(); } }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(error => { console.error(error.message); process.exitCode = error.uncertain ? 3 : 1; });

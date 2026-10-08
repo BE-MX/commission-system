@@ -32,6 +32,7 @@ const ORDER_INTELLIGENCE_PERMISSION = 'order_intelligence:read'
  * 同时,若该分组下所有子项均不可见,分组也会自动隐藏 (见 MainLayout 的 visibleGroups)。
  */
 export const MENU_GROUPS = {
+  customerPortal: { title: '客户下单门户', icon: Shop, anyPermission: ['portal_order:read', 'portal_access:read', 'portal_site:admin'] },
   personnel: {
     title: '人员管理',
     icon: User,
@@ -215,6 +216,11 @@ export const MENU_GROUPS = {
  *                    顶级菜单折叠态没有 popup 兜底,文字会溢出 68px 侧栏
  */
 export const NAV_ENTRIES = [
+  { path: '/portal/customers/:accessId/preview', name: 'PortalCustomerPreview', component: () => import('@/views/portal/CustomerPreview.vue'), title: '客户目录预览', permission: 'portal_mapping:read' },
+  { path: '/portal/catalog', name: 'PortalCatalog', component: () => import('@/views/portal/PortalCatalog.vue'), title: '门户商品目录', permission: 'portal_site:admin', menu: { group: 'customerPortal', title: '商品目录', icon: Document, order: 30, permission: 'portal_site:admin' } },
+  { path: '/portal/settings', name: 'PortalSettings', component: () => import('@/views/portal/PortalSettings.vue'), title: '客户门户站点设置', permission: 'portal_site:admin', menu: { group: 'customerPortal', title: '站点设置', icon: Document, order: 40, permission: 'portal_site:admin' } },
+  { path: '/portal/customers', name: 'PortalCustomers', component: () => import('@/views/portal/PortalCustomers.vue'), title: '客户访问与账号', permission: 'portal_access:read', menu: { group: 'customerPortal', title: '客户访问', icon: User, order: 20, permission: 'portal_access:read' } },
+  { path: '/portal/orders', name: 'PortalOrders', component: () => import('@/views/portal/PortalOrders.vue'), title: '客户下单请求', permission: 'portal_order:read', menu: { group: 'customerPortal', title: '下单请求', icon: Document, order: 10, permission: 'portal_order:read' } },
   // ── 工作台 (顶级,不属任何分组) ──────────────────────────
   {
     path: '/dashboard',

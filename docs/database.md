@@ -610,3 +610,24 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 私海客户工作台（PCW-01..06）。新增 19 张表：`ark_customer_work_items`（事项，unique(business_key,business_cycle) 跨日去重）、`ark_customer_evaluation_runs/items`（每日评估批次与逐客户结果，unique(business_date,rule_version,scope_hash,run_kind,attempt) 与 unique(run_id,customer_id)）、`ark_customer_fact_reviews`（AI 建议审核，unique(candidate_fact_id)）、`ark_customer_conversation_bindings/_events`（会话绑定与不可变审计，unique(source_system,account,conversation)）、`ark_customer_conversation_analysis_jobs`（分析任务，unique(conversation,input_hash,binding_version,rule_version)）、`ark_customer_order_batch_map`（商业采购批次映射）、`ark_customer_reorder_windows`（复购窗口，unique(occurrence_key)）、`ark_customer_monitor_subscriptions/_events/_event_sources`（监控订阅/变化事件/多源证据）、`ark_customer_maintenance_plans/_occurrences`（六类维护计划与稳定实例，unique(plan_id,occurrence_key)）、`ark_customer_sample_cases`（样品阶段机，unique(sample_order_id,item_set_hash,feedback_round)）、`ark_customer_shipment_order_links`（物流-订单多对多）、`ark_customer_campaigns`（活动）、`ark_customer_operation_receipts`（幂等回执，unique(actor,scope,key_hash)）、`ark_customer_notification_deliveries`（通知 outbox）。
 
 `ark_customer_actions` 扩展 7 列：work_item_id（FK，存量行为空）、action_round、parent_action_id（自引用行动链）、row_version（server_default 1）、original_due_at（原期限，改约不变）、business_due_at（当前期限）、due_provenance；unique(work_item_id,action_round)（历史 NULL 行不受约束）+ 索引 (owner,status,business_due_at)。126 冻结契约测试以显式 post-126 列登记方式扩展，冻结资源文件不动。
+
+
+## 客户下单门户（迁移172，开发中未部署）
+
+新增模型位于 `backend/app/portal/`，统一前缀 `ark_order_portal_`，不复用客户素材门户账号。冻结迁移 `175_customer_order_portal` 当前仅完成离线SQL验证，尚未在MySQL执行或部署。
+
+| 分组 | 表后缀 |
+| --- | --- |
+| 身份和授权（11） | auth_barriers、sites、customer_access、accounts、memberships、invitations、auth_challenges、rate_buckets、preauth_sessions、sessions、history_grants |
+| 目录和映射（3） | catalog_items、catalog_grants、mapping_revisions |
+| 交易与永久记录（8） | quotes、requests、revisions、request_lines、conversions、pi_amendments、publications、command_receipts |
+| 审计和通知（2） | audit_events、outbox |
+
+模型采用复合外键约束账号/公司/站点、请求/修订及PI绑定，保护同一报价最多一个请求和同一请求永久建票标识；不允许破坏引用删除发票。新增 `ark_invoices.portal_document_version BIGINT NOT NULL DEFAULT 1`，不改变既有API中内容SHA256形式的edit_version。
+
+字段设计见[门户数据模型](requirements/2026-09-30-customer-order-portal/02-data-model.md)，实施进展见[交接记录](handoff.md)。状态列统一为status；quotes不保存冗余consumed_request_id，由requests.quote_id唯一键回查结果。
+
+
+## 176_portal_pi_header（开发中，未部署）
+
+父迁移175_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；MySQL离线DDL和隔离SQLite保留旧行测试通过，尚未在真实MySQL执行。迁移已按项目规则暂存，未commit/push/部署。

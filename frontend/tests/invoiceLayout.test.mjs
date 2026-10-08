@@ -14,6 +14,10 @@ const invoiceStyles = readFileSync(
   new URL('../src/views/invoice/invoice-manage.css', import.meta.url),
   'utf8',
 )
+const overviewStyles = readFileSync(
+  new URL('../src/views/invoice/components/invoice-overview.css', import.meta.url),
+  'utf8',
+)
 const legacyDrawer = readFileSync(
   new URL('../src/views/invoice/components/legacy/InvoiceLegacyDrawer.vue', import.meta.url),
   'utf8',
@@ -52,8 +56,8 @@ test('side pane cards keep natural height so fee summary is not clipped', () => 
   // flex 默认会把超高卡片压扁，金额汇总上下被裁（2026-09-25）
   assert.match(invoiceStyles, /\.pane\s*>\s*\*\s*{[^}]*flex:\s*0\s*0\s*auto/s)
   // KPI 卡样式不得串到右栏金额汇总卡
-  assert.match(invoiceStyles, /\.summary-grid\s+\.summary-card\s*{/)
-  assert.doesNotMatch(invoiceStyles, /(?<!\.summary-grid\s)\.summary-card\s*{[^}]*justify-content:\s*center/s)
+  assert.match(overviewStyles, /\.summary-grid\s+\.summary-card\s*{/)
+  assert.doesNotMatch(invoiceStyles + overviewStyles, /(?<!\.summary-grid\s)\.summary-card\s*{[^}]*justify-content:\s*center/s)
   // 金额汇总卡与结算/回款卡同级白卡
   assert.match(invoiceView, /<InvoiceSummaryCard\s+class="form-card"/)
 })

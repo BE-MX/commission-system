@@ -73,3 +73,5 @@ export const mailOutreachClient = createApiClient({ baseURL: '/api/mail-outreach
 export const colorworkClient = createApiClient({ baseURL: '/api/colorwork', timeout: 30000 })
 
 export const shipmentClient = createApiClient({ baseURL: '/api', timeout: 300000 })
+
+export const portalAdminClient = createApiClient({ baseURL: '/api/portal/admin/v1', timeout: 30000 })

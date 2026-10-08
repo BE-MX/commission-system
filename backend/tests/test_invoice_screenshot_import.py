@@ -238,7 +238,7 @@ def _payment_draft(db, monkeypatch, tmp_path):
     monkeypatch.setattr(attachments, "STORAGE_ROOT", tmp_path / "receipt-proofs")
     stream = io.BytesIO()
     Image.new("RGB", (8, 8), "white").save(stream, format="PNG")
-    row = attachments.upload(db, stream.getvalue(), "payment-test.png", 27)
+    row = attachments.register_upload(db, attachments.store_upload(attachments.prepare_upload(stream.getvalue(), "payment-test.png", 27)), 27)
     return {"amount": "1.00", "collection_date": "2026-09-17", "payment_type": "T/T", "attachment_ids": [row.id]}
 
 

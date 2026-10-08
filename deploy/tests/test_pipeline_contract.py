@@ -2,6 +2,7 @@
 
 from contextlib import nullcontext
 import base64
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -87,6 +88,7 @@ def test_unchanged_static_does_not_upload(tmp_path, monkeypatch):
 
 @pytest.fixture
 def pipeline(tmp_path, monkeypatch):
+    monkeypatch.setattr(okki_outbound_release,'pause_registered',Mock())
     (tmp_path / "deploy").mkdir()
     (tmp_path / "deploy/platforms.json").write_text(json.dumps({
         "static_targets": [{"component": "frontend", "host": "example.test", "root": "/registered", "domain": "example.test"}],
@@ -99,7 +101,7 @@ def pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(publish, "STATE", state)
     monkeypatch.setattr(schema_release, "STATE", state)
     monkeypatch.setattr(publish, "deployment_lock", nullcontext)
-    monkeypatch.setattr(source_release, "prepare", Mock(return_value=(tmp_path, "new", "old")))
+    monkeypatch.setattr(source_release, "prepare", Mock(return_value=(tmp_path, "a" * 40, "old")))
     office = {"python": "isolated-python", "pending": []}
     prepare = Mock(return_value=office)
     monkeypatch.setattr(office_release, "prepare", prepare)
@@ -121,20 +123,35 @@ def pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(static_sync, "activate", activate)
     command = Mock()
     monkeypatch.setattr(publish, "run", command)
-    outbound_prepare = Mock(return_value={'receipt': {'status': 'prepared', 'digest': 'candidate'}})
-    outbound_phase = Mock(side_effect=lambda _, action: {'status': action, 'digest': 'candidate'})
+    outbound_state={}
+    digest=hashlib.sha256(b'{}').hexdigest()
+    def receipt(action):
+        prepared=outbound_state['value']
+        status={'prepare':'prepared','freeze':'frozen','install':'installed_paused','activate':'enabled','verify':'verified'}[action]
+        return {'status':status,'digest':digest,'mode':'legacy','database_fingerprint':'e'*64,
+                'revision':prepared['revision'],'release_id':prepared['release_id'],
+                'baseline':{'active':True,'enabled':True},
+                'schedule':{'active':action in {'freeze','activate','verify'},'enabled':action in {'freeze','activate','verify'}},
+                'target_schedule':{'active':action in {'activate','verify'},'enabled':action in {'activate','verify'}},
+                'release_confirmed':action in {'activate','verify'}}
+    def outbound_context(source,revision,release_id,**_):
+        prepared={'root':source/'deploy','files':{},'revision':revision,'release_id':release_id,
+                  '_baseline':{'active':True,'enabled':True}}
+        outbound_state['value']=prepared;prepared['receipt']=receipt('prepare');return prepared
+    outbound_prepare = Mock(side_effect=outbound_context)
+    outbound_phase = Mock(side_effect=lambda _, action: receipt(action))
     monkeypatch.setattr(okki_outbound_release, 'prepare', outbound_prepare)
     monkeypatch.setattr(okki_outbound_release, 'phase', outbound_phase)
     return SimpleNamespace(args=SimpleNamespace(no_pull=True, cloud_only=False, migration_credentials=None, prepare_only=False, revision=None),
                            state=state, prepare=prepare, activate=activate, office_activate=office_activate, command=command,
-                           outbound_prepare=outbound_prepare, outbound_phase=outbound_phase)
+                           outbound_prepare=outbound_prepare, outbound_phase=outbound_phase, receipt=receipt)
 
 
 def test_publish_preserves_pantone_seed_and_only_marks_success_after_activation(pipeline):
     publish.publish(pipeline.args)
     assert ["isolated-python", "scripts/import_pantone.py"] in [c.args[0] for c in pipeline.command.call_args_list]
     pipeline.activate.assert_called_once()
-    assert json.loads((pipeline.state / "publish-success.json").read_text())["revision"] == "new"
+    assert json.loads((pipeline.state / "publish-success.json").read_text())["revision"] == "a" * 40
 
 
 @pytest.mark.parametrize("prepare_only", [True, False])
@@ -222,25 +239,25 @@ def test_outbound_is_part_of_full_and_cloud_release(pipeline, monkeypatch, cloud
     events = []
     def phase(_, action):
         events.append(action)
-        return {'status': action, 'digest': 'candidate'}
+        return pipeline.receipt(action)
     pipeline.outbound_phase.side_effect = phase
     monkeypatch.setattr(schema_release, 'migrate', lambda *_: events.append('migrate') or [])
     monkeypatch.setattr(cloud_backend, 'activate', lambda _: events.append('backend'))
     pipeline.activate.side_effect = lambda _: events.append('static')
     publish.publish(pipeline.args)
-    assert events == ['freeze', *([] if cloud_only else ['migrate']), 'backend', 'static', 'activate', 'verify']
+    assert events == ['freeze', *([] if cloud_only else ['migrate']), 'install', 'backend', 'static', 'activate', 'verify']
     summary = json.loads((pipeline.state / 'publish-success.json').read_text())
-    assert summary['outbound']['digest'] == 'candidate'
+    assert summary['outbound']['digest'] == hashlib.sha256(b'{}').hexdigest()
     assert 'singapore-outbound' in json.loads((pipeline.state / 'publish-current.json').read_text())['completed']
     pipeline.outbound_prepare.assert_called_once()
 
 
-@pytest.mark.parametrize('failure', ['freeze', 'activate', 'verify'])
+@pytest.mark.parametrize('failure', ['freeze', 'install', 'activate', 'verify'])
 def test_outbound_failure_blocks_overall_success(pipeline, failure):
     def phase(_, action):
         if action == failure:
             raise RuntimeError('outbound failed')
-        return {'status': action}
+        return pipeline.receipt(action)
     pipeline.outbound_phase.side_effect = phase
     with pytest.raises(RuntimeError, match='outbound failed'):
         publish.publish(pipeline.args)
@@ -261,7 +278,7 @@ def test_static_failure_keeps_outbound_paused(pipeline):
     pipeline.activate.side_effect = RuntimeError('static failed')
     with pytest.raises(RuntimeError, match='static failed'):
         publish.publish(pipeline.args)
-    assert [call.args[1] for call in pipeline.outbound_phase.call_args_list] == ['freeze']
+    assert [call.args[1] for call in pipeline.outbound_phase.call_args_list] == ['freeze', 'install']
 
 
 def test_required_outbound_cannot_silently_disappear_from_inventory(pipeline):
@@ -478,3 +495,59 @@ def test_recovery168_prepare_only_keeps_outbound_identity_and_never_activates(pi
     journal = json.loads((pipeline.state / "publish-current.json").read_text())
     assert journal["status"] == "prepared"
     assert journal["recovery_original"] == original
+
+
+def test_registered_portal_is_cloud_only_static_even_on_first_office_release(pipeline, monkeypatch):
+    inventory_file = publish.ROOT / 'deploy/platforms.json'
+    inventory = json.loads(inventory_file.read_text())
+    inventory['static_targets'].append({'component':'frontend-portal', 'host':'portal.test',
+        'root':'/var/www/ark-static/customer-orders', 'domain':'orders.example.test', 'backend_owner':'beijing'})
+    inventory_file.write_text(json.dumps(inventory))
+    assert not (publish.ROOT / 'frontend-portal').exists()
+    outputs = {name: publish.ROOT / ('built-' + name) for name in ('frontend', 'frontend-pm', 'frontend-portal')}
+    build = Mock(return_value=outputs)
+    monkeypatch.setattr(publish, 'build_frontends', build)
+    publish.publish(pipeline.args)
+    assert build.call_args.kwargs['include_portal'] is True
+    assert set(office_release.stage_static.call_args.args[0]) == {'frontend', 'frontend-pm', 'pm-lan'}
+    portal = [call for call in static_sync.prepare.call_args_list if call.args[1] == 'portal.test']
+    assert len(portal) == 1 and portal[0].args[0] == outputs['frontend-portal']
+
+def test_guard_installation_finishes_before_either_backend_start(pipeline, monkeypatch):
+    events = []
+    pipeline.outbound_phase.side_effect = lambda _, action: events.append(action) or pipeline.receipt(action)
+    schema_release.migrate.side_effect = lambda *_: events.append('migration') or []
+    pipeline.office_activate.side_effect = lambda _: events.append('office') or {}
+    cloud_backend.activate.side_effect = lambda _: events.append('beijing') or {}
+    publish.publish(pipeline.args)
+    assert events.index('freeze') < events.index('migration') < events.index('install')
+    assert events.index('install') < events.index('office') < events.index('beijing') < events.index('activate') < events.index('verify')
+
+
+def test_guard_install_failure_never_starts_backend_or_marks_success(pipeline):
+    def phase(_, action):
+        if action == 'install':
+            raise RuntimeError('Guard installation failed')
+        return pipeline.receipt(action)
+    pipeline.outbound_phase.side_effect = phase
+    with pytest.raises(RuntimeError, match='Guard installation failed'):
+        publish.publish(pipeline.args)
+    pipeline.office_activate.assert_not_called()
+    cloud_backend.activate.assert_not_called()
+    assert not (pipeline.state / 'publish-success.json').exists()
+    assert json.loads((pipeline.state / 'publish-current.json').read_text())['status'] != 'succeeded'
+
+
+@pytest.mark.parametrize('field,value',[('release_confirmed',False),('database_fingerprint','f'*64),
+                                      ('target_schedule',{'active':1,'enabled':1})])
+def test_publish_rejects_forged_verify_before_success_marker(pipeline,monkeypatch,field,value):
+    def phase(_,action):
+        receipt=pipeline.receipt(action)
+        if action=='verify':receipt[field]=value
+        return receipt
+    pipeline.outbound_phase.side_effect=phase
+    complete=Mock();monkeypatch.setattr(schema_release,'complete',complete)
+    with pytest.raises(RuntimeError,match='receipt'):
+        publish.publish(pipeline.args)
+    complete.assert_not_called()
+    assert not (pipeline.state/'publish-success.json').exists()

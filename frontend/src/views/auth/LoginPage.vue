@@ -146,7 +146,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { isAuthOperationSuperseded, useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
 import ArkWakeCanvas from '@/components/ArkWakeCanvas.vue'
@@ -200,6 +200,7 @@ const handleSubmit = async () => {
     }
     router.push(redirect.startsWith('/') ? redirect : '/')
   } catch (error) {
+    if (isAuthOperationSuperseded(error)) return
     ElMessage.error(error.message || '登录失败，请检查用户名和密码')
   } finally {
     loading.value = false

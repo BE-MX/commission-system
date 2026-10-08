@@ -1,6 +1,8 @@
 """Invoice cancellation and outbound recovery endpoints."""
 import logging
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.routing import APIRoute
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.auth.dependencies import require_permission
@@ -8,7 +10,22 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.invoice import cancellation_service as cancellation, okki_client
 
-router = APIRouter()
+class LifecycleRoute(APIRoute):
+    """Keep private recovery responses uncached, including dependency rejections."""
+    def get_route_handler(self):
+        original = super().get_route_handler()
+        async def uncached(request):
+            try:
+                response = await original(request)
+            except StarletteHTTPException as error:
+                error.headers = {**(error.headers or {}), "Cache-Control":"private, no-store"}
+                raise
+            response.headers["Cache-Control"] = "private, no-store"
+            return response
+        return uncached
+
+
+router = APIRouter(route_class=LifecycleRoute)
 logger = logging.getLogger(__name__)
 
 
@@ -28,17 +45,54 @@ def scope(db, identity, user):
 def detail(invoice_id: int, db: Session = Depends(get_db), user=Depends(require_permission("invoice:admin"))):
     from app.invoice.linked_sync_service import edit_version
     from app.invoice.models import OkkiOutboundTask
-    invoice = scope(db, invoice_id, user)
+    from app.portal.authority import get_settings
+    if get_settings().PORTAL_ENABLED:
+        from app.invoice import edit_authority
+        invoice, user = edit_authority.prepare_local(db, invoice_id, user, "invoice:admin")
+    else:
+        invoice = scope(db, invoice_id, user)
+    from app.invoice import cancellation_facts, order_push_facts
+    recovery = cancellation_facts.summary(db, invoice) if get_settings().PORTAL_ENABLED else None
+    order_recovery = order_push_facts.summary(db, invoice) if get_settings().PORTAL_ENABLED else None
     task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice_id).first()
     return ok({"invoice_id": invoice.id, "invoice_no": invoice.invoice_no, "status": invoice.status,
-               "version": edit_version(invoice), "cancellation": invoice.cancellation,
+               "version": edit_version(invoice), "cancellation": cancellation.public_state(invoice.cancellation),
+               "recovery_summary": recovery, "order_push_summary": order_recovery,
                "outbound": {"status": task.status, "reason": task.reason} if task else None})
 
 
 @router.post("/invoices/{invoice_id}/lifecycle", summary="Process reviewed invoice lifecycle action")
 def apply(invoice_id: int, body: LifecycleAction, db: Session = Depends(get_db), user=Depends(require_permission("invoice:admin"))):
-    invoice = scope(db, invoice_id, user)
-    actor = int(user["sub"])
+    from app.portal.authority import get_settings
+    if body.action in {"outbound_retry", "ack_outbound"} and get_settings().PORTAL_ENABLED:
+        from app.invoice import outbound_recovery
+        if not body.confirmed:
+            raise HTTPException(409, "请确认处理范围及核对依据")
+        return ok(outbound_recovery.recover(db, invoice_id, user, body.action,
+                                          body.reason.strip(), body.expected_version))
+    if body.action == "remove" and get_settings().PORTAL_ENABLED:
+        from app.invoice import cancellation_execution
+        if not body.confirmed:
+            raise HTTPException(409, "请确认处理范围及核对依据")
+        return ok(cancellation.public_state(cancellation_execution.remove_authorized(db, invoice_id, user)))
+    if body.action == "refresh" and get_settings().PORTAL_ENABLED:
+        if not body.confirmed:
+            raise HTTPException(409, "请确认处理范围及核对依据")
+        try:
+            result = cancellation.refresh_authorized(db, invoice_id, user)
+            db.commit()
+            return ok(cancellation.public_state(result))
+        except ValueError:
+            db.rollback()
+            logger.warning("Cancellation reconciliation rejected by current state")
+            print("[invoice-cancel] reconciliation rejected by current state", flush=True)
+            raise HTTPException(409, "当前取消流程不可核对，请重新读取") from None
+    if body.action in {"begin", "retain", "abort"}:
+        from app.invoice import edit_authority
+        invoice, user = edit_authority.prepare_local(db, invoice_id, user, "invoice:admin")
+    else:
+        invoice = scope(db, invoice_id, user)
+    actor = int(user.get("id") or user["sub"])
     try:
         if not body.confirmed:
             raise ValueError("请确认处理范围及核对依据")
@@ -59,7 +113,7 @@ def apply(invoice_id: int, body: LifecycleAction, db: Session = Depends(get_db),
             from app.invoice.outbound_task_service import retry_reviewed
             result = retry_reviewed(db, invoice, actor, body.reason, body.expected_version)
         db.commit()
-        return ok(result)
+        return ok(cancellation.public_state(result))
     except (ValueError, okki_client.OkkiApiError) as exc:
         db.rollback()
         logger.warning("Invoice lifecycle action rejected (%s)", type(exc).__name__)

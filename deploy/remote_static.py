@@ -17,6 +17,7 @@ ROOTS = {
     "/var/www/ark/dist", "/var/www/ark-dist", "/var/www/pm/dist",
     "/var/www/pm-dist", "/var/www/hair-styles", "/var/www/video.leshine.work",
     "/var/www/video-styles", "/var/www/ark-static/customer-media",
+    "/var/www/ark-static/customer-orders",
 }
 
 

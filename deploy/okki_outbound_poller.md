@@ -95,3 +95,30 @@ journalctl -u ark-okki-outbound-poller.service -n 80 --no-pager
 ## 订单生命周期冻结（161）
 
 poller 仅认领关联发票 sync_status=synced 且 status 不为 cancel_pending/cancelled、没有 linked_sync_id 的任务。后端漏建对账改按 outbound_auto_requested 登记，移除 OKKI_OUTBOUND_RECONCILE_WINDOW_HOURS；不再受24小时窗口限制，也不追建未登记历史订单。普通完整发布现在自动协调暂停poller、迁移161及应用更新、出库脚本更新与恢复，不再要求另跑专项发布；outbound-only 入口不能代替数据库迁移及后端发布。
+
+
+## 客户门户开发分支1.18的新worker切换门禁
+
+历史上文描述独立Node轮询器；新内部worker启用范围与契约另见客户门户开发文档，不以两种机制混合运行。PORTAL_ENABLED时后台调度建立已有authority barrier的outbound-worker-v1模式，更新后的poller/直接creator读取此持久模式并拒绝旧创建；worker另须PORTAL_OUTBOUND_WORKER_ENABLED、OKKI_OUTBOUND_AUTO_ENABLED和PORTAL_OUTBOUND_WORKER_ACTOR_ID当前员工权限/PI范围。worker默认false、员工默认0。共享数据库锁ark-okki-outbound-poller由新版旧创建器/父poller和后台worker核对或持有，不能由独立.env绕过。
+
+这是开发接入说明，不是生产切换证据。现有统一发布入口尚未完整证明“先排空旧writer、建立模式、更新全部旧二进制、启动单活后端、再验证”的原子阶段，不得把首次30秒tick当切换。旧删除对账/linked-run/其他writer还须迁移；真实进程/供应商回读头合同与全schema也未通过。不能直接启用旧timer或删除mode/原事实作为回退。客户P0建PI不自动创建出库；生产启用仍须覆盖具体环境的发布授权。
+
+
+## 开发分支1.22持久模式读取
+
+1.18“调度首次建立模式”为历史说明；当前bootstrap在调度/就绪之前同步核对或首建，独立worker/SCHED开关。已有模式后的OFF不恢复旧创建。Node读取完整outbound-worker-%及version，未知/多条/坏记录或数据库错误失败关闭，日志使用安全模式错误。当前本地Node回归是纯函数/假SQL，未执行实际远端poller或供应商；模式目标timer、协议回退和成功凭据共同核验仍为待实施门禁，不能按旧timer基线直接启用。
+
+
+## 开发分支1.23模式表权限边界
+
+Node不再用元数据COUNT=0判断legacy；直接读取模式表，权限不足或连接错误安全拒绝。模式表确实缺失时，仅同连接唯一精确171_customer_tag_display_value版本允许兼容；172/173、未知/空/多head及版本表不可读均拒绝，不stamp或删除mode恢复旧执行器。此前“缺表/未迁移”泛称以这个已核证范围为准。实际本地Node/mysql2/隔离MySQL仅验证reader/gate，没有启动完整poller/creator；版本head是手工fixture值，非历史迁移证明。目标mode决定timer及发布竞争仍待实施，当前源码不能按原基线直接批准恢复；实际结果见docs/handoff.md。
+
+
+## 开发分支1.24旧timer模式目标
+
+remote不再无条件恢复基线：规范v1保持旧timer禁用/停止，专项旧activate拒绝；仅初始legacy采用原baseline。模式与目标库由专用Node/mysql2连接核验，legacy取共享锁后新读并保持至目标及待释放journal，收到规范释放确认后才记录阶段成功。独立mode-floor不可降级，completed同发布身份的完整重试不覆盖原baseline。失败仅停止旧timer，不杀或声明排空在途service。真实控制子进程/隔离MySQL测试与模拟systemd目标分别是局部证据，未验证目标Node22、业务poller/creator、实际cgroup或供应商；全writer、回退和finalize门禁继续开放。
+
+
+## 开发分支1.25发布恢复共同凭据
+
+受管publish、migration resume及历史159/160 finalizer现共用outbound回执/候选/实际verify核验。managed timer不再按原running记录无条件start；已知v1目标暂停，初始legacy按经核验baseline。缺receipt或仅installed_paused不能finalize，历史凭据不补造，需受审协调发布。fresh mode floor不能由历史legacy降低。共同guard失败只向受信登记目标请求pause，保留active service/字节/mode/业务事实；SSH/IO/审计/状态不明固定报未确认，不宣称已排空。success摘要含最新绑定outbound，静态后再check。当前本地替身/实际函数体证据不代表生产、真实systemd/cgroup或完整协议回退；I78/I79/I80现场门禁保持，具体终态见docs/handoff.md。

@@ -9,6 +9,7 @@ import json
 import secrets
 from typing import Any, Mapping
 
+from app.portal.authority import lock_authority
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -728,6 +729,7 @@ def ingest_candidates(
     agent_id: str,
     lease_token: str,
 ) -> dict:
+    lock_authority(db)
     if not request_key or len(request_key) > 64:
         raise SalesAutomationError("request_key 必填且不超过64字符")
     job = _leased_job(db, job_id, actor_id, agent_id, lease_token)

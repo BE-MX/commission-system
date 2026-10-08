@@ -1174,3 +1174,80 @@ def test_remark_internal_whitespace_is_still_material(db, sync_case, original, r
     after['record_list'] = deepcopy(plan['expected'])
     with pytest.raises(ValueError, match='出库备注未同步'):
         plans.verify(before, after, plan)
+
+
+@pytest.mark.parametrize('identity', ['0100','１００','١٠٠','100.0',0,-1,True,None,'',' 100','+'+'100','1'*65])
+def test_outbound_identity_rejects_ambiguous_or_invalid_protocol_values(identity):
+    with pytest.raises(ValueError):plans.index([{'order_record_id':identity}],'order_record_id')
+
+
+@pytest.mark.parametrize('field', ['order_record_id','outbound_record_id'])
+def test_actual_outbound_plan_rejects_alias_identity_before_building_remove(db,sync_case,field):
+    _,_,_,fake=sync_case
+    before=deepcopy(fake['outbound'])
+    before['record_list'][0][field]='0'+str(before['record_list'][0][field])
+    snapshot=deepcopy(before)
+    with pytest.raises(ValueError):plans.build(before,fake['order'],fake['order']['product_list'],'Validated remark')
+    assert before==snapshot and fake['posts']==[]
+
+
+def test_outbound_identity_accepts_canonical_mixed_int_text_and_rejects_equal_keys():
+    rows=[{'unique_id':100},{'unique_id':'101'}]
+    assert plans.index(rows,'unique_id')=={'100':rows[0],'101':rows[1]}
+    with pytest.raises(ValueError):plans.index([{'unique_id':100},{'unique_id':'100'}],'unique_id')
+
+
+@pytest.mark.parametrize('identity', ['0100', '１００', '١٠٠'])
+def test_actual_preview_rejects_raw_local_uid_before_builder(db, sync_case, monkeypatch, identity):
+    user, inv, item, fake = sync_case
+    item.xiaoman_unique_id = identity
+    db.commit()
+    before = [(e.id, e.action, deepcopy(e.payload), deepcopy(e.result))
+              for e in db.query(ShippingOperationEvent).order_by(ShippingOperationEvent.id).all()]
+    builder = sync.xiaoman_service._build_product_rows
+    called = []
+    def observe(*args, **kwargs):
+        called.append(True)
+        return builder(*args, **kwargs)
+    monkeypatch.setattr(sync.xiaoman_service, '_build_product_rows', observe)
+    with _pc_client(db, user, PERMS) as client:
+        response = client.post(f'{BASE}/OB001/invoice-sync/preview')
+    assert response.status_code == 409, response.text
+    assert called == [] and fake['posts'] == []
+    db.expire_all()
+    assert db.get(InvoiceItem, item.id).xiaoman_unique_id == identity
+    assert [(e.id, e.action, e.payload, e.result)
+            for e in db.query(ShippingOperationEvent).order_by(ShippingOperationEvent.id).all()] == before
+
+
+def test_actual_sync_accepts_canonical_outbound_identity_text_readback(db, sync_case, monkeypatch):
+    user, inv, _, fake = sync_case
+    original = sync.okki_client._post_json
+    def text_readback(*args, **kwargs):
+        result = original(*args, **kwargs)
+        for row in fake['outbound']['record_list']:
+            row['outbound_record_id'] = str(row['outbound_record_id'])
+        return result
+    monkeypatch.setattr(sync.okki_client, '_post_json', text_readback)
+    with _pc_client(db, user, PERMS) as client:
+        preview = client.post(f'{BASE}/OB001/invoice-sync/preview')
+        assert preview.status_code == 200, preview.text
+        response = client.post(f'{BASE}/OB001/invoice-sync',
+                               json={'expected_version': preview.json()['data']['version']})
+        assert response.status_code == 200, response.text
+        assert response.json()['data']['status'] == 'sync_done'
+    assert len(fake['posts']) == 1
+    assert db.query(ShippingOperationEvent).filter_by(scope=state.SCOPE).one().action == 'sync_done'
+
+
+def test_partial_repair_accepts_canonical_identity_carriers(db, sync_case):
+    _, _, _, fake = sync_case
+    products = deepcopy(fake['order']['product_list'])
+    products.append({**products[0], 'unique_id': 101})
+    order = {**fake['order'], 'product_list': deepcopy(products)}
+    plan = plans.build(fake['outbound'], order, products, 'Validated remark')
+    after = deepcopy(fake['outbound'])
+    after.update(record_list=[deepcopy(plan['expected'][0])], remark=plan['remark_after'])
+    after['record_list'][0]['order_record_id'] = '100'
+    after['record_list'][0]['outbound_record_id'] = '701'
+    assert plans.missing_only(fake['outbound'], after, plan) == ['101']

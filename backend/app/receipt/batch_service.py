@@ -1,17 +1,18 @@
 """One customer payment, atomic per-order allocations and private shared proof."""
+import logging
+
 from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy.orm import lazyload
+from sqlalchemy import select
 from app.core.time import beijing_now
 from app.invoice.models import Invoice
-from app.invoice.service import get_invoice
 from app.invoice import settlement_service as shipments
 from app.invoice.settlement_models import ReceiptBatch, BatchAttachment, SettlementApplication, ShipmentSettlement
 from app.invoice.settlement_pricing import split_payment
-from app.receipt import access, attachments, balance, fees, remote, service
-from app.receipt.models import Receipt, ReceiptAttachment
+from app.receipt import access, attachments, authority, balance, fees, remote, service
+from app.receipt.models import Receipt, ReceiptAttachment, ReceiptLog
 
 
 def ensure_batch_access(db, batch, user):
@@ -23,19 +24,28 @@ def ensure_batch_access(db, batch, user):
     return rows
 
 
-def bind_proofs(db, batch, ids, actor):
+def _proof_rows(db, ids, actor):
     if len(set(ids)) != len(ids) or not 1 <= len(ids) <= 5:
         raise ValueError("请上传1至5张不重复凭证")
     rows = db.query(ReceiptAttachment).filter(ReceiptAttachment.id.in_(ids)).order_by(
         ReceiptAttachment.id).populate_existing().with_for_update().all()
+    prior = db.query(BatchAttachment).filter(BatchAttachment.attachment_id.in_(ids)).order_by(
+        BatchAttachment.batch_id, BatchAttachment.attachment_id).populate_existing().with_for_update().all()
     if len(rows) != len(ids):
         raise ValueError("凭证不存在")
+    if prior or any(row.created_by != actor or row.invoice_id or row.receipt_id for row in rows):
+        raise ValueError("凭证已用于其他款项或无权使用，请引用原批次")
+    return rows
+
+
+def bind_proofs(db, batch, ids, actor, evidence=None):
+    rows = _proof_rows(db, ids, actor)
+    bindings = attachments._bindings(rows)
+    if evidence is None:
+        attachments.verify_storage(bindings)  # Original shipment-payment caller remains separate.
+    elif not isinstance(evidence, attachments.FileEvidence) or evidence.bindings != bindings:
+        raise HTTPException(409, "批次凭证在核验期间已变化，请重新读取")
     for row in rows:
-        prior = db.query(BatchAttachment).filter_by(attachment_id=row.id).with_for_update().first()
-        if row.created_by != actor or row.invoice_id or row.receipt_id or prior:
-            raise ValueError("凭证已用于其他款项或无权使用，请引用原批次")
-        if not attachments.origin() and not attachments.path_for(row).is_file():
-            raise ValueError("凭证文件缺失")
         db.add(BatchAttachment(batch_id=batch.id, attachment_id=row.id))
     db.flush()
 
@@ -53,13 +63,13 @@ def validate_bound_proofs(db, row):
             raise ValueError("批次凭证文件缺失")
 
 
-def new_batch(db, fields, invoice, actor, key, fingerprint):
+def new_batch(db, fields, invoice, actor, key, fingerprint, proof_evidence=None):
     row = ReceiptBatch(batch_no="HB" + beijing_now().strftime("%Y%m%d") + "-" + uuid4().hex[:12],
         customer_id=invoice.customer_id, currency=invoice.currency, gross_amount=fields.amount,
         bank_charge_total=0, collection_date=fields.collection_date, payment_type=fields.payment_type,
         remark=fields.remark, request_key=key, request_hash=fingerprint, created_by=actor)
     db.add(row); db.flush()
-    bind_proofs(db, row, fields.attachment_ids, actor)
+    bind_proofs(db, row, fields.attachment_ids, actor, proof_evidence)
     return row
 
 
@@ -84,103 +94,73 @@ def new_component(db, batch, invoice, target, amount, charge, fields, settlement
     return row
 
 
-def allocate_shipment(db, batch, invoice, settlement, amount, fields):
+def allocate_shipment(db, batch, invoice, settlement, amount, fields, *, current=False):
     if settlement.state not in {"awaiting_payment", "awaiting_verification"}:
         raise ValueError("当前结算不接受新增付款")
-    summary = shipments.funding_balance(db, settlement)
+    summary = shipments.funding_balance(db, settlement, current=current)
     components = split_payment(amount, summary["goods_remaining"], summary["freight_remaining"], summary["charge_remaining"])
     for kind in ("goods", "freight"):
         value = components[f"{kind}_amount"]
         if value:
-            target = shipments.target(db, invoice, settlement if kind == "freight" else None)
+            target = shipments.target(db, invoice, settlement if kind == "freight" else None, current=current)
             new_component(db, batch, invoice, target, value, components["charge_amount"] if kind == "goods" else Decimal(0), fields, settlement)
     settlement.state = "awaiting_verification" if Decimal(summary["remaining_amount"]) == Decimal(amount) else "awaiting_payment"
     settlement.version += 1
 
 
-def register_shipment_payment(db, invoice, settlement, fields, actor, key):
-    batch = new_batch(db, fields, invoice, actor, key, shipments.digest(fields.model_dump(mode="json")))
-    allocate_shipment(db, batch, invoice, settlement, fields.amount, fields)
+def _register_shipment_payment_verified(db, invoice, settlement, fields, actor, key, proof_evidence):
+    if not isinstance(proof_evidence, attachments.FileEvidence):
+        raise HTTPException(409, "发货付款凭证尚未核验，请保持原提交核对")
+    batch = new_batch(db, fields, invoice, actor, key, shipments.digest(fields.model_dump(mode="json")), proof_evidence)
+    allocate_shipment(db, batch, invoice, settlement, fields.amount, fields, current=True)
     return batch
 
 
-def create(db, body, user):
-    actor = access.user_id(user)
-    fingerprint = shipments.digest(body.model_dump(mode="json", exclude={"request_key"}))
-    existing = db.query(ReceiptBatch).filter_by(request_key=body.request_key).first()
-    if existing:
-        ensure_batch_access(db, existing, user)
-        if existing.created_by != actor or existing.request_hash != fingerprint:
-            raise ValueError("提交标识已用于其他回款")
-        return existing
-    if body.payment_type not in remote.receipt_types(db):
-        raise ValueError("请选择有效回款方式")
-    evidence, charges, identities = {}, {}, {}
+def _create_verified(db, body, invoices, actor, evidence, fee_evidence, proof_evidence):
+    """Pure financial application after current authorization, graph and file checks."""
+    if len({(invoice.customer_id, invoice.currency) for invoice in invoices.values()}) != 1:
+        raise ValueError("一笔付款只能选择同一客户、同一币种")
+    settlements, charges = {}, {}
     for allocation in body.allocations:
-        invoice = get_invoice(db, allocation.invoice_id)
-        access.ensure_invoice(db, invoice, user)
-        service.ensure_order_ready(db, invoice)
-        identities[invoice.id] = (invoice.customer_id, invoice.currency)
-        evidence[invoice.id] = remote.order_snapshot(db, invoice)
+        invoice = invoices[allocation.invoice_id]
+        service.ensure_order_ready(db, invoice, current=True)
+        proof = evidence[invoice.id]
+        if body.payment_type not in proof.payment_types:
+            raise ValueError("请选择有效回款方式")
+        order_summary = balance.calculate(db, invoice, proof.snapshot(), current=True)
         if invoice.order_type == "presale":
             shipments.require_enabled()
             if not allocation.settlement_id:
                 raise ValueError("预售订单必须选择发货结算")
-        else:
-            if allocation.settlement_id:
-                raise ValueError("普通订单不能绑定预售结算")
-            charges[invoice.id] = fees.allocate(db, invoice, allocation.amount)
-    if len(set(identities.values())) != 1:
-        raise ValueError("一笔付款只能选择同一客户、同一币种")
-    db.commit()
-    # Lock ALL orders before the first non-locking SELECT establishes a MySQL
-    # REPEATABLE READ snapshot. Relationship loaders must not run between locks.
-    locked = db.query(Invoice).options(lazyload("*")).filter(Invoice.id.in_(identities)).order_by(
-        Invoice.id).populate_existing().with_for_update().all()
-    if len(locked) != len(identities):
-        raise ValueError("订单已不存在")
-    invoices = {}
-    for invoice in locked:
-        identity = invoice.id
-        access.ensure_invoice(db, invoice, user)
-        service.ensure_order_ready(db, invoice)
-        if (invoice.customer_id, invoice.currency) != identities[identity]:
-            raise ValueError("订单身份已变化")
-        invoices[identity] = invoice
-    existing = db.query(ReceiptBatch).filter_by(request_key=body.request_key).first()
-    if existing:
-        if existing.created_by != actor or existing.request_hash != fingerprint:
-            raise ValueError("提交标识已用于其他回款")
-        return existing
-    settlements = {}
-    for allocation in body.allocations:
-        invoice = invoices[allocation.invoice_id]
-        order_summary = balance.calculate(db, invoice, evidence[invoice.id])
-        if invoice.order_type == "presale":
-            order_summary = shipments.goods_balance(db, invoice, evidence[invoice.id])
+            order_summary = shipments.goods_balance(db, invoice, proof.snapshot(), current=True)
             settlement = db.query(ShipmentSettlement).filter_by(id=allocation.settlement_id,
                 invoice_id=invoice.id).populate_existing().with_for_update().first()
             if not settlement:
                 raise ValueError("结算不属于所选订单")
-            summary = shipments.funding_balance(db, settlement)
-            # The quote balance additionally binds current remote evidence.
+            summary = shipments.funding_balance(db, settlement, current=True)
             summary["version"] = shipments.digest([summary["version"], order_summary["version"]])
             components = split_payment(allocation.amount, summary["goods_remaining"],
                 summary["freight_remaining"], summary["charge_remaining"])
             balance.ensure_available(order_summary, components["goods_amount"])
             settlements[invoice.id] = settlement
         else:
+            if allocation.settlement_id:
+                raise ValueError("普通订单不能绑定预售结算")
             summary = order_summary
         if summary["version"] != allocation.balance_version:
             raise ValueError(f"订单 {invoice.invoice_no} 余额已变化，请刷新（凭证保留）")
         balance.ensure_available(summary, allocation.amount)
-    batch = new_batch(db, body, next(iter(invoices.values())), actor, body.request_key, fingerprint)
+        if invoice.order_type != "presale":
+            charges[invoice.id] = fees.calculate(db, invoice, allocation.amount, fee_evidence[invoice.id], current=True)
+    fingerprint = shipments.digest(body.model_dump(mode="json", exclude={"request_key"}))
+    batch = new_batch(db, body, next(iter(invoices.values())), actor, body.request_key, fingerprint, proof_evidence)
     for allocation in body.allocations:
         invoice = invoices[allocation.invoice_id]
         if invoice.order_type == "presale":
-            allocate_shipment(db, batch, invoice, settlements[invoice.id], allocation.amount, body)
+            allocate_shipment(db, batch, invoice, settlements[invoice.id], allocation.amount, body, current=True)
         else:
-            new_component(db, batch, invoice, shipments.target(db, invoice), allocation.amount, charges[invoice.id], body)
+            new_component(db, batch, invoice, shipments.target(db, invoice, current=True),
+                allocation.amount, charges[invoice.id], body)
     db.flush()
     return batch
 
@@ -194,29 +174,72 @@ def describe(db, row, user):
         "attachment_ids": [x.attachment_id for x in db.query(BatchAttachment).filter_by(batch_id=row.id)]}
 
 
-def void_entry(db, row, user, version, reason):
-    children = ensure_batch_access(db, row, user)
-    identities = sorted({x.invoice_id for x in children})
-    db.commit()
-    db.query(Invoice).options(lazyload("*")).filter(Invoice.id.in_(identities)).order_by(
-        Invoice.id).populate_existing().with_for_update().all()
-    db.refresh(row, with_for_update=True)
-    children = ensure_batch_access(db, row, user)
+def read(db, identity, user):
+    current = authority.read_user(db, user)
+    row = db.get(ReceiptBatch, identity)
+    if row is None:
+        raise HTTPException(404, "回款批次不存在")
+    return describe(db, row, current)
+
+
+def _void_financial(db, row, children, current, version, reason):
+    """Invoice/batch/member locks are held by the authorized caller; no I/O."""
     if row.version != version or row.status != "active":
         raise ValueError("回款批次已变化")
+    applications = db.scalars(select(SettlementApplication).where(
+        SettlementApplication.receipt_id.in_([child.id for child in children]))
+        .order_by(SettlementApplication.id).with_for_update().execution_options(populate_existing=True)).all()
+    settlement_ids = sorted({app.settlement_id for app in applications})
+    settlements = {item.id: item for item in db.scalars(select(ShipmentSettlement).where(
+        ShipmentSettlement.id.in_(settlement_ids)).order_by(ShipmentSettlement.id)
+        .with_for_update().execution_options(populate_existing=True))}
+    logs = db.scalars(select(ReceiptLog).where(ReceiptLog.receipt_id.in_([child.id for child in children]))
+        .order_by(ReceiptLog.id).with_for_update().execution_options(populate_existing=True)).all()
+    if any(item.action == "late_result" for item in logs):
+        raise ValueError("批次已有迟到的远端创建结果，请先核对原单，不能作废")
+    members = {child.id: child for child in children}
     for child in children:
-        db.refresh(child, with_for_update=True)
         if child.xiaoman_receipt_id or child.lease_until or child.sync_status not in {"pending", "failed", "waiting_target"}:
             raise ValueError("批次已有远端效果或结果待核对，不能作废")
-        apps = db.query(SettlementApplication).filter_by(receipt_id=child.id).all()
-        for app in apps:
-            settlement = db.get(ShipmentSettlement, app.settlement_id)
-            if app.status == "applied" or settlement.state not in {"awaiting_payment", "awaiting_verification", "paused"}:
-                raise ValueError("资金已用于出库，不能作废")
-            app.status = "released"
-            if settlement.state != "paused":
-                settlement.state = "awaiting_payment"
-            settlement.version += 1
-        child.status = "voided"; child.version += 1
-        service.log(db, child, "voided", "整批录入纠错：" + reason, access.user_id(user))
-    row.status = "voided"; row.version += 1
+    for app in applications:
+        settlement = settlements.get(app.settlement_id)
+        if settlement is None or settlement.invoice_id != members[app.receipt_id].invoice_id:
+            raise ValueError("批次资金结算关联已变化，请核对原单")
+        if app.status == "applied" or settlement.state not in {"awaiting_payment", "awaiting_verification", "paused"}:
+            raise ValueError("资金已用于出库，不能作废")
+    # Validate the whole graph before applying any financial mutation.
+    for app in applications:
+        settlement = settlements[app.settlement_id]
+        app.status = "released"
+        if settlement.state != "paused":
+            settlement.state = "awaiting_payment"
+        settlement.version += 1
+    for child in children:
+        child.status = "voided"
+        child.version += 1
+        service.log(db, child, "voided", "整批录入纠错：" + reason, access.user_id(current))
+    row.status = "voided"
+    row.version += 1
+
+
+def void_entry(db, identity, user, version, reason):
+    row, children, current = authority.local_batch(db, identity, user, "receipt:admin")
+    _void_financial(db, row, children, current, version, reason)
+    return describe(db, row, current)
+
+
+def unavailable(error):
+    diagnostics = []
+    try:
+        logging.getLogger(__name__).warning("Batch receipt unavailable (%s)", type(error).__name__)
+    except Exception as failure:
+        diagnostics.append(failure)
+    try:
+        print("[receipt] batch result unavailable", flush=True)
+    except Exception as failure:
+        diagnostics.append(failure)
+    response = HTTPException(503, "批次回款结果暂无法确认，请先查询原批次，不要重复提交",
+        headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"})
+    if diagnostics:
+        raise response from ExceptionGroup("Batch receipt diagnostics failed", diagnostics)
+    raise response from None

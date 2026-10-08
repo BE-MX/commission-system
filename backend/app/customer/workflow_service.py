@@ -9,6 +9,7 @@ import json
 import secrets
 from typing import Iterable, Mapping, Sequence
 
+from app.portal.authority import lock_authority, suspend_customer_access
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -905,6 +906,7 @@ def assign_customer(
     change_reason: str | None = None,
     _expected_previous_owner_user_id: int | None = None,
 ) -> CustomerAssignment:
+    lock_authority(db)
     account = _account_for_update(db, customer_id)
     _active_user(db, user_id)
     _active_user(db, operated_by)
@@ -1020,6 +1022,8 @@ def assign_customer(
             action.feedback_json = feedback
             action.updated_at = now
     account.updated_at = now
+    if assignment_role == "primary":
+        suspend_customer_access(db, {customer_id})
     db.flush()
     return row
 
@@ -1032,6 +1036,7 @@ def transfer_primary_owner(
     operated_by: int,
     change_reason: str,
 ) -> CustomerAssignment:
+    lock_authority(db)
     account = _account_for_update(db, customer_id)
     _active_user(db, new_user_id)
     _active_user(db, operated_by)
@@ -1151,6 +1156,7 @@ def claim_public_pool_customer(
     allowed_user_ids: set[int],
     per_user_quota: int,
 ) -> CustomerAssignment:
+    lock_authority(db)
     _active_user_for_update(db, claimant_user_id)
     account = _account_for_update(db, customer_id)
     if operated_by != claimant_user_id:

@@ -12,7 +12,7 @@ from app.customer.access_service import CustomerAccessDenied, require_customer_a
 from app.knowledge import service as knowledge_service
 from app.knowledge.models import KnowledgeLibrary
 from app.sales_automation import public_pool_service, service, enrichment_service
-from app.sales_automation.dependencies import require_sales_agent
+from app.sales_automation.dependencies import require_sales_agent, require_sales_agent_for_identity_write
 from app.sales_automation.router import _call, _iso, _job, _research_task, _user_id
 from app.sales_automation.schemas import (
     AgentClaim,
@@ -377,7 +377,7 @@ def submit_candidates(
     job_id: int,
     payload: CandidateBatch,
     db: Session = Depends(get_db),
-    agent=Depends(require_sales_agent),
+    agent=Depends(require_sales_agent_for_identity_write),
 ):
     summary = _call(
         service.ingest_candidates,

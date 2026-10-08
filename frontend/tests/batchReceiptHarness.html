@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Isolated batch recovery UI</title><div id="app"></div><script type="module">
+import { createApp, h, ref } from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import { createPinia } from 'pinia'
+import { createRouter, createWebHistory, RouterView } from 'vue-router'
+import { useAuthStore } from '../src/stores/auth'
+import { registerPermissionDirectives } from '../src/directives/permission'
+import Batch from '../src/views/receipt/BatchReceiptDialog.vue'
+window.saved=[]
+const pinia=createPinia(), Host={setup(){const visible=ref(false);window.forceClose=()=>{visible.value=false};return()=>h('main',[h('button',{onClick:()=>visible.value=true},'打开批次回款'),h('button',{onClick:()=>window.router?.push('/other')},'切换页面'),visible.value?h(Batch,{onClose:()=>visible.value=false,onSaved:value=>window.saved.push(value)}):null])}}
+const router=createRouter({history:createWebHistory(),routes:[{path:'/tests/batchReceiptHarness.html',component:Host},{path:'/other',component:{render:()=>h('p','Other page')}}]})
+window.router=router
+const app=createApp({render:()=>h(RouterView)})
+app.use(router)
+app.use(pinia);app.use(ElementPlus);registerPermissionDirectives(app)
+const auth=useAuthStore();auth.user={id:1,roles:['super_admin'],permissions:[]}
+window.changeActor=id=>{auth.user={id,roles:['super_admin'],permissions:[]}}
+window.revokeSameActor=()=>{auth.user={id:auth.user.id,roles:[],permissions:[]}}
+window.refreshSameActor=()=>{auth.user={...auth.user}}
+await router.isReady()
+app.mount('#app')
+</script></html>
