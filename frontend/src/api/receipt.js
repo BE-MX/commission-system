@@ -4,6 +4,7 @@ export const listReceipts = (params, config = {}) => unwrap(request.get('', { ..
 export const getReceipt = id => unwrap(request.get(`/${id}`, { showLoading: false }))
 export const getReceiptOrders = params => unwrap(request.get('/order-options', { params, showLoading: false }))
 export const getReceiptBalance = id => unwrap(request.get(`/order-balance/${id}`, { showLoading: false }))
+export const getInvoiceReceiptSummary = id => unwrap(request.get(`/invoice-summary/${id}`, { showLoading: false }))
 export const getReceiptTypes = () => unwrap(request.get('/types', { showLoading: false }))
 export const createReceipt = body => unwrap(request.post('', body))
 export const updateReceipt = (id, body) => unwrap(request.patch(`/${id}`, body))

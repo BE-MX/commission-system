@@ -1,11 +1,11 @@
 <template>
   <div class="converted-proofs">
     <p class="proof-note">截图可在这里移除或重新上传；至少保留一张，点击保存后生效。</p>
-    <ReceiptProofs v-model="attachmentIds" :readonly="loading || saving || version == null" @uploading="onUploading" />
+    <ReceiptProofs v-model="attachmentIds" :readonly="locked || loading || saving || version == null" @uploading="onUploading" />
     <p v-if="error" class="proof-error" role="alert">{{ error }}</p>
     <div class="proof-actions">
-      <el-button :disabled="loading || saving || uploading" @click="load">重新加载</el-button>
-      <el-button type="primary" :loading="saving" :disabled="loading || uploading || !changed" @click="save">保存截图变更</el-button>
+      <el-button :disabled="locked || loading || saving || uploading" @click="load">重新加载</el-button>
+      <el-button type="primary" :loading="saving" :disabled="locked || loading || uploading || !changed" @click="save">保存截图变更</el-button>
     </div>
   </div>
 </template>
@@ -16,7 +16,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getReceipt, updateReceiptProofs } from '@/api/receipt'
 import ReceiptProofs from '@/views/receipt/ReceiptProofs.vue'
 
-const props = defineProps({ receiptId: { type: Number, required: true } })
+const props = defineProps({ receiptId: { type: Number, required: true }, locked: Boolean })
 const emit = defineEmits(['saved', 'uploading', 'dirty'])
 const attachmentIds = ref([])
 const savedIds = ref([])
@@ -35,7 +35,7 @@ function onUploading(value) {
 }
 
 async function load() {
-  if (uploading.value || saving.value) return
+  if (props.locked || uploading.value || saving.value) return
   const sequence = ++loadSequence
   const receiptId = props.receiptId
   loading.value = true
@@ -54,7 +54,7 @@ async function load() {
 }
 
 async function save() {
-  if (saving.value || uploading.value || !changed.value) return
+  if (props.locked || saving.value || uploading.value || !changed.value) return
   if (!attachmentIds.value.length) {
     error.value = '请先重新上传截图；回款单至少保留一张凭证'
     return
@@ -80,6 +80,7 @@ async function save() {
 }
 
 watch(() => props.receiptId, () => { loadSequence += 1; attachmentIds.value = []; savedIds.value = []; version.value = null; load() }, { immediate: true })
+watch(() => props.locked, locked => { if (!locked && version.value == null) load() })
 watch(changed, value => emit('dirty', value), { immediate: true })
 onBeforeUnmount(() => { disposed = true; loadSequence += 1 })
 </script>

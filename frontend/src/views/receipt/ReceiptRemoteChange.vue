@@ -1,5 +1,5 @@
 <template>
-  <el-button v-permission="'receipt:admin'" @click="open">核实远端删改</el-button>
+  <el-button v-permission="'receipt:admin'" :disabled="disabled || busy" @click="open">核实小满变更</el-button>
   <el-dialog v-model="visible" title="核实小满回款变更" width="640px" append-to-body :close-on-click-modal="false">
     <div v-loading="busy">
       <el-alert title="此操作只登记已核实的小满变更，不执行退款。按小满净额加本地分摊费用登记，保留原小满ID、凭证和变更前记录。" type="warning" :closable="false" />
@@ -20,10 +20,10 @@
   </el-dialog>
 </template>
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { previewReceiptRemoteChange, acceptReceiptRemoteChange } from '@/api/receipt'
-const props = defineProps({ receiptId: { type: Number, required: true } })
-const emit = defineEmits(['updated'])
+const props = defineProps({ receiptId: { type: Number, required: true }, disabled: Boolean })
+const emit = defineEmits(['updated', 'busy', 'open'])
 const visible = ref(false), busy = ref(false), proof = ref(null), error = ref(''), reason = ref(''), confirmed = ref(false)
 const labels = { amount: '回款金额', bank_charge: '手续费', collection_date: '回款日期', collect_status: '财务状态（1已生效，0未生效）' }
 const rows = computed(() => Object.entries(labels).map(([key, label]) => ({ label, before: proof.value?.before[key], after: proof.value?.after?.[key] ?? '远端已删除' })))
@@ -34,9 +34,9 @@ async function load() {
   catch (e) { error.value = e.response?.data?.detail || '未取得可靠证据，请稍后重试' }
   finally { busy.value = false }
 }
-async function open() { visible.value = true; reason.value = ''; await load() }
+async function open() { if (props.disabled || busy.value) return; visible.value = true; reason.value = ''; await load() }
 async function accept() {
-  if (busy.value || !proof.value || !confirmed.value || reason.value.trim().length < 10) return
+  if (props.disabled || busy.value || !proof.value || !confirmed.value || reason.value.trim().length < 10) return
   busy.value = true
   try {
     const row = await acceptReceiptRemoteChange(props.receiptId, { version: proof.value.version, evidence_hash: proof.value.evidence_hash, reason: reason.value.trim(), confirmed: true })
@@ -44,4 +44,7 @@ async function accept() {
   } catch (e) { error.value = e.response?.data?.detail || '结果未确认，请刷新原回款'; proof.value = null; confirmed.value = false }
   finally { busy.value = false }
 }
+watch(busy, value => emit('busy', value))
+watch(visible, value => emit('open', value))
+onBeforeUnmount(() => { emit('busy', false); emit('open', false) })
 </script>

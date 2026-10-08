@@ -1,5 +1,6 @@
 """Receipt transactions; callers commit, except explicitly durable delivery work."""
 import hashlib
+import json
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -56,8 +57,11 @@ def describe(db, row, invoice=None, *, detail=False):
                 order_id=row.xiaoman_order_id or invoice.xiaoman_order_id,
                 customer_name=invoice.customer_name, attachment_count=len(row.attachment_ids))
     if detail:
-        data["attachments"] = [attachments.describe(a) for a in db.query(ReceiptAttachment).filter(
-            ReceiptAttachment.id.in_(row.attachment_ids)).all()]
+        files = {a.id: a for a in db.query(ReceiptAttachment).filter(
+            ReceiptAttachment.id.in_(row.attachment_ids)).all()}
+        # Preserve the ledger order so refreshing details can be saved unchanged.
+        data["attachments"] = [attachments.describe(files[identity])
+                               for identity in row.attachment_ids if identity in files]
         data["logs"] = [{"action": x.action, "message": x.message, "created_at": x.created_at}
                         for x in db.query(ReceiptLog).filter(ReceiptLog.receipt_id == row.id)
                         .order_by(ReceiptLog.id.desc()).limit(100).all()]
@@ -118,6 +122,32 @@ def order_balance(db, invoice):
     return summary
 
 
+def invoice_summary(db, invoice):
+    """Read saved-order funds even before resync; writes still require a ready order."""
+    intent = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice.id).first()
+    initial = None
+    if intent and intent.status == "converted":
+        from app.receipt.invoice_link import submitted_record
+        initial = describe(db, submitted_record(db, intent), invoice, detail=True)
+    binding = remote.invoice_binding(invoice)
+    summary, balance_error = None, None
+    try:
+        rows = remote.order_receipts(db, invoice.xiaoman_order_id) if invoice.xiaoman_order_id else []
+        db.refresh(invoice)
+        summary = balance.calculate(db, invoice, {"rows": rows, "invoice_binding": binding})
+    except ValueError as exc:
+        # A changed remote receipt blocks new funds, but must keep recovery visible.
+        balance_error = str(exc)
+    blocked = None
+    try:
+        ensure_order_ready(db, invoice)
+    except ValueError as exc:
+        blocked = str(exc)
+    return {"balance": summary, "initial_receipt": initial,
+            "balance_error": balance_error, "order_sync_status": invoice.sync_status,
+            "action_blocked_reason": blocked or balance_error}
+
+
 def new_row(db, invoice, fields, actor, request_key, request_hash, *, source="manual"):
     if source == "auto":
         fields = fields.model_copy(update={"bank_charge": fees.allocate(db, invoice, fields.amount)})
@@ -172,26 +202,56 @@ def create(db, body, user):
     return new_row(db, invoice, body, actor, body.request_key, fingerprint)
 
 
-def change(db, row, invoice, body, actor):
+def _ensure_editable(row, version):
     if row.batch_id or row.purpose == "presale_deposit":
         raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
     if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:
         raise ValueError("仅未发送或明确失败的回款可修改")
-    if row.version != body.version:
+    if row.version != version:
         raise HTTPException(409, "回款已被修改，请刷新后重试")
+
+
+def _receipt_basis(db, invoice_id):
+    rows = db.query(Receipt.id, Receipt.version, Receipt.amount, Receipt.bank_charge,
+                    Receipt.sync_status, Receipt.xiaoman_receipt_id).filter(
+        Receipt.invoice_id == invoice_id, Receipt.status == "active").all()
+    return sorted((identity, version, str(amount), str(charge), state, remote_id)
+                  for identity, version, amount, charge, state, remote_id in rows)
+
+
+def change(db, row, invoice, body, actor):
+    _ensure_editable(row, body.version)
     ensure_order_ready(db, invoice)
-    summary = balance.calculate(db, invoice, remote.order_snapshot(db, invoice), exclude_receipt=row.id)
+    binding = remote.invoice_binding(invoice)
+    receipt_basis = _receipt_basis(db, invoice.id)
+    snapshot = remote.order_snapshot(db, invoice)
+    types = remote.receipt_types(db)
+    charge = fees.allocate(db, invoice, body.amount, exclude_receipt=row.id) if row.source == "auto" else body.bank_charge
+    # Remote token refresh can commit and release locks. Reacquire in sender order.
+    invoice = get_invoice(db, invoice.id, for_update=True)
+    db.refresh(invoice)
+    db.refresh(row, with_for_update=True)
+    _ensure_editable(row, body.version)
+    ensure_order_ready(db, invoice)
+    if remote.invoice_binding(invoice) != binding:
+        raise HTTPException(409, "订单金额或手续费已变化，请刷新后修正回款")
+    if _receipt_basis(db, invoice.id) != receipt_basis:
+        raise HTTPException(409, "关联回款已变化，请刷新后核对金额和手续费")
+    summary = balance.calculate(db, invoice, snapshot, exclude_receipt=row.id)
     balance.ensure_available(summary, body.amount)
-    if body.payment_type not in remote.receipt_types(db):
+    if body.payment_type not in types:
         raise ValueError("请选择有效的小满回款方式")
     attachments.bind(db, body.attachment_ids, actor, invoice.id, row.id)
-    for key, value in body.model_dump(exclude={"version"}).items():
+    before = {key: str(getattr(row, key)) for key in ("amount", "bank_charge", "collection_date", "payment_type", "remark")}
+    corrected = body.model_copy(update={"bank_charge": charge})
+    for key, value in corrected.model_dump(exclude={"version"}).items():
         setattr(row, key, value)
     row.version += 1
     # Correcting data does not silently send; the explicit retry action does.
     row.sync_status = "failed"
     row.last_error = "资料已修改，请重试同步"
-    log(db, row, "edited", "已修正回款资料，待重新同步", actor)
+    after = {key: str(getattr(row, key)) for key in before}
+    log(db, row, "edited", json.dumps({"message": "已修正回款资料，待重新同步", "before": before, "after": after}, ensure_ascii=False), actor)
 
 
 def change_proofs(db, row, invoice, body, actor):

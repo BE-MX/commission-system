@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 function setup(file, names, api) {
   const source = readFileSync(new URL(file, import.meta.url), 'utf8').match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
-  const mocks = { ref: value => ({ value }), computed: fn => ({ get value() { return fn() } }), defineProps: () => ({ invoiceId: 42, receiptId: 7 }), defineEmits: () => () => {}, defineExpose: () => {}, ...api }
+  const mocks = { ref: value => ({ value }), computed: fn => ({ get value() { return fn() } }), watch: () => {}, onBeforeUnmount: () => {}, defineProps: () => ({ invoiceId: 42, receiptId: 7 }), defineEmits: () => () => {}, defineExpose: () => {}, ...api }
   Object.assign(mocks, feedbackFixture(mocks))
   return new Function(...Object.keys(mocks), source + `\nreturn {${names}}`)(...Object.values(mocks))
 }
@@ -37,4 +37,19 @@ test('receipt stale evidence clears approval and requires a new preview', async 
   })
   await vm.open();vm.reason.value='已核对原回款及实际资金去向';vm.confirmed.value=true
   await vm.accept();await vm.accept();assert.equal(posts,1);assert.equal(vm.proof.value,null);assert.equal(vm.confirmed.value,false)
+})
+
+test('receipt disabled parent blocks both preview and accepting existing evidence', async () => {
+  const props = { receiptId: 7, disabled: false }
+  let gets = 0, posts = 0
+  const vm = setup(receipt, 'open,accept,reason,confirmed', {
+    defineProps: () => props,
+    previewReceiptRemoteChange: async () => { gets++; return { version: 2, evidence_hash: 'h', before: {}, after: null } },
+    acceptReceiptRemoteChange: async () => { posts++; return {} }
+  })
+  await vm.open()
+  vm.reason.value = '已核实原回款以及小满变更依据'; vm.confirmed.value = true
+  props.disabled = true
+  await vm.open(); await vm.accept()
+  assert.equal(gets, 1); assert.equal(posts, 0)
 })
