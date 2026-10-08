@@ -2,7 +2,7 @@ import { promptAction, msgSuccessText, msgError, confirmDanger, msgSuccess } fro
 /**
  * OKKI 出库单列表 + 直接打印逻辑（宪法 12/14：useListPage；打印不走预览弹框）。
  */
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { getOutboundPrintData, listOutboundRecords, deleteOutboundRecord, recoverOutboundDeletion, allowOutboundPrintBeforeRecheck } from '@/api/shipping'
@@ -39,6 +39,17 @@ export function useOutboundRecords() {
       },
     },
   )
+
+  // Navigation from a problem must also work when this list is already open.
+  watch(() => [route.path, route.query.order_id, route.query.keyword, route.query.problem, route.query.problem_focus], ([path], previous) => {
+    if (path !== '/shipping/outbound') return
+    if (route.query.problem || previous?.[3]) {
+      Object.assign(listApi.searchForm, { outboundState: '', inspectionStatus: '', dateRange: [] })
+    }
+    listApi.searchForm.orderId = route.query.order_id || ''
+    listApi.searchForm.keyword = route.query.keyword || ''
+    listApi.handleSearch()
+  })
 
   // 点击「打印出库单」直接调起浏览器打印：取数 → 构建文档 → 隐藏 iframe print()
   // printingId 给按钮上 loading，同时挡住重复点击

@@ -9,7 +9,9 @@ from app.invoice.settlement_models import ShipmentSettlement, ShipmentOutbound, 
 from app.receipt import remote, access as receipt_access
 from app.shipping_inspection import outbound_service
 from app.shipping_inspection.models import ShippingOperationEvent, ShippingInspection
-from app.invoice.document_anomalies import EVENT_BAD
+
+# Operation history belongs to this detail panel, never the navigation badge.
+EVENT_BAD = ("sync_failed", "sync_uncertain", "recheck_required", "delete_uncertain", "delete_failed")
 
 logger = logging.getLogger(__name__)
 

@@ -2,18 +2,18 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { useListPage } from '../src/composables/useListPage.js'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from '../src/views/shipping/composables/outboundStates.js'
 import { formatBeijingDateTime } from '../src/utils/datetime.js'
 
 const source = readFileSync(new URL('../src/views/shipping/composables/useOutboundRecords.js', import.meta.url), 'utf8')
   .replace(/^import .*\r?\n/gm, '').replace('export function', 'function')
-const factory = new Function('ref', 'useRoute', 'useListPage', 'getOutboundPrintData', 'downloadOutboundWord',
+const factory = new Function('ref', 'watch', 'useRoute', 'useListPage', 'getOutboundPrintData', 'downloadOutboundWord',
   'buildOutboundDoc', 'printDocHtml', 'downloadBlob', 'msgError', 'deleteOutboundRecord', 'confirmDanger', 'msgSuccess', `${source}; return useOutboundRecords`)
 
 test('local shortage and sync-wait records never invoke export APIs', async () => {
   let calls = 0
-  const api = factory(ref, () => ({query:{}}), () => ({}), async () => { calls++; return {data:{}} },
+  const api = factory(ref, watch, () => ({query:{}}), () => ({}), async () => { calls++; return {data:{}} },
     async () => { calls++; return {} }, () => '', () => {}, () => {}, ()=>{})()
   for (const outbound_state of ['waiting_stock','running','retrying','failed','awaiting_sync','uncertain']) {
     const row = {outbound_record_id:'task:1',outbound_state,can_print:false}
@@ -47,7 +47,7 @@ function deletionApi({confirm = async () => {}, remove = async () => {}} = {}) {
   const events = []
   const list = useListPage(async () => { events.push('refresh'); return { items: [], total: 0 } }, { immediate: false })
   list.list.value = [{}]; list.page.value = 2
-  const api = factory(ref, () => ({query:{}}), () => list, null, null, null, null, null, ()=>{},
+  const api = factory(ref, watch, () => ({query:{}}), () => list, null, null, null, null, null, ()=>{},
     async id => { events.push(`delete:${id}`); return remove() },
     async (...args) => { events.push('confirm'); return confirm(...args) }, () => events.push('success'))()
   return {api, list, events}

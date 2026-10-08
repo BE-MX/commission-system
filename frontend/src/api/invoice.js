@@ -10,6 +10,9 @@ export const getInvoiceRelatedDetail = (id, source = '', config = {}) => unwrap(
 export const getDocumentAnomalies = (config = {}) => unwrap(request.get('/document-anomalies', {
   showLoading: false, suppressToast: true, ...config,
 }))
+export const getOutboundProblems = (params, config = {}) => unwrap(request.get('/document-anomalies/outbound', {
+  showLoading: false, suppressToast: true, ...config, params,
+}))
 
 export function getInvoiceAssignees() {
   return unwrap(request.get('/delegations/assignees', { showLoading: false }))
