@@ -20,6 +20,8 @@ export function useOutboundRecords() {
       if (form.sort_field) { params.sort_field = form.sort_field; params.sort_order = form.sort_order }
       if (form.keyword) params.keyword = form.keyword
       if (form.orderId?.trim()) params.order_id = form.orderId.trim()
+      if (form.outboundState) params.outbound_state = form.outboundState
+      if (form.inspectionStatus) params.inspection_status = form.inspectionStatus
       if (form.dateRange?.length === 2) {
         params.date_from = form.dateRange[0]
         params.date_to = form.dateRange[1]
@@ -31,6 +33,8 @@ export function useOutboundRecords() {
       searchForm: {
         keyword: route.query.keyword || '',
         orderId: route.query.order_id || '',
+        outboundState: '',
+        inspectionStatus: '',
         dateRange: [],
       },
     },

@@ -10,6 +10,7 @@ import base64
 import io
 import logging
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -143,6 +144,9 @@ def delete_outbound_record(
 def list_outbound_records(
     keyword: str | None = Query(None, description="匹配出库单号/客户"),
     order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
+    outbound_state: Literal['ready', 'waiting_stock', 'pending', 'running', 'retrying',
+                            'awaiting_sync', 'failed', 'uncertain'] | None = Query(None),
+    inspection_status: Literal['none', 'draft', 'submitted'] | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     page: int = Query(1, ge=1),
@@ -156,6 +160,7 @@ def list_outbound_records(
     try:
         rows, total = outbound_queue_service.list_outbound_records(
             db, keyword=keyword, order_id=order_id, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            outbound_state=outbound_state, inspection_status=inspection_status,
             sort_field=sort_field, sort_order=sort_order,
             okki_user_id=scope_okki_user,
         )
