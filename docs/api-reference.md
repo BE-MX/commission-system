@@ -1291,6 +1291,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
 
+2026-10-08 自动重试状态：本地待出库记录 `outbound_state` 新增 `retrying`（等待自动重试）。仅执行端已记录 `pre_submit_failed`、认领次数与重试策略吻合、尚未耗尽上限，且发票仍同步成功、未取消、无关联同步任务时返回此状态。相应本地行新增 `retry_next_at`（无时区北京时间字符串，最早认领时间）、`retry_attempt`（下一次尝试序号）；其他本地状态两字段为 `null`。排序在分页前使用相同的显示状态。重试行仍为 `can_print=false`，不能打印、下载或扫码验货；不向客户端返回执行日志及业务差异原值。缺少已核实策略、最终失败及提交不确定任务仍须管理员核对。生成端按实际出库业务快照核对变化，说明见 `deploy/okki_outbound_poller.md`。
+
 2026-09-18：手机网页和小程序的扫码、刷新响应 `items` 与出库单打印、Word 共用排序函数：规格自然升序，同规格按尺寸数值升序；相同排序键保持原相对顺序。数量及照片/视频的 `item_id` 归属不变。
 
 2026-09-22 出库单打印分表：`print-data` 与 Word 的 `items[]` 增加 `product_kind`（`hair`/`accessory`，按 `ark_std_prices`/`ark_invoice_items` 的 accessory 身份匹配 `product_id`，未命中默认 `hair`）；Name 为 `Other Items` 的配件行从打印/Word 明细中剔除（扫码/验货仍含全部行；名为 `Other` 的配件仍打印）。HTML 打印与 Word 均拆为「产品明细」「配件明细」上下两表，每表末行数量合计；无对应类别时不渲染该表。列结构不变。
