@@ -31,9 +31,9 @@ test('retrying shows a safe next step and Beijing midnight even on another clien
   const previous = process.env.TZ
   process.env.TZ = 'America/Los_Angeles'
   try {
-    assert.equal(OUTBOUND_STATE_LABELS.retrying, '等待自动重试')
+    assert.equal(OUTBOUND_STATE_LABELS.retrying, '重新生成中')
     assert.equal(OUTBOUND_STATE_TAGS.retrying, 'warning')
-    assert.equal(outboundPendingHint('retrying'), '系统将自动重试，请稍后刷新')
+    assert.equal(outboundPendingHint('retrying'), '系统正在重新生成，请稍后刷新查看')
     assert.equal(outboundPendingHint('failed'), '请联系管理员核对')
     assert.equal(outboundPendingHint('uncertain'), '请联系管理员核对')
     assert.equal(formatBeijingDateTime('2026-10-09 00:05:00'), '2026-10-09 00:05:00')
