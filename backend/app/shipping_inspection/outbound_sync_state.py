@@ -107,14 +107,8 @@ def overlay(db, record, *, event=None):
     if mirror_time and str(mirror_time) > snapshot['update_time']:
         return None
     if mirror_time and str(mirror_time) == snapshot['update_time']:
-        from app.shipping_inspection.outbound_service import list_outbound_items
-        items = list_outbound_items(db, record['outbound_record_id'], use_overlay=False)
-        def signature(rows):
-            keys = ('product_id', 'product_name', 'sku', 'unit', 'size', 'color', 'spec')
-            return sorted(tuple(str(r.get(k) or '') for k in keys) + (float(r['qty']),) for r in rows)
-        if (signature(items) == signature(snapshot['items']) and
-                (record.get('remark') or '') == (snapshot.get('remark') or '') and
-                record.get('outbound_no') == snapshot.get('serial_id', record.get('outbound_no'))):
+        from app.shipping_inspection.outbound_service import mirror_matches_snapshot
+        if mirror_matches_snapshot(db, record['outbound_record_id'], snapshot):
             return None
     return snapshot
 

@@ -1,5 +1,6 @@
 """Isolated SQLite and fake OKKI only; no shared database or network writes."""
 from copy import deepcopy
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -288,6 +289,7 @@ def test_uncertain_outbound_never_requeues_after_sync(db, sync_case, monkeypatch
     monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
     result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
     assert result['status'] == 'manual'
+    assert '正在自动生成' not in result['message']
     assert task.status == 'uncertain' and not (task.reason or '').startswith('regenerate:')
 
 
@@ -310,15 +312,90 @@ def test_new_sync_wakes_regeneration_stock_wait_without_backend_stock_access(db,
     assert task.status == 'pending' and task.reason == f'regenerate:{latest.id}'
 
 
-def test_missing_outbound_without_verified_deletion_stays_manual(db, sync_case, monkeypatch):
+@pytest.mark.parametrize('task_status', ['done', 'unknown'])
+def test_missing_outbound_without_verified_deletion_stays_manual(db, sync_case, monkeypatch, task_status):
     user, inv, _, _ = sync_case
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status = task_status
     db.add(InvoiceSyncLog(invoice_id=inv.id, action='update', success=1,
                           created_at=datetime.now() + timedelta(minutes=1)))
     db.commit()
     monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
     result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
     assert result['status'] == 'manual'
-    assert db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one().status == 'done'
+    assert ('原出库任务已完成' if task_status == 'done' else '状态异常') in result['message']
+    assert '已核实删除' not in result['message']
+    assert db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one().status == task_status
+
+
+@pytest.mark.parametrize('task_status', ['failed', None])
+def test_legacy_failure_or_missing_task_does_not_claim_creation_or_requeue(db, sync_case, monkeypatch, task_status):
+    user, inv, _, fake = sync_case
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    if task_status is None:
+        db.delete(task)
+    else:
+        task.status, task.reason = task_status, 'See last_error'
+        task.attempts = 1
+        task.last_error = 'Order changed before outbound submission; no creation attempted'
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'manual'
+    assert ('自动重试状态待核对' if task_status else '尚未登记') in result['message']
+    assert '正在自动生成' not in result['message']
+    assert '已核实删除' not in result['message']
+    if task_status:
+        db.refresh(task)
+        assert task.status == 'failed' and task.attempts == 1
+        assert task.last_error == 'Order changed before outbound submission; no creation attempted'
+    else:
+        assert db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).first() is None
+    assert fake['posts'] == []
+
+
+@pytest.mark.parametrize('task_status,attempts,limit,expected_status', [
+    ('pending', 0, 5, 'pending'), ('running', 1, 5, 'pending'),
+    ('failed', 1, 5, 'pending'), ('failed', 5, 8, 'pending'),
+    ('failed', 3, 3, 'manual'), ('failed', 4, 3, 'manual'),
+])
+def test_generation_message_uses_worker_retry_policy_without_changing_queue(
+        db, sync_case, monkeypatch, task_status, attempts, limit, expected_status):
+    user, inv, _, fake = sync_case
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status, task.attempts = task_status, attempts
+    task.last_error = json.dumps({'outcome': 'pre_submit_failed', 'attempts': attempts,
+                                 'max_attempts': limit, 'error': 'Order changed before submission'})
+    db.commit()
+    original = (task.status, task.attempts, task.last_error, task.reason, task.updated_at)
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == expected_status
+    if expected_status == 'pending':
+        assert result['message'] == '出库单正在自动生成，请稍后刷新查看。'
+    else:
+        assert '重试已耗尽' in result['message'] and '恢复漏建 / 未发送出库' in result['message']
+    db.refresh(task)
+    assert (task.status, task.attempts, task.last_error, task.reason, task.updated_at) == original
+    assert fake['posts'] == []
+
+
+@pytest.mark.parametrize('evidence', [
+    [], {'outcome': 'uncertain', 'attempts': 1, 'max_attempts': 5},
+    {'outcome': 'pre_submit_failed', 'attempts': 0, 'max_attempts': 5},
+    {'outcome': 'pre_submit_failed', 'attempts': True, 'max_attempts': 5},
+    {'outcome': 'pre_submit_failed', 'attempts': 1, 'max_attempts': 0},
+    {'outcome': 'pre_submit_failed', 'attempts': 1, 'max_attempts': '5'},
+])
+def test_invalid_or_stale_retry_evidence_does_not_promise_automatic_creation(db, sync_case, monkeypatch, evidence):
+    user, inv, _, fake = sync_case
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status, task.attempts, task.last_error = 'failed', 1, json.dumps(evidence)
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'manual' and '自动重试状态待核对' in result['message']
+    assert '正在自动生成' not in result['message'] and fake['posts'] == []
 
 
 def test_invoice_sync_followup_refreshes_current_shortages_without_creating(db, sync_case, monkeypatch):
