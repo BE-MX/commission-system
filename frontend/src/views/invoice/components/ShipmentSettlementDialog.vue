@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="true" :title="pending ? '核对原发货提交' : confirmationPending ? '核对原实际出库确认' : denied ? '出库结算' : `生成出库单 · ${invoice.invoice_no}`" width="min(960px, calc(100vw - 24px))" append-to-body :before-close="close" :close-on-click-modal="false" :close-on-press-escape="!closingBlocked" :show-close="!closingBlocked">
+  <el-dialog :model-value="true" :title="pending ? '核对原发货提交' : confirmationPending ? '核对原实际出库确认' : denied ? '出库结算' : `生成出库单 · ${invoice.invoice_no}`" width="760px" class="shipment-settlement-dialog" append-to-body :before-close="close" :close-on-click-modal="false" :close-on-press-escape="!closingBlocked" :show-close="!closingBlocked">
     <div class="shipment-content" :aria-busy="busy || undefined">
       <p v-if="busy" role="status">{{ checking ? '正在只读核对原提交…' : '正在处理原发货请求，请等待回执…' }}</p>
       <el-alert v-if="error" ref="errorSummary" tabindex="-1" :title="error" type="error" :closable="false" />
@@ -8,7 +8,7 @@
       <p v-if="denied" role="status">当前身份或订单授权需重新确认，原提交内容已隐藏。</p>
       <section v-if="pending && !denied && recoveryInvoice">
         <h3>原订单 · {{ recoveryInvoice.invoice_no }}</h3>
-        <el-table class="list-table" :data="recoveryInvoice.items" border>
+        <el-table class="list-table" :data="recoveryInvoice.items" border v-sticky-scrollbar>
           <el-table-column label="产品" min-width="200"><template #default="{ row }">{{ row.product_name }} {{ row.model }} {{ row.color }} {{ row.length }}</template></el-table-column>
           <el-table-column prop="quantity" label="原提交数量" min-width="120" />
         </el-table>
@@ -334,9 +334,10 @@ onMounted(restore)
 </script>
 <style scoped>
 .shipment-content { max-height: calc(100dvh - 190px); overflow: auto; }
-.shipment-content :deep(.el-alert) { margin-bottom: 12px; }
+.shipment-content .el-alert { margin-bottom: 12px; }
 .shipment-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 600px) { .shipment-content { max-height: calc(100dvh - 230px); } .shipment-actions > * { flex: 1 1 auto; } }
 .quote-summary { margin: 16px 0; }
 h3 { font-size: 15px; margin-top: 24px; color: var(--text-primary); }
 </style>
+<style>.shipment-settlement-dialog { max-width: calc(100vw - 24px); }</style>

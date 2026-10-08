@@ -4,6 +4,7 @@ import { onBeforeRouteLeave } from 'vue-router'
 import { portalAdminApi } from '@/api/portal'
 import { useAuthStore } from '@/stores/auth'
 import { msgError, msgSuccess } from '@/utils/feedback'
+import { isEmail } from '@/utils/validators'
 import { createAccessMutation, accessStatuses } from './customerAccess.mjs'
 
 const props = defineProps({ access: { type: Object, required: true }, action: { type: String, required: true }, account: { type: Object, default: null } })
@@ -44,7 +45,7 @@ function operation() {
   if (!form.confirmed) throw new Error('请先核对并确认操作。')
   if (props.action === 'invite') {
     const email = form.email.trim(), contact_name = form.contact_name.trim()
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || !contact_name || contact_name.length > 100) throw new Error('请填写有效邮箱和采购联系人。')
+    if (!isEmail(email) || email.length > 254 || !contact_name || contact_name.length > 100) throw new Error('请填写有效邮箱和采购联系人。')
     return { action: 'invite', id: props.access.id, key: crypto.randomUUID(), body: { email, contact_name } }
   }
   const reason = form.reason.trim()
@@ -89,7 +90,7 @@ async function inspectCurrent() {
 </script>
 
 <template>
-  <el-dialog :model-value="true" :title="titles[action]" width="580px" class="portal-access-action" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
+  <el-dialog :model-value="true" :title="titles[action]" width="640px" class="portal-access-action" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
     <div class="access-action-content" :aria-busy="state === 'sending' || resolving || undefined">
     <p v-if="!denied"><strong>{{ access.company_display_name }}</strong><br />{{ account?.email || '仅对当前客户生效' }}</p>
     <p v-if="state === 'sending' || resolving" role="status">{{ resolving ? '正在读取当前客户与账号状态…' : '正在提交账号操作，请等待回执…' }}</p>
@@ -130,6 +131,5 @@ async function inspectCurrent() {
 .el-alert:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 p { overflow-wrap: anywhere; }
 .el-checkbox { display: flex; height: auto; margin: 12px 0; white-space: normal; }
-:deep(.el-checkbox__label) { white-space: normal; line-height: 1.6; }
 </style>
-<style>.portal-access-action { max-width: calc(100vw - 24px); }</style>
+<style>.portal-access-action { max-width: calc(100vw - 24px); } .portal-access-action .el-checkbox__label { white-space: normal; line-height: 1.6; }</style>

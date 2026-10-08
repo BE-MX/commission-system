@@ -29,7 +29,7 @@ function hideDenied(e) {
   emit('denied')
 }
 function catalogDenied(status) { hideDenied(status); void showError('当前商品或客户授权范围已变化，请重新核对。') }
-const { list, total, page, pageSize, loading, searchForm, handleSearch, handlePageChange } = useListPage(async params => {
+const { list, total, page, pageSize, loading, searchForm, handleSearch, handlePageChange, handleSizeChange } = useListPage(async params => {
   const current = ++sequence, identity = generation
   controller?.abort(); controller = new AbortController(); list.value = []; total.value = 0; error.value = ''
   try {
@@ -87,7 +87,7 @@ onBeforeUnmount(() => { disposed = true; clear(); window.removeEventListener('be
 </script>
 
 <template>
-  <el-dialog :model-value="true" :title="!denied && selected ? `创建授权草稿 · ${selected.company_display_name}` : '开通客户门户 · 选择方舟客户'" width="960px" class="portal-onboarding-dialog" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
+  <el-dialog :model-value="true" :title="!denied && selected ? `创建授权草稿 · ${selected.company_display_name}` : '开通客户门户 · 选择方舟客户'" width="760px" class="portal-onboarding-dialog" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
     <div class="onboarding-content" :aria-busy="loading || state === 'sending' || checking || undefined">
     <p v-if="loading || state === 'sending' || checking" role="status">{{ checking ? '正在查询已有客户授权…' : state === 'sending' ? '正在创建客户授权草稿，请等待回执…' : '正在读取可开通客户…' }}</p>
     <el-alert v-if="error" ref="errorSummary" id="portal-onboarding-error" tabindex="-1" :title="error" type="error" :closable="false" />
@@ -95,13 +95,13 @@ onBeforeUnmount(() => { disposed = true; clear(); window.removeEventListener('be
     <template v-if="!selected && !denied">
       <p>只显示当前有效主负责人范围内的客户。开通需要唯一、已验证的方舟外部公司身份；身份缺失或冲突须先在客户档案中复核。</p>
       <div class="candidate-search"><el-input v-model="searchForm.keyword" aria-label="搜索开通客户" placeholder="公司名称或完整方舟客户编码" maxlength="100" @keyup.enter="handleSearch" /><GlassButton :disabled="loading" @click="handleSearch">搜索客户</GlassButton></div>
-      <el-table v-loading="loading" :data="list" border class="list-table" empty-text="没有匹配客户，请先核对客户建档和主负责人归属">
+      <el-table v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="没有匹配客户，请先核对客户建档和主负责人归属" /></template>
         <el-table-column label="方舟客户" min-width="200"><template #default="{ row }"><strong>{{ row.company_display_name }}</strong><p>{{ row.customer_code || row.canonical_customer_id }}</p></template></el-table-column>
         <el-table-column label="主负责人" min-width="140"><template #default="{ row }">{{ row.sales_display_name || row.sales_user_id }}</template></el-table-column>
         <el-table-column label="开通条件" min-width="240"><template #default="{ row }"><span v-if="row.ready">可开通 · OKKI 公司 {{ row.okki_company_id }}</span><p v-for="reason in row.blocked_reasons" v-else :key="reason">{{ reasons[reason] || '需要复核' }}</p></template></el-table-column>
         <el-table-column label="操作" min-width="130" fixed="right" class-name="table-action-column"><template #default="{ row }"><GlassButton v-if="row.existing_access?.id" v-permission="'portal_access:read'" variant="link" @click="openExisting(row)">查看已有授权</GlassButton><GlassButton v-else v-permission="'portal_access:admin'" :disabled="!row.ready" variant="link" @click="choose(row)">选择此客户</GlassButton></template></el-table-column>
       </el-table>
-      <el-pagination :current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="handlePageChange" />
+      <el-pagination :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
     </template>
     <template v-else-if="!denied">
       <dl class="identity"><div><dt>方舟客户</dt><dd>{{ selected.company_display_name }} · {{ selected.customer_code || selected.canonical_customer_id }}</dd></div><div><dt>主负责人</dt><dd>{{ selected.sales_display_name || selected.sales_user_id }}</dd></div><div><dt>已验证 OKKI 公司</dt><dd>{{ selected.okki_company_id }}</dd></div></dl>
@@ -132,6 +132,5 @@ p { color: var(--text-secondary); overflow-wrap: anywhere; }
 .identity div { display: flex; justify-content: space-between; gap: 16px; margin: 12px 0; }
 dt { flex-shrink: 0; color: var(--text-secondary); } dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 .el-checkbox { display: flex; height: auto; white-space: normal; margin: 12px 0; }
-:deep(.el-checkbox__label) { white-space: normal; line-height: 1.6; }
 </style>
-<style>.portal-onboarding-dialog { max-width: calc(100vw - 24px); } .portal-onboarding-dialog .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; } .portal-onboarding-dialog .el-dialog__footer button { margin-left: 0; }</style>
+<style>.portal-onboarding-dialog { max-width: calc(100vw - 24px); } .portal-onboarding-dialog .el-checkbox__label { white-space: normal; line-height: 1.6; } .portal-onboarding-dialog .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; } .portal-onboarding-dialog .el-dialog__footer button { margin-left: 0; }</style>

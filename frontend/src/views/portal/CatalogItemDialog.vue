@@ -88,7 +88,7 @@ onMounted(() => { if (props.itemId) readItem() })
 </script>
 
 <template>
-  <el-dialog :model-value="true" :title="itemId ? '管理门户商品' : '导入标准 SKU'" width="900px" class="portal-catalog-item" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
+  <el-dialog :model-value="true" :title="itemId ? '管理门户商品' : '导入标准 SKU'" width="760px" class="portal-catalog-item" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
     <div v-loading="loading"><el-alert v-if="error" :title="error" type="error" :closable="false" /><el-alert v-if="state === 'uncertain'" title="写入结果未知，原商品和配置已冻结。仅查询当前记录，不重发写入。" type="warning" :closable="false" />
       <el-form label-position="top" :disabled="locked">
         <div class="fields"><el-form-item label="方舟产品 ID"><el-input v-model="source.product_id" aria-label="方舟产品 ID" :disabled="locked || !!itemId" maxlength="19" /></el-form-item><el-form-item label="方舟 SKU ID"><el-input v-model="source.sku_id" aria-label="方舟 SKU ID" :disabled="locked || !!itemId" maxlength="19" /></el-form-item><el-form-item label="商品类别"><el-select v-model="source.product_kind" aria-label="商品类别" :disabled="locked || !!itemId"><el-option label="发制品" value="hair" /><el-option label="配件" value="accessory" /></el-select></el-form-item></div>
@@ -111,7 +111,7 @@ onMounted(() => { if (props.itemId) readItem() })
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
 .el-select, .el-input-number { width: 100%; } .el-alert, .standard { margin: 16px 0; }
 p { color: var(--text-secondary); overflow-wrap: anywhere; line-height: 1.6; }
-.el-checkbox { height: auto; white-space: normal; } :deep(.el-checkbox__label) { white-space: normal; line-height: 1.6; }
+.el-checkbox { height: auto; white-space: normal; }
 @media (max-width: 600px) { .fields { grid-template-columns: 1fr; } }
 </style>
-<style>.portal-catalog-item { max-width: calc(100vw - 24px); } .portal-catalog-item .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; } .portal-catalog-item .el-dialog__footer button { margin-left: 0; }</style>
+<style>.portal-catalog-item { max-width: calc(100vw - 24px); } .portal-catalog-item .el-checkbox__label { white-space: normal; line-height: 1.6; } .portal-catalog-item .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; } .portal-catalog-item .el-dialog__footer button { margin-left: 0; }</style>

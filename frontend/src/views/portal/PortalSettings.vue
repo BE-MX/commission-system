@@ -125,6 +125,7 @@ p, .site-facts { color: var(--text-secondary); line-height: 1.7; overflow-wrap: 
 .payment-term { border-bottom: 1px solid var(--border-color); padding: 16px 0; margin-bottom: 16px; }
 .el-select { width: 100%; } .default-term { margin-top: 20px; }
 .el-alert { margin-bottom: 16px; } .el-alert:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; } .save { display: flex; justify-content: flex-end; margin-top: 20px; }
-.el-checkbox { height: auto; white-space: normal; } :deep(.el-checkbox__label) { white-space: normal; line-height: 1.6; }
+.el-checkbox { height: auto; white-space: normal; }
 @media (max-width: 600px) { header { align-items: flex-start; flex-direction: column; } .field-grid { grid-template-columns: 1fr; gap: 0; } .settings-card { padding: 16px; } }
 </style>
+<style>.portal-settings .el-checkbox__label { white-space: normal; line-height: 1.6; }</style>

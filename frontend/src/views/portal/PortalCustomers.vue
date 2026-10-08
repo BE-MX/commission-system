@@ -13,7 +13,7 @@ import BindingReviewDialog from './BindingReviewDialog.vue'
 import { accessStatuses, accountStatuses, invitationStatuses } from './customerAccess.mjs'
 
 const auth = useAuthStore(), listError = ref(''), detailError = ref(''), notice = ref('')
-const detail = ref(null), detailVisible = ref(false), detailLoading = ref(false), accountPage = ref(1)
+const detail = ref(null), detailVisible = ref(false), detailLoading = ref(false), accountPage = ref(1), accountPageSize = ref(20)
 const action = ref(null), mappingAccess = ref(null), onboardingVisible = ref(false), catalogAccess = ref(null), bindingAccess = ref(null)
 let listController, detailController, listSequence = 0, detailSequence = 0, disposed = false, detailId = ''
 const mappingTrigger = ref(null), pageRoot = ref(null), pageRefresh = ref(null), detailContent = ref(null), detailRefresh = ref(null), onboardingTrigger = ref(null)
@@ -75,7 +75,7 @@ async function loadDetail(id = detailId, pageNumber = accountPage.value) {
   detailController?.abort(); detailController = new AbortController()
   detailId = id; accountPage.value = pageNumber; detail.value = null; detailError.value = ''; detailLoading.value = true; detailVisible.value = true
   try {
-    const data = await portalAdminApi.customer(id, { page: pageNumber, page_size: 20 }, detailController.signal)
+    const data = await portalAdminApi.customer(id, { page: pageNumber, page_size: accountPageSize.value }, detailController.signal)
     if (!disposed && current === detailSequence) detail.value = data
   } catch (e) { if (!disposed && current === detailSequence) detailError.value = message(e) }
   finally { if (current === detailSequence) detailLoading.value = false }
@@ -150,7 +150,7 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
     </el-row>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" />
     <div class="table-card">
-      <el-table v-loading="loading" :data="list" border class="list-table" empty-text="当前范围内没有匹配的客户授权">
+      <el-table v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="当前范围内没有匹配的客户授权" /></template>
         <el-table-column prop="company_display_name" label="客户公司" min-width="220" show-overflow-tooltip />
         <el-table-column label="访问状态" min-width="130"><template #default="{ row }"><el-tag effect="plain">{{ accessStatuses[row.status] || '状态待核实' }}</el-tag></template></el-table-column>
         <el-table-column label="客户能力" min-width="180"><template #default="{ row }">{{ row.capabilities.can_order ? '查价与下单' : row.capabilities.can_view_price ? '仅查价' : '仅查看目录' }}</template></el-table-column>
@@ -190,7 +190,7 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
             <GlassButton v-if="account.invitation?.status === 'pending'" data-portal-action="revoke" :data-portal-account="account.id" @click="openAction('revoke', account)">撤销邀请</GlassButton>
           </div>
         </article>
-        <el-pagination :current-page="accountPage" :page-size="20" :total="detail.accounts.total" layout="total, prev, pager, next" @current-change="value => loadDetail(detailId, value)" />
+        <el-pagination :current-page="accountPage" v-model:page-size="accountPageSize" :page-sizes="[20, 50, 100]" :total="detail.accounts.total" layout="total, sizes, prev, pager, next" @current-change="value => loadDetail(detailId, value)" @size-change="loadDetail(detailId, 1)" />
       </template>
       </div>
     </DetailDrawer>

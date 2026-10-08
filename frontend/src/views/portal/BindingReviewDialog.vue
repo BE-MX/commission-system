@@ -7,11 +7,11 @@ import { msgError, msgSuccess } from '@/utils/feedback'
 import { createAccessMutation } from './customerAccess.mjs'
 import { bindingReviewPayload, validateBindingReceipt } from './bindingReview.mjs'
 const props = defineProps({ access: { type: Object, required: true } }), emit = defineEmits(['close', 'changed', 'denied'])
-const auth = useAuthStore(), data = ref(null), loading = ref(false), error = ref(''), notice = ref(''), state = ref('idle'), confirmed = ref(false), orderPage = ref(1)
+const auth = useAuthStore(), data = ref(null), loading = ref(false), error = ref(''), notice = ref(''), state = ref('idle'), confirmed = ref(false), orderPage = ref(1), orderPageSize = ref(20)
 const form = reactive({ action: 'transfer', assignment_id: '', identity_id: '', pending_request_ids: [], history_policy: 'remove', history_days: null, reason: '' })
 const mutation = createAccessMutation(async operation => validateBindingReceipt(operation, await portalAdminApi.bindingMutation(operation)))
 const locked = computed(() => loading.value || ['sending', 'uncertain'].includes(state.value))
-const pendingRows = computed(() => data.value?.pending_requests.slice((orderPage.value - 1) * 20, orderPage.value * 20) || [])
+const pendingRows = computed(() => data.value?.pending_requests.slice((orderPage.value - 1) * orderPageSize.value, orderPage.value * orderPageSize.value) || [])
 const pendingStatuses = { submitted: '待业务员处理', awaiting_customer: '待客户确认', ready_for_review: '待业务员审核' }
 let generation = 0, sequence = 0, controller, disposed = false, feedbackSequence = 0
 const denied = ref(false), errorSummary = ref(null), noticeSummary = ref(null)
@@ -77,7 +77,7 @@ onMounted(() => load())
 </script>
 
 <template>
-  <el-dialog :model-value="true" :title="denied ? '归属与身份复核 · 权限需要核对' : `归属与身份复核 · ${access.company_display_name}`" width="980px" class="portal-binding-review" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
+  <el-dialog :model-value="true" :title="denied ? '归属与身份复核 · 权限需要核对' : `归属与身份复核 · ${access.company_display_name}`" width="760px" class="portal-binding-review" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
     <div v-loading="loading" class="review-content" :aria-busy="loading || state === 'sending' || undefined">
       <p v-if="loading || state === 'sending'" role="status">{{ loading ? '正在读取当前绑定与影响范围…' : '正在提交客户复核，请等待回执…' }}</p>
       <el-alert v-if="error" ref="errorSummary" id="portal-binding-review-error" tabindex="-1" :title="error" type="error" :closable="false" /><el-alert v-if="notice" ref="noticeSummary" tabindex="-1" :title="notice" type="info" :closable="false" /><el-alert v-if="state === 'uncertain'" title="操作结果未知，当前复核已冻结。仅重新读取当前状态核对，不重发转交或重绑。" type="warning" :closable="false" />
@@ -90,8 +90,8 @@ onMounted(() => load())
             <el-form-item label="新主负责人"><el-select v-model="form.assignment_id" aria-label="新主负责人" placeholder="明确选择有效归属"><el-option v-for="row in data.assignments" :key="row.id" :label="`${row.sales_name || row.sales_user_id} · 归属 ${row.id}`" :value="row.id" /></el-select></el-form-item>
             <el-alert v-if="data.pending_truncated" :title="`共有 ${data.pending_total} 个待处理请求，此处仅列前 1000 个。未列出及未勾选请求均不会交接。`" type="warning" :closable="false" />
             <h3>选择交接的未建票请求</h3><p>已选 {{ form.pending_request_ids.length }} 个，未交接 {{ data.pending_total - form.pending_request_ids.length }} 个；选中请求回到待处理，必须重新提案并取得客户确认。</p>
-            <el-table :scrollbar-tabindex="0" :data="pendingRows" border class="list-table" empty-text="没有可交接的未建票请求"><el-table-column label="交接" min-width="80"><template #default="{ row }"><el-checkbox :model-value="form.pending_request_ids.includes(row.id)" :disabled="locked" :aria-label="`交接 ${row.public_no}`" @change="value => selectOrder(row.id, value)" /></template></el-table-column><el-table-column prop="public_no" label="请求编号" min-width="200" /><el-table-column label="当前状态" min-width="180"><template #default="{ row }">{{ pendingStatuses[row.status] || '状态待核实' }}</template></el-table-column><el-table-column prop="servicing_user_id" label="当前服务人" min-width="130" /></el-table>
-            <el-pagination :disabled="locked" v-model:current-page="orderPage" :page-size="20" :total="data.pending_requests.length" layout="total, prev, pager, next" />
+            <el-table :scrollbar-tabindex="0" :data="pendingRows" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="没有可交接的未建票请求" /></template><el-table-column label="交接" min-width="80"><template #default="{ row }"><el-checkbox :model-value="form.pending_request_ids.includes(row.id)" :disabled="locked" :aria-label="`交接 ${row.public_no}`" @change="value => selectOrder(row.id, value)" /></template></el-table-column><el-table-column prop="public_no" label="请求编号" min-width="200" /><el-table-column label="当前状态" min-width="180"><template #default="{ row }">{{ pendingStatuses[row.status] || '状态待核实' }}</template></el-table-column><el-table-column prop="servicing_user_id" label="当前服务人" min-width="130" /></el-table>
+            <el-pagination :disabled="locked" v-model:current-page="orderPage" v-model:page-size="orderPageSize" :page-sizes="[20, 50, 100]" :total="data.pending_requests.length" layout="total, sizes, prev, pager, next" @size-change="orderPage = 1" />
             <el-form-item label="历史读取策略"><el-radio-group v-model="form.history_policy"><el-radio-button value="remove">不新增历史读取</el-radio-button><el-radio-button value="explicit_grant">向新负责人限时授权</el-radio-button></el-radio-group></el-form-item>
             <p>旧历史授权全部撤销。限时授权仅给新负责人，覆盖本次已有且未选中交接的 {{ data.order_total - form.pending_request_ids.length }} 条订单，不包括未来订单；未交接待办即使可读也不会自动获得处理权。</p>
             <el-form-item v-if="form.history_policy === 'explicit_grant'" label="历史读取有效天数"><el-input-number v-model="form.history_days" aria-label="历史读取有效天数" :min="1" :max="365" :precision="0" /></el-form-item>
@@ -109,8 +109,8 @@ onMounted(() => load())
 .el-alert:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .el-alert { margin: 12px 0; } .el-form-item { margin-top: 20px; } .el-select { width: 100%; }
 p { color: var(--text-secondary); line-height: 1.7; overflow-wrap: anywhere; } .el-pagination { padding: 16px 0; overflow-x: auto; }
-.el-checkbox { height: auto; white-space: normal; } :deep(.el-checkbox__label) { white-space: normal; line-height: 1.6; }
+.el-checkbox { height: auto; white-space: normal; }
 .el-radio-group { display: flex; flex-wrap: wrap; }
 :deep(.list-table .cell) { white-space: normal !important; overflow-wrap: anywhere; word-break: normal; }
 </style>
-<style>.portal-binding-review { max-width: calc(100vw - 24px); } .portal-binding-review .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; } .portal-binding-review .el-dialog__footer button { margin-left: 0; }</style>
+<style>.portal-binding-review { max-width: calc(100vw - 24px); } .portal-binding-review .el-checkbox__label { white-space: normal; line-height: 1.6; } .portal-binding-review .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; } .portal-binding-review .el-dialog__footer button { margin-left: 0; }</style>

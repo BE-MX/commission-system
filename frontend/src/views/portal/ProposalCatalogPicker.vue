@@ -5,7 +5,7 @@ import { portalAdminApi } from '@/api/portal'
 const props = defineProps({ requestId: { type: String, required: true }, version: { type: Number, required: true }, selected: { type: Array, required: true }, disabled: Boolean })
 const emit = defineEmits(['add', 'denied']), error = ref('')
 let sequence = 0, controller, disposed = false
-const { list, total, page, pageSize, loading, searchForm, fetchList, handleSearch, handlePageChange } = useListPage(async params => {
+const { list, total, page, pageSize, loading, searchForm, fetchList, handleSearch, handlePageChange, handleSizeChange } = useListPage(async params => {
   const current = ++sequence
   controller?.abort(); controller = new AbortController(); list.value = []; total.value = 0; error.value = ''
   try {
@@ -32,12 +32,12 @@ onBeforeUnmount(() => { disposed = true; sequence++; controller?.abort() })
     <div class="picker-search"><el-input v-model="searchForm.keyword" :disabled="disabled" aria-label="搜索客户授权商品" maxlength="100" placeholder="客户型号、颜色、货号或标准 SKU" @keyup.enter="handleSearch" /><GlassButton :disabled="disabled || loading" @click="handleSearch">搜索授权商品</GlassButton><GlassButton :disabled="disabled || loading" @click="fetchList">刷新目录</GlassButton></div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <p v-if="loading" role="status">正在读取客户授权商品…</p>
-    <el-table :aria-busy="loading || undefined" v-loading="loading" :data="list" border class="list-table" empty-text="该客户没有匹配的可选商品">
+    <el-table :aria-busy="loading || undefined" v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="该客户没有匹配的可选商品" /></template>
       <el-table-column label="客户型号 / 颜色" min-width="190"><template #default="{ row }">{{ row.display_snapshot.model_name }} / {{ row.display_snapshot.color_name }}<br>{{ row.display_snapshot.customer_sku || '未设客户货号' }}</template></el-table-column>
       <el-table-column label="标准规格" min-width="200"><template #default="{ row }">{{ row.standard.model }} / {{ row.standard.color }} · {{ row.display_snapshot.length }} · {{ row.display_snapshot.weight }}<br>SKU {{ row.sku_id }} · 起订 {{ row.min_order_qty }} · 步长 {{ row.step_qty }} {{ row.sale_unit }}</template></el-table-column>
       <el-table-column label="操作" fixed="right" min-width="95" class-name="table-action-column"><template #default="{ row }"><GlassButton variant="link" :disabled="disabled || isSelected(row.item_id) || selected.length >= 100" :aria-label="`添加商品 ${row.display_snapshot.model_name} ${row.display_snapshot.color_name}`" @click="add(row)">{{ isSelected(row.item_id) ? '已添加' : '添加' }}</GlassButton></template></el-table-column>
     </el-table>
-    <el-pagination :disabled="disabled" :current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="handlePageChange" />
+    <el-pagination :disabled="disabled" :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
   </section>
 </template>
 

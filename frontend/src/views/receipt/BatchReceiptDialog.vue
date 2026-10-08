@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="true" :title="pending ? '核对原回款提交' : '新建回款单 · 分配订单'" width="min(860px, calc(100vw - 24px))" append-to-body
+  <el-dialog :model-value="true" :title="pending ? '核对原回款提交' : '新建回款单 · 分配订单'" width="760px" append-to-body
     class="batch-receipt-dialog" :before-close="close" :close-on-click-modal="false" :close-on-press-escape="!closingBlocked" :show-close="!closingBlocked">
     <div class="batch-receipt-content" :aria-busy="busy || undefined">
       <p v-if="busy" role="status">{{ checking ? '正在只读核对原提交…' : '正在提交原回款请求，请等待回执…' }}</p>
@@ -54,7 +54,7 @@ const form = reactive(empty()), searchRequest = latestRequest()
 const pending = computed(() => ['sending', 'uncertain'].includes(state.value)), busy = computed(() => saving.value || checking.value)
 const locked = computed(() => pending.value || busy.value || denied.value || storageBlocked.value)
 const closingBlocked = computed(() => pending.value || busy.value || uploading.value)
-const allocatedTotal = computed(() => (rows.value.reduce((sum, row) => sum + (cents(row.amount) || 0), 0) / 100).toFixed(2))
+const allocatedTotal = computed(() => money(rows.value.reduce((sum, row) => sum + (cents(row.amount) || 0), 0) / 100))
 let actor = Number(auth.user?.id), generation = 0, disposed = false, frozen = null, controller, errorSequence = 0
 const current = (identity, key) => !disposed && identity === generation && Number(auth.user?.id) === actor && (!key || frozen?.request_key === key)
 async function showError(value) {
@@ -180,6 +180,7 @@ async function restore() {
 onMounted(restore)
 </script>
 <style scoped>
-.batch-receipt-content{max-height:calc(100dvh - 190px);overflow:auto}.batch-receipt-content :deep(.el-alert){margin-bottom:12px}.batch-receipt-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}.batch-receipt-content p{color:var(--text-secondary);line-height:1.6}.batch-receipt-content :deep(.el-input-number){width:100%}
+.batch-receipt-content{max-height:calc(100dvh - 190px);overflow:auto}.batch-receipt-content .el-alert{margin-bottom:12px}.batch-receipt-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}.batch-receipt-content p{color:var(--text-secondary);line-height:1.6}.batch-receipt-content .el-input-number{width:100%}
 @media(max-width:600px){.batch-receipt-actions>*{flex:1 1 auto}.batch-receipt-content{max-height:calc(100dvh - 230px)}}
 </style>
+<style>.batch-receipt-dialog{max-width:calc(100vw - 24px)}</style>

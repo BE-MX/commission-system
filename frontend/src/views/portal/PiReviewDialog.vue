@@ -77,7 +77,7 @@ async function submit(retry = false) {
 </script>
 
 <template>
-  <el-dialog :model-value="true" title="处理原 PI" width="860px" class="portal-pi-dialog" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
+  <el-dialog :model-value="true" title="处理原 PI" width="760px" class="portal-pi-dialog" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
     <p v-if="loading || commandState === 'sending'" role="status" class="pi-review-status">{{ loading ? '正在读取原 PI 条款…' : '正在提交 PI 操作，请等待回执…' }}</p>
     <div v-loading="loading" :aria-busy="loading || commandState === 'sending' || undefined">
       <el-alert v-if="error" ref="errorSummary" id="portal-pi-error" tabindex="-1" :title="error" type="error" :closable="false" show-icon />
@@ -109,7 +109,6 @@ async function submit(retry = false) {
 <style scoped>
 .el-alert { margin: 16px 0; } h3 { font-size: 16px; } p { overflow-wrap: anywhere; } .pi-review-status { color: var(--text-secondary); line-height: 1.6; }
 .el-form { margin-top: 20px; } .el-radio-group { flex-wrap: wrap; gap: 4px 0; }
-:deep(.el-checkbox) { height: auto; white-space: normal; align-items: flex-start; }
-:deep(.el-checkbox__label) { white-space: normal; }
+.el-checkbox { height: auto; white-space: normal; align-items: flex-start; }
 </style>
-<style>.portal-pi-dialog { max-width: calc(100vw - 24px); }</style>
+<style>.portal-pi-dialog { max-width: calc(100vw - 24px); } .portal-pi-dialog .el-checkbox__label { white-space: normal; }</style>

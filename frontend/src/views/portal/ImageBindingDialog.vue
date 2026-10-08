@@ -14,7 +14,7 @@ const mutation = createAccessMutation(value => portalAdminApi.bindImage(props.it
 const locked = computed(() => ['sending', 'uncertain'].includes(state.value))
 const message = e => typeof e?.response?.data?.message === 'string' ? e.response.data.message : '图片操作失败，请刷新后重试。'
 function clearPreview() { previewSequence++; previewController?.abort(); if (preview.value) URL.revokeObjectURL(preview.value); preview.value = ''; reference.value = ''; confirmed.value = false; previewing.value = false }
-const { list, total, page, pageSize, loading, searchForm, fetchList, handleSearch, handlePageChange } = useListPage(async params => {
+const { list, total, page, pageSize, loading, searchForm, fetchList, handleSearch, handlePageChange, handleSizeChange } = useListPage(async params => {
   const request = ++listSequence, identity = generation
   listController?.abort(); listController = new AbortController(); list.value = []; total.value = 0
   try { const data = await portalAdminApi.imageAssets(params, listController.signal); return identity === generation && request === listSequence ? data : { items: [], total: 0 } }
@@ -65,17 +65,17 @@ onBeforeUnmount(() => { clear(); window.removeEventListener('beforeunload', befo
 onMounted(load)
 </script>
 <template>
-  <el-dialog :model-value="true" title="批准商品展示图片" width="900px" class="portal-image-binding" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
+  <el-dialog :model-value="true" title="批准商品展示图片" width="760px" class="portal-image-binding" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
     <el-alert title="仅展示允许预览和下载的全员图片素材。批准后供获授权客户查看；素材换版本后需重新批准。" type="info" :closable="false" />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-alert v-if="state === 'uncertain'" title="保存结果未知，不能重发。请读取商品当前记录后重新核对。" type="warning" :closable="false" />
     <p v-if="current">{{ current.display_name }} / {{ current.color_name }} · 当前图片 {{ current.image_asset_id || '未绑定' }}</p>
     <div class="search"><el-input v-model="searchForm.keyword" aria-label="搜索图片素材" placeholder="按素材文件名搜索" :disabled="locked" @keyup.enter="handleSearch" /><GlassButton :disabled="locked || loading" @click="handleSearch">搜索</GlassButton></div>
-    <el-table v-loading="loading" :data="list" border class="list-table" empty-text="没有符合公开展示条件的图片素材">
+    <el-table v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="没有符合公开展示条件的图片素材" /></template>
       <el-table-column prop="name" label="素材文件名" min-width="260" /><el-table-column prop="format" label="格式" min-width="80" />
       <el-table-column label="操作" min-width="100" fixed="right" class-name="table-action-column"><template #default="{ row }"><GlassButton v-permission="'asset:admin'" variant="link" :disabled="locked || previewing" @click="choose(row)">选择并预览</GlassButton></template></el-table-column>
     </el-table>
-    <el-pagination :current-page="page" :page-size="pageSize" :total="total" :disabled="locked || loading" layout="total, prev, pager, next" @current-change="handlePageChange" />
+    <el-pagination :current-page="page" :page-size="pageSize" :total="total" :disabled="locked || loading" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
     <div v-loading="previewing" class="image-preview"><img v-if="preview" :src="preview" alt="待批准的商品图片" /><p v-else>{{ selection === null ? '本次将移除商品图片。' : '请选择图片并核对展示内容。' }}</p></div>
     <GlassButton :disabled="locked" @click="clearPreview(); selection = null">移除当前图片</GlassButton>
     <el-form label-position="top" :disabled="locked || reading"><el-form-item label="操作原因"><el-input v-model="reason" aria-label="图片操作原因" maxlength="500" /></el-form-item><el-checkbox v-model="confirmed">确认此版本图片可以向获授权客户展示，或确认移除</el-checkbox></el-form>
@@ -85,6 +85,6 @@ onMounted(load)
 <style scoped>
 .el-alert { margin-bottom: 16px; } .search { display: flex; gap: 12px; margin: 16px 0; } .el-pagination { overflow-x: auto; margin: 16px 0; }
 .image-preview { min-height: 90px; margin: 20px 0; } .image-preview img { display: block; max-width: 100%; max-height: 300px; object-fit: contain; }
-p { overflow-wrap: anywhere; color: var(--text-secondary); } .el-form { margin-top: 20px; } .el-checkbox { height: auto; white-space: normal; } :deep(.el-checkbox__label) { white-space: normal; }
+p { overflow-wrap: anywhere; color: var(--text-secondary); } .el-form { margin-top: 20px; } .el-checkbox { height: auto; white-space: normal; }
 </style>
-<style>.portal-image-binding { max-width: calc(100vw - 24px); } .portal-image-binding .el-dialog__footer { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }</style>
+<style>.portal-image-binding { max-width: calc(100vw - 24px); } .portal-image-binding .el-checkbox__label { white-space: normal; } .portal-image-binding .el-dialog__footer { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }</style>

@@ -12,7 +12,7 @@ async function showError(value) {
   await nextTick()
   if (!disposed && current === errorSequence && error.value === value) errorSummary.value?.$el?.focus()
 }
-const { list, total, page, pageSize, loading, searchForm, fetchList, handleSearch, handlePageChange } = useListPage(async params => {
+const { list, total, page, pageSize, loading, searchForm, fetchList, handleSearch, handlePageChange, handleSizeChange } = useListPage(async params => {
   const current = ++sequence
   controller?.abort(); controller = new AbortController(); list.value = []; total.value = 0; error.value = ''
   try {
@@ -38,12 +38,12 @@ onBeforeUnmount(() => { disposed = true; sequence++; errorSequence++; controller
     <div class="picker-search"><el-input v-model="searchForm.keyword" :disabled="disabled" aria-label="搜索可授权商品" maxlength="100" placeholder="标准型号或颜色" @keyup.enter="handleSearch" /><GlassButton :disabled="disabled || loading" @click="handleSearch">搜索商品</GlassButton><GlassButton :disabled="disabled || loading" @click="fetchList">刷新商品</GlassButton></div>
     <p v-if="loading" role="status">正在读取可授权商品…</p>
     <el-alert v-if="error" ref="errorSummary" tabindex="-1" :title="error" type="error" :closable="false" />
-    <el-table :scrollbar-tabindex="0" v-loading="loading" :data="list" border class="list-table" empty-text="没有匹配的已发布商品，请先完成站点商品配置">
+    <el-table :scrollbar-tabindex="0" v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="没有匹配的已发布商品，请先完成站点商品配置" /></template>
       <el-table-column label="授权" min-width="80"><template #default="{ row }"><el-checkbox :model-value="selected(row.id)" :disabled="disabled" :aria-label="`授权 ${row.model_name} ${row.color_name} ${row.id}`" @change="value => toggle(row, value)" /></template></el-table-column>
       <el-table-column prop="model_name" label="标准型号" min-width="150" /><el-table-column prop="color_name" label="标准颜色" min-width="130" />
       <el-table-column label="规格" min-width="200"><template #default="{ row }">长度 {{ row.length || '未标注' }} · 重量 {{ row.weight || '未标注' }} · {{ row.sale_unit }}</template></el-table-column>
     </el-table>
-    <el-pagination :disabled="disabled" :current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="handlePageChange" />
+    <el-pagination :disabled="disabled" :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
     <details v-if="modelValue.length"><summary>查看已选规格（{{ modelValue.length }}）</summary><div class="selected-items"><el-tag v-for="item in modelValue" :key="item.id"><span class="selected-label">{{ item.model_name }} / {{ item.color_name }} · {{ item.length }} · {{ item.weight }} · {{ item.sale_unit }}{{ item.status && item.status !== 'published' ? ' · 已下架' : '' }}</span><button type="button" class="selected-remove" :disabled="disabled" :aria-label="`移除授权规格 ${item.model_name} ${item.color_name} ${item.id}`" @click="toggle(item, false)"><span aria-hidden="true">×</span></button></el-tag></div></details>
   </section>
 </template>
@@ -53,7 +53,6 @@ onBeforeUnmount(() => { disposed = true; sequence++; errorSequence++; controller
 .picker-search .el-input { flex: 1; min-width: 160px; }
 .el-alert { margin-bottom: 12px; }
 .el-alert:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
-:deep(.el-table__empty-text) { line-height: 1.6; padding: 20px 12px; width: 100%; box-sizing: border-box; }
 .el-pagination { padding: 12px 0; overflow-x: auto; }
 .selected-items { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .el-tag { height: auto; max-width: 100%; white-space: normal; padding: 6px 10px; }

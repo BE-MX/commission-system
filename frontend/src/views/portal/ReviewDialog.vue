@@ -182,8 +182,7 @@ async function submit(retry = false) {
 .el-select { width: 100%; }
 .review-status { color: var(--text-secondary); line-height: 1.6; }
 .preview-hint { color: var(--text-secondary); line-height: 1.6; }
-:deep(.el-checkbox__label) { white-space: normal; line-height: 1.6; }
 .el-checkbox { height: auto; white-space: normal; }
 @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
 </style>
-<style>.portal-review-dialog { max-width: calc(100vw - 24px); }</style>
+<style>.portal-review-dialog { max-width: calc(100vw - 24px); } .portal-review-dialog .el-checkbox__label { white-space: normal; line-height: 1.6; }</style>

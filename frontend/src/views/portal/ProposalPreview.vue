@@ -14,7 +14,7 @@ const label = line => line ? `${line.display_snapshot.model_name} / ${line.displ
     <el-alert title="这是即时核价参考，不锁价、不锁货，也不代表客户已确认。发送时会再次核算，客户须确认最终收到的完整提案。" type="warning" :closable="false" />
     <p>核算时间 {{ formatBeijingDateTime(preview.calculated_at) }} · {{ preview.currency }} · 有效期 {{ preview.valid_for_hours }} 小时（从正式发送起计算）</p>
     <div class="amount-grid"><div>原商品金额<strong>{{ amount(preview.previous_product_amount) }}</strong></div><div>新商品金额<strong>{{ preview.product_amount }}</strong></div><div>原总额<strong>{{ amount(preview.previous_total_amount) }}</strong></div><div>预览新总额<strong>{{ preview.total_amount }}</strong></div></div>
-    <el-table :data="preview.changes" border class="list-table">
+    <el-table :data="preview.changes" border class="list-table" v-sticky-scrollbar>
       <el-table-column label="变化" min-width="100"><template #default="{ row }">{{ kinds[row.kind] }}<br><small>{{ row.changed_fields.map(key => fields[key] || key).join('、') }}</small></template></el-table-column>
       <el-table-column label="原商品 / 金额" min-width="240"><template #default="{ row }">{{ label(row.before) }}<p v-if="row.before">{{ row.before.quantity }} × {{ row.before.unit_price }} = {{ row.before.line_amount }}</p></template></el-table-column>
       <el-table-column label="新商品 / 金额" min-width="240"><template #default="{ row }">{{ label(row.after) }}<p v-if="row.after">{{ row.after.quantity }} × {{ row.after.unit_price }} = {{ row.after.line_amount }}</p></template></el-table-column>

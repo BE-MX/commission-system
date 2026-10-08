@@ -259,10 +259,6 @@ function rememberClosedGroup(key) {
 </script>
 
 <style scoped>
-:deep(.el-menu-item:focus-visible), :deep(.el-sub-menu:focus-visible > .el-sub-menu__title) {
-  outline: 2px solid var(--color-gold);
-  outline-offset: -2px;
-}
 .nav-review-badge { line-height: 20px; margin-right: 22px; }
 .nav-review-badge :deep(.el-badge__content) { font-variant-numeric: tabular-nums; }
 
@@ -499,6 +495,10 @@ function rememberClosedGroup(key) {
 </style>
 
 <style>
+.aside .el-menu-item:focus-visible, .aside .el-sub-menu:focus-visible > .el-sub-menu__title {
+  outline: 2px solid var(--color-gold);
+  outline-offset: -2px;
+}
 .ark-navigation-popup .el-menu-item:focus-visible {
   outline: 2px solid var(--color-gold);
   outline-offset: -2px;

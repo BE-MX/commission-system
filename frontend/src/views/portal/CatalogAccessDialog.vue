@@ -75,7 +75,7 @@ onMounted(() => load())
 </script>
 
 <template>
-  <el-dialog :model-value="true" :title="denied ? '商品授权 · 权限需要核对' : `商品授权 · ${access.company_display_name}`" width="960px" class="portal-catalog-access" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
+  <el-dialog :model-value="true" :title="denied ? '商品授权 · 权限需要核对' : `商品授权 · ${access.company_display_name}`" width="760px" class="portal-catalog-access" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
     <div v-loading="loading" class="review-content" :aria-busy="loading || state === 'sending' || undefined">
       <p v-if="loading || state === 'sending'" role="status">{{ loading ? '正在读取当前商品授权…' : '正在保存商品授权，请等待回执…' }}</p>
       <el-alert v-if="error" ref="errorSummary" id="portal-catalog-access-error" tabindex="-1" :title="error" type="error" :closable="false" />
@@ -106,7 +106,6 @@ onMounted(() => load())
 .el-alert { margin-bottom: 16px; }
 .el-form { margin-top: 20px; }
 .el-checkbox { height: auto; white-space: normal; }
-:deep(.el-checkbox__label) { white-space: normal; line-height: 1.6; }
 p { color: var(--text-secondary); overflow-wrap: anywhere; }
 </style>
-<style>.portal-catalog-access { max-width: calc(100vw - 24px); } .portal-catalog-access .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; } .portal-catalog-access .el-dialog__footer button { margin-left: 0; }</style>
+<style>.portal-catalog-access { max-width: calc(100vw - 24px); } .portal-catalog-access .el-checkbox__label { white-space: normal; line-height: 1.6; } .portal-catalog-access .el-dialog__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; } .portal-catalog-access .el-dialog__footer button { margin-left: 0; }</style>

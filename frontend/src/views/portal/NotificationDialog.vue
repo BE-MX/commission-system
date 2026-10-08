@@ -30,7 +30,7 @@ watch(busy, value => emit('busy', value), { immediate: true, flush: 'sync' })
 const command = createNotificationCommand(value => mapping ? portalAdminApi.retryMappingNotification(value) : portalAdminApi.retryNotification(value), { scope: mapping ? 'mapping' : 'order' })
 let generation = 0, controller, disposed = false
 const message = e => e?.response?.data?.message || (e?.code === 'ERR_NETWORK' ? '网络连接中断，请按页面提示核对。' : e.message) || '通知状态读取失败，请重试。'
-const { list, total, page, pageSize, loading, fetchList, handlePageChange } = useListPage(async params => {
+const { list, total, page, pageSize, loading, fetchList, handlePageChange, handleSizeChange } = useListPage(async params => {
   const current = ++generation
   controller?.abort(); controller = new AbortController()
   list.value = []; total.value = 0; selected.value = null; reason.value = ''; confirmed.value = false; error.value = ''; notice.value = ''
@@ -92,19 +92,19 @@ onBeforeRouteLeave(() => !busy.value)
 </script>
 
 <template>
-  <el-dialog :model-value="true" title="通知投递记录" width="820px" class="portal-notification-dialog" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" @update:model-value="value => { if (!value) close() }">
+  <el-dialog :model-value="true" title="通知投递记录" width="760px" class="portal-notification-dialog" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" @update:model-value="value => { if (!value) close() }">
     <p v-if="loading || state === 'sending'" role="status" class="notification-status">{{ loading ? '正在读取通知投递记录…' : '正在重新排队通知，请等待回执…' }}</p>
     <div class="notification-content" :aria-busy="loading || state === 'sending' || undefined">
     <el-alert :title="deliveryNotice" type="info" :closable="false" />
     <el-alert v-if="error" ref="errorSummary" tabindex="-1" :title="error" type="error" :closable="false" />
     <el-alert v-if="notice" ref="noticeSummary" tabindex="-1" :title="notice" type="info" :closable="false" />
     <el-alert v-if="state === 'uncertain'" title="重试结果待核对。请勿关闭或刷新浏览器，只重放原命令获取回执。" type="warning" :closable="false" />
-    <el-table ref="table" v-loading="loading" :data="list" border class="list-table" empty-text="暂无可查看的业务通知">
+    <el-table ref="table" v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="暂无可查看的业务通知" /></template>
       <el-table-column label="事件 / 接收方" min-width="160"><template #default="{ row }"><strong>{{ notificationEvents[row.event_type] || '业务通知' }}</strong><div>{{ row.recipient_kind === 'staff' ? '当前负责人' : row.recipient_kind === 'customer' ? '客户成员' : '业务源事件' }}</div><small>{{ formatBeijingDateTime(row.created_at) }}</small></template></el-table-column>
       <el-table-column label="投递情况" min-width="190"><template #default="{ row }"><el-tag effect="plain">{{ deliveryStatuses[row.status] || '状态待核对' }}</el-tag><p>本轮尝试 {{ row.attempt_count }} 次</p><small v-if="row.error_code">{{ notificationErrors[row.error_code] || '投递失败，请核对配置' }}</small><small v-if="row.next_attempt_at">下次尝试：{{ formatBeijingDateTime(row.next_attempt_at) }}</small></template></el-table-column>
       <el-table-column label="操作" min-width="110" fixed="right" class-name="table-action-column"><template #default="{ row }"><GlassButton v-if="row.retry_eligible" v-permission="writePermission" variant="link" :disabled="busy || loading" @click="select(row)">申请重试</GlassButton><span v-else>—</span></template></el-table-column>
     </el-table>
-    <el-pagination :current-page="page" :page-size="pageSize" :total="total" :disabled="busy || loading" layout="total, prev, pager, next" @current-change="handlePageChange" />
+    <el-pagination :current-page="page" :page-size="pageSize" :total="total" :disabled="busy || loading" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
     <el-form v-if="selected" label-position="top" :disabled="busy || loading" class="retry-form">
       <p>恢复 {{ notificationEvents[selected.event_type] || '业务通知' }} · {{ formatBeijingDateTime(selected.created_at) }}</p>
       <el-form-item label="重试原因"><el-input ref="retryReason" v-model="reason" aria-label="通知重试原因" type="textarea" maxlength="500" show-word-limit placeholder="例如：邮件服务已恢复；请勿填写密码或客户个人资料" /></el-form-item>
@@ -124,5 +124,5 @@ onBeforeRouteLeave(() => !busy.value)
 p { margin: 8px 0; overflow-wrap: anywhere; }
 small { display: block; color: var(--text-secondary); }
 .el-checkbox { height: auto; white-space: normal; }
-:deep(.el-checkbox__label) { white-space: normal; }
 </style>
+<style>.portal-notification-dialog .el-checkbox__label { white-space: normal; }</style>

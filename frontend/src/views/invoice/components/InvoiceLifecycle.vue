@@ -40,7 +40,7 @@
       <el-button ref="readButton" v-permission="'invoice:admin'" :disabled="busy" @click="load">读取原任务结果</el-button>
     </div>
   </DetailDrawer>
-  <el-dialog v-model="promptVisible" title="确认处理" width="min(480px, 94vw)" append-to-body :close-on-click-modal="false" @closed="cancelPrompt" @opened="focusReason">
+  <el-dialog v-model="promptVisible" title="确认处理" width="480px" class="invoice-lifecycle-prompt" append-to-body :close-on-click-modal="false" @closed="cancelPrompt" @opened="focusReason">
     <p>{{ prompts[prompt?.action] }}</p>
     <p v-if="prompt?.orderRecovery">原小满订单：{{ prompt.orderRecovery.original_order_id }}（{{ prompt.orderRecovery.resolution === 'bind_order' ? '核对后绑定原单' : '核对当前已绑定原单' }}）</p>
     <label for="invoice-lifecycle-reason">处理依据（10–500字）</label>
@@ -179,4 +179,7 @@ async function sendAction(action, reason, ctx, version, orderRecovery = null) {
 .lifecycle-body { padding: 0 12px; }
 .lifecycle-actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
 p { color: var(--text-secondary); line-height: 1.7; overflow-wrap: anywhere; }
+</style>
+<style>
+.invoice-lifecycle-prompt { max-width: 94vw; }
 </style>

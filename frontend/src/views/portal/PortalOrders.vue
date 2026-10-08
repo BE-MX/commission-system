@@ -132,7 +132,7 @@ const amount = (value, currency = 'USD') => value == null ? '待确认' : `${cur
     </el-col></el-row>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
     <div class="table-card">
-      <el-table v-loading="loading" :data="list" border class="list-table" empty-text="当前条件下没有可查看的请求">
+      <el-table v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="当前条件下没有可查看的请求" /></template>
         <el-table-column prop="request_no" label="请求编号" min-width="180" />
         <el-table-column prop="customer_po" label="客户 PO" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" min-width="150"><template #default="{ row }"><el-tag effect="plain">{{ statuses[row.status] || '状态待核实' }}</el-tag></template></el-table-column>
