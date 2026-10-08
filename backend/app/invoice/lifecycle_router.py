@@ -38,7 +38,8 @@ class LifecycleAction(BaseModel):
 
 def scope(db, identity, user):
     from app.invoice.router import _linked_scope
-    return _linked_scope(db, identity, user)
+    invoice, _, _ = _linked_scope(db, identity, user)
+    return invoice
 
 
 @router.get("/invoices/{invoice_id}/lifecycle", summary="Read cancellation and outbound recovery state")

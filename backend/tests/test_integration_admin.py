@@ -25,6 +25,7 @@ from app.core.time import beijing_now
 from app.integration.auth import require_integration_scope, resolve_submission_principal
 from app.integration.models import IntegrationApp
 from app.integration.router import router as integration_router
+from app.portal.identity_models import AuthorityBarrier
 
 
 TABLES = [
@@ -34,6 +35,8 @@ TABLES = [
     ArkUserRole.__table__,
     ArkRolePermission.__table__,
     IntegrationApp.__table__,
+    # seed_role_permissions acquires the migrated authority barrier first.
+    AuthorityBarrier.__table__,
 ]
 
 
@@ -117,6 +120,7 @@ def _setup():
         roles=[writer_role],
     )
     db.add_all([operator, writer, super_user, plain, inactive, deleted])
+    db.add(AuthorityBarrier(code="authority"))
     db.commit()
 
     app = FastAPI()

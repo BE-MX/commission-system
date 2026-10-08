@@ -12,13 +12,16 @@ from app.portal.errors import PortalError
 @pytest.fixture
 def authorization_db(binding_db):
     db, _, metadata = binding_db
-    for model in (ArkRole, ArkPermission, ArkUserRole, ArkRolePermission):
+    from app.portal.identity_models import AuthorityBarrier
+
+    for model in (ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, AuthorityBarrier):
         model.__table__.to_metadata(metadata)
     metadata.create_all(db.get_bind())
     role = ArkRole(id=1, name="sales", label="Sales")
     permission = ArkPermission(id=1, code="portal_access:admin", module="portal_access",
                                action="admin", label="Portal", kind="action", is_legacy=False, sort=10)
-    db.add_all([role, permission])
+    # seed_role_permissions acquires the migrated authority barrier first.
+    db.add_all([role, permission, AuthorityBarrier(code="authority")])
     db.flush()
     db.add_all([ArkUserRole(user_id=1, role_id=1), ArkRolePermission(role_id=1, permission_id=1)])
     db.commit()

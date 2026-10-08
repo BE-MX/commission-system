@@ -59,10 +59,9 @@ def _client(db, *, sub: str, permissions: list[str], roles: list[str] | None = N
     app = FastAPI()
     app.include_router(router, prefix="/api/invoice")
 
-    def override_db():
-        yield db
-
-    app.dependency_overrides[get_db] = override_db
+    # The hardened read path requires a fresh transaction boundary; a shared
+    # session must roll back the previous request's read transaction first.
+    app.dependency_overrides[get_db] = lambda: (db.rollback(), db)[1]
     token = create_access_token({
         "sub": sub,
         "username": f"user{sub}",
@@ -175,6 +174,14 @@ def test_endpoint_scope_wiring(db):
     mine = service.create_invoice(db, _create_payload(), user_id=5)
     db.commit()
 
+    # Live authorization comes from the database: 5/6 are plain readers, 8 holds
+    # the read_all data scope, 7 carries the super_admin role.
+    from tests.authority_helpers import seed_authority
+    seed_authority(db, 5, "invoice:read")
+    seed_authority(db, 6, "invoice:read")
+    seed_authority(db, 8, "invoice:read", "invoice:read_all")
+    seed_authority(db, 7, roles=("super_admin",))
+
     # 创建者：列表见自己的，详情可达
     with _client(db, sub="5", permissions=["invoice:read"]) as client:
         data = client.get("/api/invoice/invoices").json()["data"]
@@ -189,7 +196,7 @@ def test_endpoint_scope_wiring(db):
         assert client.get(f"/api/invoice/invoices/{mine.id}/export/excel").status_code == 404
 
     # 他人（有 read_all）：全部可见
-    with _client(db, sub="6", permissions=["invoice:read", "invoice:read_all"]) as client:
+    with _client(db, sub="8", permissions=["invoice:read", "invoice:read_all"]) as client:
         data = client.get("/api/invoice/invoices").json()["data"]
         assert data["total"] == 1
         assert client.get(f"/api/invoice/invoices/{mine.id}").status_code == 200

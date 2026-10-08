@@ -172,10 +172,18 @@ def test_review_version_and_audit(db,order,monkeypatch,changed):
         assert '100' in db.query(ReceiptLog).filter_by(receipt_id=row.id).one().message
 
 
-def test_admin_and_scope_enforced(db,order):
+def test_admin_and_scope_enforced(db,order,monkeypatch):
+    from app.core.config import get_settings
     from app.invoice.router import router
+    from tests.authority_helpers import seed_authority
+    # The permanent portal authorization path is the current architecture; the
+    # legacy branch predates live employee authority.
+    monkeypatch.setattr(get_settings(), "PORTAL_ENABLED", True)
+    # Live grants: both accounts hold invoice:admin; only user 1 owns the invoice.
+    seed_authority(db, 1, "invoice:admin")
+    seed_authority(db, 2, "invoice:admin")
     app=FastAPI();app.include_router(router,prefix="/api/invoice")
-    app.dependency_overrides[get_db]=lambda:db
+    app.dependency_overrides[get_db]=lambda:(db.rollback(), db)[1]
     user={"sub":"1","roles":[],"permissions":["invoice:write"]}
     app.dependency_overrides[get_current_user]=lambda:user
     with TestClient(app) as client:

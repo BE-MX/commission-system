@@ -232,13 +232,19 @@ def test_outbound_scope_is_passed_to_lookup_and_missing_row_blocks(db, invoice, 
 def client(db, user):
     app = FastAPI()
     app.include_router(deletion_router.router, prefix="/api/invoice")
-    app.dependency_overrides[get_db] = lambda: db
+    # The hardened entry authorization requires a fresh transaction boundary;
+    # a shared session must roll back the previous request's reads first.
+    app.dependency_overrides[get_db] = lambda: (db.rollback(), db)[1]
     app.dependency_overrides[get_current_user] = lambda: user
     with TestClient(app) as result:
         yield result
 
 
 def test_api_requires_invoice_admin_and_explicit_confirmation(client, db, invoice, receipt, live, user):
+    from tests.authority_helpers import seed_authority
+    # Live entry authorization reads the actor's grants from the database.
+    seed_authority(db, 1, "invoice:admin", "receipt:admin",
+                   "shipping_inspection:delete", "shipping_inspection:read_all")
     path = f"/api/invoice/invoices/{invoice.id}/deletion"
     user["permissions"].remove("invoice:admin")
     assert client.get(path).status_code == 403
@@ -250,7 +256,12 @@ def test_api_requires_invoice_admin_and_explicit_confirmation(client, db, invoic
     assert live["posts"] == []
 
 
-def test_api_invoice_data_scope_blocks_other_salesperson(client, invoice, receipt, live, user):
+def test_api_invoice_data_scope_blocks_other_salesperson(client, db, invoice, receipt, live, user):
+    from tests.authority_helpers import seed_authority
+    # The other salesperson holds the same action grants; only the invoice data
+    # scope blocks the read, so the denial must come from visibility, not rights.
+    seed_authority(db, 2, "invoice:admin", "receipt:admin",
+                   "shipping_inspection:delete", "shipping_inspection:read_all")
     user["sub"] = "2"
     assert client.get(f"/api/invoice/invoices/{invoice.id}/deletion").status_code in (403, 404)
     assert live["posts"] == []

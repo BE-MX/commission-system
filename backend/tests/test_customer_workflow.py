@@ -1173,6 +1173,11 @@ def test_concurrent_different_customer_claims_share_claimant_quota_lock(
     Base.metadata.create_all(race_engine)
     factory = sessionmaker(bind=race_engine, expire_on_commit=False)
     with factory() as setup:
+        from app.portal.identity_models import AuthorityBarrier
+
+        # The claim path acquires the authority barrier first; mirror the
+        # migrated production state in this standalone engine.
+        setup.add(AuthorityBarrier(code="authority"))
         _user(setup, 1)
         first, first_version = _account(setup, code="C-CLAIM-RACE-1")
         second, second_version = _account(setup, code="C-CLAIM-RACE-2")
@@ -2211,14 +2216,17 @@ def test_manual_won_route_uses_only_dedicated_permission(db):
 def test_manual_won_permission_is_registered_but_not_auto_granted_to_admin():
     from app.auth.models import ArkRolePermission
     from app.auth.service import seed_role_permissions
+    from app.portal.identity_models import AuthorityBarrier
 
     engine = create_engine("sqlite:///:memory:")
     ArkRole.__table__.create(engine)
     ArkPermission.__table__.create(engine)
     ArkRolePermission.__table__.create(engine)
+    # seed_role_permissions acquires the migrated authority barrier first.
+    AuthorityBarrier.__table__.create(engine)
     session = sessionmaker(bind=engine)()
     admin = ArkRole(name="admin", label="System admin", is_system=True)
-    session.add(admin)
+    session.add_all([admin, AuthorityBarrier(code="authority")])
     session.commit()
 
     seed_role_permissions(session)
