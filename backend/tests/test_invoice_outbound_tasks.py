@@ -10,6 +10,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import text
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.invoice import okki_client, outbound_followup_service, outbound_task_service, product_service, xiaoman_service
@@ -274,7 +275,7 @@ def test_successful_edit_requeues_waiting_stock_for_current_order(db, monkeypatc
 def test_successful_edit_does_not_requeue_other_outbound_states(db, monkeypatch, no_reconcile, status):
     _seed_settings(db)
     _seed_binding(db)
-    invoice = _make_invoice(db, xiaoman_order_id="424242")
+    invoice = _make_invoice(db, xiaoman_order_id="424242", outbound_auto_requested=1)
     invoice.items.append(_stock_item(xiaoman_unique_id="111"))
     task = OkkiOutboundTask(invoice_id=invoice.id, order_id="424242", status=status,
                             reason="preserve", attempts=3, last_error="preserve")
@@ -479,9 +480,11 @@ def test_reconcile_ignores_first_push_outside_window(db):
 def test_reconcile_ignores_non_synced_and_failed_logs(db):
     # 首推部分受理/失败的发票保持人工核对，不自动补
     failed = _make_invoice(db, invoice_no="INV20260916-002", xiaoman_order_id="111111", sync_status="sync_failed")
+    failed.outbound_auto_requested = 1
     failed.items.append(_stock_item())
     _seed_create_log(db, failed, hours_ago=2, success=1)
     no_success_log = _make_invoice(db, invoice_no="INV20260916-003", xiaoman_order_id="222222", sync_status="synced")
+    no_success_log.outbound_auto_requested = 1
     no_success_log.items.append(_stock_item(sort_order=1))
     _seed_create_log(db, no_success_log, hours_ago=2, success=0)
 
@@ -526,3 +529,112 @@ def test_cancellation_never_backfills_even_enrolled(db):
     invoice = _make_invoice(db, xiaoman_order_id="424242", sync_status="synced", status="cancelled", outbound_auto_requested=1)
     _seed_create_log(db, invoice)
     assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_first_create_persists_outbound_intent_before_timeout_or_process_exit(db, monkeypatch, no_reconcile, interrupted):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db)
+    invoice.items.append(_stock_item())
+    db.commit()
+    def failed_push(*args, **kwargs):
+        if interrupted:
+            raise SystemExit("process interrupted during POST")
+        raise okki_client.OkkiOutcomeUncertainError("order POST timed out")
+    monkeypatch.setattr(okki_client, "push_order", failed_push)
+    if interrupted:
+        with pytest.raises(SystemExit):
+            xiaoman_service.sync_invoice(db, invoice)
+    else:
+        assert xiaoman_service.sync_invoice(db, invoice)["ok"] is False
+    db.rollback()
+    db.refresh(invoice)
+    assert invoice.sync_status == "sync_uncertain"
+    assert invoice.outbound_auto_requested == 1
+    assert _tasks(db) == []
+
+
+@pytest.mark.parametrize("order_type,enabled,wanted", [("stock", True, 1), ("production", True, 1),
+    ("presale", True, 0), ("stock", False, 0)])
+def test_bound_uncertain_first_order_enrolls_only_after_full_sync(db, monkeypatch, no_reconcile, order_type, enabled, wanted):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db, order_type=order_type, sync_status="sync_uncertain", status="sync_uncertain")
+    invoice.items.append(_stock_item())
+    db.execute(text("INSERT INTO lsordertest.okki_orders (order_id,order_no,name,company_id) VALUES (:id,:no,:name,:customer)"),
+        {"id": "424242", "no": "SO-261008-001", "name": invoice.invoice_no, "customer": invoice.customer_id})
+    db.commit()
+    monkeypatch.setattr(xiaoman_service, "get_settings", lambda: SimpleNamespace(OKKI_OUTBOUND_AUTO_ENABLED=enabled))
+    xiaoman_service.resolve_sync_uncertain(db, invoice, resolution="bind_order", reason="已核对小满原单号",
+        operator_id=1, xiaoman_order_no=" SO-261008-001 ")
+    db.commit()
+    assert invoice.xiaoman_order_id == "424242" and invoice.xiaoman_order_no == "SO-261008-001"
+    assert invoice.outbound_auto_requested == wanted
+    assert invoice.sync_status == "not_synced" and _tasks(db) == []
+    if order_type == "presale":
+        assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+        return  # Presale has its own settlement and receipt preflight.
+    # Receipt evidence has separate integration coverage; isolate outbound enrollment.
+    from app.receipt import invoice_link
+    monkeypatch.setattr(invoice_link, "preflight", lambda *args: None)
+    monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
+    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    db.commit()
+    assert len(_tasks(db)) == wanted
+    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    db.commit()
+    assert len(_tasks(db)) == wanted
+
+
+def test_partial_first_acceptance_enqueues_after_lines_are_restored(db, monkeypatch, no_reconcile):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db)
+    invoice.items.append(_stock_item())
+    db.commit()
+    monkeypatch.setattr(okki_client, "push_order", lambda *a, **kw: {"order_id": 424242, "product_list": []})
+    assert xiaoman_service.sync_invoice(db, invoice)["okki_accepted"] is True
+    db.commit()
+    assert invoice.outbound_auto_requested == 1 and _tasks(db) == []
+    monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
+    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    db.commit()
+    assert len(_tasks(db)) == 1 and _tasks(db)[0].status == "pending"
+
+
+def test_recovered_sync_task_rolls_back_when_inventory_finalize_fails(db, monkeypatch, no_reconcile):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db, xiaoman_order_id="424242", outbound_auto_requested=1)
+    invoice.items.append(_stock_item(xiaoman_unique_id="111"))
+    db.commit()
+    monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
+    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    assert len(_tasks(db)) == 1
+    db.rollback()
+    db.refresh(invoice)
+    assert invoice.sync_status != "synced" and _tasks(db) == []
+    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+
+
+def test_reconcile_restores_recovered_order_without_successful_create_log(db):
+    invoice = _make_invoice(db, xiaoman_order_id="424242", sync_status="synced", outbound_auto_requested=1)
+    invoice.items.append(_stock_item())
+    db.add_all([InvoiceSyncLog(invoice_id=invoice.id, action="create", success=0),
+        InvoiceSyncLog(invoice_id=invoice.id, action="uncertain_bind", success=1),
+        InvoiceSyncLog(invoice_id=invoice.id, action="update", success=1)])
+    db.flush()
+    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 1
+    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+    assert len(_tasks(db)) == 1
+
+
+def test_reconcile_never_treats_binding_as_complete_sync(db):
+    invoice = _make_invoice(db, xiaoman_order_id="424242", sync_status="synced", outbound_auto_requested=1)
+    invoice.items.append(_stock_item())
+    db.add_all([InvoiceSyncLog(invoice_id=invoice.id, action="create", success=0),
+        InvoiceSyncLog(invoice_id=invoice.id, action="uncertain_bind", success=1)])
+    db.flush()
+    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+    assert _tasks(db) == []

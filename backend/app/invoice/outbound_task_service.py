@@ -1,7 +1,7 @@
-"""OKKI 销售出库单自动生成任务队列（发票首推小满成功后的下游触发）。
+"""OKKI 销售出库单自动生成任务队列（已登记意图的发票完整同步成功后触发）。
 
-发票首推成功后由 xiaoman_service.sync_invoice 落一行任务（ark_okki_outbound_tasks），
-singapore 主机 okki-sync 的轮询器（deploy/okki_outbound_poller.js）消费并执行
+完整同步成功后由 xiaoman_service.sync_invoice 幂等落一行任务（ark_okki_outbound_tasks），
+北京主机 okki-sync 的轮询器（deploy/okki_outbound_poller.js）消费并执行
 okki_outbound_creator.mjs。任务表是跨系统唯一事实来源：
 
 - 同一 OKKI order_id 仅一行（唯一约束），并由执行端实时核查 OKKI 关联出库单、持久提交意图与台账防重；
@@ -13,7 +13,6 @@ okki_outbound_creator.mjs。任务表是跨系统唯一事实来源：
 import logging
 import re
 
-from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -47,7 +46,7 @@ def has_unbackfilled_custom_lines(db: Session, invoice: Invoice) -> bool:
 
 
 def enqueue_outbound_task(db: Session, invoice: Invoice) -> OkkiOutboundTask | None:
-    """为首推成功的发票入队出库任务；同 order_id 幂等（重复调用返回既有行）。
+    """为已登记意图、完整同步成功的发票入队；同 order_id 幂等。
 
     只 flush，commit 由调用方负责——同步钩子路径上任务行与同步状态同事务落库，
     上层回滚（如半成品 finalize 失败）会连带丢弃任务行，不会产生孤儿任务。
@@ -131,24 +130,20 @@ def reconcile_missing_outbound_tasks(
     *,
     limit: int = RECONCILE_LIMIT,
 ) -> dict:
-    """对账补入队：已登记自动出库、首推成功、当前 synced、但无任务行的发票。
+    """对账补入队：已登记自动出库、完整同步成功、当前 synced、但无任务行的发票。
 
-    「首推」按首张 action=create 且 success=1 的同步日志时间判定——历史订单
-    编辑重推（update）不补，避免给功能上线前的老订单回头建出库单。首推部分
-    受理（sync_status≠synced）由人工核对重推，成功后自然进入本口径。
+    已登记意图的订单在任一完整同步成功后均可补队，包括超时绑定后更新、
+    首推缺行后补齐；历史未登记订单不追建。成功绑定日志不能代替完整同步。
     """
-    first_create = (
-        db.query(
-            InvoiceSyncLog.invoice_id.label("invoice_id"),
-            func.min(InvoiceSyncLog.created_at).label("first_at"),
-        )
-        .filter(InvoiceSyncLog.action == "create", InvoiceSyncLog.success == 1)
-        .group_by(InvoiceSyncLog.invoice_id)
+    successful_sync = (
+        db.query(InvoiceSyncLog.invoice_id.label("invoice_id"))
+        .filter(InvoiceSyncLog.action.in_(["create", "update"]), InvoiceSyncLog.success == 1)
+        .distinct()
         .subquery()
     )
     invoices = (
         db.query(Invoice)
-        .join(first_create, first_create.c.invoice_id == Invoice.id)
+        .join(successful_sync, successful_sync.c.invoice_id == Invoice.id)
         .outerjoin(OkkiOutboundTask, OkkiOutboundTask.order_id == Invoice.xiaoman_order_id)
         .filter(
             Invoice.sync_status == "synced",

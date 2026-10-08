@@ -119,14 +119,14 @@ export function useInvoiceManagePage() {
 
   async function resolveUncertain(row, resolution) {
     try {
-      let xiaomanOrderId = null
+      let xiaomanOrderNo = null
       if (resolution === 'bind_order') {
         const result = await promptAction(
-          '请填写已在 OKKI 后台确认的数字订单 ID',
+          '请输入小满订单详情中的订单号（order_no）。绑定后请重新同步，核对完整明细并生成出库任务。',
           '绑定已生成订单',
-          { inputPattern: /^\d+$/, inputErrorMessage: '请输入有效的数字订单 ID' },
+          { inputValidator: value => Boolean(value?.trim()) || '请输入小满订单号' },
         )
-        xiaomanOrderId = result.value.trim()
+        xiaomanOrderNo = result.value.trim()
       }
       const reasonResult = await promptAction(
         resolution === 'confirm_existing' ? '请填写至少10字原订单核对依据；系统将核验数量、价格和金额' : resolution === 'bind_order' ? '请填写绑定依据' : '请填写确认 OKKI 未生成订单的依据',
@@ -136,7 +136,7 @@ export function useInvoiceManagePage() {
       await resolveInvoiceSyncUncertain(row.id, {
         resolution,
         reason: reasonResult.value.trim(),
-        xiaoman_order_id: xiaomanOrderId,
+        xiaoman_order_no: xiaomanOrderNo,
       })
       msgSuccess('待核对状态处理')
       await refreshUpdate()

@@ -1642,6 +1642,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - `GET /api/invoice/invoices/{id}/lifecycle`：invoice:admin + 发票范围；返回版本、取消状态与出库任务摘要。
 - `POST /api/invoice/invoices/{id}/lifecycle`：同权限；action 为 begin/refresh/remove/retain/abort/outbound_retry/ack_outbound；reason 至少10字，涉及版本检查时提供 expected_version；所有操作须 confirmed=true。409 表示当前版本、执行权或关联证据不允许操作。不能用重试 POST 推断未知结果。
 - 原订单同步不确定恢复接口增加 resolution=confirm_existing，用于已绑定原订单的受理核对，不创建/替换订单 ID。
+- `POST /api/invoice/invoices/{id}/sync-uncertain/resolve` 的 `resolution=bind_order` 使用 `xiaoman_order_no`（小满原生 `order_no`，首尾空白会去除），不再接收人工输入内部订单 ID。后端要求镜像订单号唯一命中、客户与订单名称一致、内部 ID 未绑定其他发票，再保存 ID/订单号并审计；查不到、重号或身份不符返回 400。权限仍为 `invoice:admin` 且遵守原发票数据范围。启用自动出库时绑定首次待核对订单会登记意图，但需后续完整同步成功才幂等入队；预售、未登记历史订单、失败或未完成库存收尾均不自动生成整单出库。
 - `GET /api/receipts/{id}/remote-change`、`POST /api/receipts/{id}/remote-change`：receipt:admin + 原回款范围；提交 version、evidence_hash、reason（至少10字）、confirmed=true。登记核实的远端变化，不退款。
 - `POST /api/shipping-inspection/outbound-records/{id}/delete-recovery`：shipping_inspection:admin + 原出库归属；confirmed=true 和至少10字 reason，租约结束后核实原删除，禁止重放。
 

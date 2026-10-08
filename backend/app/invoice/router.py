@@ -981,7 +981,7 @@ def sync_invoice(
 class ResolveSyncUncertainPayload(BaseModel):
     resolution: str = Field(..., pattern="^(bind_order|confirm_not_created|confirm_existing)$")
     reason: str = Field(..., min_length=2, max_length=500)
-    xiaoman_order_id: str | None = Field(None, max_length=64)
+    xiaoman_order_no: str | None = Field(None, max_length=64)
 
 
 @router.post(
@@ -1004,7 +1004,7 @@ def resolve_sync_uncertain(
             invoice,
             resolution=body.resolution,
             reason=body.reason,
-            xiaoman_order_id=body.xiaoman_order_id,
+            xiaoman_order_no=body.xiaoman_order_no,
             operator_id=_user_id(current_user),
         )
         db.commit()
