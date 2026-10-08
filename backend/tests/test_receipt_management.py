@@ -62,6 +62,9 @@ def register(db, order, amount="500", key="test_request_key_001"):
     data = fields(db, amount).model_dump()
     snapshot = service.order_balance(db, order)
     body = ReceiptCreate(**data, invoice_id=order.id, request_key=key, balance_version=snapshot["version"])
+    # The hardened create authorization requires a fresh transaction boundary;
+    # the balance snapshot read above must not share it.
+    db.rollback()
     row = create_financial(db, body, USER); db.commit()
     return row, body
 

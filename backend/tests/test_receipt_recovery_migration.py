@@ -56,8 +56,10 @@ def test_upgrade_preserves_legacy_unknown_phase_and_financial_facts():
 
 def test_single_revision_head_and_no_destructive_downgrade():
     scripts = ScriptDirectory(str(Path(__file__).resolve().parents[1] / "alembic"))
-    assert scripts.get_heads() == ["175_receipt_recovery"]
+    # The portal migrations (176/177) chain on top of this recovery migration.
+    assert scripts.get_heads() == ["177_portal_pi_header"]
     assert migration().down_revision == "174_domestic_decision"
+    assert scripts.get_revision("175_receipt_recovery").down_revision == "174_domestic_decision"
     with pytest.raises(RuntimeError, match="不可删除"):
         migration().downgrade()
 
