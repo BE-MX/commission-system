@@ -15,6 +15,16 @@ def get_intent(db, invoice_id):
     return db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice_id).first()
 
 
+def submitted_record(db, intent):
+    """Converted intents retain generation identity; the receipt owns current facts."""
+    if intent.status != "converted":
+        return intent
+    receipt = db.get(Receipt, intent.receipt_id) if intent.receipt_id else None
+    if not receipt or receipt.invoice_id != intent.invoice_id or receipt.source != "auto":
+        raise ValueError("订单关联回款记录异常，请管理员核对原单")
+    return receipt
+
+
 def save_draft(db, invoice, draft, actor, *, new=False):
     if invoice.order_type not in {"stock", "presale"}:
         return
@@ -29,9 +39,10 @@ def save_draft(db, invoice, draft, actor, *, new=False):
         return
     if row.status != "draft":
         # Generic invoice editor round-trips the frozen draft; disallow changes.
-        if (draft.amount != row.amount or draft.collection_date != row.collection_date
-                or draft.payment_type != row.payment_type or draft.attachment_ids != row.attachment_ids
-                or draft.remark != (row.remark or "")):
+        current = submitted_record(db, row)
+        if (draft.amount != current.amount or draft.collection_date != current.collection_date
+                or draft.payment_type != current.payment_type or draft.attachment_ids != current.attachment_ids
+                or draft.remark != (current.remark or "")):
             raise ValueError("本次回款已提交，不能随订单修改，请在回款单中处理")
         return
     if draft.attachment_ids:
@@ -180,8 +191,12 @@ def describe(db, invoice):
     row = get_intent(db, invoice.id)
     if not row:
         return None
-    return {"amount": str(row.amount) if row.amount is not None else None,
-            "collection_date": row.collection_date, "payment_type": row.payment_type,
-            "remark": row.remark or "", "attachment_ids": row.attachment_ids,
+    current = submitted_record(db, row)
+    return {"amount": str(current.amount) if current.amount is not None else None,
+            "collection_date": current.collection_date, "payment_type": current.payment_type,
+            "remark": current.remark or "", "attachment_ids": current.attachment_ids,
             "status": row.status, "eligible": bool(row.eligible), "receipt_id": row.receipt_id,
-            "last_error": row.last_error}
+            "last_error": current.last_error,
+            "receipt_status": current.status if row.status == "converted" else None,
+            "receipt_sync_status": current.sync_status if row.status == "converted" else None,
+            "receipt_version": current.version if row.status == "converted" else None}

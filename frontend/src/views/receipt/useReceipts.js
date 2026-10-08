@@ -1,6 +1,7 @@
 import { formatMoney } from '../../utils/money.js'
 import { confirmAction, promptAction, msgSuccess, msgError } from '@/utils/feedback'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 import { useListPage } from '@/composables/useListPage'
 import { currentBeijingDate } from '@/utils/datetime'
@@ -12,6 +13,9 @@ export const money = value => formatMoney(value)
 export const financeLabel = value => value === 1 ? '已生效' : value === 0 ? '未生效' : '未取得'
 
 export function useReceipts() {
+  const route = useRoute()
+  const queryOrderId = value => typeof value === 'string' && /^[1-9][0-9]{0,63}$/.test(value) ? value : ''
+  const queryKeyword = value => typeof value === 'string' ? value.slice(0, 100) : ''
   const deliveryEnabled = ref(null), presaleDeliveryEnabled = ref(null)
   const page = useListPage(async ({ dateRange, ...params }, { signal, isCurrent }) => {
     if (params.order_id) params.order_id = params.order_id.trim()
@@ -23,7 +27,11 @@ export function useReceipts() {
     }
     return result
   },
-    { searchForm: { keyword: '', order_id: '', sync_status: '', source: '', status: '', dateRange: [] } })
+    { searchForm: { keyword: queryKeyword(route.query.keyword), order_id: queryOrderId(route.query.order_id), sync_status: '', source: '', status: '', dateRange: [] } })
+  watch(() => [route.query.order_id, route.query.keyword], ([id, keyword]) => {
+    page.searchForm.order_id = queryOrderId(id); page.searchForm.keyword = queryKeyword(keyword)
+    page.handleSearch()
+  })
   const dates = computed({ get: () => page.searchForm.dateRange, set: value => { page.searchForm.dateRange = value || [] } })
   const editorVisible = ref(false), detailVisible = ref(false), detail = ref(null), saving = ref(false), uploading = ref(false)
   const orders = ref([]), ordersLoading = ref(false), balance = ref(null), balanceLoading = ref(false), error = ref('')
@@ -31,7 +39,7 @@ export function useReceipts() {
   let searchSequence = 0, balanceSequence = 0, detailSequence = 0, initialForm = '', idempotencyKey = ''
   const selectedOrder = computed(() => orders.value.find(o => o.id === form.invoice_id))
   const remainingAfter = computed(() => Number(balance.value?.remaining_amount || 0) - Number(form.amount || 0))
-  const editable = computed(() => detail.value?.status === 'active' && !detail.value.batch_id && detail.value.purpose !== 'presale_deposit' && ['pending', 'failed'].includes(detail.value.sync_status))
+  const editable = computed(() => detail.value?.status === 'active' && !detail.value.batch_id && !detail.value.xiaoman_receipt_id && detail.value.purpose !== 'presale_deposit' && ['pending', 'failed'].includes(detail.value.sync_status))
 
   async function searchOrders(keyword = '') {
     const sequence = ++searchSequence

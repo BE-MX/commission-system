@@ -1,41 +1,53 @@
 <template>
-  <section v-if="['stock', 'presale'].includes(form.order_type)" class="receipt-card">
-    <div class="card-title">{{ form.order_type === 'presale' ? '首笔定金' : '本次回款' }} <StatusBadge effect="plain" type="warning" size="small">同步前必填</StatusBadge></div>
-    <p class="receipt-hint">{{ form.receipt_draft?.status === 'converted' ? '本次回款已生成，订单重新同步不会重复建款。' : '上传实际到账截图；订单完整同步后自动生成回款单。回款金额默认随预付款填入，可手改；可先保存草稿。' }}</p>
+  <section v-if="['stock', 'presale'].includes(form.order_type) || form.id" class="receipt-card">
+    <template v-if="['stock', 'presale'].includes(form.order_type)">
+    <div class="card-title">{{ form.order_type === 'presale' ? '首笔定金' : '本次回款' }} <StatusBadge effect="plain" type="warning" size="small">{{ intentLabel }}</StatusBadge></div>
+    <p class="receipt-hint">{{ intentHint }}</p>
     <!-- 小满回款方式在其接口中非必填，且口径与内部付款方式不同；自动回款单统一按 Other 提交 -->
     <p class="method-note">小满回款方式默认按 Other 提交（小满侧非必填），无需选择。</p>
     <p v-if="form.order_type === 'presale'">请填写实际定金金额；定金保留至最后一批出库抵扣。</p>
     <ReceiptFields v-if="form.receipt_draft" :form="form.receipt_draft" :currency="form.currency"
       :readonly="frozen" :hide-proofs="canEditProofs" hide-payment-type @uploading="v => form.receipt_uploading = v" />
-    <InvoiceConvertedProofs v-if="canEditProofs" :key="form.receipt_draft.receipt_id" :receipt-id="form.receipt_draft.receipt_id"
+    <InvoiceConvertedProofs v-if="canEditProofs" :key="`${form.receipt_draft.receipt_id}:${form.receipt_draft.receipt_version}`" :receipt-id="form.receipt_draft.receipt_id"
+      :locked="form.receipt_action_open || form.receipt_action_busy"
       @saved="(id, ids) => { if (form.receipt_draft?.receipt_id === id) form.receipt_draft.attachment_ids = ids }"
       @uploading="value => form.receipt_uploading = value"
       @dirty="value => form.receipt_proof_dirty = value" />
     <p v-if="form.receipt_draft?.last_error" class="receipt-error" role="alert">{{ form.receipt_draft.last_error }}</p>
     <p v-if="form.receipt_draft?.eligible === false" class="receipt-hint">此单为历史库存单，补传凭证后可同步订单，已有回款不会自动补建。</p>
+    </template>
+    <InvoiceReceiptActions v-if="form.id" :form="form" :total="total" />
   </section>
 </template>
 <script setup>
 import { computed, watch } from 'vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
 import InvoiceConvertedProofs from './InvoiceConvertedProofs.vue'
+import InvoiceReceiptActions from './InvoiceReceiptActions.vue'
+import { nextDraftAmount } from '../composables/invoiceReceiptState'
 import { useAuthStore } from '@/stores/auth'
 import { currentBeijingDate } from '@/utils/datetime'
-const props = defineProps({ form: { type: Object, required: true } })
+const props = defineProps({ form: { type: Object, required: true }, total: { type: Number, required: true } })
 const frozen = computed(() => props.form.receipt_draft?.status && props.form.receipt_draft.status !== 'draft')
+const intentLabel = computed(() => ({ armed: '订单同步中', ready: '等待生成回款', converted: '原回款已生成' })[props.form.receipt_draft?.status] || '同步前必填')
+const intentHint = computed(() => ({
+  armed: '订单同步正在处理或等待恢复，暂不能修改首次回款，请先查看订单同步结果。',
+  ready: '首次回款正在等待生成，请稍后刷新；生成后按回款单状态修正或核对。',
+  converted: '本次回款已生成，金额显示原回款的当前记录；订单重新同步不会重复建款。',
+})[props.form.receipt_draft?.status] || '上传实际到账截图；订单完整同步后自动生成回款单。回款金额默认随预付款填入，可手改；可先保存草稿。')
 const auth = useAuthStore()
 const canEditProofs = computed(() => props.form.receipt_draft?.status === 'converted' &&
-  props.form.receipt_draft?.receipt_id && auth.hasPermission('receipt:write'))
+  props.form.receipt_draft?.receipt_status === 'active' && props.form.receipt_draft?.receipt_id && auth.hasPermission('receipt:write'))
 watch(() => props.form.receipt_draft, value => {
   if (!value) props.form.receipt_draft = { amount: props.form.order_type === 'presale' ? null : props.form.internal_received > 0 ? props.form.internal_received : null,
     collection_date: currentBeijingDate(), payment_type: 'Other',
     attachment_ids: [], remark: '', status: 'draft' }
 }, { immediate: true })
 // 回款金额随预付款自动填入（2026-09-23）：只跟随未被手改过的草稿金额
-watch(() => props.form.internal_received, (value, previous) => {
+watch(() => [props.form.id, props.form.internal_received], ([id, value], [previousId, previous]) => {
   const draft = props.form.receipt_draft
-  if (props.form.order_type !== 'presale' && !frozen.value && !props.form.id && draft && (draft.amount == null || draft.amount === previous)) {
-    draft.amount = value > 0 ? value : null
+  if (id === previousId && draft) {
+    draft.amount = nextDraftAmount(draft, previous, value, props.form.order_type)
   }
 })
 </script>

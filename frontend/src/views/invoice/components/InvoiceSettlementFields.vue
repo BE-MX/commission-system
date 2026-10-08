@@ -9,6 +9,7 @@
       </el-form-item>
       <el-form-item label="预付款" :error="settlementError">
         <el-input-number v-model="form.internal_received" :min="0" :max="total" :precision="2" controls-position="right" />
+        <div class="field-hint">订单约定金额；实际到账请在回款区登记</div>
       </el-form-item>
       <el-form-item label="尾款">
         <el-input :model-value="form.internal_balance == null ? '' : money(form.internal_balance)" readonly class="balance-field" />

@@ -1,6 +1,7 @@
 import { msgWarning, msgSuccessText, alertAction } from '@/utils/feedback'
 import { computed, reactive, ref, watch } from 'vue'
 import { useLinkedInvoiceSync } from './useLinkedInvoiceSync'
+import { invoiceOrderSignature } from './invoiceReceiptState'
 
 import {
   checkInvoiceNo,
@@ -65,6 +66,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const previousInvoiceNo = ref('')
 
   const form = reactive(emptyInvoiceForm())
+  const loadedOrderSignature = ref('')
+  watch(() => [loadedOrderSignature.value, invoiceOrderSignature(buildInvoicePayload(form))], ([loaded, current]) => {
+    form.receipt_order_dirty = Boolean(form.id && loaded && loaded !== current)
+  }, { flush: 'sync' })
   const linked = useLinkedInvoiceSync(async id => {
     const current = await getInvoice(id)
     if (form.id === id) resetForm(current)
@@ -235,6 +240,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       okki_first_return: data.okki_first_return ?? 0,
       items: (data.items || []).map(normalizeLine),
     })
+    loadedOrderSignature.value = invoiceOrderSignature(buildInvoicePayload(form))
     selectedCustomer.value = form.customer_id
       ? { company_id: form.customer_id, company_name: form.customer_name }
       : null
@@ -594,6 +600,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     if (contextSeq !== customerContextSeq) return null
     if (form.receipt_uploading) { msgWarning("请等待回款截图上传完成"); return null }
     if (form.receipt_proof_dirty) { msgWarning("请先保存回款截图变更"); return null }
+    if (form.receipt_action_open || form.receipt_action_busy) { msgWarning('请先完成或关闭当前回款操作'); return null }
     if (form.items.some(line => Number(line.total_price || 0) < 0)) {
       msgWarning('产品行折扣不能超过该行金额')
       return null

@@ -180,11 +180,12 @@
 | GET `/order-options` | keyword/page；可关联的已同步订单 | read/write/admin 任一 |
 | GET `/types` | 当前小满回款方式 | 回款 read/write/admin 或发票 read/write/sync |
 | GET `/order-balance/{invoice_id}` | 最新原币余额与 version；读取小满核验 | read/write/admin 任一 |
+| GET `/invoice-summary/{invoice_id}` | 已保存订单的资金汇总；返回 balance、initial_receipt（当前真实自动回款）、order_sync_status、action_blocked_reason、balance_error；订单未同步仍可只读展示，余额无法核验时保留原回款供恢复 | read/write/admin 任一，另检查回款数据范围 |
 | POST `/attachments` | multipart file，1 张有效图片≤10MiB；返回私有资源 ID | receipt:write 或 invoice:write |
 | GET `/attachments/{identity}` | 图片流；对象权限校验，private/no-store | 回款或发票权限，再检查关联范围 |
 | POST 空路径 | invoice_id、request_key、balance_version + 回款字段 | receipt:write |
 | GET `/{id}` | 单据、凭证元数据和审计日志 | read/write/admin 任一 |
-| PATCH `/{id}` | version + 回款字段；仅未被远端接受的待同步/失败单 | receipt:write |
+| PATCH `/{id}` | version + 回款字段；仅有效、无远端 ID 的待发送/明确失败普通单；订单须已同步且无活动关联任务。自动回款按新金额重新分摊手续费，排除原单；保存后明确重试，保留原 ID 并记录前后值 | receipt:write |
 | PUT `/{id}/attachments` | version + attachment_ids（1–5 个不重复 ID）；仅订单自动生成的有效回款可更新当前截图，处理中的回款不可改；同步更新发票回款意图并记录审计 | receipt:write，且须在回款数据范围内 |
 | POST `/{id}/retry` | 明确失败的原单重新排队 | receipt:write |
 | POST `/{id}/void` | reason；仅本地待同步/明确失败单作废 | receipt:write |
@@ -193,8 +194,9 @@
 
 回款字段：amount（>0，最多2位小数）、collection_date、payment_type、attachment_ids（1–5个不重复ID）、bank_charge（默认0，留空/null/空串均按0处理，且≤amount）、remark（≤500字）。币种、客户和远端订单 ID 由关联发票冻结，不接收客户端指定。request_key 为16–64位字母数字下划线/连字符；balance_version 为余额响应中的64位摘要。相同幂等键不同内容拒绝，余额变更返回409并要求刷新；参数错误422、资源/权限404或403、存储入口不可用503。代理上传超过限制413。
 
-库存发票 create/update 新增 `receipt_draft`（amount、collection_date、payment_type、remark、attachment_ids），detail 原样返回意图及生成状态；同步成功增加 receipt_generation_status/receipt_id。保存草稿可缺项，同步库存单前必须有截图；符合自动资格的新单还须完整回款字段。`pending/syncing/synced/failed/uncertain` 是传输状态，`collect_status=0/1/null` 是小满财务状态，二者不得混用。
-订单自动回款已生成后，发票编辑页的金额等字段保持冻结；有 `receipt:write` 的归属用户可在截图区移除、重传并单独保存凭证变更。至少保留一张当前凭证；移除的旧文件和绑定关系保留供审计，但旧 ID 不再可经凭证读取接口访问，也不可直接重新绑定；不会重新发送小满回款。
+库存发票 create/update 新增 `receipt_draft`（amount、collection_date、payment_type、remark、attachment_ids），detail 返回生成状态；converted 时展示、冻结校验均使用实际 Receipt 当前值，并增加 receipt_status/receipt_sync_status/receipt_version。生成意图保持 converted，不退回草稿；同步成功增加 receipt_generation_status/receipt_id。保存草稿可缺项，同步库存单前必须有截图；符合自动资格的新单还须完整回款字段。`pending/syncing/synced/failed/uncertain` 是传输状态，`collect_status=0/1/null` 是小满财务状态，二者不得混用。
+订单编辑页提供独立修正、重试、补登记及管理员小满变更核对入口；订单有未保存修改、未同步、关联任务活动或余额未核验时阻止普通资金写入。已同步或结果待核对的回款金额不能直接修正；预售定金与批次回款继续走原结算流程。发票保存不夹带回款改单，预付款只表示订单约定金额。详见[改单回款规则](invoice-linked-sync.md#改单后的回款处理2026-10-08)。
+有 `receipt:write` 的归属用户仍可在有效自动回款截图区移除、重传并单独保存凭证变更；资金操作期间暂停截图编辑，回款版本变化后重新加载。至少保留一张当前凭证；移除的旧文件和绑定关系保留供审计，但旧 ID 不再可经凭证读取接口访问，也不可直接重新绑定；不会重新发送小满回款。
 
 ## 站点 AI 网关（2026-09-12，迁移 146 后可用）
 
@@ -1640,6 +1642,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - `GET /api/invoice/invoices/{id}/lifecycle`：invoice:admin + 发票范围；返回版本、取消状态与出库任务摘要。
 - `POST /api/invoice/invoices/{id}/lifecycle`：同权限；action 为 begin/refresh/remove/retain/abort/outbound_retry/ack_outbound；reason 至少10字，涉及版本检查时提供 expected_version；所有操作须 confirmed=true。409 表示当前版本、执行权或关联证据不允许操作。不能用重试 POST 推断未知结果。
 - 原订单同步不确定恢复接口增加 resolution=confirm_existing，用于已绑定原订单的受理核对，不创建/替换订单 ID。
+- `POST /api/invoice/invoices/{id}/sync-uncertain/resolve` 的 `resolution=bind_order` 使用 `xiaoman_order_no`（小满原生 `order_no`，首尾空白会去除），不再接收人工输入内部订单 ID。后端要求镜像订单号唯一命中、客户与订单名称一致、内部 ID 未绑定其他发票，再保存 ID/订单号并审计；查不到、重号或身份不符返回 400。权限仍为 `invoice:admin` 且遵守原发票数据范围。启用自动出库时绑定首次待核对订单会登记意图，但需后续完整同步成功才幂等入队；预售、未登记历史订单、失败或未完成库存收尾均不自动生成整单出库。
 - `GET /api/receipts/{id}/remote-change`、`POST /api/receipts/{id}/remote-change`：receipt:admin + 原回款范围；提交 version、evidence_hash、reason（至少10字）、confirmed=true。登记核实的远端变化，不退款。
 - `POST /api/shipping-inspection/outbound-records/{id}/delete-recovery`：shipping_inspection:admin + 原出库归属；confirmed=true 和至少10字 reason，租约结束后核实原删除，禁止重放。
 

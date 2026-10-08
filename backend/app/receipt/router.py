@@ -65,6 +65,14 @@ def order_balance(invoice_id: int, db: Session = Depends(get_db), user=Depends(r
     return execute(db, lambda: service.order_balance(db, invoice))
 
 
+@router.get("/invoice-summary/{invoice_id}", summary="Read invoice funds and receipt action prerequisites")
+def invoice_summary(invoice_id: int, db: Session = Depends(get_db),
+                    user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin"))):
+    invoice = db.get(Invoice, invoice_id)
+    access.ensure_invoice(db, invoice, user)
+    return execute(db, lambda: service.invoice_summary(db, invoice))
+
+
 @router.post("/attachments", summary="Upload private payment screenshot")
 async def upload(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db),
                  user=Depends(require_any_permission("receipt:write", "invoice:write"))):

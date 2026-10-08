@@ -25,8 +25,9 @@ test('invoice receipt draft defaults the xiaoman payment type to Other', () => {
 test('receipt amount auto-follows the prepayment until manually edited', () => {
   // 回款金额根据预付款金额自动填充（2026-09-23）；手改后不再跟随；预售单定金除外（手填）
   assert.match(invoiceReceipt, /props\.form\.internal_received > 0 \? props\.form\.internal_received : null/)
-  assert.match(invoiceReceipt, /watch\(\(\) => props\.form\.internal_received/)
-  assert.match(invoiceReceipt, /draft\.amount === previous/)
+  assert.match(invoiceReceipt, /watch\(\(\) => \[props\.form\.id, props\.form\.internal_received\]/)
+  assert.match(invoiceReceipt, /nextDraftAmount\(draft, previous, value, props\.form\.order_type\)/)
+  assert.doesNotMatch(invoiceReceipt, /!props\.form\.id/)
   assert.match(invoiceReceipt, /props\.form\.order_type === 'presale' \? null/)
 })
 
