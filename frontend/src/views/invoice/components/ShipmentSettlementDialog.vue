@@ -26,7 +26,6 @@
         </el-table>
         <el-form-item label="本批运费"><el-input-number v-model="freight" :precision="2" :min="0" controls-position="right" /></el-form-item>
         <el-alert v-if="freight > 0" title="本批运费将在小满生成独立销售订单并单独回款。小满原生销售报表会计入这张运费订单；方舟商品 GMV、订单数和提成统计会排除它。" type="info" :closable="false" />
-        <GlassButton :loading="quoting" :disabled="saving || loading || activeShipment || confirmationPending" @click="preview">核算本批金额</GlassButton>
         <ResponsiveDescriptions v-if="quote" :column="2" border class="quote-summary">
           <el-descriptions-item v-for="field in quoteFields" :key="field[0]" :label="field[1]">{{ invoice.currency }} {{ money(quote[field[0]]) }}</el-descriptions-item>
           <el-descriptions-item label="出库批次">{{ quote.is_final ? '最后一批，抵扣定金' : '部分出库，定金保留' }}</el-descriptions-item>
@@ -69,7 +68,10 @@
         <GlassButton v-permission="'shipment:write'" :loading="checking" :disabled="busy || storageBlocked" @click="inspect">核对原提交（只查询）</GlassButton>
         <GlassButton v-permission="'shipment:write'" variant="primary" :loading="saving" :disabled="busy || denied || storageBlocked" @click="submit(true)">按原请求重试</GlassButton>
       </template>
-      <GlassButton v-else v-permission="'shipment:write'" variant="primary" :loading="saving" :disabled="!quote || quoting || uploading || loading || denied || storageBlocked || confirmationPending" @click="submit(false)">生成本批结算单</GlassButton>
+      <template v-else>
+        <GlassButton v-if="!denied && !storageBlocked" :loading="quoting" :disabled="saving || loading || activeShipment || confirmationPending" @click="preview">核算本批金额</GlassButton>
+        <GlassButton v-permission="'shipment:write'" variant="primary" :loading="saving" :disabled="!quote || quoting || uploading || loading || denied || storageBlocked || confirmationPending" @click="submit(false)">生成本批结算单</GlassButton>
+      </template>
     </div></template>
   </el-dialog>
 </template>
@@ -112,7 +114,10 @@ const activeShipment = computed(() => hasActiveShipment(settlements.value))
 const quoteFields = [['goods_amount','货款'],['packaging_amount','包装费'],['handling_amount','手续费'],['freight_amount','运费'],['deposit_applied','本批抵扣定金'],['new_payment_due','本批需新付金额']]
 const stateLabel = state => ({ pending: '待处理', pending_remote: '待确认实际出库', confirming: '实际出库确认中', confirm_uncertain: '实际出库待核对', shipped_unfunded: '已出库·回款异常', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', failed: '处理失败', uncertain: '待核对' })[state] || state
 const body = () => ({ items: lines.value.filter(row => row.requested > 0).map(row => ({ invoice_item_id: row.id, quantity: row.requested })), freight_amount: String(freight.value || 0) })
-watch(() => JSON.stringify(body()), () => { quoteRequest.next(); quote.value = null; quoting.value = false })
+watch(() => JSON.stringify(body()), () => {
+  quoteRequest.next(); quote.value = null; quoting.value = false
+  if (error.value === '请填写本批出库数量' && body().items.length) error.value = ''
+})
 function protectedRow(row) { return confirmation.value ? protectConfirmation(row, confirmation.value) : row }
 function resolveConfirmation(result, submittedVersion) {
   if (!confirmation.value || !isConfirmationResolution(result, confirmation.value, submittedVersion)) return false
