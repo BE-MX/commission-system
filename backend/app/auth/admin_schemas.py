@@ -47,6 +47,9 @@ class UserListItem(BaseModel):
     okki_department_name: Optional[str] = None
     dingtalk_id: Optional[str] = None
     is_active: bool
+    login_locked: bool = False
+    login_failed_count: int = 0
+    login_lock_expires_at: Optional[str] = None
     roles: list[str] = []
     role_ids: list[int] = []
     last_login_at: Optional[str] = None

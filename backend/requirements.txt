@@ -48,3 +48,4 @@ resvg_py==0.3.3
 starlette==0.46.2
 mcp==1.28.1
 sse-starlette==3.0.3
+reportlab>=4.5.1,<5

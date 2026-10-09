@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 from fastapi import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -73,11 +74,24 @@ def _idle(db, invoice, record_id):
         raise ValueError('该出库单存在删除任务，请先完成删除核对')
 
 
-def _prepare(db, record, user, *, desired_serial_id=None, number_only=False):
+def _prepare(db, record, user, *, desired_serial_id=None, number_only=False,
+             force_authority=False, warehouse=False):
+    from app.portal import authority
+    if force_authority or authority.get_settings().PORTAL_ENABLED:
+        from app.shipping_inspection import outbound_prepare
+        return outbound_prepare.prepare(db, record, user, desired_serial_id=desired_serial_id,
+                                         number_only=number_only, warehouse=warehouse)
+    return _prepare_legacy(db, record, user, desired_serial_id=desired_serial_id, number_only=number_only)
+
+
+def _prepare_legacy(db, record, user, *, desired_serial_id=None, number_only=False):
     before = _read(db, record['outbound_invoice_id'])
     if str(before.get('company_info', {}).get('id')) != str(record.get('company_id')):
         raise ValueError('出库单客户归属发生变化，请刷新后核对')
     invoice = _invoice(db, before, user)
+    source_items = [{'unique_id': plans.canonical_identity(i.xiaoman_unique_id),
+                     'model': i.model, 'size': i.length, 'color': i.color} for i in invoice.items]
+    plans.index(source_items, 'unique_id')
     event = state.lock(db, record['outbound_record_id'], int(user['sub']))
     if event.action in state.ACTIVE:
         return invoice, event, None
@@ -127,27 +141,46 @@ def _prepare(db, record, user, *, desired_serial_id=None, number_only=False):
         raise ValueError('出库单在核对期间发生变化，请重新预览')
     plan.update(before=before, invoice_id=invoice.id, invoice_no=invoice.invoice_no,
                 invoice_version=edit_version(invoice), order=order,
-                source_items=[{'unique_id': i.xiaoman_unique_id, 'model': i.model, 'size': i.length, 'color': i.color} for i in invoice.items])
+                source_items=source_items)
     plan['version'] = plans.digest(plan)
     return invoice, event, plan
 
 
-def preview(db, record, user, *, desired_serial_id=None, number_only=False):
-    invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
-                                    number_only=number_only)
-    commit(db)
-    if plan is None:
-        return {'status': event.action, 'recover': True, 'message': '正在核对上次同步结果，并检查能否安全补齐缺失明细', 'invoice_no': invoice.invoice_no}
-    return {k: plan[k] for k in ('version', 'invoice_no', 'changes', 'remark_before', 'remark_after', 'serial_before',
-                                  'serial_after', 'serial_changed', 'changed',
-                                  'requires_recheck')} | {'inspection_status': (plan['inspection'] or {}).get('status')}
+def preview(db, record, user, *, desired_serial_id=None, number_only=False,
+            force_authority=False, warehouse=False):
+    from app.portal import authority
+    enabled = force_authority or authority.get_settings().PORTAL_ENABLED
+    try:
+        invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
+            number_only=number_only, force_authority=enabled, warehouse=warehouse)
+        invoice_id = invoice.id
+        if plan is None:
+            result = {'status': event.action, 'recover': True,
+                      'message': '正在核对上次同步结果，并检查能否安全补齐缺失明细', 'invoice_no': invoice.invoice_no}
+        else:
+            result = {key: plan[key] for key in ('version', 'invoice_no', 'changes', 'remark_before', 'remark_after',
+                'serial_before', 'serial_after', 'serial_changed', 'changed', 'requires_recheck')}
+            result['inspection_status'] = (plan['inspection'] or {}).get('status')
+        commit(db)
+        if enabled:
+            from app.shipping_inspection.outbound_prepare import authorize_response
+            authorize_response(db, record, user, invoice_id, warehouse)
+        return result
+    except SQLAlchemyError:
+        if not enabled:
+            raise
+        db.rollback(); db.expire_all()
+        logger.warning('Outbound preview commit or response authorization unavailable')
+        print('[outbound-sync] preview commit or authorization unavailable', flush=True)
+        from app.shipping_inspection.outbound_prepare import reject
+        reject(503, '出库预览提交暂不可确认，请读取原任务后重试')
 
 
 def _snapshot(plan, after):
-    source = {str(x['unique_id']): x for x in plan['source_items']}
+    source = plans.index(plan['source_items'], 'unique_id')
     items = []
     for row in after['record_list']:
-        local = source[str(row['order_record_id'])]
+        local = source[plans.canonical_identity(row['order_record_id'])]
         items.append({'item_id': 'okki:' + str(row['outbound_record_id']), 'product_id': str(row['product_id']),
             'sku_id': str(row['sku_id']), 'order_id': str(row['order_id']),
             'order_record_id': str(row['order_record_id']), 'product_cn_name': row.get('product_cn_name') or '',
@@ -168,6 +201,11 @@ def _verify_finish(db, event):
         event.result = {**(event.result or {}), 'message': str(exc), 'checked_at': str(beijing_now())}
         commit(db)
         return {'status': 'sync_uncertain', 'recover': True, 'message': '同步结果待核对：' + str(exc)}
+    return _finish_verified(db, event, plan, after)
+
+
+def _finish_verified(db, event, plan, after, *, commit_result=True, finisher_id=None):
+    operator_id = event.operator_user_id if finisher_id is None else finisher_id
     recheck = plan.get('inspection')
     previous = event.result or {}
     stale_ids = set(previous.get('stale_media_ids') or [])
@@ -177,24 +215,28 @@ def _verify_finish(db, event):
         if inspection is None or inspection.edit_version != recheck['edit_version'] or inspection.status != recheck['status']:
             event.action = 'sync_uncertain'
             event.result = {**previous, 'message': '出库已同步，但验货记录发生变化，需人工核对'}
-            commit(db)
+            if commit_result:
+                commit(db)
             return {'status': 'sync_uncertain', 'recover': True, 'message': event.result['message']}
         media = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection.id).with_for_update().all()
         if {photo.id for photo in media} != set(recheck['media_ids']):
             event.action = 'sync_uncertain'
             event.result = {**previous, 'message': '出库已同步，但验货媒体发生变化，需人工核对'}
-            commit(db)
+            if commit_result:
+                commit(db)
             return {'status': 'sync_uncertain', 'recover': True, 'message': event.result['message']}
         inspection.edit_version += 1  # Reject every workstation page opened against the old outbound version.
+        if finisher_id is not None:
+            inspection.updated_by = finisher_id
         if event.payload.get('auto_recall') and plan['requires_recheck'] and inspection.status == 'submitted':
             inspection.status = 'draft'
             inspection.recalled_at = beijing_now()
-            inspection.recalled_by = event.operator_user_id
+            inspection.recalled_by = operator_id
             inspection.updated_at = inspection.recalled_at
-            inspection.updated_by = event.operator_user_id
-            audit_service.record(db, 'recall', event.operator_user_id, inspection.outbound_record_id,
+            inspection.updated_by = operator_id
+            audit_service.record(db, 'recall', operator_id, inspection.outbound_record_id,
                                  inspection=inspection,
-                                 context={'source': 'invoice_sync', 'scope': f'invoice_sync:{event.operator_user_id}'})
+                                 context={'source': 'invoice_sync', 'scope': f'invoice_sync:{operator_id}'})
         if plan.get('serial_changed'):
             inspection.outbound_no = after['serial_id']
         if media:
@@ -209,8 +251,10 @@ def _verify_finish(db, event):
                     'message': '已同步最新订单资料；请补验变更明细' if required_ids else '已同步最新订单资料，可直接打印'}
     if previous.get('verified') == verified and previous.get('print_before_recheck'):
         event.result['print_before_recheck'] = previous['print_before_recheck']
-    commit(db)
-    return {'status': 'sync_done', 'message': event.result['message']}
+    message = event.result['message']
+    if commit_result:
+        commit(db)
+    return {'status': 'sync_done', 'message': message}
 
 
 def _expired(event):
@@ -350,9 +394,20 @@ def _repair_missing(db, record, user, invoice, event):
 
 def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False,
                 desired_serial_id=None, number_only=False, repair=False, auto_recall=False,
-                source='pc'):
+                source='pc', force_authority=False, warehouse=False):
+    from app.portal import authority
+    if force_authority or authority.get_settings().PORTAL_ENABLED:
+        from app.shipping_inspection import outbound_execution
+        return outbound_execution.synchronize(db, record, user, version, check_only=check_only,
+            confirm_recheck=confirm_recheck, desired_serial_id=desired_serial_id, number_only=number_only,
+            repair=repair, auto_recall=auto_recall, source=source, warehouse=warehouse)
     invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
-                                    number_only=number_only)
+                                    number_only=number_only, force_authority=force_authority, warehouse=warehouse)
+    if not isinstance(record, dict):
+        from app.shipping_inspection import outbound_service
+        record = outbound_service.get_outbound_record(db, str(record))
+        if record is None:
+            raise HTTPException(404, '出库单不存在')
     if event.action in state.ACTIVE:
         result = _recover(db, event)
         if repair and not check_only and result['status'] == 'sync_uncertain' and event.action == 'sync_uncertain':

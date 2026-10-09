@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta
 from app.core.time import beijing_now
 
-from sqlalchemy import func, text
+from sqlalchemy import func, literal, text
 from sqlalchemy.orm import Session
 
 from app.auth.models import (
@@ -16,6 +16,7 @@ from app.auth.utils import (
     hash_token,
 )
 from app.core.config import get_settings
+from app.auth.account_lock_service import get_account_lock_states
 
 settings = get_settings()
 
@@ -23,7 +24,7 @@ settings = get_settings()
 def get_user_by_username(db: Session, username: str) -> ArkUser | None:
     """通过用户名查找用户（含 roles + permissions eager load）"""
     return db.query(ArkUser).filter(
-        ArkUser.username == username,
+        ArkUser.username == literal(username).collate("utf8mb4_unicode_ci"),
         ArkUser.deleted_at.is_(None),
     ).first()
 
@@ -63,17 +64,27 @@ def get_live_user_authorization(db: Session, user_id: int) -> tuple[list[str], l
 
 
 def check_account_lockout(db: Session, username: str) -> None:
-    """30 分钟内连续失败 5 次则锁定"""
-    cutoff = beijing_now() - timedelta(minutes=settings.LOGIN_LOCK_MINUTES)
-    fail_count = db.query(func.count()).filter(
-        ArkLoginLog.username == username,
-        ArkLoginLog.status == "failed",
-        ArkLoginLog.created_at >= cutoff,
-    ).scalar()
+    """Count recent failures after the latest admin unlock, including case variants."""
+    user = db.query(ArkUser.id).filter(
+        ArkUser.username == literal(username).collate("utf8mb4_unicode_ci"), ArkUser.deleted_at.is_(None),
+    ).first()
+    if user:
+        fail_count = get_account_lock_states(db, [user.id])[user.id]["login_failed_count"]
+    else:
+        fail_count = _unknown_user_failure_count(db, username)
     if fail_count >= settings.LOGIN_MAX_FAIL:
         raise AccountLockedException(
             f"账号已锁定，{settings.LOGIN_LOCK_MINUTES}分钟内失败次数过多，请稍后再试"
         )
+
+
+def _unknown_user_failure_count(db: Session, username: str) -> int:
+    cutoff = beijing_now() - timedelta(minutes=settings.LOGIN_LOCK_MINUTES)
+    return db.query(func.count()).filter(
+        ArkLoginLog.username == literal(username).collate("utf8mb4_unicode_ci"),
+        ArkLoginLog.status == "failed",
+        ArkLoginLog.created_at >= cutoff,
+    ).scalar()
 
 
 def record_login_log(
@@ -92,6 +103,7 @@ def record_login_log(
         user_agent=user_agent[:500] if user_agent else "",
         status=status,
         fail_reason=fail_reason,
+        created_at=beijing_now(),
     )
     db.add(log)
     db.commit()
@@ -108,6 +120,11 @@ def authenticate_user(
     验证用户，返回 (access_token, refresh_token_plain, user_info_dict)
     失败抛异常
     """
+    # Serialize account failures and admin unlocks on one row. Select only the
+    # user ID so MySQL FOR UPDATE does not lock eager-loaded roles/permissions.
+    db.query(ArkUser.id).filter(
+        ArkUser.username == literal(username).collate("utf8mb4_unicode_ci"), ArkUser.deleted_at.is_(None),
+    ).with_for_update().first()
     # 锁定检查
     check_account_lockout(db, username)
 
@@ -228,6 +245,8 @@ _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 def _perm_kind(code: str, action: str) -> str:
     if code == "domestic_decision_finance:read":
         return "action"
+    if code.startswith("portal_"):
+        return "data" if code == "portal_order:read_all" else "action"
     if code in _DATA_KIND_CODES:
         return "data"
     if action == "read" or code in _PAGE_KIND_EXTRA:
@@ -264,8 +283,20 @@ def seed_role_permissions(db: Session):
     历史上改了 seed 但 DB 不同步的漂移（如 user:* 的 module 归属）。
     """
     from app.auth.models import ArkPermission, ArkRole, ArkRolePermission
+    from app.portal.authority import lock_authority
+
+    lock_authority(db)
 
     seeds = [
+        # 客户下单门户：功能权限与订单全量读取范围分开。
+        ("portal_order:read", "portal_order", "read", "查看客户下单请求"),
+        ("portal_order:write", "portal_order", "write", "处理客户下单请求"),
+        ("portal_order:read_all", "portal_order", "read_all", "读取全部客户下单请求"),
+        ("portal_access:read", "portal_access", "read", "查看本人客户门户授权"),
+        ("portal_access:admin", "portal_access", "admin", "管理本人客户门户授权与邀请"),
+        ("portal_mapping:read", "portal_mapping", "read", "查看本人客户产品映射"),
+        ("portal_mapping:write", "portal_mapping", "write", "发布本人客户产品映射"),
+        ("portal_site:admin", "portal_site", "admin", "管理客户下单站点"),
         # 人员管理
         ("employee:read",  "employee", "read",   "查看员工属性"),
         ("employee:write", "employee", "write",  "编辑员工属性"),

@@ -311,7 +311,7 @@ def run(db, identity, user, expected_version):
                 db.refresh(row, with_for_update=True)
                 if _local_stamp([row])[0] != reviewed_local.get(row.id):
                     raise ValueError("方舟回款在删除期间变化，请刷新后继续核对")
-                receipts.void(db, row, REASON, actor)
+                receipts._void(db, row, REASON, actor)
         _step(db, identity, token, "local_receipts", {"status": "done"}, actor)
         # Verify no unreviewed links appeared before deleting the parent.
         invoice = _owned(db, identity, token)

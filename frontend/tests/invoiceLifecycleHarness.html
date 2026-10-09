@@ -1,0 +1,17 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invoice lifecycle isolated UI test</title><div id="app"></div><script type="module">
+import { createApp, h, ref } from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import { createPinia } from 'pinia'
+import { useAuthStore } from '../src/stores/auth'
+import { registerPermissionDirectives } from '../src/directives/permission'
+import Lifecycle from '../src/views/invoice/components/InvoiceLifecycle.vue'
+window.changed=0
+const pinia=createPinia()
+const app=createApp({setup(){const view=ref(),invoice=ref(1);window.setInvoice=value=>{invoice.value=value};return()=>h('main',[h('button',{onClick:()=>view.value.open()},'打开原任务'),h(Lifecycle,{ref:view,invoiceId:invoice.value,onChanged:()=>window.changed++})])}})
+app.use(pinia);app.use(ElementPlus);registerPermissionDirectives(app)
+const auth=useAuthStore();auth.user={id:1,roles:['super_admin'],permissions:[]};window.changeActor=()=>{auth.user={id:auth.user.id+1,roles:['super_admin'],permissions:[]}}
+window.revokeSameActor=()=>{auth.user={id:auth.user.id,roles:[],permissions:[]}}
+app.mount('#app')
+</script></html>

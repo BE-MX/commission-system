@@ -115,6 +115,12 @@ def engine():
 
     Base.metadata.create_all(eng)
 
+    # 镜像迁移 175 的种子：任何已迁移数据库都存在授权屏障行；
+    # 不经过 alembic 的 create_all 测试库需要同样的初始状态。
+    with eng.connect() as conn:
+        conn.execute(text("INSERT INTO ark_order_portal_auth_barriers (code, version) VALUES ('authority', 1)"))
+        conn.commit()
+
     # 在 lsordertest schema 中创建业务库表
     with eng.connect() as conn:
         conn.execute(text("""

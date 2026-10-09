@@ -811,6 +811,7 @@ def test_stale_job_runs_are_closed_on_scheduler_restart(monkeypatch):
 def test_operations_admin_permission_is_never_auto_granted():
     from app.auth.models import ArkPermission, ArkRole, ArkRolePermission
     from app.auth.service import seed_role_permissions
+    from app.portal.identity_models import AuthorityBarrier
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -818,10 +819,12 @@ def test_operations_admin_permission_is_never_auto_granted():
     ArkRole.__table__.create(engine)
     ArkPermission.__table__.create(engine)
     ArkRolePermission.__table__.create(engine)
+    # seed_role_permissions acquires the migrated authority barrier first.
+    AuthorityBarrier.__table__.create(engine)
     db = sessionmaker(bind=engine)()
 
     admin = ArkRole(name="admin", label="系统管理员", is_system=True)
-    db.add(admin)
+    db.add_all([admin, AuthorityBarrier(code="authority")])
     db.commit()
 
     seed_role_permissions(db)

@@ -2,7 +2,7 @@ import { msgError } from '@/utils/feedback'
 import axios from 'axios'
 
 import { useLoading } from '@/composables/useLoading'
-import { getAccessToken, clearAuthState } from '@/stores/auth'
+import { getAccessToken, getAuthEpoch, clearAuthState } from '@/stores/auth'
 import { isFxSettlementPath } from '@/router/fxSettlementRoute'
 
 const loading = useLoading()
@@ -30,6 +30,18 @@ export function createApiClient({
 } = {}) {
   const service = axios.create({ baseURL, timeout })
 
+  function currentAuthorization() {
+    if (getAuthorization) return getAuthorization() || null
+    const token = getAccessToken()
+    return token ? `Bearer ${token}` : null
+  }
+
+  function ownsCurrentAuthentication(config) {
+    return config?._arkAuthEpoch !== undefined
+      && config._arkAuthEpoch === getAuthEpoch()
+      && config._arkAuthorization === currentAuthorization()
+  }
+
   function releaseLoading(config) {
     if (!config?._arkLoadingStarted) return
     config._arkLoadingStarted = false
@@ -54,6 +66,10 @@ export function createApiClient({
       const token = getAccessToken()
       if (token) config.headers.Authorization = `Bearer ${token}`
     }
+    config._arkAuthorization = typeof config.headers?.get === 'function'
+      ? config.headers.get('Authorization') || null
+      : config.headers?.Authorization || config.headers?.authorization || null
+    config._arkAuthEpoch = getAuthEpoch()
     if (config.showLoading !== false) {
       loading.show(config.loadingText || '')
       config._arkLoadingStarted = true
@@ -109,6 +125,9 @@ export function createApiClient({
         ?? redirectOnUnauthorized
       if (shouldRedirectOnUnauthorized && (error.response?.status === 401
           || (error.response?.status === 403 && detail === 'Not authenticated'))) {
+        // An older request cannot invalidate a later login or refreshed token.
+        // Unbound errors have no authority to clear the current credentials.
+        if (!ownsCurrentAuthentication(error.config)) return Promise.reject(error)
         clearAuthState()
         const returnTo = window.location.pathname + window.location.search + window.location.hash
         window.location.href = isFxSettlementPath(window.location.pathname)

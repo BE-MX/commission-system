@@ -20,6 +20,40 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 
 
 class Settings(BaseSettings):
+    # Customer ordering portal stays off until isolated acceptance and tenant configuration.
+    PORTAL_ENABLED: bool = False
+    PORTAL_WRITES_ENABLED: bool = False
+    PORTAL_INVOICE_ENABLED: bool = False
+    PORTAL_SITE_CODE: str = "leshine"
+    PORTAL_OKKI_NAMESPACE: str = ""  # Exact source_account_key of the configured Ark OKKI mirror.
+    PORTAL_ORIGIN: str = ""
+    PORTAL_TRUSTED_PROXY_IPS: list[str] = Field(default_factory=list)
+    PORTAL_CSRF_KEYS: dict[str, str] = Field(default_factory=dict, repr=False)
+    PORTAL_CSRF_KEY_VERSION: str = "v1"
+    PORTAL_OTP_SECRET: str = Field(default="", repr=False)
+    PORTAL_MAIL_KEYS: dict[str, str] = Field(default_factory=dict, repr=False)
+    PORTAL_MAIL_KEY_VERSION: str = "v1"
+    PORTAL_SESSION_IDLE_MINUTES: Annotated[int, Field(ge=5, le=120)] = 30
+    PORTAL_SESSION_HOURS: Annotated[int, Field(ge=1, le=24)] = 12
+    PORTAL_OTP_MINUTES: Annotated[int, Field(ge=1, le=15)] = 10
+    PORTAL_INVITATION_HOURS: Annotated[int, Field(ge=1, le=168)] = 72
+    PORTAL_INVENTORY_MAX_AGE_SECONDS: Annotated[int, Field(ge=1, le=3600)] = 120
+    PORTAL_LOCK_WAIT_SECONDS: Annotated[int, Field(ge=1, le=30)] = 5  # InnoDB row waits, not a whole-request deadline.
+    # Attest importer clock/refresh semantics and count units before enabling real stock.
+    PORTAL_INVENTORY_OBSERVED_COLUMN: str = ""  # Supported source: okki_inventory.synced_at.
+    PORTAL_INVENTORY_SOURCE_TIMEZONE: str = ""  # Asia/Shanghai or UTC for naive source timestamps.
+    PORTAL_INVENTORY_UNIT_BY_SKU: dict[str, str] = Field(default_factory=dict)  # "product_id:sku_id": "piece" / "g" / "set".
+    PORTAL_MAX_ORDER_AMOUNT: str = "100000.00"
+    PORTAL_NOTIFICATION_ENABLED: bool = False
+    PORTAL_OUTBOUND_WORKER_ENABLED: bool = False
+    PORTAL_OUTBOUND_WORKER_ACTOR_ID: Annotated[int, Field(ge=0)] = 0
+    PORTAL_EMPLOYEE_ORIGIN: str = ""
+    PORTAL_MAIL_ENABLED: bool = False
+    PORTAL_MAIL_SENDER: str = ""
+    PORTAL_SMTP_HOST: str = ""
+    PORTAL_SMTP_PORT: Annotated[int, Field(ge=1, le=65535)] = 465
+    PORTAL_SMTP_USERNAME: str = ""
+    PORTAL_SMTP_PASSWORD: str = Field(default="", repr=False)
     PRESALE_SETTLEMENT_ENABLED: bool = False
     PRESALE_DELIVERY_ENABLED: bool = False
     OKKI_PRESALE_WAREHOUSE_ID: int | None = None
@@ -488,6 +522,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_production(self):
+        from app.portal.configuration import validate_configuration
+        validate_configuration(self)
         """production 模式启动前校验关键安全配置"""
         if self.DESIGN_IMAGE_STALE_SECONDS <= self.DESIGN_IMAGE_LEASE_SECONDS:
             raise ValueError(

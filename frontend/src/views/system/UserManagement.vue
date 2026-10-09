@@ -51,9 +51,9 @@
           <span v-if="!row.roles?.length" style="color: var(--text-muted)">未分配</span>
         </template>
       </el-table-column>
-      <el-table-column sortable="custom" v-if="visibleKeys.includes('status')" prop="is_active" label="状态" min-width="100" max-width="120">
+      <el-table-column sortable="custom" v-if="visibleKeys.includes('status')" prop="is_active" label="状态" min-width="120" max-width="160">
         <template #default="{ row }">
-          <StatusBadge :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '正常' : '禁用' }}</StatusBadge>
+          <StatusBadge :type="!row.is_active ? 'danger' : row.login_locked ? 'warning' : 'success'" size="small" effect="plain">{{ !row.is_active ? '禁用' : row.login_locked ? '登录锁定' : '正常' }}</StatusBadge>
         </template>
       </el-table-column>
       <el-table-column sortable="custom" v-if="visibleKeys.includes('last-login')" prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip />
@@ -63,6 +63,7 @@
           <GlassButton variant="link" left-icon="Lock" @click="openPermPreview(row)">权限</GlassButton>
           <GlassButton v-permission="'user:write'" variant="link" left-icon="Connection" @click="handleSyncDingtalk(row)" :disabled="!row.phone || !!row.dingtalk_id">同步钉钉</GlassButton>
           <GlassButton v-permission="'user:write'" variant="link" left-icon="Key" @click="openResetPwdDialog(row)">重置密码</GlassButton>
+          <GlassButton v-permission="'user:write'" variant="link" link-tone="success" left-icon="Unlock" :disabled="!row.is_active || !row.login_locked" :loading="unlockingIds.has(row.id)" @click="handleUnlockAccount(row)">解锁账号</GlassButton>
           <GlassButton v-permission="'user:write'" variant="link" :link-tone="row.is_active ? 'warning' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
             {{ row.is_active ? '禁用' : '启用' }}
           </GlassButton>
@@ -202,6 +203,7 @@ import { useTableView } from '@/composables/useTableView'
 import { useTableSort } from '@/composables/useTableSort'
 import TableTools from '@/components/TableTools.vue'
 import UserPermissionDrawer from './components/UserPermissionDrawer.vue'
+import { useAccountUnlock } from './composables/useAccountUnlock'
 
 // 列显隐元数据（TableTools 面板数据源，不驱动列渲染）
 const columnDefs = [
@@ -397,6 +399,9 @@ async function submitResetPwd() {
     saving.value = false
   }
 }
+
+// ── 解锁账号 ───────────────────────────────────────
+const { unlockingIds, handleUnlockAccount } = useAccountUnlock(refreshUpdate)
 
 // ── 启用/禁用 ───────────────────────────────────────
 async function handleToggleActive(row) {

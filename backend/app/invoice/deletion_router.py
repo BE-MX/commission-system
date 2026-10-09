@@ -19,7 +19,8 @@ class DeleteConfirmation(BaseModel):
 
 def _scope(db, identity, user):
     from app.invoice.router import _linked_scope
-    return _linked_scope(db, identity, user)
+    invoice, _, _ = _linked_scope(db, identity, user)
+    return invoice
 
 
 def _reject(db, exc):

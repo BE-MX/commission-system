@@ -8,11 +8,24 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
+def canonical_identity(value):
+    if type(value) is int and value > 0:
+        value = str(value)
+    if not isinstance(value, str) or not value or len(value) > 64 \
+            or not value.isascii() or not value.isdecimal() or value[0] == '0':
+        raise ValueError('明细关联缺失或重复，不能自动匹配，请先在小满核对')
+    return value
+
+
 def index(rows, key):
+    if not isinstance(rows, list):
+        raise ValueError('明细关联缺失或重复，不能自动匹配，请先在小满核对')
     result = {}
     for row in rows:
-        identity = str(row.get(key) or '')
-        if not identity.isdigit() or int(identity) <= 0 or identity in result:
+        if not isinstance(row, dict):
+            raise ValueError('明细关联缺失或重复，不能自动匹配，请先在小满核对')
+        identity = canonical_identity(row.get(key))
+        if identity in result:
             raise ValueError('明细关联缺失或重复，不能自动匹配，请先在小满核对')
         result[identity] = row
     return result
@@ -129,7 +142,7 @@ def verify(before, after, plan):
         for key in ('product_name', 'product_model', 'product_cn_name', 'product_unit'):
             if (actual[identity].get(key) or '') != (row.get(key) or ''):
                 raise ValueError('同步后产品资料不一致，需人工核对')
-        if row.get('outbound_record_id') and actual[identity]['outbound_record_id'] != row['outbound_record_id']:
+        if row.get('outbound_record_id') and canonical_identity(actual[identity]['outbound_record_id']) != canonical_identity(row['outbound_record_id']):
             raise ValueError('同步改变了原明细身份，需人工核对')
         if row.get('outbound_record_id') and number(actual[identity]['cost_unit_price_rmb']) != number(row['cost_unit_price_rmb']):
             raise ValueError('成本价发生了非预期变化，需人工核对')

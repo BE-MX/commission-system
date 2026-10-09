@@ -217,6 +217,10 @@ def test_delegation_http_contract_lists_replaces_and_enforces_permissions(db):
     admin = _user(db, 261, "Admin")
     assistant = _user(db, 262, "B")
     sales_a = _user(db, 263, "A")
+    # The PUT is guarded by live employee authority; the admin's user:write
+    # grant must exist in the database, not only in JWT claims.
+    from tests.authority_helpers import seed_authority
+    seed_authority(db, admin.id, "user:write")
 
     with _client(db, sub=admin.id, permissions=["user:read", "user:write"]) as client:
         before = client.get(f"/api/invoice/delegations/users/{assistant.id}")

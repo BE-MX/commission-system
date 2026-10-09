@@ -3,6 +3,7 @@ import io
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -32,7 +33,7 @@ def order(db):
 def no_real_remote(monkeypatch, tmp_path):
     monkeypatch.setattr(attachments, "STORAGE_ROOT", tmp_path / "proofs")
     monkeypatch.setattr(remote, "receipt_types", lambda db: ["T/T", "PayPal"])
-    monkeypatch.setattr(remote, "order_snapshot", lambda db, invoice: {"rows": [], "exchange_rate": 725})
+    monkeypatch.setattr(remote, "order_snapshot", lambda db, invoice: {"rows": [], "exchange_rate": 725, "invoice_binding": remote.invoice_binding(invoice)})
     monkeypatch.setattr(remote, "order_receipts", lambda *a: [])
     monkeypatch.setattr(remote, "receipt_info", lambda db, identity: {"cash_collection_id": identity,
         "cash_collection_no": "TEST-HK", "order_id": "2001", "currency": "USD", "amount": "500",
@@ -48,7 +49,7 @@ def no_real_remote(monkeypatch, tmp_path):
 
 def proof(db):
     content = io.BytesIO(); Image.new("RGB", (8, 8), "white").save(content, format="PNG")
-    row = attachments.upload(db, content.getvalue(), "test.png", 1)
+    row = attachments.register_upload(db, attachments.store_upload(attachments.prepare_upload(content.getvalue(), "test.png", 1)), 1)
     db.commit()
     return row.id
 
@@ -61,8 +62,49 @@ def register(db, order, amount="500", key="test_request_key_001"):
     data = fields(db, amount).model_dump()
     snapshot = service.order_balance(db, order)
     body = ReceiptCreate(**data, invoice_id=order.id, request_key=key, balance_version=snapshot["version"])
-    row = service.create(db, body, USER); db.commit()
+    # The hardened create authorization requires a fresh transaction boundary;
+    # the balance snapshot read above must not share it.
+    db.rollback()
+    row = create_financial(db, body, USER); db.commit()
     return row, body
+
+
+def reconcile_financial(db, row, actor):
+    evidence = remote.receipt_info(db, row.xiaoman_receipt_id) if row.xiaoman_receipt_id else remote.order_receipts(db, row.xiaoman_order_id)
+    return sync_service._reconcile(db, row, evidence, actor)
+
+
+def resolve_financial(db, row, body, actor):
+    evidence = remote.receipt_info(db, body.xiaoman_receipt_id) if body.resolution == 'bind_receipt' else remote.order_receipts(db, row.xiaoman_order_id)
+    return sync_service._resolve(db, row, body, evidence, actor)
+
+
+def create_financial(db, body, user):
+    from app.receipt import create_service
+    return create_service.create(db, body, user)[0]
+
+
+@pytest.fixture(autouse=True)
+def financial_authority_only(monkeypatch):
+    # SQLite covers the original financial algorithm. Current employee/fence
+    # authentication is exercised separately by the actual main/JWT/MySQL suite.
+    from app.receipt import access, create_service
+    def authorized(db, body, user):
+        if "super_admin" not in user.get("roles", []) and "receipt:write" not in user.get("permissions", []):
+            raise HTTPException(403, "Financial fixture requires receipt write")
+        row = db.query(Receipt).filter(Receipt.request_key == body.request_key).populate_existing().first()
+        invoice = db.get(Invoice, row.invoice_id if row else body.invoice_id)
+        access.ensure_invoice(db, invoice, user)
+        if row is not None:create_service._replay(row, invoice, body, access.user_id(user))
+        return invoice, user, row
+    monkeypatch.setattr(create_service, "_authorize", authorized)
+
+def retry_financial(db, row, actor):
+    from app.receipt import fees
+    invoice = db.get(Invoice, row.invoice_id)
+    evidence = fees.read_evidence(db, tuple(remote.invoice_binding(invoice))) if (
+        row.source == "auto" and row.bank_charge == 0 and invoice.surcharge_amount) else None
+    return service._retry(db, row, invoice, actor, evidence)
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "NaN", "Infinity", "1.001", "1000000000000"])
@@ -72,8 +114,8 @@ def test_invalid_money_rejected(value):
 
 
 def test_upload_rejects_fake_or_oversize(db):
-    with pytest.raises(ValueError): attachments.upload(db, b"fake-png", "fake.png", 1)
-    with pytest.raises(ValueError): attachments.upload(db, b"x" * (attachments.MAX_BYTES + 1), "x.jpg", 1)
+    with pytest.raises(ValueError): attachments.prepare_upload(b"fake-png", "fake.png", 1)
+    with pytest.raises(ValueError): attachments.prepare_upload(b"x" * (attachments.MAX_BYTES + 1), "x.jpg", 1)
 
 
 def test_stock_missing_proof_cannot_sync(db, order):
@@ -90,10 +132,10 @@ def test_foreign_attachment_cannot_bind(db, order):
 def test_manual_amount_and_replay_are_exactly_once(db, order):
     row, body = register(db, order)
     assert service.order_balance(db, order)["remaining_amount"] == "4360.00"
-    same = service.create(db, body, USER)
+    same = create_financial(db, body, USER)
     assert same.id == row.id and db.query(Receipt).count() == 1
     with pytest.raises(HTTPException):
-        service.create(db, body.model_copy(update={"amount": Decimal("501")}), USER)
+        create_financial(db, body.model_copy(update={"amount": Decimal("501")}), USER)
 
 
 def test_receipt_order_id_column_and_exact_filter_survive_invoice_rename(db, order):
@@ -115,7 +157,7 @@ def test_stale_balance_rejects_second_registration(db, order):
     payload = ReceiptCreate(**fields(db, "1000").model_dump(), invoice_id=order.id,
         request_key="test_request_second", balance_version=version)
     with pytest.raises(HTTPException) as exc:
-        service.create(db, payload, USER)
+        create_financial(db, payload, USER)
     assert exc.value.status_code == 409
     assert db.query(Receipt).count() == 1
 
@@ -162,7 +204,7 @@ def test_legacy_uncertain_gross_receipt_cannot_be_confirmed_absent(db, order, mo
     monkeypatch.setattr(remote, "order_receipts", lambda *a: [dict(cash_collection_id="701",
         order_id="2001", amount="500", currency="USD", collection_date="2026-09-17")])
     with pytest.raises(ValueError, match="候选"):
-        sync_service.resolve(db, row, Resolution(resolution="confirm_not_created", reason="人工核验"), 1)
+        resolve_financial(db, row, Resolution(resolution="confirm_not_created", reason="人工核验"), 1)
     assert row.sync_status == "uncertain"
 
 
@@ -253,8 +295,8 @@ def test_timeout_stays_reserved_and_no_retry(db, order, monkeypatch):
     monkeypatch.setattr(remote, "push", timeout)
     sync_service.deliver(db, row.id); db.refresh(row)
     assert row.sync_status == "uncertain"
-    with pytest.raises(ValueError): service.retry(db, row, 1)
-    with pytest.raises(ValueError): service.void(db, row, "test", 1)
+    with pytest.raises(ValueError): retry_financial(db, row, 1)
+    with pytest.raises(ValueError): service._void(db, row, "test", 1)
     assert Decimal(service.order_balance(db, order)["remaining_amount"]) == Decimal("4360")
 
 
@@ -264,7 +306,7 @@ def test_failed_can_retry_without_new_local_receipt(db, order, monkeypatch):
     monkeypatch.setattr(remote, "push", rejected)
     sync_service.deliver(db, row.id); db.refresh(row)
     assert row.sync_status == "failed"
-    service.retry(db, row, 1); db.commit()
+    retry_financial(db, row, 1); db.commit()
     monkeypatch.setattr(remote, "push", lambda *a: {"cash_collection_id": "99", "cash_collection_no": "HK99"})
     sync_service.deliver(db, row.id); db.refresh(row)
     assert row.sync_status == "synced" and row.xiaoman_receipt_id == "99"
@@ -290,7 +332,7 @@ def test_cross_owner_hidden_and_production_not_auto(db, order):
 
 def test_void_releases_balance_preserves_evidence(db, order):
     row, _ = register(db, order)
-    service.void(db, row, "not sent", 1); db.commit()
+    service._void(db, row, "not sent", 1); db.commit()
     assert Decimal(service.order_balance(db, order)["remaining_amount"]) == Decimal("4860")
     assert row.attachment_ids and db.query(Receipt).count() == 1
 
@@ -300,9 +342,9 @@ def test_same_amount_candidate_is_not_auto_bound(db, order, monkeypatch):
     data = {"cash_collection_id": "99", "order_id": "2001", "currency": "USD", "amount": "500",
             "collection_date": "2026-09-17", "cash_collection_no": "manual-other", "collect_status": 1}
     monkeypatch.setattr(remote, "order_receipts", lambda *a: [data])
-    assert len(sync_service.reconcile(db, row, 1)) == 1 and row.xiaoman_receipt_id is None
+    assert len(reconcile_financial(db, row, 1)) == 1 and row.xiaoman_receipt_id is None
     with pytest.raises(ValueError):
-        sync_service.resolve(db, row, Resolution(resolution="confirm_not_created", reason="checked"), 1)
+        resolve_financial(db, row, Resolution(resolution="confirm_not_created", reason="checked"), 1)
 
 
 def test_order_identity_frozen_after_receipt(db, order):
@@ -358,7 +400,7 @@ def test_manual_cannot_reuse_automatic_intent_proof(db, order):
     body = ReceiptCreate(**draft.model_dump(), invoice_id=order.id, request_key="different-payment-key",
                          balance_version=service.order_balance(db, order)["version"])
     with pytest.raises(ValueError, match="自动回款"):
-        service.create(db, body, USER)
+        create_financial(db, body, USER)
     db.rollback()
     assert db.query(Receipt).count() == 0
 
@@ -398,7 +440,42 @@ def api_client(db, user):
     app = FastAPI()
     app.include_router(router, prefix="/api/receipts")
     app.include_router(invoice_router, prefix="/api/invoice")
-    app.dependency_overrides[get_db] = lambda: db
+    # These remain scoped subapplication tests with a stubbed token identity.
+    # Current DB action/scope checks need real roles; each request owns a fresh
+    # Session just as get_db does, never the caller's already-read fixture Session.
+    from sqlalchemy import delete, select
+    from sqlalchemy.orm import Session
+    from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission
+    assert not db.new and not db.dirty and not db.deleted
+    db.rollback()
+    from app.portal.models import AuthorityBarrier
+    AuthorityBarrier.__table__.create(db.get_bind(), checkfirst=True)
+    if db.get(AuthorityBarrier, "authority") is None:
+        db.add(AuthorityBarrier(code="authority", version=1))
+    actor = int(user["sub"])
+    account = db.get(ArkUser, actor)
+    if account is None:
+        account = ArkUser(id=actor, username="receipt-api-" + str(actor), real_name="Owned fixture",
+            password_hash="test-only-no-password-login", is_active=True)
+        db.add(account)
+    role = ArkRole(name="receipt-api-" + uuid4().hex, label="Owned test authorization")
+    db.add(role); db.flush()
+    db.execute(delete(ArkUserRole).where(ArkUserRole.user_id == actor))
+    db.add(ArkUserRole(user_id=actor, role_id=role.id))
+    for code in user.get("permissions", []):
+        permission = db.scalar(select(ArkPermission).where(ArkPermission.code == code))
+        if permission is None:
+            module, action = code.split(":")
+            permission = ArkPermission(code=code, module=module, action=action, label=code,
+                kind="data" if action.endswith("_all") else "action", is_legacy=False, sort=1)
+            db.add(permission); db.flush()
+        db.add(ArkRolePermission(role_id=role.id, permission_id=permission.id))
+    db.commit()
+    engine = db.get_bind()
+    def request_db():
+        with Session(engine) as request_session:
+            yield request_session
+    app.dependency_overrides[get_db] = request_db
     app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(app)
 
@@ -451,6 +528,9 @@ def test_stock_router_only_complete_success_marks_ready(db, order, monkeypatch, 
     with api_client(db, {**USER, "permissions": ["invoice:sync"]}) as client:
         response = client.post(f"/api/invoice/invoices/{order.id}/sync")
     assert response.status_code == 200, response.text
+    # The HTTP request committed in its own Session. The following worker must
+    # start a new read snapshot instead of using the fixture's old invoice.
+    db.rollback(); db.expire_all()
     intent = invoice_link.get_intent(db, order.id)
     assert intent.status == ("armed" if finalize_failure else "ready")
     assert intent.attempt_token is None
@@ -465,7 +545,7 @@ def test_readback_unknown_and_mismatch_never_resend_or_release(db, order, monkey
     sync_service.deliver(db, row.id); db.refresh(row)
     assert row.sync_status == "synced" and row.xiaoman_receipt_id == "701" and row.collect_status is None
     assert "核验" in row.last_error
-    with pytest.raises(ValueError): service.retry(db, row, 1)
+    with pytest.raises(ValueError): retry_financial(db, row, 1)
     data = {"cash_collection_id": "701", "cash_collection_no": "TEST-HK", "order_id": "2001",
             "currency": "USD", "amount": "500", "collection_date": "2026-09-16", "collect_status": 0}
     monkeypatch.setattr(remote, "receipt_info", lambda *a: data)
@@ -474,7 +554,7 @@ def test_readback_unknown_and_mismatch_never_resend_or_release(db, order, monkey
     with pytest.raises(ValueError, match="冻结"):
         balance.calculate(db, order, {"rows": [data]})
     with pytest.raises(ValueError, match="已取得"):
-        sync_service.resolve(db, row, Resolution(resolution="confirm_not_created", reason="test"), 1)
+        resolve_financial(db, row, Resolution(resolution="confirm_not_created", reason="test"), 1)
 
 
 def test_invoice_only_reader_cannot_fetch_manual_receipt_proof(db, order):
@@ -491,9 +571,9 @@ def test_identical_concurrent_request_replays_after_write_lock(db, order, monkey
         fingerprint = hashlib.sha256(body.model_dump_json(exclude={"balance_version"}).encode()).hexdigest()
         service.new_row(db, invoice, body, 1, body.request_key, fingerprint)
         db.commit()
-        return {"rows": [], "exchange_rate": 725}
+        return {"rows": [], "exchange_rate": 725, "invoice_binding": remote.invoice_binding(invoice)}
     monkeypatch.setattr(remote, "order_snapshot", another_request_commits)
-    row = service.create(db, body, USER); db.commit()
+    row = create_financial(db, body, USER); db.commit()
     assert row.request_key == body.request_key and db.query(Receipt).count() == 1
 
 
@@ -552,7 +632,7 @@ def test_explicit_manual_fee_is_preserved(db, order):
     order.surcharge_amount = Decimal("17.52"); db.commit()
     data = ReceiptCreate(**fields(db, "100").model_copy(update={"bank_charge": Decimal("1.23")}).model_dump(),
         invoice_id=order.id, request_key="explicit_fee_request_001", balance_version=service.order_balance(db, order)["version"])
-    row = service.create(db, data, USER)
+    row = create_financial(db, data, USER)
     assert row.bank_charge == Decimal("1.23")
 
 
@@ -569,7 +649,7 @@ def test_old_failed_auto_retry_allocates_without_duplicate(db, order):
     order.total_amount = Decimal("367.87"); order.surcharge_amount = Decimal("17.52"); db.commit()
     row, _ = register(db, order, "367.87")
     row.source = "auto"; row.bank_charge = Decimal("0"); row.sync_status = "failed"; db.commit()
-    service.retry(db, row, 1); db.commit()
+    retry_financial(db, row, 1); db.commit()
     assert row.bank_charge == Decimal("17.52") and row.sync_status == "pending"
     assert db.query(Receipt).count() == 1
 
@@ -590,7 +670,7 @@ def test_invalid_remote_fee_freezes_accepted_receipt(db, order, monkeypatch, fee
         collection_date="2026-09-17", cash_collection_id="701", bank_charge=fee, real_amount="500", collect_status=1))
     sync_service.deliver(db, row.id); db.refresh(row)
     assert row.sync_status == "uncertain" and row.xiaoman_receipt_id == "701"
-    with pytest.raises(ValueError): service.retry(db, row, 1)
+    with pytest.raises(ValueError): retry_financial(db, row, 1)
 
 
 @pytest.mark.parametrize("status", ["pending", "failed", "syncing", "uncertain"])
@@ -610,7 +690,7 @@ def test_empty_manual_fee_is_zero(db, order, value):
     data = fields(db, "100").model_dump(); data["bank_charge"] = value
     body = ReceiptCreate(**data, invoice_id=order.id, request_key="empty_fee_request_001",
                          balance_version=service.order_balance(db, order)["version"])
-    row = service.create(db, body, USER)
+    row = create_financial(db, body, USER)
     assert row.bank_charge == Decimal("0")
 
 
