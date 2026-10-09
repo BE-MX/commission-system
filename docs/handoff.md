@@ -1,3 +1,9 @@
+## 2026-10-09 用户管理账号解锁（Codex，本地完成，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/account-unlock/commission-system`，分支 `codex/account-unlock`。用户管理新增“登录锁定”状态和 `user:write` 控制的“解锁账号”入口；密码、角色和启用状态不变。
+- 迁移 `176_account_unlock` 新增解锁审计表，原登录日志不改；解锁后的新失败继续计数，登录和解锁在目标账号行锁下串行化。尚未提交、合并、推送、部署或升级生产数据库。
+- 后端及时间测试 25 项、前端构建、9 类模拟浏览器交互、独立审查及约定检查通过；迁移单 head，Git 巡检仅本地快照。没有隔离 MySQL 双连接实测，具体证据与上线前条件见[验收记录](reports/2026-10-09-account-unlock.md)。
+
 ## 2026-10-09 订单详情加载优化（Codex，已合并推送部署）
 
 - 本次应用候选 `9bdbc5f3d2c0389b8ebaf2a6c00e46ef50a6a1ec` 已合入并推送 main，经办公室 `deploy/deploy.bat` 先预检后发布，两次退出 0；范围 `office-and-cloud`，release_id=`61ca506f06e440b8bbc513ddecf27e66`，deferred=[]。

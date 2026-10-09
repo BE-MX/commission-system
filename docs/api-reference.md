@@ -498,6 +498,8 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /me` — 获取当前用户完整信息（角色/权限/头像等）
   - `POST /logout` — 退出登录，撤销 refresh_token
 - `/api/auth` — 用户/角色/权限管理 & 个人资料（`auth/admin_router.py`，与上同前缀）
+  - `GET /users/list` — 用户列表（`user:read`）；返回 `login_locked/login_failed_count/login_lock_expires_at`。登录锁定是窗口内累计失败达到阈值，默认 30 分钟累计 5 次；成功登录不清空失败计数。
+  - `POST /users/{user_id}/unlock` — 解锁账号（`user:write`，超管自动绕过）；保留原登录日志，通过独立审计边界解除当前失败计数，返回 `{unlocked,login_locked:false}`。未锁定重复调用不写审计、不清除未达阈值的新失败；禁用账号 400、删除/不存在 404。密码、角色、启用状态不变；后续失败仍可再次锁定。需要先通过部署入口执行 `176_account_unlock` 迁移。
   - `GET /users/okki-department-options` — OKKI 部门选项（user:read；从业务库 okki_orders.departments 实时聚合 id/name/单量，倒序；OKKI 无部门清单 API，用户管理「OKKI部门」下拉用）
   - `GET /permissions/list?include_legacy=0` — 权限列表按模块分组（046 起含 kind/sort 元数据，默认过滤 is_legacy）
   - `GET /permission-audits?limit=50` — 角色权限变更审计（谁给哪个角色加/减了什么，`role:read`）

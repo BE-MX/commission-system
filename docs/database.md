@@ -1,5 +1,9 @@
 # 莱莎方舟 数据库表参考
 
+## 账号解锁（`176_account_unlock`，本地未部署）
+
+`ark_account_unlock_audits` 记录被解锁用户、操作人 ID/用户名快照、解除的失败日志 ID 上界、失败次数和北京时间。用户外键为 MySQL `INTEGER UNSIGNED`，按 `user_id` 建索引；原 `ark_login_logs` 的状态、原因和时间不变。窗口内仅计入最近解锁边界之后的新失败，避免同秒失败被误清除。管理员解锁和密码登录以目标用户行锁串行化；重复解锁未锁定账号不写审计。迁移只新增表，父 revision 为 `175_receipt_recovery`；禁止删除审计数据的 downgrade，生产迁移走统一发布入口。
+
 ## 任务中心一期（`173_task_center`，本地未部署）
 
 | 表 | 关键字段与约束 |
