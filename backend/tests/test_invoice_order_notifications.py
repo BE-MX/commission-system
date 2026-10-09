@@ -154,11 +154,14 @@ def test_order_card_has_alpha_glass_and_actual_board_avatar(tmp_path, monkeypatc
         "dedup_key": f"glass:{kind}", "created_at": datetime(2026, 10, 9, 11, 40),
     }
     image_path = notification_service.render_event_image(event)
+    assert image_path.stat().st_size < 200 * 1024
     with Image.open(image_path) as image:
-        assert image.mode == "RGBA" and image.size == (1200, 675)
+        assert image.format == "PNG" and image.size == (800, 450)
+        image = image.convert("RGBA")
         assert image.getpixel((0, 0))[3] == 0
-        assert image.getpixel((200, 300)) == (200, 40, 60, 255)
-        assert image.getpixel((650, 430))[3] > 0
+        assert all(abs(a - b) < 20 for a, b in zip(
+            image.getpixel((133, 200)), (200, 40, 60, 255)))
+        assert image.getpixel((433, 287))[3] > 0
     # Delivery reads content dynamically; the material asset cannot contain sample data.
     words = []
     original = order_card_renderer._engrave
