@@ -3,21 +3,27 @@
     <div class="funds-title">实际回款与待收 <StatusBadge v-if="receipt" size="small" effect="plain">{{ action.label }}</StatusBadge></div>
     <p class="funds-note">预付款与尾款是订单结算信息；实际回款按回款单核验。修改明细不会改写原收款。</p>
     <template v-if="summary">
-      <dl v-if="summary.balance" class="funds-grid">
+      <dl v-if="form.order_type === 'presale' && summary.balance" class="funds-grid">
+        <div><dt>已生效留存余额（含定金及费用）</dt><dd>{{ form.currency }} {{ formatMoney(summary.balance.pool_available_amount) }}</dd></div>
+        <div v-for="pool in summary.balance.pool_balances || []" :key="pool.receipt_id"><dt>{{ purposeLabel(pool.purpose) }}{{ pool.effective ? '余额' : '（待生效）' }}</dt><dd>{{ formatMoney(pool.remaining_amount) }}</dd></div>
+        <div><dt>待处理收款</dt><dd>{{ formatMoney(summary.balance.pending_amount) }}</dd></div>
+      </dl>
+      <dl v-else-if="summary.balance" class="funds-grid">
         <div><dt>{{ form.receipt_order_dirty ? '编辑后应收（预览）' : '订单应收' }}</dt><dd>{{ form.currency }} {{ formatMoney(total) }}</dd></div>
         <div><dt>已生效回款（含费）</dt><dd>{{ formatMoney(summary.balance.effective_amount) }}</dd></div>
         <div><dt>待处理回款</dt><dd>{{ formatMoney(summary.balance.pending_amount) }}</dd></div>
         <div><dt>{{ projected.overpaid > 0 ? '已生效超收' : '待收金额' }}</dt><dd>{{ formatMoney(projected.overpaid || projected.unpaid) }}</dd></div>
       </dl>
-      <p v-if="projected?.overpaid > 0" class="funds-warning">已生效回款超过当前应收，请核实退款安排；原回款保留。</p>
-      <p v-if="projected?.pendingExcess > 0" class="funds-warning">另有待处理金额超出应收 {{ formatMoney(projected.pendingExcess) }}，请核对原回款；这部分不表示已实际超收。</p>
+      <p v-if="form.order_type !== 'presale' && projected?.overpaid > 0" class="funds-warning">已生效回款超过当前应收，请核实退款安排；原回款保留。</p>
+      <p v-if="form.order_type !== 'presale' && projected?.pendingExcess > 0" class="funds-warning">另有待处理金额超出应收 {{ formatMoney(projected.pendingExcess) }}，请核对原回款；这部分不表示已实际超收。</p>
       <p v-if="receipt" class="funds-note">原回款：{{ formatMoney(receipt.amount) }} {{ receipt.currency }} · {{ action.hint }}</p>
       <p v-if="blockedReason" class="funds-warning" role="status">{{ blockedReason }}</p>
       <p v-if="form.order_type === 'presale'" class="funds-note">预售定金与分批回款请在发货结算或整笔回款中处理。</p>
       <div class="funds-actions">
         <GlassButton v-if="action.editable" v-permission="'receipt:write'" left-icon="Edit" :disabled="writeBlocked" @click="mode = 'edit'">修正回款</GlassButton>
         <GlassButton v-if="receipt?.sync_status === 'failed' && action.editable" v-permission="'receipt:write'" left-icon="Refresh" :disabled="writeBlocked" :loading="busy" @click="retry">重试同步</GlassButton>
-        <GlassButton v-if="form.order_type !== 'presale'" v-permission="'receipt:write'" left-icon="Plus" :disabled="writeBlocked || Number(summary.balance?.remaining_amount) <= 0" @click="mode = 'create'">补登记回款</GlassButton>
+        <GlassButton v-permission="'receipt:write'" left-icon="Plus" :disabled="writeBlocked || (form.order_type !== 'presale' && Number(summary.balance?.remaining_amount) <= 0)" @click="mode = 'create'">{{ form.order_type === 'presale' ? '登记预售收款' : '补登记回款' }}</GlassButton>
+        <ReceiptPurposeCorrection v-if="form.order_type === 'presale' && receipt" :receipt="receipt" :disabled="writeBlocked" @updated="updated" @busy="value => remoteBusy = value" @open="value => remoteOpen = value" />
         <ReceiptRemoteChange v-if="receipt?.status === 'active' && receipt.xiaoman_receipt_id && !receipt.batch_id && receipt.purpose !== 'presale_deposit'"
           :receipt-id="receipt.id" :disabled="localBlocked" @busy="value => remoteBusy = value" @open="value => remoteOpen = value" @updated="updated" />
       </div>
@@ -39,6 +45,8 @@ import { getInvoiceReceiptSummary, retryReceipt } from '@/api/receipt'
 import { formatMoney } from '@/utils/money'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptRemoteChange from '@/views/receipt/ReceiptRemoteChange.vue'
+import ReceiptPurposeCorrection from '@/views/receipt/ReceiptPurposeCorrection.vue'
+import { purposeLabel } from './invoiceDetailLabels'
 import InvoiceReceiptPaymentDialog from './InvoiceReceiptPaymentDialog.vue'
 import { applySubmittedReceipt, projectReceiptBalance, receiptActionState } from '../composables/invoiceReceiptState'
 

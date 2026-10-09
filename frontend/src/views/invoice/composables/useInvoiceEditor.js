@@ -120,6 +120,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.surcharge_amount,
   ))
   const settlementError = computed(() => {
+    if (form.order_type === 'presale') return ''
     if (form.internal_received == null) return ''
     if (Number(form.internal_received) > formTotal.value) return '预付款不能超过总金额'
     return settlementMatchesTotal(formTotal.value, form.internal_received, form.internal_balance)

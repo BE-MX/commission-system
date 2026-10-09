@@ -551,7 +551,7 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     _validate_screenshot_source(db, invoice)
     if not linked_change:
         invoice_link.guard_fee_basis(db, invoice, receipt_fee_basis)
-    if not linked_change and invoice.total_amount < receipt_floor:
+    if not linked_change and invoice.order_type != "presale" and invoice.total_amount < receipt_floor:
         raise ValueError("订单金额不能低于已登记回款及待处理金额")
     invoice_link.save_draft(db, invoice, body.receipt_draft, user_id)
     if grade_changed:
@@ -564,7 +564,7 @@ def validate_invoice(invoice: Invoice) -> list[dict]:
     issues: list[dict] = []
     if not invoice.customer_id:
         issues.append({"field": "customer_id", "message": "请选择客户"})
-    if not invoice.items:
+    if not invoice.items and invoice.order_type != "presale":
         issues.append({"field": "items", "message": "至少需要一条产品明细"})
     for idx, item in enumerate(invoice.items, start=1):
         prefix = f"items[{idx}]"
@@ -690,8 +690,17 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
         "synced_at": to_beijing_time(invoice.synced_at),
         "updated_at": to_beijing_time(invoice.updated_at),
         "edit_version": edit_version(invoice),
-        "items": [_serialize_item(item, material_state) for item in invoice.items],
+        "items": [_serialize_item(item, material_state) for item in invoice.items if not item.presale_archived],
+        **(_presale_editor_fields(invoice) if invoice.order_type == "presale" else {}),
     }
+
+
+def _presale_editor_fields(invoice):
+    from app.invoice.presale_lines import editor_amounts
+    return {**editor_amounts(invoice), "presale_history": [
+        {"id": item.id, "product_name": item.product_name,
+         "quantity": item.presale_shipped_quantity, "amount": item.presale_shipped_amount}
+        for item in invoice.items if item.presale_archived and item.presale_shipped_quantity]}
 
 
 def _custom_line_complete(payload) -> bool:
@@ -804,7 +813,13 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
     okki_rows = product_service.load_okki_rows(db, limit=None) if has_custom else None
     # 已推 OKKI 的行（有 unique_id）：回传 id 的行传承 unique_id（编辑语义按行更新）；
     # 未回传的即被删除，进待删快照，下次推单发 remove:1（否则 OKKI 侧留幽灵明细）
-    prior_synced = {item.id: item for item in invoice.items if item.xiaoman_unique_id}
+    from app.invoice import presale_lines
+    rolling = body.order_type == "presale"
+    presale_carried = presale_lines.prepare_replace(db, invoice) if rolling else {}
+    if rolling:
+        presale_lines.set_current_fees(db, invoice, body)
+    prior_synced = {item.id: item for item in invoice.items if item.xiaoman_unique_id
+        and not (rolling and item.presale_archived and item.presale_shipped_quantity)}
     echoed_ids = {p.id for p in body.items if p.id}
     _append_removed_lines(invoice, [
         {
@@ -815,14 +830,19 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             "sku_id": item.sku_id,
             "custom_product_id": item.custom_product_id,
         }
-        for item_id, item in prior_synced.items() if item_id not in echoed_ids
+        for item_id, item in prior_synced.items() if item_id not in echoed_ids or (rolling and item.presale_archived)
     ])
-    invoice.items.clear()
+    if rolling:
+        for item in list(invoice.items):
+            if not item.presale_archived and item.id not in echoed_ids:
+                invoice.items.remove(item)
+    else:
+        invoice.items.clear()
     carried_ids: set[int] = set()
     for idx, payload in enumerate(body.items, start=1):
         # 同一 id 只允许第一行传承——复制行带旧 id 时若两行共享 unique_id，
         # OKKI 编辑推单会把两行更新到同一条明细上（金额错且无声）
-        carried = prior_synced.get(payload.id) if payload.id and payload.id not in carried_ids else None
+        carried = (presale_carried if rolling else prior_synced).get(payload.id) if payload.id and payload.id not in carried_ids else None
         if carried:
             carried_ids.add(payload.id)
         item = InvoiceItem(
@@ -919,7 +939,10 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
         if gross_amount + item.discount_amount < 0:
             raise ValueError(f"items[{idx}].discount_amount: 产品行折扣不能超过该行金额")
         item.total_price = _money(gross_amount + item.discount_amount)
-        invoice.items.append(item)
+        if rolling and carried:
+            presale_lines.apply_current(carried, item)
+        else:
+            invoice.items.append(item)
 
 
 def _append_removed_lines(invoice: Invoice, removed: list[dict]) -> None:
@@ -947,6 +970,8 @@ def summarize_items(invoice: Invoice) -> dict[str, Decimal]:
         "accessory_discount": Decimal("0"),
     }
     for item in invoice.items:
+        if getattr(item, "presale_archived", 0):
+            continue
         prefix = "accessory" if item.product_kind == "accessory" else "hair"
         gross = _money(Decimal(item.price_per_piece or 0) * Decimal(item.quantity or 0))
         discount = _money(Decimal(item.discount_amount or 0))
@@ -959,6 +984,10 @@ def _refresh_invoice_totals(invoice: Invoice) -> None:
     summary = summarize_items(invoice)
     invoice.internal_discount = summary["hair_discount"]
     invoice.product_amount = _money(sum(summary.values(), Decimal("0")))
+    if invoice.order_type == "presale":
+        from app.invoice.presale_lines import remote_amount, remote_items
+        invoice.product_amount = _money(sum((remote_amount(item) for item in remote_items(invoice)), Decimal(0)))
+        invoice.internal_received = invoice.internal_balance = None
     invoice.total_amount = _money(
         invoice.product_amount
         + Decimal(invoice.internal_accessory or 0)

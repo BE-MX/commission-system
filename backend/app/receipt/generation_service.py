@@ -81,7 +81,9 @@ def _fields(db,invoice,intent):
             or intent.customer_id!=invoice.customer_id):
         raise HTTPException(409,'自动回款意向身份或执行状态异常，请核对原单')
     return ReceiptFields(amount=intent.amount,collection_date=intent.collection_date,
-        payment_type=intent.payment_type,attachment_ids=intent.attachment_ids,remark=intent.remark or '')
+        payment_type=intent.payment_type,attachment_ids=intent.attachment_ids,remark=intent.remark or '',
+        bank_charge=intent.bank_charge or 0,
+        purpose=intent.purpose or ('presale_deposit' if invoice.order_type=='presale' else 'ordinary'))
 
 
 def _capture(db,invoice,intent,fields,actor):
@@ -151,13 +153,15 @@ def generate(db,invoice_id,actor):
     if fields.payment_type not in order.payment_types:
         raise ValueError('请选择有效的小满回款方式')
     summary=balance.calculate(db,invoice,order.snapshot(),exclude_intent=True,current=True)
-    balance.ensure_available(summary,fields.amount)
-    charge=fees.calculate(db,invoice,fields.amount,fee,current=True)
+    if invoice.order_type!='presale':
+        balance.ensure_available(summary,fields.amount)
+    charge=(intent.bank_charge if invoice.order_type=='presale' and intent.bank_charge is not None
+        else fees.calculate(db,invoice,fields.amount,fee,current=True))
     fields=fields.model_copy(update={'bank_charge':charge})
     if invoice.order_type=='presale':
         net=fields.amount-charge
-        if net<=0 or net>remote.money(invoice.product_amount):
-            raise ValueError('预付款净额必须大于零且不能超过商品净额')
+        if net<=0:
+            raise ValueError('预售收款扣除银行手续费后的净额必须大于零')
     request_key,_=_keys(invoice.id)
     row=service._make_row(db,invoice,fields,original_actor,request_key,request_key,source='auto')
     attachments.bind_verified(db,row.attachment_ids,original_actor,invoice.id,row.id,proofs)

@@ -10,6 +10,8 @@ from sqlalchemy.orm.attributes import set_committed_value
 from app.core.storage.cos import StorageError
 from app.invoice import edit_authority, linked_outbound_service, okki_client, settlement_service as shipments
 from app.invoice.models import Invoice, InvoiceItem
+from app.invoice import presale_runtime as pools
+from app.invoice.presale_lines import remote_items
 from app.invoice.settlement_models import (ShipmentSettlement, SettlementItem, ShipmentOutbound,
     SettlementEvent, Receivable, SettlementApplication, ReceiptBatch, BatchAttachment)
 from app.portal.authority import lock_authority
@@ -66,8 +68,14 @@ def _authorize(db, identity, body, user):
 
 
 def _replay(db, invoice, existing, identity, body, current):
+    hashes = {shipments.digest(body.model_dump(mode='json'))}
+    if existing.quote.get('funding_version') != 2:
+        legacy = body.model_dump(mode='json', exclude={'is_final'})
+        if legacy.get('payment') and legacy['payment'].get('purpose') == 'ordinary':
+            legacy['payment'].pop('purpose', None)
+        hashes.add(shipments.digest(legacy))
     if (existing.invoice_id != identity or existing.created_by != access.user_id(current)
-            or existing.request_hash != shipments.digest(body.model_dump(mode='json'))
+            or existing.request_hash not in hashes
             or existing.quote_hash != body.quote_hash):
         raise HTTPException(409, '提交标识已用于其他发货结算，请勿复用')
     items = _rows(db, SettlementItem, SettlementItem.settlement_id == existing.id)
@@ -79,7 +87,12 @@ def _replay(db, invoice, existing, identity, body, current):
     batch = db.scalar(select(ReceiptBatch).where(ReceiptBatch.request_key == body.request_key)
         .with_for_update().execution_options(populate_existing=True))
     deposit_apps = [app for app in apps if app.component == 'deposit']
-    if existing.is_final:
+    if existing.quote.get('funding_version') == 2:
+        related = {receipt.id: receipt for receipt in _rows(db, Receipt,
+            Receipt.id.in_([app.receipt_id for app in apps]))}
+        pools.pool_lots(db, invoice, current=True)
+        pools.validate_quote_applications(existing, apps, related)
+    elif existing.is_final:
         deposit = db.scalar(select(Receipt).where(Receipt.id == existing.quote.get('deposit_receipt_id'))
             .with_for_update().execution_options(populate_existing=True))
         if (deposit is None or deposit.invoice_id != invoice.id or deposit.purpose != 'presale_deposit'
@@ -94,8 +107,11 @@ def _replay(db, invoice, existing, identity, body, current):
         if batch is not None:
             raise HTTPException(409, '原发货结算付款关联已变化，请核对原单')
         return
+    payment_hashes = {shipments.digest(body.payment.model_dump(mode='json'))}
+    if existing.quote.get('funding_version') != 2 and body.payment.purpose == 'ordinary':
+        payment_hashes.add(shipments.digest(body.payment.model_dump(mode='json', exclude={'purpose'})))
     if (batch is None or batch.created_by != access.user_id(current) or batch.customer_id != invoice.customer_id
-            or batch.currency != invoice.currency or batch.request_hash != shipments.digest(body.payment.model_dump(mode='json'))
+            or batch.currency != invoice.currency or batch.request_hash not in payment_hashes
             or batch.gross_amount != body.payment.amount or batch.collection_date != body.payment.collection_date
             or batch.payment_type != body.payment.payment_type or batch.remark != body.payment.remark):
         raise HTTPException(409, '原发货结算付款批次关联已变化，请核对原单')
@@ -141,7 +157,7 @@ def _capture(db, invoice, body, current, *, payment=None, request_key=None):
     if not {item.invoice_item_id for item in body.items}.issubset({item.id for item in invoice.items}):
         raise ValueError('产品明细不属于本订单')
     seen = set()
-    for item in invoice.items:
+    for item in remote_items(invoice):
         value = str(item.xiaoman_unique_id)
         if not item.product_id or not item.sku_id or not re.fullmatch(r'[1-9][0-9]*', value) or value in seen:
             raise ValueError('预售产品行必须使用不重复的标准小满ID及独立产品/SKU映射')
@@ -158,7 +174,7 @@ def _capture(db, invoice, body, current, *, payment=None, request_key=None):
     by_settlement = {row.id:row for row in settlements}
     if any(row.state not in {'shipped','cancelled'} for row in settlements):
         raise ValueError('已有未完成的活动发货结算，请先核对原批次')
-    shipments.deposit_for(db, invoice, current=True)
+    pools.pool_lots(db, invoice, current=True)
     items = _rows(db, SettlementItem, or_(SettlementItem.settlement_id.in_(by_settlement),
         SettlementItem.invoice_item_id.in_([item.id for item in invoice.items])))
     if any(item.settlement_id not in by_settlement or item.invoice_item_id not in {item.id for item in invoice.items} for item in items):
@@ -193,8 +209,6 @@ def _capture(db, invoice, body, current, *, payment=None, request_key=None):
     logs = _rows(db, ReceiptLog, ReceiptLog.receipt_id.in_(by_receipt))
     events = _rows(db, SettlementEvent, SettlementEvent.settlement_id.in_(by_settlement))
     proofs = batch_service._proof_rows(db, ids, access.user_id(current)) if payment else []
-    if payment and payment.bank_charge:
-        raise ValueError('手续费由本批自动分摊，请勿重复填写')
     models = ((Invoice,[invoice]),(InvoiceItem,invoice.items),(Receipt,receipts),(Receipt,related),(ReceiptIntent,intents),
         (InvoiceAllocation,allocations),(ShipmentSettlement,settlements),(SettlementItem,items),(ShipmentOutbound,outbounds),
         (SettlementApplication,apps),(Receivable,targets),(ReceiptBatch,batches),(BatchAttachment,proof_links),

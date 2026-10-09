@@ -38,8 +38,10 @@ export function useReceipts() {
   const candidates = ref([]), form = reactive({}), editing = ref(null)
   let searchSequence = 0, balanceSequence = 0, detailSequence = 0, initialForm = '', idempotencyKey = ''
   const selectedOrder = computed(() => orders.value.find(o => o.id === form.invoice_id))
-  const remainingAfter = computed(() => Number(balance.value?.remaining_amount || 0) - Number(form.amount || 0))
-  const editable = computed(() => detail.value?.status === 'active' && !detail.value.batch_id && !detail.value.xiaoman_receipt_id && detail.value.purpose !== 'presale_deposit' && ['pending', 'failed'].includes(detail.value.sync_status))
+  const remainingAfter = computed(() => balance.value?.funding_mode === 'presale_pool'
+    ? Number(balance.value.pool_available_amount || 0) + Number(form.amount || 0)
+    : Number(balance.value?.remaining_amount || 0) - Number(form.amount || 0))
+  const editable = computed(() => detail.value?.status === 'active' && !detail.value.batch_id && !detail.value.xiaoman_receipt_id && !['presale_deposit','presale_advance'].includes(detail.value.purpose) && ['pending', 'failed'].includes(detail.value.sync_status))
 
   async function searchOrders(keyword = '') {
     const sequence = ++searchSequence
@@ -56,8 +58,10 @@ export function useReceipts() {
       const result = await api.getReceiptBalance(id)
       if (sequence !== balanceSequence || form.invoice_id !== id) return
       balance.value = result
-      form.amount = Number(result.remaining_amount) > 0 ? Number(result.remaining_amount) : null
-      if (!form.amount) error.value = '订单已无可登记余额'
+      form.purpose = result.funding_mode === 'presale_pool' ? 'presale_advance' : 'ordinary'
+      form.amount = result.funding_mode === 'presale_pool' ? null : Number(result.remaining_amount) > 0 ? Number(result.remaining_amount) : null
+      if (!form.amount && result.funding_mode !== 'presale_pool') error.value = '订单已无可登记余额'
+      if (result.active_settlement) error.value = '此预售单有未完成的发货结算，请在整笔回款中选择本批补款。'
     } catch { if (sequence === balanceSequence) error.value = '订单余额未核验，请刷新余额后再登记' }
     finally { if (sequence === balanceSequence) balanceLoading.value = false }
   }
@@ -65,7 +69,7 @@ export function useReceipts() {
     if (saving.value || uploading.value) return
     editing.value = null; balance.value = null; error.value = ''; balanceSequence += 1
     Object.assign(form, { invoice_id: invoiceId, amount: null, collection_date: currentBeijingDate(),
-      payment_type: '', bank_charge: 0, attachment_ids: [], remark: '' })
+      payment_type: '', purpose: 'ordinary', bank_charge: 0, attachment_ids: [], remark: '' })
     idempotencyKey = crypto.randomUUID(); initialForm = JSON.stringify(form); editorVisible.value = true
     await searchOrders()
     if (invoiceId) await selectOrder(invoiceId)
@@ -90,7 +94,7 @@ export function useReceipts() {
     editing.value = detail.value.id
     const row = detail.value
     Object.assign(form, { invoice_id: row.invoice_id, amount: Number(row.amount), collection_date: row.collection_date,
-      payment_type: row.payment_type, bank_charge: Number(row.bank_charge), attachment_ids: row.attachments.map(a => a.id), remark: row.remark || '' })
+      payment_type: row.payment_type, purpose: row.purpose, bank_charge: Number(row.bank_charge), attachment_ids: row.attachments.map(a => a.id), remark: row.remark || '' })
     initialForm = JSON.stringify(form); error.value = ''; editorVisible.value = true
   }
   async function closeEditor(done) {
@@ -108,16 +112,18 @@ export function useReceipts() {
     if (!form.invoice_id || !form.amount || !form.collection_date || !form.payment_type || !form.attachment_ids.length) {
       error.value = '请选择订单，填写金额、日期、回款方式，并上传回款截图'; return
     }
-    if (!editing.value && (!balance.value || Number(form.amount) > Number(balance.value.remaining_amount))) {
+    if (!editing.value && (!balance.value || balance.value.funding_mode !== 'presale_pool' && Number(form.amount) > Number(balance.value.remaining_amount))) {
       error.value = '本次金额超过可登记余额，或余额尚未核验'; return
     }
+    if (!editing.value && balance.value.active_settlement) { error.value = '请在整笔回款中选择原批次补款'; return }
+    if (Number(form.bank_charge || 0) >= Number(form.amount)) { error.value = '银行手续费必须小于实际收款金额'; return }
     saving.value = true
     try {
       const fields = { amount: String(form.amount), collection_date: form.collection_date, payment_type: form.payment_type,
-        bank_charge: String(form.bank_charge || 0), remark: form.remark, attachment_ids: [...form.attachment_ids] }
+        bank_charge: String(form.bank_charge || 0), purpose: form.purpose || 'ordinary', remark: form.remark, attachment_ids: [...form.attachment_ids] }
       const created = !editing.value
       const row = editing.value ? await api.updateReceipt(editing.value, { ...fields, version: detail.value.version })
-        : await api.createReceipt({ ...fields, invoice_id: form.invoice_id, request_key: idempotencyKey, balance_version: balance.value.version, settlement_id: balance.value.settlement_id || null })
+        : await api.createReceipt({ ...fields, invoice_id: form.invoice_id, request_key: idempotencyKey, balance_version: balance.value.version })
       editorVisible.value = false; detail.value = row; detailVisible.value = true; candidates.value = []
       const canDeliver = selectedOrder.value?.order_type === 'presale' ? presaleDeliveryEnabled.value : deliveryEnabled.value
       msgSuccess(editing.value ? '回款已修正，请重试同步' : canDeliver === false ? '回款已创建，同步启用后自动处理' : '回款已创建，等待同步小满')

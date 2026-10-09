@@ -17,6 +17,8 @@ from app.invoice.service import summarize_items
 
 
 def build_invoice_workbook(invoice: Invoice) -> BytesIO:
+    from app.invoice.presale_lines import editor_document
+    invoice = editor_document(invoice)
     wb = Workbook()
     ws = wb.active
     ws.title = "Invoice"
@@ -137,6 +139,8 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
 
 
 def build_print_html(invoice: Invoice) -> str:
+    from app.invoice.presale_lines import editor_document
+    invoice = editor_document(invoice)
     rows = []
     for item in invoice.items:
         if item.product_kind == "accessory":
@@ -244,6 +248,8 @@ def build_print_html(invoice: Invoice) -> str:
 
 
 def build_invoice_pdf(invoice: Invoice) -> BytesIO:
+    from app.invoice.presale_lines import editor_document
+    invoice = editor_document(invoice)
     pages: list[list[tuple[str, int, int, int]]] = []
 
     def new_page(*, first: bool = False) -> tuple[list[tuple[str, int, int, int]], int]:

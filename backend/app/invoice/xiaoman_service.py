@@ -539,15 +539,17 @@ def _build_product_rows(
     # 后若仍带着共享 uid 单独成行，payload 里会出现两行同 uid → OKKI 按 uid 锚定
     # 把两行更新到同一条明细（金额无声少一行）。规则：独占 uid 才允许独立行携带，
     # 共享 uid 归合并行优先锚定，无人认领的 uid 最后统一发 remove 收掉。
+    from app.invoice.presale_lines import remote_items, remote_quantity, remote_amount
+    projected_items = remote_items(invoice) if invoice.order_type == "presale" else invoice.items
     uid_holders: dict[str, int] = defaultdict(int)
-    for item in invoice.items:
+    for item in projected_items:
         uid = str(item.xiaoman_unique_id or "")
         if uid.isdigit():
             uid_holders[uid] += 1
 
     generic_items: list = []  # 走通用产品的非标行 → 合并为一条推送（亮哥 2026-07-13 指令）
     validated_accessory_pairs: set[tuple[int, int]] = set()
-    for idx, item in enumerate(invoice.items, start=1):
+    for idx, item in enumerate(projected_items, start=1):
         prefix = f"items[{idx}]"
         product_id, sku_id = item.product_id, item.sku_id
         if item.product_kind == "accessory" and item.item_type != "stock":
@@ -597,10 +599,10 @@ def _build_product_rows(
                     continue
                 validated_accessory_pairs.add(pair)
         row: dict = {
-            "count": int(item.quantity),
+            "count": int(remote_quantity(item)),
             "unit_price": float(item.price_per_piece),
             # OKKI 不自动算小计，不传当 0 重存
-            "cost_amount": float(item.total_price),
+            "cost_amount": float(remote_amount(item)),
             "product_id": int(product_id),
             "sku_id": int(sku_id),
         }

@@ -9,7 +9,7 @@
       <div class="detail-overview"><div><strong>{{ order.customer_name }}</strong><span>{{ orderTypeLabel(order.order_type) }} · {{ order.customer_grade || '未分级' }} · 业务员 {{ order.sales_user_name || '—' }}</span><StatusBadge v-if="['cancelled','cancel_pending'].includes(order.status)" :type="detailStatus(order.status).type">{{ detailStatus(order.status).label }}</StatusBadge></div><span>发票日期 {{ order.invoice_date }}</span></div>
       <div v-if="order.sync_error && ['sync_failed','sync_uncertain'].includes(order.sync_status)" class="detail-warning" role="alert">订单同步：{{ order.sync_error }}</div>
       <div class="detail-progress-grid">
-        <div class="detail-amount"><span>订单金额 · {{ order.currency }}</span><strong>{{ formatMoney(order.total_amount) }}</strong><small>{{ order.items?.reduce((sum,r) => sum + Number(r.quantity), 0) }} 件 · {{ order.items?.length }} 行商品</small></div>
+        <div class="detail-amount"><span>{{ order.order_type === 'presale' ? '当前明细金额' : '订单金额' }} · {{ order.currency }}</span><strong>{{ formatMoney(order.total_amount) }}</strong><small>{{ order.items?.reduce((sum,r) => sum + Number(r.quantity), 0) }} 件 · {{ order.items?.length }} 行商品</small><small v-if="order.order_type === 'presale'">累计账面 {{ formatMoney(order.ledger_total_amount) }}</small></div>
         <button v-for="card in progressCards" :key="card.key" type="button" class="detail-progress-card" @click="activeTab = card.key">
           <div><span>{{ card.label }}</span><small>{{ card.stateLabel }}</small></div><strong>{{ card.progress ? `${card.progress.percentage}%` : '—' }}</strong>
           <el-progress :percentage="card.progress?.percentage || 0" :show-text="false" :status="card.progress?.complete ? 'success' : undefined" />

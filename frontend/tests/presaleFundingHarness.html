@@ -1,0 +1,19 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Isolated presale funding UI</title><div id="app"></div><script type="module">
+import { createApp, h, reactive } from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import { createPinia } from 'pinia'
+import { useAuthStore } from '../src/stores/auth'
+import { registerPermissionDirectives } from '../src/directives/permission'
+import StatusBadge from '../src/components/StatusBadge.vue'
+import Actions from '../src/views/invoice/components/InvoiceReceiptActions.vue'
+const pinia = createPinia()
+const form = reactive({id:1,invoice_no:'TEST-PRESALE',order_type:'presale',currency:'USD',xiaoman_order_id:'2001',sync_status:'synced',
+  receipt_draft:{status:'converted',receipt_id:1062},receipt_order_dirty:false})
+window.testForm = form
+const app=createApp({render:()=>h(Actions,{form,total:665})})
+app.use(pinia);app.use(ElementPlus);app.component('StatusBadge',StatusBadge);registerPermissionDirectives(app)
+useAuthStore().user={id:1,roles:['super_admin'],permissions:[]}
+app.mount('#app')
+</script></html>

@@ -13,11 +13,29 @@ export function validateAllocations(rows, amount) {
   if (new Set(rows.map(row => row.id)).size !== rows.length) return '订单不能重复分配'
   let sum = 0
   for (const row of rows) {
-    const allocated = cents(row.amount), remaining = cents(row.balance?.remaining_amount)
-    if (allocated == null || allocated <= 0 || remaining == null || allocated > remaining || row.balance?.version == null) return '每笔分配须大于 0 且不超过已核验余额'
+    const pool = ['presale_deposit', 'presale_advance'].includes(row.purpose)
+    const balance = !pool && row.balance?.active_settlement ? row.balance.active_settlement : row.balance
+    const allocated = cents(row.amount), remaining = cents(balance?.remaining_amount), charge = cents(row.bank_charge || 0)
+    if (pool && row.balance?.active_settlement) return '存在未完成发货结算，请选择本批补款'
+    if (allocated == null || allocated <= 0 || balance?.version == null
+      || (pool ? row.balance?.funding_mode !== 'presale_pool' || charge == null || charge >= allocated
+        : remaining == null || allocated > remaining)) return pool ? '预售收款须核验原单，手续费须小于分配金额' : '每笔分配须大于 0 且不超过已核验余额'
+    if (actualChargeForRow(row) && (charge == null || charge >= allocated
+      || (!pool && charge > cents(balance.charge_remaining)))) return '实际银行手续费须小于分配金额，且不超过本批可用手续费额度'
     sum += allocated
   }
   return sum === total ? '' : '分配金额合计必须与本次回款总金额完全一致'
+}
+export function actualChargeForRow(row) {
+  return ['presale_deposit', 'presale_advance'].includes(row.purpose)
+    || row.balance?.active_settlement?.funding_version === 2
+}
+export function allocationForRow(row) {
+  const pool = ['presale_deposit', 'presale_advance'].includes(row.purpose)
+  const balance = !pool && row.balance?.active_settlement ? row.balance.active_settlement : row.balance
+  return { invoice_id: row.id, settlement_id: pool ? null : balance.settlement_id || null,
+    amount: String(row.amount), balance_version: balance.version, purpose: row.purpose || 'ordinary',
+    bank_charge: actualChargeForRow(row) ? String(row.bank_charge || 0) : '0' }
 }
 export function latestRequest() {
   let sequence = 0

@@ -176,6 +176,15 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
 
+## 预售资金池规则更新（2026-10-09，本地实现，未部署）
+
+- `POST /api/invoices/{id}/shipment-quotes` 与 `shipment-settlements` 增加 `is_final`（默认false，人工确认）；新报价 `funding_version=2`，返回 `advance_applied`、`deposit_applied`、`new_payment_due`、`pool_applications` 与 `pool_balances`。定金仅末批，预付货款可抵商品、包装、手续费与运费；不足才新登记现金。
+- 预售 `receipt_draft` 支持 `purpose=presale_advance|presale_deposit` 与实际 `bank_charge`。新预售可无产品先登记实际付款，首款净额必须正，金额不限于当前产品；已转换的原收款不随编辑重算。回款单及整笔回款可补充资金池款；有活动结算时需选择原批补款。
+- 整笔回款allocation增加 `purpose` 和 `bank_charge`；资金池款不传结算ID，使用订单余额version，V2本批补款使用 `active_settlement.version` 与实际银行手续费，V1维持旧分摊。总金额仍必须与分配完全相等，重复请求不重建。
+- `/api/receipts/order-balance/{id}`、`invoice-summary/{id}` 预售返回 `funding_mode=presale_pool`、`pool_available_amount`、逐款 `pool_balances`（`remaining_amount/remaining_charge/remaining_principal/effective`）以及存在时的 `active_settlement`（含 `funding_version`）。
+- `PATCH /api/receipts/{identity}/presale-purpose`：`receipt:write` 或 `receipt:admin` 加实际订单范围，body `{version,purpose,reason}`，原因至少10字。仅已核验生效、未占用的预售定金/预付货款可改；有活动结算先处理原批。保留金额、费用、日期、凭证和远端ID，记录审计，不重推收款。
+- 预售详情items为当前产品，另返回 `presale_history`（历史实际已发数量金额）和 `ledger_total_amount`。当期导出及金额一致；原产品和结算快照保留。远端未核验、资金不够或引用异常仍阻止出库派发。
+
 ## 临时战报（2026-09-22，本地实现，迁移 162）
 
 前缀 `/api/battle-reports`，登录认证与标准 `ok()` 信封，金额以两位小数字符串返回。权限均使用 `battle_report:` 前缀；admin 包含本模块 read/write。查询逐次校验参与人身份及授权范围；汇总 visibility 不扩大订单/客户明细权限。详见 [实现说明](requirements/2026-09-22-battle-report.md)。

@@ -288,7 +288,7 @@ def test_receipt_recovery_clears_badge_even_when_error_evidence_remains(db):
 
 
 def projection_order():
-    return SimpleNamespace(xiaoman_order_id="2001",items=[SimpleNamespace(id=i,quantity=10,product_name=f"Line {i}",
+    return SimpleNamespace(order_type="stock",xiaoman_order_id="2001",items=[SimpleNamespace(id=i,quantity=10,product_name=f"Line {i}",
         xiaoman_unique_id=str(i),product_id=100,sku_id=101) for i in (1,2)])
 
 
@@ -302,6 +302,19 @@ def test_inspection_outbound_uses_exact_lines_not_sku_totals():
     data, quantities=detail_outbounds.project(projection_order(),[shipped,doc("D2",1,4,8)])
     assert quantities == {"1":"6","2":"2"} and len(data[0]["items"]) == 2
     assert data[1]["state"] == "generated"
+
+
+def test_presale_progress_uses_archived_actual_quantity_without_rewriting_original():
+    invoice = projection_order()
+    invoice.order_type = "presale"
+    original = invoice.items[0]
+    original.presale_archived = 1
+    original.presale_shipped_quantity = 6
+    invoice.items[1].quantity = 3
+    data, quantities = detail_outbounds.project(invoice, [doc(first=6, second=2)])
+    assert original.quantity == 10
+    assert data[0]["items"][0]["ordered_quantity"] == 6
+    assert quantities == {"1": "6", "2": "2"}
 
 
 @pytest.mark.parametrize("mutate", [lambda d:d["inspection"].update(status="unknown"),lambda d:d["record_list"][0].update(outbound_count=11),lambda d:d["record_list"][0].update(order_record_id="unknown"),lambda d:d["record_list"].append(d["record_list"][0])])
@@ -361,7 +374,7 @@ def test_mixed_owner_receipt_batch_is_private_before_external_read(db):
 
 def test_presale_deposit_and_independent_freight_are_not_added_twice(db, monkeypatch):
     invoice = order(db, kind="presale")
-    receipt(db, invoice, purpose="presale_deposit", amount=20, bank_charge=0, xiaoman_receipt_id="701")
+    receipt(db, invoice, purpose="presale_deposit", amount=20, bank_charge=0, xiaoman_receipt_id="701", xiaoman_order_id=invoice.xiaoman_order_id)
     batch = shipment(db, invoice, state="shipped")
     target = Receivable(invoice_id=invoice.id, settlement_id=batch.id, business_key="F1", kind="freight",
         amount=40, currency="USD", customer_id="101", remote_order_id="F1", remote_status="synced")

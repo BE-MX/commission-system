@@ -73,8 +73,8 @@ def financial_state(db, row, user, action, version, reason):
         StateGraph(applications, receipts, freight, outbound, balance))
 
 
-def make(db, invoice, quantity=4, freight="200.00", key="shipment_request_001"):
-    draft=ShipmentQuote(items=[{"invoice_item_id":invoice.items[0].id,"quantity":quantity}],freight_amount=freight)
+def make(db, invoice, quantity=4, freight="200.00", key="shipment_request_001", is_final=False):
+    draft=ShipmentQuote(items=[{"invoice_item_id":invoice.items[0].id,"quantity":quantity}],freight_amount=freight,is_final=is_final)
     quote=financial_quote(db,invoice.id,draft,USER)
     return financial_create(db,invoice.id,ShipmentCreate(**draft.model_dump(),quote_hash=quote["quote_hash"],request_key=key),USER)
 
@@ -107,19 +107,21 @@ def test_duplicate_returns_same_and_blocks_second_batch(db,presale):
     assert first.sequence==1
 
 
-def test_partial_cannot_spend_last_deposit(db,presale):
-    with pytest.raises(ValueError): make(db,presale,quantity=8)
+def test_nonfinal_batch_keeps_deposit_when_current_details_exceed_reserved_principal(db,presale):
+    row=make(db,presale,quantity=8)
+    assert row.quote["deposit_applied"] == "0.00"
+    assert row.quote["new_payment_due"] == "8200.00"
 
 
 def test_final_reserves_deposit_without_new_receipt(db,presale):
-    row=make(db,presale,quantity=10,freight="150.00")
+    row=make(db,presale,quantity=10,freight="150.00",is_final=True)
     assert row.quote["new_payment_due"]=="7150.00"
     assert db.query(Receipt).count()==1
     assert db.query(SettlementApplication).one().amount==3000
 
 
 def test_cancel_unpaid_final_releases_only_application(db,presale):
-    row=make(db,presale,quantity=10,freight="0.00")
+    row=make(db,presale,quantity=10,freight="0.00",is_final=True)
     financial_state(db,row,USER,"cancel",row.version,"暂不发货")
     assert row.state=="cancelled"
     assert db.query(Receipt).one().status=="active"
@@ -146,7 +148,7 @@ def test_unknown_remote_payment_freezes_new_settlement(db,presale,monkeypatch):
 
 
 def test_create_replay_uses_same_settlement_and_does_not_reserve_twice(db,presale):
-    draft=ShipmentQuote(items=[{"invoice_item_id":presale.items[0].id,"quantity":10}])
+    draft=ShipmentQuote(items=[{"invoice_item_id":presale.items[0].id,"quantity":10}],is_final=True)
     quoted=financial_quote(db,presale.id,draft,USER)
     body=ShipmentCreate(**draft.model_dump(),quote_hash=quoted["quote_hash"],request_key="shipment_replay_001")
     first=financial_create(db,presale.id,body,USER); db.commit()

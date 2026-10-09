@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.queue_scan import take
 from app.core.time import beijing_now
 from app.invoice import linked_outbound_service, okki_client, xiaoman_service
+from app.invoice import presale_runtime as pools
 from app.invoice.lifecycle_guard import ensure_active
 from app.invoice.models import Invoice
 from app.invoice.settlement_contract import build_outbound_candidate
@@ -32,7 +33,7 @@ def _funded(db, settlement):
         Receipt, Receipt.id == SettlementApplication.receipt_id).filter(
         SettlementApplication.settlement_id == settlement.id,
         SettlementApplication.status != "released").all()
-    expected = Decimal(settlement.quote["new_payment_due"]) + Decimal(settlement.quote["deposit_applied"])
+    expected = pools.required(settlement.quote)
     if sum((Decimal(app.amount) for app, _ in applications), Decimal(0)) != expected:
         return False
     if any(receipt.status != "active" or receipt.sync_status != "synced"
@@ -111,7 +112,7 @@ def _live_funding(db, invoice, settlement):
         SettlementApplication.settlement_id == settlement.id,
         SettlementApplication.status != "released").all()
     for application, receipt in applications:
-        rows = freight_rows if application.component == "freight" else goods_rows
+        rows = freight_rows if pools.source_component(application, receipt) == "freight" else goods_rows
         row = rows.get(str(receipt.xiaoman_receipt_id))
         if not row or str(row.get("collect_status")) != "1":
             raise ValueError("预售本批远端有效回款已缺失或未生效")

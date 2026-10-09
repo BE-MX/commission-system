@@ -4,7 +4,11 @@
     <el-form label-position="top">
       <p>{{ invoice.invoice_no }} · {{ invoice.currency }}；此操作独立保存，不修改订单明细。</p>
       <p v-if="receipt?.source === 'auto'">自动回款的手续费按最新订单重新分摊，保存后在原单重试同步。</p>
-      <p v-if="!receipt">本次可登记 {{ formatMoney(balance.remaining_amount) }}；请填写本次实际收到的金额。</p>
+      <template v-if="!receipt && balance.funding_mode === 'presale_pool'">
+        <el-form-item label="收款用途" required><el-select v-model="payment.purpose" :disabled="saving"><el-option value="presale_advance" label="预付货款（从本批开始抵扣）" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" /></el-select></el-form-item>
+        <p>请按实际收款填写金额与银行手续费。预付货款用于商品款和运费，不受当前明细金额限制。</p>
+      </template>
+      <p v-else-if="!receipt">本次可登记 {{ formatMoney(balance.remaining_amount) }}；请填写本次实际收到的金额。</p>
       <ReceiptFields :form="payment" :currency="invoice.currency" :readonly="saving" :show-charge="receipt?.source !== 'auto'"
         :hide-payment-type="receipt?.source === 'auto'" @uploading="value => uploading = value" />
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
@@ -33,6 +37,7 @@ const props = defineProps({ invoice: { type: Object, required: true }, receipt: 
 const emit = defineEmits(['close', 'saved', 'busy'])
 const saving = ref(false), uploading = ref(false), error = ref('')
 const payment = reactive({ amount: props.receipt ? Number(props.receipt.amount) : null,
+  purpose: props.receipt?.purpose || (props.balance.funding_mode === 'presale_pool' ? 'presale_advance' : 'ordinary'),
   bank_charge: Number(props.receipt?.bank_charge || 0),
   collection_date: props.receipt?.collection_date || currentBeijingDate(),
   payment_type: props.receipt?.payment_type || '', remark: props.receipt?.remark || '',
@@ -53,10 +58,10 @@ async function submit() {
   if (saving.value || uploading.value || props.blocked) return
   const amount = cents(payment.amount), charge = cents(payment.bank_charge)
   if (amount == null || amount <= 0 || charge == null || charge < 0 ||
-      (props.receipt?.source !== 'auto' && charge > amount) || !payment.collection_date || !payment.payment_type || !payment.attachment_ids.length) {
+      (props.receipt?.source !== 'auto' && charge >= amount) || !payment.collection_date || !payment.payment_type || !payment.attachment_ids.length) {
     error.value = '请核对金额、手续费、日期、方式，并至少保留一张凭证'; return
   }
-  if (!props.receipt && amount > cents(props.balance.remaining_amount)) { error.value = '金额超过可登记余额，请关闭窗口并刷新资金汇总'; return }
+  if (!props.receipt && props.balance.funding_mode !== 'presale_pool' && amount > cents(props.balance.remaining_amount)) { error.value = '金额超过可登记余额，请关闭窗口并刷新资金汇总'; return }
   saving.value = true; error.value = ''
   const id = props.invoice.id
   try {

@@ -120,7 +120,7 @@ def mysql_engine(request):
                 cursor.execute('SELECT @@datadir, @@port, @@bind_address, VERSION(), @@server_uuid')
                 actual_dir, actual_port, address, version, server_uuid = cursor.fetchone()
                 assert Path(actual_dir).resolve() == data.resolve() and actual_port == port
-                assert address == '127.0.0.1' and version.startswith('8.0.')
+                assert address == '127.0.0.1' and version.startswith(('8.0.', '8.4.'))
                 cursor.execute('CREATE DATABASE portal_isolated_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci')
         init.unlink()
         engine = create_engine(URL.create('mysql+pymysql', username='root', password=password,

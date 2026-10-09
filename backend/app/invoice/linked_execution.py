@@ -189,7 +189,7 @@ def run(db,invoice_id,identity,user,*,recheck=False):
                 effective,total=remote.money(summary['effective_amount']),remote.money(summary['total_amount'])
                 receipt={'status':'done','message':'原回款金额与手续费保持不变；新增收款或退款须另行登记',
                     'balance':summary,'unpaid_amount':str(max(total-effective,0)),'overpaid_amount':str(max(effective-total,0))}
-                if Decimal(summary['remaining_amount'])<0 or effective>total:
+                if invoice.order_type!='presale' and (Decimal(summary['remaining_amount'])<0 or effective>total):
                     receipt.update(status='manual',message='已登记或生效金额超过新订单金额，请核对原回款；未修改实际收款')
             except ValueError:
                 _diagnose()

@@ -62,7 +62,10 @@ def generate_ready(db):
             service.ensure_order_ready(db, invoice)
             fields = ReceiptFields(amount=intent.amount, collection_date=intent.collection_date,
                                    payment_type=intent.payment_type, attachment_ids=intent.attachment_ids,
-                                   remark=intent.remark or "")
+                                   remark=intent.remark or "",
+                                   purpose=intent.purpose or ("presale_deposit" if invoice.order_type == "presale" else "ordinary"),
+                                   bank_charge=(intent.bank_charge if intent.bank_charge is not None else
+                                       fees.allocate(db, invoice, intent.amount) if invoice.order_type == "presale" else 0))
             row = service.new_row(db, invoice, fields, intent.created_by, f"auto_invoice_{invoice.id}",
                                   f"auto_invoice_{invoice.id}", source="auto")
             intent.status, intent.receipt_id = "converted", row.id
@@ -97,7 +100,7 @@ def deliver(db, receipt_id):
         db.rollback()
         return
     try:
-        ensure_receipt_sendable(db, row)
+        settlement = ensure_receipt_sendable(db, row, current=True)
     except ValueError:
         db.rollback()
         return
@@ -131,7 +134,7 @@ def deliver(db, receipt_id):
         db.refresh(invoice)
         db.refresh(row, with_for_update=True)
         service.ensure_order_ready(db, invoice)
-        ensure_receipt_sendable(db, row)
+        ensure_receipt_sendable(db, row, current=True)
         if db.query(ReceiptAttempt.token).filter(ReceiptAttempt.receipt_id == receipt_id,
                 ReceiptAttempt.remote_id.isnot(None)).with_for_update().first():
             raise ValueError("已有发送任务取得小满 ID，等待恢复原单，禁止再次创建")
@@ -162,7 +165,8 @@ def deliver(db, receipt_id):
         invoice = db.get(Invoice, row.invoice_id)
         service.ensure_order_ready(db, invoice)
         ensure_receipt_sendable(db, row)
-        if row.source == "auto" and row.bank_charge == 0 and invoice.surcharge_amount:
+        pool = row.purpose in {"presale_deposit", "presale_advance"}
+        if row.source == "auto" and not pool and row.bank_charge == 0 and invoice.surcharge_amount:
             if fees.allocate(db, invoice, row.amount, exclude_receipt=row.id) != 0:
                 raise ValueError("旧自动回款尚未分摊手续费，请重试原单后同步")
         snapshot = (remote.target_snapshot(db, target) if target and target.kind == "freight"
@@ -170,7 +174,10 @@ def deliver(db, receipt_id):
         summary = (balance.calculate_target(db, target, snapshot, exclude_receipt=row.id)
                    if target and target.kind == "freight"
                    else balance.calculate(db, invoice, snapshot, exclude_receipt=row.id))
-        balance.ensure_available(summary, row.amount)
+        settlement = ensure_receipt_sendable(db, row, current=True)
+        v2_goods = row.purpose == "presale_goods" and settlement and settlement.quote.get("funding_version") == 2
+        if not pool and not v2_goods:
+            balance.ensure_available(summary, row.amount)
         if row.batch_id:
             from app.receipt.batch_service import validate_bound_proofs
             validate_bound_proofs(db, row)

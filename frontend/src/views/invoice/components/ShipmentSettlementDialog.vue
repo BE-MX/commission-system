@@ -16,7 +16,7 @@
         <p v-if="frozen.body.payment">原登记回款：{{ recoveryInvoice.currency }} {{ frozen.body.payment.amount }}；原日期 {{ frozen.body.payment.collection_date }} · {{ frozen.body.payment.payment_type }}，原凭证保持不变。</p>
       </section>
       <div v-if="!pending && !denied && !storageBlocked" v-loading="loading">
-      <el-alert title="首笔定金保留至最后一批抵扣。提交生成本地结算单，实际出库以同步结果为准。" type="info" :closable="false" />
+      <el-alert title="预付货款可扣减本批商品款和运费；定金只在人工确认最后一批时抵扣。提交生成本地结算单，实际出库以同步结果为准。" type="info" :closable="false" />
       <el-alert v-if="activeShipment" title="当前已有未完成的出库结算，请先处理下方记录后再创建下一批。" type="warning" :closable="false" />
       <el-form label-position="top" :disabled="saving">
         <el-table class="list-table" :data="lines" border v-sticky-scrollbar>
@@ -25,13 +25,17 @@
           <el-table-column prop="requested" label="本批数量" min-width="200"><template #default="{ row }"><el-input-number v-model="row.requested" :precision="0" :min="0" :max="row.remaining" :disabled="activeShipment || confirmationPending" controls-position="right" /></template></el-table-column>
         </el-table>
         <el-form-item label="本批运费"><el-input-number v-model="freight" :precision="2" :min="0" controls-position="right" /></el-form-item>
-        <el-alert v-if="freight > 0" title="本批运费将在小满生成独立销售订单并单独回款。小满原生销售报表会计入这张运费订单；方舟商品 GMV、订单数和提成统计会排除它。" type="info" :closable="false" />
+        <el-checkbox v-model="isFinal">人工确认：这是最后一批发货，可抵扣定金</el-checkbox>
+        <el-alert v-if="freight > 0" title="运费优先从预付货款余额扣减，不足部分再补款。小满保留独立运费订单，方舟记录原款抵扣，不重复登记实收。" type="info" :closable="false" />
         <ResponsiveDescriptions v-if="quote" :column="2" border class="quote-summary">
           <el-descriptions-item v-for="field in quoteFields" :key="field[0]" :label="field[1]">{{ invoice.currency }} {{ money(quote[field[0]]) }}</el-descriptions-item>
-          <el-descriptions-item label="出库批次">{{ quote.is_final ? '最后一批，抵扣定金' : '部分出库，定金保留' }}</el-descriptions-item>
+          <el-descriptions-item label="出库批次">{{ quote.is_final ? '人工确认最后一批' : '本批发货，定金保留' }}</el-descriptions-item>
+          <el-descriptions-item v-if="quote.pool_balances" label="扣减后可用预付货款">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => row.effective && row.purpose === 'presale_advance').reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
+          <el-descriptions-item v-if="quote.pool_balances" label="留存定金（仅末批）">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => row.effective && row.purpose === 'presale_deposit').reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
+          <el-descriptions-item v-if="quote.pool_balances?.some(row => !row.effective)" label="待生效款（不可用）">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => !row.effective).reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
         </ResponsiveDescriptions>
         <el-checkbox v-permission="'receipt:write'" v-model="registerPayment">同时登记本次实际回款</el-checkbox>
-        <ReceiptFields v-if="registerPayment" :form="payment" :currency="invoice.currency" :readonly="saving" @uploading="v => uploading = v" />
+        <ReceiptFields v-if="registerPayment" :form="payment" :currency="invoice.currency" :readonly="saving" show-charge @uploading="v => uploading = v" />
       </el-form>
       <ResponsiveDescriptions v-if="selectedSettlement" :column="2" border class="quote-summary">
         <el-descriptions-item label="结算单">{{ selectedSettlement.settlement_no }}</el-descriptions-item>
@@ -111,9 +115,10 @@ function failed(error) { if ([401,403,404].includes(error?.response?.status)) hi
 const quoteRequest = latestRequest(), detailRequest = latestRequest()
 const selectedSettlement = ref(null)
 const activeShipment = computed(() => hasActiveShipment(settlements.value))
-const quoteFields = [['goods_amount','货款'],['packaging_amount','包装费'],['handling_amount','手续费'],['freight_amount','运费'],['deposit_applied','本批抵扣定金'],['new_payment_due','本批需新付金额']]
+const isFinal = ref(false)
+const quoteFields = [['goods_amount','货款'],['packaging_amount','包装费'],['handling_amount','手续费'],['freight_amount','运费'],['deposit_applied','本批抵扣定金'],['advance_applied','本批抵扣预付货款'],['new_payment_due','本批需补款']]
 const stateLabel = state => ({ pending: '待处理', pending_remote: '待确认实际出库', confirming: '实际出库确认中', confirm_uncertain: '实际出库待核对', shipped_unfunded: '已出库·回款异常', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', failed: '处理失败', uncertain: '待核对' })[state] || state
-const body = () => ({ items: lines.value.filter(row => row.requested > 0).map(row => ({ invoice_item_id: row.id, quantity: row.requested })), freight_amount: String(freight.value || 0) })
+const body = () => ({ items: lines.value.filter(row => row.requested > 0).map(row => ({ invoice_item_id: row.id, quantity: row.requested })), freight_amount: String(freight.value || 0), is_final: isFinal.value })
 watch(() => JSON.stringify(body()), () => {
   quoteRequest.next(); quote.value = null; quoting.value = false
   if (error.value === '请填写本批出库数量' && body().items.length) error.value = ''

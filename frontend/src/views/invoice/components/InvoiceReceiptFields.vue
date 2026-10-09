@@ -1,13 +1,19 @@
 <template>
   <section v-if="['stock', 'presale'].includes(form.order_type) || form.id" class="receipt-card">
     <template v-if="['stock', 'presale'].includes(form.order_type)">
-    <div class="card-title">{{ form.order_type === 'presale' ? '首笔定金' : '本次回款' }} <StatusBadge effect="plain" type="warning" size="small">{{ intentLabel }}</StatusBadge></div>
+    <div class="card-title">{{ form.order_type === 'presale' ? '首次收款' : '本次回款' }} <StatusBadge effect="plain" type="warning" size="small">{{ intentLabel }}</StatusBadge></div>
     <p class="receipt-hint">{{ intentHint }}</p>
     <!-- 小满回款方式在其接口中非必填，且口径与内部付款方式不同；自动回款单统一按 Other 提交 -->
     <p class="method-note">小满回款方式默认按 Other 提交（小满侧非必填），无需选择。</p>
-    <p v-if="form.order_type === 'presale'">请填写实际定金金额；定金保留至最后一批出库抵扣。</p>
+    <template v-if="form.order_type === 'presale' && form.receipt_draft">
+      <el-form-item label="收款用途" required><el-select v-model="form.receipt_draft.purpose" :disabled="frozen">
+        <el-option value="presale_advance" label="预付货款 · 每批商品款和运费均可扣减" />
+        <el-option value="presale_deposit" label="定金 · 仅人工确认最后一批时抵扣" />
+      </el-select></el-form-item>
+      <p class="receipt-hint">产品未确定时可先保存预售单并登记实际到账款，发货前填写本批明细。原回款不会因修改明细而重复生成或重新计算手续费。</p>
+    </template>
     <ReceiptFields v-if="form.receipt_draft" :form="form.receipt_draft" :currency="form.currency"
-      :readonly="frozen" :hide-proofs="canEditProofs" hide-payment-type @uploading="v => form.receipt_uploading = v" />
+      :readonly="frozen" :hide-proofs="canEditProofs" :show-charge="form.order_type === 'presale'" hide-payment-type @uploading="v => form.receipt_uploading = v" />
     <InvoiceConvertedProofs v-if="canEditProofs" :key="`${form.receipt_draft.receipt_id}:${form.receipt_draft.receipt_version}`" :receipt-id="form.receipt_draft.receipt_id"
       :locked="form.receipt_action_open || form.receipt_action_busy"
       @saved="(id, ids) => { if (form.receipt_draft?.receipt_id === id) form.receipt_draft.attachment_ids = ids }"
@@ -41,7 +47,8 @@ const canEditProofs = computed(() => props.form.receipt_draft?.status === 'conve
 watch(() => props.form.receipt_draft, value => {
   if (!value) props.form.receipt_draft = { amount: props.form.order_type === 'presale' ? null : props.form.internal_received > 0 ? props.form.internal_received : null,
     collection_date: currentBeijingDate(), payment_type: 'Other',
-    attachment_ids: [], remark: '', status: 'draft' }
+    purpose: props.form.order_type === 'presale' ? 'presale_advance' : 'ordinary',
+    bank_charge: 0, attachment_ids: [], remark: '', status: 'draft' }
 }, { immediate: true })
 // 回款金额随预付款自动填入（2026-09-23）：只跟随未被手改过的草稿金额
 watch(() => [props.form.id, props.form.internal_received], ([id, value], [previousId, previous]) => {

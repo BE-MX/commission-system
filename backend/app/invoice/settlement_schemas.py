@@ -1,5 +1,6 @@
 """Strict wire contracts: decimal strings, bounded batches and idempotency keys."""
 from decimal import Decimal
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.receipt.schemas import ReceiptFields
 
@@ -14,6 +15,7 @@ class ShipmentQuote(BaseModel):
     model_config = ConfigDict(extra="forbid")
     items: list[ShipmentLine] = Field(min_length=1, max_length=200)
     freight_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
+    is_final: bool = Field(default=False, strict=True)
 
     @model_validator(mode="after")
     def unique_lines(self):
@@ -43,7 +45,17 @@ class BatchAllocation(BaseModel):
     invoice_id: int = Field(gt=0)
     settlement_id: int | None = Field(default=None, gt=0)
     amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    purpose: Literal["ordinary", "presale_deposit", "presale_advance"] = "ordinary"
+    bank_charge: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
     balance_version: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def pool_target(self):
+        if self.purpose != "ordinary" and self.settlement_id is not None:
+            raise ValueError("预售资金池回款不能绑定发货批次")
+        if self.bank_charge >= self.amount:
+            raise ValueError("实际银行手续费必须小于付款金额")
+        return self
 
 
 class BatchCreate(ReceiptFields):

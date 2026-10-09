@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 
 from app.invoice import edit_authority, settlement_service as shipments
+from app.invoice import presale_runtime as pools
 from app.invoice.models import InvoiceItem
 from app.invoice.settlement_models import (Receivable, ReceiptBatch, SettlementApplication,
     SettlementEvent, SettlementItem, ShipmentOutbound, ShipmentSettlement)
@@ -54,7 +55,9 @@ def _capture(db, invoice, identity, action):
         expected_purpose = {'deposit': 'presale_deposit', 'goods': 'presale_goods', 'freight': 'freight'}.get(app.component)
         if (receipt is None or settlement is None or settlement.invoice_id != invoice.id
                 or receipt.invoice_id != invoice.id or receipt.customer_id != invoice.customer_id
-                or receipt.currency != invoice.currency or receipt.purpose != expected_purpose):
+                or receipt.currency != invoice.currency or (receipt.purpose != expected_purpose
+                    and not (settlement.quote.get('funding_version') == 2 and receipt.purpose in pools.POOL_PURPOSES
+                        and app.component in {'goods', 'freight'}))):
             raise ValueError('发货资金关联异常，请核对原单')
     selected = tuple(app for app in applications if app.settlement_id == row.id)
     selected_receipts = {app.receipt_id: by_receipt[app.receipt_id] for app in selected}
@@ -68,7 +71,10 @@ def _capture(db, invoice, identity, action):
     except (InvalidOperation, KeyError, TypeError, ValueError):
         raise ValueError('结算资金快照异常，请核对原单') from None
     deposit = [app for app in selected if app.component == 'deposit']
-    if row.is_final:
+    if row.quote.get('funding_version') == 2:
+        pools.pool_lots(db, invoice, current=True)
+        pools.validate_quote_applications(row, selected, by_receipt)
+    elif row.is_final:
         if (len(deposit) != 1 or deposit[0].receipt_id != row.quote.get('deposit_receipt_id')
                 or deposit[0].amount != amounts['deposit_applied']
                 or deposit[0].bank_charge != amounts['deposit_charge_applied']):
@@ -99,7 +105,7 @@ def _capture(db, invoice, identity, action):
     for app in selected:
         receipt = selected_receipts[app.receipt_id]
         target = by_target.get(receipt.receivable_id)
-        if app.component == 'deposit':
+        if app.component == 'deposit' or receipt.purpose in pools.POOL_PURPOSES:
             if receipt.receivable_id is not None and (target is None or target.kind != 'goods'):
                 raise ValueError('发货预付款目标关联异常，请核对原单')
             continue

@@ -7,11 +7,11 @@
           <el-option v-for="option in paymentMethods" :key="option" :label="option" :value="option" />
         </el-select>
       </el-form-item>
-      <el-form-item label="预付款" :error="settlementError">
+      <el-form-item v-if="form.order_type !== 'presale'" label="预付款" :error="settlementError">
         <el-input-number v-model="form.internal_received" :min="0" :max="total" :precision="2" controls-position="right" />
         <div class="field-hint">订单约定金额；实际到账请在回款区登记</div>
       </el-form-item>
-      <el-form-item label="尾款">
+      <el-form-item v-if="form.order_type !== 'presale'" label="尾款">
         <el-input :model-value="form.internal_balance == null ? '' : money(form.internal_balance)" readonly class="balance-field" />
         <div class="field-hint">根据订单总额与预付款自动计算</div>
       </el-form-item>

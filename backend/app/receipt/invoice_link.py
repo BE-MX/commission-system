@@ -37,18 +37,29 @@ def save_draft(db, invoice, draft, actor, *, new=False):
         db.add(row)
     if draft is None:
         return
+    purpose = draft.purpose or row.purpose or ("presale_deposit" if invoice.order_type == "presale" else "ordinary")
+    if (invoice.order_type == "presale" and purpose not in {"presale_deposit", "presale_advance"}
+            or invoice.order_type != "presale" and purpose != "ordinary"):
+        raise ValueError("请选择与订单类型一致的回款用途")
     if row.status != "draft":
         # Generic invoice editor round-trips the frozen draft; disallow changes.
         current = submitted_record(db, row)
         if (draft.amount != current.amount or draft.collection_date != current.collection_date
                 or draft.payment_type != current.payment_type or draft.attachment_ids != current.attachment_ids
-                or draft.remark != (current.remark or "")):
+                or draft.remark != (current.remark or "")
+                or draft.purpose is not None and purpose != getattr(current, "purpose", None)
+                or draft.bank_charge is not None and draft.bank_charge != getattr(current, "bank_charge", None)):
             raise ValueError("本次回款已提交，不能随订单修改，请在回款单中处理")
         return
     if draft.attachment_ids:
         attachments.bind(db, draft.attachment_ids, actor, invoice.id)
     for key in ("amount", "collection_date", "payment_type", "remark", "attachment_ids"):
         setattr(row, key, getattr(draft, key))
+    row.purpose = purpose
+    if draft.bank_charge is not None:
+        row.bank_charge = draft.bank_charge
+    elif new and invoice.order_type == "presale":
+        row.bank_charge = Decimal(0)
     row.currency, row.customer_id = invoice.currency, invoice.customer_id
 
 
@@ -76,10 +87,14 @@ def preflight(db, invoice, actor):
                   attachment_ids=row.attachment_ids, remark=row.remark or "")
     if invoice.order_type == "presale":
         from app.receipt.fees import proportional
-        charge = proportional(invoice.total_amount, invoice.surcharge_amount or 0, row.amount)
-        if row.amount - charge <= 0 or row.amount - charge > invoice.product_amount:
-            raise ValueError("预付款净额必须大于零且不能超过商品净额")
-    if row.amount > invoice.total_amount:
+        charge = getattr(row, "bank_charge", None)
+        if charge is None:
+            charge = proportional(invoice.total_amount, invoice.surcharge_amount or 0, row.amount)
+        if row.amount - charge <= 0:
+            raise ValueError("预售收款扣除银行手续费后的净额必须大于零")
+        row.bank_charge = charge
+        row.purpose = getattr(row, "purpose", None) or "presale_deposit"
+    if invoice.order_type != "presale" and row.amount > invoice.total_amount:
         raise ValueError("本次回款不能超过订单金额")
 
 
@@ -153,8 +168,6 @@ def guard_edit(db, invoice, body, *, receipt_rows=None):
     row = get_intent(db, invoice.id)
     if row and (row.attempt_token or row.status == "ready" or invoice.sync_status == "sync_uncertain"):
         raise ValueError("订单回款正在处理或等待恢复，暂不能编辑")
-    if invoice.order_type == "presale" and row and row.status != "draft":
-        raise ValueError("预售首款已提交，商业合同已冻结；发货地址和备注请在批次中处理")
     local = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active").count()
     # A local editor can supply freshly verified rows bound to the rechecked PI.
     # Local receipts and intent are still read inside this final transaction.
@@ -164,7 +177,8 @@ def guard_edit(db, invoice, body, *, receipt_rows=None):
         if body.customer_id != invoice.customer_id or body.currency != invoice.currency or body.order_type != invoice.order_type:
             raise ValueError("已有回款的订单不能更换客户、币种或类型")
     if local or snapshot["rows"] or (row and row.status == "armed"):
-        return Decimal(balance.calculate(db, invoice, snapshot)["registered_amount"])
+        registered = Decimal(balance.calculate(db, invoice, snapshot)["registered_amount"])
+        return Decimal(0) if invoice.order_type == "presale" else registered
     return Decimal("0")
 
 
@@ -196,6 +210,8 @@ def describe(db, invoice):
         return None
     current = submitted_record(db, row)
     return {"amount": str(current.amount) if current.amount is not None else None,
+            "purpose": getattr(current, "purpose", None) or ("presale_deposit" if invoice.order_type == "presale" else "ordinary"),
+            "bank_charge": str(current.bank_charge) if getattr(current, "bank_charge", None) is not None else None,
             "collection_date": current.collection_date, "payment_type": current.payment_type,
             "remark": current.remark or "", "attachment_ids": current.attachment_ids,
             "status": row.status, "eligible": bool(row.eligible), "receipt_id": row.receipt_id,

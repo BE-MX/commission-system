@@ -1,6 +1,7 @@
 """Public receipt input contracts; money never passes through binary floats."""
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -11,6 +12,7 @@ class ReceiptFields(BaseModel):
     collection_date: date
     payment_type: str = Field(min_length=1, max_length=64)
     bank_charge: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
+    purpose: Literal["ordinary", "presale_deposit", "presale_advance", "presale_goods", "freight"] = "ordinary"
     remark: str = Field(default="", max_length=500)
     attachment_ids: list[str] = Field(min_length=1, max_length=5)
 
@@ -52,6 +54,8 @@ class ReceiptProofUpdate(BaseModel):
 
 class ReceiptDraft(BaseModel):
     amount: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
+    purpose: Literal["ordinary", "presale_deposit", "presale_advance"] | None = None
+    bank_charge: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     collection_date: date | None = None
     payment_type: str | None = Field(default=None, max_length=64)
     remark: str = Field(default="", max_length=500)
@@ -66,6 +70,13 @@ class Resolution(BaseModel):
 
 class Reason(BaseModel):
     reason: str = Field(min_length=2, max_length=500)
+
+
+class PresalePurposeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(gt=0)
+    purpose: Literal["presale_deposit", "presale_advance"]
+    reason: str = Field(min_length=10, max_length=500)
 
 
 class RemoteChange(BaseModel):

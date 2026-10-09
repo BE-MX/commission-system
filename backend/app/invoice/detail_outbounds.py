@@ -48,13 +48,15 @@ def annotate_inspections(db, invoice, documents, user, scope):
 
 
 def project(invoice, documents, *, presale_outbounds=None):
+    from app.invoice.presale_lines import remote_items, remote_quantity
+    projected = remote_items(invoice) if invoice.order_type == "presale" else invoice.items
     wanted = {}
-    for item in invoice.items:
+    for item in projected:
         key = (str(item.xiaoman_unique_id or ""), str(item.product_id or ""), str(item.sku_id or ""))
         if not all(key) or key in wanted:
             raise ValueError("订单行尚未精确映射，实际出库数量待核验")
         wanted[key] = item
-    shipped = {item.id: Decimal(0) for item in invoice.items}
+    shipped = {item.id: Decimal(0) for item in projected}
     result, seen = [], set()
     for doc in documents:
         identity = str(doc.get("outbound_invoice_id") or "")
@@ -87,17 +89,19 @@ def project(invoice, documents, *, presale_outbounds=None):
                 raise ValueError("出库数量或单位待核对")
             if actual_shipped:
                 shipped[item.id] += qty
-            lines.append({"invoice_item_id": item.id, "product_name": item.product_name, "quantity": str(qty), "ordered_quantity": item.quantity})
+            lines.append({"invoice_item_id": item.id, "product_name": item.product_name, "quantity": str(qty), "ordered_quantity": remote_quantity(item)})
         result.append({"id": identity, "number": doc.get("serial_id") or identity,
             "state": "shipped" if actual_shipped else "generated", "date": doc.get("outbound_time") or doc.get("create_time"),
             "maker_name": doc.get("maker_name"), "inspection": inspection, "anomaly": doc.get("anomaly"),
             "items": lines, "quantity": str(sum((Decimal(x["quantity"]) for x in lines), Decimal(0)))})
-    if any(shipped[i.id] > i.quantity for i in invoice.items):
+    if any(shipped[i.id] > remote_quantity(i) for i in projected):
         raise ValueError("实际出库超过订单数量，请核对原单")
     return result, {str(k): str(v) for k, v in shipped.items()}
 
 
 def read(db, invoice, user):
+    from app.invoice.presale_lines import remote_items, remote_quantity
+    projected = remote_items(invoice) if invoice.order_type == "presale" else invoice.items
     scope = detail_access.outbound_scope(db, user)
     result = {"state": "unverified", "items": [], "batches": [], "tasks": [], "summary": None,
               "checked_at": None, "message": "", "source": "inspection"}
@@ -138,7 +142,7 @@ def read(db, invoice, user):
         result["message"] = "无发货批次查看范围，实际出库进度待核验"
         return result
     if not invoice.xiaoman_order_id:
-        result.update(state="ready", checked_at=beijing_now(), summary={"ordered_quantity": sum(i.quantity for i in invoice.items),
+        result.update(state="ready", checked_at=beijing_now(), summary={"ordered_quantity": sum(remote_quantity(i) for i in projected),
             "shipped_quantity": "0", "by_item": {str(i.id): "0" for i in invoice.items}})
         return result
     try:
@@ -158,7 +162,7 @@ def read(db, invoice, user):
         if local is not None and not set(local) <= {str(d["outbound_invoice_id"]) for d in documents}:
             raise ValueError("已生成的预售出库单尚未进入镜像，进度待核验")
         items, by_item = project(invoice, documents, presale_outbounds=local)
-        result.update(state="ready", items=items, checked_at=beijing_now(), summary={"ordered_quantity": sum(i.quantity for i in invoice.items),
+        result.update(state="ready", items=items, checked_at=beijing_now(), summary={"ordered_quantity": sum(remote_quantity(i) for i in projected),
             "shipped_quantity": str(sum((Decimal(v) for v in by_item.values()), Decimal(0))), "by_item": by_item})
     except HTTPException:
         raise

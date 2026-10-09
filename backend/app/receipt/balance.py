@@ -28,6 +28,8 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
     for row in local:
         if row.currency != invoice.currency or row.customer_id != invoice.customer_id:
             raise ValueError("方舟回款与订单身份不一致，请核对")
+        if invoice.order_type == "presale" and row.xiaoman_order_id != invoice.xiaoman_order_id:
+            raise ValueError("预售回款所属远端订单已变化，请核对")
         if row.xiaoman_receipt_id and row.sync_status == "uncertain":
             raise ValueError("关联小满回款待核对，余额暂冻结，请先处理原单")
         if row.xiaoman_receipt_id in remote_ids:
@@ -103,11 +105,36 @@ def calculate_target(db, target, snapshot, *, exclude_receipt=None, current=Fals
                 raise ValueError("运费远端回款缺失或待核对")
         elif row.id != exclude_receipt:
             registered += row.amount
-    remaining = Decimal(target.amount) - registered
+    from app.invoice.settlement_models import SettlementApplication, ShipmentSettlement
+    query = db.query(SettlementApplication, Receipt, ShipmentSettlement).join(Receipt,
+        Receipt.id == SettlementApplication.receipt_id).join(ShipmentSettlement,
+        ShipmentSettlement.id == SettlementApplication.settlement_id).filter(
+            SettlementApplication.settlement_id == target.settlement_id,
+            SettlementApplication.component == "freight", SettlementApplication.status != "released",
+            Receipt.purpose == "presale_advance")
+    if current:
+        query = query.order_by(SettlementApplication.id).populate_existing().with_for_update()
+    pool_apps = query.all()
+    if pool_apps:
+        from app.invoice import presale_runtime
+        from app.invoice.models import Invoice
+        invoice = db.get(Invoice, target.invoice_id)
+        if invoice is None:
+            raise ValueError("运费资金池所属订单不存在")
+        presale_runtime.pool_lots(db, invoice, current=current)
+    pool_applied = Decimal(0)
+    for app, receipt, settlement in pool_apps:
+        if (receipt.invoice_id != target.invoice_id or settlement.invoice_id != target.invoice_id
+                or receipt.customer_id != target.customer_id or receipt.currency != target.currency
+                or receipt.status != "active" or app.amount <= 0 or app.bank_charge):
+            raise ValueError("运费资金池分配关联异常")
+        pool_applied += app.amount
+    remaining = Decimal(target.amount) - registered - pool_applied
     if remaining < 0:
         raise ValueError("运费目标回款已超额，请核对")
-    fingerprint = {"target": binding, "remote": sorted(seen),
+    fingerprint = {"target": binding, "remote": sorted(seen), "pool_applied": str(pool_applied),
         "local": sorted((row.id, row.version, row.sync_status, str(row.amount)) for row in local)}
     return {"registered_amount": str(registered), "effective_amount": str(effective),
+            "pool_applied_amount": str(pool_applied),
             "remaining_amount": str(remaining), "currency": target.currency,
             "version": hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()}

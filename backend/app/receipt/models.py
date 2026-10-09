@@ -77,6 +77,8 @@ class ReceiptIntent(Base):
     eligible = Column(Integer, nullable=False, default=0, comment='新库存单自动回款资格：0/1')
     status = Column(String(16), nullable=False, default="draft", comment='自动回款意图：draft/armed/ready/converted')
     amount = Column(Numeric(14, 2), comment='本次回款原币金额，含手续费')
+    purpose = Column(String(32), nullable=True, comment='首款用途，空值保留存量生成规则')
+    bank_charge = Column(Numeric(14, 2), nullable=True, comment='首款实际银行手续费，空值保留存量计算规则')
     collection_date = Column(Date, comment='回款业务日期，北京时间')
     payment_type = Column(String(64), comment='小满回款方式枚举值')
     remark = Column(String(500), comment='回款备注')

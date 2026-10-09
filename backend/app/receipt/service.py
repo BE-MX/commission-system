@@ -1,6 +1,7 @@
 """Receipt transactions; callers commit, except explicitly durable delivery work."""
 import hashlib
 import json
+from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -68,6 +69,15 @@ def describe(db, row, invoice=None, *, detail=False):
         data["logs"] = [{"action": x.action, "message": x.message, "created_at": x.created_at}
                         for x in db.query(ReceiptLog).filter(ReceiptLog.receipt_id == row.id)
                         .order_by(ReceiptLog.id.desc()).limit(100).all()]
+    if row.purpose in {"presale_deposit", "presale_advance"}:
+        from app.invoice.settlement_models import SettlementApplication
+        applied = db.query(SettlementApplication).filter(SettlementApplication.receipt_id == row.id,
+            SettlementApplication.status != "released").all()
+        allocated = sum((app.amount for app in applied), Decimal(0))
+        allocated_charge = sum((app.bank_charge for app in applied), Decimal(0))
+        data.update(allocated_amount=str(allocated), available_amount=str(row.amount - allocated),
+            available_charge=str(row.bank_charge - allocated_charge),
+            available_principal=str(row.amount - allocated - row.bank_charge + allocated_charge))
     return data
 
 
@@ -114,15 +124,33 @@ def order_balance(db, invoice):
     summary = balance.calculate(db, invoice, snapshot)
     if invoice.order_type == "presale":
         from app.invoice import settlement_service
-        from app.invoice.settlement_models import ShipmentSettlement
         summary = settlement_service.goods_balance(db, invoice, snapshot)
-        row = db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id == invoice.id, ShipmentSettlement.state.in_(["awaiting_payment", "awaiting_verification"])).first()
-        if not row:
-            raise ValueError("请先为预售订单准备发货结算")
+        return _with_active_settlement(db, invoice, summary)
+    return summary
+
+
+def _with_active_settlement(db, invoice, summary):
+    from app.invoice import settlement_service
+    from app.invoice.settlement_models import ShipmentSettlement
+    row = db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id == invoice.id,
+        ShipmentSettlement.state.notin_(["shipped", "cancelled"])).order_by(ShipmentSettlement.id).first()
+    summary["funding_mode"] = "presale_pool"
+    if row:
         data = settlement_service.funding_balance(db, row)
         data["version"] = settlement_service.digest([data["version"], summary["version"]])
-        return data
+        data["state"] = row.state
+        summary["active_settlement"] = data
     return summary
+
+
+def ensure_pool_registration(db, invoice, *, current=False):
+    from app.invoice.settlement_models import ShipmentSettlement
+    query = db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id == invoice.id,
+        ShipmentSettlement.state.notin_(["shipped", "cancelled"]))
+    if current:
+        query = query.order_by(ShipmentSettlement.id).populate_existing().with_for_update()
+    if query.first():
+        raise ValueError("当前有未完成发货结算，请通过原批次补款，或取消无远端效果的批次后登记预付款")
 
 
 def invoice_summary(db, invoice):
@@ -137,7 +165,12 @@ def invoice_summary(db, invoice):
     try:
         rows = remote.order_receipts(db, invoice.xiaoman_order_id) if invoice.xiaoman_order_id else []
         db.refresh(invoice)
-        summary = balance.calculate(db, invoice, {"rows": rows, "invoice_binding": binding})
+        snapshot = {"rows": rows, "invoice_binding": binding}
+        if invoice.order_type == "presale":
+            from app.invoice.settlement_service import goods_balance
+            summary = _with_active_settlement(db, invoice, goods_balance(db, invoice, snapshot))
+        else:
+            summary = balance.calculate(db, invoice, snapshot)
     except ValueError as exc:
         # A changed remote receipt blocks new funds, but must keep recovery visible.
         balance_error = str(exc)
@@ -158,9 +191,9 @@ def _make_row(db, invoice, fields, actor, request_key, request_hash, *, source="
                   currency=invoice.currency, customer_id=invoice.customer_id,
                   xiaoman_order_id=invoice.xiaoman_order_id, created_by=actor,
                   **fields.model_dump(include={"amount", "collection_date", "payment_type", "bank_charge",
-                                               "remark", "attachment_ids"}))
+                                               "remark", "attachment_ids", "purpose"}))
     if source == "auto" and invoice.order_type == "presale":
-        row.purpose = "presale_deposit"
+        row.purpose = getattr(fields, "purpose", "presale_deposit")
     db.add(row)
     db.flush()
     return row
@@ -168,7 +201,7 @@ def _make_row(db, invoice, fields, actor, request_key, request_hash, *, source="
 
 def new_row(db, invoice, fields, actor, request_key, request_hash, *, source="manual"):
     # Legacy scheduler wiring remains until its execution actor policy is confirmed.
-    if source == "auto":
+    if source == "auto" and invoice.order_type != "presale":
         fields = fields.model_copy(update={"bank_charge": fees.allocate(db, invoice, fields.amount)})
     row = _make_row(db, invoice, fields, actor, request_key, request_hash, source=source)
     attachments.bind(db, row.attachment_ids, actor, invoice.id, row.id)
@@ -179,13 +212,23 @@ def new_row(db, invoice, fields, actor, request_key, request_hash, *, source="ma
 def _create(db, invoice, body, actor, fingerprint, snapshot, payment_types, proof_evidence):
     ensure_order_ready(db, invoice, current=True)
     if invoice.order_type == "presale":
-        raise ValueError("预售回款请通过发货结算或批量回款登记")
+        if body.purpose not in {"presale_deposit", "presale_advance"}:
+            raise ValueError("预售回款请选择末批抵扣预付款或每批可用余额")
+        if body.bank_charge >= body.amount:
+            raise ValueError("预售付款必须包含正的实际到账本金")
+        ensure_pool_registration(db, invoice, current=True)
+    elif body.purpose != "ordinary":
+        raise ValueError("普通订单只能登记普通回款")
     if body.payment_type not in payment_types:
         raise ValueError("请选择有效的小满回款方式")
     summary = balance.calculate(db, invoice, snapshot, current=True)
+    if invoice.order_type == "presale":
+        from app.invoice.settlement_service import goods_balance
+        summary = goods_balance(db, invoice, snapshot, current=True)
     if summary["version"] != body.balance_version:
         raise HTTPException(409, "订单余额已变化，请刷新后核对金额（凭证已保留）")
-    balance.ensure_available(summary, body.amount)
+    if invoice.order_type != "presale":
+        balance.ensure_available(summary, body.amount)
     row = _make_row(db, invoice, body, actor, body.request_key, fingerprint)
     attachments.bind_verified(db, row.attachment_ids, actor, invoice.id, row.id, proof_evidence)
     log(db, row, "created", "手工登记回款", actor)
@@ -193,7 +236,7 @@ def _create(db, invoice, body, actor, fingerprint, snapshot, payment_types, proo
 
 
 def _change(db, row, invoice, body, actor, snapshot, payment_types, proof_evidence):
-    if row.batch_id or row.purpose == "presale_deposit":
+    if row.batch_id or row.purpose in {"presale_deposit", "presale_advance"}:
         raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
     if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:
         raise ValueError("仅未发送或明确失败的回款可修改")
@@ -219,7 +262,7 @@ def _change(db, row, invoice, body, actor, snapshot, payment_types, proof_eviden
 
 
 def _ensure_editable(row, version):
-    if row.batch_id or row.purpose == "presale_deposit":
+    if row.batch_id or row.purpose in {"presale_deposit", "presale_advance"}:
         raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
     if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:
         raise ValueError("仅未发送或明确失败的回款可修改")
@@ -317,7 +360,7 @@ def _retry(db, row, invoice, actor, evidence):
     ensure_no_returned_result(db, row)
     from app.invoice.settlement_guard import ensure_receipt_sendable
     ensure_receipt_sendable(db, row, current=True)
-    if row.source == "auto" and row.bank_charge == 0:
+    if row.source == "auto" and row.bank_charge == 0 and row.purpose not in {"presale_deposit", "presale_advance"}:
         if invoice.surcharge_amount:
             if evidence is None:
                 raise ValueError("自动回款缺少已核验手续费证据")

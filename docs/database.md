@@ -25,7 +25,13 @@
 
 生产库中客户标签表的 `customer_id` 为 `utf8mb4_0900_ai_ci`，素材批次表为 `utf8mb4_unicode_ci`。两列联结时需对客户标签侧显式使用 `utf8mb4_unicode_ci`，否则 MySQL 报 1267；素材预览与客户门户的标签查询均按此规则比较，不改变已有表和数据。
 
-## 预售结算与汇总回款（166_presale_settlement，未部署）
+## 预售资金池与当批明细（179_presale_funding，本地实现，未部署）
+
+父 `178_account_unlock`；只新增七列，不猜测或回填历史资金用途，不改原回款金额、手续费、日期或凭证。`ark_invoices.presale_current_accessory/presale_current_handling` 可空 NUMERIC(14,2)，保存当前包装/手续费，与含历史费用的账本分离。`ark_invoice_items.presale_archived`、`presale_shipped_quantity` INT默认0，`presale_shipped_amount` NUMERIC(14,2)默认0；归档保留原商品ID、数量、价格、金额及小满UID，远端投影只使用实际已发数量金额。`ark_receipt_intents.purpose` 可空VARCHAR(32)、`bank_charge` 可空NUMERIC(14,2)，冻结首款用途及实际银行手续费；新预售省略手续费按零，历史NULL不擅自认定零。
+
+`ark_receipts.purpose` 新增 `presale_advance`，复用原类型列。V2结算quote保存资金用途、原收款分配、手续费、余额及人工末批；保留V1历史报价。取消只释放分配，收款本身保留；用途纠错保留已取消报价的历史含义。迁移downgrade拒绝删除财务或发货事实。
+
+## 预售结算与汇总回款（166_presale_settlement）
 
 开发分支新增 `170_presale_freight_name`（父 `169_pcw_customer_workbench`）：为 `ark_receivables` 增加唯一的 `remote_order_name`、冻结的 `remote_payload` 和摘要，以及发送令牌、租约、错误和版本列；为 `ark_shipment_outbounds` 增加首次远端明细核验快照和 `last_check_attempt_at`，分别用于确认实际出库时固定行 ID/成本单价、以及远端读取失败后的公平轮询。运费目标在远端写入前先预留可匹配名称；远端 ID 回读核验后绑定。生产迁移仍只能经候选发布入口执行，本地未对共享数据库升级。
 

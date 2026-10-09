@@ -10,7 +10,7 @@ from app.core.time import beijing_now
 from app.invoice.models import Invoice
 from app.invoice import settlement_service as shipments
 from app.invoice.settlement_models import ReceiptBatch, BatchAttachment, SettlementApplication, ShipmentSettlement
-from app.invoice.settlement_pricing import split_payment
+from app.invoice.settlement_pricing import split_payment, split_current_payment
 from app.receipt import access, attachments, authority, balance, fees, remote, service
 from app.receipt.models import Receipt, ReceiptAttachment, ReceiptLog
 
@@ -73,12 +73,12 @@ def new_batch(db, fields, invoice, actor, key, fingerprint, proof_evidence=None)
     return row
 
 
-def new_component(db, batch, invoice, target, amount, charge, fields, settlement=None):
+def new_component(db, batch, invoice, target, amount, charge, fields, settlement=None, *, purpose=None):
     if amount <= 0:
         return None
     row = Receipt(receipt_no="HK" + beijing_now().strftime("%Y%m%d") + "-" + uuid4().hex[:16],
         invoice_id=invoice.id, batch_id=batch.id, receivable_id=target.id, source="manual",
-        purpose="freight" if target.kind == "freight" else "presale_goods" if settlement else "ordinary",
+        purpose=purpose or ("freight" if target.kind == "freight" else "presale_goods" if settlement else "ordinary"),
         request_key=f"batch_{batch.id}_target_{target.id}", request_hash=batch.request_hash,
         amount=amount, bank_charge=charge, currency=batch.currency, customer_id=batch.customer_id,
         collection_date=batch.collection_date, payment_type=batch.payment_type, remark=batch.remark,
@@ -98,7 +98,13 @@ def allocate_shipment(db, batch, invoice, settlement, amount, fields, *, current
     if settlement.state not in {"awaiting_payment", "awaiting_verification"}:
         raise ValueError("当前结算不接受新增付款")
     summary = shipments.funding_balance(db, settlement, current=current)
-    components = split_payment(amount, summary["goods_remaining"], summary["freight_remaining"], summary["charge_remaining"])
+    if settlement.quote.get("funding_version") == 2:
+        components = split_current_payment(amount, summary["goods_remaining"], summary["freight_remaining"],
+            summary["charge_remaining"], fields.bank_charge)
+    else:
+        if fields.bank_charge:
+            raise ValueError("旧批次手续费自动分摊，请勿重复填写")
+        components = split_payment(amount, summary["goods_remaining"], summary["freight_remaining"], summary["charge_remaining"])
     for kind in ("goods", "freight"):
         value = components[f"{kind}_amount"]
         if value:
@@ -130,20 +136,39 @@ def _create_verified(db, body, invoices, actor, evidence, fee_evidence, proof_ev
         order_summary = balance.calculate(db, invoice, proof.snapshot(), current=True)
         if invoice.order_type == "presale":
             shipments.require_enabled()
+            order_summary = shipments.goods_balance(db, invoice, proof.snapshot(), current=True)
+            if allocation.purpose in {"presale_deposit", "presale_advance"}:
+                service.ensure_pool_registration(db, invoice, current=True)
+                if allocation.settlement_id:
+                    raise ValueError("预售资金池付款不能绑定发货结算")
+                if order_summary["version"] != allocation.balance_version:
+                    raise ValueError(f"订单 {invoice.invoice_no} 余额已变化，请刷新（凭证保留）")
+                charges[invoice.id] = allocation.bank_charge
+                continue
             if not allocation.settlement_id:
                 raise ValueError("预售订单必须选择发货结算")
-            order_summary = shipments.goods_balance(db, invoice, proof.snapshot(), current=True)
             settlement = db.query(ShipmentSettlement).filter_by(id=allocation.settlement_id,
                 invoice_id=invoice.id).populate_existing().with_for_update().first()
             if not settlement:
                 raise ValueError("结算不属于所选订单")
             summary = shipments.funding_balance(db, settlement, current=True)
             summary["version"] = shipments.digest([summary["version"], order_summary["version"]])
-            components = split_payment(allocation.amount, summary["goods_remaining"],
-                summary["freight_remaining"], summary["charge_remaining"])
-            balance.ensure_available(order_summary, components["goods_amount"])
+            if settlement.quote.get("funding_version") == 2:
+                components = split_current_payment(allocation.amount, summary["goods_remaining"],
+                    summary["freight_remaining"], summary["charge_remaining"], allocation.bank_charge)
+            else:
+                if allocation.bank_charge:
+                    raise ValueError("旧批次手续费自动分摊，请勿重复填写")
+                components = split_payment(allocation.amount, summary["goods_remaining"],
+                    summary["freight_remaining"], summary["charge_remaining"])
+            if settlement.quote.get("funding_version") != 2:
+                balance.ensure_available(order_summary, components["goods_amount"])
             settlements[invoice.id] = settlement
         else:
+            if allocation.purpose != "ordinary":
+                raise ValueError("普通订单不能登记预售资金池回款")
+            if allocation.bank_charge:
+                raise ValueError("普通订单回款手续费由订单费用分摊，请勿重复填写")
             if allocation.settlement_id:
                 raise ValueError("普通订单不能绑定预售结算")
             summary = order_summary
@@ -157,7 +182,12 @@ def _create_verified(db, body, invoices, actor, evidence, fee_evidence, proof_ev
     for allocation in body.allocations:
         invoice = invoices[allocation.invoice_id]
         if invoice.order_type == "presale":
-            allocate_shipment(db, batch, invoice, settlements[invoice.id], allocation.amount, body, current=True)
+            if allocation.purpose in {"presale_deposit", "presale_advance"}:
+                new_component(db, batch, invoice, shipments.target(db, invoice, current=True),
+                    allocation.amount, charges[invoice.id], body, purpose=allocation.purpose)
+            else:
+                allocate_shipment(db, batch, invoice, settlements[invoice.id], allocation.amount,
+                    body.model_copy(update={"bank_charge": allocation.bank_charge}), current=True)
         else:
             new_component(db, batch, invoice, shipments.target(db, invoice, current=True),
                 allocation.amount, charges[invoice.id], body)

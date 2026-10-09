@@ -13,4 +13,4 @@ const statuses = {
 }
 export const detailStatus = value => resolveStatus(value, statuses)
 export const orderTypeLabel = value => ({stock:'库存单',production:'生产单',presale:'预售单'}[value] || value || '—')
-export const purposeLabel = value => ({ordinary:'订单款',presale_deposit:'预付款',presale_goods:'批次商品款',freight:'独立运费'}[value] || value || '订单款')
+export const purposeLabel = value => ({ordinary:'订单款',presale_deposit:'定金',presale_advance:'预付货款',presale_goods:'批次商品款',freight:'独立运费'}[value] || value || '订单款')

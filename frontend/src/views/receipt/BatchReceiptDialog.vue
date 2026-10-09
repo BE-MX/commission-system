@@ -15,12 +15,15 @@
         <p v-if="rows.length">{{ rows[0].customer_name }} · {{ rows[0].currency }}；同一笔凭证仅上传一次，按下表金额分配。</p>
         <el-table class="list-table" :data="rows" border v-sticky-scrollbar>
           <el-table-column prop="invoice_no" label="订单发票" min-width="150" />
-          <el-table-column label="可登记余额" min-width="130"><template #default="{ row }">{{ row.balance ? money(row.balance.remaining_amount) : pending ? '原提交已冻结' : '未核验' }}</template></el-table-column>
+          <el-table-column label="用途" min-width="170"><template #default="{ row }"><span v-if="pending">{{ purposeLabel(row.purpose) }}</span><el-select v-else-if="row.balance?.funding_mode === 'presale_pool'" v-model="row.purpose" aria-label="预售收款用途"><el-option value="presale_advance" label="预付货款" :disabled="Boolean(row.balance.active_settlement)" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" :disabled="Boolean(row.balance.active_settlement)" /><el-option v-if="row.balance.active_settlement" value="ordinary" label="本批补款" /></el-select><span v-else>订单款</span></template></el-table-column>
+          <el-table-column label="已核验金额" min-width="130"><template #default="{ row }">{{ row.balance?.funding_mode === 'presale_pool' && row.purpose !== 'ordinary' ? `预付余额 ${money(row.balance.pool_available_amount)}` : row.balance ? money(row.balance.active_settlement?.remaining_amount ?? row.balance.remaining_amount) : pending ? '原提交已冻结' : '未核验' }}</template></el-table-column>
           <el-table-column label="本次分配" min-width="185"><template #default="{ row }"><span v-if="pending">{{ row.amount }}</span><el-input-number v-else v-model="row.amount" aria-label="本次分配金额" :min="0.01" :precision="2" controls-position="right" /></template></el-table-column>
+          <el-table-column label="实际银行手续费" min-width="165"><template #default="{ row }"><span v-if="pending">{{ row.bank_charge || 0 }}</span><el-input-number v-else-if="actualChargeForRow(row)" v-model="row.bank_charge" aria-label="本次收款实际银行手续费" :min="0" :precision="2" controls-position="right" /><span v-else>按本批费用分摊</span></template></el-table-column>
           <el-table-column v-if="!pending" label="操作" class-name="table-action-column" min-width="120"><template #default="{ row }"><el-button link :loading="row.loading" :disabled="locked" @click="refresh(row)">刷新</el-button><el-button link :disabled="locked" @click="remove(row)">移除</el-button></template></el-table-column>
         </el-table>
         <p>分配合计：{{ allocatedTotal }} {{ rows[0]?.currency }}</p>
-        <ReceiptFields :form="form" :currency="rows[0]?.currency" :readonly="locked" show-charge @uploading="v => uploading = v" />
+        <p v-if="rows.some(row => row.balance?.funding_mode === 'presale_pool')">预付货款用于后续每批商品款和运费；定金留到人工确认的最后一批。金额按实际到账填写，可以超过当前商品明细金额。</p>
+        <ReceiptFields :form="form" :currency="rows[0]?.currency" :readonly="locked" @uploading="v => uploading = v" />
       </el-form>
     </div>
     <template #footer><div class="batch-receipt-actions">
@@ -42,8 +45,9 @@ import ReceiptFields from './ReceiptFields.vue'
 import { getReceiptOrders, getReceiptBalance, createReceiptBatch, inspectReceiptBatchSubmission } from '@/api/receipt'
 import { useAuthStore } from '@/stores/auth'
 import { currentBeijingDate } from '@/utils/datetime'
-import { msgError, msgSuccess } from '@/utils/feedback'
-import { cents, validateAllocations, latestRequest } from './batchReceiptState'
+import { confirmAction, msgError, msgSuccess } from '@/utils/feedback'
+import { cents, validateAllocations, latestRequest, allocationForRow, actualChargeForRow } from './batchReceiptState'
+import { purposeLabel } from '@/views/invoice/components/invoiceDetailLabels'
 import { clearSubmission, copySubmission, isBatchReceipt, readSubmission, saveSubmission, uncertainSubmission } from './batchSubmission'
 import { money } from './useReceipts'
 const emit = defineEmits(['close', 'saved'])
@@ -80,7 +84,10 @@ async function search(keyword = '') {
 async function refresh(row) {
   if (locked.value || row.loading) return
   const identity = generation; row.loading = true; row.balance = null
-  try { const balance = await getReceiptBalance(row.id); if (current(identity) && !locked.value && rows.value.includes(row)) row.balance = balance }
+  try { const balance = await getReceiptBalance(row.id); if (current(identity) && !locked.value && rows.value.includes(row)) {
+    row.balance = balance
+    if (balance.funding_mode === 'presale_pool' && (!row.purpose || balance.active_settlement)) row.purpose = balance.active_settlement ? 'ordinary' : 'presale_advance'
+  } }
   catch (e) { if (current(identity) && rows.value.includes(row)) failed(e) }
   finally { if (current(identity)) row.loading = false }
 }
@@ -90,7 +97,7 @@ async function addOrder(id) {
   if (!order || rows.value.some(row => row.id === id)) return
   const first = rows.value[0]
   if (first && (first.customer_id !== order.customer_id || first.currency !== order.currency)) { void showError('请选择同一客户、同一币种订单'); return }
-  const row = reactive({ ...order, amount: null, balance: null, loading: false }); rows.value.push(row)
+  const row = reactive({ ...order, amount: null, bank_charge: 0, purpose: '', balance: null, loading: false }); rows.value.push(row)
   await Promise.all([refresh(row), search()])
 }
 function remove(row) { if (!locked.value) { rows.value = rows.value.filter(r => r.id !== row.id); void search() } }
@@ -123,7 +130,7 @@ async function inspect() {
     if (result.state !== 'not_found' || !Array.isArray(result.invoices) || result.invoices.length !== ids.size
       || new Set(result.invoices.map(row => row.id)).size !== ids.size || !result.invoices.every(row => ids.has(row.id))) throw new Error('核对回执不完整，请保持原请求并再次核对')
     denied.value = false; Object.assign(form, copySubmission(frozen))
-    rows.value = frozen.allocations.map(item => ({ ...result.invoices.find(row => row.id === item.invoice_id), amount: item.amount, balance: null, loading: false }))
+    rows.value = frozen.allocations.map(item => ({ ...result.invoices.find(row => row.id === item.invoice_id), amount: item.amount, purpose: item.purpose, bank_charge: item.bank_charge, balance: null, loading: false }))
     void showError('尚未查到原批次，不能据此判断先前请求未执行。原内容仍冻结，可继续核对或按原请求重试。')
   } catch (e) { if (current(identity, key)) failed(e) }
   finally { if (current(identity, key)) checking.value = false }
@@ -137,7 +144,7 @@ async function submit(retry = false) {
       const previous = readSubmission(window.sessionStorage, actor)
       if (previous) { frozen = previous; state.value = 'uncertain'; hidePrivate(); await inspect(); return }
       frozen = { ...copySubmission(form), amount: String(form.amount), bank_charge: String(form.bank_charge || 0), request_key: crypto.randomUUID(),
-        allocations: rows.value.map(row => ({ invoice_id: row.id, settlement_id: row.balance.settlement_id || null, amount: String(row.amount), balance_version: row.balance.version })) }
+        allocations: rows.value.map(allocationForRow) }
     } catch (e) { storageBlocked.value = true; hidePrivate(); void showError('原提交记录不能可靠保存，本次尚未发送。请恢复会话存储后重新打开；已有待核对记录不能覆盖。'); return }
   }
   if (!frozen) return

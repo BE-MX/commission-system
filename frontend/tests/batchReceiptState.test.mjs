@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { cents, validateAllocations, latestRequest } from '../src/views/receipt/batchReceiptState.js'
+import { cents, validateAllocations, latestRequest, allocationForRow } from '../src/views/receipt/batchReceiptState.js'
 const row = (id, amount, extra = {}) => ({ id, amount, customer_id: 'customer-1', currency: 'USD', balance: { remaining_amount: '10.00', version: 'v1' }, ...extra })
 test('decimal allocations compare exact cents rather than float sums', () => {
   assert.equal(validateAllocations([row(1, '0.10'), row(2, '0.20')], '0.30'), '')
@@ -38,4 +38,32 @@ test('presale payload cannot carry order-level freight or invent a deposit', () 
   assert.equal(buildInvoicePayload(form, 0).receipt_draft, null)
   form.receipt_draft = { amount: 12.34, attachment_ids: [9] }
   assert.equal(buildInvoicePayload(form, 0).receipt_draft.amount, '12.34')
+})
+
+test('presale advances allow cash above current goods and freeze actual fee', () => {
+  const advance = row(1, '1077', { purpose: 'presale_advance', bank_charge: '12',
+    balance: { funding_mode: 'presale_pool', version: 'pool-v1', remaining_amount: '0' } })
+  assert.equal(validateAllocations([advance], '1077'), '')
+  assert.deepEqual(allocationForRow(advance), { invoice_id: 1, settlement_id: null, amount: '1077',
+    purpose: 'presale_advance', bank_charge: '12', balance_version: 'pool-v1' })
+  advance.bank_charge = '1077'
+  assert.notEqual(validateAllocations([advance], '1077'), '')
+  advance.bank_charge = '0'
+  advance.balance.active_settlement = { version: 'batch-v1', remaining_amount: '10' }
+  assert.notEqual(validateAllocations([advance], '1077'), '')
+})
+
+test('current supplement uses batch version and actual fee while legacy remains proportional', () => {
+  const payment = row(1, '20', { purpose: 'ordinary', bank_charge: '3', balance: {
+    funding_mode: 'presale_pool', version: 'pool-v1', remaining_amount: '0',
+    active_settlement: { funding_version: 2, settlement_id: 9, version: 'batch-v1',
+      remaining_amount: '100', charge_remaining: '5' } } })
+  assert.equal(validateAllocations([payment], '20'), '')
+  assert.equal(allocationForRow(payment).bank_charge, '3')
+  assert.equal(allocationForRow(payment).balance_version, 'batch-v1')
+  assert.equal(allocationForRow(payment).settlement_id, 9)
+  payment.bank_charge = '6'
+  assert.notEqual(validateAllocations([payment], '20'), '')
+  payment.balance.active_settlement.funding_version = 1
+  assert.equal(allocationForRow(payment).bank_charge, '0')
 })

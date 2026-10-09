@@ -6,6 +6,7 @@ export const getReceiptOrders = params => unwrap(request.get('/order-options', {
 export const getReceiptBalance = id => unwrap(request.get(`/order-balance/${id}`, { showLoading: false }))
 export const getInvoiceReceiptSummary = id => unwrap(request.get(`/invoice-summary/${id}`, { showLoading: false }))
 export const getReceiptTypes = () => unwrap(request.get('/types', { showLoading: false }))
+export const updatePresalePurpose = (id, body) => unwrap(request.patch(`/${id}/presale-purpose`, body))
 export const createReceipt = body => unwrap(request.post('', body))
 export const updateReceipt = (id, body) => unwrap(request.patch(`/${id}`, body))
 export const retryReceipt = id => unwrap(request.post(`/${id}/retry`))

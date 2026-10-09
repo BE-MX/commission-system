@@ -9,7 +9,10 @@ from app.invoice.models import Invoice
 from app.invoice.service import get_invoice
 from app.invoice.settlement_models import (ShipmentSettlement, SettlementItem, Receivable,
     SettlementApplication, ShipmentOutbound, SettlementEvent)
-from app.invoice.settlement_pricing import quote_settlement
+from app.invoice.settlement_pricing import quote_current
+from app.invoice.presale_funding import plan_funding
+from app.invoice import presale_runtime as pools
+from app.invoice.presale_lines import remote_items
 from app.invoice.settlement_policy import require_enabled, capabilities
 from app.receipt import access, remote, service as receipts
 from app.receipt.models import Receipt
@@ -39,15 +42,6 @@ def _current(query, enabled, *order):
     return query
 
 
-def deposit_for(db, invoice, *, current=False):
-    query = db.query(Receipt).filter(Receipt.invoice_id == invoice.id,
-        Receipt.purpose == "presale_deposit", Receipt.status == "active")
-    rows = _current(query, current, Receipt.id).all()
-    if len(rows) != 1:
-        raise ValueError("预售首款尚未生成或身份异常，请先核对预付款")
-    return rows[0]
-
-
 def goods_balance(db, invoice, snapshot, *, current=False):
     """An unallocated remote payment cannot silently become batch funding."""
     from app.receipt.balance import calculate
@@ -59,8 +53,18 @@ def goods_balance(db, invoice, snapshot, *, current=False):
     mapped = {r.xiaoman_receipt_id for r in query.all()}
     if any(str(r["cash_collection_id"]) not in mapped for r in snapshot["rows"]):
         raise ValueError("预售主单存在未分配的远端回款，请先核对，不能重复登记")
-    if Decimal(result["remaining_amount"]) < 0:
+    if invoice.order_type != "presale" and Decimal(result["remaining_amount"]) < 0:
         raise ValueError("预售主单回款已超额，请先核对")
+    if invoice.order_type == "presale":
+        _, lots = pools.pool_lots(db, invoice, snapshot, current=current)
+        result["pool_available_amount"] = str(sum((Decimal(lot.amount) - Decimal(lot.allocated_amount)
+            for lot in lots if lot.effective), Decimal(0)))
+        result["pool_balances"] = [{"receipt_id": lot.receipt_id, "purpose": lot.purpose,
+            "effective": lot.effective, "remaining_amount": str(Decimal(lot.amount) - Decimal(lot.allocated_amount)),
+            "remaining_charge": str(Decimal(lot.bank_charge) - Decimal(lot.allocated_charge)),
+            "remaining_principal": str(Decimal(lot.amount) - Decimal(lot.allocated_amount) - Decimal(lot.bank_charge) + Decimal(lot.allocated_charge))} for lot in lots]
+        result["funding_mode"] = "presale_pool"
+        result["version"] = digest([result["version"], result["pool_balances"]])
     return result
 
 
@@ -99,11 +103,11 @@ def check_shipped_funding(db, invoice, evidence, shipped, *, current=False):
             SettlementApplication.settlement_id == settlement.id,
             SettlementApplication.status != "released")
         applications = _current(applications, current, SettlementApplication.id, Receipt.id).all()
-        expected = Decimal(settlement.quote["new_payment_due"]) + Decimal(settlement.quote["deposit_applied"])
+        expected = pools.required(settlement.quote)
         if sum((Decimal(app.amount) for app, _ in applications), Decimal(0)) != expected:
             raise ValueError("历史已出库批次的资金分配已变化，不能继续安排")
         for app, receipt in applications:
-            rows = freight_rows if app.component == "freight" else goods_rows
+            rows = freight_rows if pools.source_component(app, receipt) == "freight" else goods_rows
             remote_row = rows.get(str(receipt.xiaoman_receipt_id))
             if (app.status != "applied" or receipt.status != "active"
                     or receipt.sync_status != "synced" or receipt.collect_status != 1
@@ -141,7 +145,7 @@ def check_outbounds(db, invoice, evidence, *, pending=None, current=False):
 
 def build_quote(db, invoice, body, evidence, *, current=False):
     remote_line_ids = set()
-    for item in invoice.items:
+    for item in remote_items(invoice):
         if not item.product_id or not item.sku_id or not item.xiaoman_unique_id:
             raise ValueError("预售分批出库暂不支持未映射到独立 OKKI 产品行的明细")
         identity = str(item.xiaoman_unique_id)
@@ -154,7 +158,6 @@ def build_quote(db, invoice, body, evidence, *, current=False):
     if active:
         raise ValueError("已有未完成的活动发货结算，请先处理原批次")
     check_outbounds(db, invoice, evidence, current=current)
-    deposit = deposit_for(db, invoice, current=current)
     # A changed/missing remote payment freezes new allocations too.
     available = goods_balance(db, invoice, evidence["receipt"], current=current)
     shipped = _current(db.query(ShipmentSettlement).filter_by(invoice_id=invoice.id, state="shipped"), current, ShipmentSettlement.id).all()
@@ -170,21 +173,38 @@ def build_quote(db, invoice, body, evidence, *, current=False):
             ShipmentSettlement.invoice_id == invoice.id, ShipmentSettlement.state == "shipped"
         ).group_by(SettlementItem.invoice_item_id).all())
     requested = {x.invoice_item_id: x.quantity for x in body.items}
-    if set(requested) - {x.id for x in invoice.items}:
+    current_items = [x for x in invoice.items if not getattr(x, "presale_archived", 0)]
+    if set(requested) - {x.id for x in current_items}:
         raise ValueError("产品明细不属于本订单")
     lines = [{"invoice_item_id": x.id, "quantity": x.quantity, "total_price": str(x.total_price),
               "shipped_quantity": int(quantities.get(x.id, 0)), "requested_quantity": requested.get(x.id, 0)}
-             for x in invoice.items]
-    result = quote_settlement(lines, invoice.internal_accessory or 0, invoice.surcharge_amount or 0,
-        deposit.amount, deposit.bank_charge, sum((Decimal(x.quote["packaging_amount"]) for x in shipped), Decimal(0)),
-        sum((Decimal(x.quote["handling_amount"]) for x in shipped), Decimal(0)), freight=body.freight_amount)
-    if Decimal(result["goods_payment_due"]) > Decimal(available["remaining_amount"]):
-        raise ValueError("本批商品款超过主单可回款余额，请先核对历史资金分配")
+             for x in current_items]
+    packaging = getattr(invoice, "presale_current_accessory", None)
+    handling = getattr(invoice, "presale_current_handling", None)
+    result = quote_current(lines, invoice.internal_accessory or 0 if packaging is None else packaging,
+        invoice.surcharge_amount or 0 if handling is None else handling,
+        freight=body.freight_amount, is_final=body.is_final)
+    pool_receipts, lots = pools.pool_lots(db, invoice, evidence["receipt"], current=current)
+    if not lots:
+        raise ValueError("预售首款尚未生成，请先登记预付款")
+    goods = Decimal(result["goods_amount"]) + Decimal(result["packaging_amount"])
+    plan = plan_funding(str(goods), result["handling_amount"], result["freight_amount"], lots,
+        is_final=body.is_final)
+    deposit = [app for app in plan["applications"] if app["purpose"] == "presale_deposit"]
+    advance = [app for app in plan["applications"] if app["purpose"] == "presale_advance"]
+    result.update(funding_version=2, pool_applications=plan["applications"], pool_balances=plan["balances"],
+        funding_total_amount=str(goods + Decimal(result["handling_amount"]) + Decimal(result["freight_amount"])),
+        deposit_applied=format(sum((Decimal(app["amount"]) for app in deposit), Decimal(0)), ".2f"),
+        deposit_charge_applied=format(sum((Decimal(app["bank_charge"]) for app in deposit), Decimal(0)), ".2f"),
+        advance_applied=format(sum((Decimal(app["amount"]) for app in advance), Decimal(0)), ".2f"),
+        goods_payment_due=plan["goods_payment_due"], goods_payment_charge=plan["goods_charge_due"],
+        freight_payment_due=plan["freight_payment_due"], new_payment_due=plan["additional_payment_due"],
+        additional_payment_due=plan["additional_payment_due"])
     result.update(invoice_id=invoice.id, currency=invoice.currency, customer_id=invoice.customer_id,
-                  invoice_no=invoice.invoice_no, deposit_receipt_id=deposit.id,
+                  invoice_no=invoice.invoice_no, deposit_receipt_id=None,
                   delivery_address=invoice.delivery_address, remark=invoice.remark)
     result["quote_hash"] = digest({"quote": result, "lines": lines, "evidence": evidence,
-                                   "deposit": [deposit.id, deposit.version, str(deposit.amount), str(deposit.bank_charge)]})
+                                   "funds": [(r.id, r.version, str(r.amount), str(r.bank_charge)) for r in pool_receipts]})
     result["capabilities"] = capabilities()
     return result
 
@@ -209,6 +229,16 @@ def target(db, invoice, settlement=None, *, current=False):
             remote_order_name=f"{settlement.settlement_no}-F" if settlement else None,
             remote_status="unverified" if settlement else "bound")
         db.add(row); db.flush()
+    elif current and settlement is None and invoice.order_type == "presale":
+        if (row.invoice_id != invoice.id or row.kind != "goods" or row.settlement_id is not None
+                or row.remote_order_id != invoice.xiaoman_order_id or row.customer_id != invoice.customer_id
+                or row.currency != invoice.currency):
+            raise ValueError("预售主单应收身份已变化，请核对原单")
+        if row.amount != invoice.total_amount or row.handling_amount != Decimal(invoice.surcharge_amount or 0):
+            row.amount = invoice.total_amount
+            row.handling_amount = invoice.surcharge_amount or 0
+            row.version += 1
+            db.flush()
     return row
 
 
@@ -220,6 +250,9 @@ def application(db, settlement, row, component, amount, charge):
                 sum((app.bank_charge for app in reserved_rows), Decimal(0)))
     if Decimal(reserved[0]) + Decimal(amount) > row.amount or Decimal(reserved[1]) + Decimal(charge) > row.bank_charge:
         raise ValueError("资金已被其他结算占用")
+    if (Decimal(amount) <= 0 or Decimal(charge) < 0 or Decimal(charge) > Decimal(amount)
+            or Decimal(reserved[0]) + Decimal(amount) - Decimal(reserved[1]) - Decimal(charge) > row.amount - row.bank_charge):
+        raise ValueError("资金本金或手续费分配超额")
     db.add(SettlementApplication(settlement_id=settlement.id, receipt_id=row.id, component=component,
         amount=amount, bank_charge=charge))
     db.flush()
@@ -259,12 +292,13 @@ def _create_verified(db, invoice, body, user, evidence, proof_evidence):
     target(db, invoice)
     if body.freight_amount:
         target(db, invoice, row)
-    if row.is_final:
-        deposit = deposit_for(db, invoice, current=True)
-        application(db, row, deposit, "deposit", deposit.amount, deposit.bank_charge)
+    pool_receipts = {r.id: r for r in pools.pool_lots(db, invoice, current=True)[0]}
+    for part in calculated["pool_applications"]:
+        application(db, row, pool_receipts[part["receipt_id"]], part["component"],
+            Decimal(part["amount"]), Decimal(part["bank_charge"]))
     db.add(SettlementEvent(settlement_id=row.id, action="created", actor_id=actor))
     if body.payment:
-        if body.payment.bank_charge:
+        if body.payment.bank_charge and calculated.get("funding_version") != 2:
             raise ValueError("手续费由本批自动分摊，请勿重复填写")
         batch_service._register_shipment_payment_verified(db, invoice, row, body.payment, actor, body.request_key, proof_evidence)
     return row
@@ -277,23 +311,41 @@ def funding_balance(db, row, *, current=False):
     if current:
         query = query.order_by(SettlementApplication.id, Receipt.id).populate_existing().with_for_update()
     applications = query.all()
-    goods = freight = charge = effective = Decimal(0)
+    if row.quote.get("funding_version") == 2:
+        invoice = db.get(Invoice, row.invoice_id)
+        pools.pool_lots(db, invoice, current=current)
+        if row.state != "cancelled":
+            pools.validate_quote_applications(row, [app for app, _ in applications],
+                {receipt.id: receipt for _, receipt in applications})
+    goods = freight = charge = effective = new_charge = Decimal(0)
     for app, receipt in applications:
         if receipt.status != "active":
             raise ValueError("本批关联回款已失效，请核对")
         if app.component != "deposit":
             if app.component == "goods":
                 goods += app.amount; charge += app.bank_charge
+                if receipt.purpose not in pools.POOL_PURPOSES:
+                    new_charge += app.bank_charge
             else:
                 freight += app.amount
         if receipt.sync_status == "synced" and receipt.collect_status == 1 and not receipt.last_error:
             effective += app.amount
-    result = {"settlement_id": row.id, "goods_remaining": str(Decimal(row.quote["goods_payment_due"]) - goods),
+    v2 = row.quote.get("funding_version") == 2
+    goods_total = (Decimal(row.quote["goods_amount"]) + Decimal(row.quote["packaging_amount"]) +
+        Decimal(row.quote["handling_amount"])) if v2 else Decimal(row.quote["goods_payment_due"])
+    charge_remaining = Decimal(row.quote["goods_payment_charge"]) - (new_charge if v2 else charge)
+    if v2:
+        charge_remaining = min(charge_remaining, goods_total - goods)
+    total = pools.required(row.quote) if v2 else Decimal(row.quote["new_payment_due"])
+    result = {"settlement_id": row.id, "goods_remaining": str(goods_total - goods),
+        "funding_version": row.quote.get("funding_version", 1),
         "freight_remaining": str(Decimal(row.quote["freight_amount"]) - freight),
-        "charge_remaining": str(Decimal(row.quote["goods_payment_charge"]) - charge),
+        "charge_remaining": str(charge_remaining),
         "effective_amount": str(effective), "registered_amount": str(goods + freight),
-        "remaining_amount": str(Decimal(row.quote["new_payment_due"]) - goods - freight),
-        "currency": row.quote["currency"], "total_amount": row.quote["new_payment_due"]}
+        "remaining_amount": str(total - goods - freight),
+        "currency": row.quote["currency"], "total_amount": str(total)}
+    if any(Decimal(result[key]) < 0 for key in ("goods_remaining", "freight_remaining", "charge_remaining", "remaining_amount")):
+        raise ValueError("本批资金分配超过应收金额，请核对")
     result["version"] = digest({"balance": result, "state": row.state, "version": row.version,
         "receipts": [(r.id, r.version, r.sync_status, r.collect_status, r.status) for _, r in applications]})
     return result
@@ -353,7 +405,8 @@ def _change_state_verified(db, row, user, action, version, reason, graph):
             for app in graph.applications):
         raise ValueError("本批回款正在发送或结果待核对，请先核实远端效果")
     if action == "cancel":
-        paid = any(app.component != "deposit" and app.status != "released" for app in graph.applications)
+        paid = any(app.component != "deposit" and graph.receipts[app.receipt_id].purpose not in pools.POOL_PURPOSES
+            and app.status != "released" for app in graph.applications)
         if paid or (freight and (freight.remote_order_id or freight.remote_status in {
                 "sending", "verifying", "uncertain", "bound"})):
             raise ValueError("已有真实付款或运费目标，仅支持原批暂停/恢复")

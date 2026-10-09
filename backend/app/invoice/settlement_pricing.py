@@ -116,6 +116,40 @@ def quote_settlement(lines, packaging, handling, deposit, deposit_charge,
     return result
 
 
+def quote_current(lines, packaging, handling, *, freight="0", is_final=False):
+    """Price the current editable batch; manual finality only controls funding."""
+    p, h, f = (_cents(value, name) for value, name in
+               ((packaging, "packaging"), (handling, "handling"), (freight, "freight")))
+    if type(is_final) is not bool or not lines:
+        raise ValueError("A current shipment and explicit final marker are required")
+    total = prior = goods = requested = 0
+    items, seen = [], set()
+    for row in lines:
+        identity = row["invoice_item_id"]
+        if identity in seen:
+            raise ValueError("Duplicate invoice_item_id")
+        seen.add(identity)
+        q, k, n = (_quantity(row.get(name, 0), name) for name in
+                   ("quantity", "shipped_quantity", "requested_quantity"))
+        if not q or k + n > q:
+            raise ValueError("Shipment quantity exceeds available quantity")
+        amount = _cents(row["total_price"], "total_price")
+        before = _round_ratio(amount * k, q)
+        part = _round_ratio(amount * (k + n), q) - before
+        total += amount; prior += before; goods += part; requested += n
+        if n:
+            items.append({"invoice_item_id": identity, "quantity": n, "line_amount": _format(part)})
+    if not requested or not total:
+        raise ValueError("A positive current shipment is required")
+    old_p = _round_ratio(p * prior, total)
+    new_p = _round_ratio(p * (prior + goods), total)
+    old_h = _round_ratio(h * (prior + old_p), total + p)
+    new_h = _round_ratio(h * (prior + goods + new_p), total + p)
+    return {"items": items, "is_final": is_final, "goods_amount": _format(goods),
+            "packaging_amount": _format(new_p - old_p), "handling_amount": _format(new_h - old_h),
+            "freight_amount": _format(f)}
+
+
 def split_payment(amount, goods_remaining, freight_remaining, goods_charge_remaining):
     """Return Decimal goods_amount/freight_amount/charge_amount components.
 
@@ -142,3 +176,21 @@ def split_payment(amount, goods_remaining, freight_remaining, goods_charge_remai
     charge = c if goods == g else _round_ratio(c * goods, g)
     return dict(goods_amount=Decimal(_format(goods)), freight_amount=Decimal(_format(freight_part)),
                 charge_amount=Decimal(_format(charge)))
+
+
+def split_current_payment(amount, goods_remaining, freight_remaining, handling_capacity, bank_charge):
+    """Actual bank fees are payment facts; customer handling can be paid in cash."""
+    a, c, h = (_cents(value, name) for value, name in ((amount, "amount"),
+        (bank_charge, "bank_charge"), (handling_capacity, "handling_capacity")))
+    components = split_payment(amount, goods_remaining, freight_remaining, "0")
+    goods = _cents(components["goods_amount"], "goods_amount")
+    if c and (c >= a or c > h or c + 1 > _cents(goods_remaining, "goods_remaining")):
+        raise ValueError("实际银行手续费须小于商品回款，并且不能超过本批未付手续费容量")
+    if c and goods <= c:
+        # The actual fee needs a positive goods-channel net. Move only the
+        # minimum cents from freight when proportional allocation is too small.
+        goods = c + 1
+        components["goods_amount"] = Decimal(_format(goods))
+        components["freight_amount"] = Decimal(_format(a - goods))
+    components["charge_amount"] = Decimal(_format(c))
+    return components

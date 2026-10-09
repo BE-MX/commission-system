@@ -6,6 +6,7 @@ import logging
 
 logger=logging.getLogger(__name__)
 from app.invoice import settlement_service as shipments
+from app.invoice import presale_runtime as pools
 from app.invoice.freight_reconciliation_service import _canonical
 from app.receipt import balance, reconciliation_service, remote, service, sync_service
 
@@ -133,10 +134,10 @@ def apply(db, invoice, settlement, graph, evidence):
         for app in graph.applications:
             if app.status=='released':continue
             receipt=graph.receipts[app.receipt_id]
-            counterpart=rows['freight' if app.component=='freight' else 'goods'].get(receipt.xiaoman_receipt_id)
+            counterpart=rows[pools.source_component(app,receipt)].get(receipt.xiaoman_receipt_id)
             if counterpart is None or str(counterpart.get('collect_status'))!='1':return False
         selected=[app for app in graph.applications if app.status!='released']
-        expected=Decimal(settlement.quote['new_payment_due'])+Decimal(settlement.quote['deposit_applied'])
+        expected=pools.required(settlement.quote)
         if sum((app.amount for app in selected),Decimal(0))!=expected:return False
         if any(graph.receipts[app.receipt_id].status!='active'
                 or graph.receipts[app.receipt_id].sync_status!='synced'

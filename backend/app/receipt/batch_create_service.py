@@ -27,8 +27,14 @@ def _values(row):
 
 def _replay(db, row, children, body, current):
     expected = {item.invoice_id:item.settlement_id for item in body.allocations}
-    if (row.created_by != access.user_id(current) or row.request_hash != shipments.digest(
-            body.model_dump(mode="json", exclude={"request_key"})) or {child.invoice_id for child in children} != set(expected)):
+    hashes = {shipments.digest(body.model_dump(mode="json", exclude={"request_key"}))}
+    if body.purpose == 'ordinary' and all(item.purpose == 'ordinary' and not item.bank_charge for item in body.allocations):
+        legacy = body.model_dump(mode="json", exclude={"request_key", "purpose"})
+        for item in legacy['allocations']:
+            item.pop('purpose', None); item.pop('bank_charge', None)
+        hashes.add(shipments.digest(legacy))
+    if (row.created_by != access.user_id(current) or row.request_hash not in hashes
+            or {child.invoice_id for child in children} != set(expected)):
         raise HTTPException(409, "提交标识已用于其他回款，请勿复用")
     settlements = {item.id:item for item in _rows(db, ShipmentSettlement,
         ShipmentSettlement.id.in_({identity for identity in expected.values() if identity is not None}))}
@@ -43,7 +49,14 @@ def _replay(db, row, children, body, current):
         if target is None or target.invoice_id != child.invoice_id or target.business_key != expected_key:
             raise HTTPException(409, "原批次付款目标关联已变化，请核对原批次")
         if settlement_id is None:
-            valid = child.purpose == "ordinary" and target.kind == "goods" and target.settlement_id is None and not linked
+            allocation = next(item for item in body.allocations if item.invoice_id == child.invoice_id)
+            valid = (child.purpose == allocation.purpose and target.kind == "goods" and target.settlement_id is None
+                and child.amount == allocation.amount and child.bank_charge == allocation.bank_charge
+                if child.purpose in {"presale_deposit", "presale_advance"} else
+                child.purpose == "ordinary" and target.kind == "goods" and target.settlement_id is None and not linked)
+            if child.purpose in {"presale_deposit", "presale_advance"}:
+                from app.invoice import presale_runtime
+                presale_runtime.pool_lots(db, db.get(Invoice, child.invoice_id), current=True)
         else:
             settlement = settlements.get(settlement_id)
             valid = (settlement is not None and settlement.invoice_id == child.invoice_id
@@ -103,9 +116,13 @@ def _capture(db, invoices, body, current):
         service.ensure_order_ready(db, invoice, current=True)
         if invoice.order_type == "presale":
             shipments.require_enabled()
-            if not item.settlement_id:
+            if item.purpose in {"presale_deposit", "presale_advance"} and item.settlement_id:
+                raise ValueError("预售资金池付款不能绑定发货结算")
+            if item.purpose in {"presale_deposit", "presale_advance"}:
+                service.ensure_pool_registration(db, invoice, current=True)
+            if item.purpose == "ordinary" and not item.settlement_id:
                 raise ValueError("预售订单必须选择发货结算")
-        elif item.settlement_id:
+        elif item.settlement_id or item.purpose != "ordinary":
             raise ValueError("普通订单不能绑定预售结算")
     receipts = _rows(db, Receipt, Receipt.invoice_id.in_(ids))
     occupied = or_(*(func.json_contains(ReceiptIntent.attachment_ids, json.dumps([identity])) == 1 for identity in body.attachment_ids))
@@ -173,7 +190,8 @@ def create(db, body, user):
         for target in targets:
             proof = edit_service._evidence(db, target)
             evidence[target.id] = proof
-            if not next(item for item in body.allocations if item.invoice_id == target.id).settlement_id:
+            allocation = next(item for item in body.allocations if item.invoice_id == target.id)
+            if not allocation.settlement_id and allocation.purpose == "ordinary":
                 fee = fees.read_evidence(db, proof.binding)
                 if {identity:remote.money(amount) for identity,_,amount,_ in proof.rows} != {identity:amount for identity,amount,_ in fee.rows}:
                     raise ValueError("余额与手续费付款证据不一致，请重新核对")

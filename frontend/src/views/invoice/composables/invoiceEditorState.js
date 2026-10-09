@@ -79,6 +79,8 @@ export function buildInvoicePayload(form, hairDiscount) {
   const draft = form.receipt_draft
   return {
     receipt_draft: draft ? { amount: draft.amount == null ? null : String(draft.amount),
+      purpose: draft.purpose || (form.order_type === 'presale' ? 'presale_deposit' : 'ordinary'),
+      bank_charge: draft.bank_charge == null ? null : String(draft.bank_charge),
       collection_date: draft.collection_date || null, payment_type: draft.payment_type || null,
       attachment_ids: draft.attachment_ids || [], remark: draft.remark || "" } : null,
     invoice_no: (form.invoice_no || '').trim() || null, sales_user_id: form.sales_user_id,
@@ -95,8 +97,8 @@ export function buildInvoicePayload(form, hairDiscount) {
     surcharge_amount: Number(form.surcharge_amount || 0), payment_term: form.payment_term || null,
     internal_payment_method: form.internal_payment_method || null, internal_discount: hairDiscount,
     packaging_quantity: Number(form.packaging_quantity || 0),
-    internal_accessory: Number(form.internal_accessory || 0), internal_received: form.internal_received,
-    internal_balance: form.internal_balance, internal_shipping_type: form.internal_shipping_type || null,
+    internal_accessory: Number(form.internal_accessory || 0), internal_received: form.order_type === 'presale' ? null : form.internal_received,
+    internal_balance: form.order_type === 'presale' ? null : form.internal_balance, internal_shipping_type: form.internal_shipping_type || null,
     okki_new_deal: form.okki_new_deal ?? null, okki_free_shipping: form.okki_free_shipping ?? null,
     okki_first_return: form.okki_first_return ?? null, remark: form.remark,
     source_type: form.source_type || 'manual', source_order_id: form.source_order_id || null,

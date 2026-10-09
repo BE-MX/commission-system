@@ -18,8 +18,12 @@ def fingerprint(body):
 
 
 def _replay(row, invoice, body, actor):
+    hashes = {fingerprint(body)}
+    if body.purpose == "ordinary" and row.purpose == "ordinary":
+        hashes.add(hashlib.sha256(body.model_dump_json(exclude={"balance_version", "purpose"}).encode()).hexdigest())
     if (row.invoice_id != invoice.id or row.invoice_id != body.invoice_id
-            or row.created_by != actor or row.request_hash != fingerprint(body)):
+            or body.purpose == "ordinary" and row.purpose != "ordinary"
+            or row.request_key != body.request_key or row.created_by != actor or row.request_hash not in hashes):
         raise HTTPException(409, "提交标识已用于其他回款，请勿复用")
 
 
@@ -52,8 +56,10 @@ def _authorize(db, body, user):
 
 def _participants(db, invoice, body):
     service.ensure_order_ready(db, invoice, current=True)
+    if invoice.order_type == "presale" and body.purpose not in {"presale_deposit", "presale_advance"}:
+        raise ValueError("预售回款请选择资金池用途")
     if invoice.order_type == "presale":
-        raise ValueError("预售回款请通过发货结算或批量回款登记")
+        service.ensure_pool_registration(db, invoice, current=True)
     db.scalars(select(Receipt).where(Receipt.invoice_id == invoice.id).order_by(Receipt.id)
         .with_for_update().execution_options(populate_existing=True)).all()
     intent = db.scalar(select(ReceiptIntent).where(ReceiptIntent.invoice_id == invoice.id)

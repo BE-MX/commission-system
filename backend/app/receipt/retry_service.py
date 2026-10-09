@@ -71,7 +71,7 @@ def retry(db, identity, user):
     row, invoice, current, batch, children = authority.local_group(db, identity, user)
     _check(row)
     settlement = _settlement(db, row)
-    needs_fee = row.source == "auto" and row.bank_charge == 0 and bool(invoice.surcharge_amount)
+    needs_fee = row.source == "auto" and row.purpose not in {"presale_deposit", "presale_advance"} and row.bank_charge == 0 and bool(invoice.surcharge_amount)
     evidence = None
     if needs_fee:
         expected = _binding(row, invoice, batch, children, settlement)

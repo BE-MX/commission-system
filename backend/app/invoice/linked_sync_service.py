@@ -32,11 +32,13 @@ def edit_version(invoice):
 
 
 def snapshot(invoice):
+    from app.invoice.presale_lines import remote_items, remote_quantity, remote_amount
+    items = remote_items(invoice) if invoice.order_type == "presale" else invoice.items
     return {"edit_version": edit_version(invoice), "invoice_no": invoice.invoice_no, "customer_id": invoice.customer_id, "currency": invoice.currency,
             "total_amount": str(invoice.total_amount), "surcharge_amount": str(invoice.surcharge_amount or 0),
             "remark": invoice.remark or "", "delivery_address": invoice.delivery_address or "",
-            "items": [{"product_id": str(i.product_id), "sku_id": str(i.sku_id), "quantity": i.quantity,
-                       "amount": str(i.total_price)} for i in invoice.items]}
+            "items": [{"product_id": str(i.product_id), "sku_id": str(i.sku_id), "quantity": remote_quantity(i),
+                       "amount": str(remote_amount(i))} for i in items]}
 
 
 def describe(row):
@@ -200,10 +202,10 @@ def run(db, identity, actor, *, recheck=False):
         receipt_result = {"status": "done", "message": message, "balance": summary,
                           "unpaid_amount": str(max(total - effective, 0)),
                           "overpaid_amount": str(max(effective - total, 0))}
-        if Decimal(summary["remaining_amount"]) < 0:
+        if invoice.order_type != "presale" and Decimal(summary["remaining_amount"]) < 0:
             receipt_result["status"] = "manual"
             receipt_result["message"] = "已登记或待发送金额超过新订单金额，请核对原回款；未修改实际收款"
-        if effective > total:
+        if invoice.order_type != "presale" and effective > total:
             receipt_result["status"] = "manual"
             receipt_result["message"] = "已生效回款超过新订单金额，请核实退款；原回款未修改"
         _save_step(db, identity, token, key, receipt_result)

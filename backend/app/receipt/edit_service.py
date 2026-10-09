@@ -40,7 +40,7 @@ def _binding(row, invoice):
 
 
 def _check(db, row, invoice, body):
-    if row.batch_id or row.purpose == "presale_deposit":
+    if row.batch_id or row.purpose in {"presale_deposit", "presale_advance"}:
         raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
     if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:
         raise ValueError("仅未发送或明确失败的回款可修改")

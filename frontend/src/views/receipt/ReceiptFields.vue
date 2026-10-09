@@ -5,7 +5,7 @@
       <el-form-item label="回款日期" required><el-date-picker v-model="form.collection_date" value-format="YYYY-MM-DD" :disabled="readonly" /></el-form-item>
       <!-- hidePaymentType：下单抽屉里回款方式并入订单「付款方式」，不再单选小满回款方式 -->
       <el-form-item v-if="!hidePaymentType" label="回款方式" required><el-select v-model="form.payment_type" :loading="loading" :disabled="readonly" placeholder="选择小满回款方式"><el-option v-for="t in types" :key="t" :value="t" :label="t" /></el-select></el-form-item>
-      <el-form-item v-if="showCharge" label="手续费"><el-input-number v-model="form.bank_charge" placeholder="留空为 0" :precision="2" :min="0" :disabled="readonly" controls-position="right" /></el-form-item>
+      <el-form-item v-if="showCharge" label="本次实际银行手续费"><el-input-number v-model="form.bank_charge" placeholder="留空为 0" :precision="2" :min="0" :disabled="readonly" controls-position="right" /></el-form-item>
     </div>
     <p v-if="!hidePaymentType && typesError" class="types-error" role="alert">回款方式加载失败。<el-button link type="primary" @click="loadTypes">重新加载</el-button></p>
     <el-form-item v-if="!hideProofs" label="回款截图" required><ReceiptProofs v-model="form.attachment_ids" :readonly="readonly" @uploading="$emit('uploading', $event)" /></el-form-item>

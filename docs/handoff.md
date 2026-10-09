@@ -1,5 +1,13 @@
 # 当前交接与待办
 
+## 2026-10-09 预售预付资金池与当批发货（Codex，实现验证中，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/presale-prepayment/commission-system`，分支 `codex/presale-prepayment`。用户确认定金最后一批扣、预付货款从本批扣商品及运费、每批重填明细、人工末批。Veronika981/1062的USD1077是预付货款；627商品+38运费后应余412，生产分类及结算尚未改。
+- 179迁移仅加七列；历史商品原数量/金额/UID/FK、原收款及V1报价保留。V2资金池跨批占额/取消释放、实际银行费、当前授权和发送前身份金额核验已集成。新页面提供用途与余额、更正入口、当前与历史明细；新预售空产品首款默认实际银行费0，历史未知值不猜测。
+- 专用小满探针 `ARK-PRESALE-ROLLING-20261009-155340` 已验证原0.03款保留、主单降0.01、同SKU旧UID与新UID独立、状态1待出库关联保留；已清理全部测试对象。用户删除receipt105841964279070后，两次完整活动列表确认不在；订单/客户删后核验，库存可用9923、实际9999恢复原值。服务端durable journal stage=cleanup_complete，本机 `.deploy_state/presale-prepayment/` 留必要证据。
+- 汇总受影响后端355通过；最新首款默认与DDL相关41通过，独立MySQL8.4.6真实并发3通过，Node39通过。实际Vue/Element Plus在1440/390宽度用途更正自动刷新、人工末批、数量与分列余额验证通过；前端build/严格约定/diff通过，独立财务及历史/页面问题已修复复核。
+- 尚未验证本租户直接新建超过明细金额的回款、空产品首推或实际出库后缩减历史行。用户选择暂不补测并保留限制，继续已授权合并/推送/部署；不再新增小满测试对象。发布及生产原单核验见[发布记录](reports/2026-10-09-presale-funding-release.md)。
+
 ## 2026-10-09 预售出库数量提示与核算入口（Codex，已合并推送部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/presale-shipment-quantity/commission-system`，分支 `codex/presale-shipment-quantity`，基于 main `aa598924`。复现“空数量核算后再填写，旧的请填写本批出库数量提示仍保留”；正常填写后重新核算的数量绑定和请求载荷正确，未直接核验生产运行版本，不将本地旧提示问题视为生产故障全部成因。
@@ -4928,4 +4936,5 @@ I38：启用refresh初次当前授权+request/conversion→invoice完整绑定/�
 完整goal保持active，下一运行号267。下一优先实施远端remove分阶段当前授权与F20原attempt/迟到安全事实唯一存储、接管/租约到期下原事实不丢/不盲重发，再outbound_retry/ack_outbound、sync/uncertain/linked-run及全部回款/脚本writer。T64、全历史迁移126门禁、T54真实兼容旧制品回退、其他UI/真实身份与缓存、B01–B07正式配置/SMTP/COS/双业务员双客户试点及发布门禁仍独立，未以局部通过缩小目标。
 
 本批最终收尾strict及diff均exit0，静态8篇/29引用/3JSON/64T/20F通过，inventory JSON与12源码SHA-256和AST语法实测匹配。2026-10-05 00:01北京时间no-fetch巡检记录main0修改/1未跟踪、本任务48修改/49未跟踪且无upstream（具体统计以看板日志为准）。自有临时写入脚本清理，保留仓库测试、生成候选清单的复现脚本及全部反例/通过日志。所有本批测试和约定检查句柄均终态，无本批预览/MySQL服务残留，goal仍active，下一267。
+
 
