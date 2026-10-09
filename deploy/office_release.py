@@ -57,10 +57,13 @@ def prepare(live, previous, revision, recover_149=False, recover_151=False, reco
     requirements_changed = requirements.read_bytes() != (live / "backend/requirements.txt").read_bytes()
     if requirements_changed:
         ready = candidate / ".ark-ready"
-        if not ready.exists():
+        if not ready.is_file() or ready.read_text().strip() != stamp:
             if not candidate.exists():
                 candidate.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copytree(current_python.parent.parent, candidate)
+            # A copied live stamp belongs to its old requirements, not this candidate.
+            # Failed installs must remain unready so the next attempt cannot skip pip.
+            ready.unlink(missing_ok=True)
             python = candidate / "Scripts/python.exe"
             prefix = run([python, "-c", "import sys;print(sys.prefix)"], capture=True)
             if Path(prefix).resolve() != candidate.resolve():
