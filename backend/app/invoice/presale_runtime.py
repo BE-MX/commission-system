@@ -1,5 +1,5 @@
 """Locked presale funding references; existing receipt facts remain immutable."""
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from app.invoice.presale_funding import FundingLot
 from app.invoice.settlement_models import SettlementApplication, ShipmentSettlement
 from app.receipt.models import Receipt
@@ -15,6 +15,26 @@ def required(quote):
 
 def source_component(app, receipt):
     return "goods" if receipt.purpose in POOL_PURPOSES else app.component
+
+
+def released_legacy_deposit_matches(app, settlement, receipt, invoice):
+    """A cancelled V1 whole-deposit reference retains its original money facts."""
+    quote = settlement.quote
+    try:
+        amount = Decimal(str(quote['deposit_applied']))
+        charge = Decimal(str(quote['deposit_charge_applied']))
+        return (quote.get('funding_version') in {None, 1} and app.component == 'deposit'
+            and settlement.state == 'cancelled' and app.status == 'released'
+            and app.settlement_id == settlement.id and settlement.invoice_id == invoice.id
+            and receipt.invoice_id == invoice.id
+            and receipt.customer_id == invoice.customer_id and receipt.currency == invoice.currency
+            and settlement.is_final == 1 and quote.get('currency') == invoice.currency
+            and quote.get('deposit_receipt_id') == receipt.id and app.receipt_id == receipt.id
+            and receipt.purpose in POOL_PURPOSES and receipt.xiaoman_order_id == invoice.xiaoman_order_id
+            and amount.is_finite() and charge.is_finite() and amount > 0 and 0 <= charge < amount
+            and app.amount == amount == receipt.amount and app.bank_charge == charge == receipt.bank_charge)
+    except (InvalidOperation, KeyError, TypeError, ValueError, AttributeError):
+        return False
 
 
 def pool_lots(db, invoice, snapshot=None, *, current=False):

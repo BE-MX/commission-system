@@ -95,7 +95,11 @@ def _replay(db, invoice, existing, identity, body, current):
     elif existing.is_final:
         deposit = db.scalar(select(Receipt).where(Receipt.id == existing.quote.get('deposit_receipt_id'))
             .with_for_update().execution_options(populate_existing=True))
-        if (deposit is None or deposit.invoice_id != invoice.id or deposit.purpose != 'presale_deposit'
+        if existing.state == 'cancelled':
+            if (deposit is None or len(deposit_apps) != 1
+                    or not pools.released_legacy_deposit_matches(deposit_apps[0], existing, deposit, invoice)):
+                raise HTTPException(409, '原已取消结算的预付款与冻结现金事实不一致，请核对原单')
+        elif (deposit is None or deposit.invoice_id != invoice.id or deposit.purpose != 'presale_deposit'
                 or deposit.customer_id != invoice.customer_id or deposit.currency != invoice.currency
                 or len(deposit_apps) != 1 or deposit_apps[0].receipt_id != deposit.id
                 or str(deposit_apps[0].amount) != str(remote.money(existing.quote.get('deposit_applied')))

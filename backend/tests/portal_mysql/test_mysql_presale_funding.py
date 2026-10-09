@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import Column, MetaData, Table, UniqueConstraint, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
@@ -251,3 +252,76 @@ def test_cancel_release_purpose_correction_and_original_result_replay(funds):
         assert sum(app.amount for app in live) == 627
         assert db.query(Receipt).filter_by(invoice_id=funds.invoice).count() == 1
         assert db.query(ReceiptLog).filter_by(receipt_id=receipt.id, action="purpose_changed").count() == 1
+
+
+def test_legacy_cancel_correction_allows_v2_state_and_strict_original_replay(funds):
+    with Session(funds.engine, autoflush=False) as db:
+        invoice = lock_invoice(db, funds)
+        receipt = db.get(Receipt, funds.receipt)
+        receipt.amount = Decimal("200"); receipt.purpose = "presale_deposit"
+        funds.evidence["receipt"]["rows"][0]["amount"] = "200.00"
+        quote = {"currency": "USD", "goods_payment_due": "427.00", "freight_amount": "0.00",
+            "goods_payment_charge": "0.00", "new_payment_due": "427.00", "deposit_applied": "200.00",
+            "deposit_charge_applied": "0.00", "deposit_receipt_id": receipt.id}
+        body = body_for(funds, {"quote_hash": "a"*64}, freight="0")
+        legacy = ShipmentSettlement(invoice_id=invoice.id, sequence=1, settlement_no="V1-" + uuid4().hex,
+            is_final=1, quote=quote, quote_hash=body.quote_hash, request_key=body.request_key,
+            request_hash=shipments.digest(body.model_dump(mode="json", exclude={"is_final"})), created_by=1)
+        db.add(legacy); db.flush()
+        shipments.application(db, legacy, receipt, "deposit", Decimal("200"), Decimal("0"))
+        db.add(SettlementItem(settlement_id=legacy.id, invoice_item_id=funds.item,
+            quantity=3, line_amount=627, snapshot={}))
+        identity, frozen = legacy.id, deepcopy(legacy.quote)
+        facts = (receipt.amount, receipt.bank_charge, receipt.collection_date, receipt.xiaoman_receipt_id,
+            receipt.xiaoman_order_id, deepcopy(receipt.attachment_ids))
+        db.commit()
+    with Session(funds.engine, autoflush=False) as db:
+        invoice = lock_invoice(db, funds)
+        legacy, graph = shipment_state_service._capture(db, invoice, identity, "cancel")
+        shipments._change_state_verified(db, legacy, USER, "cancel", legacy.version, "Cancel legacy intent", graph)
+        db.flush(); db.commit()
+    with Session(funds.engine, autoflush=False) as db:
+        invoice = lock_invoice(db, funds)
+        receipt = db.scalar(select(Receipt).where(Receipt.id == funds.receipt).with_for_update())
+        purpose_service.apply(db, receipt, invoice, PresalePurposeUpdate(version=receipt.version,
+            purpose="presale_advance", reason="Correct legacy deposit intent"), 1)
+        db.commit()
+    with Session(funds.engine, autoflush=False) as db:
+        invoice = lock_invoice(db, funds)
+        legacy = db.get(ShipmentSettlement, identity)
+        shipment_create_service._replay(db, invoice, legacy, invoice.id, body, USER)
+        draft = ShipmentQuote(items=[{"invoice_item_id": funds.item, "quantity": 3}])
+        quote = shipments.build_quote(db, invoice, draft, funds.evidence, current=True)
+        assert quote["funding_version"] == 2 and quote["advance_applied"] == "200.00"
+        current = shipments._create_verified(db, invoice, body_for(funds, quote, freight="0"), USER,
+            funds.evidence, None)
+        replacement = current.id
+        db.commit()
+    for command in ("pause", "resume", "cancel"):
+        with Session(funds.engine, autoflush=False) as db:
+            invoice = lock_invoice(db, funds)
+            current, graph = shipment_state_service._capture(db, invoice, replacement, command)
+            shipments._change_state_verified(db, current, USER, command, current.version,
+                "Change replacement intent", graph)
+            db.flush(); db.commit()
+    with Session(funds.engine, autoflush=False) as db:
+        invoice = lock_invoice(db, funds)
+        legacy = db.get(ShipmentSettlement, identity)
+        shipment_create_service._replay(db, invoice, legacy, invoice.id, body, USER)
+        assert legacy.quote == frozen
+        receipt = db.get(Receipt, funds.receipt)
+        assert (receipt.amount, receipt.bank_charge, receipt.collection_date, receipt.xiaoman_receipt_id,
+            receipt.xiaoman_order_id, receipt.attachment_ids) == facts
+        assert receipt.purpose == "presale_advance"
+        applications = db.query(SettlementApplication).filter_by(receipt_id=receipt.id).all()
+        assert len(applications) == 2 and all(app.status == "released" for app in applications)
+        assert db.get(ShipmentSettlement, replacement).state == "cancelled"
+        old_app = next(app for app in applications if app.settlement_id == identity)
+        old_app.amount = Decimal("199"); db.commit()
+    with Session(funds.engine, autoflush=False) as db:
+        invoice = lock_invoice(db, funds)
+        with pytest.raises(ValueError, match="历史已释放预付款"):
+            shipment_state_service._capture(db, invoice, replacement, "pause")
+        with pytest.raises(HTTPException) as rejected:
+            shipment_create_service._replay(db, invoice, db.get(ShipmentSettlement, identity), invoice.id, body, USER)
+        assert rejected.value.status_code == 409

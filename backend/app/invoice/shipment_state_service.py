@@ -55,9 +55,15 @@ def _capture(db, invoice, identity, action):
         expected_purpose = {'deposit': 'presale_deposit', 'goods': 'presale_goods', 'freight': 'freight'}.get(app.component)
         if (receipt is None or settlement is None or settlement.invoice_id != invoice.id
                 or receipt.invoice_id != invoice.id or receipt.customer_id != invoice.customer_id
-                or receipt.currency != invoice.currency or (receipt.purpose != expected_purpose
-                    and not (settlement.quote.get('funding_version') == 2 and receipt.purpose in pools.POOL_PURPOSES
-                        and app.component in {'goods', 'freight'}))):
+                or receipt.currency != invoice.currency or not isinstance(settlement.quote, dict)):
+            raise ValueError('发货资金关联异常，请核对原单')
+        if (settlement.quote.get('funding_version') in {None, 1} and app.component == 'deposit'
+                and settlement.state == 'cancelled' and app.status == 'released'):
+            if not pools.released_legacy_deposit_matches(app, settlement, receipt, invoice):
+                raise ValueError('历史已释放预付款与原结算快照不一致，请核对原单')
+        elif (receipt.purpose != expected_purpose and not (
+                settlement.quote.get('funding_version') == 2 and receipt.purpose in pools.POOL_PURPOSES
+                and app.component in {'goods', 'freight'})):
             raise ValueError('发货资金关联异常，请核对原单')
     selected = tuple(app for app in applications if app.settlement_id == row.id)
     selected_receipts = {app.receipt_id: by_receipt[app.receipt_id] for app in selected}

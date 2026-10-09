@@ -177,6 +177,106 @@ def test_legacy_quote_balance_semantics_remain_operable(db, order):
     assert Decimal(summary["effective_amount"]) == 200
 
 
+def legacy_final(db, order):
+    receipt = payment(db, order, amount="200", purpose="presale_deposit")
+    row = ShipmentSettlement(invoice_id=order.id, sequence=1, settlement_no="LEGACY-STATE", is_final=1,
+        quote={"currency": "USD", "goods_payment_due": "427.00", "freight_amount": "0.00",
+            "goods_payment_charge": "0.00", "new_payment_due": "427.00", "deposit_applied": "200.00",
+            "deposit_charge_applied": "0.00", "deposit_receipt_id": receipt.id}, quote_hash="a"*64,
+        request_key="legacy_cancel_state_001", request_hash="b"*64, created_by=1)
+    db.add(row); db.flush()
+    shipments.application(db, row, receipt, "deposit", Decimal("200"), Decimal("0"))
+    db.add(SettlementItem(settlement_id=row.id, invoice_item_id=order.items[0].id,
+        quantity=3, line_amount=627, snapshot={}))
+    row.request_hash = shipments.digest(legacy_body(row, order).model_dump(mode="json", exclude={"is_final"}))
+    db.commit()
+    return row, receipt
+
+
+def legacy_body(row, order):
+    return ShipmentCreate(items=[{"invoice_item_id": order.items[0].id, "quantity": 3}],
+        freight_amount="0", quote_hash=row.quote_hash, request_key=row.request_key)
+
+
+@pytest.mark.parametrize("action", ["pause_resume", "cancel"])
+def test_legacy_cancel_then_correct_advance_allows_current_batch_state_commands(db, order, action):
+    from copy import deepcopy
+    from app.invoice import shipment_create_service
+    from app.receipt import purpose_service
+    from app.receipt.schemas import PresalePurposeUpdate
+    legacy, receipt = legacy_final(db, order)
+    body, frozen = legacy_body(legacy, order), deepcopy(legacy.quote)
+    row, graph = shipment_state_service._capture(db, order, legacy.id, "cancel")
+    shipments._change_state_verified(db, row, USER, "cancel", row.version, "Cancel old shipment", graph)
+    db.commit()
+    purpose_service.apply(db, receipt, order, PresalePurposeUpdate(version=receipt.version,
+        purpose="presale_advance", reason="Correct payment intent"), 1)
+    db.commit()
+    current, _ = create(db, order, freight="0", key="v2_after_legacy_001")
+    shipment_create_service._replay(db, order, legacy, order.id, body, USER)
+    for command in (["pause", "resume"] if action == "pause_resume" else ["cancel"]):
+        row, graph = shipment_state_service._capture(db, order, current.id, command)
+        shipments._change_state_verified(db, row, USER, command, row.version, "Change current shipment", graph)
+        db.commit()
+    assert current.state == ("awaiting_payment" if action == "pause_resume" else "cancelled")
+    assert db.query(SettlementApplication).filter_by(settlement_id=legacy.id).one().status == "released"
+    assert receipt.amount == 200 and receipt.bank_charge == 0 and receipt.purpose == "presale_advance"
+    shipment_create_service._replay(db, order, legacy, order.id, body, USER)
+    assert legacy.quote == frozen
+
+
+def test_active_legacy_deposit_purpose_mismatch_is_rejected(db, order):
+    from fastapi import HTTPException
+    from app.invoice import shipment_create_service
+    row, receipt = legacy_final(db, order)
+    receipt.purpose = "presale_advance"; db.commit()
+    with pytest.raises(ValueError, match="资金关联异常"):
+        shipment_state_service._capture(db, order, row.id, "pause")
+    with pytest.raises(HTTPException) as rejected:
+        shipment_create_service._replay(db, order, row, order.id, legacy_body(row, order), USER)
+    assert rejected.value.status_code == 409
+
+
+@pytest.mark.parametrize("field,value", [("amount", Decimal("199")), ("bank_charge", Decimal("1")),
+    ("component", "goods"), ("status", "reserved")])
+def test_reclassified_cancelled_legacy_reference_still_requires_original_money_and_release(db, order, field, value):
+    from fastapi import HTTPException
+    from app.invoice import shipment_create_service
+    from app.receipt import purpose_service
+    from app.receipt.schemas import PresalePurposeUpdate
+    legacy, receipt = legacy_final(db, order)
+    row, graph = shipment_state_service._capture(db, order, legacy.id, "cancel")
+    shipments._change_state_verified(db, row, USER, "cancel", row.version, "Cancel old shipment", graph)
+    db.commit()
+    purpose_service.apply(db, receipt, order, PresalePurposeUpdate(version=receipt.version,
+        purpose="presale_advance", reason="Correct payment intent"), 1)
+    db.commit()
+    current, _ = create(db, order, freight="0", key="v2_after_legacy_001")
+    historical = db.query(SettlementApplication).filter_by(settlement_id=legacy.id).one()
+    setattr(historical, field, value); db.commit()
+    with pytest.raises(ValueError, match="历史已释放预付款|资金关联异常"):
+        shipment_state_service._capture(db, order, current.id, "pause")
+    with pytest.raises(HTTPException) as rejected:
+        shipment_create_service._replay(db, order, legacy, order.id, legacy_body(legacy, order), USER)
+    assert rejected.value.status_code == 409
+
+
+def test_new_effective_application_purpose_stays_strict_after_legacy_reclassification(db, order):
+    from app.receipt import purpose_service
+    from app.receipt.schemas import PresalePurposeUpdate
+    legacy, receipt = legacy_final(db, order)
+    row, graph = shipment_state_service._capture(db, order, legacy.id, "cancel")
+    shipments._change_state_verified(db, row, USER, "cancel", row.version, "Cancel old shipment", graph)
+    db.commit()
+    purpose_service.apply(db, receipt, order, PresalePurposeUpdate(version=receipt.version,
+        purpose="presale_advance", reason="Correct payment intent"), 1)
+    db.commit()
+    current, _ = create(db, order, freight="0", key="v2_after_legacy_001")
+    receipt.purpose = "presale_deposit"; db.commit()
+    with pytest.raises(ValueError, match="资金池結算|资金池结算"):
+        shipment_state_service._capture(db, order, current.id, "pause")
+
+
 def proof(db, monkeypatch, tmp_path):
     import io
     from PIL import Image
