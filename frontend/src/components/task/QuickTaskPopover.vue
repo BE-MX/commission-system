@@ -20,54 +20,56 @@
           <button type="button" class="quick-task__close" aria-label="关闭" @click="closeQuickTask">×</button>
         </header>
 
-        <el-input
-          ref="textRef"
-          v-model="text"
-          type="textarea"
-          :autosize="{ minRows: 3, maxRows: 6 }"
-          maxlength="1000"
-          placeholder="一句话说清要做什么，例如：回款列表按业务员筛选很慢，明天前搞定"
-        />
+        <div class="quick-task__body">
+          <el-input
+            ref="textRef"
+            v-model="text"
+            type="textarea"
+            :autosize="{ minRows: 3, maxRows: 6 }"
+            maxlength="1000"
+            placeholder="一句话说清要做什么，例如：回款列表按业务员筛选很慢，明天前搞定"
+          />
 
-        <p v-if="drafting" class="quick-task__thinking" aria-live="polite">
-          <span class="quick-task__shimmer" />AI 正在补全标题、重要性和验收标准…
-        </p>
-
-        <div v-if="draft" class="quick-task__draft">
-          <el-alert v-if="draft.notice" :title="draft.notice" type="warning" :closable="false" show-icon />
-          <p v-if="draft.duplicates.length" class="quick-task__dup">
-            可能和
-            <template v-for="(d, i) in draft.duplicates" :key="d.id">{{ i ? '、' : '' }}<b>{{ d.code }} {{ d.title }}</b></template>
-            重复，确认是新任务再创建
+          <p v-if="drafting" class="quick-task__thinking" aria-live="polite">
+            <span class="quick-task__shimmer" />AI 正在补全标题、重要性和验收标准…
           </p>
-          <el-form label-position="top">
-            <el-form-item label="标题"><el-input v-model="draft.title" maxlength="200" /></el-form-item>
-            <div class="quick-task__grid">
-              <el-form-item label="重要性">
-                <el-select v-model="draft.priority" @visible-change="trackInner">
-                  <el-option v-for="p in PRIORITIES" :key="p" :value="p" :label="`${p} ${PRIORITY_META[p].label}`" />
-                </el-select>
+
+          <div v-if="draft" class="quick-task__draft">
+            <el-alert v-if="draft.notice" :title="draft.notice" type="warning" :closable="false" show-icon />
+            <p v-if="draft.duplicates.length" class="quick-task__dup">
+              可能和
+              <template v-for="(d, i) in draft.duplicates" :key="d.id">{{ i ? '、' : '' }}<b>{{ d.code }} {{ d.title }}</b></template>
+              重复，确认是新任务再创建
+            </p>
+            <el-form label-position="top">
+              <el-form-item label="标题"><el-input v-model="draft.title" maxlength="200" /></el-form-item>
+              <div class="quick-task__grid">
+                <el-form-item label="重要性">
+                  <el-select v-model="draft.priority" @visible-change="trackInner">
+                    <el-option v-for="p in PRIORITIES" :key="p" :value="p" :label="`${p} ${PRIORITY_META[p].label}`" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="截止">
+                  <el-date-picker v-model="draft.due_date" type="date" value-format="YYYY-MM-DD" clearable class="quick-task__date" @visible-change="trackInner" />
+                </el-form-item>
+                <el-form-item label="关联模块">
+                  <el-select v-model="draft.module_key" filterable clearable placeholder="不关联" @visible-change="trackInner">
+                    <el-option-group v-for="g in moduleGroups" :key="g.title" :label="g.title">
+                      <el-option v-for="m in g.items" :key="m.key" :value="m.key" :label="m.title" />
+                    </el-option-group>
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="父任务">
+                  <el-select v-model="draft.parent_id" filterable clearable placeholder="顶层任务" @visible-change="trackInner">
+                    <el-option v-for="p in parentOptions" :key="p.id" :value="p.id" :label="p.label" />
+                  </el-select>
+                </el-form-item>
+              </div>
+              <el-form-item label="验收标准（每行一条）">
+                <el-input v-model="acceptanceText" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" />
               </el-form-item>
-              <el-form-item label="截止">
-                <el-date-picker v-model="draft.due_date" type="date" value-format="YYYY-MM-DD" clearable class="quick-task__date" @visible-change="trackInner" />
-              </el-form-item>
-              <el-form-item label="关联模块">
-                <el-select v-model="draft.module_key" filterable clearable placeholder="不关联" @visible-change="trackInner">
-                  <el-option-group v-for="g in moduleGroups" :key="g.title" :label="g.title">
-                    <el-option v-for="m in g.items" :key="m.key" :value="m.key" :label="m.title" />
-                  </el-option-group>
-                </el-select>
-              </el-form-item>
-              <el-form-item label="父任务">
-                <el-select v-model="draft.parent_id" filterable clearable placeholder="顶层任务" @visible-change="trackInner">
-                  <el-option v-for="p in parentOptions" :key="p.id" :value="p.id" :label="p.label" />
-                </el-select>
-              </el-form-item>
-            </div>
-            <el-form-item label="验收标准（每行一条）">
-              <el-input v-model="acceptanceText" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" />
-            </el-form-item>
-          </el-form>
+            </el-form>
+          </div>
         </div>
 
         <footer class="quick-task__actions">
@@ -112,6 +114,7 @@ const saving = ref(false)
 const modules = ref([])
 const tree = ref([])
 const zIndex = ref(2000)
+const viewport = ref({ width: window.innerWidth, height: window.innerHeight })
 const innerOpen = ref(0)   // 打开中的内层下拉/日期面板数：>0 时 Esc 只交给面板自己收起
 
 const hasText = computed(() => Boolean(text.value.trim()))
@@ -132,22 +135,22 @@ const parentOptions = computed(() => flattenForSelect(tree.value))
 // 侧栏入口在菜单项右侧展开，页头/页面入口在按钮下方右对齐；都夹在视口内。
 const panelStyle = computed(() => {
   const a = quickTask.anchor
-  const vw = window.innerWidth
-  const vh = window.innerHeight
+  const { width: vw, height: vh } = viewport.value
+  const width = Math.min(WIDTH, vw - 24)
   let left
   let top
   let origin
   if (!a) {
-    left = (vw - WIDTH) / 2; top = 96; origin = 'center top'
+    left = (vw - width) / 2; top = 96; origin = 'center top'
   } else if (a.side === 'right') {
     left = a.right + 10; top = a.top - 8; origin = 'left top'
   } else {
-    left = a.right - WIDTH; top = a.bottom + 8; origin = 'right top'
+    left = a.right - width; top = a.bottom + 8; origin = 'right top'
   }
-  left = Math.max(12, Math.min(left, vw - WIDTH - 12))
-  top = Math.max(12, Math.min(top, vh - EST_HEIGHT - 12))
+  left = Math.max(12, Math.min(left, vw - width - 12))
+  top = Math.max(16, Math.min(top, vh - EST_HEIGHT - 16))
   return {
-    left: `${left}px`, top: `${top}px`, width: `${Math.min(WIDTH, vw - 24)}px`,
+    left: `${left}px`, top: `${top}px`, width: `${width}px`, '--quick-task-top': `${top}px`,
     transformOrigin: origin, zIndex: zIndex.value,
   }
 })
@@ -155,6 +158,19 @@ const panelStyle = computed(() => {
 function trackInner(visible) {
   innerOpen.value = Math.max(0, innerOpen.value + (visible ? 1 : -1))
 }
+
+function updateViewport() {
+  viewport.value = { width: window.innerWidth, height: window.innerHeight }
+}
+
+watch(() => quickTask.open, open => {
+  if (open) {
+    updateViewport()
+    window.addEventListener('resize', updateViewport)
+  } else {
+    window.removeEventListener('resize', updateViewport)
+  }
+})
 
 // 每次打开都重取：新建的私有分类、刚建的任务都能立刻出现在下拉里
 async function loadOptions() {
@@ -237,21 +253,28 @@ function onPointerDown(event) {
   closeQuickTask()
 }
 document.addEventListener('pointerdown', onPointerDown, true)
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown, true))
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onPointerDown, true)
+  window.removeEventListener('resize', updateViewport)
+})
 </script>
 
 <style scoped>
 .quick-task {
   position: fixed;
-  max-height: calc(100dvh - 24px);
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-height: calc(100dvh - var(--quick-task-top) - 16px);
+  overflow: hidden;
   padding: 16px;
   border: 1px solid var(--dash-glass-border);
   border-radius: 16px;
   background: var(--card-bg);
   box-shadow: var(--dash-glass-shadow-hover);
 }
-.quick-task__head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.quick-task__head { display: flex; flex-shrink: 0; align-items: center; gap: 8px; margin-bottom: 10px; }
+.quick-task__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .quick-task__head h2 { margin: 0; font: 700 14px var(--font-display); color: var(--text-primary); }
 .quick-task__pill {
   display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 6px;
@@ -270,9 +293,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 @keyframes quick-shimmer { to { background-position: -200% 0; } }
 .quick-task__draft { margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); }
 .quick-task__dup { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; color: var(--color-warning-text); background: var(--color-warning-bg); }
-.quick-task__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.quick-task__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 10px; }
 .quick-task__date { width: 100%; }
-.quick-task__actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.quick-task__actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .quick-task__hint { margin-right: auto; font-size: 11.5px; color: var(--text-muted); }
 .quick-task__hint kbd { padding: 0 4px; border: 1px solid var(--border-color); border-radius: 4px; font: 600 10.5px var(--font-mono); }
 
@@ -286,5 +309,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 }
 @media (max-width: 480px) {
   .quick-task__grid { grid-template-columns: 1fr; }
+  .quick-task__hint { flex-basis: 100%; }
 }
 </style>

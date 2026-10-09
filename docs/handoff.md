@@ -1,3 +1,10 @@
+## 2026-10-09 快速创建任务底部按钮遮挡修复（Codex，已授权合并推送，未部署）
+
+- 独立 worktree `C:/Users/windb/.codex/worktrees/quick-task-footer/commission-system`，分支 `codex/quick-task-footer`，基于 main `7852719f`；亮哥已授权合并推送至 `origin/main`，不部署，主目录原有改动保留。
+- `QuickTaskPopover.vue` 原按 540px 预估高度定位，却以整个视口设置最大高度，AI 补全后长表单超出屏幕。改为扣除实际 top 和底部留白，显式 border-box；仅正文滚动，页头和创建/重新补全按钮保留，窄屏按钮换行，打开期间随窗口 resize 重新夹定位置。
+- 真实 Vue/Element Plus 组件加模拟任务 API 的浏览器验证通过：1440×900、1366×768、1024×600、390×844、390×480、320×568 共六种尺寸，22 组边界检查；覆盖长提醒、重复任务提示、10 条长验收标准、正文滚动、打开时缩小窗口、重新补全、侧栏/页头/居中入口、Ctrl+Enter、Escape 焦点恢复、编辑验收后创建与直接创建。10 次补全、7 次创建均为拦截模拟，无真实 AI 或业务写入，浏览器无运行异常。
+- 修复前 900px 高窗口中 footer 底边为 1320px；修复后为 867px，短屏 390×480 中为 447px。生产构建、任务/导航 17 项 Node 测试、增量约定与 diff 检查通过；Git 巡检为 `--no-fetch` 本地快照。浏览器脚本、夹具、测量 JSON 与截图在合并后保存至主目录 `tmp/quick-task-footer-evidence/`，临时工作树在核验整合后清理。
+
 ## 2026-10-09 订单详情加载优化（Codex，已合并推送部署）
 
 - 本次应用候选 `9bdbc5f3d2c0389b8ebaf2a6c00e46ef50a6a1ec` 已合入并推送 main，经办公室 `deploy/deploy.bat` 先预检后发布，两次退出 0；范围 `office-and-cloud`，release_id=`61ca506f06e440b8bbc513ddecf27e66`，deferred=[]。
