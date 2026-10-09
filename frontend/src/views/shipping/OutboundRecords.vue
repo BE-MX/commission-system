@@ -27,6 +27,7 @@
 
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
+        <GlassButton left-icon="Warning" @click="problemsVisible = true">问题单据</GlassButton>
         <TableTools
           v-model:visible-keys="visibleKeys"
           v-model:density="density"
@@ -128,6 +129,7 @@
       />
     </div>
     <OutboundSyncDialog v-model:visible="syncVisible" :busy="syncingId !== null" :preview="syncPreview" :row="syncRow" @apply="applySync" />
+    <OutboundProblemsDrawer v-if="problemsVisible" v-model="problemsVisible" />
   </div>
 </template>
 
@@ -135,7 +137,7 @@
 /**
  * OKKI 出库单列表 + 出库单直接打印（无预览弹框）。逻辑在 composables/useOutboundRecords.js（宪法 12）。
  */
-import { computed } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -146,6 +148,8 @@ import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
 import OutboundSyncDialog from './OutboundSyncDialog.vue'
 import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from './composables/outboundStates'
 import { formatBeijingDateTime } from '@/utils/datetime'
+const OutboundProblemsDrawer = defineAsyncComponent(() => import('./OutboundProblemsDrawer.vue'))
+const problemsVisible = ref(false)
 
 const listPageState = useOutboundRecords()
 const {

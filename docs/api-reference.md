@@ -7,17 +7,20 @@
 | 方法 | 路径 | 返回与权限 |
 | --- | --- | --- |
 | GET | `/invoices/{invoice_id}/related-detail` | `{order,checked_at}`；保存的订单信息、商品明细、同步/取消状态与按权限裁剪的 `anomalies`。不返回编辑器回款草稿或内部资金快照 |
-| GET | `/invoices/{invoice_id}/related-detail/receipts` | `{state,items,summary,freight,batch_balance,checked_at,message}`；独立校验 `receipt:read/write/admin` 和回款归属，混合归属批次按私有凭证范围整体阻断 |
-| GET | `/invoices/{invoice_id}/related-detail/outbounds` | `{state,items,tasks,batches,summary,checked_at,message}`；独立校验 `shipping_inspection:read/write/admin`、小满绑定和出库归属。预售批次另校验发货与回款归属；检验状态另按检验范围，冻结金额另按回款范围裁剪 |
+| GET | `/invoices/{invoice_id}/related-detail/receipts` | `{state,source,items,summary,freight,batch_balance,checked_at,message}`；可选 `refresh=false`（默认），`true` 实时核验；独立校验 `receipt:read/write/admin` 和回款归属，混合归属批次按私有凭证范围整体阻断 |
+| GET | `/invoices/{invoice_id}/related-detail/outbounds` | `{state,source,items,tasks,batches,summary,checked_at,message}`；`source=inspection`；独立校验 `shipping_inspection:read/write/admin`、小满绑定和出库归属。预售批次另校验发货与回款归属；检验状态另按检验范围，冻结金额另按回款范围裁剪 |
 | GET | `/document-anomalies` | `{domains:{order,outbound,receipt},checked_at}`；至少具有上述任一功能权限。各域 `{state,has_anomaly,count}`，聚合其完整可见范围，不受当前列表页限制；无权限域不返回异常数量 |
+| GET | `/document-anomalies/outbound` | `{items,total,page,page_size,checked_at}`；出库权限和归属与出库列表相同，分页默认20、最大100。仅返回方舟出库列表当前 `failed/uncertain` 的单号、客户、状态说明、更新时间和定位参数；读取失败为503，不返回假空列表 |
 
 详情来源状态为 `ready/restricted/unverified`，核验失败保持已知本地明细、`summary=null` 和未核验时间，不伪造 0% 或缓存时点。订单不存在或不可见为 404；关联域范围不足在成功信封内返回 `restricted`，不暴露单据数量。
 
 回款 `summary` 使用原币 `total_amount/effective_amount/registered_amount/pending_amount/remaining_amount`，并增加 `unpaid_amount/overpaid_amount`。远端净额按唯一远端 ID 与方舟含费记录匹配，手续费仅恢复一次；独立运费位于 `freight`，不进入主单进度。未知财务状态、金额或关联变化返回待核验。预付款抵扣不新增回款。远端独有记录 `source=remote,id=null`，不提供本地凭证。
 
-出库 `summary` 为 `{ordered_quantity,shipped_quantity,by_item}`，实时完整关联核验后仅远端状态 2 计入实际出库，状态 1 仅表示生成。匹配订单 ID、远端行 ID、产品 ID、SKU；预售还要求本地出库状态/冻结数量一致。任务数量、计划批次数量及缺货记录不计进度。制单人来自精确关联镜像；无镜像时仅显示待刷新。
+出库 `summary` 为 `{ordered_quantity,shipped_quantity,by_item}`。出库进度按当前有效的 `ShippingInspection.status=submitted` 计入对应订单行数量，不再以小满状态 2 或预售本地 `shipped` 为前提。撤回检验、同步未确认或待补验的单据不计入；数量镜像落后于已核验修改、映射缺失、重复或超量时隐藏汇总。仍按订单 ID、远端行 ID、产品 ID、SKU 精确关联，混合订单仅取本订单行，预售冻结数量须一致。该只读口径不改变原单或结算状态。按订单精确查询本地出库镜像，批量读取检验、同步事件和预售批次，避免逐单远端查询。任务数量、计划批次数量及缺货记录不计进度。
 
-发票列表每项新增 `anomalies`（`order/outbound/receipt`）与 `anomaly_states`。异常定义复用 `document_anomalies.py`：活动失败/结果不明、需要重新核验的出库事件等；已证实可自动重试的出库任务、普通等待、作废及已核实删除回款不作为异常。导航读取失败可保留此前已确认角标，权限或账号变化立即清空。详见[实现及验收](requirements/2026-10-08-invoice-detail-implementation.md)。
+回款首次加载使用现有后台完整索引快照（校验来源、版本、摘要和 watermark，最长 2 分钟），不等待远端网络请求；页面标注快照时间，分母使用当前保存订单金额。快照缺失、过期或冲突时先显示本地明细，主单及独立运费汇总保持待核验。`refresh=true` 才执行原有实时订单、回款和运费核验；快照仅用于详情展示，不用于登记、发送或可用余额授权。 回款 `source` 为 `background_snapshot/live/local`；`checked_at` 使用实际快照 watermark，`batch_balance` 仅实时核验返回。
+
+发票列表每项新增 `anomalies`（`order/outbound/receipt`）与 `anomaly_states`。出库异常仅按方舟出库列表当前 `outbound_state` 判断：`failed/uncertain` 计入；正常已生成单据、等待及已证实自动重试不计入。与出库列表共用状态表达式及单据替代任务规则，单据已正常时旧任务异常不再点亮叹号；不查询小满实时接口、不聚合历史操作或发货结算状态。订单仅按当前单据状态 `Invoice.status` 的 `sync_failed/sync_uncertain` 判断，不使用独立同步字段或日志覆盖正常单据；回款仅按有效回款单当前 `sync_status=failed/uncertain` 判断，关联应收目标失败、作废及已核实删除回款不计入。点击出库叹号或页面“问题单据”可查看当前异常并定位列表，重复定位也会清除冲突筛选。导航读取失败可保留此前已确认角标，权限或账号变化立即清空。详见[实现及验收](requirements/2026-10-08-invoice-detail-implementation.md)。
 
 ## 列表表头排序（2026-10-04）
 

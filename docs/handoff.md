@@ -9,6 +9,26 @@
 - 合并后验证（隔离 worktree 干净检出，无 backend/.env）：后端全量（排除本机缺 mcp/jinja2 依赖的 19 个收集错误模块与需专用 mysqld 的 portal_mysql）7297 passed / 46 failed / 7 errors——失败集是 origin/main(`3c81d687`) 基线的严格子集（无新增失败；另修复了基线自带的 test_start_scheduler_registers_jobs 期望集），错误集与基线逐项一致；门户 SQLite 套件 718 passed / 2 skipped / 0 failed；回款修正、发票生命周期/删除/委派/配件/关联同步等相关套件 189 passed；alembic 单 head `177_portal_pi_header`；`check_conventions --base` 增量无违规（UI 门禁 80 项已清零）。门户 MySQL 套件（ReceiptIntent 断言已同步新边界）与前端双端构建因本机无 mysqld/node 未执行，发布前须在有专用 mysqld 与 Node 的环境补跑。
 - 门户开关 PORTAL_ENABLED/PORTAL_WRITES_ENABLED/PORTAL_INVOICE_ENABLED 全部默认关闭，本次不部署。
 
+## 2026-10-09 订单详情加载优化（Codex，已合并推送部署）
+
+- 本次应用候选 `9bdbc5f3d2c0389b8ebaf2a6c00e46ef50a6a1ec` 已合入并推送 main，经办公室 `deploy/deploy.bat` 先预检后发布，两次退出 0；范围 `office-and-cloud`，release_id=`61ca506f06e440b8bbc513ddecf27e66`，deferred=[]。
+- 两地版本与健康正常，20 项公网前端制品和 8 个详情后端文件按候选摘要核验一致；数据库保持 `175_receipt_recovery`，无迁移。出库 timer 原 active/enabled 与邮件 Worker inactive/disabled 基线保留。
+- 合并同时保留主线 `019e1471` 当前状态异常判断及问题单据入口；合并候选后端 229 项、前端 12 项与构建通过，独立合并审查通过。原主目录 24 项改动已保留。详细证据见[发布记录](reports/2026-10-09-invoice-detail-speed-release.md)。下方 10 月 8 日未部署段落为当时阶段记录，已由本次发布完成。
+
+## 2026-10-08 订单详情加载优化（Codex，本地完成，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/invoice-detail-speed/commission-system`，分支 `codex/invoice-detail-speed`，基于 main `3c81d687`；改动尚未提交、合并、推送或部署。
+- 初次打开回款读取两分钟内已核验后台快照，明确展示时点；手动刷新保留严格实时核验。出库精确读取本地镜像并批量取检验/事件/预售关联状态。刷新保留明细并隐藏旧汇总。
+- 按用户新口径，有效检验提交完成即计入已出库；撤回、待补验、同步未确认、镜像与修改证据冲突、越权、重复或超量均有保护。不变更原单状态、资金写入或数据库结构。
+- 受影响后端 219 项通过；补充运费边界后详情 47 项全部通过。前端 3 项、构建、独立审查及隔离浏览器首屏/刷新路径已验证。具体证据与限制见[优化验收记录](reports/2026-10-08-invoice-detail-speed.md)。主目录其他代理改动保持不动。
+
+## 2026-10-08 单据叹号只按当前状态判断（Codex，已验收，授权合并推送，未部署）
+
+- 分支 `codex/outbound-anomaly-details`，独立工作树 `C:/Users/windb/.codex/worktrees/outbound-anomaly-details/commission-system`。按亮哥最终口径：订单只判当前 `Invoice.status`；回款只判有效回款当前 `sync_status`；出库与列表共用 `outbound_state` 和正常单据替代待生成条目的规则。历史失败记录、独立同步旧字段、发货结算和应收目标不再额外触发叹号；不调用小满接口，不修改业务状态。
+- 出库叹号及页面“问题单据”可打开当前异常清单，显示单号、客户及状态，并跳转定位；重复定位清除冲突筛选，末页数量缩减自动回退，接口失败保留过期提示，账号权限变化清空。出库清单与导航共用同一查询及权限条件。
+- 验证：后端关联详情与出库队列共67项隔离回归、前端17项回归、生产构建、增量约定及diff检查通过。独立审查通过；本地浏览器使用合成数据验证异常条目、跳转参数及正常空状态。Git巡检为 `--no-fetch` 本地快照；亮哥已授权提交、合并及推送 `origin/main`，本次不部署。
+- 排查时曾把旧自动出库任务和失败操作记录误报成当前出库异常，已向亮哥纠正；最终方案只使用方舟列表当前状态。生产数据未因本次叹号修复改写。API说明已同步；正常单据不应为清理叹号而重建、重试或清除历史记录。
+
 ## 2026-10-08 出库单打印状态筛选（Codex，已合并推送部署）
 
 - 分支 `codex/outbound-status-filters`，独立工作树 `C:/Users/windb/.codex/worktrees/outbound-status-filters/commission-system`。出库单打印页新增可清空的「出库单状态」「检验状态」下拉，复用列表状态文案；两个状态与关键词、日期直接展示，订单 ID 移入展开筛选。

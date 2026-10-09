@@ -1,6 +1,6 @@
 """Read-only invoice panels and whole-scope navigation alerts."""
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.auth.dependencies import require_any_permission
 from app.core.database import get_db
@@ -16,6 +16,20 @@ logger = logging.getLogger(__name__)
 def anomalies(db: Session = Depends(get_db), user=Depends(require_any_permission(
     *detail_access.PERMISSIONS["order"], *detail_access.PERMISSIONS["receipt"], *detail_access.PERMISSIONS["outbound"]))):
     return ok(document_anomalies.summary(db, user))
+
+
+@router.get("/document-anomalies/outbound", summary="Scoped outbound problems behind the navigation warning")
+def outbound_problems(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+                      db: Session = Depends(get_db),
+                      user=Depends(require_any_permission(*detail_access.PERMISSIONS["outbound"]))):
+    try:
+        return ok(document_anomalies.outbound_problems(db, user, page=page, page_size=page_size))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("outbound problem list unavailable: %s", type(exc).__name__)
+        print(f"[invoice_detail] outbound problem list unavailable: {type(exc).__name__}", flush=True)
+        raise HTTPException(503, "出库问题暂时无法核验，请稍后重试；不能据此判断问题已解决") from exc
 
 
 @router.get("/invoices/{invoice_id}/related-detail", summary="Saved invoice snapshot for the read-only viewer")
@@ -48,8 +62,8 @@ def panel(db, user, identity, reader):
 
 
 @router.get("/invoices/{invoice_id}/related-detail/receipts", summary="Scoped verified invoice funds and receipt documents")
-def receipts(invoice_id: int, db: Session = Depends(get_db), user=Depends(require_any_permission("invoice:read", "invoice:write", "invoice:sync"))):
-    return panel(db, user, invoice_id, detail_receipts.read)
+def receipts(invoice_id: int, refresh: bool = False, db: Session = Depends(get_db), user=Depends(require_any_permission("invoice:read", "invoice:write", "invoice:sync"))):
+    return panel(db, user, invoice_id, lambda db, invoice, user: detail_receipts.read(db, invoice, user, refresh=refresh))
 
 
 @router.get("/invoices/{invoice_id}/related-detail/outbounds", summary="Scoped verified actual outbound quantities and related documents")
