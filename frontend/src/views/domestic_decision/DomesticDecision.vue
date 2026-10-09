@@ -33,7 +33,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 import { msgError, msgInfo, msgWarning } from '@/utils/feedback'
 import { domesticDecisionApi as api } from '@/api/domesticDecision'
 import { tableSortParams } from '@/utils/tableSort'
-import { cleanQuery, FIELD_LABELS } from './state'
+import { cleanQuery, evidenceRefs, FIELD_LABELS } from './state'
 import { useDecisionWorkbench } from './composables/useDecisionWorkbench'
 import DecisionFilters from './components/DecisionFilters.vue'
 import AnalysisPanels from './components/AnalysisPanels.vue'
@@ -52,9 +52,9 @@ provide('decisionMeta', computed(() => analysis.value?.meta))
 watch(loading, value => { if (value) { evidence.open = false; evidence.refs = []; actionPreparationGeneration++; actionPreparing.value = false } })
 onBeforeUnmount(() => { actionPreparationGeneration++ })
 function openEvidence(refs) {
-  const valid = Array.isArray(refs) ? refs.filter(row => row?.id && ['orders', 'order', 'items', 'item', ...(permissions.value.finance ? ['ledger', 'requests', 'request'] : [])].includes(row.type)) : []
+  const valid = evidenceRefs(refs, permissions.value.finance)
   if (!valid.length) { msgInfo('当前没有可打开的记录证据'); return }
-  evidence.refs = [...new Map(valid.map(row => [`${row.type}:${row.id}`, row])).values()]; evidence.open = true
+  evidence.refs = valid; evidence.open = true
 }
 async function prepareAction(insight) {
   if (!permissions.value.action) { msgWarning('需要内部行动写入权限'); return }

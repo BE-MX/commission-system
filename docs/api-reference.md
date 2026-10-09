@@ -1722,11 +1722,11 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | GET | `/filters` | 当前可见客户、业务员、运行时选项和能力；无资金权限无结算/会员选项。 |
 | POST | `/analysis-runs` | `AnalysisRequest` → 一致性结果、`meta.run_id`、数据/指标/映射/配置版本、覆盖率及固定证据。 |
 | GET | `/analysis-runs/{id}` | 本人固定结果；每次复核当前权限/归属。 |
-| GET | `/analysis-runs/{id}/rows` | `kind=orders/items/customers/ledger/requests`，`page`、`page_size<=200`，可传 `customer_id/order_id/dimension/value`；`sort_field`按kind白名单，`sort_order=asc/desc`，完整筛选快照先排序再分页、空值末尾；非法排序422，来源变化409，过期410。 |
+| GET | `/analysis-runs/{id}/rows` | `kind=orders/items/customers/ledger/requests/reports`，`page`、`page_size<=200`，可传 `customer_id/order_id/dimension/value`；`sort_field`按kind白名单，`sort_order=asc/desc`，完整筛选快照先排序再分页、空值末尾；非法排序422，来源变化409，过期410。 |
 | POST | `/finance-runs` | 同查询，基础+资金阅读权限；返回meta及资金桥接。 |
 | GET | `/customers/{id}/profile` | `start_date/end_date`，当前画像+完整授权购买历史、成熟cohort、偏好与推荐。 |
 | GET | `/salespeople/{id}/profile` | 同日期，当前负责人组合及比较窗口；不假称历史业绩。 |
-| GET | `/evidence/{kind}/{id}` | `order/item/ledger/request`（兼容复数路径值）；必要字段白名单，资金证据需资金权限。 |
+| GET | `/evidence/{kind}/{id}` | `order/item/ledger/request/reports`（兼容原有复数路径值）；必要字段白名单，资金证据需资金权限。 |
 | POST | `/data-quality` | 同查询，返回质量/加权覆盖/对账问题，未改原数据。 |
 | GET/POST | `/views` | 本人/已分享条件；创建 `{name,query,time_mode:rolling/fixed,shared}`。 |
 | PATCH/DELETE | `/views/{id}` | 仅本人，更新需 `expected_version`。分享不分享客户数据权限。 |
@@ -1744,3 +1744,13 @@ Agent research context now includes `fact_contract.version=registered_research_f
 `AnalysisRequest`：`start_date/end_date`（含首尾，北京业务日，1–1096天）、`comparison_mode=previous/year/none`、`scope=mine/all`、`customer_ids`、`owner_ids`、`filters`（字段→字符串值列表）、`dimensions`（最多2个白名单字段）、`metric=amount/quantity/order_count/customer_count`、`finance_related_customers`（默认false）。所有规格过滤以同一明细AND命中；资金默认不继承产品过滤。无资金权限禁止结算/会员过滤和分组。
 
 409表示来源、版本或幂等内容冲突，需刷新或使用与原内容一致的请求号；429为每日AI预算超限。简报/查询计划模型输出必须通过程序事实和范围校验；未配置或无效输出降级为真实规则事实。后台任务中断十分钟后显式失败，不把排队说成已生成。
+
+### 内贸决策台指标扩展（2026-10-09，本地优化未发布）
+
+`analysis-runs` 增加 `summary.business_order_amount/shipped_amount/shipped_quantity/recharge_amount`，趋势和对照期同时支持对应日期口径。无资金阅读权限时充值值为 null，省略充值分组与客户充值行为。其他成交明细与矩阵仍按下单口径。
+
+结果增加 `customer_segments.groups`（充值/非充值两组各含customer_count/amount/order_count/discount_amount）、`retention.summary` 与每客户的 `retention_status`。客户充值意向永远为 unconfirmed，行为分类仅供后续核对。
+
+`products` 增加按实际发货日期的数量/金额、出货日、商业出货日、客户分布和需求信号；`production_operations.rows` 单独按毛坯规格去重，包含入库、毛坯出库、在制量及下单至整行入库周期，利润和真实库存未知。无客户生产数据需完整全量范围及内贸全量订单权限，读取旧结果、任务或导出仍实时校验。
+
+`rows(kind=reports)` 支持客户/订单过滤及报工时间、数量、金额等白名单排序，不支持dimension过滤（422）；款式使用已绑定的报工事实引用下钻。`evidence/reports/{id}` 返回工序、报工数量、北京时间、撤销状态及报工数量乘成交单价；严格核对关联客户或无客户生产权限。item证据补充original_price与每件discount_amount。产品导出包含items和reports，客户/经营导出也包含reports；旧口径快照返回409要求重新分析。

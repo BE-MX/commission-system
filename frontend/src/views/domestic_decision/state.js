@@ -7,6 +7,11 @@ import { formatMoney } from '../../utils/money.js'
 export const number = (value, digits = 0) => formatMoney(value, { precision: digits, locale: 'zh-CN', missing: '—' }).replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1')
 export const money = value => formatMoney(value, { precision: 2, currency: 'CNY', currencyDisplay: 'narrowSymbol', locale: 'zh-CN', missing: '—' })
 export const percent = value => value == null ? '—' : `${number(value * 100, 1)}%`
+export function evidenceRefs(refs, financeAllowed) {
+  const types = ['orders', 'order', 'items', 'item', 'reports', ...(financeAllowed ? ['ledger', 'requests', 'request'] : [])]
+  const valid = Array.isArray(refs) ? refs.filter(row => row?.id && types.includes(row.type)) : []
+  return [...new Map(valid.map(row => [`${row.type}:${row.id}`, row])).values()]
+}
 export function defaultQuery(today) {
   return { start_date: `${today.slice(0, 7)}-01`, end_date: today, comparison_mode: 'previous', scope: 'mine', customer_ids: [], owner_ids: [], filters: {}, dimensions: ['craft', 'length'], metric: 'amount', finance_related_customers: false }
 }
@@ -58,3 +63,5 @@ export function comparisonText(change) {
   if (change.rate == null) return change.previous === 0 ? '对照为零，仅展示绝对变化' : '历史不足，变化率未知'
   return `${change.rate >= 0 ? '+' : ''}${percent(change.rate)} 对照变化`
 }
+
+Object.assign(STATUS_LABELS, { sustained_repeat: '持续复购', losing_rhythm: '周期延后，核查流失', dormant: '长期未购，核查流失', repeat_observed: '已观察复购', inactive_store: '停止经营 / 联系', recharged: '充值客户', non_recharged: '非充值客户', recharge_and_discount: '曾充值并享折让', recharged_without_discount: '曾充值，本期未见折让', full_price_without_recharge: '未见充值，按原价下单', discount_without_recharge: '未见充值，存在折让', no_behavior_sample: '行为样本不足', unconfirmed: '待跟进确认', pending_recharge: '有待审充值申请', noncommercial_shipping: '仅售后 / 零价出货', steady_seller: '持续畅销观察', occasional_shipping: '偶发出货 / 样本待积累', ordered_not_shipped: '本期下单尚未出货', missing_cost: '缺成本，待核算', specification_unverified: '规格映射待核验', aged_production: '长期在制，核查积压', supply_build_up: '入库多于毛坯出库，核查积压', demand_supported: '有毛坯出库需求', faster_replenishment: '周期不高于同范围中位数', slower_replenishment: '周期高于同范围中位数' })

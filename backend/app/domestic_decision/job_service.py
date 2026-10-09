@@ -79,8 +79,8 @@ def _safe_cell(value):
 def export_result(result, format, focus="executive"):
     # History powers cycle/risk explanations; it is not part of the filtered
     # detail export. Keep an explicit allowlist for both formats.
-    kinds = {"product": ("items",), "customer": ("orders", "items"),
-             "finance": ("ledger", "requests")}.get(focus, ("orders", "items", "ledger", "requests"))
+    kinds = {"product": ("items", "reports"), "customer": ("orders", "items", "reports"),
+             "finance": ("ledger", "requests")}.get(focus, ("orders", "items", "reports", "ledger", "requests"))
     evidence = {kind: result.get("evidence", {}).get(kind, []) for kind in kinds}
     meta = {key: result.get("meta", {}).get(key) for key in
             ("period", "comparison_period", "data_as_of", "metric_version", "mapping_version", "rule_version", "scope_summary", "warnings")}

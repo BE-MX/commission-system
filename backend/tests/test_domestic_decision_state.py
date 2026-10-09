@@ -258,7 +258,7 @@ def test_real_http_jobs_finish_and_private_export_downloads(db, portfolio, monke
         if path == "exports":
             downloaded = client.get(f"/api/domestic-decision/exports/{job_id}/download")
             assert downloaded.status_code == 200
-            assert list(downloaded.json()["evidence"]) == ["items"]
+            assert list(downloaded.json()["evidence"]) == ["items", "reports"]
             assert "membership_level_snapshot" not in downloaded.text
     assert len(client.get("/api/domestic-decision/briefs").json()["data"]) == 1
 
