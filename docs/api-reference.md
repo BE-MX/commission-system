@@ -2363,3 +2363,9 @@ POST /api/shipments/{id}/reconcile-freight 保持 SettlementRemoteReview(version
 ## 客户原动作回执只读查询（v1.62）
 
 GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、能力与原订单范围下读取已有CommandReceipt，严格action/payload_hash与提案revision_id/proposal_hash查询引用。保留现有自然命令键，同公司当前授权联系人可查，员工token不能替代客户身份。返回ok({found,command,receipt?})；found=false不证明原动作未执行，不能自动重发POST。正常/拒绝no-store，参数422安全裁剪，SQL异常503。唯一允许写为认证idle续期，无新商业状态/回执或供应商动作。字段、自然键及事务约束详见[当前API契约](requirements/2026-09-30-customer-order-portal/03-api-contract.md)。
+
+## 未付款旧批资金升级（180，受审计原批操作）
+
+`POST /api/shipments/{id}/upgrade-funding`：`FundingUpgrade` 包含严格正整数 `version`、`receipt_id`、`receipt_version`，`purpose=presale_advance`，10..500字符理由及16..64字符独立 `request_key`。实时检查 `invoice:write`、`shipment:write`、`receipt:write` 和原订单范围；请求只读取小满，不新增远端现金、运费或实际出库。成功用 `ok` 返回 amendment 摘要和当前 settlement。
+
+仅 V1 唯一活动、未分配资金/未出库的待付款或暂停批次可升级；按原产品与费用快照计算资金引用，保留原运费订单、创建请求与末批标记。锁外完整远端取证后重读当前权限及关联版本，变化拒绝；用途、Intent、审计、报价及占额同一事务。完整升级前后证据写入 amendment。原创建 key/hash 不改，原报价创建请求返回409并指引读取原批；升级原key重读核对内容、操作人及真实占额，不重复生成款项或分配。原批暂停状态保持，正常派发只创建待出库。

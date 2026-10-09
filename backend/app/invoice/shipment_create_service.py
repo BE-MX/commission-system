@@ -68,6 +68,10 @@ def _authorize(db, identity, body, user):
 
 
 def _replay(db, invoice, existing, identity, body, current):
+    from app.invoice.settlement_models import SettlementFundingAmendment
+    if existing.quote_hash != body.quote_hash and db.scalar(select(SettlementFundingAmendment.id).where(
+            SettlementFundingAmendment.settlement_id == existing.id).with_for_update()):
+        raise HTTPException(409, '原批资金已受审计升级，请读取原批；旧创建请求不能重放为新报价')
     hashes = {shipments.digest(body.model_dump(mode='json'))}
     if existing.quote.get('funding_version') != 2:
         legacy = body.model_dump(mode='json', exclude={'is_final'})

@@ -40,6 +40,22 @@ class SettlementRemoteReview(SettlementAction):
     remote_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]*$", max_length=64)
 
 
+class FundingUpgrade(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(gt=0, strict=True)
+    receipt_id: int = Field(gt=0, strict=True)
+    receipt_version: int = Field(gt=0, strict=True)
+    purpose: Literal["presale_advance"]
+    reason: str = Field(min_length=10, max_length=500)
+    request_key: str = Field(min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+
+    @model_validator(mode="after")
+    def meaningful_reason(self):
+        if len(self.reason.strip()) < 10:
+            raise ValueError("请说明至少十个字的资金用途核对原因")
+        return self
+
+
 class BatchAllocation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invoice_id: int = Field(gt=0)

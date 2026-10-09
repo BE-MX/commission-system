@@ -700,3 +700,7 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 ## 177_portal_pi_header（开发中，未部署）
 
 父迁移176_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；MySQL离线DDL和隔离SQLite保留旧行测试通过，尚未在真实MySQL执行。迁移已按项目规则暂存，未commit/push/部署。
+
+## 180_settlement_funding_amendment（未付款旧批升级审计）
+
+父迁移 `179_presale_funding`，新增 `ark_settlement_funding_amendments`，不回填或改写旧报价/收款。保存原结算、发票、回款FK，独立唯一 request_key 和输入摘要；同一 settlement 最多一次升级。before_snapshot/after_snapshot/evidence 为非空JSON，完整保留前后报价、原创建身份、付款事实与验证证据；actor_id、reason 与北京时间 created_at 可追溯操作。原结算/产品/远端运费身份不变；升级只新建余额占用应用，未实际出库不核销。downgrade拒绝删除审计，修复使用前向迁移。

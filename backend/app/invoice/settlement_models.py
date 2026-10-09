@@ -124,3 +124,19 @@ class SettlementEvent(Base):
     reason = Column(String(500), nullable=False, default="")
     actor_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, nullable=False, default=beijing_now)
+
+
+class SettlementFundingAmendment(Base):
+    __tablename__ = "ark_settlement_funding_amendments"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    settlement_id = Column(BigInteger, ForeignKey("ark_shipment_settlements.id"), nullable=False, unique=True)
+    invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id"), nullable=False, index=True)
+    receipt_id = Column(BigInteger, ForeignKey("ark_receipts.id"), nullable=False)
+    request_key = Column(String(64), nullable=False, unique=True)
+    request_hash = Column(String(64), nullable=False)
+    before_snapshot = Column(JSON, nullable=False, comment="升级前原结算、现金与运费完整快照")
+    after_snapshot = Column(JSON, nullable=False, comment="升级后结算与资金分配完整快照")
+    evidence = Column(JSON, nullable=False, comment="主单、首款、运费单及出库核验摘要")
+    actor_id = Column(Integer, nullable=False)
+    reason = Column(String(500), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)

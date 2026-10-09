@@ -23,10 +23,10 @@ from sqlalchemy.orm.attributes import set_committed_value
 from app.invoice import settlement_service as shipments, shipment_create_service, shipment_state_service
 from app.invoice.models import Invoice, InvoiceItem
 from app.invoice.settlement_models import (ShipmentSettlement, SettlementItem, SettlementApplication,
-    SettlementEvent, ShipmentOutbound, Receivable, ReceiptBatch, BatchAttachment)
+    SettlementEvent, ShipmentOutbound, Receivable, ReceiptBatch, BatchAttachment, SettlementFundingAmendment)
 from app.invoice.settlement_schemas import ShipmentCreate, ShipmentQuote
 from app.receipt import purpose_service
-from app.receipt.models import Receipt, ReceiptIntent, ReceiptLog, ReceiptAttachment
+from app.receipt.models import Receipt, ReceiptIntent, ReceiptLog, ReceiptAttachment, ReceiptAttempt
 from app.receipt.schemas import PresalePurposeUpdate
 from app.semifinished.models import InvoiceAllocation
 
@@ -38,7 +38,8 @@ def funding_schema(mysql_engine):
     metadata = MetaData()
     for model in (Invoice, InvoiceItem, Receipt, ReceiptIntent, ReceiptLog, ReceiptAttachment,
             InvoiceAllocation, ShipmentSettlement, SettlementItem, SettlementApplication,
-            SettlementEvent, ShipmentOutbound, Receivable, ReceiptBatch, BatchAttachment):
+            SettlementEvent, ShipmentOutbound, Receivable, ReceiptBatch, BatchAttachment, SettlementFundingAmendment,
+            ReceiptAttempt):
         columns = [Column(column.name, column.type, primary_key=column.primary_key,
             nullable=column.nullable, autoincrement=column.autoincrement, default=column.default,
             server_default=column.server_default, onupdate=column.onupdate)
@@ -325,3 +326,90 @@ def test_legacy_cancel_correction_allows_v2_state_and_strict_original_replay(fun
         with pytest.raises(HTTPException) as rejected:
             shipment_create_service._replay(db, invoice, db.get(ShipmentSettlement, identity), invoice.id, body, USER)
         assert rejected.value.status_code == 409
+
+
+@pytest.mark.parametrize('same_key',[False,True])
+def test_two_upgrade_sessions_only_commit_one_amendment_and_one_allocation_graph(funds,monkeypatch,same_key):
+    from app.invoice import funding_upgrade_service as upgrades
+    from app.invoice.settlement_pricing import quote_settlement
+    from app.invoice.settlement_schemas import FundingUpgrade
+    from app.receipt import authority
+    with Session(funds.engine) as db:
+        invoice=lock_invoice(db,funds)
+        invoice.total_amount=invoice.product_amount=2090
+        invoice.items[0].quantity=10; invoice.items[0].total_price=2090
+        receipt=db.get(Receipt,funds.receipt); receipt.purpose='presale_deposit'
+        quote=quote_settlement([{'invoice_item_id':funds.item,'quantity':10,'total_price':'2090','requested_quantity':3}],
+            '0','0','1077','0',freight='38')
+        quote.update(invoice_id=invoice.id,invoice_no=invoice.invoice_no,customer_id=invoice.customer_id,currency='USD',
+            quote_hash='a'*64,deposit_receipt_id=receipt.id)
+        original=body_for(funds,quote)
+        row=ShipmentSettlement(invoice_id=invoice.id,sequence=1,settlement_no='UP-'+uuid4().hex,is_final=0,
+            quote=quote,quote_hash=quote['quote_hash'],request_key=original.request_key,
+            request_hash=shipments.digest(original.model_dump(mode='json',exclude={'is_final'})),created_by=1)
+        db.add(row); db.flush()
+        db.add(SettlementItem(settlement_id=row.id,invoice_item_id=funds.item,quantity=3,line_amount=627,
+            snapshot={'order_id':invoice.xiaoman_order_id,'order_record_id':'11','product_id':1,'sku_id':2,
+                'product_name':'Hair','outbound_count':3,'sale_price':'209.00'}))
+        target=shipments.target(db,invoice,row); target.remote_status='bound'
+        target.remote_order_id=str(int(uuid4().hex[:12],16))
+        target.remote_payload={'name':target.remote_order_name,'amount':'38','product_list':[]}
+        target.remote_payload_hash=shipments.digest(target.remote_payload)
+        identity=row.id
+        body=FundingUpgrade(version=row.version,receipt_id=receipt.id,receipt_version=receipt.version,
+            purpose='presale_advance',reason='Customer confirmed this original payment is goods advance',request_key=uuid4().hex)
+        db.commit()
+        frozen_cash,frozen_freight=upgrades.cash_facts(receipt),upgrades.values(target)
+    monkeypatch.setattr(upgrades,'lock_authority',lambda *_a,**_kw:None)
+    monkeypatch.setattr(authority,'current_user',lambda _db,_user,*_a,**_kw:_user)
+    reads=threading.Barrier(2)
+    held,release=threading.Event(),threading.Event()
+    final_connections=queue.Queue(); winner_connection=queue.Queue()
+    local=threading.local()
+    def document(db,identity,**_kw):
+        local.count=getattr(local,'count',0)+1
+        if local.count==2:final_connections.put(db.scalar(text('SELECT CONNECTION_ID()')))
+        return lock_invoice(db,funds)
+    monkeypatch.setattr(upgrades.edit_authority,'lock_document',document)
+    def evidence(_db,_lookup):
+        reads.wait(timeout=10)
+        return {'receipt':{'cash_collection_id':_lookup.cash['xiaoman_receipt_id'],'amount':'1077'},
+            'main_outbounds':[],'freight_outbounds':[],'freight_receipts':{'rows':[]}}
+    monkeypatch.setattr(upgrades,'_read_evidence',evidence)
+    apply=upgrades._apply
+    def hold(db,*args):
+        result=apply(db,*args)
+        winner_connection.put(db.scalar(text('SELECT CONNECTION_ID()')))
+        held.set(); assert release.wait(10)
+        return result
+    monkeypatch.setattr(upgrades,'_apply',hold)
+    bodies=[body,body if same_key else body.model_copy(update={'request_key':uuid4().hex})]
+    def run(command):
+        with Session(funds.engine,autoflush=False) as db:
+            try:
+                result=upgrades.upgrade(db,identity,command,USER)
+                db.commit(); return result['amendment']['id']
+            except HTTPException as rejected:
+                db.rollback(); assert rejected.status_code==409; return 'rejected'
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        tasks=[executor.submit(run,command) for command in bodies]
+        assert held.wait(10)
+        connections={final_connections.get(timeout=5),final_connections.get(timeout=5)}
+        winner=winner_connection.get(timeout=5)
+        assert len(connections)==2
+        try:
+            wait_for_lock(funds.engine,next(identity for identity in connections if identity!=winner))
+        finally:release.set()
+        results=[task.result(timeout=10) for task in tasks]
+    with Session(funds.engine) as db:
+        row=db.get(ShipmentSettlement,identity)
+        amendments=db.query(SettlementFundingAmendment).filter_by(settlement_id=identity).all()
+        assert len(amendments)==1
+        if same_key:assert results==[amendments[0].id]*2
+        else:assert sorted(str(value) for value in results)==sorted([str(amendments[0].id),'rejected'])
+        apps=db.query(SettlementApplication).filter_by(settlement_id=identity).all()
+        assert sorted((app.component,app.amount) for app in apps)==[('freight',Decimal('38')),('goods',Decimal('627'))]
+        assert row.quote['pool_balances'][0]['remaining_amount']=='412.00'
+        assert upgrades.cash_facts(db.get(Receipt,funds.receipt))==frozen_cash
+        assert upgrades.values(db.get(Receivable,frozen_freight['id']))==frozen_freight
+        assert db.query(Receipt).filter_by(invoice_id=funds.invoice).count()==1

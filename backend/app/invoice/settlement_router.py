@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.invoice import settlement_service as service, shipment_delivery, freight_delivery
 from app.invoice.settlement_models import ShipmentOutbound, Receivable, SettlementEvent
-from app.invoice.settlement_schemas import ShipmentQuote, ShipmentCreate, SettlementAction, SettlementRemoteReview, BatchCreate
+from app.invoice.settlement_schemas import ShipmentQuote, ShipmentCreate, SettlementAction, SettlementRemoteReview, BatchCreate, FundingUpgrade
 from app.receipt import batch_create_service, batch_service
 from app.receipt import access
 from app.receipt.router import execute
@@ -148,6 +148,15 @@ def detail(identity: int,db: Session=Depends(get_db),user=Depends(get_current_us
 @shipment_state_router.post("/shipments/{identity}/cancel")
 def cancel(identity: int, body: SettlementAction, db: Session = Depends(get_db), user=Depends(get_current_user)):
     return _change(db, identity, body, user, "cancel")
+
+
+@shipment_state_router.post("/shipments/{identity}/upgrade-funding")
+def upgrade_funding(identity: int, body: FundingUpgrade, db: Session=Depends(get_db), user=Depends(get_current_user)):
+    from app.invoice import funding_upgrade_service, shipment_state_service
+    try:
+        return execute(db, lambda: funding_upgrade_service.upgrade(db,identity,body,user))
+    except SQLAlchemyError as error:
+        shipment_state_service.result_unavailable(error)
 
 
 @shipment_state_router.post("/shipments/{identity}/pause")

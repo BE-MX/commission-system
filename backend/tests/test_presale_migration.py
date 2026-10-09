@@ -53,7 +53,9 @@ def test_presale_funding_adds_only_columns_and_keeps_original_cash():
     assert "DEFAULT '0'" in sql and "NUMERIC(14, 2)" in sql
     assert not any(word in sql for word in ("UPDATE ", "DELETE ", "DROP ", "ALTER COLUMN"))
     config = Config(); config.set_main_option("script_location", str(path.parents[1]))
-    assert ScriptDirectory.from_config(config).get_heads() == ["179_presale_funding"]
+    script = ScriptDirectory.from_config(config)
+    assert script.get_heads() == ["180_settlement_funding_amendment"]
+    assert script.get_revision("180_settlement_funding_amendment").down_revision == module.revision
     import pytest
     with pytest.raises(RuntimeError, match="preserved"):
         module.downgrade()
