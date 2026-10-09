@@ -30,6 +30,7 @@ SUPER_DEAL_USD = 30000
 EVENT_META = {
     "first_sign":      {"level": "L4", "label": "首单新签"},
     "new_sign_order":  {"level": "L4", "label": "新签喜报"},
+    "order_placed":    {"level": "L3", "label": "下单喜报"},
     "super_deal":      {"level": "L4", "label": "超级大单"},
     "camp_target":     {"level": "L4", "label": "达成阵营目标"},
     "big_deal":        {"level": "L3", "label": "大单来袭"},

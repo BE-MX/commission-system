@@ -1,4 +1,4 @@
-"""采购节事件图片、榜单截图与钉钉群可靠投递。"""
+"""日常订单喜报、采购节事件图片、榜单截图与钉钉群可靠投递。"""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ _TEAM_LOGOS = {
 }
 # 新签/大单来袭/超级大单/名次上升四类高光事件：奶油底黄色系极光 + 彩色烟花。
 _AURORA_EVENT_TYPES = {
-    "first_sign", "new_sign_order", "big_deal", "super_deal",
+    "first_sign", "new_sign_order", "order_placed", "big_deal", "super_deal",
     "rank_up_sign", "rank_up_first", "rank_up_re", "rank_up_team",
 }
 _AURORA_LABELS = {"首单新签", "新签喜报", "大单来袭", "超级大单"}
@@ -60,6 +60,11 @@ _AURORA_BASE_BOTTOM = (253, 242, 222)
 _AURORA_BANDS = ((255, 240, 200), (255, 228, 150), (255, 219, 118), (255, 236, 180))
 _FIREWORK_GOLD = (242, 165, 32)
 _FIREWORK_WHITE = (255, 252, 244)
+_ORDER_EVENT_TYPES = frozenset({"new_sign_order", "order_placed", "big_deal", "super_deal"})
+
+
+def _event_brand(event: dict) -> str:
+    return "方舟订单" if event.get("event_type") in _ORDER_EVENT_TYPES else "2026 莱莎采购节"
 
 
 def _draw_firework(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -> None:
@@ -256,6 +261,17 @@ def _public_url(path: Path) -> str:
 
 def render_event_image(event: dict) -> Path:
     """把与大屏一致的事件内容渲染成 16:9 PNG，供钉钉内联显示。"""
+    if event.get("event_type") in _ORDER_EVENT_TYPES:
+        from app.festival.order_card_renderer import render_order_card
+        image = render_order_card(
+            event, _REPO_ROOT / "frontend" / "public" / "festival" / "assets",
+            _font, _display_font, _wrap,
+        )
+        token = _event_token(str(event["dedup_key"]))
+        output = _UPLOAD_ROOT / "events" / f"{token}.png"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        image.save(output, "PNG", optimize=True)
+        return output
     width, height = 1200, 675
     aurora = _is_aurora_event(event)
     if aurora:
@@ -333,7 +349,7 @@ def render_event_image(event: dict) -> Path:
         created_text = created.strftime("%Y-%m-%d %H:%M")
     else:
         created_text = str(created or beijing_now().strftime("%Y-%m-%d %H:%M"))
-    draw.text((82, 565), f"2026 莱莎采购节  ·  {created_text}",
+    draw.text((82, 565), f"{_event_brand(event)}  ·  {created_text}",
               font=_font(24), fill=ink)
 
     token = _event_token(str(event["dedup_key"]))
@@ -468,10 +484,14 @@ def _event_dict(row: FestivalEvent) -> dict:
 
 
 def _detect_and_load_pending() -> list[dict]:
+    from app.invoice.order_notification_service import detect_order_events
+
     now = beijing_now()
     stale = now - timedelta(minutes=15)
     with SessionLocal() as db:
-        service.get_headline_payload(db, None, None)
+        detect_order_events(db)
+        if service.ACTIVITY_GMV_WINDOW[0] <= now.date().isoformat() <= service.ACTIVITY_GMV_WINDOW[1]:
+            service.get_headline_payload(db, None, None)
         rows = (db.query(FestivalEvent)
                 .filter(FestivalEvent.dingtalk_sent_at.is_(None))
                 .filter(or_(FestivalEvent.dingtalk_next_retry_at.is_(None),
@@ -542,7 +562,8 @@ async def monitor_festival_events() -> dict:
             image_url = _public_url(image_path)
             text = (f"![{event['label']}]({image_url})\n\n"
                     f"**{event['subject_name']}** · {event.get('detail') or event['label']}")
-            await sender.send_markdown(f"采购节 · {event['label']}", text)
+            brand = "方舟订单" if event["event_type"] in _ORDER_EVENT_TYPES else "采购节"
+            await sender.send_markdown(f"{brand} · {event['label']}", text)
             await anyio.to_thread.run_sync(_mark_event_delivery, event["id"], None)
             sent += 1
         except Exception as exc:

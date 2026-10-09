@@ -184,7 +184,8 @@ def apply(db,invoice,attempt,observation,data):
         invoice.xiaoman_order_id=observation["provider_reference"]
         # Save known acceptance even when UID or stock finalization still needs recovery.
         xiaoman_service._write_sync_log(db,invoice,action=attempt.data["action"],success=True,
-            payload=None,response={"order_id":invoice.xiaoman_order_id,"attempt_reference":attempt.key},
+            payload={xiaoman_service.FIELD_NEW_DEAL: attempt.payload.get(xiaoman_service.FIELD_NEW_DEAL)},
+            response={"order_id":invoice.xiaoman_order_id,"attempt_reference":attempt.key},
             error=None,operator_id=attempt.actor_id,inventory_operation_key=attempt.inventory_key)
         try:
             validated=verified_response(attempt,data)

@@ -53,10 +53,10 @@ def test_render_event_image_contains_shareable_png(tmp_path, monkeypatch):
         assert image.getpixel((1060, 575)) == (253, 217, 86)
 
 
-def test_render_event_image_aurora_theme_for_highlight_events(tmp_path, monkeypatch):
+def test_render_event_image_aurora_theme_for_festival_rank_events(tmp_path, monkeypatch):
     monkeypatch.setattr(notification_service, "_UPLOAD_ROOT", tmp_path)
     event = {
-        "event_type": "super_deal",
+        "event_type": "rank_up_sign",
         "level": "L4",
         "label": "超级大单",
         "subject_type": "person",

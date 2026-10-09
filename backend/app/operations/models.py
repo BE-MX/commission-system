@@ -25,7 +25,7 @@ JOB_METADATA = {
     "color_sales_aggregate": JobMetadata("发色销量聚合", "发色数字化", "产品中心"),
     "whatsapp_auto_sync": JobMetadata("WhatsApp 自动同步", "客户沟通", "销售运营"),
     "aftersales_notification_retry": JobMetadata("售后通知重试", "客户售后", "售后团队"),
-    "festival_event_monitor": JobMetadata("采购节事件监控", "采购节", "业务运营"),
+    "festival_event_monitor": JobMetadata("日常订单与采购节事件监控", "订单/采购节", "业务运营"),
     "festival_daily_report": JobMetadata("采购节日报", "采购节", "业务运营"),
     "design_image_queue": JobMetadata("设计生图队列", "AI 生图", "设计中心"),
     "customer_image_queue": JobMetadata("客户生图队列", "客户生图", "设计中心"),

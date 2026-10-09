@@ -158,7 +158,7 @@ class Settings(BaseSettings):
     FESTIVAL_DATA_SOURCE: str = "okki"
     # September ranking remains provisional after month-end until business review.
     FESTIVAL_SEPTEMBER_FINALIZED: bool = False
-    # 采购节群使用独立机器人，禁止回退全局告警群，避免赛事实时消息发错群。
+    # 日常订单喜报与采购节事件沿用独立群机器人，禁止回退全局告警群。
     FESTIVAL_DINGTALK_WEBHOOK_URL: str = ""
     FESTIVAL_DINGTALK_WEBHOOK_SECRET: str = ""
     # 定时截图从本机生产入口读取；端口/浏览器路径可按服务器实际安装覆盖。
