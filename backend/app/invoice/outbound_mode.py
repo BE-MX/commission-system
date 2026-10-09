@@ -35,7 +35,7 @@ def read_mode(db):
             logger.warning('Outbound mode parent evidence unavailable (%s)', type(head_error).__name__)
             print('[outbound-mode] parent evidence unavailable; writers remain paused', flush=True)
             raise RuntimeError('Outbound execution mode cannot be confirmed') from None
-        if heads != [('171_customer_tag_display_value',)]:
+        if heads not in ([('171_customer_tag_display_value',)], [('175_receipt_recovery',)]):
             raise RuntimeError('Outbound execution mode cannot be confirmed') from None
         return LEGACY
     if not rows:

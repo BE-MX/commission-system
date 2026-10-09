@@ -30,7 +30,8 @@ def observe(connection):
         values=getattr(getattr(error,'orig',None),'args',())
         if not values or type(values[0]) is not int or values[0]!=1146:raise
         heads=connection.exec_driver_sql('SELECT version_num FROM alembic_version').all()
-        if heads!=[('171_customer_tag_display_value',)]:raise RuntimeError('Unconfirmed pre-portal schema') from None
+        if heads not in ([('171_customer_tag_display_value',)], [('175_receipt_recovery',)]):
+            raise RuntimeError('Unconfirmed pre-portal schema') from None
         modes=[]
     if not modes:mode='legacy'
     elif len(modes)==1 and modes[0][0]==MODE and type(modes[0][1]) is int and modes[0][1]==1:mode=MODE

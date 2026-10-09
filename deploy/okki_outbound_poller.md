@@ -124,7 +124,7 @@ poller 仅认领关联发票 sync_status=synced 且 status 不为 cancel_pending
 
 ## 开发分支1.23模式表权限边界
 
-Node不再用元数据COUNT=0判断legacy；直接读取模式表，权限不足或连接错误安全拒绝。模式表确实缺失时，仅同连接唯一精确171_customer_tag_display_value版本允许兼容；172/173、未知/空/多head及版本表不可读均拒绝，不stamp或删除mode恢复旧执行器。此前“缺表/未迁移”泛称以这个已核证范围为准。实际本地Node/mysql2/隔离MySQL仅验证reader/gate，没有启动完整poller/creator；版本head是手工fixture值，非历史迁移证明。目标mode决定timer及发布竞争仍待实施，当前源码不能按原基线直接批准恢复；实际结果见docs/handoff.md。
+Node不再用元数据COUNT=0判断legacy；直接读取模式表，权限不足或连接错误安全拒绝。模式表确实缺失时，仅同连接唯一精确171_customer_tag_display_value或175_receipt_recovery版本允许兼容；未知/空/多head及版本表不可读均拒绝，不stamp或删除mode恢复旧执行器。2026-10-09门户合并将建表迁移重编号为176（父175），部署只读确认当前生产唯一175且模式表确实缺失，三个reader同步补充精确175边界；176及之后缺表仍拒绝。此前“缺表/未迁移”泛称以这个已核证范围为准。实际本地Node/mysql2/隔离MySQL仅验证reader/gate，没有启动完整poller/creator；版本head是手工fixture值，非历史迁移证明。目标mode决定timer及发布竞争的后续实施与实际结果见docs/handoff.md。
 
 
 ## 开发分支1.24旧timer模式目标

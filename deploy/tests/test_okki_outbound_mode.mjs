@@ -53,10 +53,11 @@ test('mode SQL reads the complete protocol namespace directly, without metadata 
   assert.match(calls[0],/LIKE 'outbound-worker-%'/);assert.doesNotMatch(calls[0],/information_schema/);
 });
 
-test('verified missing table and exact sole pre-portal head permit legacy on the same connection',async()=>{
+for(const parent of [PARENT,'175_receipt_recovery'])
+test('verified missing table and exact sole pre-portal head '+parent+' permit legacy on the same connection',async()=>{
   const calls=[];
   const conn={query:async(sql)=>{
-    calls.push(sql);if(calls.length===1)throw missing();return [[{version_num:PARENT}]];
+    calls.push(sql);if(calls.length===1)throw missing();return [[{version_num:parent}]];
   }};
   await assertLegacyMode(conn);
   assert.equal(calls.length,2);assert.match(calls[0],/FROM ark_order_portal_auth_barriers/);

@@ -10,11 +10,11 @@ export async function readExecutionMode(conn) {
       // Metadata visibility depends on grants; it cannot prove table absence.
       if (error?.code !== 'ER_NO_SUCH_TABLE' || error?.errno !== 1146 || error?.sqlState !== '42S02')
         throw error;
-      // Only this verified pre-portal parent is compatible with an absent mode table.
+      // Exact verified pre-portal releases; 176 creates the mode table after 175.
       // Read the same target schema on the same connection; no separate configuration fallback.
       const [heads] = await conn.query('SELECT version_num FROM alembic_version');
       if (!Array.isArray(heads) || heads.length !== 1 ||
-          heads[0]?.version_num !== '171_customer_tag_display_value')
+          !['171_customer_tag_display_value','175_receipt_recovery'].includes(heads[0]?.version_num))
         throw Error('Unconfirmed pre-portal schema');
       return 'legacy';
     }
