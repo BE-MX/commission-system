@@ -1,0 +1,1781 @@
+{
+  "format": 1,
+  "scope": "Scoped route/service candidates, not a complete writer proof",
+  "limitations": [
+    "Routes include configuration and receipt candidates; classify actual PI effect before selecting tests.",
+    "AST variable assignments can include task/receipt objects; they are not automatically invoice writers.",
+    "Raw SQL, maintenance scripts, other modules and running writer instances remain to audit.",
+    "Source hashes identify this snapshot; regenerate or reconcile after source changes."
+  ],
+  "sources_sha256": {
+    "backend/app/shipping_inspection/outbound_sync_router.py": "29096e7b6fcff6e1252518571b9bf2aaefd08bbd24b29eb2ec70799baeebc31c",
+    "backend/app/invoice/router.py": "c75c22a254e659a30215fe0e2786320b2f0f210ddd0d95992ac4d769b3b316d4",
+    "backend/app/invoice/lifecycle_router.py": "4dc7c99adbeb45078572eab6fa7feb65e8db86ac811a8e2d14ddd5710a63a73d",
+    "backend/app/receipt/router.py": "09453726c85874017723f3a9b15f53220aeccf8c65bbb6531cdcc36c1f0dbe78",
+    "backend/app/invoice/outbound_worker.py": "bc09dd04d9b4f5884f517542438976e9cf4c460705ac9c5130afd4d44bd8bbc8",
+    "backend/app/invoice/outbound_create_plan.py": "2623efdf66c59a40ed7435ad3446f1159916b3f70bd84d9dcc998af3c80c88be",
+    "backend/app/invoice/outbound_create_facts.py": "785fbb500d4976a7b97d8a90e2b5a1ba8ac04f64428e6a10a0e7aa91c2a3bb72",
+    "backend/app/schedulers/portal_outbound.py": "8dd4408a072b68a87ebdad80c2e5dcee97951363c0a678580f0a2ffa9e71a3dd",
+    "backend/app/shipping_inspection/outbound_execution.py": "f8017a2c7c657a445e97b0e697dfe8ae1cb53e2b6943330e2f7edaa1c31367fa",
+    "backend/app/shipping_inspection/outbound_facts.py": "6b5b358bd70db62d421ff16e18586eb58ea88686846b282d958f048d2c424a9c",
+    "backend/app/shipping_inspection/outbound_prepare.py": "134a36d2caf4b7adf13cd82267eccb298b6a8544829e8cf40ca68afd81165576",
+    "backend/app/invoice/outbound_followup_execution.py": "d1b9b8137eabbe50ca83d2138efd5331e9f972f7f4b4cd94e156a63443ae8cfb",
+    "backend/app/invoice/outbound_followup_service.py": "25257ec07852cd4d3a7873dd86574361c5b1703aa4b2c859e8841ec72cf5a5c8",
+    "backend/app/shipping_inspection/outbound_sync_service.py": "1d0d8f539dc048241c60acf7d7ceb04e53e10e40b39adfd78e1908a6b7ca52c2",
+    "backend/app/shipping_inspection/outbound_sync_plan.py": "eece4b8441f3d74fca720cd98563158951b825bf01433dca754e0c01df4f6b03",
+    "backend/app/invoice/order_push_facts.py": "cbbd0ea3212fd042f55374bac9238c374096194edd332f303e3acf9556a9df67",
+    "backend/app/invoice/order_sync_execution.py": "60e9c2ef0ce5ffa086389adcc8573f64510e3c1bd9eaf7c245680a2ba260a195",
+    "backend/app/semifinished/invoice_service.py": "eb71ce96d7211121f6510d4889585c82c600d1a9acb28b8a7c6152c8e40fd30a",
+    "backend/app/invoice/sync_recovery.py": "d69fd144eff8daae4ad2ac780c51b7f7105cf72222902d91c55800adf46c34cc",
+    "backend/app/invoice/edit_authority.py": "7d1b1acab550224f93f60221090897cc306765211300df3c1537e76e6f0a006a",
+    "backend/app/invoice/outbound_recovery.py": "9384401bb3f851f82b452ab5b20038c650bc13cf198d8710c08276fda6f2ac2b",
+    "backend/app/invoice/linked_outbound_service.py": "1597a8c89850eb9e791efe417a3343d467d95456ec5274d1f51010eaa795e506",
+    "backend/app/invoice/cancellation_service.py": "f9fbfee207f5d285a15db05174337e875b8a6802d35569b64c274a0557e5e813",
+    "backend/app/invoice/cancellation_execution.py": "2efcaf96da1a784ec0a84775cc3a31a4f843145b5b90a3e525f7e199a2b24988",
+    "backend/app/invoice/cancellation_facts.py": "619e8cd3b77864d304af55cc9187f279a43da32ca9fc1d5a2a3bd9b6f8755e0c",
+    "backend/app/invoice/sync_coordinator.py": "30d641e7f1ef457cf0deb21ab49a0177ec8f0bf25be57fb77be8180e91aadb2d",
+    "backend/app/invoice/uncertain_recovery.py": "b1dcd23dc9f5725ac8140d30f187c1e7f057afbc8937cb42f758ffec67d08ae0",
+    "backend/app/invoice/linked_sync_service.py": "9a4c895e3b5059ab72fa71f3993b0a76393023fd8b85b410525c13fb6bdddf92",
+    "backend/app/invoice/outbound_task_service.py": "9ee7f4cd0fae8ee28c3a56a4c8145c69e7fe84f020313a31a8fb19ce448ac8a4",
+    "backend/app/invoice/xiaoman_service.py": "273a55d016f2662031b036af0b71c923ebf4fa49e981b6ee8b75a54e9612b2b2",
+    "backend/app/receipt/service.py": "558037fcc9e26e4f02f5d71271d9ebec32692a50de4876aa99539d4d48e8541d",
+    "backend/app/receipt/sync_service.py": "d25527304474ac5d3952cbeba94605dce0486c95bcb5a21b649e46b5ad5f864f",
+    "backend/app/receipt/remote_change_service.py": "f1f900aa4860ce6babecd2afd43c66b75010729413d955adfbd51610bf55db02",
+    "backend/app/invoice/outbound_mode.py": "b90fc46a29111c8ed49e80002e94e84063483a42a203fa9b7952127deecdd9dc",
+    "backend/app/bootstrap/portal_outbound.py": "995550b6d8c3447c4d8a54da173513175e3b14aacc31b152acc078e04642eb0f",
+    "backend/app/main.py": "7bfdd0e09dcb0663038e7d095cd855b0cac9fd6efa297a770fad881c74fbf616",
+    "deploy/okki_outbound_creator.mjs": "fb8cfb89db336c681fcb6576260ff489d39ffa5c19501fff16370d294bffc247",
+    "deploy/okki_outbound_poller.js": "f6676aa9b50661062638ec27b828213f3502117a0fc1b6f2a9e13a04bf88cf48",
+    "deploy/okki_outbound_mode.mjs": "8a3d617de410a6ccad54ed6f76d9aac9ef2414bc7e5cbad55fc0230e78b23a06",
+    "deploy/okki_outbound_release.py": "f0ddb96ce7cd94e4660f3f0ac7a9fe12e354b234ef0342be17098584d42446f0",
+    "deploy/okki_outbound_remote.py": "2f25777a571e10294d870ab3027ab7c8f48386004b2ad25b026516002d395f59",
+    "deploy/publish.py": "b128e583f609ccdad674bfd8c6bedeeb262ccfb77defdfea2526526dfbca3659",
+    "backend/app/core/config.py": "3bf2a24bf81c5a2459478c2919fcd226fe56ad5750742f1522fe46885c33dba9",
+    "backend/app/schedulers/registry.py": "23494012e31cd4b2683208e7f36ab117087eb0b3f4b07469df12953406d64737",
+    "deploy/rollback_protocol.py": "c47ebd54e5aa8c39a8d1a6d441844d3e3006c54903803a7ec48705ccf8266715",
+    "deploy/remote_backend.py": "d9eb7fc882d06d0faa0737f342f40adf91205d3a96e25bf061de2a1dc6740ad0",
+    "deploy/office_release.py": "03a30aa7bc942a3e22bbfb383717a07e9a770819a07c7512c62b7de6b9bb58f3",
+    "backend/app/receipt/authority.py": "34c86c7c992b2dd140559fc2dcf0d8bbf6009379ff63319d6a81eb4f7f0637ac",
+    "backend/app/receipt/access.py": "42ab9b1d2a4582d3c119ca457a2b54c812f44f29608192efd36fb7957b935497",
+    "backend/app/auth/dependencies.py": "40bfa29cb95d0657606955353756d642e7e213291065c502fe7a3dd3ea54f9d5",
+    "backend/app/receipt/batch_service.py": "da3f282ea8970d5a4e46a547c1c63f793bcc4655236ee0140a6f74ae0b8439c8",
+    "backend/app/invoice/settlement_router.py": "c39272d5de2e93e839114b34b5df2e1e46e6da62efcf38f16304a539ac3b36e4",
+    "backend/app/portal/authority.py": "43b4ea187266f2ab9bf96a72019d72accd5ac2bf8f631d5a5ed0a8ea74012b5f",
+    "backend/app/portal/lock_timeout.py": "c2ee88848aef8419e6af551b8dd6f2acd2df82b0b43b9e3fb180a7938f620fd8",
+    "backend/app/portal/upstream_authority.py": "6d4215ace14035af06b033b2112450a5dc0bc940df93b8bbb2ca3222dd6406d5",
+    "backend/app/receipt/fees.py": "3facff8c879b8ac72708899c3fad0f06abc7d52a38534077328428b614cdc94a",
+    "backend/app/receipt/retry_service.py": "f032e22298061021f6933a2ceeb844c07c911e2d66b5225bb69fe02de58913f8",
+    "backend/app/receipt/remote.py": "98ddad136601fb88624bde6966876847131f7c107a495caea5f2ee0990f85b8d",
+    "backend/app/invoice/settlement_guard.py": "3c5d9d13027d19229946afe8e2534f834cd7dbb676147497e24de9ad970b5323",
+    "backend/app/receipt/balance.py": "4cfa1eca4d3661e885becd48c5613cb4293b5c3f5c86e35f30572c3f08852e33",
+    "backend/app/receipt/attachments.py": "ff01518893c4493c6f9083c248fe1c8768292d689a15f2d4d5a8a8fb5acc0689",
+    "backend/app/receipt/edit_service.py": "fb2d6b4f539009439fb235d3dad72b4bf66a1364eb24a9fb98a5bc50eb0fdfa1",
+    "backend/app/receipt/proof_service.py": "f4676f45a8ceee246bcd706fc7dbb6d6780f2ff45c6bf344f98c5a0925641924",
+    "backend/app/receipt/upload_service.py": "6fa239fd23671852ae801504f7f56a94d481b71c3720ab43745035758b45ab72",
+    "backend/app/receipt/storage_proxy.py": "86ba3c57c11545ed9bf6e75ad32c2d0e2a81e9358f4c97f00baaddf893ef64fa",
+    "backend/app/core/storage/cos.py": "bee554634a2c302b3e73148484818082549a39db28f50fa769ed7678d5bb588f",
+    "backend/app/core/storage/files.py": "b9ad7c643b1bada9e103d1db05f768643b285ac56e62b887bbd3d7cfda3e7966",
+    "backend/app/receipt/create_service.py": "e729fc70e67c372fb648ed29c552de729d40ac9efb110d8f1f7ebfe5dba4d5ee",
+    "backend/app/receipt/reconciliation_service.py": "c9eba444f284d533f56fcd70063b91760ce0e7a4a377f65a5e5f5cbbf251fa73",
+    "backend/app/receipt/receipt_index.py": "c93e47927612424946e1ac20786e8f9a2c414446a1c5c06c111c887a01c26957",
+    "backend/app/invoice/okki_client.py": "0cee9b9a0f1b4f930e0f6c32d5e651cd234e18e5a46dfb9af56a5b1d1278b3cf",
+    "backend/tests/portal_mysql/test_mysql_receipt_remote_change.py": "21af281b29ebc37b06ce2eadf226c4705995f1ba0aa1a67c6eba74f3d991de3e",
+    "backend/tests/portal_mysql/test_mysql_receipt_batches.py": "1977296c8827b8c085445ab12f0486cd48042a90b25138110ea1c397d6f7341e",
+    "backend/app/receipt/batch_create_service.py": "5eb7982bfef77a7b609730cb5a9252b2762abd3aa9cc34f7afa5ba695947c5ec",
+    "backend/app/invoice/settlement_service.py": "26d757dac8b31051ca973ec8ed0240933298af8c4698e46a4327b47626ea2e34",
+    "backend/tests/portal_mysql/test_mysql_receipt_batch_create.py": "ad6209084c36dab01109772d474c1fbbdefe111adb3032d0b31d4f1590676ae9",
+    "backend/tests/portal_mysql/test_mysql_receipt_batch_targets.py": "1aa55550e25f605713235e8dd8a1727130839ffecd9d82b636078cae84401463",
+    "backend/tests/portal_mysql/test_mysql_receipt_batch_create_races.py": "0c46f85d833934fe13070240dcd7976e93c50ae150c7a706a98ccd703e5131e5",
+    "backend/tests/portal_mysql/test_mysql_receipt_batch_presale.py": "d42fcb75ea7112c3b3f0cd4c8bb2419c63145b7f66e91605dd9a38ef37f8ab97",
+    "backend/tests/portal_mysql/test_mysql_receipt_batch_status.py": "154a51e2c49f32c419af9e32f15eea06afafa6b23d05dc50fb8351687897c8ca",
+    "frontend/src/api/receipt.js": "ff7ec62ca6c6edf696c063648d54d0fac11aa30d2c6fb2b98975cb8eb343858a",
+    "frontend/src/views/receipt/BatchReceiptDialog.vue": "43b63aefd76e01b683d456ac776a30bbba1df1a0e45a03c0e0fbed919db94841",
+    "frontend/src/views/receipt/batchSubmission.js": "cd46fae6c29ac45239802278ee6306df917b095d1e084d0f47bea74425e05b43",
+    "frontend/src/views/receipt/batchReceiptState.js": "e2ac6e3f11beef595e54e0d834380ea40ae5f07cf55a7f603e1b49d01a844a8d",
+    "frontend/tests/batchReceiptHarness.html": "7fe8b78465fa320acf96a5555007426e3e1f770f5c513ad7abc4160337fa2d98",
+    "frontend/tests/batchReceiptRecovery.browser.mjs": "5bfcc28c7021f7a2f9dc0c475f820b4100276bb8c34b6b01922ff433e8027196",
+    "frontend/tests/batchSubmission.test.mjs": "f49ceb8877eaa98d3b9733531c67565c19a8cb3c234cfddd5eff214f11efbb9d",
+    "frontend/tests/batchReceiptState.test.mjs": "7b67e692702962a8927a25228b001a8cf53621d21053027a88d30986b10d2c65",
+    "backend/app/invoice/shipment_create_service.py": "48467460567036f9cadd7a86ca8a5861c0c17946a8c079957125fb48301f4dc0",
+    "backend/tests/portal_mysql/test_mysql_shipment_create.py": "b7f10a5af9f7732ac22b5c2bba5e3e414ac9b876c9245e58f1bd27eb65b9b2ba",
+    "backend/tests/portal_mysql/test_mysql_shipment_create_boundaries.py": "9a0f5da25e040be732cd28895818b3c04a6edd9890ec4fd754cc49d00c9337e0",
+    "backend/app/invoice/shipment_quote_service.py": "14a203a4ef0bd90dc06f2603468b57a139653d26f3550087394e0b015411cd37",
+    "backend/app/invoice/shipment_read_service.py": "5848e505834d513b0c5ce0471d4cf64dc3409fd070145c3564e4dafe646e09f7",
+    "backend/tests/portal_mysql/test_mysql_shipment_reads.py": "ac1b66d267060267c49d947392c1501735f193b4cce2a3c6830c4358140acbd3",
+    "backend/tests/portal_mysql/test_mysql_shipment_quote_order.py": "5dbde164c70e02f2ec4e2fbdc9bb2bb96a3328f63e9db0f1e41563f4db5e9149",
+    "backend/tests/portal_mysql/test_mysql_shipment_read_boundaries.py": "2c6073c0ca3f5c3b0490156b05b9ef71049b5f413f6df57d89ab2e3a18554b02",
+    "backend/tests/portal_mysql/test_mysql_shipment_quote_failures.py": "facd695439cdb8b3d60c17faa6163f01c25e2460ea114a5ba84e22b3efb35f05",
+    "backend/app/invoice/shipment_state_service.py": "de2e315453808c42e6fdf9883a4383ae5bc397953f48afd333276a0301f9130a",
+    "backend/tests/portal_mysql/test_mysql_shipment_state.py": "6227d45a1bf25c35533d2e1fffc118ace69279e8ba908774b14e9034311a4c08",
+    "backend/tests/portal_mysql/test_mysql_shipment_state_boundaries.py": "ea9945961240db7766b82a3f90613459a7222b3af9757e1ed8a3357b53d8db90",
+    "backend/tests/portal_mysql/test_mysql_shipment_state_races.py": "9215406e73ca1f94821e8a9cc418e654bb397bcd1d194e1f9a228177c016c863",
+    "backend/tests/portal_mysql/test_mysql_shipment_status.py": "c2aea55da2f95c1d111df0e3bf4ef64184950a96109ab5636dc209e19f2b899f",
+    "frontend/src/api/shipment.js": "47bffb0a9e738b7a6e2c327a89d4f63e08fe76bfdde2209387cf46aa6b397ebb",
+    "frontend/src/views/invoice/components/ShipmentSettlementDialog.vue": "e5f5ad1fb1dc9b2c97612303dc902aabc40cb9449d96c0e18edf93d9781b7f04",
+    "frontend/src/views/invoice/composables/shipmentSubmission.js": "9b22586350848311a4b78179a73670b431cd214dbe63e97a24726d790882d53a",
+    "frontend/tests/shipmentSubmission.test.mjs": "cffc5ed20b713ac18342fa1c73caafef0f5822aee07c41ce54c1c173edcf4183",
+    "frontend/tests/shipmentSubmissionHarness.html": "44d55fea931eaaa861e6d3a7896672c520b761116c3a5e71f349b4f35f978534",
+    "frontend/tests/shipmentSubmissionRecovery.browser.mjs": "b81eed0744a9b56fe04bc93cbfa0b938fcdc6dcc7756cf35d9e5ba10775aedcf",
+    "backend/app/invoice/shipment_retry_service.py": "a32fabc6a542c60a820fdcfaa27aa6731961a82bbfc696fccaa8033eca6ff4ca",
+    "backend/app/invoice/freight_delivery.py": "9c29d6f72dec2420d01c8e4fc4e06febc024304af99155aaae0903176505b69e",
+    "backend/app/invoice/shipment_delivery.py": "20c7db3dc0e8473a65c9a967a3a4519a31bd6c7a6dafc19a6d0357f4c5dff4c4",
+    "backend/tests/portal_mysql/test_mysql_shipment_retry.py": "180efb36d02f821bdc0b34cd337807bb8cd9f4532cfe600b37c2d3ba6664e6ab",
+    "backend/tests/test_presale_settlement.py": "7a8ee5257885d40710c369401c722af86bcd02ba2277e243583b8615d76d291b",
+    "backend/app/invoice/freight_reconciliation_service.py": "98c78ff34c557ac5aaa5afb3a8d2eab39b1ddf5ed05a5f5abc3a4715c8fa4e21",
+    "backend/tests/portal_mysql/test_mysql_freight_reconciliation.py": "859cb2dda6fda9019726005e41702cdc0ab354fab3e26876a3fdb10421628c4e",
+    "backend/app/invoice/outbound_reconciliation_service.py": "d84bae22486028e7ed2db862205b5268bbae44d15cc9464423911380cf423df2",
+    "backend/app/invoice/outbound_reconciliation_funding.py": "66663f1d467a3362c629beb4f5b28f9d890a1a6f33acde2dba168061b2bf36c6",
+    "backend/tests/portal_mysql/test_mysql_outbound_reconciliation.py": "499c00d546cb77215808342f2639155ff24217b15e0dddcddb506053835ad9af",
+    "backend/tests/portal_mysql/test_mysql_outbound_reconciliation_review.py": "c4a363b767ec49c0a603331ee2f00576bac0e20b0a2fe18a10b8b0257b468040",
+    "backend/tests/portal_mysql/test_mysql_outbound_reconciliation_boundaries.py": "0b3954cf7a6d0dd2f39bb23a26e425a1adf9d4db61c7497233e9ea3bb78e58b7",
+    "frontend/tests/shipmentFundingRisk.browser.mjs": "eec4066abebd1c3ac280ba19d844d347bf16e009e8030e4652059ee44d95a595",
+    "backend/app/invoice/shipment_confirmation_service.py": "7a8d5dd7bc0d98276a9a8eed547a2879a4138a6096997858359273327be8e564",
+    "backend/app/invoice/shipment_confirmation_facts.py": "914df40b5d947c22e478fa5731e60101cf699ed04477831f9278e90fd4e34355",
+    "backend/tests/portal_mysql/test_mysql_shipment_confirmation.py": "078b3bf3cc0f0b29e6c70b4b4b166d3e502c9b8b9e520e77b53eb407b929ceaa",
+    "backend/app/invoice/shipment_confirmation_recovery.py": "52bbb208c187ea087de173fc3d553ade6f8e949cc0e12f882fc3f558c22a0b1e",
+    "backend/tests/portal_mysql/test_mysql_confirmation_recovery.py": "ba61034b6dae5fa02540f0549be041173f5dec9c70cef2b671767570ea63fa1e",
+    "frontend/src/views/invoice/composables/shipmentSettlementState.js": "2bee9f77ac289c42e36565e35cf2b9eabc522226e7b4dade6523366a385cd232",
+    "frontend/tests/shipmentConfirmation.test.mjs": "57539dced13c128791d429c27c1c3f1e7a6a38828cf61bbdaf2cf176ed627e51",
+    "frontend/src/views/invoice/composables/shipmentConfirmation.js": "0e35b40ebffe4ca3c114903cde60923c1d8c021ff23555663419226ff486afcf",
+    "frontend/tests/shipmentConfirmation.browser.mjs": "5fd1d70ce9f135027c78019b7d783998e0521411b683ca9a66385e7b19936dcc",
+    "backend/tests/portal_mysql/test_mysql_outbound_worker_diagnostics.py": "b47e30bc9024c3122e515c1b1ee050afe4ddc5c7a9a2182540af5002012e3732",
+    "backend/app/receipt/generation_service.py": "600841019f52d4bdb0e962a4288e7072ffcec64a86d8dbe7a463d92cc5c3eacf",
+    "backend/app/invoice/service.py": "1fb3ad685d7fbcf7d87d4021b442ef8996ac3ca146ce332da1c8b2904df8b4cc",
+    "backend/app/invoice/read_authority.py": "263a1f24f661f3a32836e81bd555431d59033511238dbc5bdf0d054cf4ccfc09",
+    "backend/app/invoice/price_authority.py": "be98ebba5112c88cf90009dd5ed160bac645e97d2d9adeb67478edcaa363b754",
+    "backend/app/invoice/price_service.py": "8d18d9ed4539e5b627e6be63a86482a5ec89c8b9fef985eeb193ab57b531398a",
+    "backend/app/invoice/accessory_price_service.py": "5dd8fc63a89feb5e9c88e8d4cbeb34936a5040bff02cd7c5c78add5e0423791c",
+    "backend/tests/portal_mysql/test_mysql_price_authority.py": "eb543fda165e6f4a375e0a9f46711df60cfdea72f6ed946b4fb3f956c0d77496",
+    "backend/tests/portal_mysql/test_mysql_price_commit_race.py": "8dd30e87a9afcfa9aa2d0e112d112a5774c6fa28aa123e6a0400969087c816d4",
+    "backend/app/invoice/linked_execution.py": "b444068ab6af6e8539adca8bdc18bd2282d21ffdbf245a131dd6922ae89b69b0",
+    "backend/tests/portal_mysql/test_mysql_linked_execution.py": "8faff3a01a466abb86412389d0260046a32098886853a140dc4a85ae28b6c8f0",
+    "backend/tests/portal_mysql/test_mysql_order_push_execution.py": "e19407754fe7671f7ef1b3072fbc3aad1db2915eb0941fa364a6580041e0154e"
+  },
+  "mutating_routes": [
+    {
+      "source": "backend/app/shipping_inspection/outbound_sync_router.py",
+      "line": 35,
+      "handler": "preview",
+      "method": "POST",
+      "relative_path": "/outbound-records/{record_id}/invoice-sync/preview",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_record",
+        "authority.get_settings",
+        "db.rollback",
+        "ok",
+        "outbound_sync_service.preview",
+        "require_permission",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/shipping_inspection/outbound_sync_router.py",
+      "line": 49,
+      "handler": "synchronize",
+      "method": "POST",
+      "relative_path": "/outbound-records/{record_id}/invoice-sync",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_record",
+        "authority.get_settings",
+        "db.rollback",
+        "ok",
+        "outbound_sync_service.synchronize",
+        "require_permission",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/shipping_inspection/outbound_sync_router.py",
+      "line": 67,
+      "handler": "allow_print_before_recheck",
+      "method": "POST",
+      "relative_path": "/outbound-records/{record_id}/allow-print-before-recheck",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_record",
+        "body.reason.strip",
+        "db.rollback",
+        "int",
+        "ok",
+        "outbound_sync_state.allow_print_before_recheck",
+        "require_permission",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 121,
+      "handler": "put_delegate_grants",
+      "method": "PUT",
+      "relative_path": "/delegations/users/{delegate_user_id}",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_user_id",
+        "begin_employee_authority_write",
+        "db.commit",
+        "db.get",
+        "db.rollback",
+        "delegation_service.replace_grants",
+        "ok",
+        "require_permission",
+        "router.put",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 246,
+      "handler": "sync_customer_from_okki",
+      "method": "POST",
+      "relative_path": "/customers/sync-from-okki",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_user_id",
+        "customer_sync_service.sync_customer_from_okki",
+        "db.commit",
+        "db.rollback",
+        "ok",
+        "require_permission",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 296,
+      "handler": "preview_invoice_import",
+      "method": "POST",
+      "relative_path": "/import/preview",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "import_service.preview_import",
+        "ok",
+        "require_permission",
+        "router.post",
+        "row.model_dump",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 315,
+      "handler": "preview_invoice_screenshot",
+      "method": "POST",
+      "relative_path": "/import/screenshot/preview",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "File",
+        "HTTPException",
+        "Query",
+        "_read_screenshot_upload",
+        "_user_id",
+        "logger.warning",
+        "ok",
+        "print",
+        "require_permission",
+        "router.post",
+        "screenshot_import_service.recognize_preview",
+        "str",
+        "type"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 354,
+      "handler": "resolve_invoice_screenshot",
+      "method": "POST",
+      "relative_path": "/import/screenshot/resolve",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_user_id",
+        "ok",
+        "require_permission",
+        "router.post",
+        "screenshot_import_service.resolve_preview",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 381,
+      "handler": "reconcile_custom_products",
+      "method": "POST",
+      "relative_path": "/custom-products/reconcile",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "db.commit",
+        "ok",
+        "product_service.reconcile_custom_products",
+        "require_permission",
+        "router.post"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 429,
+      "handler": "upsert_accessory_price",
+      "method": "POST",
+      "relative_path": "/price/accessories",
+      "phase": "current_price_write_authority_guarded_scoped_evidence",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_is_accessory_price_duplicate",
+        "_user_id",
+        "accessory_price_service.upsert_price",
+        "db.commit",
+        "db.rollback",
+        "logger.warning",
+        "ok",
+        "price_authority.begin_write",
+        "print",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 475,
+      "handler": "delete_accessory_price",
+      "method": "DELETE",
+      "relative_path": "/price/accessories/{price_id}",
+      "phase": "current_price_write_authority_guarded_scoped_evidence",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "accessory_price_service.delete_price",
+        "db.commit",
+        "ok",
+        "price_authority.begin_write",
+        "router.delete"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 526,
+      "handler": "upsert_std_price",
+      "method": "POST",
+      "relative_path": "/price/std",
+      "phase": "current_price_write_authority_guarded_scoped_evidence",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_user_id",
+        "db.commit",
+        "ok",
+        "price_authority.begin_write",
+        "price_service.upsert_std_price",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 551,
+      "handler": "delete_std_price",
+      "method": "DELETE",
+      "relative_path": "/price/std/{price_id}",
+      "phase": "current_price_write_authority_guarded_scoped_evidence",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "db.commit",
+        "ok",
+        "price_authority.begin_write",
+        "price_service.delete_std_price",
+        "router.delete"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 564,
+      "handler": "import_price_workbook",
+      "method": "POST",
+      "relative_path": "/price/import",
+      "phase": "current_price_write_authority_guarded_scoped_evidence",
+      "calls": [
+        "Depends",
+        "File",
+        "_user_id",
+        "db.commit",
+        "file.file.read",
+        "ok",
+        "price_authority.begin_write",
+        "price_service.import_price_workbook",
+        "router.post"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 590,
+      "handler": "upsert_color_type",
+      "method": "POST",
+      "relative_path": "/price/color-types",
+      "phase": "current_price_write_authority_guarded_scoped_evidence",
+      "calls": [
+        "Depends",
+        "db.commit",
+        "ok",
+        "price_authority.begin_write",
+        "price_service.upsert_color_type",
+        "router.post"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 602,
+      "handler": "delete_color_type",
+      "method": "DELETE",
+      "relative_path": "/price/color-types/{entry_id}",
+      "phase": "current_price_write_authority_guarded_scoped_evidence",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "db.commit",
+        "ok",
+        "price_authority.begin_write",
+        "price_service.delete_color_type",
+        "router.delete"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 643,
+      "handler": "upsert_customer_rule",
+      "method": "POST",
+      "relative_path": "/price/customer-rules",
+      "phase": "current_price_write_authority_guarded_scoped_evidence",
+      "calls": [
+        "Depends",
+        "_user_id",
+        "db.commit",
+        "ok",
+        "price_authority.begin_write",
+        "price_service.upsert_customer_rule",
+        "router.post"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 665,
+      "handler": "delete_customer_rule",
+      "method": "DELETE",
+      "relative_path": "/price/customer-rules/{rule_id}",
+      "phase": "current_price_write_authority_guarded_scoped_evidence",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "db.commit",
+        "ok",
+        "price_authority.begin_write",
+        "price_service.delete_customer_rule",
+        "router.delete"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 698,
+      "handler": "update_xiaoman_settings",
+      "method": "PUT",
+      "relative_path": "/xiaoman/settings",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_user_id",
+        "db.commit",
+        "ok",
+        "require_permission",
+        "router.put",
+        "str",
+        "xiaoman_service.serialize_settings",
+        "xiaoman_service.update_settings"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 731,
+      "handler": "fetch_xiaoman_token",
+      "method": "POST",
+      "relative_path": "/xiaoman/settings/fetch-token",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "db.commit",
+        "ok",
+        "okki_client.ensure_access_token",
+        "require_permission",
+        "router.post",
+        "str",
+        "xiaoman_service.get_settings_row",
+        "xiaoman_service.serialize_settings"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 872,
+      "handler": "create_invoice",
+      "method": "POST",
+      "relative_path": "/invoices",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "_user_id",
+        "_write_invoice_or_400",
+        "db.refresh",
+        "ok",
+        "require_permission",
+        "router.post",
+        "service.create_invoice",
+        "service.get_invoice",
+        "service.serialize_detail"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 886,
+      "handler": "create_invoice_from_screenshot",
+      "method": "POST",
+      "relative_path": "/import/screenshot/create",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_user_id",
+        "_write_invoice_or_400",
+        "db.refresh",
+        "ok",
+        "require_permission",
+        "router.post",
+        "service.create_invoice",
+        "service.get_invoice",
+        "service.serialize_detail"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 923,
+      "handler": "update_invoice",
+      "method": "PUT",
+      "relative_path": "/invoices/{invoice_id}",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "_user_id",
+        "_write_invoice_or_400",
+        "edit_authority.prepare",
+        "ok",
+        "require_permission",
+        "router.put",
+        "service.get_invoice",
+        "service.serialize_detail",
+        "service.update_invoice"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 939,
+      "handler": "delete_invoice",
+      "method": "DELETE",
+      "relative_path": "/invoices/{invoice_id}",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "db.commit",
+        "edit_authority.prepare_local",
+        "ok",
+        "require_permission",
+        "router.delete",
+        "service.delete_invoice",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 955,
+      "handler": "validate_invoice",
+      "method": "POST",
+      "relative_path": "/invoices/{invoice_id}/validate",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "db.commit",
+        "edit_authority.prepare_local",
+        "ok",
+        "require_any_permission",
+        "router.post",
+        "service.mark_ready_if_valid",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 972,
+      "handler": "sync_invoice",
+      "method": "POST",
+      "relative_path": "/invoices/{invoice_id}/sync",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "JSONResponse",
+        "_ensure_invoice_visible",
+        "_user_id",
+        "get_settings",
+        "jsonable_encoder",
+        "ok",
+        "order_sync_execution.run",
+        "outbound_followup_service.safely_run",
+        "require_permission",
+        "result.get",
+        "router.post",
+        "service.get_invoice",
+        "synchronize"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 1006,
+      "handler": "resolve_sync_uncertain",
+      "method": "POST",
+      "relative_path": "/invoices/{invoice_id}/sync-uncertain/resolve",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "JSONResponse",
+        "_ensure_invoice_visible",
+        "_user_id",
+        "body.reason.strip",
+        "db.commit",
+        "db.refresh",
+        "db.rollback",
+        "get_settings",
+        "jsonable_encoder",
+        "ok",
+        "require_permission",
+        "router.post",
+        "service.get_invoice",
+        "service.serialize_detail",
+        "str",
+        "sync_recovery.resolve",
+        "xiaoman_service.resolve_sync_uncertain"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 1126,
+      "handler": "receipt_repair_preview",
+      "method": "POST",
+      "relative_path": "/receipt-repair/preview",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "File",
+        "HTTPException",
+        "file.file.read",
+        "ok",
+        "receipt_repair_service.build_plan",
+        "receipt_repair_service.parse_workbook",
+        "require_any_permission",
+        "router.post"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 1144,
+      "handler": "receipt_repair_apply",
+      "method": "POST",
+      "relative_path": "/receipt-repair/apply",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_user_id",
+        "it.model_dump",
+        "ok",
+        "receipt_repair_service.apply_changes",
+        "require_permission",
+        "router.post"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 1161,
+      "handler": "receipt_repair_export_unmatched",
+      "method": "POST",
+      "relative_path": "/receipt-repair/export-unmatched",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "StreamingResponse",
+        "quote",
+        "receipt_repair_service.build_unmatched_workbook",
+        "require_any_permission",
+        "router.post"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 1199,
+      "handler": "save_linked",
+      "method": "POST",
+      "relative_path": "/invoices/{invoice_id}/linked-sync",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_linked_result",
+        "_user_id",
+        "db.commit",
+        "db.rollback",
+        "edit_authority.prepare",
+        "isinstance",
+        "linked.create",
+        "ok",
+        "require_permission",
+        "router.post",
+        "service.serialize_detail",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 1228,
+      "handler": "run_linked",
+      "method": "POST",
+      "relative_path": "/invoices/{invoice_id}/linked-sync/{identity}/run",
+      "phase": "installed_current_linked_execution_scoped_evidence",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_linked_result",
+        "_linked_scope",
+        "_user_id",
+        "all",
+        "db.commit",
+        "db.get",
+        "db.rollback",
+        "linked.run",
+        "linked_execution.run",
+        "ok",
+        "outbound_followup_service.safely_run",
+        "router.post",
+        "row.steps.values",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 1259,
+      "handler": "close_linked",
+      "method": "POST",
+      "relative_path": "/invoices/{invoice_id}/linked-sync/{identity}/close",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_ensure_invoice_visible",
+        "_linked_result",
+        "begin_employee_document_write",
+        "db.get",
+        "db.rollback",
+        "edit_authority.lock_document",
+        "linked.close_failed",
+        "ok",
+        "require_permission",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "line": 1285,
+      "handler": "resolve_linked",
+      "method": "POST",
+      "relative_path": "/invoices/{invoice_id}/linked-sync/{identity}/resolve",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "_ensure_invoice_visible",
+        "_linked_result",
+        "_user_id",
+        "begin_employee_document_write",
+        "body.reason.strip",
+        "db.get",
+        "db.rollback",
+        "edit_authority.lock_document",
+        "linked.resolve_manually",
+        "ok",
+        "require_permission",
+        "router.post",
+        "str"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/lifecycle_router.py",
+      "line": 65,
+      "handler": "apply",
+      "method": "POST",
+      "relative_path": "/invoices/{invoice_id}/lifecycle",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "HTTPException",
+        "ValueError",
+        "acknowledge_outbound",
+        "body.reason.strip",
+        "cancellation.abort",
+        "cancellation.begin",
+        "cancellation.public_state",
+        "cancellation.refresh",
+        "cancellation.refresh_authorized",
+        "cancellation.remove_remote",
+        "cancellation.retain",
+        "cancellation_execution.remove_authorized",
+        "db.commit",
+        "db.rollback",
+        "edit_authority.prepare_local",
+        "get_settings",
+        "int",
+        "logger.warning",
+        "ok",
+        "outbound_recovery.recover",
+        "print",
+        "require_permission",
+        "retry_reviewed",
+        "router.post",
+        "scope",
+        "str",
+        "type",
+        "user.get"
+      ]
+    },
+    {
+      "source": "backend/app/receipt/router.py",
+      "line": 73,
+      "handler": "upload",
+      "method": "POST",
+      "relative_path": "/attachments",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "File",
+        "HTTPException",
+        "attachments.describe",
+        "attachments.prepare_upload",
+        "attachments.store_upload",
+        "execute",
+        "file.read",
+        "len",
+        "router.post",
+        "run_in_threadpool",
+        "storage_proxy.forward",
+        "str",
+        "upload_service.begin",
+        "upload_service.finish",
+        "upload_service.unavailable"
+      ]
+    },
+    {
+      "source": "backend/app/receipt/router.py",
+      "line": 155,
+      "handler": "create",
+      "method": "POST",
+      "relative_path": "",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "create_service.create",
+        "create_service.result_unavailable",
+        "execute",
+        "router.post",
+        "service.describe"
+      ]
+    },
+    {
+      "source": "backend/app/receipt/router.py",
+      "line": 173,
+      "handler": "edit",
+      "method": "PATCH",
+      "relative_path": "/{identity}",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "edit_service.edit",
+        "edit_service.result_unavailable",
+        "execute",
+        "router.patch",
+        "service.describe"
+      ]
+    },
+    {
+      "source": "backend/app/receipt/router.py",
+      "line": 184,
+      "handler": "update_proofs",
+      "method": "PUT",
+      "relative_path": "/{identity}/attachments",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "execute",
+        "proof_service.result_unavailable",
+        "proof_service.update",
+        "router.put",
+        "service.describe"
+      ]
+    },
+    {
+      "source": "backend/app/receipt/router.py",
+      "line": 196,
+      "handler": "retry",
+      "method": "POST",
+      "relative_path": "/{identity}/retry",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "execute",
+        "retry_service.result_unavailable",
+        "retry_service.retry",
+        "router.post",
+        "service.describe"
+      ]
+    },
+    {
+      "source": "backend/app/receipt/router.py",
+      "line": 207,
+      "handler": "void",
+      "method": "POST",
+      "relative_path": "/{identity}/void",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "execute",
+        "router.post",
+        "service.describe",
+        "service.void"
+      ]
+    },
+    {
+      "source": "backend/app/receipt/router.py",
+      "line": 215,
+      "handler": "reconcile",
+      "method": "POST",
+      "relative_path": "/{identity}/reconcile",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "execute",
+        "reconciliation_service.recover",
+        "reconciliation_service.unavailable",
+        "router.post",
+        "service.describe"
+      ]
+    },
+    {
+      "source": "backend/app/receipt/router.py",
+      "line": 226,
+      "handler": "resolve",
+      "method": "POST",
+      "relative_path": "/{identity}/resolve",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "execute",
+        "reconciliation_service.recover",
+        "reconciliation_service.unavailable",
+        "router.post",
+        "service.describe"
+      ]
+    },
+    {
+      "source": "backend/app/receipt/router.py",
+      "line": 249,
+      "handler": "accept_remote_change",
+      "method": "POST",
+      "relative_path": "/{identity}/remote-change",
+      "phase": "candidate_needs_target_and_protocol_trace",
+      "calls": [
+        "Depends",
+        "execute",
+        "reconciliation_service.unavailable",
+        "remote_change_service.accept",
+        "router.post",
+        "service.describe"
+      ]
+    },
+    {
+      "source": "backend/app/invoice/router.py",
+      "handler": "get_linked",
+      "line": 1215,
+      "method": "GET",
+      "relative_path": "/invoices/{invoice_id}/linked-sync",
+      "phase": "current_any_read_write_sync_scope_expire_only_scoped_evidence",
+      "calls": [
+        "Depends",
+        "_linked_result",
+        "_linked_scope",
+        "db.commit",
+        "linked.expire",
+        "linked.latest",
+        "ok",
+        "router.get"
+      ]
+    }
+  ],
+  "service_candidates": [
+    {
+      "source": "backend/app/invoice/outbound_worker.py",
+      "function": "checkpoint",
+      "line": 157,
+      "candidate_field_assignments": [
+        {
+          "line": 158,
+          "target": "task.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/outbound_worker.py",
+      "function": "process",
+      "line": 251,
+      "candidate_field_assignments": [
+        {
+          "line": 299,
+          "target": "task.status"
+        },
+        {
+          "line": 292,
+          "target": "task.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/outbound_followup_service.py",
+      "function": "run",
+      "line": 117,
+      "candidate_field_assignments": [
+        {
+          "line": 192,
+          "target": "task.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/shipping_inspection/outbound_sync_service.py",
+      "function": "_finish_verified",
+      "line": 205,
+      "candidate_field_assignments": [
+        {
+          "line": 230,
+          "target": "inspection.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/order_sync_execution.py",
+      "function": "claim",
+      "line": 98,
+      "candidate_field_assignments": [
+        {
+          "line": 109,
+          "target": "invoice.sync_status"
+        },
+        {
+          "line": 109,
+          "target": "invoice.status"
+        },
+        {
+          "line": 110,
+          "target": "invoice.sync_attempt"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/order_sync_execution.py",
+      "function": "apply",
+      "line": 179,
+      "candidate_field_assignments": [
+        {
+          "line": 184,
+          "target": "invoice.xiaoman_order_id"
+        },
+        {
+          "line": 200,
+          "target": "invoice.sync_status"
+        },
+        {
+          "line": 200,
+          "target": "invoice.status"
+        },
+        {
+          "line": 200,
+          "target": "invoice.synced_at"
+        },
+        {
+          "line": 200,
+          "target": "invoice.sync_error"
+        },
+        {
+          "line": 201,
+          "target": "invoice.sync_attempt"
+        },
+        {
+          "line": 203,
+          "target": "invoice.xiaoman_removed_lines"
+        },
+        {
+          "line": 205,
+          "target": "invoice.outbound_auto_requested"
+        },
+        {
+          "line": 213,
+          "target": "invoice.sync_status"
+        },
+        {
+          "line": 213,
+          "target": "invoice.status"
+        },
+        {
+          "line": 213,
+          "target": "invoice.sync_attempt"
+        },
+        {
+          "line": 214,
+          "target": "invoice.sync_error"
+        },
+        {
+          "line": 220,
+          "target": "invoice.sync_error"
+        },
+        {
+          "line": 197,
+          "target": "invoice.sync_error"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/semifinished/invoice_service.py",
+      "function": "prepare_invoice_sync",
+      "line": 46,
+      "candidate_field_assignments": [
+        {
+          "line": 102,
+          "target": "allocation.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/semifinished/invoice_service.py",
+      "function": "finalize_invoice_sync",
+      "line": 136,
+      "candidate_field_assignments": [
+        {
+          "line": 167,
+          "target": "allocation.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/semifinished/invoice_service.py",
+      "function": "release_invoice_sync",
+      "line": 181,
+      "candidate_field_assignments": [
+        {
+          "line": 215,
+          "target": "allocation.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/sync_recovery.py",
+      "function": "resolve_late",
+      "line": 105,
+      "candidate_field_assignments": [
+        {
+          "line": 132,
+          "target": "invoice.sync_status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/outbound_recovery.py",
+      "function": "recover",
+      "line": 93,
+      "candidate_field_assignments": [
+        {
+          "line": 140,
+          "target": "operation.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/cancellation_service.py",
+      "function": "save",
+      "line": 32,
+      "candidate_field_assignments": [
+        {
+          "line": 33,
+          "target": "invoice.cancellation"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/cancellation_service.py",
+      "function": "begin",
+      "line": 40,
+      "candidate_field_assignments": [
+        {
+          "line": 56,
+          "target": "invoice.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/cancellation_service.py",
+      "function": "apply_refresh",
+      "line": 166,
+      "candidate_field_assignments": [
+        {
+          "line": 174,
+          "target": "invoice.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/cancellation_service.py",
+      "function": "remove_remote",
+      "line": 181,
+      "candidate_field_assignments": [
+        {
+          "line": 217,
+          "target": "invoice.status"
+        },
+        {
+          "line": 198,
+          "target": "invoice.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/cancellation_service.py",
+      "function": "retain",
+      "line": 221,
+      "candidate_field_assignments": [
+        {
+          "line": 231,
+          "target": "invoice.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/cancellation_service.py",
+      "function": "abort",
+      "line": 236,
+      "candidate_field_assignments": [
+        {
+          "line": 244,
+          "target": "invoice.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/cancellation_execution.py",
+      "function": "persist_result",
+      "line": 51,
+      "candidate_field_assignments": [
+        {
+          "line": 75,
+          "target": "invoice.cancellation"
+        },
+        {
+          "line": 79,
+          "target": "invoice.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/cancellation_execution.py",
+      "function": "remove_authorized",
+      "line": 94,
+      "candidate_field_assignments": [
+        {
+          "line": 141,
+          "target": "invoice.cancellation"
+        },
+        {
+          "line": 133,
+          "target": "invoice.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/sync_coordinator.py",
+      "function": "synchronize",
+      "line": 14,
+      "candidate_field_assignments": [
+        {
+          "line": 23,
+          "target": "invoice.sync_status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/linked_sync_service.py",
+      "function": "create",
+      "line": 65,
+      "candidate_field_assignments": [
+        {
+          "line": 97,
+          "target": "invoice.linked_sync_id"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/linked_sync_service.py",
+      "function": "run",
+      "line": 144,
+      "candidate_field_assignments": [
+        {
+          "line": 153,
+          "target": "row.status"
+        },
+        {
+          "line": 156,
+          "target": "invoice.linked_sync_id"
+        },
+        {
+          "line": 161,
+          "target": "row.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/linked_sync_service.py",
+      "function": "_finish",
+      "line": 232,
+      "candidate_field_assignments": [
+        {
+          "line": 236,
+          "target": "row.status"
+        },
+        {
+          "line": 239,
+          "target": "invoice.linked_sync_id"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/linked_sync_service.py",
+      "function": "close_failed",
+      "line": 244,
+      "candidate_field_assignments": [
+        {
+          "line": 248,
+          "target": "row.status"
+        },
+        {
+          "line": 249,
+          "target": "invoice.linked_sync_id"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/linked_sync_service.py",
+      "function": "expire",
+      "line": 254,
+      "candidate_field_assignments": [
+        {
+          "line": 257,
+          "target": "row.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/linked_sync_service.py",
+      "function": "resolve_manually",
+      "line": 262,
+      "candidate_field_assignments": [
+        {
+          "line": 279,
+          "target": "invoice.linked_sync_id"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/linked_sync_service.py",
+      "function": "acknowledge_outbound",
+      "line": 286,
+      "candidate_field_assignments": [
+        {
+          "line": 305,
+          "target": "row.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/outbound_task_service.py",
+      "function": "requeue_waiting_stock_after_invoice_sync",
+      "line": 89,
+      "candidate_field_assignments": [
+        {
+          "line": 123,
+          "target": "task.status"
+        },
+        {
+          "line": 106,
+          "target": "task.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/xiaoman_service.py",
+      "function": "sync_invoice",
+      "line": 54,
+      "candidate_field_assignments": [
+        {
+          "line": 181,
+          "target": "invoice.sync_status"
+        },
+        {
+          "line": 182,
+          "target": "invoice.status"
+        },
+        {
+          "line": 152,
+          "target": "invoice.xiaoman_order_id"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/xiaoman_service.py",
+      "function": "resolve_sync_uncertain",
+      "line": 279,
+      "candidate_field_assignments": [
+        {
+          "line": 346,
+          "target": "invoice.sync_status"
+        },
+        {
+          "line": 347,
+          "target": "invoice.status"
+        },
+        {
+          "line": 331,
+          "target": "invoice.xiaoman_order_id"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/xiaoman_service.py",
+      "function": "_mark_sync_failed",
+      "line": 744,
+      "candidate_field_assignments": [
+        {
+          "line": 755,
+          "target": "invoice.sync_status"
+        },
+        {
+          "line": 756,
+          "target": "invoice.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/invoice/xiaoman_service.py",
+      "function": "_mark_sync_uncertain",
+      "line": 764,
+      "candidate_field_assignments": [
+        {
+          "line": 775,
+          "target": "invoice.sync_status"
+        },
+        {
+          "line": 776,
+          "target": "invoice.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/receipt/service.py",
+      "function": "_change",
+      "line": 164,
+      "candidate_field_assignments": [
+        {
+          "line": 181,
+          "target": "row.sync_status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/receipt/service.py",
+      "function": "_void",
+      "line": 232,
+      "candidate_field_assignments": [
+        {
+          "line": 237,
+          "target": "row.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/receipt/sync_service.py",
+      "function": "release_targets",
+      "line": 21,
+      "candidate_field_assignments": [
+        {
+          "line": 42,
+          "target": "row.xiaoman_order_id"
+        },
+        {
+          "line": 43,
+          "target": "row.sync_status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/receipt/sync_service.py",
+      "function": "deliver",
+      "line": 91,
+      "candidate_field_assignments": [
+        {
+          "line": 115,
+          "target": "row.sync_status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/receipt/sync_service.py",
+      "function": "refresh_accepted",
+      "line": 190,
+      "candidate_field_assignments": [
+        {
+          "line": 198,
+          "target": "row.sync_status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/receipt/remote_change_service.py",
+      "function": "_apply",
+      "line": 124,
+      "candidate_field_assignments": [
+        {
+          "line": 129,
+          "target": "row.status"
+        }
+      ],
+      "phase": "candidate_requires_call_chain_and_target_trace"
+    },
+    {
+      "source": "backend/app/receipt/generation_service.py",
+      "function": "generate",
+      "line": 116,
+      "phase": "explicit_actor_core_not_scheduler_connected",
+      "candidate_field_assignments": [
+        {
+          "target": "intent.status"
+        },
+        {
+          "target": "intent.receipt_id"
+        },
+        {
+          "target": "intent.last_error"
+        }
+      ]
+    },
+    {
+      "source": "backend/app/invoice/linked_execution.py",
+      "function": "_step",
+      "line": 66,
+      "candidate_field_assignments": [
+        {
+          "line": 70,
+          "target": "row.steps"
+        }
+      ],
+      "phase": "current_phase_and_exact_run_binding_scoped_evidence"
+    },
+    {
+      "source": "backend/app/invoice/linked_execution.py",
+      "function": "_finish",
+      "line": 88,
+      "candidate_field_assignments": [
+        {
+          "line": 90,
+          "target": "row.status"
+        },
+        {
+          "line": 91,
+          "target": "row.run_token"
+        },
+        {
+          "line": 91,
+          "target": "row.lease_until"
+        },
+        {
+          "line": 92,
+          "target": "invoice.linked_sync_id"
+        }
+      ],
+      "phase": "current_phase_and_exact_run_binding_scoped_evidence"
+    },
+    {
+      "source": "backend/app/invoice/linked_execution.py",
+      "function": "_followup",
+      "line": 112,
+      "candidate_field_assignments": [
+        {
+          "line": 124,
+          "target": "row.steps"
+        },
+        {
+          "line": 125,
+          "target": "row.status"
+        }
+      ],
+      "phase": "current_phase_and_exact_run_binding_scoped_evidence"
+    },
+    {
+      "source": "backend/app/invoice/linked_execution.py",
+      "function": "run",
+      "line": 129,
+      "candidate_field_assignments": [
+        {
+          "line": 149,
+          "target": "row.status"
+        },
+        {
+          "line": 149,
+          "target": "row.run_token"
+        },
+        {
+          "line": 149,
+          "target": "row.lease_until"
+        },
+        {
+          "line": 200,
+          "target": "row.steps"
+        },
+        {
+          "line": 136,
+          "target": "row.status"
+        },
+        {
+          "line": 136,
+          "target": "invoice.linked_sync_id"
+        },
+        {
+          "line": 137,
+          "target": "row.steps"
+        },
+        {
+          "line": 142,
+          "target": "row.status"
+        }
+      ],
+      "phase": "current_phase_and_exact_run_binding_scoped_evidence"
+    }
+  ],
+  "verified_scope": [
+    "Enabled sync-uncertain current authorization/binding, canonical UID, state/lease guards, post-commit response revocation and local concurrency: synthetic provider/mirror evidence; actual external writers remain open.",
+    "Local begin/retain/abort and validate/delete current authorization: related actual JWT/MySQL suite.",
+    "Enabled lifecycle local order_push_summary: current JWT/HTTP scope, whitelist and zero writes; Vue ready recovery uses synthetic API and is not full live-page or worker proof.",
+    "Enabled ordinary POST phases, atomic receipt/stock claim, immutable original facts, canonical outgoing UID, late accepted collection recovery and injected commit acknowledgment errors: actual JWT/ASGI/MySQL with synthetic supplier HTTP and legacy followup substitute; not worker proof.",
+    "Enabled outbound_retry/ack current authority, unlocked evidence and exact target/lines/task binding: local queue/ack only; new actual backend creation worker has scoped evidence in handoff; process/provider/cutover and remaining writers stay open.",
+    "Enabled lifecycle GET/refresh/remove phased current authorization and immutable original attempt/facts: actual JWT/MySQL suite; in-flight OFF is covered, initially OFF is not.",
+    "Ordinary/linked edit, local close/resolve, source spoofing and PI download: related suites; whole T62 remains open.",
+    "Selected receipt list/detail/order-options and local void: current DB authorization, real JWT/admin revocation and MySQL locks with original financial states; ON/OFF selected actual admin/void competitions use installed permanent authority; all other receipt writers remain open.",
+    "Auxiliary receipt types/balance/private-proof reads use current DB principal at first business read, preserving object policies and unlocked IO; actual JWT/main/MySQL, finite financial/association snapshots and local PNG streaming use synthetic provider/proxy; no response-time revocation, token-refresh/COS or other writer proof."
+  ],
+  "receipt_retry_scope": "Current receipt write/scopes, ordered batch/lineage locks, immutable unlocked fee evidence, final current binding/settlement/participating receipts and commit-ack recovery: actual JWT/main/MySQL with synthetic provider and finite 17-model snapshot; remaining receipt writers and production gates stay open.",
+  "receipt_edit_scope": "Current receipt write/scopes and full batch authorization, immutable unlocked order/payment/file evidence, final complete target and file bindings, current Receipt/Intent/Allocation balance and original local edit semantics: actual JWT/main/MySQL with provider/storage substitutes and finite 15-model snapshot; remaining writers/production gates stay open.",
+  "receipt_proof_scope": "Current receipt write and full group scopes, current converted Intent and immutable unlocked file evidence; original same-set validated no-op, financial/execution fields unchanged and final unknown commit recovery: scoped actual JWT/main/MySQL with finite 15-model snapshot and local/config storage evidence, not other writer or production proof.",
+  "receipt_upload_scope": "Current original OR rights, unlocked private storage, frozen actual backend cleanup only before registration, final authority fence and unknown commit retaining files; actual JWT/admin/MySQL with synthetic COS/proxy transport and same ASGI receiver. Real cross-deployment/version/storage, orphan reconciliation and other writers remain open.",
+  "receipt_create_scope": "Current original receipt write/scope, actual target/actor/hash replay before new guards, unlocked independent order/file evidence, current ledger/Intent/Allocation, complete Invoice binding and atomic manual row/attachment/log; scoped actual JWT/MySQL with explicit thin request-key uniqueness and finite 15-model snapshot. Provider/process/full schema and other writers remain open.",
+  "receipt_reconciliation_scope": "Current reconcile OR/admin resolve and all batch scopes, original Receipt target, unlocked immutable GET evidence, complete final target/log binding, known late-result absence prohibition and validated candidate date/currency; scoped JWT/main/MySQL with thin remote-ID uniqueness and 15-model snapshots. In-flight unpersisted sender effects, other writers and production remain open.",
+  "pending_protocols": [
+    "Initially OFF lifecycle legacy paths and real process-crash recovery",
+    "Ordinary current-authorized queue continuation protocol: target/source review and isolated regression evidence only as recorded in handoff. Final queue-first revocation lock waits/commit/rollback and selected source/scan/readback races have isolated evidence in handoff; shared outbound preparation/preview and selected enabled outbound send/verify/repair phases now have scoped evidence as recorded in handoff; actual creation worker has scoped direct service/MySQL evidence in handoff; provider/process/cutover and all other writer stages remain separate gates.",
+    "Full live-page/pilot integration of late-ready recovery; linked-run execution stages; real provider contract, initially OFF, process-crash and full upstream schema evidence",
+    "Remaining receipt/intent/allocation, remote/file/batch writers, raw SQL/unregistered upstream mutation fencing and all worker/shared script lock ordering",
+    "Receipt generation scheduler actor selection awaiting user; explicit actor core is not a connected worker. Legacy six RED remain open, no default creator inference or new policy."
+  ],
+  "receipt_batch_create_scope": "Current all-invoice authority, full funds graph, unlocked independent order/fee/file evidence, final current binding, original stable key/settlement replay and local financial apply. Scoped actual JWT/MySQL with thin schema and finite18-model snapshot; exact runs only in handoff. Current-tab batch UI recovery and read-only status have scoped implementation evidence only in handoff; tab closure, other writers and production stay open.",
+  "shipment_create_scope": "Current invoice/shipment and optional receipt actions, original financial scope and historical operation graph, immutable unlocked order/outbound/freight/file evidence, final current full graph and local financial apply; scoped thin five-index schema and finite21-model observations only. Exact terminal results in handoff; other shipment routes/writers and production stay open.",
+  "shipment_quote_read_scope": "Current original OR actions/receipt scope; quote unlocked immutable evidence/final current graph/DTO rollback, ordinary reads authorize at first business query; private dependency/422 responses, original business sort order/hash. Scoped thin5-index/finite21-model observations; exact actual runs in handoff. Other writers and production open.",
+  "execution_evidence_authority": "docs/handoff.md; inventory is source discovery only",
+  "shipment_state_scope": "Current shipment:write and original actual Invoice financial scope, permanent authority ON/OFF, current complete participating fund graph, original local state algorithm, same-transaction flush/current response and single caller commit. Owned main/JWT/admin/MySQL with production autoflush=False, finite21-model whitelist and synthetic provider only; exact terminal evidence in handoff. Legacy late fact resolution/manual binding, other routes/writers and production remain open.",
+  "shipment_submission_scope": "Current original command inspector with no financial DML/commit/external IO and private dependency/422 responses; original request/current authorization replay. Current-tab original Invoice/body preservation, safe persisted exit and definitely-unsent vs real unknown provenance; actual scoped runs only in handoff. Thin schema/finite21/synthetic services; tab closure, other writers and production open.",
+  "shipment_retry_scope": "Current shipment:write/actual Invoice financial scope and permanent authority, unlocked immutable original-target existence evidence, final full graph before business found conflict, original definite-failed task requeue and third caller commit. Actual owned JWT/main/MySQL finite21-column success/ACK whitelist and real freight scanner with synthetic GET only; exact terminal runs in handoff. No remote POST, stable command key, full worker/provider/multipage contract or production proof; confirm/reconcile and other writers open.",
+  "shipment_freight_reconciliation_scope": "Current shipment:write and conditional current shipment:admin/actual Invoice financial scope, permanent authority and full original funds graph; immutable unlocked detail/activity evidence and final current graph before original bind/quarantine. Same final target/event commit, manual original version+2/known+1, Settlement version unchanged and no added ready guard; scoped actual JWT/main/MySQL finite21 full-column controls and synthetic GETs only. Exact terminals in handoff; no stable-key replay, worker/provider/multipage/full-schema/production proof; other outbound confirmation/workers and writers remain open.",
+  "shipment_outbound_reconciliation_scope": "Current shipment:write/conditional shipment:admin and actual Invoice financial scope, permanent authority ON/OFF, complete original graph and immutable unlocked outbound/funds GETs; final current graph before original financial apply, Receipt readback/logs, App/status and event in one third caller commit. Manual Outbound/Settlement +2, known +1, no new ready guard/no remote POST/no stable key. Proven inactive funding returns balance null and fixed risk; diagnostic failures safely request-local. Owned JWT/main/MySQL finite21/thin5/synthetic transport evidence only, exact terminals in handoff. Full confirm/worker/provider/schema/production open.",
+  "shipment_confirmation_scope": "Current explicit shipment:write/actual Invoice financial scope, original START/SEND/FACT/typed FINISH, protocol2 exact time/payload/baseline reconstruction and current full graph/journal/proof binding around unlocked evidence. Permanent shipped risk is independent of pending/effect stamp; current GET safe summary is read-only and UI fails closed. Existing isolated scoped results only in handoff; proof full-row atomic/dedup assertions, new UI browser, shared regression, full worker/rawSQL/schema/real provider/process/production remain open.",
+  "shipment_confirmation_recovery_scope": "Read original provider only, no POST: active claim blocked; current final authority, full financial graph and original confirmation plus independent shipped proof frozen/rechecked. Resolve original effect only with sufficient identity; pending status1 can reopen only unsent or every send explicitly rejected, never unknown/missing FACT/legacy insufficient data. Status2 effect resolution preserves unfunded risk. finite21/original-journal test snapshots do not certify all AuditEvent/proof rows. Source discovery, not execution or all-writer inventory proof.",
+  "receipt_generation_core_scope": "Explicit caller-selected current actor, receipt:write/actual Invoice finance scope, unlocked immutable order/fee/file evidence, full finite current binding, original fees and final presale net guard, atomic local conversion. Direct core only; scheduler execution actor policy pending, legacy generate_ready remains unchanged and six real counterexamples OPEN. Exact terminals only handoff.",
+  "invoice_current_read_scope": "Current database principal/action/scope at first business read for invoice list, summary, detail, sync logs and Excel/HTML/PDF export. Preserve current active delegation/owner, unchanged render functions and main statistics. Formal native joint73 passed on owned MySQL/thin upstream; three invoice modules verified from own checkout. Failure boundaries comprise four HTTP authorization-error injections plus six direct helper checks, not ten real SQL outages. No response-time recall, complete file-content certification, all-writer or production claim; current evidence in docs/handoff.md.",
+  "price_write_scope": "Nine local accessory/standard/color/customer/workbook price mutations: JWT identity, fresh transaction, permanent ON/OFF authority, current original action; caller single commit and existing algorithms retained. Additional executable cases cover one customer price rule versus actual HTTP acceptance/approval, both leaders and commit/rollback, exact authority record waits and immutable historical rows. Terminal evidence only docs/handoff.md. Other price sources/producer, exact legacy171 runtime, full schema and all other writers remain uncertified.",
+  "linked_execution_scope": "Installed current invoice scope and original sync permission on get/run and each linked phase, ON/OFF; remote evidence after capture commit, ordinary immutable POST facts reused, exact task/document/receipt bindings and lease checked before business commit. Final push business application rechecks current original actor. Scope and terminal runtime evidence only docs/handoff.md; DB-dependency fixture and substituted external boundaries do not certify main/full schema/real provider/old artifact/other legacy callers or all writers."
+}

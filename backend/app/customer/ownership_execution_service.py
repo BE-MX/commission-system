@@ -7,6 +7,7 @@ import hashlib
 import secrets
 from typing import Any, Mapping
 
+from app.portal.authority import lock_authority, suspend_customer_access
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -234,6 +235,7 @@ def _append_events(
 def _execute(
     db: Session, *, proposal_id: int, actor_user_id: int, idempotency_key: str,
 ) -> OwnershipExecutionResult:
+    lock_authority(db)
     if not _valid_idempotency_key(idempotency_key):
         raise OwnershipExecutionError("OWNERSHIP_EXECUTION_KEY_INVALID")
     proposal = db.query(models.CustomerChangeProposal).filter_by(
@@ -299,6 +301,7 @@ def _execute(
         account.updated_by = actor_user_id
         account.updated_at = now
     invalidate_projections(db, affected)
+    suspend_customer_access(db, affected)
     try:
         validate_postconditions(db, payload, parsed["transition_plan"], proposal.action_type)
     except (ExecutionPostconditionError, ExecutionContractError) as exc:

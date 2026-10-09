@@ -297,7 +297,7 @@ def bind_remote(db, row, data, actor):
     service.ensure_result_identity(db, row, identity)
     if row.xiaoman_receipt_id and row.xiaoman_receipt_id != identity:
         raise ValueError("已取得小满回款 ID，不能改绑其他回款，请核对远端原单")
-    other = db.query(Receipt.id).filter(Receipt.xiaoman_receipt_id == identity, Receipt.id != row.id).first()
+    other = db.query(Receipt.id).filter(Receipt.xiaoman_receipt_id == identity, Receipt.id != row.id).with_for_update().first()
     if other:
         raise ValueError("该小满回款已经绑定其他方舟单据")
     row.xiaoman_receipt_id, row.xiaoman_receipt_no = identity, str(data.get("cash_collection_no") or "")
@@ -312,31 +312,31 @@ def bind_remote(db, row, data, actor):
     service.log(db, row, "reconciled", "已核对并绑定小满回款", actor)
 
 
-def reconcile(db, row, actor):
+def _reconcile(db, row, evidence, actor):
     if row.status != "active" or row.sync_status not in {"synced", "uncertain"}:
         raise ValueError("当前状态无需核对")
     if row.xiaoman_receipt_id:
-        bind_remote(db, row, remote.receipt_info(db, row.xiaoman_receipt_id), actor)
+        bind_remote(db, row, evidence, actor)
         return []
-    candidates = [r for r in remote.order_receipts(db, row.xiaoman_order_id) if candidate_matches(row, r)]
+    candidates = [r for r in evidence if candidate_matches(row, r)]
     # Conservative: no automatic bind until OKKI's custom-number preservation
     # has been verified for this tenant; even one same-day amount is ambiguous.
     return [{"xiaoman_receipt_id": str(r["cash_collection_id"]),
              "xiaoman_receipt_no": r.get("cash_collection_no"), "amount": str(r["amount"])} for r in candidates]
 
 
-def resolve(db, row, body, actor):
+def _resolve(db, row, body, evidence, actor):
     if row.status != "active" or row.sync_status != "uncertain":
         raise ValueError("只有待核对回款可以人工处理")
     if body.resolution == "bind_receipt":
         if not body.xiaoman_receipt_id:
             raise ValueError("请填写小满回款 ID")
-        bind_remote(db, row, remote.receipt_info(db, body.xiaoman_receipt_id), actor)
+        bind_remote(db, row, evidence, actor)
     else:
         if row.xiaoman_receipt_id:
             raise ValueError("已取得小满回款 ID，不能确认未创建，请核对远端原单")
         service.ensure_no_returned_result(db, row)
-        candidates = [r for r in remote.order_receipts(db, row.xiaoman_order_id) if candidate_matches(row, r)]
+        candidates = [r for r in evidence if candidate_matches(row, r)]
         if candidates:
             raise ValueError("小满存在同订单同额回款候选，不能确认未创建，请核对后绑定")
         row.sync_status, row.last_error = "pending", None

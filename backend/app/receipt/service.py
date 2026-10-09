@@ -34,7 +34,7 @@ def get(db, identity, user, *, lock=False):
     return row, invoice
 
 
-def ensure_order_ready(db, invoice):
+def ensure_order_ready(db, invoice, *, current=False):
     from app.invoice.linked_sync_service import ensure_idle
     ensure_idle(invoice)
     from app.invoice.lifecycle_guard import ensure_active
@@ -42,8 +42,11 @@ def ensure_order_ready(db, invoice):
     from app.semifinished.models import InvoiceAllocation
     if invoice.sync_status != "synced" or not invoice.xiaoman_order_id:
         raise ValueError("请先将订单完整同步小满，再登记回款")
-    if db.query(InvoiceAllocation.id).filter(InvoiceAllocation.invoice_id == invoice.id,
-                                          InvoiceAllocation.status == "pending").first():
+    query = db.query(InvoiceAllocation.id).filter(InvoiceAllocation.invoice_id == invoice.id,
+                                                InvoiceAllocation.status == "pending")
+    if current:
+        query = query.order_by(InvoiceAllocation.id).with_for_update()
+    if query.first():
         raise ValueError("订单库存同步待恢复，暂不能登记回款")
 
 
@@ -148,9 +151,7 @@ def invoice_summary(db, invoice):
             "action_blocked_reason": blocked or balance_error}
 
 
-def new_row(db, invoice, fields, actor, request_key, request_hash, *, source="manual"):
-    if source == "auto":
-        fields = fields.model_copy(update={"bank_charge": fees.allocate(db, invoice, fields.amount)})
+def _make_row(db, invoice, fields, actor, request_key, request_hash, *, source="manual"):
     row = Receipt(receipt_no="HK" + beijing_now().strftime("%Y%m%d") + "-" + uuid4().hex[:16],
                   invoice_id=invoice.id, source=source, request_key=request_key, request_hash=request_hash,
                   auto_key=f"invoice:{invoice.id}:initial" if source == "auto" else None,
@@ -162,44 +163,59 @@ def new_row(db, invoice, fields, actor, request_key, request_hash, *, source="ma
         row.purpose = "presale_deposit"
     db.add(row)
     db.flush()
+    return row
+
+
+def new_row(db, invoice, fields, actor, request_key, request_hash, *, source="manual"):
+    # Legacy scheduler wiring remains until its execution actor policy is confirmed.
+    if source == "auto":
+        fields = fields.model_copy(update={"bank_charge": fees.allocate(db, invoice, fields.amount)})
+    row = _make_row(db, invoice, fields, actor, request_key, request_hash, source=source)
     attachments.bind(db, row.attachment_ids, actor, invoice.id, row.id)
     log(db, row, "created", "库存单完整同步后自动创建" if source == "auto" else "手工登记回款", actor)
     return row
 
 
-def create(db, body, user):
-    actor = access.user_id(user)
-    fingerprint = hashlib.sha256(body.model_dump_json(exclude={"balance_version"}).encode()).hexdigest()
-    existing = db.query(Receipt).filter(Receipt.request_key == body.request_key).first()
-    if existing:
-        access.ensure_invoice(db, db.get(Invoice, existing.invoice_id), user)
-        if existing.created_by != actor or existing.request_hash != fingerprint:
-            raise HTTPException(409, "提交标识已用于其他回款，请勿复用")
-        return existing
-    invoice = get_invoice(db, body.invoice_id)
-    access.ensure_invoice(db, invoice, user)
-    ensure_order_ready(db, invoice)
+def _create(db, invoice, body, actor, fingerprint, snapshot, payment_types, proof_evidence):
+    ensure_order_ready(db, invoice, current=True)
     if invoice.order_type == "presale":
         raise ValueError("预售回款请通过发货结算或批量回款登记")
-    snapshot = remote.order_snapshot(db, invoice)
-    if body.payment_type not in remote.receipt_types(db):
+    if body.payment_type not in payment_types:
         raise ValueError("请选择有效的小满回款方式")
-    db.commit()  # finish read/token refresh transaction before taking the write lock
-    invoice = get_invoice(db, body.invoice_id, for_update=True)
-    db.refresh(invoice)
-    access.ensure_invoice(db, invoice, user)
-    ensure_order_ready(db, invoice)
-    # Another identical request can commit during the remote read above.
-    existing = db.query(Receipt).filter(Receipt.request_key == body.request_key).first()
-    if existing:
-        if existing.created_by != actor or existing.request_hash != fingerprint:
-            raise HTTPException(409, "提交标识已用于其他回款，请勿复用")
-        return existing
-    summary = balance.calculate(db, invoice, snapshot)
+    summary = balance.calculate(db, invoice, snapshot, current=True)
     if summary["version"] != body.balance_version:
         raise HTTPException(409, "订单余额已变化，请刷新后核对金额（凭证已保留）")
     balance.ensure_available(summary, body.amount)
-    return new_row(db, invoice, body, actor, body.request_key, fingerprint)
+    row = _make_row(db, invoice, body, actor, body.request_key, fingerprint)
+    attachments.bind_verified(db, row.attachment_ids, actor, invoice.id, row.id, proof_evidence)
+    log(db, row, "created", "手工登记回款", actor)
+    return row
+
+
+def _change(db, row, invoice, body, actor, snapshot, payment_types, proof_evidence):
+    if row.batch_id or row.purpose == "presale_deposit":
+        raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
+    if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:
+        raise ValueError("仅未发送或明确失败的回款可修改")
+    if row.version != body.version:
+        raise HTTPException(409, "回款已被修改，请刷新后重试")
+    ensure_order_ready(db, invoice, current=True)
+    summary = balance.calculate(db, invoice, snapshot, exclude_receipt=row.id, current=True)
+    balance.ensure_available(summary, body.amount)
+    if body.payment_type not in payment_types:
+        raise ValueError("请选择有效的小满回款方式")
+    attachments.bind_verified(db, body.attachment_ids, actor, invoice.id, row.id, proof_evidence)
+    charge = fees.allocate(db, invoice, body.amount, exclude_receipt=row.id) if row.source == "auto" else body.bank_charge
+    before = {key: str(getattr(row, key)) for key in ("amount", "bank_charge", "collection_date", "payment_type", "remark")}
+    corrected = body.model_copy(update={"bank_charge": charge})
+    for key, value in corrected.model_dump(exclude={"version"}).items():
+        setattr(row, key, value)
+    row.version += 1
+    # Correcting data does not silently send; the explicit retry action does.
+    row.sync_status = "failed"
+    row.last_error = "资料已修改，请重试同步"
+    after = {key: str(getattr(row, key)) for key in before}
+    log(db, row, "edited", json.dumps({"message": "已修正回款资料，待重新同步", "before": before, "after": after}, ensure_ascii=False), actor)
 
 
 def _ensure_editable(row, version):
@@ -274,17 +290,17 @@ def change(db, row, invoice, body, actor):
     log(db, row, "edited", json.dumps({"message": "已修正回款资料，待重新同步", "before": before, "after": after}, ensure_ascii=False), actor)
 
 
-def change_proofs(db, row, invoice, body, actor):
+def _change_proofs(db, row, invoice, body, actor, proof_evidence):
     if row.batch_id or row.source != "auto" or row.status != "active":
         raise ValueError("仅订单自动生成的有效回款可在订单发票中修改截图")
     if row.sync_status == "syncing":
         raise ValueError("回款正在处理，请稍后刷新再修改截图")
     if row.version != body.version:
         raise HTTPException(409, "回款已被修改，请刷新后重试")
-    intent = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice.id).with_for_update().first()
+    intent = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice.id).populate_existing().with_for_update().first()
     if not intent or intent.status != "converted" or intent.receipt_id != row.id:
         raise ValueError("订单回款记录已变化，请刷新后重试")
-    attachments.bind(db, body.attachment_ids, actor, invoice.id, row.id)
+    attachments.bind_verified(db, body.attachment_ids, actor, invoice.id, row.id, proof_evidence)
     before = set(row.attachment_ids)
     after = set(body.attachment_ids)
     if before == after:
@@ -295,16 +311,18 @@ def change_proofs(db, row, invoice, body, actor):
     log(db, row, "proofs_updated", f"回款截图已更新：新增 {len(after - before)} 张，移除 {len(before - after)} 张", actor)
 
 
-def retry(db, row, actor):
+def _retry(db, row, invoice, actor, evidence):
     if row.status != "active" or row.sync_status != "failed" or row.xiaoman_receipt_id:
         raise ValueError("仅明确失败且未取得小满单号的回款可重试；待核对不能重发")
     ensure_no_returned_result(db, row)
     from app.invoice.settlement_guard import ensure_receipt_sendable
-    ensure_receipt_sendable(db, row)
+    ensure_receipt_sendable(db, row, current=True)
     if row.source == "auto" and row.bank_charge == 0:
-        invoice = db.query(Invoice).filter(Invoice.id == row.invoice_id).with_for_update().one()
         if invoice.surcharge_amount:
-            row.bank_charge = fees.allocate(db, invoice, row.amount, exclude_receipt=row.id)
+            if evidence is None:
+                raise ValueError("自动回款缺少已核验手续费证据")
+            row.bank_charge = fees.calculate(db, invoice, row.amount, evidence,
+                exclude_receipt=row.id, current=True)
             log(db, row, "fee_allocated", f"重试前按比例分摊手续费：{row.bank_charge}", actor)
     row.sync_status, row.last_error = "pending", None
     row.send_phase, row.recovery_kind, row.next_attempt_at, row.recovery_attempts = None, None, None, 0
@@ -312,7 +330,15 @@ def retry(db, row, actor):
     log(db, row, "retry", "重试原回款单", actor)
 
 
-def void(db, row, reason, actor):
+def void(db, identity, user, reason):
+    """Authorize a local cancellation; the caller commits the entire operation."""
+    from app.receipt.authority import local_receipt
+    row, invoice, current = local_receipt(db, identity, user, "receipt:write")
+    _void(db, row, reason, access.user_id(current))
+    return row, invoice
+
+
+def _void(db, row, reason, actor):
     if row.batch_id or row.purpose == "presale_deposit":
         raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
     if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:

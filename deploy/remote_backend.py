@@ -5,6 +5,8 @@ from contextlib import contextmanager
 import json
 from pathlib import Path
 import re
+import queue
+import threading
 import shutil
 import subprocess
 import sys
@@ -41,6 +43,82 @@ def database_lock(source, python):
         except subprocess.TimeoutExpired:
             process.kill()
             process.communicate()
+
+
+def protocol_command(source, python, operation):
+    return [str(python), '-u', str(source / 'deploy/rollback_protocol.py'), operation]
+
+
+def parse_protocol(line, phase):
+    try:
+        value=json.loads(line)
+        if (not isinstance(value,dict) or value.pop('phase',None)!=phase
+                or set(value)!={'mode','database_fingerprint'} or value.get('mode') not in {'legacy','outbound-worker-v1'}
+                or not isinstance(value.get('database_fingerprint'),str)
+                or not re.fullmatch(r'[0-9a-f]{64}',value['database_fingerprint'])):
+            raise ValueError('Invalid rollback observation')
+        return value
+    except (ValueError,TypeError):
+        raise RuntimeError('Rollback protocol cannot be confirmed; writers held stopped') from None
+
+
+def protocol_observation(source, python):
+    try:return parse_protocol(run(protocol_command(source,python,'observe'),cwd=source/'backend',capture=True),'observed')
+    except Exception:
+        raise RuntimeError('Rollback protocol cannot be confirmed; no activation attempted') from None
+
+
+class rollback_guard:
+    """Dedicated connection holds the legacy executor fence across code/env restore and readiness."""
+    def __init__(self,source,python,expected):
+        self.source,self.python,self.expected=source,python,expected
+        self.child=None
+    def _read(self,phase):
+        result=queue.Queue(maxsize=1)
+        def read():
+            try:result.put(self.child.stdout.readline(8193))
+            except Exception:result.put(None)
+        threading.Thread(target=read,daemon=True).start()
+        try:
+            line=result.get(timeout=30)
+            if not line or len(line)>8192 or not line.endswith('\n'):raise ValueError('Incomplete control')
+            value=parse_protocol(line,phase)
+            if value!=self.expected:raise ValueError('Rollback target changed')
+            return value
+        except (queue.Empty,ValueError):
+            raise RuntimeError('Rollback control cannot be confirmed; writers held stopped') from None
+    def _abort(self):
+        if self.child is None:return
+        if self.child.poll() is None:self.child.kill();self.child.wait(timeout=10)
+        for stream in (self.child.stdin,self.child.stdout,self.child.stderr):
+            if stream and not stream.closed:
+                try:stream.close()
+                except OSError:pass  # Child is already terminated; dead pipe is not release evidence.
+    def _command(self,command,phase):
+        try:
+            self.child.stdin.write(command+'\n');self.child.stdin.flush()
+            return self._read(phase)
+        except Exception:
+            raise RuntimeError('Rollback control cannot be confirmed; writers held stopped') from None
+    def __enter__(self):
+        if (not isinstance(self.expected,dict) or self.expected.get('mode')!='legacy'
+                or not isinstance(self.expected.get('database_fingerprint'),str)
+                or not re.fullmatch(r'[0-9a-f]{64}',self.expected['database_fingerprint'])):
+            raise RuntimeError('Rollback requires verified protocol compatibility; writers held stopped')
+        try:
+            self.child=subprocess.Popen(protocol_command(self.source,self.python,'hold'),cwd=self.source/'backend',
+                stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8')
+            self.child.stdin.write(json.dumps(self.expected)+'\n');self.child.stdin.flush()
+            self._read('ready');return self
+        except BaseException:
+            self._abort();raise
+    def check(self):return self._command('check','checked')
+    def __exit__(self,kind,*_):
+        try:
+            if kind is None:
+                self._command('release','released');self.child.stdin.close()
+                if self.child.wait(timeout=30)!=0:raise RuntimeError('Rollback release cannot be confirmed')
+        finally:self._abort()
 
 
 def schema_check(source, python, allow_pending=False):
@@ -149,6 +227,7 @@ def activate_locked(revision):
         healthy()
         activate_colorwork(info, source, python)
         return {"status": "unchanged", "schema": info["schema"]}
+    protocol_before=protocol_observation(source,python)
     run(["sudo", "-n", "systemctl", "stop", SERVICE])
     venv = ROOT / "backend/.venv"
     backup_env = STATE / ("previous-venv-" + info["previous"])
@@ -183,11 +262,17 @@ def activate_locked(revision):
         run(["sudo", "-n", "systemctl", "stop", SERVICE])
         if info.get("schema_changed"):
             raise RuntimeError("Beijing activation failed after schema change; service held stopped, no code downgrade") from None
-        run(["git", "checkout", "--detach", info["previous"]])
-        if switched_env:
-            venv.unlink(missing_ok=True)
-            venv.symlink_to(info["previous_environment"], target_is_directory=True)
-        run(["sudo", "-n", "systemctl", "start", SERVICE])
+        try:
+            with rollback_guard(source,python,protocol_before) as guard:
+                run(["git", "checkout", "--detach", info["previous"]])
+                if switched_env:
+                    venv.unlink(missing_ok=True)
+                    venv.symlink_to(info["previous_environment"], target_is_directory=True)
+                run(["sudo", "-n", "systemctl", "start", SERVICE])
+                healthy();guard.check()
+        except Exception:
+            run(["sudo", "-n", "systemctl", "stop", SERVICE])
+            raise RuntimeError('Beijing rollback unverified; service held stopped, inspect protocol compatibility') from None
         raise
     # COS readiness calls the backend storage bridge. Only activate this dependent
     # service once the target backend is healthy; a colorwork failure must not

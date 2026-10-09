@@ -33,6 +33,8 @@ def receipt_types(db):
 
 def receipt_info(db, receipt_id):
     data = read(db, "/v1/invoices/receipt/info", {"cash_collection_id": str(receipt_id)})
+    if not isinstance(data, dict):
+        raise ValueError("小满回款详情格式不完整，需人工核对")
     if str(data.get("cash_collection_id")) != str(receipt_id):
         raise ValueError("小满回款详情缺少匹配 ID，需人工核对")
     return data
@@ -173,6 +175,8 @@ def order_snapshot(db, invoice):
     if not invoice.xiaoman_order_id:
         return {"rows": [], "exchange_rate": None}
     data = read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
+    if not isinstance(data, dict):
+        raise ValueError("小满订单详情格式不完整，请先核对订单")
     if (str(data.get("order_id")) != str(invoice.xiaoman_order_id)
             or str(data.get("company_id")) != str(invoice.customer_id)
             or data.get("currency") != invoice.currency
@@ -187,6 +191,8 @@ def target_snapshot(db, target):
     if target.kind != "freight" or target.remote_status != "bound" or not target.remote_order_id:
         raise ValueError("运费目标小满订单尚未核验")
     data = read(db, "/v1/invoices/order/info", {"order_id": target.remote_order_id})
+    if not isinstance(data, dict):
+        raise ValueError("小满运费订单详情格式不完整")
     if (not order_active(db, data)
             or str(data.get("order_id")) != str(target.remote_order_id)
             or data.get("name") != target.remote_order_name

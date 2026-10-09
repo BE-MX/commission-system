@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.knowledge.models import KnowledgeLibrary, KnowledgeLibraryMember
 from app.mcp.models import MCPToken
+from app.portal.upstream_authority import begin_employee_authority_write
 
 router = APIRouter()
 logger = logging.getLogger("commission.mcp.token_admin")
@@ -128,6 +129,7 @@ def issue_token(
     db: Session = Depends(get_db),
     operator: dict = Depends(require_permission("mcp:admin")),
 ):
+    begin_employee_authority_write(db, operator, "mcp:admin")
     user = _active_user(db, req.user_id)
     row, plain = _issue_row(db, user, req.label, int(operator["sub"]) if operator.get("sub") else None)
     db.commit()
@@ -166,6 +168,7 @@ def rotate_token(
     db: Session = Depends(get_db),
     operator: dict = Depends(require_permission("mcp:admin")),
 ):
+    begin_employee_authority_write(db, operator, "mcp:admin")
     old = db.query(MCPToken).filter(MCPToken.id == token_id).with_for_update().first()
     if not old:
         raise HTTPException(status_code=404, detail="凭证不存在")
@@ -185,8 +188,9 @@ def rotate_token(
 def revoke_token(
     token_id: int = Path(..., ge=1),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_permission("mcp:admin")),
+    operator: dict = Depends(require_permission("mcp:admin")),
 ):
+    begin_employee_authority_write(db, operator, "mcp:admin")
     row = db.query(MCPToken).filter(MCPToken.id == token_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="凭证不存在")

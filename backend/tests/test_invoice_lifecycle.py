@@ -12,7 +12,7 @@ from app.invoice import linked_sync_service, service as invoices
 from app.invoice.lifecycle_guard import ensure_mutable
 from app.invoice.models import Invoice, InvoiceSyncLog, OkkiOutboundTask
 from app.receipt.models import Receipt, ReceiptLog
-from app.receipt import remote, balance, remote_change_service as changes
+from app.receipt import remote, receipt_index, balance, remote_change_service as changes
 from app.receipt.schemas import RemoteChange
 
 
@@ -30,6 +30,7 @@ def no_remote(monkeypatch):
     monkeypatch.setattr(lifecycle_remote,"request",forbidden)
     monkeypatch.setattr(okki_client,"ensure_access_token",lambda *a,**kw:"test")
     monkeypatch.setattr(remote,"order_receipts",lambda *a:[])
+    monkeypatch.setattr(receipt_index,"verified_rows",lambda *a:[])
     monkeypatch.setattr(linked_outbound_service,"find_related",lambda *a:[])
 
 
@@ -46,6 +47,17 @@ def start(db,order):
 
 def live_order(monkeypatch):
     monkeypatch.setattr(lifecycle_remote,"read",lambda *a:{"order_id":"123","company_id":"101","currency":"USD","status":"draft"})
+
+
+def financial_evidence(db, row):
+    # Only the isolated financial algorithm is exercised here. Actual current
+    # employee/group authorization and transaction phases live in MySQL tests.
+    target = changes._target(row)
+    return changes._evidence(target, changes._read(db, target))
+
+
+def financial_accept(db, row, review, actor):
+    changes._apply(db, row, review, financial_evidence(db, row), actor)
 
 
 def body(row,proof):
@@ -127,43 +139,51 @@ def test_deleted_receipt_frozen_until_review_releases_once(db,order,monkeypatch)
     row=receipt(db,order)
     with pytest.raises(ValueError,match="缺失"): balance.calculate(db,order,{"rows":[]})
     monkeypatch.setattr(lifecycle_remote,"read",lambda *a:None)
-    proof=changes.evidence(db,row);review=body(row,proof)
-    changes.accept(db,row,review,1);db.commit()
+    proof=financial_evidence(db,row);review=body(row,proof)
+    financial_accept(db,row,review,1);db.commit()
     assert row.status=="remote_deleted" and row.xiaoman_receipt_id=="88" and row.attachment_ids==["proof-retained"]
     assert Decimal(balance.calculate(db,order,{"rows":[]})["remaining_amount"])==100
-    with pytest.raises(ValueError): changes.accept(db,row,review,1)
+    with pytest.raises(ValueError): financial_accept(db,row,review,1)
     assert db.query(ReceiptLog).filter_by(receipt_id=row.id,action="remote_change").count()==1
 
 
 def test_detail_absence_with_active_index_is_not_deletion(db,order,monkeypatch):
     row=receipt(db,order)
     monkeypatch.setattr(lifecycle_remote,"read",lambda *a:None)
-    monkeypatch.setattr(remote,"order_receipts",lambda *a:[{"cash_collection_id":"88"}])
-    with pytest.raises(ValueError,match="证据不一致"): changes.evidence(db,row)
+    monkeypatch.setattr(receipt_index,"verified_rows",lambda *a:[{"cash_collection_id":"88"}])
+    with pytest.raises(ValueError,match="证据不一致"): financial_evidence(db,row)
 
 
 @pytest.mark.parametrize("changed",["remote","local","unchanged"])
 def test_review_version_and_audit(db,order,monkeypatch,changed):
     row=receipt(db,order)
     row.bank_charge=2;db.commit()
-    data={"order_id":"123","currency":"USD","amount":"78","bank_charge":"0","real_amount":"78","collection_date":"2026-09-20","collect_status":1}
+    data={"cash_collection_id":"88","order_id":"123","currency":"USD","amount":"78","bank_charge":"0","real_amount":"78","collection_date":"2026-09-20","collect_status":1}
     monkeypatch.setattr(lifecycle_remote,"read",lambda *a:data)
-    proof=changes.evidence(db,row);review=body(row,proof)
+    proof=financial_evidence(db,row);review=body(row,proof)
     if changed=="remote": data.update(amount="88",real_amount="88")
     elif changed=="local": row.version+=1;db.commit()
     if changed!="unchanged":
-        with pytest.raises(ValueError,match="变化"): changes.accept(db,row,review,1)
+        with pytest.raises(ValueError,match="变化"): financial_accept(db,row,review,1)
         assert row.amount==100
     else:
-        changes.accept(db,row,review,1);db.commit()
+        financial_accept(db,row,review,1);db.commit()
         assert row.amount==80 and row.bank_charge==2
         assert '100' in db.query(ReceiptLog).filter_by(receipt_id=row.id).one().message
 
 
-def test_admin_and_scope_enforced(db,order):
+def test_admin_and_scope_enforced(db,order,monkeypatch):
+    from app.core.config import get_settings
     from app.invoice.router import router
+    from tests.authority_helpers import seed_authority
+    # The permanent portal authorization path is the current architecture; the
+    # legacy branch predates live employee authority.
+    monkeypatch.setattr(get_settings(), "PORTAL_ENABLED", True)
+    # Live grants: both accounts hold invoice:admin; only user 1 owns the invoice.
+    seed_authority(db, 1, "invoice:admin")
+    seed_authority(db, 2, "invoice:admin")
     app=FastAPI();app.include_router(router,prefix="/api/invoice")
-    app.dependency_overrides[get_db]=lambda:db
+    app.dependency_overrides[get_db]=lambda:(db.rollback(), db)[1]
     user={"sub":"1","roles":[],"permissions":["invoice:write"]}
     app.dependency_overrides[get_current_user]=lambda:user
     with TestClient(app) as client:
@@ -262,14 +282,14 @@ def test_equal_sku_totals_cannot_hide_wrong_order_line(db,order,monkeypatch):
     result=linked_outbound_service.summarize(db,order,{'order_id':'123'})
     assert len(result['differences'])==2 and result['category']=='quantity_or_link_difference'
 
-@pytest.mark.parametrize('remote_uid,accepted',[('line1',True),('replaced',False)])
+@pytest.mark.parametrize('remote_uid,accepted',[('501',True),('999',False)])
 def test_uncertain_update_preserves_linked_fence_and_original_line(db,order,monkeypatch,remote_uid,accepted):
     from app.invoice import uncertain_recovery, xiaoman_service
     from app.invoice.models import InvoiceLinkedSync
     row=InvoiceLinkedSync(id='recover-linked',invoice_id=order.id,request_key='recover-key',request_hash='a'*64,
         created_by=1,status='uncertain',before={},after={},steps={},lease_until=datetime(2020,1,1))
     db.add(row);order.linked_sync_id=row.id;order.sync_status='sync_uncertain';db.commit()
-    product={'unique_id':'line1','product_id':'P','sku_id':'S','count':1,'unit_price':100,'cost_amount':100}
+    product={'unique_id':'501','product_id':'P','sku_id':'S','count':1,'unit_price':100,'cost_amount':100}
     monkeypatch.setattr(xiaoman_service,'_build_product_rows',lambda *a,**kw:([product],[],[],{}))
     monkeypatch.setattr(lifecycle_remote,'read',lambda *a:{'order_id':'123','company_id':'101','currency':'USD',
         'amount':100,'product_list':[{**product,'unique_id':remote_uid}]})
@@ -285,20 +305,20 @@ def test_uncertain_update_preserves_linked_fence_and_original_line(db,order,monk
 
 def test_remote_fee_cannot_replace_local_allocation(db,order,monkeypatch):
     row=receipt(db,order);row.bank_charge=2;db.commit()
-    monkeypatch.setattr(lifecycle_remote,"read",lambda *a:{"order_id":"123","currency":"USD","amount":"80",
+    monkeypatch.setattr(lifecycle_remote,"read",lambda *a:{"cash_collection_id":"88","order_id":"123","currency":"USD","amount":"80",
         "bank_charge":"1","real_amount":"79","collection_date":"2026-09-20","collect_status":1})
     with pytest.raises(ValueError,match="手续费非零"):
-        changes.evidence(db,row)
+        financial_evidence(db,row)
     assert row.amount==100 and row.bank_charge==2
 
 
 @pytest.mark.parametrize("net,fee,extra,accepted", [("0",2,{},True),("0",0,{},False),("78",2,{"bank_charge_usd":"1"},False),("78",2,{"bank_charge_rmb":"1"},False)])
 def test_remote_net_amount_boundaries(db,order,monkeypatch,net,fee,extra,accepted):
     row=receipt(db,order);row.bank_charge=fee;db.commit()
-    monkeypatch.setattr(lifecycle_remote,"read",lambda *a:{"order_id":"123","currency":"USD","amount":net,
+    monkeypatch.setattr(lifecycle_remote,"read",lambda *a:{"cash_collection_id":"88","order_id":"123","currency":"USD","amount":net,
         "bank_charge":"0","real_amount":net,"collection_date":"2026-09-20","collect_status":1,**extra})
     if accepted:
-        proof=changes.evidence(db,row);changes.accept(db,row,body(row,proof),1)
+        proof=financial_evidence(db,row);financial_accept(db,row,body(row,proof),1)
         assert row.amount==Decimal(net)+fee and row.bank_charge==fee
     else:
-        with pytest.raises(ValueError): changes.evidence(db,row)
+        with pytest.raises(ValueError): financial_evidence(db,row)

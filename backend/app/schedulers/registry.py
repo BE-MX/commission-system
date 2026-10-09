@@ -71,6 +71,9 @@ JOB_CUSTOMER_DELEGATION_ENQUEUE = "customer_delegation_enqueue"
 JOB_CUSTOMER_SOURCE_RECONCILE = "customer_source_reconcile"
 JOB_OKKI_OUTBOUND_RECONCILE = "okki_outbound_reconcile"
 JOB_OKKI_OUTBOUND_DELETE_RECONCILE = "okki_outbound_delete_reconcile"
+JOB_PORTAL_AUTH_MAIL = "portal_auth_mail"
+JOB_PORTAL_NOTIFICATIONS = "portal_notifications"
+JOB_PORTAL_OUTBOUND = "portal_outbound"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -83,7 +86,7 @@ def _console_safe(value: object, encoding: str | None = None) -> str:
         return text.encode("utf-8", errors="backslashreplace").decode("utf-8")
 
 
-def _register_jobs(scheduler: AsyncIOScheduler) -> None:
+def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     """注册所有定时任务。新增任务时在此追加。"""
     from app.design.scheduler import check_today_shoot_reminders
     from app.tracking.daily_report_service import generate_daily_reports
@@ -120,6 +123,30 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.customer.work_item_source_service import reconcile_sources_job
 
     settings = get_settings()
+    if outbound_mode not in {'legacy', 'outbound-worker-v1'} or (settings.PORTAL_ENABLED and outbound_mode == 'legacy'):
+        raise RuntimeError('Outbound mode must be confirmed before scheduler registration')
+
+    # Keep cleanup active when only mail delivery is disabled. The portal feature
+    # gate avoids touching unmigrated tables on existing installations.
+    if settings.PORTAL_ENABLED:
+        from app.portal.mail_worker import run_once as deliver_portal_auth_mail
+
+        scheduler.add_job(
+            deliver_portal_auth_mail,
+            trigger="interval", seconds=5,
+            id=JOB_PORTAL_AUTH_MAIL, replace_existing=True,
+            max_instances=1, coalesce=True, misfire_grace_time=30,
+        )
+    if settings.PORTAL_ENABLED and settings.PORTAL_NOTIFICATION_ENABLED:
+        from app.schedulers.portal_notifications import deliver_portal_notifications
+        scheduler.add_job(deliver_portal_notifications, trigger="interval", seconds=5,
+            id=JOB_PORTAL_NOTIFICATIONS, replace_existing=True,
+            max_instances=1, coalesce=True, misfire_grace_time=30)
+    if settings.PORTAL_ENABLED:
+        from app.schedulers.portal_outbound import process_portal_outbound
+        scheduler.add_job(process_portal_outbound, trigger="interval", seconds=30,
+            id=JOB_PORTAL_OUTBOUND, replace_existing=True, max_instances=1, coalesce=True,
+            misfire_grace_time=30)
     from app.receipt.scheduler import process_receipts, refresh_receipt_index
     scheduler.add_job(process_receipts, trigger="interval", seconds=30,
                       id="receipt_delivery", replace_existing=True, max_instances=1, coalesce=True)
@@ -436,15 +463,10 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     # ── OKKI 出库单自动生成：对账补入队 ─────────────────────
     # 同步钩子是主路径，本 job 只补「首推成功但任务行缺失」的缝隙（入队异常等）
     def _okki_outbound_reconcile_job():
-        from app.invoice.outbound_task_service import reconcile_missing_outbound_tasks
+        from app.invoice.outbound_mode import reconcile_legacy
+        return reconcile_legacy(SessionLocal)
 
-        with SessionLocal() as db:
-            reconcile_missing_outbound_tasks(
-                db,
-            )
-            db.commit()
-
-    if settings.OKKI_OUTBOUND_AUTO_ENABLED:
+    if settings.OKKI_OUTBOUND_AUTO_ENABLED and not settings.PORTAL_ENABLED and outbound_mode == 'legacy':
         scheduler.add_job(
             _okki_outbound_reconcile_job,
             trigger="interval", minutes=30,
@@ -654,9 +676,14 @@ def _apply_persisted_job_policies(scheduler: AsyncIOScheduler) -> None:
         print(f"scheduler policies unavailable ({type(exc).__name__})", flush=True)
 
 
-def start_scheduler() -> Optional[AsyncIOScheduler]:
+def start_scheduler(*, outbound_mode: str | None = None) -> Optional[AsyncIOScheduler]:
     """启动 APScheduler。SCHEDULER_ENABLED=false 时返回 None。"""
     settings = get_settings()
+    if outbound_mode is None:
+        from app.bootstrap.portal_outbound import initialize_portal_outbound
+        outbound_mode = initialize_portal_outbound()
+    if outbound_mode not in {'legacy', 'outbound-worker-v1'} or (settings.PORTAL_ENABLED and outbound_mode == 'legacy'):
+        raise RuntimeError('Outbound mode must be confirmed before scheduler startup')
     if not settings.SCHEDULER_ENABLED:
         logger.info("APScheduler disabled (SCHEDULER_ENABLED=false)")
         return None
@@ -667,7 +694,7 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
         _job_active_run_keys = {}
         _job_completed_before_submission = {}
     scheduler = AsyncIOScheduler(timezone=settings.SCHEDULER_TIMEZONE)
-    _register_jobs(scheduler)
+    _register_jobs(scheduler, outbound_mode=outbound_mode)
     try:
         from app.operations.observability import recover_stale_job_runs
 
@@ -684,15 +711,24 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
         EVENT_JOB_SUBMITTED | EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED
         | EVENT_JOB_MAX_INSTANCES,
     )
-    scheduler.start()
-    _active_scheduler = scheduler
-
-    job_ids = [job.id for job in scheduler.get_jobs()]
-    logger.info(
-        "APScheduler started (timezone=%s, %d jobs): %s",
-        settings.SCHEDULER_TIMEZONE, len(job_ids), ", ".join(job_ids),
-    )
-    return scheduler
+    try:
+        scheduler.start()
+        _active_scheduler = scheduler
+        job_ids = [job.id for job in scheduler.get_jobs()]
+        logger.info(
+            "APScheduler started (timezone=%s, %d jobs): %s",
+            settings.SCHEDULER_TIMEZONE, len(job_ids), ", ".join(job_ids),
+        )
+        return scheduler
+    except BaseException:
+        # Cleanup must not depend on diagnostic logging or a writable stdout.
+        try:
+            if scheduler.running:
+                scheduler.shutdown(wait=False)
+        finally:
+            if _active_scheduler is scheduler:
+                _active_scheduler = None
+        raise
 
 
 def shutdown_scheduler(scheduler: Optional[AsyncIOScheduler]) -> None:

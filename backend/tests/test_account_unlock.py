@@ -19,6 +19,7 @@ from app.auth.models import ArkAccountUnlockAudit, ArkLoginLog, ArkUser
 from app.auth.utils import create_access_token, hash_password
 from app.core.database import get_db
 from app.core.time import BEIJING_TIMEZONE
+from tests.authority_helpers import seed_authority
 
 
 @pytest.fixture
@@ -34,6 +35,7 @@ def accounts(db, monkeypatch):
         ArkUser(id=203, username="other", real_name="Other", password_hash="x", is_active=True),
     ])
     db.commit()
+    seed_authority(db, 201, "user:write", "user:read")
     return now
 
 
@@ -99,6 +101,48 @@ def test_permission_required_and_super_admin_supported(db, accounts):
     assert denied.status_code == 403
     assert db.query(ArkAccountUnlockAudit).count() == 0
     assert client(db, permissions=(), roles=("super_admin",)).post("/api/auth/users/202/unlock").status_code == 200
+
+
+def test_stale_jwt_cannot_unlock_after_live_role_revoke_or_operator_disable(db, accounts):
+    from app.auth.models import ArkUserRole
+    failures(db, accounts)
+    api = client(db, roles=("super_admin",))
+    role_id = db.query(ArkUserRole.role_id).filter(ArkUserRole.user_id == 201).scalar()
+    db.query(ArkUserRole).filter(ArkUserRole.user_id == 201).delete()
+    db.commit()
+    assert api.post("/api/auth/users/202/unlock").status_code == 403
+    assert api.post("/api/auth/users/999/unlock").status_code == 403
+    db.add(ArkUserRole(user_id=201, role_id=role_id))
+    db.commit()
+    db.get(ArkUser, 201).is_active = False
+    db.commit()
+    assert api.post("/api/auth/users/202/unlock").status_code == 403
+    assert db.query(ArkAccountUnlockAudit).count() == 0
+
+
+def test_unlock_does_not_change_portal_authority_version(db, accounts):
+    from app.portal.models import AuthorityBarrier
+    failures(db, accounts)
+    version = db.query(AuthorityBarrier.version).scalar()
+    db.commit()
+    assert client(db).post("/api/auth/users/202/unlock").status_code == 200
+    assert db.query(AuthorityBarrier.version).scalar() == version
+
+
+def test_authority_unavailable_and_busy_are_not_silent_or_successful(db, accounts, monkeypatch):
+    from app.portal import authority
+    from app.portal.errors import PortalError, TransactionBusy
+    failures(db, accounts)
+    def unavailable(_db):
+        raise PortalError("SERVICE_UNAVAILABLE", "unavailable", 503)
+    monkeypatch.setattr(authority, "lock_authority", unavailable)
+    assert client(db).post("/api/auth/users/202/unlock").status_code == 503
+    def busy(_db):
+        raise TransactionBusy()
+    monkeypatch.setattr(authority, "lock_authority", busy)
+    with pytest.raises(TransactionBusy):
+        account_lock_service.unlock_account(db, 202, {"sub":"201","username":"admin"})
+    assert db.query(ArkAccountUnlockAudit).count() == 0
 
 
 def test_disabled_deleted_and_missing_accounts_are_rejected(db, accounts):
@@ -180,7 +224,7 @@ def test_successful_login_does_not_clear_window_without_admin_unlock(db, account
 
 
 def test_migration_preserves_logs_and_matches_unsigned_user_foreign_keys():
-    path = Path(__file__).parents[1] / "alembic/versions/176_account_unlock.py"
+    path = Path(__file__).parents[1] / "alembic/versions/178_account_unlock.py"
     spec = importlib.util.spec_from_file_location("account_unlock_migration", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -188,7 +232,7 @@ def test_migration_preserves_logs_and_matches_unsigned_user_foreign_keys():
         column = ArkAccountUnlockAudit.__table__.c[name]
         assert str(column.type.compile(dialect=mysql.dialect())) == "INTEGER UNSIGNED"
     assert str(migration.USER_ID.compile(dialect=mysql.dialect())) == "INTEGER UNSIGNED"
-    assert migration.down_revision == "175_receipt_recovery" and len(migration.revision) <= 32
+    assert migration.down_revision == "177_portal_pi_header" and len(migration.revision) <= 32
     output = StringIO()
     with Operations.context(MigrationContext.configure(dialect_name="mysql", opts={"as_sql":True,"output_buffer":output})):
         migration.upgrade()

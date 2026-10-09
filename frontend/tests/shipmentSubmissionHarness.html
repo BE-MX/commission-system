@@ -1,0 +1,23 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Isolated shipment recovery UI</title><div id="app"></div><script type="module">
+import { createApp, h, ref } from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import '../src/styles/app.css'
+import { createPinia } from 'pinia'
+import { createRouter, createWebHistory, RouterView } from 'vue-router'
+import { useAuthStore } from '../src/stores/auth'
+import { registerPermissionDirectives } from '../src/directives/permission'
+import Shipment from '../src/views/invoice/components/ShipmentSettlementDialog.vue'
+window.saved=[]
+const pinia=createPinia(), Host={setup(){const visible=ref(false),invoice=ref({id:1,invoice_no:'PI-PRIVATE-ONE',currency:'USD'});window.forceClose=()=>visible.value=false;window.changeInvoice=id=>invoice.value={id,invoice_no:id===1?'PI-PRIVATE-ONE':'PI-OTHER',currency:'USD'};return()=>h('main',[h('button',{onClick:()=>visible.value=true},'打开出库结算'),h('button',{onClick:()=>window.router.push('/other')},'切换页面'),visible.value?h(Shipment,{invoice:invoice.value,onClose:()=>visible.value=false,onSaved:value=>window.saved.push(value)}):null])}}
+const router=createRouter({history:createWebHistory(),routes:[{path:'/tests/shipmentSubmissionHarness.html',component:Host},{path:'/other',component:{render:()=>h('p','Other page')}}]})
+window.router=router
+const app=createApp({render:()=>h(RouterView)})
+app.use(router);app.use(pinia);app.use(ElementPlus);registerPermissionDirectives(app)
+const auth=useAuthStore();auth.user={id:1,roles:['super_admin'],permissions:[]}
+window.changeActor=id=>auth.user={id,roles:['super_admin'],permissions:[]}
+window.revokeSameActor=()=>auth.user={id:auth.user.id,roles:[],permissions:[]}
+window.refreshSameActor=()=>auth.user={...auth.user}
+await router.isReady();app.mount('#app')
+</script></html>

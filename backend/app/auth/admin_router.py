@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
 from sqlalchemy import or_, func
 from app.core.list_sort import apply_list_sort
+from app.portal.upstream_authority import begin_employee_authority_write
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db
@@ -123,6 +124,7 @@ def create_user(
     _current_user: dict = Depends(require_permission("user:write")),
 ) -> ResponseModel:
     # 检查用户名唯一性
+    begin_employee_authority_write(db, _current_user, "user:write")
     exists = db.query(ArkUser).filter(
         ArkUser.username == req.username,
         ArkUser.deleted_at.is_(None),
@@ -159,6 +161,7 @@ def update_user(
     db: Session = Depends(get_db),
     _current_user: dict = Depends(require_permission("user:write")),
 ) -> ResponseModel:
+    begin_employee_authority_write(db, _current_user, "user:write")
     user = db.query(ArkUser).filter(
         ArkUser.id == user_id,
         ArkUser.deleted_at.is_(None),
@@ -200,6 +203,7 @@ def delete_user(
     current_user: dict = Depends(require_permission("user:delete")),
 ) -> ResponseModel:
     # 不能删除自己
+    begin_employee_authority_write(db, current_user, "user:delete")
     if int(current_user["sub"]) == user_id:
         return ResponseModel(code=400, message="不能删除当前登录账号")
 
@@ -226,7 +230,8 @@ def unlock_user_account(
     try:
         result = unlock_account(db, user_id, current_user)
     except AccountUnlockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.status_code, detail=str(exc),
+                            headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"}) from exc
     return ok(result, message="账号已解锁" if result["unlocked"] else "账号当前未锁定")
 
 
@@ -237,6 +242,7 @@ def reset_user_password(
     db: Session = Depends(get_db),
     _current_user: dict = Depends(require_permission("user:write")),
 ) -> ResponseModel:
+    begin_employee_authority_write(db, _current_user, "user:write")
     user = db.query(ArkUser).filter(
         ArkUser.id == user_id,
         ArkUser.deleted_at.is_(None),
@@ -259,6 +265,7 @@ def toggle_user_active(
     current_user: dict = Depends(require_permission("user:write")),
 ) -> ResponseModel:
     # 不能禁用自己
+    begin_employee_authority_write(db, current_user, "user:write")
     if int(current_user["sub"]) == user_id:
         return ResponseModel(code=400, message="不能禁用当前登录账号")
 
@@ -421,6 +428,7 @@ def create_user_binding(
     _current_user: dict = Depends(require_permission("external_binding:write")),
 ) -> ResponseModel:
     # 校验用户存在
+    begin_employee_authority_write(db, _current_user, "external_binding:write")
     user = db.query(ArkUser).filter(ArkUser.id == user_id, ArkUser.deleted_at.is_(None)).first()
     if not user:
         return ResponseModel(code=404, message="用户不存在")
@@ -446,6 +454,7 @@ def delete_user_binding(
     db: Session = Depends(get_db),
     _current_user: dict = Depends(require_permission("external_binding:write")),
 ) -> ResponseModel:
+    begin_employee_authority_write(db, _current_user, "external_binding:write")
     from app.insight.external_binding_service import delete_binding
     try:
         delete_binding(db, binding_id)
@@ -507,6 +516,7 @@ def bind_candidate_endpoint(
     db: Session = Depends(get_db),
     _current_user: dict = Depends(require_permission("external_binding:write")),
 ) -> ResponseModel:
+    begin_employee_authority_write(db, _current_user, "external_binding:write")
     from app.insight.external_binding_service import bind_candidate
     try:
         bind_candidate(db, candidate_id, user_id, admin_user_id=_current_user.get("sub"))
@@ -593,6 +603,7 @@ def create_role(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("role:write")),
 ) -> ResponseModel:
+    begin_employee_authority_write(db, current_user, "role:write")
     exists = db.query(ArkRole).filter(ArkRole.name == req.name).first()
     if exists:
         return ResponseModel(code=400, message="角色标识已存在")
@@ -622,6 +633,7 @@ def update_role(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("role:write")),
 ) -> ResponseModel:
+    begin_employee_authority_write(db, current_user, "role:write")
     role = db.get(ArkRole, role_id)
     if not role:
         return ResponseModel(code=404, message="角色不存在")
@@ -656,6 +668,7 @@ def delete_role(
     db: Session = Depends(get_db),
     _current_user: dict = Depends(require_permission("role:delete")),
 ) -> ResponseModel:
+    begin_employee_authority_write(db, _current_user, "role:delete")
     role = db.get(ArkRole, role_id)
     if not role:
         return ResponseModel(code=404, message="角色不存在")

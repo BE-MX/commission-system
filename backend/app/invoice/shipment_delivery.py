@@ -285,67 +285,6 @@ def refresh(db, outbound_id, *, confirmation_token=None):
     return outbound.status
 
 
-def bind_exact(db, outbound_id, remote_id, expected_version):
-    """Bind only an exact active remote outbound after an unknown first POST."""
-    outbound = db.get(ShipmentOutbound, outbound_id)
-    if not outbound:
-        raise ValueError("出库任务不存在")
-    invoice_id = outbound.invoice_id
-    detail = remote.read(db, "/v1/invoices/outbound/info", {"outbound_invoice_id": remote_id})
-    token = okki_client.ensure_access_token(db)
-    if (not outbound_presence.is_active(token, remote_id, detail.get("create_time"))
-            or not _verify(outbound, detail, remote_id)):
-        raise ValueError("小满出库单与冻结任务不匹配，不能绑定")
-    db.commit()
-    db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
-    db.refresh(outbound, with_for_update=True)
-    settlement = db.get(ShipmentSettlement, outbound.settlement_id)
-    db.refresh(settlement, with_for_update=True)
-    if (settlement.version != expected_version
-            or outbound.status not in {"uncertain", "failed", "verifying"}
-            or (outbound.remote_id and outbound.remote_id != remote_id)):
-        raise ValueError("出库任务已变化，请刷新后核对")
-    outbound.remote_id = remote_id
-    outbound.status = "verifying"
-    outbound.last_error = None
-    outbound.version += 1
-    settlement.state = "outbound_pending"
-    settlement.version += 1
-    db.commit()
-    return refresh(db, outbound_id)
-
-
-def retry_failed(db, outbound_id, expected_version):
-    """Retry only a definite rejection after exact serial absence is checked."""
-    require_delivery()
-    outbound = db.get(ShipmentOutbound, outbound_id)
-    if not outbound:
-        raise ValueError("出库任务不存在")
-    invoice_id = outbound.invoice_id
-    serial = outbound.outbound_no
-    db.commit()
-    if okki_client.find_outbound_by_serial(db, serial):
-        raise ValueError("小满已有同编号出库单，请输入远端 ID 核对绑定")
-    db.commit()
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
-    ensure_active(invoice)
-    db.refresh(outbound, with_for_update=True)
-    settlement = db.get(ShipmentSettlement, outbound.settlement_id)
-    db.refresh(settlement, with_for_update=True)
-    if (settlement.version != expected_version or outbound.status != "failed"
-            or outbound.remote_id or settlement.state != "review_required"):
-        raise ValueError("出库任务不是可重试的明确失败状态")
-    outbound.status = "pending"
-    outbound.attempt_token = None
-    outbound.lease_until = None
-    outbound.last_error = None
-    outbound.version += 1
-    settlement.state = "outbound_pending"
-    settlement.version += 1
-    db.commit()
-    return outbound.status
-
-
 def _fence(db, outbound_id, token):
     count = db.execute(update(ShipmentOutbound).where(
         ShipmentOutbound.id == outbound_id, ShipmentOutbound.attempt_token == token,

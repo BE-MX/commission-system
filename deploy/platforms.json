@@ -44,6 +44,10 @@
     {
       "component": "video",
       "reason": "Authoritative source outside repository; COS migration deferred"
+    },
+    {
+      "component": "frontend-portal",
+      "reason": "Domain/TLS, backend owner and pilot business configuration not confirmed; customer ordering remains disabled"
     }
   ],
   "external_services": [

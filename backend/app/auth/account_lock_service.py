@@ -59,10 +59,20 @@ def get_account_lock_states(db: Session, user_ids: list[int]) -> dict[int, dict]
 
 def unlock_account(db: Session, user_id: int, operator: dict) -> dict:
     """Serialize with password login on the target user, then record a reset boundary."""
+    # Lazy imports avoid access_policy -> auth.service -> account_lock_service.
+    from app.portal.authority import lock_authority
+    from app.portal.access_policy import employee_principal
+    from app.portal.errors import PortalError, TransactionBusy
+
     try:
+        barrier = lock_authority(db)
         target = db.query(ArkUser.id, ArkUser.username, ArkUser.is_active).filter(
             ArkUser.id == user_id, ArkUser.deleted_at.is_(None),
         ).with_for_update().first()
+        # Both locks precede the first ordinary read. The resulting RR snapshot
+        # includes any failure committed while waiting for the target row lock.
+        if barrier is not None:
+            employee_principal(db, int(operator["sub"]), "user:write")
         if target is None:
             raise AccountUnlockError("用户不存在", 404)
         if not target.is_active:
@@ -81,6 +91,13 @@ def unlock_account(db: Session, user_id: int, operator: dict) -> dict:
         ))
         db.commit()
         return {"unlocked": True, "login_locked": False}
+    except TransactionBusy:
+        db.rollback()
+        raise
+    except PortalError as exc:
+        db.rollback()
+        message = "当前账号无权执行此操作" if exc.status == 403 else "授权服务暂不可用"
+        raise AccountUnlockError(message, exc.status) from exc
     except Exception:
         db.rollback()
         raise

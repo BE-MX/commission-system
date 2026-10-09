@@ -43,7 +43,7 @@ def _desired_quantities(db: Session, invoice: Invoice) -> dict[int, Decimal]:
     return desired
 
 
-def prepare_invoice_sync(db: Session, invoice: Invoice, operator_id: int | None) -> str | None:
+def prepare_invoice_sync(db: Session, invoice: Invoice, operator_id: int | None, *, commit: bool = True) -> str | None:
     desired = _desired_quantities(db, invoice)
     existing_rows = (
         db.query(InvoiceAllocation)
@@ -101,7 +101,10 @@ def prepare_invoice_sync(db: Session, invoice: Invoice, operator_id: int | None)
         allocation.operation_key = operation_key
         allocation.status = "pending"
         allocation.pending_at = beijing_now()
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return operation_key
 
 

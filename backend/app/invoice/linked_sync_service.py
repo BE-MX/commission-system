@@ -52,12 +52,19 @@ def latest(db, invoice_id):
         InvoiceLinkedSync.created_at.desc(), InvoiceLinkedSync.id.desc()).first()
 
 
-def create(db, invoice, body, actor):
+def replay(db, invoice, body, actor):
+    """Validate the durable original command before reading new external evidence."""
     digest = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
-    existing = db.query(InvoiceLinkedSync).filter_by(request_key=body.request_key).first()
+    existing = db.query(InvoiceLinkedSync).filter_by(request_key=body.request_key).with_for_update().first()
     if existing:
         if existing.invoice_id != invoice.id or existing.created_by != actor or existing.request_hash != digest:
             raise ValueError("该提交标识已用于其他修改，请刷新后重新提交")
+    return existing, digest
+
+
+def create(db, invoice, body, actor, *, receipt_rows=None):
+    existing, digest = replay(db, invoice, body, actor)
+    if existing is not None:
         return existing
     ensure_idle(invoice)
     if not invoice.xiaoman_order_id:
@@ -76,7 +83,7 @@ def create(db, invoice, body, actor):
     before = snapshot(invoice)
     # Identity and receipt evidence remain frozen; only the amount floor and fee
     # basis restrictions are replaced by a preserved-payment reconciliation.
-    service.update_invoice(db, invoice, body.invoice, actor, linked_change=True)
+    service.update_invoice(db, invoice, body.invoice, actor, linked_change=True, receipt_rows=receipt_rows)
     # MySQL/SQLite Numeric columns can reload with a different Decimal scale
     # (19.6 -> 19.60). Persist the version from the stored representation so a
     # later recheck does not mistake that formatting change for a new edit.

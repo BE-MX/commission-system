@@ -1,0 +1,55 @@
+# Inactive template. Replace __PORTAL_DOMAIN__ only after domain/TLS approval.
+# Same-host Ark backend must be loopback-only; portal headers must preserve its TCP peer.
+server {
+    listen 80;
+    server_name __PORTAL_DOMAIN__;
+    access_log off;
+    location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+    location / { return 308 https://__PORTAL_DOMAIN__$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    server_name __PORTAL_DOMAIN__;
+    ssl_certificate /etc/letsencrypt/live/__PORTAL_DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__PORTAL_DOMAIN__/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    root /var/www/ark-static/customer-orders;
+    index index.html;
+    # Invitation capabilities may occur in URLs. Do not log raw query strings.
+    access_log off;
+    client_max_body_size 256k;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+
+    location ^~ /api/portal/v1/ {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # Clear client-supplied proxy headers; Uvicorn must retain its TCP peer.
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header X-Forwarded-Proto "";
+        proxy_set_header Forwarded "";
+        proxy_set_header Authorization "";
+        proxy_cache off;
+        proxy_buffering off;
+        proxy_read_timeout 60s;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "private, no-store" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+    }
+    location = /api { return 404; }
+    location /api/ { return 404; }
+    location ~ /\. { return 404; }
+    location /assets/ { try_files $uri =404; }
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options DENY always;
+    }
+}

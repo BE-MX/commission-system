@@ -72,6 +72,13 @@ def execute(request):
         result = static_sync.remote_python(p.BJ, remote_script, {'revision': revision, 'prepare_only': True}, timeout=180)
         if result.returncode:
             raise RuntimeError(result.stderr[-4000:])
+        candidate = root / '.deploy_state/sources' / revision
+        if p.run(['git', 'rev-parse', 'HEAD'], cwd=candidate, capture=True) != revision or p.run(
+                ['git', 'status', '--porcelain', '--untracked-files=no'], cwd=candidate, capture=True):
+            raise RuntimeError('Prepared candidate source drift')
+        import okki_outbound_release as outbound_release
+        outbound = outbound_release.completion_context(candidate, journal)
+        journal['outbound'] = outbound_release.verify_completion(outbound, journal)
         if request.get('prepare_only'):
             return {'status': 'prepared', 'revision': revision, 'schema': checked}
         if not archive.exists():
@@ -82,9 +89,11 @@ def execute(request):
         if 'beijing-backend' not in journal['completed']:
             journal['completed'].append('beijing-backend')
         p.atomic_json(p.STATE / 'publish-current.json', journal)
-        schema.resume_external(migration['stopped'], {'python': python, 'nssm': nssm})
+        schema.resume_external(migration['stopped'], {'python': python, 'nssm': nssm}, outbound=outbound, journal=journal)
         for writer in baseline:
-            if schema.writer_state(writer['writer'], nssm) != writer['before']:
+            target = ('running' if journal['outbound']['schedule']['active'] else 'stopped') if (
+                writer['writer'] == schema.registered_writer('ark-okki-outbound-poller')) else writer['before']
+            if schema.writer_state(writer['writer'], nssm) != target:
                 raise RuntimeError('Writer baseline has not recovered')
         candidate = root / '.deploy_state/sources' / revision
         if p.run(['git', 'rev-parse', 'HEAD'], cwd=candidate, capture=True) != revision or p.run(
@@ -115,9 +124,11 @@ def execute(request):
             transferred += item['bytes']
             journal['completed'].append(item['target'] + ':' + item['request']['root'])
             p.atomic_json(p.STATE / 'publish-current.json', journal)
+        journal['outbound'] = outbound_release.verify_completion(outbound, journal)
         schema.complete({'schema_changed': True, 'schema': migration['schema']})
         p.atomic_json(p.STATE / 'publish-success.json', {'revision': revision,
-            'scope': 'office-and-cloud', 'schema': checked, 'transfer_bytes': transferred, 'deferred': []})
+            'scope': 'office-and-cloud', 'schema': checked, 'transfer_bytes': transferred, 'deferred': [],
+            'outbound': journal['outbound']})
         journal.update(status='succeeded', recovered_from=str(archive))
         p.atomic_json(p.STATE / 'publish-current.json', journal)
         return {'status': 'succeeded', 'revision': revision, 'schema': checked}

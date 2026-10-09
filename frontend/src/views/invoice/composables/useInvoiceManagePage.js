@@ -1,5 +1,5 @@
 import { promptAction, msgSuccess, confirmDanger, confirmAction, alertAction, notifyFeedback, isFeedbackCancelled } from '@/utils/feedback'
-import { computed, h, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, h, onMounted, onScopeDispose, onUnmounted, reactive, ref, watch } from 'vue'
 
 import { formatMoney } from '@/utils/money'
 import { useTableView } from '@/composables/useTableView'
@@ -21,6 +21,7 @@ import { createInvoiceSubmissionGuard } from './invoiceSubmissionGuard'
 import { runRelatedInvoiceDeletion, usesRelatedInvoiceDeletion } from './invoiceDeletionFlow'
 import { formatInvoiceDateTime } from './invoiceDateTime'
 import { currentBeijingDate } from '@/utils/datetime'
+import { useAuthStore } from '@/stores/auth'
 
 export function useInvoiceManagePage() {
   const listPage = useListPage((params, { signal }) => {
@@ -70,25 +71,75 @@ export function useInvoiceManagePage() {
   const deletionGuard = createInvoiceSubmissionGuard(reactive(new Set()))
   const isInvoiceDeleting = id => deletionGuard.isPending(id)
 
+  const auth = useAuthStore()
+  let alive = true
+  let readGeneration = 0
+  let logRequestId = 0
+
+  function readerKey() {
+    if (!auth.user?.id || !auth.accessToken) return null
+    return JSON.stringify([String(auth.user.id), [...auth.roles].sort(), [...auth.permissions].sort()])
+  }
+
+  function readTicket() { return { key: readerKey(), generation: readGeneration } }
+  function currentRead(ticket) {
+    return alive && ticket.key !== null && ticket.key === readerKey() && ticket.generation === readGeneration
+  }
+
+  function clearReadViews() {
+    readGeneration += 1
+    summaryRequestId += 1
+    logRequestId += 1
+    listPage.cancel()
+    invoices.value = []
+    total.value = 0
+    summary.value = null
+    summaryError.value = ''
+    syncLogs.value = []
+    syncLogsTitle.value = ''
+    syncLogsVisible.value = false
+    summaryLoading.value = false
+    syncLogsLoading.value = false
+  }
+
+  function deniedRead(error) {
+    if (![401, 403].includes(error?.response?.status)) return false
+    clearReadViews()
+    summaryError.value = '订单读取权限已变化，请刷新订单或重新登录'
+    return true
+  }
+
+  watch(readerKey, () => {
+    clearReadViews()
+    if (readerKey()) summaryError.value = '账号或权限已变化，请刷新订单'
+  }, { flush: 'sync' })
+  // 列表读取走 useListPage；其失败同样按门户读守卫处理（401/403 清空并提示）
+  watch(() => listPage.error.value, failure => { if (failure) deniedRead(failure) })
+  onScopeDispose(() => { alive = false; clearReadViews() })
+
   async function loadSummary() {
+    const ticket = readTicket()
     const [dateFrom, dateTo] = summaryDateRange.value || []
-    if (!dateFrom || !dateTo) return
+    if (!currentRead(ticket) || !dateFrom || !dateTo) return
     const requestId = ++summaryRequestId
     summaryController?.abort()
     const controller = new AbortController()
     summaryController = controller
+    summary.value = null
     summaryLoading.value = true
     summaryError.value = ''
     try {
       const result = await getInvoiceSummary({ date_from: dateFrom, date_to: dateTo }, { signal: controller.signal, suppressToast: true })
-      if (requestId === summaryRequestId) summary.value = result
-    } catch {
+      if (currentRead(ticket) && requestId === summaryRequestId) summary.value = result
+    } catch (error) {
+      if (!currentRead(ticket) || requestId !== summaryRequestId) return
+      if (deniedRead(error)) return
       if (requestId === summaryRequestId) {
         summary.value = null
         summaryError.value = '订单概览加载失败，请重试'
       }
     } finally {
-      if (requestId === summaryRequestId) summaryLoading.value = false
+      if (currentRead(ticket) && requestId === summaryRequestId) summaryLoading.value = false
     }
   }
 
@@ -146,14 +197,28 @@ export function useInvoiceManagePage() {
   }
 
   async function openSyncLogs(row) {
+    const ticket = readTicket()
+    if (!currentRead(ticket)) return
+    const requestId = ++logRequestId
+    const invoiceId = row.id
+    syncLogs.value = []
     syncLogsTitle.value = `同步日志 - ${row.invoice_no}`
     syncLogsVisible.value = true
     syncLogsLoading.value = true
     try {
-      const result = await getInvoiceSyncLogs(row.id)
-      syncLogs.value = result.items || []
+      const result = await getInvoiceSyncLogs(invoiceId)
+      if (currentRead(ticket) && requestId === logRequestId) syncLogs.value = result.items || []
+    } catch (error) {
+      if (!currentRead(ticket) || requestId !== logRequestId) return
+      if (deniedRead(error)) throw error
+      if (requestId === logRequestId) {
+        syncLogs.value = []
+        syncLogsTitle.value = ''
+        syncLogsVisible.value = false
+      }
+      throw error
     } finally {
-      syncLogsLoading.value = false
+      if (currentRead(ticket) && requestId === logRequestId) syncLogsLoading.value = false
     }
   }
 
@@ -164,7 +229,15 @@ export function useInvoiceManagePage() {
   }
 
   async function exportFile(row, download, extension) {
-    const response = await download(row.id)
+    const ticket = readTicket()
+    if (!currentRead(ticket)) return
+    let response
+    try { response = await download(row.id) } catch (error) {
+      if (!currentRead(ticket)) return
+      deniedRead(error)
+      throw error
+    }
+    if (!currentRead(ticket)) return
     const blob = new Blob([response.data], { type: response.headers['content-type'] })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -175,7 +248,15 @@ export function useInvoiceManagePage() {
   }
 
   async function openPrint(id) {
-    const html = await fetchInvoicePrintHtml(id)
+    const ticket = readTicket()
+    if (!currentRead(ticket)) return
+    let html
+    try { html = await fetchInvoicePrintHtml(id) } catch (error) {
+      if (!currentRead(ticket)) return
+      deniedRead(error)
+      throw error
+    }
+    if (!currentRead(ticket)) return
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 60000)

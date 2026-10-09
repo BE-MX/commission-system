@@ -245,6 +245,8 @@ _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 def _perm_kind(code: str, action: str) -> str:
     if code == "domestic_decision_finance:read":
         return "action"
+    if code.startswith("portal_"):
+        return "data" if code == "portal_order:read_all" else "action"
     if code in _DATA_KIND_CODES:
         return "data"
     if action == "read" or code in _PAGE_KIND_EXTRA:
@@ -281,8 +283,20 @@ def seed_role_permissions(db: Session):
     历史上改了 seed 但 DB 不同步的漂移（如 user:* 的 module 归属）。
     """
     from app.auth.models import ArkPermission, ArkRole, ArkRolePermission
+    from app.portal.authority import lock_authority
+
+    lock_authority(db)
 
     seeds = [
+        # 客户下单门户：功能权限与订单全量读取范围分开。
+        ("portal_order:read", "portal_order", "read", "查看客户下单请求"),
+        ("portal_order:write", "portal_order", "write", "处理客户下单请求"),
+        ("portal_order:read_all", "portal_order", "read_all", "读取全部客户下单请求"),
+        ("portal_access:read", "portal_access", "read", "查看本人客户门户授权"),
+        ("portal_access:admin", "portal_access", "admin", "管理本人客户门户授权与邀请"),
+        ("portal_mapping:read", "portal_mapping", "read", "查看本人客户产品映射"),
+        ("portal_mapping:write", "portal_mapping", "write", "发布本人客户产品映射"),
+        ("portal_site:admin", "portal_site", "admin", "管理客户下单站点"),
         # 人员管理
         ("employee:read",  "employee", "read",   "查看员工属性"),
         ("employee:write", "employee", "write",  "编辑员工属性"),

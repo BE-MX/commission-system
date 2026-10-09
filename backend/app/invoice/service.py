@@ -119,6 +119,67 @@ def summarize_invoices(
         Invoice.invoice_date.between(date_from, date_to),
         Invoice.sync_status == "synced",
         Invoice.status.notin_(("cancel_pending", "cancelled")),
+
+    )
+    is_usd = func.upper(Invoice.currency) == "USD"
+    order_count, new_sign_count, unknown_new_sign_count, gmv, usd_order_count = query.with_entities(
+        func.count(Invoice.id),
+        func.count(func.distinct(case((Invoice.okki_new_deal == 1, Invoice.customer_id)))),
+        func.coalesce(func.sum(case((Invoice.okki_new_deal.is_(None), 1), else_=0)), 0),
+        func.coalesce(func.sum(case((is_usd, Invoice.total_amount), else_=0)), 0),
+        func.coalesce(func.sum(case((is_usd, 1), else_=0)), 0),
+    ).one()
+    gmv = _money(Decimal(gmv or 0))
+    usd_order_count = int(usd_order_count or 0)
+    return {
+        "gmv": gmv,
+        "new_sign_count": int(new_sign_count or 0),
+        "unknown_new_sign_count": int(unknown_new_sign_count or 0),
+        "order_count": int(order_count or 0),
+        "average_order_amount": _money(gmv / usd_order_count) if usd_order_count else Decimal("0.00"),
+        "non_usd_count": int(order_count or 0) - usd_order_count,
+    }
+
+
+def _visible_invoice_query(
+    db: Session,
+    *,
+    created_by: int | None = None,
+    viewer_user_id: int | None = None,
+):
+    query = db.query(Invoice)
+    if viewer_user_id is not None:
+        active_grant = exists().where(
+            InvoiceDelegateGrant.delegate_user_id == viewer_user_id,
+            InvoiceDelegateGrant.sales_user_id == Invoice.sales_user_id,
+            ArkUser.id == InvoiceDelegateGrant.sales_user_id,
+            ArkUser.deleted_at.is_(None),
+            ArkUser.is_active.is_(True),
+        )
+        query = query.filter(or_(
+            Invoice.sales_user_id == viewer_user_id,
+            and_(Invoice.created_by == viewer_user_id, active_grant),
+        ))
+    elif created_by is not None:
+        # 数据范围口径（invoice:read_all 缺失时只看自己创建的），
+        # created_by 为 NULL 的历史发票只对全量范围可见
+        query = query.filter(Invoice.created_by == created_by)
+    return query
+
+
+def summarize_invoices(
+    db: Session,
+    *,
+    date_from: date,
+    date_to: date,
+    created_by: int | None = None,
+    viewer_user_id: int | None = None,
+) -> dict:
+    """Aggregate synced visible invoices by order date, independent of pagination."""
+    query = _visible_invoice_query(db, created_by=created_by, viewer_user_id=viewer_user_id).filter(
+        Invoice.invoice_date.between(date_from, date_to),
+        Invoice.sync_status == "synced",
+        Invoice.status.notin_(("cancel_pending", "cancelled")),
     )
     is_usd = func.upper(Invoice.currency) == "USD"
     order_count, new_sign_count, unknown_new_sign_count, gmv, usd_order_count = query.with_entities(
@@ -258,6 +319,8 @@ def delete_invoice(db: Session, invoice: Invoice) -> None:
     """Judge by xiaoman_order_id, not sync_status: editing flips a synced invoice
     back to not_synced while the real OKKI order still exists, and deleting would
     orphan it AND cascade-drop its push audit logs."""
+    if invoice.source_type == "portal":
+        raise ValueError("门户发票必须保留订单关联，不允许删除；请使用作废流程")
     from app.invoice.lifecycle_guard import ensure_mutable
     ensure_mutable(db, invoice)
     from app.receipt.invoice_link import guard_delete
@@ -322,7 +385,12 @@ def create_invoice(
     *,
     allow_screenshot_source: bool = False,
     allow_external_source: bool = False,
+    allow_portal_source: bool = False,
 ) -> Invoice:
+    if allow_portal_source and (allow_external_source or allow_screenshot_source):
+        raise ValueError("发票创建入口来源授权冲突")
+    if (body.source_type == "portal") != allow_portal_source:
+        raise ValueError("门户来源发票只能通过客户订单审核入口创建")
     if body.order_type == "presale":
         from app.invoice.settlement_policy import require_enabled
         require_enabled()
@@ -402,15 +470,19 @@ def create_invoice(
         request_payload=body,
     )
     db.flush()
-    from app.receipt.invoice_link import save_draft
-    save_draft(db, invoice, body.receipt_draft, user_id, new=True)
+    # Portal-sourced PIs skip the creation-time receipt intent draft; their
+    # collection is handled later through the existing Ark receipt entries
+    # (manual receipt or invoice edit), same as historical invoices.
+    if body.source_type != "portal":
+        from app.receipt.invoice_link import save_draft
+        save_draft(db, invoice, body.receipt_draft, user_id, new=True)
     if "customer_grade" in body.model_fields_set:
         save_customer_grade(db, invoice.customer_id, invoice.customer_grade, user_id)
     db.flush()
     return invoice
 
 
-def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None, *, linked_change=False) -> Invoice:
+def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None, *, linked_change=False, receipt_rows=None) -> Invoice:
     from app.receipt import invoice_link
     from app.invoice.linked_sync_service import ensure_idle
     ensure_idle(invoice)
@@ -425,7 +497,7 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
             raise ValueError("预售发票号最多56字符，需预留分批出库编号")
     if body.order_type != invoice.order_type and "presale" in {body.order_type, invoice.order_type}:
         raise ValueError("预售单与普通订单不能互相转换，请新建正确类型的订单")
-    receipt_floor = invoice_link.guard_edit(db, invoice, body)
+    receipt_floor = invoice_link.guard_edit(db, invoice, body, receipt_rows=receipt_rows)
     receipt_fee_basis = (invoice.total_amount, invoice.surcharge_amount)
     from app.semifinished.models import InvoiceAllocation
 
@@ -957,6 +1029,16 @@ def _validate_screenshot_source(
         invoice.source_order_id, invoice.source_order_no,
         invoice.source_order_name, invoice.source_image_sha256,
     )
+    if source_type == "portal":
+        from uuid import UUID
+        try:
+            if str(UUID(invoice.source_order_id)) != invoice.source_order_id:
+                raise ValueError("noncanonical")
+        except (ValueError, TypeError, AttributeError):
+            raise ValueError("门户来源发票缺少有效订单请求标识") from None
+        if not invoice.source_order_name or invoice.source_order_no or invoice.source_image_sha256 or preview_token:
+            raise ValueError("门户来源字段无效或混入其他入口凭证")
+        return
     if source_type == "external_api":
         if not invoice.source_order_id:
             raise ValueError("外部 API 来源发票缺少接入请求 ID")

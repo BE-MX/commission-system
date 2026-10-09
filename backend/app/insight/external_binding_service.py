@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from app.core.time import beijing_now
 
+from app.portal.authority import authority_changed
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser, ArkUserExternalBinding, ArkExternalBindingCandidate
@@ -242,6 +243,7 @@ def list_candidates(db: Session, status: str | None = None) -> list[ArkExternalB
 
 def bind_candidate(db: Session, candidate_id: int, user_id: int, admin_user_id: int) -> ArkExternalBindingCandidate:
     """将候选绑定到指定方舟用户。同时创建正式绑定记录。"""
+    authority_changed(db)
     candidate = db.query(ArkExternalBindingCandidate).get(candidate_id)
     if not candidate:
         raise ValueError(f"Candidate {candidate_id} not found")
@@ -293,6 +295,7 @@ def create_binding(db: Session, user_id: int, provider: str, external_account_id
                    external_display_name: str | None = None, is_primary: bool = False,
                    created_by: int | None = None) -> ArkUserExternalBinding:
     # 检查唯一性
+    authority_changed(db)
     existing = (
         db.query(ArkUserExternalBinding)
         .filter(
@@ -321,6 +324,7 @@ def create_binding(db: Session, user_id: int, provider: str, external_account_id
 
 def delete_binding(db: Session, binding_id: int) -> None:
     """软删除绑定"""
+    authority_changed(db)
     binding = db.query(ArkUserExternalBinding).get(binding_id)
     if not binding:
         raise ValueError(f"Binding {binding_id} not found")

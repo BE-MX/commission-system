@@ -159,17 +159,43 @@ def test_summary_requires_receipt_action_and_salesperson_scope(db, records):
             assert client.get(f"/api/receipts/invoice-summary/{order.id}").status_code == expected
 
 
+def _admin_user(db, user_id=1):
+    """DB-backed current authority: the hardened remote-change path reads live roles."""
+    from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission
+    from app.portal.identity_models import AuthorityBarrier
+    if not db.get(ArkUser, user_id):
+        db.add(ArkUser(id=user_id, username=f"receipt-admin-{user_id}", password_hash="x",
+                       real_name="Receipt Admin", is_active=True))
+    permission = db.query(ArkPermission).filter_by(code="receipt:admin").first()
+    if not permission:
+        permission = ArkPermission(code="receipt:admin", module="receipt", action="admin",
+                                   label="receipt admin", kind="action", is_legacy=False, sort=1)
+        db.add(permission); db.flush()
+    role = ArkRole(name=f"receipt_admin_{user_id}", label="Receipt Admin")
+    db.add(role); db.flush()
+    db.add(ArkRolePermission(role_id=role.id, permission_id=permission.id))
+    db.add(ArkUserRole(user_id=user_id, role_id=role.id))
+    if not db.get(AuthorityBarrier, "authority"):
+        db.add(AuthorityBarrier(code="authority"))
+    db.commit()
+    return {"sub": str(user_id)}
+
+
 def test_remote_change_is_reflected_without_rewriting_generation_intent(db, records, monkeypatch):
     from app.invoice import lifecycle_remote
     from app.receipt import remote_change_service as changes
     from app.receipt.schemas import RemoteChange
     order, row, intent = records
     row.sync_status = "synced"; row.xiaoman_receipt_id = "88"; row.bank_charge = Decimal("25"); db.commit()
-    monkeypatch.setattr(lifecycle_remote, "read", lambda *a: {"order_id": "123", "currency": "USD",
+    identity, version = row.id, row.version  # capture before commits expire the ORM attributes
+    monkeypatch.setattr(lifecycle_remote, "read", lambda *a: {"cash_collection_id": "88", "order_id": "123", "currency": "USD",
         "amount": "550", "bank_charge": "0", "real_amount": "550", "collect_status": 1, "collection_date": "2026-10-08"})
-    proof = changes.evidence(db, row)
-    changes.accept(db, row, RemoteChange(version=row.version, evidence_hash=proof["evidence_hash"],
-        reason="已核实实际收款与小满原单更正结果", confirmed=True), 1); db.commit()
+    admin = _admin_user(db)
+    db.rollback()  # fresh boundary: no open transaction when the hardened path authorizes
+    proof = changes.preview(db, identity, admin)
+    db.rollback()  # preview is a separate request in production; close its read transaction
+    changes.accept(db, identity, RemoteChange(version=version, evidence_hash=proof["evidence_hash"],
+        reason="已核实实际收款与小满原单更正结果", confirmed=True), admin); db.commit()
     shown = invoice_link.describe(db, order)
     assert shown["amount"] == "575.00" and intent.amount == Decimal("500")
     invoice_link.save_draft(db, order, ReceiptDraft(**{k: shown[k] for k in

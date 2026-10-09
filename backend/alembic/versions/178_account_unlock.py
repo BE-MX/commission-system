@@ -3,8 +3,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
-revision = "176_account_unlock"
-down_revision = "175_receipt_recovery"
+revision = "178_account_unlock"
+down_revision = "177_portal_pi_header"
 branch_labels = None
 depends_on = None
 

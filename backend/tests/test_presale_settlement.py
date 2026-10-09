@@ -36,10 +36,47 @@ def presale(db, monkeypatch):
     return invoice
 
 
+def financial_quote(db,invoice_id,body,user):
+    # SQLite financial units do not simulate current Ark employee authority.
+    service.require_enabled()
+    invoice=service.get_order(db,invoice_id,user)
+    return service.build_quote(db,invoice,body,service.fetch_evidence(db,invoice))
+
+
+def financial_create(db, invoice_id, body, user):
+    # These SQLite units retain the original financial assertions. Real current
+    # employee/authority/locks are covered through main/JWT/MySQL separately.
+    from app.invoice import shipment_create_service
+    from app.receipt import attachments, batch_service
+    invoice=service.get_order(db,invoice_id,user)
+    existing=db.query(ShipmentSettlement).filter_by(request_key=body.request_key).first()
+    if existing is not None:
+        shipment_create_service._replay(db,invoice,existing,invoice_id,body,user)
+        return existing
+    evidence=service.fetch_evidence(db,invoice)
+    proof_evidence=None
+    if body.payment:
+        proof_evidence=attachments.verify_storage(attachments._bindings(
+            batch_service._proof_rows(db,body.payment.attachment_ids,int(user['sub']))))
+    return service._create_verified(db,invoice,body,user,evidence,proof_evidence)
+
+
+def financial_state(db, row, user, action, version, reason):
+    # Explicit isolated financial algorithm; not a current employee simulator.
+    from app.invoice.shipment_state_service import StateGraph
+    applications = tuple(db.query(SettlementApplication).filter_by(settlement_id=row.id).all())
+    receipts = {app.receipt_id: db.get(Receipt, app.receipt_id) for app in applications}
+    freight = db.query(Receivable).filter_by(settlement_id=row.id, kind="freight").first()
+    outbound = db.query(ShipmentOutbound).filter_by(settlement_id=row.id).first()
+    balance = service.funding_balance(db, row) if action == "resume" else None
+    return service._change_state_verified(db, row, user, action, version, reason,
+        StateGraph(applications, receipts, freight, outbound, balance))
+
+
 def make(db, invoice, quantity=4, freight="200.00", key="shipment_request_001"):
     draft=ShipmentQuote(items=[{"invoice_item_id":invoice.items[0].id,"quantity":quantity}],freight_amount=freight)
-    quote=service.quote(db,invoice.id,draft,USER)
-    return service.create(db,invoice.id,ShipmentCreate(**draft.model_dump(),quote_hash=quote["quote_hash"],request_key=key),USER)
+    quote=financial_quote(db,invoice.id,draft,USER)
+    return financial_create(db,invoice.id,ShipmentCreate(**draft.model_dump(),quote_hash=quote["quote_hash"],request_key=key),USER)
 
 
 def test_partial_keeps_deposit_and_original_total(db,presale):
@@ -83,7 +120,7 @@ def test_final_reserves_deposit_without_new_receipt(db,presale):
 
 def test_cancel_unpaid_final_releases_only_application(db,presale):
     row=make(db,presale,quantity=10,freight="0.00")
-    service.change_state(db,row,USER,"cancel",row.version,"暂不发货")
+    financial_state(db,row,USER,"cancel",row.version,"暂不发货")
     assert row.state=="cancelled"
     assert db.query(Receipt).one().status=="active"
     assert db.query(SettlementApplication).one().status=="released"
@@ -94,7 +131,7 @@ def test_cancel_cannot_race_freight_target_send(db,presale):
     target=db.query(Receivable).filter_by(settlement_id=row.id,kind="freight").one()
     target.remote_status="sending"
     with pytest.raises(ValueError,match="运费目标"):
-        service.change_state(db,row,USER,"cancel",row.version,"取消测试")
+        financial_state(db,row,USER,"cancel",row.version,"取消测试")
     assert row.state=="awaiting_payment"
 
 
@@ -110,21 +147,21 @@ def test_unknown_remote_payment_freezes_new_settlement(db,presale,monkeypatch):
 
 def test_create_replay_uses_same_settlement_and_does_not_reserve_twice(db,presale):
     draft=ShipmentQuote(items=[{"invoice_item_id":presale.items[0].id,"quantity":10}])
-    quoted=service.quote(db,presale.id,draft,USER)
+    quoted=financial_quote(db,presale.id,draft,USER)
     body=ShipmentCreate(**draft.model_dump(),quote_hash=quoted["quote_hash"],request_key="shipment_replay_001")
-    first=service.create(db,presale.id,body,USER); db.commit()
-    replay=service.create(db,presale.id,body,USER)
+    first=financial_create(db,presale.id,body,USER); db.commit()
+    replay=financial_create(db,presale.id,body,USER)
     assert replay.id==first.id
     assert db.query(SettlementApplication).count()==1
 
 
 def test_quote_hash_cannot_hide_contract_or_quantity_change(db,presale):
     draft=ShipmentQuote(items=[{"invoice_item_id":presale.items[0].id,"quantity":4}])
-    quoted=service.quote(db,presale.id,draft,USER)
+    quoted=financial_quote(db,presale.id,draft,USER)
     body=ShipmentCreate(items=[{"invoice_item_id":presale.items[0].id,"quantity":5}],
         quote_hash=quoted["quote_hash"],request_key="shipment_stale_001")
     with pytest.raises(ValueError,match="QUOTE_STALE"):
-        service.create(db,presale.id,body,USER)
+        financial_create(db,presale.id,body,USER)
     assert db.query(ShipmentSettlement).count()==0
 
 
@@ -137,10 +174,10 @@ def test_partial_embedded_payment_stays_awaiting_payment(db,presale,monkeypatch)
     db.add(proof); db.commit()
     monkeypatch.setattr(remote,"receipt_types",lambda db:["TT"])
     draft=ShipmentQuote(items=[{"invoice_item_id":presale.items[0].id,"quantity":4}],freight_amount="200")
-    quoted=service.quote(db,presale.id,draft,USER)
+    quoted=financial_quote(db,presale.id,draft,USER)
     body=ShipmentCreate(**draft.model_dump(),quote_hash=quoted["quote_hash"],request_key="shipment_partial_001",
         payment=dict(amount="1000",collection_date="2026-09-23",payment_type="TT",attachment_ids=["p1"]))
-    row=service.create(db,presale.id,body,USER)
+    row=financial_create(db,presale.id,body,USER)
     assert row.state=="awaiting_payment"
     assert Decimal(service.funding_balance(db,row)["remaining_amount"])==3200
     assert Decimal(service.funding_balance(db,row)["effective_amount"])==0
@@ -278,14 +315,14 @@ def test_deleted_source_order_blocks_freight_post(db,presale,monkeypatch):
 
 
 def test_failed_freight_retry_requires_absent_reserved_name(db,presale,monkeypatch):
-    from app.invoice import freight_delivery
+    from app.invoice import freight_delivery, shipment_retry_service
     row=make(db,presale,freight="200.00")
     target=db.query(Receivable).filter_by(settlement_id=row.id,kind="freight").one()
     target.remote_status="failed"; db.commit()
     monkeypatch.setattr(freight_delivery,"require_delivery",lambda:None)
     monkeypatch.setattr(freight_delivery,"_matching_active_orders",lambda *_args:{"301"})
     with pytest.raises(ValueError,match="同名运费订单"):
-        freight_delivery.retry_failed(db,target.id,row.version)
+        shipment_retry_service._require_absent(shipment_retry_service._read_evidence(db,shipment_retry_service.RetryTarget('freight',target.id,target.remote_order_name,target.created_at)))
     db.rollback(); db.refresh(target)
     assert target.remote_status=="failed"
 
@@ -599,31 +636,41 @@ def test_paused_presale_batch_cannot_release_send_or_retry_payment(db,presale,mo
     assert payment.sync_status=="pending" and not pushed
     payment.sync_status="failed"; db.commit()
     with pytest.raises(ValueError,match="已暂停"):
-        receipt_service.retry(db,payment,1)
+        receipt_service._retry(db,payment,db.get(Invoice,payment.invoice_id),1,None)
 
 
 def test_unknown_freight_target_only_binds_exact_active_existing_order(db,presale,monkeypatch):
-    from app.invoice import freight_delivery
+    from app.invoice import freight_delivery, freight_reconciliation_service
+    from app.invoice.settlement_schemas import SettlementRemoteReview
     row=make(db,presale,freight="200.00")
     target=db.query(Receivable).filter_by(settlement_id=row.id,kind="freight").one()
     target.remote_status="uncertain"; db.commit()
+    before=(target.version,row.version,target.amount,target.handling_amount)
+    lookup=freight_reconciliation_service.FreightTarget(target.id,"301",target.remote_order_name,
+        target.customer_id,target.currency,Decimal(target.amount))
+    body=SettlementRemoteReview(version=row.version,reason="Recover original freight",remote_id="301")
     detail={"order_id":"301","name":target.remote_order_name,"company_id":"C1",
             "currency":"USD","amount":"200.00","product_total_amount":"0.00",
-            "product_total_count":0,"product_list":[]}
+            "product_total_count":0,"product_list":[],"create_time":"2026-09-23 12:00:00"}
     monkeypatch.setattr(freight_delivery.remote,"read",lambda *_args:detail)
     active={"value":False}
     monkeypatch.setattr(freight_delivery.remote,"order_active",lambda *_args:active["value"])
+    evidence=freight_reconciliation_service._read_evidence(db,lookup)
     with pytest.raises(ValueError,match="不匹配"):
-        freight_delivery.bind_exact(db,target.id,"301",row.version)
+        freight_reconciliation_service._apply(target,body,evidence)
     db.rollback(); db.refresh(target)
     assert target.remote_order_id is None
     active["value"]=True
-    assert freight_delivery.bind_exact(db,target.id,"301",row.version)=="bound"
-    assert target.remote_order_id=="301"
+    evidence=freight_reconciliation_service._read_evidence(db,lookup)
+    freight_reconciliation_service._apply(target,body,evidence); db.commit()
+    assert target.remote_order_id=="301" and target.remote_status=="bound"
+    assert (target.version,row.version,target.amount,target.handling_amount)==(before[0]+2,before[1],before[2],before[3])
 
 
 def test_unknown_outbound_only_binds_exact_active_existing_note(db,presale,monkeypatch):
-    from app.invoice import shipment_delivery
+    import json
+    from app.invoice import shipment_delivery, outbound_reconciliation_service as reconcile
+    from app.invoice.settlement_schemas import SettlementRemoteReview
     row=make(db,presale,freight="0.00")
     payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
         "order_record_id":11,"product_id":1,"sku_id":2,"outbound_count":4}]}
@@ -640,12 +687,20 @@ def test_unknown_outbound_only_binds_exact_active_existing_note(db,presale,monke
     monkeypatch.setattr(shipment_delivery.okki_client,"ensure_access_token",lambda *_args:"token")
     active={"value":False}
     monkeypatch.setattr(shipment_delivery.outbound_presence,"is_active",lambda *_args:active["value"])
+    before=(task.version,row.version,presale.total_amount,presale.surcharge_amount)
+    body=SettlementRemoteReview(version=row.version,reason="Recover original outbound",remote_id="401")
+    lookup=reconcile.OutboundTarget(task.id,"401",task.outbound_no,json.dumps(payload),json.dumps(None),None)
+    graph=SimpleNamespace(outbound=task)
+    evidence=reconcile._read_evidence(db,lookup)
     with pytest.raises(ValueError,match="不匹配"):
-        shipment_delivery.bind_exact(db,task.id,"401",row.version)
+        reconcile._apply(db,presale,row,graph,body,evidence)
     db.rollback(); db.refresh(task)
     assert task.remote_id is None
     active["value"]=True
-    assert shipment_delivery.bind_exact(db,task.id,"401",row.version)=="pending_remote"
+    evidence=reconcile._read_evidence(db,lookup)
+    reconcile._apply(db,presale,row,graph,body,evidence); db.commit()
+    assert task.remote_id=="401" and task.status=="pending_remote"
+    assert (task.version,row.version,presale.total_amount,presale.surcharge_amount)==(before[0]+2,before[1]+2,before[2],before[3])
 
 
 def test_outbound_readback_rejects_price_unit_and_cost_changes():
@@ -865,7 +920,7 @@ def test_explicit_outbound_edit_rejection_can_be_retried_after_exact_readback(db
 
 
 def test_failed_outbound_retry_requires_exact_serial_absence(db,presale,monkeypatch):
-    from app.invoice import shipment_delivery
+    from app.invoice import shipment_delivery, shipment_retry_service
     row=make(db,presale,freight="0.00")
     payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
         "order_record_id":11,"product_id":1,"sku_id":2,"outbound_count":4}]}
@@ -878,9 +933,14 @@ def test_failed_outbound_retry_requires_exact_serial_absence(db,presale,monkeypa
     found={"value":{"outbound_invoice_id":"401"}}
     monkeypatch.setattr(shipment_delivery.okki_client,"find_outbound_by_serial",lambda *_args:found["value"])
     with pytest.raises(ValueError,match="已有同编号"):
-        shipment_delivery.retry_failed(db,task.id,row.version)
+        shipment_retry_service._require_absent(shipment_retry_service._read_evidence(db,shipment_retry_service.RetryTarget('outbound',task.id,task.outbound_no,task.created_at)))
     db.rollback(); db.refresh(task)
     assert task.status=="failed"
     found["value"]=None
-    assert shipment_delivery.retry_failed(db,task.id,row.version)=="pending"
+    before=(row.version,task.version)
+    proof=shipment_retry_service._read_evidence(db,shipment_retry_service.RetryTarget('outbound',task.id,task.outbound_no,task.created_at))
+    assert proof.target.kind=='outbound' and proof.target.target_id==task.id and not proof.exists
+    shipment_retry_service._require_absent(proof)
+    shipment_retry_service._apply(row,task,'outbound');db.commit()
+    assert task.status=='pending' and (row.version,task.version)==(before[0]+1,before[1]+1)
     assert db.get(ShipmentSettlement,row.id).state=="outbound_pending"

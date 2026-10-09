@@ -441,7 +441,7 @@ def test_scheduler_job_is_independent_of_automatic_creation(db, sync_case, monke
     monkeypatch.setattr(settings, 'OKKI_CLIENT_SECRET', 'test')
     monkeypatch.setattr(registry, 'SessionLocal', lambda: nullcontext(db))
     scheduler = MagicMock()
-    registry._register_jobs(scheduler)
+    registry._register_jobs(scheduler, outbound_mode="legacy")
     calls = {call.kwargs.get('id'): call for call in scheduler.add_job.call_args_list}
     assert registry.JOB_OKKI_OUTBOUND_RECONCILE not in calls
     job = calls[registry.JOB_OKKI_OUTBOUND_DELETE_RECONCILE]
