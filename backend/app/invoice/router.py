@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
+from app.portal.upstream_authority import begin_employee_authority_write, begin_employee_document_write
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_any_permission, require_permission
+from app.auth.dependencies import get_current_user, require_any_permission, require_permission
 from app.auth.models import ArkUser
 from app.core.database import get_db
 from app.core.response import ok
@@ -24,7 +25,9 @@ from app.invoice import (
     import_service,
     okki_client,
     price_service,
+    price_authority,
     product_service,
+    read_authority,
     receipt_repair_service,
     screenshot_import_service,
     service,
@@ -123,6 +126,7 @@ def put_delegate_grants(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("user:write")),
 ):
+    begin_employee_authority_write(db, current_user, "user:write")
     if db.get(ArkUser, delegate_user_id) is None:
         raise HTTPException(404, "代创建用户不存在")
     try:
@@ -427,8 +431,9 @@ def list_accessory_prices(
 def upsert_accessory_price(
     body: AccessoryPricePayload,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice_price:write")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = price_authority.begin_write(db, current_user, "invoice_price:write")
     try:
         row = accessory_price_service.upsert_price(db, body, _user_id(current_user))
         db.commit()
@@ -472,8 +477,9 @@ def _is_accessory_price_duplicate(exc: IntegrityError) -> bool:
 def delete_accessory_price(
     price_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice_price:write")),
+    _user=Depends(get_current_user),
 ):
+    _user = price_authority.begin_write(db, _user, "invoice_price:write")
     if not accessory_price_service.delete_price(db, price_id):
         raise HTTPException(404, "配件价格记录不存在")
     db.commit()
@@ -522,8 +528,9 @@ class StdPricePayload(BaseModel):
 def upsert_std_price(
     body: StdPricePayload,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:admin")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = price_authority.begin_write(db, current_user, "invoice:admin")
     try:
         price_service.upsert_std_price(
             db,
@@ -546,8 +553,9 @@ def upsert_std_price(
 def delete_std_price(
     price_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:admin")),
+    _user=Depends(get_current_user),
 ):
+    _user = price_authority.begin_write(db, _user, "invoice:admin")
     if not price_service.delete_std_price(db, price_id):
         raise HTTPException(404, "价格记录不存在")
     db.commit()
@@ -558,9 +566,10 @@ def delete_std_price(
 def import_price_workbook(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:admin")),
+    current_user=Depends(get_current_user),
 ):
     content = file.file.read()
+    current_user = price_authority.begin_write(db, current_user, "invoice:admin")
     result = price_service.import_price_workbook(db, content, user_id=_user_id(current_user))
     db.commit()
     return ok(result)
@@ -583,8 +592,9 @@ class ColorTypePayload(BaseModel):
 def upsert_color_type(
     body: ColorTypePayload,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:admin")),
+    _user=Depends(get_current_user),
 ):
+    _user = price_authority.begin_write(db, _user, "invoice:admin")
     price_service.upsert_color_type(db, color_code=body.color_code, color_type=body.color_type)
     db.commit()
     return ok(message="已保存")
@@ -594,8 +604,9 @@ def upsert_color_type(
 def delete_color_type(
     entry_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:admin")),
+    _user=Depends(get_current_user),
 ):
+    _user = price_authority.begin_write(db, _user, "invoice:admin")
     if not price_service.delete_color_type(db, entry_id):
         raise HTTPException(404, "映射不存在")
     db.commit()
@@ -634,8 +645,9 @@ class CustomerRulePayload(BaseModel):
 def upsert_customer_rule(
     body: CustomerRulePayload,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:admin")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = price_authority.begin_write(db, current_user, "invoice:admin")
     price_service.upsert_customer_rule(
         db,
         customer_id=body.customer_id,
@@ -655,8 +667,9 @@ def upsert_customer_rule(
 def delete_customer_rule(
     rule_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:admin")),
+    _user=Depends(get_current_user),
 ):
+    _user = price_authority.begin_write(db, _user, "invoice:admin")
     if not price_service.delete_customer_rule(db, rule_id):
         raise HTTPException(404, "规则不存在")
     db.commit()
@@ -756,8 +769,9 @@ def list_invoices(
     sort_field: str = "",
     sort_order: str = "",
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:read")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = read_authority.current_user(db, current_user)
     if _can_read_all(current_user):
         created_by = None  # 全量范围，不过滤
         viewer_user_id = None
@@ -783,8 +797,9 @@ def invoice_summary(
     date_from: date = Query(...),
     date_to: date = Query(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:read")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = read_authority.current_user(db, current_user)
     if date_from > date_to:
         raise HTTPException(422, "开始日期不能晚于结束日期")
     can_read_all = _can_read_all(current_user)
@@ -900,8 +915,9 @@ def create_invoice_from_screenshot(
 def get_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:read")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = read_authority.current_user(db, current_user)
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
@@ -916,12 +932,10 @@ def update_invoice(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):
-    invoice = service.get_invoice(db, invoice_id, for_update=True)
-    if not invoice:
-        raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(db, invoice, current_user)
+    from app.invoice import edit_authority
+    invoice, current_user, receipt_rows = edit_authority.prepare(db, invoice_id, current_user, "invoice:write")
     invoice = _write_invoice_or_400(
-        db, lambda: service.update_invoice(db, invoice, body, user_id=_user_id(current_user)),
+        db, lambda: service.update_invoice(db, invoice, body, user_id=_user_id(current_user), receipt_rows=receipt_rows),
     )
     invoice = service.get_invoice(db, invoice.id)
     return ok(service.serialize_detail(invoice, db))
@@ -933,10 +947,8 @@ def delete_invoice(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):
-    invoice = service.get_invoice(db, invoice_id, for_update=True)
-    if not invoice:
-        raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(db, invoice, current_user)
+    from app.invoice import edit_authority
+    invoice, current_user = edit_authority.prepare_local(db, invoice_id, current_user, "invoice:write")
     try:
         service.delete_invoice(db, invoice)
     except ValueError as exc:
@@ -952,10 +964,8 @@ def validate_invoice(
     # mutates invoice.status -> read-only users must not reach it
     current_user=Depends(require_any_permission("invoice:write", "invoice:sync")),
 ):
-    invoice = service.get_invoice(db, invoice_id)
-    if not invoice:
-        raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(db, invoice, current_user)
+    from app.invoice import edit_authority
+    invoice, current_user = edit_authority.prepare_local(db, invoice_id, current_user, "invoice:write", "invoice:sync", any_permission=True)
     try:
         issues = service.mark_ready_if_valid(invoice)
     except ValueError as exc:
@@ -970,6 +980,13 @@ def sync_invoice(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:sync")),
 ):
+    from app.portal.authority import get_settings
+    if get_settings().PORTAL_ENABLED:
+        from app.invoice import order_sync_execution
+        from fastapi.responses import JSONResponse
+        from fastapi.encoders import jsonable_encoder
+        result = order_sync_execution.run(db, invoice_id, current_user)
+        return JSONResponse(jsonable_encoder(ok(result)), headers={"Cache-Control":"private, no-store"})
     invoice = service.get_invoice(db, invoice_id, for_update=True)
     if not invoice:
         raise HTTPException(404, "发票不存在")
@@ -986,6 +1003,8 @@ class ResolveSyncUncertainPayload(BaseModel):
     resolution: str = Field(..., pattern="^(bind_order|confirm_not_created|confirm_existing)$")
     reason: str = Field(..., min_length=2, max_length=500)
     xiaoman_order_no: str | None = Field(None, max_length=64)
+    # Portal-mode recovery binds by the internal order id; the legacy path uses order_no.
+    xiaoman_order_id: str | None = Field(None, max_length=64)
 
 
 @router.post(
@@ -998,6 +1017,14 @@ def resolve_sync_uncertain(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:admin")),
 ):
+    from app.portal.authority import get_settings
+    if get_settings().PORTAL_ENABLED:
+        from app.invoice import sync_recovery
+        result = sync_recovery.resolve(db, invoice_id, current_user, resolution=body.resolution,
+            reason=body.reason.strip(), xiaoman_order_id=body.xiaoman_order_id)
+        from fastapi.responses import JSONResponse
+        from fastapi.encoders import jsonable_encoder
+        return JSONResponse(jsonable_encoder(ok(result)), headers={"Cache-Control":"private, no-store"})
     invoice = service.get_invoice(db, invoice_id, for_update=True)
     if not invoice:
         raise HTTPException(404, "发票不存在")
@@ -1023,8 +1050,9 @@ def resolve_sync_uncertain(
 def get_sync_logs(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:read")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = read_authority.current_user(db, current_user)
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
@@ -1036,8 +1064,9 @@ def get_sync_logs(
 def export_excel(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:read")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = read_authority.current_user(db, current_user)
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
@@ -1055,8 +1084,9 @@ def export_excel(
 def export_print_html(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:read")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = read_authority.current_user(db, current_user)
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
@@ -1068,8 +1098,9 @@ def export_print_html(
 def export_pdf(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:read")),
+    current_user=Depends(get_current_user),
 ):
+    current_user = read_authority.current_user(db, current_user)
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
@@ -1155,12 +1186,9 @@ class LinkedSavePayload(BaseModel):
     expected_version: str = Field(min_length=64, max_length=64)
 
 
-def _linked_scope(db, invoice_id, user):
-    invoice = service.get_invoice(db, invoice_id, for_update=True)
-    if invoice is None:
-        raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(db, invoice, user)
-    return invoice
+def _linked_scope(db, invoice_id, user, *permissions, any_permission=False):
+    from app.invoice import linked_execution
+    return linked_execution.entry(db, invoice_id, user, *permissions, any_permission=any_permission)
 
 
 def _linked_result(row, invoice, user):
@@ -1180,9 +1208,10 @@ def save_linked(invoice_id: int, body: LinkedSavePayload, db: Session = Depends(
                 user=Depends(require_permission("invoice:write")),
                 sync_user=Depends(require_permission("invoice:sync"))):
     from app.invoice import linked_sync_service as linked
-    invoice = _linked_scope(db, invoice_id, user)
+    from app.invoice import edit_authority
+    invoice, user, receipt_rows = edit_authority.prepare(db, invoice_id, user, "invoice:write", "invoice:sync", linked_body=body)
     try:
-        row = linked.create(db, invoice, body, _user_id(user))
+        row = linked.create(db, invoice, body, _user_id(user), receipt_rows=receipt_rows)
         db.commit()
     except (ValueError, IntegrityError) as exc:
         db.rollback()
@@ -1192,26 +1221,33 @@ def save_linked(invoice_id: int, body: LinkedSavePayload, db: Session = Depends(
 
 @router.get("/invoices/{invoice_id}/linked-sync", summary="Read latest linked synchronization result")
 def get_linked(invoice_id: int, db: Session = Depends(get_db),
-               user=Depends(require_any_permission("invoice:read", "invoice:write", "invoice:sync"))):
+               user=Depends(get_current_user)):
     from app.invoice import linked_sync_service as linked
-    invoice = _linked_scope(db, invoice_id, user)
+    invoice, user, installed = _linked_scope(db, invoice_id, user, "invoice:read", "invoice:write", "invoice:sync", any_permission=True)
     row = linked.latest(db, invoice_id)
     if row:
         row = linked.expire(db, row.id)
-    return ok(_linked_result(row, invoice, user))
+    result = _linked_result(row, invoice, user)
+    db.commit()
+    return ok(result)
 
 
 @router.post("/invoices/{invoice_id}/linked-sync/{identity}/run", summary="Continue only unfinished synchronization steps")
 def run_linked(invoice_id: int, identity: str, recheck: bool = False, db: Session = Depends(get_db),
-               user=Depends(require_permission("invoice:sync"))):
+               user=Depends(get_current_user)):
     from app.invoice import linked_sync_service as linked
-    invoice = _linked_scope(db, invoice_id, user)
+    invoice, user, installed = _linked_scope(db, invoice_id, user, "invoice:sync")
     row = db.get(linked.InvoiceLinkedSync, identity)
     if row is None or row.invoice_id != invoice.id:
         raise HTTPException(404, "关联同步记录不存在")
     try:
-        row = linked.run(db, identity, _user_id(user), recheck=recheck)
-        if (row.status in {'done', 'manual'} and row.steps['order']['status'] == 'done'
+        if installed:
+            db.commit()  # End current entry authorization before the executor's first phase.
+            from app.invoice import linked_execution
+            row, invoice, user = linked_execution.run(db, invoice_id, identity, user, recheck=recheck)
+        else:
+            row = linked.run(db, identity, _user_id(user), recheck=recheck)
+        if (not installed and row.status in {'done', 'manual'} and row.steps['order']['status'] == 'done'
                 and row.steps['outbound']['status'] != 'done' and invoice.linked_sync_id is None):
             from app.invoice import outbound_followup_service
             outbound = outbound_followup_service.safely_run(db, invoice, user)
@@ -1222,14 +1258,21 @@ def run_linked(invoice_id: int, identity: str, recheck: bool = False, db: Sessio
     except ValueError as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
-    return ok(_linked_result(row, invoice, user))
+    result = _linked_result(row, invoice, user)
+    db.commit()
+    return ok(result)
 
 
 @router.post("/invoices/{invoice_id}/linked-sync/{identity}/close", summary="Keep completed results and end a failed workflow")
 def close_linked(invoice_id: int, identity: str, db: Session = Depends(get_db),
                  user=Depends(require_permission("invoice:sync"))):
     from app.invoice import linked_sync_service as linked
-    invoice = _linked_scope(db, invoice_id, user)
+    user = begin_employee_document_write(db, user, "invoice:sync")
+    from app.invoice import edit_authority
+    invoice = edit_authority.lock_document(db, invoice_id)
+    if invoice is None:
+        raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(db, invoice, user)
     row = db.get(linked.InvoiceLinkedSync, identity)
     if row is None or row.invoice_id != invoice.id:
         raise HTTPException(404, "关联同步记录不存在")
@@ -1250,7 +1293,12 @@ class LinkedResolutionPayload(BaseModel):
 def resolve_linked(invoice_id: int, identity: str, body: LinkedResolutionPayload, db: Session = Depends(get_db),
                    user=Depends(require_permission("invoice:admin"))):
     from app.invoice import linked_sync_service as linked
-    invoice = _linked_scope(db, invoice_id, user)
+    user = begin_employee_document_write(db, user, "invoice:admin")
+    from app.invoice import edit_authority
+    invoice = edit_authority.lock_document(db, invoice_id)
+    if invoice is None:
+        raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(db, invoice, user)
     row = db.get(linked.InvoiceLinkedSync, identity)
     if row is None or row.invoice_id != invoice.id:
         raise HTTPException(404, "关联同步记录不存在")

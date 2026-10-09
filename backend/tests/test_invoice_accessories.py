@@ -12,6 +12,7 @@ from pydantic import ValidationError
 import pytest
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session
 
 from app.auth import service as auth_service
 from app.auth.models import ArkPermission, ArkRole, ArkRolePermission
@@ -20,6 +21,7 @@ from app.core.database import get_db
 from app.invoice import import_service, price_service, schemas, service
 from app.invoice.models import CustomerPriceRule, Invoice, InvoiceItem, StdPrice
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
+from tests.authority_helpers import seed_authority
 
 
 def _seed_accessory_okki_product(db):
@@ -648,19 +650,20 @@ def _payload(**overrides):
 
 
 @contextmanager
-def _api_client(db, *, permissions):
+def _api_client(db, *, permissions, sub=9):
     from app.invoice.router import router
 
     app = FastAPI()
     app.include_router(router, prefix="/api/invoice")
 
-    def override_db():
-        yield db
-
-    app.dependency_overrides[get_db] = override_db
+    # Hardened price writes require a fresh transaction boundary; a shared
+    # session must roll back the previous request's reads first. Go through the
+    # Session class so tests instrumenting db.rollback still observe only the
+    # endpoint's own error handling.
+    app.dependency_overrides[get_db] = lambda: (Session.rollback(db), db)[1]
     token = create_access_token({
-        "sub": "9",
-        "username": "accessory-tester",
+        "sub": str(sub),
+        "username": f"accessory-tester-{sub}",
         "roles": [],
         "permissions": permissions,
     })
@@ -890,7 +893,7 @@ def test_accessory_list_filters_invoice_currency_without_hiding_other_history(db
         price=Decimal("3.0000"), currency="EUR",
     )
     db.add_all([usd, eur])
-    db.flush()
+    db.commit()  # The API request starts from a fresh transaction; uncommitted rows are invisible.
 
     pricing = _accessory_price_service()
     assert {row["id"] for row in pricing.list_prices(db)} == {usd.id, eur.id}
@@ -952,7 +955,7 @@ def test_accessory_price_api_preserves_four_decimal_customer_rule_for_invoice(db
         adjust_value=Decimal("10.0000"),
         enabled=1,
     ))
-    db.flush()
+    db.commit()  # The API request starts from a fresh transaction; uncommitted rows are invisible.
 
     with _api_client(db, permissions=["invoice_price:read"]) as client:
         response = client.get("/api/invoice/price/accessories", params={
@@ -1001,6 +1004,7 @@ def test_accessory_price_list_keeps_history_by_default_and_filters_inactive_for_
 
 def test_accessory_price_active_only_catalog_outage_is_actionable_503_but_history_still_lists(db):
     _accessory_std_price(db)
+    db.commit()  # The API request starts from a fresh transaction; uncommitted rows are invisible.
 
     with _api_client(db, permissions=["invoice_price:read"]) as client:
         history = client.get("/api/invoice/price/accessories")
@@ -1061,12 +1065,17 @@ def test_accessory_catalog_select_failures_are_actionable(operation, db, monkeyp
 def test_accessory_price_write_delete_api_require_invoice_price_write(db):
     _seed_accessory_candidates(db)
     body = _payload().model_dump(mode="json")
+    # Live authorization reads each actor's grants from the database; distinct
+    # accounts keep the denied cases denied for the missing right, not a stale JWT.
+    seed_authority(db, 9, "invoice_price:read")
+    seed_authority(db, 10, "invoice:admin")
+    seed_authority(db, 11, "invoice_price:write")
 
-    with _api_client(db, permissions=["invoice_price:read"]) as client:
+    with _api_client(db, permissions=["invoice_price:read"], sub=9) as client:
         assert client.post("/api/invoice/price/accessories", json=body).status_code == 403
-    with _api_client(db, permissions=["invoice:admin"]) as client:
+    with _api_client(db, permissions=["invoice:admin"], sub=10) as client:
         assert client.post("/api/invoice/price/accessories", json=body).status_code == 403
-    with _api_client(db, permissions=["invoice_price:write"]) as client:
+    with _api_client(db, permissions=["invoice_price:write"], sub=11) as client:
         created = client.post("/api/invoice/price/accessories", json=body)
         price_id = db.query(StdPrice).filter_by(product_kind="accessory").one().id
         deleted = client.delete(f"/api/invoice/price/accessories/{price_id}")
@@ -1080,6 +1089,7 @@ def test_accessory_price_write_delete_api_require_invoice_price_write(db):
 def test_accessory_price_api_maps_actionable_business_errors(db):
     _create_accessory_candidate_tables(db)
     body = _payload().model_dump(mode="json")
+    seed_authority(db, 9, "invoice_price:write")
 
     with _api_client(db, permissions=["invoice_price:write"]) as client:
         invalid = client.post("/api/invoice/price/accessories", json=body)
@@ -1093,6 +1103,7 @@ def test_accessory_price_api_maps_actionable_business_errors(db):
 
 def test_accessory_catalog_api_returns_actionable_503(db):
     body = _payload().model_dump(mode="json")
+    seed_authority(db, 9, "invoice_price:write")
 
     with _api_client(db, permissions=["invoice_price:read"]) as client:
         candidates = client.get("/api/invoice/price/accessory-candidates")
@@ -1119,6 +1130,9 @@ def test_accessory_price_api_rejects_database_precision_overflow(db, price):
 def test_accessory_price_api_rolls_back_real_sqlite_duplicate(db):
     _seed_accessory_candidates(db)
     body = _payload().model_dump(mode="json")
+    # Grant the writer before the flush listener exists; seeding must not
+    # consume the one-shot injection.
+    seed_authority(db, 9, "invoice_price:write")
 
     def inject_competing_row(session, _flush_context, _instances):
         session.connection().execute(text("""
@@ -1153,6 +1167,8 @@ def test_accessory_price_api_does_not_misreport_other_integrity_errors(
 ):
     _seed_accessory_candidates(db)
     body = _payload().model_dump(mode="json")
+    # Grant the writer before db.commit is replaced; seeding commits.
+    seed_authority(db, 9, "invoice_price:write")
     original_rollback = db.rollback
     rolled_back = {"value": False}
 

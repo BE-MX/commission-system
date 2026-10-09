@@ -52,6 +52,7 @@ function loadCreateApiClient({ accessToken = 'ark-token' } = {}) {
     'ElMessage',
     'useLoading',
     'getAccessToken',
+    'getAuthEpoch',
     'clearAuthState',
     'isFxSettlementPath',
     `${body}; return createApiClient`,
@@ -60,6 +61,7 @@ function loadCreateApiClient({ accessToken = 'ark-token' } = {}) {
     { error() {} },
     () => ({ show() {}, hide() {} }),
     () => accessToken,
+    () => 0,
     () => { cleared += 1 },
     isFxSettlementPath,
   )
@@ -209,11 +211,11 @@ test('default client injects Ark Bearer auth and redirects a 401 after clearing 
     const harness = loadCreateApiClient()
     harness.factory({ baseURL: '/api/v1' })
     const headers = new AxiosHeaders()
-    harness.handlers.request({ headers, showLoading: false })
+    const config = harness.handlers.request({ headers, showLoading: false })
     assert.equal(headers.get('Authorization'), 'Bearer ark-token')
 
     const error = {
-      config: { showLoading: false },
+      config,
       response: { status: 401, data: { detail: 'expired' } },
     }
     await assert.rejects(harness.handlers.responseFailure(error), value => value === error)

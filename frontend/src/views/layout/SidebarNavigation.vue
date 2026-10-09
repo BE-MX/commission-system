@@ -26,6 +26,7 @@
     </template>
 
     <el-menu
+      ref="menu"
       :key="menuRenderKey"
       :default-active="route.meta.activeMenu || route.path"
       :default-openeds="defaultOpenGroupKeys"
@@ -39,6 +40,10 @@
         v-for="item in topLevelItems"
         :key="item.path"
         :index="item.path"
+        :aria-label="item.title"
+        tabindex="0"
+        @keydown.enter.prevent.stop="activateMenuItem"
+        @keydown.space.prevent.stop="activateMenuItem"
       >
         <el-icon><component :is="item.icon" /></el-icon>
         <template #title>
@@ -60,6 +65,14 @@
         v-for="group in visibleGroups"
         :key="group.key"
         :index="group.key"
+        popper-class="ark-navigation-popup"
+        :aria-label="group.title"
+        aria-haspopup="menu"
+        tabindex="0"
+        :data-nav-group-trigger="group.key"
+        @keydown.enter.self.prevent.stop="activateMenuGroup($event, group.key)"
+        @keydown.space.self.prevent.stop="activateMenuGroup($event, group.key)"
+        @keydown.esc.self.prevent.stop="closeKeyboardGroup($event, group.key)"
       >
         <template #title>
           <el-icon class="nav-group-icon">
@@ -72,6 +85,9 @@
           <a
             v-if="item.external"
             class="el-menu-item external-item"
+            :data-nav-group="group.key"
+            @keydown.esc.prevent.stop="closeKeyboardGroup($event, group.key)"
+            @focusout="leaveKeyboardGroup($event, group.key)"
             :href="item.path"
             target="_blank"
             rel="noopener"
@@ -80,7 +96,9 @@
             <span>{{ item.title }}</span>
             <el-icon class="ext-mark"><TopRight /></el-icon>
           </a>
-          <el-menu-item v-else :index="item.path">
+          <el-menu-item v-else :index="item.path" :data-nav-group="group.key" tabindex="0"
+            @keydown.enter.prevent.stop="activateMenuItem" @keydown.space.prevent.stop="activateMenuItem"
+            @keydown.esc.prevent.stop="closeKeyboardGroup($event, group.key)" @focusout="leaveKeyboardGroup($event, group.key)">
             <el-icon><component :is="item.icon" /></el-icon>
             <template #title>
               <el-badge v-if="item.badge === 'domesticReviews'" :value="pendingReviews" :max="Number.MAX_SAFE_INTEGER" :hidden="pendingReviews === 0" class="nav-review-badge" :aria-label="`${item.title}，${pendingReviews}笔待审核`">
@@ -118,7 +136,7 @@
 <script setup>
 import { useDomesticReviewBadge } from './useDomesticReviewBadge'
 import { useDocumentAnomalyBadge } from './useDocumentAnomalyBadge'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import { Search, TopRight } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -149,6 +167,7 @@ function quickAdd(event, item) {
   openQuickTask({ anchorEl: event.currentTarget, moduleKey: item.name, source: 'nav_quick' })
 }
 
+const menu = ref(null)
 const searchQuery = ref('')
 const openedGroupKeys = ref([])
 const normalizedQuery = computed(() => normalizeNavigationQuery(searchQuery.value))
@@ -207,6 +226,40 @@ const hasNoMatches = computed(() => (
   && visibleGroups.value.length === 0
 ))
 
+// Keep Element Plus click routing/permission guards for keyboard activation too.
+function activateMenuItem(event) {
+  if (!event.repeat && event.target === event.currentTarget && !event.currentTarget.classList.contains('is-disabled')) event.currentTarget.click()
+}
+async function activateMenuGroup(event, key) {
+  if (event.repeat || event.target !== event.currentTarget || event.currentTarget.classList.contains('is-disabled')) return
+  const trigger = event.currentTarget
+  if (trigger.getAttribute('aria-expanded') === 'true') {
+    menu.value?.close(key)
+    rememberClosedGroup(key)
+    return
+  }
+  menu.value?.open(key)
+  if (props.collapsed) {
+    await nextTick()
+    const firstItem = [...trigger.ownerDocument.querySelectorAll('[data-nav-group]')]
+      .find(item => item.dataset.navGroup === key && item.getClientRects().length > 0)
+    firstItem?.focus()
+  }
+}
+function closeKeyboardGroup(event, key) {
+  menu.value?.close(key)
+  rememberClosedGroup(key)
+  const trigger = [...menu.value?.$el.querySelectorAll('[data-nav-group-trigger]') || []]
+    .find(item => item.dataset.navGroupTrigger === key)
+  trigger?.focus()
+}
+function leaveKeyboardGroup(event, key) {
+  if (!props.collapsed) return
+  const target = event.relatedTarget
+  if (target?.dataset.navGroup === key) return
+  menu.value?.close(key)
+  rememberClosedGroup(key)
+}
 function rememberOpenedGroup(key) {
   if (normalizedQuery.value || openedGroupKeys.value.includes(key)) return
   openedGroupKeys.value = [...openedGroupKeys.value, key]
@@ -460,6 +513,14 @@ function rememberClosedGroup(key) {
 </style>
 
 <style>
+.aside .el-menu-item:focus-visible, .aside .el-sub-menu:focus-visible > .el-sub-menu__title {
+  outline: 2px solid var(--color-gold);
+  outline-offset: -2px;
+}
+.ark-navigation-popup .el-menu-item:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: -2px;
+}
 .el-menu--popup {
   background: rgba(34, 37, 46, 0.92) !important;
   backdrop-filter: blur(var(--dash-glass-blur)) saturate(1.5);

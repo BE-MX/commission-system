@@ -81,6 +81,25 @@
 | POST | `/ai/draft` | write | 一句话生成可编辑草稿；失败时降级 |
 | GET | `/brief/today` | read/write | 获取或生成今日简报，不发送通知 |
 
+## 当前实施：原确认恢复和安全回执（v1.56）
+
+confirm-outbound/reconcile-outbound沿用version/reason，ok(data)，无新服务端幂等键；动作/实际Invoice财务范围及原发货条件不变。GET安全outbound.confirmation只读八字段，不创建proof/FINISH，不证明原未知请求未发送。前端共享恢复选项不自动401跳转，scope拒绝隐藏内容且保原actor/完整目标/body。
+
+原未知确认槽只有显式同一Invoice/Settlement/Outbound/remote_id且安全状态一致、版本高于原命令和本次提交时才清；普通GETnone/旧resolved、错目标或同版本回执不得清。4个START前受控HTTP竞争验证成功核对提交的新版本围栏旧confirm→409，无新增POST/START。当前tab存储不等于服务端权限或关闭tab耐久。以下旧版本范围按各自历史时点阅读，实际终态仅docs/handoff.md。
+
+## 实施增量：confirm-outbound 接口（v1.54）
+
+POST /api/shipments/{identity}/confirm-outbound 沿用 SettlementAction 的原 version/reason 和 ok(data) 信封，成功返回当前发货结算 DTO。当前 shipment:write 和实际 Invoice 财务范围必需；不新增客户端 attempt token，不把旧 body 重放称为稳定幂等回执。重复/变更版本先 GET 原结算，未知不能换目标或再次确认。
+
+403 为当前主体停用/撤权，404 为原对象不存在或无财务范围，409 为当前版本/关联/lease 或业务条件冲突；技术取证/token/数据库结果不可确认为固定 503。成功与依赖/验证/异常响应使用 private, no-store；不回显供应商响应、凭证、SQL 或私密输入。可读取完整有效证据后的显式业务不满足与坏形状技术错误分别处理。
+
+内部只向冻结原 outbound ID 发送 status=2，保原 line ID、成本/数量/费用/载荷。只有明确鉴权拒绝可至多重试一次；第二轮重新取 token、当前授权/绑定并持久 SEND。超时、错 ID、布尔 ID、缺 ID、坏形状或其他不明结果不能进入第二 POST。显式拒绝仍需完整活动原待出库单回读才允许恢复待确认。
+
+结果已发但当前失权/归属或执行权变化：保原 FACT，拒绝商业状态应用。新确认事实恢复和 GET 风险摘要仍为待实现契约；普通 GET 当前 DTO 不充当 durable FINISH 或“可以再次发送”的证明。
+
+## v1.53 原出库核对
+
+reconcile-outbound uses current shipment:write and actual Invoice financial scope; manual remote_id additionally current shipment:admin. Unlocked immutable GET evidence, final full graph/current authorization, original financial readback/status and one final transaction. No supplier POST/new ready guard. Outbound/Settlement versions manual +2 / known +1, no stable-key replay. Invalid participating Receipt under proven shipped_unfunded returns balance=null with fixed balance_error; never fake zero. Three scoped files define 82+16+33 cases; original retry and financial/Chrome checks separate. Exact executed terminals and all limits only docs/handoff.md. Full workers/provider/schema/production remain open.
 
 ## 私海客户工作台 PCW（2026-09-25 已部署，迁移 169）
 
@@ -194,7 +213,12 @@
 
 ## 回款管理（2026-09-17，应用及迁移156已发布，小满发送未启用）
 
-前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。普通用户仅可访问 `Invoice.sales_user_id` 等于当前用户的订单回款；创建人/代录授权不扩大回款范围。`receipt:read_all` 可看全部（数据范围权限，仍需 `receipt:read/write/admin` 页面或操作权限）；`invoice:read_all` 不扩大回款范围。列表、详情、订单选择、余额、已绑定回款凭证和写操作统一校验；已绑定回款凭证必须具有回款动作权限，未绑定回款的订单截图仍按发票编辑权限访问。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
+2026-10-06自有分支1.34授权增量（尚未发布）：已安装authority时，共同上游权限/本地编辑helper在ON/OFF均当前鉴权并持屏障，OFF身份辅助仍撤会话/邀请/有效报价。只有OFF/nonforce、屏障SELECT真实1146及同mapper物理连接FOR UPDATE唯一精确171才允许旧员工路径；其他连接/timeout/权限或未知schema安全503/no-store。与回款的OFF竞争已有专项对照，真实终态见docs/handoff.md；不背书未接入writer、完整旧制品/历史启动或其他财务入口。以下1.33为此前范围记录。
+
+2026-10-06自有分支1.33局部接入（尚未发布）：GET列表/详情/order-options及POST单笔void以JWT仅取得身份，再从当前DB重建账号/角色/动作及原财务scope；读OR保持receipt:read/write/admin，本地void保持receipt:write。void须fresh Session，并force authority→永久谱系→Invoice→Receipt，持至原commit/rollback；原财务状态和PI版本/发布不变。授权/锁查询SQL异常固定503/no-store且诊断Exception不覆盖响应。当前门户schema完整安装后OFF也保留本地保护；1.34已接入共同helper的上游OFF屏障并有选定实际并发对照，未注册writer仍开放。其他回款写/远端/文件/批次入口未因本批自动迁移，I81仍开放。详细目标见客户门户03/04/06；运行状态唯一来源docs/handoff.md，不改变上文历史已发布标记。
+
+
+前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。普通用户仅可访问 `Invoice.sales_user_id` 等于当前用户的订单回款；创建人/代录授权不扩大回款范围。`receipt:read_all` 可看全部（数据范围权限，仍需 `receipt:read/write/admin` 页面或操作权限）；`invoice:read_all` 不扩大回款范围。列表、详情、订单选择、余额、已绑定回款凭证和写操作统一校验；纯未绑定凭证仅原上传人可读；仅绑定Intent的凭证可由当前receipt动作及原财务scope访问，或由当前invoice:read/write/sync动作及原发票委派scope访问；已绑定Receipt凭证必须仍在当前关联attachment_ids中，并具有receipt动作及原财务scope；批次凭证需要receipt动作且所有子单可见。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
 
 | 方法与路径 | 参数 / 行为 | 权限 |
 | --- | --- | --- |
@@ -473,9 +497,9 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET|POST|DELETE /price/color-types` — 色号→色型映射（solid/piano/ombre/balayage）
   - `GET|POST|DELETE /price/customer-rules` — 客户价格规则（fixed/percent 二选一，有符号）；`GET /price/customer-rules/by-customer/{id}` — 单客户规则
   - `GET /invoices` — 发票列表（分页+搜索+状态+order_type；普通用户返回 `sales_user_id=本人`，以及 `created_by=本人` 且代办授权仍有效的订单；不会因获授权而看到归属人的其他历史订单）
-  - `GET /invoices/summary?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` — 订单发票页概览（invoice:read）：按发票日期闭区间汇总当前用户可查看的全部已同步发票，排除取消处理中及已取消单据，不受列表分页与搜索影响；`invoice:read_all`/超管沿用列表的全量范围。返回 `gmv`、`new_sign_count`（`okki_new_deal=1` 的客户去重数）、`unknown_new_sign_count`（历史 NULL 标记单据数，未计入新签）、`order_count`、`average_order_amount`、`non_usd_count`；金额仅汇总 USD 发票的 `total_amount`，平均金额分母仅为 USD 发票数，非 USD 单据仍计入订单数与新签数。开始日期晚于结束日期返回 422。
+  - `GET /invoices/summary?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` — 订单发票页概览（invoice:read）：按发票日期闭区间汇总当前用户可查看的全部已同步发票，排除取消处理中及已取消单据，不受列表分页与搜索影响；`invoice:read_all`/超管沿用列表的全量范围。返回 `gmv`、`new_sign_count`（`okki_new_deal=1` 的客户去重数）、`unknown_new_sign_count`（历史 NULL 标记单据数，未计入新签）、`order_count`、`average_order_amount`、`non_usd_count`；金额仅汇总 USD 发票的 `total_amount`，平均金额分母仅为 USD 发票数，非 USD 单据仍计入订单数与新签数。开始日期晚于结束日期返回 422。  此外，列表与概览在查询前以 JWT 识别员工并重新读取数据库当前 active/role/action/scope：旧 JWT 不保留已撤范围，当前新授予无需重签 token；当前无读取动作 403、授权数据库不可用 503、借用已有事务 409。普通读取不获取写屏障、不承诺召回在途响应。
   - `POST /invoices` — 创建普通发票；请求显式提交 `sales_user_id`，后端校验本人/代办授权并从该用户生成姓名、电话、邮箱快照，忽略客户端伪造文本；保存 `created_by=实际录入人`。截图来源发票必须走 `/import/screenshot/create`；同来源订单或同图唯一约束防并发重复创建。
-  - `GET /invoices/{id}` — 发票详情
+  - `GET /invoices/{id}` — 发票详情；详情、同步日志和Excel/HTML/PDF导出均在首次发票查询前重新读取当前数据库active/deleted/角色/读取动作和数据范围。撤读取动作或停用员工403；撤全量范围后的他人订单404，本人及当前有效代办订单可读。当前新grant无需重签JWT；拒绝发生在序列化、日志读取或文件生成之前。授权数据库不可用503，借用已有事务409；普通读取不获取写屏障、不召回已在途响应。
   - `PUT /invoices/{id}` — 更新发票（`sales_user_id` 与 order_type 创建后不可改；金额与折扣由服务端重算）
   - `DELETE /invoices/{id}` — 删除发票（需 `invoice:write` 且符合当前数据可见范围；已有 `xiaoman_order_id`、`sync_status` 为 `synced`/`sync_uncertain` 或存在未恢复半成品库存时拒绝。`external_api` 站点接入发票通过 guard 后允许删除时，同一事务删除关联 `ark_invoice_ingest_requests`，释放 App + `external_order_id`，独立站可重新 POST，首次创建返回 HTTP 201 并建立新的幂等记录）
   - `POST /invoices/{id}/validate` — 同步前校验
@@ -498,6 +522,8 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /me` — 获取当前用户完整信息（角色/权限/头像等）
   - `POST /logout` — 退出登录，撤销 refresh_token
 - `/api/auth` — 用户/角色/权限管理 & 个人资料（`auth/admin_router.py`，与上同前缀）
+  - `GET /users/list` — 用户列表（`user:read`）；返回 `login_locked/login_failed_count/login_lock_expires_at`。登录锁定是窗口内累计失败达到阈值，默认 30 分钟累计 5 次；成功登录不清空失败计数。
+  - `POST /users/{user_id}/unlock` — 解锁账号（`user:write`，超管自动绕过）；保留原登录日志，通过独立审计边界解除当前失败计数，返回 `{unlocked,login_locked:false}`。未锁定重复调用不写审计、不清除未达阈值的新失败；禁用账号 400、删除/不存在 404。密码、角色、启用状态不变；后续失败仍可再次锁定。需要先通过部署入口执行 `178_account_unlock` 迁移。
   - `GET /users/okki-department-options` — OKKI 部门选项（user:read；从业务库 okki_orders.departments 实时聚合 id/name/单量，倒序；OKKI 无部门清单 API，用户管理「OKKI部门」下拉用）
   - `GET /permissions/list?include_legacy=0` — 权限列表按模块分组（046 起含 kind/sort 元数据，默认过滤 is_legacy）
   - `GET /permission-audits?limit=50` — 角色权限变更审计（谁给哪个角色加/减了什么，`role:read`）
@@ -1638,7 +1664,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 |POST|/invoices/{id}/linked-sync/{operation}/close|结束明确失败任务，保留已成功结果；sync|
 |POST|/invoices/{id}/linked-sync/{operation}/resolve|管理员人工核对留证结束；reason、confirmed；admin|
 
-均校验发票可见范围；回款摘要另校验回款动作及数据范围。发票详情增加edit_version。边界及恢复见[invoice-linked-sync.md](invoice-linked-sync.md)。
+均校验发票可见范围；回款摘要另校验回款动作及数据范围。发票详情增加edit_version。 PORTAL_ENABLED开启时，普通PUT、linked-save、close、resolve按当前数据库员工角色/权限及对象范围校验，旧JWT不保留全量权限。新编辑若需远端回款，锁外取证、最终短事务重核绑定与本地保护；失败安全503、绑定冲突409。linked-save同key/invoice/actor/hash成功回放在初次和最终事务均优先于取证/版本冲突，异载荷409、当前撤权仍拒绝。close/resolve不调用远端，保留原失败/不确定状态、租约与分摊检查。边界及恢复见[invoice-linked-sync.md](invoice-linked-sync.md)。
 
 
 ### 小程序验货上传重试（2026-09-20）
@@ -1722,11 +1748,11 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | GET | `/filters` | 当前可见客户、业务员、运行时选项和能力；无资金权限无结算/会员选项。 |
 | POST | `/analysis-runs` | `AnalysisRequest` → 一致性结果、`meta.run_id`、数据/指标/映射/配置版本、覆盖率及固定证据。 |
 | GET | `/analysis-runs/{id}` | 本人固定结果；每次复核当前权限/归属。 |
-| GET | `/analysis-runs/{id}/rows` | `kind=orders/items/customers/ledger/requests`，`page`、`page_size<=200`，可传 `customer_id/order_id/dimension/value`；`sort_field`按kind白名单，`sort_order=asc/desc`，完整筛选快照先排序再分页、空值末尾；非法排序422，来源变化409，过期410。 |
+| GET | `/analysis-runs/{id}/rows` | `kind=orders/items/customers/ledger/requests/reports`，`page`、`page_size<=200`，可传 `customer_id/order_id/dimension/value`；`sort_field`按kind白名单，`sort_order=asc/desc`，完整筛选快照先排序再分页、空值末尾；非法排序422，来源变化409，过期410。 |
 | POST | `/finance-runs` | 同查询，基础+资金阅读权限；返回meta及资金桥接。 |
 | GET | `/customers/{id}/profile` | `start_date/end_date`，当前画像+完整授权购买历史、成熟cohort、偏好与推荐。 |
 | GET | `/salespeople/{id}/profile` | 同日期，当前负责人组合及比较窗口；不假称历史业绩。 |
-| GET | `/evidence/{kind}/{id}` | `order/item/ledger/request`（兼容复数路径值）；必要字段白名单，资金证据需资金权限。 |
+| GET | `/evidence/{kind}/{id}` | `order/item/ledger/request/reports`（兼容原有复数路径值）；必要字段白名单，资金证据需资金权限。 |
 | POST | `/data-quality` | 同查询，返回质量/加权覆盖/对账问题，未改原数据。 |
 | GET/POST | `/views` | 本人/已分享条件；创建 `{name,query,time_mode:rolling/fixed,shared}`。 |
 | PATCH/DELETE | `/views/{id}` | 仅本人，更新需 `expected_version`。分享不分享客户数据权限。 |
@@ -1744,3 +1770,586 @@ Agent research context now includes `fact_contract.version=registered_research_f
 `AnalysisRequest`：`start_date/end_date`（含首尾，北京业务日，1–1096天）、`comparison_mode=previous/year/none`、`scope=mine/all`、`customer_ids`、`owner_ids`、`filters`（字段→字符串值列表）、`dimensions`（最多2个白名单字段）、`metric=amount/quantity/order_count/customer_count`、`finance_related_customers`（默认false）。所有规格过滤以同一明细AND命中；资金默认不继承产品过滤。无资金权限禁止结算/会员过滤和分组。
 
 409表示来源、版本或幂等内容冲突，需刷新或使用与原内容一致的请求号；429为每日AI预算超限。简报/查询计划模型输出必须通过程序事实和范围校验；未配置或无效输出降级为真实规则事实。后台任务中断十分钟后显式失败，不把排队说成已生成。
+
+### 内贸决策台指标扩展（2026-10-09，已合并主线未部署）
+
+`analysis-runs` 增加 `summary.business_order_amount/shipped_amount/shipped_quantity/recharge_amount`，趋势和对照期同时支持对应日期口径。无资金阅读权限时充值值为 null，省略充值分组与客户充值行为。其他成交明细与矩阵仍按下单口径。
+
+结果增加 `customer_segments.groups`（充值/非充值两组各含customer_count/amount/order_count/discount_amount）、`retention.summary` 与每客户的 `retention_status`。客户充值意向永远为 unconfirmed，行为分类仅供后续核对。
+
+`products` 增加按实际发货日期的数量/金额、出货日、商业出货日、客户分布和需求信号；`production_operations.rows` 单独按毛坯规格去重，包含入库、毛坯出库、在制量及下单至整行入库周期，利润和真实库存未知。无客户生产数据需完整全量范围及内贸全量订单权限，读取旧结果、任务或导出仍实时校验。
+
+`rows(kind=reports)` 支持客户/订单过滤及报工时间、数量、金额等白名单排序，不支持dimension过滤（422）；款式使用已绑定的报工事实引用下钻。`evidence/reports/{id}` 返回工序、报工数量、北京时间、撤销状态及报工数量乘成交单价；严格核对关联客户或无客户生产权限。item证据补充original_price与每件discount_amount。产品导出包含items和reports，客户/经营导出也包含reports；旧口径快照返回409要求重新分析。
+
+## 客户下单门户认证（开发中，默认关闭）
+
+客户前缀 `/api/portal/v1`，不接受员工 JWT 作为客户身份。实现 `GET /auth/bootstrap`、`POST /auth/challenges`、`POST /auth/verify`、`POST /auth/logout`、`GET /session`。请求和错误信封详见[门户API契约](requirements/2026-09-30-customer-order-portal/03-api-contract.md)。OTP有效期由PORTAL_OTP_MINUTES决定，返回实际秒数，默认600；登录成功消费预登录Cookie，签发HttpOnly、SameSite=Lax正式Cookie；HTTPS使用Secure和__Host-前缀。全部认证响应no-store，输入校验失败不回显原始令牌或邮箱。
+
+POST须精确Origin、application/json及对应会话X-Portal-CSRF；无效会话退出仍检查Origin。错误OTP在返回401前提交尝试计数。HMAC绑定账号/成员/客户访问ID和三类权限版本，发码后改绑或撤权拒绝旧码。外部响应不含内部客户、小满或员工权限ID；sales_contact未配置批准渠道时为null。
+
+PORTAL_ENABLED默认false，关闭时路由在读取数据库前返回503。PORTAL_TRUSTED_PROXY_IPS默认空（拒绝所有来源），只能填实际反代TCP peer IP；反代必须覆盖X-Real-IP，Uvicorn必须保留TCP peer（--no-proxy-headers），不能依赖用户伪造的转发头。真实代理部署链、MySQL并发、登录审计、邀请配置和邮件发送仍待联调，不可据此启用真实客户入口。
+
+
+## 客户下单门户管理（开发中，默认关闭）
+
+管理前缀 `/api/portal/admin/v1`，已注册 GET/POST `/customers`、PATCH `/customers/{access_id}`、POST `/customers/{access_id}/invitations`、POST `/invitations/{invitation_id}/revoke`、PATCH `/accounts/{account_id}`。员工Bearer仅提供身份sub；屏障内查询当前数据库角色和权限，不能用JWT中的super_admin声明绕过。普通员工须有对应功能权限且当前有效primary assignment与access负责人一致；review_required对普通员工失败关闭，super_admin可读待复核对象，但普通PATCH也不能清除其复核状态。
+
+创建access保持draft；启用、能力与目录修改需带引号整数If-Match，目录仅接纳本站已发布SKU。邀请需UUID Idempotency-Key，同键同规范化内容回原ID（200），首次创建201；不同内容409。当前鉴权与范围先于回放，原始邀请令牌仅保存摘要及AES-GCM邮件信封。所有管理成功写入含审计，调用方统一commit；未连接邮件供应商。
+
+账号状态active要求verified_at存在；disabled撤销会话并提升版本；只有disabled且未验证邮箱的账号允许恢复invited，返回requires_invitation=true，须重新邀请及OTP验证。不能用邀请改绑邮箱所属公司。普通客户更新不能通过review_required→suspended→enabled绕过显式复核。
+
+新增8项权限通过既有seed_role_permissions upsert：portal_order:read/write/read_all、portal_access:read/admin、portal_mapping:read/write、portal_site:admin；仅read_all为data，其余action。seed写入口参与屏障。实际生产seed和部署未执行；转交/重绑、站点设置、管理UI、邮件发送及全上游屏障仍在开发。
+
+
+### 客户详情、身份复核与交接
+
+已实现 GET `/api/portal/admin/v1/customers/{access_id}`：按当前员工范围返回公司授权、目录ID和分页账号（page/page_size），包括邮箱、联系人、账号版本、是否验证、成员状态、最近邀请状态及版本；不返回令牌摘要或密文。用于邀请、撤邀和账号启停操作的可审阅详情。
+
+POST `/customers/{access_id}/rebind` 接收 identity_id、reason、If-Match；新外部身份必须仍归属于同一canonical客户且当前primary归属有效。成功提升访问和记录版本，撤销会话/有效报价/未消费邀请，状态为suspended并返回requires_enable=true。旧订单及其公司/业务员快照不改写；启用仍需显式检查目录和能力配置。
+
+POST `/customers/{access_id}/transfer` 接收 assignment_id、pending_request_ids、history_policy、history_days（仅explicit_grant必填）、reason、If-Match。新assignment必须为同公司有效primary。只交接选定且未建票pending请求，改服务负责人、清当前接受指针、返回submitted，须新提案与新客户接受；保留旧接受证据和财务归属快照。响应列出未选中的待处理单，不能默认为已交接。旧历史授权撤销；remove不新增授权，explicit_grant给新负责人逐单授予交接时已存在、未选中的订单只读授权，不覆盖未来请求且不授予invoice代办权限。
+
+归属与外部身份同时变化时，transfer可先完成有效归属复核，保留review_required；rebind完成身份复核后到suspended，最后显式启用。未完成的复核不开放客户访问。上述流程未执行生产数据操作；后续订单读取/审批服务必须使用这些范围与版本。
+
+
+### 客户型号、颜色和货号映射
+
+已实现GET `/api/portal/admin/v1/customers/{access_id}/mapping`、POST同路径`/preview`和`/publish`。分别要求portal_mapping:read/write并检查当前客户归属范围。GET提供mapping_version、row_version、有效sources、已发布entries，首版draft=null；编辑草稿留在前端。preview不保存数据；publish同时核对If-Match和base_version，重新校验全量目录并写入新不可变revision，返回201、新版本及覆盖SKU数，旧报价失效，旧订单/已发布映射历史不改写。
+
+来源只包括本站、该客户enabled grant、published catalog item。CatalogItem.standard_json须提供model_key/color_key/length/weight；标准型号、颜色键必须为非空字符串。sku映射source_key须等于item_id；model/color不能携带item_id或customer_sku。禁止以别名作为标准SKU或价格解析依据。发布快照snapshot_schema=1，保存entries和完整projection及内容摘要。
+
+目录撤销/商品下架导致旧entries引用无效来源时，当前投影失败关闭；GET mapping仍返回旧entries与当前sources供后台修复，清除失效来源并重新发布后恢复，不静默回退到标准名。管理界面需明确提示“目录已变化，请修复映射后发布”。当前服务已接入后台路由，客户目录UI、库存/价格适配仍待实现。
+
+
+### 站点设置与经营策略
+
+GET/PATCH `/api/portal/admin/v1/settings` 要求实时portal_site:admin。尚无站点记录时GET返回configured=false、row_version=0；PATCH首次使用If-Match:"0"创建，已有记录使用其实际版本，重复首次初始化409。功能总开关PORTAL_ENABLED仍须由部署配置开启；关闭时在数据库访问前503。
+
+PATCH白名单：name、status（enabled/disabled）、reason、policy。域名来自PORTAL_ORIGIN，不能从界面提交任意URL；币种固定USD、客户语言固定en；密钥、SMTP等不在接口内。policy字段：quote_valid_minutes（1..30，默认15）；proposal_valid_hours（1..168小时、1..8个无重复选项，默认[24,48]）；payment_terms（最多20条唯一code，display_text纯文本1..256字，deposit_percent为0..100两位小数字符串）；default_payment_term_code必须为已配置项。无付款条款允许保存disabled草稿，不能enabled；不自动播种付款承诺。
+
+站点启停会撤销当前会话、预登录与未消费OTP，重新启用仍需新验证码。策略变化提升policy_version并使有效报价expired；不改写已确认的订单/付款快照。每次更新记录审计。上述行为由隔离测试验证，报价API仍需后续接入策略和版本校验；未执行生产设置。
+
+
+### 门户认证邮件任务
+
+内部调度 `portal_auth_mail` 无公开调用接口。仅 `PORTAL_ENABLED=true` 注册，每5秒处理一个邀请或OTP事件，单进程max_instances=1；多进程使用持久租约及授权屏障。`PORTAL_MAIL_ENABLED=false` 停止投递但继续清理已过期密文；总开关关闭则不读门户表，避免未迁移环境访问。
+
+SMTP使用TLS直连（默认465），配置PORTAL_SMTP_HOST/PORT/USERNAME/PASSWORD与PORTAL_MAIL_SENDER；密码不进入日志。数据库事务先提交，网络调用期间不持锁；发送前复查当前授权和有效期，最长120秒租约，最多8次尝试，退避1/5/15/60/120/240/360分钟。成功、取消、过期或耗尽重试清除secret_envelope。邀请链接令牌使用URL fragment；客户前端仍须通过OTP完成激活。
+
+传输异常仅记录MAIL_TRANSPORT_FAILED等固定错误码，业务重试状态保存在outbox，不以调度器调用成功代表邮件送达。邮件采用至少一次投递；回执丢失可重复，已进入SMTP的邮件不可召回。准备邮件后发生撤权，兑换端仍按当前权限拒绝失效令牌。邮件配置或密钥错误采用有界重试，最终dead事件需要运维检查；不记录原始SMTP异常或收件正文。当前仅模拟SMTP及SQLite验证，真实发信、MySQL竞争与部署验证未完成。
+
+
+### 门户启用时的上游员工授权写入
+
+当PORTAL_ENABLED=true，以下既有写入口保持请求/成功响应合同，但在首次数据库读取前取得门户authority屏障，随后按当前数据库权限再次鉴权：POST/PUT/DELETE用户、用户启停、管理员重置用户密码、POST/PUT/DELETE角色，以及PUT发票代办授权。失效或已撤权的旧JWT不能凭原super_admin角色继续执行；无权限返回403，屏障未就绪返回503，不能绕过后继续写。新状态与屏障版本同原业务事务提交/回滚，无额外提交。
+
+门户关闭时，这组扩展不查询门户表，既有鉴权行为不变；这不是对全部方舟API实时撤权能力的声明。内部replace_grants调用也参加屏障，但仍由受信任调用方负责操作人授权及事务边界。客户归属、身份合并等其他入口的屏障接入仍在实施，启用真实客户前必须完成完整覆盖及MySQL并发验收。
+
+
+### 客户归属变更与门户复核
+
+门户启用时，客户提案执行入口、primary分配/转交、公海认领服务、合并拆分执行器与逻辑归属CAS参加同一authority事务屏障。实际主负责人或逻辑所属公司改变后，受影响门户access进入review_required、版本递增，现有会话与未消费邀请撤销，valid报价失效；原access客户/业务员绑定和已提交订单快照不自动重写。由门户管理的显式转交/重绑流程复核后再启用。
+
+同一负责人重试、重复已有assignment、只增加协作人不触发暂停；同一事务多次影响同一access时不会反复提升已review_required的访问版本。所有失效与业务归属变更共用原事务，回滚时一起撤销。该接入尚未涵盖所有身份确认与同步写入口，保持真实门户开关关闭；完整MySQL并发和合并拆分端到端测试仍待执行。
+
+
+### 身份同步后的门户复核
+
+身份候选追加、业务上下文解析、身份确认及其OKKI/Alibaba投影、批量同步与获客候选入库取得authority屏障后执行。持久绑定重查采用稳定identity/assignment标识与授权语义；名称、置信度和来源证据刷新不构成撤权。绑定已失效才暂停门户并撤销会话、未消费邀请与valid报价。查询同时覆盖物理受影响客户及实际引用其identity的门户access，避免逻辑拆分/合并后遗漏新公司。
+
+Agent候选入库入口专用鉴权依赖在token首次查询前获取屏障；resolve_token(commit_usage=False)不自行提交last_used_at，避免提前释放调用方事务锁。其余token入口保留默认使用时间提交行为。此处不是对全部MCP撤销入口的并发保证；全量上游覆盖和MySQL并发仍属于启用门禁。
+
+
+### 外部绑定与登录审计补充
+
+PORTAL_ENABLED=true时，员工外部账号新增、软删除及候选确认绑定入口先取得authority屏障，再重查external_binding:write当前权限；底层绑定写入与屏障版本在原事务共同提交。门户关闭时不查询门户表，不改变既有接口合同。
+
+验证码验证持久记录auth.verified或auth.verify_failed，退出记录auth.logout。成功验证关联真实客户账号/access/session，失败关联预登录会话且不冒认客户；审计不保存验证码、会话令牌、CSRF、邮箱、原始IP或正文。失败结果与尝试次数同事务提交后才返回401；成功审计与会话同事务，回滚不会留下孤立成功记录。此前的预登录、CSRF和限流拒绝不属于该业务事件覆盖范围。退出已失效会话保持幂等，不补造成功会话操作。
+
+
+### 客户目录读取（实现增量）
+
+GET /api/portal/v1/catalog 支持keyword（最长100）、category=hair/accessory、in_stock_only、page、page_size（1–100，默认24）、sort=curated/name。返回当前授权且已发布的商品、过滤后total/facets、catalog_version/mapping_version。GET /api/portal/v1/catalog/{item_id} 使用UUID和同一授权范围，目录外或不存在统一404。两者使用客户会话和受信代理，no-store，员工JWT不能替代客户Cookie。
+
+公开商品字段为item_id/category/model_name/color_name/customer_sku/length_display/weight_display/sale_unit/image_url/availability/inventory_observed_at/min_order_qty/step_qty/currency。允许查价时另含unit_price（四位小数字符串或null）及price_status；无查价权限不调用价格服务且不含这两个字段。不返回源SKU ID、库存数量、标准价或价格规则。
+
+PORTAL_OKKI_NAMESPACE必须是部署中Ark OKKI镜像的实际source_account_key，默认空将价格标记不可用；必须由已核实的环境信息配置，不能以任意客户传入命名空间代替。hair计价读取标准JSON里的product_display/length/price_unit/color，客户别名仅用于展示。缺价、零负价格、外币和不同数据源均不可报价。内部指纹包含标准元数据、商品/SKU、客户身份、规则ID/调整类型/值/更新时间；不向客户暴露。
+
+当前库存读取适配未接通：现有聚合没有可信观测时间，因此load_observations返回空，目录显示unknown，in_stock_only为空；image_url暂为null。库存状态算法已有隔离回归，但不能据此声称真实库存或下单可用。标准SKU导入/有效性复核、库存来源、图片解析及POST quotes仍是后续实现项。
+
+
+### 客户下单门户：标准商品管理（开发分支，未启用）
+
+前缀 `/api/portal/admin/v1`，员工实时权限 `portal_site:admin`；独立于客户Cookie端点。
+
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| GET | /catalog | 当前站点商品分页列表，status筛选，page_size最大100 |
+| POST | /catalog/import | 精确标准SKU导入/重新导入；If-Match新建0或当前版本，结果始终draft |
+| PATCH | /catalog/{item_id} | If-Match更新销售配置/状态；发布时重新核验标准源 |
+
+配置含展示名、颜色名、库存/销售单位、精确换算、安全余量、最小量/步长和原因；标准属性/价格不可由请求覆盖。源namespace固定为PORTAL_OKKI_NAMESPACE。所有变更同事务更新有效授权客户目录版本、失效valid报价和写审计，历史快照保留。源变更需要重新导入，重复首次导入409且不新建第二条。管理端HTTP已验证，UI、图片、真实库存来源和报价写入仍待实现。
+
+
+### 客户下单门户：报价快照（开发分支，未启用）
+
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| POST | /api/portal/v1/quotes | 真实客户会话、同源JSON、CSRF、PORTAL_WRITES_ENABLED及can_order+can_view_price；201创建服务端报价 |
+| GET | /api/portal/v1/quotes/{quote_id} | 当前创建账号/access/membership三重范围及view_price；404不暴露其他账号报价 |
+
+创建只接收授权item_id/整数quantity、delivery、PO和remark；精确标准SKU复核，按当前标准资料和客户规则计价，按可信库存观测核验换算、MOQ、step与余量。保存不可变标准/展示/价格来源/库存/权限/经营版本快照。付款条件取站点默认受控选项；费用pending，各项费用与total为null，不生成PI。公共响应不返回原始库存数量、标准身份或规则指纹；GET只读原快照并检查摘要，不重新定价。报价行同时返回min_order_qty和step_qty，来自已校验的不可变inventory_snapshot.min_qty/step_qty；不公开inventory_snapshot整体或源库存数量，当前提交规则仍服务端复查。到期状态按now>=expires_at判定；expires_at在hash前规范为秒精度，匹配现有MySQL DATETIME。
+
+当前生产load_observations仍为空，库存不可核实会返回INVENTORY_UNAVAILABLE/503，不写报价。测试注入可信观测仅用于隔离验证，不能当作真实库存已接通。现适配只允许本地数据库镜像读取；未来远程库存必须在授权锁外预取再核验，不在锁内执行外部I/O。
+
+
+### 客户下单门户：幂等提交与结果回查（开发分支，未启用）
+
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| POST | /api/portal/v1/orders | SubmitInput、UUID Idempotency-Key、同源JSON/客户会话/CSRF；201首次、200同键同内容回放 |
+| GET | /api/portal/v1/orders/by-key/{key} | 仅当前account/access命名空间回查；无记录或他人记录404 |
+
+新提交要求写开关、can_order+can_view_price；锁内复核quote账号/成员/客户、未消费/未到期、内容hash、PO/备注、当前权限/目录/映射/政策版本、标准SKU、价格指纹和可信库存。变化时拒绝，不能静默改数量或金额。同事务写request、submitted revision、标准与展示明细、quote消费、审计和仅含请求引用的order_submitted outbox；不建PI、不锁库存、不确认费用或收款。请求号采用POR-北京时间日期-完整UUID十六进制，避免并发计数器争用。
+
+当前身份验证后先查已成功回执，不依赖重新定价/查库存/报价有效期；写开关或can_order关闭后仍允许恢复已提交结果。can_view_price撤销时裁剪币种/金额，停用账号/访问仍拒绝。不同body复用同键409，同quote换键不新建。仅已知请求幂等唯一键冲突允许rollback后查询赢家；其他数据库异常不能伪报成功。订单修订摘要覆盖实际revision交易字段及排序明细，金额回执先核验完整性；不会为了核验历史金额访问实时价格源。
+
+当前只实现提交和按键回查，列表/详情/取消/提案/建票另行接入；订单通知尚只有持久化事件，没有发送worker。真实库存仍未接通，SQLite回归不代表MySQL并发验证。
+
+
+### 客户下单门户：订单列表与详情（开发分支，未启用）
+
+| 方法 | 路径 | 授权 |
+| --- | --- | --- |
+| GET | /api/portal/v1/orders | 有效客户会话；同access成员共享订单；page/page_size/status |
+| GET | /api/portal/v1/orders/{request_id} | 同access范围；越权和不存在均404 |
+| GET | /api/portal/admin/v1/orders | 当前portal_order:read，再按订单服务归属/显式历史授权/read_all裁剪 |
+| GET | /api/portal/admin/v1/orders/{request_id} | 同列表范围；无隐式团队/公海权限 |
+
+列表page>=1、page_size为1..100；status白名单为submitted/awaiting_customer/ready_for_review/invoice_created/rejected/cancelled。范围先于计数和分页；默认submitted_at、id倒序稳定分页。
+
+客户撤view_price后，列表/详情不输出金额、币种、单价、折扣、费用和付款条款；仍可查看订单状态、展示规格、数量及交付资料。详情验证当前修订的实际持久化摘要，标准SKU内部字段、定价指纹、库存快照和员工内部审计不对外输出。timeline只输出允许的订单事件类型和北京时间，不返回原始audit diff/reason/actor。
+
+员工本人范围同时要求servicing_user_id、access当前负责人及有效主assignment一致；不能凭历史财务归属继续访问。额外历史授权须同access、未撤销且未过期；逐订单scope精确绑定。兼容的数据模型request_history读取仅涵盖created_at严格早于授权时刻的订单，同秒边界不自动放行；当前转交流程只生成逐订单授权。read_all和super_admin在当前站点可全量读取，但不授予审批动作。当前available_actions为空，取消/提案/PI写流程后续接入。
+
+
+### 客户下单门户：取消请求（开发分支，未启用）
+
+`POST /api/portal/v1/orders/{request_id}/cancel`，JSON `{reason}`、当前客户Cookie/CSRF/Origin及必需If-Match（带引号正整数）。同access有效成员均可操作，但每次包括回放都要求can_order+can_view_price；无权对象统一404。
+
+取消稳定命令身份为cancel+request_id，reason进入payload_hash。成功后相同reason重试返回原original_receipt和current_state、replayed=true，不重新递增版本/发事件、不覆盖首次操作人；旧If-Match可回放，缺失/格式错误仍428/422，不同reason冲突409。新动作要求写开关、当前row_version、submitted/awaiting_customer/ready_for_review；invoice_id或任何conversion lineage存在均拒绝，即使状态字段不一致。已建票应走发票生命周期。
+
+首次取消把请求置cancelled并清accepted_revision指针，原quote仍consumed，revision/明细不改写。同事务写CommandReceipt、审计和order_cancelled引用事件，未发送外部通知。返回不含金额/地址。客户详情在当前写开关和能力满足、状态允许时提供cancel动作；员工只读接口仍不提供写动作。本接口的MySQL取消/审批并发验证待建票实现后执行。
+
+
+### 客户下单门户：业务员提案（开发分支，未启用）
+
+`POST /api/portal/admin/v1/orders/{request_id}/proposals`，If-Match及ProposalInput；实时portal_order:write，当前servicing/access归属一致，复用invoice.delegation_service.can_act_for本人/明确代办规则，read_all不授予写。当前主assignment和身份binding还须有效；新提案要求客户及站点启用、下单/查价能力、写开关开启、未有建票关联。
+
+商品明细复用报价的标准SKU/当前合同价/可信库存校验；运费、包装费、附加费为明确的非负两位金额，非零附加费必填名称；付款code和有效小时数必须在站点政策内。PO须与请求一致，不静默修改。创建完整confirmed费用修订、稳定line_key、公司级权限/映射/政策快照和完整内容hash，设置awaiting_customer、清除accepted指针；不创建PI、不改变旧修订。
+
+命令身份为propose+起始If-Match版本；同版本同body回原回执，不同body409，不会再生成修订。返回original_receipt含revision_id/hash/expires_at；通过订单详情查看完整交易内容。详情在有查价权限时返回proposal摘要，撤销查价后不返回该摘要或金额。
+
+submitted/ready_for_review可新提案；awaiting_customer仅在当前提案到期时允许新提案，校验旧证据后保留旧revision并递增版本。未过期待确认提案须等待客户确认/拒绝；原命令始终优先回放。客户接受/拒绝已接入下述端点；差异对照界面和真实库存仍未完成。
+
+
+### 客户下单门户：接受与拒绝提案（开发分支，未启用）
+
+`POST /api/portal/v1/orders/{request_id}/proposals/{revision_id}/accept` 接收 `{proposal_hash}`；同路径 `/reject` 接收 `{reason}`。两者要求当前客户 Cookie、Origin、CSRF 和带引号正整数 If-Match。每次包括回放均重新检查公司访问范围、can_order 和 can_view_price；非本请求提案返回404。
+
+新接受要求当前 awaiting_customer 修订、版本一致、无 invoice/conversion、完整费用、内容摘要匹配且未到期；重新验证公司授权/政策/映射版本、标准SKU、当前合同价及可信库存。成功只进入 ready_for_review，持久保存首次确认人/时间，不建票或预占。拒绝可处理已过期的当前提案，退回 submitted 并清当前接受指针，保留修订证据。
+
+同一提案同一接受摘要或相同拒绝原因重试，优先返回原回执和当前状态，旧If-Match不阻止成功回放；不会恢复被后续提案替换的指针。不同拒绝原因409。状态、接受元数据、命令回执、审计和引用outbox同事务；尚无外部通知发送。客户详情在权限及状态允许时提供reject_proposal，未过期时提供accept_proposal；提交时仍须重新核验库存与价格。
+
+
+### 门户 PI 适配基础（内部服务，无新增公开建票端点）
+
+InvoiceCreate 的 source_type 增加 portal，但通用员工创建入口没有 allow_portal_source 内部授权，伪造请求会被拒绝。门户来源必须带有效请求UUID和请求号，不接受截图凭证或其他来源字段；既有更新来源不可变规则继续适用，普通硬删除拒绝此来源。
+
+portal.invoice_adapter 从当前已接受的proposal修订构建标准InvoiceCreate，调用既有金额算法并验证客户身份、销售归属、标准属性和所有费用/合计。调用方仍必须编排实时授权、版本/库存/价格重查、永久conversion、发布快照、成功回执以及事务提交回滚；审批HTTP编排见下节；未启用生产建票。
+
+
+### 门户审核建票（开发分支，默认关闭）
+
+`POST /api/portal/admin/v1/orders/{request_id}/approve`，请求体仅`{accepted_revision_id}`，必需带引号正整数If-Match。先获取authority屏障并重新检查portal_order:write、invoice:write以及当前公司归属/明确代办/有效外部身份；金额、客户与SKU不可由调用者指定。
+
+同命令成功回执优先于库存读取、版本和有效期校验；旧If-Match可恢复原invoice_id及invoice_document_version，不重复建票或发布。新动作要求ready_for_review、当前accepted=active修订、客户和站点可交易、未存在任何永久conversion。建票前后均重新验证提案时效、SKU、当前价格和可信库存；使用实际invoice.create_invoice领域服务（portal来源不创建回款意图草稿，回款由方舟既有入口后续处理），在同事务保存conversion、publication快照及版本化line_key→invoice_item_id_at_publication对照、PiAmendment、请求状态、成功回执、审计与引用outbox。
+
+execute拥有commit/rollback；只有明确的invoice_no唯一约束冲突可重试，最多3次且每次重新鉴权并重做整个事务。其他完整性错误原样回滚，业务失败单独保存脱敏系统审计，不留下pending conversion。未知提交结果不自动再次创建，调用方以原命令回查/重试恢复。
+
+本端点已接入代码，但不代表PI全生命周期完成。publication保存数据库快照，客户PDF下载与ORM修改撤回见后续章节；后续修改重新确认见下文 PI 后续修订章节；上线门禁仍包含真实库存、MySQL并发与所有Invoice写入口版本联动。尚未连接生产数据库或发送通知。
+
+
+### 门户 PI 修改撤回保护（ORM 事务层，开发分支）
+
+已绑定永久conversion的portal来源发票，其客户可见抬头、费用、规格/数量/价格、增删明细或进入cancel_pending/cancelled时，在同次ORM flush中以数据库当前整数版本校验并递增portal_document_version，撤回所有published Publication、设置PiAmendment.withdrawn并清接受指针、写安全审计。事务回滚同时恢复内容、版本和发布状态。初建领域服务中的多次自动flush不触发撤回，首次发布仍为version=1；同步ID、同步状态等内部字段变化不触发撤回。
+
+ORM来源改写、硬删除、手工修改门户版本和将既有门户明细重挂其他发票均拒绝；即使source_type或原invoice_id已经过期未加载，也查数据库原值以避免绕过。保留linked_sync_service.edit_version()的原SHA合同，不改其语义。
+
+此保护不覆盖直接Core/bulk SQL。全部上游写入口的权限、锁序及bulk写入审计仍为上线门禁；客户下载见下一节；后续重新提案/确认/发布见下文；不能仅凭本ORM保护启用生产。
+
+
+### 客户 PI PDF 下载（开发分支，默认关闭）
+
+`GET /api/portal/v1/orders/{request_id}/pi` 使用与其他客户接口一致的session cookie命名（生产__Host-portal_session；获准本地开发dev-portal_session），经可信反代校验。当前账号须有查价权限与同公司订单范围；越权404、无查价403、无有效发布/已撤回/发票内容漂移409。成功为application/pdf附件，安全UUID文件名，no-store与nosniff。
+
+审批发布快照新增invoice_document_hash和snapshot_hash；下载在锁定当前Invoice/明细/Publication/PiAmendment后核对版本、发布状态和规范化内容摘要。即使Core/bulk写绕过ORM版本递增，当前客户可见内容与已发布摘要不同仍拒绝提供旧PI；这不是对bulk写入流程已完整覆盖的声明。缺少摘要的旧开发快照拒绝下载，不自动补签。
+
+取得受控快照后提交并释放锁，PDF仅由客户别名、客户货号、已确认金额、地址和付款条款生成，不调用内部发票导出。渲染完成后重新鉴权及核对相同publication/版本/摘要，再记录下载审计并返回内存字节。此最终检查后已授权的在途响应与客户已保存附件无法召回。
+
+PDF模板portal-pi-v1采用LeShine原Logo及黄黑视觉，分页重复表头，所有业务文本XML转义，不解析客户提供链接。依赖reportlab>=4.5.1,<5；沿用PDF_CJK_FONT_PATH配置可嵌入字体，缺失返回安全PDF_UNAVAILABLE，不回显文件路径。生产字体/部署链、MySQL并发仍为待验收项；后续PI重新确认实现见下文。
+
+
+### 客户提案差异与再次下单（开发分支）
+
+GET客户/员工订单详情在有查价权限且当前修订为proposal时返回proposal.changes。结构为before_revision_id/kind、after_revision_id/kind、items、fields。基线是同请求的紧邻上一修订（不保证是最后接受版本，kind明确标识）；双方使用不可变快照，校验基线实际内容hash，历史损坏则拒绝详情。items按稳定line_key对照，含change=added/removed/changed、before/after及changed_fields；fields给费用、合计、地址、付款条件、备注的前后值，未知费用保持null。只返回客户展示字段，无内部SKU、价格来源或员工ID；无查价能力时不返回proposal或任何差异金额。
+
+`POST /api/portal/v1/orders/{request_id}/reorder-quote`，JSON `{}` 或 `{line_keys:[UUID,...]}`；201返回常规全新报价及reorder={source_request_id,source_revision_id,changes}。必须当前登录、同公司对象范围、can_order AND can_view_price、写开关开启、可信代理、Origin和CSRF有效。无幂等键要求：此动作只创建新报价，正式提交沿用quotes→requests的幂等契约。
+
+使用原当前修订所选行的数量/收货信息/备注，清空客户PO；按当前授权目录、别名、标准SKU、合同价和可信库存重新报价，费用恢复pending/total=null。重复/未知/空选择422；源订单不可见404；撤下行REORDER_CHANGED409并仅返回安全line_key及错误码；缺价/库存不可信继续按quote错误拒绝。不会创建OrderRequest、PI或改变旧快照。客户必须核对新报价后另行提交。
+
+首次建票归属同步收紧：新proposal.authority_versions_json持久sales_user_id并进入内容hash；接受/审批按当前公司版本完整比对，adapter同时验证其等于servicing_user_id及access.sales_user_id，再用该快照归属创建PI。原提交sales_user_id_snapshot只作历史证据。旧开发提案缺此字段须重新提案，不能自动补签已接受内容。
+
+
+### PI 后续修订确认与发布（开发分支，默认关闭）
+
+POST员工`/api/portal/admin/v1/orders/{request_id}/pi-proposals`，体为`{invoice_document_version,valid_for_hours,reason}`；POST员工`.../publish-pi`，体为`{invoice_document_version,accepted_revision_id}`。必需If-Match=request.row_version。当前portal_order:write、invoice:write、客户当前归属/有效代办及原PI归属/有效代办须同时成立；跨来源时客户access、catalog item与配置namespace必须一致，且在SKU/库存读取前校验。两端都不接收任意invoice_id。
+
+后续提案只从锁定PI及明细生成，保持实际单价、非正折扣、费用、总额、稳定SKU与客户别名，独立复核目录资格/标准属性/库存，不重新套最新目录价。1..100个不同SKU，数量和金额沿用门户边界。付款文本必须精确匹配唯一已配置条款；原结构化地址与PI整段地址一致时保留结构，否则只保存formatted_address，不猜国家或邮编。提案绑定PI版本、实际内容指纹、公司授权版本和不可变商业头部（详情字段见数据模型），全部进入hash。
+
+客户沿用POST`/api/portal/v1/orders/{id}/proposals/{revision_id}/accept|reject`，按revision.kind分流；接受pi_amendment仅使PiAmendment.accepted，主请求一直invoice_created。pending/accepted到期可重新提案，旧修订及接受证据保留，新修订清当前接受指针。发布要求当前accepted=active、未过期、PI版本/指纹/商业头部及授权未变化，当前SKU/库存仍有效；仅追加新版本Publication，不再次调用create_invoice、不改变永久Conversion。
+
+各命令回执与状态/审计/引用outbox同事务；成功回放先检查当前权限，再取原回执，不受后来库存故障阻断，也不恢复被撤回的发布。详情pi_amendment返回status和客户安全proposal，含商业头部、完整交易值及历史差异。顶层订单内容取最近已发布修订，待确认修改单独展示；无查价能力不返回这些金额/提案。可用动作download_pi/accept_pi/reject_pi供前端使用；真正权限仍在写/下载端重查。
+
+实现验证使用隔离SQLite，不证明MySQL锁序/并发。现有ORM修改撤回清active/accepted指针，但所有上游Invoice/Core写入口的统一授权屏障、锁序及请求版本联动仍须继续收口；本地作废见后续章节；真实库存和生产字体/邮件/部署链亦未验收，不能据此启用生产。
+
+
+### 员工拒绝请求与未同步 PI 本地作废（开发分支）
+
+POST `/api/portal/admin/v1/orders/{request_id}/reject`：ReasonInput与必需If-Match。实时portal_order:write及当前归属/代办/绑定授权；仅submitted/awaiting_customer/ready_for_review、且无永久Conversion或invoice关联时允许。保留原修订及接受证据、清当前接受指针，主状态rejected。命令键request+原If-Match，reason入hash；相同命令回原回执，不同内容409；旧成功回放仍查当前权限。拒绝状态、审计、引用outbox与回执同事务。
+
+POST `/api/portal/admin/v1/orders/{request_id}/void-pi`：`{invoice_document_version,reason}`与必需If-Match=request.row_version。当前portal_order:write和invoice:write、客户当前归属及原PI归属/明确代办、有效客户外部绑定与配置来源均须通过。暂停客户交易不阻止有权员工处理本地终止；新命令仍要求门户写开关开启。
+
+仅允许stock PI且status为draft/ready/sync_failed、sync_status为not_synced/sync_failed，无xiaoman_order_id、synced_at、sync_attempt、linked_sync_id及非aborted取消流程。复用既有ensure_idle/ensure_mutable，额外拒绝任何出库任务记录、有效Receipt、非draft或带attempt/lease/receipt的ReceiptIntent、待处理或非零半成品分配/差额。拒绝返回PI_VOID_REQUIRES_REVIEW409，由方舟既有流程核对；本端点不调用外部删除、库存恢复或财务接口。
+
+成功置Invoice.cancelled、cancellation.status=retained/mode=local_void，保留Invoice/明细/ReceiptIntent草稿及附件，仅eligible置0；Conversion永久tombstoned，主请求仍invoice_created，版本递增。ORM钩子同事务撤回Publication、清PiAmendment active/accepted指针；客户详情投影为pi_amendment.status=voided，无下载动作。命令回执、员工/发票审计、引用outbox同事务；稳定键request+local-void，原版本/相同body重放回原结果，内容变化409。旧approve成功回执不会重新创建或恢复票。
+
+ORM状态恢复保护对Conversion按invoice_id执行SELECT status FOR UPDATE，不按status过滤，以当前锁读识别tombstone；同时检查同事务待作废对象。禁止将本地作废票恢复ready/synced等状态；Core/bulk SQL和全部上游writer统一协议仍在后续验收范围。SQLite回归及MySQL方言SQL锁定断言不代表已完成真实双连接并发验证。
+
+
+#### 门户员工审核上下文
+
+`GET /api/portal/admin/v1/orders/{request_id}/review`：当前员工读写权限、客户绑定及can_act_for共同校验后返回order/customer/standard_lines/available_actions/policy。客户身份及标准SKU对照仅在员工审核接口返回。提案/审批/拒绝仍独立校验If-Match和实时授权，动作提示不构成授权。PORTAL_INVOICE_ENABLED关闭阻止新建PI，但不阻止已成功approve的持久回执回放。
+
+### 员工原 PI 审核上下文（2026-10-03 实现增量）
+
+GET `/api/portal/admin/v1/orders/{request_id}/pi-review` 要求当前portal_order:read/write、invoice:write及当前客户负责人/原PI业务员的can_act_for。返回request_id/request_no/row_version、字符串invoice_id、invoice_document_version、invoice_status/amendment_status、customer、current_invoice、last_published、proposal、available_actions、blocked_reasons、policy.proposal_valid_hours。
+
+current_invoice按员工白名单读取当前发票商业抬头/商品/金额/地址；last_published保留最近发布revision，额外商业抬头和版本来自对应Publication（snapshot_hash完整验证），不得用live回填；proposal是仍有效绑定的客户修订证据。动作值propose_pi/publish_pi/void_pi只提示当前可尝试操作，不替代POST授权、If-Match及证据校验。无库存/价格源读取，无新建发票副作用。政策不可用时明确原因并移除发送/发布；本地作废仍按原业务限制判定。
+
+
+### 客户门户访问配置的可选目录字段（2026-10-03）
+
+`PATCH /api/portal/admin/v1/customers/{access_id}`的catalog_item_ids现可省略或为null，表示保留现有grants；显式[]清空授权，非空列表仍需全部为同站点已发布商品。访问状态/能力更新仍校验当前员工范围、If-Match、客户复核门禁，递增授权版本并撤销会话。客户界面的目录/报价仍裁剪已撤下商品，保留grant不构成新的可见授权。中文管理页`/portal/customers`接入已有客户/账号/邀请接口，未知邀请只原键重试，其他版本写操作不自动重发。
+
+
+### 客户门户映射预览冲突列表（2026-10-03）
+
+`POST /api/portal/admin/v1/customers/{access_id}/mapping/preview`在语义冲突时返回200、valid=false和conflicts数组（code/item_ids），覆盖颜色歧义、完整规格歧义和客户货号重复，ID仅来自当前授权且已发布商品。有效结果valid=true/conflicts=[]。未知来源/非法字段/版本仍返回错误；preview无发布副作用。正式publish继续按If-Match/base_version重做全部校验，冲突409；客户投影错误不下发冲突ID。中文客户详情已接入编辑/预览/发布，未知发布不自动重发。
+
+
+### 客户门户开通向导（2026-10-03）
+
+- GET `/api/portal/admin/v1/onboarding/customers`：当前有效主负责人范围的开通候选；keyword/page/page_size，返回 ready、blocked_reasons、当前身份和 binding_fingerprint。
+- GET `/api/portal/admin/v1/onboarding/customers/{canonical_customer_id}`：重新查询单客户开通条件及可读 existing_access，用于未知创建结果恢复；不代表原命令回执。
+- GET `/api/portal/admin/v1/onboarding/catalog`：当前站点已发布规格选项；keyword/page/page_size，只返回安全规格投影。
+- 三个 GET 要求当前 portal_access:admin，员工数据范围仍独立核对。POST `/customers` 新增必填 binding_fingerprint（64位十六进制），屏障内比较当前身份/归属；旧选择409，越权404。创建 draft，无启用、邀请或发信副作用；后续由已有访问与账号管理完成。
+
+
+## 客户商品授权独立编辑（2026-10-03 接入增量）
+
+GET `/api/portal/admin/v1/customers/{access_id}/catalog` 要求当前 portal_access:read；PATCH 同路径要求 portal_access:admin 和 If-Match。两者独立核对当前主负责人范围与当前站点。GET 返回访问状态/能力/版本及最多5000条已授予商品的安全规格（含已下架状态），不返回价格、成本、库存数量、内部来源键。
+
+PATCH 请求为 catalog_item_ids（必填UUID数组，最多5000、无重复）及 reason；不接受 status/capabilities，不隐式启用草稿。采用完整选择集：[]明确清空；当前已授予的下架项可保留或移除，但新授予/移除后重新授予必须为同站点published商品。普通 CustomerUpdate 的原有非空列表仍要求全部published；需要上述保留语义时使用独立catalog接口。
+
+保存先在共享授权屏障内重查权限、范围与记录版本，review_required拒绝；应用授权后验证全量有效映射，防新增商品引出已有别名歧义，冲突返回MAPPING_CONFLICT并回滚。成功提升row_version/auth_version，授权集合变化时提升catalog_version；撤销现有会话、使valid报价失效，审计增删public ID及原因。客户启停/能力、映射不可变历史、已提交订单和PI快照均不改写。接口无幂等回执，不自动重放PATCH；返回丢失时只能GET核对当前状态。
+
+
+### 客户门户站点设置管理端接入（2026-10-03）
+
+`/portal/settings`已消费既有GET/PATCH `/api/portal/admin/v1/settings`，权限portal_site:admin；PATCH保持原白名单SiteUpdate和If-Match契约，未新增服务端字段或接口。未配置站点version0；未知PATCH不重发，重新GET核对当前设置。金额百分比保持字符串，域名/密钥/币种不可编辑。
+
+
+## 商品导入来源预览与结果恢复（2026-10-03）
+
+以下均要求当前portal_site:admin，限定当前站点及配置来源：
+
+- GET `/api/portal/admin/v1/catalog/source`：product_id、sku_id为规范十进制字符串，product_kind为hair/accessory；返回source标准快照、已有existing_item和expected_version（未导入0）。读取镜像并验证精确有效SKU，不落商品或审计，不推断conversion_factor、安全余量或销售单位。
+- POST `/api/portal/admin/v1/catalog/import`新增必填standard_fingerprint（64位十六进制），必须回传source预览值。服务端重新读取来源快照，先比对指纹，后应用单位/标签配置；同ID规格变化报SKU_CHANGED并回滚。If-Match仍核对已有本站记录版本。导入和重新导入均落draft，重新导入会撤下原发布项、失效相关报价，需单独确认再发布。
+- GET `/api/portal/admin/v1/catalog/import-status`：按原product_id/sku_id查本站持久记录，返回found/item，不读取镜像。用于导入响应丢失后查询；found仅为当前状态，不能证明原命令成功，未找到也不是请求未执行证明。
+- GET `/api/portal/admin/v1/catalog/{item_id}`：按public UUID读取当前商品及版本，不依赖镜像，可用于编辑/未知更新恢复。不存在或其他站点404。
+- GET `/api/portal/admin/v1/catalog`新增keyword：名称/颜色按字面包含（转义SQL通配符），product_id/sku_id精确匹配，支持原status与分页。
+
+静态/source/import-status路由先于UUID详情路由登记。查询不提供写入副作用；经营单位仍需B02的真实确认，不能将标准price_unit直接当库存数量单位。新UI应先预览来源并冻结指纹再导入；更换来源必须清除旧预览、换算确认及草稿。未知POST/PATCH不自动重发，仅查询当前记录核对。
+
+
+### 客户门户商品管理UI接入（2026-10-03）
+
+`/portal/catalog`已消费catalog列表、source预览、详情、import-status查询及import/update写接口。导入携带必填standard_fingerprint与If-Match，重新导入转draft；更新携带最新详情版本。未知写入只GET查询，不自动重放。新字段未扩展后端契约，货币/价格/库存数量不由管理表单写入。
+
+
+## 归属与身份复核上下文（2026-10-03）
+
+GET `/api/portal/admin/v1/customers/{access_id}/binding-review`要求当前portal_access:admin及当前客户范围，返回公司名称、访问版本/状态、当前归属及外部公司绑定、有效主负责人候选、配置来源下已验证强公司身份候选、待交接订单的public ID/编号/状态/版本/服务人、订单总数与含PI订单数、review_fingerprint。不含订单金额、地址、账号秘密。待处理列表最多1000项，pending_total/pending_truncated明确标注；指纹始终覆盖全部订单，不能把截断列表当全部。
+
+普通业务员不因有admin功能权限而获得其他业务员客户范围；上游归属已变或review_required时通常须super_admin完成复核。候选身份遵循方舟逻辑归属，限定配置namespace；变更主负责人首先在方舟客户归属完成，此端点不会创建新归属关系。
+
+POST transfer/rebind新增必填review_fingerprint（64位十六进制）。服务在共享授权屏障、当前员工范围和If-Match通过后重算：包括客户记录/身份状态、当前有效负责人/外部身份选项，以及全部请求ID、版本、状态、服务人和PI关联。任何差异返回REVIEW_CHANGED，无业务写入。选择的assignment_id/identity_id必须属于当前复核选项，不能配同一指纹伪造其他来源或客户的对象；随后仍执行原归属/身份/历史处理校验。
+
+同ID外部公司值或负责人原地修改、复核后新增订单、订单状态变化都会拒绝旧复核。转交只重置明确选中的未建票请求；旧归属快照和PI不重写，历史读取授权继续遵守既有history_policy。重绑/转交仍撤会话/邀请/旧报价，完成后暂停或保留review_required，须另行启用。指纹不是认证凭证，不赋予权限，也不是写入幂等键。
+
+
+### 客户门户归属复核前端消费者
+
+`frontend/src/views/portal/BindingReviewDialog.vue` 从客户访问详情调用 `GET /api/portal/admin/v1/customers/{access_id}/binding-review`，再以同一 row_version 的 If-Match 和 review_fingerprint 提交 transfer/rebind。明确选择当前候选与待办；历史授权对象为新负责人，期限 1–365 天。未知写入只 GET 读回并放弃草稿，不自动重发，也不把当前状态视为原操作成功回执。完成后仍须显式启用客户。详细交互见开发文档 05-frontend.md；实际验证记录见 docs/handoff.md。
+
+
+## 提案选品与差异预览契约（2026-10-03）
+
+以下员工接口必须同时具备当前 portal_order:write/read，以及该请求的当前处理范围（负责人或明确代办）。read_all 不提供处理权。共享授权屏障内复查归属、站点/客户启用和查价/下单能力、请求状态及永久建票关联；待客户确认且未过期的提案、已建票/取消/拒绝请求不能用于准备初始新提案。
+
+| 接口 | 输入与输出 |
+| --- | --- |
+| GET `/api/portal/admin/v1/orders/{request_id}/proposal-catalog` | keyword最多100字、page>=1、page_size=1..100；仅当前客户已授权published商品，按稳定ID顺序分页；返回request_id/row_version/catalog_version/mapping_version/items/total/page/page_size。每项含item_id、客户display_snapshot、标准型号颜色长度重量、product_id/sku_id字符串、类别、销售单位、min_order_qty/step_qty；不返回价格、原始库存或定价依据 |
+| POST `/api/portal/admin/v1/orders/{request_id}/proposal-preview` | 完整ProposalInput及带引号If-Match；不接收客户端单价/总额。返回当前服务端核价items、按商品ID关联的changes（added/removed/changed/unchanged、changed_fields、before/after）、新旧商品总额/总额/费用/地址/付款条件、input_hash、calculated_at、row_version、valid_for_hours、requires_customer_acceptance=true、binding=false |
+
+预览复用正式提案prepare校验与金额算法，完整重查标准SKU、客户价、库存观测及数量步长；新增或移除商品仍按客户当前授权。失效目录404、版本冲突409、缺If-Match428、输入非法422、价格或库存不可信按既有错误拒绝。返回Cache-Control: private, no-store。预览不新增quote/revision/receipt/audit/outbox，不改变订单版本或客户接受记录。
+
+这是发送前的即时参考，不是锁价凭证、锁货或客户确认；input_hash只关联本次输入，不作为创建授权。正式POST proposals仍按当时权威数据重新核算，生成完整新修订并等待客户确认；即使预览后价格变化也不得沿用旧客户接受。旧proposals成功回执仍在核价/库存读取前回放，不受新增准备接口影响。前端应明确标识即时预览，编辑后撤销预览及操作确认；具体接入和验证进度以docs/handoff.md为准。
+
+
+### 审核上下文当前数量规则
+
+`GET /api/portal/admin/v1/orders/{request_id}/review` 增加 `quantity_rules`，只包含原当前修订中仍在该客户授权published目录内的商品：item_id/min_order_qty/step_qty。使用当前目录配置，不修改历史订单数量/快照；不依赖库存或价格源。缺失规则意味着前端不能据旧快照继续编辑该商品，应明确提示移除或先由管理员恢复授权。ReviewDialog 使用本字段及proposal-catalog/preview完成授权选品和即时价差核对。
+
+
+## 业务通知查询与受控恢复
+
+员工入口 `/api/portal/admin/v1`：
+
+| 方法与路径 | 请求 | 权限与结果 |
+| --- | --- | --- |
+| GET /orders/{request_id}/notifications | page>=1、page_size 1..100，默认20 | 实时 portal_order:read + employee_query 当前订单范围。返回 request_id/items/total/page/page_size |
+| POST /orders/{request_id}/notifications/{event_id}/retry | Idempotency-Key UUID；JSON fingerprint（64位小写hex）、reason（1..500字符）；禁止多余字段 | 当前 portal_order:write + managed_request 当前负责人/代办及绑定，额外 read + 对象范围；只恢复允许的 dead 业务事件 |
+
+列表仅支持业务源事件和 business_mail，不包含邀请、验证码。每项字段为 id/event_type/status/recipient_kind/attempt_count/created_at/next_attempt_at/lease_until/error_code/retry_eligible/fingerprint；不返回 payload、密文、邮箱、事件键或租约 token。源事件 expanded 表示展开完成，邮件成功必须看子事件 sent。retry_eligible 是状态提示，不能替代写入鉴权和开关检查。未知错误仅显示 DELIVERY_FAILED。
+
+重试只允许 dead 且错误为 MAIL_TRANSPORT_FAILED、AUTHORITY_UNAVAILABLE、NOTIFICATION_CONFIGURATION_INVALID、LEASE_EXPIRED_BEFORE_SEND、ATTEMPTS_EXHAUSTED。sent/cancelled/expanded/pending/sending、损坏源事件、无效收件人不能重发；认证事件即使 aggregate 被污染也返回404。通知开关与邮件开关必须开启，站点/access/绑定须当前有效；worker投递时再次检查实际收件人。
+
+命令身份为 notification_retry + event_public_id + Idempotency-Key，fingerprint/reason 完整入 hash。当前鉴权后先查持久成功回执：同键同载荷返回原回执与当前投递状态，同键异载荷409 IDEMPOTENCY_CONFLICT。新命令才检查开关、当前指纹、可恢复状态。指纹覆盖事件ID、状态、尝试次数、下次时间、错误码及租约时间。过期指纹409 VERSION_CONFLICT、不可恢复409 NOTIFICATION_NOT_RETRYABLE、通知关闭409 NOTIFICATION_DISABLED。
+
+成功仅表示重新排队：原事件 pending、本轮 attempt_count=0、next_attempt_at=北京时间当前、清租约和错误；保留稳定event_key，既有sent兄弟任务不变。旧尝试次数和错误写入 notification.retry_requested 审计，连同员工、原因、请求引用及成功回执在同事务提交。回滚不改变dead任务。响应包含 replayed、original_receipt（request_id/event_id/command_key/status=pending）、current（当前安全事件视图）。回放时current可已sent，不能把原pending回执当当前投递状态。接口不修改订单/PI版本、不直接发信、不能指定收件人。
+
+
+### MCP凭据管理与门户授权事务
+
+门户协议启用时，POST /api/mcp/tokens、POST /api/mcp/tokens/{token_id}/rotate、DELETE /api/mcp/tokens/{token_id}在首个业务查询前取得authority屏障并校验当前mcp:admin，不能仅依赖旧JWT里的管理员声明。响应格式和token明文仅返回一次的语义不变；屏障版本和凭据变更同事务。此协调覆盖同样持锁的Agent客户身份写；不宣称所有既有MCP读取请求均与撤销原子化。关闭门户时保留既有行为，不访问门户表。
+
+
+## 客户映射通知查询与受控恢复（2026-10-04）
+
+员工入口 `/api/portal/admin/v1`，独立于订单通知范围：
+
+| 方法与路径 | 请求 | 权限与结果 |
+| --- | --- | --- |
+| GET /customers/{access_id}/mapping/notifications | page>=1、page_size 1..100，默认20 | 实时portal_mapping:read及当前客户scope；返回access_id/items/total/page/page_size |
+| POST /customers/{access_id}/mapping/notifications/{event_id}/retry | Idempotency-Key UUID；fingerprint（64位小写hex）、reason（1..500）；拒绝多余字段 | 实时portal_mapping:write，额外read及同一当前客户scope；开关、站点/绑定/当前修订与受控dead失败校验 |
+
+发布映射与mapping_published源事件同事务，稳定键mapping-published:{revisionUUID}；按当前有效已验证成员展开唯一mapping_mail，子键notify:{sourceUUID}:customer:{membershipID}。正文仅为显示名称更新摘要与允许origin的/collection登录链接；不附别名、邮箱、金额、地址、凭据或PI。旧修订替换取消未发送任务，投递/恢复不增加映射版本或改变订单快照。
+
+列表在SQL中限制类型、aggregate/access、修订归属和子事件源引用，分页/count同范围；认证或订单事件不可借污染aggregate读取。安全字段沿订单投递视图，不返回payload/邮箱/密文/事件键/租约token；private, no-store。当前负责人读取权不等于跨客户权限，订单read_all不授予映射范围。
+
+新恢复命令校验有效源、当前修订、成员标识格式/BIGINT、实际成员site/access及稳定子键；损坏收件人NOTIFICATION_RECIPIENT_INVALID404、旧修订NOTIFICATION_SUPERSEDED409，拒绝无重排队/回执/审计。成员启停/邮箱验证在最终prepare再检查。成功仅重排原事件，尝试清零、清租约错误、next_attempt_at北京时间；回执为access_id/event_id/command_key/status=pending，不能用request_id。持久命令身份及原键完整body回放沿notification_retry，回放优先于新指纹检查，先实时鉴权。审计、回执和重排同事务，sent兄弟任务与映射版本不变，不直接发信或接受指定收件人。
+
+映射通知和订单通知共享有界租约/退避，SMTP仍在数据库事务外；至少一次投递可能重复邮件，稳定Message-ID不构成供应商去重保证。最终prepare提交为授权时点，已授权在途窗口不能召回。当前本地实现与验证不代表生产邮件配置或跨进程恢复验收。
+
+### 门户参与事务锁超时
+
+PORTAL_LOCK_WAIT_SECONDS（默认5，1..30秒）仅限制参与authority协议事务的MySQL行锁等待。参与事务1205返回503 TRANSACTION_BUSY、retryable=true、private no-store；客户英文、管理端中文，隐藏SQL/参数。事务整笔回滚，客户先按原命令身份核对，再使用原键/body重试；不自动换键。上游员工写入口同样使用专用异常处理。其他SQL错误/非参与1205保持原行为，参数不代表整体请求或外网时限。细节见客户门户交易契约。
+
+
+### 门户启用时的发票生命周期接入
+
+既有invoice模块GET lifecycle按当前员工/角色及对象范围检查。POST lifecycle的begin/retain/abort需当前invoice:admin，短事务仍保留理由/确认/状态/租约守卫；refresh使用锁外取证及最终重鉴权/完整绑定和当前本地财务检查。权限403、范围404、绑定冲突409、受控证据不可用503，不回显上游正文。validate保留invoice:write OR invoice:sync，DELETE需write且禁止门户PI硬删除。门户启用后的remote remove已接入分阶段当前授权、原执行日志与终态核对；outbound_retry/ack已接入当前授权与锁外证据的本地恢复；其他同步执行器及实际worker仍需逐阶段接入验证，不能将本段视为全入口已修复。
+
+### 生命周期原执行事实与安全响应（开发分支）
+
+GET/POST `/api/invoice/invoices/{id}/lifecycle` 返回 `Cache-Control: private, no-store`，含401/403/404/409/503。取消投影不返回执行token；GET含recovery_summary的review_required、pending_attempt_count、last_observed_at（+08:00或null）、remote_observation（absent/present/unknown/not_checked）。retained或remote_deleted有原attempt待核对时，action=refresh仅观察原远端目标并追加核对，不重发DELETE、不改本地终态或恢复发布；无待核对记录继续零外部I/O。
+
+启用门户的remove在外发前提交原claim；提交不确定503不重发。实际结果先按原attempt独立保存脱敏事实，再当前授权返回；403/503不能说明DELETE没发生。原attempt/事实集合或绑定变化409且风险不清。客户端用有权员工读取同一原任务，不能更换身份/attempt重复删除。其他执行器及初始OFF仍需对应验收。
+
+### 出库恢复/确认接入（开发分支）
+
+启用门户的POST lifecycle `outbound_retry/ack_outbound`：当前invoice:admin及对象范围→短事务捕获→锁外订单/出库GET（retry另读完整回款，ack不新查回款）→最终重新当前授权和完整绑定。绑定额外包含币种/金额/order_type、产品行/UID及原任务和最新关联操作，不能仅用legacy内容hash。取证不可信503，最终变化409，旧身份403/越权404；沿用confirmed/reason/expected_version，不外发出库创建/删除。
+
+retry仅将原明确未发送/漏建任务排队，拒绝其他任务状态和delete_pending/regenerate标记。ack仅确认最新本版本manual、order done、outbound未done且已验证数量/关联/状态的操作；整体manual时也不能重复覆盖已done出库确认。未知关联订单引用停止核对，不判无关联。实际worker需独立当前执行与查重验收。
+
+
+### 客户门户启用后的同步不确定核对接入（1.8）
+
+`POST /api/invoice/invoices/{id}/sync-uncertain/resolve` 使用当前 invoice:admin 与对象范围。confirm_existing对已绑定原订单两阶段只读核对，最终重新授权和完整商业/任务/分摊绑定复核；bind_order与confirm_not_created仅在原首次未绑定状态进行本地人工核对。正常响应及恢复处理器受控错误private/no-store，不外推全部依赖层401/422。业务提交后的响应403/404不撤销已提交事实，应由有权员工读取原PI核对。初始OFF仍为原路径。
+
+1.8时点I48开放；1.9已在confirm_existing核对入口严格验证规范正整数UID（真实64字符字段），整组证据通过后回写，非法身份固定409且零业务写。提交后撤权/降范围和单次并发核对取得定向证据，actual token helper仅外部fetch/request替身；不是真实供应商验证。详细规范、三个resolution条件及真实HTTP零写验收以客户门户03/04/06/07文档为准；实际测试与尚缺证明以docs/handoff.md为准。正常sync、linked-run和出库worker不在此接入结论范围。
+
+### 客户门户 1.11 普通推送实施增量
+
+启用时 POST sync 使用新 ordinary 执行器，原子 claim/锁外POST/原执行事实/当前业务与响应授权分离。claim 提交未知503零POST；accepted 但 UID/库存收尾失败保留原订单和预占，禁止盲重发。已接受事实禁止人工 confirm_not_created 或另绑其他订单。现有 sync-uncertain/resolve 对迟到 ready/not_synced 或 synced/synced 提供受控原 accepted 订单 GET 核对；全商业与规范UID验证后回写，按事实集合记审计，不自动恢复库存/回款/出库。前端 ready 恢复入口尚待接入。实际结果仅 docs/handoff.md；遗留 followup、linked-run、worker 与初始 OFF 不属于本批证明。
+
+### 客户门户1.12推送风险摘要与原单恢复入口
+
+GET /api/invoice/invoices/{id}/lifecycle 增加 order_push_summary：review_required、pending_attempt_count、last_observed_at、result_class、original_order_id、resolution。当前 invoice:admin/对象范围通过后只读本地未解决事实，private/no-store，无原事实/token/指纹/上游正文；初始OFF为null。resolution只是提示，现有 sync-uncertain/resolve 仍重查权限、租约、完整商业/执行绑定与事实集合。管理端沿用“更多→取消 / 恢复”，固定原引用+依据，不另选目标、不自动重发；局部实现/实际测试范围以docs/handoff.md为准。
+
+### 客户门户相关普通同步后续排队
+
+启用门户的ordinary sync在原推单成功后强制当前授权的followup队列阶段；403/404/409/503保留原成功事实，查询原任务而不重POST。删除凭据须同原出库/订单/task，原及最新成功create/update代次须同PI同规范order_id，queue与outbound_queue审计原子。期中OFF不回落旧路径；其他默认legacy调用方、关联出库更新执行器及实际worker仍单独验收。详情见客户门户开发文档1.14及交接。
+
+### Customer portal outbound preparation (implementation increment 1.16)
+
+When PORTAL_ENABLED, the existing shipping invoice-sync preview/start paths enter current employee invoice:sync AND shipping_inspection:write and current warehouse scope before mirror lookup, then current invoice scope and unlocked supplier evidence with complete local recapture. Ordinary invoice followup requires invoice:sync plus that invoice scope, without a warehouse-wide grant. Preview commits only authorized idle/recheck state and rechecks private response authority; fixed 403/404/409/503 are no-store. Fresh transaction required even for an already-read caller Session. Preparation and private preview are migrated; pending/sending, outbound POST results, verify/repair and workers still require their own authority/immutable original-fact protocol. Latest evidence is in docs/handoff.md, target contracts in requirements/2026-09-30-customer-order-portal/03-api-contract.md.
+
+### 客户门户实施增量1.17：出库原执行协议
+
+现有invoice-sync enabled/force路径进入outbound_execution，原START/SEND/FACT/READ/FINISH/REVIEW复用ShippingOperationEvent独立namespace；手动AND权限/仓库范围不变。原唯一POST锁外，当前完整绑定才验货收尾，未知回执不重发；repair只接受已结束且规范同目标accepted原FACT。FINISH/迟到事实只读核对与真实通过范围见客户门户03/04/06及docs/handoff.md。初始OFF、历史active人工核对、worker/linked-run及其他writer仍开放。
+
+
+### 客户门户实施增量1.18：内部自动创建worker
+
+无新增客户自动出库API。内部scheduler按三开关及配置当前员工invoice:sync/PI范围处理明确auto_requested整单；原START/SEND/FACT/READ/CHECK/FINISH与当前收尾分阶段，新旧新版创建器共用数据库持久模式及advisory单活锁。错/缺仓库等头保持uncertain，坏占号证据503零新claim/POST；unknown/持久SEND不盲重发，跨代次未核对风险阻断新收尾。实际接入、配置和未完成切换门禁见客户门户1.18开发文档，最新运行证据只在docs/handoff.md。P0建PI仍不自动出库。
+
+### 客户门户增量：回款辅助读取（1.35）
+
+GET receipts/types、order-balance/{invoice_id}、attachments/{id}由JWT取得身份，首业务DB读重建当前角色/动作/scope。types/凭证原六动作OR和余额原receipt三动作OR不变；read_all不能独立授动作，invoice全量不能扩大Receipt范围。凭证继续未绑定上传人、Intent原receipt范围或invoice动作及委派、已绑定Receipt当前关联与receipt范围、批次全部子单范围；invoice-only的Intent转换Receipt后拒绝。余额仍调用原算法。
+
+普通读取不持authority或对象写锁跨供应商/文件IO，授权在首业务读；已在途响应不承诺末次撤权，新请求按当前DB拒绝。授权查询固定安全503/no-store；外部查询/序列化/commit/文件后续错误各循原逻辑。其他write/上传/绑定/remote/batch/worker和真实服务/现场上线门禁仍开放，实际终态与证据范围唯一见docs/handoff.md。
+
+## 客户门户 v1.36 回款重试接入
+
+POST /api/receipts/{id}/retry保持原路由/body，当前receipt:write和原财务scope，成功仅原failed无远端ID单据→pending、费用原算法/版本与日志，不直接外发。自动补费为当前授权捕获→锁外不可变供应商证据→当前授权/完整绑定/结算及参与回款当前锁读→本地提交；批次全部子单可见且同层锁排序。当前权限拒绝403、对象范围404、状态/绑定409；本retry证据/安全边界内不可确认SQLA故障安全503/no-store；原execute处理的IntegrityError冲突保留rollback及409，受控锁超时走TransactionBusy。最终结果不能确认时刷新原单，不能自动重发。已提交pending重复409。其他写入口不因该改动获得背书；详见客户门户03/04/06及docs/handoff.md。
+
+## 客户门户 v1.37 回款修改接入
+
+PATCH /api/receipts/{id}保持ReceiptUpdate原body，当前receipt:write和原财务scope。先全批次范围：混合越权404、全部可见但不能单独修改409；原active pending/failed无远端ID/version/非预售定金约束保持。当前授权捕获独立订单及文件身份，锁外order/types及原存储规则取证，最终重验权限/完整绑定、当前Receipt/Intent余额、Allocation和文件关联。合法仅修字段、version+1、failed与edited日志，不投递或改PI。
+
+取证/安全边界内不可确认SQLA固定503/no-store；原execute处理的IntegrityError冲突rollback409，受控锁超时TransactionBusy。最终结果不可确认先刷新原单；已提交修正保留，旧version409，不自动重发。原附件的Intent占用、上传人及跨单/旧图规则保留，真实COS/proxy与其他写入口未因此验收；实际终态见docs/handoff.md。
+
+## 客户门户 v1.38 自动回款截图接入
+
+PUT /api/receipts/{id}/attachments保持version/attachment_ids原body，当前receipt:write及原财务scope、完整batch scope先404/合法batch409。当前converted Intent与Receipt绑定，两阶段完整绑定和附件身份复核，文件IO锁外。保留仅拒syncing、synced/uncertain/非ready PI仍可改图；不引入金额ready/余额/手续费限制。相同集合先验证再no-op；换图只Receipt/Intent关联、版本与proofs_updated，金额/费/执行字段不变、不发送。
+
+存储及不可确认SQLA固定503/no-store，原IntegrityError冲突409与TransactionBusy保持。已提交丢回执先核原单，旧版本409、当前版本同集合200不重复日志。没有provider/token中间commit，真实proxy/COS和其他writer未因此通过；当前终态见docs/handoff.md。
+
+### 客户门户接入 v1.39：回款凭证上传
+
+POST /api/receipts/attachments保留原receipt:write或invoice:write，JWT仅身份、两次当前权限、本地最终注册屏障，代理/本地存储锁外。明确拒绝未注册用冻结位置清理；提交不明保图503/no-store、不自动重传。canonical必须具备相同最终授权；真实跨部署/COS及其他writer未通过。终态见docs/handoff.md；详细合同见客户门户03/04。
+
+### 客户门户接入 v1.40：手工回款创建
+
+POST /api/receipts保留receipt:write/原财务scope与request_key原回放。JWT仅身份，两次current授权/实际PI目标，锁外订单/文件证据，最终当前余额/Intent占图/绑定与回款日志原子；最后提交不明先同原键核对，禁止改键盲重复。共享reader保留原金额摘要表示且保持数值校验（I108），其他writer未通过。实际终态见docs/handoff.md，合同见客户门户03/04。
+
+
+### 回款reconcile/resolve当前授权与锁外核对（v1.41）
+
+两POST由当前DB主体分别按receipt:write OR receipt:admin、receipt:admin鉴权，整个批次原财务范围；Receipt原订单/远端ID与完整目标日志捕获后放锁GET，结束token/cache再最终当前授权重验。已知ID/late_result禁止确认未创建，坏候选日期/空币种503保持待核对；合法候选与精确绑定保持，无外部POST。提交不明先GET原单核对，无稳定命令键或自动回放承诺；I109/I110、95规格及剩余门禁见门户文档，实际终态只看handoff。
+
+
+### 回款remote-change当前授权与全索引删除证据（v1.42）
+
+GET/POST /api/receipts/{id}/remote-change保持原body/hash与金融规则。preview首读current admin+原scope；confirm两次current全group，显式放锁取独立详情/global verified index，最后current/完整绑定先于商业evidence/hash，原财务应用和日志同commit。原ID改关联仍存在不能当删除；坏shape固定503/no-store，动作403/范围404/商业或绑定409；无ready/余额新guard、无外部POST。未知提交GET核原单，无稳定命令回放。实际范围/终态只看handoff，整体I81/现场门禁仍OPEN。
+
+
+### 批次GET及本地void-entry当前主体（v1.43）
+
+GET /api/receipts/batches/{id}首DB当前receipt三动作OR与全批scope；POST /void-entry原version/reason，current receipt:admin、永久屏障/精确成员/当前应用结算日志，原金融guard全批通过后同commit。late_result或坏结算关联拒绝，金额/手续费/图/ID保持，不增加ready或IO。SQL故障/提交未知503 no-store先查原批次，旧version成功后409，无命令键回放。create及其他writer未因此迁移，实际验收看handoff。
+
+
+### Receipt batch create current authority (v1.45)
+
+POST /api/receipts/batches uses current receipt:write and all actual invoice scopes,
+capture/unlocked order-fee-file evidence/final current binding and local atomic
+financial application. Original key replay checks actor, body hash (including
+balance_version), actual stable target and settlement/component relationships
+before new readiness, file and balance guards. Missing new targets may be created;
+missing original replay targets may not. Technical unknown results return fixed
+503/private,no-store; retain original complete body/key to check, never new-key
+retry. No supplier POST. Other settlement/intent/worker APIs and the existing
+batch dialog's unknown-result freezing remain open; details and actual evidence
+are in the portal contracts and docs/handoff.md.
+
+
+### Batch original submission inspection (v1.46)
+
+POST /api/receipts/batches/submission-status accepts the complete original BatchCreate
+body/key, including balance_version. Current receipt:write and every actual Invoice
+scope precede original actor/hash/association checks. Found returns the current batch;
+not_found only authorized invoice display fields and never establishes that an in-flight
+create failed. No financial commit, target creation or provider/storage IO; read locks
+are released by rollback. Dedicated route coverage includes dependency 401/403 and
+sanitized validation422, all private,no-store. Create success adds request_key.
+UI retains exact original body/key per actor/current tab, freezes unknown results and
+separates pure inspection from exact idempotent retry; broader gates remain open.
+Actual run evidence is maintained only in docs/handoff.md.
+
+
+## 发货结算创建补充契约（v1.47）
+
+沿用POST /api/invoices/{invoice_id}/shipment-settlements、ShipmentCreate和统一ok信封，不增加外部发送。body含原request_key、quote_hash、原items及可选payment；完整model_dump(mode=json)包含request_key及quote_hash参与原操作摘要。未知结果必须保留完全原body/key，不换键、不替换quote_hash或凭证。
+
+已有原键先当前动作/实际Invoice范围授权，再核URL、actor、摘要和原历史资金关联后返回当前原Settlement。此路径先于新ready、预售开关、余额、文件及取证检查；合法paused/shipped、凭证文件缺失或后续正常回款不遮原回执。已成功操作关联缺失或错组件返回409，不创建或修复历史目标。
+
+新建初始捕获→释放锁→订单/出库/历史运费目标与类型/凭证取证→最终新事务重新授权及当前完整资金图重验→原本地财务应用。技术上不可信的供应商形状、ID、重复行、非有限或非整数出库数量在锁外固定503/private,no-store；合法但实际数量差异为409。SQL事务结果不能确认同样固定503/private,no-store，指引原提交核对，禁止把它当作失败后改键新建。
+
+报价、读取、状态与执行端点的迁移范围分别管理；本轮不提供新的发货只读submission-status API或前端持久恢复承诺。
+
+
+## 四路发货报价与读取接入（v1.48）
+
+沿用POST /api/invoices/{identity}/shipment-quotes与ShipmentQuote、GET /api/shipments/capabilities、GET /api/shipments/order/{identity}、GET /api/shipments/{identity}及原ok响应字段。报价不调用execute的自动commit包装；最终current计算后返回独立JSON DTO并rollback放锁，报价不创建结算/目标/回款、不外发POST。
+
+新权限按01的原动作OR及原财务范围执行。报价期间管理员先提交撤权/转交时最终403/404；完整资金图变化返回409重新获取报价。合法原金额/业务行顺序/hash保持。技术SQL/供应商坏形状固定503/private,no-store，不返回内部诊断；四路依赖/参数错误同样no-store，422固定detail不回显body或非法ID。
+
+普通order/detail允许原合法历史not-ready状态读取。四路接入不证明发货状态/恢复/确认/worker和所有上游writer均完成；无新的客户站登录或发货提交恢复API。
+
+
+## 发货本地状态动作接入（v1.49）
+
+沿用 POST /api/shipments/{id}/cancel、pause、resume，SettlementAction 请求为 version 与 reason，原 ok 返回完整结算描述和资金余额。正常、依赖401/403、范围404、业务409及参数422均 private,no-store/Pragma:no-cache；422固定安全消息，不回显原因或非法 ID。SQL/提交结果不明固定503，先GET原结算核对当前version/state；审计事件由后台原记录核验。
+
+这些动作没有稳定命令键或专用原命令回执，不承诺自动幂等重试。提交已成功但丢ACK后重复旧version返回409，不能解释为原操作没发生；未提交且当前仍合法，核对后方可按现有版本人工处理。该协议不同于 shipment-create 的稳定 request_key，也不等于批次对话框已实现的当前tab恢复。
+
+## 实施增量：原发货提交核对（v1.50）
+
+POST /api/invoices/{id}/shipment-settlements/submission-status沿用ShipmentCreate严格body，不接受缩减key-only查询。始终要求当前invoice:write+shipment:write及原实际Invoice财务scope；仅含payment时额外要求receipt:write；与原create replay共用原actor、完整hash、quote_hash、Invoice URL和实际历史关联，不应用新创建ready/余额/文件条件遮原回执。
+
+ok信封data包含state=found|not_found、request_key、invoice{id,invoice_no,currency,items[{id,product_name,model,color,length,quantity=原请求数量}]}。仅found有settlement原当前describe DTO加request_key/quote_hash。客户端核对原invoice/key、items唯一id/数量，found必须核id/version/单号/state/对象quote及原hash；不一致保守冻结。原创建200成功同步增加request_key/quote_hash。
+
+not_found只观察，原POST可能锁外取证或仍执行，不能证明失败/取消，也不能换键创建。该入口无商业commit/金融DML/外部IO/文件取证，finally rollback放锁。401/403/404/409遵守原权限/范围/冲突语义，技术失败503不能改not_found；422固定原发货参数提示，不回显备注/金额/附件input。成功、依赖及校验错误均Cache-Control: private, no-store和Pragma: no-cache。其他发货执行接口尚未迁移不据此关闭。
+
+## 实施增量：原运费与出库失败重试（v1.51）
+
+员工接口 POST /api/shipments/{id}/retry-freight、POST /api/shipments/{id}/retry-outbound 使用既有 SettlementAction body（version、reason），返回 ok 信封的当前 Settlement DTO。始终当前 shipment:write 和原实际 Invoice 财务范围；并非客户前缀 API，也不新增权限动作或 body 字段。预售主单、原主运费为零及原 active 规则保持；仅原目标明确 failed、无远端 ID，原编号/冻结载荷有效及对应原结算状态可以重新排队，uncertain/sending/已绑定不能按此流程重发。
+
+当前停用/缺动作 403、范围不可见 404，原版本/关联变化及当前授权后查到同名运费或同 serial 出库为 409。坏形状、列表不完整/变化、供应商技术错误和数据库结果不明固定 503，不泄露 provider/SQL 细节，也不能降为“不存在”。所有正常、依赖错误及固定 422 均 private, no-store 和 Pragma: no-cache。
+
+没有稳定 command key。提交结果不明先 GET 原结算核对原状态、版本及审计，不能自动重发、改编号或把旧版本 409 当原提交失败。两个接口只重新排队本地原任务，无供应商 POST；其他确认/核对入口和投递执行器仍待各自协议验证。
+
+## 实施增量：原运费核对与绑定（v1.52）
+
+POST /api/shipments/{id}/reconcile-freight 保持 SettlementRemoteReview(version、reason、可选 remote_id) 和 ok/current Settlement DTO。始终当前 shipment:write＋原实际 Invoice 财务范围；仅 body 提供 remote_id 时追加当前 shipment:admin。手工绑定仅原 uncertain/verifying/failed，已有不同 ID 冲突；已知 ID 刷新保留原隔离规则。无 ID 时提示先核对原单，禁止创建。
+
+原版本/完整关联变化、原 ID 不规范及手工远端不匹配为 409；当前动作/管理权不足 403、范围不可见 404。远端详情/活动列表不完整、技术错误和数据库结果不明固定 503，不改成 inactive 或写入隔离状态，不回显 provider/SQL。成功、依赖及固定422 private, no-store/Pragma。合法但不活动/不匹配的已知原 ID 刷新返回200，保原 ID并设uncertain及固定错误说明；手工同证据拒绝，无新增金额/编号。
+
+无稳定 command key。未知结果先 GET 原目标状态/ID/version 和审计；Settlement.version 不变不能证明动作未执行。已知 ID 刷新是可重复观察，重发可能再增目标 version/审计，不宣称原键唯一回放；手工已成功 bound 后旧请求不可再次绑定。原核对不新增 ready 条件。其他出库核对/确认与执行器不在此局部契约范围。
+
+## 客户原动作回执只读查询（v1.62）
+
+GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、能力与原订单范围下读取已有CommandReceipt，严格action/payload_hash与提案revision_id/proposal_hash查询引用。保留现有自然命令键，同公司当前授权联系人可查，员工token不能替代客户身份。返回ok({found,command,receipt?})；found=false不证明原动作未执行，不能自动重发POST。正常/拒绝no-store，参数422安全裁剪，SQL异常503。唯一允许写为认证idle续期，无新商业状态/回执或供应商动作。字段、自然键及事务约束详见[当前API契约](requirements/2026-09-30-customer-order-portal/03-api-contract.md)。

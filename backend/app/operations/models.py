@@ -11,6 +11,7 @@ class JobMetadata:
 
 
 JOB_METADATA = {
+    "portal_auth_mail": JobMetadata("客户门户认证邮件", "客户下单门户", "销售运营"),
     "okki_outbound_delete_reconcile": JobMetadata("小满出库删除同步", "发货检验", "供应链"),
     "design_shoot_reminder": JobMetadata("设计拍摄提醒", "设计预约", "设计中心"),
     "shipping_daily_report": JobMetadata("物流日报生成", "物流跟踪", "物流团队"),

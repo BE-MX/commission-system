@@ -1,0 +1,22 @@
+[
+  {
+    "input": "Please adjust",
+    "reason": "Please adjust",
+    "payload_hash": "e63b689f6a214776392eed9b8490b58fe2a2c2d31003c0a6f7cf769d68558959"
+  },
+  {
+    "input": "   Please\n adjust 😀",
+    "reason": "Please\n adjust 😀",
+    "payload_hash": "b976890b65ae1168a1cd5df45986c2bb04de9160a1068df599f6c2d647916afb"
+  },
+  {
+    "input": "\u001cPlease adjust\u001c",
+    "reason": "\u001cPlease adjust\u001c",
+    "payload_hash": "4596fc3d283570343a8be6dfe15b19248b1d5551c453b6e759026157c3bd786d"
+  },
+  {
+    "input": "  私密注释 😀\n  ",
+    "reason": "私密注释 😀",
+    "payload_hash": "76689cc3e3633dbce46e523c005cf17d7559af4f9904243d99996f918f40a172"
+  }
+]

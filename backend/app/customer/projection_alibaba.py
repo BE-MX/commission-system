@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Mapping, Sequence
 
+from app.portal.authority import lock_authority
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -79,6 +80,7 @@ def project_alibaba_inquiry(
     sync_cursor: str | None = None,
     captured_at: datetime | None = None,
 ) -> ProjectionReceipt:
+    lock_authority(db)
     try:
         return _project_alibaba_inquiry_from_source(
             db, source_account_key=source_account_key, payload=payload,

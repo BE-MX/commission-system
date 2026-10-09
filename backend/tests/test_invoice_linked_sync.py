@@ -57,10 +57,13 @@ def test_linked_invoice_sync_stores_outbound_followup_result(db, order, monkeypa
     row.steps = {key: {'status': 'done'} for key in ('order', 'receipt')}
     row.steps = {**row.steps, 'outbound': {'status': 'manual', 'message': '旧出库资料'}}
     db.commit()
-    monkeypatch.setattr(invoice_router, '_linked_scope', lambda *a: order)
+    # Entry authorization now returns (invoice, live user, installed); this test
+    # exercises the followup merge, so the stub keeps the legacy executor path.
+    user = {'sub': '1', 'permissions': ['invoice:sync']}
+    monkeypatch.setattr(invoice_router, '_linked_scope', lambda *a: (order, user, False))
     monkeypatch.setattr(linked, 'run', lambda *a, **kw: row)
     monkeypatch.setattr(followup, 'safely_run', lambda *a: {'status': 'done', 'message': '出库已更新'})
-    response = invoice_router.run_linked(order.id, row.id, False, db, {'sub': '1', 'permissions': ['invoice:sync']})
+    response = invoice_router.run_linked(order.id, row.id, False, db, user)
     assert response['data']['status'] == 'done'
     assert row.steps['outbound']['message'] == '出库已更新'
 
@@ -68,10 +71,11 @@ def test_linked_invoice_sync_stores_outbound_followup_result(db, order, monkeypa
 def test_linked_receipt_read_failure_does_not_hold_outbound_followup(db, order, monkeypatch):
     row = operation(db, order)
     monkeypatch.setattr(sync_coordinator, 'synchronize', lambda *a, **kw: {'ok': True})
-    monkeypatch.setattr(invoice_router, '_linked_scope', lambda *a: order)
+    user = {'sub': '1', 'permissions': ['invoice:sync']}
+    monkeypatch.setattr(invoice_router, '_linked_scope', lambda *a: (order, user, False))
     monkeypatch.setattr(linked.balance, 'calculate', lambda *a: (_ for _ in ()).throw(ValueError('回款暂不可用')))
     monkeypatch.setattr(followup, 'safely_run', lambda *a: {'status': 'done', 'message': '出库已更新'})
-    result = invoice_router.run_linked(order.id, row.id, False, db, {'sub': '1', 'permissions': ['invoice:sync']})
+    result = invoice_router.run_linked(order.id, row.id, False, db, user)
     assert result['data']['steps']['order']['status'] == 'done'
     assert result['data']['steps']['outbound']['status'] == 'done'
     assert result['data']['steps']['receipt']['status'] == 'manual'

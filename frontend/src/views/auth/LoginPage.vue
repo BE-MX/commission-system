@@ -146,8 +146,7 @@
 <script setup>import { msgWarning, msgSuccessText, msgError } from '@/utils/feedback'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-
+import { isAuthOperationSuperseded, useAuthStore } from '@/stores/auth'
 import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
 import ArkWakeCanvas from '@/components/ArkWakeCanvas.vue'
 import logoGold from '@/assets/leshine-logo-gold.png'
@@ -200,6 +199,7 @@ const handleSubmit = async () => {
     }
     router.push(redirect.startsWith('/') ? redirect : '/')
   } catch (error) {
+    if (isAuthOperationSuperseded(error)) return
     msgError(error.message || '登录失败，请检查用户名和密码', error)
   } finally {
     loading.value = false

@@ -9,8 +9,10 @@ from app.domestic_decision.models import DecisionRun
 from app.domestic_decision.schemas import AnalysisRequest
 from app.domestic_decision.insight_service import enrich
 from app.domestic_decision.schemas import PRODUCT_FIELDS
+from app.domestic_decision.metrics import METRIC_VERSION
 
 SORT_FIELDS = {
+    "reports": {"id", "item_id", "order_id", "customer_id", "process_name", "reported_at", "report_qty", "amount"},
     "orders": {"id", "domestic_no", "order_date", "customer_id", "order_category", "order_type", "status", "total_amount"},
     "items": {"id", "order_id", "order_qty", "unit_price", "amount", *[f"attrs.{field}" for field in PRODUCT_FIELDS]},
     "customers": {"customer_id", "shop_name", "amount", "matched_amount", "history.cycle_status"},
@@ -42,6 +44,8 @@ def require_run(db, actor, run_id, *, fresh=False, allow_expired=False):
     row = db.query(DecisionRun).filter(DecisionRun.id == run_id, DecisionRun.owner_user_id == actor["id"]).first()
     if row is None:
         raise HTTPException(404, "分析结果不存在")
+    if row.result_json.get("meta", {}).get("metric_version") != METRIC_VERSION:
+        raise HTTPException(409, "统计口径已更新，请重新分析")
     if not allow_expired and row.expires_at <= beijing_now():
         raise HTTPException(410, "分析已过期，请刷新")
     visible = {customer.id for customer in scope.customer_query(db, actor).all()}
@@ -49,6 +53,8 @@ def require_run(db, actor, run_id, *, fresh=False, allow_expired=False):
         raise HTTPException(403, "客户归属或权限已变化，请重新分析")
     if row.includes_finance and not has(actor, "domestic_decision_finance:read"):
         raise HTTPException(403, "资金阅读权限已变化，请重新分析")
+    if row.result_json.get("meta", {}).get("includes_unassigned_production") and not (has(actor, "domestic_decision:read_all") and has(actor, "domestic:read_all")):
+        raise HTTPException(403, "生产订单阅读权限已变化，请重新分析")
     if fresh:
         latest = analytics.build_analysis(db, actor, AnalysisRequest.model_validate(row.query_json))
         if latest["meta"]["data_version"] != row.data_version:
@@ -58,7 +64,7 @@ def require_run(db, actor, run_id, *, fresh=False, allow_expired=False):
 
 def rows(db, actor, run_id, *, kind="orders", page=1, page_size=50, customer_id=None, order_id=None, dimension=None, value=None, sort_field=None, sort_order=None):
     row = require_run(db, actor, run_id, fresh=True)
-    if kind not in {"orders", "items", "customers", "ledger", "requests"}:
+    if kind not in {"orders", "items", "customers", "ledger", "requests", "reports"}:
         raise HTTPException(422, "证据类型不支持")
     if (sort_field is not None and sort_field not in SORT_FIELDS[kind]) or sort_order not in {None, "asc", "desc"} or bool(sort_field) != bool(sort_order):
         raise HTTPException(422, "排序字段或方向不支持")
@@ -71,6 +77,8 @@ def rows(db, actor, run_id, *, kind="orders", page=1, page_size=50, customer_id=
     if order_id is not None:
         data = [item for item in data if item.get("order_id", item.get("id") if kind == "orders" else None) == order_id]
     if dimension:
+        if kind == "reports":
+            raise HTTPException(422, "报工证据请按客户、订单或事实引用下钻")
         if dimension not in row.result_json.get("dimensions", {}):
             raise HTTPException(422, "维度不支持")
         # Restrict whole-order evidence by matching item IDs, preserving the

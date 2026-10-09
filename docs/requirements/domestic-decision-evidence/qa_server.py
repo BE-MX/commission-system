@@ -25,7 +25,8 @@ from app.core.time import beijing_today
 from app.core.response import ok
 from app.auth.dependencies import get_current_user
 from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission
-from app.domestic.models import DomesticCustomer, DomesticProduct, DomesticOrder, DomesticOrderItem, DomesticCustomerLedger, DomesticCustomerRequest
+from app.domestic.models import DomesticCustomer, DomesticProduct, DomesticOrder, DomesticOrderItem, DomesticCustomerLedger, DomesticCustomerRequest, DomesticItemProgress, DomesticReportLog
+from app.production.models import Process, ProcessRoute
 from app.domestic_decision.models import DecisionConfig, DecisionMapping
 from app.domestic_decision.router import router
 from app.domestic_decision import job_service, scope
@@ -71,7 +72,7 @@ def seed():
         db.flush()
         for user, role in zip(users, roles):
             db.add(ArkUserRole(user_id=user.id, role_id=role.id))
-        codes = ["domestic_decision:read", "domestic_decision:read_all", "domestic_decision_finance:read", "domestic_decision_action:write", "domestic_decision_report:write", "domestic_decision:admin"]
+        codes = ["domestic_decision:read", "domestic_decision:read_all", "domestic_decision_finance:read", "domestic_decision_action:write", "domestic_decision_report:write", "domestic_decision:admin", "domestic:read_all"]
         for code in codes:
             permission = ArkPermission(code=code, module=code.split(":")[0], action=code.split(":")[1], label=code)
             db.add(permission)
@@ -123,6 +124,30 @@ def seed():
             customer.balance = balance
             if index % 9 == 0:
                 db.add(DomesticCustomerRequest(customer_id=customer.id, request_type="recharge", amount=3000, status="pending", request_id=f"qa-request-{index}", business_key=f"qa-request-{index}", created_by=owner.id))
+        db.flush()
+        route = ProcessRoute(name="隔离经营报工路线")
+        processes = {name: Process(name=name) for name in ("入库", "毛坯出库", "发货完成")}
+        db.add_all([route, *processes.values()])
+        db.flush()
+        def report(item, name, day):
+            progress = DomesticItemProgress(item_id=item.id, route_id=route.id, process_id=processes[name].id, step_order=list(processes).index(name) + 1, completed_qty=item.order_qty)
+            db.add(progress)
+            db.flush()
+            db.add(DomesticReportLog(item_id=item.id, progress_id=progress.id, process_id=progress.process_id, step_order=progress.step_order, report_qty=item.order_qty, reported_at=datetime.combine(day, time(14)), reported_by_user_id=users[0].id))
+        business_items = db.query(DomesticOrderItem).all()
+        for item in business_items:
+            order = db.get(DomesticOrder, item.order_id)
+            report(item, "毛坯出库", min(today, order.order_date + timedelta(days=1)))
+            report(item, "发货完成", min(today, order.order_date + timedelta(days=2)))
+        for index in range(3):
+            template = business_items[0]
+            order = DomesticOrder(domestic_no=f"DP-QA-{index}", order_no=f"DP-QA-{index}", order_kind="production", customer_id=None, order_category=None, order_date=today - timedelta(days=10 + index), status=2, total_amount=0, charged_amount=0, created_by=users[0].id)
+            db.add(order)
+            db.flush()
+            item = DomesticOrderItem(order_id=order.id, line_no=1, product_id=template.product_id, product_name=template.product_name, order_qty=10, unit_price=0, original_price=0, discount_amount=0, labor_fee=0, pricing_rule="production", pricing_version="qa-v1", base_price_version_snapshot=0, attrs_snapshot={**template.attrs_snapshot, "hair_style_series": None}, color=template.color)
+            db.add(item)
+            db.flush()
+            report(item, "入库", today - timedelta(days=2 + index))
         db.commit()
         return {user.username: user.id for user in users}
 

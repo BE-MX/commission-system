@@ -18,6 +18,9 @@ from app.domestic_decision.analytic_rules import build_insights
 from app.domestic_decision.profiles import customer_rows, buying_cohorts, apply_reference_cycles
 from app.domestic_decision.finance import build_finance
 from app.domestic_decision.recommendations import customer_recommendations
+from app.domestic_decision.operations import load_operations, in_period, shipping_summary, shipping_by_day
+from app.domestic_decision.customer_operations import retention_report, recharge_segments
+from app.domestic_decision.product_operations import product_report
 
 
 def _selected_customers(db, actor, payload):
@@ -57,7 +60,7 @@ def _period_facts(orders, items, attrs, payload, start, end):
     return headers, lines
 
 
-def _version(customers, orders, items, attrs, mappings, config, finance):
+def _version(customers, orders, items, attrs, mappings, config, finance, operations, segments):
     customer_fields = ("id", "shop_name", "owner_user_id", "province", "city", "customer_source", "store_type", "settle_mode", "membership_level", "lifecycle_status", "status", "total_order_count", "total_sales_amount", "first_order_date", "last_order_date", "updated_at")
     customer_values = [{field: str(getattr(r, field)) if getattr(r, field) is not None else None for field in customer_fields} for r in customers]
     if finance:
@@ -66,7 +69,9 @@ def _version(customers, orders, items, attrs, mappings, config, finance):
     sources = {"customers": customer_values, "orders": [header_evidence(r, bool(finance)) for r in orders],
                "items": [item_evidence(r, *attrs[r.id]) for r in items],
                "mappings": [{"id": r.id, "property": r.property, "product_type": r.product_type, "raw_value": r.raw_value, "standard_value": r.standard_value, "version": r.version} for r in mappings],
-               "config": config, "finance": finance.get("version_evidence") if finance else None}
+               "config": config, "finance": finance.get("version_evidence") if finance else None,
+               "operations": operations["source"], "customer_segments": segments.get("source") if segments else None,
+               "metric_version": METRIC_VERSION}
     return hashlib.sha256(json.dumps(sources, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
 
 
@@ -84,11 +89,16 @@ def build_analysis(db, actor, payload):
     mapping_rows = db.query(DecisionMapping).order_by(DecisionMapping.id).all()
     mappings = {(r.property, r.product_type or "", r.raw_value): r.standard_value for r in mapping_rows}
     attrs = {r.id: item_attributes(r, mappings) for r in all_items}
+    operations = load_operations(db, actor, payload, source_orders, all_items, attrs, mappings)
+    shipping = in_period(operations["shipping"], payload.start_date, payload.end_date)
     current_orders, current_items = _period_facts(source_orders, all_items, attrs, payload, payload.start_date, payload.end_date)
     previous_orders, previous_items = _period_facts(source_orders, all_items, attrs, payload, *comparison) if comparison else ([], [])
     aftersales = config["aftersales_order_types"]
     summary = aggregate_orders(current_orders, current_items, aftersales)
     previous_summary = aggregate_orders(previous_orders, previous_items, aftersales)
+    summary.update(business_order_amount=summary["amount"], recharge_amount=None, **shipping_summary(shipping))
+    previous_summary.update(business_order_amount=previous_summary["amount"], recharge_amount=None,
+                            **shipping_summary(in_period(operations["shipping"], *comparison) if comparison else []))
     history = [r for r in source_orders if r.order_kind == "business" and r.deleted_flag == 0 and r.status in (1, 2, 3) and decimal(r.total_amount) > 0 and r.order_type not in aftersales]
     selected_customer_rows = customer_rows(customers, current_orders, current_items, history, config, min(payload.end_date, beijing_today()))
     apply_reference_cycles(selected_customer_rows, all_items, history, attrs)
@@ -102,6 +112,8 @@ def build_analysis(db, actor, payload):
         selected_customer_rows = [row for row in selected_customer_rows if row["customer_id"] in visible_customer_ids]
     for row in selected_customer_rows:
         row["risk_candidate"] = row["customer_id"] in risk_customer_ids
+    retention = retention_report(selected_customer_rows, config, payload)
+    segments = recharge_segments(db, customers, selected_customer_rows, current_orders, current_items, payload, comparison) if finance_allowed else None
     requested_dimensions = [field for field in DIMENSIONS if finance_allowed or field not in {"settle_mode", "membership_level"}]
     dimensions = {field: dimension_rows(current_items, current_orders, customers, field, attrs, previous_items, previous_orders, payload.metric) for field in requested_dimensions}
     quality = quality_report(current_orders, all_items, current_items, attrs, requested_dimensions, config, [r for r in source_orders if payload.start_date <= r.order_date <= payload.end_date], payload.metric)
@@ -112,33 +124,31 @@ def build_analysis(db, actor, payload):
     finance = build_finance(db, finance_customers, payload, history, config) if finance_allowed else None
     if finance:
         quality["ledger_anomaly_count"] = finance["summary"]["anomaly_count"]
+        summary["recharge_amount"] = finance["summary"]["recharge_amount"]
+        if comparison:
+            related_ids = {r.customer_id for r in previous_orders} if payload.finance_related_customers else {r.id for r in customers}
+            previous_summary["recharge_amount"] = number(sum((decimal(entry["amount"]) for entry in segments["source"] if "created_at" in entry and entry["customer_id"] in related_ids and comparison[0].isoformat() <= entry["created_at"][:10] <= comparison[1].isoformat()), decimal(0)))
     trend = []
     coverage_start = date.fromisoformat(config["coverage_start"]) if config["coverage_start"] else None
     config["trend_comparison_complete"] = bool(comparison and coverage_start and coverage_start <= comparison[0])
+    daily_shipping = shipping_by_day(shipping)
+    daily_recharge = {row["date"]: row["recharge_amount"] for row in finance["trend"]} if finance else {}
     day = payload.start_date
     while day <= payload.end_date:
         point_orders = [r for r in current_orders if r.order_date == day]
         ids = {r.id for r in point_orders}
         point_items = [r for r in current_items if r.order_id in ids]
         covered = bool(coverage_start and coverage_start <= day <= beijing_today())
-        if point_orders or covered:
+        if point_orders or covered or day.isoformat() in daily_shipping or day.isoformat() in daily_recharge:
             trend.append({"date": day.isoformat(), "coverage": "confirmed" if covered else "observed", **aggregate_orders(point_orders, point_items, aftersales)})
         else:
             trend.append({"date": day.isoformat(), "coverage": "unconfirmed", "amount": None, "matched_amount": None, "quantity": None, "order_count": None, "customer_count": None})
+        trend[-1].update(business_order_amount=trend[-1]["amount"],
+                         **daily_shipping.get(day.isoformat(), {"shipped_amount": 0 if covered else None, "shipped_quantity": 0 if covered else None}),
+                         recharge_amount=daily_recharge.get(day.isoformat(), 0) if finance else None)
         day += timedelta(days=1)
-    product_groups = defaultdict(list)
-    for item in current_items:
-        key = tuple(attrs[item.id][0][field] for field in PRODUCT_FIELDS)
-        product_groups[key].append(item)
     current_order_map = {r.id: r for r in current_orders}
-    products = []
-    for key, lines in product_groups.items():
-        products.append({"key": hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()[:16],
-                         "attrs": dict(zip(PRODUCT_FIELDS, key)), "label": " / ".join(key),
-                         "amount": number(sum((decimal(r.unit_price) * r.order_qty for r in lines), decimal(0))),
-                         "quantity": sum(r.order_qty for r in lines), "order_count": len({r.order_id for r in lines}),
-                         "customer_count": len({current_order_map[r.order_id].customer_id for r in lines}),
-                         "evidence_refs": [{"type": "items", "id": r.id} for r in lines]})
+    products, production_operations = product_report(current_items, current_orders, operations, payload, config)
     owner_ids = {r.owner_user_id for r in customers if r.owner_user_id is not None}
     users = {r.id: r.real_name for r in db.query(ArkUser).filter(ArkUser.id.in_(owner_ids)).all()} if owner_ids else {}
     salespeople = []
@@ -158,22 +168,28 @@ def build_analysis(db, actor, payload):
         warnings.append("订单主表额与明细金额存在差异，已分别展示")
     if finance and any(field in PRODUCT_FIELDS for field in payload.filters) and not payload.finance_related_customers:
         warnings.append("资金分析未应用产品筛选；需明确开启按相关客户分析资金")
-    data_version = _version(customers, source_orders, all_items, attrs, mapping_rows, config, finance)
+    data_version = _version(customers, source_orders, all_items, attrs, mapping_rows, config, finance, operations, segments)
+    comparison_keys = ["amount", "matched_amount", "quantity", "order_count", "customer_count", "business_order_amount", "shipped_amount"] + (["recharge_amount"] if finance else [])
     result = {"meta": {"customer_ids": [r.id for r in customers], "data_version": data_version,
                        "period": {"start_date": payload.start_date.isoformat(), "end_date": payload.end_date.isoformat()},
                        "comparison_period": {"start_date": comparison[0].isoformat(), "end_date": comparison[1].isoformat()} if comparison else None,
                        "time_basis": "Asia/Shanghai", "attribution_mode": "current_owner", "scope_summary": {"mode": payload.scope, "customer_count": len(customers), "actor_id": actor["id"]},
                        "data_as_of": beijing_now().isoformat(), "coverage_start": config["coverage_start"],
                        "metric_version": METRIC_VERSION, "mapping_version": {str(r.id): r.version for r in mapping_rows}, "rule_version": config["rule_version"],
+                       "includes_unassigned_production": operations["includes_unassigned_production"],
                        "config_version": config["config_version"], "sample_size": {"orders": len(current_orders), "items": len(current_items), "customers": len(customers)}, "warnings": warnings},
-              "summary": summary, "comparison": {"summary": previous_summary if comparison else None, "changes": {key: change(summary[key], previous_summary[key]) for key in ("amount", "matched_amount", "quantity", "order_count", "customer_count")} if comparison else {}},
+              "summary": summary, "comparison": {"summary": previous_summary if comparison else None, "changes": {key: change(summary[key], previous_summary[key]) for key in comparison_keys} if comparison else {}},
               "trend": trend, "dimensions": dimensions, "matrix": matrix_rows(current_items, current_orders, customers, payload.dimensions, attrs, payload.metric),
               "price_structure": price_report(current_items), "quantity_structure": quantity_report(current_orders, current_items, all_items), "amount_decomposition": amount_decomposition(summary, previous_summary) if comparison else None,
-              "products": sorted(products, key=lambda r: (-r["amount"], r["key"])), "customers": selected_customer_rows, "salespeople": salespeople,
+              "products": products, "production_operations": production_operations, "retention": retention, "customers": selected_customer_rows, "salespeople": salespeople,
               "cohorts": buying_cohorts(selected_customer_rows, min(payload.end_date, beijing_today()), config["coverage_start"]),
               "recommendation_meta": recommendation_meta,
               "quality": quality, "insights": build_insights(selected_customer_rows, dimensions, quality, config, finance),
-              "evidence": {"orders": [header_evidence(r, finance_allowed) for r in current_orders], "items": [item_evidence(r, *attrs[r.id]) for r in current_items]}, "metric_registry": METRICS}
+              "evidence": {"orders": [header_evidence(r, finance_allowed) for r in current_orders], "items": [item_evidence(r, *attrs[r.id]) for r in current_items],
+                           "reports": shipping + in_period(operations["supply"], payload.start_date, payload.end_date)}, "metric_registry": METRICS}
+    if segments:
+        segments.pop("source", None)
+        result["customer_segments"] = segments
     if finance:
         finance.pop("version_evidence", None)
         result["finance"] = finance

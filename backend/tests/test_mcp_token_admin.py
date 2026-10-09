@@ -10,6 +10,7 @@ from app.core.database import Base, get_db
 from app.knowledge.models import KnowledgeLibrary, KnowledgeLibraryMember
 from app.mcp.models import MCPToken
 from app.mcp.token_admin import router
+from app.portal.identity_models import AuthorityBarrier
 
 
 TABLES = [
@@ -21,6 +22,8 @@ TABLES = [
     KnowledgeLibrary.__table__,
     KnowledgeLibraryMember.__table__,
     MCPToken.__table__,
+    # Token mutation endpoints acquire the migrated authority barrier first.
+    AuthorityBarrier.__table__,
 ]
 
 
@@ -32,7 +35,19 @@ def _setup():
     read_permission = ArkPermission(
         id=1, code="knowledge:read", module="knowledge", action="read", label="Knowledge read"
     )
+    admin_permission = ArkPermission(
+        id=2, code="mcp:admin", module="mcp", action="admin", label="MCP token admin"
+    )
     reader_role = ArkRole(id=1, name="reader", label="Reader", permissions=[read_permission])
+    operator_role = ArkRole(id=2, name="mcp_operator", label="MCP operator",
+                            permissions=[admin_permission])
+    # The mutation endpoints re-check the operator's live database authority;
+    # JWT claims alone no longer grant mcp:admin. Keep the name keyword-free so
+    # the candidate search contract ("user") is unchanged.
+    operator = ArkUser(
+        id=1, username="mcp-operator", real_name="MCP Operator", password_hash="test",
+        roles=[operator_role],
+    )
     ready = ArkUser(
         id=2, username="ready", real_name="Ready User", password_hash="test", roles=[reader_role]
     )
@@ -41,7 +56,7 @@ def _setup():
         id=4, username="inactive", real_name="Inactive User", password_hash="test", is_active=False
     )
     library = KnowledgeLibrary(id=1, name="Sales", category="company", created_by=1)
-    db.add_all([ready, no_access, inactive, library])
+    db.add_all([ready, no_access, inactive, library, operator, AuthorityBarrier(code="authority")])
     db.flush()
     db.add(KnowledgeLibraryMember(library_id=1, user_id=2, role="viewer", created_by=1))
     db.add_all([

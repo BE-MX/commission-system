@@ -145,6 +145,10 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(agent_runtime_model_router, prefix="/api/agent-runtime/model", tags=["AI Agent 模型网关"])
     app.include_router(customer_media_public_router, prefix="/api/customer-media/portal", tags=["客户拍摄素材门户-公开"])
     app.include_router(customer_media_router, prefix="/api/customer-media", tags=["客户拍摄素材交付"])
+    from app.portal.router import router as portal_router
+    app.include_router(portal_router, prefix="/api/portal/v1", tags=["客户下单门户"])
+    from app.portal.admin_router import router as portal_admin_router
+    app.include_router(portal_admin_router, prefix="/api/portal/admin/v1", tags=["客户下单门户管理"])
     app.include_router(integration_router, prefix="/api/integrations", tags=["外部站点发票接入"])
     app.include_router(shipping_inspection_router, prefix="/api/shipping-inspection", tags=["发货检验"])
     app.include_router(whatsapp_translation_router, prefix="/api/whatsapp-translation", tags=["WhatsApp 实时翻译"])

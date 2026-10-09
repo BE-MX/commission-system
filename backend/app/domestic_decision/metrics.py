@@ -4,14 +4,17 @@ from decimal import Decimal
 from datetime import timedelta
 from app.domestic_decision.models import DecisionConfig
 
-METRIC_VERSION = "domestic-v1"
+METRIC_VERSION = "domestic-v2-report-date"
 DEFAULT_CONFIG = {"coverage_start": None, "aftersales_order_types": [], "quality_threshold": 0.8, "dormant_days": 90, "rule_version": "rules-v1", "inactive_lifecycle_statuses": ["closed", "paused", "inactive", "lost", "停业", "暂停合作"]}
 METRICS = [
+    {"code": "business_order_amount", "label": "业务下单金额", "grain": "order_id", "formula": "SUM(unique valid business order.total_amount BY order_date)", "unit": "元", "version": METRIC_VERSION},
+    {"code": "shipped_amount", "label": "发货出库金额", "grain": "report_log_id", "formula": "SUM(valid 发货完成 report_qty * item.unit_price BY reported_at)", "unit": "元", "version": METRIC_VERSION},
+    {"code": "recharge_amount", "label": "客户充值金额", "grain": "ledger_id", "formula": "SUM(positive posted recharge.amount BY created_at)", "unit": "元", "version": METRIC_VERSION},
     {"code": "amount", "label": "订单额", "grain": "order_id", "formula": "SUM(unique order.total_amount)", "unit": "元", "version": METRIC_VERSION},
     {"code": "matched_amount", "label": "匹配产品金额", "grain": "order_item_id", "formula": "SUM(order_qty * unit_price)", "unit": "元", "version": METRIC_VERSION},
     {"code": "quantity", "label": "件数", "grain": "order_item_id", "formula": "SUM(order_qty)", "unit": "件", "version": METRIC_VERSION},
     {"code": "order_count", "label": "相关订单数", "grain": "order_id", "formula": "COUNT(DISTINCT order_id)", "unit": "单", "version": METRIC_VERSION},
-    {"code": "customer_count", "label": "购买客户数", "grain": "customer_id", "formula": "COUNT(DISTINCT customer_id)", "unit": "客户", "version": METRIC_VERSION},
+    {"code": "customer_count", "label": "下单客户个数", "grain": "customer_id", "formula": "COUNT(DISTINCT customer_id)", "unit": "客户", "version": METRIC_VERSION},
 ]
 
 

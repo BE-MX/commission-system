@@ -1,10 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { defaultQuery, cleanQuery, applySavedView, validateQuery, latestRequestGate, groupedInsights, actionCompletionError, comparisonText } from '../src/views/domestic_decision/state.js'
+import { defaultQuery, cleanQuery, applySavedView, validateQuery, latestRequestGate, groupedInsights, actionCompletionError, comparisonText, evidenceRefs } from '../src/views/domestic_decision/state.js'
 import { currentBeijingDate } from '../src/utils/datetime.js'
 
 const options = { dimensions: { craft: [], length: [], color: [], province: [] }, permissions: { all: false, finance: false } }
+test('report evidence survives selection while finance evidence stays permission gated', () => {
+  const refs = [{ type: 'reports', id: 1 }, { type: 'items', id: 1 }, { type: 'reports', id: 1 }, { type: 'ledger', id: 2 }, { type: 'requests', id: 3 }, { type: 'unknown', id: 4 }, { type: 'reports' }]
+  assert.deepEqual(evidenceRefs(refs, false), refs.slice(0, 2))
+  assert.deepEqual(evidenceRefs(refs, true), [refs[0], refs[1], refs[3], refs[4]])
+  assert.deepEqual(evidenceRefs(null, true), [])
+  const page = readFileSync(new URL('../src/views/domestic_decision/DomesticDecision.vue', import.meta.url), 'utf8')
+  assert.match(page, /evidenceRefs\(refs, permissions\.value\.finance\)/)
+})
 test('business month default follows Beijing midnight even on a non-Beijing client', () => {
   const today = currentBeijingDate(new Date('2026-09-30T16:01:00Z'))
   assert.equal(today, '2026-10-01')

@@ -7,7 +7,7 @@ from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.response import ok
 from app.core.time import beijing_today, beijing_now
-from app.domestic.models import DomesticOrder, DomesticOrderItem, DomesticCustomerLedger, DomesticCustomerRequest
+from app.domestic.models import DomesticOrder, DomesticOrderItem, DomesticCustomerLedger, DomesticCustomerRequest, DomesticReportLog
 from app.domestic_decision import analytics, profiles, scope, run_service, state_service, job_service
 from app.domestic_decision.models import DecisionMapping, DecisionConfig, DecisionJob
 from app.domestic_decision.schemas import AnalysisRequest
@@ -75,8 +75,9 @@ def evidence(kind: str, entity_id: int, db: Session = Depends(decision_db), user
     actor = _actor(db, user)
     kind = {"orders": "order", "items": "item", "requests": "request"}.get(kind, kind)
     types = {
+        "reports": (DomesticReportLog, ("id", "item_id", "process_id", "report_qty", "reported_at", "revoked")),
         "order": (DomesticOrder, ("id", "domestic_no", "order_date", "customer_id", "order_kind", "order_category", "order_type", "order_channel", "status", "total_amount", "deleted_flag")),
-        "item": (DomesticOrderItem, ("id", "order_id", "line_no", "product_name", "attrs_snapshot", "order_qty", "unit_price", "color", "labor_fee", "membership_level_snapshot", "pricing_version")),
+        "item": (DomesticOrderItem, ("id", "order_id", "line_no", "product_name", "attrs_snapshot", "order_qty", "unit_price", "original_price", "discount_amount", "color", "labor_fee", "membership_level_snapshot", "pricing_version")),
         "ledger": (DomesticCustomerLedger, ("id", "customer_id", "order_id", "transaction_type", "amount", "balance_before", "balance_after", "created_at")),
         "request": (DomesticCustomerRequest, ("id", "customer_id", "request_type", "amount", "status", "created_at", "reviewed_at")),
     }
@@ -89,14 +90,25 @@ def evidence(kind: str, entity_id: int, db: Session = Depends(decision_db), user
     if row is None:
         raise HTTPException(404, "证据不存在")
     customer_id = getattr(row, "customer_id", None)
-    if kind == "item":
-        customer_id = db.query(DomesticOrder.customer_id).filter(DomesticOrder.id == row.order_id).scalar()
+    order = None
+    if kind in {"order", "item", "reports"}:
+        order_id = row.id if kind == "order" else row.order_id if kind == "item" else db.query(DomesticOrderItem.order_id).filter(DomesticOrderItem.id == row.item_id).scalar()
+        order = db.query(DomesticOrder).filter(DomesticOrder.id == order_id).first()
+        customer_id = order.customer_id if order else None
     if customer_id is None:
-        raise HTTPException(404, "证据不存在")
-    scope.require_customer(db, actor, customer_id)
+        if not (order and order.order_kind == "production" and run_service.has(actor, "domestic_decision:read_all") and run_service.has(actor, "domestic:read_all")):
+            raise HTTPException(404, "证据不存在")
+    else:
+        scope.require_customer(db, actor, customer_id)
     if kind == "item" and not run_service.has(actor, "domestic_decision_finance:read"):
         keys = tuple(key for key in keys if key != "membership_level_snapshot")
     data = {key: getattr(row, key) for key in keys}
+    if kind == "reports":
+        from app.production.models import Process
+        from app.domestic_decision.operations import report_evidence
+        item = db.query(DomesticOrderItem).filter_by(id=row.item_id).first()
+        process = db.query(Process).filter_by(id=row.process_id).first()
+        data = report_evidence(row, item, order, process.name if process else "未知")
     if kind == "item":
         from app.domestic_decision.event_hooks import safe_snapshot
         data["attrs_snapshot"] = safe_snapshot(data["attrs_snapshot"])
