@@ -25,7 +25,7 @@
 
 生产库中客户标签表的 `customer_id` 为 `utf8mb4_0900_ai_ci`，素材批次表为 `utf8mb4_unicode_ci`。两列联结时需对客户标签侧显式使用 `utf8mb4_unicode_ci`，否则 MySQL 报 1267；素材预览与客户门户的标签查询均按此规则比较，不改变已有表和数据。
 
-## 预售资金池与当批明细（179_presale_funding，本地实现，未部署）
+## 预售资金池与当批明细（179_presale_funding，2026-10-09 已部署）
 
 父 `178_account_unlock`；只新增七列，不猜测或回填历史资金用途，不改原回款金额、手续费、日期或凭证。`ark_invoices.presale_current_accessory/presale_current_handling` 可空 NUMERIC(14,2)，保存当前包装/手续费，与含历史费用的账本分离。`ark_invoice_items.presale_archived`、`presale_shipped_quantity` INT默认0，`presale_shipped_amount` NUMERIC(14,2)默认0；归档保留原商品ID、数量、价格、金额及小满UID，远端投影只使用实际已发数量金额。`ark_receipt_intents.purpose` 可空VARCHAR(32)、`bank_charge` 可空NUMERIC(14,2)，冻结首款用途及实际银行手续费；新预售省略手续费按零，历史NULL不擅自认定零。
 
@@ -701,6 +701,6 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 父迁移176_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；MySQL离线DDL和隔离SQLite保留旧行测试通过，尚未在真实MySQL执行。迁移已按项目规则暂存，未commit/push/部署。
 
-## 180_settlement_funding_amendment（未付款旧批升级审计）
+## 180_settlement_funding_amendment（未付款旧批升级审计，2026-10-09 已部署）
 
 父迁移 `179_presale_funding`，新增 `ark_settlement_funding_amendments`，不回填或改写旧报价/收款。保存原结算、发票、回款FK，独立唯一 request_key 和输入摘要；同一 settlement 最多一次升级。before_snapshot/after_snapshot/evidence 为非空JSON，完整保留前后报价、原创建身份、付款事实与验证证据；actor_id、reason 与北京时间 created_at 可追溯操作。原结算/产品/远端运费身份不变；升级只新建余额占用应用，未实际出库不核销。downgrade拒绝删除审计，修复使用前向迁移。

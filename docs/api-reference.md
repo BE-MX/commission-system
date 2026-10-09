@@ -176,7 +176,7 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
 
-## 预售资金池规则更新（2026-10-09，本地实现，未部署）
+## 预售资金池规则更新（2026-10-09，已部署）
 
 - `POST /api/invoices/{id}/shipment-quotes` 与 `shipment-settlements` 增加 `is_final`（默认false，人工确认）；新报价 `funding_version=2`，返回 `advance_applied`、`deposit_applied`、`new_payment_due`、`pool_applications` 与 `pool_balances`。定金仅末批，预付货款可抵商品、包装、手续费与运费；不足才新登记现金。
 - 预售 `receipt_draft` 支持 `purpose=presale_advance|presale_deposit` 与实际 `bank_charge`。新预售可无产品先登记实际付款，首款净额必须正，金额不限于当前产品；已转换的原收款不随编辑重算。回款单及整笔回款可补充资金池款；有活动结算时需选择原批补款。
