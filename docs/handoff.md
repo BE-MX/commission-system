@@ -1,3 +1,9 @@
+## 2026-10-09 订单详情加载优化（Codex，已合并推送部署）
+
+- 本次应用候选 `9bdbc5f3d2c0389b8ebaf2a6c00e46ef50a6a1ec` 已合入并推送 main，经办公室 `deploy/deploy.bat` 先预检后发布，两次退出 0；范围 `office-and-cloud`，release_id=`61ca506f06e440b8bbc513ddecf27e66`，deferred=[]。
+- 两地版本与健康正常，20 项公网前端制品和 8 个详情后端文件按候选摘要核验一致；数据库保持 `175_receipt_recovery`，无迁移。出库 timer 原 active/enabled 与邮件 Worker inactive/disabled 基线保留。
+- 合并同时保留主线 `019e1471` 当前状态异常判断及问题单据入口；合并候选后端 229 项、前端 12 项与构建通过，独立合并审查通过。原主目录 24 项改动已保留。详细证据见[发布记录](reports/2026-10-09-invoice-detail-speed-release.md)。下方 10 月 8 日未部署段落为当时阶段记录，已由本次发布完成。
+
 ## 2026-10-08 订单详情加载优化（Codex，本地完成，未部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/invoice-detail-speed/commission-system`，分支 `codex/invoice-detail-speed`，基于 main `3c81d687`；改动尚未提交、合并、推送或部署。
