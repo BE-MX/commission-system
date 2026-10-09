@@ -1,10 +1,12 @@
 # 当前交接与待办
 
-## 2026-10-09 订单关联回款删除权限独立（Codex，已验证，未合并部署）
+## 2026-10-09 订单关联回款删除权限独立（Codex，已合并推送部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/receipt-delete-permission/commission-system`，分支 `codex/receipt-delete-permission`，基于 main `a0742e4e`。生产只读核验“翟 #261015”及末尾带句点的同名订单：归属 Ginny（翟佳盟），已有 `invoice:delete`、`shipping_inspection:delete`，但有有效关联回款且缺少原删除流程要求的 `receipt:admin`，因此提示权限不足。未执行订单删除或生产权限修改。
 - 按亮哥确认新增 `receipt:delete`（删除订单关联回款单），整单删除有有效远端或本地回款时改为要求此权限及原回款财务范围。只登记权限，不自动授予普通 admin 或已有 write/admin 角色，人工授权保留；超级管理员沿用原绕过规则。权限矩阵补“回款单”中文行名，归入“单据 · 订单与物流”，删除动作在删除列显示。订单删除权、出库删除权、归属、业务阻碍、资金/凭证保留和未知结果不重发规则不变；无表结构迁移及独立回款删除入口。
 - 先用新授权回归复现旧代码 `receipt:admin` 拦截及缺少 seed；修复后权限专项 83 passed，扩大关联删除/回款证据/出库/取消/门户生命周期回归 213 passed（隔离 SQLite、模拟远端，未连接共享业务库）。前端权限与导航 12 passed，生产构建通过，保留既有 auth 混合导入和大 chunk 提示；增量约定检查与 diff 检查通过，Git 巡检 `--no-fetch` 仅本地快照。独立 agent 审查未发现 P1/P2。后续发布重启后端、刷新角色管理权限目录，在业务员角色人工勾选“回款单 → 删除”，业务员重新登录取得当前权限。
+- 应用 `60e408d4e1538a4e2613cb85bad685e76f80584b` 已合并推送；办公室统一入口固定同 SHA，预检和正式发布均 exit 0，release ID `ec45c9bc99cc43228471912b387db62c`，范围 `office-and-cloud`，deferred 为空。首次预检遇到 SSH 转发重置及 OSError，无应用切换；同候选采用办公室持久日志恢复预检后发布成功。两地 HEAD 与关键后端源码摘要匹配候选，健康 `ok/database=connected`；两主域入口、主资源、角色管理及权限矩阵 JS/CSS 共 16 项 SHA256 匹配。schema 保持 `180_settlement_funding_amendment`，无迁移；出库原 active/enabled、邮件 Worker 原 inactive 基线保留。
+- 生产权限 `receipt:delete` 已登记为 ID 2000，尚未授予任何角色；刷新角色管理后人工配置“回款单 → 删除”并重新登录。两张目标订单仍 synced，本轮未删除订单或修改业务员权限。主目录原 24 项内容保留，证据在 `.deploy_state/receipt-delete-permission/`；详见[发布记录](reports/2026-10-09-receipt-delete-permission-release.md)。
 
 ## 2026-10-09 预售预付资金池与当批发货（Codex，已合并推送部署及原单核验）
 
