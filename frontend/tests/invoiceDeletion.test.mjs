@@ -1,5 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { parse } from '@vue/compiler-sfc'
+import { baseParse } from '@vue/compiler-dom'
 import { buildInvoiceDeletionConfirmation, runRelatedInvoiceDeletion, usesRelatedInvoiceDeletion } from '../src/views/invoice/composables/invoiceDeletionFlow.js'
 import { createInvoiceSubmissionGuard } from '../src/views/invoice/composables/invoiceSubmissionGuard.js'
 
@@ -7,6 +10,25 @@ const evidence = {
   version: 'preview-1', invoice_no: 'Rina-KC-1001', outbounds: [{ id: 2, number: 'Rina-KC-1001' }],
   receipts: [{ id: 3, number: 'RC-1', amount: '168.00', currency: 'USD' }], local_receipt_count: 1, blockers: [],
 }
+
+test('all invoice deletion buttons use the independent delete grant', () => {
+  for (const [file, handler, count] of [
+    ['../src/views/invoice/InvoiceManage.vue', 'removeInvoice(row)', 2],
+    ['../src/views/invoice/components/InvoiceLifecycle.vue', "act('remove')", 1],
+  ]) {
+    const { descriptor } = parse(readFileSync(new URL(file, import.meta.url), 'utf8'))
+    const buttons = []
+    function visit(node) {
+      if (node.type === 1 && node.props.some(prop => prop.type === 7 && prop.name === 'on' && prop.exp?.content === handler)) buttons.push(node)
+      for (const child of node.children || []) visit(child)
+    }
+    visit(baseParse(descriptor.template.content))
+    assert.equal(buttons.length, count)
+    for (const button of buttons) {
+      assert.equal(button.props.find(prop => prop.type === 7 && prop.name === 'permission')?.exp?.content, "'invoice:delete'")
+    }
+  }
+})
 function setup(overrides = {}) {
   const calls = []
   return {
@@ -24,7 +46,7 @@ function setup(overrides = {}) {
   }
 }
 
-test('synced invoices and pending cancellation use admin deletion, unsynced drafts keep local deletion', () => {
+test('synced invoices and pending cancellation use related deletion, unsynced drafts use local deletion', () => {
   assert.equal(usesRelatedInvoiceDeletion({ status: 'draft', sync_status: 'not_synced' }), false)
   for (const row of [{ xiaoman_order_id: 7 }, { status: 'synced' }, { sync_status: 'synced' }, { status: 'cancel_pending' }]) {
     assert.equal(usesRelatedInvoiceDeletion(row), true)

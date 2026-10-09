@@ -415,6 +415,7 @@ def seed_role_permissions(db: Session):
         ("receipt:read_all", "receipt", "read_all", "查看全部回款单（数据范围）"),
         ("invoice:read",          "invoice", "read",          "查看订单发票"),
         ("invoice:write",         "invoice", "write",         "创建/编辑订单发票"),
+        ("invoice:delete",        "invoice", "delete",        "删除订单发票及关联单据"),
         ("invoice:sync",          "invoice", "sync",          "同步订单发票到小满"),
         # 数据范围码（2026-07-13）：默认只看自己创建的发票，持有此码放开为全部
         ("invoice:read_all",      "invoice", "read_all",      "查看全部发票（数据范围）"),
@@ -659,6 +660,7 @@ def seed_role_permissions(db: Session):
 
     # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
     manual_grant_codes = {
+        "invoice:delete",
         "domestic_decision:read", "domestic_decision:read_all", "domestic_decision:admin",
         "domestic_decision_finance:read", "domestic_decision_action:write", "domestic_decision_report:write",
         "mini_export:write", "mini_domestic:write", "mini_lookup:read", "mini_shipping:write",

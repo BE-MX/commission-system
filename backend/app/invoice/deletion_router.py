@@ -19,8 +19,8 @@ class DeleteConfirmation(BaseModel):
 
 def _scope(db, identity, user):
     from app.invoice.router import _linked_scope
-    invoice, _, _ = _linked_scope(db, identity, user)
-    return invoice
+    invoice, current, _ = _linked_scope(db, identity, user, "invoice:delete")
+    return invoice, current
 
 
 def _reject(db, exc):
@@ -31,8 +31,8 @@ def _reject(db, exc):
 
 
 @router.get("/invoices/{invoice_id}/deletion", summary="Preview related documents for one-confirmation deletion")
-def preview(invoice_id: int, db: Session = Depends(get_db), user=Depends(require_permission("invoice:admin"))):
-    invoice = _scope(db, invoice_id, user)
+def preview(invoice_id: int, db: Session = Depends(get_db), user=Depends(require_permission("invoice:delete"))):
+    invoice, user = _scope(db, invoice_id, user)
     try:
         return ok(deletion_service.preview(db, invoice, user))
     except (ValueError, okki_client.OkkiApiError) as exc:
@@ -41,8 +41,8 @@ def preview(invoice_id: int, db: Session = Depends(get_db), user=Depends(require
 
 @router.post("/invoices/{invoice_id}/deletion", summary="Delete reviewed related documents and archive invoice")
 def delete(invoice_id: int, body: DeleteConfirmation, db: Session = Depends(get_db),
-           user=Depends(require_permission("invoice:admin"))):
-    _scope(db, invoice_id, user)
+           user=Depends(require_permission("invoice:delete"))):
+    _, user = _scope(db, invoice_id, user)
     if not body.confirmed:
         raise HTTPException(409, "请确认删除订单及关联单据")
     try:

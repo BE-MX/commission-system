@@ -25,7 +25,7 @@
           <el-button v-if="terminal && reviewRequired" v-permission="'invoice:admin'" :disabled="locked" @click="act('refresh')">核对远端结果</el-button>
           <template v-if="data.cancellation && !terminal">
             <el-button v-permission="'invoice:admin'" :disabled="locked" @click="act('refresh')">核对关联单据</el-button>
-            <el-button v-if="['pending','blocked'].includes(data.cancellation.status) && !reviewRequired" v-permission="'invoice:admin'" :disabled="locked" type="danger" @click="act('remove')">尝试删除小满订单</el-button>
+            <el-button v-if="['pending','blocked'].includes(data.cancellation.status) && !reviewRequired" v-permission="'invoice:delete'" :disabled="locked" type="danger" @click="act('remove')">尝试删除小满订单</el-button>
             <el-button v-permission="'invoice:admin'" :disabled="locked" @click="act('retain')">终止本地业务并保留记录</el-button>
             <el-button v-if="['pending','blocked'].includes(data.cancellation.status) && !reviewRequired" v-permission="'invoice:admin'" :disabled="locked" @click="act('abort')">撤回取消申请</el-button>
           </template>

@@ -945,10 +945,10 @@ def update_invoice(
 def delete_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("invoice:write")),
+    current_user=Depends(require_permission("invoice:delete")),
 ):
     from app.invoice import edit_authority
-    invoice, current_user = edit_authority.prepare_local(db, invoice_id, current_user, "invoice:write")
+    invoice, current_user = edit_authority.prepare_local(db, invoice_id, current_user, "invoice:delete")
     try:
         service.delete_invoice(db, invoice)
     except ValueError as exc:

@@ -246,7 +246,7 @@ P0 不新增“团队”自动范围。代办授权只沿用现有有效授权�
 
 ### 本地生命周期、校验与删除的授权边界
 
-本地 lifecycle.begin/retain/abort 均需当前 invoice:admin；validate 保留当前 invoice:write **或** invoice:sync 的任一权限语义，不能误改成同时具备两项；DELETE 仍需当前 invoice:write。所有动作先检查当前有效员工和范围，再查状态及执行领域操作；read_all 不能代替动作权限。首个数据库读取、当前读与锁序遵循上述协议，不复用已开启事务、旧 ORM 对象或 JWT 中的管理员标志。
+本地 lifecycle.begin/retain/abort 均需当前 invoice:admin；validate 保留当前 invoice:write **或** invoice:sync 的任一权限语义，不能误改成同时具备两项；DELETE 需当前独立 invoice:delete；lifecycle.remove 在 invoice:admin 之外另需 invoice:delete。所有动作先检查当前有效员工和范围，再查状态及执行领域操作；read_all 不能代替动作权限。首个数据库读取、当前读与锁序遵循上述协议，不复用已开启事务、旧 ORM 对象或 JWT 中的管理员标志。
 
 GET lifecycle 也必须遵守每请求当前主体及对象范围，不能因仅查询而信任旧管理员标志；不因本节要求把只读请求机械改为全局长锁事务。refresh/remove/outbound_retry/ack_outbound、sync、linked-run 和不确定结果核对中涉及外部 I/O 的部分，需采用各自短事务、执行令牌和结果 fencing 协议。此分类只明确开发目标，当前实现与逐入口证据须另行核验。
 

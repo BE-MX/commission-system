@@ -501,7 +501,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `POST /invoices` — 创建普通发票；请求显式提交 `sales_user_id`，后端校验本人/代办授权并从该用户生成姓名、电话、邮箱快照，忽略客户端伪造文本；保存 `created_by=实际录入人`。截图来源发票必须走 `/import/screenshot/create`；同来源订单或同图唯一约束防并发重复创建。
   - `GET /invoices/{id}` — 发票详情；详情、同步日志和Excel/HTML/PDF导出均在首次发票查询前重新读取当前数据库active/deleted/角色/读取动作和数据范围。撤读取动作或停用员工403；撤全量范围后的他人订单404，本人及当前有效代办订单可读。当前新grant无需重签JWT；拒绝发生在序列化、日志读取或文件生成之前。授权数据库不可用503，借用已有事务409；普通读取不获取写屏障、不召回已在途响应。
   - `PUT /invoices/{id}` — 更新发票（`sales_user_id` 与 order_type 创建后不可改；金额与折扣由服务端重算）
-  - `DELETE /invoices/{id}` — 删除发票（需 `invoice:write` 且符合当前数据可见范围；已有 `xiaoman_order_id`、`sync_status` 为 `synced`/`sync_uncertain` 或存在未恢复半成品库存时拒绝。`external_api` 站点接入发票通过 guard 后允许删除时，同一事务删除关联 `ark_invoice_ingest_requests`，释放 App + `external_order_id`，独立站可重新 POST，首次创建返回 HTTP 201 并建立新的幂等记录）
+  - `DELETE /invoices/{id}` — 删除发票（需 `invoice:delete` 且符合当前数据可见范围；已有 `xiaoman_order_id`、`sync_status` 为 `synced`/`sync_uncertain` 或存在未恢复半成品库存时拒绝。`external_api` 站点接入发票通过 guard 后允许删除时，同一事务删除关联 `ark_invoice_ingest_requests`，释放 App + `external_order_id`，独立站可重新 POST，首次创建返回 HTTP 201 并建立新的幂等记录）
   - `POST /invoices/{id}/validate` — 同步前校验
   - `POST /invoices/{id}/sync` — 推单到小满（invoice:sync；真实调 OKKI `POST /v1/invoices/order/push`，无沙箱=真实订单）。`source_type=okki_screenshot` 表示来源 OKKI 订单已经存在，本端点直接拒绝，避免重复建单。其他发票已存 xiaoman_order_id 走编辑语义（明细带 unique_id、本地删行发 remove:1）；前置校验（客户数字ID/默认订单状态/业务员OKKI绑定/**业务员归属部门**/通用产品）不过返回 issues 不置失败态；payload 含企业必填字段：departments（业务员用户设置的部门）+ 4 个自定义字段（订单类型 691123983470 按 order_type 自动映射规格品/定制品，新成交 22595163468 / 包邮 20528077262544 / 首返 20528142733548 取发票三标记）；明细折扣已计入 product_list 的 `cost_amount`，不再进入 cost_list，Packaging/Shipping Fee 用 percent_type=0 加绝对值；Handling Fee 仅在方舟记录和计入方舟应付合计，不推送 OKKI；推送失败标 sync_failed 并落日志
   - `GET /invoices/{id}/sync-logs` — OKKI 推单审计日志（invoice:read；倒序 50 条，含请求摘要/响应/错误）
@@ -1651,7 +1651,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 ### 一次确认自动删除关联单据（2026-10-05）
 
-- `GET /api/invoice/invoices/{id}/deletion`：`invoice:admin` + 发票范围；只读预览完整关联出库、回款、金额、阻碍和执行进度，返回 `version`、`invoice_no`、`outbounds`、`receipts`、`local_receipt_count`、`blockers`、`progress`、`complete`。
+- `GET /api/invoice/invoices/{id}/deletion`：`invoice:delete` + 发票范围；只读预览完整关联出库、回款、金额、阻碍和执行进度，返回 `version`、`invoice_no`、`outbounds`、`receipts`、`local_receipt_count`、`blockers`、`progress`、`complete`。
 - `POST /api/invoice/invoices/{id}/deletion`：同入口权限；请求 `{expected_version, confirmed:true}`，无需另填原因。先验证完整确认范围与全部下游权限，再冻结并按待出库→回款→订单顺序删除；返回 `{status,message,steps}`，`status` 为 `remote_deleted/blocked/uncertain/running`。未确认或版本变化返回409；权限不足403、范围不可见404。
 - 有出库时要求 `shipping_inspection:delete` + 出库数据范围；有回款时要求 `receipt:admin` + 回款数据范围。预售、批次回款、共享出库、已出库、库存未恢复及执行中/未知结果的其他任务不自动删除。步骤意图与原始依据写入现有取消 JSON 和审计日志；未知删除不重发，再次提交仅核对原结果并接续未发送步骤。小满删单后方舟保留取消归档、回款凭证和审计，不执行退款。详见 [单据生命周期](invoice-lifecycle.md)。
 - 回款详情仍可读时，以同秒完整窗口的有效/删除列表双轮一致证据及原单关联回读判定软删除，不能用财务生效状态代替删除状态。列表不完整、超过100条、重复ID、原单变化或读取失败仍阻断；已发送的未知删除仅核验，不重发。
@@ -2180,7 +2180,7 @@ PORTAL_LOCK_WAIT_SECONDS（默认5，1..30秒）仅限制参与authority协议�
 
 ### 门户启用时的发票生命周期接入
 
-既有invoice模块GET lifecycle按当前员工/角色及对象范围检查。POST lifecycle的begin/retain/abort需当前invoice:admin，短事务仍保留理由/确认/状态/租约守卫；refresh使用锁外取证及最终重鉴权/完整绑定和当前本地财务检查。权限403、范围404、绑定冲突409、受控证据不可用503，不回显上游正文。validate保留invoice:write OR invoice:sync，DELETE需write且禁止门户PI硬删除。门户启用后的remote remove已接入分阶段当前授权、原执行日志与终态核对；outbound_retry/ack已接入当前授权与锁外证据的本地恢复；其他同步执行器及实际worker仍需逐阶段接入验证，不能将本段视为全入口已修复。
+既有invoice模块GET lifecycle按当前员工/角色及对象范围检查。POST lifecycle的begin/retain/abort需当前invoice:admin，短事务仍保留理由/确认/状态/租约守卫；refresh使用锁外取证及最终重鉴权/完整绑定和当前本地财务检查。权限403、范围404、绑定冲突409、受控证据不可用503，不回显上游正文。validate保留invoice:write OR invoice:sync，DELETE需invoice:delete且禁止门户PI硬删除；lifecycle的remove另需invoice:delete。门户启用后的remote remove已接入分阶段当前授权、原执行日志与终态核对；outbound_retry/ack已接入当前授权与锁外证据的本地恢复；其他同步执行器及实际worker仍需逐阶段接入验证，不能将本段视为全入口已修复。
 
 ### 生命周期原执行事实与安全响应（开发分支）
 

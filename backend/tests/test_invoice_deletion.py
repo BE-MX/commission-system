@@ -40,7 +40,7 @@ def no_network(monkeypatch):
 
 @pytest.fixture
 def user():
-    return {"sub": "1", "roles": [], "permissions": ["invoice:admin", "receipt:admin",
+    return {"sub": "1", "roles": [], "permissions": ["invoice:delete", "receipt:admin",
         "shipping_inspection:delete", "shipping_inspection:read_all"]}
 
 
@@ -240,16 +240,16 @@ def client(db, user):
         yield result
 
 
-def test_api_requires_invoice_admin_and_explicit_confirmation(client, db, invoice, receipt, live, user):
+def test_api_requires_invoice_delete_and_explicit_confirmation(client, db, invoice, receipt, live, user):
     from tests.authority_helpers import seed_authority
     # Live entry authorization reads the actor's grants from the database.
-    seed_authority(db, 1, "invoice:admin", "receipt:admin",
+    seed_authority(db, 1, "invoice:delete", "receipt:admin",
                    "shipping_inspection:delete", "shipping_inspection:read_all")
     path = f"/api/invoice/invoices/{invoice.id}/deletion"
-    user["permissions"].remove("invoice:admin")
+    user["permissions"].remove("invoice:delete")
     assert client.get(path).status_code == 403
     assert client.post(path, json={"expected_version": "a" * 64, "confirmed": True}).status_code == 403
-    user["permissions"].append("invoice:admin")
+    user["permissions"].append("invoice:delete")
     version = deletion.preview(db, invoice, user)["version"]
     assert client.post(path, json={"expected_version": version}).status_code == 409
     assert client.post(path, json={"expected_version": version, "confirmed": False}).status_code == 409
@@ -260,7 +260,7 @@ def test_api_invoice_data_scope_blocks_other_salesperson(client, db, invoice, re
     from tests.authority_helpers import seed_authority
     # The other salesperson holds the same action grants; only the invoice data
     # scope blocks the read, so the denial must come from visibility, not rights.
-    seed_authority(db, 2, "invoice:admin", "receipt:admin",
+    seed_authority(db, 2, "invoice:delete", "receipt:admin",
                    "shipping_inspection:delete", "shipping_inspection:read_all")
     user["sub"] = "2"
     assert client.get(f"/api/invoice/invoices/{invoice.id}/deletion").status_code in (403, 404)

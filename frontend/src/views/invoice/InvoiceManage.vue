@@ -156,11 +156,11 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button v-if="usesRelatedInvoiceDeletion(row) && row.status !== 'cancelled'" v-permission="'invoice:admin'" link type="danger" :loading="isInvoiceDeleting(row.id)" :disabled="isInvoiceSyncing(row.id)" @click="removeInvoice(row)">
+              <el-button v-if="usesRelatedInvoiceDeletion(row) && row.status !== 'cancelled'" v-permission="'invoice:delete'" link type="danger" :loading="isInvoiceDeleting(row.id)" :disabled="isInvoiceSyncing(row.id)" @click="removeInvoice(row)">
                 <el-icon><Delete /></el-icon>
                 {{ isInvoiceDeleting(row.id) ? '处理中' : row.status === 'cancel_pending' ? '继续删除' : '删除' }}
               </el-button>
-              <el-button v-if="!usesRelatedInvoiceDeletion(row) && !['cancel_pending','cancelled'].includes(row.status)" v-permission="'invoice:write'" link type="danger" :loading="isInvoiceDeleting(row.id)" :disabled="isInvoiceSyncing(row.id)" @click="removeInvoice(row)">
+              <el-button v-if="!usesRelatedInvoiceDeletion(row) && !['cancel_pending','cancelled'].includes(row.status)" v-permission="'invoice:delete'" link type="danger" :loading="isInvoiceDeleting(row.id)" :disabled="isInvoiceSyncing(row.id)" @click="removeInvoice(row)">
                 <el-icon><Delete /></el-icon>
                 删除
               </el-button>

@@ -36,9 +36,9 @@ class LifecycleAction(BaseModel):
     confirmed: bool = False
 
 
-def scope(db, identity, user):
+def scope(db, identity, user, *permissions):
     from app.invoice.router import _linked_scope
-    invoice, _, _ = _linked_scope(db, identity, user)
+    invoice, _, _ = _linked_scope(db, identity, user, "invoice:admin", *permissions)
     return invoice
 
 
@@ -65,6 +65,8 @@ def detail(invoice_id: int, db: Session = Depends(get_db), user=Depends(require_
 @router.post("/invoices/{invoice_id}/lifecycle", summary="Process reviewed invoice lifecycle action")
 def apply(invoice_id: int, body: LifecycleAction, db: Session = Depends(get_db), user=Depends(require_permission("invoice:admin"))):
     from app.portal.authority import get_settings
+    if body.action == "remove":
+        require_permission("invoice:delete")(user)
     if body.action in {"outbound_retry", "ack_outbound"} and get_settings().PORTAL_ENABLED:
         from app.invoice import outbound_recovery
         if not body.confirmed:
@@ -92,7 +94,7 @@ def apply(invoice_id: int, body: LifecycleAction, db: Session = Depends(get_db),
         from app.invoice import edit_authority
         invoice, user = edit_authority.prepare_local(db, invoice_id, user, "invoice:admin")
     else:
-        invoice = scope(db, invoice_id, user)
+        invoice = scope(db, invoice_id, user, *("invoice:delete",) if body.action == "remove" else ())
     actor = int(user.get("id") or user["sub"])
     try:
         if (invoice.cancellation or {}).get("deletion") and (invoice.cancellation or {}).get("status") != "remote_deleted":

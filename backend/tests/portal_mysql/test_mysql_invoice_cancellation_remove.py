@@ -51,7 +51,7 @@ def result_state(e):
         return row.status,dict(row.cancellation)
 
 
-@pytest.mark.parametrize('codes,status',[([],403),(['invoice:admin'],404)])
+@pytest.mark.parametrize('codes,status',[([],403),(['invoice:admin'],403),(['invoice:admin','invoice:delete'],404)])
 def test_remove_rechecks_old_jwt_roles_and_scope(editor,monkeypatch,codes,status):
     e=editor;route,body,method,calls=setup_remove(e,monkeypatch);demote_admin(e,codes)
     before=e.snapshot();response=asyncio.run(e.write(route,body,method,e.admin_token))
@@ -351,7 +351,7 @@ def test_lifecycle_http_success_and_rejections_are_uncached(editor,monkeypatch,s
     elif status==403:
         with Session(e.ctx.engine) as db:
             lock_authority(db);db.get(ArkUser,e.ctx.admin).is_active=False;db.commit()
-    elif status==404:demote_admin(e,['invoice:admin'])
+    elif status==404:demote_admin(e,['invoice:admin','invoice:delete'])
     elif status==409:body={**body,'confirmed':False}
     elif status==503:
         def fail(*a):raise okki_client.OkkiApiError('PRIVATE-UPSTREAM')

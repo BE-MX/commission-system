@@ -1,5 +1,13 @@
 # 当前交接与待办
 
+## 2026-10-09 订单发票删除权限独立（Codex，已验收，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/invoice-delete-permission/commission-system`，分支 `codex/invoice-delete-permission`，基于 main `6bbcabff`；亮哥已授权合并并推送 origin/main，本轮不部署，主目录原有改动单独保护。
+- 新增 `invoice:delete`（删除订单发票及关联单据，action 权限），草稿 DELETE、关联删除预览/执行及列表按钮统一要求此权限；旧 lifecycle.remove 在管理权限之外另需删除权，取证前后均检查当前数据库授权。关联删除向服务传当前 principal，不透传 JWT 中已撤销的下游权限。订单/出库/回款范围及下游操作权限不变。
+- 启动 seed upsert 登记新权限，不自动从 write/admin 继承、不自动补给普通 admin，已明确授予的链接保留；super_admin 仍按现有规则绕过。需前后端一起发布，角色管理“订单发票 → 删除”明确分配后重新登录。不新增表结构或迁移。
+- 验证：隔离 SQLite 后端 117 passed，前端删除/权限矩阵/权限治理 18 passed，生产构建、增量约定检查与 diff 检查通过；独立 agent 审查无新增 P1/P2。MySQL 专用套件因未提供独立 mysqld 配置 45 skipped；既有 invoiceLifecycle.test.mjs 两项缺 useAuthStore 测试桩，在未修改主目录同样失败，未纳入通过数。git_sweep --no-fetch 已执行，仅为本地快照。
+- 当前接口参考、单据生命周期、外部发票接入文档和门户契约已同步；历史设计稿/归档保持历史记录。
+
 ## 2026-10-09 内贸经营决策台经营口径优化（Codex，已合并推送，未部署）
 
 - 独立工作树 `C:/Users/windb/.codex/worktrees/domestic-decision-metrics/commission-system`，分支 `codex/domestic-decision-metrics`，基点 `7852719f`。功能提交 `46cfdf46`、集成提交 `8be4a8ec` 已合并并推送 `origin/main`；未部署。主目录原有24项未提交内容逐项核验保留。
