@@ -29,6 +29,11 @@ export function buildOrderListParams({ page, page_size, ...form }) {
   return params
 }
 
+export function buildOrderExportParams(form) {
+  const { page, page_size, sort_field, sort_order, ...filters } = buildOrderListParams(form)
+  return filters
+}
+
 export function useDomesticOrderFilters(form, getOptions, search, getAppliedForm) {
   const advancedTags = computed(() => {
     const applied = getAppliedForm()

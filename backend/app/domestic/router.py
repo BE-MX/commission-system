@@ -27,6 +27,7 @@ from app.domestic import (
     balance_service,
     customer_service,
     export_service,
+    order_details_export_service,
     file_service,
     order_service,
     pricing_service,
@@ -810,6 +811,39 @@ def list_orders(
         include_all=can_read_all,
     )
     return ok(page_result(items, total, page, page_size))
+
+
+@router.get("/orders/export-details", summary="按筛选导出内贸订单明细 Excel")
+def export_order_details(
+    keyword: str = Query(""),
+    status: int | None = Query(None),
+    customer_id: int | None = Query(None),
+    customer_name: str = Query("", max_length=200),
+    order_category: str = Query("", pattern="^(normal|special)?$"),
+    order_kind: str = Query("", pattern="^(business|production)?$"),
+    order_type: str = Query(""),
+    order_channel: str = Query(""),
+    customer_source: str = Query("", max_length=32),
+    owner_user_id: int | None = Query(None, gt=0),
+    date_start: date | None = Query(None),
+    date_end: date | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ)),
+):
+    can_read_all = _can_read_all_orders(current_user)
+    stream = order_details_export_service.export_order_details(
+        db, keyword=keyword, status=status, customer_id=customer_id, customer_name=customer_name,
+        order_category=order_category, order_kind=order_kind, order_type=order_type,
+        order_channel=order_channel, customer_source=customer_source, owner_user_id=owner_user_id,
+        date_start=date_start, date_end=date_end,
+        creator_id=None if can_read_all else _uid(current_user), include_all=can_read_all,
+    )
+    filename = quote(f"内贸订单明细-{beijing_now():%Y%m%d-%H%M%S}.xlsx")
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
 
 
 @router.get("/orders/{order_id}/export", summary="导出内贸订单领货单 Excel")

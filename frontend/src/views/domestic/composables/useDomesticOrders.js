@@ -8,13 +8,13 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
 import {
-  attachItemRoute, deleteOrder, exportOrder, getCustomerOptions, getItemWxacode, getOptions, getOrder, getProcessRoutes,
+  attachItemRoute, deleteOrder, exportOrder, exportOrderDetails, getCustomerOptions, getItemWxacode, getOptions, getOrder, getProcessRoutes,
   listDomesticSkips, listOrders, listProcessWorkers, listReports, newRequestId,
   reviewOrder,
   revokeDomesticSkip, revokeReport, shipItem, skipDomesticStep,
   submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
-import { buildOrderListParams, emptyAdvancedFilters } from './useDomesticOrderFilters'
+import { buildOrderExportParams, buildOrderListParams, emptyAdvancedFilters } from './useDomesticOrderFilters'
 import { useListPage } from '@/composables/useListPage'
 import { downloadBlob } from '@/utils/download'
 import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
@@ -358,6 +358,18 @@ export function useDomesticOrders() {
     downloadBlob(response)
   }
 
+  const exportingDetails = ref(false)
+  async function handleExportDetails() {
+    if (exportingDetails.value) return
+    exportingDetails.value = true
+    try {
+      const response = await exportOrderDetails(buildOrderExportParams(listApi.appliedSearchForm.value))
+      downloadBlob(response)
+    } catch { /* API 拦截器已提示下载失败 */ } finally {
+      exportingDetails.value = false
+    }
+  }
+
   const editDialog = reactive({ visible: false, orderId: null, itemId: null })
 
   function openEdit(row, itemId = null) {
@@ -533,7 +545,7 @@ export function useDomesticOrders() {
     attachDialog, openAttachRoute, confirmAttachRoute,
     printDialog, openPrintCard, openQrLabel, openOrderQrLabels, openWxacodeLabel,
     wxacodeDialog, openWxacode, downloadWxacode,
-    handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
+    handleExport, handleExportDetails, exportingDetails, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
     canOperateOrder,
     canReview, canReviewOrder, reviewingOrderIds, handleReviewApprove, handleReviewReject,
     editDialog, openEdit,

@@ -43,6 +43,7 @@ from app.domestic.models import (
     DomesticSkipLog,
     DomesticSkipUnit,
 )
+from app.domestic.order_query_service import filtered_order_query
 from app.domestic.schemas import (
     DraftSubmitRequest,
     ItemShipRequest,
@@ -814,42 +815,13 @@ def list_orders(
     include_all: bool = True,
     include_finance: bool = True,
 ) -> tuple[list[dict], int]:
-    q = db.query(DomesticOrder).filter(DomesticOrder.deleted_flag == 0)
-    if order_kind:
-        q = q.filter(DomesticOrder.order_kind == order_kind)
-    if not include_all:
-        q = q.filter(DomesticOrder.created_by == creator_id)
-    if keyword:
-        kw = f"%{keyword}%"
-        q = q.filter((DomesticOrder.order_no.like(kw)) | (DomesticOrder.domestic_no.like(kw)))
-    if status is not None:
-        q = q.filter(DomesticOrder.status == status)
-    if customer_id:
-        q = q.filter(DomesticOrder.customer_id == customer_id)
-    if customer_name.strip():
-        q = q.filter(DomesticOrder.customer_id.in_(
-            db.query(DomesticCustomer.id).filter(
-                DomesticCustomer.shop_name.contains(customer_name.strip(), autoescape=True)
-            )
-        ))
-    if order_category:
-        q = q.filter(DomesticOrder.order_category == order_category)
-    if order_type:
-        q = q.filter(DomesticOrder.order_type == order_type)
-    if order_channel:
-        q = q.filter(DomesticOrder.order_channel == order_channel)
-    if customer_source:
-        q = q.filter(DomesticOrder.customer_id.in_(
-            db.query(DomesticCustomer.id).filter(DomesticCustomer.customer_source == customer_source)
-        ))
-    if owner_user_id:
-        q = q.filter(DomesticOrder.customer_id.in_(
-            db.query(DomesticCustomer.id).filter(DomesticCustomer.owner_user_id == owner_user_id)
-        ))
-    if date_start:
-        q = q.filter(DomesticOrder.order_date >= date_start)
-    if date_end:
-        q = q.filter(DomesticOrder.order_date <= date_end)
+    q = filtered_order_query(
+        db, keyword=keyword, status=status, customer_id=customer_id,
+        customer_name=customer_name, order_kind=order_kind, order_category=order_category,
+        order_type=order_type, order_channel=order_channel, customer_source=customer_source,
+        owner_user_id=owner_user_id, date_start=date_start, date_end=date_end,
+        creator_id=creator_id, include_all=include_all,
+    )
 
     total = q.count()
 

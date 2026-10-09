@@ -4938,3 +4938,8 @@ I38：启用refresh初次当前授权+request/conversion→invoice完整绑定/�
 本批最终收尾strict及diff均exit0，静态8篇/29引用/3JSON/64T/20F通过，inventory JSON与12源码SHA-256和AST语法实测匹配。2026-10-05 00:01北京时间no-fetch巡检记录main0修改/1未跟踪、本任务48修改/49未跟踪且无upstream（具体统计以看板日志为准）。自有临时写入脚本清理，保留仓库测试、生成候选清单的复现脚本及全部反例/通过日志。所有本批测试和约定检查句柄均终态，无本批预览/MySQL服务残留，goal仍active，下一267。
 
 
+## 2026-10-09 内贸订单筛选范围明细导出（Codex，实现与验收）
+
+实现分支：`codex/domestic-order-details-export`。列表操作行新增“导出订单明细”，调用 `GET /api/domestic/orders/export-details`。沿用已应用筛选与订单读权限，后端共享 `order_query_service.filtered_order_query` 保持列表/导出条件一致；独立只读明细查询避免逐单详情接口的编号修复和进度计算。随代码保存用户提供的空模板，按其 14 列和格式输出全部筛选明细；按下单日期升序，多销售总表+个人页，单销售无总表，未归属与空结果有明确 sheet。同名销售按 ID 分组且 sheet 自动消歧，客户订单号/用户内容以 Excel 文本写入。
+
+验证：后端模板、所有筛选、跨分页、多销售/单销售、删除过滤、无归属生产单、空结果、公式文本防护、HTTP 权限/下载回归，以及既有订单/导出范围测试；前端导出参数、Blob API、加载/连点/失败恢复行为测试。后端 89 项回归通过（86 项既有与新增范围回归，审查修复后 9 项明细导出测试复验，其中新增 3 项）；前端 4 项通过，`npm run build` 通过（仅既有包体积/动态导入警告）。独立 agent 审查发现并闭环控制字符和复制 sheet 临时名冲突。隔离 SQLite + 浏览器实际点击验证全部销售、未应用筛选仍导出原范围、查询单销售后三种下载；已读取下载文件确认 sheet、行数和日期顺序，证据在主目录 `tmp/domestic-order-details-export/order-details-*.xlsx` 与 `tmp/domestic-order-details-export/order-details-export-review.jpg`。`check_conventions` 与 `git_sweep --no-fetch` 通过（巡检只代表本地快照）。本次授权交付范围为合并与推送；未发布，无数据库迁移。

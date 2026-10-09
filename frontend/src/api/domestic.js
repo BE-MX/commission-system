@@ -294,3 +294,8 @@ export async function fetchImageDataUrl(path) {
 export function getCustomerRequestPendingCount() {
   return domesticClient.get('/customer-requests/pending-count', { suppressToast: true })
 }
+
+// 按当前已应用筛选导出全部订单明细（不分页）。
+export function exportOrderDetails(params) {
+  return domesticClient.get('/orders/export-details', { params, responseType: 'blob' })
+}

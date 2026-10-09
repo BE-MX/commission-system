@@ -18,6 +18,7 @@
       <div class="action-bar">
         <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务下单</GlassButton>
         <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产下单</GlassButton>
+        <GlassButton v-any-permission="['domestic:read', 'domestic:write', 'domestic:admin']" variant="secondary" left-icon="Download" :loading="exportingDetails" :disabled="loading || exportingDetails || !!listErrorMessage" @click="handleExportDetails">导出订单明细</GlassButton>
         <TableTools
           v-model:visible-keys="visibleKeys"
           v-model:density="density"
@@ -399,7 +400,7 @@ const {
   attachDialog, openAttachRoute, confirmAttachRoute,
   printDialog, openPrintCard, openQrLabel, openOrderQrLabels, openWxacodeLabel,
   wxacodeDialog, openWxacode, downloadWxacode,
-  handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
+  handleExport, handleExportDetails, exportingDetails, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
   canOperateOrder,
   canReviewOrder, reviewingOrderIds, handleReviewApprove, handleReviewReject,
   editDialog, openEdit,
