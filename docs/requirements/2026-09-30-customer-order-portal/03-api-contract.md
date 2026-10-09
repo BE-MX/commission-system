@@ -468,8 +468,8 @@ POST /quotes及复用build_lines的受控调用，在已鉴权后发现请求公
 | --- | --- | --- |
 | POST /invoices/{invoice_id}/lifecycle，action=begin/retain/abort | invoice:admin | 本地短事务；confirmed/reason/既有版本、取消状态与租约规则仍由领域服务校验；不可越权恢复发布 |
 | POST /invoices/{invoice_id}/validate | invoice:write OR invoice:sync | 状态写入，不是只读验证；任一当前权限即可，仍须对象范围；不等于客户确认或正式发布 |
-| DELETE /invoices/{invoice_id} | invoice:write | 门户 PI 永久 lineage 禁止硬删；普通 PI 保留远端绑定、回款/意图/分摊等既有删除限制 |
-| POST /invoices/{invoice_id}/lifecycle，action=refresh/remove/outbound_retry/ack_outbound | invoice:admin | 明确外部观测/操作阶段；网络等待不持 authority；按状态、绑定、令牌与租约保护结果 |
+| DELETE /invoices/{invoice_id} | invoice:delete | 门户 PI 永久 lineage 禁止硬删；普通 PI 保留远端绑定、回款/意图/分摊等既有删除限制 |
+| POST /invoices/{invoice_id}/lifecycle，action=refresh/remove/outbound_retry/ack_outbound | invoice:admin；remove 另需 invoice:delete | 明确外部观测/操作阶段；网络等待不持 authority；按状态、绑定、令牌与租约保护结果 |
 | POST /invoices/{invoice_id}/sync；linked-sync/{identity}/run | invoice:sync | 采用同步任务协议，不把外部调用包进全局锁事务；成功/不确定结果均可追踪 |
 | POST /invoices/{invoice_id}/sync-uncertain/resolve | invoice:admin | 按 resolution 区分本地证明和远端核对，不能一律当作零 I/O 的 linked-resolve |
 

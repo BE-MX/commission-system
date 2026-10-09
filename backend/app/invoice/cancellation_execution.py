@@ -24,14 +24,14 @@ def unavailable(message):
     raise HTTPException(503, message, headers={"Cache-Control":"no-store"}) from None
 
 
-def authorize(db, invoice_id, user):
+def authorize(db, invoice_id, user, *permissions):
     if db.in_transaction() or db.new or db.dirty or db.deleted:
         raise HTTPException(409, "取消授权必须从新事务开始")
     db.expire_all()
     try:
         lock_authority(db, force=True)
         actor = int(user.get("id") or user.get("sub") or 0)
-        current = employee_principal(db, actor, "invoice:admin")
+        current = employee_principal(db, actor, "invoice:admin", *permissions)
     except (TypeError, ValueError):
         raise HTTPException(403, "无法确认当前操作人") from None
     except PortalError as error:
@@ -92,7 +92,7 @@ def persist_result(db, attempt, observations):
 
 
 def remove_authorized(db, invoice_id, user):
-    invoice, current = authorize(db, invoice_id, user)
+    invoice, current = authorize(db, invoice_id, user, "invoice:delete")
     state = deepcopy(invoice.cancellation)
     if not state:
         raise HTTPException(409, "请先发起取消")
@@ -115,7 +115,7 @@ def remove_authorized(db, invoice_id, user):
     finally:
         db.rollback()
         db.expire_all()
-    invoice, current = authorize(db, invoice_id, user)
+    invoice, current = authorize(db, invoice_id, user, "invoice:delete")
     if (edit_authority._binding(db, invoice), invoice.cancellation) != expected:
         raise HTTPException(409, "发票或原取消绑定已变化，请重新读取")
     if invoice.status != "cancel_pending" or state.get("status") not in {"pending", "blocked"}:
