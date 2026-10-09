@@ -1,3 +1,10 @@
+## 2026-10-08 订单详情加载优化（Codex，本地完成，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/invoice-detail-speed/commission-system`，分支 `codex/invoice-detail-speed`，基于 main `3c81d687`；改动尚未提交、合并、推送或部署。
+- 初次打开回款读取两分钟内已核验后台快照，明确展示时点；手动刷新保留严格实时核验。出库精确读取本地镜像并批量取检验/事件/预售关联状态。刷新保留明细并隐藏旧汇总。
+- 按用户新口径，有效检验提交完成即计入已出库；撤回、待补验、同步未确认、镜像与修改证据冲突、越权、重复或超量均有保护。不变更原单状态、资金写入或数据库结构。
+- 受影响后端 219 项通过；补充运费边界后详情 47 项全部通过。前端 3 项、构建、独立审查及隔离浏览器首屏/刷新路径已验证。具体证据与限制见[优化验收记录](reports/2026-10-08-invoice-detail-speed.md)。主目录其他代理改动保持不动。
+
 ## 2026-10-08 出库单打印状态筛选（Codex，已合并推送部署）
 
 - 分支 `codex/outbound-status-filters`，独立工作树 `C:/Users/windb/.codex/worktrees/outbound-status-filters/commission-system`。出库单打印页新增可清空的「出库单状态」「检验状态」下拉，复用列表状态文案；两个状态与关键词、日期直接展示，订单 ID 移入展开筛选。

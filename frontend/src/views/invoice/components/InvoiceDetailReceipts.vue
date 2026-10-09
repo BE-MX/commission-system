@@ -34,7 +34,7 @@ const props = defineProps({ panel: {type:Object,required:true}, currency: String
 const purpose = ref(''), keyword = ref(''), selected = ref(null), detail = ref(null), detailLoading = ref(false), detailError = ref('')
 let generation = 0
 const amount = value => formatMoney(value, {missing:'—'})
-const metrics = computed(() => [['effective_amount','已生效回款'],['pending_amount','待生效回款'],['unpaid_amount','未结清金额'],['remaining_amount',props.presale ? '主单未登记金额' : '可登记余额']])
+const metrics = computed(() => [['effective_amount','已生效回款'],['pending_amount','待生效回款'],['unpaid_amount','未结清金额'],['remaining_amount',props.panel.source === 'background_snapshot' ? '快照未登记金额' : props.presale ? '主单未登记金额' : '可登记余额']])
 const filtered = computed(() => (props.panel.items || []).filter(r => (!purpose.value || (purpose.value === 'freight' ? r.purpose === 'freight' : r.purpose !== 'freight')) && (!keyword.value || `${r.receipt_no} ${r.xiaoman_receipt_no || ''}`.toLowerCase().includes(keyword.value.trim().toLowerCase()))))
 async function openReceipt(row) {
   const current = ++generation; selected.value = row; detail.value = null; detailLoading.value = true; detailError.value = ''

@@ -143,18 +143,18 @@ def projection_order():
 
 
 def doc(identity="D1", status=2, first=6, second=2):
-    return {"outbound_invoice_id":identity,"status":status,"record_list":[
+    return {"outbound_invoice_id":identity,"status":status,"inspection":{"state":"ready","status":"submitted" if status==2 else "draft"},"record_list":[
         {"order_id":"2001","order_record_id":str(i),"product_id":100,"sku_id":101,"outbound_count":n} for i,n in ((1,first),(2,second))]}
 
 
-def test_actual_outbound_uses_status_and_exact_lines_not_sku_totals():
+def test_inspection_outbound_uses_exact_lines_not_sku_totals():
     shipped=doc(); shipped["record_list"].append({"order_id":"9999","outbound_count":100})
     data, quantities=detail_outbounds.project(projection_order(),[shipped,doc("D2",1,4,8)])
     assert quantities == {"1":"6","2":"2"} and len(data[0]["items"]) == 2
     assert data[1]["state"] == "generated"
 
 
-@pytest.mark.parametrize("mutate", [lambda d:d.update(status=3),lambda d:d["record_list"][0].update(outbound_count=11),lambda d:d["record_list"][0].update(order_record_id="unknown"),lambda d:d["record_list"].append(d["record_list"][0])])
+@pytest.mark.parametrize("mutate", [lambda d:d["inspection"].update(status="unknown"),lambda d:d["record_list"][0].update(outbound_count=11),lambda d:d["record_list"][0].update(order_record_id="unknown"),lambda d:d["record_list"].append(d["record_list"][0])])
 def test_invalid_or_overfull_outbound_is_not_zero_progress(mutate):
     document=doc(); mutate(document)
     with pytest.raises(ValueError): detail_outbounds.project(projection_order(),[document])
@@ -166,9 +166,10 @@ def test_presale_remote_moved_line_rejected():
     with pytest.raises(ValueError): detail_outbounds.project(projection_order(),[document],presale_outbounds={"D1":frozen})
 
 
-def test_presale_generated_is_not_shipped_confirmation():
+def test_presale_local_shipped_without_inspection_submission_is_not_complete():
     document=doc(status=1); frozen=SimpleNamespace(status="shipped",payload={"record_list":document["record_list"]})
-    with pytest.raises(ValueError): detail_outbounds.project(projection_order(),[document],presale_outbounds={"D1":frozen})
+    _, quantities = detail_outbounds.project(projection_order(),[document],presale_outbounds={"D1":frozen})
+    assert quantities == {"1":"0","2":"0"}
 
 
 def test_missing_and_duplicate_order_line_mapping_rejected():
@@ -228,16 +229,17 @@ def test_presale_deposit_and_independent_freight_are_not_added_twice(db, monkeyp
 
 
 def test_inspection_metadata_obeys_its_own_scope(db, monkeypatch):
-    from app.shipping_inspection import router, outbound_service
+    from app.shipping_inspection import router
     from app.shipping_inspection.models import ShippingInspection
-    record = {"outbound_record_id":"R1"}
+    documents = [{"record_id":"R1"}]
     db.add(ShippingInspection(outbound_record_id="R1", status="submitted")); db.flush()
     monkeypatch.setattr(router, "_inspection_scope", lambda *a: "owner")
-    monkeypatch.setattr(outbound_service, "get_outbound_record", lambda *a, **k: None)
-    assert detail_outbounds.inspection_metadata(db, record, ADMIN) == {"state":"restricted", "status":None}
-    monkeypatch.setattr(outbound_service, "get_outbound_record", lambda *a, **k: record)
-    assert detail_outbounds.inspection_metadata(db, record, ADMIN)["status"] == "submitted"
-    assert detail_outbounds.inspection_metadata(db, None, ADMIN)["state"] == "unverified"
+    monkeypatch.setattr(detail_outbounds.detail_outbound_mirror, "read", lambda *a: [])
+    detail_outbounds.annotate_inspections(db, order(db), documents, ADMIN, None)
+    assert documents[0]["inspection"] == {"state":"restricted", "status":None}
+    monkeypatch.setattr(detail_outbounds.detail_outbound_mirror, "read", lambda *a: documents)
+    detail_outbounds.annotate_inspections(db, db.query(Invoice).first(), documents, ADMIN, None)
+    assert documents[0]["inspection"]["status"] == "submitted"
 
 
 def test_batch_frozen_amounts_require_receipt_permission(db, monkeypatch):

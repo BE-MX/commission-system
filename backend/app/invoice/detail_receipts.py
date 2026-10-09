@@ -2,7 +2,7 @@
 import logging
 from decimal import Decimal
 from app.core.time import beijing_now
-from app.invoice import detail_access, settlement_service
+from app.invoice import detail_access, detail_receipt_snapshot, settlement_service
 from app.invoice.settlement_models import Receivable, ShipmentSettlement
 from app.receipt import balance, remote, service
 from app.receipt.models import Receipt
@@ -45,20 +45,28 @@ def merge_rows(db, invoice, local, remote_rows, *, purpose="ordinary"):
     return result
 
 
-def read(db, invoice, user):
+def read(db, invoice, user, *, refresh=True):
     detail_access.require_receipts(db, invoice, user)
     local = db.query(Receipt).filter(Receipt.invoice_id == invoice.id).order_by(Receipt.id.desc()).all()
     items = [dict(service.describe(db, row, invoice), key=f"local:{row.id}", verified=False, collect_status=None) for row in local]
     result = {"state": "unverified", "items": items, "summary": None, "freight": None,
-              "batch_balance": None, "checked_at": None, "message": ""}
+              "batch_balance": None, "checked_at": None, "message": "", "source": "live" if refresh else "background_snapshot"}
+    payload = None
+    snapshot_stamp = None
     try:
-        snapshot = remote.order_snapshot(db, invoice)
+        if not refresh and invoice.xiaoman_order_id:
+            payload, snapshot_stamp = detail_receipt_snapshot.load(db)
+        if not refresh and not invoice.xiaoman_order_id:
+            snapshot, snapshot_stamp = {"rows": []}, beijing_now()
+            result["source"] = "local"
+        else:
+            snapshot = remote.order_snapshot(db, invoice) if refresh else detail_receipt_snapshot.order(payload, invoice)
         validate_finance(snapshot["rows"])
         summary = (settlement_service.goods_balance if invoice.order_type == "presale" else balance.calculate)(db, invoice, snapshot)
         items = merge_rows(db, invoice, [r for r in local if r.purpose != "freight"], snapshot["rows"])
         effective, total = Decimal(summary["effective_amount"]), Decimal(summary["total_amount"])
         summary.update(unpaid_amount=str(max(total - effective, Decimal(0))), overpaid_amount=str(max(effective - total, Decimal(0))))
-        result.update(state="ready", items=items, summary=summary, checked_at=beijing_now())
+        result.update(state="ready", items=items, summary=summary, checked_at=beijing_now() if refresh else snapshot_stamp)
     except Exception as exc:
         logger.warning("invoice funds verification unavailable invoice=%s: %s", invoice.id, type(exc).__name__)
         print(f"[invoice_detail] funds verification unavailable invoice={invoice.id}: {type(exc).__name__}", flush=True)
@@ -70,12 +78,16 @@ def read(db, invoice, user):
         totals = [Decimal(0), Decimal(0), Decimal(0)]
         freight_items = []
         try:
+            if not refresh and payload is None and result["source"] != "local":
+                raise ValueError("回款快照尚不可用，独立运费汇总待实时核验")
             for target in targets:
                 rows = [r for r in local if r.receivable_id == target.id]
                 if target.remote_status in ("failed", "uncertain"):
                     raise ValueError("独立运费目标失败或待核对，请在发货结算中核对原目标")
                 if target.remote_order_id:
-                    snapshot = remote.target_snapshot(db, target)
+                    if not refresh and payload is None:
+                        raise ValueError("回款快照尚不可用，请刷新实时核验")
+                    snapshot = remote.target_snapshot(db, target) if refresh else detail_receipt_snapshot.freight(payload, target)
                 else:
                     snapshot = {"rows": [], "target_binding": [target.id, target.remote_order_id, str(target.amount), target.currency, target.customer_id, target.version]}
                 funds = balance.calculate_target(db, target, snapshot)
@@ -86,7 +98,7 @@ def read(db, invoice, user):
                 freight_items.extend(merge_rows(db, invoice, rows, snapshot["rows"], purpose="freight"))
             if {r.id for r in local if r.purpose == "freight" and r.status == "active"} != {r.id for t in targets for r in local if r.receivable_id == t.id and r.status == "active"}:
                 raise ValueError("运费回款目标关联待核对")
-            freight.update(total_amount=str(totals[0]), effective_amount=str(totals[1]), registered_amount=str(totals[2]), checked_at=beijing_now())
+            freight.update(total_amount=str(totals[0]), effective_amount=str(totals[1]), registered_amount=str(totals[2]), checked_at=beijing_now() if refresh else snapshot_stamp)
         except Exception as exc:
             logger.warning("invoice freight verification unavailable invoice=%s: %s", invoice.id, type(exc).__name__)
             print(f"[invoice_detail] freight verification unavailable invoice={invoice.id}: {type(exc).__name__}", flush=True)
@@ -97,7 +109,7 @@ def read(db, invoice, user):
         freight_items += [dict(service.describe(db, r, invoice), key=f"local:{r.id}", verified=False, collect_status=None) for r in local if r.purpose == "freight" and f"local:{r.id}" not in known]
         result["items"] = [r for r in result["items"] if r["purpose"] != "freight"] + freight_items
         result["freight"] = freight
-        if detail_access.allowed(user, "shipment"):
+        if refresh and detail_access.allowed(user, "shipment"):
             current = db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id == invoice.id,
                 ShipmentSettlement.state.in_(("awaiting_payment", "awaiting_verification"))).order_by(ShipmentSettlement.sequence.desc()).first()
             if current:

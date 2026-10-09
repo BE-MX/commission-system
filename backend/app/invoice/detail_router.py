@@ -48,8 +48,8 @@ def panel(db, user, identity, reader):
 
 
 @router.get("/invoices/{invoice_id}/related-detail/receipts", summary="Scoped verified invoice funds and receipt documents")
-def receipts(invoice_id: int, db: Session = Depends(get_db), user=Depends(require_any_permission("invoice:read", "invoice:write", "invoice:sync"))):
-    return panel(db, user, invoice_id, detail_receipts.read)
+def receipts(invoice_id: int, refresh: bool = False, db: Session = Depends(get_db), user=Depends(require_any_permission("invoice:read", "invoice:write", "invoice:sync"))):
+    return panel(db, user, invoice_id, lambda db, invoice, user: detail_receipts.read(db, invoice, user, refresh=refresh))
 
 
 @router.get("/invoices/{invoice_id}/related-detail/outbounds", summary="Scoped verified actual outbound quantities and related documents")

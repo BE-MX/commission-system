@@ -1,32 +1,48 @@
-"""Actual shipped quantities: exact order line identity, never generated task counts."""
+"""Inspection-completed quantities from exact local outbound associations."""
 import logging
 from decimal import Decimal, InvalidOperation
 from fastapi import HTTPException
 from app.core.time import beijing_now
-from app.invoice import detail_access, linked_outbound_service, settlement_service
+from app.invoice import detail_access, detail_outbound_mirror
 from app.invoice.models import Invoice, OkkiOutboundTask
 from app.invoice.settlement_models import ShipmentSettlement, ShipmentOutbound, SettlementItem
-from app.receipt import remote, access as receipt_access
-from app.shipping_inspection import outbound_service
+from app.receipt import access as receipt_access
+from app.shipping_inspection import outbound_service, outbound_sync_state
 from app.shipping_inspection.models import ShippingOperationEvent, ShippingInspection
 from app.invoice.document_anomalies import EVENT_BAD
 
 logger = logging.getLogger(__name__)
 
 
-def inspection_metadata(db, record, user):
-    """Inspection visibility is narrower than outbound-list visibility."""
-    if not record:
-        return {"state": "unverified", "status": None}
+def annotate_inspections(db, invoice, documents, user, scope):
+    """Batch-load inspections and events after applying their independent scope."""
     from app.shipping_inspection.router import _inspection_scope
     try:
-        scope = _inspection_scope(db, user)
-        if scope is not None and outbound_service.get_outbound_record(db, record["outbound_record_id"], okki_user_id=scope) is None:
-            return {"state": "restricted", "status": None}
+        inspection_scope = _inspection_scope(db, user)
+        visible = {d["record_id"] for d in documents} if inspection_scope is None or inspection_scope == scope else {
+            d["record_id"] for d in detail_outbound_mirror.read(db, invoice, inspection_scope)}
     except HTTPException:
-        return {"state": "restricted", "status": None}
-    inspection = db.query(ShippingInspection).filter_by(outbound_record_id=record["outbound_record_id"]).first()
-    return {"state": "ready", "status": inspection.status if inspection else "not_inspected"}
+        visible = set()
+    identities = [d["record_id"] for d in documents]
+    inspections = {i.outbound_record_id: i for i in db.query(ShippingInspection).filter(
+        ShippingInspection.outbound_record_id.in_(identities)).all()} if identities else {}
+    events = {e.request_id: e for e in db.query(ShippingOperationEvent).filter(
+        ShippingOperationEvent.scope == outbound_sync_state.SCOPE, ShippingOperationEvent.request_id.in_(identities)).all()} if identities else {}
+    for document in documents:
+        identity = document["record_id"]
+        inspection, event = inspections.get(identity), events.get(identity)
+        document["inspection"] = {"state": "ready" if identity in visible else "restricted",
+            "status": (inspection.status if inspection else "not_inspected") if identity in visible else None}
+        evidence = event.result or {} if event else {}
+        document["inspection_blocked"] = bool(event and (event.action in outbound_sync_state.BLOCKED or evidence.get("required_recheck_ids")))
+        verified_time = (evidence.get("verified") or {}).get("update_time")
+        document["quantity_unverified"] = bool(verified_time and (not document.get("mirror_updated_at") or str(document["mirror_updated_at"]) < str(verified_time)))
+        if verified_time and str(document.get("mirror_updated_at")) == str(verified_time):
+            document["quantity_unverified"] = not outbound_service.mirror_matches_snapshot(db, identity, evidence["verified"])
+        if event and event.action in EVENT_BAD and event.action != "recheck_required":
+            document["anomaly"] = event.action
+        elif identity in visible and document["inspection_blocked"]:
+            document["anomaly"] = "recheck_required"
 
 
 def project(invoice, documents, *, presale_outbounds=None):
@@ -40,14 +56,17 @@ def project(invoice, documents, *, presale_outbounds=None):
     result, seen = [], set()
     for doc in documents:
         identity = str(doc.get("outbound_invoice_id") or "")
-        if not identity or identity in seen or str(doc.get("status")) not in ("1", "2") or not isinstance(doc.get("record_list"), list):
+        if not identity or identity in seen or not isinstance(doc.get("record_list"), list):
             raise ValueError("出库单身份或状态待核对")
         seen.add(identity)
-        actual_shipped = str(doc["status"]) == "2"
-        if presale_outbounds is not None:
-            local = presale_outbounds.get(identity)
-            if local is None or (local.status == "shipped") != actual_shipped:
-                raise ValueError("预售本地出库与小满事实不一致，请核对原单")
+        inspection = doc.get("inspection") or {}
+        if inspection.get("state") != "ready":
+            raise ValueError("部分关联出库单的检验状态不可见，进度待核验")
+        if inspection.get("status") not in ("submitted", "draft", "not_inspected") or doc.get("quantity_unverified"):
+            raise ValueError("出库镜像或检验状态待核验，请先完成出库资料刷新")
+        actual_shipped = inspection.get("status") == "submitted" and not doc.get("inspection_blocked")
+        if presale_outbounds is not None and identity in presale_outbounds:
+            local = presale_outbounds[identity]
             expected = {str(x["order_record_id"]): Decimal(str(x["outbound_count"])) for x in local.payload["record_list"]}
             current = {str(x.get("order_record_id")): Decimal(str(x.get("outbound_count"))) for x in doc["record_list"]}
             if expected != current or len(current) != len(doc["record_list"]) or any(str(x.get("order_id")) != str(invoice.xiaoman_order_id) for x in doc["record_list"]):
@@ -69,6 +88,7 @@ def project(invoice, documents, *, presale_outbounds=None):
             lines.append({"invoice_item_id": item.id, "product_name": item.product_name, "quantity": str(qty), "ordered_quantity": item.quantity})
         result.append({"id": identity, "number": doc.get("serial_id") or identity,
             "state": "shipped" if actual_shipped else "generated", "date": doc.get("outbound_time") or doc.get("create_time"),
+            "maker_name": doc.get("maker_name"), "inspection": inspection, "anomaly": doc.get("anomaly"),
             "items": lines, "quantity": str(sum((Decimal(x["quantity"]) for x in lines), Decimal(0)))})
     if any(shipped[i.id] > i.quantity for i in invoice.items):
         raise ValueError("实际出库超过订单数量，请核对原单")
@@ -78,7 +98,7 @@ def project(invoice, documents, *, presale_outbounds=None):
 def read(db, invoice, user):
     scope = detail_access.outbound_scope(db, user)
     result = {"state": "unverified", "items": [], "batches": [], "tasks": [], "summary": None,
-              "checked_at": None, "message": ""}
+              "checked_at": None, "message": "", "source": "inspection"}
     from sqlalchemy import literal_column
     from app.shipping_inspection.list_sort_service import local_retry_at
     retry_at = literal_column(local_retry_at(db).replace("t.", "ark_okki_outbound_tasks.").replace("f.", "ark_invoices."))
@@ -95,10 +115,16 @@ def read(db, invoice, user):
         except HTTPException:
             pass
     batches = db.query(ShipmentSettlement).filter_by(invoice_id=invoice.id).order_by(ShipmentSettlement.sequence).all() if can_batch else []
+    batch_ids = [batch.id for batch in batches]
+    batch_items = {}
+    for item in db.query(SettlementItem).filter(SettlementItem.settlement_id.in_(batch_ids)).all() if batch_ids else []:
+        batch_items.setdefault(item.settlement_id, []).append(item)
+    batch_outbounds = {out.settlement_id: out for out in db.query(ShipmentOutbound).filter(
+        ShipmentOutbound.settlement_id.in_(batch_ids)).all()} if batch_ids else {}
+    names = {i.id: i.product_name for i in invoice.items}
     for batch in batches:
-        items = db.query(SettlementItem).filter_by(settlement_id=batch.id).all()
-        names = {i.id: i.product_name for i in invoice.items}
-        out = db.query(ShipmentOutbound).filter_by(settlement_id=batch.id).first()
+        items = batch_items.get(batch.id, [])
+        out = batch_outbounds.get(batch.id)
         result["batches"].append({"number": batch.settlement_no, "state": batch.state,
             "outbound_id": out.remote_id if out else None, "outbound_state": out.status if out else None,
             "sequence": batch.sequence, "currency": invoice.currency, "is_final": bool(batch.is_final),
@@ -114,33 +140,22 @@ def read(db, invoice, user):
             "shipped_quantity": "0", "by_item": {str(i.id): "0" for i in invoice.items}})
         return result
     try:
-        order = remote.read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
-        if str(order.get("order_id")) != str(invoice.xiaoman_order_id) or str(order.get("company_id")) != str(invoice.customer_id):
-            raise ValueError("远端订单关联身份已变化")
-        if not remote.order_active(db, order):
-            raise ValueError("远端订单已失效或活动状态未确认")
-        documents = linked_outbound_service.find_related(db, order)
-        if scope is not None:
-            for doc in documents:
-                if outbound_service.get_record_by_outbound_invoice_id(db, str(doc["outbound_invoice_id"]), okki_user_id=scope) is None:
-                    raise HTTPException(403, "部分关联出库单尚不可见或镜像待刷新")
+        documents = detail_outbound_mirror.read(db, invoice, scope)
+        # A narrow list must not become a misleading whole-order percentage.
+        if scope is not None and {d["record_id"] for d in documents} != {
+                d["record_id"] for d in detail_outbound_mirror.read(db, invoice, None)}:
+            raise HTTPException(403, "部分关联出库单不在当前查看范围内")
+        annotate_inspections(db, invoice, documents, user, scope)
         names = {str(i.xiaoman_unique_id): i.product_name for i in invoice.items if i.xiaoman_unique_id}
         result["items"] = [{"id": str(d["outbound_invoice_id"]), "number": d.get("serial_id") or str(d["outbound_invoice_id"]),
-            "state": "uncertain", "date": d.get("create_time"), "quantity": None,
+            "state": "uncertain", "date": d.get("outbound_time"), "quantity": None,
+            "inspection": d["inspection"], "maker_name": d.get("maker_name"), "anomaly": d.get("anomaly"),
             "items": [{"product_name": names.get(str(r.get("order_record_id")), "关联行待核对"), "quantity": str(r.get("outbound_count")), "ordered_quantity": None}
                       for r in d["record_list"] if str(r.get("order_id")) == str(invoice.xiaoman_order_id)]} for d in documents]
         local = {o.remote_id: o for o in db.query(ShipmentOutbound).filter_by(invoice_id=invoice.id).all() if o.remote_id} if invoice.order_type == "presale" else None
-        if local is not None and set(local) != {str(d["outbound_invoice_id"]) for d in documents}:
-            raise ValueError("预售远端出库关联待核对")
+        if local is not None and not set(local) <= {str(d["outbound_invoice_id"]) for d in documents}:
+            raise ValueError("已生成的预售出库单尚未进入镜像，进度待核验")
         items, by_item = project(invoice, documents, presale_outbounds=local)
-        for doc in items:
-            record = outbound_service.get_record_by_outbound_invoice_id(db, doc["id"], okki_user_id=scope)
-            doc["maker_name"] = record.get("owner_name") if record else None
-            doc["inspection"] = inspection_metadata(db, record, user)
-            if record:
-                event = db.query(ShippingOperationEvent).filter_by(scope="outbound-invoice-sync", outbound_record_id=record["outbound_record_id"]).first()
-                if event and event.action in EVENT_BAD:
-                    doc["anomaly"] = event.action
         result.update(state="ready", items=items, checked_at=beijing_now(), summary={"ordered_quantity": sum(i.quantity for i in invoice.items),
             "shipped_quantity": str(sum((Decimal(v) for v in by_item.values()), Decimal(0))), "by_item": by_item})
     except HTTPException:
@@ -148,5 +163,5 @@ def read(db, invoice, user):
     except Exception as exc:
         logger.warning("invoice outbound verification unavailable invoice=%s: %s", invoice.id, type(exc).__name__)
         print(f"[invoice_detail] outbound verification unavailable invoice={invoice.id}: {type(exc).__name__}", flush=True)
-        result["message"] = str(exc) if isinstance(exc, (ValueError, InvalidOperation)) else "出库事实核验失败，请重试；任务与批次记录已保留"
+        result["message"] = str(exc) if isinstance(exc, (ValueError, InvalidOperation)) else "出库镜像或检验记录读取失败，请重试；任务与批次记录已保留"
     return result
