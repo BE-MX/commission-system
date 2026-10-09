@@ -51,7 +51,7 @@ _TEAM_LOGOS = {
 }
 # 新签/大单来袭/超级大单/名次上升四类高光事件：奶油底黄色系极光 + 彩色烟花。
 _AURORA_EVENT_TYPES = {
-    "first_sign", "new_sign_order", "order_placed", "big_deal", "super_deal",
+    "first_sign", "new_sign_order", "big_deal", "super_deal",
     "rank_up_sign", "rank_up_first", "rank_up_re", "rank_up_team",
 }
 _AURORA_LABELS = {"首单新签", "新签喜报", "大单来袭", "超级大单"}
@@ -60,7 +60,7 @@ _AURORA_BASE_BOTTOM = (253, 242, 222)
 _AURORA_BANDS = ((255, 240, 200), (255, 228, 150), (255, 219, 118), (255, 236, 180))
 _FIREWORK_GOLD = (242, 165, 32)
 _FIREWORK_WHITE = (255, 252, 244)
-_ORDER_EVENT_TYPES = frozenset({"new_sign_order", "order_placed", "big_deal", "super_deal"})
+_ORDER_EVENT_TYPES = frozenset({"new_sign_order", "big_deal", "super_deal"})
 
 
 def _event_brand(event: dict) -> str:
@@ -484,7 +484,7 @@ def _event_dict(row: FestivalEvent) -> dict:
 
 
 def _detect_and_load_pending() -> list[dict]:
-    from app.invoice.order_notification_service import detect_order_events
+    from app.invoice.order_notification_service import detect_order_events, delivery_order_detail
 
     now = beijing_now()
     stale = now - timedelta(minutes=15)
@@ -493,13 +493,17 @@ def _detect_and_load_pending() -> list[dict]:
         if service.ACTIVITY_GMV_WINDOW[0] <= now.date().isoformat() <= service.ACTIVITY_GMV_WINDOW[1]:
             service.get_headline_payload(db, None, None)
         rows = (db.query(FestivalEvent)
+                .filter(FestivalEvent.event_type.in_(_ORDER_EVENT_TYPES))
                 .filter(FestivalEvent.dingtalk_sent_at.is_(None))
                 .filter(or_(FestivalEvent.dingtalk_next_retry_at.is_(None),
                             FestivalEvent.dingtalk_next_retry_at <= now))
                 .filter(or_(FestivalEvent.dingtalk_claimed_at.is_(None),
                             FestivalEvent.dingtalk_claimed_at <= stale))
                 .order_by(FestivalEvent.id.asc()).limit(30).all())
-        return [_event_dict(row) for row in rows]
+        events = [_event_dict(row) for row in rows]
+        for event in events:
+            event["detail"] = delivery_order_detail(db, event)
+        return events
 
 
 def _claim_event_delivery(event_id: int) -> bool:
@@ -508,6 +512,7 @@ def _claim_event_delivery(event_id: int) -> bool:
     with SessionLocal() as db:
         updated = (db.query(FestivalEvent)
                    .filter(FestivalEvent.id == event_id)
+                   .filter(FestivalEvent.event_type.in_(_ORDER_EVENT_TYPES))
                    .filter(FestivalEvent.dingtalk_sent_at.is_(None))
                    .filter(or_(FestivalEvent.dingtalk_next_retry_at.is_(None),
                                FestivalEvent.dingtalk_next_retry_at <= now))

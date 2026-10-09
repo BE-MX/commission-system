@@ -71,9 +71,16 @@ def render_order_card(event, assets_root, font, display_font, wrap):
     _engrave(image, (text_x, 247), name, name_font)
 
     details = str(event.get("detail") or "").splitlines()
-    customer = details[0] if details else ""
-    for idx, line in enumerate(wrap(ImageDraw.Draw(image), customer, font(29), 405)):
-        _engrave(image, (text_x, 337 + idx * 38), line, font(29))
+    message = details[0] if details else ""
+    size = 29
+    while True:
+        detail_font = font(size)
+        lines = wrap(ImageDraw.Draw(image), message, detail_font, 405, max_lines=3)
+        if "".join(lines) == message or size <= 23:
+            break
+        size -= 2
+    for idx, line in enumerate(lines):
+        _engrave(image, (text_x, 327 + idx * 36), line, detail_font)
     amount = event.get("amount")
     amount_text = f"${float(amount):,.0f}" if amount is not None else (
         details[1] if len(details) > 1 else "")

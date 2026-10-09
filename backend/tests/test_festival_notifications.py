@@ -488,9 +488,9 @@ def test_event_delivery_lease_and_backoff(engine, monkeypatch):
     monkeypatch.setattr(notification_service, "SessionLocal", session_factory)
     with session_factory() as db:
         event = FestivalEvent(
-            event_type="daily_combo", level="L3", subject_type="person",
+            event_type="big_deal", level="L3", subject_type="person",
             subject_id="U1", subject_name="张三", detail="×2 连击",
-            dedup_key="combo:lease-test",
+            dedup_key="deal:lease-test",
         )
         db.add(event)
         db.commit()
@@ -541,7 +541,7 @@ async def test_busy_response_marks_popup_event_sent_to_avoid_duplicate(engine, m
     monkeypatch.setattr(notification_service, "SessionLocal", session_factory)
     with session_factory() as db:
         row = FestivalEvent(
-            event_type="daily_combo", level="L3", subject_type="person",
+            event_type="big_deal", level="L3", subject_type="person",
             subject_id="U1", subject_name="张三", detail="×2 连击",
             dedup_key="combo:busy-response",
         )

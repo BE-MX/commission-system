@@ -41,13 +41,13 @@ def test_baseline_shards_keep_late_sync_and_new_shards(db):
 
     old = invoice(db, "old")
     old.id = 999
-    late = invoice(db, "late", sync="not_synced")
+    late = invoice(db, "late", sync="not_synced", new=1)
     late.id = 1000
     db.flush()
     assert detect(db) == 0
     late.sync_status = "synced"
     assert detect(db) == 1
-    newer = invoice(db, "newer")
+    newer = invoice(db, "newer", new=1)
     newer.id = 2000
     db.flush()
     assert detect(db) == 1
@@ -62,17 +62,17 @@ def test_baseline_shards_keep_late_sync_and_new_shards(db):
 
 
 @pytest.mark.parametrize("day", [date(2026, 7, 1), date(2026, 10, 9), date(2027, 1, 1)])
-def test_all_dates_and_four_notice_types(db, day):
+def test_all_dates_and_three_notice_types(db, day):
     detect(db)
     invoice(db, "new", new=1, day=day)
     invoice(db, "ordinary", day=day)
     invoice(db, "big", amount=5000, day=day)
     invoice(db, "super", amount=30000, day=day)
     invoice(db, "below", amount=5100, fee=101, day=day)
-    assert detect(db) == 7
+    assert detect(db) == 3
     events = db.query(FestivalEvent).all()
     assert {e.event_type for e in events} == {
-        "new_sign_order", "order_placed", "big_deal", "super_deal",
+        "new_sign_order", "big_deal", "super_deal",
     }
     assert [e.dedup_key for e in events if e.event_type == "big_deal"] == ["deal:remote-big"]
     assert [e.dedup_key for e in events if e.event_type == "super_deal"] == ["deal:remote-super"]
@@ -80,7 +80,7 @@ def test_all_dates_and_four_notice_types(db, day):
 
 
 def test_drafts_failures_cancellation_and_later_success(db):
-    pending = invoice(db, "draft", sync="not_synced", status="draft")
+    pending = invoice(db, "draft", sync="not_synced", status="draft", new=1)
     detect(db)
     invoice(db, "failed", sync="sync_failed")
     invoice(db, "uncertain", sync="sync_uncertain")
@@ -112,15 +112,15 @@ def test_same_order_has_no_duplicate_festival_notice(db):
 
 def test_non_usd_is_never_classified_as_usd_big_deal(db):
     detect(db)
-    invoice(db, "cny", amount=30000, currency="CNY")
+    invoice(db, "cny", amount=30000, currency="CNY", new=1)
     assert detect(db) == 1
     event = db.query(FestivalEvent).one()
-    assert event.event_type == "order_placed"
+    assert event.event_type == "new_sign_order"
     assert event.amount is None
     assert "CNY 30,000" in event.detail
 
 
-def test_notice_detail_uses_country_customer_and_manual_overlay(db):
+def test_notice_detail_hides_customer_and_uses_country_overlay(db):
     from sqlalchemy import text
     from app.invoice.models import InvoiceCustomerOverlay
 
@@ -128,16 +128,17 @@ def test_notice_detail_uses_country_customer_and_manual_overlay(db):
     db.execute(text("INSERT INTO lsordertest.customer_info (company_id, company_name, country_name) "
                     "VALUES ('C1', 'Customer', 'United States')"))
     invoice(db, "no-number-in-card", amount=35000)
-    assert detect(db) == 2
-    assert {event.detail for event in db.query(FestivalEvent).all()} == {"United States · Customer"}
+    assert detect(db) == 1
+    assert {event.detail for event in db.query(FestivalEvent).all()} == {
+        "恭喜未分队的Salesperson成交United States的客户！"}
     db.add(InvoiceCustomerOverlay(company_id="C1", company_name="Customer", country_name="Canada"))
-    invoice(db, "overlay", currency="CNY", amount=35000)
+    invoice(db, "overlay", currency="CNY", amount=35000, new=1)
     assert detect(db) == 1
     assert db.query(FestivalEvent).order_by(FestivalEvent.id.desc()).first().detail == (
-        "Canada · Customer\nCNY 35,000")
+        "恭喜未分队的Salesperson新签Canada的客户！\nCNY 35,000")
 
 
-@pytest.mark.parametrize("kind", ["new_sign_order", "order_placed", "big_deal", "super_deal"])
+@pytest.mark.parametrize("kind", ["new_sign_order", "big_deal", "super_deal"])
 def test_order_card_has_alpha_glass_and_actual_board_avatar(tmp_path, monkeypatch, kind):
     from PIL import Image
     from app.festival import order_card_renderer
@@ -150,7 +151,7 @@ def test_order_card_has_alpha_glass_and_actual_board_avatar(tmp_path, monkeypatc
     monkeypatch.setattr(notification_service, "_UPLOAD_ROOT", tmp_path / "output")
     event = {
         "event_type": kind, "label": "超级大单", "subject_type": "person", "subject_id": "U1",
-        "subject_name": "业务员", "detail": "United States · Customer", "amount": 35000,
+        "subject_name": "业务员", "detail": "恭喜先锋战队的业务员成交美国的客户！", "amount": 35000,
         "dedup_key": f"glass:{kind}", "created_at": datetime(2026, 10, 9, 11, 40),
     }
     image_path = notification_service.render_event_image(event)
@@ -169,10 +170,10 @@ def test_order_card_has_alpha_glass_and_actual_board_avatar(tmp_path, monkeypatc
         words.append(value)
         return original(image, position, value, font, **kwargs)
     monkeypatch.setattr(order_card_renderer, "_engrave", record)
-    event.update(detail="Canada · " + "Long Customer Name " * 20, amount=None)
+    event.update(detail="恭喜乘风破浪战队的业务员新签United States的客户！", amount=None)
     notification_service.render_event_image(event)
-    assert any(value.startswith("Canada · ") for value in words)
-    assert any("…" in value for value in words)
+    assert "恭喜乘风破浪战队的业务员新签United States的客户！" in "".join(words)
+    assert not any("…" in value for value in words)
     assert not any("SO-" in value or "$35,000" in value for value in words)
 
 
@@ -225,7 +226,7 @@ def test_current_push_execution_saves_auto_new_sign_evidence(db, monkeypatch):
     assert db.query(FestivalEvent).one().event_type == "new_sign_order"
 
 
-@pytest.mark.parametrize("kind", ["new_sign_order", "order_placed", "big_deal", "super_deal"])
+@pytest.mark.parametrize("kind", ["new_sign_order", "big_deal", "super_deal"])
 def test_order_image_footer_has_no_festival_date(kind):
     assert notification_service._event_brand({"event_type": kind}) == "方舟订单"
     assert notification_service._event_brand({"event_type": "rank_up_sign"}) == "2026 莱莎采购节"
@@ -252,7 +253,7 @@ async def test_delivery_uses_daily_branding(engine, monkeypatch):
     monkeypatch.setattr(notification_service, "beijing_now", lambda: datetime(2026, 10, 9, 12))
     notification_service._detect_and_load_pending()
     with factory() as db:
-        invoice(db, "placed")
+        invoice(db, "placed", new=1)
         db.commit()
     sent = []
 
@@ -264,5 +265,75 @@ async def test_delivery_uses_daily_branding(engine, monkeypatch):
     monkeypatch.setattr(notification_service, "render_event_image", lambda _e: None)
     monkeypatch.setattr(notification_service, "_public_url", lambda _p: "https://files.test/notice.png")
     assert (await notification_service.monitor_festival_events())["sent"] == 1
-    assert sent[0][0] == "方舟订单 · 下单喜报"
+    assert sent[0][0] == "方舟订单 · 新签喜报"
+    assert "Customer" not in sent[0][1]
+    assert "恭喜未分队的Salesperson新签国家未知的客户！" in sent[0][1]
     assert (await notification_service.monitor_festival_events())["sent"] == 0
+
+
+def test_ordinary_orders_are_observed_without_notices(db):
+    detect(db)
+    row = invoice(db, "ordinary", amount=4999)
+    assert detect(db) == 0
+    row.total_amount = 35000
+    row.okki_new_deal = 1
+    assert detect(db) == 0
+    assert db.query(FestivalEvent).count() == 0
+
+
+def test_team_comes_from_active_okki_binding(db):
+    from sqlalchemy import text
+    from app.auth.models import ArkUser, ArkUserExternalBinding
+
+    db.execute(text("CREATE TABLE lsordertest.user_rel_team (user_id TEXT, Team TEXT)"))
+    db.execute(text("INSERT INTO lsordertest.user_rel_team VALUES ('U1', '先锋战队')"))
+    db.add(ArkUser(id=101, username="salesperson", real_name="Salesperson", password_hash="test"))
+    db.add(ArkUserExternalBinding(ark_user_id=101, provider="okki", external_account_id="U1",
+                                binding_status="active"))
+    db.flush()
+    detect(db)
+    invoice(db, "new-big", new=1, amount=5000)
+    assert detect(db) == 2
+    assert {row.detail for row in db.query(FestivalEvent)} == {
+        "恭喜先锋战队的Salesperson新签国家未知的客户！"}
+    from app.invoice.order_notification_service import delivery_order_detail
+    event = notification_service._event_dict(db.query(FestivalEvent).first())
+    event.update(subject_id="ark:101", detail="PRIVATE CUSTOMER")
+    assert delivery_order_detail(db, event) == "恭喜先锋战队的Salesperson新签国家未知的客户！"
+    db.query(ArkUserExternalBinding).one().binding_status = "inactive"
+    db.flush()
+    event["subject_id"] = "U1"
+    assert delivery_order_detail(db, event) == "恭喜未分队的Salesperson新签国家未知的客户！"
+    binding = db.query(ArkUserExternalBinding).one()
+    binding.binding_status = "active"
+    binding.deleted_at = datetime(2026, 10, 9, 12)
+    db.flush()
+    assert delivery_order_detail(db, event) == "恭喜未分队的Salesperson新签国家未知的客户！"
+
+
+@pytest.mark.asyncio
+async def test_legacy_pending_copy_is_redacted_and_other_event_types_stay_unsent(engine, monkeypatch):
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(notification_service, "SessionLocal", factory)
+    monkeypatch.setattr(notification_service, "beijing_now", lambda: datetime(2026, 10, 9, 12))
+    notification_service._detect_and_load_pending()
+    with factory() as db:
+        invoice(db, "legacy", amount=5000)
+        for kind, key in [("big_deal", "deal:remote-legacy"),
+                          ("order_placed", "order:remote-legacy"), ("rank_up_sign", "rank:legacy")]:
+            db.add(FestivalEvent(event_type=kind, dedup_key=key, level="L3", subject_type="person",
+                                 subject_id="ark:101", subject_name="Salesperson",
+                                 detail="United States · PRIVATE CUSTOMER", amount=5000))
+        db.commit()
+    images, sent = [], []
+    class Sender:
+        async def send_markdown(self, title, markdown):
+            sent.append(markdown)
+    monkeypatch.setattr(notification_service, "_festival_sender", lambda: Sender())
+    monkeypatch.setattr(notification_service, "render_event_image", lambda event: images.append(event) or None)
+    monkeypatch.setattr(notification_service, "_public_url", lambda path: "https://files.test/card.png")
+    assert (await notification_service.monitor_festival_events())["sent"] == 1
+    assert images[0]["detail"] == "恭喜未分队的Salesperson成交国家未知的客户！"
+    assert "PRIVATE CUSTOMER" not in sent[0]
+    with factory() as db:
+        assert db.query(FestivalEvent).filter(FestivalEvent.dingtalk_sent_at.is_(None)).count() == 2
