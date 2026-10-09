@@ -459,7 +459,7 @@ def test_reconcile_backfills_task_for_recent_first_push(db):
     invoice.outbound_auto_requested = 1
     _seed_create_log(db, invoice, hours_ago=2)
 
-    stats = outbound_task_service.reconcile_missing_outbound_tasks(db)
+    stats = outbound_task_service._reconcile_missing_outbound_tasks(db)
 
     assert stats == {"scanned": 1, "enqueued": 1, "skipped": 0}
     assert [t.order_id for t in _tasks(db)] == ["424242"]
@@ -471,7 +471,7 @@ def test_reconcile_ignores_first_push_outside_window(db):
     invoice.items.append(_stock_item())
     _seed_create_log(db, invoice, hours_ago=72)
 
-    stats = outbound_task_service.reconcile_missing_outbound_tasks(db)
+    stats = outbound_task_service._reconcile_missing_outbound_tasks(db)
 
     assert stats == {"scanned": 0, "enqueued": 0, "skipped": 0}
     assert _tasks(db) == []
@@ -488,7 +488,7 @@ def test_reconcile_ignores_non_synced_and_failed_logs(db):
     no_success_log.items.append(_stock_item(sort_order=1))
     _seed_create_log(db, no_success_log, hours_ago=2, success=0)
 
-    stats = outbound_task_service.reconcile_missing_outbound_tasks(db)
+    stats = outbound_task_service._reconcile_missing_outbound_tasks(db)
 
     assert stats == {"scanned": 0, "enqueued": 0, "skipped": 0}
     assert _tasks(db) == []
@@ -508,7 +508,7 @@ def test_reconcile_keeps_existing_task_and_marks_generic_merge_skipped(db):
     outbound_task_service.enqueue_outbound_task(db, existing)
     db.flush()
 
-    stats = outbound_task_service.reconcile_missing_outbound_tasks(db)
+    stats = outbound_task_service._reconcile_missing_outbound_tasks(db)
 
     assert stats == {"scanned": 1, "enqueued": 0, "skipped": 1}
     tasks = _tasks(db)
@@ -522,13 +522,13 @@ def test_explicit_enrollment_survives_long_outage(db):
     invoice = _make_invoice(db, xiaoman_order_id="424242", sync_status="synced", outbound_auto_requested=1)
     invoice.items.append(_stock_item())
     _seed_create_log(db, invoice, hours_ago=240)
-    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 1
+    assert outbound_task_service._reconcile_missing_outbound_tasks(db)["enqueued"] == 1
 
 
 def test_cancellation_never_backfills_even_enrolled(db):
     invoice = _make_invoice(db, xiaoman_order_id="424242", sync_status="synced", status="cancelled", outbound_auto_requested=1)
     _seed_create_log(db, invoice)
-    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+    assert outbound_task_service._reconcile_missing_outbound_tasks(db)["enqueued"] == 0
 
 
 @pytest.mark.parametrize("interrupted", [False, True])
@@ -573,7 +573,7 @@ def test_bound_uncertain_first_order_enrolls_only_after_full_sync(db, monkeypatc
     assert invoice.outbound_auto_requested == wanted
     assert invoice.sync_status == "not_synced" and _tasks(db) == []
     if order_type == "presale":
-        assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+        assert outbound_task_service._reconcile_missing_outbound_tasks(db)["enqueued"] == 0
         return  # Presale has its own settlement and receipt preflight.
     # Receipt evidence has separate integration coverage; isolate outbound enrollment.
     from app.receipt import invoice_link
@@ -615,7 +615,7 @@ def test_recovered_sync_task_rolls_back_when_inventory_finalize_fails(db, monkey
     db.rollback()
     db.refresh(invoice)
     assert invoice.sync_status != "synced" and _tasks(db) == []
-    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+    assert outbound_task_service._reconcile_missing_outbound_tasks(db)["enqueued"] == 0
 
 
 def test_reconcile_restores_recovered_order_without_successful_create_log(db):
@@ -625,8 +625,8 @@ def test_reconcile_restores_recovered_order_without_successful_create_log(db):
         InvoiceSyncLog(invoice_id=invoice.id, action="uncertain_bind", success=1),
         InvoiceSyncLog(invoice_id=invoice.id, action="update", success=1)])
     db.flush()
-    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 1
-    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+    assert outbound_task_service._reconcile_missing_outbound_tasks(db)["enqueued"] == 1
+    assert outbound_task_service._reconcile_missing_outbound_tasks(db)["enqueued"] == 0
     assert len(_tasks(db)) == 1
 
 
@@ -636,5 +636,6 @@ def test_reconcile_never_treats_binding_as_complete_sync(db):
     db.add_all([InvoiceSyncLog(invoice_id=invoice.id, action="create", success=0),
         InvoiceSyncLog(invoice_id=invoice.id, action="uncertain_bind", success=1)])
     db.flush()
-    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0
+    assert outbound_task_service._reconcile_missing_outbound_tasks(db)["enqueued"] == 0
     assert _tasks(db) == []
+

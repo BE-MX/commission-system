@@ -9,7 +9,17 @@ from app.invoice import okki_client
 from app.receipt import recovery, remote, service, sync_service
 from app.receipt.models import ReceiptAttempt
 from app.receipt.receipt_index import IndexNotReady
-from tests.test_receipt_management import no_real_remote, order, register  # noqa: F401
+from tests.authority_helpers import seed_authority
+from tests.test_receipt_management import (  # noqa: F401
+    USER, no_real_remote, order, reconcile_financial, register,
+)
+
+
+@pytest.fixture(autouse=True)
+def live_receipt_authority(db):
+    """Creation/change authorization is live: the operator's grants come from
+    the database, and the shared engine already carries the authority barrier."""
+    seed_authority(db, 1, "receipt:read", "receipt:write")
 
 
 @pytest.mark.parametrize("phase,expected,kind", [
@@ -208,16 +218,30 @@ def test_late_different_id_blocks_existing_binding_and_is_not_reprocessed(db, or
 
 
 def test_current_id_reconciliation_cannot_clear_other_exact_response_ids(db, order, monkeypatch):
+    from app.invoice import lifecycle_remote
     from app.receipt import remote_change_service
+    from app.receipt.schemas import RemoteChange
     row, _ = register(db, order)
     row.xiaoman_receipt_id, row.sync_status = "701", "synced"
     db.add(ReceiptAttempt(token="different-result", receipt_id=row.id, remote_id="99", remote_no="HK99"))
     db.commit()
     recovery.recover_late_results(db)
+    # The public one-shot helpers were replaced by evidence-passing service
+    # functions and the current-authorized accept path; both still hit the same
+    # identity guard, so the conflict survives a current-ID readback.
     with pytest.raises(service.ReturnedIdentityConflict):
-        sync_service.reconcile(db, row, 1)
+        reconcile_financial(db, row, 1)
+    identity, version = row.id, row.version  # Capture before closing the transaction.
+    db.rollback()  # The rejected reconciliation leaves an open lock transaction.
+    seed_authority(db, 1, "receipt:admin")
+    monkeypatch.setattr(lifecycle_remote, "read", lambda db, kind, identity: {
+        "cash_collection_id": "701", "cash_collection_no": "TEST-HK", "order_id": "2001",
+        "currency": "USD", "amount": "500", "bank_charge": "0", "real_amount": "500",
+        "collect_status": 1, "collection_date": "2026-09-17"})
+    body = RemoteChange(version=version, evidence_hash="a" * 64,
+                        reason="已核实实际收款与小满原单一致", confirmed=True)
     with pytest.raises(service.ReturnedIdentityConflict):
-        remote_change_service.evidence(db, row)
+        remote_change_service.accept(db, identity, body, USER)
     sync_service.refresh_accepted(db, row.id)
     assert row.sync_status == "uncertain" and row.recovery_kind == "blocked"
     assert row.xiaoman_receipt_id == "701"

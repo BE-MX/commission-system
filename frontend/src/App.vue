@@ -6,7 +6,7 @@
 <script setup>
 import { onMounted } from 'vue'
 import GlobalLoading from '@/components/GlobalLoading.vue'
-import { clearAuthState, useAuthStore } from '@/stores/auth'
+import { clearAuthState, isAuthOperationSuperseded, useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 
@@ -20,12 +20,20 @@ onMounted(async () => {
       // 内存/localStorage 没有可用 token 时，先用 HttpOnly Cookie 换一个
       if (!auth.isLoggedIn) await auth.refreshToken()
       await auth.fetchMe()
-    } catch {
+    } catch (error) {
+      if (isAuthOperationSuperseded(error)) {
+        auth.markInitialized()
+        return
+      }
       // localStorage 里的 token 可能已过期：用 refresh 换新后再拉一次
       try {
         await auth.refreshToken()
         await auth.fetchMe()
-      } catch {
+      } catch (error) {
+        if (isAuthOperationSuperseded(error)) {
+          auth.markInitialized()
+          return
+        }
         // 彻底失败（未登录/会话过期/后端不可用）：清残留 token，
         // 由路由守卫带 redirect 参数跳登录页
         clearAuthState()

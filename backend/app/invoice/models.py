@@ -32,6 +32,9 @@ class Invoice(Base):
 
     __tablename__ = "ark_invoices"
 
+    # Monotonic portal publication version; existing edit_version remains a content hash.
+    portal_document_version = Column(BigInteger, nullable=False, default=1, server_default="1", comment="门户PI文档版本，不替代既有内容哈希")
+
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     invoice_no = Column(String(64), nullable=False, unique=True, comment="Invoice number")
     order_type = Column(String(16), nullable=False, default="stock", comment="stock/production")

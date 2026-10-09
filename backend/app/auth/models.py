@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey, JSON, SmallInteger, Text,
 )
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
 from app.core.time import beijing_now
@@ -119,6 +120,21 @@ class ArkRefreshToken(Base):
     expires_at = Column(DateTime, nullable=False, comment="Token过期时间")
     revoked_at = Column(DateTime, comment="主动吊销时间")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+
+
+class ArkAccountUnlockAudit(Base):
+    __tablename__ = "ark_account_unlock_audits"
+    __table_args__ = {"comment": "管理员账号解锁审计，原登录日志保留"}
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="解锁审计ID")
+    user_id = Column(Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"),
+                     ForeignKey("ark_users.id"), nullable=False, index=True, comment="被解锁用户ID")
+    operator_user_id = Column(Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"),
+                              ForeignKey("ark_users.id"), nullable=False, comment="操作人用户ID")
+    operator_username = Column(String(50), nullable=False, comment="操作人用户名快照")
+    through_login_log_id = Column(BigInteger, nullable=False, comment="本次解除的失败日志ID上界")
+    failed_count = Column(Integer, nullable=False, comment="解除时窗口内失败次数")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="北京时间解锁时间")
 
 
 class ArkLoginLog(Base):

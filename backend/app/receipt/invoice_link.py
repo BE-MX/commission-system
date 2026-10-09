@@ -149,14 +149,17 @@ def release_rejected(db, invoice, token=None):
         row.status = "draft"
 
 
-def guard_edit(db, invoice, body):
+def guard_edit(db, invoice, body, *, receipt_rows=None):
     row = get_intent(db, invoice.id)
     if row and (row.attempt_token or row.status == "ready" or invoice.sync_status == "sync_uncertain"):
         raise ValueError("订单回款正在处理或等待恢复，暂不能编辑")
     if invoice.order_type == "presale" and row and row.status != "draft":
         raise ValueError("预售首款已提交，商业合同已冻结；发货地址和备注请在批次中处理")
     local = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active").count()
-    snapshot = {"rows": remote.order_receipts(db, invoice.xiaoman_order_id) if invoice.xiaoman_order_id else []}
+    # A local editor can supply freshly verified rows bound to the rechecked PI.
+    # Local receipts and intent are still read inside this final transaction.
+    rows = receipt_rows if receipt_rows is not None else (remote.order_receipts(db, invoice.xiaoman_order_id) if invoice.xiaoman_order_id else [])
+    snapshot = {"rows": rows}
     if local or snapshot["rows"] or (row and row.status in {"armed", "converted"}):
         if body.customer_id != invoice.customer_id or body.currency != invoice.currency or body.order_type != invoice.order_type:
             raise ValueError("已有回款的订单不能更换客户、币种或类型")

@@ -52,36 +52,49 @@ def _source_active(db, invoice):
 
 
 def _matching_active_orders(db, target):
-    """Fail closed unless the entire active creation-time range can be read twice."""
+    """Require two complete, identical identity/name maps before proving absence."""
     params = {"start_time": target.created_at.date().isoformat(),
               "end_time": beijing_now().date().isoformat(), "time_type": 2,
               "removed": 0, "approval_with_draft": 1, "count": 100}
+
+    def canonical_number(value, *, positive):
+        if isinstance(value, bool) or not isinstance(value, (int, str)):
+            raise okki_client.OkkiApiError("小满有效订单列表数字不可验证")
+        text = str(value)
+        if (not text.isascii() or not text.isdecimal() or len(text) > 64
+                or str(int(text)) != text or int(text) < int(positive)):
+            raise okki_client.OkkiApiError("小满有效订单列表数字不可验证")
+        return text
+
     def scan():
-        seen, matches, total = set(), set(), None
+        seen, total = {}, None
         for page in range(1, 501):
             data = remote.read(db, "/v1/invoices/order/list", {**params, "start_index": page})
-            rows, count = data.get("list"), data.get("count")
-            if not isinstance(rows, list) or not str(count).isdigit():
-                raise ValueError("小满有效订单列表不完整")
-            if total is not None and total != int(count):
-                raise ValueError("小满有效订单列表查询期间变化")
-            total = int(count)
+            if not isinstance(data, dict) or not isinstance(data.get("list"), list):
+                raise okki_client.OkkiApiError("小满有效订单列表不完整")
+            rows = data["list"]
+            count = int(canonical_number(data.get("count"), positive=False))
+            if total is not None and total != count:
+                raise okki_client.OkkiApiError("小满有效订单列表查询期间变化")
+            total = count
             for row in rows:
-                identity = str(row.get("order_id") or "") if isinstance(row, dict) else ""
-                if not identity.isdigit() or identity in seen:
-                    raise ValueError("小满有效订单列表 ID 缺失或重复")
-                seen.add(identity)
-                if row.get("name") == target.remote_order_name:
-                    matches.add(identity)
+                if not isinstance(row, dict):
+                    raise okki_client.OkkiApiError("小满有效订单列表行不完整")
+                identity = canonical_number(row.get("order_id"), positive=True)
+                name = row.get("name")
+                if not isinstance(name, str) or not name.strip() or identity in seen:
+                    raise okki_client.OkkiApiError("小满有效订单列表名称缺失或 ID 重复")
+                seen[identity] = name
             if len(seen) == total:
-                return matches
+                return seen
             if not rows or len(seen) > total:
                 break
-        raise ValueError("小满有效订单列表未完整读取")
+        raise okki_client.OkkiApiError("小满有效订单列表未完整读取")
+
     first, second = scan(), scan()
     if first != second:
-        raise ValueError("小满运费订单列表发生变化，请稍后核对")
-    return second
+        raise okki_client.OkkiApiError("小满运费订单列表发生变化，请稍后核对")
+    return {identity for identity, name in second.items() if name == target.remote_order_name}
 
 
 def freeze(db, target):
@@ -219,60 +232,6 @@ def refresh(db, target_id):
     else:
         target.remote_status = "uncertain"
         target.last_error = "小满运费订单身份或金额与冻结目标不一致，请核对原单"
-    target.version += 1
-    db.commit()
-    return target.remote_status
-
-
-def bind_exact(db, target_id, remote_id, expected_version):
-    """Manual recovery of an unknown POST using a verified existing OKKI ID."""
-    target = db.get(Receivable, target_id)
-    if not target:
-        raise ValueError("运费目标不存在")
-    invoice_id = target.invoice_id
-    detail = remote.read(db, "/v1/invoices/order/info", {"order_id": remote_id})
-    if not remote.order_active(db, detail) or not _verify(target, detail, remote_id):
-        raise ValueError("小满订单与冻结的运费目标不匹配，不能绑定")
-    db.commit()
-    db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
-    db.refresh(target, with_for_update=True)
-    settlement = db.get(ShipmentSettlement, target.settlement_id)
-    db.refresh(settlement, with_for_update=True)
-    if (settlement.version != expected_version or target.kind != "freight"
-            or target.remote_status not in {"uncertain", "verifying", "failed"}
-            or (target.remote_order_id and target.remote_order_id != remote_id)):
-        raise ValueError("运费目标已变化，请刷新后核对")
-    target.remote_order_id = remote_id
-    target.remote_status = "verifying"
-    target.last_error = None
-    target.version += 1
-    db.commit()
-    return refresh(db, target_id)
-
-
-def retry_failed(db, target_id, expected_version):
-    """Only a definite pre-write rejection may get a fresh send attempt."""
-    require_delivery()
-    target = db.get(Receivable, target_id)
-    if not target:
-        raise ValueError("运费目标不存在")
-    invoice_id = target.invoice_id
-    if _matching_active_orders(db, target):
-        raise ValueError("小满已有同名运费订单，请输入远端 ID 核对绑定")
-    db.commit()
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
-    ensure_active(invoice)
-    db.refresh(target, with_for_update=True)
-    settlement = db.get(ShipmentSettlement, target.settlement_id)
-    db.refresh(settlement, with_for_update=True)
-    if (settlement.version != expected_version
-            or settlement.state not in {"awaiting_payment", "awaiting_verification", "ready"}
-            or target.remote_status != "failed" or target.remote_order_id):
-        raise ValueError("运费目标不是可重试的明确失败状态")
-    target.remote_status = "unverified"
-    target.attempt_token = None
-    target.lease_until = None
-    target.last_error = None
     target.version += 1
     db.commit()
     return target.remote_status

@@ -29,6 +29,10 @@ export function resetUserPassword(userId, data) {
   return authRequest.put(`/users/${userId}/password`, data, { loadingText: '正在重置...' }).then(r => r.data)
 }
 
+export function unlockUserAccount(userId) {
+  return authRequest.post(`/users/${userId}/unlock`).then(r => r.data)
+}
+
 export function toggleUserActive(userId) {
   return authRequest.put(`/users/${userId}/toggle-active`).then(r => r.data)
 }

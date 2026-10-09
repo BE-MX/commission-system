@@ -13,6 +13,7 @@ import hmac
 import secrets
 from typing import Mapping, Sequence
 
+from app.portal.authority import lock_authority
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -179,6 +180,7 @@ def project_sync_batch(
     records: Sequence[Mapping],
 ) -> SyncBatchResult:
     """Project every record while advancing only its continuous success prefix."""
+    lock_authority(db)
     account_key = normalized_identifier(
         source_account_key, "SOURCE_ACCOUNT_INVALID"
     )

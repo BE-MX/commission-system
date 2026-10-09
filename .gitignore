@@ -91,3 +91,6 @@ expo-sales/server/expo.db
 /extensions/*/dist/
 /extensions/*/release/
 /frontend/public/downloads/whatsapp-translation/
+
+# pnpm virtual store (local only)
+.pnpm-store/

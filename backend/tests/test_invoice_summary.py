@@ -12,13 +12,16 @@ from app.auth.utils import create_access_token
 from app.core.database import get_db
 from app.invoice.models import Invoice, InvoiceDelegateGrant
 from app.invoice.router import router
+from tests.authority_helpers import seed_authority
 
 
 @contextmanager
 def _client(db, *, user_id=5, permissions=("invoice:read",)):
     app = FastAPI()
     app.include_router(router, prefix="/api/invoice")
-    app.dependency_overrides[get_db] = lambda: db
+    # The hardened read path requires a fresh transaction boundary; a shared
+    # session must roll back the previous request's read transaction first.
+    app.dependency_overrides[get_db] = lambda: (db.rollback(), db)[1]
     token = create_access_token({
         "sub": str(user_id), "username": f"user{user_id}", "roles": [],
         "permissions": list(permissions),
@@ -57,7 +60,10 @@ def test_summary_uses_all_visible_synced_invoices_not_current_page(db):
     _invoice(db, "DRAFT", amount="300", sync_status="not_synced")
     _invoice(db, "CANCEL-PENDING", amount="500", status="cancel_pending")
     _invoice(db, "CANCELLED", amount="500", status="cancelled")
-    db.flush()
+    # Live authorization is read from the database: the viewer holds invoice:read,
+    # the read-all viewer is a separate account with the data-scope grant.
+    seed_authority(db, 5, "invoice:read")
+    seed_authority(db, 8, "invoice:read", "invoice:read_all")
 
     with _client(db) as client:
         result = client.get("/api/invoice/invoices/summary", params={
@@ -73,14 +79,14 @@ def test_summary_uses_all_visible_synced_invoices_not_current_page(db):
         assert page.status_code == 200
         assert len(page.json()["data"]["items"]) == 1
 
-    with _client(db, permissions=("invoice:read", "invoice:read_all")) as client:
+    with _client(db, user_id=8, permissions=("invoice:read", "invoice:read_all")) as client:
         result = client.get("/api/invoice/invoices/summary", params={
             "date_from": "2026-09-01", "date_to": "2026-09-30",
         })
         assert result.json()["data"]["order_count"] == 6
 
     db.delete(grant)
-    db.flush()
+    db.commit()
     with _client(db) as client:
         result = client.get("/api/invoice/invoices/summary", params={
             "date_from": "2026-09-01", "date_to": "2026-09-30",
@@ -90,6 +96,9 @@ def test_summary_uses_all_visible_synced_invoices_not_current_page(db):
 
 
 def test_summary_rejects_invalid_range_and_requires_read_permission(db):
+    # The reader holds a live invoice:read grant; the second account has none.
+    seed_authority(db, 5, "invoice:read")
+    seed_authority(db, 7)
     with _client(db) as client:
         empty = client.get("/api/invoice/invoices/summary", params={
             "date_from": "2026-10-01", "date_to": "2026-10-31",
@@ -101,7 +110,7 @@ def test_summary_rejects_invalid_range_and_requires_read_permission(db):
         })
         assert result.status_code == 422
 
-    with _client(db, permissions=()) as client:
+    with _client(db, user_id=7, permissions=()) as client:
         result = client.get("/api/invoice/invoices/summary", params={
             "date_from": "2026-09-01", "date_to": "2026-09-30",
         })

@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Iterable, Literal, Mapping, Sequence
 from urllib.parse import urlsplit
 
+from app.portal.authority import lock_authority, review_customer_bindings
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -275,10 +276,12 @@ def _account_for_update(db: Session, customer_id: int) -> CustomerAccount:
 
 
 def _bump_accounts(db: Session, customer_ids: Iterable[int]) -> None:
-    for customer_id in sorted(set(customer_ids)):
+    customer_ids = set(customer_ids)
+    for customer_id in sorted(customer_ids):
         account = _account_for_update(db, customer_id)
         account.profile_input_seq = int(account.profile_input_seq) + 1
         account.updated_at = beijing_now()
+    review_customer_bindings(db, customer_ids)
 
 
 def _contact_customer_ids(db: Session, contact_id: int) -> tuple[int, ...]:
@@ -719,6 +722,7 @@ def attach_identity_candidate(
     now: datetime | None = None,
 ) -> CustomerExternalIdentity:
     """Append an identity candidate using only registered policy metadata."""
+    lock_authority(db)
     row, _created = _attach_identity_candidate(
         db,
         customer_id=customer_id,
@@ -1144,6 +1148,7 @@ def _apply_context_material(
         account.profile_input_seq = int(account.profile_input_seq) + 1
         account.updated_at = now
     db.flush()
+    review_customer_bindings(db, {account.id})
     return contact
 
 
@@ -1200,6 +1205,7 @@ def resolve_business_context(
     now: datetime | None = None,
 ) -> ResolvedBusinessContext:
     """Resolve a business context through insert-first transaction arbitration."""
+    lock_authority(db)
     candidates = tuple(identity_candidates)
     reject_ascii_control_characters(
         source_system,
@@ -1447,6 +1453,7 @@ def confirm_identity(
     now: datetime | None = None,
 ) -> IdentityConfirmationResult:
     """Verify one identity, surfacing strong-key collisions as review state."""
+    lock_authority(db)
     now = now or beijing_now()
     identity = (
         db.query(CustomerExternalIdentity)

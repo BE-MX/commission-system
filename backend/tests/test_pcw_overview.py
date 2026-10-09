@@ -241,6 +241,9 @@ def test_watermarks_fresh_stale_unknown_and_gaps(db):
 
 def test_scans_latest_run_of_the_day(db):
     """scans 取 on_date 当天最新一个批次；无批次为 None。"""
+    # 全量套件先采集（导入）全部模块再执行；import 期的 TODAY 与运行期默认
+    # on_date 可能跨过北京零点，批次日期必须与运行期日期同源。
+    today = beijing_today()
     user = _user(db, 9630)
     account, _ = _account(db, code="C-OV-SCAN")
     _assign(db, account, user, "primary")
@@ -251,7 +254,7 @@ def test_scans_latest_run_of_the_day(db):
     )
     assert overview["scans"] is None
 
-    run_daily_evaluation(db, business_date=TODAY, customer_ids=[account.id])
+    run_daily_evaluation(db, business_date=today, customer_ids=[account.id])
     overview = get_workbench_overview(
         db, actor_user_id=user.id, actor_permissions=set(),
         customer_scope="primary", action_scope="mine",
@@ -262,7 +265,7 @@ def test_scans_latest_run_of_the_day(db):
     assert overview["scans"]["ai_completed"] == 0
 
     # 同日更新的批次（空范围）覆盖旧批次
-    run_daily_evaluation(db, business_date=TODAY, customer_ids=[])
+    run_daily_evaluation(db, business_date=today, customer_ids=[])
     overview = get_workbench_overview(
         db, actor_user_id=user.id, actor_permissions=set(),
         customer_scope="primary", action_scope="mine",
@@ -271,7 +274,7 @@ def test_scans_latest_run_of_the_day(db):
 
     overview = get_workbench_overview(
         db, actor_user_id=user.id, actor_permissions=set(),
-        customer_scope="primary", action_scope="mine", on_date=YESTERDAY,
+        customer_scope="primary", action_scope="mine", on_date=today - timedelta(days=1),
     )
     assert overview["scans"] is None
 

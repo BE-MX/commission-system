@@ -5,15 +5,15 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_any_permission, require_permission
+from app.auth.dependencies import get_current_user, require_any_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.core.config import get_settings
 from app.invoice.models import Invoice
-from app.receipt import access, attachments, remote, service, storage_proxy, sync_service
+from app.receipt import access, attachments, authority, create_service, edit_service, proof_service, reconciliation_service, remote, retry_service, service, storage_proxy, upload_service
 from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent
 from app.receipt.schemas import ReceiptCreate, ReceiptProofUpdate, ReceiptUpdate, Reason, Resolution
 
@@ -38,7 +38,8 @@ def list_rows(sort_field: str = "", sort_order: str = "", page: int = Query(1, g
               keyword: str = Query("", max_length=100), order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
               sync_status: str = "", source: str = "", status: str = "",
               date_from: date | None = None, date_to: date | None = None,
-              db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin"))):
+              db: Session = Depends(get_db), user=Depends(get_current_user)):
+    user = authority.read_user(db, user)
     data = service.list_receipts(db, user, page, page_size, keyword, sync_status, source, status, date_from, date_to, order_id=order_id, sort_field=sort_field, sort_order=sort_order)
     data["delivery_enabled"] = get_settings().RECEIPT_SYNC_ENABLED
     from app.invoice.settlement_policy import capabilities
@@ -49,17 +50,20 @@ def list_rows(sort_field: str = "", sort_order: str = "", page: int = Query(1, g
 @router.get("/order-options", summary="Search available invoice associations")
 def options(keyword: str = Query("", max_length=100), page: int = Query(1, ge=1),
             customer_id: str = "", currency: str = "",
-            db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin"))):
+            db: Session = Depends(get_db), user=Depends(get_current_user)):
+    user = authority.read_user(db, user)
     return ok(service.order_options(db, user, keyword, page, customer_id, currency))
 
 
 @router.get("/types", summary="Read receipt payment methods from OKKI")
-def types(db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin", "invoice:read", "invoice:write", "invoice:sync"))):
+def types(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    user = authority.read_user(db, user, *authority.AUXILIARY_READ_PERMISSIONS)
     return execute(db, lambda: remote.receipt_types(db))
 
 
 @router.get("/order-balance/{invoice_id}", summary="Get verified original-currency balance")
-def order_balance(invoice_id: int, db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin"))):
+def order_balance(invoice_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    user = authority.read_user(db, user)
     invoice = db.get(Invoice, invoice_id)
     access.ensure_invoice(db, invoice, user)
     return execute(db, lambda: service.order_balance(db, invoice))
@@ -75,18 +79,37 @@ def invoice_summary(invoice_id: int, db: Session = Depends(get_db),
 
 @router.post("/attachments", summary="Upload private payment screenshot")
 async def upload(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db),
-                 user=Depends(require_any_permission("receipt:write", "invoice:write"))):
+                 user=Depends(get_current_user)):
     content = await file.read(attachments.MAX_BYTES + 1)
     if not content or len(content) > attachments.MAX_BYTES:
         raise HTTPException(413, "图片为空或超过 10MB")
-    proxied = await run_in_threadpool(storage_proxy.forward, request, "/api/receipts/attachments", content, file.filename)
-    if proxied is not None:
-        return proxied
-    return execute(db, lambda: attachments.describe(attachments.upload(db, content, file.filename, access.user_id(user))))
+    from app.core.storage.cos import StorageError
+    def apply():
+        actor = upload_service.begin(db, user)
+        proxied = storage_proxy.forward(request, "/api/receipts/attachments", content, file.filename)
+        if proxied is not None:
+            # Canonical receiver performs its own current authorization at registration.
+            return proxied
+        try:
+            staged = attachments.store_upload(attachments.prepare_upload(content, file.filename, actor))
+        except (OSError, StorageError) as error:
+            upload_service.unavailable(error)
+        return execute(db, lambda: attachments.describe(upload_service.finish(db, staged, user)))
+    try:
+        return await run_in_threadpool(apply)
+    except SQLAlchemyError as error:
+        upload_service.unavailable(error)
+    except HTTPException as error:
+        if error.status_code == 503:
+            upload_service.unavailable(error)
+        raise
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from None
 
 
 @router.get("/attachments/{identity}", summary="Read permission-checked receipt image")
-def proof(identity: str, request: Request, db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin", "invoice:read", "invoice:write", "invoice:sync"))):
+def proof(identity: str, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    user = authority.read_user(db, user, *authority.AUXILIARY_READ_PERMISSIONS)
     row = db.get(ReceiptAttachment, identity)
     if not row:
         raise HTTPException(404, "凭证不存在")
@@ -137,86 +160,106 @@ def proof(identity: str, request: Request, db: Session = Depends(get_db), user=D
 
 
 @router.post("", summary="Create receipt and queue delivery with idempotency")
-def create(body: ReceiptCreate, db: Session = Depends(get_db), user=Depends(require_permission("receipt:write"))):
-    return execute(db, lambda: service.describe(db, service.create(db, body, user), detail=True))
+def create(body: ReceiptCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    def apply():
+        row, invoice = create_service.create(db, body, user)
+        return service.describe(db, row, invoice, detail=True)
+    try:
+        return execute(db, apply)
+    except SQLAlchemyError as error:
+        create_service.result_unavailable(error)
 
 
 @router.get("/{identity}", summary="Read receipt and audit trail")
-def detail(identity: int, db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin"))):
+def detail(identity: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    user = authority.read_user(db, user)
     row, invoice = service.get(db, identity, user)
     return ok(service.describe(db, row, invoice, detail=True))
 
 
 @router.patch("/{identity}", summary="Correct a receipt before remote acceptance")
-def edit(identity: int, body: ReceiptUpdate, db: Session = Depends(get_db), user=Depends(require_permission("receipt:write"))):
+def edit(identity: int, body: ReceiptUpdate, db: Session = Depends(get_db), user=Depends(get_current_user)):
     def apply():
-        row, invoice = service.get(db, identity, user, lock=True)
-        service.change(db, row, invoice, body, access.user_id(user))
+        row, invoice = edit_service.edit(db, identity, body, user)
         return service.describe(db, row, invoice, detail=True)
-    return execute(db, apply)
+    try:
+        return execute(db, apply)
+    except SQLAlchemyError as error:
+        edit_service.result_unavailable(error)
 
 
 @router.put("/{identity}/attachments", summary="Update automatic invoice receipt screenshots")
 def update_proofs(identity: int, body: ReceiptProofUpdate, db: Session = Depends(get_db),
-                  user=Depends(require_permission("receipt:write"))):
+                  user=Depends(get_current_user)):
     def apply():
-        row, invoice = service.get(db, identity, user, lock=True)
-        service.change_proofs(db, row, invoice, body, access.user_id(user))
+        row, invoice = proof_service.update(db, identity, body, user)
         return service.describe(db, row, invoice, detail=True)
-    return execute(db, apply)
+    try:
+        return execute(db, apply)
+    except SQLAlchemyError as error:
+        proof_service.result_unavailable(error)
 
 
 @router.post("/{identity}/retry", summary="Retry only a definitively rejected receipt")
-def retry(identity: int, db: Session = Depends(get_db), user=Depends(require_permission("receipt:write"))):
+def retry(identity: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     def apply():
-        row, invoice = service.get(db, identity, user, lock=True)
-        service.retry(db, row, access.user_id(user))
+        row, invoice = retry_service.retry(db, identity, user)
         return service.describe(db, row, invoice, detail=True)
-    return execute(db, apply)
+    try:
+        return execute(db, apply)
+    except SQLAlchemyError as error:
+        retry_service.result_unavailable(error)
 
 
 @router.post("/{identity}/void", summary="Void a local receipt with no remote effect")
-def void(identity: int, body: Reason, db: Session = Depends(get_db), user=Depends(require_permission("receipt:write"))):
+def void(identity: int, body: Reason, db: Session = Depends(get_db), user=Depends(get_current_user)):
     def apply():
-        row, invoice = service.get(db, identity, user, lock=True)
-        service.void(db, row, body.reason, access.user_id(user))
+        row, invoice = service.void(db, identity, user, body.reason)
         return service.describe(db, row, invoice, detail=True)
     return execute(db, apply)
 
 
 @router.post("/{identity}/reconcile", summary="Read remote result without sending another receipt")
-def reconcile(identity: int, db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:write", "receipt:admin"))):
+def reconcile(identity: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     def apply():
-        row, invoice = service.get(db, identity, user, lock=True)
-        candidates = sync_service.reconcile(db, row, access.user_id(user))
+        row, invoice, candidates = reconciliation_service.recover(db, identity, user)
         return {"receipt": service.describe(db, row, invoice, detail=True), "candidates": candidates}
-    return execute(db, apply)
+    try:
+        return execute(db, apply)
+    except SQLAlchemyError as error:
+        reconciliation_service.unavailable(error, result=True)
 
 
 @router.post("/{identity}/resolve", summary="Resolve unknown outcome using administrator evidence")
-def resolve(identity: int, body: Resolution, db: Session = Depends(get_db), user=Depends(require_permission("receipt:admin"))):
+def resolve(identity: int, body: Resolution, db: Session = Depends(get_db), user=Depends(get_current_user)):
     def apply():
-        row, invoice = service.get(db, identity, user, lock=True)
-        sync_service.resolve(db, row, body, access.user_id(user))
+        row, invoice, _ = reconciliation_service.recover(db, identity, user, body)
         return service.describe(db, row, invoice, detail=True)
-    return execute(db, apply)
+    try:
+        return execute(db, apply)
+    except SQLAlchemyError as error:
+        reconciliation_service.unavailable(error, result=True)
 
 
 @router.get("/{identity}/remote-change", summary="Preview verified remote receipt changes")
-def remote_change_preview(identity: int, db: Session = Depends(get_db), user=Depends(require_permission("receipt:admin"))):
+def remote_change_preview(identity: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     from app.receipt import remote_change_service
-    row, _ = service.get(db, identity, user, lock=True)
-    return execute(db, lambda: remote_change_service.evidence(db, row))
+    try:
+        return execute(db, lambda: remote_change_service.preview(db, identity, user))
+    except SQLAlchemyError as error:
+        reconciliation_service.unavailable(error)
 
 
 from app.receipt.schemas import RemoteChange
 
 
 @router.post("/{identity}/remote-change", summary="Accept reviewed remote receipt changes with audit")
-def accept_remote_change(identity: int, body: RemoteChange, db: Session = Depends(get_db), user=Depends(require_permission("receipt:admin"))):
+def accept_remote_change(identity: int, body: RemoteChange, db: Session = Depends(get_db), user=Depends(get_current_user)):
     from app.receipt import remote_change_service
     def apply():
-        row, invoice = service.get(db, identity, user, lock=True)
-        remote_change_service.accept(db, row, body, access.user_id(user))
+        row, invoice = remote_change_service.accept(db, identity, body, user)
         return service.describe(db, row, invoice, detail=True)
-    return execute(db, apply)
+    try:
+        return execute(db, apply)
+    except SQLAlchemyError as error:
+        reconciliation_service.unavailable(error, result=True)

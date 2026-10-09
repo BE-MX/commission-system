@@ -179,10 +179,21 @@ def migrate(prepared, inventory, credential_file=None):
     return result["stopped"]
 
 
-def resume_external(writers, prepared):
+def resume_external(writers, prepared, *, outbound=None, journal=None):
     owned = {("nssm", "office", "CommissionSystem"), ("nssm", "office", "WhatsAppConnector"), ("systemd", "ubuntu@154.8.205.162", "ark-backend")}
+    managed = registered_writer('ark-okki-outbound-poller')
+    targets = [writer for writer in writers if writer.get('service') == managed['service']]
+    if targets:
+        import okki_outbound_release
+        if len(targets) != 1 or targets[0] != managed or outbound is None or journal is None:
+            okki_outbound_release.pause_registered()
+            raise RuntimeError('Outbound resume requires a bound verified release')
+        journal['outbound'] = okki_outbound_release.verify_completion(outbound, journal)
     with database_lock(ROOT, prepared["python"]):
         schema_check(ROOT, prepared["python"])
         for writer in writers:
+            if writer == managed:
+                # The verified outbound phase already enforces mode and the original baseline.
+                continue
             if (writer["kind"], writer.get("host"), writer["service"]) not in owned:
                 control(writer, "start", prepared["nssm"])

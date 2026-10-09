@@ -1,5 +1,9 @@
 # 莱莎方舟 数据库表参考
 
+## 账号解锁（`178_account_unlock`，本地未部署）
+
+`ark_account_unlock_audits` 记录被解锁用户、操作人 ID/用户名快照、解除的失败日志 ID 上界、失败次数和北京时间。用户外键为 MySQL `INTEGER UNSIGNED`，按 `user_id` 建索引；原 `ark_login_logs` 的状态、原因和时间不变。窗口内仅计入最近解锁边界之后的新失败，避免同秒失败被误清除。管理员解锁和密码登录以目标用户行锁串行化；重复解锁未锁定账号不写审计。迁移只新增表，父 revision 为 `177_portal_pi_header`；禁止删除审计数据的 downgrade，生产迁移走统一发布入口。
+
 ## 任务中心一期（`173_task_center`，本地未部署）
 
 | 表 | 关键字段与约束 |
@@ -670,3 +674,23 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 所有用户FK为unsigned INT，账本源entity_id支持BIGINT；时间统一北京时间。六项新权限只登记，旧角色不自动获得读取、资金或全量范围。权限撤销/客户转移立即作用于新请求的结果读取、任务、证据和下载。迁移降级明确拒绝删除审计/报告/行动数据，修复采用前向迁移。
 
 迁移已在内存SQLite隔离验证，不等于MySQL线上迁移。生产依[统一发布入口](../deploy/README.md)部署并核验容量；数据库约束、MySQL并发及大样本性能还需目标环境验证。详见[模块说明](domestic-decision.md)。
+
+## 客户下单门户（迁移176/177，开发中未部署）
+
+新增模型位于 `backend/app/portal/`，统一前缀 `ark_order_portal_`，不复用客户素材门户账号。冻结迁移 `176_customer_order_portal` 当前仅完成离线SQL验证，尚未在MySQL执行或部署。
+
+| 分组 | 表后缀 |
+| --- | --- |
+| 身份和授权（11） | auth_barriers、sites、customer_access、accounts、memberships、invitations、auth_challenges、rate_buckets、preauth_sessions、sessions、history_grants |
+| 目录和映射（3） | catalog_items、catalog_grants、mapping_revisions |
+| 交易与永久记录（8） | quotes、requests、revisions、request_lines、conversions、pi_amendments、publications、command_receipts |
+| 审计和通知（2） | audit_events、outbox |
+
+模型采用复合外键约束账号/公司/站点、请求/修订及PI绑定，保护同一报价最多一个请求和同一请求永久建票标识；不允许破坏引用删除发票。新增 `ark_invoices.portal_document_version BIGINT NOT NULL DEFAULT 1`，不改变既有API中内容SHA256形式的edit_version。
+
+字段设计见[门户数据模型](requirements/2026-09-30-customer-order-portal/02-data-model.md)，实施进展见[交接记录](handoff.md)。状态列统一为status；quotes不保存冗余consumed_request_id，由requests.quote_id唯一键回查结果。
+
+
+## 177_portal_pi_header（开发中，未部署）
+
+父迁移176_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；MySQL离线DDL和隔离SQLite保留旧行测试通过，尚未在真实MySQL执行。迁移已按项目规则暂存，未commit/push/部署。
