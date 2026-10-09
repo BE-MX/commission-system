@@ -134,4 +134,6 @@ remote不再无条件恢复基线：规范v1保持旧timer禁用/停止，专项
 
 ## 开发分支1.25发布恢复共同凭据
 
+2026-10-09受管全量发布允许接续上一部署器的精确五字段completed回执：仅缺mode/fingerprint的旧格式，必须核验实际legacy模式、永久mode-floor、原timer基线，以及四个已安装文件的组合摘要。预检不改写历史回执；freeze按原规则暂停timer并生成本次规范回执，activate/verify保留现有ModeFence。部分缺字段、新模式、未完成回执或文件/基线不符均拒绝，不能用此入口补造历史成功或恢复旧执行器。
+
 受管publish、migration resume及历史159/160 finalizer现共用outbound回执/候选/实际verify核验。managed timer不再按原running记录无条件start；已知v1目标暂停，初始legacy按经核验baseline。缺receipt或仅installed_paused不能finalize，历史凭据不补造，需受审协调发布。fresh mode floor不能由历史legacy降低。共同guard失败只向受信登记目标请求pause，保留active service/字节/mode/业务事实；SSH/IO/审计/状态不明固定报未确认，不宣称已排空。success摘要含最新绑定outbound，静态后再check。当前本地替身/实际函数体证据不代表生产、真实systemd/cgroup或完整协议回退；I78/I79/I80现场门禁保持，具体终态见docs/handoff.md。

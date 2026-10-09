@@ -16,6 +16,49 @@ PAUSED={'active':False,'enabled':False}
 
 
 @pytest.fixture
+def legacy_receipt(host):
+    hashes = {}
+    for name in remote.NAMES - {'okki_outbound_mode.mjs'}:
+        path = (host.units if name.endswith(('.service', '.timer')) else host.root) / name
+        path.write_bytes(name.encode())
+        hashes[name] = hashlib.sha256(name.encode()).hexdigest()
+    record = {'digest': hashlib.sha256(json.dumps(dict(sorted(hashes.items()))).encode()).hexdigest(),
+              'revision': 'b'*40, 'release_id': 'd'*32, 'status': 'completed',
+              'baseline': {'active': True, 'enabled': True}}
+    journal = host.root / '.deploy-state/ark-outbound/release-current.json'
+    journal.parent.mkdir(parents=True)
+    journal.write_text(json.dumps(record))
+    return host, journal, record
+
+
+def test_verified_old_receipt_prepare_then_full_release(legacy_receipt):
+    host, journal, record = legacy_receipt
+    assert host.call('prepare')['mode'] == 'legacy'
+    assert json.loads(journal.read_text()) == record
+    assert not any(c[:2] == ['systemctl','stop'] for c in host.commands)
+    host.call('freeze');host.call('install');host.call('activate');host.call('verify')
+    assert json.loads(journal.read_text())['mode'] == 'legacy'
+
+
+@pytest.mark.parametrize('bad', ['mode','floor','bytes','schedule','partial','pending','revision','digest'])
+def test_unconfirmed_old_receipt_never_permits_prepare(legacy_receipt,bad):
+    host, journal, record = legacy_receipt
+    if bad == 'mode':host.state['mode'] = MODE
+    elif bad == 'floor':
+        (journal.parent/'mode-floor.json').write_text(json.dumps({'mode':MODE,'database_fingerprint':'e'*64}))
+    elif bad == 'bytes':(host.root/'okki_outbound_creator.mjs').write_text('unconfirmed')
+    elif bad == 'schedule':host.state['active'] = False
+    elif bad == 'partial':record['mode'] = 'legacy'
+    elif bad == 'pending':record['status'] = 'installed_paused'
+    elif bad == 'revision':record['revision'] = 'unknown'
+    elif bad == 'digest':record['digest'] = 'f'*64
+    journal.write_text(json.dumps(record))
+    with pytest.raises(RuntimeError):host.call('prepare')
+    assert not any(c[:2] == ['systemctl','stop'] for c in host.commands)
+    assert json.loads(journal.read_text()) == record
+
+
+@pytest.fixture
 def mode_host(host,monkeypatch):
     state={'mode':MODE,'database_fingerprint':'e'*64,'held':False,'release_error':False}
     def observe(*_):

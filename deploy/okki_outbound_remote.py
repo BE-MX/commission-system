@@ -47,6 +47,32 @@ def validate_observation(value):
     return value
 
 
+def legacy_completed_receipt(value):
+    """Recognize only the persisted five-field receipt of the prior deployer."""
+    return (isinstance(value, dict)
+            and set(value) == {'digest', 'revision', 'release_id', 'status', 'baseline'}
+            and value['status'] == 'completed'
+            and all(isinstance(value.get(key), str) and re.fullmatch(pattern, value[key])
+                    for key, pattern in [('digest', r'[0-9a-f]{64}'),
+                                         ('revision', r'[0-9a-f]{40}'), ('release_id', r'[0-9a-f]{32}')]))
+
+
+def confirm_legacy_receipt(previous, observation):
+    # Never infer legacy from missing fields. Prove live mode, schedule and exact
+    # installed four-file artifact; the permanent mode floor is checked first.
+    if observation['mode'] != 'legacy' or timer_state() != previous['baseline']:
+        raise RuntimeError('Legacy outbound receipt requires inspection')
+    hashes = {}
+    for name in NAMES - {'okki_outbound_mode.mjs'}:
+        path = (UNITS if name.endswith(('.service', '.timer')) else ROOT) / name
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError('Legacy outbound artifact requires inspection')
+        hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = hashlib.sha256(json.dumps(dict(sorted(hashes.items()))).encode()).hexdigest()
+    if digest != previous['digest']:
+        raise RuntimeError('Legacy outbound artifact digest mismatch')
+
+
 def mode_command(stage, config, operation):
     return [NODE, '--env-file=' + str(config), '--input-type=module', '-e', MODE_CONTROL_PROBE,
             (stage / 'okki_outbound_mode.mjs').resolve().as_uri(), operation]
@@ -246,6 +272,7 @@ def execute_candidate(request):
         raise ValueError('Unexpected deployment path')
     journal = stage.parent / 'release-current.json'
     previous = json.loads(journal.read_text()) if journal.exists() else None
+    legacy_previous = legacy_completed_receipt(previous)
     if previous is not None:
         if (not isinstance(previous, dict) or previous.get('status') not in
                 {'freezing', 'frozen', 'installed_paused', 'target_verified', 'activated', 'completed', 'failed_paused'}
@@ -253,7 +280,8 @@ def execute_candidate(request):
                 or set(previous['baseline']) != {'active', 'enabled'}
                 or any(type(value) is not bool for value in previous['baseline'].values())):
             raise RuntimeError('Outbound release journal requires inspection')
-        validate_observation({key: previous.get(key) for key in ('mode', 'database_fingerprint')})
+        if not legacy_previous:
+            validate_observation({key: previous.get(key) for key in ('mode', 'database_fingerprint')})
     coordinated = request.get('coordinated', False)
     revision = request.get('revision')
     release_id = request.get('release_id')
@@ -294,6 +322,8 @@ try {await c.query('SELECT id,status FROM ark_okki_outbound_tasks LIMIT 1'); awa
     observation = observe_mode(stage, config)
     confirm_target(observation, previous, request)
     remember_mode(observation, stage.parent)
+    if legacy_previous:
+        confirm_legacy_receipt(previous, observation)
     def receipt(status, **extra):
         return {'status': status, 'digest': digest, 'revision': revision, 'release_id': release_id,
                 'target': str(ROOT), **observation, **extra}
