@@ -9,6 +9,28 @@ from app.shipping_inspection import outbound_service as records
 from app.shipping_inspection.list_sort_service import QUEUE_SORT_FIELDS, mirror_sort_value, local_sort_value, local_retry_at
 
 
+def local_unmirrored_clauses(db, okki_user_id=None):
+    """Shared list/badge suppression of old tasks replaced by visible documents."""
+    rm = records._record_columns(db)
+    schema = records._schema()
+    clauses = []
+    visible = f" AND {records._owner_scope_clause(db, rm)}" if okki_user_id else ""
+    if rm.get("outbound_no") and rm.get("company_id"):
+        number = f"r.`{rm['outbound_no']}`"
+        if db.get_bind().dialect.name == "mysql":
+            number += " COLLATE utf8mb4_unicode_ci"
+        clauses.append(f"""NOT EXISTS (SELECT 1 FROM `{schema}`.`{records.RECORDS_TABLE}` r
+            WHERE {number}=f.invoice_no AND r.`{rm['company_id']}`=f.customer_id{visible})""")
+    link, _, im = records._link(db)
+    if link and "order_id" in records._table_columns(db, records.ITEMS_TABLE):
+        ik = im["invoice_id"] if link == "invoice" else im["record_id"]
+        rk = rm["invoice_id"] if link == "invoice" else rm["id"]
+        clauses.append(f"""NOT EXISTS (SELECT 1 FROM `{schema}`.`{records.ITEMS_TABLE}` i
+            JOIN `{schema}`.`{records.RECORDS_TABLE}` r ON r.`{rk}`=i.`{ik}`
+            WHERE i.order_id=t.order_id{visible})""")
+    return clauses
+
+
 def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sort_field=None,
                  outbound_state=None, inspection_status=None):
     rm = records._record_columns(db)
@@ -41,15 +63,8 @@ def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sor
 
     # A header may sync before its items. Exact invoice number + customer suppresses
     # that transient duplicate; otherwise actual item order linkage is authoritative.
-    dedup_clauses = []
+    dedup_clauses = local_unmirrored_clauses(db, okki_user_id)
     mysql = db.get_bind().dialect.name == "mysql"
-    visible = f" AND {records._owner_scope_clause(db, rm)}" if okki_user_id else ""
-    if rm.get("outbound_no") and rm.get("company_id"):
-        number = f"r.`{rm['outbound_no']}`"
-        if mysql:
-            number += " COLLATE utf8mb4_unicode_ci"
-        dedup_clauses.append(f"""NOT EXISTS (SELECT 1 FROM `{schema}`.`{records.RECORDS_TABLE}` r
-            WHERE {number}=f.invoice_no AND r.`{rm['company_id']}`=f.customer_id{visible})""")
     link, _, im = records._link(db)
     # Match the same state expressions used for display/sorting, before COUNT/LIMIT.
     if outbound_state:
@@ -63,15 +78,6 @@ def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sor
         # Local tasks display an em dash, not an uninspected outbound document.
         local_clauses.append('1=0')
     mirror_where = "WHERE " + " AND ".join(clauses) if clauses else ""
-    if link and "order_id" in records._table_columns(db, records.ITEMS_TABLE):
-        ik = im["invoice_id"] if link == "invoice" else im["record_id"]
-        rk = rm["invoice_id"] if link == "invoice" else rm["id"]
-        # Start from the indexed order_id, then resolve its mirrored header.
-        # Combining this match with the number match using OR forced MySQL to
-        # scan every mirrored header for each pending task.
-        dedup_clauses.append(f"""NOT EXISTS (SELECT 1 FROM `{schema}`.`{records.ITEMS_TABLE}` i
-            JOIN `{schema}`.`{records.RECORDS_TABLE}` r ON r.`{rk}`=i.`{ik}`
-            WHERE i.order_id=t.order_id{visible})""")
     if not dedup_clauses:
         # Legacy schemas cannot safely deduplicate local entries; keep their
         # existing mirror-only view without granting any local queue access.

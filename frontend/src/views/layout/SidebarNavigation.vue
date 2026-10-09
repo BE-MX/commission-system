@@ -86,7 +86,7 @@
               <el-badge v-if="item.badge === 'domesticReviews'" :value="pendingReviews" :max="Number.MAX_SAFE_INTEGER" :hidden="pendingReviews === 0" class="nav-review-badge" :aria-label="`${item.title}，${pendingReviews}笔待审核`">
                 <span>{{ item.title }}</span>
               </el-badge>
-              <span v-else class="nav-document-label" :title="documentBadgeTitle(item)">{{ item.title }}<span v-if="documentAnomalies[item.anomalyDomain]?.has_anomaly" class="nav-document-anomaly" :aria-label="documentBadgeTitle(item)">!</span></span>
+              <span v-else class="nav-document-label" :title="documentBadgeTitle(item)">{{ item.title }}<template v-if="documentAnomalies[item.anomalyDomain]?.has_anomaly"><button v-if="item.anomalyDomain === 'outbound'" type="button" class="nav-document-anomaly nav-document-anomaly-button" :aria-label="documentBadgeTitle(item)" @click.stop.prevent="outboundProblemsVisible = true" @keydown.enter.stop @keydown.space.stop>!</button><span v-else class="nav-document-anomaly" :aria-label="documentBadgeTitle(item)">!</span></template></span>
               <button
                 v-if="!collapsed && item.name"
                 v-permission="'task:write'"
@@ -111,13 +111,14 @@
     <div v-show="!collapsed" class="sidebar-bottom">
       <div class="env-badge">DEVELOPMENT</div>
     </div>
+    <OutboundProblemsDrawer v-if="outboundProblemsVisible" v-model="outboundProblemsVisible" />
   </el-aside>
 </template>
 
 <script setup>
 import { useDomesticReviewBadge } from './useDomesticReviewBadge'
 import { useDocumentAnomalyBadge } from './useDocumentAnomalyBadge'
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { Search, TopRight } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -131,10 +132,13 @@ const props = defineProps({
 
 const pendingReviews = useDomesticReviewBadge()
 const documentAnomalies = useDocumentAnomalyBadge()
+const OutboundProblemsDrawer = defineAsyncComponent(() => import('@/views/shipping/OutboundProblemsDrawer.vue'))
+const outboundProblemsVisible = ref(false)
 function documentBadgeTitle(item) {
   const domain = documentAnomalies.value[item.anomalyDomain]
   if (!domain || domain.state === 'restricted') return ''
   if (domain.state === 'unavailable') return `${item.title}异常状态待核验${domain.has_anomaly ? '，保留上次异常提示' : ''}`
+  if (item.anomalyDomain === 'outbound' && domain.has_anomaly) return `出库有 ${domain.count ?? '待核对'} 项问题，点击查看具体单据`
   return domain.has_anomaly ? `${item.title}存在异常单据，请查看核对` : ''
 }
 const route = useRoute()
@@ -217,6 +221,9 @@ function rememberClosedGroup(key) {
 <style scoped>
 .nav-document-label{position:relative;overflow:visible;margin-right:14px}
 .nav-document-anomaly{position:absolute;right:-14px;top:-8px;width:14px;height:14px;display:grid;place-items:center;border-radius:50%;background:var(--color-gold);color:var(--sidebar-bg-from);font-size:10px;font-weight:800;line-height:1;box-shadow:0 0 6px var(--sidebar-glow-gold)}
+.nav-document-anomaly-button{border:0;padding:0;cursor:pointer;width:20px;height:20px;right:-22px;top:-11px}
+.nav-document-anomaly-button:focus-visible{outline:2px solid var(--color-gold);outline-offset:3px}
+.nav-document-anomaly-button::before{content:'';position:absolute;inset:-4px}
 .nav-review-badge { line-height: 20px; margin-right: 22px; }
 .nav-review-badge :deep(.el-badge__content) { font-variant-numeric: tabular-nums; }
 

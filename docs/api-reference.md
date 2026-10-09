@@ -10,6 +10,7 @@
 | GET | `/invoices/{invoice_id}/related-detail/receipts` | `{state,source,items,summary,freight,batch_balance,checked_at,message}`；可选 `refresh=false`（默认），`true` 实时核验；独立校验 `receipt:read/write/admin` 和回款归属，混合归属批次按私有凭证范围整体阻断 |
 | GET | `/invoices/{invoice_id}/related-detail/outbounds` | `{state,source,items,tasks,batches,summary,checked_at,message}`；`source=inspection`；独立校验 `shipping_inspection:read/write/admin`、小满绑定和出库归属。预售批次另校验发货与回款归属；检验状态另按检验范围，冻结金额另按回款范围裁剪 |
 | GET | `/document-anomalies` | `{domains:{order,outbound,receipt},checked_at}`；至少具有上述任一功能权限。各域 `{state,has_anomaly,count}`，聚合其完整可见范围，不受当前列表页限制；无权限域不返回异常数量 |
+| GET | `/document-anomalies/outbound` | `{items,total,page,page_size,checked_at}`；出库权限和归属与出库列表相同，分页默认20、最大100。仅返回方舟出库列表当前 `failed/uncertain` 的单号、客户、状态说明、更新时间和定位参数；读取失败为503，不返回假空列表 |
 
 详情来源状态为 `ready/restricted/unverified`，核验失败保持已知本地明细、`summary=null` 和未核验时间，不伪造 0% 或缓存时点。订单不存在或不可见为 404；关联域范围不足在成功信封内返回 `restricted`，不暴露单据数量。
 
@@ -19,7 +20,7 @@
 
 回款首次加载使用现有后台完整索引快照（校验来源、版本、摘要和 watermark，最长 2 分钟），不等待远端网络请求；页面标注快照时间，分母使用当前保存订单金额。快照缺失、过期或冲突时先显示本地明细，主单及独立运费汇总保持待核验。`refresh=true` 才执行原有实时订单、回款和运费核验；快照仅用于详情展示，不用于登记、发送或可用余额授权。 回款 `source` 为 `background_snapshot/live/local`；`checked_at` 使用实际快照 watermark，`batch_balance` 仅实时核验返回。
 
-发票列表每项新增 `anomalies`（`order/outbound/receipt`）与 `anomaly_states`。异常定义复用 `document_anomalies.py`：活动失败/结果不明、需要重新核验的出库事件等；已证实可自动重试的出库任务、普通等待、作废及已核实删除回款不作为异常。导航读取失败可保留此前已确认角标，权限或账号变化立即清空。详见[实现及验收](requirements/2026-10-08-invoice-detail-implementation.md)。
+发票列表每项新增 `anomalies`（`order/outbound/receipt`）与 `anomaly_states`。出库异常仅按方舟出库列表当前 `outbound_state` 判断：`failed/uncertain` 计入；正常已生成单据、等待及已证实自动重试不计入。与出库列表共用状态表达式及单据替代任务规则，单据已正常时旧任务异常不再点亮叹号；不查询小满实时接口、不聚合历史操作或发货结算状态。订单仅按当前单据状态 `Invoice.status` 的 `sync_failed/sync_uncertain` 判断，不使用独立同步字段或日志覆盖正常单据；回款仅按有效回款单当前 `sync_status=failed/uncertain` 判断，关联应收目标失败、作废及已核实删除回款不计入。点击出库叹号或页面“问题单据”可查看当前异常并定位列表，重复定位也会清除冲突筛选。导航读取失败可保留此前已确认角标，权限或账号变化立即清空。详见[实现及验收](requirements/2026-10-08-invoice-detail-implementation.md)。
 
 ## 列表表头排序（2026-10-04）
 
