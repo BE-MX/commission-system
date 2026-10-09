@@ -1771,7 +1771,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 409表示来源、版本或幂等内容冲突，需刷新或使用与原内容一致的请求号；429为每日AI预算超限。简报/查询计划模型输出必须通过程序事实和范围校验；未配置或无效输出降级为真实规则事实。后台任务中断十分钟后显式失败，不把排队说成已生成。
 
-### 内贸决策台指标扩展（2026-10-09，本地优化未发布）
+### 内贸决策台指标扩展（2026-10-09，已合并主线未部署）
 
 `analysis-runs` 增加 `summary.business_order_amount/shipped_amount/shipped_quantity/recharge_amount`，趋势和对照期同时支持对应日期口径。无资金阅读权限时充值值为 null，省略充值分组与客户充值行为。其他成交明细与矩阵仍按下单口径。
 

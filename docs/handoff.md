@@ -1,11 +1,11 @@
 # 当前交接与待办
 
-## 2026-10-09 内贸经营决策台经营口径优化（Codex，本地完成，未部署）
+## 2026-10-09 内贸经营决策台经营口径优化（Codex，已合并推送，未部署）
 
-- 独立工作树 `C:/Users/windb/.codex/worktrees/domestic-decision-metrics/commission-system`，分支 `codex/domestic-decision-metrics`，基点 `7852719f`。本次优化未提交、合并、推送或部署；主目录其他任务改动未触碰。
+- 独立工作树 `C:/Users/windb/.codex/worktrees/domestic-decision-metrics/commission-system`，分支 `codex/domestic-decision-metrics`，基点 `7852719f`。功能提交 `46cfdf46`、集成提交 `8be4a8ec` 已合并并推送 `origin/main`；未部署。主目录原有24项未提交内容逐项核验保留。
 - 经营总览采用业务下单金额、按有效报工时间的发货出库金额、实际客户充值金额、去重下单客户个数。客户页新增充值/非充值四指标、行为意向证据、持续复购与流失线索；产品页新增商业持续出货观察、毛坯供需/整行入库周期与在制积压。
 - 亮哥确认缺成本先显示“缺成本，待核算”；真实库存未知，期间供需差不当作库存余额。无客户生产单要求全量查询及两个域全量权限；报工/价格/充值来源参与快照版本，旧指标快照要求重算。
-- 后端隔离回归111项、前端11项、构建、约定检查、diff检查和独立风险审查通过。桌面/手机、报工与折让原始证据下钻已在合成数据隔离服务核验；临时服务及SQLite已清理。Git巡检仅 `--no-fetch` 本地快照。详见[验收记录](reports/2026-10-09-domestic-decision-metrics.md)。
+- 整合最新主线后，后端隔离回归111项、前端11项、构建、严格增量约定、diff检查和独立接缝审查再次通过。桌面/手机、报工与折让原始证据下钻已在合成数据隔离服务核验；临时服务及SQLite已清理。Git巡检仅 `--no-fetch` 本地快照。详见[验收记录](reports/2026-10-09-domestic-decision-metrics.md)。
 
 ## 2026-10-09 用户管理账号解锁（Codex，已授权合并推送，未部署）
 
