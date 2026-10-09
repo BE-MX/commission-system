@@ -1,5 +1,11 @@
 # 当前交接与待办
 
+## 2026-10-09 订单关联回款删除权限独立（Codex，已验证，未合并部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/receipt-delete-permission/commission-system`，分支 `codex/receipt-delete-permission`，基于 main `a0742e4e`。生产只读核验“翟 #261015”及末尾带句点的同名订单：归属 Ginny（翟佳盟），已有 `invoice:delete`、`shipping_inspection:delete`，但有有效关联回款且缺少原删除流程要求的 `receipt:admin`，因此提示权限不足。未执行订单删除或生产权限修改。
+- 按亮哥确认新增 `receipt:delete`（删除订单关联回款单），整单删除有有效远端或本地回款时改为要求此权限及原回款财务范围。只登记权限，不自动授予普通 admin 或已有 write/admin 角色，人工授权保留；超级管理员沿用原绕过规则。权限矩阵补“回款单”中文行名，归入“单据 · 订单与物流”，删除动作在删除列显示。订单删除权、出库删除权、归属、业务阻碍、资金/凭证保留和未知结果不重发规则不变；无表结构迁移及独立回款删除入口。
+- 先用新授权回归复现旧代码 `receipt:admin` 拦截及缺少 seed；修复后权限专项 83 passed，扩大关联删除/回款证据/出库/取消/门户生命周期回归 213 passed（隔离 SQLite、模拟远端，未连接共享业务库）。前端权限与导航 12 passed，生产构建通过，保留既有 auth 混合导入和大 chunk 提示；增量约定检查与 diff 检查通过，Git 巡检 `--no-fetch` 仅本地快照。独立 agent 审查未发现 P1/P2。后续发布重启后端、刷新角色管理权限目录，在业务员角色人工勾选“回款单 → 删除”，业务员重新登录取得当前权限。
+
 ## 2026-10-09 预售预付资金池与当批发货（Codex，已合并推送部署及原单核验）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/presale-prepayment/commission-system`，分支 `codex/presale-prepayment`。用户确认定金最后一批扣、预付货款从本批扣商品及运费、每批重填明细、人工末批。Veronika981/1062的USD1077是预付货款；627商品+38运费后应余412，生产用途已更正并完成原结算资金升级，待出库及打印已核验。

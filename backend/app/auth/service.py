@@ -411,6 +411,7 @@ def seed_role_permissions(db: Session):
         ("shipment:admin", "shipment", "admin", "核对发货结算异常"),
         ("receipt:read", "receipt", "read", "查看本人订单回款单"),
         ("receipt:write", "receipt", "write", "登记和同步回款单"),
+        ("receipt:delete", "receipt", "delete", "删除订单关联回款单"),
         ("receipt:admin", "receipt", "admin", "核对回款同步结果"),
         ("receipt:read_all", "receipt", "read_all", "查看全部回款单（数据范围）"),
         ("invoice:read",          "invoice", "read",          "查看订单发票"),
@@ -660,7 +661,7 @@ def seed_role_permissions(db: Session):
 
     # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
     manual_grant_codes = {
-        "invoice:delete",
+        "invoice:delete", "receipt:delete",
         "domestic_decision:read", "domestic_decision:read_all", "domestic_decision:admin",
         "domestic_decision_finance:read", "domestic_decision_action:write", "domestic_decision_report:write",
         "mini_export:write", "mini_domestic:write", "mini_lookup:read", "mini_shipping:write",

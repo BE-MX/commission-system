@@ -40,7 +40,7 @@ def no_network(monkeypatch):
 
 @pytest.fixture
 def user():
-    return {"sub": "1", "roles": [], "permissions": ["invoice:delete", "receipt:admin",
+    return {"sub": "1", "roles": [], "permissions": ["invoice:delete", "receipt:delete",
         "shipping_inspection:delete", "shipping_inspection:read_all"]}
 
 
@@ -201,7 +201,7 @@ def test_unknown_delete_is_read_back_and_never_replayed(db, invoice, receipt, li
     assert db.query(ReceiptLog).filter_by(receipt_id=receipt.id, action="remote_deleted").count() == 1
 
 
-@pytest.mark.parametrize("missing", ["receipt:admin", "shipping_inspection:delete"])
+@pytest.mark.parametrize("missing", ["receipt:delete", "shipping_inspection:delete"])
 def test_related_permissions_are_checked_before_post(db, invoice, receipt, live, user, missing):
     user["permissions"].remove(missing)
     with pytest.raises(HTTPException) as error:
@@ -243,7 +243,7 @@ def client(db, user):
 def test_api_requires_invoice_delete_and_explicit_confirmation(client, db, invoice, receipt, live, user):
     from tests.authority_helpers import seed_authority
     # Live entry authorization reads the actor's grants from the database.
-    seed_authority(db, 1, "invoice:delete", "receipt:admin",
+    seed_authority(db, 1, "invoice:delete", "receipt:delete",
                    "shipping_inspection:delete", "shipping_inspection:read_all")
     path = f"/api/invoice/invoices/{invoice.id}/deletion"
     user["permissions"].remove("invoice:delete")
@@ -260,7 +260,7 @@ def test_api_invoice_data_scope_blocks_other_salesperson(client, db, invoice, re
     from tests.authority_helpers import seed_authority
     # The other salesperson holds the same action grants; only the invoice data
     # scope blocks the read, so the denial must come from visibility, not rights.
-    seed_authority(db, 2, "invoice:delete", "receipt:admin",
+    seed_authority(db, 2, "invoice:delete", "receipt:delete",
                    "shipping_inspection:delete", "shipping_inspection:read_all")
     user["sub"] = "2"
     assert client.get(f"/api/invoice/invoices/{invoice.id}/deletion").status_code in (403, 404)
@@ -443,3 +443,69 @@ def test_absent_outbound_does_not_hold_other_order_from_stale_mirror(db, invoice
     db.refresh(task)
     assert task.status == "pending" and task.reason == "untouched"
     assert live["posts"] == ["receipt", "order"]
+
+
+@pytest.mark.parametrize("codes,expected", [
+    ([], 403), (["receipt:read"], 403), (["receipt:write"], 403),
+    (["receipt:admin"], 403), (["receipt:read", "receipt:write", "receipt:admin"], 403),
+    (["receipt:delete"], 200),
+])
+def test_receipt_delete_is_independent_of_other_receipt_grants(db, invoice, receipt, live, user, codes, expected):
+    user["permissions"] = [p for p in user["permissions"] if not p.startswith("receipt:")] + codes
+    if expected == 403:
+        with pytest.raises(HTTPException) as error:
+            execute(db, invoice, user)
+        assert error.value.status_code == 403
+        assert "receipt:delete" in error.value.detail
+        assert live["posts"] == [] and receipt.status == "active"
+    else:
+        assert execute(db, invoice, user)["status"] == "remote_deleted"
+        assert live["posts"] == ["outbound", "receipt", "order"]
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize("live_granted", [False, True])
+def test_api_uses_current_receipt_delete_grant(client, db, invoice, receipt, live, user, method, live_granted):
+    from tests.authority_helpers import seed_authority
+    codes = ["invoice:delete", "shipping_inspection:delete", "shipping_inspection:read_all"]
+    seed_authority(db, 1, *codes, *(["receipt:delete"] if live_granted else ["receipt:admin"]))
+    # A stale token grant must not bypass the current role configuration.
+    path = f"/api/invoice/invoices/{invoice.id}/deletion"
+    version = deletion.preview(db, invoice, user)["version"]
+    response = client.request(method, path, **({"json": {"expected_version": version, "confirmed": True}}
+                                             if method == "POST" else {}))
+    assert response.status_code == (200 if live_granted else 403)
+    assert live["posts"] == (["outbound", "receipt", "order"] if live_granted and method == "POST" else [])
+    if not live_granted:
+        assert "receipt:delete" in response.json()["detail"]
+        assert receipt.status == "active"
+
+
+def test_receipt_delete_is_not_needed_without_related_receipts(db, invoice, live, user):
+    user["permissions"].remove("receipt:delete")
+    live["receipt"] = None
+    assert execute(db, invoice, user)["status"] == "remote_deleted"
+    assert live["posts"] == ["outbound", "order"]
+
+
+def test_local_only_receipt_still_requires_delete_grant(db, invoice, receipt, live, user):
+    live["receipt"] = None
+    receipt.xiaoman_receipt_id = None
+    receipt.sync_status = "pending"
+    db.commit()
+    user["permissions"].remove("receipt:delete")
+    with pytest.raises(HTTPException) as error:
+        execute(db, invoice, user)
+    assert error.value.status_code == 403 and live["posts"] == []
+    assert receipt.status == "active"
+    user["permissions"].append("receipt:delete")
+    assert execute(db, invoice, user)["status"] == "remote_deleted"
+    assert receipt.status == "voided" and receipt.amount == Decimal("168")
+    assert receipt.attachment_ids == ["proof-retained"]
+    assert live["posts"] == ["outbound", "order"]
+
+
+def test_super_admin_can_delete_related_receipt_without_action_grants(db, invoice, receipt, live, user):
+    user.update(sub="2", roles=["super_admin"], permissions=[])
+    assert execute(db, invoice, user)["status"] == "remote_deleted"
+    assert live["posts"] == ["outbound", "receipt", "order"]

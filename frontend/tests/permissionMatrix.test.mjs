@@ -32,3 +32,12 @@ test('customer image permissions stay in the design-facing marketing group', () 
   assert.ok(marketingGroup)
   assert.match(marketingGroup, /'customer_image'/)
 })
+
+test('receipt permissions have a Chinese label in the order and logistics group', () => {
+  assert.match(matrixSource, /receipt:\s*'回款单'/)
+  const documentGroup = matrixSource.match(
+    /\{ label: '单据 · 订单与物流', prefixes: \[([\s\S]*?)\]\s*\}/,
+  )?.[1]
+  assert.ok(documentGroup)
+  assert.match(documentGroup, /'receipt'/)
+})

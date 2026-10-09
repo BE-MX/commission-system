@@ -152,15 +152,19 @@ def test_legacy_executor_rechecks_delete_after_remote_evidence(db, order, monkey
     assert error.value.status_code == 403
 
 
-def test_delete_permission_seed_is_idempotent_and_not_inherited(db):
+@pytest.mark.parametrize("code,module,label", [
+    ("invoice:delete", "invoice", "删除订单发票及关联单据"),
+    ("receipt:delete", "receipt", "删除订单关联回款单"),
+])
+def test_delete_permission_seed_is_idempotent_and_not_inherited(db, code, module, label):
     db.add_all([ArkRole(name="admin", label="Admin"), ArkRole(name="sales", label="Sales")])
     db.commit()
-    seed_authority(db, 1, "invoice:write", "invoice:admin")
+    seed_authority(db, 1, "invoice:write", "invoice:admin", "receipt:write", "receipt:admin")
     seed_role_permissions(db)
     seed_role_permissions(db)
-    permission = db.query(ArkPermission).filter_by(code="invoice:delete").one()
+    permission = db.query(ArkPermission).filter_by(code=code).one()
     assert (permission.module, permission.action, permission.kind, permission.label) == (
-        "invoice", "delete", "action", "删除订单发票及关联单据")
+        module, "delete", "action", label)
     assert db.query(ArkRolePermission).filter_by(permission_id=permission.id).count() == 0
     admin = db.query(ArkRole).filter_by(name="admin").one()
     db.add(ArkRolePermission(role_id=admin.id, permission_id=permission.id))

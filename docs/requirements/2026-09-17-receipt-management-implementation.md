@@ -51,7 +51,7 @@
 
 集成最新主线后已串联 `154 → 155 → 156`，Alembic ScriptDirectory 检查唯一 head 为 `156_receipt_management`；未连接或升级生产数据库。
 
-`receipt:read` 查看，`receipt:write` 创建/修改/重试/本地作废，`receipt:admin` 处理未知结果，`receipt:read_all` 扩大数据范围。普通用户沿用订单归属及有效代理授权。首次权限种子给已有 invoice:sync 角色补查看权限；手工写权限单独分配。截图不挂静态目录，不提供公开 URL；只有订单权限的用户只能读库存单自身意图中的凭证，不能读取手工回款截图。
+`receipt:read` 查看，`receipt:write` 创建/修改/重试/本地作废，`receipt:admin` 处理未知结果，`receipt:read_all` 扩大数据范围。`receipt:delete` 独立授权订单整单删除中的关联回款处理，需同时具备 `invoice:delete`，有关联出库时另需 `shipping_inspection:delete`；沿用回款财务范围，不新增独立回款删除入口，不自动从 write/admin 继承或分配给普通 admin。普通用户沿用订单归属及有效代理授权。首次权限种子给已有 invoice:sync 角色补查看权限；手工写权限单独分配。截图不挂静态目录，不提供公开 URL；只有订单权限的用户只能读库存单自身意图中的凭证，不能读取手工回款截图。
 
 ## 验证与限制
 

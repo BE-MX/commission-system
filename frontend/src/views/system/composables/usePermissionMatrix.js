@@ -34,6 +34,7 @@ export const PREFIX_LABELS = {
   sales_automation: '智能获客',
   order_intelligence: '订单经营决策台',
   invoice: '订单发票',
+  receipt: '回款单',
   invoice_price: '价格与产品配置',
   invoice_okki: 'OKKI 推单设置',
   invoice_repair: '回款日期修复',
@@ -157,7 +158,7 @@ const ROW_GROUPS = [
   { label: '小程序 · 功能入口', prefixes: ['mini_export', 'mini_domestic', 'mini_lookup', 'mini_shipping'] },
   { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'sales_automation', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
-    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'battle_report', 'order_intelligence', 'domestic',
+    'invoice', 'receipt', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'battle_report', 'order_intelligence', 'domestic',
     'domestic_customer', 'domestic_quantity_report', 'domestic_unit_report',
     'aftersales', 'aftersales_analytics', 'tracking', 'shipping_inspection',
     'stock', 'stock_daily',

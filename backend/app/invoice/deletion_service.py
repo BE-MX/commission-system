@@ -105,7 +105,7 @@ def collect(db, invoice, user):
     outbounds = linked_outbound_service.find_related(db, source_order) if source_order else []
     indexed = remote.order_receipts(db, invoice.xiaoman_order_id) if invoice.xiaoman_order_id else []
     if indexed or any(r.status == "active" for r in local):
-        require_permission("receipt:admin")(user)
+        require_permission("receipt:delete")(user)
         access.ensure_invoice(db, invoice, user)
     records = {}
     pending_outbounds = {k.split(":", 1)[1]: v for k, v in _workflow(invoice).get("steps", {}).items()
