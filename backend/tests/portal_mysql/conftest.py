@@ -99,7 +99,8 @@ def mysql_engine(request):
     password = secrets.token_urlsafe(36)
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0)); port = listener.getsockname()[1]
-    ALLOWED.update(port=port, password=password, database='portal_isolated_test')
+    owned_database = 'commission_db' if request.config.getoption('portal_production_backup') else 'portal_isolated_test'
+    ALLOWED.update(port=port, password=password, database=owned_database)
     base = [str(executable), '--no-defaults', '--basedir=' + executable.parent.parent.as_posix(),
         '--datadir=' + data.as_posix(), '--tmpdir=' + temporary.as_posix()]
     initialized = subprocess.run(base + ['--initialize-insecure', '--console'],
@@ -131,7 +132,10 @@ def mysql_engine(request):
                 actual_dir, actual_port, address, version, server_uuid = cursor.fetchone()
                 assert Path(actual_dir).resolve() == data.resolve() and actual_port == port
                 assert address == '127.0.0.1' and version.startswith(('8.0.', '8.4.'))
-                cursor.execute('CREATE DATABASE portal_isolated_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci')
+                # A production dump can contain qualified routines/ALTER DATABASE. Preserve
+                # its name on this random-port, new-datadir owned process only.
+                assert owned_database in {'commission_db', 'portal_isolated_test'}
+                cursor.execute('CREATE DATABASE `' + owned_database + '` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci')
         init.unlink()
         engine = create_engine(URL.create('mysql+pymysql', username='root', password=password,
             host='127.0.0.1', port=port, database=ALLOWED['database']),

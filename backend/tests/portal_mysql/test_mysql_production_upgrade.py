@@ -3,7 +3,7 @@
 Only the fixture-owned server is contacted. No stamp, baseline invention or live DDL.
 Raw backup rows, credentials and restore stderr are never emitted in test diagnostics.
 """
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 import hashlib
 import json
@@ -21,7 +21,7 @@ from conftest import ALLOWED
 
 def json_value(value):
     if isinstance(value, bytes): return {'bytes': value.hex()}
-    if isinstance(value, (Decimal, date, datetime)): return str(value)
+    if isinstance(value, (Decimal, date, datetime, time, timedelta)): return str(value)
     return value
 
 
