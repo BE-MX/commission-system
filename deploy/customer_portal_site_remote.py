@@ -7,6 +7,7 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -176,7 +177,7 @@ def status(path):
         return error.code
 
 
-def verify():
+def verify_once():
     run(['openssl', 'x509', '-in', str(CERTIFICATE), '-noout', '-checkhost', DOMAIN])
     run(['openssl', 'x509', '-in', str(CERTIFICATE), '-noout', '-checkend', '86400'])
     run(['nginx', '-t'])
@@ -189,6 +190,19 @@ def verify():
     return {'domain': DOMAIN, 'https_verified': True, 'api_boundaries': probes,
         'static_index_present': Path('/var/www/ark-static/customer-orders/index.html').is_file(),
         'business_accepted': False}
+
+
+def verify():
+    # reload sends HUP; old workers can briefly answer new TLS connections.
+    # Retain certificate/route verification throughout this bounded convergence.
+    deadline = time.monotonic() + 15
+    while True:
+        try:
+            return verify_once()
+        except (urllib.error.URLError, RuntimeError):
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(.5)
 
 
 def execute(request):

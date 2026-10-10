@@ -115,3 +115,14 @@ def test_dns_with_another_ipv6_endpoint_is_blocked(owned, monkeypatch):
     with pytest.raises(RuntimeError, match='DNS'):
         site.validate({'phase': 'plan', 'domain': site.DOMAIN, 'template': template,
             'digest': hashlib.sha256(template.encode()).hexdigest(), 'revision': 'a' * 40, 'script_digest': 'b' * 64})
+
+
+def test_reload_convergence_retries_without_disabling_certificate_checks(monkeypatch):
+    calls = []
+    def once():
+        calls.append(True)
+        if len(calls) == 1: raise site.urllib.error.URLError('old worker certificate')
+        return {'https_verified': True}
+    monkeypatch.setattr(site, 'verify_once', once)
+    monkeypatch.setattr(site.time, 'sleep', lambda seconds: None)
+    assert site.verify() == {'https_verified': True} and len(calls) == 2
