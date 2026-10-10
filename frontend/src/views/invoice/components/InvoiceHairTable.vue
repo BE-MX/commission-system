@@ -28,7 +28,7 @@
       </div>
     </div>
     <div class="line-table-wrap">
-      <el-table :data="pagedItems" @sort-change="sortLines" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
+      <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
         <el-table-column label="#" type="index" :index="indexBase" min-width="48" max-width="60" fixed />
         <el-table-column v-if="isProduction" label="Product" min-width="190" max-width="260" prop="product_display" sortable="custom">
           <template #default="{ row }">
@@ -158,7 +158,10 @@
           </template>
         </el-table-column>
         <el-table-column label="Quantity" min-width="100" max-width="140" prop="quantity" sortable="custom">
-          <template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" :precision="0" :controls="false" @change="onQuantityChange(row)" /></template>
+          <template #default="{ row }">
+            <el-input-number v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="onQuantityChange(row)" />
+            <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
+          </template>
         </el-table-column>
         <el-table-column label="折扣" min-width="110" max-width="150" prop="discount_amount" sortable="custom">
           <template #default="{ row }"><el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="onLineDiscountChange(row)" /></template>
@@ -187,7 +190,7 @@
 </template>
 
 <script setup>import { msgWarning } from '@/utils/feedback'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { sortTableRows } from '@/utils/tableSort'
 
 import { ArrowDown, ArrowUp, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue'
@@ -196,6 +199,7 @@ import { quoteSemifinished } from '@/api/semifinished'
 
 const props = defineProps({
   items: { type: Array, required: true },
+  quantityErrorRow: { type: Object, default: null },
   isProduction: Boolean,
   entryOptions: { type: Object, required: true },
   canPasteImport: Boolean,
@@ -224,6 +228,19 @@ const sortedItems = computed(() => sortTableRows(props.items, sortField.value, s
   : row[sortField.value]))
 const pagedItems = computed(() => sortedItems.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
+const lineTable = ref(null)
+const quantityInput = ref(null)
+watch(() => props.quantityErrorRow, async row => {
+  const index = props.items.indexOf(row)
+  if (index < 0) return
+  // Return to entry order so typing a quantity cannot move this row to another page.
+  lineTable.value?.clearSort()
+  sortField.value = ''
+  sortOrder.value = ''
+  page.value = Math.floor(index / pageSize.value) + 1
+  await nextTick()
+  quantityInput.value?.focus()
+})
 watch(() => props.items.length, (now, before) => {
   const pages = Math.max(1, Math.ceil(now / pageSize.value))
   if (!before) page.value = 1 // 编辑单初次装载：从第一页开始审阅
@@ -296,6 +313,7 @@ function lineOptionGroups(options, key) {
 .std-price { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .price-cell.is-manual :deep(.el-input__wrapper) { background: var(--color-warning-bg); }
 .line-discount-input :deep(input) { color: var(--color-danger); font-variant-numeric: tabular-nums; }
+.quantity-error { outline: 1px solid var(--color-danger); }
 .semifinished-cell { display: flex; flex-direction: column; gap: 6px; }
 .semifinished-line { display: grid; grid-template-columns: minmax(85px, 1fr) 90px 14px; align-items: center; gap: 6px; font-size: 12px; }
 .semifinished-line small { color: var(--text-muted); }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { emptyHairRow, buildInvoicePayload, emptyInvoiceForm } from '../src/views/invoice/composables/invoiceEditorState.js'
+import { emptyHairRow, buildInvoicePayload, emptyInvoiceForm, invoiceQuantityIssue } from '../src/views/invoice/composables/invoiceEditorState.js'
 import { isBlankInvoiceLine } from '../src/views/invoice/composables/useInvoicePasteImport.js'
 
 for (const production of [false, true]) {
@@ -18,9 +18,32 @@ for (const production of [false, true]) {
     assert.deepEqual(row.semifinished_plan, [])
     assert.equal(row._importBatchFingerprint, '')
     const payload = buildInvoicePayload({ ...emptyInvoiceForm(), items: [row] }, 0)
-    assert.equal(payload.items[0].quantity, null, 'unfilled quantity must not silently become 1 on save')
+    assert.deepEqual(payload.items, [], 'an untouched placeholder is not an order item')
+    assert.equal(row.quantity, null, 'unfilled quantity must not silently become 1 on save')
+    assert.equal(invoiceQuantityIssue([row]), null)
   })
 }
+
+test('only untouched, unsaved hair placeholders are omitted; entered and persisted content survives', () => {
+  const changes = [
+    { id: 10 }, { product_id: 'P1' }, { sku_id: 2 }, { custom_product_id: 3 },
+    { product_name: 'Product' }, { product_display: 'Product' }, { model: 'Model' },
+    { color: 'Black' }, { length: '20' }, { net_weight_grams: '100g' }, { curl: 'Straight' },
+    { quantity: 1 }, { quantity: 0 }, { quantity: NaN }, { price_per_piece: 0 },
+    { discount_amount: 2 }, { discount_amount: NaN }, { total_price: 2 },
+    { semifinished_enabled: true }, { semifinished_plan: [{ material_id: 1 }] },
+    { _importBatchFingerprint: 'batch' }, { product_kind: 'accessory' },
+  ]
+  for (const change of changes) {
+    const row = { ...emptyHairRow(), ...change }
+    const payload = buildInvoicePayload({ ...emptyInvoiceForm(), items: [emptyHairRow(), row] }, 0)
+    assert.equal(payload.items.length, 1, JSON.stringify(change))
+    assert.equal(payload.items[0].quantity, row.quantity)
+    if (!Number.isInteger(row.quantity) || row.quantity <= 0) {
+      assert.equal(invoiceQuantityIssue([emptyHairRow(), row]).row, row)
+    }
+  }
+})
 
 test('new rows have independent options and material plans', () => {
   const first = emptyHairRow()

@@ -226,3 +226,68 @@ test('remark editing prevents ordinary order persistence until saved or cancelle
   assert.equal(h.editor.receiptLocked.value, false)
   assert.ok(h.warnings.includes('请先保存或取消回款备注编辑'))
 }))
+
+for (const orderType of ['presale', 'stock', 'production']) {
+  test(`${orderType} accessory-only save omits the default blank hair row`, () => run(async h => {
+    const accessory = pricing.normalizeAccessoryRow({ product_id: 'A1', sku_id: 7,
+      product_name: 'Clip', quantity: 3600, price_per_piece: 2, discount_amount: 5 })
+    Object.assign(h.editor.form, defaults('accessory only'), { order_type: orderType, express_channel: 'FEDEX',
+      items: [state.emptyHairRow(orderType === 'production'), accessory] })
+    assert.ok(await h.editor.saveDraft())
+    assert.equal(h.saved.length, 1)
+    assert.equal(h.saved[0].items.length, 1)
+    assert.equal(h.saved[0].items[0].product_kind, 'accessory')
+    assert.equal(h.saved[0].items[0].quantity, 3600)
+    assert.equal(h.saved[0].items[0].discount_amount, -5)
+    assert.equal(h.editor.quantityErrorRow.value, null)
+  }))
+}
+
+test('mixed hair/accessory save ignores added blank placeholders while preserving all entered rows', () => run(async h => {
+  Object.assign(h.editor.form, defaults('mixed'), { order_type: 'presale', express_channel: 'FEDEX', items: [
+    state.emptyHairRow(), { ...state.emptyHairRow(), product_name: 'Hair', quantity: 2, price_per_piece: 50 },
+    pricing.normalizeAccessoryRow({ product_name: 'Clip', quantity: 3600, price_per_piece: 2 }), state.emptyHairRow(),
+  ] })
+  await h.editor.saveDraft()
+  assert.deepEqual(h.saved[0].items.map(row => row.quantity), [2, 3600])
+}))
+
+test('accessory-only save and sync proceeds past the blank hair placeholder', () => run(async h => {
+  Object.assign(h.editor.form, defaults('accessory'), { order_type: 'presale', express_channel: 'FEDEX',
+    items: [state.emptyHairRow(), pricing.normalizeAccessoryRow({ product_name: 'Clip', quantity: 3600, price_per_piece: 2 })] })
+  await h.editor.saveAndSync()
+  assert.equal(h.saved.length, 1)
+  assert.equal(h.saved[0].items.length, 1)
+  assert.equal(h.saved[0].items[0].quantity, 3600)
+}))
+
+for (const quantity of [null, undefined, NaN, Infinity, 0, -1, 1.5]) {
+  test(`presale save rejects invalid quantity ${String(quantity)} without creating an invoice`, () => run(async h => {
+    Object.assign(h.editor.form, defaults('order'), { order_type: 'presale', express_channel: 'FEDEX',
+      items: [{ ...state.emptyHairRow(), model: 'Started model', quantity },
+        { ...state.emptyHairRow(), product_display: 'Filled product', quantity: 3, price_per_piece: 50 }] })
+    assert.equal(await h.editor.saveDraft(), null)
+    assert.equal(h.saved.length, 0)
+    assert.equal(h.editor.quantityErrorRow.value, h.editor.form.items[0])
+    assert.match(h.warnings.at(-1), /Started model.*数量.*正整数/)
+    assert.equal(h.editor.form.items.length, 2)
+    assert.equal(h.editor.form.items[1].quantity, 3)
+  }))
+}
+
+test('save and sync locates an incomplete old row hidden by filled imported rows; correction saves original quantities', () => run(async h => {
+  Object.assign(h.editor.form, defaults('order'), { order_type: 'presale', express_channel: 'FEDEX',
+    items: [{ ...state.emptyHairRow(), model: 'Started model' },
+      ...Array.from({ length: 21 }, () => ({ ...state.emptyHairRow(), quantity: 2, price_per_piece: 50 }))] })
+  await h.editor.saveAndSync()
+  assert.equal(h.saved.length, 0)
+  assert.equal(h.editor.quantityErrorRow.value, h.editor.form.items[0])
+  h.editor.form.items[0].quantity = 4
+  await vue.nextTick()
+  assert.equal(h.editor.quantityErrorRow.value, null)
+  await h.editor.saveDraft()
+  assert.equal(h.saved.length, 1)
+  assert.equal(h.saved[0].items[0].quantity, 4)
+  assert.equal(h.saved[0].items.length, 22)
+  assert.ok(h.saved[0].items.slice(1).every(row => row.quantity === 2))
+}))

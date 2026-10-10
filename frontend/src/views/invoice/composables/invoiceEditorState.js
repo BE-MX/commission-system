@@ -77,6 +77,27 @@ export function emptyHairRow(isProduction = false) {
   }
 }
 
+export function isInvoicePlaceholder(row) {
+  return row.product_kind !== 'accessory'
+    && !row.id && !row.product_id && !row.sku_id && !row.custom_product_id
+    && !row.product_name && !row.product_display && !row.model && !row.color
+    && !row.length && !row.net_weight_grams && !row.curl
+    && row.quantity == null && row.price_per_piece == null
+    && (row.discount_amount == null || row.discount_amount === 0)
+    && !row.total_price && !row.semifinished_enabled && !row.semifinished_plan?.length
+    && !row._importBatchFingerprint
+}
+
+export function invoiceQuantityIssue(items) {
+  const index = items.findIndex(row => !isInvoicePlaceholder(row)
+    && (!Number.isInteger(row.quantity) || row.quantity <= 0))
+  if (index < 0) return null
+  const row = items[index]
+  const product = [row.product_name || row.product_display || row.model, row.color, row.length, row.net_weight_grams]
+    .filter(Boolean).join(' / ') || '未填写产品规格'
+  return { row, message: `录入顺序第 ${index + 1} 条明细（${product}）的数量必须填写正整数，已定位到该数量栏` }
+}
+
 export function buildInvoicePayload(form, hairDiscount) {
   const draft = form.receipt_draft
   return {
@@ -107,7 +128,7 @@ export function buildInvoicePayload(form, hairDiscount) {
     source_order_no: form.source_order_no || null, source_order_name: form.source_order_name || null,
     source_image_sha256: form.source_image_sha256 || null,
     source_preview_token: form.source_preview_token || null,
-    items: form.items.map(line => ({
+    items: form.items.filter(line => !isInvoicePlaceholder(line)).map(line => ({
       id: line.id || null, product_kind: line.product_kind || 'hair', item_type: line.item_type,
       product_id: line.product_id, sku_id: line.sku_id, product_name: line.product_name,
       product_display: line.product_display, net_weight_grams: line.net_weight_grams,

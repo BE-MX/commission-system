@@ -75,6 +75,16 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
     assert.equal(state.page.value, 1)
     assert.deepEqual(state.pagedItems.value.map(row => row.id), originalRows.slice(0, 20).map(row => row.id))
     assert.deepEqual([...props.items], originalRows)
+    state.sortLines({ prop: 'quantity', order: 'ascending' })
+    props.quantityErrorRow = originalRows[44]
+    await Vue.nextTick()
+    assert.equal(state.page.value, 3, 'validation reveals the incomplete row in entry order')
+    assert.ok(state.pagedItems.value.includes(props.quantityErrorRow))
+    for (const quantity of [3, 36, 360, 3600]) {
+      props.quantityErrorRow.quantity = quantity
+      await Vue.nextTick()
+      assert.ok(state.pagedItems.value.includes(props.quantityErrorRow), 'typing cannot move the corrected row off the page')
+    }
     props.items.splice(0, props.items.length)
     await Vue.nextTick()
     props.items.push(...originalRows)

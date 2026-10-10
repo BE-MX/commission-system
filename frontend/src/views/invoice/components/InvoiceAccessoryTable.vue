@@ -11,7 +11,7 @@
       </el-button>
     </div>
     <div class="line-table-wrap accessory-line-table-wrap">
-      <el-table :data="pagedItems" @sort-change="sortLines" border class="list-table line-table accessory-line-table" max-height="560" v-sticky-scrollbar>
+      <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" border class="list-table line-table accessory-line-table" max-height="560" v-sticky-scrollbar>
         <el-table-column label="#" type="index" :index="indexBase" min-width="48" max-width="60" fixed />
         <el-table-column label="Name" min-width="190" max-width="300" prop="product_name" sortable="custom">
           <template #default="{ row }">
@@ -74,7 +74,8 @@
         </el-table-column>
         <el-table-column label="Quantity" min-width="96" max-width="125" prop="quantity" sortable="custom">
           <template #default="{ row }">
-            <el-input-number v-model="row.quantity" :min="1" :precision="0" :controls="false" @change="$emit('change', row)" />
+            <el-input-number v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="$emit('change', row)" />
+            <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
         <el-table-column label="折扣" min-width="105" max-width="140" prop="discount_amount" sortable="custom">
@@ -110,13 +111,14 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { sortTableRows } from '@/utils/tableSort'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { accessoryStandardPriceState } from '../composables/accessoryPricing.js'
 
 const props = defineProps({
   items: { type: Array, required: true },
+  quantityErrorRow: { type: Object, default: null },
   options: { type: Array, default: () => [] },
   loading: Boolean,
   searchOptions: { type: Function, required: true },
@@ -137,6 +139,19 @@ const sortedItems = computed(() => sortTableRows(props.items, sortField.value, s
   : row[sortField.value]))
 const pagedItems = computed(() => sortedItems.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
+const lineTable = ref(null)
+const quantityInput = ref(null)
+watch(() => props.quantityErrorRow, async row => {
+  const index = props.items.indexOf(row)
+  if (index < 0) return
+  // Return to entry order so typing a quantity cannot move this row to another page.
+  lineTable.value?.clearSort()
+  sortField.value = ''
+  sortOrder.value = ''
+  page.value = Math.floor(index / pageSize.value) + 1
+  await nextTick()
+  quantityInput.value?.focus()
+})
 watch(() => props.items.length, (now, before) => {
   const pages = Math.max(1, Math.ceil(now / pageSize.value))
   if (!before) page.value = 1
@@ -178,6 +193,7 @@ const handleSelect = (row, key) => {
 .price-cell { display: flex; align-items: center; gap: 6px; }
 .price-cell :deep(.el-input-number) { min-width: 0; flex: 1; }
 .accessory-line-table :deep(.el-input-number) { width: 100%; }
+.quantity-error { outline: 1px solid var(--color-danger); }
 .price-cell.is-manual :deep(.el-input__wrapper) { background: var(--color-warning-bg); }
 .std-price, .customer-price-reference { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .customer-price-reference { min-width: 36px; font-size: 11px; }

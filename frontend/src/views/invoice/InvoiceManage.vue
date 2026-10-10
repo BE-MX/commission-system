@@ -217,6 +217,7 @@
               <InvoiceHairTable
                 class="form-card"
                 :items="hairItems"
+                :quantity-error-row="quantityErrorRow"
                 :is-production="isProduction"
                 :entry-options="entryOptions"
                 :can-paste-import="canPasteImport"
@@ -238,6 +239,7 @@
               <InvoiceAccessoryTable
                 class="form-card"
                 :items="accessoryItems"
+                :quantity-error-row="quantityErrorRow"
                 :options="accessoryOptions"
                 :loading="accessoryLoading"
                 :search-options="searchAccessoryOptions"
@@ -434,7 +436,7 @@ const {
   drawerVisible, legacyVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
   customerTotal, customerHasMore, loadMoreCustomers, privateOnlyCompany,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
-  saveAndSyncSubmitting,
+  saveAndSyncSubmitting, quantityErrorRow,
   linkedOperation, linkedBusy, linkedLoading, refreshLinked, retryLinked, recheckLinked, closeLinked, resolveLinked,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,

@@ -1,5 +1,5 @@
 import { msgWarning, msgSuccessText, alertAction } from '@/utils/feedback'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useLinkedInvoiceSync } from './useLinkedInvoiceSync'
 import { invoiceOrderSignature } from './invoiceReceiptState'
 
@@ -34,6 +34,7 @@ import { useInvoiceAccessories } from './useInvoiceAccessories'
 import {
   buildInvoicePayload,
   emptyInvoiceForm,
+  invoiceQuantityIssue,
   INVOICE_NO_MAX_LENGTH,
   normalizeHairRow,
   screenshotInvoiceNo,
@@ -67,6 +68,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const previousInvoiceNo = ref('')
 
   const form = reactive(emptyInvoiceForm())
+  const quantityErrorRow = ref(null)
+  watch(() => quantityErrorRow.value?.quantity, quantity => {
+    if (Number.isInteger(quantity) && quantity > 0) quantityErrorRow.value = null
+  })
   const loadedOrderSignature = ref('')
   watch(() => [loadedOrderSignature.value, invoiceOrderSignature(buildInvoicePayload(form))], ([loaded, current]) => {
     form.receipt_order_dirty = Boolean(form.id && loaded && loaded !== current)
@@ -208,6 +213,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   let invoiceNoEdited = false
 
   function resetForm(data = emptyInvoiceForm()) {
+    quantityErrorRow.value = null
     loadedUpdatedAt.value = data.edit_version || null
     contactFillSeq++
     gradeEditSeq++
@@ -648,6 +654,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
       msgWarning(`请完善必填项：${missingRequired.join('、')}`)
       return null
     }
+    const quantityIssue = invoiceQuantityIssue(form.items)
+    if (quantityIssue) {
+      quantityErrorRow.value = null
+      await nextTick()
+      quantityErrorRow.value = quantityIssue.row
+      msgWarning(quantityIssue.message)
+      return null
+    }
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
     // A failed defaults request must not erase an existing customer grade.
     if (!customerGradeReady) delete payload.customer_grade
@@ -705,6 +719,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   return {
+    quantityErrorRow,
     drawerVisible,
     legacyVisible,
     customerLoading,
