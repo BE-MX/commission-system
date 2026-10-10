@@ -329,7 +329,7 @@ if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument('--customer-portal-site', choices=['https', 'verify'], help='Configure or verify the approved Beijing customer-site HTTPS boundary; no business gates')
-    parser.add_argument('--customer-portal-db-backup', action='store_true', help='Protected full revision-180 snapshot on office; no migration or service activation')
+    parser.add_argument('--customer-portal-db-backup', action='store_true', help='Protected full revision-182 snapshot on office; no migration or service activation')
     parser.add_argument('--customer-portal-config', choices=['prepare', 'enable-access', 'stop-orders', 'close'], help='Merge protected Beijing password access config; order/PI/mail/outbound gates stay off')
     parser.add_argument('--static-retention-only', action='store_true', help='Prune expired main-frontend assets and backups without restarting applications')
     parser.add_argument('--colorwork-backup-policy', action='store_true', help='Install hourly retention of two recent Colorwork recovery backups')

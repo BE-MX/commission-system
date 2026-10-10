@@ -51,6 +51,12 @@ def test_exact_actual_upgrade_proof_passes(tmp_path):
     validate_proof(tmp_path, Connection(), [TARGET], TARGET)
 
 
+def test_old_production_path_proof_cannot_authorize_current_release(tmp_path):
+    proof_file(tmp_path, base='180_settlement_funding_amendment', target='181_portal_password_login')
+    with pytest.raises(RuntimeError, match='does not match'):
+        validate_proof(tmp_path, Connection(), [TARGET], TARGET)
+
+
 @pytest.mark.parametrize('pending', [[BASE,TARGET], [TARGET,'182_new'], ['unknown',TARGET]])
 def test_longer_chain_cannot_bypass_portal_gate(tmp_path, pending):
     proof_file(tmp_path)

@@ -8,6 +8,7 @@
 - 独立迁移账号完整备份权限已实核；180快照767,327,823字节、SHA650f6a17…，实际隔离180→181→恢复180→重放181通过1952秒，392原表/2,483,347行/列值/FK/唯一键/事件原始字段摘要不变，scheduler持续OFF。生产随后升级182，旧proof只能作历史证据；必须重新备份实际182并演练182→183。
 - 实查额外writer：北京sync-outbound.js cron及source小时事件(root@%定义、scheduler ON)。已实现原cron独占锁围栏/手工排空/批准摘要、事件保留definer/rawhash暂停与最终恢复、P_S可见/注册/lost0排空门禁；真实owned MySQL2通过，受影响部署7文件87通过。事件DBA `.deploy_state/credentials/event-maintenance.env` 尚未提供，发布在停服务前阻断；未冻结生产cron或事件。该文件只含COMMISSION_DB_USER/PASSWORD，不替换migration.env或应用.env。
 - 详细验证与未验收范围见[生产证据](requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)，发布/验收/停止接单见[受管操作](../deploy/customer-orders.md)。库存NULL单位712/915、刷新语义、真实合同价/授权、生产订单/PI/通知未验收；WRITES/INVOICE/MAIL/NOTIFICATION/OUTBOUND继续false。当前没有能力可标记正式开放。无origin push/main合并。
+- 本轮末次办公室127.0.0.1:2223在传候选时连接拒绝、TCP复核关闭；待用户恢复持续转发。182新备份/proof/受管prepare及发布未执行。北京末查1227/.env原摘要、六开关false、index不存在。整合后SQLite747通过；183/限流/模式MySQL67通过，实际密码登录+库存价格失效/完整交易至PI/PDF MySQL8通过；两前端按原锁构建通过。扩大MySQL全组未完成，首个缺解锁审计表的夹具已修，共用登录助手改密码；旧OTP测试未全部迁移。独立审查无新P1/P2。
 
 ## 2026-10-10 预售出库完成改用检验提交（Codex，本地实现，未部署）
 

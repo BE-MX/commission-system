@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import Column, MetaData, Table, inspect, select, text
 from sqlalchemy.orm import Session
 
-from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, ArkLoginLog, ArkRefreshToken
+from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, ArkLoginLog, ArkRefreshToken, ArkAccountUnlockAudit
 from app.customer.models import CustomerAccount, CustomerAssignment, CustomerExternalIdentity, CustomerObjectOwnership, CustomerSourceRecord, CustomerContactRelationship
 from app.invoice.models import Invoice, InvoiceItem, InvoiceDelegateGrant, StdPrice, PriceColorType, CustomerPriceRule
 from app.receipt.models import ReceiptIntent
@@ -31,7 +31,7 @@ def service_schema(migrated):
     # fixtures, NOT migrations or proof of the complete upstream schema.
     models = (ArkUser, CustomerAccount, CustomerAssignment, CustomerExternalIdentity, CustomerObjectOwnership, CustomerSourceRecord, CustomerContactRelationship,
         ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, Invoice, InvoiceItem, InvoiceDelegateGrant,
-        ReceiptIntent, StdPrice, PriceColorType, CustomerPriceRule, ArkLoginLog, ArkRefreshToken)
+        ReceiptIntent, StdPrice, PriceColorType, CustomerPriceRule, ArkLoginLog, ArkRefreshToken, ArkAccountUnlockAudit)
     for model in models:
         with migrated.begin() as connection:
             inspector = inspect(connection)

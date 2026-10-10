@@ -20,6 +20,8 @@
 
 这是各项末次观测，不将初检e26版本或仓库配置登记冒充服务器当前状态。生产切换前须再次核验两台HEAD、DB revision、部署锁/journal。
 
+末次北京复核仍为1227af7b，受保护.env摘要b59b8912…与prepare一致，全部六项门户开关false，index不存在。办公室入口曾恢复并成功读取当前HEAD/182；之后传输候选时127.0.0.1:2223变为连接拒绝，再测TCP仍关闭。候选尚未传入办公室，未执行新182备份/完整恢复proof/受管应用prepare或激活。当前技术阻断为办公室SSH转发和独立事件管理凭据；恢复入口后须先重核生产版本，防止再次漂移。
+
 ## 客户与经营来源
 
 24个门户表已安装；初检及复核 site/access/account/membership/catalog授权/outbox/订单/PI等为0，仅authority barrier1和审计21。生产没有可据此宣称已授权的客户或采购账号。
@@ -53,6 +55,9 @@
 - 部署6文件专项96通过；后续受保护配置/HTTPS/DBA专项39通过，最新完整权限/新proof专项38通过（另SSH监听边界5通过）（含partial revoke拒绝）。组别重叠。
 - 独立agent已审查密码/权限/出库/HTTPS/配置恢复/备份与owned clone边界；已修复历史成员恢复、昂贵哈希前鉴权、服务读取身份、临时.env权限窗口及partial revoke误判。恢复通道独立审查要求清理互不跳过、proof核真实schema/通道/客户端摘要/scheduler以及实际SSH监听回环；均已收口，未以归一SQL摘要放行。
 - 维护专项真实owned MySQL 2 passed/15.87秒：暂停/恢复保留原始定义（含CRLF、definer、属性），真实活动event worker在INSTRUMENTED=NO时仍可见并排空。部署受影响7文件87 passed；扩展部署全组728 passed/17 skips/1既有storage_routing mock耗尽失败（本任务未改该实现/测试）。独立审查另要求拒绝未持锁cron伪装及READY后新手工同步，已补原始批准摘要/每次进程复核及回归。
+- 整合当前1227后再次验证：SQLite门户747 passed/2默认浏览器skip；当前183 DDL、限流、部署/出库模式、关闭态HTTP等选定MySQL组67 passed/10 opt-in skip。客户站34模块和员工站3497模块按提交的锁文件构建成功，员工站保留既有混合导入/大chunk提示。误用pnpm在员工站生成的未跟踪锁文件已移除，员工站重新使用package-lock/npm ci，不改变依赖约定。
+- 扩大MySQL全目录时出现夹具失败，未完成全组验收。单独复现首项为员工登录依赖的ark_account_unlock_audits表缺失；补实际依赖表，并把共用客户登录助手从已删除OTP路由改为实际密码登录。保留错误密码401、Cookie/CSRF与商业断言，当前真实组装应用+owned MySQL库存/价格失效6场景及跨客户完整下单→PI/PDF2场景共8 passed/67.01秒。无SMTP/外部网络/共享写入。其他旧邀请/OTP测试尚未逐项改造，不能宣称全目录通过。
+- 新门禁明确回归拒绝旧180→181 proof；配置/维护/客户站发布专项复验53 passed。独立审查确认183唯一head/父182、旧proof拒绝、围栏token/并发/未知结果恢复均无新的P1/P2。17:31 Git巡检--no-fetch exit0，仅本地快照，未清理或推送其他工作树。
 
 ## 当前可开放范围与剩余验收
 

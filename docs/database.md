@@ -621,7 +621,7 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 
 新迁移接 154_okki_outbound_tasks，重复执行检查已存在结构，保留数据；降级拒绝自动删除历史。已验证 SQLite 升级/重复执行与 MySQL DDL 编译，未执行真实 MySQL 升级。生产按既有发布入口先备份与迁移演练。
 
-`182_announcement_reads` 接当前 main 的 `180_settlement_funding_amendment`。user_id 在 MySQL 使用 INT UNSIGNED，与 ark_users.id 一致；document_id/revision_id 使用 BIGINT。重复阅读保留首次时间，重新发布新的修订独立计算未读；全部已读只写当前可见版本，不改其他用户。撤回/失效/删除后保留阅读事实，但不计入提醒。升级重复执行保留数据，降级拒绝删除阅读历史。本次仅隔离 SQLite 升级及 MySQL DDL 编译；未执行共享或生产迁移。其他分支已有 183，集成时重新核对迁移链并保持单 head。
+`182_announcement_reads` 接当前 main 的 `180_settlement_funding_amendment`。user_id 在 MySQL 使用 INT UNSIGNED，与 ark_users.id 一致；document_id/revision_id 使用 BIGINT。重复阅读保留首次时间，重新发布新的修订独立计算未读；全部已读只写当前可见版本，不改其他用户。撤回/失效/删除后保留阅读事实，但不计入提醒。升级重复执行保留数据，降级拒绝删除阅读历史。该公告功能原实现阶段仅验证隔离 SQLite 升级及 MySQL DDL 编译；该阶段未执行生产迁移。客户门户任务随后实查生产已为182；未发布的密码迁移183接在182后，保持单 head。
 
 
 ### 发票客户等级（157）
