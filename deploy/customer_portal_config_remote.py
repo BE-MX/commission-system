@@ -65,6 +65,14 @@ def service_environment(allow_stopped=False):
     return {os.fsdecode(key): os.fsdecode(value) for key, value in environment.items()}
 
 
+def service_identity():
+    import pwd, grp
+    name = subprocess.check_output(['systemctl', 'show', 'ark-backend', '-p', 'User', '--value'], text=True).strip() or 'root'
+    group = subprocess.check_output(['systemctl', 'show', 'ark-backend', '-p', 'Group', '--value'], text=True).strip()
+    account = pwd.getpwnam(name)
+    return account.pw_uid, grp.getgrnam(group).gr_gid if group else account.pw_gid
+
+
 def apply_failure(phase, restore, stop):
     if phase in {'stop-orders', 'close'}:
         stop()
@@ -73,7 +81,7 @@ def apply_failure(phase, restore, stop):
     return 'restored'
 
 
-def runtime_probe(environment=None):
+def runtime_probe(environment=None, identity=None):
     code = '''import json,sys
 try:
  from app.core.config import get_settings
@@ -92,8 +100,9 @@ try:
 except Exception as error:
  print(json.dumps({'error_type':type(error).__name__}));sys.exit(1)
 '''
+    permissions = {'user':identity[0], 'group':identity[1], 'extra_groups':[]} if identity else {}
     result = subprocess.run([str(ROOT / 'backend/.venv/bin/python'), '-c', code], cwd=ROOT / 'backend',
-        capture_output=True, text=True, timeout=30, env=environment)
+        capture_output=True, text=True, timeout=30, env=environment, **permissions)
     if result.returncode:
         raise RuntimeError('Protected configuration/database validation failed; raw diagnostics withheld')
     return json.loads(result.stdout)
@@ -118,6 +127,7 @@ def execute(request):
             raise RuntimeError('Password access requires the pinned activated application and actual revision 181')
         if phase == 'prepare' and probe['enabled']:
             raise RuntimeError('Preparation cannot silently close an already enabled portal')
+        identity = service_identity()
         original = ENV.read_bytes(); metadata = ENV.stat(); before = hashlib.sha256(original).hexdigest()
         content = original.decode('utf-8')
         values = portal_values(content)
@@ -145,12 +155,12 @@ def execute(request):
         backup = STATE / ('env-' + uuid.uuid4().hex)
         backup.write_bytes(original); backup.chmod(0o600)
         temporary = ENV.with_name('.env.portal-next')
-        temporary.write_bytes(candidate); temporary.chmod(0o600); os.chown(temporary, metadata.st_uid, metadata.st_gid)
+        temporary.write_bytes(candidate); temporary.chmod(0o600); os.chown(temporary, *identity)
         if fingerprint(ENV) != before: raise RuntimeError('Protected env changed; merge withheld')
         os.replace(temporary, ENV)
         activated = False
         try:
-            probe = runtime_probe(environment) if phase == 'prepare' else {}
+            probe = runtime_probe(environment, identity) if phase == 'prepare' else {}
             if phase != 'prepare' and environment is not None:
                 subprocess.run(['systemctl', 'restart', 'ark-backend'], check=True, timeout=45, capture_output=True)
                 activated = True
@@ -165,7 +175,7 @@ def execute(request):
                         time.sleep(1)
                 if health.get('status') != 'ok' or health.get('database') != 'connected':
                     raise RuntimeError('Backend readiness failed after customer overlay')
-                probe = runtime_probe(service_environment())
+                probe = runtime_probe(service_environment(), identity)
                 expected = {'enabled':'PORTAL_ENABLED', 'writes':'PORTAL_WRITES_ENABLED', 'invoice':'PORTAL_INVOICE_ENABLED',
                     'mail':'PORTAL_MAIL_ENABLED', 'notification':'PORTAL_NOTIFICATION_ENABLED', 'outbound':'PORTAL_OUTBOUND_WORKER_ENABLED'}
                 if any(probe[key] != (overlay[name].lower() == 'true') for key, name in expected.items() if name in overlay):

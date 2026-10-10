@@ -94,3 +94,12 @@ def test_closing_already_paused_backend_does_not_require_or_start_process(monkey
     import customer_portal_config_remote as remote
     monkeypatch.setattr(remote.subprocess, 'check_output', lambda *a, **k: '0')
     assert service_environment(allow_stopped=True) is None
+
+
+def test_configuration_probe_uses_the_service_identity(monkeypatch):
+    import customer_portal_config_remote as remote
+    from types import SimpleNamespace
+    captured = []
+    monkeypatch.setattr(remote.subprocess, 'run', lambda *a, **kw: captured.append(kw) or SimpleNamespace(returncode=0, stdout='{}'))
+    remote.runtime_probe({'SAFE_TEST':'value'}, (1000,1000))
+    assert captured[0]['user'] == 1000 and captured[0]['group'] == 1000 and captured[0]['extra_groups'] == []
