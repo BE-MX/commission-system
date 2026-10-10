@@ -1,5 +1,10 @@
 # 当前交接与待办
 
+## 2026-10-10 订单发票与回款备注编辑（Codex，已授权合并推送，未部署）
+
+- 分支 `codex/document-remarks-edit`，工作树 `C:/Users/windb/.codex/worktrees/document-remarks-edit/commission-system`，基于 main `942c4514`。详情备注区可独立修改或清空，保留现有写权限和实时归属，版本冲突409；订单5000字符、回款500字符。已同步单据方舟留存，未同步单据后续同步带入；不触发整单重算或远端重发。订单保留取消/关联同步/不可编辑保护，回款拒绝无效和同步中状态；已转换意图跟随回款备注，记录回款操作审计；门户PI按既有内容变更协议撤回发布。
+- 验证：受影响SQLite回归150 passed；备注端点18项在加强撤权场景后复跑通过；门户内容生命周期13 passed；前端交互10 passed（含撤权/切换账号在途响应丢弃），最终build通过（既有chunk大小提示）。真实Chrome组件+模拟API验证修改、清空、冲突保留输入、取消、撤权隐藏按钮和390px边界，无页面错误；截图和构建证据保留在主目录tmp/document-remarks-delivery/。独立审查发现并修复订单普通推送期间回款备注改变执行绑定的问题，最终复核无阻断项。约定strict与diff检查通过，git_sweep --no-fetch完成（本地快照，其他分支保留）。按亮哥授权提交、合并main并推送origin；不包含共享数据库写入或部署。
+
 ## 2026-10-10 发票保存与校验交易繁忙（Codex，修复与 Git 交付，未部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/invoice-lock-wait/commission-system`，分支 `codex/invoice-lock-wait`，基于 main `2b86d584`；亮哥已授权合并并推送，本次不包含生产部署。北京日志确认订单 994“李宝珠261001”的 validate/PUT 与同期订单 993 linked-sync 多次发生 5 秒行锁超时。两次生产只读核验：994 为 ready/not_synced，保存版本停在北京时间 2026-10-10 09:29:51，总额 USD 2627.18，xiaoman_order_id/linked_sync_id 均空，关联任务与推单日志均 0；末次检查全局授权屏障无记录锁。未执行生产业务 POST、清锁或重发；当前快照不表示失败当次页面改动已保存。

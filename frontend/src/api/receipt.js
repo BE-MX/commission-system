@@ -1,4 +1,6 @@
 import { receiptClient as request } from './clients'
+
+export const updateReceiptRemark = (id, body) => unwrap(request.patch(`/${id}/remark`, body, { showLoading: false, suppressToast: true }))
 const unwrap = promise => promise.then(res => res.data ?? res)
 export const listReceipts = (params, config = {}) => unwrap(request.get('', { ...config, params, showLoading: false }))
 export const getReceipt = id => unwrap(request.get(`/${id}`, { showLoading: false }))

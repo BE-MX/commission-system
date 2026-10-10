@@ -128,6 +128,10 @@ export function updateInvoice(id, data) {
   return unwrap(request.put(`/invoices/${id}`, data, { loadingText: '正在保存发票...' }))
 }
 
+export function updateInvoiceRemark(id, data) {
+  return unwrap(request.patch(`/invoices/${id}/remark`, data, { showLoading: false, suppressToast: true }))
+}
+
 export function deleteInvoice(id) {
   return unwrap(request.delete(`/invoices/${id}`, { loadingText: '正在删除发票...' }))
 }
