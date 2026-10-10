@@ -74,16 +74,38 @@ def _accessory_product_ids(db) -> set[str]:
     return keys
 
 
+def _missing_print_models(db, items: list[dict]) -> dict[str, str]:
+    """Snapshots lack joined metadata; resolve their models by exact product ID."""
+    from sqlalchemy import bindparam, text
+    from app.shipping_inspection import outbound_service
+
+    product_ids = sorted({key for item in items
+        if not str(item.get('spec') or '').strip() and not str(item.get('model') or '').strip()
+        if (key := _product_id_key(item.get('product_id')))})
+    if not product_ids:
+        return {}
+    query = text(f"SELECT product_id, model FROM `{outbound_service._schema()}`."
+                 f"`{outbound_service.PRODUCTS_TABLE}` WHERE product_id IN :product_ids")
+    rows = db.execute(query.bindparams(bindparam('product_ids', expanding=True)),
+                      {'product_ids': product_ids}).mappings()
+    return {_product_id_key(row['product_id']): str(row['model']).strip()
+            for row in rows if str(row['model'] or '').strip()}
+
+
 def annotate_print_items(db, items: list[dict]) -> list[dict]:
-    """打印/Word 专用：补 product_kind，去掉 Name=Other Items 的配件；不改动扫描/验货明细。"""
+    """打印/Word 专用：补类别和空规格，过滤 Other Items；不改动扫描/验货明细。"""
+    items = items or []
     accessory_ids = _accessory_product_ids(db)
+    models = _missing_print_models(db, items)
     result = []
-    for item in items or []:
+    for item in items:
         product_id = _product_id_key(item.get("product_id"))
         kind = "accessory" if product_id and product_id in accessory_ids else "hair"
         annotated = {**item, "product_kind": kind}
         if is_other_accessory(annotated):
             continue
+        if not str(item.get('spec') or '').strip():
+            annotated['spec'] = str(item.get('model') or '').strip() or models.get(product_id)
         result.append(annotated)
     return result
 

@@ -1160,6 +1160,12 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 发送仅发生在提交事务成功之后，重复提交不重发；撤回重提再通知。发送失败不影响提交，超时10秒，无持久队列及不确定结果自动重试，进程中断或提供商异常可能漏发。日志按`[SHIPPING] notification`查跳过/失败；上线须有正确的当前OKKI归属、有效账号绑定和钉钉绑定。测试不发送真实通知。
 
 
+### 2026-10-10 出库单空规格补取
+
+HTML 打印与 Word 共用 `print_service.annotate_print_items`：优先保留非空出库明细规格；为空或纯空白时使用关联产品的 `model`。同步快照没有关联型号时按精确 `product_id` 批量查只读产品表。产品不存在或型号未维护时保持空白，不从产品名称猜规格。只改变文档数据副本，原始镜像、同步核验、数量、验货身份与照片关联不变。
+
+`2026.Veronika赊销-01` 的 5 行明细 `product_model` 都为空，但产品表型号均为 `B1天才发帘（帘宽12“）`；只读实单生成 HTML 与 Word 已验证 5 个规格格有值、数量合计 18。
+
 ### 2026-09-17 出库单打印负责人
 
 HTML打印与Word共用 `print_service.with_owner_chinese_name`，先按 outbound_invoice_id 实时读取

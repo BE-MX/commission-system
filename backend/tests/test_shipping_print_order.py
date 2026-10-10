@@ -9,7 +9,7 @@ from app.shipping_inspection.print_service import (
     sort_outbound_print_items,
 )
 from app.shipping_inspection.word_service import build_outbound_word
-from tests.test_shipping_inspection import _user, _pc_client
+from tests.test_shipping_inspection import _user, _pc_client, product_display_source
 
 
 def sample_items():
