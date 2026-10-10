@@ -53,7 +53,7 @@ deploy\deploy.bat --customer-portal-config stop-orders --revision <full-sha>
 deploy\deploy.bat --customer-portal-config close --revision <full-sha>
 ```
 
-实际 origin/site code、leshine-okki身份来源、回环可信代理、独立CSRF/AUTH密钥在服务器合并，秘密不输出。密码登录不依赖SMTP。AUTH_SECRET参与耐久创建回执摘要，当前没有摘要keyring，不能随意轮换；轮换前须专门实现和验收旧摘要保留。配置修改经受管重启刷新缓存，进程覆盖配置须先处理其受保护来源。
+实际 origin/site code、leshine-okki身份来源、回环可信代理、独立CSRF/AUTH密钥在服务器合并，秘密不输出。密码登录不依赖SMTP。AUTH_SECRET参与耐久创建回执摘要，当前没有摘要keyring，不能随意轮换；轮换前须专门实现和验收旧摘要保留。配置修改经受管重启刷新缓存，重启前后大小写无关核对实际进程覆盖与生效配置；非规范/重复dotenv键在生成密钥前拒绝。进程覆盖或非规范配置导致前检拒绝时，不能宣称已停单，需先处理其受保护来源。停单/关闭后检失败保留关闭配置并暂停后端，绝不自动恢复接单；已停服务可再次关闭配置且保持停服，回执closed_paused不证明重新启动后的生效配置。
 
 | 开关 | 能力及开放前提 |
 | --- | --- |

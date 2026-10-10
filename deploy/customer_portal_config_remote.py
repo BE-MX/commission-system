@@ -38,12 +38,12 @@ def merge_text(content, overlay):
 def portal_values(content):
     values = {}
     for line in content.splitlines():
-        match = re.match(r'^\s*(?:export\s+)?([A-Za-z_][A-Za-z_0-9]*)\s*=', line)
-        if not match or not match[1].upper().startswith('PORTAL_'):
+        match = re.match(r'^\s*(export\s+)?([A-Za-z_][A-Za-z_0-9]*)\s*=', line)
+        if not match or not match[2].upper().startswith('PORTAL_'):
             continue
-        key = match[1]
+        key = match[2]
         # Reject alternate dotenv spellings before generating a durable key.
-        if key != key.upper() or line.lstrip().startswith('export ') or key in values:
+        if key != key.upper() or match[1] or key in values:
             raise RuntimeError('Noncanonical or duplicate portal env key requires protected inspection')
         raw = line.split('=', 1)[1].strip()
         if '#' in raw or '\n' in raw or (raw[:1] in {'"', "'"} and raw[-1:] != raw[:1]):
@@ -52,8 +52,10 @@ def portal_values(content):
     return values
 
 
-def service_environment():
+def service_environment(allow_stopped=False):
     pid = subprocess.check_output(['systemctl', 'show', 'ark-backend', '-p', 'MainPID', '--value'], text=True).strip()
+    if pid == '0' and allow_stopped:
+        return None
     directory = Path('/proc/' + pid)
     environment = dict(part.split(b'=', 1) for part in (directory / 'environ').read_bytes().split(b'\0') if b'=' in part)
     if any(key.upper().startswith(b'PORTAL_') for key in environment):
@@ -108,7 +110,7 @@ def execute(request):
         os.chmod(STATE / 'lock', 0o600); fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         live = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         phase = request['phase']
-        environment = service_environment()
+        environment = service_environment(allow_stopped=phase in {'stop-orders', 'close'})
         probe = runtime_probe(environment) if phase not in {'stop-orders', 'close'} else {}
         if phase not in {'stop-orders', 'close'} and not probe['namespace_present']:
             raise RuntimeError('Confirmed customer identity namespace is absent')
@@ -149,7 +151,7 @@ def execute(request):
         activated = False
         try:
             probe = runtime_probe(environment) if phase == 'prepare' else {}
-            if phase != 'prepare':
+            if phase != 'prepare' and environment is not None:
                 subprocess.run(['systemctl', 'restart', 'ark-backend'], check=True, timeout=45, capture_output=True)
                 activated = True
                 deadline = time.monotonic() + 35
@@ -185,7 +187,8 @@ def execute(request):
             status = apply_failure(phase, restore, stop)
             raise RuntimeError('Customer overlay validation failed; state=' + status) from None
         receipt = {'phase':phase,'application_revision':live,'config_digest':fingerprint(ENV),'backup':str(backup),
-            'merged_keys':sorted(overlay),'probe':probe,'business_accepted':False}
+            'merged_keys':sorted(overlay),'probe':probe,'business_accepted':False,
+            'status':'closed_paused' if environment is None else 'validated'}
         (STATE / 'current.json').write_text(json.dumps(receipt)); (STATE / 'current.json').chmod(0o600)
         return receipt
 

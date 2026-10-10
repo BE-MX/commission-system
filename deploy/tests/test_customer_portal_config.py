@@ -63,7 +63,7 @@ def test_unmatched_or_unverified_recovery_proof_rejects(tmp_path, changes):
         validate_proof(tmp_path, Connection(), [TARGET], TARGET)
 
 
-@pytest.mark.parametrize('content', ['export PORTAL_AUTH_SECRET=retained', 'portal_auth_secret=retained',
+@pytest.mark.parametrize('content', ['export PORTAL_AUTH_SECRET=retained', 'export\tPORTAL_AUTH_SECRET=retained', 'portal_auth_secret=retained',
     'PORTAL_AUTH_SECRET=one\nportal_auth_secret=two', 'PORTAL_AUTH_SECRET=one\nPORTAL_AUTH_SECRET=two'])
 def test_noncanonical_durable_key_rejected_before_generation(content):
     with pytest.raises(RuntimeError, match='Noncanonical'):
@@ -88,3 +88,9 @@ def test_case_insensitive_service_override_rejected(monkeypatch, key):
     monkeypatch.setattr(Path, 'read_bytes', lambda self: key + b'=true\0')
     with pytest.raises(RuntimeError, match='overrides'):
         service_environment()
+
+
+def test_closing_already_paused_backend_does_not_require_or_start_process(monkeypatch):
+    import customer_portal_config_remote as remote
+    monkeypatch.setattr(remote.subprocess, 'check_output', lambda *a, **k: '0')
+    assert service_environment(allow_stopped=True) is None
