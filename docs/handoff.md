@@ -1,5 +1,11 @@
 # 当前交接与待办
 
+## 2026-10-10 平台公告提醒（Codex，已实现验收，已授权合并推送，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/announcement-inbox/commission-system`，分支 `codex/announcement-inbox`。已接右上角铃铛、未读数量/光点、列表正文、渲染后自动已读、全部已读、移动端及空态；复用公告发布修订与库 ACL。
+- 新表/迁移 `182_announcement_reads` 当前接 main 的 180，用户 FK 为 INT UNSIGNED，阅读事实按用户/文档/修订唯一。其他分支已有 181，集成时再核对单 head；本次未操作共享或生产数据库。
+- SQLite 公告服务/提醒/迁移 40 passed，Node 提醒/导航 16 passed；实际隔离 HTTP 与 MainLayout 浏览器核心路径、320 窄屏/1024 短屏、空态和关闭焦点通过。独立审查两个问题已修复并补回归。构建和增量约定通过，既有警告保留；no-fetch 巡检 exit 0，仅本地快照，未处理其他分支。详见 [实现与验收](requirements/2026-10-10-announcement-inbox.md)。
+
 ## 2026-10-10 主站历史资源清理与部署保留机制（Codex，已合并推送部署）
 
 - 用户授权清理并修改保留机制，首次完整发布 `1864176c`，补充维护时限的最终生产候选 `5e1a3de9`。统一 `deploy/deploy.bat` 两轮均 exit 0，应用与 office / leshine.work / leshine.cloud 维护 succeeded，无迁移，schema 180。最新候选包含此前发票读取锁与出库打印规格修复；旧条目中的未部署状态为当时记录。

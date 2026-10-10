@@ -1630,6 +1630,11 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | GET / POST | `/categories` | 查询 / 新建类别目录 |
 | PUT | `/categories/{id}` | 名称、启用状态 |
 | GET / POST | 空路径 | 分页列表 / 新建草稿 |
+| GET | `/inbox/summary` | 当前用户可见公告总数与未读数 |
+| GET | `/inbox` | 已发布公告列表；unread_only、page、page_size（最多 100） |
+| GET | `/inbox/{document_id}` | 当前发布版本正文；纯读取，不更新已读 |
+| POST | `/inbox/{document_id}/read` | 正文展示后提交 revision_id，幂等标记当前用户已读 |
+| POST | `/inbox/read-all` | 标记当前用户此刻可见的发布版本全部已读 |
 | GET / PUT / DELETE | `/{document_id}` | 查看 / 保存版本 / 删除未发布草稿 |
 | GET | `/{document_id}/preview` | 保存版本的钉钉图文分片预览 |
 | POST | `/{document_id}/submit` | 提交审核（须已验证推送通道） |
@@ -1646,6 +1651,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 保存参数：title、content（Tiptap JSON）、category_id、base_revision_id（更新必需）、important、effective_at、expires_at、change_note。列表参数 q/category_id/status/page/page_size。审核中禁止改稿；已发布公告更新后，读者仍看上一发布版本。时间按北京时间保存。
 
 平台权限 `announcement:read/write/admin`；审批端点允许 `knowledge:review/knowledge:admin/announcement:admin`，仍需公告阅读权限和库审核 ACL。普通知识库接口不能修改 managed 公告库。
+
+公告提醒接口同样执行上述双重权限校验；未初始化返回空列表及零计数。仅统计未删除、未撤回且处于生效期内的当前发布修订，管理员也不会收到草稿。summary/read/read-all 返回 total、unread_count；inbox 返回 items、total（当前筛选数量）、announcement_count（所有可见数量）、unread_count。条目包含 id、revision_id、title、category_name、important、pinned、published_at、is_read，详情另含 content_json。阅读旧修订后重新发布为未读；提交过时 revision_id 返回 409，不误标新版本。时间统一北京时间。
 
 
 ### 发票客户等级与出库单金额
