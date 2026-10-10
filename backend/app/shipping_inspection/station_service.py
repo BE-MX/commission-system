@@ -198,6 +198,8 @@ def delete_media(db, login_id, session_id, media_id, edit_version, request_id):
 
 def submit(db, login_id, session_id, edit_version, request_id, remark, submitted_ids=None):
     session = session_for(db, login_id, session_id, allow_ended=True)
+    from app.invoice import shipment_inspection_service
+    shipment_inspection_service.lock_for_record(db, session.outbound_record_id)
     payload = {'edit_version': edit_version, 'remark': remark}
     prior = _replay(db, session, 'submit', request_id, payload)
     if prior is not None:

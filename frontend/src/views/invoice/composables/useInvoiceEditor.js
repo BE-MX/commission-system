@@ -615,6 +615,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const contextSeq = customerContextSeq
     await customerDefaultsPromise
     if (contextSeq !== customerContextSeq) return null
+    if (form.presale_edit_blocked_reason) { msgWarning(form.presale_edit_blocked_reason); return null }
     if (form.receipt_uploading) { msgWarning("请等待回款截图上传完成"); return null }
     if (form.receipt_proof_dirty) { msgWarning("请先保存回款截图变更"); return null }
     if (form.receipt_remark_editing || form.receipt_remark_saving) { msgWarning('请先保存或取消回款备注编辑'); return null }

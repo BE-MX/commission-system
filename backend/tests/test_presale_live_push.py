@@ -212,14 +212,11 @@ def _run_dispatch_probe(db, monkeypatch, root, marker, invoice, order_detail, fl
         "status": task.status, "error": task.last_error})
     assert task.status == "pending_remote" and task.remote_id and task.remote_line_snapshot
     db.refresh(settlement)
-    _record(root, "flow-confirm-intent.json", {"task_id": outbound_id,
-        "remote_id": task.remote_id, "version": settlement.version})
-    result = shipment_delivery.confirm(db, outbound_id, settlement.version, 1,
-                                       "Dedicated API probe; no physical shipment")
-    db.refresh(task)
-    _record(root, "flow-confirm-result.json", {"id": task.remote_id,
-        "status": result, "error": task.last_error})
-    assert result == "shipped" and task.status == "shipped"
+    _record(root, "flow-await-inspection.json", {"task_id": outbound_id,
+        "remote_id": task.remote_id, "version": settlement.version,
+        "status": task.status, "completion_source": "inspection_submitted"})
+    # This API probe has no physical inspection. Leave the supplier note draft.
+    assert settlement.state == "outbound_pending"
 
 
 def test_ark_created_presale_is_accepted_and_read_back_by_okki(db, monkeypatch, tmp_path, live_settings):

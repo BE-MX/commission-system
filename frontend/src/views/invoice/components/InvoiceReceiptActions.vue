@@ -59,7 +59,11 @@ const summary = ref(null), mode = ref(null), error = ref('')
 const receipt = computed(() => summary.value?.initial_receipt)
 const action = computed(() => receiptActionState(receipt.value))
 const projected = computed(() => summary.value?.balance ? projectReceiptBalance(summary.value.balance, props.total) : null)
-const blockedReason = computed(() => props.form.receipt_order_dirty ? '订单有未保存修改，请先保存并完成关联同步，再处理回款。' : summary.value?.action_blocked_reason)
+const blockedReason = computed(() => props.form.receipt_order_dirty
+  ? props.form.presale_edit_blocked_reason
+    ? '主单有未保存修改，当前批次未完成，暂不能保存。请关闭并重新打开订单，恢复已保存内容后，再按页脚指引处理回款。'
+    : '订单有未保存修改，请先保存并完成关联同步，再处理回款。'
+  : summary.value?.action_blocked_reason)
 const localBlocked = computed(() => loading.value || busy.value || dialogBusy.value || Boolean(props.form.receipt_order_dirty || props.form.receipt_uploading || props.form.receipt_proof_dirty || props.form.receipt_remark_editing || props.form.receipt_remark_saving))
 const writeBlocked = computed(() => localBlocked.value || remoteBusy.value || Boolean(blockedReason.value) || !summary.value?.balance)
 const managementUrl = computed(() => props.form.xiaoman_order_id

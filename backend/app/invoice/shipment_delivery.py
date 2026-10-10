@@ -23,23 +23,27 @@ from app.receipt import balance as receipt_balance, remote
 from app.receipt.models import Receipt
 from app.receipt.sync_service import refresh_accepted
 from app.shipping_inspection import outbound_presence
+from app.invoice import shipment_inspection_service as inspection_completion
 
 
 logger = logging.getLogger(__name__)
 
 
-def _funded(db, settlement):
-    applications = db.query(SettlementApplication, Receipt).join(
+def _funded(db, settlement, *, current=False):
+    query = db.query(SettlementApplication, Receipt).join(
         Receipt, Receipt.id == SettlementApplication.receipt_id).filter(
         SettlementApplication.settlement_id == settlement.id,
-        SettlementApplication.status != "released").all()
+        SettlementApplication.status != "released")
+    if current:
+        query = query.order_by(SettlementApplication.id, Receipt.id).populate_existing().with_for_update()
+    applications = query.all()
     expected = pools.required(settlement.quote)
     if sum((Decimal(app.amount) for app, _ in applications), Decimal(0)) != expected:
         return False
     if any(receipt.status != "active" or receipt.sync_status != "synced"
            or receipt.collect_status != 1 or receipt.last_error for _, receipt in applications):
         return False
-    balance = funding_balance(db, settlement)
+    balance = funding_balance(db, settlement, current=current)
     return (Decimal(balance["remaining_amount"]) == 0
             and Decimal(balance["effective_amount"]) == expected)
 
@@ -230,8 +234,9 @@ def refresh(db, outbound_id, *, confirmation_token=None):
             and outbound.lease_until > beijing_now()
             and outbound.attempt_token != confirmation_token):
         raise ValueError("实际出库确认仍在发送中，请稍后核对")
+    inspection_before = inspection_completion.snapshot(db, outbound)
     funding_ok = True
-    if str(detail.get("status")) == "2":
+    if inspection_before[1]:
         try:
             funding_ok = _refresh_funding(db, outbound.settlement_id)
             settlement_for_funding = db.get(ShipmentSettlement, outbound.settlement_id)
@@ -241,6 +246,7 @@ def refresh(db, outbound_id, *, confirmation_token=None):
         except Exception:
             db.rollback()
             funding_ok = False
+    db.commit()
     db.query(Invoice.id).filter(Invoice.id == outbound.invoice_id).with_for_update().one()
     db.refresh(outbound, with_for_update=True)
     settlement = db.get(ShipmentSettlement, outbound.settlement_id)
@@ -252,34 +258,17 @@ def refresh(db, outbound_id, *, confirmation_token=None):
         outbound.status = "uncertain"
         outbound.last_error = "小满分批出库身份或数量与冻结任务不一致，请核对原单"
         settlement.state = "outbound_uncertain"
-    elif str(detail["status"]) == "2" and not outbound.remote_line_snapshot:
-        outbound.status = "uncertain"
-        outbound.last_error = "小满首次回读已实际出库，缺少待出库明细 ID 和成本基线，请人工核查"
-        settlement.state = "outbound_uncertain"
-    elif str(detail["status"]) == "2":
-        outbound.status = "shipped" if funding_ok else "shipped_unfunded"
-        outbound.last_error = None if funding_ok else "小满已实际出库，但关联回款未通过实时核验，请立即核查"
-        outbound.verified_at = beijing_now()
-        settlement.state = "shipped" if funding_ok else "outbound_uncertain"
-        if funding_ok:
-            db.query(SettlementApplication).filter_by(settlement_id=settlement.id,
-                status="reserved").update({"status": "applied"})
-    elif outbound.status in {"shipped", "shipped_unfunded"}:
-        outbound.status = "uncertain"
-        outbound.last_error = "小满已出库单重新显示待出库，需人工核查，禁止再次确认"
-        settlement.state = "outbound_uncertain"
-    elif outbound.status in {"confirming", "confirm_uncertain"}:
-        outbound.status = "confirm_uncertain"
-        outbound.last_error = "实际出库请求结果待核对；小满当前仍显示待出库，禁止再次确认"
-        settlement.state = "outbound_uncertain"
-        outbound.verified_at = beijing_now()
     else:
-        outbound.status = "pending_remote"
-        outbound.last_error = None
-        outbound.verified_at = beijing_now()
-        settlement.state = "outbound_pending"
         if outbound.remote_line_snapshot is None:
             outbound.remote_line_snapshot = _line_snapshot(detail)
+        proof, complete = inspection_completion.snapshot(db, outbound, current=True)
+        if (proof, complete) != inspection_before:
+            db.rollback()
+            raise ValueError('检验状态在核验期间已变化，请刷新原批次')
+        if complete:
+            funding_ok = funding_ok and _funded(db, settlement, current=True)
+        inspection_completion.apply(db, outbound, settlement, complete,
+            funded=funding_ok, basis='inspection:' + proof, bump=False)
     outbound.version += 1
     settlement.version += 1
     db.commit()
@@ -295,120 +284,6 @@ def _fence(db, outbound_id, token):
     db.commit()
     if not count:
         raise ValueError("分批出库任务租约已失效，请核对原单")
-
-
-def _fence_confirm(db, outbound_id, token):
-    count = db.execute(update(ShipmentOutbound).where(
-        ShipmentOutbound.id == outbound_id, ShipmentOutbound.attempt_token == token,
-        ShipmentOutbound.status == "confirming", ShipmentOutbound.lease_until > beijing_now(),
-    ).values(lease_until=beijing_now() + timedelta(minutes=5),
-             version=ShipmentOutbound.version + 1)).rowcount
-    db.commit()
-    if not count:
-        raise ValueError("实际出库确认租约已失效，请核对原单")
-
-
-def confirm(db, outbound_id, expected_version, actor, reason):
-    """One explicit status-2 edit after rechecking funding and the pending note."""
-    require_delivery()
-    outbound = db.get(ShipmentOutbound, outbound_id)
-    if not outbound:
-        raise ValueError("出库任务不存在")
-    invoice_id = outbound.invoice_id
-    db.commit()
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
-    ensure_active(invoice)
-    db.refresh(outbound, with_for_update=True)
-    settlement = db.get(ShipmentSettlement, outbound.settlement_id)
-    db.refresh(settlement, with_for_update=True)
-    if (settlement.version != expected_version or settlement.state != "outbound_pending"
-            or outbound.status != "pending_remote" or not outbound.remote_id):
-        raise ValueError("出库任务已变化，请刷新后核对")
-    db.commit()
-
-    if not _refresh_funding(db, settlement.id) or not _funded(db, settlement):
-        raise ValueError("本批回款未全部生效，不能确认实际出库")
-    detail = remote.read(db, "/v1/invoices/outbound/info", {"outbound_invoice_id": outbound.remote_id})
-    token = okki_client.ensure_access_token(db)
-    if (not outbound_presence.is_active(token, outbound.remote_id, detail.get("create_time"))
-            or not _verify(outbound, detail) or str(detail.get("status")) != "1"):
-        raise ValueError("小满待出库单身份、数量或状态已变化，请先核对")
-    remote_lines = {str(item["order_record_id"]): item for item in detail["record_list"]}
-    if not outbound.remote_line_snapshot:
-        raise ValueError("小满待出库明细尚未完成首次核验，请先刷新")
-    edit_lines, remote_line_ids = [], set()
-    for frozen in outbound.payload["record_list"]:
-        baseline = outbound.remote_line_snapshot[str(frozen["order_record_id"])]
-        remote_line_id = str(remote_lines[str(frozen["order_record_id"])].get("outbound_record_id") or "")
-        if not remote_line_id.isdigit() or int(remote_line_id) <= 0 or remote_line_id in remote_line_ids:
-            raise ValueError("小满待出库明细缺少唯一 ID，不能确认实际出库")
-        remote_line_ids.add(remote_line_id)
-        edit_lines.append({**frozen, "outbound_record_id": int(remote_line_id),
-                           "cost_unit_price_rmb": float(Decimal(baseline["cost_unit_price_rmb"]))})
-    candidate = _live_candidate(db, invoice, settlement, pending=outbound)
-    if digest(candidate) != outbound.payload_hash:
-        raise ValueError("小满订单或关联出库已变化，不能确认实际出库")
-    db.commit()
-
-    db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
-    db.refresh(outbound, with_for_update=True)
-    db.refresh(settlement, with_for_update=True)
-    ensure_active(db.get(Invoice, invoice_id))
-    if (settlement.version != expected_version or settlement.state != "outbound_pending"
-            or outbound.status != "pending_remote"):
-        raise ValueError("出库任务已变化，请刷新后核对")
-    attempt = uuid4().hex
-    outbound.status = "confirming"
-    outbound.attempt_token = attempt
-    outbound.lease_until = beijing_now() + timedelta(minutes=30)
-    outbound.last_error = None
-    outbound.version += 1
-    db.add(SettlementEvent(settlement_id=settlement.id, action="confirm_outbound",
-                           actor_id=actor, reason=reason))
-    db.commit()
-    payload = {**outbound.payload, "record_list": edit_lines,
-               "outbound_invoice_id": int(outbound.remote_id),
-               "status": 2, "warehouse_invoice_time": beijing_now().strftime("%Y-%m-%d %H:%M:%S")}
-    sent = False
-
-    def before_send():
-        nonlocal sent
-        _fence_confirm(db, outbound_id, attempt)
-        sent = True
-
-    try:
-        result = okki_client.push_outbound(db, payload, before_send=before_send)
-        if str(result.get("outbound_invoice_id")) != outbound.remote_id:
-            raise okki_client.OkkiOutcomeUncertainError("实际出库返回了不同单号，请核对原单")
-        refresh(db, outbound_id, confirmation_token=attempt)
-    except Exception as exc:
-        db.rollback()
-        logger.warning("shipment confirmation failed id=%s (%s)", outbound_id, type(exc).__name__)
-        definite_rejection = (sent and isinstance(exc, okki_client.OkkiApiError)
-                              and not isinstance(exc, okki_client.OkkiOutcomeUncertainError))
-        if definite_rejection:
-            try:
-                current = remote.read(db, "/v1/invoices/outbound/info", {"outbound_invoice_id": outbound.remote_id})
-                active = outbound_presence.is_active(
-                    okki_client.ensure_access_token(db), outbound.remote_id, current.get("create_time"))
-                definite_rejection = active and _verify(outbound, current) and str(current.get("status")) == "1"
-            except Exception:
-                db.rollback()
-                definite_rejection = False
-        outbound = db.get(ShipmentOutbound, outbound_id)
-        if outbound and outbound.attempt_token == attempt and outbound.status == "confirming":
-            uncertain = sent and not definite_rejection
-            outbound.status = "confirm_uncertain" if uncertain else "pending_remote"
-            outbound.last_error = ("实际出库结果待核对，禁止再次确认" if uncertain
-                else "小满明确拒绝实际出库，请检查库存或权限后重试" if definite_rejection
-                else "实际出库尚未发送：" + str(exc)[:450])
-            outbound.lease_until = None
-            outbound.version += 1
-            settlement = db.get(ShipmentSettlement, outbound.settlement_id)
-            settlement.state = "outbound_uncertain" if uncertain else "outbound_pending"
-            settlement.version += 1
-            db.commit()
-    return db.get(ShipmentOutbound, outbound_id).status
 
 
 def deliver(db, outbound_id):

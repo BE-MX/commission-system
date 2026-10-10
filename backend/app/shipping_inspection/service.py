@@ -243,6 +243,8 @@ def submit(
     submitted_ids: list[int] | None = None,
 ) -> ShippingInspection:
     """提交验货：照片总数 ≥ 1；已提交幂等返回原单（request_id 靠状态幂等，不落库）。"""
+    from app.invoice import shipment_inspection_service as completion
+    outbound = completion.lock_for_record(db, outbound_record_id)
     inspection = _get_by_outbound_id(db, outbound_record_id)
     from app.shipping_inspection.outbound_sync_state import ensure_submission_ready
     sync_event = ensure_submission_ready(db, outbound_record_id, user_id, inspection) if inspection else None
@@ -252,6 +254,9 @@ def submit(
     if inspection is not None and inspection.edit_version != edit_version:
         raise ValueError("验货单已撤回更新，请重新扫码后提交")
     if inspection is not None and inspection.status == C.STATUS_SUBMITTED:
+        completion.sync_record(db, outbound, actor_id=user_id)
+        if commit:
+            _commit(db)
         return inspection
     count = _photo_count(db, inspection.id) if inspection is not None else 0
     if count < 1:
@@ -269,6 +274,7 @@ def submit(
     inspection.updated_by = user_id
     if sync_event and (sync_event.result or {}).get('required_recheck_ids'):
         sync_event.result = {**sync_event.result, 'required_recheck_ids': [], 'recheck_completed_at': str(beijing_now())}
+    completion.sync_record(db, outbound, actor_id=user_id)
     if commit:
         audit_service.record(db, 'submit', user_id, outbound_record_id, inspection=inspection)
         _commit(db)
@@ -285,6 +291,8 @@ def recall(db: Session, inspection_id: int, user_id: int, edit_version: int) -> 
     current = db.get(ShippingInspection, inspection_id)
     if current is None:
         raise ValueError("验货单不存在")
+    from app.invoice import shipment_inspection_service as completion
+    outbound = completion.lock_for_record(db, current.outbound_record_id)
     from app.shipping_inspection.outbound_sync_state import lock, ACTIVE
     sync_event = lock(db, current.outbound_record_id, user_id)
     if sync_event.action in ACTIVE:
@@ -302,6 +310,7 @@ def recall(db: Session, inspection_id: int, user_id: int, edit_version: int) -> 
     inspection.recalled_by = user_id
     inspection.updated_at = inspection.recalled_at
     inspection.updated_by = user_id
+    completion.sync_record(db, outbound, actor_id=user_id)
     audit_service.record(db, 'recall', user_id, inspection.outbound_record_id, inspection=inspection,
                          context={'source': 'pc', 'scope': f'pc:{user_id}'})
     _commit(db)

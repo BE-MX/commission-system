@@ -434,7 +434,7 @@ def test_next_batch_candidate_counts_existing_remote_outbound(db,presale,monkeyp
         shipment_delivery._live_candidate(db,presale,row)
 
 
-def test_partial_outbound_is_shipped_only_after_active_remote_status_two(db,presale,monkeypatch):
+def test_remote_status_two_alone_does_not_complete_inspection(db,presale,monkeypatch):
     from app.invoice import shipment_delivery
     row=make(db,presale,freight="0.00")
     payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
@@ -468,7 +468,7 @@ def test_partial_outbound_is_shipped_only_after_active_remote_status_two(db,pres
     state["status"]=2
     shipment_delivery.refresh(db,task.id)
     db.refresh(task); db.refresh(row)
-    assert task.status=="shipped" and row.state=="shipped"
+    assert task.status=="pending_remote" and row.state=="outbound_pending"
     shipment_delivery.deliver(db,task.id)
     assert len(sent)==1
 
@@ -509,104 +509,6 @@ def test_partial_outbound_unknown_result_cannot_send_again(db,presale,monkeypatc
     assert task.status=="uncertain" and row.state=="outbound_uncertain"
     shipment_delivery.deliver(db,task.id)
     assert len(sent)==1
-
-
-def test_actual_outbound_confirmation_is_explicit_and_exact(db,presale,monkeypatch):
-    from app.invoice import shipment_delivery
-    row=make(db,presale,freight="0.00")
-    payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
-        "order_record_id":11,"product_id":1,"sku_id":2,"outbound_count":4}]}
-    task=ShipmentOutbound(settlement_id=row.id,invoice_id=presale.id,
-        outbound_no=row.settlement_no,status="pending_remote",remote_id="401",
-        payload=payload,payload_hash=service.digest(payload),remote_line_snapshot={
-            "11":{"outbound_record_id":"501","cost_unit_price_rmb":"12.50"}})
-    row.state="outbound_pending"
-    db.add(task); db.commit()
-    monkeypatch.setattr(shipment_delivery,"require_delivery",lambda:None)
-    monkeypatch.setattr(shipment_delivery,"_refresh_funding",lambda *_args:True)
-    monkeypatch.setattr(shipment_delivery,"_funded",lambda *_args:True)
-    monkeypatch.setattr(shipment_delivery,"_live_funding",lambda *_args:None)
-    monkeypatch.setattr(shipment_delivery,"_live_candidate",lambda *_args,**_kwargs:payload)
-    monkeypatch.setattr(shipment_delivery.okki_client,"ensure_access_token",lambda *_args:"token")
-    monkeypatch.setattr(shipment_delivery.outbound_presence,"is_active",lambda *_args:True)
-    state={"status":1}
-    monkeypatch.setattr(shipment_delivery.remote,"read",lambda *_args:{
-        "outbound_invoice_id":"401","serial_id":row.settlement_no,
-        "status":state["status"],"create_time":"2026-09-23 12:00:00",
-        "record_list":[{**payload["record_list"][0],"outbound_record_id":"501",
-                        "cost_unit_price_rmb":"12.50"}]})
-    sent=[]
-    def push(_db,body,before_send):
-        before_send(); sent.append(body); state["status"]=2
-        return {"outbound_invoice_id":"401"}
-    monkeypatch.setattr(shipment_delivery.okki_client,"push_outbound",push)
-    assert shipment_delivery.confirm(db,task.id,row.version,1,"Verified physical release") == "shipped"
-    assert sent[0]["status"]==2 and sent[0]["outbound_invoice_id"]==401
-    assert sent[0]["record_list"][0]["outbound_record_id"]==501
-    assert sent[0]["record_list"][0]["cost_unit_price_rmb"]==12.5
-    assert len(sent)==1
-    with pytest.raises(ValueError,match="已变化"):
-        shipment_delivery.confirm(db,task.id,row.version,1,"Duplicate release")
-
-
-def test_ambiguous_actual_outbound_confirmation_never_reposts(db,presale,monkeypatch):
-    from app.invoice import okki_client, shipment_delivery
-    row=make(db,presale,freight="0.00")
-    payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
-        "order_record_id":11,"product_id":1,"sku_id":2,"outbound_count":4}]}
-    task=ShipmentOutbound(settlement_id=row.id,invoice_id=presale.id,
-        outbound_no=row.settlement_no,status="pending_remote",remote_id="401",
-        payload=payload,payload_hash=service.digest(payload),remote_line_snapshot={
-            "11":{"outbound_record_id":"501","cost_unit_price_rmb":"12.50"}})
-    row.state="outbound_pending"
-    db.add(task); db.commit()
-    monkeypatch.setattr(shipment_delivery,"require_delivery",lambda:None)
-    monkeypatch.setattr(shipment_delivery,"_refresh_funding",lambda *_args:True)
-    monkeypatch.setattr(shipment_delivery,"_funded",lambda *_args:True)
-    monkeypatch.setattr(shipment_delivery,"_live_candidate",lambda *_args,**_kwargs:payload)
-    monkeypatch.setattr(shipment_delivery.okki_client,"ensure_access_token",lambda *_args:"token")
-    monkeypatch.setattr(shipment_delivery.outbound_presence,"is_active",lambda *_args:True)
-    monkeypatch.setattr(shipment_delivery.remote,"read",lambda *_args:{
-        "outbound_invoice_id":"401","serial_id":row.settlement_no,
-        "status":1,"create_time":"2026-09-23 12:00:00",
-        "record_list":[{**payload["record_list"][0],"outbound_record_id":"501",
-                        "cost_unit_price_rmb":"12.50"}]})
-    sent=[]
-    def push(_db,body,before_send):
-        before_send(); sent.append(body)
-        raise okki_client.OkkiOutcomeUncertainError("timeout")
-    monkeypatch.setattr(shipment_delivery.okki_client,"push_outbound",push)
-    assert shipment_delivery.confirm(db,task.id,row.version,1,"Verified physical release") == "confirm_uncertain"
-    assert db.get(ShipmentSettlement,row.id).state=="outbound_uncertain"
-    with pytest.raises(ValueError,match="已变化"):
-        shipment_delivery.confirm(db,task.id,row.version,1,"Duplicate release")
-    assert len(sent)==1
-
-
-def test_actual_outbound_edit_needs_existing_remote_line_id(db,presale,monkeypatch):
-    from app.invoice import shipment_delivery
-    row=make(db,presale,freight="0.00")
-    payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
-        "order_record_id":11,"product_id":1,"sku_id":2,"outbound_count":4}]}
-    task=ShipmentOutbound(settlement_id=row.id,invoice_id=presale.id,
-        outbound_no=row.settlement_no,status="pending_remote",remote_id="401",
-        payload=payload,payload_hash=service.digest(payload),remote_line_snapshot={
-            "11":{"outbound_record_id":"501","cost_unit_price_rmb":"12.50"}})
-    row.state="outbound_pending"; db.add(task); db.commit()
-    monkeypatch.setattr(shipment_delivery,"require_delivery",lambda:None)
-    monkeypatch.setattr(shipment_delivery,"_refresh_funding",lambda *_args:True)
-    monkeypatch.setattr(shipment_delivery,"_funded",lambda *_args:True)
-    monkeypatch.setattr(shipment_delivery.okki_client,"ensure_access_token",lambda *_args:"token")
-    monkeypatch.setattr(shipment_delivery.outbound_presence,"is_active",lambda *_args:True)
-    monkeypatch.setattr(shipment_delivery.remote,"read",lambda *_args:{
-        "outbound_invoice_id":"401","serial_id":row.settlement_no,
-        "status":1,"create_time":"2026-09-23 12:00:00",
-            "record_list":[{**payload["record_list"][0],"cost_unit_price_rmb":"12.50"}]})
-    sent=[]
-    monkeypatch.setattr(shipment_delivery.okki_client,"push_outbound",lambda *_args,**_kwargs:sent.append(True))
-    with pytest.raises(ValueError,match="已变化"):
-        shipment_delivery.confirm(db,task.id,row.version,1,"Checked stock")
-    assert sent==[]
 
 
 def test_paused_presale_batch_cannot_release_send_or_retry_payment(db,presale,monkeypatch):
@@ -721,9 +623,10 @@ def test_outbound_readback_rejects_price_unit_and_cost_changes():
         assert not shipment_delivery._verify(task,changed), field
 
 
-def test_remote_shipped_with_invalid_funding_stays_blocked(db,presale,monkeypatch):
+def test_submitted_inspection_with_invalid_funding_stays_blocked(db,presale,monkeypatch):
     from app.invoice import shipment_delivery
     row=make(db,presale,freight="0.00")
+    monkeypatch.setattr(shipment_delivery.inspection_completion,"snapshot",lambda *_args,**_kwargs:("test-inspection",True))
     payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
         "order_record_id":11,"product_id":1,"sku_id":2,"outbound_count":4}]}
     task=ShipmentOutbound(settlement_id=row.id,invoice_id=presale.id,
@@ -745,7 +648,7 @@ def test_remote_shipped_with_invalid_funding_stays_blocked(db,presale,monkeypatc
         make(db,presale,key="shipment_request_after_unfunded")
 
 
-def test_status_two_requires_a_prior_pending_line_baseline(db,presale,monkeypatch):
+def test_status_two_without_inspection_captures_baseline_and_keeps_pending(db,presale,monkeypatch):
     from app.invoice import shipment_delivery
     row=make(db,presale,freight="0.00")
     payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
@@ -763,9 +666,11 @@ def test_status_two_requires_a_prior_pending_line_baseline(db,presale,monkeypatc
         "outbound_invoice_id":"401","serial_id":row.settlement_no,"status":2,
         "record_list":[{**payload["record_list"][0],"outbound_record_id":"501",
                         "cost_unit_price_rmb":"2.50"}]})
-    assert shipment_delivery.refresh(db,task.id)=="uncertain"
-    assert db.get(ShipmentSettlement,row.id).state=="outbound_uncertain"
+    assert shipment_delivery.refresh(db,task.id)=="pending_remote"
+    assert db.get(ShipmentSettlement,row.id).state=="outbound_pending"
 
+
+    assert task.remote_line_snapshot["11"]["outbound_record_id"] == "501"
 
 def test_status_two_funding_reconciles_all_active_remote_receipts(db,presale,monkeypatch):
     from app.invoice import shipment_delivery
@@ -799,7 +704,7 @@ def test_remote_list_pending_status_blocks_outbound_even_if_receipt_detail_is_ef
         shipment_delivery._live_funding(db,presale,row)
 
 
-def test_shipped_outbound_cannot_reopen_when_remote_returns_to_pending(db,presale,monkeypatch):
+def test_missing_inspection_reopens_completed_batch_without_resending(db,presale,monkeypatch):
     from app.invoice import shipment_delivery
     row=make(db,presale,freight="0.00")
     payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
@@ -815,8 +720,8 @@ def test_shipped_outbound_cannot_reopen_when_remote_returns_to_pending(db,presal
         "outbound_invoice_id":"401","serial_id":row.settlement_no,"status":1,
         "record_list":[{**payload["record_list"][0],"outbound_record_id":"501",
                         "cost_unit_price_rmb":"2.50"}]})
-    assert shipment_delivery.refresh(db,task.id)=="uncertain"
-    assert db.get(ShipmentSettlement,row.id).state=="outbound_uncertain"
+    assert shipment_delivery.refresh(db,task.id)=="pending_remote"
+    assert db.get(ShipmentSettlement,row.id).state=="outbound_pending"
 
 
 def test_prior_shipped_receipt_losing_effective_status_blocks_next_batch(db,presale):
@@ -885,40 +790,6 @@ def test_active_confirmation_lease_cannot_be_stolen_by_refresh(db,presale,monkey
     db.rollback(); db.refresh(task)
     assert task.status=="confirming" and task.attempt_token=="attempt"
     assert task.remote_id=="401"
-
-
-def test_explicit_outbound_edit_rejection_can_be_retried_after_exact_readback(db,presale,monkeypatch):
-    from app.invoice import okki_client, shipment_delivery
-    row=make(db,presale,freight="0.00")
-    payload={"serial_id":row.settlement_no,"record_list":[{"order_id":100,
-        "order_record_id":11,"product_id":1,"sku_id":2,"outbound_count":4,
-        "sale_price":10,"product_unit":"Piece"}]}
-    task=ShipmentOutbound(settlement_id=row.id,invoice_id=presale.id,
-        outbound_no=row.settlement_no,status="pending_remote",remote_id="401",
-        payload=payload,payload_hash=service.digest(payload),remote_line_snapshot={
-            "11":{"outbound_record_id":"501","cost_unit_price_rmb":"2.50"}})
-    row.state="outbound_pending"; db.add(task); db.commit()
-    monkeypatch.setattr(shipment_delivery,"require_delivery",lambda:None)
-    monkeypatch.setattr(shipment_delivery,"_refresh_funding",lambda *_:True)
-    monkeypatch.setattr(shipment_delivery,"_funded",lambda *_:True)
-    monkeypatch.setattr(shipment_delivery,"_live_candidate",lambda *_args,**_kwargs:payload)
-    monkeypatch.setattr(okki_client,"ensure_access_token",lambda *_:"token")
-    monkeypatch.setattr(shipment_delivery.outbound_presence,"is_active",lambda *_:True)
-    monkeypatch.setattr(shipment_delivery.remote,"read",lambda *_args:{
-        "outbound_invoice_id":"401","serial_id":row.settlement_no,"status":1,
-        "record_list":[{**payload["record_list"][0],"outbound_record_id":"501",
-                        "cost_unit_price_rmb":"2.50"}]})
-    attempts=[]
-    def reject(_db,body,before_send):
-        before_send(); attempts.append(body)
-        raise okki_client.OkkiApiError("stock rejected")
-    monkeypatch.setattr(okki_client,"push_outbound",reject)
-    assert shipment_delivery.confirm(db,task.id,row.version,1,"Checked stock") == "pending_remote"
-    db.refresh(row); db.refresh(task)
-    assert row.state=="outbound_pending" and len(attempts)==1
-    assert "明确拒绝" in task.last_error
-    assert shipment_delivery.confirm(db,task.id,row.version,1,"Stock restored") == "pending_remote"
-    assert len(attempts)==2
 
 
 def test_failed_outbound_retry_requires_exact_serial_absence(db,presale,monkeypatch):

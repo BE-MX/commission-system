@@ -178,16 +178,6 @@ def _change(db, identity, body, user, action):
         shipment_state_service.result_unavailable(error)
 
 
-@shipment_state_router.post("/shipments/{identity}/confirm-outbound")
-def confirm_outbound(identity: int, body: SettlementAction, db: Session = Depends(get_db),
-                     user=Depends(get_current_user)):
-    from app.invoice import shipment_confirmation_service,shipment_state_service
-    try:
-        return execute(db, lambda: shipment_confirmation_service.confirm(db,identity,body,user))
-    except SQLAlchemyError as error:
-        shipment_state_service.result_unavailable(error)
-
-
 @shipment_state_router.post("/shipments/{identity}/reconcile-freight")
 def reconcile_freight(identity: int, body: SettlementRemoteReview,
                       db: Session = Depends(get_db), user=Depends(get_current_user)):

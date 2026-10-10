@@ -8,17 +8,20 @@
       <span class="summary-operator">→</span>
       <span class="summary-chip total">应付合计 <strong>{{ form.currency }} {{ money(total) }}</strong></span>
     </div>
-    <div class="footer-actions">
-      <el-button @click="$emit('cancel')">取消</el-button>
-      <!-- 无同步权限时「保存」升为主按钮，避免抽屉底部没有主操作 -->
-      <el-button v-permission="'invoice:write'" :type="canSync && !syncBlocked ? '' : 'primary'" :disabled="syncBlocked" @click="$emit('save')">保存</el-button>
-      <el-tooltip :disabled="!syncBlocked" :content="syncBlockedReason">
-        <span>
-          <el-button v-permission="'invoice:sync'" type="primary" :disabled="syncBlocked" :loading="syncing" @click="$emit('sync')">
-            {{ syncing ? '保存并同步中' : '保存并同步' }}
-          </el-button>
-        </span>
-      </el-tooltip>
+    <div class="footer-controls">
+      <p v-if="blockedReason" class="footer-note" role="status">{{ blockedReason }}</p>
+      <div class="footer-actions">
+        <el-button @click="$emit('cancel')">取消</el-button>
+        <!-- 无同步权限时「保存」升为主按钮，避免抽屉底部没有主操作 -->
+        <el-button v-permission="'invoice:write'" :type="canSync && !writeBlocked ? '' : 'primary'" :disabled="writeBlocked" @click="$emit('save')">保存</el-button>
+        <el-tooltip :disabled="!writeBlocked" :content="blockedReason">
+          <span>
+            <el-button v-permission="'invoice:sync'" type="primary" :disabled="writeBlocked" :loading="syncing" @click="$emit('sync')">
+              {{ syncing ? '保存并同步中' : '保存并同步' }}
+            </el-button>
+          </span>
+        </el-tooltip>
+      </div>
     </div>
   </div>
 </template>
@@ -27,7 +30,7 @@
 import { computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
-defineProps({
+const props = defineProps({
   form: { type: Object, required: true },
   total: { type: Number, required: true },
   baseAmount: { type: Number, required: true },
@@ -39,6 +42,8 @@ defineProps({
 defineEmits(['cancel', 'save', 'sync'])
 
 const canSync = computed(() => useAuthStore().hasPermission('invoice:sync'))
+const writeBlocked = computed(() => props.syncBlocked || Boolean(props.form.presale_edit_blocked_reason))
+const blockedReason = computed(() => props.form.presale_edit_blocked_reason || (props.syncBlocked ? props.syncBlockedReason : ''))
 </script>
 
 <style scoped>
@@ -55,5 +60,7 @@ const canSync = computed(() => useAuthStore().hasPermission('invoice:sync'))
 .summary-divider { color: var(--text-muted); }
 .chip-note { margin-left: 5px; color: var(--text-muted); font-size: 11px; font-style: normal; }
 .footer-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.footer-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: 480px; }
+.footer-note { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 @media (max-width: 900px) { .drawer-footer { align-items: stretch; flex-direction: column; } }
 </style>

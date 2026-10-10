@@ -1,5 +1,20 @@
 # 当前交接与待办
 
+## 2026-10-10 预售出库完成改用检验提交（Codex，本地实现，未部署）
+
+- 用户明确：小满出库单持续草稿，方舟以对应检验 `submitted` 判定出库完成；撤回后恢复未完成。沿用 `codex/presale-receipt-guard` 工作树。新增共享检验证据/状态服务，按镜像记录 ID 与真实 outbound_invoice_id 精确桥接并核对客户及冻结行数量；提交/撤回、后台回读、管理员补绑、前批校验与主单编辑限制采用同一口径。
+- 提交先锁 Invoice，再锁同步事件与检验，状态和资金应用同事务。撤回保留 applied 资金占用/冻结明细，恢复 pending_remote/outbound_pending，不释放资金、不重新派发；资金核验异常仍隔离。锁外证据捕获包含检验轮次，最终变化拒绝应用。已提交的历史 pending_remote 由原刷新队列回补，无迁移或生产数据脚本。
+- 删除旧确认按钮、confirm-outbound 路由与两条 status=2 发送实现；历史确认载荷只用于原事实解码，恢复记录继续保留，检验 shipped 不制造永久远端出库证明。出库结算显示“待提交检验”，允许只读核对待检验/完成的原单。原 live API probe 到草稿出库即结束，不伪造物理检验。
+- 定向 SQLite 156 passed（该次新增完成测试 7 项）；补充生产 autoflush=False、历史回补、无效资金、撤回竞态、旧入口移除、管理员补绑和历史未发送事实恢复后，完成测试独立 14 passed。真实 MySQL 8.4.6 REPEATABLE READ / autoflush=False 隔离进程并发 2 passed：双提交只应用一次、资金读取间另一连接撤回不被覆盖。扩大资金升级/历史行/检验及预售回归 227 passed（与完成测试覆盖重叠，不累加）；Node 26 passed；前端 build 通过。独立审查发现补绑需按拟绑定 remote_id 捕获检验证据，已修复且实际 reconcile 回归通过；两处修复独立复验 2 passed。
+- 未提交、推送、合并、部署；未操作生产单据或小满写接口。MySQL 证据位于本工作树 tmp/inspection-mysql-02（进程已退出），构建日志 tmp/presale-inspection-build.log，回归日志 tmp/presale-inspection-pytest.log。约定检查通过，Git 巡检 --no-fetch exit 0（仅本地快照）；临时测试目录 01/02 的删除被工具策略拦截，进程已退出，保留目录与证据，未绕过删除限制。历史 opt-in 确认发送套件描述的是已撤除接口，不作为新行为验收；本轮未运行整套客户门户或线上浏览器。
+
+## 2026-10-10 预售收款与主单保存入口区分（Codex，本地修复，未部署）
+
+- 用户确认 Veronika 提示发生在底部“保存/保存并同步”，并非独立“登记预售收款”。活动发货结算禁止改主单是正确保护；V2 新增资金池收款继续允许，提交后无需再保存主单。
+- 工作树 `C:/Users/windb/.codex/worktrees/presale-receipt-guard/commission-system`，分支 `codex/presale-receipt-guard`。详情返回只读 `presale_edit_blocked_reason`，现代页脚提前显示原因并禁用主单保存/同步，composable 也在请求前阻断。V1 指向原批补款，V2 说明独立收款入口；不改现金事实、占用、幂等或出库规则，无迁移。
+- 隔离 SQLite 后端 58 passed，Node/Vue 编译渲染及编辑器回归 32 passed，前端构建通过（既有 chunk/混合导入警告）。增量约定和 diff 检查通过；Git 巡检 `--no-fetch` 仅本地快照，其他分支未处理。未操作生产原单、提交、推送或部署；真实线上点击路径未验证。
+- 独立审查通过，修正 V1 未保存修改提示，不引导其走禁止的资金池登记。独立复验后端 9、Node 18 passed（与上述覆盖重叠，不相加）。字段不进入保存 payload/dirty signature，跨单 reset 清空；批次在其他窗口结束后需重新打开订单刷新状态。未验证真实浏览器布局。
+
 ## 2026-10-10 主站历史资源清理与部署保留机制（Codex，已合并推送部署）
 
 - 用户授权清理并修改保留机制，首次完整发布 `1864176c`，补充维护时限的最终生产候选 `5e1a3de9`。统一 `deploy/deploy.bat` 两轮均 exit 0，应用与 office / leshine.work / leshine.cloud 维护 succeeded，无迁移，schema 180。最新候选包含此前发票读取锁与出库打印规格修复；旧条目中的未部署状态为当时记录。

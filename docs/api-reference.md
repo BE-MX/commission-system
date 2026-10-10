@@ -88,7 +88,13 @@
 | POST | `/ai/draft` | write | 一句话生成可编辑草稿；失败时降级 |
 | GET | `/brief/today` | read/write | 获取或生成今日简报，不发送通知 |
 
-## 当前实施：原确认恢复和安全回执（v1.56）
+## 2026-10-10 预售出库完成依据（本地实现，未部署）
+
+预售分批出库以准确对应出库单的发货检验 `submitted` 为方舟完成依据，小满出库单可持续为草稿 `status=1`。检验通过镜像记录 ID → `outbound_invoice_id` → 本地冻结出库任务关联，核对客户、订单行、产品、SKU、数量及重新检验要求；不按单号模糊匹配。提交与撤回在同一事务同步本地批次。撤回恢复 `pending_remote/outbound_pending`，阻止修改主单和安排下一批，保留原冻结明细及款项占用；重新提交恢复完成。原资金有效性保护保留，异常为 `shipped_unfunded/outbound_uncertain`，不释放资金或重复建单。
+
+后台刷新回补历史已提交检验的批次，并与 `/shipments/{id}/reconcile-outbound`、主单保存和后续批次校验采用相同依据。锁外核对期间检验撤回或版本变化，最终提交拒绝旧证据。`POST /api/shipments/{id}/confirm-outbound` 已移除（404），前端不再提供“确认实际出库”；不向小满发送确认 `status=2`。历史确认日志与原未知请求的核对仍保留，检验完成不生成远端不可逆出库证明。以下 v1.53–v1.56 段落仅为历史契约，确认写接口已由此段替代。
+
+## 历史实施：原确认恢复和安全回执（v1.56）
 
 confirm-outbound/reconcile-outbound沿用version/reason，ok(data)，无新服务端幂等键；动作/实际Invoice财务范围及原发货条件不变。GET安全outbound.confirmation只读八字段，不创建proof/FINISH，不证明原未知请求未发送。前端共享恢复选项不自动401跳转，scope拒绝隐藏内容且保原actor/完整目标/body。
 
@@ -191,6 +197,7 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 - `/api/receipts/order-balance/{id}`、`invoice-summary/{id}` 预售返回 `funding_mode=presale_pool`、`pool_available_amount`、逐款 `pool_balances`（`remaining_amount/remaining_charge/remaining_principal/effective`）以及存在时的 `active_settlement`（含 `funding_version`）。
 - `PATCH /api/receipts/{identity}/presale-purpose`：`receipt:write` 或 `receipt:admin` 加实际订单范围，body `{version,purpose,reason}`，原因至少10字。仅已核验生效、未占用的预售定金/预付货款可改；有活动结算先处理原批。保留金额、费用、日期、凭证和远端ID，记录审计，不重推收款。
 - 预售详情items为当前产品，另返回 `presale_history`（历史实际已发数量金额）和 `ledger_total_amount`。当期导出及金额一致；原产品和结算快照保留。远端未核验、资金不够或引用异常仍阻止出库派发。
+- 2026-10-10 本地修复（未部署）：编辑详情增加 `presale_edit_blocked_reason`，无活动批次为 null。活动批次时提前解释主单不能保存/同步；V2 引导独立“登记预售收款”，V1 引导原批次补款。此只读提示不授予收款权限、不替代提交时的状态核验，底部保存不登记新增收款。
 
 ## 临时战报（2026-09-22，本地实现，迁移 162）
 
