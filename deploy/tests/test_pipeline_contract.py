@@ -56,7 +56,10 @@ def test_remote_command_is_ascii_and_passes_payload_on_stdin(monkeypatch):
     assert args[0] == "ssh" and "ConnectionAttempts=3" in args
     assert args[-1].isascii()
     code, request = command.call_args.kwargs["input"].split("\n", 1)
-    assert base64.b64decode(code) == (static_sync.HERE / "remote_static.py").read_bytes()
+    source = base64.b64decode(code)
+    assert source.endswith((static_sync.HERE / "remote_static.py").read_bytes())
+    assert b"sys.modules['static_retention']" in source
+    assert base64.b64encode((static_sync.HERE / 'static_retention.py').read_bytes()) in source
     assert json.loads(request) == payload
 
 
@@ -76,6 +79,13 @@ def test_backend_uses_streamed_script_and_rejects_remote_failure(monkeypatch):
         cloud_backend.invoke(request)
 
 
+def test_static_failure_reports_remote_cause(monkeypatch):
+    monkeypatch.setattr(static_sync, 'remote_python', Mock(return_value=subprocess.CompletedProcess(
+        [], 1, '', 'Protected browser asset missing')))
+    with pytest.raises(RuntimeError, match='Protected browser asset missing'):
+        static_sync.remote('example.test', {'action': 'retention'})
+
+
 def test_unchanged_static_does_not_upload(tmp_path, monkeypatch):
     (tmp_path / "index.html").write_text("ready")
     monkeypatch.setattr(static_sync, "remote", Mock(return_value={
@@ -88,6 +98,8 @@ def test_unchanged_static_does_not_upload(tmp_path, monkeypatch):
 
 @pytest.fixture
 def pipeline(tmp_path, monkeypatch):
+    import static_retention_release
+    monkeypatch.setattr(static_retention_release, 'run', Mock(return_value={'status': 'succeeded'}))
     monkeypatch.setattr(okki_outbound_release,'pause_registered',Mock())
     (tmp_path / "deploy").mkdir()
     (tmp_path / "deploy/platforms.json").write_text(json.dumps({
@@ -536,6 +548,28 @@ def test_guard_install_failure_never_starts_backend_or_marks_success(pipeline):
     cloud_backend.activate.assert_not_called()
     assert not (pipeline.state / 'publish-success.json').exists()
     assert json.loads((pipeline.state / 'publish-current.json').read_text())['status'] != 'succeeded'
+
+
+def test_retention_failure_preserves_verified_application_success(pipeline, monkeypatch):
+    import static_retention_release
+    def fail(*args, **kwargs):
+        assert json.loads((pipeline.state / 'publish-current.json').read_text())['status'] == 'succeeded'
+        raise RuntimeError('Retention failed')
+    monkeypatch.setattr(static_retention_release, 'run', fail)
+    with pytest.raises(RuntimeError, match='Retention failed'):
+        publish.publish(pipeline.args)
+    journal = json.loads((pipeline.state / 'publish-current.json').read_text())
+    assert journal['status'] == 'succeeded'
+    assert 'Retention failed' in journal['static_retention_error']
+
+
+def test_prepare_only_never_runs_retention(pipeline, monkeypatch):
+    import static_retention_release
+    retention = Mock()
+    monkeypatch.setattr(static_retention_release, 'run', retention)
+    pipeline.args.prepare_only = True
+    publish.publish(pipeline.args)
+    retention.assert_not_called()
 
 
 @pytest.mark.parametrize('field,value',[('release_confirmed',False),('database_fingerprint','f'*64),

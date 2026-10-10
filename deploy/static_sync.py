@@ -19,7 +19,8 @@ def run(args, **kwargs):
 
 def remote(target, request):
     result = remote_python(target, HERE / "remote_static.py", request, sudo=True)
-    result.check_returncode()
+    if result.returncode:
+        raise RuntimeError('Static ' + request['action'] + ' failed for ' + target + ': ' + result.stderr[-3000:])
     return json.loads(result.stdout)
 
 
@@ -27,7 +28,16 @@ def remote_python(target, script, request, *, sudo=False, timeout=300):
     # Windows SSH launchers truncate long command arguments. Stream the source
     # separately from JSON; the executed script continues reading the same stdin.
     command = ("sudo -n " if sudo else "") + "python3 -c 'import base64,sys;exec(base64.b64decode(sys.stdin.readline()))'"
-    payload = base64.b64encode(script.read_bytes()).decode() + "\n" + json.dumps(request)
+    source = script.read_bytes()
+    if script.name == 'remote_static.py':
+        # The remote helper runs from stdin; ship its shared retention module too.
+        helper = base64.b64encode((HERE / 'static_retention.py').read_bytes()).decode()
+        loader = ("import base64,sys,types\n"
+                  "_retention=types.ModuleType('static_retention')\n"
+                  "sys.modules['static_retention']=_retention\n"
+                  f"exec(base64.b64decode({helper!r}),_retention.__dict__)\n")
+        source = loader.encode() + source
+    payload = base64.b64encode(source).decode() + "\n" + json.dumps(request)
     return subprocess.run(["ssh", *SSH_OPTIONS, target, command], input=payload,
                           text=True, capture_output=True, timeout=timeout)
 
@@ -63,6 +73,8 @@ def prepare(source, target, root, state, host):
         remote_archive = "/tmp/ark-static-" + result["artifact"] + ".tar.gz"
         run(["scp", *SSH_OPTIONS, str(archive), target + ":" + remote_archive], timeout=300)
         remote(target, {**common, "action": "stage", "archive": remote_archive})
+    elif result.get('staged') and result['active_artifact'] != result['artifact']:
+        remote(target, {**common, 'action': 'prepared'})
     print(f"  {target}:{root}: {len(result['missing'])} changed files, {transferred} transfer bytes, staged={result.get('staged', False)}", flush=True)
     common["expected"] = result["active_artifact"]
     return {"target": target, "request": common, "bytes": transferred}

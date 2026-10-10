@@ -79,7 +79,7 @@ deploy\deploy.bat --shipping-video-routing-only
 - 本地源码以内容及 Node 版本计算构建指纹；相同输入复用同一制品。扩展包缓存也复用，避免仅因打包时间变化导致全站重建。
 - 每个云目标一次计算 SHA-256 清单，变化文件打成一个包传输。未变文件零传输，不按单文件重复建立 SSH。
 - 制品全部校验后才切换。首次发布用 Linux `renameat2` 原子地将原 Nginx 根目录换成受管符号链接；Nginx 原配置与别名仍指向相同路径。
-- `assets/` 中历史文件追加保留；同名不同内容阻断，防止破坏仍打开的页面。当前不自动清理历史版本。
+- 应用发布成功后自动保留当前版本、最近两份回滚备份与最近 7 天退役版本的 `assets/`；同名不同内容阻断。旧版本首次过渡、未激活候选保护、独立清理与回执见 [主站静态资源保留](static-retention.md)。
 - 切换后通过本机 HTTPS、真实域名和证书验证 Nginx 返回的 index.html 摘要；失败恢复旧指针。
 - 后端依赖在候选环境中安装；启动失败且 schema 未变化时回退代码/环境。数据库变更后失败保持停止，不能自动将旧代码接回新 schema。
 
@@ -137,7 +137,7 @@ COS 公共文件规则会在受管 `ARK STORAGE PUBLIC ROUTING` 块内增加 `lo
 
 2026-09-15 的 `520c22ca` 安装目录启动部署 `7efe0cf0` 时，旧进程的预检只算出 152，候选迁移 runner 则正确算出美颜分支 146 + 152。记录为 `failed` / `restored-before-ddl`、writers 与 stopped 均为空；取到新源码不等于当前 Python 进程已加载新部署器。
 
-这种情况可从已审查、固定版本的受管候选启动同一个 `deploy.bat`，显式传 `--live-root`。候选必须位于 `<live>/.deploy_state/sources/<完整 SHA>`，且 SHA 与 `--revision` 一致；仅支持普通完整发布及其 `--prepare-only`，不用于部分发布或迁移事故恢复。全部部署模块取自候选，服务目录、状态、锁和 DBA 凭据仍使用安装目录。不要先更新正在运行的业务 checkout，也不要删除迁移日志。
+这种情况可从已审查、固定版本的受管候选启动同一个 `deploy.bat`，显式传 `--live-root`。候选必须位于 `<live>/.deploy_state/sources/<完整 SHA>`，且 SHA 与 `--revision` 一致；支持普通完整发布及其 `--prepare-only`，以及独立 `--static-retention-only` 维护，不用于部分发布或迁移事故恢复。全部部署模块取自候选，服务目录、状态、锁和 DBA 凭据仍使用安装目录。不要先更新正在运行的业务 checkout，也不要删除迁移日志。
 
 ```powershell
 # 候选提交须已安全传入本机 Git 并准备为受管 worktree。

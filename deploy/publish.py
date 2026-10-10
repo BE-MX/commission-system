@@ -306,6 +306,15 @@ def publish(args):
         atomic_json(STATE / "publish-success.json", summary)
         journal["status"] = "succeeded"
         atomic_json(STATE / "publish-current.json", journal)
+        from static_retention_release import run as retain_static
+        try:
+            summary['static_retention'] = step('static-retention', '清理过期前端资源与回滚备份',
+                                               retain_static, live, ROOT, include_office=bool(office))
+        except Exception as error:
+            journal['static_retention_error'] = type(error).__name__ + ': ' + str(error)
+            atomic_json(STATE / 'publish-current.json', journal)
+            raise
+        atomic_json(STATE / 'publish-success.json', summary)
         emit("result", status="succeeded", revision=revision, completed=journal["completed"],
              unmanaged_services=summary["unmanaged_services"], deferred=journal["deferred"])
         print("CLOUD RELEASE COMPLETED (office not included)" if args.cloud_only else "MANAGED APPLICATION RELEASE COMPLETED")
@@ -318,6 +327,7 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument('--static-retention-only', action='store_true', help='Prune expired main-frontend assets and backups without restarting applications')
     parser.add_argument('--colorwork-backup-policy', action='store_true', help='Install hourly retention of two recent Colorwork recovery backups')
     parser.add_argument('--agent-cloud-migration', choices=['prepare', 'validate-staged', 'freeze-source', 'copy-frozen-state', 'configure-target', 'activate-target', 'verify-target', 'retire-source', 'nginx-prepare', 'nginx-activate', 'nginx-verify', 'source-routes-prepare', 'source-routes-activate', 'source-routes-verify'], help='Execute one journalled phase of the inspected Agent migration')
     parser.add_argument('--storage-maintenance', metavar='PLAN_JSON', help='Freeze/restore API ingress and direct office LAN access')
@@ -348,6 +358,10 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if args.static_retention_only:
+            from static_retention_release import execute
+            print(json.dumps(execute(args, ROOT, Path(__file__).resolve().parent.parent, deployment_lock)), flush=True)
+            sys.exit(0)
         if args.okki_sync_only:
             if any(value for key, value in vars(args).items() if key not in {'okki_sync_only', 'prepare_only'}):
                 raise RuntimeError('Outbound mirror release only accepts its plan and --prepare-only')
@@ -460,12 +474,13 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if any(getattr(locals().get('args'), key, None) for key in ['okki_sync_only', 'mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
+        if any(getattr(locals().get('args'), key, None) for key in ['static_retention_only', 'okki_sync_only', 'mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
         if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
             journal = marker("publish-current")
-            journal.update(status="failed", error_type=type(error).__name__)
+            if journal.get('status') != 'succeeded':
+                journal.update(status="failed", error_type=type(error).__name__)
             atomic_json(STATE / "publish-current.json", journal)
         print("DEPLOY FAILED: " + str(error), file=sys.stderr, flush=True)
         sys.exit(1)
