@@ -125,6 +125,7 @@ def activate_locked(prepared):
         return {"status": "unchanged", "revision": revision}
     protocol_before=protocol_observation(ROOT,prepared['python'])
     backups = []
+    frontend_backup = None
     services = (["CommissionSystem"] if backend_changed else []) + (["WhatsAppConnector"] if connector_changed or prepared.get("schema_changed") else [])
     # Stopping is inside the recovery block: a partial stop must not strand services.
     try:
@@ -142,6 +143,8 @@ def activate_locked(prepared):
         for name, destination, staged, files in prepared["static"]:
             backup = STATE / ("office-previous-" + name + "-" + str(time.time_ns()))
             if destination.exists():
+                if name == 'frontend':
+                    frontend_backup = (backup, marker('office-frontend')['files'])
                 destination.rename(backup)
             backups.append((destination, backup))
             staged.rename(destination)
@@ -189,6 +192,9 @@ def activate_locked(prepared):
                 if run([nssm,'status',service],capture=True)!='SERVICE_STOPPED':run([nssm,'stop',service])
             raise RuntimeError('Office rollback unverified; services held stopped, inspect protocol compatibility') from None
         raise
+    if frontend_backup:
+        from office_static_retention import record_backup
+        record_backup(STATE, *frontend_backup)
     for name, _, _, files in prepared["static"]:
         atomic_json(STATE / ("office-" + name + ".json"), {"files": files})
     atomic_json(STATE / "office-success.json", {"revision": revision, "previous": previous,

@@ -10,9 +10,10 @@ logger = logging.getLogger(__name__)
 PRIVATE_HEADERS = {"Cache-Control": "private, no-store", "Pragma": "no-cache"}
 
 
-def current_user(db, claims):
+def current_user(db, claims, *permissions):
     """JWT identifies the employee; current roles determine action and scope.
 
+    The caller may accept any of the supplied actions; collections default to read.
     Ordinary read authorization has one fresh snapshot. It does not acquire
     write barriers or hold an employee lock until the response is delivered.
     """
@@ -26,7 +27,7 @@ def current_user(db, claims):
     except (TypeError, ValueError):
         raise HTTPException(403, "无法确认当前查询人", headers=PRIVATE_HEADERS) from None
     try:
-        roles, permissions = get_live_user_authorization(db, actor)
+        roles, live_permissions = get_live_user_authorization(db, actor)
     except SQLAlchemyError:
         diagnostics = []
         try:
@@ -41,6 +42,7 @@ def current_user(db, claims):
         if diagnostics:
             raise response from ExceptionGroup("Invoice authorization diagnostics failed", diagnostics)
         raise response from None
-    if not roles or ("super_admin" not in roles and "invoice:read" not in permissions):
+    required = permissions or ("invoice:read",)
+    if not roles or ("super_admin" not in roles and not set(required).intersection(live_permissions)):
         raise HTTPException(403, "当前账号无权读取发票", headers=PRIVATE_HEADERS)
-    return {**claims, "id": actor, "sub": str(actor), "roles": roles, "permissions": permissions}
+    return {**claims, "id": actor, "sub": str(actor), "roles": roles, "permissions": live_permissions}
