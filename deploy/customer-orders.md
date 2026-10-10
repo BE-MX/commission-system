@@ -35,7 +35,18 @@ deploy\deploy.bat --customer-portal-db-backup --live-root D:\commission-system -
 
 受保护独立 DBA 配置位于 `.deploy_state/credentials/migration.env`；受审工具清单位于 `.deploy_state/tools/mysql-8.4.6/manifest.json`。备份目录仅办公室用户/SYSTEM可读；唯一客户端配置、禁用login paths及显式核定TCP目标保护连接，临时凭据finally删除。受管DB锁阻断并发DDL，InnoDB单事务备份不暂停正常业务写入。备份时间、UUID、revision、字节和摘要是备份证据，不等于恢复成功。
 
-新目录、独占回环 MySQL、随机凭据、受限 ACL、关闭 event_scheduler 的隔离库恢复真实180备份。单独运行 `test_mysql_production_upgrade.py`，由原Alembic升级181，核对全部原业务行/FK/唯一键不变，再恢复180并重放181；禁止stamp/伪造基线。成功proof放入办公室 `.deploy_state/customer-portal-upgrade-proof.json`。
+备份账号需在 commission_db 上有 SELECT、SHOW VIEW、EVENT、TRIGGER，及全局 SHOW_ROUTINE 定义可见性；迁移的读写/DDL 权限不能代替完整备份权限。先重新连接读 `CURRENT_USER()` / `SHOW GRANTS`，由有授权权限的实例管理员补齐实际匹配的 user@host，不能把 host 改成 `%` 或自动授予全局数据读取。动态 SHOW_ROUTINE 允许读取例程定义，见[MySQL 权限说明](https://dev.mysql.com/doc/refman/8.0/en/privileges-provided.html#priv_show-routine)。预检遇部分撤权拒绝；不能仅汇总 GRANT 忽略 REVOKE。账号不能给自己授权。Grant 后无需编辑/替换受保护密码文件。
+
+新目录、独占回环 MySQL、随机凭据、受限 ACL、关闭 event_scheduler 的隔离库恢复真实180备份。数据库名称保留 commission_db 以恢复限定名称的存储对象，连接仍只能使用新进程的随机回环端口/随机密码，不复用生产目标。在源库完整定义可见性已核验的只读事务中，使用 `storage_snapshot.stored_objects_snapshot` 获取视图/例程/事件/触发器的 SHOW CREATE 字段摘要；不输出 SQL 正文，记录实际 UUID/revision，另存摘要 manifest。
+
+仅在无 backend/.env 的隔离工作树，单独运行恢复规格（路径均须替换为已核实的绝对路径）：
+
+```powershell
+# 在 backend 下，运行已验证 Python；backup/receipt 在同一受限目录。
+python -m pytest --confcutdir=tests/portal_mysql tests/portal_mysql/test_mysql_production_upgrade.py --portal-mysqld <owned-mysqld.exe> --portal-mysql-workspace <new-private-directory> --portal-production-backup <protected-commission_db.sql> --portal-production-objects <source-object-hashes.json> -q
+```
+
+由原Alembic升级181，核对全部原业务行/FK/唯一键与源库存储定义摘要，再恢复180并重放181；禁止stamp/伪造基线。事件定义恢复时调度器保持OFF。成功proof含源定义核验与恢复后的定义不变标志，放入办公室 `.deploy_state/customer-portal-upgrade-proof.json`；未带源定义摘要的旧proof不能进入生产181门禁。
 
 完整应用发布仍走办公室候选 `deploy.bat --live-root ... --revision ... --no-pull --prepare-only`；准备通过后同固定参数去掉 prepare-only。实际唯一180→181链、独立DBA和全部writer预检通过后，维护窗口停止登记writer，再取新的完整备份后一次升级。包含181的其他未演练链拒绝，不让更长pending绕过门禁。DDL后失败保留停写/journal，不能自动重启旧代码或强改revision。生产恢复只能使用维护窗口备份，核对备份后是否有新交易；新数据先保全，不把旧演练快照覆盖生产。只恢复原运行writer，不启动原本停用的服务。
 

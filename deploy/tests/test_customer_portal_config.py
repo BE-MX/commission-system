@@ -38,6 +38,7 @@ def proof_file(path, **changes):
     migration = Path(__file__).resolve().parents[2] / 'backend/alembic/versions/181_portal_password_login.py'
     proof = {'database_uuid':'owned-uuid','base':BASE,'target':TARGET,
         'business_rows_and_constraints_unchanged':True,'restore_after_ddl_verified':True,
+        'stored_definitions_unchanged':True,'source_stored_definitions_verified':True,
         'migration_sha256':hashlib.sha256(migration.read_bytes().replace(b'\r\n', b'\n')).hexdigest()}
     proof.update(changes)
     (path / 'customer-portal-upgrade-proof.json').write_text(json.dumps(proof))
@@ -56,7 +57,8 @@ def test_longer_chain_cannot_bypass_portal_gate(tmp_path, pending):
 
 
 @pytest.mark.parametrize('changes', [{'database_uuid':'other'}, {'restore_after_ddl_verified':'false'},
-    {'migration_sha256':'0'*64}, {'business_rows_and_constraints_unchanged':False}])
+    {'migration_sha256':'0'*64}, {'business_rows_and_constraints_unchanged':False},
+    {'stored_definitions_unchanged':False}, {'source_stored_definitions_verified':'true'}])
 def test_unmatched_or_unverified_recovery_proof_rejects(tmp_path, changes):
     proof_file(tmp_path, **changes)
     with pytest.raises(RuntimeError, match='does not match'):
@@ -128,3 +130,9 @@ def test_backup_rejects_missing_object_visibility_before_dump(grants):
 def test_backup_definition_privileges_are_not_mistaken_for_migration_only_privileges():
     backup_privileges(['GRANT SELECT, SHOW VIEW, EVENT, TRIGGER ON `commission_db`.* TO hidden',
         'GRANT SHOW_ROUTINE ON *.* TO hidden'], 'commission_db')
+
+
+def test_backup_partial_revoke_cannot_be_hidden_by_global_grant():
+    with pytest.raises(RuntimeError, match='partial revokes'):
+        backup_privileges(['GRANT ALL PRIVILEGES ON *.* TO hidden',
+            'REVOKE SELECT ON `commission_db`.* FROM hidden'], 'commission_db')

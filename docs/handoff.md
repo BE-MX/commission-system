@@ -1,5 +1,14 @@
 # 当前交接与待办
 
+## 2026-10-10 客户下单门户生产准备（Codex，备份完成，发布前恢复验证中）
+
+- 独立工作树 `C:/Users/windb/.codex/worktrees/customer-portal-readiness/commission-system`，分支 `codex/customer-portal-readiness`。用户确认北京 `shop.leshine.cloud`，员工在方舟登记采购邮箱/密码；真实客户和生产流程由用户选定测试。无代理真实客户发信、账号创建或交易。
+- 密码登录/员工创建重置、当前客户授权/撤权/限流/幂等、181 nullable密码哈希、frontend-portal登记、受管HTTPS/逐键配置/完整备份与隔离恢复门禁已实现。独立审查处理出库接管、配置失败恢复/服务用户/临时文件权限/partial revoke风险；不因门户启用打开自动回款、小满推送或出库执行器。
+- 实机办公室HEAD5e1a3de9、北京1864176c，DB唯一180；shop可信HTTPS/API边界实测通过，客户静态index尚未发布。北京受保护配置prepare完成但全部门户开关false；密码功能代码未激活。续期演练仍是CA二次验证超时，用户已确认TCP80开放，不能标续期通过。
+- 独立DBA曾因EVENT缺权导致完整备份失败，已移除无效部分并保留受限诊断。用户已补权限，重连验证SHOW VIEW/EVENT/TRIGGER和global SHOW_ROUTINE；新受管备份成功767,327,823字节、SHA256 `650f6a174366c36bcce1c9b7898700d71de4a19b47aa7604b685867673a5d660`，办公室受限目录 `.deploy_state/customer-portal-backups/f7d897f41f364ba6b7dd9f9bacabfd2b`。真实180隔离恢复/升级/恢复180/重放181正在准备，未生产DDL。
+- 验证：SQLite门户747通过；实际隔离HTTPS浏览器登录/交易至PI共2通过；MySQL专项复跑63通过/10opt-in跳过；客户/员工授权Node135通过；两前端构建成功。组别重叠，详见[实机证据与未验收范围](requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)。空库全历史链在126真实切换合同门禁失败，未stamp/绕过。完整生产快照恢复不能用上述回归替代。
+- 待恢复proof/实际受管发布后才enable-access供用户管理真实账号；库存单位NULL712/915及刷新语义、合同价/真实授权、生产交易/PI/通知未验收，对应开关保持关闭，不能标为正式开放。操作见[发布/验收/停止接单](../deploy/customer-orders.md)。仅本任务本地提交，无origin push或main合并。
+
 ## 2026-10-10 Veronika 出库打印规格补取（Codex，已授权合并推送，未部署）
 
 - 独立工作树 `C:/Users/windb/.codex/worktrees/outbound-print-spec/commission-system`，分支 `codex/outbound-print-spec`。实库只读确认镜像单 93262 / 小满出库 105842096302467 / `2026.Veronika赊销-01` 的 5 行规格为空，产品 `model` 均为 `B1天才发帘（帘宽12“）`。

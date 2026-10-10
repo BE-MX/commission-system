@@ -34,6 +34,10 @@ def option(value):
 def backup_privileges(grants, database):
     scoped, global_privileges = set(), set()
     for grant in grants:
+        # SHOW GRANTS may include partial revokes. A flat GRANT union cannot
+        # establish effective privileges in that case; refuse before dumping.
+        if re.match(r'REVOKE\s', grant, re.I):
+            raise RuntimeError('Complete backup privileges include partial revokes; protected DBA review required')
         match = re.match(r'GRANT (.+) ON (.+) TO ', grant, re.I)
         if not match:
             continue
@@ -116,6 +120,7 @@ def validate_proof(state, connection, pending, schema):
             or proof.get('database_uuid') != connection.scalar(text('SELECT @@server_uuid'))
             or proof.get('base') != BASE or proof.get('target') != TARGET
             or proof.get('business_rows_and_constraints_unchanged') is not True or proof.get('restore_after_ddl_verified') is not True
+            or proof.get('stored_definitions_unchanged') is not True or proof.get('source_stored_definitions_verified') is not True
             or proof.get('migration_sha256') != hashlib.sha256(migration.read_bytes().replace(b'\r\n', b'\n')).hexdigest()):
         raise RuntimeError('Actual credential upgrade/recovery proof does not match this database and migration')
 

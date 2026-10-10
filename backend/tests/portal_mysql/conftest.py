@@ -59,6 +59,7 @@ def pytest_addoption(parser):
     group = parser.getgroup('portal-owned-mysql')
     group.addoption('--portal-full-chain', action='store_true', help='Standalone fresh database historical replay')
     group.addoption('--portal-production-backup', default=None, help='Explicit protected revision-180 snapshot; owned server restore only')
+    group.addoption('--portal-production-objects', default=None, help='Read-only source stored-object hashes; no SQL definitions')
     for name in ('node', 'module', 'chromium'):
         group.addoption('--portal-browser-' + name, default=None, help='Opt-in browser runtime path')
     group.addoption('--portal-mode-node', default=None, help='Explicit local Node binary for mode privilege tests')
@@ -68,6 +69,8 @@ def pytest_addoption(parser):
 
 
 def pytest_collection_modifyitems(config, items):
+    if config.getoption('portal_production_objects') and not config.getoption('portal_production_backup'):
+        raise pytest.UsageError('--portal-production-objects requires an explicit protected production backup')
     if config.getoption('portal_full_chain') and any(item.path.name != 'test_mysql_full_chain.py' for item in items):
         raise pytest.UsageError('--portal-full-chain requires selecting only test_mysql_full_chain.py')
     if config.getoption('portal_production_backup') and any(item.path.name != 'test_mysql_production_upgrade.py' for item in items):
