@@ -49,6 +49,13 @@ def describe(row):
             "created_at": row.created_at, "updated_at": row.updated_at}
 
 
+def observed_status(row):
+    """Display an expired runner as uncertain without mutating its durable task."""
+    if row.status == "running" and (not row.lease_until or row.lease_until <= beijing_now()):
+        return "uncertain"
+    return row.status
+
+
 def latest(db, invoice_id):
     return db.query(InvoiceLinkedSync).filter_by(invoice_id=invoice_id).order_by(
         InvoiceLinkedSync.created_at.desc(), InvoiceLinkedSync.id.desc()).first()
@@ -268,7 +275,7 @@ def resolve_manually(db, identity, actor, reason):
     if len(reason) < 10:
         raise ValueError("请至少填写10字人工核对依据")
     invoice, row = _lock(db, identity)
-    if row.status != "uncertain" or invoice.linked_sync_id != identity:
+    if observed_status(row) != "uncertain" or invoice.linked_sync_id != identity:
         raise ValueError("仅可处理本订单当前待核对任务")
     # A lease remains on interrupted runners. Never unlock while they can send.
     if row.lease_until and row.lease_until > beijing_now():

@@ -19,7 +19,8 @@ def run(args, **kwargs):
 
 def remote(target, request):
     result = remote_python(target, HERE / "remote_static.py", request, sudo=True)
-    result.check_returncode()
+    if result.returncode:
+        raise RuntimeError('Static ' + request['action'] + ' failed for ' + target + ': ' + result.stderr[-3000:])
     return json.loads(result.stdout)
 
 

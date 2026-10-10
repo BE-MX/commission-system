@@ -35,7 +35,8 @@ def legacy_manifest(backup, state):
         if (folder / 'index.html').is_file() and retention.sha(folder / 'index.html') == index:
             files = manifest(folder)
             retention.validate_manifest(files)
-            matches.append(files)
+            if all(retention.matching(backup, name, digest) for name, digest in files.items()):
+                matches.append(files)
     if not matches or any(files != matches[0] for files in matches[1:]):
         raise ValueError('Cannot reconstruct unique legacy build: ' + backup.name)
     retention.verify(backup, matches[0])

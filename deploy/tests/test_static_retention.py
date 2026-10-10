@@ -97,7 +97,9 @@ class OfficeRetentionTests(unittest.TestCase):
 
     def test_corrupt_rollback_blocks_deletion(self):
         expired, _ = self.backup('expired', 30 * DAY, cache=False)
-        latest, _ = self.backup('latest', DAY)
+        self.backup('second', 2 * DAY)
+        latest, own = self.backup('latest', DAY)
+        office.record_backup(self.state, latest, own)
         (latest / 'assets/latest.js').write_bytes(b'bad')
         with patch.object(office.time, 'time', return_value=NOW), self.assertRaisesRegex(ValueError, 'corrupt'):
             office.cleanup(self.live)
@@ -132,6 +134,36 @@ class OfficeRetentionTests(unittest.TestCase):
         self.assertEqual(remote.call_count, 2)
         self.assertEqual(remote.call_args.args[1]['action'], 'prepared')
         upload.assert_not_called()
+
+    def test_legacy_index_match_requires_matching_public_files(self):
+        latest, own = self.backup('latest', DAY)
+        alternate = self.state / 'builds' / ('frontend-' + 'f' * 64)
+        tree(alternate, 'latest')
+        (alternate / 'downloads/test.zip').write_bytes(b'other public bytes')
+        self.assertEqual(office.legacy_manifest(latest, self.state), own)
+
+    def test_interrupted_copy_never_leaves_partial_protected_asset(self):
+        destination = self.current / 'assets/new.js'
+        source = self.current / 'assets/current.js'
+        plan = {'deletes': [], 'copies': [(source, destination)], 'bytes': 0,
+                'kept': [], 'removed': [], 'assets': 1}
+        def fail_copy(original, temporary):
+            temporary.write_bytes(b'partial')
+            raise OSError('disk full')
+        with patch.object(policy.shutil, 'copyfile', side_effect=fail_copy), self.assertRaisesRegex(OSError, 'disk full'):
+            policy.apply_cleanup(plan, [self.current])
+        self.assertFalse(destination.exists())
+        self.assertFalse(list(destination.parent.glob('new.js.next-*')))
+
+    def test_copy_from_deleted_release_has_stable_completion_summary(self):
+        old = self.state / 'old-release'
+        files = tree(old, 'grace')
+        assets = policy.asset_union([self.files, files])
+        plan = policy.plan_cleanup([(self.current, self.files)], [old], assets, [old])
+        result = policy.apply_cleanup(plan, [self.live])
+        self.assertEqual(result['copy_bytes'], len(b'grace'))
+        self.assertFalse(old.exists())
+        self.assertEqual((self.current / 'assets/grace.js').read_bytes(), b'grace')
 
     @unittest.skipUnless(os.name == 'nt', 'Windows junction protection')
     def test_windows_junction_blocks_before_deletion(self):

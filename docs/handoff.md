@@ -7,6 +7,12 @@
 - 新增 4 项回归在原实现实际失败；修复后打印、排序、快照追平和验货定向测试 55 passed，Node 打印 10 passed，约定检查和 diff 检查通过；独立 agent 契约审查无阻断问题。`git_sweep.py --no-fetch` exit 0，仅本地快照，未处理其他工作树。扩验负责人测试 2 项因旧 mock 缺 outbound_record_id 失败，已在未改 main 单独复现，保留原断言与测试。
 - 实单只读生成的 HTML/Word 已核验 5 格规格非空、尺寸排序 16/20/20/22/22、合计 18；本地预览保存在该工作树 `tmp/outbound-print-spec/`。用户已授权合并推送；生产部署尚未授权，线上需发布后生效。
 
+## 2026-10-10 订单发票点击编辑时交易繁忙（Codex，已验收，授权合并推送，未部署）
+
+- 分支 `codex/invoice-edit-busy`，独立工作树 `C:/Users/windb/.codex/worktrees/invoice-edit-busy/commission-system`，基于 `e26d5c23`。点击编辑依赖的关联任务 GET 原复用写授权、订单/任务写锁；隔离 MySQL 在另一连接持屏障时复现相同 TRANSACTION_BUSY 503。改为 fresh live 权限与归属的纯读取，回款摘要仍脱敏；过期运行只在响应显示待核对，不写任务或释放订单占用。
+- 管理员结束在原写授权内重新核对租约、原任务指针和 pending 库存；可处理尚未持久化 uncertain 的过期 running，旧 runner 仍被拒绝。保存、同步与资金保护保留，无迁移。
+- 组合真实 MySQL 108 passed，新增边界定向 5 passed（3 项复验）；SQLite 31、Node 关联同步 4 passed，独立审查通过，严格增量约定与 diff 检查通过。既有前端列表测试 16 项缺 import 测试桩，在未改 HEAD 基线同样失败，单独记录。亮哥已授权合并推送，本轮不部署，主目录既有改动独立保护。详见[修复与验证](reports/2026-10-10-invoice-editor-read-lock.md)。
+
 ## 2026-10-10 已生成回款的订单编辑页备注补漏（Codex，已验收，待生产发布授权）
 
 - 用户截图的「本次回款」备注仍被整体 readonly 冻结；前次 `f3b1a685` 仅接入详情页。现补新旧订单入口，独立保存回款备注并回填冻结草稿；金额日期保护与未保存订单内容保留。旧版本资金汇总不能回退新备注，订单保存/同步与备注/截图双向互斥。

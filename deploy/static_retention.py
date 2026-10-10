@@ -114,7 +114,7 @@ def walk_files(root):
                                                      & stat.FILE_ATTRIBUTE_REPARSE_POINT):
                     raise ValueError('Unexpected symlink/reparse point: ' + entry.path)
                 if stat.S_ISREG(observed.st_mode):
-                    yield Path(entry.path)
+                    yield Path(entry.path), observed.st_size
                 elif not stat.S_ISDIR(observed.st_mode):
                     raise ValueError('Unexpected static file type: ' + entry.path)
 
@@ -139,15 +139,16 @@ def plan_cleanup(kept, removed, assets, asset_sources=()):
                     raise ValueError('Retained asset checksum mismatch: ' + name)
             else:
                 copies.append((sources[name], destination))
-        for path in walk_files(folder / 'assets'):
+        for path, length in walk_files(folder / 'assets'):
             if path.relative_to(folder).as_posix() not in assets:
                 deletes.append(path)
-                size += path.stat().st_size
+                size += length
     for folder in removed:
-        for path in walk_files(folder):
-            size += path.stat().st_size
+        for _, length in walk_files(folder):
+            size += length
         deletes.append(folder)
     return {'copies': copies, 'deletes': deletes, 'bytes': size,
+            'copy_bytes': sum(source.stat().st_size for source, _ in copies),
             'kept': [str(folder) for folder, _ in kept],
             'removed': [str(folder) for folder in removed], 'assets': len(assets)}
 
@@ -164,7 +165,12 @@ def apply_cleanup(plan, allowed_roots):
         no_links(source)
         no_links(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination)
+        temporary = destination.with_name(destination.name + '.next-' + uuid.uuid4().hex)
+        try:
+            shutil.copyfile(source, temporary)
+            os.replace(temporary, destination)
+        finally:
+            temporary.unlink(missing_ok=True)
     # Windows uses native LiteralPath deletion end-to-end. No cmd expansion.
     if os.name == 'nt' and plan['deletes']:
         command = ('$ErrorActionPreference="Stop"; '
@@ -185,4 +191,5 @@ def apply_cleanup(plan, allowed_roots):
 
 def summary(plan):
     return {key: plan[key] for key in ('bytes', 'kept', 'removed', 'assets')} | {
-        'delete_paths': len(plan['deletes']), 'copy_files': len(plan['copies'])}
+        'delete_paths': len(plan['deletes']), 'copy_files': len(plan['copies']),
+        'copy_bytes': plan['copy_bytes']}

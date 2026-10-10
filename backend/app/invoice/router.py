@@ -6,7 +6,8 @@ from decimal import Decimal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from app.portal.upstream_authority import begin_employee_authority_write, begin_employee_document_write
@@ -1225,13 +1226,17 @@ def save_linked(invoice_id: int, body: LinkedSavePayload, db: Session = Depends(
 def get_linked(invoice_id: int, db: Session = Depends(get_db),
                user=Depends(get_current_user)):
     from app.invoice import linked_sync_service as linked
-    invoice, user, installed = _linked_scope(db, invoice_id, user, "invoice:read", "invoice:write", "invoice:sync", any_permission=True)
+    user = read_authority.current_user(db, user, "invoice:read", "invoice:write", "invoice:sync")
+    invoice = service.get_invoice(db, invoice_id)
+    if invoice is None:
+        raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(db, invoice, user)
     row = linked.latest(db, invoice_id)
-    if row:
-        row = linked.expire(db, row.id)
     result = _linked_result(row, invoice, user)
-    db.commit()
-    return ok(result)
+    if result:
+        result["status"] = linked.observed_status(row)
+    # Opening the editor only observes state; all transitions retain write authority.
+    return JSONResponse(content=jsonable_encoder(ok(result)), headers=read_authority.PRIVATE_HEADERS)
 
 
 @router.post("/invoices/{invoice_id}/linked-sync/{identity}/run", summary="Continue only unfinished synchronization steps")

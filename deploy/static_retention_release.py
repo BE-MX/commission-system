@@ -18,11 +18,13 @@ def run(live, source, prepare_only=False, include_office=True):
     targets = [target for target in inventory['static_targets'] if target['component'] == 'frontend']
     results = {'status': 'prepared', 'completed': [], 'targets': {}}
     if include_office:
+        print('RETENTION PREVIEW office: validating manifests and deletion trees', flush=True)
         from office_release import health
         health(8001)
         results['targets']['office'] = office_static_retention.cleanup(live, True)
     rollback_hints = results['targets'].get('office', {}).get('rollback_artifacts', [])
     for target in targets:
+        print('RETENTION PREVIEW ' + target['domain'], flush=True)
         results['targets'][target['domain']] = static_sync.remote(target['host'], {
             'action': 'retention', 'root': target['root'], 'host': target['domain'],
             'prepare_only': True, 'rollback_hints': rollback_hints})
@@ -35,12 +37,14 @@ def run(live, source, prepare_only=False, include_office=True):
         results['status'] = 'cleaning'
         atomic_json(receipt, results)
         if include_office:
+            print('RETENTION APPLY office', flush=True)
             from office_release import health
             health(8001)
             results['targets']['office'] = office_static_retention.cleanup(live)
             results['completed'].append('office')
             atomic_json(receipt, results)
         for target in targets:
+            print('RETENTION APPLY ' + target['domain'], flush=True)
             results['targets'][target['domain']] = static_sync.remote(target['host'], {
                 'action': 'retention', 'root': target['root'], 'host': target['domain'],
                 'prepare_only': False, 'rollback_hints': rollback_hints})

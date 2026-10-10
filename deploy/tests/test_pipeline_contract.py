@@ -79,6 +79,13 @@ def test_backend_uses_streamed_script_and_rejects_remote_failure(monkeypatch):
         cloud_backend.invoke(request)
 
 
+def test_static_failure_reports_remote_cause(monkeypatch):
+    monkeypatch.setattr(static_sync, 'remote_python', Mock(return_value=subprocess.CompletedProcess(
+        [], 1, '', 'Protected browser asset missing')))
+    with pytest.raises(RuntimeError, match='Protected browser asset missing'):
+        static_sync.remote('example.test', {'action': 'retention'})
+
+
 def test_unchanged_static_does_not_upload(tmp_path, monkeypatch):
     (tmp_path / "index.html").write_text("ready")
     monkeypatch.setattr(static_sync, "remote", Mock(return_value={
