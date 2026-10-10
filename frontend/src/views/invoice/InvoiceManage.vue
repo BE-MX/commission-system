@@ -313,7 +313,7 @@
                 :on-total-discount-change="applyTotalDiscount"
               />
 
-              <InvoiceReceiptFields class="form-card" :form="form" :total="formTotal" />
+              <InvoiceReceiptFields class="form-card" :form="form" :total="formTotal" :locked="editor.receiptLocked.value" />
             </aside>
           </div>
         </el-form>

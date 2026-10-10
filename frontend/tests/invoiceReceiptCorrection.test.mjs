@@ -52,3 +52,12 @@ test('auto corrections submit zero fee for server allocation, including reductio
   const dialog = readFileSync(new URL('../src/views/invoice/components/InvoiceReceiptPaymentDialog.vue', import.meta.url), 'utf8')
   assert.match(dialog, /bank_charge: props\.receipt\?\.source === 'auto' \? '0'/)
 })
+
+test('late summary cannot revert a newer remark and version in the frozen receipt draft', () => {
+  const form = { id: 1, receipt_draft: { status: 'converted', receipt_id: 11,
+    receipt_version: 2, remark: 'saved new remark', attachment_ids: [41] } }
+  const before = structuredClone(form)
+  assert.equal(applySubmittedReceipt(form, { id: 11, invoice_id: 1, source: 'auto',
+    version: 1, remark: 'stale remark', attachments: [] }), false)
+  assert.deepEqual(form, before)
+})

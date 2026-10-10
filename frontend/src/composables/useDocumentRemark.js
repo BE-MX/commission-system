@@ -42,6 +42,8 @@ export function useDocumentRemark(props, emit) {
   }
   watch(() => [props.document.id, props.kind], cancel, { flush: 'sync' })
   watch(authorityKey, cancel, { flush: 'sync' })
+  watch(editing, value => emit('editing', value), { flush: 'sync' })
+  watch(saving, value => emit('saving', value), { flush: 'sync' })
   onUnmounted(cancel)
   return { editing, saving, draft, error, permission, maxLength, editable, authorityKey, start, save, cancel }
 }

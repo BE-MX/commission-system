@@ -23,7 +23,7 @@ const props = defineProps({
   kind: { type: String, required: true },
   disabled: Boolean,
 })
-const emit = defineEmits(['updated'])
+const emit = defineEmits(['updated', 'editing', 'saving'])
 const { editing, saving, draft, error, permission, maxLength, editable, authorityKey, start, save, cancel } = useDocumentRemark(props, emit)
 </script>
 <style scoped>

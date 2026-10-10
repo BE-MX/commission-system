@@ -10,7 +10,7 @@ async function harness(kind = 'invoice') {
   const props = vue.reactive({ kind, disabled: false, document: {
     id: 1, remark: 'old', edit_version: 'v1', version: 1, status: kind === 'invoice' ? 'synced' : 'active', sync_status: 'synced',
   } })
-  const pending = deferred(), calls = [], emitted = []
+  const pending = deferred(), calls = [], emitted = [], states = []
   let dispose
   const auth = vue.reactive({ user: { id: 801, roles: [], permissions: ['invoice:write', 'receipt:write'] } })
   const save = (...args) => { calls.push(args); return pending.promise }
@@ -31,8 +31,10 @@ async function harness(kind = 'invoice') {
   })
   await module.evaluate()
   const scope = vue.effectScope()
-  const editor = scope.run(() => module.namespace.useDocumentRemark(props, (...args) => emitted.push(args)))
-  return { props, editor, pending, calls, emitted, auth, dispose() { dispose(); scope.stop() } }
+  const editor = scope.run(() => module.namespace.useDocumentRemark(props, (...args) => {
+    (args[0] === 'updated' ? emitted : states).push(args)
+  }))
+  return { props, editor, pending, calls, emitted, states, auth, dispose() { dispose(); scope.stop() } }
 }
 
 for (const kind of ['invoice', 'receipt']) {
@@ -96,5 +98,18 @@ test('syncing receipt cannot open or submit remark edits', async () => {
   try {
     h.props.document.sync_status = 'syncing'; h.editor.start(); await h.editor.save()
     assert.equal(h.editor.editing.value, false); assert.equal(h.calls.length, 0)
+  } finally { h.dispose() }
+})
+
+test('receipt editor reports editing and saving so its order form can block competing writes', async () => {
+  const h = await harness('receipt')
+  try {
+    h.editor.start()
+    const saving = h.editor.save()
+    assert.deepEqual(h.states.map(args => [...args]), [['editing', true], ['saving', true]])
+    h.pending.resolve({ id: 1, version: 2, remark: 'old' }); await saving
+    assert.deepEqual(h.states.map(args => [...args]), [
+      ['editing', true], ['saving', true], ['editing', false], ['saving', false],
+    ])
   } finally { h.dispose() }
 })

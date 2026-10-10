@@ -1,5 +1,11 @@
 # 当前交接与待办
 
+## 2026-10-10 已生成回款的订单编辑页备注补漏（Codex，已验收，待生产发布授权）
+
+- 用户截图的「本次回款」备注仍被整体 readonly 冻结；前次 `f3b1a685` 仅接入详情页。现补新旧订单入口，独立保存回款备注并回填冻结草稿；金额日期保护与未保存订单内容保留。旧版本资金汇总不能回退新备注，订单保存/同步与备注/截图双向互斥。
+- 办公室与北京运行中 OpenAPI 都没有订单/回款 remark 接口，源码 checkout `60e408d4` 缺少 remark_service。未写生产数据或部署；合并推送授权持续有效，生产发布另待用户授权。
+- 验证：37 Node 回归通过；实际 Vue/Chrome 新旧入口的编辑、清空、冲突、取消、权限及互斥检查通过；构建、增量约定与 diff 检查通过；独立 agent 复核通过。详见 [排查与验证记录](reports/2026-10-10-converted-receipt-remark.md)。
+
 ## 2026-10-10 内贸充值 COS 路由修复与附件审计（Codex，已合并推送部署）
 
 - 独立 worktree `C:/Users/windb/.codex/worktrees/domestic-recharge-500/commission-system`，分支 `codex/domestic-recharge-500`。充值凭证已在共享 COS，原 `.cloud → .work → 办公室` 是本地文件时期遗留。候选将 cloud 两条提交/凭证 API 直连北京 8001；work 保持办公室 8002，两站关闭请求/响应 buffering，原权限、幂等、审核与资金逻辑不变。

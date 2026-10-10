@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Converted receipt remark regression</title><div id="app"></div>
+<script type="module">
+import { createApp, h, reactive, ref } from 'vue'
+import { createPinia } from 'pinia'
+import ElementPlus, { ElForm } from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import { useAuthStore } from '../src/stores/auth'
+import { registerPermissionDirectives } from '../src/directives/permission'
+import StatusBadge from '../src/components/StatusBadge.vue'
+import Fields from '../src/views/invoice/components/InvoiceReceiptFields.vue'
+import Legacy from '../src/views/invoice/components/legacy/InvoiceLegacyReceiptFields.vue'
+const form = reactive({ id: 1, order_type: 'stock', currency: 'USD', remark: 'unsaved order header',
+  receipt_draft: { status: 'converted', receipt_id: 11, receipt_version: 1, receipt_status: 'active',
+    amount: 880.91, collection_date: '2026-10-10', payment_type: 'Other', purpose: 'ordinary',
+    attachment_ids: [41], remark: 'old receipt remark' } })
+window.form = form
+const locked = ref(false)
+window.orderSaving = value => { locked.value = value }
+const pinia = createPinia()
+const app = createApp({ render: () => h(ElForm, { labelPosition: 'top' }, {
+  default: () => h(location.search.includes('legacy') ? Legacy : Fields, { form, total: 880.91, locked: locked.value }),
+}) })
+app.use(pinia); app.use(ElementPlus); app.component('StatusBadge', StatusBadge)
+registerPermissionDirectives(app)
+const auth = useAuthStore()
+auth.user = { id: 1, roles: [], permissions: ['receipt:read', 'receipt:write'] }
+window.revoke = () => { auth.user.permissions = ['receipt:read'] }
+app.mount('#app')
+</script>
+<style>body{max-width:620px;margin:20px auto;padding:16px}</style>
+</html>

@@ -60,6 +60,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const okkiBound = ref(true)
   const invoiceNoTaken = ref(false)
   const saveAndSyncSubmitting = ref(false)
+  const orderSaving = ref(false)
   const entryOptions = ref({ displays: [], models: [], colors: [], sizes: [], units: [] })
   // 指定跟单员候选（「跟单员」角色在职用户）；同业务员同类型上一单号（订单号旁的红色提醒）
   const merchandiserOptions = ref([])
@@ -604,11 +605,19 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // ── 保存 ────────────────────────────────────────────
 
   async function saveDraft(options = {}) {
+    if (orderSaving.value) return null
+    orderSaving.value = true
+    try { return await saveDraftContent(options) }
+    finally { orderSaving.value = false }
+  }
+
+  async function saveDraftContent(options) {
     const contextSeq = customerContextSeq
     await customerDefaultsPromise
     if (contextSeq !== customerContextSeq) return null
     if (form.receipt_uploading) { msgWarning("请等待回款截图上传完成"); return null }
     if (form.receipt_proof_dirty) { msgWarning("请先保存回款截图变更"); return null }
+    if (form.receipt_remark_editing || form.receipt_remark_saving) { msgWarning('请先保存或取消回款备注编辑'); return null }
     if (form.receipt_action_open || form.receipt_action_busy) { msgWarning('请先完成或关闭当前回款操作'); return null }
     if (form.items.some(line => Number(line.total_price || 0) < 0)) {
       msgWarning('产品行折扣不能超过该行金额')
@@ -710,6 +719,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     okkiBound,
     invoiceNoTaken,
     saveAndSyncSubmitting,
+    receiptLocked: computed(() => orderSaving.value || saveAndSyncSubmitting.value || linked.busy.value || linked.loading.value),
     linkedOperation: linked.operation,
     linkedBusy: linked.busy,
     linkedLoading: linked.loading,

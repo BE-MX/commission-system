@@ -9,14 +9,14 @@
     </div>
     <p v-if="!hidePaymentType && typesError" class="types-error" role="alert">回款方式加载失败。<el-button link type="primary" @click="loadTypes">重新加载</el-button></p>
     <el-form-item v-if="!hideProofs" label="回款截图" required><ReceiptProofs v-model="form.attachment_ids" :readonly="readonly" @uploading="$emit('uploading', $event)" /></el-form-item>
-    <el-form-item label="回款备注"><el-input v-model="form.remark" type="textarea" maxlength="500" :disabled="readonly" /></el-form-item>
+    <el-form-item v-if="!hideRemark" label="回款备注"><el-input v-model="form.remark" type="textarea" maxlength="500" :disabled="readonly" /></el-form-item>
   </div>
 </template>
 <script setup>
 import { onMounted, ref } from 'vue'
 import { getReceiptTypes } from '@/api/receipt'
 import ReceiptProofs from './ReceiptProofs.vue'
-const props = defineProps({ form: { type: Object, required: true }, currency: String, readonly: Boolean, showCharge: Boolean, hidePaymentType: Boolean, hideProofs: Boolean })
+const props = defineProps({ form: { type: Object, required: true }, currency: String, readonly: Boolean, showCharge: Boolean, hidePaymentType: Boolean, hideProofs: Boolean, hideRemark: Boolean })
 defineEmits(['uploading'])
 const types = ref([]), loading = ref(false), typesError = ref(false)
 async function loadTypes() {

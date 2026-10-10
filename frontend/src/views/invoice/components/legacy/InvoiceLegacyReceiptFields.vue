@@ -3,10 +3,13 @@
     <div class="col-title">本次回款 <StatusBadge effect="plain" type="warning">同步前必填</StatusBadge></div>
     <p>{{ form.receipt_draft?.status === 'converted' ? '本次回款已生成，订单重新同步不会重复建款。' : '上传实际到账截图；订单完整同步后自动生成回款单。可先保存草稿。' }}</p>
     <ReceiptFields v-if="form.receipt_draft" :form="form.receipt_draft" :currency="form.currency"
-      :readonly="frozen" :hide-proofs="canEditProofs" @uploading="v => form.receipt_uploading = v" />
+      :readonly="frozen" :hide-proofs="canEditProofs" :hide-remark="canEditProofs" @uploading="v => form.receipt_uploading = v" />
     <InvoiceConvertedProofs v-if="canEditProofs" :key="`${form.receipt_draft.receipt_id}:${form.receipt_draft.receipt_version}`" :receipt-id="form.receipt_draft.receipt_id"
-      :locked="form.receipt_action_open || form.receipt_action_busy"
+      :locked="locked || form.receipt_action_open || form.receipt_action_busy"
       @saved="(id, ids) => { if (form.receipt_draft?.receipt_id === id) form.receipt_draft.attachment_ids = ids }"
+      @updated="row => applySubmittedReceipt(form, row)"
+      @remark-editing="value => form.receipt_remark_editing = value"
+      @remark-saving="value => form.receipt_remark_saving = value"
       @uploading="value => form.receipt_uploading = value"
       @dirty="value => form.receipt_proof_dirty = value" />
     <p v-if="form.receipt_draft?.last_error" role="alert">{{ form.receipt_draft.last_error }}</p>
@@ -19,12 +22,12 @@ import { computed, watch } from 'vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
 import InvoiceConvertedProofs from '../InvoiceConvertedProofs.vue'
 import InvoiceReceiptActions from '../InvoiceReceiptActions.vue'
-import { nextDraftAmount } from '../../composables/invoiceReceiptState'
+import { nextDraftAmount, applySubmittedReceipt } from '../../composables/invoiceReceiptState'
 import { useAuthStore } from '@/stores/auth'
 import { currentBeijingDate } from '@/utils/datetime'
 
 // 旧版下单抽屉的回款区（HEAD 版原样保留，过渡期使用）：回款方式独立下拉小满回款方式
-const props = defineProps({ form: { type: Object, required: true }, total: Number })
+const props = defineProps({ form: { type: Object, required: true }, total: Number, locked: Boolean })
 const frozen = computed(() => props.form.receipt_draft?.status && props.form.receipt_draft.status !== 'draft')
 const auth = useAuthStore()
 const canEditProofs = computed(() => props.form.receipt_draft?.status === 'converted' &&

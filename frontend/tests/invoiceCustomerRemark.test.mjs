@@ -12,7 +12,7 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 const customer = id => ({ company_id: id, company_name: `Customer ${id}` })
 const defaults = remark => ({ remark, customer_grade: 'A', contact_name: 'Alice', contact_phone: '123', contact_email: 'a@example.test', delivery_address: 'Address' })
 
-async function harness(request = async () => defaults('上单备注')) {
+async function harness(request = async () => defaults('上单备注'), createRequest) {
   const saved = [], warnings = []
   const api = Object.fromEntries(['checkInvoiceNo', 'createInvoice', 'createInvoiceFromScreenshot',
     'getCustomerContactDefaults', 'getCustomerRule', 'getInvoice', 'getInvoiceAssignees',
@@ -21,7 +21,7 @@ async function harness(request = async () => defaults('上单备注')) {
   Object.assign(api, {
     getCustomerContactDefaults: request, getCustomerRule: async () => null,
     getInvoice: async id => ({ ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id, customer_id: 'C1' }),
-    createInvoice: async payload => { saved.push(payload); return { ...payload, id: 10 } },
+    createInvoice: async payload => { saved.push(payload); return createRequest ? createRequest(payload) : { ...payload, id: 10 } },
   })
   const imports = {
     vue,
@@ -189,4 +189,28 @@ test('screenshot customer defaults also fill the latest remark', () => run(async
     ...state.emptyInvoiceForm(), customer_id: 'C1', customer_name: 'Customer C1',
   } })
   assert.equal(h.editor.form.remark, '上单备注')
+}))
+
+test('order write locks receipt editing until the response settles and prevents duplicate writes', async () => {
+  const pending = deferred()
+  const h = await harness(undefined, () => pending.promise)
+  try {
+    Object.assign(h.editor.form, defaults('order'), { express_channel: 'FEDEX' })
+    const saving = h.editor.saveDraft()
+    assert.equal(h.editor.receiptLocked.value, true)
+    await h.editor.saveDraft()
+    await Promise.resolve()
+    assert.equal(h.saved.length, 1)
+    pending.resolve({ ...h.saved[0], id: 10 })
+    await saving
+    assert.equal(h.editor.receiptLocked.value, false)
+  } finally { h.stop() }
+})
+
+test('remark editing prevents ordinary order persistence until saved or cancelled', () => run(async h => {
+  Object.assign(h.editor.form, defaults('order'), { express_channel: 'FEDEX', receipt_remark_editing: true })
+  assert.equal(await h.editor.saveDraft(), null)
+  assert.equal(h.saved.length, 0)
+  assert.equal(h.editor.receiptLocked.value, false)
+  assert.ok(h.warnings.includes('请先保存或取消回款备注编辑'))
 }))

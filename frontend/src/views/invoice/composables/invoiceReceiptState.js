@@ -34,6 +34,7 @@ export function applySubmittedReceipt(form, row) {
   const draft = form.receipt_draft
   if (!draft || !['armed', 'ready', 'converted'].includes(draft.status) || row.source !== 'auto' || row.invoice_id !== form.id) return false
   if (draft.status === 'converted' && draft.receipt_id !== row.id) return false
+  if (draft.status === 'converted' && row.version < draft.receipt_version) return false
   Object.assign(draft, { status: 'converted', receipt_id: row.id, amount: Number(row.amount),
     purpose: row.purpose, bank_charge: Number(row.bank_charge || 0),
     collection_date: row.collection_date, payment_type: row.payment_type, remark: row.remark || '',

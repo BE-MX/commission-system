@@ -13,10 +13,13 @@
       <p class="receipt-hint">产品未确定时可先保存预售单并登记实际到账款，发货前填写本批明细。原回款不会因修改明细而重复生成或重新计算手续费。</p>
     </template>
     <ReceiptFields v-if="form.receipt_draft" :form="form.receipt_draft" :currency="form.currency"
-      :readonly="frozen" :hide-proofs="canEditProofs" :show-charge="form.order_type === 'presale'" hide-payment-type @uploading="v => form.receipt_uploading = v" />
+      :readonly="frozen" :hide-proofs="canEditProofs" :hide-remark="canEditProofs" :show-charge="form.order_type === 'presale'" hide-payment-type @uploading="v => form.receipt_uploading = v" />
     <InvoiceConvertedProofs v-if="canEditProofs" :key="`${form.receipt_draft.receipt_id}:${form.receipt_draft.receipt_version}`" :receipt-id="form.receipt_draft.receipt_id"
-      :locked="form.receipt_action_open || form.receipt_action_busy"
+      :locked="locked || form.receipt_action_open || form.receipt_action_busy"
       @saved="(id, ids) => { if (form.receipt_draft?.receipt_id === id) form.receipt_draft.attachment_ids = ids }"
+      @updated="row => applySubmittedReceipt(form, row)"
+      @remark-editing="value => form.receipt_remark_editing = value"
+      @remark-saving="value => form.receipt_remark_saving = value"
       @uploading="value => form.receipt_uploading = value"
       @dirty="value => form.receipt_proof_dirty = value" />
     <p v-if="form.receipt_draft?.last_error" class="receipt-error" role="alert">{{ form.receipt_draft.last_error }}</p>
@@ -30,10 +33,10 @@ import { computed, watch } from 'vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
 import InvoiceConvertedProofs from './InvoiceConvertedProofs.vue'
 import InvoiceReceiptActions from './InvoiceReceiptActions.vue'
-import { nextDraftAmount } from '../composables/invoiceReceiptState'
+import { nextDraftAmount, applySubmittedReceipt } from '../composables/invoiceReceiptState'
 import { useAuthStore } from '@/stores/auth'
 import { currentBeijingDate } from '@/utils/datetime'
-const props = defineProps({ form: { type: Object, required: true }, total: { type: Number, required: true } })
+const props = defineProps({ form: { type: Object, required: true }, total: { type: Number, required: true }, locked: Boolean })
 const frozen = computed(() => props.form.receipt_draft?.status && props.form.receipt_draft.status !== 'draft')
 const intentLabel = computed(() => ({ armed: '订单同步中', ready: '等待生成回款', converted: '原回款已生成' })[props.form.receipt_draft?.status] || '同步前必填')
 const intentHint = computed(() => ({

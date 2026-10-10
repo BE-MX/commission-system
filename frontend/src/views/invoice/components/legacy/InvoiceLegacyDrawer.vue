@@ -170,7 +170,7 @@
           :on-handling-fee-input="markHandlingFeeTouched"
         />
 
-        <InvoiceLegacyReceiptFields :form="form" :total="formTotal" />
+        <InvoiceLegacyReceiptFields :form="form" :total="formTotal" :locked="editor.receiptLocked.value" />
 
         <InvoiceHairTable
           :items="hairItems"
