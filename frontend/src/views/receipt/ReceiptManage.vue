@@ -137,7 +137,7 @@
       <template v-if="detail"><div class="detail-status"><StatusBadge size="small" effect="plain" :type="statusTone(detail.sync_status)">{{ detail.status === 'voided' ? '已作废' : statusLabel(detail.sync_status) }}</StatusBadge><StatusBadge size="small" effect="plain">财务：{{ financeLabel(detail.collect_status) }}</StatusBadge></div>
         <h1 class="detail-amount">{{ detail.currency }} {{ money(detail.amount) }}</h1>
         <el-alert v-if="detail.last_error" :title="detail.last_error" type="warning" :closable="false" />
-        <ResponsiveDescriptions :column="1" border class="receipt-descriptions"><el-descriptions-item label="订单发票">{{ detail.invoice_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item><el-descriptions-item label="回款日期">{{ detail.collection_date }}</el-descriptions-item><el-descriptions-item label="回款方式">{{ detail.payment_type }}</el-descriptions-item><el-descriptions-item label="银行手续费">{{ money(detail.bank_charge) }}</el-descriptions-item><el-descriptions-item label="小满回款编号">{{ detail.xiaoman_receipt_no || '尚未取得' }}</el-descriptions-item><el-descriptions-item label="截图传输">仅方舟留存</el-descriptions-item><el-descriptions-item label="备注">{{ detail.remark || '—' }}</el-descriptions-item></ResponsiveDescriptions>
+        <ResponsiveDescriptions :column="1" border class="receipt-descriptions"><el-descriptions-item label="订单发票">{{ detail.invoice_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item><el-descriptions-item label="回款日期">{{ detail.collection_date }}</el-descriptions-item><el-descriptions-item label="回款方式">{{ detail.payment_type }}</el-descriptions-item><el-descriptions-item label="银行手续费">{{ money(detail.bank_charge) }}</el-descriptions-item><el-descriptions-item label="小满回款编号">{{ detail.xiaoman_receipt_no || '尚未取得' }}</el-descriptions-item><el-descriptions-item label="截图传输">仅方舟留存</el-descriptions-item><el-descriptions-item label="备注"><DocumentRemarkEditor :key="detail.id" :document="detail" kind="receipt" :disabled="saving" @updated="row => { detail = row; refreshUpdate() }" /></el-descriptions-item></ResponsiveDescriptions>
         <p>收款用途：{{ purposeLabel(detail.purpose) }}</p>
         <ReceiptPurposeCorrection :receipt="detail" :disabled="saving" @updated="row => { detail = row; refreshUpdate() }" />
         <h3>回款凭证</h3><ReceiptProofs :key="detail.id" :model-value="detail.attachments?.map(a => a.id) || []" readonly />
@@ -158,6 +158,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 import TableTools from '@/components/TableTools.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import ListPageStatus from '@/components/ListPageStatus.vue'
+import DocumentRemarkEditor from '@/components/DocumentRemarkEditor.vue'
 import ReceiptFields from './ReceiptFields.vue'
 import ReceiptRemoteChange from './ReceiptRemoteChange.vue'
 import ReceiptPurposeCorrection from './ReceiptPurposeCorrection.vue'

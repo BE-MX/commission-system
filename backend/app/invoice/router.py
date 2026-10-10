@@ -49,6 +49,8 @@ _UPLOAD_CHUNK_BYTES = 1024 * 1024
 router = APIRouter()
 from app.invoice.detail_router import router as detail_router
 router.include_router(detail_router)
+from app.invoice.remark_router import router as remark_router
+router.include_router(remark_router)
 
 _READ_OR_WRITE = require_any_permission("invoice:read", "invoice:write")
 # 价格与产品配置页读端点（063 拆分）：页面码 + 旧读写码兼容（发票编辑器也调这批端点）

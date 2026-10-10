@@ -17,7 +17,7 @@
         </button>
       </div>
       <el-tabs v-model="activeTab" class="invoice-detail-tabs">
-        <el-tab-pane label="订单详情" name="order"><InvoiceDetailOrder :order="order" :shipped="outbounds.state === 'ready' ? outbounds.summary?.by_item : null" /></el-tab-pane>
+        <el-tab-pane label="订单详情" name="order"><InvoiceDetailOrder :order="order" :disabled="loading" @updated="row => Object.assign(order, row)" :shipped="outbounds.state === 'ready' ? outbounds.summary?.by_item : null" /></el-tab-pane>
         <el-tab-pane :label="`出库单详情${outbounds.state === 'ready' ? ` (${outbounds.items?.length || 0})` : ''}`" name="outbound">
           <div v-if="outbounds.state === 'loading'" class="detail-loading" role="status">正在核验实际出库事实…</div>
           <div v-if="outbounds.state !== 'ready' && outbounds.message" class="detail-warning" role="alert">{{ outbounds.message }}</div><InvoiceDetailOutbounds v-if="outbounds.state !== 'restricted'" :panel="outbounds" />

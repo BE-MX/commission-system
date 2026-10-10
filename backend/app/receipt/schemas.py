@@ -6,6 +6,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+class ReceiptRemarkUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    remark: str = Field(max_length=500)
+    version: int = Field(ge=1)
+
+
 class ReceiptFields(BaseModel):
     model_config = ConfigDict(extra="forbid")
     amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)

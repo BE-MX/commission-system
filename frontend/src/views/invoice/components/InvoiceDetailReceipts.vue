@@ -19,7 +19,7 @@
     <section v-if="selected" class="detail-document" aria-live="polite">
       <div class="detail-filter"><h3>{{ selected.receipt_no }}</h3><el-button link @click="closeReceipt"><el-icon><Close /></el-icon>收起资料</el-button></div>
       <p v-if="detailLoading">正在加载回款资料…</p><p v-else-if="detailError" role="alert">{{ detailError }}</p>
-      <template v-else-if="detail"><p>净额 {{ amount(Number(detail.amount) - Number(detail.bank_charge)) }} · 手续费 {{ amount(detail.bank_charge) }}</p><p>{{ detail.remark || '暂无备注' }}</p><p v-if="detail.last_error" class="detail-warning">{{ detail.last_error }}</p><ReceiptProofs :model-value="(detail.attachments || []).map(a => a.id)" readonly /></template>
+      <template v-else-if="detail"><p>净额 {{ amount(Number(detail.amount) - Number(detail.bank_charge)) }} · 手续费 {{ amount(detail.bank_charge) }}</p><h4>备注</h4><DocumentRemarkEditor :key="detail.id" :document="detail" kind="receipt" @updated="row => { detail = row }" /><p v-if="detail.last_error" class="detail-warning">{{ detail.last_error }}</p><ReceiptProofs :model-value="(detail.attachments || []).map(a => a.id)" readonly /></template>
     </section>
   </section>
 </template>
@@ -27,6 +27,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { Picture, Close } from '@element-plus/icons-vue'
 import { getReceipt } from '@/api/receipt'
+import DocumentRemarkEditor from '@/components/DocumentRemarkEditor.vue'
 import ReceiptProofs from '@/views/receipt/ReceiptProofs.vue'
 import { formatMoney } from '@/utils/money'
 import { purposeLabel, detailStatus } from './invoiceDetailLabels'
