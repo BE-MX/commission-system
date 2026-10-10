@@ -113,7 +113,7 @@ def mysql_engine(request):
         identity = subprocess.check_output(['whoami', '/user', '/fo', 'csv', '/nh']).decode('ascii', errors='replace')
         sid = next(csv.reader([identity.strip()]))[1]
         permissions = subprocess.run(['icacls', str(directory), '/inheritance:r', '/grant:r',
-            '*' + sid + ':(OI)(CI)F', '*S-1-5-18:(OI)(CI)F'], capture_output=True, text=True)
+            '*' + sid + ':(OI)(CI)F', '*S-1-5-18:(OI)(CI)F'], capture_output=True)
         assert permissions.returncode == 0, 'Cannot protect production clone before MySQL initialization'
     data = directory / 'data'
     temporary = directory / 'temp'; temporary.mkdir()

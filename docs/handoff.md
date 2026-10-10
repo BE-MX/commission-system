@@ -9,6 +9,8 @@
 - 实查额外writer：北京sync-outbound.js cron及source小时事件(root@%定义、scheduler ON)。已实现原cron独占锁围栏/手工排空/批准摘要、事件保留definer/rawhash暂停与最终恢复、P_S可见/注册/lost0排空门禁；真实owned MySQL2通过，受影响部署7文件87通过。事件DBA `.deploy_state/credentials/event-maintenance.env` 尚未提供，发布在停服务前阻断；未冻结生产cron或事件。该文件只含COMMISSION_DB_USER/PASSWORD，不替换migration.env或应用.env。
 - 详细验证与未验收范围见[生产证据](requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)，发布/验收/停止接单见[受管操作](../deploy/customer-orders.md)。库存NULL单位712/915、刷新语义、真实合同价/授权、生产订单/PI/通知未验收；WRITES/INVOICE/MAIL/NOTIFICATION/OUTBOUND继续false。当前没有能力可标记正式开放。无origin push/main合并。
 - 本轮末次办公室127.0.0.1:2223在传候选时连接拒绝、TCP复核关闭；待用户恢复持续转发。182新备份/proof/受管prepare及发布未执行。北京末查1227/.env原摘要、六开关false、index不存在。整合后SQLite747通过；183/限流/模式MySQL67通过，实际密码登录+库存价格失效/完整交易至PI/PDF MySQL8通过；两前端按原锁构建通过。扩大MySQL全组未完成，首个缺解锁审计表的夹具已修，共用登录助手改密码；旧OTP测试未全部迁移。独立审查无新P1/P2。
+- 用户回复事件管理文件已添加、连接已恢复；再测GameViewer运行但2223无监听/SSH拒绝，新增文件及权限未核验。受管北京mirror check再次ready，未冻结；待实际转发监听后继续新182备份/proof/发布，不重复申请授权。候选代码f05f18e9及其bundle已本地就绪，尚未传入办公室。
+- 后续2223监听/SSH实际恢复，f05候选已传入并准备独立源码，未激活；发现root凭据追加migration.env形成重复键，备份因独立身份门禁拒绝且未开始导出。已验证两组连接/原ark_migrator备份权限/root原definer和P_S，将原件保留受限目录后拆分migration.env与event-maintenance.env，实际ACL仅acciowork/SYSTEM；应用.env未变，尚未暂停cron或事件。SSH/凭据阻断已解除，继续新182完整备份与proof；icacls中文输出捕获改用bytes避免UTF8解码线程异常。
 
 ## 2026-10-10 预售出库完成改用检验提交（Codex，本地实现，未部署）
 

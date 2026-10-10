@@ -23,7 +23,7 @@ def private_directory(path):
     identity = subprocess.check_output(['whoami', '/user', '/fo', 'csv', '/nh']).decode('ascii', errors='replace')
     sid = next(csv.reader([identity.strip()]))[1]
     result = subprocess.run(['icacls', str(path), '/inheritance:r', '/grant:r',
-        '*' + sid + ':(OI)(CI)F', '*S-1-5-18:(OI)(CI)F'], capture_output=True, text=True)
+        '*' + sid + ':(OI)(CI)F', '*S-1-5-18:(OI)(CI)F'], capture_output=True)
     if result.returncode:
         raise RuntimeError('Cannot restrict the database backup directory')
 

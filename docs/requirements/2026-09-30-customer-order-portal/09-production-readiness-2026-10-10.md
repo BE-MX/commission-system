@@ -22,6 +22,10 @@
 
 末次北京复核仍为1227af7b，受保护.env摘要b59b8912…与prepare一致，全部六项门户开关false，index不存在。办公室入口曾恢复并成功读取当前HEAD/182；之后传输候选时127.0.0.1:2223变为连接拒绝，再测TCP仍关闭。候选尚未传入办公室，未执行新182备份/完整恢复proof/受管应用prepare或激活。当前技术阻断为办公室SSH转发和独立事件管理凭据；恢复入口后须先重核生产版本，防止再次漂移。
 
+用户随后回复已添加事件管理凭据、已恢复连接。重新核验时GameViewer进程运行但本机2223无监听，SSH连接拒绝，尚不能核验新增文件及其权限。北京1227/active仍成立，cron原始摘要13e3a254…按受管只读check再次验证ready；没有冻结cron或修改数据库事件。待实际SSH转发监听后继续已授权发布流程，不把用户回复当作服务器验证结果。
+
+后续监听实际恢复，SSH成功；办公室仍1227，候选f05f18e9已通过bundle传入并由source_release准备独立源码，未激活。实查用户将root凭据追加到migration.env形成重复键，导致最后一组覆盖独立身份，备份门禁在开始导出前拒绝。已验证原ark_migrator完整备份权限与新root@%原事件定义者/P_S可见性，在受限portal-credential-recovery-9ad3aedbb768469aa3b2323a7c180fa6保留原件并拆分两份文件；实查ACL只含acciowork/SYSTEM。应用.env未替换，源事件/cron未暂停。凭据和SSH阻断解除；新182完整备份/proof及实际受管发布仍待完成。中文Windows icacls输出遇PYTHONUTF8解码异常，已改为只判返回码并捕获原始字节，不影响ACL独立核验。
+
 ## 客户与经营来源
 
 24个门户表已安装；初检及复核 site/access/account/membership/catalog授权/outbox/订单/PI等为0，仅authority barrier1和审计21。生产没有可据此宣称已授权的客户或采购账号。
