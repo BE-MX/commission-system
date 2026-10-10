@@ -79,6 +79,15 @@ def test_backend_uses_streamed_script_and_rejects_remote_failure(monkeypatch):
         cloud_backend.invoke(request)
 
 
+def test_retention_allows_large_history_without_extending_publish_timeout(monkeypatch):
+    command = Mock(return_value=subprocess.CompletedProcess([], 0, '{}', ''))
+    monkeypatch.setattr(static_sync.subprocess, 'run', command)
+    static_sync.remote('example.test', {'action': 'retention'})
+    assert command.call_args.kwargs['timeout'] == 1800
+    static_sync.remote('example.test', {'action': 'plan'})
+    assert command.call_args.kwargs['timeout'] == 300
+
+
 def test_static_failure_reports_remote_cause(monkeypatch):
     monkeypatch.setattr(static_sync, 'remote_python', Mock(return_value=subprocess.CompletedProcess(
         [], 1, '', 'Protected browser asset missing')))

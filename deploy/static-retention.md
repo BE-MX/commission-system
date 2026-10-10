@@ -19,6 +19,8 @@
 # 核对清单后，同一命令去掉 --prepare-only 才删除。
 ```
 
+云端大规模维护单目标允许 1800 秒，普通静态发布仍为 300 秒；首次累计数十万资源的核验与清理可能持续数分钟。
+
 该入口不发布应用代码、不重启服务、不运行迁移；要求最近应用发布 `publish-current.json.status=succeeded` 且无未完成 schema 恢复。它与其他专项参数互斥。维护清单重新在锁内计算，所有受保护摘要、冲突和删除树中的链接/Windows junction 核验后才执行；Windows 使用原生 PowerShell `Remove-Item -LiteralPath`，目标须严格位于指定目录内部。失败保留已完成目标，重跑可接续，不把旧回执冒充本轮完成。
 
 回执：安装目录 `.deploy_state/static-retention-current.json`、`office-frontend-retention.json`；云端受管静态状态目录 `retention-current.json`。历史清单：`office-frontend-history.json` 和云端 `retention-history.json`。普通应用发布已经成功而后续维护失败时，应用成功状态保留并附 `static_retention_error`，部署进程仍返回非零；修复后使用独立维护入口，不必重新发布业务应用。
