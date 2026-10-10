@@ -1,92 +1,68 @@
-# 客户下单门户发布接入
+# 客户下单门户发布与验收
 
-当前为本地实现与待启用配置。客户域名、主机归属、TLS、邮件及试点客户配置尚未确认；
-`platforms.json` 只列 pending，普通发布不构建或发布客户站。本文件不构成发布授权。
+客户确认入口 `https://shop.leshine.cloud`，北京后端承接；员工使用 `https://leshine.cloud`。`platforms.json` 仅登记发布目标，不证明站点已部署或业务已验收。实机结果见 `docs/requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md`。
 
-## 构建与现有发布入口
+2026-10-10 用户确认：方舟员工登记采购邮箱、联系人和密码，客户直接密码登录，不走邀请或邮箱验证码。客户、业务员及生产流程测试由用户选择操作；代理不编造客户、合同价、库存单位或执行身份。门户边界止于方舟正式 PI，回款/出库继续使用既有模块。
 
-客户站组件名 `frontend-portal`。确认目标并评审后，才将 pending 项移入 `static_targets`，
-填入实际 `host`、`domain`、`backend_owner` 和固定静态根目录
-`/var/www/ark-static/customer-orders`。不得复制其他客户门户的身份/账号或复用素材门户权限。
-当前预留模板适用于同主机回环后端，跨主机代理需重新验证网络和可信代理地址。
+## 固定版本与 HTTPS
 
-正式动作仍走 `deploy/deploy.bat`，遵守固定候选、干净工作区、迁移、单活 writer、准备和
-激活规则。已登记客户站与其他站点共享制品摘要、差异传输、损坏缓存阻断和静态切换机制。
-只将主站/PM产物交给办公室静态步骤，客户站走其已登记云静态目标，避免首次发布时向
-不存在的办公室目录写入。未登记时不要求发布机有 pnpm。
+代码在所属 codex worktree 验证。操作绑定干净候选完整 SHA；禁止 latest、stamp、开发机升级共享生产库。
 
-登记后发布机需可用 Node 与 pnpm。客户站使用其已提交的 `pnpm-lock.yaml`，执行
-`pnpm install --frozen-lockfile --ignore-scripts`，再 `pnpm exec vite build --outDir <candidate>`。
-依赖与构建缓存、日志和临时制品位于 `.deploy_state/`。不将 `.env`、令牌、订单数据或上传
-文件放入静态制品。客户前端只调用同源API，不复制生产前端环境变量到候选。
+```powershell
+deploy\deploy.bat --customer-portal-site https --revision <full-sha> --prepare-only
+deploy\deploy.bat --customer-portal-site https --revision <full-sha>
+deploy\deploy.bat --customer-portal-site verify --revision <full-sha>
+```
 
-## HTTPS 与代理边界
+基础设施入口核对全部 DNS 地址、Nginx 归属、模板/脚本摘要及当前配置摘要。仅客户 `/api/portal/v1/` 代理到回环后端 `127.0.0.1:8001`；员工/其他 API 和点文件返回 404。清除 Authorization、X-Forwarded-For/Proto 和 Forwarded；X-Real-IP 由 TCP 客户端覆盖。API/HTML no-store，关闭原始 access 日志和代理缓存/缓冲。
 
-`nginx/customer-orders.conf.template` 是未激活模板。替换域名占位符、验证实际证书路径和
-回环后端端口后，仍须在目标候选环境执行 `nginx -t` 及真实探针，按受审发布流程安装。
-本轮没有 Nginx 实机语法/重载验证，也没有为域名申请证书。
+远端锁、激活前原子 pending journal、受限备份和严格字节比对保护恢复。只读 verify 遇 pending 拒绝，同固定版本 https 动作才允许恢复；原配置恢复后也必须 reload。未知漂移不能覆盖。证书/SNI当前有效和自动续期链是独立验收项。
 
-- HTTP 只允许证书验证路径，其余跳转HTTPS。
-- 仅 `/api/portal/v1/` 进入客户路由，其余 `/api` 返回404；员工登录与管理API仍在方舟域名。
-- 覆盖 `X-Real-IP` 为TCP客户端地址，清空 `X-Forwarded-For`、`X-Forwarded-Proto`、
-  `Forwarded`、`Authorization`。保留 Origin/Cookie/CSRF；不增加CORS或员工Bearer登录。
-- 门户依赖原始后端TCP peer：专用服务可关闭Uvicorn代理头解析；共享服务至少须确保此
-  Nginx location移除上述代理头，避免Uvicorn把peer改成公网客户IP。中间代理/CDN若加入，
-  需重新验证可信链，不能直接信任任意公网X-Real-IP。
-- 应用后端不得直接对公网开放。当前同机模板应将实际Nginx出口地址加入
-  `PORTAL_TRUSTED_PROXY_IPS`；不能填通配或仅凭浏览器传入值判断可信。
-- API no-store、禁用代理缓存/缓冲，HTML no-store，点文件拒绝；普通access日志关闭，
-  邀请URL/OTP/邮件信封不可进入日志。上线前同时检查应用、CDN及错误日志是否记录敏感URL。
+客户站随完整受管发布构建：冻结 pnpm-lock、禁用安装脚本，仅传静态制品，经摘要差异传输和受管切换到 `/var/www/ark-static/customer-orders`。不向办公室发布客户站，不传 .env/密码/业务数据。
 
-## 受保护配置与开通顺序
+## 180→181、备份与恢复
 
-`customer-orders.env.example` 的五个开关均为false，秘密和实际业务绑定全部留空。
-经复核后将必要项合入受保护的后端配置，不整文件覆盖现有 `.env`。
+新增 `181_portal_password_login` 的父 revision 为 `180_settlement_funding_amendment`。只给账号表增 nullable `password_hash VARCHAR(255)`；不设默认密码、不激活历史账号、不删除业务行。downgrade 拒绝丢弃密码哈希。有权员工明确设置密码并恢复账号时，当前授权内 invited membership 转 active，disabled membership 不自动恢复。
 
-1. 确定客户域名/员工域名、站点码、OKKI身份namespace、可信代理地址；校验来源一致。
-2. 经秘密管理渠道配置独立OTP/CSRF/邮件加密密钥和版本，配置邮件发送方/SMTP；不提交密钥。
-3. 核对迁移状态。172/173已在隔离增量库验证；从历史空库重放止于126切换门禁，不能据此
-   宣称完整生产升级通过。不得stamp、跳过或伪造客户数据切换批准。
-4. 按B01–B07在方舟配置真实客户、业务员、目录、合同价、SKU单位、起订步长及安全余量；
-   库存观测列、时区、时效和单位需用真实镜像证明。无可信库存/价格时保持不可下单。
-5. 在授权的测试环境完成邀请/邮箱验证、撤权、双端下单确认/PI与下载、通知失败恢复。
-   再按明确试点范围逐项打开登录、邮件、下单、建票和业务通知开关，不默认一并开启。
+空库全链仍要求 126 的真实客户切换合同，缺失时失败必须保留，不能绕过/stamp。精简 fixture 的176/177/181 DDL不证明生产基线升级。
 
-停止接单可先关闭 `PORTAL_WRITES_ENABLED`/`PORTAL_INVOICE_ENABLED`；需全面封闭访问时
-关闭 `PORTAL_ENABLED`。开关变化不替代数据回滚，不删除已成功订单或PI。邮件开关与在途
-发送分别核验；遵守现有单活调度及恢复流程。
+先在办公室已安装服务的受管候选生成完整逻辑备份：
 
-## 本轮本地证据与未完成项
+```powershell
+# 候选须位于 D:\commission-system\.deploy_state\sources\<SHA>，已安全传入该机 Git。
+deploy\deploy.bat --customer-portal-db-backup --live-root D:\commission-system --revision <full-sha> --no-pull
+```
 
-发布构建/协调/源码回归53 passed；实际Uvicorn代理peer边界3 passed。实际 pnpm11.25.0
-冻结安装通过（策略校验开启，未运行依赖脚本），临时制品Vite构建29模块通过，产物与
-现有客户站构建一致。首次离线安装缺策略元数据，按原命令补读注册表后通过，未绕过策略。
-发布回归使用模拟进程，不等同执行远端发布或Linux原子切换；Nginx模板未实机验证。
+受保护独立 DBA 配置位于 `.deploy_state/credentials/migration.env`；受审工具清单位于 `.deploy_state/tools/mysql-8.4.6/manifest.json`。备份目录仅办公室用户/SYSTEM可读；唯一客户端配置、禁用login paths及显式核定TCP目标保护连接，临时凭据finally删除。受管DB锁阻断并发DDL，InnoDB单事务备份不暂停正常业务写入。备份时间、UUID、revision、字节和摘要是备份证据，不等于恢复成功。
 
-独立审查发现并修复“首次登记门户误进入办公室静态激活”的P2，并补旧live无门户目录
-回归。真实域名/TLS、客户经营配置、完整迁移基线、SMTP及生产试点仍为未满足门禁。
+新目录、独占回环 MySQL、随机凭据、受限 ACL、关闭 event_scheduler 的隔离库恢复真实180备份。单独运行 `test_mysql_production_upgrade.py`，由原Alembic升级181，核对全部原业务行/FK/唯一键不变，再恢复180并重放181；禁止stamp/伪造基线。成功proof放入办公室 `.deploy_state/customer-portal-upgrade-proof.json`。
 
+完整应用发布仍走办公室候选 `deploy.bat --live-root ... --revision ... --no-pull --prepare-only`；准备通过后同固定参数去掉 prepare-only。实际唯一180→181链、独立DBA和全部writer预检通过后，维护窗口停止登记writer，再取新的完整备份后一次升级。包含181的其他未演练链拒绝，不让更长pending绕过门禁。DDL后失败保留停写/journal，不能自动重启旧代码或强改revision。生产恢复只能使用维护窗口备份，核对备份后是否有新交易；新数据先保全，不把旧演练快照覆盖生产。只恢复原运行writer，不启动原本停用的服务。
 
-## 开发分支1.22执行模式启动约束
+## 受保护配置及分阶段开放
 
-后端bootstrap在scheduler/就绪前同步建立或核对outbound-worker-v1模式，独立worker/SCHED开关；首建共享锁busy时启动拒绝并保持暂停，已有模式ON/OFF重启只读核对。数据库或模式不可确认不当作legacy。锁取得/释放不确定时废弃物理连接；关闭业务开关不删除模式或恢复旧创建。此为开发实现边界，目标调度/兼容回退、真实新旧进程、完整历史迁移及供应商/SMTP/COS与B01–B07仍须独立验收，具体实际本地测试见docs/handoff.md。
+逐键合并实际 .env，保留其他配置、权限和受限备份。默认开关仍false，不绕过require_enabled。
 
+```powershell
+deploy\deploy.bat --customer-portal-config prepare --revision <full-sha>
+# 固定应用与181已实际激活后，开账号管理/登录，交易与通知仍关闭。
+deploy\deploy.bat --customer-portal-config enable-access --revision <full-sha>
+# 停止订单写入/建票，保留其他独立能力。
+deploy\deploy.bat --customer-portal-config stop-orders --revision <full-sha>
+# 全面封闭门户。
+deploy\deploy.bat --customer-portal-config close --revision <full-sha>
+```
 
-## 开发分支1.23旧Node模式读取与权限
+实际 origin/site code、leshine-okki身份来源、回环可信代理、独立CSRF/AUTH密钥在服务器合并，秘密不输出。密码登录不依赖SMTP。AUTH_SECRET参与耐久创建回执摘要，当前没有摘要keyring，不能随意轮换；轮换前须专门实现和验收旧摘要保留。配置修改经受管重启刷新缓存，进程覆盖配置须先处理其受保护来源。
 
-旧Node的模式准入直接读取模式表，不能把元数据中不可见当表不存在。缺表legacy仅允许已核证171 parent且同连接版本表唯一精确值；权限不足和172/173或未知版本缺表均拒绝。部署账号需能读取模式及适用的版本证据，开发测试不自动修改现场权限。实际Node/mysql2局部函数探针不证明完整进程、Node22、历史迁移或成功切换；按mode目标timer、兼容回退及finalize/resume统一凭据仍是待完成项，不能据此恢复旧调度。具体证据见docs/handoff.md。
+| 开关 | 能力及开放前提 |
+| --- | --- |
+| PORTAL_ENABLED | 管理站点/真实客户/采购密码和授权目录；还需用户创建有效站点与真实授权 |
+| PORTAL_WRITES_ENABLED + 客户can_order | 报价、提交及客户确认；合同价/库存单位/刷新语义、失效与幂等/隔离验收 |
+| PORTAL_INVOICE_ENABLED | 正式PI及下载；完整提案、唯一建票、金额/PDF/存储及恢复验收 |
+| PORTAL_MAIL_ENABLED + PORTAL_NOTIFICATION_ENABLED | 业务通知；SMTP、批准真实收件范围、送达及失败恢复；不参与登录 |
+| PORTAL_OUTBOUND_WORKER_ENABLED | 独立出库执行器，本轮false；门户打开不接管出库或启用自动回款/小满推送 |
 
+验收顺序：员工授权与账号→密码登录、撤权/跨客户隔离→商品/合同价→库存及价格失效→下单/重复提交/丢ACK恢复→员工完整提案/客户接受→唯一PI/下载→通知及失败恢复。写测试仅隔离库，真实发信和生产交易由用户在其批准范围操作。尚未完成验收的能力不得标为正式开放。
 
-## 开发分支1.24模式目标与发布阶段回执
-
-C03已按实际mode决定旧timer：v1始终disabled/inactive，初始legacy保留原四种baseline。activate/verify经专用Node/MySQLfence；legacy持锁至目标核验及待释放journal，确认释放后才成功；v1只读不争合法worker锁。独立模式下限防失败重试降级，同发布completed重试保留原baseline，local绑定模式/库/发布身份/严格bool目标与释放确认。failed_paused仅确认timer暂停，不表示业务进程排空；恢复先freeze/drain。真实systemd/cgroup、Node22、新进程接管、I79回退及I80共同成功标记仍未完成，不直接运行真实prepare/publish。实际结果只见docs/handoff.md。
-
-
-## 开发分支1.25发布恢复共同凭据
-
-受管publish、migration resume及历史159/160 finalizer现共用outbound回执/候选/实际verify核验。managed timer不再按原running记录无条件start；已知v1目标暂停，初始legacy按经核验baseline。缺receipt或仅installed_paused不能finalize，历史凭据不补造，需受审协调发布。fresh mode floor不能由历史legacy降低。共同guard失败只向受信登记目标请求pause，保留active service/字节/mode/业务事实；SSH/IO/审计/状态不明固定报未确认，不宣称已排空。success摘要含最新绑定outbound，静态后再check。当前本地替身/实际函数体证据不代表生产、真实systemd/cgroup或完整协议回退；I78/I79/I80现场门禁保持，具体终态见docs/handoff.md。
-
-
-## Python回退协议探针（局部接入，不能据此启用自动回退）
-
-rollback_protocol.py由候选脚本位置导入同候选backend Settings，使用专用AUTOCOMMIT连接只读观察UUID/schema与持久mode；legacy控制连接取得共享执行锁并贯穿窗口新读，结果未知时物理socket失效，不回池。Office/北京的changed激活前观察、失败恢复窗口guard已有接入；真实服务回退和旧制品持续协议兼容尚未核证，I92/I79/C05开放。当前不能用Health200或14项控制器测试批准自动回退、正式切换或上线。配置仍由方舟Settings维护，不手工删mode或恢复旧timer。
+暂停单个客户授权立即撤销会话；停止接单先关WRITES/INVOICE；全面封闭可关站点status或PORTAL_ENABLED。保留历史订单、PI、审计和持久出库模式。构建、配置写入和健康检查均不能代替业务上线验收。

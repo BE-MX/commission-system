@@ -50,6 +50,8 @@ def execute(request):
             from migration_recovery149 import execute as recover
             return recover(request, connection, settings)
         if request["action"] == "check":
+            from customer_portal_backup import validate_proof
+            validate_proof(journal.resolve().parent, connection, request['pending'], request['schema'])
             return {"status": "ready", "database": runtime.COMMISSION_DB_NAME}
         if connection.execute(text("SELECT GET_LOCK('leshine-schema-release',0)")).scalar() != 1:
             raise RuntimeError("Another database release owns the lock; no writer stopped")
@@ -69,6 +71,10 @@ def execute(request):
             pending = list(reversed([r.revision for r in script.iterate_revisions(request["schema"], current[0], implicit_base=True)]))
             if pending != request["pending"]:
                 raise RuntimeError("Pending migration chain changed since preflight; no writer stopped")
+            if '181_portal_password_login' in pending and pending != ['181_portal_password_login']:
+                raise RuntimeError('Portal credential release requires the separately rehearsed unique 180-to-181 path')
+            from customer_portal_backup import validate_proof
+            validate_proof(journal.resolve().parent, connection, pending, request['schema'])
             record.update(status="stopping", schema=request["schema"], database=current[0], pending=pending,
                           writers=[{"writer": w, "before": writer_state(w, request["nssm"])} for w in request["writers"]])
             atomic_json(journal, record)
@@ -79,6 +85,10 @@ def execute(request):
                     atomic_json(journal, record)
             if any(writer_state(writer, request["nssm"]) != "stopped" for writer in request["writers"]):
                 raise RuntimeError("A database writer is still running; no DDL executed")
+            if pending == ['181_portal_password_login']:
+                from customer_portal_backup import snapshot
+                record['backup'] = snapshot(journal.resolve().parent.parent, settings, connection)
+                atomic_json(journal, record)
             # Alembic imports Settings in this isolated process after the override.
             config.get_settings = lambda: settings
             from alembic import command

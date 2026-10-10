@@ -1,5 +1,10 @@
 # 莱莎方舟 API 参考
 
+## 客户下单门户密码认证（2026-10-10 候选）
+
+客户 POST /api/portal/v1/auth/login使用email/password、bootstrap Cookie/CSRF和同源Origin；员工POST /api/portal/admin/v1/customers/{access_id}/accounts使用当前Bearer授权、Idempotency-Key及email/contact_name/password。PATCH /accounts/{id}/password使用If-Match及password/reason并撤销旧会话。旧邀请、challenges、verify路由不挂载。详细契约和实际开放结果见客户下单门户03-api-contract.md和09-production-readiness-2026-10-10.md。
+
+
 ## 订单发票与回款备注编辑（2026-10-10）
 
 - `PATCH /api/invoice/invoices/{invoice_id}/remark`：现有 `invoice:write` 和实时订单数据范围；body `{remark,expected_version}`，版本取详情 `edit_version`，备注最多5000字符，空字符串清空。返回 `{id,remark,edit_version}`。

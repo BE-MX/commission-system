@@ -34,7 +34,7 @@ def test_initial_settings_create_is_conditional_and_whitelisted(configured):
     ctx.db.commit()
     assert result["configured"] and result["row_version"] == 1
     assert result["origin"] == ctx.settings.PORTAL_ORIGIN and result["currency"] == "USD"
-    assert "PORTAL_OTP_SECRET" not in str(result) and "smtp" not in str(result).lower()
+    assert "PORTAL_AUTH_SECRET" not in str(result) and "smtp" not in str(result).lower()
     with pytest.raises(PortalError) as error:
         site.update_settings(ctx.db, 1, 0, settings_body("disabled"))
     assert error.value.code == "VERSION_CONFLICT"

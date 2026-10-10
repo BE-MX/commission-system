@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     PORTAL_TRUSTED_PROXY_IPS: list[str] = Field(default_factory=list)
     PORTAL_CSRF_KEYS: dict[str, str] = Field(default_factory=dict, repr=False)
     PORTAL_CSRF_KEY_VERSION: str = "v1"
-    PORTAL_OTP_SECRET: str = Field(default="", repr=False)
+    PORTAL_AUTH_SECRET: str = Field(default="", repr=False)
     PORTAL_MAIL_KEYS: dict[str, str] = Field(default_factory=dict, repr=False)
     PORTAL_MAIL_KEY_VERSION: str = "v1"
     PORTAL_SESSION_IDLE_MINUTES: Annotated[int, Field(ge=5, le=120)] = 30

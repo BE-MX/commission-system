@@ -83,7 +83,7 @@ def trade(service_schema, monkeypatch, request):
     request.addfinalizer(cleanup_owned_mailbox)
     suffix = uuid4().hex[:12]
     settings = SimpleNamespace(PORTAL_ENABLED=True, PORTAL_SITE_CODE='test' + suffix,
-        PORTAL_ORIGIN='https://orders.example.test', PORTAL_OTP_SECRET=secrets.token_urlsafe(32),
+        PORTAL_ORIGIN='https://orders.example.test', PORTAL_AUTH_SECRET=secrets.token_urlsafe(32),
         PORTAL_CSRF_KEYS={'v1': 'c'*32}, PORTAL_CSRF_KEY_VERSION='v1',
         PORTAL_MAIL_KEYS={'v1': 'ab'*32}, PORTAL_MAIL_KEY_VERSION='v1',
         PORTAL_OTP_MINUTES=5, PORTAL_SESSION_HOURS=12, PORTAL_SESSION_IDLE_MINUTES=30,

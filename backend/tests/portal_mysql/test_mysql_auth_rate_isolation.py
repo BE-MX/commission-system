@@ -27,7 +27,7 @@ def test_each_fixture_keeps_real_shared_ip_send_quota(trade,application_case):
                 ChallengeInput(email=uuid4().hex+'@example.test',purpose='login'),ip)
         assert caught.value.code=='RATE_LIMITED' and caught.value.status==429
         db.rollback()
-        digest=keyed_digest(auth.get_settings().PORTAL_OTP_SECRET,'rate','send-ip:'+ip)
+        digest=keyed_digest(auth.get_settings().PORTAL_AUTH_SECRET,'rate','send-ip:'+ip)
         buckets=db.scalars(select(RateBucket).where(RateBucket.scope_key_hash==digest)).all()
         assert len(buckets)==1 and buckets[0].count==30
         assert db.scalar(select(func.count()).select_from(OutboxEvent))==before

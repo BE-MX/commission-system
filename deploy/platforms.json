@@ -27,6 +27,13 @@
       "root": "/var/www/ark-static/customer-media",
       "domain": "media.leshine.cloud",
       "backend_owner": "beijing"
+    },
+    {
+      "component": "frontend-portal",
+      "host": "ubuntu@154.8.205.162",
+      "root": "/var/www/ark-static/customer-orders",
+      "domain": "shop.leshine.cloud",
+      "backend_owner": "beijing"
     }
   ],
   "pending_targets": [
@@ -44,10 +51,6 @@
     {
       "component": "video",
       "reason": "Authoritative source outside repository; COS migration deferred"
-    },
-    {
-      "component": "frontend-portal",
-      "reason": "Domain/TLS, backend owner and pilot business configuration not confirmed; customer ordering remains disabled"
     }
   ],
   "external_services": [

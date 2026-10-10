@@ -263,20 +263,24 @@ def update_account(db, actor_id, public_id, expected, body):
     for access in bindings:
         scoped_access(db, access.public_id, actor)
     require_version(account.row_version, expected)
-    if body.status == "active" and account.verified_at is None:
-        reject("EMAIL_NOT_VERIFIED", "账号须先通过邀请验证邮箱，不能直接激活。")
-    if body.status == "invited" and (account.status != "disabled" or account.verified_at is not None):
-        reject("INVALID_ACCOUNT_TRANSITION", "仅已停用且未验证邮箱的账号可恢复为待邀请。")
+    if body.status == "active" and not account.password_hash:
+        reject("PASSWORD_NOT_CONFIGURED", "请先为采购账号设置密码，再恢复访问。")
     before = account.row_version
     account.status = body.status
     account.auth_version += 1
     account.row_version += 1
+    if body.status == "active":
+        # Explicit employee activation can recover historical invitation records.
+        # Never reactivate revoked/disabled memberships as a side effect.
+        for member in db.scalars(select(Membership).where(Membership.account_id == account.id,
+                Membership.status == "invited")).all():
+            member.status = "active"
+            member.version += 1
     revoke_sessions(db, account_id=account.id)
     audit(db, actor, bindings[0], account, "account_updated", before=before, reason=body.reason,
           changes={"status": account.status})
     db.flush()
-    return {"id": account.public_id, "status": account.status, "row_version": account.row_version,
-            "requires_invitation": account.status == "invited"}
+    return {"id": account.public_id, "status": account.status, "row_version": account.row_version}
 
 
 def list_customers(db, actor_id, *, page=1, page_size=20, status=None, keyword=None):
@@ -314,17 +318,10 @@ def customer_detail(db, actor_id, public_id, *, page=1, page_size=20):
         .offset((page - 1) * page_size).limit(page_size)).all()
     members = []
     for account, member in rows:
-        invitation = db.scalar(select(Invitation).where(Invitation.membership_id == member.id)
-            .order_by(Invitation.created_at.desc(), Invitation.id.desc()).limit(1))
-        invitation_view = None
-        if invitation is not None:
-            state = "consumed" if invitation.consumed_at else "revoked" if invitation.revoked_at else (
-                "expired" if invitation.expires_at <= beijing_now() else "pending")
-            invitation_view = {"id": invitation.public_id, "status": state, "row_version": invitation.row_version}
         members.append({"id": account.public_id, "email": account.email_display,
             "contact_name": account.contact_name, "status": account.status,
-            "row_version": account.row_version, "email_verified": account.verified_at is not None,
-            "membership_status": member.status, "invitation": invitation_view})
+            "row_version": account.row_version, "password_configured": bool(account.password_hash),
+            "membership_status": member.status})
     grants = db.scalars(select(CatalogItem.public_id).join(CatalogGrant,
         CatalogGrant.catalog_item_id == CatalogItem.id).where(CatalogGrant.access_id == access.id,
         CatalogGrant.status == "enabled")).all()

@@ -1,5 +1,19 @@
 # LeShine 开发方案对抗性审查
 
+## v1.74 员工登记密码登录（2026-10-10）
+
+用户确认 shop.leshine.cloud 由北京承接，员工登记采购邮箱/联系人/密码；客户直接密码登录，不再邀请或验证码认证。业务边界仍止于方舟 PI。旧邀请/OTP内容为历史记录，本节优先。
+
+- 客户 POST `/api/portal/v1/auth/login`，email/password，沿用 bootstrap preauth Cookie/CSRF、可信代理、Origin和安全会话；原 challenges/verify 未挂载。
+- 员工 POST `/api/portal/admin/v1/customers/{access_id}/accounts`，Idempotency-Key及email/contact_name/password，同一原请求可恢复，不发邮件。PATCH `/accounts/{id}/password` 使用If-Match及password/reason，撤销旧会话；邀请/撤销邀请路由不再挂载。
+- 密码8–64字符且UTF-8≤72字节，复用bcrypt，不裁剪密码；不入回执/响应/日志/前端存储。锁外哈希前短事务核当前员工范围，完成时重新鉴权。
+- 181在180后仅增nullable password_hash，不设默认密码或激活历史账号。明确员工恢复时仅invited成员转active，disabled成员保持原值。
+- PORTAL_AUTH_SECRET为独立至少32字节密钥，参与耐久创建回执摘要；当前不得随意轮换，旧摘要keyring须另行验收。密码登录可关闭邮件和邮件密钥。
+- 门户启用不接管出库；必须同时显式开启OUTBOUND_WORKER才安装模式，既有持久模式不降级。旧认证邮件只保留过期秘密清理，不调度发送。
+
+实际部署、升级、证书、配置和未完成业务验收见[生产准备记录](09-production-readiness-2026-10-10.md)与[发布步骤](../../../deploy/customer-orders.md)。本节是契约，不能证明生产已开放。
+
+
 ## v1.73 范围剥离后的门禁重分类（2026-10-08）
 
 业务决定门户边界止于生成方舟 PI，回款/出库/履约由方舟既有模块处理。本轮为范围重分类，不关闭任何已识别风险，原有发现、反例与证据全部保留：

@@ -29,9 +29,9 @@ def validate_configuration(settings):
         raise ValueError("PORTAL_ORIGIN requires HTTPS")
     csrf_key = settings.PORTAL_CSRF_KEYS.get(settings.PORTAL_CSRF_KEY_VERSION, "")
     mail_key = settings.PORTAL_MAIL_KEYS.get(settings.PORTAL_MAIL_KEY_VERSION, "")
-    if len(csrf_key.encode()) < 32 or len(settings.PORTAL_OTP_SECRET.encode()) < 32:
-        raise ValueError("Portal CSRF and OTP keys must each have at least 32 bytes")
-    if len(mail_key) != 64 or any(c not in "0123456789abcdefABCDEF" for c in mail_key):
+    if len(csrf_key.encode()) < 32 or len(settings.PORTAL_AUTH_SECRET.encode()) < 32:
+        raise ValueError("Portal CSRF and auth keys must each have at least 32 bytes")
+    if settings.PORTAL_MAIL_ENABLED and (len(mail_key) != 64 or any(c not in "0123456789abcdefABCDEF" for c in mail_key)):
         raise ValueError("Portal mail key must encode exactly 32 bytes as hexadecimal")
     csrf_bytes = {key.encode() for key in settings.PORTAL_CSRF_KEYS.values()}
     if any(len(key) < 32 for key in csrf_bytes):
@@ -39,8 +39,8 @@ def validate_configuration(settings):
     if any(len(key) != 64 or any(c not in "0123456789abcdefABCDEF" for c in key) for key in settings.PORTAL_MAIL_KEYS.values()):
         raise ValueError("Every retained mail key must encode 32 bytes as hexadecimal")
     mail_bytes = {bytes.fromhex(key) for key in settings.PORTAL_MAIL_KEYS.values()}
-    otp_bytes = settings.PORTAL_OTP_SECRET.encode()
-    if csrf_bytes & mail_bytes or otp_bytes in csrf_bytes | mail_bytes:
-        raise ValueError("Portal CSRF, OTP and mail keys must be independent")
+    auth_bytes = settings.PORTAL_AUTH_SECRET.encode()
+    if csrf_bytes & mail_bytes or auth_bytes in csrf_bytes | mail_bytes:
+        raise ValueError("Portal CSRF, auth and mail keys must be independent")
     if settings.PORTAL_INVOICE_ENABLED and not settings.PORTAL_WRITES_ENABLED:
         raise ValueError("Portal invoice creation requires portal order submission")

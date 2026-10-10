@@ -1,5 +1,10 @@
 # 莱莎方舟 数据库表参考
 
+## 客户采购账号密码（181_portal_password_login，候选）
+
+ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工设置的bcrypt；父revision180。无默认密码或迁移自动激活。重置增加授权/记录版本并撤销旧会话；明确恢复账号可激活invited成员。downgrade拒绝丢弃哈希，升级及备份/隔离恢复见deploy/customer-orders.md。
+
+
 ## 账号解锁（`178_account_unlock`，本地未部署）
 
 `ark_account_unlock_audits` 记录被解锁用户、操作人 ID/用户名快照、解除的失败日志 ID 上界、失败次数和北京时间。用户外键为 MySQL `INTEGER UNSIGNED`，按 `user_id` 建索引；原 `ark_login_logs` 的状态、原因和时间不变。窗口内仅计入最近解锁边界之后的新失败，避免同秒失败被误清除。管理员解锁和密码登录以目标用户行锁串行化；重复解锁未锁定账号不写审计。迁移只新增表，父 revision 为 `177_portal_pi_header`；禁止删除审计数据的 downgrade，生产迁移走统一发布入口。
