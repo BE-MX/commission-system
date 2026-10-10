@@ -14,6 +14,7 @@ import sys
 import urllib.request
 import uuid
 import time
+import tempfile
 
 ROOT = Path('/home/ubuntu/commission-system')
 ENV = ROOT / 'backend/.env'
@@ -71,6 +72,21 @@ def service_identity():
     group = subprocess.check_output(['systemctl', 'show', 'ark-backend', '-p', 'Group', '--value'], text=True).strip()
     account = pwd.getpwnam(name)
     return account.pw_uid, grp.getgrnam(group).gr_gid if group else account.pw_gid
+
+
+def private_next(content, identity, mode=0o600):
+    fd, filename = tempfile.mkstemp(prefix='.env.portal-', suffix='.next', dir=ENV.parent)
+    path = Path(filename)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            path.chmod(0o600)
+            os.chown(path, *identity)
+            stream.write(content); stream.flush(); os.fsync(stream.fileno())
+        path.chmod(mode)
+        return path
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
 
 
 def apply_failure(phase, restore, stop):
@@ -154,9 +170,10 @@ def execute(request):
         candidate = merge_text(content, overlay).encode()
         backup = STATE / ('env-' + uuid.uuid4().hex)
         backup.write_bytes(original); backup.chmod(0o600)
-        temporary = ENV.with_name('.env.portal-next')
-        temporary.write_bytes(candidate); temporary.chmod(0o600); os.chown(temporary, *identity)
-        if fingerprint(ENV) != before: raise RuntimeError('Protected env changed; merge withheld')
+        temporary = private_next(candidate, identity)
+        if fingerprint(ENV) != before:
+            temporary.unlink()
+            raise RuntimeError('Protected env changed; merge withheld')
         os.replace(temporary, ENV)
         activated = False
         try:
@@ -184,8 +201,8 @@ def execute(request):
             def restore():
                 if fingerprint(ENV) != hashlib.sha256(candidate).hexdigest():
                     raise RuntimeError('Customer overlay failed with config drift; restore withheld') from None
-                temporary.write_bytes(original); temporary.chmod(stat.S_IMODE(metadata.st_mode)); os.chown(temporary, metadata.st_uid, metadata.st_gid)
-                os.replace(temporary, ENV)
+                restored = private_next(original, (metadata.st_uid, metadata.st_gid), stat.S_IMODE(metadata.st_mode))
+                os.replace(restored, ENV)
                 if activated or phase != 'prepare':
                     subprocess.run(['systemctl', 'restart', 'ark-backend'], check=True, timeout=45, capture_output=True)
             def stop():

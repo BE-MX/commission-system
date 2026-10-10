@@ -103,3 +103,14 @@ def test_configuration_probe_uses_the_service_identity(monkeypatch):
     monkeypatch.setattr(remote.subprocess, 'run', lambda *a, **kw: captured.append(kw) or SimpleNamespace(returncode=0, stdout='{}'))
     remote.runtime_probe({'SAFE_TEST':'value'}, (1000,1000))
     assert captured[0]['user'] == 1000 and captured[0]['group'] == 1000 and captured[0]['extra_groups'] == []
+
+
+def test_private_temporary_is_unique_and_never_overwrites_existing_file(tmp_path, monkeypatch):
+    import customer_portal_config_remote as remote
+    monkeypatch.setattr(remote, 'ENV', tmp_path / '.env')
+    monkeypatch.setattr(remote.os, 'chown', lambda *args: None, raising=False)
+    existing = tmp_path / '.env.portal-next'; existing.write_text('unrelated')
+    first = remote.private_next(b'isolated-test-content', (1,1))
+    second = remote.private_next(b'other', (1,1))
+    assert first != second and first.name.startswith('.env.portal-')
+    assert first.read_bytes() == b'isolated-test-content' and existing.read_text() == 'unrelated'
