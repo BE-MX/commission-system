@@ -7,7 +7,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from customer_portal_backup import BASE, TARGET, option, validate_proof
+from customer_portal_backup import BASE, TARGET, option, validate_proof, backup_privileges
 from customer_portal_config_remote import merge_text, portal_values, service_environment, apply_failure
 
 
@@ -114,3 +114,17 @@ def test_private_temporary_is_unique_and_never_overwrites_existing_file(tmp_path
     second = remote.private_next(b'other', (1,1))
     assert first != second and first.name.startswith('.env.portal-')
     assert first.read_bytes() == b'isolated-test-content' and existing.read_text() == 'unrelated'
+
+
+@pytest.mark.parametrize('grants', [
+    ['GRANT SELECT, EVENT, TRIGGER, SHOW VIEW ON `different_db`.* TO hidden'],
+    ['GRANT SELECT ON `commission_db`.* TO hidden'],
+    ['GRANT ALL PRIVILEGES ON `commission_db`.* TO hidden']])
+def test_backup_rejects_missing_object_visibility_before_dump(grants):
+    with pytest.raises(RuntimeError, match='backup privileges'):
+        backup_privileges(grants, 'commission_db')
+
+
+def test_backup_definition_privileges_are_not_mistaken_for_migration_only_privileges():
+    backup_privileges(['GRANT SELECT, SHOW VIEW, EVENT, TRIGGER ON `commission_db`.* TO hidden',
+        'GRANT SHOW_ROUTINE ON *.* TO hidden'], 'commission_db')

@@ -50,7 +50,9 @@ def execute(request):
             from migration_recovery149 import execute as recover
             return recover(request, connection, settings)
         if request["action"] == "check":
-            from customer_portal_backup import validate_proof
+            from customer_portal_backup import validate_proof, backup_privileges
+            if '181_portal_password_login' in request['pending']:
+                backup_privileges(grants, runtime.COMMISSION_DB_NAME)
             validate_proof(journal.resolve().parent, connection, request['pending'], request['schema'])
             return {"status": "ready", "database": runtime.COMMISSION_DB_NAME}
         if connection.execute(text("SELECT GET_LOCK('leshine-schema-release',0)")).scalar() != 1:

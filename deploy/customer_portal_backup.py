@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import uuid
@@ -30,6 +31,27 @@ def option(value):
     return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r') + '"'
 
 
+def backup_privileges(grants, database):
+    scoped, global_privileges = set(), set()
+    for grant in grants:
+        match = re.match(r'GRANT (.+) ON (.+) TO ', grant, re.I)
+        if not match:
+            continue
+        target = match[2].replace('`', '').lower()
+        privileges = {value.strip().upper() for value in match[1].split(',')}
+        if target == '*.*':
+            global_privileges.update(privileges)
+        if target in {'*.*', database.lower() + '.*'}:
+            scoped.update(privileges)
+    required = {'SELECT', 'SHOW VIEW', 'EVENT', 'TRIGGER'}
+    missing = required - scoped if 'ALL PRIVILEGES' not in scoped else set()
+    # A filtered routine listing cannot prove that unowned routines are absent.
+    if not {'ALL PRIVILEGES', 'SELECT', 'SHOW_ROUTINE'} & global_privileges:
+        missing.add('SHOW_ROUTINE (global definition visibility)')
+    if missing:
+        raise RuntimeError('Complete backup privileges are missing: ' + ', '.join(sorted(missing)))
+
+
 def snapshot(root, settings, connection):
     if os.name != 'nt' or root.resolve() != Path('D:/commission-system').resolve():
         raise RuntimeError('Database backup must run on the installed office host')
@@ -42,6 +64,7 @@ def snapshot(root, settings, connection):
     engines = connection.execute(text('SELECT DISTINCT engine FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type="BASE TABLE"')).scalars().all()
     if engines != ['InnoDB']:
         raise RuntimeError('Snapshot requires reviewed transactional tables')
+    backup_privileges(connection.execute(text('SHOW GRANTS')).scalars().all(), 'commission_db')
     tools = root / '.deploy_state/tools/mysql-8.4.6'
     manifest = json.loads((tools / 'manifest.json').read_text())
     binary = tools / 'bin/mysqldump.exe'
@@ -117,8 +140,10 @@ def execute(revision):
         raise RuntimeError('Backup requires the independent DBA identity')
     settings = runtime.model_copy(update=values)
     engine = create_engine(settings.commission_db_url, hide_parameters=True)
+    stage = 'deployment lock and DBA connection'
     try:
         with publish.deployment_lock(), engine.connect() as connection:
+            stage = 'backup preflight or snapshot'
             if connection.scalar(text("SELECT GET_LOCK('leshine-schema-release',0)")) != 1:
                 raise RuntimeError('Another schema release owns the maintenance lock')
             try:
@@ -130,6 +155,6 @@ def execute(revision):
                 connection.execute(text("SELECT RELEASE_LOCK('leshine-schema-release')"))
     except Exception as error:
         # Never expose driver URLs or SQL parameters from production diagnostics.
-        raise RuntimeError('Protected portal backup failed: ' + type(error).__name__) from None
+        raise RuntimeError(str(error) if isinstance(error, RuntimeError) else 'Protected portal backup failed during ' + stage + ': ' + type(error).__name__) from None
     finally:
         engine.dispose()
