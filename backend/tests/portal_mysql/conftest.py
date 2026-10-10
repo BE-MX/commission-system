@@ -6,6 +6,7 @@ Only the supplied mysqld executable is used; no Windows service is installed.
 import json
 from pathlib import Path
 import secrets
+import re
 import socket
 import subprocess
 import time
@@ -17,7 +18,12 @@ from sqlalchemy.engine import Engine, URL
 
 
 BACKEND = Path(__file__).resolve().parents[2]
-ALLOWED = {}
+class OwnedCredentials(dict):
+    def __repr__(self):
+        return '<owned loopback connection; credential redacted>'
+
+
+ALLOWED = OwnedCredentials()
 original_connect = pymysql.connect
 
 
@@ -58,8 +64,11 @@ def mysql_connections_guard():
 def pytest_addoption(parser):
     group = parser.getgroup('portal-owned-mysql')
     group.addoption('--portal-full-chain', action='store_true', help='Standalone fresh database historical replay')
-    group.addoption('--portal-production-backup', default=None, help='Explicit protected revision-180 snapshot; owned server restore only')
+    group.addoption('--portal-maintenance-events', action='store_true', help='Synthetic event maintenance on an owned commission_db process')
+    group.addoption('--portal-production-backup', default=None, help='Explicit protected revision-182 snapshot; owned server restore only')
     group.addoption('--portal-production-objects', default=None, help='Read-only source stored-object hashes; no SQL definitions')
+    for name in ('ssh', 'host', 'client', 'sha256'):
+        group.addoption('--portal-restore-' + name, default=None, help='Explicit protected Linux restore transport ' + name)
     for name in ('node', 'module', 'chromium'):
         group.addoption('--portal-browser-' + name, default=None, help='Opt-in browser runtime path')
     group.addoption('--portal-mode-node', default=None, help='Explicit local Node binary for mode privilege tests')
@@ -71,8 +80,15 @@ def pytest_addoption(parser):
 def pytest_collection_modifyitems(config, items):
     if config.getoption('portal_production_objects') and not config.getoption('portal_production_backup'):
         raise pytest.UsageError('--portal-production-objects requires an explicit protected production backup')
+    if config.getoption('portal_production_backup') and not all(config.getoption('portal_restore_' + name)
+            for name in ('ssh', 'host', 'client', 'sha256')):
+        raise pytest.UsageError('Production restore requires the byte-preserving Linux client transport')
+    if config.getoption('portal_production_backup') and not config.getoption('portal_production_objects'):
+        raise pytest.UsageError('Production restore requires actual source schema and stored-definition metadata')
     if config.getoption('portal_full_chain') and any(item.path.name != 'test_mysql_full_chain.py' for item in items):
         raise pytest.UsageError('--portal-full-chain requires selecting only test_mysql_full_chain.py')
+    if config.getoption('portal_maintenance_events') and any(item.path.name != 'test_mysql_maintenance_event.py' for item in items):
+        raise pytest.UsageError('--portal-maintenance-events requires only the synthetic event maintenance specification')
     if config.getoption('portal_production_backup') and any(item.path.name != 'test_mysql_production_upgrade.py' for item in items):
         raise pytest.UsageError('--portal-production-backup requires standalone test_mysql_production_upgrade.py')
 
@@ -92,7 +108,9 @@ def mysql_engine(request):
     directory.mkdir()
     if request.config.getoption('portal_production_backup'):
         import csv
-        identity = subprocess.check_output(['whoami', '/user', '/fo', 'csv', '/nh'], text=True)
+        # Only the ASCII SID is needed; account names may use a console encoding
+        # different from Python's locale (Chinese Windows + UTF-8 terminal).
+        identity = subprocess.check_output(['whoami', '/user', '/fo', 'csv', '/nh']).decode('ascii', errors='replace')
         sid = next(csv.reader([identity.strip()]))[1]
         permissions = subprocess.run(['icacls', str(directory), '/inheritance:r', '/grant:r',
             '*' + sid + ':(OI)(CI)F', '*S-1-5-18:(OI)(CI)F'], capture_output=True, text=True)
@@ -102,7 +120,8 @@ def mysql_engine(request):
     password = secrets.token_urlsafe(36)
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0)); port = listener.getsockname()[1]
-    owned_database = 'commission_db' if request.config.getoption('portal_production_backup') else 'portal_isolated_test'
+    owned_database = 'commission_db' if (request.config.getoption('portal_production_backup')
+        or request.config.getoption('portal_maintenance_events')) else 'portal_isolated_test'
     ALLOWED.update(port=port, password=password, database=owned_database)
     base = [str(executable), '--no-defaults', '--basedir=' + executable.parent.parent.as_posix(),
         '--datadir=' + data.as_posix(), '--tmpdir=' + temporary.as_posix()]
@@ -112,7 +131,7 @@ def mysql_engine(request):
     init = directory / 'bootstrap.sql'
     init.write_text("ALTER USER 'root'@'localhost' IDENTIFIED BY '" + password + "';\n", encoding='utf-8')
     server = subprocess.Popen(base + ['--bind-address=127.0.0.1', f'--port={port}', '--mysqlx=OFF',
-        '--skip-log-bin', '--performance-schema=ON', '--init-file=' + init.as_posix(),
+        '--skip-log-bin', '--event-scheduler=OFF', '--performance-schema=ON', '--init-file=' + init.as_posix(),
         '--log-error=' + (directory / 'mysql.log').as_posix(), '--pid-file=' + (directory / 'mysql.pid').as_posix()],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
     engine = None
@@ -138,7 +157,17 @@ def mysql_engine(request):
                 # A production dump can contain qualified routines/ALTER DATABASE. Preserve
                 # its name on this random-port, new-datadir owned process only.
                 assert owned_database in {'commission_db', 'portal_isolated_test'}
-                cursor.execute('CREATE DATABASE `' + owned_database + '` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci')
+                charset, collation = 'utf8mb4', 'utf8mb4_0900_ai_ci'
+                if request.config.getoption('portal_production_backup'):
+                    manifest = json.loads(Path(request.config.getoption('portal_production_objects')).read_text(encoding='utf-8'))
+                    receipt = json.loads(Path(request.config.getoption('portal_production_backup')).with_name('receipt.json').read_text())
+                    assert manifest['database_uuid'] == receipt['database_uuid'] and manifest['revision'] == receipt['revision']
+                    assert manifest['schema']['name'] == owned_database
+                    charset, collation = manifest['schema']['character_set'], manifest['schema']['collation']
+                    assert all(re.fullmatch(r'[a-z0-9_]+', value) for value in (charset, collation))
+                    cursor.execute('SELECT COUNT(*) FROM information_schema.collations WHERE COLLATION_NAME=%s AND CHARACTER_SET_NAME=%s', (collation, charset))
+                    assert cursor.fetchone()[0] == 1, 'Source schema collation is unavailable in the owned server'
+                cursor.execute('CREATE DATABASE `' + owned_database + '` CHARACTER SET ' + charset + ' COLLATE ' + collation)
         init.unlink()
         engine = create_engine(URL.create('mysql+pymysql', username='root', password=password,
             host='127.0.0.1', port=port, database=ALLOWED['database']),

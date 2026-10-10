@@ -20,11 +20,17 @@ deploy\deploy.bat --customer-portal-site verify --revision <full-sha>
 
 客户站随完整受管发布构建：冻结 pnpm-lock、禁用安装脚本，仅传静态制品，经摘要差异传输和受管切换到 `/var/www/ark-static/customer-orders`。不向办公室发布客户站，不传 .env/密码/业务数据。
 
-## 180→181、备份与恢复
+## 182→183、备份与恢复
 
-新增 `181_portal_password_login` 的父 revision 为 `180_settlement_funding_amendment`。只给账号表增 nullable `password_hash VARCHAR(255)`；不设默认密码、不激活历史账号、不删除业务行。downgrade 拒绝丢弃密码哈希。有权员工明确设置密码并恢复账号时，当前授权内 invited membership 转 active，disabled membership 不自动恢复。
+新增 `183_portal_password_login` 的父 revision 为 `182_announcement_reads`。只给账号表增 nullable `password_hash VARCHAR(255)`；不设默认密码、不激活历史账号、不删除业务行。downgrade 拒绝丢弃密码哈希。有权员工明确设置密码并恢复账号时，当前授权内 invited membership 转 active，disabled membership 不自动恢复。
 
-空库全链仍要求 126 的真实客户切换合同，缺失时失败必须保留，不能绕过/stamp。精简 fixture 的176/177/181 DDL不证明生产基线升级。
+本轮期间生产已发布182，未发布的181密码迁移因此重新编号183。旧180→181隔离演练虽通过，不能用于182→183门禁；需重新备份实际182并恢复/升级/恢复182/重放183。候选必须包含当前双后端已发布代码。
+
+维护窗还必须覆盖实查的额外写入者：北京 `/etc/cron.d/ark-agent-sync` 的 sync-outbound.js，以及源库小时事件 `evt_update_shipment_tracking_dingtalk_user`（原定义者root@%，global event_scheduler=ON）。在办公室受保护 `.deploy_state/credentials/event-maintenance.env` 提供仅含 COMMISSION_DB_USER、COMMISSION_DB_PASSWORD 的独立事件管理身份；它需能保留原definer并读取Performance Schema线程。migration.env与应用.env保持原配置，密码不写入文档或聊天。
+
+预检在停服务前验证凭据、目标UUID、原事件各字段摘要、P_S线程可见/注册/无lost线程，以及已核cron原始摘要。维护持有原 `/tmp/okki-outbound.lock`，不改cron；等待在途与手工同步排空，临时DISABLE事件并核原definer/原始摘要，所有登记服务停止后再完整备份/DDL。人工同步在整个维护窗须遵守同一锁；每次复核发现额外手工进程即阻断。全部制品和worker验证后恢复原事件及cron锁，再完成journal。DDL前失败恢复原运行状态；DDL后失败保留围栏与停写，先检查恢复材料，不能直接重启旧代码。
+
+空库全链仍要求 126 的真实客户切换合同，缺失时失败必须保留，不能绕过/stamp。精简 fixture 的176/177/183 DDL不证明生产基线升级。
 
 先在办公室已安装服务的受管候选生成完整逻辑备份：
 
@@ -37,18 +43,20 @@ deploy\deploy.bat --customer-portal-db-backup --live-root D:\commission-system -
 
 备份账号需在 commission_db 上有 SELECT、SHOW VIEW、EVENT、TRIGGER，及全局 SHOW_ROUTINE 定义可见性；迁移的读写/DDL 权限不能代替完整备份权限。先重新连接读 `CURRENT_USER()` / `SHOW GRANTS`，由有授权权限的实例管理员补齐实际匹配的 user@host，不能把 host 改成 `%` 或自动授予全局数据读取。动态 SHOW_ROUTINE 允许读取例程定义，见[MySQL 权限说明](https://dev.mysql.com/doc/refman/8.0/en/privileges-provided.html#priv_show-routine)。预检遇部分撤权拒绝；不能仅汇总 GRANT 忽略 REVOKE。账号不能给自己授权。Grant 后无需编辑/替换受保护密码文件。
 
-新目录、独占回环 MySQL、随机凭据、受限 ACL、关闭 event_scheduler 的隔离库恢复真实180备份。数据库名称保留 commission_db 以恢复限定名称的存储对象，连接仍只能使用新进程的随机回环端口/随机密码，不复用生产目标。在源库完整定义可见性已核验的只读事务中，使用 `storage_snapshot.stored_objects_snapshot` 获取视图/例程/事件/触发器的 SHOW CREATE 字段摘要；不输出 SQL 正文，记录实际 UUID/revision，另存摘要 manifest。
+新目录、独占回环 MySQL、随机凭据、受限 ACL、关闭 event_scheduler 的隔离库恢复真实182备份。数据库名称保留 commission_db 以恢复限定名称的存储对象，连接仍只能使用新进程的随机回环端口/随机密码，不复用生产目标。在源库完整定义可见性已核验的只读事务中，使用 `storage_snapshot.schema_snapshot` 记录真实建库字符集/排序规则、`storage_snapshot.stored_objects_snapshot` 获取视图/例程/事件/触发器的 SHOW CREATE 字段摘要；不输出 SQL 正文，记录实际 UUID/revision，另存摘要 manifest。
 
 仅在无 backend/.env 的隔离工作树，单独运行恢复规格（路径均须替换为已核实的绝对路径）：
 
 ```powershell
 # 在 backend 下，运行已验证 Python；backup/receipt 在同一受限目录。
-python -m pytest --confcutdir=tests/portal_mysql tests/portal_mysql/test_mysql_production_upgrade.py --portal-mysqld <owned-mysqld.exe> --portal-mysql-workspace <new-private-directory> --portal-production-backup <protected-commission_db.sql> --portal-production-objects <source-object-hashes.json> -q
+python -m pytest --confcutdir=tests/portal_mysql tests/portal_mysql/test_mysql_production_upgrade.py --portal-mysqld <owned-mysqld.exe> --portal-mysql-workspace <new-private-directory> --portal-production-backup <protected-commission_db.sql> --portal-production-objects <source-object-hashes.json> --portal-restore-ssh <verified-ssh.exe> --portal-restore-host ubuntu@154.8.205.162 --portal-restore-client /home/ubuntu/commission-system/.deploy_state/tools/portal-restore-client-8.4.6/extracted/usr/bin/mysql --portal-restore-sha256 c0d0308027906c5116bd4ff6f86923cca04ff969b9cc6c4897aad1ec0da8b618 -q
 ```
 
-由原Alembic升级181，核对全部原业务行/FK/唯一键与源库存储定义摘要，再恢复180并重放181；禁止stamp/伪造基线。事件定义恢复时调度器保持OFF。成功proof含源定义核验与恢复后的定义不变标志，放入办公室 `.deploy_state/customer-portal-upgrade-proof.json`；未带源定义摘要的旧proof不能进入生产181门禁。
+恢复通道使用固定摘要 Linux mysql8.4.6、`--binary-mode`、禁用login paths，经SSH仅回环反向转发到测试独占进程；传SQL之前及每次恢复前核对实际listener、进程UUID/端口、scheduler OFF。远端只保存受限短期测试密码，原始备份通过SSH流式发送，finally删除两端凭据并关闭隧道。Windows客户端会在batch_readline移除行尾CR，即使binary-mode也会改变原定义；禁止用它恢复此备份或通过归一摘要掩盖差异，见[官方实现](https://raw.githubusercontent.com/mysql/mysql-server/mysql-8.4.6/client/readline.cc)。源schema实际为utf8mb4/utf8mb4_unicode_ci，不能默认建为0900。
 
-完整应用发布仍走办公室候选 `deploy.bat --live-root ... --revision ... --no-pull --prepare-only`；准备通过后同固定参数去掉 prepare-only。实际唯一180→181链、独立DBA和全部writer预检通过后，维护窗口停止登记writer，再取新的完整备份后一次升级。包含181的其他未演练链拒绝，不让更长pending绕过门禁。DDL后失败保留停写/journal，不能自动重启旧代码或强改revision。生产恢复只能使用维护窗口备份，核对备份后是否有新交易；新数据先保全，不把旧演练快照覆盖生产。只恢复原运行writer，不启动原本停用的服务。
+由原Alembic升级183，核对全部原业务行/FK/唯一键与源库存储定义摘要，再恢复182并重放183；禁止stamp/伪造基线。事件定义恢复时调度器保持OFF。成功proof含真实schema、固定Linux通道/客户端摘要、scheduler持续OFF、源定义核验与恢复后的原始字节定义不变标志，放入办公室 `.deploy_state/customer-portal-upgrade-proof.json`；未带源定义摘要的旧proof不能进入生产183门禁。
+
+完整应用发布仍走办公室候选 `deploy.bat --live-root ... --revision ... --no-pull --prepare-only`；准备通过后同固定参数去掉 prepare-only。实际唯一182→183链、独立DBA和全部writer预检通过后，维护窗口停止登记writer，再取新的完整备份后一次升级。包含183的其他未演练链拒绝，不让更长pending绕过门禁。DDL后失败保留停写/journal，不能自动重启旧代码或强改revision。生产恢复只能使用维护窗口备份，核对备份后是否有新交易；新数据先保全，不把旧演练快照覆盖生产。只恢复原运行writer，不启动原本停用的服务。生产恢复也须使用上述固定Linux客户端的保字节通道，在受保护配置中由独立DBA核对恢复目标UUID、维护备份摘要/源schema、全部writer停写及事件调度策略后操作；不要把测试用root密码或owned反向端口用于生产，也不要在开发机发出生产恢复SQL。恢复后复核原始存储定义、行数/约束、revision以及应用版本，证据齐全才恢复原运行服务。RDS控制台恢复实例与保留策略未核实前不能宣称该路径已验收。
 
 ## 受保护配置及分阶段开放
 
@@ -56,7 +64,7 @@ python -m pytest --confcutdir=tests/portal_mysql tests/portal_mysql/test_mysql_p
 
 ```powershell
 deploy\deploy.bat --customer-portal-config prepare --revision <full-sha>
-# 固定应用与181已实际激活后，开账号管理/登录，交易与通知仍关闭。
+# 固定应用与183已实际激活后，开账号管理/登录，交易与通知仍关闭。
 deploy\deploy.bat --customer-portal-config enable-access --revision <full-sha>
 # 停止订单写入/建票，保留其他独立能力。
 deploy\deploy.bat --customer-portal-config stop-orders --revision <full-sha>

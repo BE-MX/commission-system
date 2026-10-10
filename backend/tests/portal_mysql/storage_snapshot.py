@@ -3,6 +3,13 @@ import hashlib
 import json
 
 
+def schema_snapshot(connection):
+    from sqlalchemy import text
+    row = connection.execute(text('SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME '
+        'FROM information_schema.schemata WHERE SCHEMA_NAME=DATABASE()')).one()
+    return dict(name=row[0], character_set=row[1], collation=row[2])
+
+
 def stored_objects_snapshot(connection):
     from sqlalchemy import text
     result = []

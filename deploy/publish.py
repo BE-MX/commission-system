@@ -294,6 +294,7 @@ def publish(args):
             journal['completed'].append('beijing-mail-worker')
         atomic_json(STATE / "publish-current.json", journal)
         if office:
+            step('maintenance-resume', '全部制品验收后恢复数据库事件和镜像定时同步', schema_release.resume_maintenance, office)
             schema_release.complete(office)
         summary = {"revision": revision, "scope": "cloud-only" if args.cloud_only else "office-and-cloud",
                    "schema": backend["schema"], "transfer_bytes": sum(item["bytes"] for item in prepared),

@@ -7,7 +7,7 @@
 - 客户 POST `/api/portal/v1/auth/login`，email/password，沿用 bootstrap preauth Cookie/CSRF、可信代理、Origin和安全会话；原 challenges/verify 未挂载。
 - 员工 POST `/api/portal/admin/v1/customers/{access_id}/accounts`，Idempotency-Key及email/contact_name/password，同一原请求可恢复，不发邮件。PATCH `/accounts/{id}/password` 使用If-Match及password/reason，撤销旧会话；邀请/撤销邀请路由不再挂载。
 - 密码8–64字符且UTF-8≤72字节，复用bcrypt，不裁剪密码；不入回执/响应/日志/前端存储。锁外哈希前短事务核当前员工范围，完成时重新鉴权。
-- 181在180后仅增nullable password_hash，不设默认密码或激活历史账号。明确员工恢复时仅invited成员转active，disabled成员保持原值。
+- 183在180后仅增nullable password_hash，不设默认密码或激活历史账号。明确员工恢复时仅invited成员转active，disabled成员保持原值。
 - PORTAL_AUTH_SECRET为独立至少32字节密钥，参与耐久创建回执摘要；当前不得随意轮换，旧摘要keyring须另行验收。密码登录可关闭邮件和邮件密钥。
 - 门户启用不接管出库；必须同时显式开启OUTBOUND_WORKER才安装模式，既有持久模式不降级。旧认证邮件只保留过期秘密清理，不调度发送。
 

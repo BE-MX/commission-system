@@ -38,6 +38,8 @@ def complete(prepared):
         record = json.loads(journal.read_text(encoding="utf-8"))
         if record.get("status") != "upgraded" or record.get("schema") != prepared["schema"]:
             raise RuntimeError("Migration journal does not match the verified release")
+        if record.get('portal_maintenance') and record['portal_maintenance'].get('restored') is not True:
+            raise RuntimeError('Original database event and mirror schedule were not restored')
         record["status"] = "completed"
         atomic_json(journal, record)
 
@@ -197,3 +199,11 @@ def resume_external(writers, prepared, *, outbound=None, journal=None):
                 continue
             if (writer["kind"], writer.get("host"), writer["service"]) not in owned:
                 control(writer, "start", prepared["nssm"])
+
+
+def resume_maintenance(prepared):
+    if not prepared.get('schema_changed'):
+        return
+    record = json.loads(STATE.joinpath('schema-writers.json').read_text(encoding='utf-8'))
+    if record.get('portal_maintenance'):
+        invoke(prepared, [], None, 'resume-maintenance')

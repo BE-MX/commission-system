@@ -13,13 +13,14 @@ from pathlib import Path
 import subprocess
 import uuid
 
-BASE = '180_settlement_funding_amendment'
-TARGET = '181_portal_password_login'
+BASE = '182_announcement_reads'
+TARGET = '183_portal_password_login'
+RESTORE_CLIENT_SHA256 = 'c0d0308027906c5116bd4ff6f86923cca04ff969b9cc6c4897aad1ec0da8b618'
 
 
 def private_directory(path):
     path.mkdir(parents=True, exist_ok=False)
-    identity = subprocess.check_output(['whoami', '/user', '/fo', 'csv', '/nh'], text=True)
+    identity = subprocess.check_output(['whoami', '/user', '/fo', 'csv', '/nh']).decode('ascii', errors='replace')
     sid = next(csv.reader([identity.strip()]))[1]
     result = subprocess.run(['icacls', str(path), '/inheritance:r', '/grant:r',
         '*' + sid + ':(OI)(CI)F', '*S-1-5-18:(OI)(CI)F'], capture_output=True, text=True)
@@ -64,11 +65,13 @@ def snapshot(root, settings, connection):
     identity = connection.execute(text('SELECT @@server_uuid, DATABASE()')).one()
     current = connection.execute(text('SELECT version_num FROM alembic_version')).scalars().all()
     if current != [BASE] or identity[1] != 'commission_db':
-        raise RuntimeError('Portal backup requires the actual single revision 180 commission_db')
+        raise RuntimeError('Portal backup requires the actual single revision 182 commission_db')
     engines = connection.execute(text('SELECT DISTINCT engine FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type="BASE TABLE"')).scalars().all()
     if engines != ['InnoDB']:
         raise RuntimeError('Snapshot requires reviewed transactional tables')
     backup_privileges(connection.execute(text('SHOW GRANTS')).scalars().all(), 'commission_db')
+    schema = connection.execute(text('SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME '
+        'FROM information_schema.schemata WHERE SCHEMA_NAME=DATABASE()')).one()
     tools = root / '.deploy_state/tools/mysql-8.4.6'
     manifest = json.loads((tools / 'manifest.json').read_text())
     binary = tools / 'bin/mysqldump.exe'
@@ -101,6 +104,7 @@ def snapshot(root, settings, connection):
     with output.open('rb') as stream:
         checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
     receipt = {'database_uuid': identity[0], 'database': identity[1], 'revision': BASE, 'target': TARGET,
+        'schema': {'name': identity[1], 'character_set': schema[0], 'collation': schema[1]},
         'started_at_utc': started, 'completed_at_utc': datetime.now(timezone.utc).isoformat(),
         'path': str(output), 'sha256': checksum, 'bytes': output.stat().st_size,
         'scope': 'full commission_db logical backup; isolated recovery must be verified separately'}
@@ -109,18 +113,21 @@ def snapshot(root, settings, connection):
 
 
 def validate_proof(state, connection, pending, schema):
-    if '181_portal_password_login' not in pending:
+    if '183_portal_password_login' not in pending:
         return
     if pending != [TARGET] or schema != TARGET:
-        raise RuntimeError('Portal credentials require the separately rehearsed unique 180-to-181 path')
+        raise RuntimeError('Portal credentials require the separately rehearsed unique 182-to-183 path')
     from sqlalchemy import text
     proof = json.loads((state / 'customer-portal-upgrade-proof.json').read_text())
-    migration = Path(__file__).resolve().parents[1] / 'backend/alembic/versions/181_portal_password_login.py'
+    migration = Path(__file__).resolve().parents[1] / 'backend/alembic/versions/183_portal_password_login.py'
     if (connection.execute(text('SELECT version_num FROM alembic_version')).scalars().all() != [BASE]
             or proof.get('database_uuid') != connection.scalar(text('SELECT @@server_uuid'))
             or proof.get('base') != BASE or proof.get('target') != TARGET
             or proof.get('business_rows_and_constraints_unchanged') is not True or proof.get('restore_after_ddl_verified') is not True
             or proof.get('stored_definitions_unchanged') is not True or proof.get('source_stored_definitions_verified') is not True
+            or proof.get('source_schema_verified') is not True or proof.get('event_scheduler_remained_off') is not True
+            or proof.get('restore_transport') != 'linux_mysql_ssh_owned_loopback'
+            or proof.get('restore_client_sha256') != RESTORE_CLIENT_SHA256
             or proof.get('migration_sha256') != hashlib.sha256(migration.read_bytes().replace(b'\r\n', b'\n')).hexdigest()):
         raise RuntimeError('Actual credential upgrade/recovery proof does not match this database and migration')
 

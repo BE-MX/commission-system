@@ -1,13 +1,14 @@
 # 当前交接与待办
 
-## 2026-10-10 客户下单门户生产准备（Codex，备份完成，发布前恢复验证中）
+## 2026-10-10 客户下单门户生产准备（Codex，旧路径恢复通过，新生产基线182待演练）
 
-- 独立工作树 `C:/Users/windb/.codex/worktrees/customer-portal-readiness/commission-system`，分支 `codex/customer-portal-readiness`。用户确认北京 `shop.leshine.cloud`，员工在方舟登记采购邮箱/密码；真实客户和生产流程由用户选定测试。无代理真实客户发信、账号创建或交易。
-- 密码登录/员工创建重置、当前客户授权/撤权/限流/幂等、181 nullable密码哈希、frontend-portal登记、受管HTTPS/逐键配置/完整备份与隔离恢复门禁已实现。独立审查处理出库接管、配置失败恢复/服务用户/临时文件权限/partial revoke风险；不因门户启用打开自动回款、小满推送或出库执行器。
-- 实机办公室HEAD5e1a3de9、北京1864176c，DB唯一180；shop可信HTTPS/API边界实测通过，客户静态index尚未发布。北京受保护配置prepare完成但全部门户开关false；密码功能代码未激活。续期演练仍是CA二次验证超时，用户已确认TCP80开放，不能标续期通过。
-- 独立DBA曾因EVENT缺权导致完整备份失败，已移除无效部分并保留受限诊断。用户已补权限，重连验证SHOW VIEW/EVENT/TRIGGER和global SHOW_ROUTINE；新受管备份成功767,327,823字节、SHA256 `650f6a174366c36bcce1c9b7898700d71de4a19b47aa7604b685867673a5d660`，办公室受限目录 `.deploy_state/customer-portal-backups/f7d897f41f364ba6b7dd9f9bacabfd2b`。真实180隔离恢复/升级/恢复180/重放181正在准备，未生产DDL。
-- 验证：SQLite门户747通过；实际隔离HTTPS浏览器登录/交易至PI共2通过；MySQL专项复跑63通过/10opt-in跳过；客户/员工授权Node135通过；两前端构建成功。组别重叠，详见[实机证据与未验收范围](requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)。空库全历史链在126真实切换合同门禁失败，未stamp/绕过。完整生产快照恢复不能用上述回归替代。
-- 待恢复proof/实际受管发布后才enable-access供用户管理真实账号；库存单位NULL712/915及刷新语义、合同价/真实授权、生产交易/PI/通知未验收，对应开关保持关闭，不能标为正式开放。操作见[发布/验收/停止接单](../deploy/customer-orders.md)。仅本任务本地提交，无origin push或main合并。
+- 独立 `codex/customer-portal-readiness`；用户确认北京 shop.leshine.cloud、员工登记客户邮箱/密码，无OTP。真实客户、合同价/库存规则和生产流程由用户选择操作；代理未发客户邮件或创建真实交易。
+- 当前实机两后端均1227af7b，服务运行；共享库唯一182_announcement_reads。本任务未生产DDL/切换。候选已整合实际已发布代码，将未发布密码迁移从181改为183/父182，单head；不回退公告/预售已发布内容。
+- shop可信HTTPS、客户专用API边界通过；TCP80放通后certbot续期dry-run成功。客户静态index尚未发布；北京受保护配置逐键prepare、所有门户开关false、actor0，未enable-access。
+- 独立迁移账号完整备份权限已实核；180快照767,327,823字节、SHA650f6a17…，实际隔离180→181→恢复180→重放181通过1952秒，392原表/2,483,347行/列值/FK/唯一键/事件原始字段摘要不变，scheduler持续OFF。生产随后升级182，旧proof只能作历史证据；必须重新备份实际182并演练182→183。
+- 实查额外writer：北京sync-outbound.js cron及source小时事件(root@%定义、scheduler ON)。已实现原cron独占锁围栏/手工排空/批准摘要、事件保留definer/rawhash暂停与最终恢复、P_S可见/注册/lost0排空门禁；真实owned MySQL2通过，受影响部署7文件87通过。事件DBA `.deploy_state/credentials/event-maintenance.env` 尚未提供，发布在停服务前阻断；未冻结生产cron或事件。该文件只含COMMISSION_DB_USER/PASSWORD，不替换migration.env或应用.env。
+- 详细验证与未验收范围见[生产证据](requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)，发布/验收/停止接单见[受管操作](../deploy/customer-orders.md)。库存NULL单位712/915、刷新语义、真实合同价/授权、生产订单/PI/通知未验收；WRITES/INVOICE/MAIL/NOTIFICATION/OUTBOUND继续false。当前没有能力可标记正式开放。无origin push/main合并。
+
 ## 2026-10-10 预售出库完成改用检验提交（Codex，本地实现，未部署）
 
 - 用户明确：小满出库单持续草稿，方舟以对应检验 `submitted` 判定出库完成；撤回后恢复未完成。沿用 `codex/presale-receipt-guard` 工作树。新增共享检验证据/状态服务，按镜像记录 ID 与真实 outbound_invoice_id 精确桥接并核对客户及冻结行数量；提交/撤回、后台回读、管理员补绑、前批校验与主单编辑限制采用同一口径。

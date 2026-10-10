@@ -139,7 +139,7 @@ def execute(request):
         probe = runtime_probe(environment) if phase not in {'stop-orders', 'close'} else {}
         if phase not in {'stop-orders', 'close'} and not probe['namespace_present']:
             raise RuntimeError('Confirmed customer identity namespace is absent')
-        if phase == 'enable-access' and (live != request['revision'] or probe['revision'] != ['181_portal_password_login']):
+        if phase == 'enable-access' and (live != request['revision'] or probe['revision'] != ['183_portal_password_login']):
             raise RuntimeError('Password access requires the pinned activated application and actual revision 181')
         if phase == 'prepare' and probe['enabled']:
             raise RuntimeError('Preparation cannot silently close an already enabled portal')

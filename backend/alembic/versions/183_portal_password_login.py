@@ -1,13 +1,13 @@
 """Add managed customer passwords without activating historical accounts.
 
-Revision ID: 181_portal_password_login
-Revises: 180_settlement_funding_amendment
+Revision ID: 183_portal_password_login
+Revises: 182_announcement_reads
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = '181_portal_password_login'
-down_revision = '180_settlement_funding_amendment'
+revision = '183_portal_password_login'
+down_revision = '182_announcement_reads'
 branch_labels = None
 depends_on = None
 

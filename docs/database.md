@@ -1,8 +1,8 @@
 # 莱莎方舟 数据库表参考
 
-## 客户采购账号密码（181_portal_password_login，候选）
+## 客户采购账号密码（183_portal_password_login，候选）
 
-ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工设置的bcrypt；父revision180。无默认密码或迁移自动激活。重置增加授权/记录版本并撤销旧会话；明确恢复账号可激活invited成员。downgrade拒绝丢弃哈希，升级及备份/隔离恢复见deploy/customer-orders.md。
+ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工设置的bcrypt；父revision182。无默认密码或迁移自动激活。重置增加授权/记录版本并撤销旧会话；明确恢复账号可激活invited成员。downgrade拒绝丢弃哈希，升级及备份/隔离恢复见deploy/customer-orders.md。
 
 
 ## 账号解锁（`178_account_unlock`，本地未部署）
@@ -621,7 +621,7 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 
 新迁移接 154_okki_outbound_tasks，重复执行检查已存在结构，保留数据；降级拒绝自动删除历史。已验证 SQLite 升级/重复执行与 MySQL DDL 编译，未执行真实 MySQL 升级。生产按既有发布入口先备份与迁移演练。
 
-`182_announcement_reads` 接当前 main 的 `180_settlement_funding_amendment`。user_id 在 MySQL 使用 INT UNSIGNED，与 ark_users.id 一致；document_id/revision_id 使用 BIGINT。重复阅读保留首次时间，重新发布新的修订独立计算未读；全部已读只写当前可见版本，不改其他用户。撤回/失效/删除后保留阅读事实，但不计入提醒。升级重复执行保留数据，降级拒绝删除阅读历史。本次仅隔离 SQLite 升级及 MySQL DDL 编译；未执行共享或生产迁移。其他分支已有 181，集成时重新核对迁移链并保持单 head。
+`182_announcement_reads` 接当前 main 的 `180_settlement_funding_amendment`。user_id 在 MySQL 使用 INT UNSIGNED，与 ark_users.id 一致；document_id/revision_id 使用 BIGINT。重复阅读保留首次时间，重新发布新的修订独立计算未读；全部已读只写当前可见版本，不改其他用户。撤回/失效/删除后保留阅读事实，但不计入提醒。升级重复执行保留数据，降级拒绝删除阅读历史。本次仅隔离 SQLite 升级及 MySQL DDL 编译；未执行共享或生产迁移。其他分支已有 183，集成时重新核对迁移链并保持单 head。
 
 
 ### 发票客户等级（157）

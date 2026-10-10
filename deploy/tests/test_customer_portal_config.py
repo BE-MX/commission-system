@@ -7,7 +7,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from customer_portal_backup import BASE, TARGET, option, validate_proof, backup_privileges
+from customer_portal_backup import BASE, TARGET, RESTORE_CLIENT_SHA256, option, validate_proof, backup_privileges
 from customer_portal_config_remote import merge_text, portal_values, service_environment, apply_failure
 
 
@@ -35,10 +35,12 @@ class Connection:
 
 
 def proof_file(path, **changes):
-    migration = Path(__file__).resolve().parents[2] / 'backend/alembic/versions/181_portal_password_login.py'
+    migration = Path(__file__).resolve().parents[2] / 'backend/alembic/versions/183_portal_password_login.py'
     proof = {'database_uuid':'owned-uuid','base':BASE,'target':TARGET,
         'business_rows_and_constraints_unchanged':True,'restore_after_ddl_verified':True,
         'stored_definitions_unchanged':True,'source_stored_definitions_verified':True,
+        'source_schema_verified':True,'event_scheduler_remained_off':True,
+        'restore_transport':'linux_mysql_ssh_owned_loopback','restore_client_sha256':RESTORE_CLIENT_SHA256,
         'migration_sha256':hashlib.sha256(migration.read_bytes().replace(b'\r\n', b'\n')).hexdigest()}
     proof.update(changes)
     (path / 'customer-portal-upgrade-proof.json').write_text(json.dumps(proof))
@@ -58,7 +60,9 @@ def test_longer_chain_cannot_bypass_portal_gate(tmp_path, pending):
 
 @pytest.mark.parametrize('changes', [{'database_uuid':'other'}, {'restore_after_ddl_verified':'false'},
     {'migration_sha256':'0'*64}, {'business_rows_and_constraints_unchanged':False},
-    {'stored_definitions_unchanged':False}, {'source_stored_definitions_verified':'true'}])
+    {'stored_definitions_unchanged':False}, {'source_stored_definitions_verified':'true'},
+    {'source_schema_verified':None}, {'event_scheduler_remained_off':'true'},
+    {'restore_transport':'windows_mysql'}, {'restore_client_sha256':'0'*64}])
 def test_unmatched_or_unverified_recovery_proof_rejects(tmp_path, changes):
     proof_file(tmp_path, **changes)
     with pytest.raises(RuntimeError, match='does not match'):
