@@ -149,7 +149,9 @@ def ensure_pool_registration(db, invoice, *, current=False):
         ShipmentSettlement.state.notin_(["shipped", "cancelled"]))
     if current:
         query = query.order_by(ShipmentSettlement.id).populate_existing().with_for_update()
-    if query.first():
+    # V2 freezes exact source applications. New cash stays unallocated in the
+    # order pool and cannot rewrite a running shipment's quote or reservations.
+    if any(not isinstance(row.quote, dict) or row.quote.get("funding_version") != 2 for row in query.all()):
         raise ValueError("当前有未完成发货结算，请通过原批次补款，或取消无远端效果的批次后登记预付款")
 
 

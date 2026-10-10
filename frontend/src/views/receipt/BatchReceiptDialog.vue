@@ -15,14 +15,15 @@
         <p v-if="rows.length">{{ rows[0].customer_name }} · {{ rows[0].currency }}；同一笔凭证仅上传一次，按下表金额分配。</p>
         <el-table class="list-table" :data="rows" border v-sticky-scrollbar>
           <el-table-column prop="invoice_no" label="订单发票" min-width="150" />
-          <el-table-column label="用途" min-width="170"><template #default="{ row }"><span v-if="pending">{{ purposeLabel(row.purpose) }}</span><el-select v-else-if="row.balance?.funding_mode === 'presale_pool'" v-model="row.purpose" aria-label="预售收款用途"><el-option value="presale_advance" label="预付货款" :disabled="Boolean(row.balance.active_settlement)" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" :disabled="Boolean(row.balance.active_settlement)" /><el-option v-if="row.balance.active_settlement" value="ordinary" label="本批补款" /></el-select><span v-else>订单款</span></template></el-table-column>
-          <el-table-column label="已核验金额" min-width="130"><template #default="{ row }">{{ row.balance?.funding_mode === 'presale_pool' && row.purpose !== 'ordinary' ? `预付余额 ${money(row.balance.pool_available_amount)}` : row.balance ? money(row.balance.active_settlement?.remaining_amount ?? row.balance.remaining_amount) : pending ? '原提交已冻结' : '未核验' }}</template></el-table-column>
+          <el-table-column label="用途" min-width="170"><template #default="{ row }"><span v-if="pending">{{ purposeLabel(row.purpose) }}</span><el-select v-else-if="row.balance?.funding_mode === 'presale_pool'" v-model="row.purpose" aria-label="预售收款用途"><el-option value="presale_advance" label="预付货款" :disabled="Boolean(row.balance.active_settlement && row.balance.active_settlement.funding_version !== 2)" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" :disabled="Boolean(row.balance.active_settlement && row.balance.active_settlement.funding_version !== 2)" /><el-option v-if="row.balance.active_settlement" value="ordinary" label="本批补款" /></el-select><span v-else>订单款</span></template></el-table-column>
+          <el-table-column label="可分配余额" min-width="130"><template #default="{ row }">{{ row.balance?.funding_mode === 'presale_pool' && row.purpose !== 'ordinary' ? `预付余额 ${money(row.balance.pool_available_amount)}` : row.balance ? money(row.balance.active_settlement?.remaining_amount ?? row.balance.remaining_amount) : pending ? '原提交已冻结' : '未核验' }}</template></el-table-column>
           <el-table-column label="本次分配" min-width="185"><template #default="{ row }"><span v-if="pending">{{ row.amount }}</span><el-input-number v-else v-model="row.amount" aria-label="本次分配金额" :min="0.01" :precision="2" controls-position="right" /></template></el-table-column>
           <el-table-column label="实际银行手续费" min-width="165"><template #default="{ row }"><span v-if="pending">{{ row.bank_charge || 0 }}</span><el-input-number v-else-if="actualChargeForRow(row)" v-model="row.bank_charge" aria-label="本次收款实际银行手续费" :min="0" :precision="2" controls-position="right" /><span v-else>按本批费用分摊</span></template></el-table-column>
           <el-table-column v-if="!pending" label="操作" class-name="table-action-column" min-width="120"><template #default="{ row }"><el-button link :loading="row.loading" :disabled="locked" @click="refresh(row)">刷新</el-button><el-button link :disabled="locked" @click="remove(row)">移除</el-button></template></el-table-column>
         </el-table>
         <p>分配合计：{{ allocatedTotal }} {{ rows[0]?.currency }}</p>
         <p v-if="rows.some(row => row.balance?.funding_mode === 'presale_pool')">预付货款用于后续每批商品款和运费；定金留到人工确认的最后一批。金额按实际到账填写，可以超过当前商品明细金额。</p>
+        <p v-if="rows.some(row => row.balance?.active_settlement?.funding_version === 2)">本批补款仅用于本批未付余额；另外新到账的款项请选择预付货款或定金，留作后续结算使用。</p>
         <ReceiptFields :form="form" :currency="rows[0]?.currency" :readonly="locked" @uploading="v => uploading = v" />
       </el-form>
     </div>
@@ -46,7 +47,7 @@ import { getReceiptOrders, getReceiptBalance, createReceiptBatch, inspectReceipt
 import { useAuthStore } from '@/stores/auth'
 import { currentBeijingDate } from '@/utils/datetime'
 import { confirmAction, msgError, msgSuccess } from '@/utils/feedback'
-import { cents, validateAllocations, latestRequest, allocationForRow, actualChargeForRow } from './batchReceiptState'
+import { cents, validateAllocations, latestRequest, allocationForRow, actualChargeForRow, purposeForBalance } from './batchReceiptState'
 import { purposeLabel } from '@/views/invoice/components/invoiceDetailLabels'
 import { clearSubmission, copySubmission, isBatchReceipt, readSubmission, saveSubmission, uncertainSubmission } from './batchSubmission'
 import { money } from './useReceipts'
@@ -86,7 +87,7 @@ async function refresh(row) {
   const identity = generation; row.loading = true; row.balance = null
   try { const balance = await getReceiptBalance(row.id); if (current(identity) && !locked.value && rows.value.includes(row)) {
     row.balance = balance
-    if (balance.funding_mode === 'presale_pool' && (!row.purpose || balance.active_settlement)) row.purpose = balance.active_settlement ? 'ordinary' : 'presale_advance'
+    row.purpose = purposeForBalance(balance, row.purpose)
   } }
   catch (e) { if (current(identity) && rows.value.includes(row)) failed(e) }
   finally { if (current(identity)) row.loading = false }

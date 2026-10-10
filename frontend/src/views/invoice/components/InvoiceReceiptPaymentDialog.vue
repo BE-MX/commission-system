@@ -5,8 +5,9 @@
       <p>{{ invoice.invoice_no }} · {{ invoice.currency }}；此操作独立保存，不修改订单明细。</p>
       <p v-if="receipt?.source === 'auto'">自动回款的手续费按最新订单重新分摊，保存后在原单重试同步。</p>
       <template v-if="!receipt && balance.funding_mode === 'presale_pool'">
-        <el-form-item label="收款用途" required><el-select v-model="payment.purpose" :disabled="saving"><el-option value="presale_advance" label="预付货款（从本批开始抵扣）" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" /></el-select></el-form-item>
+        <el-form-item label="收款用途" required><el-select v-model="payment.purpose" :disabled="saving"><el-option value="presale_advance" label="预付货款" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" /></el-select></el-form-item>
         <p>请按实际收款填写金额与银行手续费。预付货款用于商品款和运费，不受当前明细金额限制。</p>
+        <p v-if="balance.active_settlement?.funding_version === 2">本次新增预付款留作后续结算使用；本批未付余额请到回款单中选择本批补款。</p>
       </template>
       <p v-else-if="!receipt">本次可登记 {{ formatMoney(balance.remaining_amount) }}；请填写本次实际收到的金额。</p>
       <ReceiptFields :form="payment" :currency="invoice.currency" :readonly="saving" :show-charge="receipt?.source !== 'auto'"

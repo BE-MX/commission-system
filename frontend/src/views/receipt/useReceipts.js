@@ -61,7 +61,7 @@ export function useReceipts() {
       form.purpose = result.funding_mode === 'presale_pool' ? 'presale_advance' : 'ordinary'
       form.amount = result.funding_mode === 'presale_pool' ? null : Number(result.remaining_amount) > 0 ? Number(result.remaining_amount) : null
       if (!form.amount && result.funding_mode !== 'presale_pool') error.value = '订单已无可登记余额'
-      if (result.active_settlement) error.value = '此预售单有未完成的发货结算，请在整笔回款中选择本批补款。'
+      if (result.active_settlement && result.active_settlement.funding_version !== 2) error.value = '此预售单有旧版未完成的发货结算，请在整笔回款中选择本批补款。'
     } catch { if (sequence === balanceSequence) error.value = '订单余额未核验，请刷新余额后再登记' }
     finally { if (sequence === balanceSequence) balanceLoading.value = false }
   }
@@ -115,7 +115,7 @@ export function useReceipts() {
     if (!editing.value && (!balance.value || balance.value.funding_mode !== 'presale_pool' && Number(form.amount) > Number(balance.value.remaining_amount))) {
       error.value = '本次金额超过可登记余额，或余额尚未核验'; return
     }
-    if (!editing.value && balance.value.active_settlement) { error.value = '请在整笔回款中选择原批次补款'; return }
+    if (!editing.value && balance.value.active_settlement && balance.value.active_settlement.funding_version !== 2) { error.value = '请在整笔回款中选择原批次补款'; return }
     if (Number(form.bank_charge || 0) >= Number(form.amount)) { error.value = '银行手续费必须小于实际收款金额'; return }
     saving.value = true
     try {

@@ -108,8 +108,9 @@
       <el-form label-position="top" :model="form">
         <el-form-item v-if="!editing" label="对应订单发票" required><el-select v-model="form.invoice_id" filterable remote :remote-method="searchOrders" :loading="ordersLoading" :disabled="saving || uploading" placeholder="搜索发票号或客户" @change="selectOrder"><el-option v-for="o in orders" :key="o.id" :value="o.id" :disabled="o.sync_status !== 'synced'" :label="`${o.invoice_no} · ${o.customer_name}${o.sync_status !== 'synced' ? '（请先同步订单）' : ''}`" /></el-select></el-form-item>
         <template v-if="!editing && balance?.funding_mode === 'presale_pool'">
-          <el-form-item label="收款用途" required><el-select v-model="form.purpose" :disabled="saving"><el-option value="presale_advance" label="预付货款（从本批开始抵扣）" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" /></el-select></el-form-item>
+          <el-form-item label="收款用途" required><el-select v-model="form.purpose" :disabled="saving"><el-option value="presale_advance" label="预付货款" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" /></el-select></el-form-item>
           <p class="balance-hint">可用预付余额 {{ money(balance.pool_available_amount) }}；本次到账生效后余额 {{ money(remainingAfter) }}。收款可以超过当前商品明细金额。</p>
+          <p v-if="balance.active_settlement?.funding_version === 2" class="balance-hint">本次新增预付款留作后续结算使用；本批未付余额请在整笔回款中选择本批补款。</p>
         </template>
         <template v-else-if="!editing">
           <div v-loading="balanceLoading" class="balance-card"><div>订单金额<b>{{ balance?.currency }} {{ money(balance?.total_amount) }}</b></div><div>已登记回款<b>{{ money(balance?.registered_amount) }}</b></div><div>可登记余额<b>{{ money(balance?.remaining_amount) }}</b></div></div>
