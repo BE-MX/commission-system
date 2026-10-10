@@ -1,6 +1,7 @@
 <template>
   <el-dialog :model-value="true" :title="pending ? '核对原发货提交' : confirmationPending ? '核对原实际出库确认' : denied ? '出库结算' : `生成出库单 · ${invoice.invoice_no}`" width="760px" class="shipment-settlement-dialog" append-to-body :before-close="close" :close-on-click-modal="false" :close-on-press-escape="!closingBlocked" :show-close="!closingBlocked">
     <div class="shipment-content" :aria-busy="busy || undefined">
+      <p v-if="!denied">对应出库单的检验已提交即视为出库完成；撤回检验后恢复为未完成。小满出库单保持草稿状态。</p>
       <p v-if="busy" role="status">{{ checking ? '正在只读核对原提交…' : '正在处理原发货请求，请等待回执…' }}</p>
       <el-alert v-if="error" ref="errorSummary" tabindex="-1" :title="error" type="error" :closable="false" />
       <el-alert v-if="pending" title="原订单、数量、运费、报价和回款凭证已冻结。尚未查到不代表未提交，请勿另建结算。" type="warning" :closable="false" />
@@ -56,7 +57,6 @@
         <el-table-column label="操作" class-name="table-action-column" min-width="200"><template #default="{ row }">
           <el-button v-permission="'shipment:write'" v-if="canChangeShipment(row, 'cancel')" link :disabled="saving" @click="change(row, 'cancel')"><el-icon><Close /></el-icon>取消</el-button>
           <el-button :type="row.state === 'paused' ? 'success' : 'warning'" v-permission="'shipment:write'" v-if="canChangeShipment(row, row.state === 'paused' ? 'resume' : 'pause')" link :disabled="saving" @click="change(row, row.state === 'paused' ? 'resume' : 'pause')"><el-icon><SwitchButton /></el-icon>{{ row.state === 'paused' ? '恢复' : '暂停' }}</el-button>
-          <el-button v-permission="'shipment:write'" v-if="canConfirmOutbound(row)" link type="success" :disabled="saving" @click="confirmOutbound(row)"><el-icon><Check /></el-icon>确认实际出库</el-button>
           <el-button v-permission="'shipment:write'" v-if="['uncertain','verifying'].includes(row.freight_target?.status) && (row.freight_target?.remote_order_id || auth.hasPermission('shipment:admin'))" link :disabled="saving" @click="reconcileTarget(row, 'freight')"><el-icon><Check /></el-icon>核对运费单</el-button>
           <el-button v-permission="'shipment:write'" v-if="row.freight_target?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'freight')"><el-icon><Refresh /></el-icon>重试运费单</el-button>
           <el-button v-permission="'shipment:write'" v-if="canReconcileOutbound(row) && (row.outbound?.remote_id || auth.hasPermission('shipment:admin'))" link :disabled="saving" @click="reconcileTarget(row, 'outbound')"><el-icon><Check /></el-icon>核对出库单</el-button>
@@ -83,17 +83,17 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { getInvoice } from '@/api/invoice'
-import { quoteShipment, createShipment, inspectShipmentSubmission, listShipments, getShipment, changeShipment, confirmShipmentOutbound, reconcileShipmentTarget, retryShipmentTarget } from '@/api/shipment'
+import { quoteShipment, createShipment, inspectShipmentSubmission, listShipments, getShipment, changeShipment, reconcileShipmentTarget, retryShipmentTarget } from '@/api/shipment'
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
-import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment, canConfirmOutbound as canConfirmServerOutbound, canReconcileOutbound } from '../composables/shipmentSettlementState'
+import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment, canReconcileOutbound } from '../composables/shipmentSettlementState'
 import { cents, latestRequest } from '@/views/receipt/batchReceiptState'
 import { money } from '@/views/receipt/useReceipts'
 import { currentBeijingDate } from '@/utils/datetime'
 import { confirmAction, msgError, msgSuccess, promptAction } from '@/utils/feedback'
 import { readShipmentSubmission, saveShipmentSubmission, clearShipmentSubmission, copyShipment, isShipmentReceipt, isShipmentObservation, uncertainShipment } from '../composables/shipmentSubmission'
-import { readConfirmation, saveConfirmation, clearConfirmation, isConfirmationTarget, isConfirmationResolution, protectConfirmation } from '../composables/shipmentConfirmation'
+import { readConfirmation, clearConfirmation, isConfirmationTarget, isConfirmationResolution, protectConfirmation } from '../composables/shipmentConfirmation'
 const props = defineProps({ invoice: { type: Object, required: true } })
 const emit = defineEmits(['close', 'saved']), auth = useAuthStore()
 const lines = ref([]), freight = ref(0), quote = ref(null), settlements = ref([]), loading = ref(true), quoting = ref(false), saving = ref(false), uploading = ref(false), error = ref(''), registerPayment = ref(false)
@@ -103,7 +103,6 @@ const payment = reactive({ amount: null, bank_charge: 0, collection_date: curren
 const persisted = ref(false), mayHaveSubmitted = ref(false)
 const confirmation = ref(null), confirmationPersisted = ref(false)
 const confirmationPending = computed(() => Boolean(confirmation.value))
-const canConfirmOutbound = row => !confirmationPending.value && canConfirmServerOutbound(row)
 const state = ref('draft'), checking = ref(false), denied = ref(false), storageBlocked = ref(false), recoveryInvoice = ref(null), errorSummary = ref(null), frozen = ref(null)
 const pending = computed(() => ['sending', 'uncertain'].includes(state.value)), busy = computed(() => saving.value || checking.value)
 const closingBlocked = computed(() => busy.value || uploading.value || (pending.value && !persisted.value) || (confirmationPending.value && !confirmationPersisted.value))
@@ -117,7 +116,7 @@ const selectedSettlement = ref(null)
 const activeShipment = computed(() => hasActiveShipment(settlements.value))
 const isFinal = ref(false)
 const quoteFields = [['goods_amount','货款'],['packaging_amount','包装费'],['handling_amount','手续费'],['freight_amount','运费'],['deposit_applied','本批抵扣定金'],['advance_applied','本批抵扣预付货款'],['new_payment_due','本批需补款']]
-const stateLabel = state => ({ pending: '待处理', pending_remote: '待确认实际出库', confirming: '实际出库确认中', confirm_uncertain: '实际出库待核对', shipped_unfunded: '已出库·回款异常', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', failed: '处理失败', uncertain: '待核对' })[state] || state
+const stateLabel = state => ({ pending: '待处理', pending_remote: '待提交检验', confirming: '实际出库确认中', confirm_uncertain: '实际出库待核对', shipped_unfunded: '已出库·回款异常', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', failed: '处理失败', uncertain: '待核对' })[state] || state
 const body = () => ({ items: lines.value.filter(row => row.requested > 0).map(row => ({ invoice_item_id: row.id, quantity: row.requested })), freight_amount: String(freight.value || 0), is_final: isFinal.value })
 watch(() => JSON.stringify(body()), () => {
   quoteRequest.next(); quote.value = null; quoting.value = false
@@ -238,37 +237,6 @@ async function change(row, action) {
   saving.value = true
   try { await changeShipment(row.id, action, { version: row.version, reason }); if (!current(identity)) return; await reload(); if (!current(identity)) return; quote.value = null; emit('saved') }
   catch (e) { if (current(identity)) failed(e) }
-  finally { if (current(identity)) saving.value = false }
-}
-async function confirmOutbound(row) {
-  if (busy.value || pending.value || denied.value || storageBlocked.value || !canConfirmOutbound(row)) return
-  const identity = generation
-  let reason
-  try { reason = (await promptAction('将把这张小满待出库单确认为实际出库，并影响库存。请核对本批回款、数量和仓库，填写操作原因。', '确认实际出库', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符', confirmButtonText: '确认实际出库', type: 'warning' })).value } catch { return }
-  if (!current(identity) || pending.value || denied.value || !canConfirmOutbound(row)) return
-  const command = { invoice_id: row.invoice_id, settlement_id: row.id, outbound_id: row.outbound?.id,
-    remote_id: row.outbound?.remote_id, body: { version: row.version, reason } }
-  try {
-    if (readShipmentSubmission(window.sessionStorage, actor)) { await restore(); return }
-    saveConfirmation(window.sessionStorage, actor, command)
-    confirmation.value = command; confirmationPersisted.value = true
-  } catch (e) { storageBlocked.value = true; hidePrivate(); void showError(e.message); return }
-  saving.value = true; error.value = ''
-  try {
-    const result = await confirmShipmentOutbound(command.settlement_id, command.body)
-    if (!current(identity)) return
-    if (!isConfirmationTarget(result, command)) throw new Error('确认回执与原出库单不一致，请保持原记录核对')
-    const resolved = resolveConfirmation(result, command.body.version)
-    await reload(); if (!current(identity)) return
-    selectedSettlement.value = protectedRow(result); emit('saved')
-    if (!resolved) void showError('原实际出库确认结果仍待核对，请先核对原单，禁止再次发送')
-  } catch (e) {
-    if (!current(identity)) return
-    failed(e)
-    if (!denied.value) {
-      try { await reload() } catch (readError) { if (current(identity)) failed(readError) }
-    }
-  }
   finally { if (current(identity)) saving.value = false }
 }
 async function reconcileTarget(row, kind) {

@@ -8,6 +8,33 @@
 - 独立DBA曾因EVENT缺权导致完整备份失败，已移除无效部分并保留受限诊断。用户已补权限，重连验证SHOW VIEW/EVENT/TRIGGER和global SHOW_ROUTINE；新受管备份成功767,327,823字节、SHA256 `650f6a174366c36bcce1c9b7898700d71de4a19b47aa7604b685867673a5d660`，办公室受限目录 `.deploy_state/customer-portal-backups/f7d897f41f364ba6b7dd9f9bacabfd2b`。真实180隔离恢复/升级/恢复180/重放181正在准备，未生产DDL。
 - 验证：SQLite门户747通过；实际隔离HTTPS浏览器登录/交易至PI共2通过；MySQL专项复跑63通过/10opt-in跳过；客户/员工授权Node135通过；两前端构建成功。组别重叠，详见[实机证据与未验收范围](requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)。空库全历史链在126真实切换合同门禁失败，未stamp/绕过。完整生产快照恢复不能用上述回归替代。
 - 待恢复proof/实际受管发布后才enable-access供用户管理真实账号；库存单位NULL712/915及刷新语义、合同价/真实授权、生产交易/PI/通知未验收，对应开关保持关闭，不能标为正式开放。操作见[发布/验收/停止接单](../deploy/customer-orders.md)。仅本任务本地提交，无origin push或main合并。
+## 2026-10-10 预售出库完成改用检验提交（Codex，本地实现，未部署）
+
+- 用户明确：小满出库单持续草稿，方舟以对应检验 `submitted` 判定出库完成；撤回后恢复未完成。沿用 `codex/presale-receipt-guard` 工作树。新增共享检验证据/状态服务，按镜像记录 ID 与真实 outbound_invoice_id 精确桥接并核对客户及冻结行数量；提交/撤回、后台回读、管理员补绑、前批校验与主单编辑限制采用同一口径。
+- 提交先锁 Invoice，再锁同步事件与检验，状态和资金应用同事务。撤回保留 applied 资金占用/冻结明细，恢复 pending_remote/outbound_pending，不释放资金、不重新派发；资金核验异常仍隔离。锁外证据捕获包含检验轮次，最终变化拒绝应用。已提交的历史 pending_remote 由原刷新队列回补，无迁移或生产数据脚本。
+- 删除旧确认按钮、confirm-outbound 路由与两条 status=2 发送实现；历史确认载荷只用于原事实解码，恢复记录继续保留，检验 shipped 不制造永久远端出库证明。出库结算显示“待提交检验”，允许只读核对待检验/完成的原单。原 live API probe 到草稿出库即结束，不伪造物理检验。
+- 定向 SQLite 156 passed（该次新增完成测试 7 项）；补充生产 autoflush=False、历史回补、无效资金、撤回竞态、旧入口移除、管理员补绑和历史未发送事实恢复后，完成测试独立 14 passed。真实 MySQL 8.4.6 REPEATABLE READ / autoflush=False 隔离进程并发 2 passed：双提交只应用一次、资金读取间另一连接撤回不被覆盖。扩大资金升级/历史行/检验及预售回归 227 passed（与完成测试覆盖重叠，不累加）；Node 26 passed；前端 build 通过。独立审查发现补绑需按拟绑定 remote_id 捕获检验证据，已修复且实际 reconcile 回归通过；两处修复独立复验 2 passed。
+- 未提交、推送、合并、部署；未操作生产单据或小满写接口。MySQL 证据位于本工作树 tmp/inspection-mysql-02（进程已退出），构建日志 tmp/presale-inspection-build.log，回归日志 tmp/presale-inspection-pytest.log。约定检查通过，Git 巡检 --no-fetch exit 0（仅本地快照）；临时测试目录 01/02 的删除被工具策略拦截，进程已退出，保留目录与证据，未绕过删除限制。历史 opt-in 确认发送套件描述的是已撤除接口，不作为新行为验收；本轮未运行整套客户门户或线上浏览器。
+
+## 2026-10-10 预售收款与主单保存入口区分（Codex，本地修复，未部署）
+
+- 用户确认 Veronika 提示发生在底部“保存/保存并同步”，并非独立“登记预售收款”。活动发货结算禁止改主单是正确保护；V2 新增资金池收款继续允许，提交后无需再保存主单。
+- 工作树 `C:/Users/windb/.codex/worktrees/presale-receipt-guard/commission-system`，分支 `codex/presale-receipt-guard`。详情返回只读 `presale_edit_blocked_reason`，现代页脚提前显示原因并禁用主单保存/同步，composable 也在请求前阻断。V1 指向原批补款，V2 说明独立收款入口；不改现金事实、占用、幂等或出库规则，无迁移。
+- 隔离 SQLite 后端 58 passed，Node/Vue 编译渲染及编辑器回归 32 passed，前端构建通过（既有 chunk/混合导入警告）。增量约定和 diff 检查通过；Git 巡检 `--no-fetch` 仅本地快照，其他分支未处理。未操作生产原单、提交、推送或部署；真实线上点击路径未验证。
+- 独立审查通过，修正 V1 未保存修改提示，不引导其走禁止的资金池登记。独立复验后端 9、Node 18 passed（与上述覆盖重叠，不相加）。字段不进入保存 payload/dirty signature，跨单 reset 清空；批次在其他窗口结束后需重新打开订单刷新状态。未验证真实浏览器布局。
+## 2026-10-10 平台公告提醒（Codex，已合入 main，未部署）
+
+- 实现提交 `41109017` 经分支 `codex/announcement-inbox` 合入主目录 main，用户已授权推送。已接右上角铃铛、未读数量/光点、列表正文、渲染后自动已读、全部已读、移动端及空态；复用公告发布修订与库 ACL。
+- 新表/迁移 `182_announcement_reads` 当前接 main 的 180，用户 FK 为 INT UNSIGNED，阅读事实按用户/文档/修订唯一。其他分支已有 181，集成时再核对单 head；本次未操作共享或生产数据库。
+- SQLite 公告服务/提醒/迁移 40 passed，Node 提醒/导航 16 passed；实际隔离 HTTP 与 MainLayout 浏览器核心路径、320 窄屏/1024 短屏、空态和关闭焦点通过。独立审查两个问题已修复并补回归。构建和增量约定通过，既有警告保留；no-fetch 巡检 exit 0，仅本地快照，未处理其他分支。详见 [实现与验收](requirements/2026-10-10-announcement-inbox.md)。
+- 合并后主目录隔离后端 40、Node 16 项复验通过；严格增量约定以 `29c22117` 为基点，迁移单 head 182。交接文档顶部冲突保留双方条目；原有 25 个本地文件及交接文档原始 diff 核验保留。应用源码与已构建/浏览器验收版本一致，未执行部署或生产迁移。
+
+## 2026-10-10 主站历史资源清理与部署保留机制（Codex，已合并推送部署）
+
+- 用户授权清理并修改保留机制，首次完整发布 `1864176c`，补充维护时限的最终生产候选 `5e1a3de9`。统一 `deploy/deploy.bat` 两轮均 exit 0，应用与 office / leshine.work / leshine.cloud 维护 succeeded，无迁移，schema 180。最新候选包含此前发票读取锁与出库打印规格修复；旧条目中的未部署状态为当时记录。
+- 三站文件净占用减少约 36.6 GB：办公室 16,007 assets → 3,485，85 份主站备份 → 2；新加坡 17.0 GB → 6.5 GB，北京 17.1 GB → 6.6 GB。当前版本、最近两份回滚及七天内退役资源保留；云端旧版本首次七天过渡，重复维护不续期。成功发布后自动清理，没有新定时任务；PM、媒体、业务附件、数据库及其他缓存不在范围。
+- 独立审查和平台定向回归通过；三站重复清理均零删除/零补拷贝，受保护摘要通过，四站线上 index 与备注编辑资源 SHA256 正确。发布后健康检查正常，唯一必需检查红项为独立数据库备份占发布锁，已核对进程，未干预；六项原非必需停用/未知保留。
+- [实测与保留规则](reports/2026-10-10-main-frontend-retention.md)；原始回执、日志与容量证据在主目录 `tmp/static-retention/`。保留两份回滚备份与恢复材料，不清理其他任务。
 
 ## 2026-10-10 Veronika 出库打印规格补取（Codex，已授权合并推送，未部署）
 

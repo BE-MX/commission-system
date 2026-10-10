@@ -8,6 +8,5 @@ export const inspectShipmentSubmission = (id, body, signal) => unwrap(request.po
 export const listShipments = id => unwrap(request.get(`/shipments/order/${id}`, { showLoading: false }))
 export const getShipment = id => unwrap(request.get(`/shipments/${id}`, { showLoading: false }))
 export const changeShipment = (id, action, body) => unwrap(request.post(`/shipments/${id}/${action}`, body))
-export const confirmShipmentOutbound = (id, body) => unwrap(request.post(`/shipments/${id}/confirm-outbound`, body, shipmentRecoveryOptions))
 export const reconcileShipmentTarget = (id, kind, body) => unwrap(request.post(`/shipments/${id}/reconcile-${kind}`, body, shipmentRecoveryOptions))
 export const retryShipmentTarget = (id, kind, body) => unwrap(request.post(`/shipments/${id}/retry-${kind}`, body))

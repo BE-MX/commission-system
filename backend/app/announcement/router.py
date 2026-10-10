@@ -6,9 +6,9 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.knowledge.router import _call
 from app.knowledge.schemas import MembersReplace
-from app.announcement import service, settings_service, weekly, delivery, channel_test
+from app.announcement import service, settings_service, weekly, delivery, channel_test, inbox_service
 from app.announcement.models import WeeklyReport, Delivery
-from app.announcement.schemas import AnnouncementInput, CategoryInput, ReviewInput, ReasonInput, PinInput, ConfigInput, RetryInput, WeeklyInput, VerifyInput
+from app.announcement.schemas import AnnouncementInput, CategoryInput, ReviewInput, ReasonInput, PinInput, ConfigInput, RetryInput, WeeklyInput, VerifyInput, ReadInput
 
 router = APIRouter()
 READ = ('announcement:read', 'announcement:write', 'announcement:admin')
@@ -115,6 +115,32 @@ def list_announcements(q: str = Query('', max_length=128), category_id: int | No
 def create(payload: AnnouncementInput, db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*WRITE))):
     row = _call(service.save_announcement, db, user, **payload.model_dump())
     return ok({'id': row.document_id})
+
+
+@router.get('/inbox/summary')
+def inbox_summary(db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*READ))):
+    return ok(_call(inbox_service.summary, db, user))
+
+
+@router.get('/inbox')
+def inbox(unread_only: bool = False, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+          db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*READ))):
+    return ok(_call(inbox_service.list_inbox, db, user, unread_only=unread_only, page=page, page_size=page_size))
+
+
+@router.post('/inbox/read-all')
+def read_all(db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*READ))):
+    return ok(_call(inbox_service.mark_all_read, db, user))
+
+
+@router.get('/inbox/{document_id}')
+def inbox_detail(document_id: int, db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*READ))):
+    return ok(_call(inbox_service.detail, db, user, document_id))
+
+
+@router.post('/inbox/{document_id}/read')
+def read_notice(document_id: int, payload: ReadInput, db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*READ))):
+    return ok(_call(inbox_service.mark_read, db, user, document_id, payload.revision_id))
 
 
 @router.get('/{document_id}')

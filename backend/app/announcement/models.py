@@ -1,5 +1,6 @@
 """Announcement metadata and durable publication/delivery facts; no duplicate body."""
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy.dialects.mysql import INTEGER as MYSQL_INTEGER
 from app.core.database import Base
 from app.core.time import beijing_now
 
@@ -41,6 +42,14 @@ class AnnouncementMeta(Base):
     effective_at = Column(DateTime, comment='生效时间')
     expires_at = Column(DateTime, comment='截止时间')
     change_note = Column(String(500), nullable=False, default='', comment='更新说明')
+
+
+class AnnouncementRead(Base):
+    __tablename__ = 'ark_announcement_reads'
+    user_id = Column(Integer().with_variant(MYSQL_INTEGER(unsigned=True), 'mysql'), ForeignKey('ark_users.id'), primary_key=True, comment='阅读用户ID')
+    document_id = Column(BigInteger, ForeignKey('ark_knowledge_documents.id'), primary_key=True, comment='公告文档ID')
+    revision_id = Column(BigInteger, ForeignKey('ark_knowledge_revisions.id'), primary_key=True, comment='已读发布修订ID')
+    read_at = Column(DateTime, nullable=False, default=beijing_now, comment='首次阅读时间（北京时间）')
 
 
 class Publication(Base):

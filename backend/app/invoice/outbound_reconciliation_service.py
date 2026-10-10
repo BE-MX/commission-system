@@ -16,6 +16,7 @@ from app.portal.authority import lock_authority
 from app.portal.errors import PortalError, TransactionBusy
 from app.receipt import access, authority, remote
 from app.shipping_inspection import outbound_presence
+from app.invoice import shipment_inspection_service as inspection_completion
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class OutboundTarget:
     payload_json: str
     baseline_json: str
     funds: funding.FundingTarget
+    inspection: tuple = ()
 
     @property
     def payload(self):return json.loads(self.payload_json)
@@ -71,7 +73,8 @@ def _capture(db, identity, body, user):
         if not target.payload or shipments.digest(target.payload)!=target.payload_hash:
             raise ValueError('原出库编号或冻结快照不完整，请核对原单')
         lookup=OutboundTarget(target.id,remote_id,target.outbound_no,
-            json.dumps(target.payload,sort_keys=True),json.dumps(target.remote_line_snapshot,sort_keys=True),funding.freeze(invoice,graph))
+            json.dumps(target.payload,sort_keys=True),json.dumps(target.remote_line_snapshot,sort_keys=True),funding.freeze(invoice,graph),
+            inspection_completion.snapshot(db,target,current=True,remote_id=remote_id))
         return invoice,row,graph,current,(shipment_retry_service._binding(db,invoice,row),recovery.capture(db,target)),lookup
     except TransactionBusy:raise
     except PortalError as error:
@@ -133,7 +136,7 @@ def _read_evidence(db, lookup):
     active=outbound_presence.is_active(token,lookup.remote_id,detail['create_time'])
     if not isinstance(active,bool):raise ValueError('Unverified outbound activity')
     matches=shipment_delivery._verify(lookup,detail)
-    funds=funding.read(db,lookup.funds) if status=='2' and active and matches and lookup.remote_line_snapshot else None
+    funds=funding.read(db,lookup.funds) if lookup.inspection and lookup.inspection[1] and active and matches else None
     return OutboundEvidence(lookup,active,matches,status,json.dumps(shipment_delivery._line_snapshot(detail) if needs_baseline else None,sort_keys=True),funds)
 
 
@@ -145,23 +148,11 @@ def _apply(db, invoice, row, graph, body, evidence):
         target.last_error=None;target.version+=1;row.state='outbound_pending';row.version+=1
     if not evidence.active or not evidence.matches:
         target.status='uncertain';target.last_error='小满分批出库身份或数量与冻结任务不一致，请核对原单';row.state='outbound_uncertain'
-    elif evidence.status=='2' and not target.remote_line_snapshot:
-        target.status='uncertain';target.last_error='小满首次回读已实际出库，缺少待出库明细 ID 和成本基线，请人工核查';row.state='outbound_uncertain'
-    elif evidence.status=='2':
-        funded=funding.apply(db,invoice,row,graph,evidence.funds)
-        target.status='shipped' if funded else 'shipped_unfunded'
-        target.last_error=None if funded else '小满已实际出库，但关联回款未通过实时核验，请立即核查'
-        target.verified_at=beijing_now();row.state='shipped' if funded else 'outbound_uncertain'
-        if funded:
-            for app in graph.applications:
-                if app.status=='reserved':app.status='applied'
-    elif target.status in {'shipped','shipped_unfunded'}:
-        target.status='uncertain';target.last_error='小满已出库单重新显示待出库，需人工核查，禁止再次确认';row.state='outbound_uncertain'
-    elif target.status in {'confirming','confirm_uncertain'}:
-        target.status='confirm_uncertain';target.last_error='实际出库请求结果待核对；小满当前仍显示待出库，禁止再次确认';row.state='outbound_uncertain';target.verified_at=beijing_now()
     else:
-        target.status='pending_remote';target.last_error=None;target.verified_at=beijing_now();row.state='outbound_pending'
         if target.remote_line_snapshot is None:target.remote_line_snapshot=json.loads(evidence.lines_json)
+        proof,complete=inspection_completion.snapshot(db,target,current=True)
+        funded=funding.apply(db,invoice,row,graph,evidence.funds) if complete and evidence.funds else not complete
+        inspection_completion.apply(db,target,row,complete,funded=funded,basis='inspection:'+proof,bump=False)
     target.version+=1;row.version+=1
 
 
@@ -182,7 +173,8 @@ def reconcile(db, identity, body, user):
         raise HTTPException(409,'原出库目标或资金在核验期间已变化，请核对原单')
     previous_status=graph.outbound.status
     _apply(db,invoice,row,graph,body,evidence)
-    recovery.apply(db,graph.outbound,row,actual[1],evidence,previous_status=previous_status)
+    if actual[1].histories or actual[1].proven_shipped:
+        recovery.apply(db,graph.outbound,row,actual[1],evidence,previous_status=previous_status,inspection_basis=True)
     db.add(SettlementEvent(settlement_id=row.id,action='reconcile_outbound',actor_id=access.user_id(current),reason=body.reason))
     db.flush()
     return shipments.describe(db,row,current=True)

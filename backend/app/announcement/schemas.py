@@ -32,6 +32,10 @@ class PinInput(BaseModel):
     pinned: bool
 
 
+class ReadInput(BaseModel):
+    revision_id: int = Field(gt=0)
+
+
 class ConfigInput(BaseModel):
     version: int = Field(ge=1)
     group_name: str = Field(max_length=120)

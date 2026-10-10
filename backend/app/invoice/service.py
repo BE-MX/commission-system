@@ -656,9 +656,11 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
                 for material, balance in rows
             }
     from app.receipt.invoice_link import describe as describe_receipt
+    from app.invoice.lifecycle_guard import presale_edit_blocked_reason
     return {
         **_invoice_list_row(invoice, len(invoice.items)),
         "receipt_draft": describe_receipt(db, invoice) if db is not None else None,
+        "presale_edit_blocked_reason": presale_edit_blocked_reason(db, invoice) if db is not None else None,
         "customer_grade": invoice.customer_grade,
         "contact_name": invoice.contact_name,
         "contact_phone": invoice.contact_phone,

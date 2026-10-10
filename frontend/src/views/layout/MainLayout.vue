@@ -26,6 +26,7 @@
           </div>
           <div class="header-right">
             <GlassButton v-permission="'task:write'" class="header-quick-task" size="sm" left-icon="EditPen" data-quick-task-trigger @click="openHeaderQuickTask">记任务</GlassButton>
+            <AnnouncementBell />
             <div class="header-badge">莱莎发制品</div>
             <el-dropdown trigger="click" @command="handleUserCommand">
               <div class="user-trigger">
@@ -98,6 +99,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import QuickTaskPopover from '@/components/task/QuickTaskPopover.vue'
+import AnnouncementBell from '@/components/announcement/AnnouncementBell.vue'
 import { useQuickTask } from '@/composables/useQuickTask'
 import { NAV_ENTRIES } from '@/config/navigation'
 import NavigationTabs from './NavigationTabs.vue'

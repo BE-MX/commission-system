@@ -132,8 +132,10 @@ def check_outbounds(db, invoice, evidence, *, pending=None, current=False):
             if str(live[outbound.remote_id].get("status")) != "1":
                 raise ValueError("当前待出库单状态已变化，请先核对原单")
             continue
-        if outbound.status != "shipped" or str(live[outbound.remote_id].get("status")) != "2":
-            raise ValueError("前批尚未确认实际出库，请先完成前批")
+        from app.invoice import shipment_inspection_service
+        if (outbound.status != "shipped" or str(live[outbound.remote_id].get("status")) not in {"1", "2"}
+                or not shipment_inspection_service.snapshot(db, outbound, current=current)[1]):
+            raise ValueError("前批检验尚未提交或出库资料待核对，请先完成前批")
         expected = {str(x["order_record_id"]): int(x["outbound_count"]) for x in outbound.payload["record_list"]}
         rows = live[outbound.remote_id].get("record_list", [])
         if len(rows) != len(expected) or any(str(x.get("order_id")) != invoice.xiaoman_order_id for x in rows):

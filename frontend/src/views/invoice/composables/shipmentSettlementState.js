@@ -18,16 +18,9 @@ export function canChangeShipment(row, action) {
   return action === 'pause' ? row.state !== 'paused' : action === 'resume' && row.state === 'paused'
 }
 
-export function canConfirmOutbound(row) {
-  const confirmation = row.outbound?.confirmation
-  return row.outbound?.status === 'pending_remote' && confirmation &&
-    ['none', 'resolved'].includes(confirmation.state) && confirmation.blocks_confirmation === false &&
-    confirmation.requires_review === false && confirmation.in_progress === false
-}
-
 export function canReconcileOutbound(row) {
   const target = row.outbound
   if (!target || target.confirmation?.in_progress === true) return false
-  return ['uncertain', 'verifying', 'confirm_uncertain', 'shipped_unfunded'].includes(target.status) ||
+  return ['pending_remote', 'shipped', 'uncertain', 'verifying', 'confirm_uncertain', 'shipped_unfunded'].includes(target.status) ||
     target.confirmation?.requires_review === true
 }

@@ -93,7 +93,13 @@
 | POST | `/ai/draft` | write | 一句话生成可编辑草稿；失败时降级 |
 | GET | `/brief/today` | read/write | 获取或生成今日简报，不发送通知 |
 
-## 当前实施：原确认恢复和安全回执（v1.56）
+## 2026-10-10 预售出库完成依据（本地实现，未部署）
+
+预售分批出库以准确对应出库单的发货检验 `submitted` 为方舟完成依据，小满出库单可持续为草稿 `status=1`。检验通过镜像记录 ID → `outbound_invoice_id` → 本地冻结出库任务关联，核对客户、订单行、产品、SKU、数量及重新检验要求；不按单号模糊匹配。提交与撤回在同一事务同步本地批次。撤回恢复 `pending_remote/outbound_pending`，阻止修改主单和安排下一批，保留原冻结明细及款项占用；重新提交恢复完成。原资金有效性保护保留，异常为 `shipped_unfunded/outbound_uncertain`，不释放资金或重复建单。
+
+后台刷新回补历史已提交检验的批次，并与 `/shipments/{id}/reconcile-outbound`、主单保存和后续批次校验采用相同依据。锁外核对期间检验撤回或版本变化，最终提交拒绝旧证据。`POST /api/shipments/{id}/confirm-outbound` 已移除（404），前端不再提供“确认实际出库”；不向小满发送确认 `status=2`。历史确认日志与原未知请求的核对仍保留，检验完成不生成远端不可逆出库证明。以下 v1.53–v1.56 段落仅为历史契约，确认写接口已由此段替代。
+
+## 历史实施：原确认恢复和安全回执（v1.56）
 
 confirm-outbound/reconcile-outbound沿用version/reason，ok(data)，无新服务端幂等键；动作/实际Invoice财务范围及原发货条件不变。GET安全outbound.confirmation只读八字段，不创建proof/FINISH，不证明原未知请求未发送。前端共享恢复选项不自动401跳转，scope拒绝隐藏内容且保原actor/完整目标/body。
 
@@ -196,6 +202,7 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 - `/api/receipts/order-balance/{id}`、`invoice-summary/{id}` 预售返回 `funding_mode=presale_pool`、`pool_available_amount`、逐款 `pool_balances`（`remaining_amount/remaining_charge/remaining_principal/effective`）以及存在时的 `active_settlement`（含 `funding_version`）。
 - `PATCH /api/receipts/{identity}/presale-purpose`：`receipt:write` 或 `receipt:admin` 加实际订单范围，body `{version,purpose,reason}`，原因至少10字。仅已核验生效、未占用的预售定金/预付货款可改；有活动结算先处理原批。保留金额、费用、日期、凭证和远端ID，记录审计，不重推收款。
 - 预售详情items为当前产品，另返回 `presale_history`（历史实际已发数量金额）和 `ledger_total_amount`。当期导出及金额一致；原产品和结算快照保留。远端未核验、资金不够或引用异常仍阻止出库派发。
+- 2026-10-10 本地修复（未部署）：编辑详情增加 `presale_edit_blocked_reason`，无活动批次为 null。活动批次时提前解释主单不能保存/同步；V2 引导独立“登记预售收款”，V1 引导原批次补款。此只读提示不授予收款权限、不替代提交时的状态核验，底部保存不登记新增收款。
 
 ## 临时战报（2026-09-22，本地实现，迁移 162）
 
@@ -1635,6 +1642,11 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | GET / POST | `/categories` | 查询 / 新建类别目录 |
 | PUT | `/categories/{id}` | 名称、启用状态 |
 | GET / POST | 空路径 | 分页列表 / 新建草稿 |
+| GET | `/inbox/summary` | 当前用户可见公告总数与未读数 |
+| GET | `/inbox` | 已发布公告列表；unread_only、page、page_size（最多 100） |
+| GET | `/inbox/{document_id}` | 当前发布版本正文；纯读取，不更新已读 |
+| POST | `/inbox/{document_id}/read` | 正文展示后提交 revision_id，幂等标记当前用户已读 |
+| POST | `/inbox/read-all` | 标记当前用户此刻可见的发布版本全部已读 |
 | GET / PUT / DELETE | `/{document_id}` | 查看 / 保存版本 / 删除未发布草稿 |
 | GET | `/{document_id}/preview` | 保存版本的钉钉图文分片预览 |
 | POST | `/{document_id}/submit` | 提交审核（须已验证推送通道） |
@@ -1651,6 +1663,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 保存参数：title、content（Tiptap JSON）、category_id、base_revision_id（更新必需）、important、effective_at、expires_at、change_note。列表参数 q/category_id/status/page/page_size。审核中禁止改稿；已发布公告更新后，读者仍看上一发布版本。时间按北京时间保存。
 
 平台权限 `announcement:read/write/admin`；审批端点允许 `knowledge:review/knowledge:admin/announcement:admin`，仍需公告阅读权限和库审核 ACL。普通知识库接口不能修改 managed 公告库。
+
+公告提醒接口同样执行上述双重权限校验；未初始化返回空列表及零计数。仅统计未删除、未撤回且处于生效期内的当前发布修订，管理员也不会收到草稿。summary/read/read-all 返回 total、unread_count；inbox 返回 items、total（当前筛选数量）、announcement_count（所有可见数量）、unread_count。条目包含 id、revision_id、title、category_name、important、pinned、published_at、is_read，详情另含 content_json。阅读旧修订后重新发布为未读；提交过时 revision_id 返回 409，不误标新版本。时间统一北京时间。
 
 
 ### 发票客户等级与出库单金额

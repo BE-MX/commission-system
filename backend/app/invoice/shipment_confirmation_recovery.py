@@ -167,14 +167,14 @@ def original_payload(history,target):
     return True
 
 
-def apply(db,target,row,journal,evidence,*,previous_status):
+def apply(db,target,row,journal,evidence,*,previous_status,inspection_basis=False):
     pending=journal.pending
     shipped=(evidence.active and evidence.matches and evidence.status=='2' and target.remote_line_snapshot
         and target.status in ('shipped','shipped_unfunded'))
-    prior_shipped=journal.proven_shipped or previous_status in ('shipped','shipped_unfunded') or any(h.was_shipped for h in journal.histories)
+    prior_shipped=journal.proven_shipped or (not inspection_basis and previous_status in ('shipped','shipped_unfunded')) or any(h.was_shipped for h in journal.histories)
     pending_note=evidence.active and evidence.matches and evidence.status=='1'
     if shipped:remember_shipped(db,target,basis='remote_status_two')
-    elif previous_status in ('shipped','shipped_unfunded'):remember_shipped(db,target,basis='prior_local_shipped')
+    elif not inspection_basis and previous_status in ('shipped','shipped_unfunded'):remember_shipped(db,target,basis='prior_local_shipped')
     # Permanent shipped evidence precedes the no-pending short circuit.
     if pending_note and prior_shipped:
         target.status='confirm_uncertain';target.last_error='原单曾已出库，当前又显示待出库，请人工核查，禁止再次确认'
@@ -188,8 +188,10 @@ def apply(db,target,row,journal,evidence,*,previous_status):
     if pending_note and not prior_shipped and all(h.unsent or h.rejected and original_payload(h,target) for h in pending):
         for history in pending:
             facts.finish(db,history.attempt,True,resolution='not_sent' if history.unsent else 'explicitly_rejected')
-        target.status='pending_remote';target.last_error=None;target.verified_at=beijing_now();target.lease_until=None
-        row.state='outbound_pending'
+        if not inspection_basis or target.status not in ('shipped','shipped_unfunded'):
+            target.status='pending_remote';target.last_error=None;target.verified_at=beijing_now()
+            row.state='outbound_pending'
+        target.lease_until=None
     elif pending_note:
         target.status='confirm_uncertain';target.last_error='原实际出库发送尚不能证明未受理，请核对原单，禁止再次确认'
         row.state='outbound_uncertain'

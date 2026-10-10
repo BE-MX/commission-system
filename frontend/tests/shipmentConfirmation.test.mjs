@@ -1,23 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canConfirmOutbound, canReconcileOutbound } from '../src/views/invoice/composables/shipmentSettlementState.js'
+import { canReconcileOutbound } from '../src/views/invoice/composables/shipmentSettlementState.js'
 const row = (status, confirmation) => ({ outbound: { status, confirmation } })
 const clear = { state: 'none', blocks_confirmation: false, requires_review: false, in_progress: false }
-test('confirmation requires explicit safe server summary', () => {
-  assert.equal(Boolean(canConfirmOutbound(row('pending_remote', clear))), true)
-  assert.equal(Boolean(canConfirmOutbound(row('pending_remote', { ...clear, state: 'resolved' }))), true)
-  for (const summary of [undefined, {}, { ...clear, blocks_confirmation: true }, { ...clear, requires_review: true },
-    { ...clear, in_progress: true }, { ...clear, state: 'legacy_review' }, { ...clear, state: 'invalid' }]) {
-    assert.equal(Boolean(canConfirmOutbound(row('pending_remote', summary))), false)
-  }
-  assert.equal(Boolean(canConfirmOutbound(row('shipped', clear))), false)
+test('inspection completion supports read-only review of drafts and completed batches', () => {
+  assert.equal(canReconcileOutbound(row('pending_remote', clear)), true)
+  assert.equal(canReconcileOutbound(row('shipped', clear)), true)
 })
 test('expired or unknown claim can be reviewed, active claim stays blocked', () => {
   assert.equal(canReconcileOutbound(row('confirming', { state: 'active', requires_review: true, in_progress: true })), false)
   assert.equal(canReconcileOutbound(row('confirming', { state: 'unresolved', requires_review: true, in_progress: false })), true)
   assert.equal(canReconcileOutbound(row('pending_remote', { state: 'invalid', requires_review: true, in_progress: false })), true)
   assert.equal(canReconcileOutbound(row('confirm_uncertain', clear)), true)
-  assert.equal(canReconcileOutbound(row('shipped', clear)), false)
+  assert.equal(canReconcileOutbound(row('shipped', clear)), true)
 })
 
 import { confirmationKey, readConfirmation, saveConfirmation, clearConfirmation, isConfirmationTarget,
@@ -48,7 +43,6 @@ test('ordinary none or old resolved rows remain locally blocked, active claims c
   for (const state of ['none', 'resolved']) {
     const value = settlement(); value.outbound.confirmation.state = state
     const protectedRow = protectConfirmation(value, original())
-    assert.equal(Boolean(canConfirmOutbound(protectedRow)), false)
     assert.equal(canReconcileOutbound(protectedRow), true)
     assert.equal(value.outbound.confirmation.state, state)
   }

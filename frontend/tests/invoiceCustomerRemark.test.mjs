@@ -22,6 +22,7 @@ async function harness(request = async () => defaults('上单备注'), createReq
     getCustomerContactDefaults: request, getCustomerRule: async () => null,
     getInvoice: async id => ({ ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id, customer_id: 'C1' }),
     createInvoice: async payload => { saved.push(payload); return createRequest ? createRequest(payload) : { ...payload, id: 10 } },
+    updateInvoice: async (id, payload) => { saved.push(payload); return { ...payload, id } },
   })
   const imports = {
     vue,
@@ -84,6 +85,17 @@ test('no-history customer starts empty and can save', () => run(async h => {
   assert.equal(h.saved.length, 1)
   assert.equal(h.saved[0].remark, '')
 }, async () => ({ remark: '', customer_grade: null })))
+
+test('active presale blocks save and save-and-sync before sending any document write', () => run(async h => {
+  await h.editor.onCustomerChange(customer('C1'))
+  Object.assign(h.editor.form, defaults(''), { id: 981, order_type: 'presale', express_channel: 'FEDEX',
+    presale_edit_blocked_reason: '请使用登记预售收款，提交后无需保存主单' })
+  await h.editor.saveDraft()
+  await h.editor.saveAndSync()
+  assert.equal(h.saved.length, 0)
+  assert.deepEqual(h.warnings, Array(2).fill(h.editor.form.presale_edit_blocked_reason))
+  assert.equal(h.editor.saveAndSyncSubmitting.value, false)
+}))
 
 for (const manual of ['手动填写', '']) {
   test(`manual remark ${JSON.stringify(manual)} survives a late response`, () => {

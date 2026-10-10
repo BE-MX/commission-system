@@ -18,6 +18,7 @@ export function emptyInvoiceForm() {
     receipt_draft: null, receipt_uploading: false, receipt_proof_dirty: false,
     receipt_order_dirty: false, receipt_action_open: false, receipt_action_busy: false,
     receipt_remark_editing: false, receipt_remark_saving: false,
+    presale_edit_blocked_reason: null,
     id: null, invoice_no: '', order_type: 'stock', sales_user_id: null, customer_id: '', customer_name: '',
     customer_grade: null,
     contact_name: '', contact_phone: '', contact_email: '', delivery_address: '',
