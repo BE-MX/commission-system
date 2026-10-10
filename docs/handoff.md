@@ -14,6 +14,12 @@
 - 工作树 `C:/Users/windb/.codex/worktrees/presale-receipt-guard/commission-system`，分支 `codex/presale-receipt-guard`。详情返回只读 `presale_edit_blocked_reason`，现代页脚提前显示原因并禁用主单保存/同步，composable 也在请求前阻断。V1 指向原批补款，V2 说明独立收款入口；不改现金事实、占用、幂等或出库规则，无迁移。
 - 隔离 SQLite 后端 58 passed，Node/Vue 编译渲染及编辑器回归 32 passed，前端构建通过（既有 chunk/混合导入警告）。增量约定和 diff 检查通过；Git 巡检 `--no-fetch` 仅本地快照，其他分支未处理。未操作生产原单、提交、推送或部署；真实线上点击路径未验证。
 - 独立审查通过，修正 V1 未保存修改提示，不引导其走禁止的资金池登记。独立复验后端 9、Node 18 passed（与上述覆盖重叠，不相加）。字段不进入保存 payload/dirty signature，跨单 reset 清空；批次在其他窗口结束后需重新打开订单刷新状态。未验证真实浏览器布局。
+## 2026-10-10 平台公告提醒（Codex，已合入 main，未部署）
+
+- 实现提交 `41109017` 经分支 `codex/announcement-inbox` 合入主目录 main，用户已授权推送。已接右上角铃铛、未读数量/光点、列表正文、渲染后自动已读、全部已读、移动端及空态；复用公告发布修订与库 ACL。
+- 新表/迁移 `182_announcement_reads` 当前接 main 的 180，用户 FK 为 INT UNSIGNED，阅读事实按用户/文档/修订唯一。其他分支已有 181，集成时再核对单 head；本次未操作共享或生产数据库。
+- SQLite 公告服务/提醒/迁移 40 passed，Node 提醒/导航 16 passed；实际隔离 HTTP 与 MainLayout 浏览器核心路径、320 窄屏/1024 短屏、空态和关闭焦点通过。独立审查两个问题已修复并补回归。构建和增量约定通过，既有警告保留；no-fetch 巡检 exit 0，仅本地快照，未处理其他分支。详见 [实现与验收](requirements/2026-10-10-announcement-inbox.md)。
+- 合并后主目录隔离后端 40、Node 16 项复验通过；严格增量约定以 `29c22117` 为基点，迁移单 head 182。交接文档顶部冲突保留双方条目；原有 25 个本地文件及交接文档原始 diff 核验保留。应用源码与已构建/浏览器验收版本一致，未执行部署或生产迁移。
 
 ## 2026-10-10 主站历史资源清理与部署保留机制（Codex，已合并推送部署）
 
