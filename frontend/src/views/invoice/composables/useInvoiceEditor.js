@@ -194,6 +194,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   let contactFillSeq = 0
+  let remarkEditSeq = 0
+  // 同步记录手动修改（包括清空），防止迟到的默认值覆盖当前输入。
+  watch(() => form.remark, () => { remarkEditSeq++ }, { flush: 'sync' })
   let customerRuleSeq = 0
   let customerSelectionSeq = 0
   let customerContextSeq = 0
@@ -381,6 +384,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 残留上一个客户的地址是错单风险
   async function fillContactDefaults() {
     const seq = ++contactFillSeq
+    // 只为新建单回填备注；切客户时立即清除上一客户的内容。
+    if (!form.id) form.remark = ''
+    const remarkSeq = remarkEditSeq
     form.customer_grade = null
     customerGradeReady = false
     const gradeSeq = gradeEditSeq
@@ -395,6 +401,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       }
     }
     if (seq !== contactFillSeq) return // 期间又切了客户/换了单据，丢弃过期响应
+    if (!form.id && remarkSeq === remarkEditSeq) form.remark = defaults.remark || ''
     if (gradeSeq === gradeEditSeq && defaultsLoaded) {
       form.customer_grade = defaults.customer_grade || null
       customerGradeReady = true
@@ -549,6 +556,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.contact_phone = ''
     form.contact_email = ''
     form.delivery_address = ''
+    if (!form.id) form.remark = ''
     customerRule.value = null
     accessories.invalidateCustomerContext()
     refreshPreviousInvoiceNo()

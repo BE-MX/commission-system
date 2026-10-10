@@ -236,7 +236,7 @@ def search_customer_contacts(
 def get_customer_contact_defaults(
     customer_id: str = Query(..., min_length=1, max_length=64),
     db: Session = Depends(get_db),
-    # 录入页自动填充用；组织级共享（客户数据，非发票财务数据），刻意不做数据范围过滤
+    # 录入页复用客户联系快照和历史备注；沿用组织级共享，不做发票数据范围过滤
     _user=Depends(require_permission("invoice:write")),
 ):
     return ok(service.get_customer_contact_defaults(db, customer_id))

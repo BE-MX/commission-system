@@ -1,5 +1,11 @@
 # 当前交接与待办
 
+## 2026-10-10 新建订单自动填充客户上单备注（Codex，已验收，授权合并推送，未部署）
+
+- 分支 `codex/customer-last-order-remarks`，工作树 `C:/Users/windb/.codex/worktrees/customer-last-order-remarks/commission-system`，基于 main `f3b1a685`。订单发票管理新旧下单入口共用编辑器，选客户后复用该客户最近一张方舟订单发票的 remark；按 created_at DESC、id DESC 取真正最新单，最新为空或无历史留空，不从更早的非空备注兜底。复用既有 contact-defaults 接口和 invoice:write 权限，无数据库迁移。
+- 手动修改/清空后按当前内容保存；同步编辑序号与客户/表单请求序号防迟到响应覆盖。切客户、清空客户或业务员切换清除新建单旧备注，同公司换联系人保留输入；编辑已保存订单保留本单备注。截图导入现有客户默认值路径同样回填。
+- 验证：旧后端代码下新增/调整回归 5 项实际失败；受影响后端 `test_invoice_module.py`、`test_invoice_customer_grade.py`、`test_invoice_okki_push.py` 共 77 passed（隔离内存 SQLite），前端实际 Vue 响应式编辑器及相关客户搜索/整单粘贴/旧入口/截图回归 43 passed，覆盖填写、编辑保存、无历史、空备注、切换客户、手动清空、迟到响应、请求失败和已有订单。`npm run build`、严格增量约定和 diff 检查通过；构建保留既有 auth 混合导入及大 chunk 提示，pytest 保留既有 utcnow 弃用警告。独立 agent 审查未发现 P1/P2；Git 巡检 `--no-fetch` 已运行，仅本地快照；亮哥已授权提交、合并 main 并推送 origin，未部署。
+
 ## 2026-10-10 活动预售批次期间新增到账登记（Codex，Git交付，未部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/receipt-allocation-balance/commission-system`，分支 `codex/receipt-allocation-balance`。只读核对订单 981：原 1077 USD 预付已抵本批商品 627 与运费 38，本批余额为零；亮哥确认另有新增到账 38。根因是有活动批次时前后端强制补款，阻断独立资金池收款。
