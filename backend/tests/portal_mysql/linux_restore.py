@@ -52,12 +52,12 @@ def linux_restore(request, directory, allowed):
     common = ['-C', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=15',
         '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3']
     def run(command, **kwargs):
-        result = subprocess.run([str(ssh), *common, host, command], stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, timeout=kwargs.pop('timeout', 30), **kwargs)
-        if result.returncode:
-            with (directory / 'protected-restore.stderr').open('ab') as errors:
-                errors.write(result.stderr)
-            result.stderr = b''
+        # Stream diagnostics into the existing ACL-protected clone directory.
+        # CompletedProcess and TimeoutExpired never hold raw SQL diagnostics;
+        # opening this file fails before any command or SQL can be dispatched.
+        with (directory / 'protected-restore.stderr').open('ab') as errors:
+            result = subprocess.run([str(ssh), *common, host, command], stdout=subprocess.PIPE,
+                stderr=errors, timeout=kwargs.pop('timeout', 30), **kwargs)
         assert result.returncode == 0, 'Protected Linux restore transport failed; diagnostics withheld'
         return result.stdout
     # Pin the client before supplying any temporary credential or backup bytes.
