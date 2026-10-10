@@ -13,6 +13,30 @@
 - `leshine.cloud` 充值凭证路由经新加坡到办公室；新加坡 `/dev/vda2` 普通用户可用空间为 0，`www-data` 无法写上传临时文件。无鉴权 1 KiB POST 两主域均正常返回 403，64 KiB 均返回 Nginx 500；办公室健康返回 200。未修改业务代码或资金数据。
 - 用户批准后仅清理新加坡 `/root/.cache/pip`、`/root/.cache/uv`、`/root/.npm/_cacache` 缓存内容并保留目录，实际回收约 634 MiB，普通用户可用约 600 MiB。业务附件、数据库、系统日志和备份保留；未重启或部署。两主域 1 KiB/64 KiB/1 MiB 六项无鉴权上传探针均恢复 403，办公室健康正常。共享 MySQL 显式只读核对客户 567：今日及待审申请为空，今日只有早先订单扣款，未见失败充值遗留。可以正常重新提交；真实申请及凭证待用户操作验收。磁盘仍 99%，后续容量治理另行确定保留范围。[排查与恢复记录](reports/2026-10-10-domestic-recharge-disk-incident.md)。
 
+## 2026-10-10 新建订单自动填充客户上单备注（Codex，已验收，授权合并推送，未部署）
+
+- 分支 `codex/customer-last-order-remarks`，工作树 `C:/Users/windb/.codex/worktrees/customer-last-order-remarks/commission-system`，基于 main `f3b1a685`。订单发票管理新旧下单入口共用编辑器，选客户后复用该客户最近一张方舟订单发票的 remark；按 created_at DESC、id DESC 取真正最新单，最新为空或无历史留空，不从更早的非空备注兜底。复用既有 contact-defaults 接口和 invoice:write 权限，无数据库迁移。
+- 手动修改/清空后按当前内容保存；同步编辑序号与客户/表单请求序号防迟到响应覆盖。切客户、清空客户或业务员切换清除新建单旧备注，同公司换联系人保留输入；编辑已保存订单保留本单备注。截图导入现有客户默认值路径同样回填。
+- 验证：旧后端代码下新增/调整回归 5 项实际失败；受影响后端 `test_invoice_module.py`、`test_invoice_customer_grade.py`、`test_invoice_okki_push.py` 共 77 passed（隔离内存 SQLite），前端实际 Vue 响应式编辑器及相关客户搜索/整单粘贴/旧入口/截图回归 43 passed，覆盖填写、编辑保存、无历史、空备注、切换客户、手动清空、迟到响应、请求失败和已有订单。`npm run build`、严格增量约定和 diff 检查通过；构建保留既有 auth 混合导入及大 chunk 提示，pytest 保留既有 utcnow 弃用警告。独立 agent 审查未发现 P1/P2；Git 巡检 `--no-fetch` 已运行，仅本地快照；亮哥已授权提交、合并 main 并推送 origin，未部署。
+
+## 2026-10-10 活动预售批次期间新增到账登记（Codex，Git交付，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/receipt-allocation-balance/commission-system`，分支 `codex/receipt-allocation-balance`。只读核对订单 981：原 1077 USD 预付已抵本批商品 627 与运费 38，本批余额为零；亮哥确认另有新增到账 38。根因是有活动批次时前后端强制补款，阻断独立资金池收款。
+- V2 活动批可新增预付货款或定金，仅新增原始回款，保留当前批冻结报价、抵扣、版本与付款上限。回款弹框允许选预付，无欠款默认预付；刷新保留有效用途。零余额、超额、未核验分别提示，表头改为可分配余额。V1 活动批的登记限制保留。
+- 隔离 SQLite、模拟远端回归 138 passed，另补单笔参与方校验/创建/原请求重放/同步一次性专项 1 passed；新增款未生效不计可用余额，生效后留存余额从 412 增至 450，原批资金图不变。真实 Vue/Element Plus 合成 API 在 1440/390 宽度均通过零余额拦截、新 38 预付提交、刷新用途保持与 V1 禁用；生产构建与严格增量约定检查通过。Node 金额/提交恢复/付款字段回归 19 passed；原提交恢复浏览器在 1440/390/320 宽度通过，覆盖未知结果冻结、原请求重试、刷新恢复与账号隔离，无页面异常或意外请求。独立 agent 最终审查无 P1/P2；采纳其用途文案建议，去掉单笔入口“从本批开始抵扣”的歧义。构建仅有既有大 chunk 与 auth 混合导入提示；Git 巡检 --no-fetch 已运行，仅代表本地快照。无表结构迁移，未创建或改写生产回款；修复验证完成；与最新 main 备注编辑整合后，后端 157 passed、前端 29 passed，生产构建及针对 main 的严格增量约定通过；唯一交接文档冲突保留双方记录。亮哥本轮已授权合并并推送 origin/main，本次不包含生产部署。
+
+## 2026-10-10 订单发票与回款备注编辑（Codex，已授权合并推送，未部署）
+
+- 分支 `codex/document-remarks-edit`，工作树 `C:/Users/windb/.codex/worktrees/document-remarks-edit/commission-system`，基于 main `942c4514`。详情备注区可独立修改或清空，保留现有写权限和实时归属，版本冲突409；订单5000字符、回款500字符。已同步单据方舟留存，未同步单据后续同步带入；不触发整单重算或远端重发。订单保留取消/关联同步/不可编辑保护，回款拒绝无效和同步中状态；已转换意图跟随回款备注，记录回款操作审计；门户PI按既有内容变更协议撤回发布。
+- 验证：受影响SQLite回归150 passed；备注端点18项在加强撤权场景后复跑通过；门户内容生命周期13 passed；前端交互10 passed（含撤权/切换账号在途响应丢弃），最终build通过（既有chunk大小提示）。真实Chrome组件+模拟API验证修改、清空、冲突保留输入、取消、撤权隐藏按钮和390px边界，无页面错误；截图和构建证据保留在主目录tmp/document-remarks-delivery/。独立审查发现并修复订单普通推送期间回款备注改变执行绑定的问题，最终复核无阻断项。约定strict与diff检查通过，git_sweep --no-fetch完成（本地快照，其他分支保留）。按亮哥授权提交、合并main并推送origin；不包含共享数据库写入或部署。
+
+## 2026-10-10 发票保存与校验交易繁忙（Codex，修复与 Git 交付，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/invoice-lock-wait/commission-system`，分支 `codex/invoice-lock-wait`，基于 main `2b86d584`；亮哥已授权合并并推送，本次不包含生产部署。北京日志确认订单 994“李宝珠261001”的 validate/PUT 与同期订单 993 linked-sync 多次发生 5 秒行锁超时。两次生产只读核验：994 为 ready/not_synced，保存版本停在北京时间 2026-10-10 09:29:51，总额 USD 2627.18，xiaoman_order_id/linked_sync_id 均空，关联任务与推单日志均 0；末次检查全局授权屏障无记录锁。未执行生产业务 POST、清锁或重发；当前快照不表示失败当次页面改动已保存。
+- 根因：已安装门户权限协议仍在 `PORTAL_ENABLED=false` 时取得全局权限屏障，但 `edit_authority.prepare` 按功能开关走旧路径，返回 receipt_rows=None，使已推单订单编辑在权限锁内读取小满回款。修复按已安装权限判定取证边界，取证前释放只读事务，取证后重新校验 live 权限、订单归属、明细与任务绑定；最终保存复用验证的回款。OFF 本地校验同样核对当前 write/sync 权限、拒绝已有事务；当前权限 scope 决定是否锁门户 lineage。实际 verified pre-portal 边界保留原行为，无迁移或权限授予。
+- 独立 agent 核对 lock_document 全部调用方、事务/identity-map/legacy 边界，未发现必须修的问题。旧代码的 OFF 远程取证用例失败，修复后 `test_mysql_invoice_editor_authority.py` 81 passed；新增 `test_mysql_invoice_edit_off.py` 9 passed；SQLite `test_invoice_linked_sync.py` 25 passed。真实 MySQL 8.4.6 独立 loopback 进程覆盖另一连接取得屏障与单据锁、取证期间撤权/文档变化/回款变化、失败证据不变空、仅 write/仅 sync 放行及全部撤销拒绝、既有 read/dirty/flushed/Core 事务拒绝、synthetic exact-parent fallback。测试 fixture 同步单 head/177 ancestry 检查及真实登录依赖的 ArkAccountUnlockAudit 表；未模拟认证或连接共享生产库。JWT 库仅有既有 utcnow 弃用警告。
+- `scripts/check_conventions.py --strict` 与 `git diff --check` 通过，`scripts/git_sweep.py --no-fetch` 完成（本地快照，保留其他代理分支与主目录 diff）。自动安全策略拒绝测试临时目录清理，未提供具体原因；测试数据及运行/停机日志暂保留在本工作树 `tmp/`。新测试曾暴露共享 sales 权限污染，已改为仅撤销当前 actor 的角色；独立审查又指出无角色的 403 假阳性，已改为保留仅 invoice:read 的 live role，并断言实际角色与权限。后续仅在取得生产发布授权后走 `deploy/deploy.bat`，发布完成后用户核对编辑内容并重试原保存与同步。
+
 ## 2026-10-09 订单关联回款删除权限独立（Codex，已合并推送部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/receipt-delete-permission/commission-system`，分支 `codex/receipt-delete-permission`，基于 main `a0742e4e`。生产只读核验“翟 #261015”及末尾带句点的同名订单：归属 Ginny（翟佳盟），已有 `invoice:delete`、`shipping_inspection:delete`，但有有效关联回款且缺少原删除流程要求的 `receipt:admin`，因此提示权限不足。未执行订单删除或生产权限修改。

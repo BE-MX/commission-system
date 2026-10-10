@@ -10,7 +10,7 @@ const end = editor.indexOf('  // 编辑回显专用', start)
 function harness(request) {
   const form = { customer_id: 'C1', customer_grade: 'A' }
   return new Function('form', 'getCustomerContactDefaults', `
-    let contactFillSeq = 0, gradeEditSeq = 0, customerGradeReady = true;
+    let contactFillSeq = 0, gradeEditSeq = 0, remarkEditSeq = 0, customerGradeReady = true;
     const okkiFlagsTouched = { newDeal: false }, lastOrderDate = { value: '' };
     ${editor.slice(start, end)}
     return { form, fillContactDefaults, ready: () => customerGradeReady,

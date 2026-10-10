@@ -16,7 +16,7 @@ from app.invoice.models import Invoice
 from app.receipt import access, attachments, authority, create_service, edit_service, proof_service, reconciliation_service, remote, retry_service, service, storage_proxy, upload_service
 from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent
 from app.receipt.schemas import ReceiptCreate, ReceiptProofUpdate, ReceiptUpdate, Reason, Resolution
-from app.receipt.schemas import PresalePurposeUpdate
+from app.receipt.schemas import PresalePurposeUpdate, ReceiptRemarkUpdate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -187,6 +187,20 @@ def edit(identity: int, body: ReceiptUpdate, db: Session = Depends(get_db), user
         return execute(db, apply)
     except SQLAlchemyError as error:
         edit_service.result_unavailable(error)
+
+
+@router.patch("/{identity}/remark", summary="Edit local receipt remark without resending")
+def update_remark(identity: int, body: ReceiptRemarkUpdate, db: Session = Depends(get_db),
+                  user=Depends(require_any_permission("receipt:write"))):
+    from app.receipt import remark_service
+    def apply():
+        row, invoice = remark_service.update(db, identity, body, user)
+        return service.describe(db, row, invoice, detail=True)
+    try:
+        return execute(db, apply)
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.patch("/{identity}/presale-purpose", summary="Audit correction of unallocated presale funds purpose")

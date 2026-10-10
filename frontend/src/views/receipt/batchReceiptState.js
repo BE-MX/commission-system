@@ -16,15 +16,26 @@ export function validateAllocations(rows, amount) {
     const pool = ['presale_deposit', 'presale_advance'].includes(row.purpose)
     const balance = !pool && row.balance?.active_settlement ? row.balance.active_settlement : row.balance
     const allocated = cents(row.amount), remaining = cents(balance?.remaining_amount), charge = cents(row.bank_charge || 0)
-    if (pool && row.balance?.active_settlement) return '存在未完成发货结算，请选择本批补款'
-    if (allocated == null || allocated <= 0 || balance?.version == null
-      || (pool ? row.balance?.funding_mode !== 'presale_pool' || charge == null || charge >= allocated
-        : remaining == null || allocated > remaining)) return pool ? '预售收款须核验原单，手续费须小于分配金额' : '每笔分配须大于 0 且不超过已核验余额'
+    const order = row.invoice_no || '所选订单'
+    if (pool && row.balance?.active_settlement && row.balance.active_settlement.funding_version !== 2) return '存在旧版未完成发货结算，请选择本批补款'
+    if (allocated == null || allocated <= 0) return `${order}：分配金额须大于 0，且最多保留两位小数`
+    if (balance?.version == null || (!pool && remaining == null)) return `${order}：余额尚未核验，请刷新该订单后重试`
+    if (pool && (row.balance?.funding_mode !== 'presale_pool' || charge == null || charge >= allocated)) return '预售收款须核验原单，手续费须小于分配金额'
+    if (!pool && remaining === 0) return `${order}：${row.balance?.active_settlement ? '本批可补款' : '可登记'}余额为 0，请核对已登记回款或预付款抵扣${row.balance?.active_settlement?.funding_version === 2 ? '；新增到账请另选预付货款用途' : ''}`
+    if (!pool && allocated > remaining) return `${order}：分配金额超过已核验余额，请刷新并核对本次用途和金额`
     if (actualChargeForRow(row) && (charge == null || charge >= allocated
       || (!pool && charge > cents(balance.charge_remaining)))) return '实际银行手续费须小于分配金额，且不超过本批可用手续费额度'
     sum += allocated
   }
   return sum === total ? '' : '分配金额合计必须与本次回款总金额完全一致'
+}
+export function purposeForBalance(balance, selected = '') {
+  if (balance?.funding_mode !== 'presale_pool') return 'ordinary'
+  const active = balance.active_settlement
+  if (active && active.funding_version !== 2) return 'ordinary'
+  if (['presale_advance', 'presale_deposit'].includes(selected)) return selected
+  if (active && (selected === 'ordinary' || cents(active.remaining_amount) > 0)) return 'ordinary'
+  return 'presale_advance'
 }
 export function actualChargeForRow(row) {
   return ['presale_deposit', 'presale_advance'].includes(row.purpose)

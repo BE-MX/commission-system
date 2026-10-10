@@ -435,7 +435,40 @@ def test_customer_contact_defaults_latest_snapshot(db):
         "has_xiaoman_orders": False,
         "last_order_date": None,
         "customer_grade": None,
+        "remark": "",
     }
+
+
+@pytest.mark.parametrize("latest_remark", ["新单备注\n保留换行", "", None])
+def test_customer_defaults_remark_uses_latest_order_even_without_contacts(db, latest_remark):
+    old = service.create_invoice(db, _header_payload(
+        contact_name="Alice", remark="旧备注",
+    ), user_id=5)
+    latest = service.create_invoice(db, _header_payload(remark=latest_remark), user_id=6)
+    old.created_at = datetime(2026, 7, 1)
+    latest.created_at = datetime(2026, 7, 2)
+    old.updated_at = datetime(2026, 12, 31)
+    service.create_invoice(db, _header_payload(customer_id="999", remark="其他客户"), user_id=5)
+    db.flush()
+
+    defaults = service.get_customer_contact_defaults(db, "123456")
+    assert defaults["remark"] == (latest_remark or "")
+    assert defaults["contact_name"] == "Alice"
+
+
+def test_customer_defaults_remark_same_creation_time_uses_id_and_saves_edits(db):
+    old = service.create_invoice(db, _header_payload(remark="旧备注"), user_id=5)
+    latest = service.create_invoice(db, _header_payload(remark="上单备注"), user_id=6)
+    old.created_at = latest.created_at = datetime(2026, 7, 1)
+    db.flush()
+    assert service.get_customer_contact_defaults(db, "123456")["remark"] == "上单备注"
+
+    saved = service.create_invoice(db, _header_payload(remark="手动修改\n新要求"), user_id=5)
+    db.expire(saved)
+    assert saved.remark == "手动修改\n新要求"
+    fresh = service.create_invoice(db, _header_payload(customer_id="no-history", remark=""), user_id=5)
+    db.expire(fresh)
+    assert fresh.remark == ""
 
 
 def test_okki_flags_stored_and_null_recomputes_on_update(db):

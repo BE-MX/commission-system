@@ -403,13 +403,83 @@ def test_pool_remote_changed_amount_or_moved_identity_blocks_quote(db, order):
         shipments.build_quote(db, order, draft, evidence(db, order))
 
 
-def test_new_pool_registration_is_blocked_during_active_batch_but_original_replay_is_valid(db, order):
-    from app.receipt import service
+@pytest.mark.parametrize("state", ["awaiting_payment", "awaiting_verification", "paused", "outbound_pending", "uncertain"])
+@pytest.mark.parametrize("purpose", ["presale_advance", "presale_deposit"])
+def test_new_pool_cash_during_v2_batch_preserves_frozen_funding(db, order, monkeypatch, tmp_path, state, purpose):
+    from copy import deepcopy
+    from app.receipt import service, attachments, batch_service, batch_create_service, edit_service
+    from app.invoice.settlement_schemas import BatchCreate
     payment(db, order)
-    row, _ = create(db, order, freight="0")
+    row, _ = create(db, order)
+    row.state = state; db.commit()
+    before = deepcopy(row.quote), row.version, shipments.funding_balance(db, row)
+    upload = proof(db, monkeypatch, tmp_path)
+    snapshot = evidence(db, order)["receipt"]
+    body = BatchCreate(request_key="active_pool_cash_001", amount="38", collection_date="2026-10-10",
+        payment_type="TT", attachment_ids=[upload.id], allocations=[{"invoice_id": order.id,
+            "amount": "38", "purpose": purpose, "bank_charge": "0",
+            "balance_version": shipments.goods_balance(db, order, snapshot)["version"]}])
+    service.ensure_pool_registration(db, order, current=True)
+    evidence_rows = {order.id: edit_service.OrderEvidence(tuple(remote.invoice_binding(order)),
+        tuple((item["cash_collection_id"], item["currency"], item["amount"], item["collect_status"])
+            for item in snapshot["rows"]), ("TT",))}
+    files = attachments.verify_storage(attachments._bindings(batch_service._proof_rows(db, body.attachment_ids, 1)))
+    batch = batch_service._create_verified(db, body, {order.id: order}, 1, evidence_rows, {}, files)
+    db.commit()
+    child = db.query(Receipt).filter_by(batch_id=batch.id).one()
+    assert child.amount == 38 and child.purpose == purpose and child.sync_status == "pending"
+    assert db.query(SettlementApplication).filter_by(receipt_id=child.id).count() == 0
+    assert (row.quote, row.version, shipments.funding_balance(db, row)) == before
+    assert shipments.goods_balance(db, order, evidence(db, order)["receipt"])["pool_available_amount"] == "412.00"
+    batch_create_service._replay(db, batch, [child], body, USER)
+    child.sync_status = "synced"; child.collect_status = 1; child.xiaoman_receipt_id = "new-38"; db.commit()
+    assert shipments.goods_balance(db, order, evidence(db, order)["receipt"])["pool_available_amount"] == "450.00"
+    assert (row.quote, row.version, shipments.funding_balance(db, row)) == before
+
+
+def test_new_pool_cash_still_blocked_during_legacy_batch(db, order):
+    from app.receipt import service
+    legacy_final(db, order)
     with pytest.raises(ValueError, match="通过原批次补款"):
         service.ensure_pool_registration(db, order, current=True)
-    assert shipments.goods_balance(db, order, evidence(db, order)["receipt"])["pool_available_amount"] == "450.00"
+
+
+def test_standalone_new_cash_sends_once_without_reallocating_active_batch(db, order, monkeypatch, tmp_path):
+    from copy import deepcopy
+    from app.receipt import service, attachments, create_service, sync_service
+    from app.receipt.schemas import ReceiptCreate
+    payment(db, order)
+    settlement, _ = create(db, order)
+    settlement.state = "outbound_pending"; db.commit()
+    before = deepcopy(settlement.quote), settlement.version, shipments.funding_balance(db, settlement)
+    upload = proof(db, monkeypatch, tmp_path)
+    snapshot = evidence(db, order)["receipt"]
+    body = ReceiptCreate(invoice_id=order.id, request_key="active_single_cash_001", purpose="presale_advance",
+        amount="38", bank_charge="0", collection_date="2026-10-10", payment_type="TT",
+        attachment_ids=[upload.id], balance_version=shipments.goods_balance(db, order, snapshot)["version"])
+    create_service._participants(db, order, body)
+    files = attachments.verify_storage(attachments.capture_binding(db, body.attachment_ids, 1, order.id, None))
+    row = service._create(db, order, body, 1, create_service.fingerprint(body), snapshot, ["TT"], files)
+    db.commit()
+    create_service._replay(row, order, body, 1)
+    assert db.query(Receipt).count() == 2 and shipment_delivery._funded(db, settlement)
+    sent = []
+    def push(db, receipt, summary, fence):
+        payload = {"order_id": receipt.xiaoman_order_id, **remote.amount_fields(receipt)}
+        fence(payload); sent.append(payload)
+        return {"cash_collection_id": "new-38", "cash_collection_no": "HK-38"}
+    monkeypatch.setattr(remote, "order_snapshot", lambda *_: evidence(db, order)["receipt"])
+    monkeypatch.setattr(remote, "push", push)
+    monkeypatch.setattr(remote, "receipt_info", lambda *_: {"order_id": "100", "cash_collection_id": "new-38",
+        "currency": "USD", "amount": "38", "real_amount": "38", "bank_charge": "0",
+        "collection_date": "2026-10-10", "collect_status": 1})
+    sync_service.deliver(db, row.id); sync_service.deliver(db, row.id)
+    db.refresh(row)
+    assert row.sync_status == "synced" and row.collect_status == 1 and len(sent) == 1
+    assert Decimal(sent[0]["amount"]) == 38
+    assert db.query(SettlementApplication).filter_by(receipt_id=row.id).count() == 0
+    assert (settlement.quote, settlement.version, shipments.funding_balance(db, settlement)) == before
+    assert shipment_delivery._funded(db, settlement)
 
 
 def test_v2_receipt_guard_rejects_changed_frozen_application(db, order, monkeypatch, tmp_path):

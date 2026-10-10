@@ -24,14 +24,16 @@
         <el-table-column label="已发商品款" min-width="150" max-width="180"><template #default="{row}">{{ formatMoney(row.amount) }}</template></el-table-column>
       </el-table>
     </template>
-    <h3>备注</h3><p class="detail-remark">{{ order.remark || '暂无备注' }}</p>
+    <h3>备注</h3><DocumentRemarkEditor :document="order" kind="invoice" :disabled="disabled" @updated="$emit('updated', $event)" />
   </section>
 </template>
 <script setup>
 import ResponsiveDescriptions from '@/components/ResponsiveDescriptions.vue'
+import DocumentRemarkEditor from '@/components/DocumentRemarkEditor.vue'
 import { formatMoney } from '@/utils/money'
 const sourceLabel = value => ({manual:'手工录入',okki_screenshot:'小满截图导入',external_api:'外部站点接入'}[value] || value || '—')
-defineProps({ order: { type: Object, required: true }, shipped: { type: Object, default: null } })
+defineProps({ order: { type: Object, required: true }, shipped: { type: Object, default: null }, disabled: Boolean })
+defineEmits(['updated'])
 const fields = [['customer_name','客户'],['contact_name','联系人'],['invoice_date','发票日期'],['sales_user_name','业务员'],['merchandiser_name','跟单员'],['xiaoman_order_no','小满订单号'],['contact_phone','联系电话'],['contact_email','联系邮箱'],['delivery_address','收货地址'],['payment_term','付款条款'],['express_channel','发货方式'],['source_type','订单来源']]
 const amounts = [['product_amount','商品净额'],['internal_accessory','包装费'],['shipping_fee','主单运费'],['surcharge_amount','附加费']]
 </script>

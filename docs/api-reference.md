@@ -1,5 +1,12 @@
 # 莱莎方舟 API 参考
 
+## 订单发票与回款备注编辑（2026-10-10）
+
+- `PATCH /api/invoice/invoices/{invoice_id}/remark`：现有 `invoice:write` 和实时订单数据范围；body `{remark,expected_version}`，版本取详情 `edit_version`，备注最多5000字符，空字符串清空。返回 `{id,remark,edit_version}`。
+- `PATCH /api/receipts/{identity}/remark`：现有 `receipt:write` 和实时回款/批次全部成员归属；body `{remark,version}`，备注最多500字符，空字符串清空。返回完整回款详情；有改动时递增version、同步已转换的回款意图备注并记录操作人审计。
+- 两项均只改备注，拒绝其他字段，旧版本409；订单沿用取消、关联同步及不可编辑状态保护，回款拒绝无效或同步中的单据。已同步单据的修改只留存在方舟，不自动重推小满，不改变金额、费用、财务状态或远端ID；未同步单据后续发送使用当前备注。门户来源订单继续走现有ORM内容变更协议，撤回旧PI发布并递增文档版本，需重新发布后客户才能查看新内容。
+- 页面入口：订单发票详情的订单备注、关联回款资料，以及回款单详情的备注区，均提供编辑、保存和取消；失败保留输入供刷新核对。
+
 ## 订单发票关联详情与异常概要（2026-10-08）
 
 基址 `/api/invoice`，响应沿用 `ok(data)`。无新增写入接口或权限。以下三项详情均先要求 `invoice:read/write/sync` 任一权限，并校验现有发票本人、代创建或全量数据范围；订单可见不自动授予关联单据权限。
@@ -489,7 +496,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /invoices/suggest-no?order_type=` — 新建单默认发票号（invoice:write，支持 stock/production/presale）：库存单与预售单共用 `{用户名}-KC-{MM}{NN}` 序列（NN=该用户本月同前缀下一序号，两位零填充）、生产单 `SC-{MM}{NN}`（全公司本月序列，不含用户名）；跨年撞号自动顺延，用户可改
   - `GET /invoices/check-no?invoice_no=&exclude_id=` — 发票号占用检查（invoice:write；exclude_id 编辑时排除自身）
   - `GET /invoices/previous-no?sales_user_id=&order_type=&exclude_id=` — 同业务员同类型上一单号提醒（invoice:write，支持 stock/production/presale；exclude_id 编辑时排除自身）
-  - `GET /customers/contact-defaults?customer_id=` — 该客户最近一张（created_at 倒序）带联系信息发票的联系人/电话/邮箱/地址快照，录入页自动填充用（invoice:write；组织级共享，刻意不受发票数据范围限制——联系人是客户数据非财务数据）。附带 `has_xiaoman_orders`（新成交预判）+ `last_order_date`（该客户 okki_orders 最新 account_date，「首返」旁参考展示，新成交为 null，仅展示不落库不推 OKKI）
+  - `GET /customers/contact-defaults?customer_id=` — 客户联系快照和最新单备注，录入页自动填充用（invoice:write；沿用组织级共享，不受发票数据范围限制）。联系人/电话/邮箱/地址取最近一张带联系信息的方舟发票；`remark` 独立取该客户真正最近一张方舟订单发票（created_at DESC、id DESC），不跳过空备注或无联系信息订单，无历史/NULL 备注返回空串。前端仅新建时回填备注，手动修改/清空优先；编辑既有单保留本单备注。附带 `has_xiaoman_orders`（新成交预判）+ `last_order_date`（该客户 okki_orders 最新 account_date，「首返」旁参考展示，新成交为 null，仅展示不落库不推 OKKI）
   - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）；每维度返回级联候选 `models/colors/sizes/units`（按其余已选维度过滤）+ 全量候选 `all_models/all_colors/all_sizes/all_units`（前端「匹配当前组合/全部」双分组用，2026-07-30）
   - `POST /import/preview` — Excel/WPS 粘贴明细批量预检（invoice:write，支持 stock/production/presale）：请求含客户、订单类型、币种和最多 200 行标准字段；预售单与库存单一样要求匹配已有产品/SKU，只有生产单可提示定制产品；只读返回 passed/warning/blocked、产品/SKU 候选、同币种客户价差与批次指纹，不创建发票/定制产品、不自动换汇
   - `POST /import/screenshot/preview?order_type=stock|production|presale` — 上传一张 PNG/JPG/WebP OKKI 订单截图（invoice:write，分块读取，最大 10MB/4000 万像素）：AI 只做字段提取，服务端再按客户、授权业务员、产品编号+四维规格、SKU、日期/金额匹配业务库；返回可人工修正的预览，不保存原图，仅返回原图 SHA-256。截图文字始终按不可信数据处理，AI 调用仅保留 metadata 快照。

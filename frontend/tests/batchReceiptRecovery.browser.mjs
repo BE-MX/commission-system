@@ -41,7 +41,8 @@ for(const width of red?[1440]:geometryOnly?[320]:[1440,390,320]) {
     }
     unknown.push(path);return route.fulfill({status:503,json:{detail:'Unexpected isolated endpoint'}})
   })
-  const open=()=>page.getByRole('button',{name:'打开批次回款',exact:true}).click()
+  // Persistent error feedback can overlap the harness launcher; use its keyboard path.
+  const open=async()=>{const button=page.getByRole('button',{name:'打开批次回款',exact:true});await button.focus();await button.press('Enter')}
   const cancel=()=>page.getByRole('button',{name:'取消',exact:true})
   const inspect=()=>page.getByRole('button',{name:'核对原提交（只查询）',exact:true}).click()
   async function waitText(text){await page.getByText(text,{exact:false}).first().waitFor()}

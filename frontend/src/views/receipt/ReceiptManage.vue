@@ -108,8 +108,9 @@
       <el-form label-position="top" :model="form">
         <el-form-item v-if="!editing" label="对应订单发票" required><el-select v-model="form.invoice_id" filterable remote :remote-method="searchOrders" :loading="ordersLoading" :disabled="saving || uploading" placeholder="搜索发票号或客户" @change="selectOrder"><el-option v-for="o in orders" :key="o.id" :value="o.id" :disabled="o.sync_status !== 'synced'" :label="`${o.invoice_no} · ${o.customer_name}${o.sync_status !== 'synced' ? '（请先同步订单）' : ''}`" /></el-select></el-form-item>
         <template v-if="!editing && balance?.funding_mode === 'presale_pool'">
-          <el-form-item label="收款用途" required><el-select v-model="form.purpose" :disabled="saving"><el-option value="presale_advance" label="预付货款（从本批开始抵扣）" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" /></el-select></el-form-item>
+          <el-form-item label="收款用途" required><el-select v-model="form.purpose" :disabled="saving"><el-option value="presale_advance" label="预付货款" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" /></el-select></el-form-item>
           <p class="balance-hint">可用预付余额 {{ money(balance.pool_available_amount) }}；本次到账生效后余额 {{ money(remainingAfter) }}。收款可以超过当前商品明细金额。</p>
+          <p v-if="balance.active_settlement?.funding_version === 2" class="balance-hint">本次新增预付款留作后续结算使用；本批未付余额请在整笔回款中选择本批补款。</p>
         </template>
         <template v-else-if="!editing">
           <div v-loading="balanceLoading" class="balance-card"><div>订单金额<b>{{ balance?.currency }} {{ money(balance?.total_amount) }}</b></div><div>已登记回款<b>{{ money(balance?.registered_amount) }}</b></div><div>可登记余额<b>{{ money(balance?.remaining_amount) }}</b></div></div>
@@ -136,7 +137,7 @@
       <template v-if="detail"><div class="detail-status"><StatusBadge size="small" effect="plain" :type="statusTone(detail.sync_status)">{{ detail.status === 'voided' ? '已作废' : statusLabel(detail.sync_status) }}</StatusBadge><StatusBadge size="small" effect="plain">财务：{{ financeLabel(detail.collect_status) }}</StatusBadge></div>
         <h1 class="detail-amount">{{ detail.currency }} {{ money(detail.amount) }}</h1>
         <el-alert v-if="detail.last_error" :title="detail.last_error" type="warning" :closable="false" />
-        <ResponsiveDescriptions :column="1" border class="receipt-descriptions"><el-descriptions-item label="订单发票">{{ detail.invoice_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item><el-descriptions-item label="回款日期">{{ detail.collection_date }}</el-descriptions-item><el-descriptions-item label="回款方式">{{ detail.payment_type }}</el-descriptions-item><el-descriptions-item label="银行手续费">{{ money(detail.bank_charge) }}</el-descriptions-item><el-descriptions-item label="小满回款编号">{{ detail.xiaoman_receipt_no || '尚未取得' }}</el-descriptions-item><el-descriptions-item label="截图传输">仅方舟留存</el-descriptions-item><el-descriptions-item label="备注">{{ detail.remark || '—' }}</el-descriptions-item></ResponsiveDescriptions>
+        <ResponsiveDescriptions :column="1" border class="receipt-descriptions"><el-descriptions-item label="订单发票">{{ detail.invoice_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item><el-descriptions-item label="回款日期">{{ detail.collection_date }}</el-descriptions-item><el-descriptions-item label="回款方式">{{ detail.payment_type }}</el-descriptions-item><el-descriptions-item label="银行手续费">{{ money(detail.bank_charge) }}</el-descriptions-item><el-descriptions-item label="小满回款编号">{{ detail.xiaoman_receipt_no || '尚未取得' }}</el-descriptions-item><el-descriptions-item label="截图传输">仅方舟留存</el-descriptions-item><el-descriptions-item label="备注"><DocumentRemarkEditor :key="detail.id" :document="detail" kind="receipt" :disabled="saving" @updated="row => { detail = row; refreshUpdate() }" /></el-descriptions-item></ResponsiveDescriptions>
         <p>收款用途：{{ purposeLabel(detail.purpose) }}</p>
         <ReceiptPurposeCorrection :receipt="detail" :disabled="saving" @updated="row => { detail = row; refreshUpdate() }" />
         <h3>回款凭证</h3><ReceiptProofs :key="detail.id" :model-value="detail.attachments?.map(a => a.id) || []" readonly />
@@ -157,6 +158,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 import TableTools from '@/components/TableTools.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import ListPageStatus from '@/components/ListPageStatus.vue'
+import DocumentRemarkEditor from '@/components/DocumentRemarkEditor.vue'
 import ReceiptFields from './ReceiptFields.vue'
 import ReceiptRemoteChange from './ReceiptRemoteChange.vue'
 import ReceiptPurposeCorrection from './ReceiptPurposeCorrection.vue'

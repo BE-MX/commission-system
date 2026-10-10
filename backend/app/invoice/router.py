@@ -49,6 +49,8 @@ _UPLOAD_CHUNK_BYTES = 1024 * 1024
 router = APIRouter()
 from app.invoice.detail_router import router as detail_router
 router.include_router(detail_router)
+from app.invoice.remark_router import router as remark_router
+router.include_router(remark_router)
 
 _READ_OR_WRITE = require_any_permission("invoice:read", "invoice:write")
 # 价格与产品配置页读端点（063 拆分）：页面码 + 旧读写码兼容（发票编辑器也调这批端点）
@@ -234,7 +236,7 @@ def search_customer_contacts(
 def get_customer_contact_defaults(
     customer_id: str = Query(..., min_length=1, max_length=64),
     db: Session = Depends(get_db),
-    # 录入页自动填充用；组织级共享（客户数据，非发票财务数据），刻意不做数据范围过滤
+    # 录入页复用客户联系快照和历史备注；沿用组织级共享，不做发票数据范围过滤
     _user=Depends(require_permission("invoice:write")),
 ):
     return ok(service.get_customer_contact_defaults(db, customer_id))

@@ -209,10 +209,10 @@ def _resolve_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:
 
 
 def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
-    """该客户最近一张带联系信息发票的联系人快照 + OKKI 历史订单标记，录入页自动填充用。
+    """客户联系人快照、最新单备注及 OKKI 历史订单标记，录入页自动填充用。
 
     组织级共享（刻意不受发票数据范围限制）：联系人/地址是客户数据（OKKI CRM
-    同源），只出联系字段、不暴露任何金额——否则助理录一次业务员还得重录。
+    同源），共享联系字段和复用备注，不额外返回金额字段。
     has_xiaoman_orders 供前端预判「是否新成交」开关默认值。
     """
     defaults: dict = {
@@ -222,6 +222,15 @@ def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
         # 新成交（无历史单）时为 None → 前端留空
         "last_order_date": customer_last_order_date(db, customer_id),
     }
+    # 备注取真正最近一单：不受联系信息是否填写影响，也不跳过空备注。
+    # 系统更新老单不能改变排序；同刻创建用 id 保证确定性。
+    defaults["remark"] = (
+        db.query(Invoice.remark)
+        .filter(Invoice.customer_id == customer_id)
+        .order_by(Invoice.created_at.desc(), Invoice.id.desc())
+        .limit(1)
+        .scalar()
+    ) or ""
     row = (
         db.query(
             Invoice.contact_name, Invoice.contact_phone,

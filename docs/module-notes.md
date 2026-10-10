@@ -837,6 +837,7 @@ frontend/src/
 - **业绩归属部门 departments**：挂业务员用户设置（ark_users.okki_department_id，用户管理页「OKKI部门」下拉），推单传 `[{department_id, rate:100}]`，未设置 fail-fast。选项无官方 API（多候选路径实测 404），从业务库 okki_orders.departments 实时聚合；**department_id=0（我的企业）是合法值，禁止 falsy 判断**（前后端都栽过）
 - **4 个自定义字段**（payload 顶层 key=字段 ID 字符串，值=选项文本）：订单类型 691123983470（规格品/定制品，order_type 自动映射零人工）、是否新成交 22595163468、是否包邮 20528077262544、是否首返 20528142733548（均是/否）
 - 三标记存发票（okki_* 三列），录单页「小满标记」开关智能默认：新成交=客户在 okki_orders 无历史订单（contact-defaults 返回 has_xiaoman_orders 预判；兜底查询排除本单已推订单防自指翻转）、包邮=运费为 0（watch 联动，碰过开关不再自动改）、首返=否；NULL 推单时服务端同口径兜底
+- 新建订单选客户时，`contact-defaults.remark` 复用该客户最近一张方舟订单发票的备注（created_at DESC、id DESC）；独立于“最近一张带联系信息”查询，最新备注为空/NULL 或无历史则留空，不回退旧备注。新旧下单抽屉共用编辑器；切客户立即清空旧备注，过期响应及请求期间手动修改/清空不覆盖当前输入，同公司仅切联系人不重填，编辑既有单不替换本单备注。保存沿用当前表单 remark，无额外库表或推单动作。
 
 ### 推单字段映射（2026-07-13 落地，`xiaoman_service.build_push_payload`）
 - **订单层**：name=发票号+客户名；account_date=invoice_date；company_id=customer_id（customer_info 投影即 OKKI 数字 ID，非数字前置拦截）；status=设置页选定的企业枚举 code；create_user/handler/users[rate=100]=业务员绑定的 OKKI user_id（**未绑定 fail-fast 不推**）；**不传 user_id**（避开操作人权限 404）；**订单级金额一律不传**（OKKI 按 product_list+cost_list 自算，避开汇率×100 口径）；payment_term 并入 remark；联系人字段 v1 不传

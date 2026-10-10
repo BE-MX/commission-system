@@ -14,7 +14,7 @@ from sqlalchemy import Column, MetaData, Table, select, text, delete, event
 from sqlalchemy.orm import Session
 
 from app.auth import router as auth_router, service as auth_service, utils
-from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission
+from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, ArkAccountUnlockAudit
 from app.core.database import get_db
 from app.invoice import router, service as invoices, linked_sync_service as linked
 from app.invoice.models import Invoice, InvoiceItem, OkkiOutboundTask, InvoiceLinkedSync, InvoiceSyncLog, CustomerProfile
@@ -32,7 +32,7 @@ from test_mysql_services import accepted_request
 @pytest.fixture
 def editor(trade, monkeypatch):
     ctx=trade; metadata=MetaData()
-    for model in (Receipt,InvoiceAllocation,ShippingOperationEvent,OkkiOutboundTask,InvoiceLinkedSync,InvoiceSyncLog,ReceiptAttachment,CustomerProfile):
+    for model in (ArkAccountUnlockAudit,Receipt,InvoiceAllocation,ShippingOperationEvent,OkkiOutboundTask,InvoiceLinkedSync,InvoiceSyncLog,ReceiptAttachment,CustomerProfile):
         Table(model.__tablename__,metadata,*(Column(c.name,c.type,primary_key=c.primary_key,
             nullable=c.nullable,default=c.default,server_default=c.server_default) for c in model.__table__.columns))
     metadata.create_all(ctx.engine)
