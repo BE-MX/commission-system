@@ -1676,7 +1676,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 |方法|路径（/api/invoice前缀）|说明|
 |---|---|---|
 |POST|/invoices/{id}/linked-sync|保存并登记；invoice、request_key、expected_version内容哈希；write+sync|
-|GET|/invoices/{id}/linked-sync|最新结果及过期租约检查；read/write/sync|
+|GET|/invoices/{id}/linked-sync|只读最新结果，过期运行租约显示待核对；当前read/write/sync任一权限，不申请写锁或修改任务|
 |POST|/invoices/{id}/linked-sync/{operation}/run|继续未完成步骤；recheck=true仅重新核对；sync|
 |POST|/invoices/{id}/linked-sync/{operation}/close|结束明确失败任务，保留已成功结果；sync|
 |POST|/invoices/{id}/linked-sync/{operation}/resolve|管理员人工核对留证结束；reason、confirmed；admin|
