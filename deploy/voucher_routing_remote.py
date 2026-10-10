@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -78,6 +79,91 @@ def syntax_config(snippet, scratch):
             + snippet + "\n} }\n")
 
 
+def backend_context(backend):
+    """Pin the live service and its cached configuration without exposing its environment."""
+    result = subprocess.run(
+        ["systemctl", "show", "ark-backend", "-p", "MainPID", "-p", "User",
+         "-p", "WorkingDirectory", "-p", "ExecStart"],
+        check=True, text=True, capture_output=True, timeout=10,
+    )
+    props = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    pid = int(props.get("MainPID", "0"))
+    if (pid <= 0 or props.get("User") != "ubuntu"
+            or props.get("WorkingDirectory") != str(backend)
+            or str(backend / ".venv/bin/uvicorn") not in props.get("ExecStart", "")
+            or "--port 8001" not in props.get("ExecStart", "")):
+        raise RuntimeError("Unexpected Beijing backend identity; routing unchanged")
+    proc = Path("/proc") / str(pid)
+    # The comm field can contain spaces; fields after its closing ')' start at #3.
+    ticks = int((proc / "stat").read_text().rsplit(")", 1)[1].split()[19])
+    boot = int(re.search(r"(?m)^btime (\d+)$", Path("/proc/stat").read_text()).group(1))
+    started = boot + ticks / os.sysconf("SC_CLK_TCK")
+    sources = [".env", "app/core/config.py", "app/core/storage/cos.py",
+               "app/core/storage/files.py", "app/domestic/file_service.py", "app/domestic/router.py"]
+    if any((backend / name).stat().st_mtime > started for name in sources):
+        raise RuntimeError("Backend configuration or storage code changed after service start; routing unchanged")
+    environment = dict(entry.split("=", 1) for entry in (proc / "environ").read_bytes().decode().split("\0") if "=" in entry)
+    return pid, environment
+
+
+def check_voucher_cos():
+    """Use the running backend's identity; never write business rows or COS objects."""
+    backend = Path("/home/ubuntu/commission-system/backend")
+    pid, environment = backend_context(backend)
+    probe = '''
+import json, re
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from sqlalchemy import text
+from app.core.config import get_settings
+from app.core.database import engine
+from app.core.storage.cos import CosObjectStore
+from app.core.storage.files import reserve_processing_bytes
+try:
+    s = get_settings()
+    if 'domestic' not in s.COS_ENABLED_DOMAINS or 'domestic' not in s.COS_MANAGED_DOMAINS:
+        raise RuntimeError('Domestic COS must be enabled and managed')
+    with engine.connect() as conn:
+        conn.exec_driver_sql('START TRANSACTION READ ONLY')
+        keys = list(conn.execute(text("SELECT DISTINCT voucher_path FROM ark_domestic_customer_requests WHERE voucher_path IS NOT NULL AND voucher_path <> '' ORDER BY voucher_path" )).scalars())
+        conn.rollback()
+    store = CosObjectStore('domestic')
+    samples = 0
+    cache = Path(s.COS_CACHE_ROOT)
+    cache.mkdir(parents=True, exist_ok=True)
+    for key in keys:
+        head = store.head(key)
+        size = int(head.get('Content-Length', -1))
+        sha = head.get('x-cos-meta-sha256', '')
+        if size < 0 or size > 20 * 1024 * 1024 or not re.fullmatch('[0-9a-f]{64}', sha):
+            raise RuntimeError('Voucher lacks verified COS metadata')
+        if samples < 3:
+            with reserve_processing_bytes(max(1, size)), TemporaryDirectory(prefix='voucher-preflight-', dir=cache) as tmp:
+                store.download(key, Path(tmp) / 'voucher', max_bytes=max(1, size), expected_sha256=sha)
+            samples += 1
+    # Exercise writable, budgeted scratch space even before the first voucher exists.
+    with reserve_processing_bytes(1), TemporaryDirectory(prefix='voucher-preflight-', dir=cache) as tmp:
+        (Path(tmp) / 'probe').write_bytes(b'x')
+    print(json.dumps(dict(status='ready', historical_vouchers=len(keys), checksum_reads=samples)))
+except Exception as exc:
+    print(json.dumps(dict(status='failed', error_type=type(exc).__name__)))
+    raise SystemExit(1)
+'''
+    result = subprocess.run(
+        ["runuser", "-u", "ubuntu", "--", str(backend / ".venv/bin/python"), "-c", probe],
+        cwd=backend, env=environment, text=True, capture_output=True, timeout=120,
+    )
+    if result.returncode:
+        raise RuntimeError("Beijing voucher COS readiness failed; live routing unchanged")
+    proof = json.loads(result.stdout.splitlines()[-1])
+    if proof.get("status") != "ready":
+        raise RuntimeError("Beijing voucher COS readiness failed; live routing unchanged")
+    if backend_context(backend)[0] != pid:
+        raise RuntimeError("Beijing backend restarted during COS checks; routing unchanged")
+    proof["backend_pid"] = pid
+    return proof
+
+
 def execute(request):
     region = request["region"]
     path = Path(SPECS[region][0]).resolve()
@@ -88,6 +174,13 @@ def execute(request):
     candidate = render(original, request["snippet"], region, feature)
     state = STATE if feature == "voucher" else STATE.parent / feature
     baseline = digest(original)
+    if request["action"] not in {"prepare", "activate"}:
+        raise ValueError("Unknown routing action")
+    if request["action"] == "activate" and (
+        baseline != request["baseline"] or digest(candidate) != request["candidate"]
+    ):
+        raise RuntimeError("Nginx configuration changed since preparation")
+    readiness = check_voucher_cos() if feature == "voucher" and region == "cloud" else None
     if request["action"] == "prepare":
         state.mkdir(parents=True, exist_ok=True, mode=0o700)
         # Never let a root syntax check inherit the production temp paths.
@@ -99,13 +192,13 @@ def execute(request):
         candidate_path = state / (region + "-candidate.conf")
         candidate_path.write_text(candidate)
         return {"region": region, "status": "prepared", "baseline": baseline,
-                "candidate": digest(candidate), "changed": candidate != original}
-    if request["action"] != "activate":
-        raise ValueError("Unknown routing action")
-    if baseline != request["baseline"] or digest(candidate) != request["candidate"]:
-        raise RuntimeError("Nginx configuration changed since preparation")
+                "candidate": digest(candidate), "changed": candidate != original,
+                "readiness": readiness}
     if candidate == original:
         return {"region": region, "status": "unchanged"}
+    # COS preflight can take time; recheck drift immediately before writing.
+    if digest(path.read_text()) != baseline:
+        raise RuntimeError("Nginx configuration changed during readiness checks")
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     backup = state / (region + "-" + uuid.uuid4().hex + ".conf")
     backup.write_bytes(path.read_bytes())
@@ -113,7 +206,11 @@ def execute(request):
         path.write_text(candidate)
         run(["nginx", "-t"])
         run(["systemctl", "reload", "nginx"])
+        if digest(path.read_text()) != digest(candidate):
+            raise RuntimeError("Nginx configuration changed during activation")
     except Exception:
+        if digest(path.read_text()) != digest(candidate):
+            raise RuntimeError(f"Nginx configuration changed; rollback blocked, backup retained at {backup}") from None
         path.write_bytes(backup.read_bytes())
         run(["nginx", "-t"])
         run(["systemctl", "reload", "nginx"])

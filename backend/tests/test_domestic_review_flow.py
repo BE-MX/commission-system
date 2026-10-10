@@ -342,6 +342,72 @@ def test_recharge_api_requires_voucher_file_and_creates_pending_request(db, tmp_
     assert bad_type.status_code == 400
 
 
+def test_recharge_cos_voucher_is_readable_without_original_instance_files(db, tmp_path, monkeypatch):
+    import hashlib
+    import io
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.core.storage import files as cloud_files
+    from app.core.storage.cos import CosObjectStore
+    from app.domestic import request_notification_service
+    from app.domestic.router import router
+
+    class FakeCos:
+        def __init__(self):
+            self.objects = {}
+        def upload_file(self, **kwargs):
+            self.objects[kwargs["Key"]] = Path(kwargs["LocalFilePath"]).read_bytes()
+        def head_object(self, **kwargs):
+            content = self.objects[kwargs["Key"]]
+            return {"Content-Length": str(len(content)), "x-cos-meta-sha256": hashlib.sha256(content).hexdigest()}
+        def get_object(self, **kwargs):
+            content = self.objects[kwargs["Key"]]
+            return {"Content-Length": str(len(content)), "Body": SimpleNamespace(get_raw_stream=lambda: io.BytesIO(content))}
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "COS_ENABLED_DOMAINS", ["domestic"])
+    monkeypatch.setattr(settings, "COS_MANAGED_DOMAINS", ["domestic"])
+    monkeypatch.setattr(settings, "COS_CACHE_ROOT", str(tmp_path / "upload-cache"))
+    monkeypatch.setattr(settings, "DOMESTIC_STORAGE_ROOT", str(tmp_path / "office-originals"))
+    store = CosObjectStore("domestic", settings=SimpleNamespace(COS_BUCKET="test-123", COS_KEY_PREFIX="ark/test"), client=FakeCos())
+    monkeypatch.setattr(cloud_files, "CosObjectStore", lambda domain: store)
+    monkeypatch.setattr(request_notification_service, "notify_submitted", AsyncMock())
+    applicant = _user(db, "cos-recharge-applicant")
+    outsider = _user(db, "cos-recharge-outsider")
+    customer = _customer(db, applicant, "COS充值客户")
+    db.commit()
+    identity = {"sub": str(applicant.id), "roles": [], "permissions": ["domestic:recharge"]}
+    app = FastAPI()
+    app.include_router(router, prefix="/api/domestic")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: identity
+    client = TestClient(app)
+    upload = {"data": {"amount": "10000", "request_id": "cos-recharge-request-1"},
+              "files": {"file": ("voucher.png", b"cos-voucher-original", "image/png")}}
+    response = client.post(f"/api/domestic/customers/{customer.id}/recharges", **upload)
+    assert response.status_code == 200
+    req = db.query(DomesticCustomerRequest).one()
+    assert req.status == "pending"
+    assert not (tmp_path / "office-originals").exists()
+    db.refresh(customer)
+    assert customer.balance == D("0.00")
+    assert db.query(DomesticCustomerLedger).count() == 0
+
+    # A different instance has neither office originals nor the uploader's cache.
+    monkeypatch.setattr(settings, "COS_CACHE_ROOT", str(tmp_path / "beijing-cache"))
+    monkeypatch.setattr(settings, "DOMESTIC_STORAGE_ROOT", str(tmp_path / "beijing-originals"))
+    private = client.get(f"/api/domestic/customer-requests/{req.id}/voucher")
+    assert private.status_code == 200
+    assert private.content == b"cos-voucher-original"
+    replay = client.post(f"/api/domestic/customers/{customer.id}/recharges", **upload)
+    assert replay.status_code == 200 and replay.json()["data"]["replayed"] is True
+    assert db.query(DomesticCustomerRequest).count() == 1
+    assert db.query(DomesticCustomerLedger).count() == 0
+    identity["sub"] = str(outsider.id)
+    assert client.get(f"/api/domestic/customer-requests/{req.id}/voucher").status_code == 404
+
+
 # ── 优惠价订单审核 ────────────────────────────────────
 
 

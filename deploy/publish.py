@@ -336,7 +336,7 @@ if __name__ == "__main__":
     parser.add_argument("--restore-pre151", metavar="PLAN", help="Restore only the reviewed compatible applications after the failed 151 migration")
     parser.add_argument("--office-lan-https", metavar="PLAN", help="Configure only office LAN HTTPS using an existing domain certificate")
     parser.add_argument("--shipping-video-routing-only", action="store_true", help="Enable 100MB private shipping video uploads on existing backends")
-    parser.add_argument("--voucher-routing-only", action="store_true", help="Route recharge uploads and voucher reads to the office only")
+    parser.add_argument("--voucher-routing-only", action="store_true", help="Route recharge uploads and voucher reads to each site's COS backend")
     parser.add_argument("--receipt-routing-only", action="store_true", help="Route receipts and 10MiB proofs to the office only")
     parser.add_argument("--colorwork-routing-only", action="store_true", help="Route colorwork to the existing healthy Beijing module")
     parser.add_argument("--migrate-only", metavar="PLAN", help="Execute only the reviewed 137 -> 138 migration using a verified local plan")

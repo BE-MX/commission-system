@@ -1,5 +1,18 @@
 # 当前交接与待办
 
+## 2026-10-10 内贸充值 COS 路由修复与附件审计（Codex，预检完成，待生产激活）
+
+- 独立 worktree `C:/Users/windb/.codex/worktrees/domestic-recharge-500/commission-system`，分支 `codex/domestic-recharge-500`。充值凭证已在共享 COS，原 `.cloud → .work → 办公室` 是本地文件时期遗留。候选将 cloud 两条提交/凭证 API 直连北京 8001；work 保持办公室 8002，两站关闭请求/响应 buffering，原权限、幂等、审核与资金逻辑不变。
+- 发布器核验当前北京服务身份和启动配置、历史 COS 凭证、预算内缓存权限；配置漂移阻断，并发编辑时不覆盖回滚。真实 `deploy.bat --voucher-routing-only --prepare-only` exit 0，79 个历史凭证 HEAD、3 次下载 SHA256 全部通过，PID 2740362；两站候选片段语法通过，未 reload/切换正式配置。当前授权只覆盖此前缓存清理，生产路由激活另须明确授权。
+- 定向部署测试 38 passed；隔离充值/COS/通知回归 37 passed（2 项既有弃用警告），证明跨实例读取、pending 前余额/账本保护、重复提交幂等与越权拒绝。未通过真实充值/审批探活，生产 PUT/满上限上传未实测。独立 agent 修订后复核无阻断 P1/P2。扩大存储路由回归有一项未改动 mock 基线失败，未弱化断言。
+- 附件审计：回款和设计生图整模块仍经办公室，有逐域撤掉中转的基础，但配置/历史对象/权限/后台处理还需核验；出货新原件先落本实例再异步同步，不直接撤掉归属。素材、培训、售后、知识库、展会、名片、客户素材和色块等未发现同类 cloud 中转；PM 外网小附件限制是既有慢隧道策略。work logo/小程序照片精确路由还有默认缓冲风险，另行纳管验收。[完整报告](reports/2026-10-10-attachment-routing-audit.md)。无 commit/push/merge；本地 diff 保留供审阅。
+- 最终增量约定与 diff 检查通过；扩大部署回归 81 passed / 1 项既有存储路由 mock 失败。10:26 `git_sweep.py --no-fetch` exit 0，仅本地快照，本任务 10 修改 / 2 未跟踪，主目录原内容保留。
+
+## 2026-10-10 内贸充值 500（Codex，网关恢复，待用户正常提交）
+
+- `leshine.cloud` 充值凭证路由经新加坡到办公室；新加坡 `/dev/vda2` 普通用户可用空间为 0，`www-data` 无法写上传临时文件。无鉴权 1 KiB POST 两主域均正常返回 403，64 KiB 均返回 Nginx 500；办公室健康返回 200。未修改业务代码或资金数据。
+- 用户批准后仅清理新加坡 `/root/.cache/pip`、`/root/.cache/uv`、`/root/.npm/_cacache` 缓存内容并保留目录，实际回收约 634 MiB，普通用户可用约 600 MiB。业务附件、数据库、系统日志和备份保留；未重启或部署。两主域 1 KiB/64 KiB/1 MiB 六项无鉴权上传探针均恢复 403，办公室健康正常。共享 MySQL 显式只读核对客户 567：今日及待审申请为空，今日只有早先订单扣款，未见失败充值遗留。可以正常重新提交；真实申请及凭证待用户操作验收。磁盘仍 99%，后续容量治理另行确定保留范围。[排查与恢复记录](reports/2026-10-10-domestic-recharge-disk-incident.md)。
+
 ## 2026-10-09 订单关联回款删除权限独立（Codex，已合并推送部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/receipt-delete-permission/commission-system`，分支 `codex/receipt-delete-permission`，基于 main `a0742e4e`。生产只读核验“翟 #261015”及末尾带句点的同名订单：归属 Ginny（翟佳盟），已有 `invoice:delete`、`shipping_inspection:delete`，但有有效关联回款且缺少原删除流程要求的 `receipt:admin`，因此提示权限不足。未执行订单删除或生产权限修改。

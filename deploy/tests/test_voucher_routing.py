@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+import os
 import re
 from unittest.mock import Mock
 
@@ -21,6 +22,56 @@ def config(region):
     _, port, count = routing.SPECS[region]
     return ("server {\n    location /api/ {\n        proxy_pass http://127.0.0.1:"
             + port + ";\n    }\n}\n") * count
+
+
+@pytest.fixture
+def backend_context_fixture(tmp_path, monkeypatch):
+    backend = tmp_path / "backend"
+    for name in [".env", "app/core/config.py", "app/core/storage/cos.py",
+                 "app/core/storage/files.py", "app/domestic/file_service.py", "app/domestic/router.py"]:
+        source = backend / name
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("fixture")
+        os.utime(source, (101, 101))
+    proc = tmp_path / "proc"
+    (proc / "123").mkdir(parents=True)
+    (proc / "stat").write_text("btime 100\n")
+    # Include spaces in comm so an incorrect /proc stat split fails this test.
+    (proc / "123/stat").write_text("123 (uvicorn worker) " + "0 " * 19 + "200 0\n")
+    (proc / "123/environ").write_bytes(b"PATH=/service/bin\0TEST_SECRET=fixture-only\0")
+    original_path = Path
+    monkeypatch.setattr(routing, "Path", lambda value: (
+        proc if value == "/proc" else proc / "stat" if value == "/proc/stat" else original_path(value)))
+    monkeypatch.setattr(routing.os, "sysconf", lambda _: 100, raising=False)
+    props = {"MainPID": "123", "User": "ubuntu", "WorkingDirectory": str(backend),
+             "ExecStart": str(backend / ".venv/bin/uvicorn") + " app.main:app --port 8001"}
+    monkeypatch.setattr(routing.subprocess, "run", lambda *args, **kwargs: Mock(
+        stdout="\n".join(f"{key}={value}" for key, value in props.items())))
+    return backend, props
+
+
+def test_backend_context_uses_live_service_environment(backend_context_fixture):
+    backend, _ = backend_context_fixture
+    pid, environment = routing.backend_context(backend)
+    assert pid == 123
+    assert environment == {"PATH": "/service/bin", "TEST_SECRET": "fixture-only"}
+
+
+@pytest.mark.parametrize("field,value", [("MainPID", "0"), ("User", "root"),
+                                        ("WorkingDirectory", "/other/backend"), ("ExecStart", "/other/uvicorn --port 8001")])
+def test_backend_context_rejects_unexpected_service(backend_context_fixture, field, value):
+    backend, props = backend_context_fixture
+    props[field] = value
+    with pytest.raises(RuntimeError, match="Unexpected Beijing backend identity"):
+        routing.backend_context(backend)
+
+
+@pytest.mark.parametrize("source", [".env", "app/domestic/file_service.py"])
+def test_backend_context_rejects_config_newer_than_live_service(backend_context_fixture, source):
+    backend, _ = backend_context_fixture
+    os.utime(backend / source, (103, 103))
+    with pytest.raises(RuntimeError, match="changed after service start"):
+        routing.backend_context(backend)
 
 
 @pytest.mark.parametrize("region", ["office", "cloud"])
@@ -61,6 +112,32 @@ def test_routing_changes_only_voucher_paths_and_is_repeatable(region):
     assert "proxy_next_upstream off;" in candidate
     assert "proxy_set_header Authorization $http_authorization;" in candidate
     assert "proxy_cache off;" in candidate
+    assert "proxy_request_buffering off;" in candidate
+    assert "proxy_buffering off;" in candidate
+
+
+def test_voucher_cloud_uses_beijing_cos_backend_without_office_hop():
+    source = snippet("cloud")
+    assert "proxy_pass http://127.0.0.1:8001;" in source
+    assert "119.28.107.92" not in source
+    assert "leshine.work" not in source
+    assert "proxy_set_header Host $host;" in source
+    assert "proxy_request_buffering off;" in source
+    assert "client_body_timeout 300s;" in source
+    assert "proxy_read_timeout 300s;" in source
+    assert "client_max_body_size 21m;" in source
+
+
+def test_voucher_update_preserves_other_attachment_owners():
+    other = "# BEGIN ARK RECEIPT ROUTING\n" + (DEPLOY / "nginx/receipt-cloud.conf").read_text() + "# END ARK RECEIPT ROUTING\n"
+    other += "# BEGIN ARK SHIPPING VIDEO ROUTING\n" + (DEPLOY / "nginx/shipping-video-cloud.conf").read_text() + "# END ARK SHIPPING VIDEO ROUTING\n"
+    legacy = snippet("cloud").replace("http://127.0.0.1:8001", "https://119.28.107.92")
+    old = routing.render(config("cloud"), legacy, "cloud") + other
+    candidate = routing.render(old, snippet("cloud"), "cloud")
+    assert candidate.endswith(other)
+    assert candidate.count("proxy_pass http://127.0.0.1:8001;") == 4
+    assert candidate.count(routing.BEGIN) == 2
+    assert routing.render(candidate, snippet("cloud"), "cloud") == candidate
 
 
 @pytest.mark.parametrize("bad", ["", "location ^~ /api/ { proxy_pass http://127.0.0.1:8001; }",
@@ -82,8 +159,46 @@ def site(tmp_path, monkeypatch):
         True if str(other) == "/etc/nginx" and self == path else original(self, other)))
     command = Mock()
     monkeypatch.setattr(routing, "run", command)
+    monkeypatch.setattr(routing, "check_voucher_cos", Mock(return_value={"status": "ready"}))
     request = {"region": "cloud", "snippet": snippet("cloud"), "action": "prepare"}
     return path, command, request
+
+
+@pytest.mark.parametrize("action", ["prepare", "activate"])
+def test_unavailable_beijing_cos_blocks_voucher_routing(site, monkeypatch, action):
+    path, command, request = site
+    original = path.read_bytes()
+    prepared = routing.execute(request)
+    command.reset_mock()
+    monkeypatch.setattr(routing, "check_voucher_cos", Mock(side_effect=RuntimeError("COS not ready")))
+    with pytest.raises(RuntimeError, match="COS not ready"):
+        routing.execute({**request, **prepared, "action": action})
+    assert path.read_bytes() == original
+    command.assert_not_called()
+
+
+def test_other_features_do_not_require_domestic_cos(site, monkeypatch):
+    path, command, request = site
+    check = Mock(side_effect=AssertionError("Domestic guard must not affect receipts"))
+    monkeypatch.setattr(routing, "check_voucher_cos", check)
+    request.update(feature="receipt", snippet=(DEPLOY / "nginx/receipt-cloud.conf").read_text())
+    assert routing.execute(request)["status"] == "prepared"
+    check.assert_not_called()
+
+
+def test_configuration_drift_during_cos_check_blocks_activation(site, monkeypatch):
+    path, command, request = site
+    prepared = routing.execute(request)
+    changed = path.read_text() + "\n# Concurrent operator change\n"
+    def readiness():
+        path.write_text(changed)
+        return {"status": "ready"}
+    monkeypatch.setattr(routing, "check_voucher_cos", readiness)
+    command.reset_mock()
+    with pytest.raises(RuntimeError, match="changed during readiness"):
+        routing.execute({**request, **prepared, "action": "activate"})
+    assert path.read_text() == changed
+    command.assert_not_called()
 
 
 def test_prepare_never_changes_live_config_or_reloads(site):
@@ -142,6 +257,23 @@ def test_validation_or_reload_failure_restores_exact_original(site, failure_inde
     with pytest.raises(RuntimeError, match="nginx failure"):
         routing.execute({**request, **prepared, "action": "activate"})
     assert path.read_bytes() == original
+    assert list(routing.STATE.glob("cloud-*.conf"))
+
+
+def test_reload_failure_does_not_overwrite_concurrent_operator_change(site):
+    path, command, request = site
+    prepared = routing.execute(request)
+    command.reset_mock()
+    changed = path.read_text() + "\n# Concurrent external edit\n"
+    def command_result(args):
+        if args == ["systemctl", "reload", "nginx"]:
+            path.write_text(changed)
+            raise RuntimeError("reload failed")
+    command.side_effect = command_result
+    with pytest.raises(RuntimeError, match="rollback blocked"):
+        routing.execute({**request, **prepared, "action": "activate"})
+    assert path.read_text() == changed
+    assert command.call_count == 2
     assert list(routing.STATE.glob("cloud-*.conf"))
 
 

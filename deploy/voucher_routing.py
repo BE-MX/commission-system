@@ -36,7 +36,7 @@ def execute(prepare_only, feature="voucher"):
             journal.update(status="prepared", prepared=[item[2] for item in prepared])
             publish.atomic_json(record, journal)
             if not prepare_only:
-                # Office first: its unchanged file ownership is also safe if Beijing fails.
+                # Prepare both sites before activation; keep partial completion explicit.
                 for host, payload, result in prepared:
                     activated = remote(host, {**payload, **result, "action": "activate"})
                     journal["completed"].append(activated)
