@@ -1,5 +1,12 @@
 # 当前交接与待办
 
+## 2026-10-10 发票保存与校验交易繁忙（Codex，修复与 Git 交付，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/invoice-lock-wait/commission-system`，分支 `codex/invoice-lock-wait`，基于 main `2b86d584`；亮哥已授权合并并推送，本次不包含生产部署。北京日志确认订单 994“李宝珠261001”的 validate/PUT 与同期订单 993 linked-sync 多次发生 5 秒行锁超时。两次生产只读核验：994 为 ready/not_synced，保存版本停在北京时间 2026-10-10 09:29:51，总额 USD 2627.18，xiaoman_order_id/linked_sync_id 均空，关联任务与推单日志均 0；末次检查全局授权屏障无记录锁。未执行生产业务 POST、清锁或重发；当前快照不表示失败当次页面改动已保存。
+- 根因：已安装门户权限协议仍在 `PORTAL_ENABLED=false` 时取得全局权限屏障，但 `edit_authority.prepare` 按功能开关走旧路径，返回 receipt_rows=None，使已推单订单编辑在权限锁内读取小满回款。修复按已安装权限判定取证边界，取证前释放只读事务，取证后重新校验 live 权限、订单归属、明细与任务绑定；最终保存复用验证的回款。OFF 本地校验同样核对当前 write/sync 权限、拒绝已有事务；当前权限 scope 决定是否锁门户 lineage。实际 verified pre-portal 边界保留原行为，无迁移或权限授予。
+- 独立 agent 核对 lock_document 全部调用方、事务/identity-map/legacy 边界，未发现必须修的问题。旧代码的 OFF 远程取证用例失败，修复后 `test_mysql_invoice_editor_authority.py` 81 passed；新增 `test_mysql_invoice_edit_off.py` 9 passed；SQLite `test_invoice_linked_sync.py` 25 passed。真实 MySQL 8.4.6 独立 loopback 进程覆盖另一连接取得屏障与单据锁、取证期间撤权/文档变化/回款变化、失败证据不变空、仅 write/仅 sync 放行及全部撤销拒绝、既有 read/dirty/flushed/Core 事务拒绝、synthetic exact-parent fallback。测试 fixture 同步单 head/177 ancestry 检查及真实登录依赖的 ArkAccountUnlockAudit 表；未模拟认证或连接共享生产库。JWT 库仅有既有 utcnow 弃用警告。
+- `scripts/check_conventions.py --strict` 与 `git diff --check` 通过，`scripts/git_sweep.py --no-fetch` 完成（本地快照，保留其他代理分支与主目录 diff）。自动安全策略拒绝测试临时目录清理，未提供具体原因；测试数据及运行/停机日志暂保留在本工作树 `tmp/`。新测试曾暴露共享 sales 权限污染，已改为仅撤销当前 actor 的角色；独立审查又指出无角色的 403 假阳性，已改为保留仅 invoice:read 的 live role，并断言实际角色与权限。后续仅在取得生产发布授权后走 `deploy/deploy.bat`，发布完成后用户核对编辑内容并重试原保存与同步。
+
 ## 2026-10-09 订单关联回款删除权限独立（Codex，已合并推送部署）
 
 - 工作树 `C:/Users/windb/.codex/worktrees/receipt-delete-permission/commission-system`，分支 `codex/receipt-delete-permission`，基于 main `a0742e4e`。生产只读核验“翟 #261015”及末尾带句点的同名订单：归属 Ginny（翟佳盟），已有 `invoice:delete`、`shipping_inspection:delete`，但有有效关联回款且缺少原删除流程要求的 `receipt:admin`，因此提示权限不足。未执行订单删除或生产权限修改。

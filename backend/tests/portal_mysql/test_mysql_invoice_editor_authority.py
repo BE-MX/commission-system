@@ -142,8 +142,10 @@ def local_operation(e, action, *, lease=False):
 
 @pytest.mark.parametrize('entry', ['normal', 'linked'])
 @pytest.mark.parametrize('change', ['none', 'disable', 'scope', 'document', 'raw_line', 'remote_id', 'task_lease', 'receipt'])
-def test_remote_preflight_releases_locks_and_rechecks_current_state(editor, monkeypatch, entry, change):
+@pytest.mark.parametrize('portal_enabled', [True, False])
+def test_remote_preflight_releases_locks_and_rechecks_current_state(editor, monkeypatch, entry, change, portal_enabled):
     e = editor; route, body, method = synced_editor(e, entry)
+    monkeypatch.setattr(edit_authority.authority.get_settings(), 'PORTAL_ENABLED', portal_enabled)
     if change == 'task_lease':
         with Session(e.ctx.engine) as db:
             invoice = invoices.get_invoice(db, e.invoice_id)
@@ -216,8 +218,10 @@ def test_remote_preflight_releases_locks_and_rechecks_current_state(editor, monk
 
 @pytest.mark.parametrize('entry', ['normal','linked'])
 @pytest.mark.parametrize('failure', ['value','api','incomplete'])
-def test_remote_preflight_unavailable_never_becomes_empty_receipt_evidence(editor,monkeypatch,entry,failure):
+@pytest.mark.parametrize('portal_enabled', [True, False])
+def test_remote_preflight_unavailable_never_becomes_empty_receipt_evidence(editor,monkeypatch,entry,failure,portal_enabled):
     e=editor;route,body,method=synced_editor(e,entry);baseline=e.snapshot();calls=[]
+    monkeypatch.setattr(edit_authority.authority.get_settings(), 'PORTAL_ENABLED', portal_enabled)
     def unavailable(db, order_id):
         assert not db.in_transaction();calls.append(order_id)
         if failure=='incomplete':return None
@@ -230,8 +234,10 @@ def test_remote_preflight_unavailable_never_becomes_empty_receipt_evidence(edito
 
 
 @pytest.mark.parametrize('entry',['normal','linked'])
-def test_actual_http_editor_locks_portal_lineage_before_invoice(editor,entry):
+@pytest.mark.parametrize('portal_enabled', [True, False])
+def test_actual_http_editor_locks_portal_lineage_before_invoice(editor,monkeypatch,entry,portal_enabled):
     e=editor;route,body,method=e.prepare(entry);locks=[]
+    monkeypatch.setattr(edit_authority.authority.get_settings(), 'PORTAL_ENABLED', portal_enabled)
     def observe(conn,cursor,statement,params,context,many):
         if 'FOR UPDATE' in statement.upper():locks.append(statement)
     event.listen(e.ctx.engine,'before_cursor_execute',observe)
@@ -244,8 +250,10 @@ def test_actual_http_editor_locks_portal_lineage_before_invoice(editor,entry):
 
 
 @pytest.mark.parametrize('prior_write',['dirty','flushed','core'])
-def test_capture_refuses_to_commit_callers_pending_business_changes(editor,prior_write):
+@pytest.mark.parametrize('portal_enabled', [True, False])
+def test_capture_refuses_to_commit_callers_pending_business_changes(editor,monkeypatch,prior_write,portal_enabled):
     e=editor
+    monkeypatch.setattr(edit_authority.authority.get_settings(), 'PORTAL_ENABLED', portal_enabled)
     with Session(e.ctx.engine) as db:
         if prior_write=='core':
             db.execute(update(ArkUser).where(ArkUser.id==e.ctx.actor).values(is_active=False))

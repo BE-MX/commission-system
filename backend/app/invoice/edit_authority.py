@@ -26,7 +26,9 @@ def _visible(db, invoice, user):
 
 def lock_document(db, invoice_id, *, force=False):
     """Lock portal lineage before its invoice; caller already holds authority."""
-    if force or authority.get_settings().PORTAL_ENABLED:
+    scope = (db.get_transaction(), db.get_nested_transaction())
+    held = scope[0] is not None and db.info.get('portal_authority_scope') == scope
+    if force or held or authority.get_settings().PORTAL_ENABLED:
         with db.no_autoflush:
             identity = db.execute(select(Conversion.id, Conversion.request_id)
                 .where(Conversion.invoice_id == invoice_id)).first()
@@ -40,14 +42,14 @@ def lock_document(db, invoice_id, *, force=False):
 
 def prepare_local(db, invoice_id, user, *permissions, any_permission=False):
     """First DB work for local-only mutations, without external evidence reads."""
-    enabled = authority.get_settings().PORTAL_ENABLED
-    if enabled and (db.in_transaction() or db.new or db.dirty or db.deleted):
+    if db.in_transaction() or db.new or db.dirty or db.deleted:
         raise HTTPException(409, "发票授权必须从新事务开始，请重新读取")
-    if enabled:
-        db.expire_all()  # Prior committed identity-map entries are not current reads.
+    db.expire_all()  # Prior committed identity-map entries are not current reads.
     required = () if any_permission else permissions
-    user = begin_employee_document_write(db, user, *required)
-    if enabled and any_permission and "super_admin" not in user.get("roles", []):
+    current = begin_employee_document_write(db, user, *required)
+    installed = current is not user
+    user = current
+    if installed and any_permission and "super_admin" not in user.get("roles", []):
         if not set(permissions).intersection(user.get("permissions", [])):
             raise HTTPException(403, "当前账号无权执行此发票操作")
     invoice = lock_document(db, invoice_id)
@@ -81,20 +83,21 @@ def _has_replay(db, invoice, user, body):
 def prepare(db, invoice_id, user, *permissions, linked_body=None):
     """First endpoint DB work; returns a locked PI, current user and receipt rows.
 
-    Disabled mode keeps the prior transaction/remote behavior. Enabled mode
-    commits only its initial read-only authorization/capture before remote I/O,
+    A verified pre-portal schema keeps the prior transaction/remote behavior.
+    Installed authority, even with the storefront disabled, commits only its
+    initial read-only authorization/capture before remote I/O,
     then starts a new transaction, rechecks live scope and exact PI binding,
     and leaves all local receipt guards to the actual edit service.
     """
-    enabled = authority.get_settings().PORTAL_ENABLED
-    if enabled and (db.in_transaction() or db.new or db.dirty or db.deleted):
+    if db.in_transaction() or db.new or db.dirty or db.deleted:
         raise HTTPException(409, "编辑取证前存在未提交修改，请重新读取")
-    if enabled:
-        db.expire_all()
-    user = begin_employee_document_write(db, user, *permissions)
+    db.expire_all()
+    current = begin_employee_document_write(db, user, *permissions)
+    installed = current is not user
+    user = current
     invoice = lock_document(db, invoice_id)
     _visible(db, invoice, user)
-    if not enabled:
+    if not installed:
         return invoice, user, None
     if _has_replay(db, invoice, user, linked_body):
         return invoice, user, []  # Authorized original command needs no new evidence.
