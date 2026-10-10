@@ -20,6 +20,21 @@ def verify_loopback_listeners(output, port):
         for address in addresses), 'SSH restore forward must listen exclusively on loopback'
 
 
+def verify_owned_identity(probe, expected, pause=time.sleep):
+    """Retry only read-only handshake failures, never restore SQL or a mismatch."""
+    for attempt in range(3):
+        result = probe()
+        if result.returncode == 0:
+            assert result.stdout.decode('ascii').strip().split('\t') == expected, 'Owned restore target changed'
+            return
+        transient = re.match(rb'ERROR (?:2003|2013) \(HY000\):', result.stderr)
+        # Pytest renders CompletedProcess locals on assertion failures. Do not
+        # let captured client diagnostics expose protected data in that output.
+        result.stderr = b''
+        assert transient and attempt < 2, 'Owned identity probe failed; no restore SQL transmitted'
+        pause(.5)
+
+
 @contextmanager
 def linux_restore(request, directory, allowed):
     ssh = Path(request.config.getoption('portal_restore_ssh')).resolve(strict=True)
@@ -34,10 +49,15 @@ def linux_restore(request, directory, allowed):
     assert runtime['port'] == allowed['port'] and Path(runtime['datadir']).resolve() == (directory / 'data').resolve()
     remote = '/home/' + host.split('@')[0] + '/.cache/ark-owned-restore-' + uuid.uuid4().hex
     remote_port = 40000 + secrets.randbelow(20000)
-    common = ['-C', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=15']
+    common = ['-C', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=15',
+        '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3']
     def run(command, **kwargs):
         result = subprocess.run([str(ssh), *common, host, command], stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, timeout=kwargs.pop('timeout', 30), **kwargs)
+        if result.returncode:
+            with (directory / 'protected-restore.stderr').open('ab') as errors:
+                errors.write(result.stderr)
+            result.stderr = b''
         assert result.returncode == 0, 'Protected Linux restore transport failed; diagnostics withheld'
         return result.stdout
     # Pin the client before supplying any temporary credential or backup bytes.
@@ -61,25 +81,18 @@ def linux_restore(request, directory, allowed):
             invocation = shlex.quote(client) + ' --defaults-file=' + shlex.quote(remote + '/client.cnf') \
                 + ' --no-login-paths --protocol=TCP --host=127.0.0.1 --port=' + str(remote_port) \
                 + ' --user=root --default-character-set=utf8mb4 --binary-mode --batch --skip-column-names'
-            # Before transmitting SQL, prove this SSH endpoint is the owned server.
-            deadline = time.monotonic() + 20
-            while True:
+            def probe():
                 assert tunnel.poll() is None, 'Owned-loopback reverse tunnel failed'
-                probe = subprocess.run([str(ssh), *common, host, invocation + ' --execute='
+                return subprocess.run([str(ssh), *common, host, invocation + ' --execute='
                     + shlex.quote('SELECT @@server_uuid, @@port, @@GLOBAL.event_scheduler')],
                     capture_output=True, timeout=20)
-                if probe.returncode == 0:
-                    break
-                assert time.monotonic() < deadline, 'Owned-loopback reverse tunnel did not become ready'
-                time.sleep(.2)
-            identity = probe.stdout.decode('ascii').strip().split('\t')
-            assert identity == [runtime['server_uuid'], str(allowed['port']), 'OFF'], 'Remote restore target is not the owned disabled-scheduler server'
+            # First and subsequent read-only probes share the same refusal policy.
+            verify_owned_identity(probe, [runtime['server_uuid'], str(allowed['port']), 'OFF'])
             def restore(backup):
                 assert tunnel.poll() is None
                 verify_loopback_listeners(run('ss -H -lnt ' + shlex.quote('sport = :' + str(remote_port))), remote_port)
-                identity = run(invocation + ' --execute=' + shlex.quote(
-                    'SELECT @@server_uuid, @@port, @@GLOBAL.event_scheduler')).decode('ascii').strip().split('\t')
-                assert identity == [runtime['server_uuid'], str(allowed['port']), 'OFF'], 'Owned restore target changed'
+                verify_owned_identity(probe, [runtime['server_uuid'], str(allowed['port']), 'OFF'])
+                verify_loopback_listeners(run('ss -H -lnt ' + shlex.quote('sport = :' + str(remote_port))), remote_port)
                 with backup.open('rb') as data:
                     run(invocation + ' ' + shlex.quote(allowed['database']), stdin=data, timeout=900)
             yield restore
