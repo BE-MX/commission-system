@@ -283,12 +283,6 @@ async function main() {
   setConfig("gateway.terminal.enabled", false);
   setConfig("gateway.controlUi.enabled", true);
   setConfig("agents.defaults.workspace", workspace);
-  setConfig("agents.defaults.model", { primary: "mimo/mimo-v2.5" });
-  setConfig("agents.defaults.models", {
-    "mimo/mimo-v2.5": { agentRuntime: { id: "openclaw" } },
-    "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
-    "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
-  }, { replace: true });
   setConfig("secrets.providers.mimo_key_file", {
     source: "file", path: mimoTokenFile, mode: "singleValue",
   });
@@ -314,6 +308,13 @@ async function main() {
   setConfig("models.providers.deepseek.apiKey", {
     source: "file", provider: "deepseek_key_file", id: "value",
   });
+  // Fresh profiles must register the provider before selecting its model.
+  setConfig("agents.defaults.models", {
+    "mimo/mimo-v2.5": { agentRuntime: { id: "openclaw" } },
+    "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
+    "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
+  }, { replace: true });
+  setConfig("agents.defaults.model", { primary: "mimo/mimo-v2.5" });
   setConfig("agents.defaults.skills", [
     "ark-lead-discovery", "ark-company-research", "ark-public-pool-research",
   ]);

@@ -1,6 +1,5 @@
 """On-server credential bootstrap for the existing sales principal; no secret output."""
 from datetime import timedelta
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,6 +10,22 @@ import sys
 BACKEND = Path('/home/ubuntu/commission-system/backend')
 PROFILE = Path('/var/lib/ark-sales/.openclaw-ark-sales')
 LABEL = 'openclaw-sales-beijing'
+INTENT = Path('/opt/ark-sales/token-issuance.json')
+
+
+def record_intent():
+    if INTENT.exists():
+        raise RuntimeError('Credential issuance was already attempted; reconcile its outcome first')
+    fd = os.open(INTENT, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(json.dumps({'label': LABEL, 'user_id': 90, 'status': 'request_started'}))
+        stream.flush()
+        os.fsync(stream.fileno())
+    parent_fd = os.open(INTENT.parent, os.O_RDONLY)
+    try:
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
 
 
 def save_private(path, value):
@@ -38,8 +53,7 @@ def main():
     from app.core.database import get_db
     from app.mcp.auth import build_current_user
     from app.mcp.models import MCPToken
-    from app.customer.models import CustomerResearchTask
-    from app.agent_runtime.models import AgentRun
+    from app.customer.models import CustomerResearchTask, SearchJob
 
     generator = get_db()
     db = next(generator)
@@ -55,12 +69,16 @@ def main():
         operator = next((item for item in admins if 'super_admin' in item['roles']), None)
         if operator is None:
             raise RuntimeError('No active maintenance operator')
-        running = db.query(CustomerResearchTask).join(AgentRun, AgentRun.id == CustomerResearchTask.agent_run_id).filter(
-            AgentRun.owner_user_id == 90, CustomerResearchTask.task_status == 'running').count()
+        running = db.query(CustomerResearchTask).filter(CustomerResearchTask.claimed_by.like('90:%'),
+            CustomerResearchTask.task_status == 'running').count()
+        running += db.query(SearchJob).filter(SearchJob.claimed_by.like('90:%'), SearchJob.status == 'running').count()
         if running:
             raise RuntimeError('Wait for old sales research tasks to drain')
         path = PROFILE / 'secrets/ark-agent-token'
-        row = db.query(MCPToken).filter_by(user_id=90, label=LABEL, is_active=True).first()
+        rows = db.query(MCPToken).filter_by(user_id=90, label=LABEL, is_active=True).all()
+        if len(rows) > 1:
+            raise RuntimeError('Duplicate cloud credentials require reconciliation')
+        row = rows[0] if rows else None
         if row is not None and (not path.exists() or hash_token(path.read_text().strip()) != row.token_hash):
             raise RuntimeError('Issued cloud credential has no matching file; inspect before reissuing')
         old_ids = [r.id for r in db.query(MCPToken).filter(MCPToken.user_id == 90,
@@ -71,6 +89,7 @@ def main():
                           headers={'Authorization': 'Bearer ' + auth}) as client:
             if row is None:
                 # Exactly one request. Ambiguous outcome is detected by label on the next run.
+                record_intent()
                 response = client.post('/api/mcp/tokens', json={'user_id': 90, 'label': LABEL})
                 if response.status_code != 200:
                     raise RuntimeError(f'Token issuance HTTP {response.status_code}')
