@@ -31,8 +31,10 @@ print(json.dumps({'current':git(root,'rev-parse','HEAD'),'dirty':git(root,'statu
 
 
 def validate(journal, migration, current, inventory):
+    completed = journal.get('completed')
+    resumed_office = completed == ['office'] and journal.get('recovery', {}).get('phase') == 'beijing'
     if (journal.get('revision') != REVISION or journal.get('release_id') != RELEASE_ID
-            or journal.get('status') != 'failed' or journal.get('completed') != []
+            or journal.get('status') != 'failed' or (completed != [] and not resumed_office)
             or current != REVISION or migration.get('status') != 'upgraded'
             or migration.get('schema') != SCHEMA or migration.get('pending') != PENDING
             or [row.get('writer') for row in migration.get('writers', [])] != inventory['migration_writers']
@@ -94,8 +96,15 @@ def execute(plan_path, prepare_only=False):
         if schema.schema_check(source, python)['schema'] != SCHEMA:
             raise RuntimeError('Actual schema differs from the completed migration')
         for row in migration['writers']:
-            if schema.writer_state(row['writer'], nssm) != 'stopped':
-                raise RuntimeError('Frozen writer is running before recovery')
+            expected = 'running' if journal['completed'] == ['office'] and row['writer']['host'] == 'office' else 'stopped'
+            if schema.writer_state(row['writer'], nssm) != expected:
+                raise RuntimeError('Writer differs from the confirmed recovery checkpoint')
+        resumed_office = journal['completed'] == ['office']
+        if resumed_office:
+            success = p.marker('office-success')
+            if success.get('revision') != REVISION or success.get('schema') != SCHEMA:
+                raise RuntimeError('Previously verified office receipt differs from candidate')
+            office.health(8001)
         inspect_beijing(p.run, static_sync.SSH_OPTIONS, p.BJ)
         outbound = outbound_release.prepare(source, REVISION, RELEASE_ID)
         original = journal['outbound']
@@ -103,12 +112,18 @@ def execute(plan_path, prepare_only=False):
             revision=REVISION, release_id=RELEASE_ID, database_fingerprint=outbound['receipt']['database_fingerprint'],
             mode=original['mode'], baseline=original['baseline'])
         outbound['_baseline'], outbound['_mode_floor'] = dict(original['baseline']), original['mode']
+        backup = state / ('office-activation-original-' + REVISION + '.json')
+        if resumed_office:
+            original_record = json.loads(backup.read_text(encoding='utf-8'))
+            validate(original_record['publish'], original_record['migration'], REVISION, inventory)
+            if original_record['publish'].get('completed') != [] or original_record['migration'] != migration:
+                raise RuntimeError('Original migration baseline changed at the office checkpoint')
+        elif backup.exists():
+            raise RuntimeError('Recovery was already attempted; inspect phase before any retry')
         if prepare_only:
             return {'status': 'prepared', 'revision': REVISION, 'schema': SCHEMA}
-        backup = state / ('office-activation-original-' + REVISION + '.json')
-        if backup.exists():
-            raise RuntimeError('Recovery was already attempted; inspect phase before any retry')
-        p.atomic_json(backup, {'publish': journal, 'migration': migration})
+        if not resumed_office:
+            p.atomic_json(backup, {'publish': journal, 'migration': migration})
         journal['recovery'] = {'status': 'running', 'phase': 'office', 'revision': REVISION}
         p.atomic_json(state / 'publish-current.json', journal)
         def phase(name):
@@ -119,10 +134,12 @@ def execute(plan_path, prepare_only=False):
             if schema.schema_check(source, python)['schema'] != SCHEMA:
                 raise RuntimeError('Schema changed before office restart')
             for row in migration['writers']:
-                if schema.writer_state(row['writer'], nssm) != 'stopped':
-                    raise RuntimeError('Writer changed before office restart')
+                expected = 'running' if resumed_office and row['writer']['host'] == 'office' else 'stopped'
+                if schema.writer_state(row['writer'], nssm) != expected:
+                    raise RuntimeError('Writer changed before office readiness verification')
             try:
-                p.run([nssm, 'start', 'CommissionSystem'])
+                if not resumed_office:
+                    p.run([nssm, 'start', 'CommissionSystem'])
                 wait_ready(lambda: office.health(8001),
                     lambda: p.run([nssm, 'status', 'CommissionSystem'], capture=True))
             except Exception:
@@ -138,7 +155,7 @@ def execute(plan_path, prepare_only=False):
                 p.atomic_json(state / 'publish-current.json', journal)
                 raise
         phase('office-connector')
-        if next(row['before'] for row in migration['writers'] if row['writer']['service'] == 'WhatsAppConnector') == 'running':
+        if not resumed_office and next(row['before'] for row in migration['writers'] if row['writer']['service'] == 'WhatsAppConnector') == 'running':
             p.run([nssm, 'start', 'WhatsAppConnector'])
             if p.run([nssm, 'status', 'WhatsAppConnector'], capture=True) != 'SERVICE_RUNNING':
                 raise RuntimeError('Original connector did not restart')
@@ -153,7 +170,8 @@ def execute(plan_path, prepare_only=False):
             p.atomic_json(state / ('office-' + name + '.json'), {'files': expected})
         p.atomic_json(state / 'office-success.json', {'revision': REVISION, 'previous': PREVIOUS, 'schema': SCHEMA,
             'recovered_from': 'office-readiness-budget'})
-        journal['completed'].append('office')
+        if not resumed_office:
+            journal['completed'].append('office')
         phase('beijing')
         cloud_backend.activate(REVISION)
         journal['completed'].append('beijing-backend')

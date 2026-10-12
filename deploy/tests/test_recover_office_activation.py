@@ -145,3 +145,41 @@ def test_unhealthy_office_is_stopped_and_confirmed_before_failure(simulated,monk
     assert ('beijing',) not in simulated.events
     current=json.loads((simulated.state/'publish-current.json').read_text())
     assert current['recovery']=={'status':'failed','phase':'office-stopped','revision':recovery.REVISION}
+
+
+def test_confirmed_office_checkpoint_resumes_without_restarting_office(simulated):
+    journal,migration,inventory=facts()
+    original=copy.deepcopy(journal)
+    journal['completed']=['office']
+    journal['recovery']={'phase':'beijing','status':'running','revision':recovery.REVISION}
+    p=simulated.modules['publish']
+    p.marker=lambda name:copy.deepcopy(journal if name=='publish-current' else
+        {'revision':recovery.REVISION,'schema':recovery.SCHEMA} if name=='office-success' else migration)
+    simulated.modules['schema_release'].writer_state=lambda writer,*a:'running' if writer['host']=='office' else 'stopped'
+    # Actual synthetic NSSM readback matches the previously verified instance.
+    old_run=p.run
+    p.run=lambda args,**kw:'SERVICE_RUNNING' if len(args)>1 and args[0] not in {'git','ssh'} and args[1]=='status' else old_run(args,**kw)
+    (simulated.state/('office-activation-original-'+recovery.REVISION+'.json')).write_text(json.dumps({'publish':original,'migration':migration}))
+    result=recovery.execute(simulated.plan)
+    assert result['revision']==recovery.REVISION
+    assert not any(event[:1] in {('start',),('stop',)} for event in simulated.events)
+    assert ('beijing',) in simulated.events
+
+
+@pytest.mark.parametrize('field',['before','stopped'])
+def test_checkpoint_rejects_changed_migration_baseline(simulated,field):
+    journal,migration,inventory=facts()
+    original=copy.deepcopy(journal)
+    archived=copy.deepcopy(migration)
+    journal['completed']=['office']
+    journal['recovery']={'phase':'beijing','status':'running','revision':recovery.REVISION}
+    if field=='before': migration['writers'][0]['before']='stopped'
+    else: migration['stopped']=[]
+    p=simulated.modules['publish']
+    p.marker=lambda name:copy.deepcopy(journal if name=='publish-current' else
+        {'revision':recovery.REVISION,'schema':recovery.SCHEMA} if name=='office-success' else migration)
+    simulated.modules['schema_release'].writer_state=lambda *a:'running'
+    (simulated.state/('office-activation-original-'+recovery.REVISION+'.json')).write_text(json.dumps({'publish':original,'migration':archived}))
+    with pytest.raises(RuntimeError,match='baseline changed'):
+        recovery.execute(simulated.plan,True)
+    assert simulated.events==[]
