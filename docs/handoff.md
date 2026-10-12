@@ -7,6 +7,13 @@
 - 五个目录共 15 份原图摘要一致；`leshine.work` / `leshine.cloud` 六个公开头像 URL 均 HTTP 200，响应字节 SHA-256 与原图一致。办公室和北京使用各自现行通知渲染器生成三人共六张 800×450 卡片，头像区域像素比对及本地逐张视觉核对通过；仅生成文件预览，未发钉钉消息、未写数据库、未重启服务或发布业务代码，上一条战队取数代码的“未部署”状态不变。
 - 账号映射、原图摘要、服务器写入/公开读取回执及实际卡片在主目录 `tmp/salesperson-avatars-20261012/`。三张原图同时纳入 `frontend/public/festival/assets/avatars/` 的版本管理，用户已授权本次素材及交接记录合并推送 main；此后主站构建和发布将从 public 带上这些原图。本轮不部署应用，已有服务器文件保持生效。
 
+## 2026-10-12 内贸审核撤回与发型师分析（Codex，已验证，授权合并推送，未部署）
+
+- 分支 `codex/domestic-withdraw-stylist`，worktree `C:/Users/windb/.codex/worktrees/domestic-withdraw-stylist/commission-system`。本人待审价格单可撤回为草稿再编辑，审批/撤回绑定审核轮次防止旧页面审核新报价；充值/调整可撤回并修改重提，新申请关联原记录，原金额/凭证与账本保留。全部相关写事务沿用审批行锁，已完成审核不能撤回。
+- 内贸经营台新增发型师分析：按“做发型”有效报工归属实际报工人，统计件数、去重明细/订单、次数/天数、型号历史规格、日/月趋势、属性分布、人员×属性热力图及报工证据下钻，沿用客户范围和实时权限。指标版本 `domestic-v3-stylist-workload`，旧结果需重新分析。
+- 隔离回归567 passed/1 skipped；后续相关68 passed、最后新增两套10 passed，集合重叠。Node25 passed、前端构建及严格约定通过；Chrome1440px/390px截获API验收通过，页面运行错误0。独立审查发现的旧审批ABA、矩阵横轴及排序契约已修复并复审。证据及复跑见 [验收记录](reports/2026-10-12-domestic-withdraw-stylist.md)。
+- 迁移184以182为父revision，已查所有分支编号避免与183重号；离线MySQL编译/单head通过，未执行生产迁移。集成前核对最新main父链仍为182；生产发布前需要隔离MySQL演练，并协调全部审核写实例与前端切换。亮哥已授权本次范围提交、合并main及推送origin/main，生产发布尚未授权。其他未提交文档和配置独立保护，不进入本次提交。
+
 ## 2026-10-12 日常订单喜报战队改用当前业绩归属部门（Codex，已合入 main，未部署）
 
 - 分支 `codex/order-notice-current-team`，工作树 `C:/Users/windb/.codex/worktrees/order-notice-current-team/commission-system`。用户确认改用当前业绩归属部门；生成和发送前均按发票 `sales_user_id` 读取 `ark_users.okki_department_name`，删除采购节 `user_rel_team.Team` 取数，部门缺失或空白仍为“未分队”。无需 OKKI 绑定或活动名册，当前部门调整对待发通知和重试生效；通知类型、金额阈值、外部账号头像主体和幂等状态保持原行为。

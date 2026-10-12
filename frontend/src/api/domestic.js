@@ -122,6 +122,21 @@ export function rejectCustomerRequest(id, remark) {
   return requestReviewsChanged(domesticClient.post(`/customer-requests/${id}/reject`, { remark: remark || null }))
 }
 
+export function withdrawCustomerRequest(id) {
+  return requestReviewsChanged(domesticClient.post(`/customer-requests/${id}/withdraw`))
+}
+
+export function resubmitCustomerRequest(id, data, file) {
+  const form = new FormData()
+  form.append('data', JSON.stringify(data))
+  if (file) form.append('file', file)
+  return requestReviewsChanged(domesticClient.post(`/customer-requests/${id}/resubmit`, form))
+}
+
+export function withdrawOrderReview(id, review_version) {
+  return requestReviewsChanged(domesticClient.post(`/orders/${id}/withdraw-review`, { review_version }))
+}
+
 // 凭证走鉴权端点，<img>/新窗口不带 token —— 取 blob 转 object URL（同参考图做法）
 export async function fetchVoucherBlob(requestId) {
   const res = await domesticClient.get(`/customer-requests/${requestId}/voucher`, { responseType: 'blob' })
@@ -199,8 +214,8 @@ export function submitDraftOrder(id, data, config) {
 }
 
 // 优惠价订单审核：approve=通过并扣款生效；reject=驳回（remark 必填）
-export function reviewOrder(id, decision, remark) {
-  return domesticClient.post(`/orders/${id}/review`, { decision, remark: remark || null })
+export function reviewOrder(id, decision, remark, review_version) {
+  return domesticClient.post(`/orders/${id}/review`, { decision, remark: remark || null, review_version })
 }
 
 export function terminateOrder(id, reason) {

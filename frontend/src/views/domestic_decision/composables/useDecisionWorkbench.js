@@ -14,7 +14,7 @@ export function useDecisionWorkbench() {
   const qualityOpen = ref(false)
   const gates = { filters: latestRequestGate(), analysis: latestRequestGate(), profile: latestRequestGate(), drill: latestRequestGate() }
   const permissions = computed(() => options.value.permissions || {})
-  const tabs = computed(() => [['overview', '经营总览'], ['products', '订单与产品'], ...(permissions.value.finance ? [['finance', '充值与资金']] : []), ['customers', '客户经营'], ['people', '业务员画像'], ['trends', '需求趋势'], ['actions', '行动与简报']])
+  const tabs = computed(() => [['overview', '经营总览'], ['products', '订单与产品'], ['stylists', '发型师分析'], ...(permissions.value.finance ? [['finance', '充值与资金']] : []), ['customers', '客户经营'], ['people', '业务员画像'], ['trends', '需求趋势'], ['actions', '行动与简报']])
   function failure(cause) {
     const status = cause.response?.status
     if (status === 409) return '数据或版本已变化，请刷新完整分析后重试'

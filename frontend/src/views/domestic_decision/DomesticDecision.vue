@@ -9,8 +9,9 @@
     <template v-else-if="analysis">
       <div v-if="!analysis.meta.coverage_start || analysis.summary.customer_count < 10 || analysis.quality.order_reconciliation_count" class="decision-notice"><strong>观察限制</strong><span>{{ !analysis.meta.coverage_start ? '完整历史覆盖未确认；首次观察不代表真实新客。' : '' }} {{ analysis.summary.customer_count < 10 ? '当前购买客户少于10位，避免外推强趋势。' : '' }} {{ analysis.quality.order_reconciliation_count ? '整单与明细金额有差异，查看质量面板核验。' : '' }}</span></div>
       <section :id="`decision-panel-${tab}`" role="tabpanel" :aria-labelledby="`decision-tab-${tab}`" class="decision-tab-content" tabindex="0">
-        <AnalysisPanels v-if="tab !== 'actions'" :tab="tab" :data="analysis" :query="query" :applied="applied" :options="options" @apply="analyze" @rows="openRows" @profile="openProfile" @evidence="openEvidence" @action="prepareAction" @tab="tab = $event" />
-        <ActionReportPanel v-show="tab === 'actions'" ref="actionPanel" :data="analysis" :finance-allowed="permissions.finance" :report-allowed="permissions.report" :mutate="mutate" :failure="failure" @evidence="openEvidence" @customer="id => openProfile('customer', id)" @plan="applyPlan" />
+        <StylistAnalysis v-if="tab === 'stylists'" :data="analysis.stylists" :applied="applied" @rows="openRows" @evidence="openEvidence" />
+        <AnalysisPanels v-else-if="tab !== 'actions'" :tab="tab" :data="analysis" :query="query" :applied="applied" :options="options" @apply="analyze" @rows="openRows" @profile="openProfile" @evidence="openEvidence" @action="prepareAction" @tab="tab = $event" />
+        <div v-show="tab === 'actions'"><ActionReportPanel ref="actionPanel" :data="analysis" :finance-allowed="permissions.finance" :report-allowed="permissions.report" :mutate="mutate" :failure="failure" @evidence="openEvidence" @customer="id => openProfile('customer', id)" @plan="applyPlan" /></div>
       </section>
       <footer class="decision-footer"><span>当前状态重算 · 本公司成交需求样本 · 归因采用当前客户负责人</span><span>指标 {{ analysis.meta.metric_version }} · 规则 {{ analysis.meta.rule_version }} · 北京时间</span></footer>
     </template>
@@ -18,8 +19,9 @@
     <EvidenceDrawer :state="evidence" :failure="failure" />
     <QualityDrawer v-model="qualityOpen" :data="analysis" :options="options" :admin-allowed="permissions.admin" :mutate="mutate" :failure="failure" @refresh="refresh" @evidence="openEvidence" />
     <DetailDrawer v-model="drill.open" :title="drill.title" :width="760">
-      <div class="action-bar"><el-select v-model="drill.kind" aria-label="明细类型" @change="drill.page = 1; drill.sort_field = ''; drill.sort_order = ''; loadRows()"><el-option label="匹配产品明细" value="items" /><el-option label="相关整单" value="orders" /><el-option label="客户" value="customers" /><el-option v-if="permissions.finance" label="资金流水" value="ledger" /><el-option v-if="permissions.finance" label="申请" value="requests" /></el-select><GlassButton @click="loadRows">重试明细</GlassButton></div>
-      <p class="decision-note">同一快照下钻。相关整单额含未命中产品行，命中明细额仅含匹配行；跨组订单/客户不能相加。</p>
+      <div class="action-bar"><el-select v-model="drill.kind" aria-label="明细类型" @change="changeDrillKind"><el-option label="做发型报工" value="stylist_reports" /><el-option label="匹配产品明细" value="items" /><el-option label="相关整单" value="orders" /><el-option label="客户" value="customers" /><el-option v-if="permissions.finance" label="资金流水" value="ledger" /><el-option v-if="permissions.finance" label="申请" value="requests" /></el-select><GlassButton @click="loadRows">重试明细</GlassButton></div>
+      <p v-if="drill.kind === 'stylist_reports'" class="decision-note">同一快照下钻。每行是一条有效做发型报工，按报工时间统计数量；多人、分批报工可能涉及同一明细。</p>
+      <p v-else class="decision-note">同一快照下钻。相关整单额含未命中产品行，命中明细额仅含匹配行；跨组订单/客户不能相加。</p>
       <el-skeleton v-if="drill.loading" :rows="6" animated />
       <template v-else-if="drill.error"><el-alert type="error" :title="drill.error" :closable="false" /><GlassButton variant="primary" @click="refresh">刷新整组分析</GlassButton></template>
       <template v-else><DecisionTable :rows="drill.items" :columns="drillColumns" :paginate="false" remote-sort :sort-state="{ prop: drill.sort_field, order: drill.sort_order === 'asc' ? 'ascending' : drill.sort_order === 'desc' ? 'descending' : null }" @sort-change="sortDrill" action="原始证据" @open="openRowEvidence" /><el-pagination v-model:current-page="drill.page" v-model:page-size="drill.page_size" :page-sizes="[20, 50, 100]" :total="drill.total" layout="total, sizes, prev, pager, next" @current-change="loadRows" @size-change="drill.page = 1; loadRows()" /></template>
@@ -37,6 +39,7 @@ import { cleanQuery, evidenceRefs, FIELD_LABELS } from './state'
 import { useDecisionWorkbench } from './composables/useDecisionWorkbench'
 import DecisionFilters from './components/DecisionFilters.vue'
 import AnalysisPanels from './components/AnalysisPanels.vue'
+import StylistAnalysis from './components/StylistAnalysis.vue'
 import ActionReportPanel from './components/ActionReportPanel.vue'
 import ProfileDrawer from './components/ProfileDrawer.vue'
 import EvidenceDrawer from './components/EvidenceDrawer.vue'
@@ -89,13 +92,20 @@ function tabKeydown(event) {
 }
 const col = (key, label, format) => ({ key, label, format })
 const drillColumns = computed(() => {
+  if (drill.kind === 'stylist_reports') return [col('reported_at', '报工时间（北京）'), col('name', '发型师'), col('domestic_no', '订单号'), col('item_id', '明细ID'), col('product_name', '型号 / 产品'), col('report_qty', '完成件数', 'number'), ...['craft', 'length', 'hair_style_series', 'color'].map(field => col('attrs.' + field, FIELD_LABELS[field]))]
   if (drill.kind === 'orders') return [col('id', '订单ID'), col('domestic_no', '订单号'), col('order_date', '订单日期'), col('customer_id', '客户ID'), col('order_category', '订单类别'), col('order_type', '订单类型'), col('status', '当前状态'), col('total_amount', '相关整单额', 'money')]
   if (drill.kind === 'items') return [col('id', '明细ID'), col('order_id', '订单ID'), ...['product_type', 'craft', 'net_color', 'size', 'length', 'density', 'hair_style_series', 'color'].map(field => col(`attrs.${field}`, FIELD_LABELS[field])), col('order_qty', '数量', 'number'), col('unit_price', '成交单价', 'money'), col('amount', '命中明细额', 'money')]
   if (drill.kind === 'customers') return [col('customer_id', '客户ID'), col('shop_name', '客户'), col('amount', '相关整单额', 'money'), col('matched_amount', '匹配明细额', 'money'), col('history.cycle_status', '节奏')]
   if (drill.kind === 'ledger') return [col('id', '流水ID'), col('customer_id', '客户ID'), col('order_id', '订单ID'), col('transaction_type', '流水类型'), col('amount', '金额', 'money'), col('balance_before', '发生前', 'money'), col('balance_after', '发生后', 'money'), col('created_at', '北京时间')]
   return [col('id', '申请ID'), col('customer_id', '客户ID'), col('request_type', '申请类型'), col('amount', '金额', 'money'), col('status', '当前审核状态'), col('created_at', '创建时间')]
 })
-function openRowEvidence(row) { if (drill.kind === 'customers') openProfile('customer', row.customer_id); else openEvidence([{ type: drill.kind, id: row.id }]) }
+function openRowEvidence(row) { if (drill.kind === 'customers') openProfile('customer', row.customer_id); else openEvidence([{ type: drill.kind === 'stylist_reports' ? 'reports' : drill.kind, id: row.id }]) }
 function sortDrill(sort) { const params = tableSortParams(sort); drill.sort_field = params.sort_field || ''; drill.sort_order = params.sort_order || ''; drill.page = 1; loadRows() }
+function changeDrillKind() {
+  drill.page = 1; drill.sort_field = ''; drill.sort_order = ''
+  if (drill.kind !== 'stylist_reports') delete drill.params.stylist_id
+  else { delete drill.params.dimension; delete drill.params.value }
+  loadRows()
+}
 onMounted(async () => { await refresh(); loadViews() })
 </script>

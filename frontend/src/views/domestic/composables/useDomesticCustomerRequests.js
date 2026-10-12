@@ -1,11 +1,12 @@
 import { formatMoney } from '../../../utils/money.js'
-import { confirmAction, promptAction, msgSuccess } from '@/utils/feedback'
+import { confirmAction, promptAction, msgSuccess, msgSuccessText, msgWarning } from '@/utils/feedback'
 /** 内贸充值/调整申请审核列表：审核员看全部并操作，申请人看自己的申请进度。 */
 import { reactive, ref } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 import {
   approveCustomerRequest, fetchVoucherBlob, listCustomerRequests, rejectCustomerRequest,
+  withdrawCustomerRequest, resubmitCustomerRequest, newRequestId,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { membershipPreview } from './domesticMemberPricing'
@@ -13,6 +14,7 @@ export const REQUEST_STATUS = [
   { value: 'pending', label: '待审核', tag: 'warning' },
   { value: 'approved', label: '已通过', tag: 'success' },
   { value: 'rejected', label: '已驳回', tag: 'danger' },
+  { value: 'withdrawn', label: '已撤回', tag: 'info' },
 ]
 export const REQUEST_STATUS_MAP = Object.fromEntries(REQUEST_STATUS.map(s => [s.value, s]))
 export const REQUEST_TYPE_LABELS = { recharge: '充值', adjust: '调整' }
@@ -68,6 +70,54 @@ const {
 
   // ── 审核操作（行级 loading 防连点）──
   const reviewingIds = reactive(new Set())
+  const editDialog = reactive({ visible: false, row: null, amount: 0, remark: '', membership: '__keep__', files: [], file: null, requestId: '', saving: false })
+  function canWithdrawRow(row) {
+    return row.status === 'pending' && row.created_by === auth.user?.id
+  }
+  function canEditRow(row) {
+    return row.status === 'withdrawn' && row.created_by === auth.user?.id && !row.resubmitted_request_id
+  }
+  function openEdit(row) {
+    Object.assign(editDialog, { visible: true, row, amount: Number(row.amount), remark: row.remark || '',
+      membership: row.change_membership ? (row.membership_level || '__none__') : '__keep__',
+      files: [], file: null, requestId: newRequestId(), saving: false })
+  }
+  async function selectVoucher(file) {
+    editDialog.file = file
+    return { path: 'selected-voucher', name: file.name, url: '' }
+  }
+  async function handleWithdraw(row) {
+    if (reviewingIds.has(row.id)) return
+    try { await confirmAction('撤回后可修改金额、说明及凭证，再重新提交审核。', '撤回申请', { confirmButtonText: '撤回申请' }) }
+    catch { return }
+    reviewingIds.add(row.id)
+    try {
+      const result = await withdrawCustomerRequest(row.id)
+      msgSuccessText('申请已撤回，余额和会员等级未改变')
+      openEdit({ ...row, ...result.data })
+      searchForm.status = 'withdrawn'
+      await handleSearch()
+    } catch { await listPageState.refreshUpdate() }
+    finally { reviewingIds.delete(row.id) }
+  }
+  async function confirmResubmit() {
+    if (editDialog.saving) return
+    if (!Number.isFinite(editDialog.amount) || (editDialog.row.request_type === 'recharge' && editDialog.amount <= 0)) return msgWarning('请填写有效金额')
+    const change = editDialog.row.request_type === 'adjust' && editDialog.membership !== '__keep__'
+    if (editDialog.row.request_type === 'adjust' && (!editDialog.remark.trim() || editDialog.remark.trim().length < 2)) return msgWarning('调整原因至少 2 个字')
+    editDialog.saving = true
+    try {
+      await resubmitCustomerRequest(editDialog.row.id, {
+        amount: editDialog.amount, remark: editDialog.remark.trim() || null, request_id: editDialog.requestId,
+        change_membership: change, membership_level: change && editDialog.membership !== '__none__' ? editDialog.membership : null,
+      }, editDialog.files.length ? editDialog.file : null)
+      editDialog.visible = false
+      msgSuccessText('申请已重新提交，审核通过后生效')
+      searchForm.status = 'pending'
+      await handleSearch()
+    } catch { await listPageState.refreshUpdate() }
+    finally { editDialog.saving = false }
+  }
 
   async function handleApprove(row) {
     try {
@@ -125,7 +175,8 @@ const {
     fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange,
     canReview, canReviewRow, REQUEST_STATUS, REQUEST_STATUS_MAP, REQUEST_TYPE_LABELS,
     voucherDialog, voucherLoadingId, openVoucher, closeVoucher,
-    reviewingIds, handleApprove, handleReject,
+    reviewingIds, handleApprove, handleReject, canWithdrawRow, canEditRow, handleWithdraw,
+    editDialog, openEdit, selectVoucher, confirmResubmit,
     amountText, membershipText,
   }
 }

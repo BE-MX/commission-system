@@ -17,7 +17,7 @@ from app.domestic_decision.schemas import PRODUCT_FIELDS
 
 FIELDS = {
     DomesticCustomer: ("id", "owner_user_id", "membership_level", "settle_mode", "status", "province", "city", "customer_source", "store_type", "customer_level", "lifecycle_status"),
-    DomesticOrder: ("id", "customer_id", "order_kind", "order_date", "order_category", "order_type", "order_channel", "status", "total_amount", "charged_amount", "deleted_flag", "created_by"),
+    DomesticOrder: ("id", "customer_id", "order_kind", "order_date", "order_category", "order_type", "order_channel", "status", "review_version", "total_amount", "charged_amount", "deleted_flag", "created_by"),
     DomesticOrderItem: ("id", "order_id", "line_no", "attrs_snapshot", "order_qty", "unit_price", "original_price", "default_discount_price", "discount_amount", "labor_fee", "membership_level_snapshot", "pricing_rule", "pricing_version", "status", "ship_time", "color"),
     DomesticCustomerLedger: ("id", "customer_id", "order_id", "transaction_type", "amount", "balance_before", "balance_after", "business_key", "created_by", "created_at"),
 }

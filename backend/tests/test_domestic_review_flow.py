@@ -501,7 +501,7 @@ def _approve(db, order_id, reviewer):
     return order_service.review_order(
         db, order_id, decision="approve", remark=None,
         reviewer_id=reviewer.id, can_admin=False,
-    )
+     review_version=db.get(order_service.DomesticOrder, order_id).review_version)
 
 
 def test_discount_order_pends_review_then_approve_charges(db):
@@ -528,7 +528,7 @@ def test_discount_order_pends_review_then_approve_charges(db):
         order_service.review_order(
             db, order.id, decision="approve", remark=None,
             reviewer_id=user.id, can_admin=False,
-        )
+         review_version=db.get(order_service.DomesticOrder, order.id).review_version)
 
     result = _approve(db, order.id, reviewer)
     db.refresh(customer)
@@ -571,12 +571,12 @@ def test_reject_order_leaves_no_charge_and_blocks_resubmit(db):
     with pytest.raises(ValueError, match="驳回必须填写原因"):
         order_service.review_order(
             db, order.id, decision="reject", remark="", reviewer_id=reviewer.id, can_admin=False,
-        )
+         review_version=db.get(order_service.DomesticOrder, order.id).review_version)
 
     result = order_service.review_order(
         db, order.id, decision="reject", remark="优惠价未经同意",
         reviewer_id=reviewer.id, can_admin=False,
-    )
+     review_version=db.get(order_service.DomesticOrder, order.id).review_version)
     db.refresh(customer)
     db.refresh(order)
     assert result["status"] == C.ORDER_REJECTED

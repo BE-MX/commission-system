@@ -17,6 +17,8 @@ from pydantic import ValidationError
 from app.auth.models import ArkUser
 from app.domestic import constants as C
 from app.domestic import price_review
+
+
 from app.domestic import (
     attribute_service,
     balance_service,
@@ -58,6 +60,10 @@ from app.domestic.schemas import (
 from app.system.models import SysDict
 
 logger = logging.getLogger("commission")
+
+
+class ReviewVersionConflict(ValueError):
+    """The page belongs to a previous price-review submission."""
 
 _TEXT_FIELDS = ("guest_name", "hairstyle", "color", "style_requirement", "remark")
 _IMAGE_FIELDS = ("hairstyle_images", "color_images", "style_images", "remark_images")
@@ -271,6 +277,7 @@ def _order_create_result(
         "item_count": item_count,
         "total_amount": float(order.total_amount or 0),
         "status": order.status,
+        "review_version": order.review_version,
         "is_draft": order.status == C.ORDER_DRAFT,
         "warnings": warnings or [],
         "replayed": replayed,
@@ -568,6 +575,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                     else C.ORDER_PRODUCING
                 ),
                 total_amount=0,
+                review_version=1 if requires_review else 0,
                 charged_amount=0,
                 next_line_no=1,
                 item_count=0,
@@ -960,6 +968,7 @@ def list_orders(
             ),
             "remark": o.remark,
             "created_by": o.created_by,
+            "review_version": o.review_version,
             "created_at": o.created_at,
         }
         if include_finance:
@@ -1155,6 +1164,7 @@ def get_order_detail(
     # 都不返回。主站 RBAC 详情才包含这两个字段。
     if include_finance:
         detail["created_by"] = order.created_by
+        detail["review_version"] = order.review_version
         detail["created_by_name"] = db.query(ArkUser.real_name).filter(
             ArkUser.id == order.created_by
         ).scalar()
@@ -1748,6 +1758,8 @@ def submit_draft(
             request_hash=request_hash,
         )
         if replay is not None:
+            if replay.get("review_version", 0) != order.review_version or order.status == C.ORDER_DRAFT:
+                raise ReviewVersionConflict("该提交已撤回或审核轮次已变化，请刷新并重新提交")
             db.commit()
             return replay
         if order.status != C.ORDER_DRAFT:
@@ -1799,6 +1811,8 @@ def submit_draft(
             )
         )
         order.status = C.ORDER_PENDING_REVIEW if requires_review else C.ORDER_PRODUCING
+        if requires_review:
+            order.review_version += 1
         if customer and not requires_review:
             # 待审核单不推进下单节奏：审核通过时才记 last_order_date（与统计口径一致）
             customer.last_order_date = max(
@@ -1814,6 +1828,7 @@ def submit_draft(
             "id": order.id,
             "customer_id": order.customer_id,
             "status": order.status,
+            "review_version": order.review_version,
             "total_amount": float(order.total_amount or 0),
             "charged_amount": float(order.charged_amount or 0),
             "replayed": False,
@@ -1833,6 +1848,29 @@ def submit_draft(
         raise
 
 
+def withdraw_review(db: Session, order_id: int, user_id: int, *, review_version: int) -> dict:
+    """Return a pending price review to an editable draft under the approval lock."""
+    db.info["domestic_actor_id"] = user_id
+    try:
+        order = _get_order_or_raise(db, order_id, lock=True)
+        _ensure_order_creator(order, user_id)
+        if order.review_version != review_version:
+            raise ReviewVersionConflict("审核轮次已变化，请刷新订单后重试")
+        if order.status != C.ORDER_PENDING_REVIEW:
+            raise ValueError("只有待审核订单可以撤回")
+        if balance_service.money(order.charged_amount or 0) != 0:
+            raise ValueError("订单已有扣款，不能撤回审核")
+        order.status = C.ORDER_DRAFT
+        order.reviewed_by = None
+        order.reviewed_at = None
+        order.review_remark = None
+        db.commit()
+        return {"id": order.id, "status": order.status}
+    except Exception:
+        db.rollback()
+        raise
+
+
 def review_order(
     db: Session,
     order_id: int,
@@ -1841,6 +1879,7 @@ def review_order(
     remark: str | None,
     reviewer_id: int,
     can_admin: bool,
+    review_version: int,
 ) -> dict:
     """审核优惠价订单：通过=转生产中并按报价快照扣款；驳回=落已驳回。
 
@@ -1849,6 +1888,8 @@ def review_order(
     db.info["domestic_actor_id"] = reviewer_id
     try:
         order = _get_order_or_raise(db, order_id, lock=True)
+        if order.review_version != review_version:
+            raise ReviewVersionConflict("审核轮次已变化，请刷新订单并核对新报价")
         if order.status != C.ORDER_PENDING_REVIEW:
             raise ValueError("该订单不在待审核状态，请刷新查看最新状态")
         # 审自己不成立；domestic:admin / super_admin 兜底（如只有一人在岗）

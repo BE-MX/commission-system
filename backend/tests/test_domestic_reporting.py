@@ -188,7 +188,7 @@ def _create_order(db, user, qty=20, craft="中分界"):
         order_service.review_order(
             db, created["id"], decision="approve", remark=None,
             reviewer_id=reviewer.id, can_admin=False,
-        )
+         review_version=db.get(order_service.DomesticOrder, created["id"]).review_version)
     return created
 
 
@@ -779,7 +779,7 @@ def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers, 
         order_service.review_order(
             db, order_id, decision="approve", remark=None,
             reviewer_id=reviewer.id, can_admin=False,
-        )
+         review_version=db.get(order_service.DomesticOrder, order_id).review_version)
     items = db.query(DomesticOrderItem).filter(DomesticOrderItem.order_id == order_id).all()
     assert len(items) == 2
     db.autoflush = autoflush

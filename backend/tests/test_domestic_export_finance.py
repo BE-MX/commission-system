@@ -22,7 +22,7 @@ def create_order(db, suffix, is_draft=False):
         order_service.review_order(
             db, result["id"], decision="approve", remark=None,
             reviewer_id=reviewer.id, can_admin=False,
-        )
+         review_version=db.get(order_service.DomesticOrder, result["id"]).review_version)
     return user, customer, db.get(DomesticOrder, result["id"])
 
 
@@ -81,7 +81,7 @@ def test_edit_total_unit_price_preserves_labor_and_correct_discount(db):
         order_service.review_order(
             db, result["id"], decision="approve", remark=None,
             reviewer_id=reviewer.id, can_admin=False,
-        )
+         review_version=db.get(order_service.DomesticOrder, result["id"]).review_version)
     item = db.query(DomesticOrderItem).filter_by(order_id=result["id"]).one()
     order_service.update_item(db, item.id, OrderItemUpdate(unit_price=Decimal("980")), user.id)
     assert item.labor_fee == Decimal("30")

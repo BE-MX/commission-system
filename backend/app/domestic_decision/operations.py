@@ -10,7 +10,7 @@ from app.domestic_decision.schemas import PRODUCT_FIELDS, ORDER_FIELDS, CUSTOMER
 from app.domestic_decision.metrics import decimal, number
 from app.domestic_decision.scope import has_permission
 
-REPORT_PROCESSES = ("发货完成", "入库", "毛坯出库")
+REPORT_PROCESSES = ("发货完成", "入库", "毛坯出库", "做发型")
 
 
 def unassigned_production_allowed(actor, payload):
@@ -41,6 +41,8 @@ def load_operations(db, actor, payload, orders, items, attrs, mappings):
     process_names = {row.id: row.name for row in db.query(Process).filter(Process.name.in_(REPORT_PROCESSES)).populate_existing().all()}
     logs = db.query(DomesticReportLog).filter(DomesticReportLog.item_id.in_(list(item_map)), DomesticReportLog.process_id.in_(list(process_names)), DomesticReportLog.reported_at < end).populate_existing().order_by(DomesticReportLog.reported_at, DomesticReportLog.id).all() if item_map and process_names else []
     source = [report_evidence(log, item_map[log.item_id], order_map[item_map[log.item_id].order_id], process_names[log.process_id]) for log in logs]
+    for row, log in zip(source, logs):
+        row.update(reported_by_user_id=log.reported_by_user_id, reported_by_name=log.reported_by_name)
     eligible_items = {}
     for item in items:
         order = order_map[item.order_id]
@@ -55,7 +57,8 @@ def load_operations(db, actor, payload, orders, items, attrs, mappings):
     valid = [row for row in source if row["item_id"] in eligible_items and not row["revoked"] and row["report_qty"] > 0]
     shipping = [row for row in valid if row["process_name"] == "发货完成" and order_map[row["order_id"]].order_kind == "business"]
     supply = [row for row in valid if (row["process_name"] == "入库" and order_map[row["order_id"]].order_kind == "production") or (row["process_name"] == "毛坯出库" and order_map[row["order_id"]].order_kind == "business")]
-    return {"orders": order_map, "items": eligible_items, "attrs": attrs, "shipping": shipping, "supply": supply,
+    styling = [row for row in valid if row["process_name"] == "做发型"]
+    return {"orders": order_map, "items": eligible_items, "attrs": attrs, "shipping": shipping, "supply": supply, "styling": styling,
             "source": {"reports": source, "extra_orders": [header_evidence(row) for row in orders if row.customer_id is None], "extra_items": [item_evidence(row, *attrs[row.id]) for row in items if order_map[row.order_id].customer_id is None], "process_names": process_names},
             "includes_unassigned_production": includes_unassigned}
 

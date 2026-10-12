@@ -63,16 +63,19 @@
         <el-table-column v-if="visibleKeys.includes('review')" label="审核信息" min-width="180" show-overflow-tooltip prop="review_remark" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.status === 'pending'">—</span>
+            <span v-else-if="row.status === 'withdrawn'">申请人撤回于 {{ row.withdrawn_at }}</span>
             <span v-else>{{ row.reviewed_by_name || '—' }} · {{ row.reviewed_at || '' }}<template v-if="row.review_remark"> · {{ row.review_remark }}</template></span>
           </template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" v-if="canReview" label="操作" min-width="150" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="180" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 'pending' && canReviewRow(row)">
               <el-link type="success" :disabled="reviewingIds.has(row.id)" @click="handleApprove(row)">通过</el-link>
               <el-link type="danger" class="action-gap" :disabled="reviewingIds.has(row.id)" @click="handleReject(row)">驳回</el-link>
             </template>
-            <span v-else>—</span>
+            <GlassButton v-if="canWithdrawRow(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="RefreshLeft" :loading="reviewingIds.has(row.id)" @click="handleWithdraw(row)">撤回申请</GlassButton>
+            <GlassButton v-if="canEditRow(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="EditPen" @click="openEdit(row)">修改并重提</GlassButton>
+            <span v-if="row.status === 'withdrawn' && row.resubmitted_request_id">已重提 #{{ row.resubmitted_request_id }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -86,6 +89,22 @@
     <el-dialog v-model="voucherDialog.visible" title="转账凭证" width="640px" @close="closeVoucher">
       <img v-if="voucherDialog.image" :src="voucherDialog.image" class="voucher-image" alt="转账凭证" />
     </el-dialog>
+    <el-dialog v-model="editDialog.visible" title="修改已撤回申请" width="480px" :close-on-click-modal="false" :close-on-press-escape="!editDialog.saving" :show-close="!editDialog.saving">
+      <p>原申请保留，重新提交生成新申请；审核通过前不入账。</p>
+      <el-form label-position="top" :disabled="editDialog.saving">
+        <el-form-item label="客户">{{ editDialog.row?.customer_name }}</el-form-item>
+        <el-form-item label="金额"><el-input-number v-model="editDialog.amount" :precision="2" :min="editDialog.row?.request_type === 'recharge' ? 0.01 : -999999999999.99" :max="999999999999.99" /></el-form-item>
+        <el-form-item v-if="editDialog.row?.request_type === 'adjust'" label="会员等级">
+          <el-select v-model="editDialog.membership"><el-option label="不调整等级" value="__keep__" /><el-option label="取消会员" value="__none__" /><el-option label="银卡会员" value="silver" /><el-option label="黑卡会员" value="black" /><el-option label="至尊会员" value="supreme" /></el-select>
+        </el-form-item>
+        <el-form-item v-if="editDialog.row?.request_type === 'recharge'" label="转账凭证">
+          <p>未选择新文件时沿用原凭证，可在列表查看。</p>
+          <AppUpload v-if="!editDialog.saving" v-model="editDialog.files" :upload-fn="selectVoucher" :limit="1" :max-size-mb="20" accept="image/jpeg,image/png,image/webp,application/pdf" button-text="选择替换凭证" />
+        </el-form-item>
+        <el-form-item label="说明 / 调整原因"><el-input v-model="editDialog.remark" type="textarea" :rows="3" maxlength="500" /></el-form-item>
+      </el-form>
+      <template #footer><GlassButton :disabled="editDialog.saving" @click="editDialog.visible = false">取消</GlassButton><GlassButton variant="primary" :loading="editDialog.saving" @click="confirmResubmit">重新提交审核</GlassButton></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -93,6 +112,7 @@
 /** 内贸充值/调整申请审核列表。逻辑在 composables/useDomesticCustomerRequests.js。 */
 import { computed } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
+import AppUpload from '@/components/AppUpload.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
 import { useDomesticCustomerRequests } from './composables/useDomesticCustomerRequests'
@@ -107,7 +127,8 @@ const {
   fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange,
   canReview, canReviewRow, REQUEST_STATUS, REQUEST_STATUS_MAP, REQUEST_TYPE_LABELS,
   voucherDialog, voucherLoadingId, openVoucher, closeVoucher,
-  reviewingIds, handleApprove, handleReject,
+  reviewingIds, handleApprove, handleReject, canWithdrawRow, canEditRow, handleWithdraw,
+  editDialog, openEdit, selectVoucher, confirmResubmit,
   amountText, membershipText,
 } = listPageState
 

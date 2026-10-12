@@ -208,7 +208,7 @@ def _approve_pending_order(db, order_id, reviewer):
     result = order_service.review_order(
         db, order_id, decision="approve", remark=None,
         reviewer_id=reviewer.id, can_admin=False,
-    )
+     review_version=db.get(order_service.DomesticOrder, order_id).review_version)
     db.refresh(order)
     assert order.status == C.ORDER_PRODUCING
     return result

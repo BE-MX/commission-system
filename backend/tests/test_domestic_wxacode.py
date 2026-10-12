@@ -149,7 +149,7 @@ def _create_order(db, user, item_count=1):
         order_service.review_order(
             db, created["id"], decision="approve", remark=None,
             reviewer_id=reviewer.id, can_admin=False,
-        )
+         review_version=db.get(order_service.DomesticOrder, created["id"]).review_version)
     return created
 
 
