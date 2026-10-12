@@ -293,7 +293,6 @@ export function useInvoiceManagePage() {
   const actionText = action => ({ create: '首次推送', update: '编辑推送', retry: '重试' })[action] || action
   const formatDateTime = formatInvoiceDateTime
   const money = value => formatMoney(value)
-  const money4 = value => formatMoney(value, 4)
   // 状态字典：枚举 → { label, tone } 单点维护（DESIGN.md「Status Badge & 状态字典」）
   const STATUS_DICT = {
     draft: { label: '草稿', tone: 'info' },
@@ -325,7 +324,7 @@ export function useInvoiceManagePage() {
   function handleTableSort({ prop, order }) { return listPage.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
   return {
     handleTableSort, actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
-    loading, money, money4, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
+    loading, money, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
     listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch,
     handleSearch, handlePageChange, handleSaved, refreshUpdate,
     summary, summaryDateRange, summaryError, summaryLoading, loadSummary,

@@ -185,7 +185,7 @@
                body-class="invoice-modern-drawer-body" footer-class="invoice-modern-drawer-footer">
       <template #default>
         <el-form label-position="top" ref="formRef" :model="form" class="invoice-form">
-          <div class="drawer-panes">
+          <div :class="['drawer-panes', sideCollapsed ? 'is-side-collapsed' : '']">
             <!-- 左窗格：录入主流（客户/订单 → 产品明细 → 配件明细），独立滚动 -->
             <main class="pane pane-main">
               <LinkedSyncResult
@@ -229,11 +229,11 @@
                 :on-line-discount-change="onLineDiscountChange"
                 :update-line-total="updateLineTotal"
                 :money="money"
-                :money4="money4"
                 @paste="pasteImportVisible = true"
                 @copy="copyLine"
                 @add-blank="addBlankLine"
                 @remove="removeLine"
+                @remove-many="removeLines"
               />
 
               <InvoiceAccessoryTable
@@ -244,11 +244,11 @@
                 :loading="accessoryLoading"
                 :search-options="searchAccessoryOptions"
                 :money="money"
-                :money4="money4"
                 @add="addAccessory"
                 @select="selectAccessory"
                 @change="updateAccessoryTotal"
                 @remove="removeAccessory"
+                @remove-many="removeAccessories"
               />
 
               <!-- 卡片 4：物流与备注（快递渠道必填单选 → 指定跟单员 → 备注） -->
@@ -289,6 +289,14 @@
             </main>
 
             <!-- 右窗格：金额/结算/回款，独立滚动 -->
+            <!-- 右窗格可收起：明细列多时让表格吃满宽度；页脚始终显示订单总额，收起不会丢金额 -->
+            <el-tooltip :content="sideCollapsed ? '展开结算栏' : '收起结算栏'" placement="left">
+              <button type="button" class="side-toggle" :aria-expanded="!sideCollapsed"
+                      :aria-label="sideCollapsed ? '展开结算栏' : '收起结算栏'" @click="toggleSidePane">
+                <el-icon><component :is="sideCollapsed ? DArrowLeft : DArrowRight" /></el-icon>
+              </button>
+            </el-tooltip>
+
             <aside class="pane pane-side">
               <InvoiceSummaryCard
                 class="form-card"
@@ -368,7 +376,6 @@
     <InvoiceLegacyDrawer
       :editor="editor"
       :money="money"
-      :money4="money4"
       @open-paste="wholeOrderPasteVisible = true"
       @open-legacy-paste="pasteImportVisible = true"
     />
@@ -395,7 +402,7 @@ import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShi
 import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
 import { computed, nextTick, ref } from 'vue'
-import { ArrowDown, Box, Calendar, Delete, Document, Download, Edit, Refresh, RefreshLeft, Search, Tools } from '@element-plus/icons-vue'
+import { ArrowDown, Box, Calendar, DArrowLeft, DArrowRight, Delete, Document, Download, Edit, Refresh, RefreshLeft, Search, Tools } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { useInvoiceEditor } from './composables/useInvoiceEditor'
 import { useInvoiceManagePage } from './composables/useInvoiceManagePage'
@@ -420,9 +427,16 @@ import ListPageStatus from '@/components/ListPageStatus.vue'
 const { shipmentInvoice, shipmentCapabilities } = useInvoiceShipments()
 const listPage = useInvoiceManagePage()
 const invoiceDetailRef = ref(null)
+// 结算栏收起状态按用户记忆：明细列多的人长期要宽表格，不必每次手动收
+const SIDE_COLLAPSE_KEY = 'invoice-drawer-side-collapsed'
+const sideCollapsed = ref(localStorage.getItem(SIDE_COLLAPSE_KEY) === '1')
+function toggleSidePane() {
+  sideCollapsed.value = !sideCollapsed.value
+  localStorage.setItem(SIDE_COLLAPSE_KEY, sideCollapsed.value ? '1' : '0')
+}
 const {
   handleTableSort, actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
-  loading, money, money4, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
+  loading, money, openSyncLogs, page, pageSize, total, removeInvoice, statusText, statusType,
   listErrorMessage, hasLoaded, hasData, dataPage, hasPendingSearch, handleSearch, handlePageChange, handleSaved, refreshUpdate,
   summary, summaryDateRange, summaryError, summaryLoading, loadSummary,
   syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
@@ -443,8 +457,8 @@ const {
   searchCustomers, selectSyncedCustomer,
   onCustomerChange, onSalesUserChange, onCurrencyChange,  onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
   applyScreenshotPreview,
-  addBlankLine, copyLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
-  updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,
+  addBlankLine, copyLine, addAccessory, selectAccessory, removeAccessory, removeAccessories, searchAccessoryOptions,
+  updateAccessoryTotal, removeLine, removeLines, loadLineOptions, onLineFilterChange, onCustomFieldChange,
   onPriceInput, onLineDiscountChange, updateLineTotal, appendImportedLines, saveDraft,
   saveAndSync, showIssues, markCustomerGradeTouched, markOkkiFlagTouched, onPaymentMethodChange, markHandlingFeeTouched,
   merchandiserOptions, previousInvoiceNo, formHairDiscountAbs, applyTotalDiscount,

@@ -75,6 +75,12 @@ export function useInvoiceAccessories(form) {
     removeItemByReference(form.items, row)
   }
 
+  function removeAccessories(rows) {
+    const doomed = new Set(rows)
+    if (!doomed.size) return
+    form.items = form.items.filter(item => !doomed.has(item))
+  }
+
   function updateAccessoryTotal(row) {
     row.discount_amount = normalizeDiscount(row.discount_amount)
     row.total_price = calculateAccessoryTotal(row.quantity, row.price_per_piece, row.discount_amount)
@@ -134,6 +140,7 @@ export function useInvoiceAccessories(form) {
     invalidateCustomerContext,
     refreshAccessoryPrices,
     removeAccessory,
+    removeAccessories,
     searchAccessoryOptions,
     selectAccessory,
     updateAccessoryTotal,
