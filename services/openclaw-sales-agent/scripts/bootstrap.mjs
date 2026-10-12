@@ -270,7 +270,7 @@ async function main() {
     run(openclaw, ["--profile", profile, "setup", "--baseline", "--workspace", workspace]);
   }
   run(openclaw, [
-    "--profile", profile, "plugins", "install", parallelPlugin, "--pin", "--force",
+    "--profile", profile, "plugins", "install", parallelPlugin, "--pin", "--force", "--accept-capabilities",
   ]);
   setConfig("gateway.mode", "local");
   setConfig("gateway.port", 18791);
