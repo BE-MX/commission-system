@@ -1,5 +1,12 @@
 # 当前交接与待办
 
+## 2026-10-12 Ashley / Serena / Ray 订单通知头像补充（Codex，服务器已存储，素材纳入版本管理）
+
+- 用户授权将三张新业务员头像补充存储到服务器。Downloads 原路径已不存在，从 `D:/8-9月新贸节大屏/个人积分榜(1)/元素/3D头像/` 找到同名原图并逐张视觉核对与附件一致，保持原图 PNG 字节及 1254×1254 尺寸；Ashley（刘婷）对应有效 OKKI ID `57292815`，Serena（栾奕）为 `57292591`，Ray（李秀玉）为 `57285758`，文件名为各 ID 加 `.png`。
+- 已追加至办公室 `D:/commission-system/frontend/public/festival/assets/avatars/` 与 `frontend/dist/festival/assets/avatars/`，北京 `/home/ubuntu/commission-system/frontend/public/festival/assets/avatars/` 与 `/var/www/ark-dist/festival/assets/avatars/`，新加坡 `/var/www/ark/dist/festival/assets/avatars/`。写前核验三地均无这三张头像，原子追加不覆盖同名不同内容，并核对其他头像摘要保持不变。办公室初始 SSH 不可用，用户提示重试后 `office-prod` 恢复。
+- 五个目录共 15 份原图摘要一致；`leshine.work` / `leshine.cloud` 六个公开头像 URL 均 HTTP 200，响应字节 SHA-256 与原图一致。办公室和北京使用各自现行通知渲染器生成三人共六张 800×450 卡片，头像区域像素比对及本地逐张视觉核对通过；仅生成文件预览，未发钉钉消息、未写数据库、未重启服务或发布业务代码，上一条战队取数代码的“未部署”状态不变。
+- 账号映射、原图摘要、服务器写入/公开读取回执及实际卡片在主目录 `tmp/salesperson-avatars-20261012/`。三张原图同时纳入 `frontend/public/festival/assets/avatars/` 的版本管理，用户已授权本次素材及交接记录合并推送 main；此后主站构建和发布将从 public 带上这些原图。本轮不部署应用，已有服务器文件保持生效。
+
 ## 2026-10-12 日常订单喜报战队改用当前业绩归属部门（Codex，已合入 main，未部署）
 
 - 分支 `codex/order-notice-current-team`，工作树 `C:/Users/windb/.codex/worktrees/order-notice-current-team/commission-system`。用户确认改用当前业绩归属部门；生成和发送前均按发票 `sales_user_id` 读取 `ark_users.okki_department_name`，删除采购节 `user_rel_team.Team` 取数，部门缺失或空白仍为“未分队”。无需 OKKI 绑定或活动名册，当前部门调整对待发通知和重试生效；通知类型、金额阈值、外部账号头像主体和幂等状态保持原行为。
