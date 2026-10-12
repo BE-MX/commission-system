@@ -20,7 +20,7 @@ from app.portal.security import open_secret
 @pytest.fixture
 def auth_context(portal_db, portal_metadata, monkeypatch):
     settings = SimpleNamespace(PORTAL_ENABLED=True, PORTAL_SITE_CODE="leshine",
-        PORTAL_ORIGIN="https://orders.example.com", PORTAL_OTP_SECRET="o"*32,
+        PORTAL_ORIGIN="https://orders.example.com", PORTAL_AUTH_SECRET="o"*32,
         PORTAL_CSRF_KEYS={"v1": "c"*32}, PORTAL_CSRF_KEY_VERSION="v1",
         PORTAL_MAIL_KEYS={"v1": "ab"*32}, PORTAL_MAIL_KEY_VERSION="v1",
         PORTAL_OTP_MINUTES=5, PORTAL_SESSION_HOURS=12, PORTAL_SESSION_IDLE_MINUTES=30)
@@ -210,27 +210,25 @@ def test_http_auth_boundaries_and_failed_attempt_commit(auth_context, monkeypatc
             assert boot.headers["cache-control"] == "no-store"
             headers = {"Origin": ctx.settings.PORTAL_ORIGIN,
                        "X-Portal-CSRF": boot.json()["data"]["csrf_token"]}
-            denied = await client.post("/api/portal/v1/auth/challenges", json={"email": "buyer@example.com", "purpose": "login"})
+            from app.auth.utils import hash_password
+            ctx.account.password_hash = hash_password("test-password-2026")
+            ctx.db.commit()
+            denied = await client.post("/api/portal/v1/auth/login", json={"email": "buyer@example.com", "password": "test-password-2026"})
             assert denied.status_code == 403
-            invalid = await client.post("/api/portal/v1/auth/verify", headers=headers,
-                                       json={"challenge_id": "bad", "code": "SECRET"})
+            invalid = await client.post("/api/portal/v1/auth/login", headers=headers,
+                                       json={"email": "buyer@example.com", "password": "SECRET"})
             assert invalid.status_code == 422 and "SECRET" not in invalid.text
-            issued = await client.post("/api/portal/v1/auth/challenges", headers=headers,
-                                       json={"email": "buyer@example.com", "purpose": "login"})
-            assert issued.status_code == 202 and issued.json()["code"] == 202
-            challenge_id = issued.json()["data"]["challenge_id"]
-            event = ctx.db.scalar(select(OutboxEvent).where(OutboxEvent.aggregate_public_id == challenge_id))
-            code = open_secret(ctx.settings.PORTAL_MAIL_KEYS["v1"], event.secret_envelope,
-                event_key=event.event_key, purpose="login", object_id=challenge_id)
-            wrong = "000001" if code != "000001" else "000002"
-            failed = await client.post("/api/portal/v1/auth/verify", headers=headers,
-                                      json={"challenge_id": challenge_id, "code": wrong})
+            for retired in ("challenges", "verify"):
+                assert (await client.post("/api/portal/v1/auth/" + retired, headers=headers, json={})).status_code == 404
+            failed = await client.post("/api/portal/v1/auth/login", headers=headers,
+                                      json={"email": "buyer@example.com", "password": "wrong-password"})
             assert failed.status_code == 401 and failed.json()["data"]["error_code"] == "AUTH_FAILED"
             ctx.db.expire_all()
-            challenge = ctx.db.scalar(select(AuthChallenge).where(AuthChallenge.public_id == challenge_id))
-            assert challenge.attempts == 1
-            verified = await client.post("/api/portal/v1/auth/verify", headers=headers,
-                                        json={"challenge_id": challenge_id, "code": code})
+            bucket = ctx.db.scalar(select(RateBucket))
+            assert bucket is not None  # Rate state remains committed after failure.
+            assert ctx.db.scalar(select(func.count()).select_from(OutboxEvent)) == 0
+            verified = await client.post("/api/portal/v1/auth/login", headers=headers,
+                                        json={"email": "buyer@example.com", "password": "test-password-2026"})
             assert verified.status_code == 200
             assert "__Host-portal_session" in client.cookies
             assert "__Host-portal_preauth" not in client.cookies

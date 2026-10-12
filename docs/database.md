@@ -1,5 +1,10 @@
 # 莱莎方舟 数据库表参考
 
+## 客户采购账号密码（183_portal_password_login，候选）
+
+ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工设置的bcrypt；父revision182。无默认密码或迁移自动激活。重置增加授权/记录版本并撤销旧会话；明确恢复账号可激活invited成员。downgrade拒绝丢弃哈希，升级及备份/隔离恢复见deploy/customer-orders.md。
+
+
 ## 账号解锁（`178_account_unlock`，本地未部署）
 
 `ark_account_unlock_audits` 记录被解锁用户、操作人 ID/用户名快照、解除的失败日志 ID 上界、失败次数和北京时间。用户外键为 MySQL `INTEGER UNSIGNED`，按 `user_id` 建索引；原 `ark_login_logs` 的状态、原因和时间不变。窗口内仅计入最近解锁边界之后的新失败，避免同秒失败被误清除。管理员解锁和密码登录以目标用户行锁串行化；重复解锁未锁定账号不写审计。迁移只新增表，父 revision 为 `177_portal_pi_header`；禁止删除审计数据的 downgrade，生产迁移走统一发布入口。
@@ -611,6 +616,8 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 | ark_announcement_config | 单例 id=1；library_id 唯一；目标群、机器人、执行账号、配置版本、周报时刻和通道验证 |
 | ark_announcement_items | document_id 主键/FK；置顶、发布时间/发布人、撤回信息 |
 | ark_announcement_revision_meta | revision_id 主键/FK；类别名称快照、重要、生效/截止、变更说明；迁移 185 新增 push_dingtalk 非空布尔值，默认 true 保留历史推送行为 |
+
+迁移 186 汇合已部署的 183_portal_password_login 与 185_announcement_push_option 两支，保留原有 183/184/185 父节点，不重复修改密码列。生产实读 183 时升级计划为 184 → 185 → 186；186 本身不执行表结构或业务数据变更。
 | ark_announcement_publications | 发布/撤回事件；唯一 document_id+revision_id+kind |
 | ark_announcement_weekly | 唯一 library_id+period_start；冻结来源、正文、generation、旧版历史、生成租约 |
 | ark_announcement_deliveries | 唯一 source_key+sequence；内容和目标快照、授权指纹、租约、尝试、回执、错误 |
@@ -618,7 +625,7 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 
 新迁移接 154_okki_outbound_tasks，重复执行检查已存在结构，保留数据；降级拒绝自动删除历史。已验证 SQLite 升级/重复执行与 MySQL DDL 编译，未执行真实 MySQL 升级。生产按既有发布入口先备份与迁移演练。
 
-`182_announcement_reads` 接当前 main 的 `180_settlement_funding_amendment`。user_id 在 MySQL 使用 INT UNSIGNED，与 ark_users.id 一致；document_id/revision_id 使用 BIGINT。重复阅读保留首次时间，重新发布新的修订独立计算未读；全部已读只写当前可见版本，不改其他用户。撤回/失效/删除后保留阅读事实，但不计入提醒。升级重复执行保留数据，降级拒绝删除阅读历史。本次仅隔离 SQLite 升级及 MySQL DDL 编译；未执行共享或生产迁移。其他分支已有 181，集成时重新核对迁移链并保持单 head。
+`182_announcement_reads` 接当前 main 的 `180_settlement_funding_amendment`。user_id 在 MySQL 使用 INT UNSIGNED，与 ark_users.id 一致；document_id/revision_id 使用 BIGINT。重复阅读保留首次时间，重新发布新的修订独立计算未读；全部已读只写当前可见版本，不改其他用户。撤回/失效/删除后保留阅读事实，但不计入提醒。升级重复执行保留数据，降级拒绝删除阅读历史。该公告功能原实现阶段仅验证隔离 SQLite 升级及 MySQL DDL 编译；该阶段未执行生产迁移。客户门户任务随后实查生产已为182；未发布的密码迁移183接在182后，保持单 head。
 
 
 ### 发票客户等级（157）

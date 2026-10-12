@@ -128,11 +128,11 @@ export const portalAdminApi = {
     return response.data
   },
   async accessMutation({ action, id, version, key, body }) {
-    const routes = { catalog: ['patch', `/customers/${encodeURIComponent(id)}/catalog`], access: ['patch', `/customers/${encodeURIComponent(id)}`], account: ['patch', `/accounts/${encodeURIComponent(id)}`], invite: ['post', `/customers/${encodeURIComponent(id)}/invitations`], revoke: ['post', `/invitations/${encodeURIComponent(id)}/revoke`] }
+    const routes = { catalog: ['patch', `/customers/${encodeURIComponent(id)}/catalog`], access: ['patch', `/customers/${encodeURIComponent(id)}`], account: ['patch', `/accounts/${encodeURIComponent(id)}`], createAccount: ['post', `/customers/${encodeURIComponent(id)}/accounts`], password: ['patch', `/accounts/${encodeURIComponent(id)}/password`] }
     if (!routes[action]) throw new Error('无效操作。')
-    if (action !== 'invite' && (!Number.isSafeInteger(version) || version < 0)) throw new Error('无效版本，请刷新。')
+    if (action !== 'createAccount' && (!Number.isSafeInteger(version) || version < 0)) throw new Error('无效版本，请刷新。')
     const [method, url] = routes[action]
-    const headers = action === 'invite' ? { 'Idempotency-Key': key } : { 'If-Match': `"${version}"` }
+    const headers = action === 'createAccount' ? { 'Idempotency-Key': key } : { 'If-Match': `"${version}"` }
     const response = await portalAdminClient[method](url, body, { headers, showLoading: false, suppressToast: true })
     return response.data
   },

@@ -11,17 +11,16 @@ import threading
 import pytest
 from live_browser_server import running_portal
 from fastapi import Depends, FastAPI
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import sessionmaker
 
 from test_admin_service import managed, portal_metadata, auth_context
-from app.core.time import beijing_now
+from app.auth.utils import hash_password
 from app.core.database import get_db
 from app.portal import access_policy, admin_service, authority, router as customer_router
 from app.portal.access_policy import validate_binding as real_validate_binding
 from app.portal.models import Account, OutboxEvent
 from app.portal.schemas import AccountUpdate
-from app.portal.security import open_secret
 
 
 def test_real_https_cookie_origin_proxy_logout_and_revocation(managed, monkeypatch, request):
@@ -37,7 +36,8 @@ def test_real_https_cookie_origin_proxy_logout_and_revocation(managed, monkeypat
     monkeypatch.setattr(customer_router, 'get_settings', lambda: ctx.settings)
     monkeypatch.setattr(authority, 'get_settings', lambda: ctx.settings)
     ctx.settings.PORTAL_TRUSTED_PROXY_IPS = ['127.0.0.2']
-    ctx.account.verified_at = beijing_now()
+    ctx.account.password_hash = hash_password('Isolated-buyer-2026')
+    ctx.db.commit()
     account_id = ctx.account.public_id
     lock = threading.Lock()  # StaticPool shares one SQLite connection; this is not a concurrency test.
     factory = sessionmaker(bind=ctx.db.get_bind())
@@ -46,13 +46,6 @@ def test_real_https_cookie_origin_proxy_logout_and_revocation(managed, monkeypat
             yield db
     app = FastAPI(); app.include_router(customer_router.router, prefix='/api/portal/v1')
     app.dependency_overrides[get_db] = database
-
-    @app.get('/__qa/mailbox')
-    def mailbox(db=Depends(get_db)):
-        row = db.scalar(select(OutboxEvent).where(OutboxEvent.event_type == 'auth_code').order_by(OutboxEvent.id.desc()))
-        assert row is not None
-        return {'code': open_secret(ctx.settings.PORTAL_MAIL_KEYS['v1'], row.secret_envelope,
-            event_key=row.event_key, purpose='login', object_id=row.aggregate_public_id)}
 
     @app.post('/__qa/disable')
     def disable(db=Depends(get_db)):
@@ -69,3 +62,4 @@ def test_real_https_cookie_origin_proxy_logout_and_revocation(managed, monkeypat
         report = json.loads(result.stdout.strip().splitlines()[-1])
         assert report['status'] == 'pass' and report['network'] == 'real-local-https'
         print(json.dumps(report))
+    assert ctx.db.scalar(select(func.count()).select_from(OutboxEvent)) == 0

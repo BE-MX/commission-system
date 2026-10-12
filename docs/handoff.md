@@ -1,5 +1,11 @@
 # 当前交接与待办
 
+## 2026-10-12 最新代码生产集成候选（Codex，部署已授权）
+
+- 只读实测办公室运行 9e16a4e1、共享数据库 183_portal_password_login，最新 main 9afa3cb5 与生产分叉。独立 worktree 合并两者，保留已部署的密码登录、shop.leshine.cloud 静态目标、后台执行门禁及部署恢复保护，不覆盖旧生产源码。
+- 新增 186_portal_announcement_merge 汇合 183 与 185；保留已发布迁移标识及原父节点，生产仅执行 184/185/186。合并冲突仅交接文档，双方记录完整保留。独立审查确认生产门户与部署器相关代码相对 9e16a4e1 无业务差异。
+- 服务器三张未跟踪业务员头像 SHA256 与最新已提交素材一致；生产发布前备份原件，候选接续相同字节。部署走固定候选 deploy.bat --live-root/--revision，先 prepare-only，再正式全环境发布；过程与验收证据保留主目录 .deploy_state/announcement-release-20261012/。未将局部或prepared状态当成发布成功。
+
 ## 2026-10-12 公告单条钉钉推送选择（Codex，已验证并获合并推送授权，未部署）
 
 - 分支 `codex/announcement-dingtalk-option`，worktree `C:\Users\windb\.codex\worktrees\announcement-dingtalk-option\commission-system`。每条公告的 `push_dingtalk` 随修订保存并在待审核期间冻结；编辑、审核提示、确认弹窗和列表同步显示选择。新建默认跟随群推送总开关；API 省略仍 true 保留既有调用行为。
@@ -53,6 +59,20 @@
 - 前端构建、严格增量约定与 diff 检查通过；独立审查问题已修复并复验。Git 巡检 --no-fetch exit 0，仅本地快照，未处理其他分支。沿用 codex/presale-receipt-guard 工作树，主目录他人改动未触碰；用户已授权本次修复合并推送；生产部署不在本轮授权范围。
 
 ## 2026-10-10 预售出库完成改用检验提交（Codex，已合并推送部署）
+
+## 2026-10-10 客户下单门户生产准备（Codex，旧路径恢复通过，新生产基线182待演练）
+
+- 独立 `codex/customer-portal-readiness`；用户确认北京 shop.leshine.cloud、员工登记客户邮箱/密码，无OTP。真实客户、合同价/库存规则和生产流程由用户选择操作；代理未发客户邮件或创建真实交易。
+- 当前实机两后端均1227af7b，服务运行；共享库唯一182_announcement_reads。本任务未生产DDL/切换。候选已整合实际已发布代码，将未发布密码迁移从181改为183/父182，单head；不回退公告/预售已发布内容。
+- shop可信HTTPS、客户专用API边界通过；TCP80放通后certbot续期dry-run成功。客户静态index尚未发布；北京受保护配置逐键prepare、所有门户开关false、actor0，未enable-access。
+- 独立迁移账号完整备份权限已实核；180快照767,327,823字节、SHA650f6a17…，实际隔离180→181→恢复180→重放181通过1952秒，392原表/2,483,347行/列值/FK/唯一键/事件原始字段摘要不变，scheduler持续OFF。生产随后升级182，旧proof只能作历史证据；必须重新备份实际182并演练182→183。
+- 实查额外writer：北京sync-outbound.js cron及source小时事件(root@%定义、scheduler ON)。已实现原cron独占锁围栏/手工排空/批准摘要、事件保留definer/rawhash暂停与最终恢复、P_S可见/注册/lost0排空门禁；真实owned MySQL2通过，受影响部署7文件87通过。事件DBA `.deploy_state/credentials/event-maintenance.env` 尚未提供，发布在停服务前阻断；未冻结生产cron或事件。该文件只含COMMISSION_DB_USER/PASSWORD，不替换migration.env或应用.env。
+- 详细验证与未验收范围见[生产证据](requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)，发布/验收/停止接单见[受管操作](../deploy/customer-orders.md)。库存NULL单位712/915、刷新语义、真实合同价/授权、生产订单/PI/通知未验收；WRITES/INVOICE/MAIL/NOTIFICATION/OUTBOUND继续false。当前没有能力可标记正式开放。无origin push/main合并。
+- 本轮末次办公室127.0.0.1:2223在传候选时连接拒绝、TCP复核关闭；待用户恢复持续转发。182新备份/proof/受管prepare及发布未执行。北京末查1227/.env原摘要、六开关false、index不存在。整合后SQLite747通过；183/限流/模式MySQL67通过，实际密码登录+库存价格失效/完整交易至PI/PDF MySQL8通过；两前端按原锁构建通过。扩大MySQL全组未完成，首个缺解锁审计表的夹具已修，共用登录助手改密码；旧OTP测试未全部迁移。独立审查无新P1/P2。
+- 用户回复事件管理文件已添加、连接已恢复；再测GameViewer运行但2223无监听/SSH拒绝，新增文件及权限未核验。受管北京mirror check再次ready，未冻结；待实际转发监听后继续新182备份/proof/发布，不重复申请授权。候选代码f05f18e9及其bundle已本地就绪，尚未传入办公室。
+- 后续2223监听/SSH实际恢复，f05候选已传入并准备独立源码，未激活；发现root凭据追加migration.env形成重复键，备份因独立身份门禁拒绝且未开始导出。已验证两组连接/原ark_migrator备份权限/root原definer和P_S，将原件保留受限目录后拆分migration.env与event-maintenance.env，实际ACL仅acciowork/SYSTEM；应用.env未变，尚未暂停cron或事件。SSH/凭据阻断已解除，继续新182完整备份与proof；icacls中文输出捕获改用bytes避免UTF8解码线程异常。
+
+## 2026-10-10 预售出库完成改用检验提交（Codex，本地实现，未部署）
 
 - 用户明确：小满出库单持续草稿，方舟以对应检验 `submitted` 判定出库完成；撤回后恢复未完成。沿用 `codex/presale-receipt-guard` 工作树。新增共享检验证据/状态服务，按镜像记录 ID 与真实 outbound_invoice_id 精确桥接并核对客户及冻结行数量；提交/撤回、后台回读、管理员补绑、前批校验与主单编辑限制采用同一口径。
 - 提交先锁 Invoice，再锁同步事件与检验，状态和资金应用同事务。撤回保留 applied 资金占用/冻结明细，恢复 pending_remote/outbound_pending，不释放资金、不重新派发；资金核验异常仍隔离。锁外证据捕获包含检验轮次，最终变化拒绝应用。已提交的历史 pending_remote 由原刷新队列回补，无迁移或生产数据脚本。

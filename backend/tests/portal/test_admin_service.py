@@ -146,7 +146,7 @@ def test_reinvite_revokes_old_link_without_duplicate_member(managed):
     assert ctx.db.scalar(select(func.count()).select_from(Membership).where(Membership.account_id == account.id)) == 1
 
 
-def test_admin_cannot_bypass_email_verification(managed):
+def test_admin_cannot_activate_without_managed_password(managed):
     ctx = managed
     result = admin.invite(ctx.db, 1, ctx.access.public_id, uuid4(), invitation_body())
     ctx.db.commit()
@@ -155,7 +155,7 @@ def test_admin_cannot_bypass_email_verification(managed):
     with pytest.raises(PortalError) as error:
         admin.update_account(ctx.db, 1, account.public_id, account.row_version,
             AccountUpdate(status="active", reason="review"))
-    assert error.value.code == "EMAIL_NOT_VERIFIED" and account.status == "invited"
+    assert error.value.code == "PASSWORD_NOT_CONFIGURED" and account.status == "invited"
 
 
 def test_customer_suspend_bumps_version_and_rejects_stale_update(managed):
@@ -183,7 +183,7 @@ def test_rollback_leaves_no_account_invite_outbox_or_receipt(managed):
     assert ctx.db.scalar(select(Account).where(Account.email_normalized == "new@example.com")) is None
 
 
-def test_admin_http_scope_version_and_invite_replay(managed, monkeypatch):
+def test_admin_http_scope_version_and_account_replay(managed, monkeypatch):
     import asyncio
     import httpx
     from fastapi import FastAPI
@@ -199,17 +199,17 @@ def test_admin_http_scope_version_and_invite_replay(managed, monkeypatch):
     app.dependency_overrides[get_current_user] = lambda: claims
     async def scenario():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            path = f"/api/portal/admin/v1/customers/{ctx.access.public_id}/invitations"
+            path = f"/api/portal/admin/v1/customers/{ctx.access.public_id}/accounts"
             headers = {"Idempotency-Key": str(uuid4())}
-            denied = await client.post(path, headers=headers, json=invitation_body().model_dump())
+            denied = await client.post(path, headers=headers, json={"email": "new@example.com", "contact_name": "Buyer", "password": "test-password-2026"})
             assert denied.status_code == 404
             claims["sub"] = "1"
-            missing = await client.post(path, json=invitation_body().model_dump())
+            missing = await client.post(path, json={"email": "new@example.com", "contact_name": "Buyer", "password": "test-password-2026"})
             assert missing.status_code == 428
-            first = await client.post(path, headers=headers, json=invitation_body().model_dump())
-            second = await client.post(path, headers=headers, json=invitation_body().model_dump())
+            first = await client.post(path, headers=headers, json={"email": "new@example.com", "contact_name": "Buyer", "password": "test-password-2026"})
+            second = await client.post(path, headers=headers, json={"email": "new@example.com", "contact_name": "Buyer", "password": "test-password-2026"})
             assert first.status_code == 201 and second.status_code == 200
-            assert first.json()["data"]["invitation_id"] == second.json()["data"]["invitation_id"]
+            assert first.json()["data"]["id"] == second.json()["data"]["id"]
             update_path = f"/api/portal/admin/v1/customers/{ctx.access.public_id}"
             body = {"status": "suspended", "capabilities": {"can_view_price": False, "can_order": False},
                     "catalog_item_ids": [], "reason": "review"}
@@ -338,22 +338,10 @@ def test_super_admin_cannot_erase_review_gate_through_suspend(managed, monkeypat
         assert ctx.access.status == "review_required"
 
 
-def test_disabled_unverified_account_can_reenter_invitation_flow(managed):
-    ctx = managed
-    admin.invite(ctx.db, 1, ctx.access.public_id, uuid4(), invitation_body())
-    ctx.db.commit()
-    account = ctx.db.scalar(select(Account).where(Account.email_normalized == "new@example.com"))
-    admin.update_account(ctx.db, 1, account.public_id, 1, AccountUpdate(status="disabled", reason="pause"))
-    ctx.db.commit()
-    result = admin.update_account(ctx.db, 1, account.public_id, 2,
-                                  AccountUpdate(status="invited", reason="resume invitation"))
-    ctx.db.commit()
-    assert result["requires_invitation"] and account.verified_at is None and account.status == "invited"
-    result = admin.invite(ctx.db, 1, ctx.access.public_id, uuid4(), invitation_body())
-    ctx.db.commit()
-    invitation = ctx.db.scalar(select(Invitation).where(Invitation.public_id == result["invitation_id"]))
-    assert invitation.account_version == account.auth_version == 3
-    assert ctx.db.scalar(select(func.count()).select_from(PortalSession)) == 0
+def test_retired_invitation_status_cannot_be_requested():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        AccountUpdate(status="invited", reason="resume invitation")
 
 
 def test_list_and_count_use_current_owner_and_literal_keyword(managed, portal_metadata):
@@ -442,7 +430,8 @@ def test_customer_detail_has_scoped_account_controls_without_secrets(managed):
     assert result["accounts"]["total"] == 2
     assert len(result["accounts"]["items"]) == 1
     assert result["accounts"]["items"][0]["email"] == "new@example.com"
-    assert result["accounts"]["items"][0]["invitation"]["status"] == "pending"
+    assert result["accounts"]["items"][0]["password_configured"] is False
+    assert "invitation" not in result["accounts"]["items"][0]
     assert "token_hash" not in str(result) and "secret_envelope" not in str(result)
     with pytest.raises(PortalError) as error:
         admin.customer_detail(ctx.db, 2, ctx.access.public_id)

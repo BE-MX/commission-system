@@ -21,7 +21,7 @@ TABLE = 'ark_order_portal_auth_barriers'
 def boot(migrated, monkeypatch):
     with migrated.begin() as connection:
         connection.execute(text(f"DELETE FROM {TABLE} WHERE code LIKE 'outbound-worker-%' OR code='fixture_legacy_queue'"))
-    settings = SimpleNamespace(PORTAL_ENABLED=True, PORTAL_OUTBOUND_WORKER_ENABLED=False,
+    settings = SimpleNamespace(PORTAL_ENABLED=True, PORTAL_OUTBOUND_WORKER_ENABLED=True,
         SCHEDULER_ENABLED=False, OKKI_OUTBOUND_AUTO_ENABLED=True, PORTAL_LOCK_WAIT_SECONDS=3)
     monkeypatch.setattr(authority, 'get_settings', lambda: settings)
     factory = sessionmaker(bind=migrated, expire_on_commit=False)
@@ -75,7 +75,7 @@ def lifespan_body(boot, monkeypatch):
         'initialize_portal_outbound':initialize, 'engine':SimpleNamespace(dispose=lambda:None)}
     for name in ('check_pdf_export_resources','check_expo_watermark','check_database_connection',
         'load_business_rules','seed_admin_and_permissions','seed_asset_dimensions','seed_salary_rules',
-        'seed_agent_runtime_profiles','seed_whatsapp_translation_glossary','auto_init_ai_presets'):
+        'seed_agent_runtime_profiles','seed_whatsapp_translation_glossary','auto_init_ai_presets', 'seed_task_modules'):
         namespace[name] = lambda name=name: events.append(name)
     exec(compile(ast.Module(body=[node],type_ignores=[]), str(source), 'exec'), namespace)
     return namespace['lifespan'], events
@@ -89,9 +89,9 @@ async def test_production_lifespan_confirms_mode_before_scheduler_with_every_fla
     before = boot.snapshot()
     lifespan, events = lifespan_body(boot,monkeypatch)
     async with lifespan(object()):
-        assert boot.value() == 1
+        assert boot.value() == (1 if worker else None)
         called = next(item for item in events if isinstance(item,tuple))
-        assert called == ('scheduler',1,{'outbound_mode':MODE})
+        assert called == ('scheduler',1 if worker else None,{'outbound_mode':MODE if worker else 'legacy'})
         assert events.index('mode') < events.index(called)
     assert boot.snapshot() == before
 

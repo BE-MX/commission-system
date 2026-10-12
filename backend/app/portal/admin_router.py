@@ -15,7 +15,7 @@ from app.core.response import ok
 from app.portal import admin_service as service
 from app.portal.auth_service import require_enabled
 from app.portal.errors import PortalError, reject
-from app.portal.schemas import (PortalInput, CatalogImageInput, NotificationRetryInput, AccountUpdate, CustomerCreate, CustomerUpdate, CustomerCatalogUpdate, InvitationInput, ReasonInput, RebindInput, TransferInput, MappingInput, SiteUpdate, CatalogImport, CatalogUpdate, ProposalInput, ApproveInput, PiProposalInput, PublishPiInput, VoidPiInput)
+from app.portal.schemas import (PortalInput, CatalogImageInput, NotificationRetryInput, AccountUpdate, CustomerCreate, CustomerUpdate, CustomerCatalogUpdate, AccountCreate, AccountPasswordUpdate, ReasonInput, RebindInput, TransferInput, MappingInput, SiteUpdate, CatalogImport, CatalogUpdate, ProposalInput, ApproveInput, PiProposalInput, PublishPiInput, VoidPiInput)
 
 
 class AdminRoute(APIRoute):
@@ -152,19 +152,29 @@ def update_customer_catalog(access_id: UUID, body: CustomerCatalogUpdate, expect
     return ok(data)
 
 
-@router.post("/customers/{access_id}/invitations")
-def invite(access_id: UUID, body: InvitationInput, command_key=Depends(idempotency_key),
-           actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
-    data = service.invite(db, actor, access_id, command_key, body)
+@router.post("/customers/{access_id}/accounts")
+def create_account(access_id: UUID, body: AccountCreate, command_key=Depends(idempotency_key),
+                   actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.auth.utils import hash_password
+    from app.portal.password_service import create_account as create, preflight_create
+    preflight_create(db, actor, access_id)
+    db.commit()
+    hashed = hash_password(body.password.get_secret_value())
+    data = create(db, actor, access_id, command_key, body, hashed)
     db.commit()
     code = 200 if data["replayed"] else 201
     return JSONResponse(status_code=code, content=ok(data, code=code))
 
 
-@router.post("/invitations/{invitation_id}/revoke")
-def revoke_invitation(invitation_id: UUID, body: ReasonInput, expected=Depends(expected_version),
-                      actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
-    data = service.revoke_invitation(db, actor, invitation_id, expected, body.reason)
+@router.patch("/accounts/{account_id}/password")
+def reset_password(account_id: UUID, body: AccountPasswordUpdate, expected=Depends(expected_version),
+                   actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.auth.utils import hash_password
+    from app.portal.password_service import reset_password as reset, password_target
+    password_target(db, actor, account_id, expected)
+    db.commit()
+    hashed = hash_password(body.password.get_secret_value())
+    data = reset(db, actor, account_id, expected, body, hashed)
     db.commit()
     return ok(data)
 

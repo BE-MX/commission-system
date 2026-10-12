@@ -50,14 +50,14 @@ test('requests stay same-origin with no-store, CSRF and exact version/key contra
   assert.throws(() => client.product('https://attacker.invalid'), { code: 'INVALID_INPUT' })
 })
 
-test('bootstrap, activation and verify use preauth CSRF; wrong OTP remains retryable', async () => {
-  const { client, calls } = setup(ok({ csrf_token: 'preauth' }), ok({ challenge_id: ID }, 202), failure(401, 'AUTH_FAILED'), ok(identity()))
+test('password login uses preauth CSRF; wrong password remains retryable', async () => {
+  const { client, calls } = setup(ok({ csrf_token: 'preauth' }), failure(401, 'AUTH_FAILED'), ok(identity()))
   await client.bootstrap()
-  await client.challenge({ email: 'buyer@example.test', invitationToken: 'x'.repeat(32) })
-  assert.equal(JSON.parse(calls[1][1].body).purpose, 'activate')
-  await assert.rejects(client.verify(ID, '123456'), { code: 'AUTH_FAILED', traceId: 'trace-1' })
-  await client.verify(ID, '654321')
-  assert.equal(calls[3][1].headers['X-Portal-CSRF'], 'preauth')
+  await assert.rejects(client.login('buyer@example.test', 'wrong-password'), { code: 'AUTH_FAILED', traceId: 'trace-1' })
+  await client.login('buyer@example.test', 'correct-password')
+  assert.equal(calls[2][0], '/api/portal/v1/auth/login')
+  assert.deepEqual(JSON.parse(calls[2][1].body), { email: 'buyer@example.test', password: 'correct-password' })
+  assert.equal(calls[2][1].headers['X-Portal-CSRF'], 'preauth')
   assert.equal(client.session.me.account_public_id, ID)
 })
 

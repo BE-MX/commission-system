@@ -28,7 +28,6 @@ from app.invoice.models import Invoice, InvoiceItem
 from app.portal import admin_service, pi_pdf, router
 from app.portal.models import (Account, Membership, CustomerAccess, CatalogGrant, CatalogItem,
     OrderRequest, Revision, RequestLine, CommandReceipt, Conversion, Publication, OutboxEvent, AuditEvent)
-from app.portal.security import open_secret
 from app.receipt.models import ReceiptIntent
 from test_mysql_full_application import assembled, boot  # noqa: F401
 
@@ -100,12 +99,12 @@ def commerce(assembled,service_schema,monkeypatch,request):
         accounts=[]
         for access in (own_access,other_access):
             account=Account(email_normalized=uuid4().hex[:16]+'@example.test',email_display='Buyer@example.test',
-                contact_name='Buyer',status='active',verified_at=beijing_now())
+                contact_name='Buyer',status='active',verified_at=beijing_now(),password_hash=own.password_hash)
             db.add(account);db.flush();db.add(Membership(site_id=access.site_id,account_id=account.id,access_id=access.id,status='active'))
             accounts.append((account.id,account.email_normalized))
         c.buyer_id,c.buyer_email=accounts[0];c.other_buyer_id,c.other_buyer_email=accounts[1]
         forwarded = Account(email_normalized=uuid4().hex[:16]+'@example.test', email_display='Forwarded@example.test',
-            contact_name='Valid foreign buyer', status='active', verified_at=beijing_now())
+            contact_name='Valid foreign buyer', status='active', verified_at=beijing_now(),password_hash=own.password_hash)
         db.add(forwarded);db.flush()
         forwarded_member = Membership(site_id=other_access.site_id, account_id=forwarded.id, access_id=other_access.id, status='active')
         db.add(forwarded_member);db.flush()
@@ -173,17 +172,9 @@ def customer_login(client,c,email):
     csrf=bootstrap.json()['data']['csrf_token']
     cookies=bootstrap.headers.get('set-cookie','').lower()
     assert 'httponly' in cookies and 'secure' in cookies and 'samesite=lax' in cookies
-    challenge=client.post('/api/portal/v1/auth/challenges',json={'email':email,'purpose':'login'},headers={'X-Portal-CSRF':csrf})
-    assert challenge.status_code==202
-    challenge_id=challenge.json()['data']['challenge_id']
-    with Session(c.app.ctx.engine) as db:
-        event=db.scalar(select(OutboxEvent).where(OutboxEvent.aggregate_public_id==challenge_id))
-        code=open_secret(c.app.settings.PORTAL_MAIL_KEYS['v1'],event.secret_envelope,
-            event_key=event.event_key,purpose='login',object_id=challenge_id)
-    wrong='000000' if code!='000000' else '111111'
-    invalid=client.post('/api/portal/v1/auth/verify',json={'challenge_id':challenge_id,'code':wrong},headers={'X-Portal-CSRF':csrf})
+    invalid=client.post('/api/portal/v1/auth/login',json={'email':email,'password':'wrong-test-password'},headers={'X-Portal-CSRF':csrf})
     assert invalid.status_code==401 and invalid.json()['data']['error_code']=='AUTH_FAILED'
-    verified=client.post('/api/portal/v1/auth/verify',json={'challenge_id':challenge_id,'code':code},headers={'X-Portal-CSRF':csrf})
+    verified=client.post('/api/portal/v1/auth/login',json={'email':email,'password':c.password},headers={'X-Portal-CSRF':csrf})
     assert verified.status_code==200
     return Secret(verified.json()['data']['csrf_token']),Secret(client.cookies.get(router.cookie_name('session')))
 

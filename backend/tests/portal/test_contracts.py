@@ -60,7 +60,7 @@ def config(**overrides):
                   PORTAL_ORIGIN="https://shop.example", APP_ENV="production",
                   PORTAL_CSRF_KEYS={"v1": secrets.token_hex(32)}, PORTAL_CSRF_KEY_VERSION="v1",
                   PORTAL_MAIL_KEYS={"v1": secrets.token_hex(32)}, PORTAL_MAIL_KEY_VERSION="v1",
-                  PORTAL_OTP_SECRET=secrets.token_hex(32))
+                  PORTAL_AUTH_SECRET=secrets.token_hex(32))
     values.update(overrides)
     return SimpleNamespace(**values)
 
@@ -74,7 +74,7 @@ def test_invalid_launch_origin_is_rejected(origin):
 def test_launch_fails_closed_without_separate_keys():
     validate_configuration(config())
     with pytest.raises(ValueError):
-        validate_configuration(config(PORTAL_OTP_SECRET=""))
+        validate_configuration(config(PORTAL_AUTH_SECRET=""))
     with pytest.raises(ValueError):
         validate_configuration(config(PORTAL_ENABLED=False))
     with pytest.raises(ValueError):

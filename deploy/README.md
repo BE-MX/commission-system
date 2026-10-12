@@ -1,7 +1,7 @@
 # 统一部署入口
 
 客户邮件 Worker 使用北京独立 systemd 服务并纳入同一候选的准备、发送排空、激活及版本核验。首次 CLI/OAuth 准备和耐久回执恢复见 [邮件 Worker 部署](mail-worker.md)。
-客户下单门户目前仅准备接入、未登记活跃目标；构建、HTTPS与经营门禁见[客户下单门户发布接入](customer-orders.md)。
+客户下单门户已登记北京shop.leshine.cloud发布目标；登记不证明静态站已发布或经营验收已通过。构建、HTTPS与经营门禁见[客户下单门户发布接入](customer-orders.md)，实际服务器状态见[生产准备记录](../docs/requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)。
 
 OpenClaw、MCP、中继及配套同步已于 2026-09-26 统一到北京 `leshine.cloud`；后续新增 Agent 服务同样部署北京。部署归属、迁移入口、回滚和验证见 [Agent 服务部署](agent-cloud-migration.md)。出库发布与 DDL writer 必须使用本次主机调整后的部署器，旧新加坡 unit 已 mask。
 
@@ -43,7 +43,7 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 独立维修仍可用 `deploy\deploy.bat --okki-outbound-only --prepare-only` 预检，去掉 `--prepare-only` 仅更新并启用该服务，不做应用发布或迁移。此专项入口显式启用调度，与普通发布保留原状态不同；存在未完成的协调发布时拒绝穿越其暂停边界。
 
-上述激活和基线恢复目前仍是legacy初始兼容行为。门户持久模式切换不得据此上线：同步bootstrap、按mode选择目标schedule、专项启用拒绝、兼容回退、finalize共同核验和旧调度门禁尚未闭环，详见客户门户开发文档1.19/1.20。三个模块的静态import不验证main内动态auth.js/mysql2、真实远端子进程或供应商合同。
+门户候选已实现持久mode选择、旧调度门禁和finalize核验；这些代码与隔离验证不代替实际发布及供应商业务验收。门户开启不默认开启出库执行器、小满推送或自动回款。三个模块的静态import不验证main内动态auth.js/mysql2、真实远端子进程或供应商合同；实际通过范围及尚未验收项见客户门户生产准备记录。
 
 普通发布中途失败，出库可能保持暂停。先检查本机 `.deploy_state/publish-current.json` 的 `outbound` 阶段及北京 `.deploy-state/ark-outbound/release-current.json`，核实应用/schema状态后从同一本地发布目录、同一完整 revision 和发布范围重试；本地持久 `release_id` 与原调度基线会被保留。不同机器、发布范围、revision 或专项发布不能覆盖未完成的恢复记录，即使脚本摘要相同也不能接管；不要删除日志或直接启动旧脚本来绕过恢复。迁移自身失败仍遵循下方数据库恢复规则。
 

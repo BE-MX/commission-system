@@ -49,7 +49,7 @@ def close_event(row, status, error=None):
 def cleanup_expired(db):
     lock_authority(db, force=True)
     rows = db.scalars(select(OutboxEvent).where(OutboxEvent.secret_envelope.is_not(None),
-        OutboxEvent.secret_expires_at <= beijing_now()).order_by(OutboxEvent.id).limit(100)).all()
+        OutboxEvent.event_type.in_(AUTH_EVENTS), OutboxEvent.secret_expires_at <= beijing_now()).order_by(OutboxEvent.id).limit(100)).all()
     for row in rows:
         close_event(row, "expired", "SECRET_EXPIRED")
     return len(rows)

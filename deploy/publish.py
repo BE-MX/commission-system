@@ -294,6 +294,7 @@ def publish(args):
             journal['completed'].append('beijing-mail-worker')
         atomic_json(STATE / "publish-current.json", journal)
         if office:
+            step('maintenance-resume', '全部制品验收后恢复数据库事件和镜像定时同步', schema_release.resume_maintenance, office)
             schema_release.complete(office)
         summary = {"revision": revision, "scope": "cloud-only" if args.cloud_only else "office-and-cloud",
                    "schema": backend["schema"], "transfer_bytes": sum(item["bytes"] for item in prepared),
@@ -327,6 +328,9 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument('--customer-portal-site', choices=['https', 'verify'], help='Configure or verify the approved Beijing customer-site HTTPS boundary; no business gates')
+    parser.add_argument('--customer-portal-db-backup', action='store_true', help='Protected full revision-182 snapshot on office; no migration or service activation')
+    parser.add_argument('--customer-portal-config', choices=['prepare', 'enable-access', 'stop-orders', 'close'], help='Merge protected Beijing password access config; order/PI/mail/outbound gates stay off')
     parser.add_argument('--static-retention-only', action='store_true', help='Prune expired main-frontend assets and backups without restarting applications')
     parser.add_argument('--colorwork-backup-policy', action='store_true', help='Install hourly retention of two recent Colorwork recovery backups')
     parser.add_argument('--agent-cloud-migration', choices=['prepare', 'validate-staged', 'freeze-source', 'copy-frozen-state', 'configure-target', 'activate-target', 'verify-target', 'retire-source', 'nginx-prepare', 'nginx-activate', 'nginx-verify', 'source-routes-prepare', 'source-routes-activate', 'source-routes-verify'], help='Execute one journalled phase of the inspected Agent migration')
@@ -358,6 +362,24 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if args.customer_portal_config:
+            if any(value for key, value in vars(args).items() if key not in {'customer_portal_config', 'revision'}):
+                raise RuntimeError('Customer configuration only accepts its phase and pinned revision')
+            from customer_portal_site import execute
+            execute(args.customer_portal_config, args.revision, config=True)
+            sys.exit(0)
+        if args.customer_portal_db_backup:
+            if any(value for key, value in vars(args).items() if key not in {'customer_portal_db_backup', 'revision', 'live_root', 'no_pull'}):
+                raise RuntimeError('Portal backup only accepts the installed root and pinned revision')
+            from customer_portal_backup import execute
+            execute(args.revision)
+            sys.exit(0)
+        if args.customer_portal_site:
+            if any(value for key, value in vars(args).items() if key not in {'customer_portal_site', 'prepare_only', 'revision'}):
+                raise RuntimeError('Customer-site infrastructure only accepts its phase and --prepare-only')
+            from customer_portal_site import execute
+            execute(args.customer_portal_site, args.revision, args.prepare_only)
+            sys.exit(0)
         if args.static_retention_only:
             from static_retention_release import execute
             print(json.dumps(execute(args, ROOT, Path(__file__).resolve().parent.parent, deployment_lock)), flush=True)

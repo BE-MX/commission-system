@@ -72,6 +72,7 @@ JOB_CUSTOMER_SOURCE_RECONCILE = "customer_source_reconcile"
 JOB_OKKI_OUTBOUND_RECONCILE = "okki_outbound_reconcile"
 JOB_OKKI_OUTBOUND_DELETE_RECONCILE = "okki_outbound_delete_reconcile"
 JOB_PORTAL_AUTH_MAIL = "portal_auth_mail"
+JOB_PORTAL_AUTH_CLEANUP = "portal_auth_cleanup"
 JOB_PORTAL_NOTIFICATIONS = "portal_notifications"
 JOB_PORTAL_OUTBOUND = "portal_outbound"
 
@@ -123,26 +124,21 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     from app.customer.work_item_source_service import reconcile_sources_job
 
     settings = get_settings()
-    if outbound_mode not in {'legacy', 'outbound-worker-v1'} or (settings.PORTAL_ENABLED and outbound_mode == 'legacy'):
+    worker_enabled = settings.PORTAL_ENABLED and settings.PORTAL_OUTBOUND_WORKER_ENABLED
+    if outbound_mode not in {'legacy', 'outbound-worker-v1'} or (worker_enabled and outbound_mode == 'legacy'):
         raise RuntimeError('Outbound mode must be confirmed before scheduler registration')
 
-    # Keep cleanup active when only mail delivery is disabled. The portal feature
-    # gate avoids touching unmigrated tables on existing installations.
+    # Managed password login has no invitation/OTP mail job.
     if settings.PORTAL_ENABLED:
-        from app.portal.mail_worker import run_once as deliver_portal_auth_mail
-
-        scheduler.add_job(
-            deliver_portal_auth_mail,
-            trigger="interval", seconds=5,
-            id=JOB_PORTAL_AUTH_MAIL, replace_existing=True,
-            max_instances=1, coalesce=True, misfire_grace_time=30,
-        )
+        from app.schedulers.portal_auth_cleanup import cleanup_portal_auth_secrets
+        scheduler.add_job(cleanup_portal_auth_secrets, trigger="interval", minutes=1,
+            id=JOB_PORTAL_AUTH_CLEANUP, replace_existing=True, max_instances=1, coalesce=True)
     if settings.PORTAL_ENABLED and settings.PORTAL_NOTIFICATION_ENABLED:
         from app.schedulers.portal_notifications import deliver_portal_notifications
         scheduler.add_job(deliver_portal_notifications, trigger="interval", seconds=5,
             id=JOB_PORTAL_NOTIFICATIONS, replace_existing=True,
             max_instances=1, coalesce=True, misfire_grace_time=30)
-    if settings.PORTAL_ENABLED:
+    if worker_enabled:
         from app.schedulers.portal_outbound import process_portal_outbound
         scheduler.add_job(process_portal_outbound, trigger="interval", seconds=30,
             id=JOB_PORTAL_OUTBOUND, replace_existing=True, max_instances=1, coalesce=True,
@@ -466,7 +462,7 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
         from app.invoice.outbound_mode import reconcile_legacy
         return reconcile_legacy(SessionLocal)
 
-    if settings.OKKI_OUTBOUND_AUTO_ENABLED and not settings.PORTAL_ENABLED and outbound_mode == 'legacy':
+    if settings.OKKI_OUTBOUND_AUTO_ENABLED and not worker_enabled and outbound_mode == 'legacy':
         scheduler.add_job(
             _okki_outbound_reconcile_job,
             trigger="interval", minutes=30,
@@ -682,7 +678,8 @@ def start_scheduler(*, outbound_mode: str | None = None) -> Optional[AsyncIOSche
     if outbound_mode is None:
         from app.bootstrap.portal_outbound import initialize_portal_outbound
         outbound_mode = initialize_portal_outbound()
-    if outbound_mode not in {'legacy', 'outbound-worker-v1'} or (settings.PORTAL_ENABLED and outbound_mode == 'legacy'):
+    worker_enabled = settings.PORTAL_ENABLED and settings.PORTAL_OUTBOUND_WORKER_ENABLED
+    if outbound_mode not in {'legacy', 'outbound-worker-v1'} or (worker_enabled and outbound_mode == 'legacy'):
         raise RuntimeError('Outbound mode must be confirmed before scheduler startup')
     if not settings.SCHEDULER_ENABLED:
         logger.info("APScheduler disabled (SCHEDULER_ENABLED=false)")
