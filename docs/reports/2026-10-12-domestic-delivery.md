@@ -1,6 +1,6 @@
 # 内贸逐件分批交付与货款核销验收
 
-交付分支：`codex/domestic-shipment-settlement`。本地实现及隔离验收，未合并、未推送、未部署、未执行共享数据库迁移。
+实现提交：`9cae79df`，开发分支 `codex/domestic-shipment-settlement`。本地实现与隔离验收完成，2026-10-12 已获合并 main 并推送 origin 授权。未部署、未执行共享数据库迁移。
 
 ## 结果
 
