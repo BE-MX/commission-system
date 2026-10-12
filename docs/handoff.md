@@ -1,3 +1,10 @@
+## 2026-10-12 销售研究 Agent 北京准备（Codex，MiMo 待提供）
+
+- 独立分支 codex/sales-agent-cloud。用户授权云端配置，后补 MiMo；已用统一 deploy.bat 完成专用 ark-sales-agent prepare/configure/verify，安装候选 a9f0cd8856c9a5789c79a9e6a9ffec7424e283c1，disabled/inactive，main heartbeat=0m。
+- MCP probe、实际 Parallel Free 搜索、HTTPS task251 context 契约与凭据权限通过；新凭据11有效、旧 Mac 凭据7已吊销，没有扩大90号账号权限。缺失项仅 MiMo key。
+- Crystal customer628/task251/Run266 仍 failed，未重试或写研究证据；需 MiMo 接入后 CAS 重试与作战卡验收。旧门控 uncertain，不能伪造主体或直接标完成。
+- 北京邮件 Worker 冻结状态和既有数据保留；Mac 历史队列/会话无源快照，未迁移。未发邮件、未推送或合并 main。报告 docs/reports/2026-10-12-sales-agent-cloud-preparation.md；运行边界 deploy/sales-agent-cloud.md。
+
 # 当前交接与待办
 
 ## 2026-10-12 订单通知卡片磨砂玻璃质感恢复（Codex，已验证并授权合并推送，未部署）

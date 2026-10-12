@@ -69,8 +69,8 @@ def test_unknown_token_issuance_cannot_be_sent_twice(tmp_path, monkeypatch):
     # Windows cannot fsync a directory; the actual remote is POSIX.
     if sys.platform == 'win32':
         original_open = credentials.os.open
-        monkeypatch.setattr(credentials.os, 'open', lambda path, flags, *args: original_open(
-            journal if path == journal.parent else path, flags, *args))
+        monkeypatch.setattr(credentials.os, 'open', lambda path, flags, *args: original_open(journal, credentials.os.O_RDWR)
+            if path == journal.parent else original_open(path, flags, *args))
     credentials.record_intent()
     before = journal.read_bytes()
     with pytest.raises(RuntimeError, match='already attempted'):
