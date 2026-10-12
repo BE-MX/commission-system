@@ -301,13 +301,18 @@ def connect_model(payload):
     previous = dict(provider['models'][0])
     previous.update(id=model, name=model)
     provider.update(baseUrl=base_url, models=[previous], agentRuntime={'id': 'openclaw'})
+    # The dedicated research instance uses MiMo. Preserve the separate stored
+    # DeepSeek credential and the generic Gateway, without loading a mail provider here.
+    config['models']['providers'].pop('deepseek', None)
     defaults = config['agents']['defaults']
-    defaults['models'] = {name: value for name, value in defaults['models'].items() if not name.startswith('mimo/')}
+    defaults['models'] = {name: value for name, value in defaults['models'].items()
+                          if not name.startswith(('mimo/', 'deepseek/'))}
     defaults['models']['mimo/' + model] = {'agentRuntime': {'id': 'openclaw'}}
     defaults['model'] = {'primary': 'mimo/' + model}
     defaults['maxConcurrent'] = 1
     # The uninstalled fallback is not part of the migrated search provider.
     config['plugins']['entries'].pop('duckduckgo', None)
+    config['plugins']['entries']['deepseek'] = {'enabled': False}
     key_path = PROFILE / 'secrets/mimo-api-key'
     if key_path.exists() and not (backup / 'mimo-api-key').exists():
         write(backup / 'mimo-api-key', key_path.read_bytes())
@@ -362,10 +367,6 @@ def activate(payload):
     if ready['runtime_revision'] != payload['runtime_revision'] or state['model']['primary'] != ready['model']:
         raise RuntimeError('Model readiness does not match the runtime')
     run(cli_command(payload, 'config', 'validate'))
-    # This is the already configured, packaged DeepSeek model provider.
-    # Its declared provider capability must be registered before Gateway startup.
-    run(cli_command(payload, 'plugins', 'enable', 'deepseek', '--accept-capabilities'))
-    require_model_ready(payload)
     run(['systemctl', 'enable', '--now', SERVICE])
     # Scheduling remains zero during the first fixed-customer acceptance turn.
     for _ in range(12):
