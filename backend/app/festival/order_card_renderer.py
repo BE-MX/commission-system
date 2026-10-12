@@ -92,9 +92,7 @@ def render_order_card(event, assets_root, font, display_font, wrap):
     created_text = (created.strftime("%Y-%m-%d %H:%M") if isinstance(created, datetime)
                     else str(created or beijing_now().strftime("%Y-%m-%d %H:%M")))
     _engrave(image, (98, 565), f"方舟订单 · {created_text}", font(25))
-    # Keep the layout at its design resolution, then downsample text and glass
-    # together. Indexed PNG preserves transparent edges without shipping grain
-    # as a nearly megabyte-sized true-color image to every DingTalk client.
-    return image.resize((800, 450), Image.Resampling.LANCZOS).quantize(
-        colors=256, method=Image.Quantize.FASTOCTREE,
-    )
+    # Keep the design resolution and full RGBA tones. Palette reduction turns
+    # the frosted texture and soft highlights into visible color bands.
+    # The caller uses lossless PNG compression for the image URL.
+    return image
