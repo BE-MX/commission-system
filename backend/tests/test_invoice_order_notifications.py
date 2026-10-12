@@ -281,34 +281,106 @@ def test_ordinary_orders_are_observed_without_notices(db):
     assert db.query(FestivalEvent).count() == 0
 
 
-def test_team_comes_from_active_okki_binding(db):
+@pytest.mark.parametrize("binding_status", ["active", "inactive", "deleted", "missing"])
+def test_team_comes_from_current_performance_department(db, binding_status):
     from sqlalchemy import text
     from app.auth.models import ArkUser, ArkUserExternalBinding
 
     db.execute(text("CREATE TABLE lsordertest.user_rel_team (user_id TEXT, Team TEXT)"))
     db.execute(text("INSERT INTO lsordertest.user_rel_team VALUES ('U1', '先锋战队')"))
-    db.add(ArkUser(id=101, username="salesperson", real_name="Salesperson", password_hash="test"))
-    db.add(ArkUserExternalBinding(ark_user_id=101, provider="okki", external_account_id="U1",
-                                binding_status="active"))
+    user = ArkUser(id=101, username="salesperson", real_name="Salesperson", password_hash="test",
+                   okki_department_id=24925, okki_department_name="多财多亿")
+    db.add(user)
+    if binding_status != "missing":
+        db.add(ArkUserExternalBinding(
+            ark_user_id=101, provider="okki", external_account_id="U1",
+            binding_status="inactive" if binding_status == "inactive" else "active",
+            deleted_at=datetime(2026, 10, 9, 12) if binding_status == "deleted" else None,
+        ))
     db.flush()
     detect(db)
     invoice(db, "new-big", new=1, amount=5000)
     assert detect(db) == 2
     assert {row.detail for row in db.query(FestivalEvent)} == {
-        "恭喜先锋战队的Salesperson新签国家未知的客户！"}
+        "恭喜多财多亿的Salesperson新签国家未知的客户！"}
     from app.invoice.order_notification_service import delivery_order_detail
     event = notification_service._event_dict(db.query(FestivalEvent).first())
     event.update(subject_id="ark:101", detail="PRIVATE CUSTOMER")
-    assert delivery_order_detail(db, event) == "恭喜先锋战队的Salesperson新签国家未知的客户！"
-    db.query(ArkUserExternalBinding).one().binding_status = "inactive"
+    assert delivery_order_detail(db, event) == "恭喜多财多亿的Salesperson新签国家未知的客户！"
+    user.okki_department_name = "乘风"
     db.flush()
     event["subject_id"] = "U1"
-    assert delivery_order_detail(db, event) == "恭喜未分队的Salesperson新签国家未知的客户！"
-    binding = db.query(ArkUserExternalBinding).one()
-    binding.binding_status = "active"
-    binding.deleted_at = datetime(2026, 10, 9, 12)
+    assert delivery_order_detail(db, event) == "恭喜乘风的Salesperson新签国家未知的客户！"
+
+
+@pytest.mark.parametrize("department", [None, "", "  \t "])
+def test_missing_department_does_not_fall_back_to_festival_roster(db, department):
+    from sqlalchemy import text
+    from app.auth.models import ArkUser, ArkUserExternalBinding
+    from app.invoice.order_notification_service import delivery_order_detail
+
+    db.execute(text("CREATE TABLE lsordertest.user_rel_team (user_id TEXT, Team TEXT)"))
+    db.execute(text("INSERT INTO lsordertest.user_rel_team VALUES ('U1', '先锋战队')"))
+    db.add(ArkUser(id=101, username="salesperson", real_name="Salesperson", password_hash="test",
+                   okki_department_name=department))
+    db.add(ArkUserExternalBinding(ark_user_id=101, provider="okki", external_account_id="U1",
+                                binding_status="active"))
     db.flush()
+    detect(db)
+    invoice(db, "missing-department", new=1)
+    assert detect(db) == 1
+    event = notification_service._event_dict(db.query(FestivalEvent).one())
+    assert event["detail"] == "恭喜未分队的Salesperson新签国家未知的客户！"
     assert delivery_order_detail(db, event) == "恭喜未分队的Salesperson新签国家未知的客户！"
+
+
+def test_serena_without_festival_roster_uses_current_department(db):
+    from app.auth.models import ArkUser
+    from app.invoice.order_notification_service import delivery_order_detail
+
+    db.add(ArkUser(id=101, username="Serena", real_name="栾奕", password_hash="test",
+                   okki_department_id=24925, okki_department_name="多财多亿"))
+    db.flush()
+    detect(db)
+    row = invoice(db, "Serena-1001", new=1)
+    row.sales_user_name = "Serena"
+    db.flush()
+    assert detect(db) == 1
+    event = notification_service._event_dict(db.query(FestivalEvent).one())
+    assert event["detail"] == "恭喜多财多亿的Serena新签国家未知的客户！"
+    assert delivery_order_detail(db, event) == event["detail"]
+
+
+@pytest.mark.asyncio
+async def test_pending_notice_uses_changed_department_in_card_and_message_once(engine, monkeypatch):
+    from app.auth.models import ArkUser
+
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(notification_service, "SessionLocal", factory)
+    monkeypatch.setattr(notification_service, "beijing_now", lambda: datetime(2026, 10, 9, 12))
+    with factory() as db:
+        db.add(ArkUser(id=101, username="salesperson", real_name="Salesperson", password_hash="test",
+                       okki_department_name="多财多亿"))
+        db.flush()
+        detect(db)
+        invoice(db, "change-team", new=1)
+        assert detect(db) == 1
+        assert "多财多亿" in db.query(FestivalEvent).one().detail
+        db.get(ArkUser, 101).okki_department_name = "乘风"
+        db.commit()
+    images, messages = [], []
+    class Sender:
+        async def send_markdown(self, title, markdown):
+            messages.append(markdown)
+    monkeypatch.setattr(notification_service, "_festival_sender", lambda: Sender())
+    monkeypatch.setattr(notification_service, "render_event_image", lambda event: images.append(event) or None)
+    monkeypatch.setattr(notification_service, "_public_url", lambda path: "https://files.test/card.png")
+    assert (await notification_service.monitor_festival_events())["sent"] == 1
+    assert images[0]["detail"] == "恭喜乘风的Salesperson新签国家未知的客户！"
+    assert images[0]["detail"] in messages[0]
+    assert "多财多亿" not in messages[0]
+    assert (await notification_service.monitor_festival_events())["sent"] == 0
+    assert len(messages) == 1
 
 
 @pytest.mark.asyncio
@@ -318,6 +390,9 @@ async def test_legacy_pending_copy_is_redacted_and_other_event_types_stay_unsent
     monkeypatch.setattr(notification_service, "beijing_now", lambda: datetime(2026, 10, 9, 12))
     notification_service._detect_and_load_pending()
     with factory() as db:
+        from app.auth.models import ArkUser
+        db.add(ArkUser(id=101, username="salesperson", real_name="Salesperson", password_hash="test",
+                       okki_department_name="多财多亿"))
         invoice(db, "legacy", amount=5000)
         for kind, key in [("big_deal", "deal:remote-legacy"),
                           ("order_placed", "order:remote-legacy"), ("rank_up_sign", "rank:legacy")]:
@@ -333,7 +408,7 @@ async def test_legacy_pending_copy_is_redacted_and_other_event_types_stay_unsent
     monkeypatch.setattr(notification_service, "render_event_image", lambda event: images.append(event) or None)
     monkeypatch.setattr(notification_service, "_public_url", lambda path: "https://files.test/card.png")
     assert (await notification_service.monitor_festival_events())["sent"] == 1
-    assert images[0]["detail"] == "恭喜未分队的Salesperson成交国家未知的客户！"
+    assert images[0]["detail"] == "恭喜多财多亿的Salesperson成交国家未知的客户！"
     assert "PRIVATE CUSTOMER" not in sent[0]
     with factory() as db:
         assert db.query(FestivalEvent).filter(FestivalEvent.dingtalk_sent_at.is_(None)).count() == 2
