@@ -1,5 +1,14 @@
 # 当前交接与待办
 
+## 2026-10-12 公告代码生产发布完成（Codex，已上线）
+
+- 两地应用实际版本均为c797c45e（发布开始时main9afa3cb5与线上门户9e16a4e1的集成）；共享库单head186_portal_announcement_merge，公告push_dingtalk列非空/默认1/NULL记录0。两地真实health及公网主站、PM、门户页面正常，五个已登记静态目标完整核验。
+- 原发布身份b68389384a5e4e8b8f69bf4223f0ee8e完成；办公室、北京、色卡、WhatsApp和物流恢复；出库legacy模式原active/enabled基线恢复并verified；邮件保持原inactive/disabled。最终schema-writers completed，publish succeeded，资源保留succeeded，控制入口exit0。无真实钉钉测试投递。
+- 已安全处理启动健康等待、两地主机既有未跟踪头像及出库核验锁竞争，保留事故日志、原头像与回滚制品。恢复改动独立审查，相关部署回归161项通过，原17项发票UI约定问题未改。
+- 发布期间其他任务新增的内贸交付9cae79df/b2a4db10未包含本次固定候选；其186_domestic_delivery与本次186merge需在下一集成新增汇合迁移。生产集成/恢复提交保留codex/latest-release-integration，未额外推送origin。
+- [发布记录](reports/2026-10-12-announcement-production-release.md)；完整运行证据在主目录.deploy_state/announcement-release-20261012/。主目录其他未提交文件保持原字节，只新增发布记录。
+
+
 ## 2026-10-12 最新代码生产集成候选（Codex，部署已授权）
 
 - 首次固定候选 c797c45e 已执行 183→184/185→186，但办公室启动在权限初始化期间超过既有约30秒验收窗口，部署器停止 writer 并保留 schema-writers.upgraded / publish.failed；未回滚旧代码。启动日志至数据库及规则加载成功，无应用异常；现场只读平均查询往返23.4ms、248条权限。专项恢复入口绑定同一应用revision、原发布id b68389384a5e4e8b8f69bf4223f0ee8e，300秒真实健康等待并保护失败停止边界；15项替身/状态漂移与阶段失败回归、独立审查通过，准备后接续原发布，不再DDL。
