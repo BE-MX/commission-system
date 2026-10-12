@@ -338,7 +338,7 @@ if __name__ == "__main__":
     parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Beijing outbound worker")
     parser.add_argument('--okki-sync-only', metavar='PLAN_JSON', help='Prepare/activate only the reviewed Beijing outbound mirror')
     parser.add_argument('--mail-worker-stage', choices=['prepare', 'provision', 'configure', 'oauth', 'enable-sending'], help='Prepare Beijing mail service/OAuth without activating application code')
-    parser.add_argument('--sales-agent-stage', choices=['prepare', 'configure', 'verify', 'model', 'activate', 'verify-active'], help='Prepare or activate the dedicated Beijing research agent')
+    parser.add_argument('--sales-agent-stage', choices=['prepare', 'configure', 'verify', 'model', 'activate', 'verify-active', 'pause'], help='Prepare or activate the dedicated Beijing research agent')
     parser.add_argument('--sales-agent-model-config', help='Local private model file; transferred through SSH stdin only')
     parser.add_argument('--sales-agent-runtime-revision', help='Full SHA of the existing prepared sales runtime')
     parser.add_argument("--cloud-only", action="store_true")
@@ -368,7 +368,7 @@ if __name__ == "__main__":
                 raise RuntimeError('Sales preparation cannot be combined with application release actions')
             if bool(args.sales_agent_model_config) != (args.sales_agent_stage == 'model'):
                 raise RuntimeError('Model stage requires exactly one private model file')
-            if bool(args.sales_agent_runtime_revision) != (args.sales_agent_stage in {'model', 'activate', 'verify-active'}):
+            if bool(args.sales_agent_runtime_revision) != (args.sales_agent_stage in {'model', 'activate', 'verify-active', 'pause'}):
                 raise RuntimeError('Model activation must bind the existing runtime revision')
             from sales_agent_release import execute
             with deployment_lock():

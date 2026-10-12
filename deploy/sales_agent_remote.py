@@ -49,9 +49,9 @@ def run(args, *, env=None, timeout=300):
 def validate(payload):
     if not re.fullmatch(r'[a-f0-9]{40}', payload.get('revision', '')):
         raise ValueError('Invalid revision')
-    if payload.get('action') not in {'prepare', 'configure', 'verify', 'model', 'activate', 'verify-active'}:
+    if payload.get('action') not in {'prepare', 'configure', 'verify', 'model', 'activate', 'verify-active', 'pause'}:
         raise ValueError('Invalid preparation action')
-    if payload['action'] in {'model', 'activate', 'verify-active'} and not re.fullmatch(r'[a-f0-9]{40}', payload.get('runtime_revision', '')):
+    if payload['action'] in {'model', 'activate', 'verify-active', 'pause'} and not re.fullmatch(r'[a-f0-9]{40}', payload.get('runtime_revision', '')):
         raise ValueError('Invalid runtime revision')
     files = {}
     for name, item in payload.get('files', {}).items():
@@ -362,6 +362,10 @@ def activate(payload):
     if ready['runtime_revision'] != payload['runtime_revision'] or state['model']['primary'] != ready['model']:
         raise RuntimeError('Model readiness does not match the runtime')
     run(cli_command(payload, 'config', 'validate'))
+    # This is the already configured, packaged DeepSeek model provider.
+    # Its declared provider capability must be registered before Gateway startup.
+    run(cli_command(payload, 'plugins', 'enable', 'deepseek', '--accept-capabilities'))
+    require_model_ready(payload)
     run(['systemctl', 'enable', '--now', SERVICE])
     # Scheduling remains zero during the first fixed-customer acceptance turn.
     for _ in range(12):
@@ -382,6 +386,18 @@ def verify_active(payload):
         raise RuntimeError('Gateway is not active and enabled')
     run(cli_command(payload, 'gateway', 'status', '--require-rpc', '--json'), timeout=30)
     return {**state, 'gateway_rpc': 'passed'}
+
+
+def pause(payload):
+    release = ROOT / 'releases' / payload['runtime_revision']
+    if (Path('/etc/systemd/system') / (SERVICE + '.service')).read_text() != unit_text(release):
+        raise RuntimeError('Refusing to stop a different service revision')
+    config = json.loads((PROFILE / 'openclaw.json').read_text())
+    if config['agents']['entries']['main']['heartbeat']['every'] != '0m':
+        raise RuntimeError('Freeze and drain scheduled research before pausing')
+    run(['systemctl', 'disable', '--now', SERVICE])
+    inactive()
+    return {'service': 'inactive', 'enabled': False}
 
 
 def execute(payload):
@@ -407,6 +423,8 @@ def execute(payload):
         detail = activate(payload)
     elif action == 'verify-active':
         detail = verify_active(payload)
+    elif action == 'pause':
+        detail = pause(payload)
     return {'revision': payload['revision'], 'runtime_revision': payload.get('runtime_revision') or payload['revision'],
             'status': action, **detail}
 
