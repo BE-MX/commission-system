@@ -16,6 +16,9 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+import urllib.parse
+import urllib.error
+import time
 
 ROOT = Path('/opt/ark-sales')
 HOME = Path('/var/lib/ark-sales')
@@ -46,8 +49,10 @@ def run(args, *, env=None, timeout=300):
 def validate(payload):
     if not re.fullmatch(r'[a-f0-9]{40}', payload.get('revision', '')):
         raise ValueError('Invalid revision')
-    if payload.get('action') not in {'prepare', 'configure', 'verify'}:
+    if payload.get('action') not in {'prepare', 'configure', 'verify', 'model', 'activate', 'verify-active'}:
         raise ValueError('Invalid preparation action')
+    if payload['action'] in {'model', 'activate', 'verify-active'} and not re.fullmatch(r'[a-f0-9]{40}', payload.get('runtime_revision', '')):
+        raise ValueError('Invalid runtime revision')
     files = {}
     for name, item in payload.get('files', {}).items():
         path = PurePosixPath(name)
@@ -203,9 +208,10 @@ def configure(payload):
     write(ROOT / 'configured.json', json.dumps({'revision': payload['revision']}))
 
 
-def verify(payload):
-    inactive()
-    revision = payload['revision']
+def verify(payload, *, active=False):
+    if not active:
+        inactive()
+    revision = payload.get('runtime_revision') or payload['revision']
     if json.loads((ROOT / 'configured.json').read_text())['revision'] != revision:
         raise RuntimeError('Candidate not configured')
     config = json.loads((PROFILE / 'openclaw.json').read_text())
@@ -220,7 +226,8 @@ def verify(payload):
         mcp['args'] != [str(release / 'services/openclaw-sales-agent/src/server.mjs')] or
         mcp['cwd'] != str(release / 'services/openclaw-sales-agent')):
         raise RuntimeError('Incorrect API owner')
-    if config['agents']['defaults']['models']['mimo/mimo-v2.5']['agentRuntime']['id'] != 'openclaw':
+    selected = config['agents']['defaults']['model']['primary']
+    if config['agents']['defaults']['models'][selected]['agentRuntime']['id'] != 'openclaw':
         raise RuntimeError('Model runtime pin drift')
     if not {'exec', 'write', 'edit', 'apply_patch', 'group:messaging'}.issubset(main['tools']['deny']) or not main['tools']['fs']['workspaceOnly']:
         raise RuntimeError('Main tool permissions drift')
@@ -238,14 +245,151 @@ def verify(payload):
             raise RuntimeError('Invalid private credential file: ' + name)
     return {'model': main.get('model', config['agents']['defaults']['model']),
             'missing_credentials': missing, 'heartbeat': 'disabled', 'gateway_port': 18791,
-            'api_origin': 'https://leshine.cloud', 'service': 'inactive', 'enabled': False, 'mail_state': 'preserved'}
+            'api_origin': 'https://leshine.cloud', 'service': 'active' if active else 'inactive',
+            'enabled': active, 'mail_state': 'preserved'}
+
+
+def model_parameters(data):
+    url = urllib.parse.urlsplit(data.get('base_url', ''))
+    if (url.scheme != 'https' or url.hostname != 'token-plan-cn.xiaomimimo.com' or
+        url.port not in {None, 443} or url.path != '/v1' or url.username or url.password or url.query or url.fragment):
+        raise ValueError('Model URL must match the authorized MiMo endpoint')
+    model = data.get('model', '')
+    if not re.fullmatch(r'mimo-[a-zA-Z0-9.-]{1,60}', model):
+        raise ValueError('Invalid model identifier')
+    key = data.get('api_key', '')
+    if not 16 <= len(key) <= 512 or re.search(r'\s', key):
+        raise ValueError('Invalid model credential format')
+    return url.geturl(), model, key
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def probe_model(base_url, model, key):
+    req = urllib.request.Request(base_url + '/chat/completions', method='POST',
+        headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'},
+        data=json.dumps({'model': model, 'messages': [{'role': 'user', 'content': 'Reply with READY only.'}],
+                         'max_tokens': 64, 'stream': False, 'thinking': {'type': 'disabled'}}).encode())
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(req, timeout=60) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f'Model probe HTTP {exc.code}') from None
+    except (OSError, ValueError):
+        raise RuntimeError('Model probe did not return a valid response') from None
+    if not data.get('choices') or not data['choices'][0].get('message', {}).get('content', '').strip():
+        raise RuntimeError('Model probe has no text response')
+    if data.get('model') != model:
+        raise RuntimeError('Model probe returned a different model identifier')
+    return {'requested_model': model, 'response_model': data.get('model'), 'probe': 'passed'}
+
+
+def connect_model(payload):
+    state = verify(payload)
+    base_url, model, key = model_parameters(payload.get('model_config', {}))
+    result = probe_model(base_url, model, key)
+    path = PROFILE / 'openclaw.json'
+    config = json.loads(path.read_text())
+    backup = ROOT / 'model-backups' / payload['revision']
+    backup.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if not (backup / 'openclaw.json').exists():
+        write(backup / 'openclaw.json', path.read_bytes())
+    provider = config['models']['providers']['mimo']
+    previous = dict(provider['models'][0])
+    previous.update(id=model, name=model)
+    provider.update(baseUrl=base_url, models=[previous], agentRuntime={'id': 'openclaw'})
+    defaults = config['agents']['defaults']
+    defaults['models'] = {name: value for name, value in defaults['models'].items() if not name.startswith('mimo/')}
+    defaults['models']['mimo/' + model] = {'agentRuntime': {'id': 'openclaw'}}
+    defaults['model'] = {'primary': 'mimo/' + model}
+    defaults['maxConcurrent'] = 1
+    # The uninstalled fallback is not part of the migrated search provider.
+    config['plugins']['entries'].pop('duckduckgo', None)
+    key_path = PROFILE / 'secrets/mimo-api-key'
+    if key_path.exists() and not (backup / 'mimo-api-key').exists():
+        write(backup / 'mimo-api-key', key_path.read_bytes())
+    write(key_path, key + '\n')
+    private_owner(key_path)
+    write(path, json.dumps(config, ensure_ascii=False, indent=2))
+    private_owner(path)
+    write(ROOT / 'model-ready.json', json.dumps({'runtime_revision': payload['runtime_revision'],
+          'model': 'mimo/' + model, 'base_url': base_url, 'probe': 'passed',
+          'config_digest': model_config_digest(config),
+          'key_digest': hashlib.sha256(key.encode()).hexdigest()}))
+    return result
+
+
+def model_config_digest(config):
+    # Exclude incidental CLI metadata, retain every permission and connection boundary.
+    boundary = {key: config.get(key) for key in ('agents', 'models', 'secrets', 'gateway', 'mcp', 'tools')}
+    return hashlib.sha256(json.dumps(boundary, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def require_model_ready(payload):
+    ready = json.loads((ROOT / 'model-ready.json').read_text())
+    config = json.loads((PROFILE / 'openclaw.json').read_text())
+    provider = config['models']['providers']['mimo']
+    key = (PROFILE / 'secrets/mimo-api-key').read_text().strip()
+    if (ready['runtime_revision'] != payload['runtime_revision'] or
+        config['agents']['defaults']['model']['primary'] != ready['model'] or
+        model_config_digest(config) != ready['config_digest'] or
+        hashlib.sha256(key.encode()).hexdigest() != ready['key_digest'] or
+        provider['baseUrl'] != ready['base_url'] or
+        provider['apiKey'] != {'source': 'file', 'provider': 'mimo_key_file', 'id': 'value'} or
+        config['secrets']['providers']['mimo_key_file'] !=
+            {'source': 'file', 'path': str(PROFILE / 'secrets/mimo-api-key'), 'mode': 'singleValue'} or
+        [item['id'] for item in provider['models']] != [ready['model'].split('/', 1)[1]]):
+        raise RuntimeError('Model configuration drifted after the probe')
+    model_parameters({'base_url': ready['base_url'], 'model': ready['model'].split('/', 1)[1], 'api_key': key})
+    return ready
+
+
+def cli_command(payload, *args):
+    release = ROOT / 'releases' / payload['runtime_revision']
+    node = ROOT / 'runtime' / ('node-' + NODE_VERSION + '-linux-x64') / 'bin/node'
+    return ['sudo', '-u', USER, 'env', f'HOME={HOME}', f'PATH={node.parent}:/usr/bin:/bin', node,
+            release / 'deploy/sales-agent-runtime/node_modules/openclaw/openclaw.mjs', '--profile', 'ark-sales', *args]
+
+
+def activate(payload):
+    state = verify(payload)
+    if state['missing_credentials']:
+        raise RuntimeError('Model credentials are not ready')
+    ready = require_model_ready(payload)
+    if ready['runtime_revision'] != payload['runtime_revision'] or state['model']['primary'] != ready['model']:
+        raise RuntimeError('Model readiness does not match the runtime')
+    run(cli_command(payload, 'config', 'validate'))
+    run(['systemctl', 'enable', '--now', SERVICE])
+    # Scheduling remains zero during the first fixed-customer acceptance turn.
+    for _ in range(12):
+        try:
+            run(cli_command(payload, 'gateway', 'status', '--require-rpc', '--json'), timeout=15)
+            write(ROOT / 'activation.json', json.dumps({'runtime_revision': payload['runtime_revision'],
+                  'model': ready['model'], 'heartbeat': 'disabled', 'status': 'rpc_verified'}))
+            return {'gateway_rpc': 'passed', 'heartbeat': 'disabled', 'model': ready['model']}
+        except RuntimeError:
+            time.sleep(2)
+    raise RuntimeError('Gateway activation is not confirmed; inspect status before retrying')
+
+
+def verify_active(payload):
+    state = verify(payload, active=True)
+    require_model_ready(payload)
+    if run(['systemctl', 'is-active', SERVICE]) != 'active' or run(['systemctl', 'is-enabled', SERVICE]) != 'enabled':
+        raise RuntimeError('Gateway is not active and enabled')
+    run(cli_command(payload, 'gateway', 'status', '--require-rpc', '--json'), timeout=30)
+    return {**state, 'gateway_rpc': 'passed'}
 
 
 def execute(payload):
     files = validate(payload)
     action = payload['action']
     if action != 'prepare':
-        release = ROOT / 'releases' / payload['revision']
+        runtime_revision = payload.get('runtime_revision') or payload['revision']
+        release = ROOT / 'releases' / runtime_revision
         for name, body in files.items():
             path = release / name
             if path.is_symlink() or not path.is_file() or path.read_bytes() != body:
@@ -254,8 +398,17 @@ def execute(payload):
         stage(payload, files)
     elif action == 'configure':
         configure(payload)
-    detail = verify(payload) if action == 'verify' else {}
-    return {'revision': payload['revision'], 'status': action, **detail}
+    detail = {}
+    if action == 'verify':
+        detail = verify(payload)
+    elif action == 'model':
+        detail = connect_model(payload)
+    elif action == 'activate':
+        detail = activate(payload)
+    elif action == 'verify-active':
+        detail = verify_active(payload)
+    return {'revision': payload['revision'], 'runtime_revision': payload.get('runtime_revision') or payload['revision'],
+            'status': action, **detail}
 
 
 if __name__ == '__main__':

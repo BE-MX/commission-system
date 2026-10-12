@@ -338,7 +338,9 @@ if __name__ == "__main__":
     parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Beijing outbound worker")
     parser.add_argument('--okki-sync-only', metavar='PLAN_JSON', help='Prepare/activate only the reviewed Beijing outbound mirror')
     parser.add_argument('--mail-worker-stage', choices=['prepare', 'provision', 'configure', 'oauth', 'enable-sending'], help='Prepare Beijing mail service/OAuth without activating application code')
-    parser.add_argument('--sales-agent-stage', choices=['prepare', 'configure', 'verify'], help='Prepare dedicated Beijing research agent without starting tasks')
+    parser.add_argument('--sales-agent-stage', choices=['prepare', 'configure', 'verify', 'model', 'activate', 'verify-active'], help='Prepare or activate the dedicated Beijing research agent')
+    parser.add_argument('--sales-agent-model-config', help='Local private model file; transferred through SSH stdin only')
+    parser.add_argument('--sales-agent-runtime-revision', help='Full SHA of the existing prepared sales runtime')
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
@@ -359,12 +361,19 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if (args.sales_agent_model_config or args.sales_agent_runtime_revision) and not args.sales_agent_stage:
+            raise RuntimeError('Sales parameters require --sales-agent-stage')
         if args.sales_agent_stage:
-            if any(value for key, value in vars(args).items() if key not in {'sales_agent_stage', 'revision', 'live_root', 'no_pull'}):
+            if any(value for key, value in vars(args).items() if key not in {'sales_agent_stage', 'sales_agent_model_config', 'sales_agent_runtime_revision', 'revision', 'live_root', 'no_pull'}):
                 raise RuntimeError('Sales preparation cannot be combined with application release actions')
+            if bool(args.sales_agent_model_config) != (args.sales_agent_stage == 'model'):
+                raise RuntimeError('Model stage requires exactly one private model file')
+            if bool(args.sales_agent_runtime_revision) != (args.sales_agent_stage in {'model', 'activate', 'verify-active'}):
+                raise RuntimeError('Model activation must bind the existing runtime revision')
             from sales_agent_release import execute
             with deployment_lock():
-                execute(Path(__file__).resolve().parent.parent, args.revision, args.sales_agent_stage, STATE)
+                execute(Path(__file__).resolve().parent.parent, args.revision, args.sales_agent_stage, STATE,
+                        args.sales_agent_model_config, args.sales_agent_runtime_revision)
             sys.exit(0)
         if args.static_retention_only:
             from static_retention_release import execute

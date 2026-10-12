@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import re
 
 from static_sync import remote_python
 
@@ -31,14 +32,34 @@ def artifact(source):
     return result
 
 
-def execute(source, revision, action, state):
+def read_model_config(path):
+    values = {}
+    names = {'mimo base url': 'base_url', 'api key': 'api_key', 'model': 'model'}
+    for line in Path(path).read_text(encoding='utf-8-sig').splitlines():
+        match = re.fullmatch(r'\s*([^:]+):\s*(\S+)\s*', line)
+        if not match or match[1].strip().lower() not in names:
+            raise ValueError('Model file must contain only base URL, API KEY and MODEL fields')
+        key = names[match[1].strip().lower()]
+        if key in values:
+            raise ValueError('Duplicate model configuration field')
+        values[key] = match[2]
+    if set(values) != {'base_url', 'api_key', 'model'}:
+        raise ValueError('Missing model configuration field')
+    return values
+
+
+def execute(source, revision, action, state, model_path=None, runtime_revision=None):
     source = Path(source)
     actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip()
     dirty = subprocess.check_output(['git', 'status', '--porcelain'], cwd=source, text=True).strip()
     if actual != revision or dirty:
         raise RuntimeError('Sales preparation requires a clean pinned candidate')
-    result = remote_python(HOST, source / 'deploy/sales_agent_remote.py',
-        {'revision': revision, 'action': action, 'files': artifact(source)}, sudo=True, timeout=1200)
+    payload = {'revision': revision, 'action': action, 'files': artifact(source)}
+    if model_path:
+        payload['model_config'] = read_model_config(model_path)
+    if runtime_revision:
+        payload['runtime_revision'] = runtime_revision
+    result = remote_python(HOST, source / 'deploy/sales_agent_remote.py', payload, sudo=True, timeout=1200)
     if result.returncode:
         raise RuntimeError('Sales preparation failed: ' + result.stderr[-1500:])
     receipt = json.loads(result.stdout.splitlines()[-1])
