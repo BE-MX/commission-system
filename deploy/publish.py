@@ -431,6 +431,8 @@ if __name__ == "__main__":
             if any(value for key, value in vars(args).items() if key not in {'recover_office_activation', 'prepare_only', 'live_root', 'revision', 'no_pull'}):
                 raise RuntimeError('Office recovery only accepts its pinned controller and reviewed plan')
             from recover_office_activation import execute
+            if marker('publish-current').get('recovery', {}).get('phase') == 'outbound-activate':
+                from recover_release_completion import execute
             print(json.dumps(execute(args.recover_office_activation, args.prepare_only)), flush=True)
         elif args.finalize_release:
             if any(value for key, value in vars(args).items() if key not in {'finalize_release', 'prepare_only'}):
