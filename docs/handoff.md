@@ -1,11 +1,11 @@
 # 当前交接与待办
 
-## 2026-10-12 日常订单喜报战队改用当前业绩归属部门（Codex，已验证并授权合并推送，未部署）
+## 2026-10-12 日常订单喜报战队改用当前业绩归属部门（Codex，已合入 main，未部署）
 
 - 分支 `codex/order-notice-current-team`，工作树 `C:/Users/windb/.codex/worktrees/order-notice-current-team/commission-system`。用户确认改用当前业绩归属部门；生成和发送前均按发票 `sales_user_id` 读取 `ark_users.okki_department_name`，删除采购节 `user_rel_team.Team` 取数，部门缺失或空白仍为“未分队”。无需 OKKI 绑定或活动名册，当前部门调整对待发通知和重试生效；通知类型、金额阈值、外部账号头像主体和幂等状态保持原行为。
 - 原版订单专项基线 22 passed；调整后的行为断言在原逻辑下 9 failed / 20 passed。实现后隔离 SQLite 订单通知及投递回归 78 passed（既有 Pillow 弃用警告 1 项），覆盖旧名册冲突、绑定失效/缺失、空部门、Serena 无名册、生成后调队的图片/消息文案及二轮不重发。独立 agent 只读审查无 P1/P2，增量严格约定及 diff 检查通过；Git 巡检 `--no-fetch` exit 0，仅本地快照，未处理其他任务。
-- 实库显式只读事务调用修改后的 `delivery_order_detail`：事件 1370 原留档“恭喜未分队的Serena新签美国的客户！”，新文案预览为“恭喜多财多亿的Serena新签美国的客户！”。证据在本工作树 `tmp/order-notice-current-team/serena-preview.json`；未发送消息、未改已发留档或业务数据，无迁移。
-- 用户已授权本次提交、合并和推送 main；生产发布尚未授权，线上要发布后生效。集成时保留主目录既有改动。
+- 实库显式只读事务调用修改后的 `delivery_order_detail`：事件 1370 原留档“恭喜未分队的Serena新签美国的客户！”，新文案预览为“恭喜多财多亿的Serena新签美国的客户！”。证据已保存在主目录 `tmp/order-notice-current-team/serena-preview.json`；未发送消息、未改已发留档或业务数据，无迁移。
+- 实现提交 `02ca80d2`、最新 main 整合提交 `6f733d91` 已合入主目录 main，整合后及主目录订单/投递回归均 78 passed。交接冲突保留双方条目，主目录原 25 个其他文件摘要和原交接内容核验一致，保护备份及摘要证据保存在主目录 `tmp/order-notice-current-team/`。用户已授权推送 origin/main；生产发布尚未授权，线上要发布后生效。
 
 ## 2026-10-12 订单发票零价明细（Codex，已验证并授权合并推送，未部署）
 
