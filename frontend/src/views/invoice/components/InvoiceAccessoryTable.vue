@@ -31,7 +31,7 @@
     </div>
     <div class="line-table-wrap accessory-line-table-wrap">
       <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table accessory-line-table" max-height="560" v-sticky-scrollbar>
-        <el-table-column type="selection" width="42" fixed :selectable="() => true" />
+        <el-table-column type="selection" width="42" fixed />
         <el-table-column label="#" type="index" :index="indexBase" width="48" fixed />
         <el-table-column label="Name" min-width="190" prop="product_name" sortable="custom">
           <template #default="{ row }">
@@ -78,7 +78,7 @@
             <el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="$emit('change', row)" />
           </template>
         </el-table-column>
-        <el-table-column label="客户价" width="130" align="right" prop="price_per_piece" sortable="custom" fixed="right">
+        <el-table-column label="客户价" width="130" align="right" prop="price_per_piece" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
             <!-- 输入框占满整格；客户参考价移到下方小字，手改只用底色提示 -->
             <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
@@ -89,21 +89,23 @@
                 :precision="2"
                 :controls="false"
                 :disabled="row.standard_price == null"
-                @change="$emit('change', row)"
+                @change="commitPrice(row)"
+                @blur="commitPrice(row)"
               />
-              <span class="customer-price-reference" :title="row.customer_price == null ? '选择客户后解析客户价' : `客户价 ${money(row.customer_price)}`">
-                {{ row.customer_price == null ? '客户价 —' : `客户价 ${money(row.customer_price)}` }}{{ row.price_source === 'manual' ? ' · 已手改' : '' }}
+              <!-- 两位显示藏住的小数位（规则价如 13.585）在这里写明，单价×数量对不上时有据可查 -->
+              <span class="customer-price-reference" :title="row.customer_price == null ? '选择客户后解析客户价' : `客户价 ${preciseMoney(row.customer_price)}`">
+                {{ row.customer_price == null ? '客户价 —' : `客户价 ${preciseMoney(row.customer_price)}` }}{{ row.price_source === 'manual' ? ' · 已手改' : '' }}
               </span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" width="96" prop="quantity" sortable="custom" fixed="right">
+        <el-table-column label="Quantity" width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
             <el-input-number v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="$emit('change', row)" />
             <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
-        <el-table-column label="TotalPrice" width="110" align="right" prop="total_price" sortable="custom" fixed="right">
+        <el-table-column label="TotalPrice" width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" width="56" fixed="right">
@@ -137,6 +139,7 @@ import { sortTableRows } from '@/utils/tableSort'
 import { ArrowDown, ArrowUp, Delete, Plus } from '@element-plus/icons-vue'
 import { accessoryStandardPriceState } from '../composables/accessoryPricing.js'
 import { useLineSelection } from '../composables/useLineSelection.js'
+import { hiddenPricePrecision, snapPriceToRule } from '../composables/invoiceSettlement.js'
 
 const props = defineProps({
   items: { type: Array, required: true },
@@ -145,6 +148,8 @@ const props = defineProps({
   loading: Boolean,
   searchOptions: { type: Function, required: true },
   money: { type: Function, required: true },
+  // 旧版 640px 抽屉放不下右侧固定列（会挤掉全部可滚动空间），由调用方关掉
+  pinColumns: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['add', 'select', 'change', 'remove', 'remove-many'])
@@ -161,6 +166,12 @@ const sortedItems = computed(() => sortTableRows(props.items, sortField.value, s
 const pagedItems = computed(() => sortedItems.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
 const lineTable = ref(null)
+const preciseMoney = value => hiddenPricePrecision(value) || props.money(value)
+// 只在价格框提交时还原规则价：updateAccessoryTotal 也被数量/折扣调用，不能在那里动价格
+function commitPrice(row) {
+  row.price_per_piece = snapPriceToRule(row.price_per_piece, row.customer_price)
+  emit('change', row)
+}
 // 折扣大多数单不填：没有行填折扣时隐藏，填过就常驻
 const showOptionalCols = ref(false)
 const showDiscountCol = computed(() => showOptionalCols.value

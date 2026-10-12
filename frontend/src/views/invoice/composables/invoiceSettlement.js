@@ -43,6 +43,29 @@ export function normalizeDiscount(value) {
   return cents === 0 ? 0 : -cents / 100
 }
 
+// 价格框只显示两位，成交价仍按四位存（规则价如 21.1919、导入价如 30.048）。
+// 用户重输的两位值与规则价四舍五入后一致时，视为「没改」，还原成四位规则价：
+// 否则一敲键盘就把 21.1919 截成 21.19，行被误标手改且再也回不到规则价。
+export function snapPriceToRule(price, rulePrice) {
+  if (price == null || rulePrice == null) return price
+  return toMoneyCents(price) === toMoneyCents(rulePrice) && isWholeCents(price)
+    ? Number(rulePrice)
+    : price
+}
+
+// 两位显示藏住的小数位：单价×数量与行合计对不上时，悬停能看到实际计价口径
+export function hiddenPricePrecision(price) {
+  if (price == null || price === '') return ''
+  const number = Number(price)
+  if (!Number.isFinite(number) || isWholeCents(number)) return ''
+  return String(Number(number.toFixed(4)))
+}
+
+function isWholeCents(value) {
+  const number = Number(value)
+  return Math.abs(number - toMoneyCents(number) / 100) < 1e-9
+}
+
 export function calculateLineGross(quantity, pricePerPiece) {
   return toMoneyCents(Number(quantity || 0) * Number(pricePerPiece || 0)) / 100
 }
