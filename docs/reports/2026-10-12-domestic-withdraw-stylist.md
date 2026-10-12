@@ -1,6 +1,10 @@
 # 内贸审核撤回与发型师分析验收
 
-2026-10-12，本地验收完成。分支 `codex/domestic-withdraw-stylist`，worktree `C:/Users/windb/.codex/worktrees/domestic-withdraw-stylist/commission-system`。亮哥已授权本次范围提交、合并main及推送origin/main；生产发布尚未授权，未执行生产迁移或写入验收数据。
+2026-10-12，已合并并推送 `origin/main`，实现提交 `7c75c435`。原分支 `codex/domestic-withdraw-stylist`，原worktree `C:/Users/windb/.codex/worktrees/domestic-withdraw-stylist/commission-system`。生产发布尚未授权，未执行生产迁移或写入验收数据。
+
+合并后在主目录运行受影响13套隔离后端回归：568 passed、1 skipped；Node25 passed，覆盖实现提交的严格约定检查通过，迁移图唯一head为184。主目录26个原有文件独立保护：24个字节一致，另外两份文档保留原内容并加入本次章节，没有提交其他任务改动。
+
+原worktree清理前，四张验收截图、构建日志与巡检证据已复制到主目录 `tmp/domestic-withdraw-stylist/evidence/`；保护备份、原diff及文件校验清单保存在 `tmp/domestic-withdraw-stylist/integration-protection/`。该目录不进Git，不涉及生产数据写入。
 
 ## 完成行为
 
