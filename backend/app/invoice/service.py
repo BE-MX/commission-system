@@ -609,8 +609,8 @@ def validate_invoice(invoice: Invoice) -> list[dict]:
                 issues.append({"field": f"{prefix}.length", "message": "Length 必填"})
         if not item.quantity or item.quantity <= 0:
             issues.append({"field": f"{prefix}.quantity", "message": "Quantity 必须大于 0"})
-        if item.price_per_piece is None or item.price_per_piece <= 0:
-            issues.append({"field": f"{prefix}.price_per_piece", "message": "Price/Piece 必须大于 0"})
+        if item.price_per_piece is None or item.price_per_piece < 0:
+            issues.append({"field": f"{prefix}.price_per_piece", "message": "Price/Piece 必填且不能小于 0"})
         gross = Decimal(item.price_per_piece or 0) * Decimal(item.quantity or 0)
         if gross + Decimal(item.discount_amount or 0) < 0:
             issues.append({"field": f"{prefix}.discount_amount", "message": "产品行折扣不能超过该行金额"})

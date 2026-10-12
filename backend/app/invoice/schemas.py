@@ -82,7 +82,7 @@ class ScreenshotExtractedItem(BaseModel):
     color: Optional[str] = Field(None, max_length=128)
     weight: Optional[str] = Field(None, max_length=64)
     quantity: Optional[int] = Field(None, gt=0)
-    unit_price: Optional[Decimal] = Field(None, gt=0)
+    unit_price: Optional[Decimal] = Field(None, ge=0)
     subtotal: Optional[Decimal] = Field(None, ge=0)
     confidence: float = Field(default=0, ge=0, le=1)
 
@@ -192,7 +192,7 @@ class InvoiceItemPayload(BaseModel):
     length: Optional[str] = Field(None, max_length=128)
     quantity: int = Field(..., gt=0)
     price_per_piece: Optional[Decimal] = Field(
-        None, gt=0, max_digits=12, decimal_places=4,
+        None, ge=0, max_digits=12, decimal_places=4,
     )
     discount_amount: Decimal = Field(default=Decimal("0"), le=0)
     price_source: str = Field(default="manual", max_length=32)

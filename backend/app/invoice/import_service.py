@@ -23,7 +23,7 @@ def normalize_row(raw: Mapping[str, object]) -> dict:
     color = _normalize_color_display(raw.get("color"))
     weight = _normalize_weight(raw.get("weight"))
     quantity = _positive_int(raw.get("quantity"), "quantity")
-    unit_price = _positive_money(raw.get("unit_price"))
+    unit_price = _nonnegative_money(raw.get("unit_price"))
     product_no = _display_text(raw.get("product_no"))
     if not all((product, length, color)):
         raise ValueError("Product、Length、Color 必填")
@@ -451,13 +451,13 @@ def _positive_int(value: object, field: str) -> int:
     return int(parsed)
 
 
-def _positive_money(value: object) -> Decimal:
+def _nonnegative_money(value: object) -> Decimal:
     try:
         parsed = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError) as exc:
-        raise ValueError("Unit Price 必须是大于 0 的数字") from exc
-    if parsed <= 0:
-        raise ValueError("Unit Price 必须是大于 0 的数字")
+        raise ValueError("Unit Price 必须是大于或等于 0 的数字") from exc
+    if not parsed.is_finite() or parsed < 0:
+        raise ValueError("Unit Price 必须是大于或等于 0 的数字")
     # OKKI permits four-decimal unit prices (the sample screenshot has 30.048).
     # Rounding here to cents changes the invoice total after multiplication.
     return parsed.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)

@@ -134,6 +134,62 @@ class TestMoneyRounding:
 
 
 class TestLineAndInvoiceTotals:
+    def test_zero_price_hair_and_accessory_preserve_quantities_and_totals(self, db):
+        _seed_accessory_for_amounts(db)
+        invoice = _create(db, [
+            _item(2, Decimal("10")),
+            _item(3, Decimal("0")),
+            _item(4, Decimal("0"), product_kind="accessory", product_id=2,
+                  sku_id=9002, product_name="Hair Gripper", product_display="Hair Gripper",
+                  model="Magic Tape", color="Black", length=None, net_weight_grams=None),
+        ], shipping_fee=Decimal("5"))
+        assert invoice.status == "ready"
+        assert service.validate_invoice(invoice) == []
+        assert [row.quantity for row in invoice.items] == [2, 3, 4]
+        assert [row.total_price for row in invoice.items] == [Decimal("20"), Decimal("0"), Decimal("0")]
+        assert invoice.product_amount == Decimal("20")
+        assert invoice.total_amount == Decimal("25")
+        assert service.serialize_detail(invoice)["items"][1]["price_per_piece"] == 0
+
+    def test_all_zero_price_invoice_is_ready_and_prints_zero(self, db):
+        from app.invoice.export_service import build_print_html
+
+        invoice = _create(db, [_item(3, Decimal("0"))])
+        assert invoice.status == "ready"
+        assert invoice.total_amount == Decimal("0")
+        html = build_print_html(invoice)
+        assert '<td class="num">0</td>' in html
+        assert '<td class="num">0.00</td>' in html
+
+    def test_pdf_hair_and_accessory_rows_show_zero_prices(self, db, monkeypatch):
+        from app.invoice import export_service
+
+        _seed_accessory_for_amounts(db)
+        invoice = _create(db, [
+            _item(3, Decimal("0")),
+            _item(4, Decimal("0"), product_kind="accessory", product_id=2,
+                  sku_id=9002, product_name="Hair Gripper", product_display="Hair Gripper",
+                  model="Magic Tape", color="Black", length=None, net_weight_grams=None),
+        ])
+        monkeypatch.setattr(export_service, "_write_pdf_pages", lambda pages: pages)
+        pages = export_service.build_invoice_pdf(invoice)
+        lines = [row[0] for page in pages for row in page]
+        assert any("Raw Hair |" in line and "3 | 0 | 0 | 0.00" in line for line in lines)
+        assert any("Transaction Price: 0 | Quantity: 4 | Discount: 0 | TotalPrice: 0.00" in line for line in lines)
+
+    def test_zero_price_line_cannot_have_negative_discount(self, db):
+        import pytest
+
+        with pytest.raises(ValueError, match="产品行折扣不能超过该行金额"):
+            _create(db, [_item(1, Decimal("0"), discount_amount=Decimal("-0.01"))])
+
+    def test_negative_price_is_rejected_by_schema(self):
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            _item(1, Decimal("-0.01"))
+
     def test_line_total_is_quantity_times_price(self, db):
         invoice = _create(db, [_item(3, Decimal("12.50"))])
         assert invoice.items[0].total_price == Decimal("37.50")
@@ -407,9 +463,9 @@ class TestValidateAmounts:
         issues = service.validate_invoice(self._orm_invoice(-1, Decimal("1.00")))
         assert any("Quantity" in i["message"] for i in issues)
 
-    def test_zero_price_rejected(self):
+    def test_zero_price_accepted(self):
         issues = service.validate_invoice(self._orm_invoice(1, Decimal("0")))
-        assert any("Price/Piece" in i["message"] for i in issues)
+        assert issues == []
 
     def test_valid_amounts_pass(self):
         assert service.validate_invoice(self._orm_invoice(1, Decimal("0.01"))) == []

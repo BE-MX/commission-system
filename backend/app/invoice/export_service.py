@@ -155,9 +155,9 @@ def build_print_html(invoice: Invoice) -> str:
           <td>{escape(item.color or "")}</td>
           <td>{escape(item.length or "")}</td>
           <td class="num">{item.quantity}</td>
-          <td class="num">{item.price_per_piece or ""}</td>
+          <td class="num">{"" if item.price_per_piece is None else item.price_per_piece}</td>
           <td class="num">{item.discount_amount or 0}</td>
-          <td class="num">{item.total_price or ""}</td>
+          <td class="num">{"" if item.total_price is None else item.total_price}</td>
         </tr>
         """)
     accessory_rows = []
@@ -174,7 +174,7 @@ def build_print_html(invoice: Invoice) -> str:
           <td class="num">{"" if item.price_per_piece is None else item.price_per_piece}</td>
           <td class="num">{item.quantity}</td>
           <td class="num">{item.discount_amount or 0}</td>
-          <td class="num">{item.total_price or ""}</td>
+          <td class="num">{"" if item.total_price is None else item.total_price}</td>
         </tr>
         """)
     accessory_section = ""
@@ -285,7 +285,8 @@ def build_invoice_pdf(invoice: Invoice) -> BytesIO:
         product = (item.product_display or item.product_name or "")[:24]
         row = (
             f"{product} | {item.model or ''} | {item.color or ''} | {item.length or ''} | "
-            f"{item.quantity} | {item.price_per_piece or ''} | {item.discount_amount or 0} | {item.total_price or ''}"
+            f"{item.quantity} | {'' if item.price_per_piece is None else item.price_per_piece} | "
+            f"{item.discount_amount or 0} | {'' if item.total_price is None else item.total_price}"
         )
         page.append((row[:105], 50, y, 8))
         y -= 16
@@ -303,7 +304,7 @@ def build_invoice_pdf(invoice: Invoice) -> BytesIO:
                 f"Customer Price: {'' if item.customer_price is None else item.customer_price} | "
                 f"Transaction Price: {'' if item.price_per_piece is None else item.price_per_piece} | "
                 f"Quantity: {item.quantity} | Discount: {item.discount_amount or 0} | "
-                f"TotalPrice: {item.total_price or ''}"
+                f"TotalPrice: {'' if item.total_price is None else item.total_price}"
             )
             detail_lines = [amount_line]
             detail_lines.extend(_wrap_pdf_field("Name", item.product_display or item.product_name or ""))

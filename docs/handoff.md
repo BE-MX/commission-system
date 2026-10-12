@@ -1,5 +1,13 @@
 # 当前交接与待办
 
+## 2026-10-12 订单发票零价明细（Codex，已验证并授权合并推送，未部署）
+
+- 分支 `codex/invoice-zero-price`，worktree `C:/Users/windb/.codex/worktrees/invoice-zero-price/commission-system`。发制品与配件成交单价允许显式 0，空价仍不能同步、负价拒绝；零价行不得追加负折扣。Excel 粘贴、截图提取和 HTML/PDF 导出同步保留零值，参考价配置规则不变，无迁移。
+- OKKI 实时只读订单 `105839228404511` 返回两条数量 2/8、单价 0、小计 0 的明细，业务 code 200；镜像共 401 条零价行。直接沿用零值推单及失败/待核对审计机制，不改成 0.01、不丢行或改变其他金额。真实新建/编辑/出库 POST 未执行。全零商品金额预售批次仍受当前结算与首款资金池限制，夹带零价行且商品合计 >0 的场景不新增限制。
+- SQLite 相关五套第一轮 224 passed；PDF/截图新增后受影响两套 75 passed，覆盖重叠不累加。Node 45 passed，前端构建通过（既有混合导入和 chunk 警告）。独立审查发现 PDF 零价被空白替代，已修复并复核。
+- Edge 真实双表组件输入 0、Tab 失焦后均显示 `0.0000`，保存载荷保留数量 3/4 和单价 0；清空价格传 null，页面错误 0。截图、JSON 和可复跑脚本已保存在主目录 `tmp/invoice-zero-price/invoice-zero-price-ui.*`、`tmp/invoice-zero-price/verify_zero_price_ui.py`，隔离 harness 在 `frontend/tests/invoiceZeroPriceHarness.html`。没有触达生产保存。
+- 增量约定及 `git diff --check` 通过；Git 巡检 `--no-fetch` 已运行，仅本地远端快照，其他分支未处理。详细证据与机制边界见 [验证记录](reports/2026-10-12-invoice-zero-price.md)。用户已授权本次修复提交、合并及推送 main，生产部署不在本轮范围；主目录无关改动保留。
+
 ## 2026-10-10 仅配件订单保存误提交空产品行（Codex，已验证并授权合并推送，未部署）
 
 - 用户确认新建预售单仅有配件，默认预留的空产品行导致 `items[0].quantity=null`，并非配件数量未填。原 HEAD payload 本地复现；保存统一忽略未持久化、完全未填写的 hair 占位行，配件和已有内容/ID/半成品计划/导入标记的行均保留，不自动补数量。
