@@ -10,6 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import sales_agent_release as release
 import sales_agent_remote as remote
+import sales_agent_credentials as credentials
 
 
 def request():
@@ -53,6 +54,28 @@ def test_active_consumer_blocks_preparation(monkeypatch):
     monkeypatch.setattr(remote.subprocess, 'run', Mock(return_value=Mock(stdout='active\n')))
     with pytest.raises(RuntimeError, match='inactive'):
         remote.inactive()
+
+
+def test_enabled_but_inactive_consumer_blocks_preparation(monkeypatch):
+    monkeypatch.setattr(remote.subprocess, 'run', Mock(side_effect=[Mock(stdout='inactive\n'), Mock(stdout='enabled\n')]))
+    with pytest.raises(RuntimeError, match='disabled'):
+        remote.inactive()
+
+
+def test_unknown_token_issuance_cannot_be_sent_twice(tmp_path, monkeypatch):
+    journal = tmp_path / 'intent.json'
+    monkeypatch.setattr(credentials, 'INTENT', journal)
+    monkeypatch.setattr(credentials.os, 'open', credentials.os.open)
+    # Windows cannot fsync a directory; the actual remote is POSIX.
+    if sys.platform == 'win32':
+        original_open = credentials.os.open
+        monkeypatch.setattr(credentials.os, 'open', lambda path, flags, *args: original_open(
+            journal if path == journal.parent else path, flags, *args))
+    credentials.record_intent()
+    before = journal.read_bytes()
+    with pytest.raises(RuntimeError, match='already attempted'):
+        credentials.record_intent()
+    assert journal.read_bytes() == before
 
 
 def test_symlink_destination_is_not_overwritten(tmp_path):

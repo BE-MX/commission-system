@@ -3,7 +3,10 @@ from datetime import timedelta
 import json
 import os
 from pathlib import Path
-import pwd
+try:
+    import pwd
+except ImportError:  # Windows unit tests only exercise the issuance journal.
+    pwd = None
 import secrets
 import sys
 
@@ -81,8 +84,10 @@ def main():
         row = rows[0] if rows else None
         if row is not None and (not path.exists() or hash_token(path.read_text().strip()) != row.token_hash):
             raise RuntimeError('Issued cloud credential has no matching file; inspect before reissuing')
+        # Bind retirement to the inspected old Mac credential, not every token
+        # this account might acquire for a different purpose in the future.
         old_ids = [r.id for r in db.query(MCPToken).filter(MCPToken.user_id == 90,
-                   MCPToken.is_active.is_(True), MCPToken.label != LABEL).all()]
+                   MCPToken.id == 7, MCPToken.label == 'openclaw-sales-01', MCPToken.is_active.is_(True)).all()]
         db.rollback()
         auth = create_access_token(operator, expires_delta=timedelta(minutes=5))
         with httpx.Client(base_url='http://127.0.0.1:8001', trust_env=False, timeout=30,

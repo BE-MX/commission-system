@@ -31,7 +31,14 @@ def run(args, *, env=None, timeout=300):
                             env=env, timeout=timeout)
     if result.returncode:
         # Provider/config output can contain credentials, so do not echo it.
-        write(ROOT / 'last-error.log', result.stdout + '\n' + result.stderr)
+        diagnostic = 'command_failed'
+        for marker, code in [('requires capability consent', 'plugin_capability_consent_required'),
+                             ('Unknown model:', 'model_not_registered'),
+                             ('Invalid config', 'invalid_configuration')]:
+            if marker in result.stdout + result.stderr:
+                diagnostic = code
+        write(ROOT / 'last-error.log', json.dumps({'command': Path(str(args[0])).name,
+              'exit_code': result.returncode, 'diagnostic': diagnostic}))
         raise RuntimeError(f'{Path(str(args[0])).name} failed (exit {result.returncode})')
     return result.stdout.strip()
 
