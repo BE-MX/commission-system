@@ -185,9 +185,9 @@
       "gateway": "127.0.0.1:18791",
       "database_writer": false,
       "write_path": "Authenticated HTTPS Ark API only; existing sales principal permissions",
-      "deploy": "deploy.bat --sales-agent-stage prepare/configure/verify",
-      "status": "prepared; disabled; pending user MiMo authentication",
-      "migration_status": "prepared-2026-10-12"
+      "deploy": "deploy.bat --sales-agent-stage prepare/configure/verify/model/activate/verify-active/pause",
+      "status": "active RPC verified; mimo-v2.6-flash; heartbeat 0m; pending research-gap API deployment",
+      "migration_status": "configured-2026-10-12; Mac historical queue/session unavailable"
     }
   ],
   "terminals": [

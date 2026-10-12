@@ -1,9 +1,10 @@
-## 2026-10-12 销售研究 Agent 北京准备（Codex，MiMo 待提供）
+## 2026-10-12 销售研究 Agent 北京接入（Codex，MiMo 已验证，资料不足修复待发布）
 
-- 独立分支 codex/sales-agent-cloud。用户授权云端配置，后补 MiMo；已用统一 deploy.bat 完成专用 ark-sales-agent prepare/configure/verify，安装候选 a9f0cd8856c9a5789c79a9e6a9ffec7424e283c1，disabled/inactive，main heartbeat=0m。
-- MCP probe、实际 Parallel Free 搜索、HTTPS task251 context 契约与凭据权限通过；新凭据11有效、旧 Mac 凭据7已吊销，没有扩大90号账号权限。缺失项仅 MiMo key。
-- Crystal customer628/task251/Run266 仍 failed，未重试或写研究证据；需 MiMo 接入后 CAS 重试与作战卡验收。旧门控 uncertain，不能伪造主体或直接标完成。
-- 北京邮件 Worker 冻结状态和既有数据保留；Mac 历史队列/会话无源快照，未迁移。未发邮件、未推送或合并 main。报告 docs/reports/2026-10-12-sales-agent-cloud-preparation.md；运行边界 deploy/sales-agent-cloud.md。
+- 独立分支 codex/sales-agent-cloud。专用runtime a9f0cd8856c9a5789c79a9e6a9ffec7424e283c1，deployer89ff4a2d；用户MiMo文件只通过SSH stdin进入私有0600文件。mimo-v2.6-flash真实提供商探针和Gateway回复、RPC/active/enabled读回通过，main heartbeat仍0m。专用profile清理未使用DeepSeek，原通用Gateway保留。
+- MCP probe、实际 Parallel Free 搜索、HTTPS task251 context 契约与凭据权限通过；新凭据11有效、旧 Mac 凭据7已吊销，没有扩大90号账号权限。
+- Crystal customer628/task251按attempt1做一次CAS重试，旧Run266保留，新Run267/attempt2实际MiMo研究未核实到主体，零事实。用户确认无其他线索。线上完成接口必须有facts/citations，无法正常结束资料不足；任务仍running，未改档案或假标完成。
+- 已完成research_gap_v1 API/MCP/UI候选：仅私海full_research、uncertain门控、当前Run零事实；租约/Run/hash绑定仍有效，继承更严格分级，保留旧档案和门控，禁止质量审核/资格/编排采纳。独立审查修复两项风险后通过。原开发分支有线上外业务改动，另从两台后端实读9e16a4e1制作唯一修复提交a99af84079114d7b73f6de918539ea42c5993e22，worktree sales-gap-hotfix / codex/private-research-gap-hotfix；不发布原开发分支。
+- 北京邮件 Worker disabled/inactive、冻结和既有数据保留；Mac 历史队列/会话无源快照，未迁移。未发邮件、未推送或合并main；主应用资料不足修复尚未获发布授权。报告 docs/reports/2026-10-12-sales-agent-cloud-preparation.md；运行边界 deploy/sales-agent-cloud.md。发布后受控恢复task251并验收，完成前不启自动消费。
 
 # 当前交接与待办
 
