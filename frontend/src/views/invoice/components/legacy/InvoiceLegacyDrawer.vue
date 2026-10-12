@@ -173,6 +173,7 @@
         <InvoiceLegacyReceiptFields :form="form" :total="formTotal" :locked="editor.receiptLocked.value" />
 
         <InvoiceHairTable
+          :pin-columns="false"
           :items="hairItems"
           :quantity-error-row="quantityErrorRow"
           :is-production="isProduction"
@@ -194,6 +195,7 @@
         />
 
         <InvoiceAccessoryTable
+          :pin-columns="false"
           :items="accessoryItems"
           :quantity-error-row="quantityErrorRow"
           :options="accessoryOptions"

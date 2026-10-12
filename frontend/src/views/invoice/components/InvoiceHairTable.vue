@@ -39,7 +39,7 @@
     </div>
     <div class="line-table-wrap">
       <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
-        <el-table-column type="selection" width="42" fixed :selectable="() => true" />
+        <el-table-column type="selection" width="42" fixed />
         <el-table-column label="#" type="index" :index="indexBase" width="48" fixed />
         <el-table-column v-if="isProduction" label="Product" min-width="190" prop="product_display" sortable="custom">
           <template #default="{ row }">
@@ -132,13 +132,18 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isProduction" label="匹配" width="130" prop="product_name" sortable="custom">
+        <el-table-column v-if="!isProduction" :label="collapseSpecs ? 'Product_name' : '匹配'" :width="collapseSpecs ? undefined : 150" :min-width="collapseSpecs ? 230 : undefined" prop="product_name" sortable="custom">
           <template #default="{ row }">
-            <!-- Product_name 由规格列拼出，整列展开只是重复；单元格给状态，完整名称悬停看 -->
-            <el-tooltip :disabled="!row.product_name" :content="row.product_name || ''" placement="top">
-              <div :class="['product-cell', row.product_name ? 'is-matched' : 'is-pending']" :aria-label="row.product_name || '待匹配'">
+            <!-- 规格列可见时 Product_name 只是重复，单元格给状态、名称悬停看；
+                 规格列收起后它是唯一能区分行的信息，必须完整显示 -->
+            <el-tooltip :disabled="collapseSpecs || !row.product_name" :content="row.product_name || ''" placement="top">
+              <div :class="['product-cell', row.product_name ? 'is-matched' : 'is-pending']">
                 <StatusBadge v-if="row.matching" size="small" type="info" effect="plain">匹配中</StatusBadge>
-                <span v-else>{{ row.product_name ? '已匹配' : '待匹配' }}</span>
+                <span v-else-if="collapseSpecs" class="product-name">{{ row.product_name || '待匹配' }}</span>
+                <template v-else>
+                  <span aria-hidden="true">{{ row.product_name ? '已匹配' : '待匹配' }}</span>
+                  <span class="sr-only">{{ row.product_name || '待匹配' }}</span>
+                </template>
                 <span v-if="row.sku_id" class="stock-count">库存 {{ row.available_stock == null ? '—' : Math.round(row.available_stock) }}</span>
               </div>
             </el-tooltip>
@@ -166,23 +171,24 @@
         <el-table-column v-if="showDiscountCol" label="折扣" width="100" prop="discount_amount" sortable="custom">
           <template #default="{ row }"><el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="onLineDiscountChange(row)" /></template>
         </el-table-column>
-        <el-table-column label="客户价" width="130" align="right" prop="price_per_piece" sortable="custom" fixed="right">
+        <el-table-column label="客户价" width="130" align="right" prop="price_per_piece" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
-            <!-- 手改只用底色提示，整格留给数字；标准价在悬停里对照 -->
-            <el-tooltip :disabled="row.price_source !== 'manual'" :content="`已手改，标准价 ${row.standard_price == null ? '—' : money(row.standard_price)}`" placement="top">
+            <!-- 手改只用底色提示，整格留给数字；标准价与被两位显示藏住的小数位在悬停里对照 -->
+            <el-tooltip :disabled="!priceHint(row)" :content="priceHint(row)" placement="top">
               <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
-                <el-input-number v-model="row.price_per_piece" :min="0" :precision="2" :controls="false" :aria-label="row.price_source === 'manual' ? '客户价（已手改）' : '客户价'" @change="onPriceInput(row)" />
+                <!-- blur 也要提交：重输同样的两位值时 EP 不触发 change，行合计会停在旧值 -->
+                <el-input-number v-model="row.price_per_piece" :min="0" :precision="2" :controls="false" :aria-label="row.price_source === 'manual' ? '客户价（已手改）' : '客户价'" @change="onPriceInput(row)" @blur="onPriceInput(row)" />
               </div>
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" width="96" prop="quantity" sortable="custom" fixed="right">
+        <el-table-column label="Quantity" width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
             <el-input-number v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="onQuantityChange(row)" />
             <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
-        <el-table-column label="TotalPrice" width="110" align="right" prop="total_price" sortable="custom" fixed="right">
+        <el-table-column label="TotalPrice" width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" width="56" fixed="right">
@@ -210,6 +216,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { confirmDanger, isFeedbackCancelled } from '@/utils/feedback'
 import { sortTableRows } from '@/utils/tableSort'
 import { useLineSelection } from '../composables/useLineSelection.js'
+import { hiddenPricePrecision } from '../composables/invoiceSettlement.js'
 
 import { ArrowDown, ArrowUp, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue'
 import { CURL_OPTIONS } from '../composables/useInvoiceEditor'
@@ -229,9 +236,19 @@ const props = defineProps({
   onLineDiscountChange: { type: Function, required: true },
   updateLineTotal: { type: Function, required: true },
   money: { type: Function, required: true },
+  // 旧版 640px 抽屉放不下右侧固定列（会挤掉全部可滚动空间），由调用方关掉
+  pinColumns: { type: Boolean, default: true },
 })
 const emit = defineEmits(['paste', 'copy', 'add-blank', 'remove', 'remove-many'])
 const showOptionalCols = ref(false)
+function priceHint(row) {
+  const parts = []
+  const precise = hiddenPricePrecision(row.price_per_piece)
+  if (precise) parts.push(`按 ${precise} 计价`)
+  if (row.price_source === 'manual') parts.push(`已手改，标准价 ${row.standard_price == null ? '—' : preciseMoney(row.standard_price)}`)
+  return parts.join(' · ')
+}
+const preciseMoney = value => hiddenPricePrecision(value) || props.money(value)
 // 折扣大多数单不填：并入选填列；但只要有行填了折扣就常驻，避免金额对不上却看不到原因
 const showDiscountCol = computed(() => showOptionalCols.value
   || props.items.some(row => Number(row.discount_amount || 0) !== 0))
@@ -353,7 +370,9 @@ function lineOptionGroups(options, key) {
 .line-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--card-radius); }
 .line-pagination { display: flex; justify-content: flex-end; margin-top: 10px; }
 .line-table { width: 100%; }
-.product-cell { min-height: 28px; }
+.product-cell { min-height: 28px; flex-wrap: wrap; row-gap: 2px; }
+.product-name { overflow-wrap: anywhere; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .stock-count { font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 6px; padding: 1px 7px; background: var(--table-header-bg); white-space: nowrap; }
 .product-cell.is-pending { color: var(--text-muted); }
 .std-price { color: var(--text-secondary); font-variant-numeric: tabular-nums; }

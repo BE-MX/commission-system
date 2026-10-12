@@ -5,7 +5,7 @@ import {
   matchInvoiceProduct,
   resolveInvoicePrice,
 } from '@/api/invoice'
-import { calculateLineTotal, normalizeDiscount } from './invoiceSettlement.js'
+import { calculateLineTotal, normalizeDiscount, snapPriceToRule } from './invoiceSettlement.js'
 import { createLatestRequestGate } from './accessoryPricing.js'
 import { hasImportedBatch, isBlankInvoiceLine, mapPreviewRowToInvoiceLine } from './useInvoicePasteImport.js'
 import { emptyHairRow, normalizeHairRow } from './invoiceEditorState.js'
@@ -105,6 +105,7 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
   }
   function updateLineTotal(row) { row.total_price = calculateLineTotal(row.quantity, row.price_per_piece, row.discount_amount) }
   function onPriceInput(row) {
+    row.price_per_piece = snapPriceToRule(row.price_per_piece, row.customer_price)
     if (row.customer_price != null) row.price_source = Number(row.price_per_piece) === row.customer_price ? 'customer_rule' : 'manual'
     updateLineTotal(row)
   }

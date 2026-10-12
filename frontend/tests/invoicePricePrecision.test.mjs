@@ -27,5 +27,6 @@ test('invoice line tables show prices with two decimals while keeping stored pre
   }
   assert.match(hairTable, /v-model="row\.price_per_piece" :min="0" :precision="2"/)
   assert.match(accessoryTable, /v-model="row\.price_per_piece"[\s\S]*?:precision="2"/)
-  assert.match(accessoryTable, /money\(row\.customer_price\)/)
+  // 配件客户参考价：两位之外的小数位照实显示（preciseMoney 回落到两位 money）
+  assert.match(accessoryTable, /preciseMoney\(row\.customer_price\)/)
 })
