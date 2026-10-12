@@ -337,6 +337,7 @@ if __name__ == "__main__":
     parser.add_argument('--storage-maintenance', metavar='PLAN_JSON', help='Freeze/restore API ingress and direct office LAN access')
     parser.add_argument('--recover-colorwork-start-order', metavar='PLAN_JSON', help='Recover the inspected schema-160 dependency-order interruption')
     parser.add_argument('--finalize-release', metavar='PLAN_JSON', help='Complete the inspected post-DDL activated release without repeating migrations')
+    parser.add_argument('--recover-office-activation', metavar='PLAN_JSON', help='Resume the inspected schema-186 office readiness interruption')
     parser.add_argument('--storage-cutover', metavar='PLAN_JSON', help='Execute a journalled COS cutover phase')
     parser.add_argument("--storage-routing-only", metavar="PROBES_JSON", help="Prepare/activate public COS routing with explicit cloud object probes")
     parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Beijing outbound worker")
@@ -426,6 +427,11 @@ if __name__ == "__main__":
                 raise RuntimeError('Storage cutover only accepts --prepare-only')
             from storage_cutover import execute
             execute(args.storage_cutover, args.prepare_only)
+        elif args.recover_office_activation:
+            if any(value for key, value in vars(args).items() if key not in {'recover_office_activation', 'prepare_only', 'live_root', 'revision', 'no_pull'}):
+                raise RuntimeError('Office recovery only accepts its pinned controller and reviewed plan')
+            from recover_office_activation import execute
+            print(json.dumps(execute(args.recover_office_activation, args.prepare_only)), flush=True)
         elif args.finalize_release:
             if any(value for key, value in vars(args).items() if key not in {'finalize_release', 'prepare_only'}):
                 raise RuntimeError('Release finalization only accepts --prepare-only')

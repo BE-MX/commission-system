@@ -1,5 +1,11 @@
 # 统一部署入口
 
+## 2026-10-12 办公室启动等待中断接续
+
+`deploy.bat --recover-office-activation PLAN --prepare-only` 仅核验已审查的 c797c45e 候选、schema186、原 release_id b68389384a5e4e8b8f69bf4223f0ee8e、全部停止 writer 和 installed_paused 出库回执。计划固定包含 revision 与 release_id；去掉 prepare-only 接续同次发布，不重跑 DDL、不回退旧代码、不生成新的发布身份。
+
+从包含恢复入口的受管控制候选启动时，使用 `--live-root D:/commission-system --revision <控制候选完整SHA> --no-pull`。业务代码仍为计划内 c797c45e。Office 当前新安装在共享锁内等待最多300秒并核验真实健康；启动失败停止并确认。之后接续北京、路由/静态、原身份出库、邮件及原 writer/维护基线；阶段与回执即时保存，归档原事故记录。既有成功记录或已发生恢复尝试不能冒充首次现场，结果未知先只读核实。
+
 客户邮件 Worker 使用北京独立 systemd 服务并纳入同一候选的准备、发送排空、激活及版本核验。首次 CLI/OAuth 准备和耐久回执恢复见 [邮件 Worker 部署](mail-worker.md)。
 客户下单门户已登记北京shop.leshine.cloud发布目标；登记不证明静态站已发布或经营验收已通过。构建、HTTPS与经营门禁见[客户下单门户发布接入](customer-orders.md)，实际服务器状态见[生产准备记录](../docs/requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)。
 
