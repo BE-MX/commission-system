@@ -229,7 +229,8 @@ test('entered total discount updates eligible product rows and their totals', ()
 })
 
 test('product discount precedes TotalPrice and packaging quantity precedes its fee', () => {
-  const discountIndex = hairTable.indexOf('<el-table-column label="折扣"')
+  // 折扣列按需显示（v-if 在 label 前），仍须排在 TotalPrice 之前
+  const discountIndex = hairTable.indexOf('label="折扣"')
   const totalPriceIndex = hairTable.indexOf('<el-table-column label="TotalPrice"')
   assert.ok(discountIndex >= 0 && discountIndex < totalPriceIndex)
   assert.match(hairTable, /v-model="row\.discount_amount"/)

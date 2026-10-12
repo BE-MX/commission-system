@@ -186,11 +186,11 @@
           :on-line-discount-change="onLineDiscountChange"
           :update-line-total="updateLineTotal"
           :money="money"
-          :money4="money4"
           @paste="$emit('open-legacy-paste')"
           @copy="copyLine"
           @add-blank="addBlankLine"
           @remove="removeLine"
+          @remove-many="removeLines"
         />
 
         <InvoiceAccessoryTable
@@ -200,11 +200,11 @@
           :loading="accessoryLoading"
           :search-options="searchAccessoryOptions"
           :money="money"
-          :money4="money4"
           @add="addAccessory"
           @select="selectAccessory"
           @change="updateAccessoryTotal"
           @remove="removeAccessory"
+          @remove-many="removeAccessories"
         />
       </el-form>
     </template>
@@ -244,7 +244,6 @@ import InvoiceLegacyTotalsFooter from './InvoiceLegacyTotalsFooter.vue'
 const props = defineProps({
   editor: { type: Object, required: true }, // useInvoiceEditor 整包：与新版共享同一份状态
   money: { type: Function, required: true },
-  money4: { type: Function, required: true },
 })
 defineEmits(['open-paste', 'open-legacy-paste'])
 
@@ -266,7 +265,7 @@ const {
   lastOrderDate, settlementError, isProduction, saveAndSyncSubmitting, quantityErrorRow,
   searchCustomers, selectSyncedCustomer, onCustomerChange, onSalesUserChange, onCurrencyChange,
   onInvoiceNoInput, onInvoiceNoBlur, addBlankLine, copyLine, addAccessory, selectAccessory,
-  removeAccessory, searchAccessoryOptions, updateAccessoryTotal, removeLine, loadLineOptions,
+  removeAccessory, removeAccessories, searchAccessoryOptions, updateAccessoryTotal, removeLine, removeLines, loadLineOptions,
   onLineFilterChange, onCustomFieldChange, onPriceInput, onLineDiscountChange, updateLineTotal,
   saveDraft, saveAndSync, markCustomerGradeTouched, markOkkiFlagTouched, onPaymentMethodChange, markHandlingFeeTouched,
 } = props.editor

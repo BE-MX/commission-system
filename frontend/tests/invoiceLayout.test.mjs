@@ -37,7 +37,7 @@ test('invoice editor uses one 36px control height instead of mixed size variants
 })
 
 test('drawer body splits into two independently scrolling panes', () => {
-  assert.match(invoiceView, /<div class="drawer-panes">/)
+  assert.match(invoiceView, /<div :class="\['drawer-panes'/)
   assert.match(invoiceView, /<main class="pane pane-main">/)
   assert.match(invoiceView, /<aside class="pane pane-side">/)
   assert.match(invoiceStyles, /\.drawer-panes\s*{[^}]*display:\s*grid/s)
@@ -107,4 +107,23 @@ test('unbound OKKI guidance is concise helper text rather than a warning pill', 
   assert.match(orderFields, /未绑定 OKKI，私海筛选无结果/)
   assert.doesNotMatch(orderFields, /class="rule-badge warn"/)
   assert.match(invoiceStyles, /\.invoice-order-fields :deep\(\.binding-helper\)\s*{[^}]*line-height:\s*1\.5;/s)
+})
+
+test('side pane collapses on demand and remembers the choice', () => {
+  // 明细列多时结算栏吃掉 372px；页脚常驻订单总额，收起不会丢金额（2026-10-12）
+  assert.match(invoiceView, /:class="\['drawer-panes', sideCollapsed \? 'is-side-collapsed' : ''\]"/)
+  assert.match(invoiceView, /class="side-toggle"[\s\S]*?@click="toggleSidePane"/)
+  assert.match(invoiceView, /:aria-expanded="!sideCollapsed"/)
+  assert.match(invoiceView, /sideCollapsed \? DArrowLeft : DArrowRight/)
+  assert.match(invoiceView, /const sideCollapsed = ref\(localStorage\.getItem\(SIDE_COLLAPSE_KEY\) === '1'\)/)
+  assert.match(invoiceView, /localStorage\.setItem\(SIDE_COLLAPSE_KEY, sideCollapsed\.value \? '1' : '0'\)/)
+  assert.match(invoiceStyles, /\.drawer-panes\.is-side-collapsed\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s)
+  assert.match(invoiceStyles, /\.drawer-panes\.is-side-collapsed\s+\.pane-side\s*{[^}]*display:\s*none/s)
+  // 收起态按钮停在抽屉右缘，不再悬在原分隔线位置
+  assert.match(invoiceStyles, /\.is-side-collapsed\s*>\s*\.side-toggle\s*{[^}]*right:\s*12px/s)
+  assert.match(invoiceStyles, /\.side-toggle:active\s*{[^}]*transform:\s*translateX\(50%\)\s*scale\(0\.94\)/s)
+  assert.match(invoiceStyles, /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*\.side-toggle:hover/)
+  // 窄屏单栏：结算卡在明细下方，收起无意义
+  assert.match(invoiceStyles, /@media \(max-width: 1200px\)[\s\S]*\.side-toggle\s*{[^}]*display:\s*none/s)
+  assert.match(invoiceStyles, /@media \(max-width: 1200px\)[\s\S]*\.drawer-panes\.is-side-collapsed\s+\.pane-side\s*{[^}]*display:\s*flex/s)
 })

@@ -211,6 +211,63 @@
   border-left: 1px solid var(--border-warm);
 }
 
+/* 结算栏收起：按钮骑在右栏分隔线上；收起后贴右缘，主栏让出按钮宽度 */
+.drawer-panes {
+  position: relative;
+}
+
+.drawer-panes.is-side-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.drawer-panes.is-side-collapsed .pane-side {
+  display: none;
+}
+
+.drawer-panes.is-side-collapsed .pane-main {
+  padding-right: 30px;
+}
+
+.side-toggle {
+  position: absolute;
+  top: 6px;
+  right: 372px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--invoice-border);
+  border-radius: 50%;
+  background: var(--invoice-surface);
+  color: var(--invoice-muted);
+  cursor: pointer;
+  transform: translateX(50%);
+  transition: transform 140ms var(--invoice-ease-out), color 140ms var(--invoice-ease-out), border-color 140ms var(--invoice-ease-out);
+}
+
+.is-side-collapsed > .side-toggle {
+  right: 12px;
+}
+
+.side-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.side-toggle:active {
+  transform: translateX(50%) scale(0.94);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .side-toggle:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
+}
+
 /* 卡片：抽屉底为浅灰、卡片为白，分组边界靠底色差而不是分割线 */
 .form-card {
   background: var(--invoice-surface);
@@ -499,6 +556,10 @@
   .invoice-page :deep(.el-button:active) {
     transform: none;
   }
+
+  .side-toggle:active {
+    transform: translateX(50%);
+  }
 }
 
 /* 窄屏降级：双窗格还原为单栏整页滚动 */
@@ -510,6 +571,19 @@
 
   .pane {
     overflow: visible;
+  }
+
+  /* 单栏时结算卡在明细下方，不占横向空间，收起无意义 */
+  .side-toggle {
+    display: none;
+  }
+
+  .drawer-panes.is-side-collapsed .pane-side {
+    display: flex;
+  }
+
+  .drawer-panes.is-side-collapsed .pane-main {
+    padding-right: 6px;
   }
 
   .pane-side {

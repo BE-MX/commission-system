@@ -94,7 +94,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const hair = useInvoiceHairItems(form, accessories.hairItems, isProduction, entryOptions)
   const {
     addBlankLine, copyLine, appendImportedLines, loadEntryOptions, loadLineOptions, onCustomFieldChange,
-    onLineDiscountChange, onLineFilterChange, onPriceInput, refreshLinePrice, removeLine,
+    onLineDiscountChange, onLineFilterChange, onPriceInput, refreshLinePrice, removeLine, removeLines,
     updateLineTotal,
   } = hair
 
@@ -781,9 +781,11 @@ export function useInvoiceEditor({ onSaved } = {}) {
     addAccessory: accessories.addAccessory,
     selectAccessory: accessories.selectAccessory,
     removeAccessory: accessories.removeAccessory,
+    removeAccessories: accessories.removeAccessories,
     searchAccessoryOptions: accessories.searchAccessoryOptions,
     updateAccessoryTotal: accessories.updateAccessoryTotal,
     removeLine,
+    removeLines,
     loadLineOptions,
     onLineFilterChange,
     onCustomFieldChange,

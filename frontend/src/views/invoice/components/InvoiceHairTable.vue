@@ -23,14 +23,25 @@
           <el-icon><component :is="showOptionalCols ? ArrowUp : ArrowDown" /></el-icon>
           {{ showOptionalCols ? '收起选填列' : '展开选填列' }}
         </el-button>
+        <!-- 勾选后才出现批量删除：平时不占位，也不用先选再找按钮 -->
+        <template v-if="selectedCount">
+          <span class="selection-hint">已选 {{ selectedCount }} 行</span>
+          <el-button link type="danger" @click="removeSelected">
+            <el-icon><Delete /></el-icon>
+            删除所选
+          </el-button>
+          <el-button link @click="clearSelection">取消选择</el-button>
+        </template>
+        <el-button :disabled="!items.length" @click="clearAll"><el-icon><Delete /></el-icon>清空明细</el-button>
         <el-button :disabled="!items.length" @click="$emit('copy')"><el-icon><DocumentCopy /></el-icon>复制一行</el-button>
         <el-button @click="$emit('add-blank')"><el-icon><Plus /></el-icon>添加空行</el-button>
       </div>
     </div>
     <div class="line-table-wrap">
-      <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
-        <el-table-column label="#" type="index" :index="indexBase" min-width="48" max-width="60" fixed />
-        <el-table-column v-if="isProduction" label="Product" min-width="190" max-width="260" prop="product_display" sortable="custom">
+      <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
+        <el-table-column type="selection" width="42" fixed :selectable="() => true" />
+        <el-table-column label="#" type="index" :index="indexBase" width="48" fixed />
+        <el-table-column v-if="isProduction" label="Product" min-width="190" prop="product_display" sortable="custom">
           <template #default="{ row }">
             <el-select v-model="row.product_display" filterable allow-create default-first-option placeholder="系列描述，可输入" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.displays" :key="value" :label="value" :value="value" />
@@ -38,7 +49,7 @@
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
         </el-table-column>
-        <el-table-column v-if="(showOptionalCols || !isProduction) && !collapseSpecs" label="Model" min-width="120" max-width="180" prop="model" sortable="custom">
+        <el-table-column v-if="(showOptionalCols || !isProduction) && !collapseSpecs" label="Model" min-width="120" prop="model" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.model" filterable allow-create clearable default-first-option placeholder="可选" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.models" :key="value" :label="value" :value="value" />
@@ -55,7 +66,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="!collapseSpecs" label="Color" min-width="120" max-width="170" prop="color" sortable="custom">
+        <el-table-column v-if="!collapseSpecs" label="Color" min-width="120" prop="color" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.color" filterable allow-create default-first-option placeholder="Color" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.colors" :key="value" :label="value" :value="value" />
@@ -72,7 +83,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="!collapseSpecs" label="Length" min-width="95" max-width="130" prop="length" sortable="custom">
+        <el-table-column v-if="!collapseSpecs" label="Length" min-width="95" prop="length" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.length" filterable allow-create default-first-option placeholder="Length" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.sizes" :key="value" :label="value" :value="value" />
@@ -89,7 +100,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="!collapseSpecs" label="Net Weight" min-width="105" max-width="150" prop="net_weight_grams" sortable="custom">
+        <el-table-column v-if="!collapseSpecs" label="Net Weight" min-width="105" prop="net_weight_grams" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.net_weight_grams" filterable allow-create default-first-option placeholder="Unit" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.units" :key="value" :label="value" :value="value" />
@@ -106,7 +117,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="isProduction" label="半成品库存" min-width="240" max-width="320" prop="semifinished_summary" sortable="custom">
+        <el-table-column v-if="isProduction" label="半成品库存" min-width="240" prop="semifinished_summary" sortable="custom">
           <template #default="{ row }">
             <div class="semifinished-cell">
               <el-checkbox v-model="row.semifinished_enabled" :disabled="row.semifinished_loading" @change="enabled => onSemifinishedToggle(row, enabled)">自动使用</el-checkbox>
@@ -121,27 +132,30 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isProduction" label="Product_name" min-width="230" max-width="360" show-overflow-tooltip prop="product_name" sortable="custom">
+        <el-table-column v-if="!isProduction" label="匹配" width="130" prop="product_name" sortable="custom">
           <template #default="{ row }">
-            <div :class="['product-cell', row.product_name ? 'is-matched' : 'is-pending']">
-              <span>{{ row.product_name || '待匹配' }}</span>
-              <span v-if="row.sku_id" class="stock-count">库存 {{ row.available_stock == null ? '—' : Math.round(row.available_stock) }}</span>
-              <StatusBadge v-else-if="row.matching" size="small" type="info" effect="plain">匹配中</StatusBadge>
-            </div>
+            <!-- Product_name 由规格列拼出，整列展开只是重复；单元格给状态，完整名称悬停看 -->
+            <el-tooltip :disabled="!row.product_name" :content="row.product_name || ''" placement="top">
+              <div :class="['product-cell', row.product_name ? 'is-matched' : 'is-pending']" :aria-label="row.product_name || '待匹配'">
+                <StatusBadge v-if="row.matching" size="small" type="info" effect="plain">匹配中</StatusBadge>
+                <span v-else>{{ row.product_name ? '已匹配' : '待匹配' }}</span>
+                <span v-if="row.sku_id" class="stock-count">库存 {{ row.available_stock == null ? '—' : Math.round(row.available_stock) }}</span>
+              </div>
+            </el-tooltip>
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
         </el-table-column>
-        <el-table-column v-if="showOptionalCols" label="Curl" min-width="110" max-width="150" prop="curl" sortable="custom">
+        <el-table-column v-if="showOptionalCols" label="Curl" min-width="110" prop="curl" sortable="custom">
           <template #default="{ row }">
             <el-select v-model="row.curl" clearable placeholder="可选">
               <el-option v-for="value in CURL_OPTIONS" :key="value" :label="value" :value="value" />
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="标准价" min-width="120" max-width="140" align="right" prop="standard_price" sortable="custom">
+        <el-table-column label="标准价" width="110" align="right" prop="standard_price" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.standard_price != null" class="std-price">
-              {{ money4(row.standard_price) }}
+              {{ money(row.standard_price) }}
               <el-tooltip v-if="row.color_type_source === 'inferred'" content="该色号未登记色型映射，价格按命名规则推断的色型取得，请人工核对">
                 <StatusBadge size="small" type="warning" effect="plain">色型推断</StatusBadge>
               </el-tooltip>
@@ -149,27 +163,29 @@
             <StatusBadge v-else size="small" type="warning" effect="plain">无标准价</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column label="客户价" min-width="140" max-width="180" prop="price_per_piece" sortable="custom">
+        <el-table-column v-if="showDiscountCol" label="折扣" width="100" prop="discount_amount" sortable="custom">
+          <template #default="{ row }"><el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="onLineDiscountChange(row)" /></template>
+        </el-table-column>
+        <el-table-column label="客户价" width="130" align="right" prop="price_per_piece" sortable="custom" fixed="right">
           <template #default="{ row }">
-            <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
-              <el-input-number v-model="row.price_per_piece" :min="0" :precision="4" :controls="false" @change="onPriceInput(row)" />
-              <StatusBadge v-if="row.price_source === 'manual'" size="small" type="warning" effect="plain">手改</StatusBadge>
-            </div>
+            <!-- 手改只用底色提示，整格留给数字；标准价在悬停里对照 -->
+            <el-tooltip :disabled="row.price_source !== 'manual'" :content="`已手改，标准价 ${row.standard_price == null ? '—' : money(row.standard_price)}`" placement="top">
+              <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
+                <el-input-number v-model="row.price_per_piece" :min="0" :precision="2" :controls="false" :aria-label="row.price_source === 'manual' ? '客户价（已手改）' : '客户价'" @change="onPriceInput(row)" />
+              </div>
+            </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" min-width="100" max-width="140" prop="quantity" sortable="custom">
+        <el-table-column label="Quantity" width="96" prop="quantity" sortable="custom" fixed="right">
           <template #default="{ row }">
             <el-input-number v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="onQuantityChange(row)" />
             <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
-        <el-table-column label="折扣" min-width="110" max-width="150" prop="discount_amount" sortable="custom">
-          <template #default="{ row }"><el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="onLineDiscountChange(row)" /></template>
-        </el-table-column>
-        <el-table-column label="TotalPrice" min-width="100" max-width="150" align="right" prop="total_price" sortable="custom">
+        <el-table-column label="TotalPrice" width="110" align="right" prop="total_price" sortable="custom" fixed="right">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="64" max-width="80" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" width="56" fixed="right">
           <template #default="{ row }"><el-button link type="danger" aria-label="删除产品" @click="$emit('remove', row)"><el-icon><Delete /></el-icon></el-button></template>
         </el-table-column>
       </el-table>
@@ -191,7 +207,9 @@
 
 <script setup>import { msgWarning } from '@/utils/feedback'
 import { computed, nextTick, ref, watch } from 'vue'
+import { confirmDanger, isFeedbackCancelled } from '@/utils/feedback'
 import { sortTableRows } from '@/utils/tableSort'
+import { useLineSelection } from '../composables/useLineSelection.js'
 
 import { ArrowDown, ArrowUp, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue'
 import { CURL_OPTIONS } from '../composables/useInvoiceEditor'
@@ -211,10 +229,12 @@ const props = defineProps({
   onLineDiscountChange: { type: Function, required: true },
   updateLineTotal: { type: Function, required: true },
   money: { type: Function, required: true },
-  money4: { type: Function, required: true },
 })
-defineEmits(['paste', 'copy', 'add-blank', 'remove'])
+const emit = defineEmits(['paste', 'copy', 'add-blank', 'remove', 'remove-many'])
 const showOptionalCols = ref(false)
+// 折扣大多数单不填：并入选填列；但只要有行填了折扣就常驻，避免金额对不上却看不到原因
+const showDiscountCol = computed(() => showOptionalCols.value
+  || props.items.some(row => Number(row.discount_amount || 0) !== 0))
 const collapseSpecs = ref(false)
 
 // 窗内分页：几十上百行时表格窗口高度固定；行号跨页连续
@@ -229,6 +249,30 @@ const sortedItems = computed(() => sortTableRows(props.items, sortField.value, s
 const pagedItems = computed(() => sortedItems.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
 const lineTable = ref(null)
+const itemsRef = computed(() => props.items)
+const { selectedCount, onSelect, onSelectAll, clearSelection, takeSelected } =
+  useLineSelection(lineTable, itemsRef, pagedItems)
+
+async function removeSelected() {
+  try {
+    await confirmDanger('删除', `所选 ${selectedCount.value} 行产品明细`, '删除后可重新添加，但本行录入内容会丢失。')
+  } catch (error) {
+    if (isFeedbackCancelled(error)) return
+    throw error
+  }
+  emit('remove-many', takeSelected())
+}
+
+async function clearAll() {
+  try {
+    await confirmDanger('清空', `全部 ${props.items.length} 行产品明细`, '清空后可重新添加或从 Excel 粘贴，但已录入内容会丢失。')
+  } catch (error) {
+    if (isFeedbackCancelled(error)) return
+    throw error
+  }
+  clearSelection()
+  emit('remove-many', [...props.items])
+}
 const quantityInput = ref(null)
 watch(() => props.quantityErrorRow, async row => {
   const index = props.items.indexOf(row)
@@ -304,6 +348,8 @@ function lineOptionGroups(options, key) {
 .line-title .line-hint { color: var(--text-secondary); font-size: 13px; }
 .step { display: inline-flex; width: 20px; height: 20px; flex: none; align-items: center; justify-content: center; border-radius: 6px; background: var(--color-primary); color: #fff; font-size: 12px; font-weight: 700; }
 .line-header-actions, .price-cell, .product-cell { display: flex; align-items: center; gap: 8px; }
+.line-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+.selection-hint { color: var(--text-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
 .line-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--card-radius); }
 .line-pagination { display: flex; justify-content: flex-end; margin-top: 10px; }
 .line-table { width: 100%; }
@@ -312,6 +358,9 @@ function lineOptionGroups(options, key) {
 .product-cell.is-pending { color: var(--text-muted); }
 .std-price { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .price-cell.is-manual :deep(.el-input__wrapper) { background: var(--color-warning-bg); }
+.price-cell { width: 100%; }
+.price-cell :deep(.el-input-number) { width: 100%; }
+.price-cell :deep(input) { text-align: right; font-variant-numeric: tabular-nums; }
 .line-discount-input :deep(input) { color: var(--color-danger); font-variant-numeric: tabular-nums; }
 .quantity-error { outline: 1px solid var(--color-danger); }
 .semifinished-cell { display: flex; flex-direction: column; gap: 6px; }

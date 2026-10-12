@@ -5,15 +5,35 @@
         <span class="step">3</span><strong>配件明细</strong>
         <span class="line-hint">Hair ExtensionsTools Fee · 仅可选择已配置标准价的真实 OKKI SKU</span>
       </div>
-      <el-button @click="$emit('add')">
-        <el-icon><Plus /></el-icon>
-        添加配件
-      </el-button>
+      <div class="line-header-actions">
+        <!-- 勾选后才出现批量删除：平时不占位，也不用先选再找按钮 -->
+        <template v-if="selectedCount">
+          <span class="selection-hint">已选 {{ selectedCount }} 行</span>
+          <el-button link type="danger" @click="removeSelected">
+            <el-icon><Delete /></el-icon>
+            删除所选
+          </el-button>
+          <el-button link @click="clearSelection">取消选择</el-button>
+        </template>
+        <el-button link type="primary" @click="showOptionalCols = !showOptionalCols">
+          <el-icon><component :is="showOptionalCols ? ArrowUp : ArrowDown" /></el-icon>
+          {{ showOptionalCols ? '收起折扣列' : '展开折扣列' }}
+        </el-button>
+        <el-button :disabled="!items.length" @click="clearAll">
+          <el-icon><Delete /></el-icon>
+          清空配件
+        </el-button>
+        <el-button @click="$emit('add')">
+          <el-icon><Plus /></el-icon>
+          添加配件
+        </el-button>
+      </div>
     </div>
     <div class="line-table-wrap accessory-line-table-wrap">
-      <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" border class="list-table line-table accessory-line-table" max-height="560" v-sticky-scrollbar>
-        <el-table-column label="#" type="index" :index="indexBase" min-width="48" max-width="60" fixed />
-        <el-table-column label="Name" min-width="190" max-width="300" prop="product_name" sortable="custom">
+      <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table accessory-line-table" max-height="560" v-sticky-scrollbar>
+        <el-table-column type="selection" width="42" fixed :selectable="() => true" />
+        <el-table-column label="#" type="index" :index="indexBase" width="48" fixed />
+        <el-table-column label="Name" min-width="190" prop="product_name" sortable="custom">
           <template #default="{ row }">
             <!-- 不要加 @visible-change 预取：EP 2.13 起该事件绑内部 dropdownMenuVisible
                  （随 loading/option 挂载数翻转），配合请求会形成无限刷新环；
@@ -40,53 +60,53 @@
             <div v-if="row.sku_id" class="accessory-identity">SKU {{ row.sku_id }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="Model" min-width="130" max-width="190" prop="model" sortable="custom">
+        <el-table-column label="Model" min-width="130" prop="model" sortable="custom">
           <template #default="{ row }"><el-input :model-value="row.model" readonly /></template>
         </el-table-column>
-        <el-table-column label="Color" min-width="130" max-width="190" prop="color" sortable="custom">
+        <el-table-column label="Color" min-width="130" prop="color" sortable="custom">
           <template #default="{ row }"><el-input :model-value="row.color" readonly /></template>
         </el-table-column>
-        <el-table-column label="标准价" min-width="140" max-width="170" align="right" prop="standard_price" sortable="custom">
+        <el-table-column label="标准价" width="110" align="right" prop="standard_price" sortable="custom">
           <template #default="{ row }">
-            <span v-if="row.standard_price != null" class="std-price">{{ money4(row.standard_price) }}</span>
+            <span v-if="row.standard_price != null" class="std-price">{{ money(row.standard_price) }}</span>
             <StatusBadge v-else-if="accessoryStandardPriceState(row) === 'invalid'" size="small" type="warning" effect="plain">需重新配置</StatusBadge>
             <span v-else class="std-price">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="客户价" min-width="135" max-width="175" prop="price_per_piece" sortable="custom">
+        <el-table-column v-if="showDiscountCol" label="折扣" width="100" prop="discount_amount" sortable="custom">
           <template #default="{ row }">
+            <el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="$emit('change', row)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="客户价" width="130" align="right" prop="price_per_piece" sortable="custom" fixed="right">
+          <template #default="{ row }">
+            <!-- 输入框占满整格；客户参考价移到下方小字，手改只用底色提示 -->
             <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
-              <span class="customer-price-reference" :title="row.customer_price == null ? '选择客户后解析客户价' : `客户价 ${money4(row.customer_price)}`">
-                {{ row.customer_price == null ? '—' : money4(row.customer_price) }}
-              </span>
               <el-input-number
                 v-model="row.price_per_piece"
-                aria-label="成交价"
+                :aria-label="row.price_source === 'manual' ? '成交价（已手改）' : '成交价'"
                 :min="0"
-                :precision="4"
+                :precision="2"
                 :controls="false"
                 :disabled="row.standard_price == null"
                 @change="$emit('change', row)"
               />
-              <StatusBadge v-if="row.price_source === 'manual'" size="small" type="warning" effect="plain">手改</StatusBadge>
+              <span class="customer-price-reference" :title="row.customer_price == null ? '选择客户后解析客户价' : `客户价 ${money(row.customer_price)}`">
+                {{ row.customer_price == null ? '客户价 —' : `客户价 ${money(row.customer_price)}` }}{{ row.price_source === 'manual' ? ' · 已手改' : '' }}
+              </span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" min-width="96" max-width="125" prop="quantity" sortable="custom">
+        <el-table-column label="Quantity" width="96" prop="quantity" sortable="custom" fixed="right">
           <template #default="{ row }">
             <el-input-number v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="$emit('change', row)" />
             <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
-        <el-table-column label="折扣" min-width="105" max-width="140" prop="discount_amount" sortable="custom">
-          <template #default="{ row }">
-            <el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="$emit('change', row)" />
-          </template>
-        </el-table-column>
-        <el-table-column label="TotalPrice" min-width="100" max-width="140" align="right" prop="total_price" sortable="custom">
+        <el-table-column label="TotalPrice" width="110" align="right" prop="total_price" sortable="custom" fixed="right">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="64" max-width="80" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" width="56" fixed="right">
           <template #default="{ row }">
             <el-button link type="danger" aria-label="删除配件" @click="$emit('remove', row)">
               <el-icon><Delete /></el-icon>
@@ -112,9 +132,11 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
+import { confirmDanger, isFeedbackCancelled } from '@/utils/feedback'
 import { sortTableRows } from '@/utils/tableSort'
-import { Delete, Plus } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Delete, Plus } from '@element-plus/icons-vue'
 import { accessoryStandardPriceState } from '../composables/accessoryPricing.js'
+import { useLineSelection } from '../composables/useLineSelection.js'
 
 const props = defineProps({
   items: { type: Array, required: true },
@@ -123,10 +145,9 @@ const props = defineProps({
   loading: Boolean,
   searchOptions: { type: Function, required: true },
   money: { type: Function, required: true },
-  money4: { type: Function, required: true },
 })
 
-const emit = defineEmits(['add', 'select', 'change', 'remove'])
+const emit = defineEmits(['add', 'select', 'change', 'remove', 'remove-many'])
 
 // 窗内分页：与产品明细同款；新增行后跳到末页
 const page = ref(1)
@@ -140,6 +161,35 @@ const sortedItems = computed(() => sortTableRows(props.items, sortField.value, s
 const pagedItems = computed(() => sortedItems.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
 const lineTable = ref(null)
+// 折扣大多数单不填：没有行填折扣时隐藏，填过就常驻
+const showOptionalCols = ref(false)
+const showDiscountCol = computed(() => showOptionalCols.value
+  || props.items.some(row => Number(row.discount_amount || 0) !== 0))
+const itemsRef = computed(() => props.items)
+const { selectedCount, onSelect, onSelectAll, clearSelection, takeSelected } =
+  useLineSelection(lineTable, itemsRef, pagedItems)
+
+async function removeSelected() {
+  const count = selectedCount.value
+  try {
+    await confirmDanger('删除', `所选 ${count} 行配件`, '删除后可重新添加，但本行录入内容会丢失。')
+  } catch (error) {
+    if (isFeedbackCancelled(error)) return
+    throw error
+  }
+  emit('remove-many', takeSelected())
+}
+
+async function clearAll() {
+  try {
+    await confirmDanger('清空', `全部 ${props.items.length} 行配件`, '清空后可重新添加，但已录入内容会丢失。')
+  } catch (error) {
+    if (isFeedbackCancelled(error)) return
+    throw error
+  }
+  clearSelection()
+  emit('remove-many', [...props.items])
+}
 const quantityInput = ref(null)
 watch(() => props.quantityErrorRow, async row => {
   const index = props.items.indexOf(row)
@@ -189,14 +239,17 @@ const handleSelect = (row, key) => {
 .step { display: inline-flex; width: 20px; height: 20px; flex: none; align-items: center; justify-content: center; border-radius: 6px; background: var(--color-primary); color: #fff; font-size: 12px; font-weight: 700; }
 .line-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--card-radius); }
 .line-pagination { display: flex; justify-content: flex-end; margin-top: 10px; }
+.line-header-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.selection-hint { color: var(--text-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
 .line-table { width: 100%; }
-.price-cell { display: flex; align-items: center; gap: 6px; }
-.price-cell :deep(.el-input-number) { min-width: 0; flex: 1; }
+.price-cell { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+.price-cell :deep(.el-input-number) { width: 100%; }
+.price-cell :deep(input) { text-align: right; font-variant-numeric: tabular-nums; }
 .accessory-line-table :deep(.el-input-number) { width: 100%; }
 .quantity-error { outline: 1px solid var(--color-danger); }
 .price-cell.is-manual :deep(.el-input__wrapper) { background: var(--color-warning-bg); }
 .std-price, .customer-price-reference { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.customer-price-reference { min-width: 36px; font-size: 11px; }
+.customer-price-reference { font-size: 11px; line-height: 1.3; text-align: right; white-space: nowrap; }
 .accessory-identity { margin-top: 3px; color: var(--text-secondary); font-size: 11px; }
 .line-discount-input :deep(input) { color: var(--color-danger); font-variant-numeric: tabular-nums; }
 </style>

@@ -44,7 +44,12 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
         return `const ${declaration} = modules[${JSON.stringify(key)}] || {};`
       })
     const state = scope.run(() => new Function('modules', 'defineProps', 'defineEmits', `${script}\nreturn { page, pageSize, pagedItems, indexBase, sortLines };`)(
-      { vue: Vue, '@/utils/tableSort': { sortTableRows } }, () => props, () => () => {},
+      {
+        vue: Vue,
+        '@/utils/tableSort': { sortTableRows },
+        // 勾选逻辑有独立测试；这里只验证分页/排序，给个惰性桩
+        '../composables/useLineSelection.js': { useLineSelection: () => ({ selectedCount: Vue.ref(0), onSelect() {}, onSelectAll() {}, clearSelection() {}, takeSelected: () => [] }) },
+      }, () => props, () => () => {},
     ))
     state.page.value = 3
     assert.equal(state.pagedItems.value[0].id, 41)

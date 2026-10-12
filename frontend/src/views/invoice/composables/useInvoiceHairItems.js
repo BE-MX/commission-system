@@ -38,6 +38,12 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     const index = form.items.indexOf(row)
     if (index >= 0) form.items.splice(index, 1)
   }
+  // 批量删除按引用过滤：配件行与产品行共用 form.items，只动传入的那些
+  function removeLines(rows) {
+    const doomed = new Set(rows)
+    if (!doomed.size) return
+    form.items = form.items.filter(item => !doomed.has(item))
+  }
   async function loadLineOptions(row) {
     const result = await getInvoiceProductOptions({
       model: row.model || undefined, color: row.color || undefined,
@@ -116,7 +122,7 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
   }
   return {
     addBlankLine, copyLine, appendImportedLines, loadEntryOptions, loadLineOptions, onCustomFieldChange,
-    onLineDiscountChange, onLineFilterChange, onPriceInput, refreshLinePrice, removeLine,
+    onLineDiscountChange, onLineFilterChange, onPriceInput, refreshLinePrice, removeLine, removeLines,
     updateLineTotal,
   }
 }
