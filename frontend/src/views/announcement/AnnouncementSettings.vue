@@ -7,14 +7,18 @@
     </template>
     <el-tabs v-if="config.initialized" v-model="tab">
       <el-tab-pane label="推送与周报" name="config">
-        <el-alert type="info" :closable="false" title="使用企业应用机器人。先保存群配置、发送图文测试，再确认图片可见并开启自动推送。" />
+        <el-alert type="info" :closable="false" title="公告使用企业应用机器人">
+          需要系统已配置同一应用的 AppKey / AppSecret，开通机器人发送群消息及图片上传权限，并将该机器人加入目标群。
+          本页填写群会话 ID 和应用机器人编码；群自定义机器人的 Webhook 地址不能填在这里。
+          先保存配置、发送图文测试，确认图片可见后开启群推送。
+        </el-alert>
         <ListPageStatus v-if="peopleResource.error.value" v-bind="resourceStatus(peopleResource)" @retry="peopleResource.load()" />
         <el-form label-position="top" class="config-form">
           <el-form-item label="公告群名称"><el-input v-model="config.group_name" maxlength="120" /></el-form-item>
-          <el-form-item label="群会话 ID（openConversationId）"><el-input v-model="config.conversation_id" maxlength="256" /></el-form-item>
-          <el-form-item label="机器人编码（robotCode）"><el-input v-model="config.robot_code" maxlength="128" /></el-form-item>
+          <el-form-item label="群会话 ID（openConversationId）"><el-input v-model="config.conversation_id" placeholder="应用机器人所在群的 openConversationId" maxlength="256" /></el-form-item>
+          <el-form-item label="应用机器人编码（robotCode）"><el-input v-model="config.robot_code" placeholder="钉钉开发者后台的应用机器人编码" maxlength="128" /></el-form-item>
           <el-form-item label="后台执行账号"><el-select v-model="config.executor_id" filterable remote :remote-method="searchPeople" placeholder="搜索方舟用户"><el-option v-for="p in people" :key="p.user_id" :label="`${p.real_name}（${p.username}）`" :value="p.user_id" /></el-select><small>账号须保持公告库访问权限及公告入口权限。</small></el-form-item>
-          <el-form-item label="自动推送"><el-switch v-model="config.delivery_enabled" :disabled="!config.channel_verified" /><span>{{ config.channel_verified ? '图文通道已验证' : '尚未验证图文通道' }}</span></el-form-item>
+          <el-form-item label="允许推送钉钉群"><el-switch v-model="config.delivery_enabled" :disabled="!config.channel_verified" /><span>{{ config.channel_verified ? '图文通道已验证' : '尚未验证图文通道' }}</span><small>这是群推送总开关；每条公告仍可单独选择是否推送。关闭时，不推送的公告仍可审核发布。</small></el-form-item>
           <el-form-item label="每周公告周报"><el-switch v-model="config.weekly_enabled" /><span>每周一（北京时间）</span><el-input-number v-model="config.weekly_hour" :min="0" :max="23" />时<el-input-number v-model="config.weekly_minute" :min="0" :max="59" />分</el-form-item>
           <el-form-item label="周报 AI Preset 名称"><el-input v-model="config.preset_name" placeholder="已在 AI 管理中配置的直连文本方案" maxlength="100" /></el-form-item>
         </el-form>
@@ -144,7 +148,9 @@ onMounted(load)
 </script>
 
 <style scoped>
-.settings { display: grid; gap: 16px; }
+.settings { display: grid; gap: 16px; overflow-wrap: anywhere; }
+.settings > .el-tabs { min-width: 0; }
+.config-form .el-select { width: 100%; }
 .table-card:fullscreen { overflow: auto; }
 .config-form { margin-top: 20px; }
 .actions, .category-row, .member-row { display: flex; align-items: center; gap: 12px; margin: 16px 0; flex-wrap: wrap; }

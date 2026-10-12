@@ -11,6 +11,10 @@
         <el-form-item label="生效时间（北京时间，可空）"><el-date-picker v-model="meta.effective_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" @change="dirty = true" /></el-form-item>
         <el-form-item label="截止时间（北京时间，可空）"><el-date-picker v-model="meta.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" @change="dirty = true" /></el-form-item>
         <el-form-item label="重要公告"><el-switch v-model="meta.important" @change="dirty = true" /></el-form-item>
+        <el-form-item label="是否推送钉钉群">
+          <el-switch v-model="meta.push_dingtalk" aria-label="是否推送钉钉群" active-text="推送" inactive-text="不推送" @change="dirty = true" />
+          <small>关闭后仅在站内发布，也不纳入钉钉周报。</small>
+        </el-form-item>
         <el-form-item label="更新说明"><el-input v-model="meta.change_note" maxlength="500" @input="dirty = true" /></el-form-item>
       </el-form>
       <div v-else class="read-meta">
@@ -19,12 +23,12 @@
         <span v-if="document.effective_at">生效：{{ formatBeijingDateTime(document.effective_at) }}</span>
         <span v-if="document.expires_at">截止：{{ formatBeijingDateTime(document.expires_at) }}</span>
       </div>
-      <el-alert v-if="document.can_edit || document.pending_approval_id" :title="`审核通过后，完整图文将自动推送至「${config.group_name || '尚未配置公告群'}」`" type="info" :closable="false" />
+      <el-alert v-if="document.can_edit || document.pending_approval_id" :title="deliveryNotice" :type="meta.push_dingtalk && !channelReady ? 'warning' : 'info'" :closable="false" />
       <KnowledgeEditor :key="`${document.id || 'new'}:${document.revision_id || 0}:${document.can_edit}`" ref="editor" :document="document" :role="document.can_edit ? 'editor' : 'viewer'" :saving="saving" external-controls @save="save" @dirty-change="editorDirty = $event" />
       <div class="actions">
         <el-button v-if="document.can_edit" v-any-permission="['announcement:write', 'announcement:admin']" :icon="Check" type="primary" :loading="saving" @click="editor.save()">保存草稿</el-button>
         <el-button v-if="document.can_edit && document.id" v-any-permission="['announcement:write', 'announcement:admin']" :icon="Promotion" :disabled="hasChanges || saving" @click="submit">提交审核</el-button>
-        <el-button v-if="document.id && edit" :icon="View" :disabled="hasChanges" @click="preview">钉钉预览</el-button>
+        <el-button v-if="document.id && edit && meta.push_dingtalk" :icon="View" :disabled="hasChanges" @click="preview">钉钉预览</el-button>
         <template v-if="edit && document.pending_approval_id && document.can_review">
           <el-button v-any-permission="['knowledge:review', 'announcement:admin']" :icon="Check" type="primary" :loading="saving" @click="review(true)">审核并发布</el-button>
           <el-button v-any-permission="['knowledge:review', 'announcement:admin']" :icon="Close" @click="review(false)">驳回</el-button>
@@ -57,7 +61,13 @@ const loading = ref(false)
 const saving = ref(false)
 const dirty = ref(false)
 const editorDirty = ref(false)
-const meta = reactive({ category_id: null, important: false, effective_at: null, expires_at: null, change_note: '' })
+const meta = reactive({ category_id: null, important: false, push_dingtalk: false, effective_at: null, expires_at: null, change_note: '' })
+const channelReady = computed(() => props.config.delivery_enabled && props.config.channel_verified && props.config.conversation_id && props.config.robot_code)
+const deliveryNotice = computed(() => !meta.push_dingtalk
+  ? '审核通过后仅在站内发布，不推送钉钉群，也不纳入钉钉周报。'
+  : channelReady.value
+    ? `审核通过后，完整图文将推送至「${props.config.group_name || '公告群'}」。`
+    : '已选择推送钉钉群；请管理员先配置并验证图文通道、开启群推送，再提交审核。')
 const hasChanges = computed(() => dirty.value || editorDirty.value || !document.value?.id)
 const previewOpen = ref(false)
 const parts = ref([])
@@ -69,9 +79,9 @@ async function load(id = props.documentId) {
   try {
     document.value = id ? await api.get(`/${id}`, { edit: props.edit }) : {
       library_id: props.config.library_id, title: '', content_json: { type: 'doc', content: [{ type: 'paragraph' }] },
-      can_edit: true, status: 'draft', version_no: 1,
+      can_edit: true, status: 'draft', version_no: 1, push_dingtalk: Boolean(props.config.delivery_enabled),
     }
-    for (const key of Object.keys(meta)) meta[key] = document.value[key] ?? ({ important: false, change_note: '' }[key] ?? null)
+    for (const key of Object.keys(meta)) meta[key] = document.value[key] ?? ({ important: false, push_dingtalk: true, change_note: '' }[key] ?? null)
     dirty.value = false
     editorDirty.value = false
   } finally { loading.value = false }
@@ -99,7 +109,7 @@ async function review(approve) {
   let remark = ''
   try {
     if (!approve) remark = (await promptAction('请填写驳回原因', '驳回公告', { inputPattern: /\S+/, inputErrorMessage: '原因不能为空' })).value
-    else await confirmAction(`发布后将自动推送至「${props.config.group_name}」。`, '审核并发布', { confirmButtonText: '发布', cancelButtonText: '取消' })
+    else await confirmAction(meta.push_dingtalk ? `发布后将推送至「${props.config.group_name || '公告群'}」。` : '发布后仅在站内展示，不推送钉钉群，也不纳入钉钉周报。', '审核并发布', { confirmButtonText: '发布', cancelButtonText: '取消' })
   } catch { return }
   saving.value = true
   try { await api.post(`/${document.value.id}/review`, { approve, remark }); await load(document.value.id); emit('saved'); msgSuccess(approve ? '发布' : '驳回') }
@@ -122,6 +132,7 @@ defineExpose({ hasChanges })
 .meta-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .read-meta, .actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .read-meta { color: var(--text-secondary); }
+.meta-form small { display: block; width: 100%; color: var(--text-secondary); line-height: 1.7; }
 .message-part { padding: 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 10px; }
 .message-part pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .message-part img { display: block; max-width: 100%; margin-top: 12px; }

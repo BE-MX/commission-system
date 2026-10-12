@@ -1,5 +1,14 @@
 # 当前交接与待办
 
+## 2026-10-12 公告单条钉钉推送选择（Codex，已验证并获合并推送授权，未部署）
+
+- 分支 `codex/announcement-dingtalk-option`，worktree `C:\Users\windb\.codex\worktrees\announcement-dingtalk-option\commission-system`。每条公告的 `push_dingtalk` 随修订保存并在待审核期间冻结；编辑、审核提示、确认弹窗和列表同步显示选择。新建默认跟随群推送总开关；API 省略仍 true 保留既有调用行为。
+- false 时可在未配置/未验证/未启用钉钉群的情况下提交审核并站内发布，不建立即时投递，也不纳入钉钉周报；已有旧摘要发送前复验当前发布选择。旧版本曾通过即时消息或周报披露（sent/sending/uncertain）时，仍锁住原群并在撤回时安排更正。旧周报 generation 的 sources 从历史快照读取；发送仍服从总开关。
+- 公告设置已说明现有协议为企业应用机器人：系统 Settings 需同一应用 AppKey/AppSecret、发送及媒体权限、机器人已入群，本页 openConversationId/robotCode 是目标参数。Webhook 属于群自定义机器人协议，当前公告传输不支持将 Webhook 填入群会话 ID。
+- 迁移 `185_announcement_push_option` 接 `184_domestic_request_withdraw`，仅新增非空布尔字段，历史默认 true，重入保留用户选择，降级拒删。隔离 SQLite 迁移和 MySQL 列 DDL 编译通过；`alembic heads` 为单一 185，未执行共享/生产迁移。
+- 公告后端 59 passed，未读状态 Node 8 passed，前端生产构建通过。Playwright + headless Edge 使用真实公告编辑/设置组件、隔离模拟 API，验证切换、保存 false 请求、重载、审核确认、新建默认、390px 手机布局及配置说明，无 pageerror；截图/脚本/模拟请求证据在 `tmp/announcement-ui/`（组件测试入口在 `frontend/tmp/announcement-ui/`）。无真实钉钉消息发送。
+- 独立审查发现并修复“仅周报历史披露会漏锁群和撤回更正”的 P2，复查无 P1/P2。全量 `check_conventions.py` 被主目录同样存在的发票表格 18 项 UI 基线错误阻断；单独执行其本次 diff 规则无违规，`git diff --check` 通过。用户已授权提交、合并及推送 origin/main；生产部署未获授权。集成校验、主目录改动保护和验证证据归档在主目录 `tmp/announcement-integration-20261012/`；发布前执行迁移 185，实际钉钉投递仍待单独授权验收。
+
 ## 2026-10-12 订单通知卡片磨砂玻璃质感恢复（Codex，已验证并授权合并推送，未部署）
 
 - 用户反馈降分辨率后玻璃质感丢失。底板 `backend/assets/festival/order-glass.png` 为 1670×942 RGBA，问题发生在渲染末尾：1200×675 卡片再次缩到 800×450，并用 FASTOCTREE 量化成 256 色。相同画面、相同背景区域对照：800 索引色剩 53 色，800 RGBA 保留 2247 色，1200 RGBA 保留 2344 色；视觉确认主要色带来自量化，缩图额外损失细纹与清晰度。

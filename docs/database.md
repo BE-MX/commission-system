@@ -610,7 +610,7 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 |---|---|
 | ark_announcement_config | 单例 id=1；library_id 唯一；目标群、机器人、执行账号、配置版本、周报时刻和通道验证 |
 | ark_announcement_items | document_id 主键/FK；置顶、发布时间/发布人、撤回信息 |
-| ark_announcement_revision_meta | revision_id 主键/FK；类别名称快照、重要、生效/截止、变更说明 |
+| ark_announcement_revision_meta | revision_id 主键/FK；类别名称快照、重要、生效/截止、变更说明；迁移 185 新增 push_dingtalk 非空布尔值，默认 true 保留历史推送行为 |
 | ark_announcement_publications | 发布/撤回事件；唯一 document_id+revision_id+kind |
 | ark_announcement_weekly | 唯一 library_id+period_start；冻结来源、正文、generation、旧版历史、生成租约 |
 | ark_announcement_deliveries | 唯一 source_key+sequence；内容和目标快照、授权指纹、租约、尝试、回执、错误 |

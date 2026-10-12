@@ -1653,8 +1653,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | POST | `/inbox/read-all` | 标记当前用户此刻可见的发布版本全部已读 |
 | GET / PUT / DELETE | `/{document_id}` | 查看 / 保存版本 / 删除未发布草稿 |
 | GET | `/{document_id}/preview` | 保存版本的钉钉图文分片预览 |
-| POST | `/{document_id}/submit` | 提交审核（须已验证推送通道） |
-| POST | `/{document_id}/review` | approve、remark；审批通过同事务创建发布事件与投递 |
+| POST | `/{document_id}/submit` | 提交审核；仅 push_dingtalk=true 的修订须已验证并启用群推送 |
+| POST | `/{document_id}/review` | approve、remark；审批通过创建发布事件，仅选择群推送时同事务创建投递 |
 | POST | `/{document_id}/withdraw` | 管理员撤回，必填 reason |
 | PUT | `/{document_id}/pin` | 管理员设置 pinned |
 | POST | `/channel-test` | 显式排队向配置群发送测试文字和图片 |
@@ -1664,7 +1664,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | GET / POST | `/weekly` | 最近 52 期 / 手动生成上周预览（regenerate 可重生成） |
 | POST | `/weekly/{id}/send` | 显式发送已生成版本；同版不得重复入队 |
 
-保存参数：title、content（Tiptap JSON）、category_id、base_revision_id（更新必需）、important、effective_at、expires_at、change_note。列表参数 q/category_id/status/page/page_size。审核中禁止改稿；已发布公告更新后，读者仍看上一发布版本。时间按北京时间保存。
+保存参数：title、content（Tiptap JSON）、category_id、base_revision_id（更新必需）、important、push_dingtalk、effective_at、expires_at、change_note。push_dingtalk 为修订级布尔值，API 省略默认 true 保留既有调用行为；界面新建默认跟随群推送总开关，更新沿用该修订选择。详情与列表返回 push_dingtalk。false 时仅站内发布，不要求钉钉通道，也不纳入钉钉周报；旧版本已发送或结果不确定时，撤回仍生成更正投递。列表参数 q/category_id/status/page/page_size。审核中禁止改稿；已发布公告更新后，读者仍看上一发布版本。时间按北京时间保存。
 
 平台权限 `announcement:read/write/admin`；审批端点允许 `knowledge:review/knowledge:admin/announcement:admin`，仍需公告阅读权限和库审核 ACL。普通知识库接口不能修改 managed 公告库。
 

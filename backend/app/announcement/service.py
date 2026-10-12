@@ -10,7 +10,7 @@ from app.core.time import beijing_now, to_beijing_naive
 from app.knowledge import access, service as knowledge
 from app.knowledge.managed import announcement_scope
 from app.knowledge.models import KnowledgeLibrary, KnowledgeLibraryMember, KnowledgeDocument, KnowledgeRevision, KnowledgeApprovalRequest
-from app.announcement.models import AnnouncementConfig, Announcement, AnnouncementMeta, Publication, Delivery
+from app.announcement.models import AnnouncementConfig, Announcement, AnnouncementMeta, Publication, Delivery, WeeklyReport
 from app.announcement import rendering
 
 
@@ -89,7 +89,7 @@ def _item(db, identity, document_id, capability='read', lock=False):
 
 
 def save_announcement(db, identity, *, title, content, category_id, document_id=None, base_revision_id=None,
-                      important=False, effective_at=None, expires_at=None, change_note=''):
+                      important=False, push_dingtalk=True, effective_at=None, expires_at=None, change_note=''):
     config = config_for(db, identity, 'write', lock=True)
     effective_at, expires_at = to_beijing_naive(effective_at), to_beijing_naive(expires_at)
     if effective_at and expires_at and effective_at >= expires_at:
@@ -114,7 +114,7 @@ def save_announcement(db, identity, *, title, content, category_id, document_id=
         if not document.published_revision_id:
             document.parent_id = category.id
         db.add(AnnouncementMeta(revision_id=revision.id, category_id=category.id, category_name=category.title,
-                                important=important, effective_at=effective_at, expires_at=expires_at, change_note=change_note))
+                                important=important, push_dingtalk=push_dingtalk, effective_at=effective_at, expires_at=expires_at, change_note=change_note))
         db.commit()
         return item
 
@@ -126,12 +126,16 @@ def channel_ready(config):
 
 def submit(db, identity, document_id):
     config, document, item = _item(db, identity, document_id, 'write', True)
-    channel_ready(config)
     if item.withdrawn_at or document.draft_revision_id == document.published_revision_id:
         raise knowledge.ConflictError('没有可发布的新草稿')
     revision = db.get(KnowledgeRevision, document.draft_revision_id)
     if not revision or not revision.content_text.strip():
         raise knowledge.ValidationError('请填写公告正文；图片公告也需提供文字说明')
+    meta = db.get(AnnouncementMeta, revision.id)
+    if not meta:
+        raise knowledge.ConflictError('公告修订缺少类别和有效期信息')
+    if meta.push_dingtalk:
+        channel_ready(config)
     with announcement_scope(config.library_id):
         result = knowledge.submit_document(db, identity, document_id, commit=False)
     db.commit()
@@ -160,7 +164,12 @@ def review(db, identity, document_id, *, approve, remark=''):
         if not approve:
             knowledge.reject_request(db, identity, document.pending_approval_id, remark=remark, commit=False)
         else:
-            channel_ready(config)
+            request = db.get(KnowledgeApprovalRequest, document.pending_approval_id)
+            meta = db.get(AnnouncementMeta, request.revision_id)
+            if not meta:
+                raise knowledge.ConflictError('公告修订缺少类别和有效期信息')
+            if meta.push_dingtalk:
+                channel_ready(config)
             kind = 'update' if document.published_revision_id else 'publish'
             approval = knowledge.approve_request(db, identity, document.pending_approval_id, remark=remark, commit=False)
             revision = db.get(KnowledgeRevision, approval.revision_id)
@@ -176,7 +185,8 @@ def review(db, identity, document_id, *, approve, remark=''):
             db.add(event)
             db.flush()
             _cancel_pending(db, document.id)
-            enqueue(db, config, rendering.publication_parts(event, revision, meta), publication=event)
+            if meta.push_dingtalk:
+                enqueue(db, config, rendering.publication_parts(event, revision, meta), publication=event)
     db.commit()
     return {'id': document.id, 'status': document.status}
 
@@ -187,6 +197,23 @@ def _cancel_pending(db, document_id):
         task.status, task.error = 'cancelled', '公告已更新或撤回'
 
 
+def group_exposed(db, document_id):
+    """Sent or ambiguous messages, including retained weekly generations, need corrections."""
+    states = ['sent', 'sending', 'uncertain']
+    if db.query(Delivery.id).join(Publication, Publication.id == Delivery.publication_id).filter(
+        Publication.document_id == document_id, Delivery.status.in_(states)).first():
+        return True
+    for task, report in db.query(Delivery, WeeklyReport).join(
+        WeeklyReport, WeeklyReport.id == Delivery.weekly_id).filter(Delivery.status.in_(states)):
+        generation = task.payload.get('generation')
+        snapshot = report if generation == report.generation else next(
+            (old for old in (report.history or []) if old['generation'] == generation), None)
+        sources = report.sources if snapshot is report else snapshot.get('sources', []) if snapshot else []
+        if any(source['document_id'] == document_id for source in sources):
+            return True
+    return False
+
+
 def withdraw(db, identity, document_id, reason):
     config, document, item = _item(db, identity, document_id, 'admin', True)
     if item.withdrawn_at or not document.published_revision_id:
@@ -195,6 +222,9 @@ def withdraw(db, identity, document_id, reason):
     if not reason:
         raise knowledge.ValidationError('请填写撤回原因')
     revision = db.get(KnowledgeRevision, document.published_revision_id)
+    meta = db.get(AnnouncementMeta, revision.id)
+    # Correct any earlier version that may already have reached the group.
+    needs_correction = group_exposed(db, document_id)
     event = Publication(document_id=document.id, revision_id=revision.id, title=revision.title, kind='withdraw', reason=reason, actor_id=access.user_id(identity))
     db.add(event)
     db.flush()
@@ -204,7 +234,8 @@ def withdraw(db, identity, document_id, reason):
     document.status = 'withdrawn'
     _cancel_pending(db, document_id)
     parts = rendering.text_parts(f'【公告撤回】{rendering.escape(revision.title)}\n{rendering.escape(reason)}\n[查看说明]({rendering.link(document_id)})')
-    enqueue(db, config, [{'title': '公告撤回', **p} for p in parts], publication=event)
+    if meta.push_dingtalk or needs_correction:
+        enqueue(db, config, [{'title': '公告撤回', **p} for p in parts], publication=event)
     knowledge._audit(db, identity, config.library_id, 'announcement_withdraw', 'document', document.id, revision.id)
     db.commit()
 
@@ -238,7 +269,7 @@ def detail(db, identity, document_id, *, edit=False):
             'revision_id': revision.id, 'version_no': revision.version_no, 'status': document.status if edit or not document.published_revision_id else 'published',
             'pending_approval_id': document.pending_approval_id if edit else None, 'can_edit': can_write and edit and not document.pending_approval_id,
             'can_review': can_review, 'published_at': item.published_at, 'published_by': item.published_by, 'pinned': item.pinned,
-            'category_id': meta.category_id, 'category_name': meta.category_name, 'important': meta.important,
+            'category_id': meta.category_id, 'category_name': meta.category_name, 'important': meta.important, 'push_dingtalk': meta.push_dingtalk,
             'effective_at': meta.effective_at, 'expires_at': meta.expires_at, 'change_note': meta.change_note}
 
 

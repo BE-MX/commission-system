@@ -39,6 +39,7 @@ class AnnouncementMeta(Base):
     category_id = Column(BigInteger, ForeignKey('ark_knowledge_documents.id'), nullable=False, comment='类别目录ID')
     category_name = Column(String(256), nullable=False, comment='类别名称快照')
     important = Column(Boolean, nullable=False, default=False, comment='重要标记')
+    push_dingtalk = Column(Boolean, nullable=False, default=True, comment='此修订是否推送钉钉群')
     effective_at = Column(DateTime, comment='生效时间')
     expires_at = Column(DateTime, comment='截止时间')
     change_note = Column(String(500), nullable=False, default='', comment='更新说明')
