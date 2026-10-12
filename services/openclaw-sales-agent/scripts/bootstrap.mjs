@@ -25,6 +25,8 @@ const node = process.env.OPENCLAW_NODE || join(home, ".openclaw/tools/node/bin/n
 const parallelPlugin = process.env.OPENCLAW_PARALLEL_PLUGIN
   || "@openclaw/parallel-plugin@2026.8.1";
 const envFile = join(stateDir, ".env");
+// Cloud preparation deliberately creates no model requests or queue consumer.
+const prepareOnly = process.argv.includes("--prepare-only");
 const mainHeartbeat = {
   every: "5m",
   target: "none",
@@ -127,6 +129,7 @@ async function migrateModelKeyToSecretFile(envName, tokenFile, providerLabel) {
   try {
     metadata = await lstat(tokenFile);
   } catch {
+    if (prepareOnly) return;
     throw new Error(`${providerLabel} key is missing; store it as the only line in ${tokenFile} before bootstrap`);
   }
   if (!metadata.isFile() || metadata.isSymbolicLink()
@@ -252,6 +255,7 @@ function configureMainAgentTools() {
   // Keep queue automation scoped to the sales agent. A defaults-level
   // heartbeat would silently schedule unrelated agents such as email outreach.
   main.heartbeat = mainHeartbeat;
+  if (prepareOnly) main.heartbeat = { ...mainHeartbeat, every: "0m" };
   setConfig("agents.entries.main", main);
 }
 
@@ -359,7 +363,7 @@ async function main() {
   }
 
   run(openclaw, ["--profile", profile, "config", "validate"]);
-  run(openclaw, ["--profile", profile, "gateway", "install", "--force", "--json"]);
+  if (!prepareOnly) run(openclaw, ["--profile", profile, "gateway", "install", "--force", "--json"]);
   process.stdout.write(`\nOpenClaw profile '${profile}' prepared at ${stateDir}.\n`);
   process.stdout.write(`Add the Ark token to ${arkTokenFile} (mode 0600).\n`);
   process.stdout.write(`Optional runtime heartbeat token file: ${heartbeatTokenFile} (mode 0600).\n`);

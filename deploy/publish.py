@@ -338,6 +338,7 @@ if __name__ == "__main__":
     parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Beijing outbound worker")
     parser.add_argument('--okki-sync-only', metavar='PLAN_JSON', help='Prepare/activate only the reviewed Beijing outbound mirror')
     parser.add_argument('--mail-worker-stage', choices=['prepare', 'provision', 'configure', 'oauth', 'enable-sending'], help='Prepare Beijing mail service/OAuth without activating application code')
+    parser.add_argument('--sales-agent-stage', choices=['prepare', 'configure', 'verify'], help='Prepare dedicated Beijing research agent without starting tasks')
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
@@ -358,6 +359,13 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if args.sales_agent_stage:
+            if any(value for key, value in vars(args).items() if key not in {'sales_agent_stage', 'revision', 'no_pull'}):
+                raise RuntimeError('Sales preparation cannot be combined with application release actions')
+            from sales_agent_release import execute
+            with deployment_lock():
+                execute(Path(__file__).resolve().parent.parent, args.revision, args.sales_agent_stage, STATE)
+            sys.exit(0)
         if args.static_retention_only:
             from static_retention_release import execute
             print(json.dumps(execute(args, ROOT, Path(__file__).resolve().parent.parent, deployment_lock)), flush=True)
