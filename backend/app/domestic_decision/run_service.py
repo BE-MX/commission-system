@@ -12,6 +12,7 @@ from app.domestic_decision.schemas import PRODUCT_FIELDS
 from app.domestic_decision.metrics import METRIC_VERSION
 
 SORT_FIELDS = {
+    "stylist_reports": {"id", "item_id", "order_id", "domestic_no", "user_id", "name", "product_name", "reported_at", "report_qty", *[f"attrs.{field}" for field in PRODUCT_FIELDS]},
     "reports": {"id", "item_id", "order_id", "customer_id", "process_name", "reported_at", "report_qty", "amount"},
     "orders": {"id", "domestic_no", "order_date", "customer_id", "order_category", "order_type", "status", "total_amount"},
     "items": {"id", "order_id", "order_qty", "unit_price", "amount", *[f"attrs.{field}" for field in PRODUCT_FIELDS]},
@@ -62,22 +63,26 @@ def require_run(db, actor, run_id, *, fresh=False, allow_expired=False):
     return row
 
 
-def rows(db, actor, run_id, *, kind="orders", page=1, page_size=50, customer_id=None, order_id=None, dimension=None, value=None, sort_field=None, sort_order=None):
+def rows(db, actor, run_id, *, kind="orders", page=1, page_size=50, customer_id=None, order_id=None, dimension=None, value=None, sort_field=None, sort_order=None, stylist_id=None):
     row = require_run(db, actor, run_id, fresh=True)
-    if kind not in {"orders", "items", "customers", "ledger", "requests", "reports"}:
+    if kind not in {"orders", "items", "customers", "ledger", "requests", "reports", "stylist_reports"}:
         raise HTTPException(422, "证据类型不支持")
     if (sort_field is not None and sort_field not in SORT_FIELDS[kind]) or sort_order not in {None, "asc", "desc"} or bool(sort_field) != bool(sort_order):
         raise HTTPException(422, "排序字段或方向不支持")
     if kind in {"ledger", "requests"} and not has(actor, "domestic_decision_finance:read"):
         raise HTTPException(403, "需要资金阅读权限")
     data = row.result_json.get("customers", []) if kind == "customers" else row.result_json["evidence"].get(kind, [])
+    if stylist_id is not None:
+        if kind != "stylist_reports":
+            raise HTTPException(422, "发型师筛选仅用于做发型报工")
+        data = [item for item in data if item["user_id"] == stylist_id]
     if customer_id is not None:
         scope.require_customer(db, actor, customer_id)
         data = [item for item in data if item.get("customer_id", item.get("id") if kind == "customers" else None) == customer_id]
     if order_id is not None:
         data = [item for item in data if item.get("order_id", item.get("id") if kind == "orders" else None) == order_id]
     if dimension:
-        if kind == "reports":
+        if kind in {"reports", "stylist_reports"}:
             raise HTTPException(422, "报工证据请按客户、订单或事实引用下钻")
         if dimension not in row.result_json.get("dimensions", {}):
             raise HTTPException(422, "维度不支持")

@@ -142,6 +142,28 @@ class CustomerRechargeCreate(BaseModel):
         return v.strip() if isinstance(v, str) else v
 
 
+class FundRequestResubmit(BaseModel):
+    model_config = {"extra": "forbid"}
+    amount: Decimal = Field(..., ge=Decimal("-999999999999.99"), le=Decimal("999999999999.99"),
+                            max_digits=14, decimal_places=2)
+    request_id: str = Field(..., min_length=8, max_length=64, pattern=r"^\S+$")
+    remark: str | None = Field(None, max_length=500)
+    change_membership: bool = False
+    membership_level: Literal["silver", "black", "supreme"] | None = None
+
+    @model_validator(mode="after")
+    def validate_membership(self):
+        if not self.change_membership and self.membership_level is not None:
+            raise ValueError("未选择调整会员等级")
+        self.remark = (self.remark or "").strip() or None
+        return self
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _strip_request_id(cls, v: str) -> str:
+        return v.strip() if isinstance(v, str) else v
+
+
 class CustomerInitialize(BaseModel):
     """老客户建档时一次性写入期初余额与会员等级；已有流水后一律走临时调整。"""
 
@@ -203,6 +225,7 @@ class ReviewDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: Literal["approve", "reject"]
+    review_version: int = Field(..., ge=0, description="页面所见价格审核轮次")
     remark: str | None = Field(None, max_length=500, description="审核意见；驳回必填（≥2 字）")
 
     @field_validator("remark", mode="before")
@@ -213,6 +236,9 @@ class ReviewDecision(BaseModel):
 
 
 # ── 产品属性 ──────────────────────────────────────────
+class ReviewWithdraw(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    review_version: int = Field(..., ge=0)
 
 
 class ProductAttrs(BaseModel):

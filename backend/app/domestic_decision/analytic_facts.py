@@ -40,7 +40,7 @@ def header_evidence(order, finance=False):
     result = {"id": order.id, "domestic_no": order.domestic_no, "customer_id": order.customer_id,
               "order_date": order.order_date.isoformat(), "order_kind": order.order_kind,
               "order_category": order.order_category, "order_type": order.order_type,
-              "order_channel": order.order_channel, "status": order.status, "deleted_flag": order.deleted_flag,
+              "order_channel": order.order_channel, "status": order.status, "review_version": order.review_version, "deleted_flag": order.deleted_flag,
               "total_amount": number(order.total_amount), "created_by": order.created_by,
               "updated_at": order.updated_at.isoformat() if order.updated_at else None}
     if finance:

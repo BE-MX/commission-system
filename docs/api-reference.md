@@ -899,6 +899,15 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 
 ## 内贸订单（`/api/domestic`，081～140 相关迁移，2026-07-27 至 2026-09-07）
 
+### 审核撤回与重新提交（2026-10-12，本地实现）
+
+- `POST /orders/{id}/withdraw-review`：`domestic:write`且本人创建；JSON必填`review_version`（页面所见轮次）。仅待审核且尚未扣款可退回草稿，然后沿用明细编辑与草稿提交。与审批共用订单行锁。
+- `POST /orders/{id}/review` 的请求新增必填`review_version>=0`；列表/详情/建单/提交结果返回轮次。每次进入待审核递增；旧页面通过、驳回或撤回返回409，须刷新核对本轮报价。旧草稿提交幂等键不能重新激活撤回过的提交。
+- `POST /customer-requests/{id}/withdraw`：`domestic:recharge`或`domestic:admin`且本人申请；只允许pending→withdrawn，不动余额、会员与账本。重复撤回返回原记录；已审批拒绝。列表状态筛选增加withdrawn，并返回`withdrawn_at/resubmitted_request_id`。
+- `POST /customer-requests/{id}/resubmit`：同权限和本人约束，并重新核验客户当前操作范围。multipart的`data`是JSON：`amount,request_id,remark?,change_membership=false,membership_level=null`；可选`file`替换充值凭证，未传沿用原凭证。充值金额必须为正，不接受手调等级；调整可正负或仅改等级，原因至少2字。保留原申请金额/说明/凭证，生成新pending申请并原子关联；同一撤回记录只生成一个替代申请，同键同内容返回当前新申请状态。审核新申请后才入账。
+
+迁移184增加撤回状态与订单审核轮次；生产须经统一部署入口协调全部内贸审核后端写实例及主站前端切换，新服务不会接受缺轮次的旧页面审核请求。
+
 - 2026-09-20：业务单仅在商品成交价偏离系统默认会员价时进入价格审核，正常会员优惠直接生效。详情明细新增 `default_discount_price`（不含手工费）、`default_line_amount`、`price_changed`；`unit_price` 和 `line_amount` 含手工费。`current_expected_quotes.discount_price` 不含手工费。
 - 订单类型新增 `sample=样单`，普货样单允许 `manual_discount_price=0`；普通订单人工商品价仍必须大于 0。零价样单在草稿设置/追加并提交审核，禁止在制订单直接新增或改为零价；已有零价样单不能直接改成普通类型。
 - 订单列表整单逐件码打印沿用明细 `unit-qrcodes` API，以每批最多 200 件按明细序号获取全部标签；失败不提供部分打印。充值仍按单笔金额重新核定等级，覆盖人工指定等级，申请及审批界面明确提示。
@@ -1779,7 +1788,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | GET | `/filters` | 当前可见客户、业务员、运行时选项和能力；无资金权限无结算/会员选项。 |
 | POST | `/analysis-runs` | `AnalysisRequest` → 一致性结果、`meta.run_id`、数据/指标/映射/配置版本、覆盖率及固定证据。 |
 | GET | `/analysis-runs/{id}` | 本人固定结果；每次复核当前权限/归属。 |
-| GET | `/analysis-runs/{id}/rows` | `kind=orders/items/customers/ledger/requests/reports`，`page`、`page_size<=200`，可传 `customer_id/order_id/dimension/value`；`sort_field`按kind白名单，`sort_order=asc/desc`，完整筛选快照先排序再分页、空值末尾；非法排序422，来源变化409，过期410。 |
+| GET | `/analysis-runs/{id}/rows` | `kind=orders/items/customers/ledger/requests/reports/stylist_reports`，`page`、`page_size<=200`，可传 `customer_id/order_id/dimension/value`；做发型报工支持`stylist_id`且不接受维度下钻条件。`sort_field`按kind白名单，`sort_order=asc/desc`，完整筛选快照先排序再分页、空值末尾；非法排序422，来源变化409，过期410。 |
 | POST | `/finance-runs` | 同查询，基础+资金阅读权限；返回meta及资金桥接。 |
 | GET | `/customers/{id}/profile` | `start_date/end_date`，当前画像+完整授权购买历史、成熟cohort、偏好与推荐。 |
 | GET | `/salespeople/{id}/profile` | 同日期，当前负责人组合及比较窗口；不假称历史业绩。 |

@@ -18,7 +18,7 @@ from app.domestic import balance_service, customer_service
 from app.domestic import constants as C
 from app.domestic.models import DomesticCustomer, DomesticCustomerRequest
 from app.domestic.pricing_service import membership_label
-from app.domestic.schemas import CustomerAdjust
+from app.domestic.schemas import CustomerAdjust, FundRequestResubmit
 
 
 def _validate_request_id(request_id: str | None, action: str) -> str:
@@ -186,6 +186,8 @@ def _request_view(req: DomesticCustomerRequest, *, replayed: bool = False) -> di
         "reviewed_by": req.reviewed_by,
         "reviewed_at": req.reviewed_at,
         "review_remark": req.review_remark,
+        "withdrawn_at": req.withdrawn_at,
+        "resubmitted_request_id": req.resubmitted_request_id,
         "replayed": replayed,
     }
 
@@ -249,7 +251,9 @@ def _lock_pending_request(db: Session, request_id: int) -> DomesticCustomerReque
     if req is None:
         raise ValueError("申请不存在")
     if req.status != C.REQUEST_STATUS_PENDING:
-        raise ValueError("该申请已审核过，请刷新查看最新状态")
+        if req.status in (C.REQUEST_STATUS_APPROVED, C.REQUEST_STATUS_REJECTED):
+            raise ValueError("该申请已审核过，请刷新查看最新状态")
+        raise ValueError("该申请不在待审核状态，请刷新查看最新状态")
     return req
 
 
@@ -327,3 +331,73 @@ def reject_request(
     req.review_remark = remark
     db.commit()
     return _request_view(req)
+
+
+def _lock_owned_request(db: Session, request_id: int, user_id: int) -> DomesticCustomerRequest:
+    req = db.query(DomesticCustomerRequest).filter(
+        DomesticCustomerRequest.id == request_id,
+    ).populate_existing().with_for_update().first()
+    if req is None or req.created_by != user_id:
+        raise ValueError("申请不存在或不是本人提交")
+    return req
+
+
+def withdraw_request(db: Session, request_id: int, user_id: int) -> dict:
+    """Serialize withdrawal with approval on the same request lock; never touch funds."""
+    db.info["domestic_actor_id"] = user_id
+    req = _lock_owned_request(db, request_id, user_id)
+    if req.status == C.REQUEST_STATUS_WITHDRAWN:
+        return _request_view(req, replayed=True)
+    if req.status != C.REQUEST_STATUS_PENDING:
+        raise ValueError("该申请不在待审核状态，不能撤回")
+    req.status = C.REQUEST_STATUS_WITHDRAWN
+    req.withdrawn_at = beijing_now()
+    db.commit()
+    return _request_view(req)
+
+
+def resubmit_request(db: Session, request_id: int, payload: FundRequestResubmit, user_id: int,
+                     *, voucher_path: str | None = None, can_operate_all: bool = False) -> dict:
+    """Keep the withdrawn row immutable; one replacement per withdrawal."""
+    db.info["domestic_actor_id"] = user_id
+    req = _lock_owned_request(db, request_id, user_id)
+    if req.status != C.REQUEST_STATUS_WITHDRAWN:
+        raise ValueError("只有已撤回的申请可以重新提交")
+    if req.resubmitted_request_id:
+        replacement = db.get(DomesticCustomerRequest, req.resubmitted_request_id)
+        if replacement and replacement.request_id == payload.request_id:
+            if (balance_service.money(replacement.amount) != balance_service.money(payload.amount)
+                    or bool(replacement.change_membership) != payload.change_membership
+                    or replacement.membership_level != payload.membership_level
+                    or (replacement.remark or "") != (payload.remark or "")):
+                raise ValueError("该请求号已用于不同申请内容")
+            return _request_view(replacement, replayed=True)
+        raise ValueError("该撤回记录已重新提交，请查看新申请")
+    _lock_customer(db, req.customer_id, user_id, can_operate_all)
+    amount = balance_service.money(payload.amount)
+    if req.request_type == C.REQUEST_TYPE_RECHARGE:
+        if amount <= 0 or payload.change_membership or payload.membership_level is not None:
+            raise ValueError("充值金额必须大于 0，会员等级由充值金额自动核定")
+        voucher_path = voucher_path or req.voucher_path
+        if not voucher_path:
+            raise ValueError("请上传银行流水或转账截图")
+    else:
+        if amount == 0 and not payload.change_membership:
+            raise ValueError("没有需要调整的内容")
+        if not payload.remark or len(payload.remark.strip()) < 2:
+            raise ValueError("请填写调整原因（至少 2 个字）")
+        voucher_path = None
+    if db.query(DomesticCustomerRequest.id).filter_by(request_id=payload.request_id).first():
+        raise ValueError("该请求号已用于其他申请，请使用新的请求号")
+    replacement = DomesticCustomerRequest(
+        customer_id=req.customer_id, request_type=req.request_type, amount=amount,
+        change_membership=int(payload.change_membership), membership_level=payload.membership_level,
+        voucher_path=voucher_path, remark=payload.remark, status=C.REQUEST_STATUS_PENDING,
+        request_id=payload.request_id, business_key=f"{req.request_type}:{req.customer_id}:{payload.request_id}",
+        created_by=user_id,
+    )
+    db.add(replacement)
+    db.flush()
+    req.resubmitted_request_id = replacement.id
+    db.commit()
+    return _request_view(replacement)

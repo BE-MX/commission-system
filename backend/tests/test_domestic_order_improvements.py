@@ -116,6 +116,6 @@ def test_sample_zero_edit_and_append_only_allowed_before_review(db, draft):
     reviewer = _user(db, "sample-zero-approver")
     db.commit()
     approved = order_service.review_order(db, created["id"], decision="approve", remark=None,
-                                         reviewer_id=reviewer.id, can_admin=False)
+                                         reviewer_id=reviewer.id, can_admin=False, review_version=db.get(order_service.DomesticOrder, created["id"]).review_version)
     assert approved["status"] == C.ORDER_PRODUCING
     assert approved["charged_amount"] == 0

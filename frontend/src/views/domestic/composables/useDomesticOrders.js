@@ -10,7 +10,7 @@ import { useAuthStore } from '@/stores/auth'
 import {
   attachItemRoute, deleteOrder, exportOrder, exportOrderDetails, getCustomerOptions, getItemWxacode, getOptions, getOrder, getProcessRoutes,
   listDomesticSkips, listOrders, listProcessWorkers, listReports, newRequestId,
-  reviewOrder,
+  reviewOrder, withdrawOrderReview,
   revokeDomesticSkip, revokeReport, shipItem, skipDomesticStep,
   submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
@@ -83,6 +83,21 @@ export function useDomesticOrders() {
   }
   const reviewingOrderIds = reactive(new Set())
 
+  async function handleWithdrawReview(row) {
+    if (reviewingOrderIds.has(row.id)) return
+    try {
+      await confirmAction('撤回后订单退回草稿，可修改价格和明细后重新提交。', '撤回申请', { confirmButtonText: '撤回申请' })
+    } catch { return }
+    reviewingOrderIds.add(row.id)
+    try {
+      await withdrawOrderReview(row.id, row.review_version)
+      draftSubmitRequestIds.delete(row.id)
+      msgSuccessText('审核已撤回，订单已退回草稿，可重新编辑')
+      await refreshAll()
+    } catch { await refreshAll() }
+    finally { reviewingOrderIds.delete(row.id) }
+  }
+
   async function handleReviewApprove(row) {
     try {
       await confirmAction(
@@ -93,7 +108,7 @@ export function useDomesticOrders() {
     } catch { return }
     reviewingOrderIds.add(row.id)
     try {
-      await reviewOrder(row.id, 'approve')
+      await reviewOrder(row.id, 'approve', null, row.review_version)
     } catch { return } finally {
       reviewingOrderIds.delete(row.id)
     }
@@ -112,7 +127,7 @@ export function useDomesticOrders() {
     } catch { return }
     reviewingOrderIds.add(row.id)
     try {
-      await reviewOrder(row.id, 'reject', value.trim())
+      await reviewOrder(row.id, 'reject', value.trim(), row.review_version)
     } catch { return } finally {
       reviewingOrderIds.delete(row.id)
     }
@@ -547,7 +562,7 @@ export function useDomesticOrders() {
     wxacodeDialog, openWxacode, downloadWxacode,
     handleExport, handleExportDetails, exportingDetails, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
     canOperateOrder,
-    canReview, canReviewOrder, reviewingOrderIds, handleReviewApprove, handleReviewReject,
+    canReview, canReviewOrder, reviewingOrderIds, handleReviewApprove, handleReviewReject, handleWithdrawReview,
     editDialog, openEdit,
     isShipDateOverdue,
   }

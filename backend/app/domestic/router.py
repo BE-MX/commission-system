@@ -10,6 +10,7 @@ import io
 import logging
 from datetime import date, datetime
 from decimal import Decimal
+from pydantic import ValidationError
 from app.core.time import beijing_now
 from urllib.parse import quote
 
@@ -53,6 +54,7 @@ from app.domestic.schemas import (
     CustomerInitialize,
     CustomerUpdate,
     DraftSubmitRequest,
+    FundRequestResubmit,
     ItemShipRequest,
     OrderCreate,
     OrderItemAppend,
@@ -66,6 +68,7 @@ from app.domestic.schemas import (
     ReportSubmit,
     ReviewDecision,
     ReviewRemark,
+    ReviewWithdraw,
     RouteRuleSaveRequest,
     RouteConfigurationSaveRequest,
 )
@@ -441,7 +444,7 @@ def customer_request_pending_count(
 def list_customer_requests(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status: str = Query("", pattern="^(pending|approved|rejected)?$"),
+    status: str = Query("", pattern="^(pending|approved|rejected|withdrawn)?$"),
     request_type: str = Query("", pattern="^(recharge|adjust)?$"),
     keyword: str = Query("", max_length=120),
     sort_field: str = "",
@@ -457,6 +460,56 @@ def list_customer_requests(
         viewer_user_id=_uid(current_user), can_review_all=_can_review(current_user),
     )
     return ok(page_result(items, total, page, page_size))
+
+
+@router.post("/customer-requests/{request_id}/withdraw", summary="本人撤回待审核充值/调整申请")
+def withdraw_customer_request(
+    request_id: int, db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
+):
+    try:
+        return ok(request_service.withdraw_request(db, request_id, _uid(current_user)), message="申请已撤回，可修改后重新提交")
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/customer-requests/{request_id}/resubmit", summary="修改已撤回申请并重新提交（保留原申请）")
+async def resubmit_customer_request(
+    request_id: int, data: str = Form(..., max_length=4000), file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
+):
+    try:
+        payload = FundRequestResubmit.model_validate_json(data)
+        req = request_service._lock_owned_request(db, request_id, _uid(current_user))
+        if req.status != C.REQUEST_STATUS_WITHDRAWN:
+            raise ValueError("只有已撤回的申请可以重新提交")
+        if file and req.request_type != C.REQUEST_TYPE_RECHARGE:
+            raise ValueError("调整申请不接受充值凭证")
+        voucher_path = None
+        if file and not req.resubmitted_request_id:
+            content = await file.read()
+            file_service.validate_voucher_upload(file.filename, file.content_type or "", len(content))
+            voucher_path = file_service.store_bytes(file.filename, content)
+        result = request_service.resubmit_request(
+            db, request_id, payload, _uid(current_user), voucher_path=voucher_path,
+            can_operate_all=_can_operate_all_customers(current_user),
+        )
+    except ValidationError as exc:
+        db.rollback()
+        raise HTTPException(422, "申请内容格式不正确") from exc
+    except (ValueError, file_service.FileValidationError) as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+    await request_notification_service.notify_submitted(db, result)
+    return ok(result, message="申请已重新提交，审核通过后生效")
 
 
 @router.post("/customer-requests/{request_id}/approve", summary="审核通过充值/调整申请（立即入账）")
@@ -913,6 +966,8 @@ def submit_draft_order(
         result = order_service.submit_draft(
             db, order_id, payload, _uid(current_user)
         )
+    except order_service.ReviewVersionConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     except pricing_service.DomesticQuoteChangedError as exc:
         raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
@@ -921,6 +976,20 @@ def submit_draft_order(
     if result["status"] == C.ORDER_PENDING_REVIEW:
         return ok(result, message="订单已提交：优惠价低于原始价，审核通过后正式生效")
     return ok(result, message="订单已提交，余额扣款成功")
+
+
+@router.post("/orders/{order_id}/withdraw-review", summary="本人撤回待审核价格订单并退回草稿")
+def withdraw_order_review(
+    order_id: int, payload: ReviewWithdraw, db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        return ok(order_service.withdraw_review(db, order_id, _uid(current_user), review_version=payload.review_version),
+                  message="审核已撤回，订单已退回草稿")
+    except order_service.ReviewVersionConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/orders/{order_id}/review", summary="审核优惠价订单（通过即扣款生效）")
@@ -935,7 +1004,10 @@ def review_order(
             db, order_id,
             decision=payload.decision, remark=payload.remark,
             reviewer_id=_uid(current_user), can_admin=_has_admin(current_user),
+            review_version=payload.review_version,
         )
+    except order_service.ReviewVersionConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(

@@ -45,8 +45,8 @@ def get_analysis(run_id: str, db: Session = Depends(decision_db), user=Depends(g
 
 
 @router.get("/analysis-runs/{run_id}/rows")
-def rows(run_id: str, kind: str = "orders", page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200), customer_id: int | None = None, order_id: int | None = None, dimension: str | None = None, value: str | None = None, sort_field: str | None = None, sort_order: str | None = None, db: Session = Depends(decision_db), user=Depends(get_current_user)):
-    return ok(run_service.rows(db, _actor(db, user), run_id, kind=kind, page=page, page_size=page_size, customer_id=customer_id, order_id=order_id, dimension=dimension, value=value, sort_field=sort_field, sort_order=sort_order))
+def rows(run_id: str, kind: str = "orders", page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200), customer_id: int | None = None, order_id: int | None = None, dimension: str | None = None, value: str | None = None, sort_field: str | None = None, sort_order: str | None = None, stylist_id: int | None = Query(None, gt=0), db: Session = Depends(decision_db), user=Depends(get_current_user)):
+    return ok(run_service.rows(db, _actor(db, user), run_id, kind=kind, page=page, page_size=page_size, customer_id=customer_id, order_id=order_id, dimension=dimension, value=value, sort_field=sort_field, sort_order=sort_order, stylist_id=stylist_id))
 
 
 @router.post("/finance-runs")
@@ -109,6 +109,8 @@ def evidence(kind: str, entity_id: int, db: Session = Depends(decision_db), user
         item = db.query(DomesticOrderItem).filter_by(id=row.item_id).first()
         process = db.query(Process).filter_by(id=row.process_id).first()
         data = report_evidence(row, item, order, process.name if process else "未知")
+        data.update(reported_by_user_id=row.reported_by_user_id, reported_by_name=row.reported_by_name,
+                    product_name=item.product_name)
     if kind == "item":
         from app.domestic_decision.event_hooks import safe_snapshot
         data["attrs_snapshot"] = safe_snapshot(data["attrs_snapshot"])

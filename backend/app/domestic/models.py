@@ -178,6 +178,7 @@ class DomesticOrder(Base):
     order_type = Column(String(32), comment="订单类型（sys_dict: domestic_order_type）")
     order_channel = Column(String(32), comment="订单渠道（sys_dict: domestic_order_channel）")
     status = Column(SmallInteger, nullable=False, default=1, comment="0=草稿,1=生产中,2=已完工,3=已发货,4=已终止")
+    review_version = Column(Integer, nullable=False, default=0, server_default="0", comment="价格审核提交轮次")
     total_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="订单明细总金额")
     charged_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="已从客户余额扣除金额")
     next_line_no = Column(Integer, nullable=False, default=1, comment="下一条明细的稳定序号")
@@ -466,7 +467,9 @@ class DomesticCustomerRequest(Base):
     membership_level = Column(String(16), comment="目标会员等级 silver/black/supreme；change_membership=1 且为 NULL 表示取消会员")
     voucher_path = Column(String(255), comment="银行流水/转账截图相对路径（充值必填）")
     remark = Column(String(500), comment="申请说明/调整原因")
-    status = Column(String(16), nullable=False, default="pending", comment="pending/approved/rejected")
+    status = Column(String(16), nullable=False, default="pending", comment="pending/approved/rejected/withdrawn")
+    withdrawn_at = Column(DateTime, comment="申请人撤回时间（北京时间）")
+    resubmitted_request_id = Column(BigInteger, comment="重新提交的新申请ID；原申请保留")
     request_id = Column(String(64), nullable=False, unique=True, comment="客户端提交幂等键")
     business_key = Column(String(128), nullable=False, unique=True, comment="执行入账时的账本幂等键")
     created_by = Column(_UINT, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="申请人")
@@ -481,7 +484,7 @@ class DomesticCustomerRequest(Base):
             name="ck_dom_request_type",
         ),
         CheckConstraint(
-            "status IN ('pending', 'approved', 'rejected')",
+            "status IN ('pending', 'approved', 'rejected', 'withdrawn')",
             name="ck_dom_request_status",
         ),
         Index("idx_dom_request_status", "status", "created_at"),

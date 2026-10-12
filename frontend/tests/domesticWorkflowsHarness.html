@@ -1,0 +1,44 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Isolated domestic workflows</title><style>.fixture-content{padding:24px 28px;overflow-x:clip}@media(max-width:640px){.fixture-content{padding:12px 10px}}</style><div id="app"></div><script type="module">
+import { createApp, h, ref } from 'vue'
+import ElementPlus from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import * as icons from '@element-plus/icons-vue'
+import * as echarts from 'echarts/core'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import '../src/styles/app.css'
+import '../src/styles/liquid-glass.css'
+import '../src/styles/table-actions.css'
+import '../src/styles/dashboard-theme.css'
+import { createPinia } from 'pinia'
+import { createRouter, createWebHistory, RouterView } from 'vue-router'
+import { useAuthStore } from '../src/stores/auth'
+import { registerPermissionDirectives } from '../src/directives/permission'
+import { registerSortableTables } from '../src/components/SortableTableColumn'
+import { registerStickyScrollbarDirective } from '../src/directives/stickyScrollbar'
+import FilterBar from '../src/components/FilterBar.vue'
+import ListPageStatus from '../src/components/ListPageStatus.vue'
+import StatusBadge from '../src/components/StatusBadge.vue'
+import ResponsiveDescriptions from '../src/components/ResponsiveDescriptions.vue'
+import DetailDrawer from '../src/components/DetailDrawer.vue'
+import EmptyState from '../src/components/EmptyState.vue'
+import GlassButton from '../src/components/GlassButton.vue'
+import Requests from '../src/views/domestic/DomesticCustomerRequests.vue'
+import Orders from '../src/views/domestic/DomesticOrders.vue'
+import Decision from '../src/views/domestic_decision/DomesticDecision.vue'
+const pinia = createPinia()
+window.chartOption = element => echarts.getInstanceByDom(element)?.getOption()
+const Host = { setup() { const tab = ref('requests'); return () => h('main', { class: 'fixture-content' }, [
+  h('nav', ['requests', 'orders', 'decision'].map(key => h('button', { onClick: () => tab.value = key }, key))),
+  h(tab.value === 'requests' ? Requests : tab.value === 'orders' ? Orders : Decision),
+]) } }
+const router = createRouter({ history: createWebHistory(), routes: [{ path: '/tests/domesticWorkflowsHarness.html', name: 'DomesticOrders', component: Host }] })
+const app = createApp({ render: () => h(RouterView) })
+app.use(pinia); app.use(router); app.use(ElementPlus, { locale: zhCn })
+registerPermissionDirectives(app); registerSortableTables(app); registerStickyScrollbarDirective(app)
+app.component('FilterBar', FilterBar); app.component('ListPageStatus', ListPageStatus); app.component('StatusBadge', StatusBadge); app.component('ResponsiveDescriptions', ResponsiveDescriptions)
+app.component('DetailDrawer', DetailDrawer); app.component('EmptyState', EmptyState); app.component('GlassButton', GlassButton)
+for (const [key, component] of Object.entries(icons)) app.component(key, component)
+useAuthStore().user = { id: 1, roles: [], permissions: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic_decision:read'] }
+await router.isReady(); app.mount('#app')
+</script></html>

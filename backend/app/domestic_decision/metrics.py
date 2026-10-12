@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import timedelta
 from app.domestic_decision.models import DecisionConfig
 
-METRIC_VERSION = "domestic-v2-report-date"
+METRIC_VERSION = "domestic-v3-stylist-workload"
 DEFAULT_CONFIG = {"coverage_start": None, "aftersales_order_types": [], "quality_threshold": 0.8, "dormant_days": 90, "rule_version": "rules-v1", "inactive_lifecycle_statuses": ["closed", "paused", "inactive", "lost", "停业", "暂停合作"]}
 METRICS = [
     {"code": "business_order_amount", "label": "业务下单金额", "grain": "order_id", "formula": "SUM(unique valid business order.total_amount BY order_date)", "unit": "元", "version": METRIC_VERSION},

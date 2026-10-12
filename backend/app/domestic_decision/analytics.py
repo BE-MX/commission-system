@@ -21,6 +21,7 @@ from app.domestic_decision.recommendations import customer_recommendations
 from app.domestic_decision.operations import load_operations, in_period, shipping_summary, shipping_by_day
 from app.domestic_decision.customer_operations import retention_report, recharge_segments
 from app.domestic_decision.product_operations import product_report
+from app.domestic_decision.stylist_analysis import build_stylist_analysis
 
 
 def _selected_customers(db, actor, payload):
@@ -90,6 +91,8 @@ def build_analysis(db, actor, payload):
     mappings = {(r.property, r.product_type or "", r.raw_value): r.standard_value for r in mapping_rows}
     attrs = {r.id: item_attributes(r, mappings) for r in all_items}
     operations = load_operations(db, actor, payload, source_orders, all_items, attrs, mappings)
+    stylists, stylist_names = build_stylist_analysis(db, operations, payload, comparison)
+    operations["source"]["stylist_names"] = stylist_names
     shipping = in_period(operations["shipping"], payload.start_date, payload.end_date)
     current_orders, current_items = _period_facts(source_orders, all_items, attrs, payload, payload.start_date, payload.end_date)
     previous_orders, previous_items = _period_facts(source_orders, all_items, attrs, payload, *comparison) if comparison else ([], [])
@@ -182,11 +185,13 @@ def build_analysis(db, actor, payload):
               "trend": trend, "dimensions": dimensions, "matrix": matrix_rows(current_items, current_orders, customers, payload.dimensions, attrs, payload.metric),
               "price_structure": price_report(current_items), "quantity_structure": quantity_report(current_orders, current_items, all_items), "amount_decomposition": amount_decomposition(summary, previous_summary) if comparison else None,
               "products": products, "production_operations": production_operations, "retention": retention, "customers": selected_customer_rows, "salespeople": salespeople,
+              "stylists": stylists,
               "cohorts": buying_cohorts(selected_customer_rows, min(payload.end_date, beijing_today()), config["coverage_start"]),
               "recommendation_meta": recommendation_meta,
               "quality": quality, "insights": build_insights(selected_customer_rows, dimensions, quality, config, finance),
               "evidence": {"orders": [header_evidence(r, finance_allowed) for r in current_orders], "items": [item_evidence(r, *attrs[r.id]) for r in current_items],
-                           "reports": shipping + in_period(operations["supply"], payload.start_date, payload.end_date)}, "metric_registry": METRICS}
+                           "reports": shipping + in_period(operations["supply"], payload.start_date, payload.end_date),
+                           "stylist_reports": stylists["details"]}, "metric_registry": METRICS}
     if segments:
         segments.pop("source", None)
         result["customer_segments"] = segments
