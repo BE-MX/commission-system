@@ -283,7 +283,7 @@ const {
   const ledgerDrawer = reactive({ visible: false, customer: null, items: ledgerState.list, loading: ledgerState.loading,
     page: ledgerState.page, pageSize: ledgerState.pageSize, total: ledgerState.total })
   const ledgerTypeLabel = {
-    recharge: '充值', order_charge: '订单扣款', order_adjustment: '订单差额', order_refund: '订单退款',
+    receipt: '货款收款', recharge: '充值', order_charge: '订单扣款', order_adjustment: '订单差额', order_refund: '订单退款',
     init: '期初初始化', adjust: '手工调整', level_adjust: '等级调整',
   }
 

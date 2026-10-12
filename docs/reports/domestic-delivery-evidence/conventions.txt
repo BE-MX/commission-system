@@ -1,0 +1,19 @@
+[UI] frontend/src/views/invoice/components/InvoiceAccessoryTable.vue: column 1 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceAccessoryTable.vue: column 2 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceAccessoryTable.vue: column 6 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceAccessoryTable.vue: column 7 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceAccessoryTable.vue: column 8 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceAccessoryTable.vue: column 9 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceAccessoryTable.vue: column 10 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceAccessoryTable.vue: column 11 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceHairTable.vue: column 1 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceHairTable.vue: column 2 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceHairTable.vue: column 11 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceHairTable.vue: column 12 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceHairTable.vue: column 13 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceHairTable.vue: column 14 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceHairTable.vue: column 15 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceHairTable.vue: column 16 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceHairTable.vue: deep_el_override baseline is stale (baseline=1, actual=2); regenerate it only after intentional cleanup
+audit_frontend_ui: 17 failure(s)
+check_conventions: UI 债务门禁失败

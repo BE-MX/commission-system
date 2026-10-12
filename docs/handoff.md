@@ -1,5 +1,13 @@
 # 当前交接与待办
 
+## 2026-10-12 内贸逐件分批发货与收款对账（Codex，本地开发，未合并推送部署）
+
+- 分支 `codex/domestic-shipment-settlement`；独立 worktree `C:/Users/windb/.codex/worktrees/domestic-shipment-settlement/commission-system`。复用逐件报工，支持跨订单批次、同明细分数量、顾客搜索、紧凑行高、收货登记、货款审核及分批/跨批核销。
+- 迁移186接185，只新增交付/核销结构和资金申请字段，无历史猜配，未执行共享或生产迁移。部分发货冻结明细并保护已发报工；终止保留交付金额。用户只授权开发，未执行 push 或部署。
+- 后端233 passed、Node选择2 passed、前端构建及真实Edge完整路径通过（33px行高、跨订单/分次/跨批核销及CSV读回）；本任务增量约定检查0问题，全仓检查仅原发票17项告警。
+- 使用与验收入口：[内贸交付说明](domestic-delivery.md)、[验收报告](reports/2026-10-12-domestic-delivery.md)。
+
+
 ## 2026-10-12 公告单条钉钉推送选择（Codex，已验证并获合并推送授权，未部署）
 
 - 分支 `codex/announcement-dingtalk-option`，worktree `C:\Users\windb\.codex\worktrees\announcement-dingtalk-option\commission-system`。每条公告的 `push_dingtalk` 随修订保存并在待审核期间冻结；编辑、审核提示、确认弹窗和列表同步显示选择。新建默认跟随群推送总开关；API 省略仍 true 保留既有调用行为。

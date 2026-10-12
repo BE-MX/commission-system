@@ -445,7 +445,7 @@ def list_customer_requests(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: str = Query("", pattern="^(pending|approved|rejected|withdrawn)?$"),
-    request_type: str = Query("", pattern="^(recharge|adjust)?$"),
+    request_type: str = Query("", pattern="^(recharge|adjust|receipt)?$"),
     keyword: str = Query("", max_length=120),
     sort_field: str = "",
     sort_order: str = "",

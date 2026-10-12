@@ -709,3 +709,8 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 ## 180_settlement_funding_amendment（未付款旧批升级审计，2026-10-09 已部署）
 
 父迁移 `179_presale_funding`，新增 `ark_settlement_funding_amendments`，不回填或改写旧报价/收款。保存原结算、发票、回款FK，独立唯一 request_key 和输入摘要；同一 settlement 最多一次升级。before_snapshot/after_snapshot/evidence 为非空JSON，完整保留前后报价、原创建身份、付款事实与验证证据；actor_id、reason 与北京时间 created_at 可追溯操作。原结算/产品/远端运费身份不变；升级只新建余额占用应用，未实际出库不核销。downgrade拒绝删除审计，修复使用前向迁移。
+
+
+## 内贸交付批次与货款核销（186）
+
+迁移 `186_domestic_delivery` 接 185。新增 `ark_domestic_shipments`（同客户跨订单批次、发货/收货事实、幂等指纹）、`ark_domestic_shipment_lines`（订单明细及顾客/规格/价格/数量快照）、`ark_domestic_shipment_units`（具体件唯一交付关联）、`ark_domestic_receipt_allocations`（资金申请到批次的不可删增量核销，`ledger_id` 为已入账证据，`business_key` 唯一）。FK 保持目标类型一致。资金申请增加可空 `receipt_date`、`payload_hash`，类型扩展 `receipt`；历史字段和资金记录不猜配、不回填。所有新审计时间用北京时间，downgrade 拒删。行为及历史对账边界见 [内贸交付说明](domestic-delivery.md)。

@@ -17,7 +17,7 @@ export const REQUEST_STATUS = [
   { value: 'withdrawn', label: '已撤回', tag: 'info' },
 ]
 export const REQUEST_STATUS_MAP = Object.fromEntries(REQUEST_STATUS.map(s => [s.value, s]))
-export const REQUEST_TYPE_LABELS = { recharge: '充值', adjust: '调整' }
+export const REQUEST_TYPE_LABELS = { recharge: '充值', adjust: '调整', receipt: '货款收款' }
 
 export function useDomesticCustomerRequests() {
   const auth = useAuthStore()
@@ -75,7 +75,7 @@ const {
     return row.status === 'pending' && row.created_by === auth.user?.id
   }
   function canEditRow(row) {
-    return row.status === 'withdrawn' && row.created_by === auth.user?.id && !row.resubmitted_request_id
+    return row.request_type !== 'receipt' && row.status === 'withdrawn' && row.created_by === auth.user?.id && !row.resubmitted_request_id
   }
   function openEdit(row) {
     Object.assign(editDialog, { visible: true, row, amount: Number(row.amount), remark: row.remark || '',
@@ -94,7 +94,8 @@ const {
     try {
       const result = await withdrawCustomerRequest(row.id)
       msgSuccessText('申请已撤回，余额和会员等级未改变')
-      openEdit({ ...row, ...result.data })
+      if (row.request_type !== 'receipt') openEdit({ ...row, ...result.data })
+      else msgSuccessText('收款已撤回，可从交付对账重新登记')
       searchForm.status = 'withdrawn'
       await handleSearch()
     } catch { await listPageState.refreshUpdate() }
@@ -122,7 +123,7 @@ const {
   async function handleApprove(row) {
     try {
       await confirmAction(
-        `确认通过${row.customer_name || ''}的${REQUEST_TYPE_LABELS[row.request_type]}申请？通过即入账生效。${row.request_type === 'recharge' ? `本次充值将覆盖当前会员等级（含人工调整），重新核定为「${membershipPreview(row.amount)}」。` : '人工调整的等级会在下一次充值审批通过时被重新核定。'}`,
+        `确认通过${row.customer_name || ''}的${REQUEST_TYPE_LABELS[row.request_type]}申请？通过即入账生效。${row.request_type === 'recharge' ? `本次充值将覆盖当前会员等级（含人工调整），重新核定为「${membershipPreview(row.amount)}」。` : row.request_type === 'receipt' ? '本次货款收款不改变会员等级。' : '人工调整的等级会在下一次充值审批通过时被重新核定。'}`,
         '审核通过',
         { type: 'warning', confirmButtonText: '通过并入账', cancelButtonText: '再想想' },
       )

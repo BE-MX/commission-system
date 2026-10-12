@@ -168,10 +168,14 @@ def create_adjust_request(
 
 
 def _request_view(req: DomesticCustomerRequest, *, replayed: bool = False) -> dict:
+    from sqlalchemy.orm import object_session
+    from app.domestic.receipt_service import allocation_view
     return {
+        "allocations": allocation_view(object_session(req), req.id) if req.request_type == "receipt" else [],
         "id": req.id,
         "customer_id": req.customer_id,
         "request_type": req.request_type,
+        "receipt_date": req.receipt_date,
         "amount": float(req.amount),
         "change_membership": bool(req.change_membership),
         "membership_level": req.membership_level if req.change_membership else None,
@@ -280,7 +284,10 @@ def approve_request(
     db.info["domestic_actor_id"] = reviewer_id
     req = _lock_pending_request(db, request_id)
     _ensure_reviewer(req, reviewer_id, can_admin)
-    if req.request_type == C.REQUEST_TYPE_RECHARGE:
+    if req.request_type == "receipt":
+        from app.domestic.receipt_service import approve_receipt
+        result = approve_receipt(db, req)
+    elif req.request_type == C.REQUEST_TYPE_RECHARGE:
         result = balance_service.recharge_customer(
             db,
             customer_id=req.customer_id,
@@ -361,6 +368,8 @@ def resubmit_request(db: Session, request_id: int, payload: FundRequestResubmit,
     """Keep the withdrawn row immutable; one replacement per withdrawal."""
     db.info["domestic_actor_id"] = user_id
     req = _lock_owned_request(db, request_id, user_id)
+    if req.request_type == "receipt":
+        raise ValueError("收款撤回后请从交付对账重新登记，原申请保留")
     if req.status != C.REQUEST_STATUS_WITHDRAWN:
         raise ValueError("只有已撤回的申请可以重新提交")
     if req.resubmitted_request_id:
