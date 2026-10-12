@@ -152,7 +152,7 @@
         <el-table-column label="客户价" min-width="140" max-width="180" prop="price_per_piece" sortable="custom">
           <template #default="{ row }">
             <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
-              <el-input-number v-model="row.price_per_piece" :min="0.01" :precision="4" :controls="false" @change="onPriceInput(row)" />
+              <el-input-number v-model="row.price_per_piece" :min="0" :precision="4" :controls="false" @change="onPriceInput(row)" />
               <StatusBadge v-if="row.price_source === 'manual'" size="small" type="warning" effect="plain">手改</StatusBadge>
             </div>
           </template>

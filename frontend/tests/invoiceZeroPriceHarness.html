@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>Invoice zero price isolated UI verification</title>
+<div id="app"></div>
+<script type="module">
+import { createApp, h, reactive } from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import HairTable from '../src/views/invoice/components/InvoiceHairTable.vue'
+import AccessoryTable from '../src/views/invoice/components/InvoiceAccessoryTable.vue'
+import { normalizeHairRow, buildInvoicePayload } from '../src/views/invoice/composables/invoiceEditorState.js'
+import { normalizeAccessoryRow } from '../src/views/invoice/composables/accessoryPricing.js'
+import { calculateLineTotal } from '../src/views/invoice/composables/invoiceSettlement.js'
+
+const form = reactive({ items: [
+  normalizeHairRow({ id: 1, product_name: 'Hair', product_display: 'Hair', color: 'Black',
+    length: '18', net_weight_grams: '100g', quantity: 3, price_per_piece: 15 }),
+  normalizeAccessoryRow({ id: 2, product_name: 'Tool', product_display: 'Tool', model: 'Tape',
+    product_id: 2, sku_id: 9002, standard_price: 8, customer_price: 8,
+    color: 'Black', quantity: 4, price_per_piece: 8 }),
+] })
+const noop = () => {}
+const money = value => value == null ? '' : Number(value).toFixed(2)
+const recalc = row => { row.total_price = calculateLineTotal(row.quantity, row.price_per_piece, row.discount_amount) }
+form.items.forEach(recalc)
+window.zeroPriceForm = form
+window.zeroPricePayload = () => buildInvoicePayload(form, 0)
+const app = createApp({ setup: () => () => h('main', [
+  h(HairTable, { items: [form.items[0]], isProduction: true,
+    entryOptions: { displays: [], models: [], colors: [], sizes: [], units: [] },
+    loadLineOptions: noop, onLineFilterChange: noop, onCustomFieldChange: noop,
+    onPriceInput: recalc, onLineDiscountChange: recalc, updateLineTotal: recalc, money, money4: money }),
+  h(AccessoryTable, { items: [form.items[1]], searchOptions: noop, onChange: recalc, money, money4: money }),
+]) })
+app.use(ElementPlus)
+app.directive('permission', {})
+app.directive('sticky-scrollbar', {})
+app.mount('#app')
+</script>
+</html>

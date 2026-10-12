@@ -199,7 +199,7 @@ def test_accessory_validation_uses_accessory_fields_without_hair_dimensions():
         net_weight_grams=None,
         curl=None,
         quantity=0,
-        price_per_piece=Decimal("0"),
+        price_per_piece=Decimal("-0.01"),
         discount_amount=Decimal("-1"),
         total_price=Decimal("-1"),
     ))

@@ -184,6 +184,64 @@ def presale_for_push(db, monkeypatch, tmp_path):
 # ── payload 映射 ──────────────────────────────────────────
 
 
+@pytest.mark.parametrize("kind", ["hair", "accessory", "custom"])
+@pytest.mark.parametrize("editing", [False, True])
+def test_zero_price_rows_are_retained_in_okki_payload(db, monkeypatch, kind, editing):
+    from app.invoice import accessory_price_service
+
+    _seed_settings(db)
+    _seed_binding(db)
+    monkeypatch.setattr(accessory_price_service, "validate_active_identity", lambda *args, **kwargs: None)
+    invoice = _make_invoice(db, xiaoman_order_id="123" if editing else None)
+    if kind == "custom":
+        product = _make_custom_product(db, "zero-price-custom")
+        item = _custom_item(product.id, price_per_piece=Decimal("0"), total_price=Decimal("0"))
+    else:
+        item = _stock_item(product_kind=kind, model="M1", price_per_piece=Decimal("0"), total_price=Decimal("0"))
+    item.xiaoman_unique_id = "456" if editing else None
+    invoice.items.append(item)
+    db.flush()
+    assert service.validate_invoice(invoice) == []
+    payload, bindings, issues = xiaoman_service.build_push_payload(db, invoice)
+    assert issues == []
+    assert len(payload["product_list"]) == 1
+    assert bindings[0][0] == [item]
+    row = payload["product_list"][0]
+    assert row["unit_price"] == 0
+    assert row["cost_amount"] == 0
+    assert row["count"] == (1 if kind == "custom" else item.quantity)
+    if editing:
+        assert row["unique_id"] == 456
+
+
+def test_provider_zero_price_rejection_preserves_local_price_and_audit(db, monkeypatch, no_reconcile):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db)
+    invoice.items.append(_stock_item(price_per_piece=Decimal("0"), total_price=Decimal("0")))
+    db.flush()
+    calls = []
+
+    def reject(_db, payload, *, before_send=None):
+        calls.append(payload)
+        if before_send:
+            before_send()
+        raise okki_client.OkkiApiError("OKKI rejects unit_price=0")
+
+    monkeypatch.setattr(okki_client, "push_order", reject)
+    result = xiaoman_service.sync_invoice(db, invoice, operator_id=7)
+    assert result["ok"] is False
+    assert len(calls) == 1
+    assert invoice.items[0].price_per_piece == 0
+    assert invoice.sync_status == "sync_failed"
+    assert invoice.xiaoman_order_id is None
+    log = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id).one()
+    assert log.success == 0
+    assert json.loads(log.request_digest)["product_list"][0]["unit_price"] == 0
+    assert "unit_price=0" in log.error_message
+
+
+
 def test_build_push_payload_stock_custom_and_backfilled(db):
     _seed_settings(db)
     _seed_binding(db)

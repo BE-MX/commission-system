@@ -62,7 +62,7 @@
               <el-input-number
                 v-model="row.price_per_piece"
                 aria-label="成交价"
-                :min="0.01"
+                :min="0"
                 :precision="4"
                 :controls="false"
                 :disabled="row.standard_price == null"

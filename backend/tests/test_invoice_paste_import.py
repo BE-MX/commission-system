@@ -92,12 +92,18 @@ def test_normalize_import_row_accepts_decimal_weight(raw, expected):
     ("quantity", 0),
     ("quantity", 1.5),
     ("quantity", True),
-    ("unit_price", "0"),
+    ("unit_price", "-0.01"),
+    ("unit_price", "NaN"),
+    ("unit_price", "Infinity"),
     ("weight", "abc"),
 ])
 def test_normalize_import_row_rejects_invalid_values(field, value):
     with pytest.raises(ValueError):
         import_service.normalize_row(valid_row(**{field: value}))
+
+
+def test_normalize_import_row_accepts_explicit_zero_price():
+    assert import_service.normalize_row(valid_row(unit_price="0"))["unit_price"] == Decimal("0.0000")
 
 
 def test_normalize_rows_rejects_empty_and_over_limit_batches():

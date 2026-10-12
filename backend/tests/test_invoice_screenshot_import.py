@@ -38,6 +38,15 @@ from app.invoice.screenshot_token import issue_preview_token
 SOURCE_HASH = "a" * 64
 
 
+def test_screenshot_zero_price_is_explicit_and_totals_are_valid():
+    extraction = ScreenshotExtraction.model_validate({
+        "product_amount": "0", "order_amount": "0",
+        "items": [{"source_row": 1, "quantity": 2, "unit_price": "0", "subtotal": "0"}],
+    })
+    assert extraction.items[0].unit_price == Decimal("0")
+    assert screenshot_import_service._validate_totals(extraction)["blockers"] == []
+
+
 @contextmanager
 def _api_client(db, permissions):
     from app.invoice.router import router
