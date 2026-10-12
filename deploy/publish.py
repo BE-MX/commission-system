@@ -360,7 +360,7 @@ if __name__ == "__main__":
     try:
         args = parser.parse_args()
         if args.sales_agent_stage:
-            if any(value for key, value in vars(args).items() if key not in {'sales_agent_stage', 'revision', 'no_pull'}):
+            if any(value for key, value in vars(args).items() if key not in {'sales_agent_stage', 'revision', 'live_root', 'no_pull'}):
                 raise RuntimeError('Sales preparation cannot be combined with application release actions')
             from sales_agent_release import execute
             with deployment_lock():

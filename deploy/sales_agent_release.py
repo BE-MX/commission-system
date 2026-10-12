@@ -19,6 +19,7 @@ def artifact(source):
     for skill in ('ark-lead-discovery', 'ark-company-research', 'ark-public-pool-research'):
         paths.extend((source / '.agents/skills' / skill).rglob('*'))
     paths.extend((source / 'deploy/sales-agent-runtime').glob('*.json'))
+    paths.append(source / 'deploy/sales_agent_credentials.py')
     result = {}
     for path in sorted(paths):
         if path.is_symlink():

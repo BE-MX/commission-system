@@ -11,6 +11,7 @@ except ImportError:  # Windows tests never provision a real user.
     pwd = None
 import re
 import secrets
+import stat
 import subprocess
 import sys
 import tarfile
@@ -30,6 +31,7 @@ def run(args, *, env=None, timeout=300):
                             env=env, timeout=timeout)
     if result.returncode:
         # Provider/config output can contain credentials, so do not echo it.
+        write(ROOT / 'last-error.log', result.stdout + '\n' + result.stderr)
         raise RuntimeError(f'{Path(str(args[0])).name} failed (exit {result.returncode})')
     return result.stdout.strip()
 
@@ -45,7 +47,8 @@ def validate(payload):
         allowed = (name.startswith('services/openclaw-sales-agent/') or
                    any(name.startswith('.agents/skills/' + s + '/') for s in
                        ('ark-lead-discovery', 'ark-company-research', 'ark-public-pool-research')) or
-                   name in {'deploy/sales-agent-runtime/package.json', 'deploy/sales-agent-runtime/package-lock.json'})
+                   name in {'deploy/sales-agent-runtime/package.json', 'deploy/sales-agent-runtime/package-lock.json',
+                            'deploy/sales_agent_credentials.py'})
         if not allowed or path.is_absolute() or '..' in path.parts or '\\' in name:
             raise ValueError('Invalid artifact path')
         body = base64.b64decode(item['content'], validate=True)
@@ -58,12 +61,12 @@ def validate(payload):
 
 
 def write(path, body, mode=0o600):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.is_symlink():
+    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
         raise RuntimeError('Refusing symlink destination')
-    temporary = path.with_name(path.name + '.next')
-    with open(temporary, 'wb') as stream:
-        os.chmod(temporary, mode)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + '.' + secrets.token_hex(12) + '.next')
+    fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, mode)
+    with os.fdopen(fd, 'wb') as stream:
         stream.write(body.encode() if isinstance(body, str) else body)
         stream.flush()
         os.fsync(stream.fileno())
@@ -71,6 +74,8 @@ def write(path, body, mode=0o600):
 
 
 def private_owner(path):
+    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
+        raise RuntimeError('Refusing symlink ownership change')
     user = pwd.getpwnam(USER)
     os.chown(path, user.pw_uid, user.pw_gid)
 
@@ -114,6 +119,9 @@ def inactive():
     result = subprocess.run(['systemctl', 'is-active', SERVICE], capture_output=True, text=True)
     if result.stdout.strip() not in {'inactive', 'unknown', 'failed'}:
         raise RuntimeError('Sales consumer must remain inactive during preparation')
+    enabled = subprocess.run(['systemctl', 'is-enabled', SERVICE], capture_output=True, text=True)
+    if enabled.stdout.strip() not in {'disabled', 'masked', 'not-found', ''}:
+        raise RuntimeError('Sales consumer must remain disabled during preparation')
 
 
 def stage(payload, files):
@@ -165,6 +173,8 @@ def configure(payload):
         raise RuntimeError('Candidate not prepared')
     node = ROOT / 'runtime' / ('node-' + NODE_VERSION + '-linux-x64') / 'bin/node'
     cli = release / 'deploy/sales-agent-runtime/node_modules/openclaw/openclaw.mjs'
+    if PROFILE.is_symlink() or any(parent.is_symlink() for parent in PROFILE.parents):
+        raise RuntimeError('Refusing symlink profile')
     PROFILE.mkdir(exist_ok=True, mode=0o700)
     private_owner(PROFILE)
     env_path = PROFILE / '.env'
@@ -177,6 +187,10 @@ def configure(payload):
             f'OPENCLAW_BIN={cli}', f'OPENCLAW_NODE={node}']
     # Configure, install Skills and MCP, with scheduling disabled and no gateway install.
     run([*args, node, release / 'services/openclaw-sales-agent/scripts/bootstrap.mjs', '--prepare-only'], timeout=900)
+    # Credential issuance uses the existing principal and audited application API.
+    # Plaintext never passes through this process or developer-machine receipts.
+    run(['/home/ubuntu/commission-system/backend/.venv/bin/python',
+         release / 'deploy/sales_agent_credentials.py'], timeout=90)
     write(Path('/etc/systemd/system') / (SERVICE + '.service'), unit_text(release), 0o644)
     run(['systemctl', 'daemon-reload'])
     write(ROOT / 'configured.json', json.dumps({'revision': payload['revision']}))
@@ -189,21 +203,46 @@ def verify(payload):
         raise RuntimeError('Candidate not configured')
     config = json.loads((PROFILE / 'openclaw.json').read_text())
     main = config['agents']['entries']['main']
-    if main['heartbeat']['every'] != '0m' or config['gateway']['port'] != 18791:
+    if main['heartbeat']['every'] != '0m' or config['gateway']['port'] != 18791 or config['gateway']['bind'] != 'loopback' or config['gateway']['auth']['mode'] != 'token':
         raise RuntimeError('Unsafe preparation policy')
     mcp = config['mcp']['servers']['ark-sales']
-    if mcp['env']['ARK_BASE_URL'] != 'https://leshine.cloud':
+    release = ROOT / 'releases' / revision
+    node = ROOT / 'runtime' / ('node-' + NODE_VERSION + '-linux-x64') / 'bin/node'
+    if (mcp['env']['ARK_BASE_URL'] != 'https://leshine.cloud' or
+        mcp['env']['ARK_ALLOWED_ORIGIN'] != 'https://leshine.cloud' or mcp['command'] != str(node) or
+        mcp['args'] != [str(release / 'services/openclaw-sales-agent/src/server.mjs')] or
+        mcp['cwd'] != str(release / 'services/openclaw-sales-agent')):
         raise RuntimeError('Incorrect API owner')
-    missing = [name for name in ('mimo-api-key', 'ark-agent-token')
-               if not (PROFILE / 'secrets' / name).exists() or not (PROFILE / 'secrets' / name).stat().st_size]
+    if config['agents']['defaults']['models']['mimo/mimo-v2.5']['agentRuntime']['id'] != 'openclaw':
+        raise RuntimeError('Model runtime pin drift')
+    if not {'exec', 'write', 'edit', 'apply_patch', 'group:messaging'}.issubset(main['tools']['deny']) or not main['tools']['fs']['workspaceOnly']:
+        raise RuntimeError('Main tool permissions drift')
+    if (Path('/etc/systemd/system') / (SERVICE + '.service')).read_text() != unit_text(release):
+        raise RuntimeError('Systemd unit drift')
+    missing = []
+    owner = pwd.getpwnam(USER)
+    for name in ('mimo-api-key', 'ark-agent-token', 'deepseek-api-key'):
+        path = PROFILE / 'secrets' / name
+        if not path.exists():
+            missing.append(name)
+            continue
+        meta = path.lstat()
+        if path.is_symlink() or not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode) != 0o600 or meta.st_uid != owner.pw_uid or not path.read_text().strip():
+            raise RuntimeError('Invalid private credential file: ' + name)
     return {'model': main.get('model', config['agents']['defaults']['model']),
             'missing_credentials': missing, 'heartbeat': 'disabled', 'gateway_port': 18791,
-            'api_origin': 'https://leshine.cloud', 'service': 'inactive', 'mail_state': 'preserved'}
+            'api_origin': 'https://leshine.cloud', 'service': 'inactive', 'enabled': False, 'mail_state': 'preserved'}
 
 
 def execute(payload):
     files = validate(payload)
     action = payload['action']
+    if action != 'prepare':
+        release = ROOT / 'releases' / payload['revision']
+        for name, body in files.items():
+            path = release / name
+            if path.is_symlink() or not path.is_file() or path.read_bytes() != body:
+                raise RuntimeError('Prepared artifact drift: ' + name)
     if action == 'prepare':
         stage(payload, files)
     elif action == 'configure':
