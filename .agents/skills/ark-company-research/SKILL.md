@@ -24,6 +24,8 @@ Never print or persist the token. Require the exact scheme/host/port of `ARK_BAS
 6. Build `customer_research_v1` from evidence returned by successful tools in the same Agent Run. Every claim uses stable claim/citation IDs; every citation includes the returned `fact:<id>` and exact content hash. The cited facts, task, Run scope, `customer_id`, and `input_hash` must match.
 7. Complete only through the claimed `research_task_id`. Return Ark's `customer_id`, `research_task_id`, review status, and evidence fact IDs. On a recoverable failure, fail the task with a safe error code while the lease is valid.
 
+For an unresolved private enrichment with no facts captured in this Run, follow the current context `gap_contract` when advertised. Complete with `research_gap_v1`, the claim response's `input_hash`, a Simplified Chinese `gap_reason`, and a short `missing_information` list. This is a normal information gap, not an operational failure. Do not include claims, citations, identity assertions, or knowledge references. Any successfully captured fact requires the original evidence closure; public-pool tasks do not use this branch. If the backend does not advertise the gap contract, report the missing capability without fabricating facts or claiming success.
+
 ## Evidence rules
 
 - Customer identity is Ark `customer_id`; company names, domains, emails, social handles, and external IDs are evidence-bearing identities, not master keys.

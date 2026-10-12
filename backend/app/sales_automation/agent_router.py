@@ -88,6 +88,13 @@ def _research_context(db: Session, task_id: int) -> dict:
             "relationship_stage": customer.relationship_stage,
         },
         "fact_contract": enrichment_service.research_fact_contract(),
+        "gap_contract": {
+            "schema_version": "research_gap_v1",
+            "allowed_policy": "private-enrichment-v1",
+            "rules": ["Only an uncertain industry gate with zero facts in this Run may finish with an evidence gap.",
+                      "Use the current input_hash, a gap_reason and missing_information; never submit claims or citations.",
+                      "An evidence gap does not verify identity, change the customer profile or authorize outreach."],
+        },
         "research_rules": {
             "identity_boundary": "仅围绕商业身份和公开业务证据调查；主体不明时保留待识别，不拼接同名主体资料",
             "industry_gate": "先验证业务相关性；明确无关时停止，不猜联系方式、不生成触达草稿或正向成交分",

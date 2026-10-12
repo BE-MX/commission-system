@@ -54,6 +54,7 @@ test('API maps params and mutation payloads through injected customer hub client
 
 test('research review is gated by the loaded matching detail', () => {
   assert.equal(canReviewResearchDetail({ loading: false, error: null, data: { research_task_id: 7, task_status: 'completed' } }, 7), true)
+  assert.equal(canReviewResearchDetail({ loading: false, error: null, data: { research_task_id: 7, task_status: 'completed', result_schema_version: 'research_gap_v1' } }, 7), false)
   assert.equal(canReviewResearchDetail({ loading: false, error: null, data: { research_task_id: 7, task_status: 'completed', content_redacted: true } }, 7), false)
   assert.equal(canReviewResearchDetail({ loading: true, error: null, data: { research_task_id: 7, task_status: 'completed' } }, 7), false)
   assert.equal(canReviewResearchDetail({ loading: false, error: null, data: { research_task_id: 8, task_status: 'completed' } }, 7), false)

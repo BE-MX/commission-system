@@ -15,7 +15,7 @@
         <template v-else-if="detail">
           <ResearchSummary :detail="detail" />
           <p class="timestamp">最近更新：{{ formatDate(detail.updated_at) }}</p>
-          <el-alert v-if="!reviewReady" type="info" title="仅已完成的背调任务可进行结果复核。" :closable="false" show-icon />
+          <el-alert v-if="!reviewReady" type="info" :title="detail.result_schema_version === 'research_gap_v1' ? '资料不足结果无需质量复核；补充线索后可重新研究。' : '仅已完成的背调任务可进行结果复核。'" :closable="false" show-icon />
         </template>
       </div>
       <template v-if="reviewReady && !detail?.content_redacted" #footer>

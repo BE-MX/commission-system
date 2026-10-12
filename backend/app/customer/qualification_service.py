@@ -41,6 +41,8 @@ def _ranked_research(db, user, customer_id=None):
         CustomerResearchTask.task_status == "completed",
         CustomerResearchTask.gate_status == "passed",
         CustomerResearchTask.result_review_status == "accepted",
+        or_(CustomerResearchTask.result_schema_version.is_(None),
+            CustomerResearchTask.result_schema_version != "research_gap_v1"),
         or_(CustomerResearchTask.source_ref_type.is_(None),
             CustomerResearchTask.source_ref_type != "search_result", SearchJob.id.isnot(None)),
     ).with_entities(

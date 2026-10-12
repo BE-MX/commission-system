@@ -92,14 +92,19 @@ const researchCompletion = z.object({
   research_task_id: z.number().int().min(1),
   data_classification: z.enum(["public_business", "internal_business", "personal_contact", "restricted_internal"]).default("internal_business"),
   visibility_scope: z.enum(["all_authorized", "customer_team", "management"]).default("customer_team"),
-  result_json: z.object({
+  result_json: z.discriminatedUnion("schema_version", [z.object({
     schema_version: z.literal("customer_research_v1"),
     input_hash: z.string().regex(/^[0-9a-f]{64}$/u),
     claims: z.array(researchClaim).min(1).max(100),
     citations: z.array(researchCitation).min(1).max(500),
     knowledge_references: z.array(knowledgeReference).max(100).default([]),
     evidence_fact_ids: z.array(z.number().int().min(1)).max(500).default([]),
-  }),
+  }).strict(), z.object({
+    schema_version: z.literal("research_gap_v1"),
+    input_hash: z.string().regex(/^[0-9a-f]{64}$/u),
+    gap_reason: z.string().trim().min(10).max(2000),
+    missing_information: z.array(z.string().trim().min(1).max(200)).min(1).max(10),
+  }).strict()]),
 });
 
 function result(data) {
@@ -296,6 +301,7 @@ export function createServer(
       return { research_task_id: data.research_task_id, customer_id: data.customer_id,
         agent_run_id: data.agent_run_id, input_hash: data.input_hash,
         fact_contract: context.fact_contract,
+        gap_contract: context.gap_contract,
         lease_expires_at: data.lease_expires_at, lease_held: true };
     } finally {
       researchClaimPending = false;
@@ -336,7 +342,7 @@ export function createServer(
   )));
 
   server.registerTool("ark_complete_research_task", {
-    description: "Complete a claimed task with customer_research_v1 claims and same-Run citations.",
+    description: "Complete with customer_research_v1 same-Run evidence, or research_gap_v1 for an uncertain, evidence-free private enrichment per context gap_contract.",
     inputSchema: researchCompletion,
     annotations: { readOnlyHint: false, idempotentHint: true },
   }, safeTracked(async ({ research_task_id: taskId, ...research }) => {

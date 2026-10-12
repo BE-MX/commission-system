@@ -240,10 +240,28 @@ class CustomerResearchResult(BaseModel):
         return self
 
 
+class ResearchGapResult(BaseModel):
+    """An unresolved private enrichment outcome, never an evidence-backed claim."""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    schema_version: Literal["research_gap_v1"]
+    input_hash: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    gap_reason: str = Field(..., min_length=10, max_length=2000)
+    missing_information: list[str] = Field(..., min_length=1, max_length=10)
+
+    @field_validator("missing_information")
+    @classmethod
+    def valid_gaps(cls, value):
+        cleaned = [item.strip() for item in value]
+        if any(not item or len(item) > 200 for item in cleaned) or len(set(cleaned)) != len(cleaned):
+            raise ValueError("缺失线索必须为非空、不重复的简短说明")
+        return cleaned
+
+
 class PublicPoolResearchSubmit(AgentLease):
     model_config = ConfigDict(extra="forbid")
 
-    result_json: CustomerResearchResult
+    result_json: CustomerResearchResult | ResearchGapResult = Field(..., discriminator="schema_version")
     agent_run_id: int = Field(..., gt=0)
     data_classification: Literal[
         "public_business", "internal_business", "personal_contact", "restricted_internal"

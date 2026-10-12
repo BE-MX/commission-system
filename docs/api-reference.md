@@ -1774,6 +1774,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - `GET /api/customer-hub/customers/{customer_id}/enrichment`：读取当前客户最新补全任务、状态、研究结论与证据；无任务返回 `data: null`。权限为 `customer:read/read_all` 或档案维护权限，并实时校验客户范围与资料可见级别。
 - `POST /api/customer-hub/customers/{customer_id}/enrichment`：无请求体，一键发起当前私海客户补全；需要 `customer_profile:write` 或 `customer:admin`。仅处理有有效主负责人的活跃客户，禁止开发客户返回 409；失权返回 404。返回 `{created, task}`，进行中或完成待审核任务复用，客户行锁串行化重复请求。
 - 固定策略 `private-enrichment-v1`，沿用 `full_research` 队列。输入冻结四项重点与既有可见资料及来源；结果经原研究证据闭包回写，质量审核与正式档案采纳分离，历史 Run 的候选事实也不会自动进入档案。
+- 主体未核实且当前 Run 零事实时，Agent 完成接口另接受 `research_gap_v1`（当前 input_hash、gap_reason、missing_information），要求私海 full_research 且行业门控 uncertain/passed。任务与 Run 正常完成，审核状态 not_required，保留旧档案和门控审计；资料不足结果禁止质量审核与开发资格采纳。权限、租约、Run、输入绑定和更严格的数据分级仍有效；新线索可另发起补全任务。
 - 管理员批量入口：在 backend 目录执行 `python -m scripts.private_customer_research create --all-private --enrichment --run-tag <稳定批次标识> --dry-run`，检查范围后去掉 `--dry-run` 创建。`--owners` 与 `--all-private` 互斥。禁止开发、不可解析客户分别计入跳过回执；写入前须确认所有档案编译实例已发布本策略的候选隔离。
 
 邮件草稿 `POST /api/mail-outreach/drafts` 可传 `internal_test: true`（默认 false），仅邮件管理员且收件地址明确列入白名单时可用。模式保存在 revision evidence_snapshot；后续编辑、再生成、审批和临发保持并复查；试发不写客户触达/分类时间线。

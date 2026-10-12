@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>Research gap component acceptance</title></head>
+<body><div id="app"></div><script type="module">
+import { createApp, h } from 'vue'
+import { createPinia } from 'pinia'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import WorkspaceEnrichment from '../src/views/customer_hub/workspace/WorkspaceEnrichment.vue'
+import GlassButton from '../src/components/GlassButton.vue'
+import StatusBadge from '../src/components/StatusBadge.vue'
+import DetailDrawer from '../src/components/DetailDrawer.vue'
+import { customerHubClient } from '../src/api/clients'
+const task = { research_task_id:251, customer_id:628, task_status:'completed',
+  result_review_status:'not_required', result_schema_version:'research_gap_v1',
+  research_summary:'资料不足，未确认新的档案信息。只有姓名，未核实到公开商业主体。',
+  result_json:{schema_version:'research_gap_v1', gap_reason:'只有姓名，未核实到公开商业主体。',
+    missing_information:['公司名称、城市或官网中任意一项']}, evidence:[] }
+// This adapter rejects every write and never contacts a business API.
+customerHubClient.defaults.adapter = async config => {
+  if (config.method !== 'get' || config.url !== '/customers/628/enrichment') throw new Error('Harness blocks non-fixture requests')
+  return {data:{code:200,message:'ok',data:task},status:200,statusText:'OK',headers:{},config}
+}
+const app = createApp({render:()=>h('main',{style:'max-width:1100px;margin:32px auto;padding:24px'},[
+  h('p','隔离组件验收：模拟资料不足结果，不连接生产接口'), h(WorkspaceEnrichment,{customerId:628})])})
+app.use(createPinia()).use(ElementPlus)
+app.component('GlassButton',GlassButton).component('StatusBadge',StatusBadge).component('DetailDrawer',DetailDrawer)
+app.directive('permission',{}).directive('any-permission',{})
+app.mount('#app')
+</script></body></html>

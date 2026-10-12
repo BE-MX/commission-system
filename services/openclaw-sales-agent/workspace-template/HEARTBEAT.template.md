@@ -22,6 +22,8 @@
 6. 使用 `ark_append_research_facts` 把原子事实写入同一 `research_task_id`，保留返回的规范 evidence envelope。完成时以 `customer_research_v1` 提交 claims 与同一 Agent Run 的 citation 闭包；不得输出客户等级、成交概率或触达草稿。研究摘要、结论与门控理由一律使用简体中文（公司名、产品名等专有名词保留原文）。
 7. 研究超过 10 分钟时调用 `ark_heartbeat_research_task`。身份无法确认是正常研究结论，不标失败；只有登记的网络、鉴权、提供商或执行故障才调用 `ark_fail_research_task`。
 
+私海主体无法核实且本 Run 没有写入任何事实时，按 context 的 `gap_contract` 通过 `ark_complete_research_task` 提交 `research_gap_v1`：使用领取返回的 input_hash、简体中文 gap_reason 和 missing_information。不添加 claims/citations，不猜测身份；已有事实必须走原证据闭包。未公布 gap_contract 的后端只报告契约缺口，不能伪造完成。
+
 两个队列都没有可处理任务时，回复 `HEARTBEAT_OK`，不要产生其他消息。
 
 ## 背调回执与停止规则

@@ -110,3 +110,18 @@ test("claim returns the server fact contract to the model", async t => {
   assert.equal((await call("ark_claim_research_task", {research_task_id:11})).structuredContent.fact_contract.version,
     "registered_research_facts_v1");
 });
+
+test("evidence gap completion injects the claimed Run and releases the task", async t => {
+  const {call, sent} = await fixture(t);
+  await call("ark_claim_research_task", {research_task_id:11});
+  const result_json = {schema_version:"research_gap_v1",input_hash:"a".repeat(64),
+    gap_reason:"Only a name is known; no business identity could be verified.",
+    missing_information:["Company name, city or official website"]};
+  assert.equal((await call("ark_complete_research_task", {research_task_id:11,
+    result_json:{...result_json,claims:[]}})).isError, true);
+  assert.equal(sent.length, 0);
+  assert.equal((await call("ark_complete_research_task", {research_task_id:11,result_json})).isError, undefined);
+  assert.equal(sent[0][2].agent_run_id,9001);
+  assert.equal(sent[0][2].result_json.schema_version,"research_gap_v1");
+  assert.equal((await call("ark_claim_research_task", {research_task_id:12})).isError,undefined);
+});
