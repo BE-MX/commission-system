@@ -139,7 +139,7 @@ def _tasks(db):
 def _fake_push_stock_only(_db, _payload, *, before_send=None):
     return {
         "order_id": 424242,
-        "product_list": [{"unique_id": 111, "product_id": "1", "sku_id": "9001"}],
+        "product_list": [{**_payload["product_list"][0], "unique_id": 111}],
     }
 
 
@@ -147,8 +147,8 @@ def _fake_push_with_merged(_db, _payload, *, before_send=None):
     return {
         "order_id": 424242,
         "product_list": [
-            {"unique_id": 111, "product_id": "1", "sku_id": "9001"},
-            {"unique_id": 222, "product_id": "888", "sku_id": "999"},
+            {**_payload["product_list"][0], "unique_id": 111},
+            {**_payload["product_list"][1], "unique_id": 222},
         ],
     }
 
@@ -207,7 +207,7 @@ def test_backfilled_custom_lines_still_enqueue_pending(db, monkeypatch, no_recon
     def fake_push(_db, _payload, *, before_send=None):
         return {
             "order_id": 424242,
-            "product_list": [{"unique_id": 111, "product_id": "555", "sku_id": "556"}],
+            "product_list": [{**_payload["product_list"][0], "unique_id": 111}],
         }
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
@@ -228,7 +228,7 @@ def test_edit_repush_does_not_enqueue(db, monkeypatch, no_reconcile):
     def fake_push(_db, _payload, *, before_send=None):
         return {
             "order_id": 424242,
-            "product_list": [{"unique_id": 111, "product_id": "1", "sku_id": "9001"}],
+            "product_list": [{**_payload["product_list"][0], "unique_id": 111}],
         }
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
@@ -588,9 +588,10 @@ def test_bound_uncertain_first_order_enrolls_only_after_full_sync(db, monkeypatc
 
 
 def test_partial_first_acceptance_enqueues_after_lines_are_restored(db, monkeypatch, no_reconcile):
+    from app.invoice import uncertain_recovery
     _seed_settings(db)
     _seed_binding(db)
-    invoice = _make_invoice(db)
+    invoice = _make_invoice(db, total_amount=Decimal('37.50'), product_amount=Decimal('37.50'))
     invoice.items.append(_stock_item())
     db.commit()
     monkeypatch.setattr(okki_client, "push_order", lambda *a, **kw: {"order_id": 424242, "product_list": []})
@@ -598,6 +599,13 @@ def test_partial_first_acceptance_enqueues_after_lines_are_restored(db, monkeypa
     db.commit()
     assert invoice.outbound_auto_requested == 1 and _tasks(db) == []
     monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
+    assert not xiaoman_service.sync_invoice(db, invoice)["ok"]
+    assert _tasks(db) == []
+    rows, _, _, _ = xiaoman_service._build_product_rows(db, invoice, None, editing=True, reconciling=True)
+    uncertain_recovery.confirm_existing(db, invoice, '已独立核对原单明细与金额一致', 1, evidence={
+        'order_id':'424242', 'company_id':invoice.customer_id, 'currency':'USD', 'amount':37.50,
+        'product_list':[{**rows[0], 'unique_id':111}],
+    })
     assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
     db.commit()
     assert len(_tasks(db)) == 1 and _tasks(db)[0].status == "pending"

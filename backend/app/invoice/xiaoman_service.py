@@ -66,13 +66,13 @@ def sync_invoice(
     order with no local record means the next sync creates a duplicate REAL
     order. Caller (router) owns the final commit for everything else.
     """
-    if invoice.sync_status == "sync_uncertain" and not invoice.xiaoman_order_id:
+    if invoice.sync_status == "sync_uncertain":
         return {
             "ok": False,
-            "message": "上次首推结果待核对，禁止自动重试以免重复建单",
+            "message": "上次推送结果待核对，禁止重推以免重复建单或费用",
             "issues": [{
                 "field": "sync_status",
-                "message": "请先到小满确认订单是否已生成，并由管理员按小满订单号绑定或处理待核对状态",
+                "message": "请先核对原小满订单明细和金额，由管理员处理待核对状态",
             }],
         }
     from app.receipt.invoice_link import preflight
@@ -142,9 +142,9 @@ def sync_invoice(
         return {"ok": False, "message": f"推单异常：{exc}", "issues": []}
 
     order_id = (data or {}).get("order_id")
-    if action == "create" and not order_id:
-        # 响应异常（无 order_id）不能标成功：本地记不住单号，重推必然重复建单
-        message = "OKKI 响应异常（未返回 order_id）：订单可能已生成，请先到 OKKI 后台确认，禁止直接重试"
+    if not order_id or (action == "update" and str(order_id) != str(payload['order_id'])):
+        # Never change the original target based on an unrelated acceptance.
+        message = "OKKI 响应订单身份（order_id）缺失或不一致：请核对原订单，禁止直接重试"
         _mark_sync_uncertain(db, invoice, message, action, payload, operator_id, response=data)
         return {"ok": False, "message": message, "issues": []}
 
@@ -160,22 +160,32 @@ def sync_invoice(
 
     fence()
 
-    # 第二段：unique_id 回写与状态收尾（由 router 的 commit 落库）
-    unassigned = _assign_unique_ids(invoice, line_binding, (data or {}).get("product_list") or [])
+    # Repeated SKU push responses omit subtotals. Read the accepted original
+    # order before matching; do not infer discounted amounts from count * price.
+    from types import SimpleNamespace
+    from app.invoice import order_sync_execution
+    attempt = SimpleNamespace(payload=payload)
+    evidence = data or {}
+    if order_sync_execution.repeated_products(attempt):
+        try:
+            evidence = order_sync_execution.read_accepted_products(
+                okki_client.ensure_access_token(db), attempt,
+                {"provider_reference": invoice.xiaoman_order_id})
+        except okki_client.OkkiApiError:
+            logger.warning('Accepted order readback authentication unavailable invoice=%s', invoice.id)
+            print(f'[xiaoman] accepted order readback authentication unavailable invoice={invoice.id}', flush=True)
+            evidence = {}
+        fence()
+    unassigned = _assign_unique_ids(invoice, line_binding, evidence.get("product_list") or [])
     if unassigned:
-        # OKKI 静默丢行（product_id/sku_id 失效等）：订单已建但缺行，必须让用户看见
         message = (
             f"OKKI 已受理订单（order_id={invoice.xiaoman_order_id}），"
-            f"但有 {unassigned} 行未出现在响应中（可能被静默忽略），"
-            "请核对 OKKI 订单明细后重推补齐"
+            "但明细身份、数量或金额未核对一致；请核对原单，禁止直接重推"
         )
-        _mark_sync_failed(db, invoice, message, action, payload, operator_id, response=data)
+        _mark_sync_uncertain(db, invoice, message, action, payload, operator_id, response=data)
         return {
-            "ok": False,
-            "message": message,
-            "issues": [],
-            "xiaoman_order_id": invoice.xiaoman_order_id,
-            "okki_accepted": True,
+            "ok": False, "message": message, "issues": [],
+            "xiaoman_order_id": invoice.xiaoman_order_id, "okki_accepted": True,
         }
 
     push_attempt.finish(invoice)
@@ -732,63 +742,18 @@ def _commercial_signature(row):
 
 
 def _assign_unique_ids(invoice: Invoice, line_binding: list[tuple], response_rows: list[dict]) -> int:
-    """Write OKKI line unique_ids back onto items; return the unassigned count.
-
-    Each binding maps one pushed row to its local item list (the merged generic
-    row spans several items — every member gets the same uid so any surviving
-    subset can anchor the line in later edits). Rows pushed with a unique_id
-    keep it; new rows claim unclaimed response uids grouped by
-    (product_id, sku_id). Repeated groups require complete commercial evidence
-    and match quantity, price and amount, independently of response ordering.
-    A non-zero return means OKKI silently dropped rows — caller must surface it.
-    """
-    known = {str(row.get("unique_id")) for _items, row in line_binding if row.get("unique_id")}
-    pool: dict[tuple[str, str], list] = defaultdict(list)
-    for resp in response_rows:
-        uid = resp.get("unique_id")
-        if uid is None or str(uid) in known:
-            continue
-        pool[(str(resp.get("product_id")), str(resp.get("sku_id")))].append(resp)
-    fresh = defaultdict(list)
-    for _items, row in line_binding:
-        if not row.get('unique_id'):
-            fresh[(str(row.get('product_id')), str(row.get('sku_id')))].append(row)
-    ordered = {}
-    for pair, rows in fresh.items():
-        if len(rows) < 2:
-            continue
-        candidates = list(pool.get(pair, []))
-        matches = []
-        try:
-            for row in rows:
-                signature = _commercial_signature(row)
-                found = next((i for i, candidate in enumerate(candidates)
-                              if _commercial_signature(candidate) == signature), None)
-                if found is None:
-                    raise ValueError('Repeated SKU commercial identity is incomplete')
-                matches.append(candidates.pop(found))
-        except (ValueError, KeyError, TypeError, ArithmeticError):
-            logger.warning('invoice %s: repeated SKU evidence cannot be assigned', invoice.id)
-            print(f'[xiaoman] invoice {invoice.id}: repeated SKU evidence cannot be assigned', flush=True)
-            matches = []
-        ordered[pair] = matches
-    pool.update(ordered)
-    unassigned = 0
-    for items, row in line_binding:
-        if row.get("unique_id"):
-            uid = str(row["unique_id"])
-        else:
-            uids = pool.get((str(row.get("product_id")), str(row.get("sku_id"))))
-            if not uids:
-                unassigned += 1
-                continue
-            uid = str(uids.pop(0)['unique_id'])
+    """Bind every line atomically; any missing, extra or ambiguous evidence blocks completion."""
+    from app.invoice.response_binding import match
+    try:
+        assignments = match(line_binding, response_rows)
+    except (ValueError, KeyError, TypeError, ArithmeticError):
+        logger.warning("invoice %s: accepted product identities require readback", invoice.id)
+        print(f"[xiaoman] invoice {invoice.id}: accepted product identities require readback", flush=True)
+        return max(1, len(line_binding))
+    for items, uid in assignments:
         for item in items:
             item.xiaoman_unique_id = uid
-    if unassigned:
-        logger.warning("invoice %s: %s line(s) missing unique_id from OKKI response", invoice.id, unassigned)
-        print(f"[xiaoman] invoice {invoice.id}: {unassigned} line(s) missing unique_id in response", flush=True)
-    return unassigned
+    return 0
 
 
 def _mark_sync_failed(

@@ -682,8 +682,8 @@ def test_sync_invoice_success_state_and_unique_id_writeback(db, monkeypatch, no_
         return {
             "order_id": 424242,
             "product_list": [
-                {"unique_id": 111, "product_id": "1", "sku_id": "9001"},
-                {"unique_id": 222, "product_id": "888", "sku_id": "999"},
+                {**payload["product_list"][0], "unique_id": 111},
+                {**payload["product_list"][1], "unique_id": 222},
             ],
         }
 
@@ -720,7 +720,7 @@ def test_ark_presale_create_push_records_exact_okki_order(db, monkeypatch, presa
     def accepted(_db, payload, *, before_send=None):
         captured.append(payload)
         return {"order_id": 424242, "product_list": [
-            {"unique_id": 111, "product_id": "1", "sku_id": "9001"},
+            {**payload["product_list"][0], "unique_id": 111},
         ]}
 
     monkeypatch.setattr(okki_client, "push_order", accepted)
@@ -746,7 +746,7 @@ def test_ark_presale_create_push_records_exact_okki_order(db, monkeypatch, presa
     (okki_client.OkkiApiError("rejected"), "sync_failed", False),
     (okki_client.OkkiOutcomeUncertainError("timeout"), "sync_uncertain", False),
     ({}, "sync_uncertain", False),
-    ({"order_id": 424242, "product_list": []}, "sync_failed", True),
+    ({"order_id": 424242, "product_list": []}, "sync_uncertain", True),
 ])
 def test_ark_presale_push_failure_preserves_remote_identity(
     db, monkeypatch, presale_for_push, response, status, has_order_id,
@@ -828,7 +828,7 @@ def test_sync_create_without_order_id_marks_failed(db, monkeypatch, no_reconcile
         lambda *_args, **_kwargs: pytest.fail("待核对状态不应再次调用 OKKI"),
     )
     retry = xiaoman_service.sync_invoice(db, invoice)
-    assert retry["ok"] is False and "禁止自动重试" in retry["message"]
+    assert retry["ok"] is False and "禁止重推" in retry["message"]
 
 
 def test_sync_create_transport_uncertainty_blocks_retry(db, monkeypatch, no_reconcile):
@@ -852,8 +852,8 @@ def test_sync_create_transport_uncertainty_blocks_retry(db, monkeypatch, no_reco
     assert invoice.xiaoman_order_id is None
 
 
-def test_sync_partial_response_fails_but_keeps_order_id(db, monkeypatch, no_reconcile):
-    # OKKI 静默丢行：订单已建（order_id 固化）但同步标失败，用户可见可重推
+def test_sync_partial_response_stays_uncertain_and_blocks_resend(db, monkeypatch, no_reconcile):
+    # Acceptance with incomplete evidence must be reconciled before another POST.
     _seed_settings(db)
     _seed_binding(db)
     cp = _make_custom_product(db, "key-partial")
@@ -874,11 +874,13 @@ def test_sync_partial_response_fails_but_keeps_order_id(db, monkeypatch, no_reco
         db, invoice, operator_id=7, inventory_operation_key="inventory-batch-1",
     )
 
-    assert result["ok"] is False and "1 行" in result["message"]
+    assert result["ok"] is False and "禁止直接重推" in result["message"]
     assert result["okki_accepted"] is True
-    assert invoice.xiaoman_order_id == "424242"  # 单号已固化，重推走编辑语义
-    assert invoice.sync_status == "sync_failed"
-    assert invoice.items[0].xiaoman_unique_id == "111"  # 成功的行照常回写
+    assert invoice.xiaoman_order_id == "424242"
+    assert invoice.sync_status == "sync_uncertain"
+    assert invoice.items[0].xiaoman_unique_id is None
+    monkeypatch.setattr(okki_client, "push_order", lambda *_a, **_k: pytest.fail("must not resend"))
+    assert not xiaoman_service.sync_invoice(db, invoice)["ok"]
     logs = db.query(InvoiceSyncLog).filter(InvoiceSyncLog.invoice_id == invoice.id).all()
     assert [log.success for log in logs] == [1, 0]  # 受理日志 + 缺行告警日志
     assert logs[0].inventory_operation_key == "inventory-batch-1"

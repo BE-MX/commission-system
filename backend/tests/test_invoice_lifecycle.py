@@ -289,8 +289,10 @@ def test_uncertain_update_preserves_linked_fence_and_original_line(db,order,monk
     row=InvoiceLinkedSync(id='recover-linked',invoice_id=order.id,request_key='recover-key',request_hash='a'*64,
         created_by=1,status='uncertain',before={},after={},steps={},lease_until=datetime(2020,1,1))
     db.add(row);order.linked_sync_id=row.id;order.sync_status='sync_uncertain';db.commit()
-    product={'unique_id':'501','product_id':'P','sku_id':'S','count':1,'unit_price':100,'cost_amount':100}
-    monkeypatch.setattr(xiaoman_service,'_build_product_rows',lambda *a,**kw:([product],[],[],{}))
+    from types import SimpleNamespace
+    product={'unique_id':'501','product_id':1,'sku_id':11,'count':1,'unit_price':100,'cost_amount':100}
+    item=SimpleNamespace(xiaoman_unique_id='501')
+    monkeypatch.setattr(xiaoman_service,'_build_product_rows',lambda *a,**kw:([product],[([item],product)],[],{}))
     monkeypatch.setattr(lifecycle_remote,'read',lambda *a:{'order_id':'123','company_id':'101','currency':'USD',
         'amount':100,'product_list':[{**product,'unique_id':remote_uid}]})
     if accepted:
