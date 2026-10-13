@@ -21,3 +21,19 @@
 统一入口处理办公室/北京后端、办公室Connector、两地主站、PM、素材、采购门户、北京出库轮询器及邮件Worker；保留既有邮件禁用状态和出库单活状态。独立研究Agent的MCP/Skill更新需同一发布目标下核验专用入口，heartbeat保持0m，不自动消耗业务队列。
 
 发布证据目录：主目录及办公室 `.deploy_state/full-main-release-20261013/`，含固定候选、准备/切换日志、版本/schema/服务读回和恢复资料。健康/API只读验收不代表已替用户重绑WhatsApp、执行付费模型研究或真实单据写入。
+
+## 实际应用发布与读回
+
+生产固定版本a7d39aaaffff6a9d5337ecaac60edb4f3c86fcb2，包含origin/main77622edf和原生产f5269d9d；发布身份7cc7f57a7c204e73890ad461429891bc。首次准备被快进祖先门禁拒绝，未停服务；补齐真实Git第二父后候选文件树逐字不变，重新准备成功。失败记录保留在初始目录，最终执行与证据位于full-main-release-20261013-r2。
+
+- 办公室和北京实际HEAD均a7d39aaa，后端及Connector运行。共享库实际195_main_portal_merge，schema-writers状态completed，八张新增业务表已读回存在。没有stamp/downgrade或覆盖原密码/资金事实。
+- 三个健康入口（办公室回环、leshine.work、leshine.cloud）均200/connected。真实登录身份只读读取navigation-preferences和WhatsApp账户均200；助手options无account_uid正确返回422，证明路由和输入验证，不代表已有授权账号能分析。OpenAPI已含信用批ship_first、三条内贸交付路径、五条助手路径及research_gap_v1。没有实际创建订单/出库/回款、外发聊天或付费模型调用。
+- 两地主站artifact均013a00d94eadce3c240faa275d88e04ba118a952d17b470958ad7bbca8452b3a；229文件变化，各首次传输2277922字节。PM、素材及采购门户制品未变。Nginx真实HTTPS index摘要由统一入口核验。
+- Baileys受保护/health实际200。四个历史账号仍旧provider/pending，消息仍0；旧认证目录保留，没有自动转账号或扫码。持有人后续需重新绑定并明确正文/AI外发授权。
+- 出库release_confirmed=true、legacy和原active/enabled timer保持；邮件服务仍inactive/disabled，没有为发布开启发送。publish-current/success均绑定本轮revision，deferred=[]。统一入口最终exit_code=0；静态资源保留status=succeeded，办公室及两主站均completed，保留当前及两份回滚备份与七日资源；最终退出及保留回执已归档。
+
+## 未完成的独立销售研究Agent更新
+
+专用Agent实际仍active、runtime=a9f0cd8856c9a5789c79a9e6a9ffec7424e283c1、heartbeat=0m，MCP尚无research_gap_v1消费分支。实际task251/customer628仍running，lease过期；sales_agent_credentials.py明确拒绝旧running任务未排空时配置发布。已向用户请求是否把该旧任务核验收尾纳入范围；在答复前保留任务、档案和Agent现状，不伪造结束或绕过门禁。因此research_gap的主应用API/UI已发布，但独立Agent端闭环尚未完成，不能称所有独立服务全部更新。
+
+主线origin/main仍77622edf，本次没有另行推送origin。195及生产门户历史保存在codex/full-main-production；后续主线交付需集成这段已运行历史，不能用194代码直接覆盖195数据库。

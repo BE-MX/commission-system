@@ -1,3 +1,12 @@
+## 2026-10-13 最新main主平台生产发布（Codex，独立研究Agent待旧任务解锁）
+
+- 用户授权根据远端全部最新合并代码部署。origin/main基点77622edf，生产固定候选a7d39aaaffff6a9d5337ecaac60edb4f3c86fcb2保留f526生产门户/恢复历史并包含全部main。两台实际HEAD一致，deploy.bat完整发布exit0，publish succeeded/deferred=[]；资源保留后检三目标succeeded，服务及两公网health200/connected。
+- 共享库实际195_main_portal_merge，五步前向迁移仅186_domestic_delivery/192/193/194/195，八张新表读回存在，schema-writers completed。没有stamp/downgrade。原27处主目录修改逐字备份核验，不纳入发布；此新交接段单独追加。
+- 预售批次先出库后回款、导航、内贸交付、WhatsApp/Baileys和助手、编辑器插图、小图喜报及研究资料不足主应用API/UI已发布。新Connector认证health200；旧4账号保持旧provider/pending，消息0，未重绑、未外发聊天或模型请求。出库legacy与timer active/enabled，邮件仍inactive/disabled；两地主站制品一致，其他三个静态目标未变。
+- 后端898 passed/2 skipped；部署805 passed/18 skipped/1已在未修改main复现的storage mock失败；最终迁移/环境28 passed，隔离MySQL升级1 passed、前端52、Connector41、真实入口预检4 passed。17项原UI基线问题保留。独立迁移/发布审查完成。
+- 独立Agent仍a9f0cd88/active/heartbeat0m，MCP无research_gap_v1。task251/customer628仍running、lease过期；专用发布器要求旧任务先结束，已async询问是否纳入该任务核验收尾，答复前保留事实和服务，不伪造完结。因此Agent端闭环尚未更新。
+- 195及生产门户历史在codex/full-main-production，本轮未推origin（仍77622edf）；后续主线发布必须先合入已运行迁移历史，不能用194图覆盖195库。部署及恢复证据.deploy_state/full-main-release-20261013-r2，首个快进准备失败记录单独保留。详见[生产发布记录](reports/2026-10-13-full-main-production-release.md)。
+
 ## 2026-10-13 预售按批次先出库后回款（Codex，Git交付，未部署）
 
 - 分支 codex/presale-credit-batches，独立 worktree C:/Users/windb/.codex/worktrees/presale-credit-batches/commission-system；基点c15b1d2c。本轮按用户授权合并main并推送origin；未部署，未写生产/小满或共享库；主目录已有27处修改备份并独立保留，不纳入本次提交。
