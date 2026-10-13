@@ -32,8 +32,8 @@
 - Baileys受保护/health实际200。四个历史账号仍旧provider/pending，消息仍0；旧认证目录保留，没有自动转账号或扫码。持有人后续需重新绑定并明确正文/AI外发授权。
 - 出库release_confirmed=true、legacy和原active/enabled timer保持；邮件服务仍inactive/disabled，没有为发布开启发送。publish-current/success均绑定本轮revision，deferred=[]。统一入口最终exit_code=0；静态资源保留status=succeeded，办公室及两主站均completed，保留当前及两份回滚备份与七日资源；最终退出及保留回执已归档。
 
-## 未完成的独立销售研究Agent更新
+## 独立销售研究Agent追加更新（已完成）
 
-专用Agent实际仍active、runtime=a9f0cd8856c9a5789c79a9e6a9ffec7424e283c1、heartbeat=0m，MCP尚无research_gap_v1消费分支。实际task251/customer628仍running，lease过期；sales_agent_credentials.py明确拒绝旧running任务未排空时配置发布。已向用户请求是否把该旧任务核验收尾纳入范围；在答复前保留任务、档案和Agent现状，不伪造结束或绕过门禁。因此research_gap的主应用API/UI已发布，但独立Agent端闭环尚未完成，不能称所有独立服务全部更新。
+独立Agent已通过统一专用入口更新至3c7448cc，实际active/enabled、原MiMo/key不变、RPC及真实MCP只读契约通过、heartbeat0m。task251已按research_gap_v1完成，旧Run267取消保留、新Run268完成、正式档案/事实不变。主平台发布时曾因该任务running状态阻挡；用户随后明确授权核验收尾后，才完成此追加更新。详见[追加更新记录](2026-10-13-sales-agent-upgrade.md)。
 
 主线origin/main仍77622edf，本次没有另行推送origin。195及生产门户历史保存在codex/full-main-production；后续主线交付需集成这段已运行历史，不能用194代码直接覆盖195数据库。

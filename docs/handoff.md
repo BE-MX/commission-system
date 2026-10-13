@@ -1,3 +1,10 @@
+## 2026-10-13 旧研究任务收尾与专用Agent发布完成（Codex）
+
+- 用户追加授权核验收尾task251/customer628并更新Agent。原private enrichment uncertain gate保留，事实0；现有API一次重领、一次完成research_gap_v1。旧Run267取消并保留、新Run268 completed，task completed/not_required，正式账号/事实/档案版本逐字不变，实际客户补全GET200。
+- 专用Agent统一deploy.bat七阶段及最终exit0，实际runtime3c7448cc、active/enabled、Gateway RPC passed、原mimo-v2.6-flash及云key/地址不变，token11身份保持，旧7原inactive。heartbeat0m，不自动消费队列、不开邮件；主平台仍a7/schema195。
+- 修复新版controller安全暂停旧runtime和云端模型复用入口：精确unit/旧ready检查后暂停，其余制品检查保留；reuse旧模型证明/key，拒绝漂移，最小模型探针仅一次，未知不自动重发。回归59 passed/1 POSIXskip、MCP17通过、独立审查完成，原17项UI基线保留。
+- 实际安装版SDK/stdio以ark-sales用户探针通过：工具schema含research_gap_v1、task251 context completed、gap contract正确；没有90:* running研究。源文件摘要与本地一致。受保护原始快照仅云端；脱敏回执/日志.deploy_state/sales-agent-followup-20261013，旧服务配置保留。详情[追加更新记录](reports/2026-10-13-sales-agent-upgrade.md)。代码/195历史保留codex/full-main-production，本轮未推origin。
+
 ## 2026-10-13 最新main主平台生产发布（Codex，独立研究Agent待旧任务解锁）
 
 - 用户授权根据远端全部最新合并代码部署。origin/main基点77622edf，生产固定候选a7d39aaaffff6a9d5337ecaac60edb4f3c86fcb2保留f526生产门户/恢复历史并包含全部main。两台实际HEAD一致，deploy.bat完整发布exit0，publish succeeded/deferred=[]；资源保留后检三目标succeeded，服务及两公网health200/connected。
