@@ -514,7 +514,8 @@ def resolve_okki_user_id(db: Session, ark_user_id: int | None) -> int | None:
 
 
 def _build_product_rows(
-    db: Session, invoice: Invoice, settings_row: XiaomanSettings | None, *, editing: bool
+    db: Session, invoice: Invoice, settings_row: XiaomanSettings | None, *, editing: bool,
+    reconciling: bool = False,
 ) -> tuple[list[dict], list[tuple], list[dict], list[int]]:
     """Returns (rows, line_binding, issues, superseded_uids).
 
@@ -522,6 +523,8 @@ def _build_product_rows(
     the merged generic row maps to every un-backfilled custom item.
     superseded_uids: extra OKKI line ids left over when previously
     individually-pushed custom lines collapse into one merged row.
+    reconciling only reads an existing order; it does not send new rows, so the
+    edit-only unanchored-SKU restriction must not prevent restoring their IDs.
     """
     issues: list[dict] = []
     rows: list[dict] = []
@@ -647,7 +650,7 @@ def _build_product_rows(
         for row in rows:
             if not row.get("unique_id"):
                 fresh_counts[(row["product_id"], row["sku_id"])] += 1
-        if any(count > 1 for count in fresh_counts.values()):
+        if not reconciling and any(count > 1 for count in fresh_counts.values()):
             issues.append({
                 "field": "items",
                 "message": "编辑推单一次只能新增一条相同产品的明细（OKKI 按产品去重会静默合并）：请先推送保存，再添加下一条后重推",
@@ -721,6 +724,13 @@ def _build_cost_list(invoice: Invoice) -> list[dict]:
     return costs
 
 
+def _commercial_signature(row):
+    values = tuple(Decimal(str(row[key])) for key in ('count', 'unit_price', 'cost_amount'))
+    if any(not value.is_finite() for value in values):
+        raise ValueError('Nonfinite product evidence')
+    return values
+
+
 def _assign_unique_ids(invoice: Invoice, line_binding: list[tuple], response_rows: list[dict]) -> int:
     """Write OKKI line unique_ids back onto items; return the unassigned count.
 
@@ -728,7 +738,8 @@ def _assign_unique_ids(invoice: Invoice, line_binding: list[tuple], response_row
     row spans several items — every member gets the same uid so any surviving
     subset can anchor the line in later edits). Rows pushed with a unique_id
     keep it; new rows claim unclaimed response uids grouped by
-    (product_id, sku_id), in order — same-identity rows are interchangeable.
+    (product_id, sku_id). Repeated groups require complete commercial evidence
+    and match quantity, price and amount, independently of response ordering.
     A non-zero return means OKKI silently dropped rows — caller must surface it.
     """
     known = {str(row.get("unique_id")) for _items, row in line_binding if row.get("unique_id")}
@@ -737,7 +748,31 @@ def _assign_unique_ids(invoice: Invoice, line_binding: list[tuple], response_row
         uid = resp.get("unique_id")
         if uid is None or str(uid) in known:
             continue
-        pool[(str(resp.get("product_id")), str(resp.get("sku_id")))].append(uid)
+        pool[(str(resp.get("product_id")), str(resp.get("sku_id")))].append(resp)
+    fresh = defaultdict(list)
+    for _items, row in line_binding:
+        if not row.get('unique_id'):
+            fresh[(str(row.get('product_id')), str(row.get('sku_id')))].append(row)
+    ordered = {}
+    for pair, rows in fresh.items():
+        if len(rows) < 2:
+            continue
+        candidates = list(pool.get(pair, []))
+        matches = []
+        try:
+            for row in rows:
+                signature = _commercial_signature(row)
+                found = next((i for i, candidate in enumerate(candidates)
+                              if _commercial_signature(candidate) == signature), None)
+                if found is None:
+                    raise ValueError('Repeated SKU commercial identity is incomplete')
+                matches.append(candidates.pop(found))
+        except (ValueError, KeyError, TypeError, ArithmeticError):
+            logger.warning('invoice %s: repeated SKU evidence cannot be assigned', invoice.id)
+            print(f'[xiaoman] invoice {invoice.id}: repeated SKU evidence cannot be assigned', flush=True)
+            matches = []
+        ordered[pair] = matches
+    pool.update(ordered)
     unassigned = 0
     for items, row in line_binding:
         if row.get("unique_id"):
@@ -747,7 +782,7 @@ def _assign_unique_ids(invoice: Invoice, line_binding: list[tuple], response_row
             if not uids:
                 unassigned += 1
                 continue
-            uid = str(uids.pop(0))
+            uid = str(uids.pop(0)['unique_id'])
         for item in items:
             item.xiaoman_unique_id = uid
     if unassigned:

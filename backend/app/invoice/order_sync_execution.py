@@ -3,6 +3,7 @@ import logging
 import json
 from copy import deepcopy
 from datetime import datetime, timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -176,6 +177,47 @@ def verified_response(attempt,data):
     return normalized
 
 
+def repeated_products(attempt):
+    pairs=[(str(row['product_id']),str(row['sku_id'])) for row in attempt.payload['product_list']
+           if not row.get('remove')]
+    return len(pairs)!=len(set(pairs))
+
+
+def read_accepted_products(api_token,attempt,observation):
+    """Read an accepted original target outside locks; never send another order."""
+    reference=observation['provider_reference']
+    try:
+        data=okki_client._get_json('/v1/invoices/order/info',api_token,
+            context='已受理订单明细核对',params={'order_id':reference})
+        if (not isinstance(data,dict) or str(data.get('order_id'))!=reference
+                or str(data.get('company_id'))!=str(attempt.payload['company_id'])
+                or data.get('currency')!=attempt.payload['currency']
+                or data.get('name')!=attempt.payload['name']):
+            raise ValueError('Accepted order header differs from original request')
+        actual=verified_response(attempt,data)
+        sent=[row for row in attempt.payload['product_list'] if not row.get('remove')]
+        def signature(row):
+            return str(row['product_id']),str(row['sku_id']),*xiaoman_service._commercial_signature(row)
+        if sorted(map(signature,sent))!=sorted(map(signature,actual)):
+            raise ValueError('Accepted order commercial evidence differs from original request')
+        by_id={row['unique_id']:row for row in actual}
+        if any(row.get('unique_id') and signature(row)!=signature(by_id[str(row['unique_id'])]) for row in sent):
+            raise ValueError('Accepted order reassigned an anchored commercial line')
+        costs=attempt.payload.get('cost_list') or []
+        if any(row.get('percent_type')!=0 for row in costs):
+            raise ValueError('Unsupported original additional cost basis')
+        expected=sum((Decimal(str(row['cost_amount'])) for row in sent),Decimal(0))
+        expected+=sum((Decimal(str(row['cost'])) for row in costs),Decimal(0))
+        amount=Decimal(str(data.get('amount')))
+        if not amount.is_finite() or amount!=expected:
+            raise ValueError('Accepted order amount differs from original request')
+        return data
+    except (ValueError,KeyError,TypeError,ArithmeticError,okki_client.OkkiApiError):
+        logger.warning('Accepted repeated-product order evidence unavailable or changed')
+        print('[invoice-push] accepted repeated-product evidence unavailable or changed',flush=True)
+        return {'order_id':reference}  # Acceptance survives; incomplete proof cannot finalize.
+
+
 def apply(db,invoice,attempt,observation,data):
     result_class=observation["result_class"]
     result={"ok":False,"message":"原订单推送结果待核对，禁止自动重发","issues":[],
@@ -189,10 +231,13 @@ def apply(db,invoice,attempt,observation,data):
             error=None,operator_id=attempt.actor_id,inventory_operation_key=attempt.inventory_key)
         try:
             validated=verified_response(attempt,data)
-            _,binding,issues,_=xiaoman_service._build_product_rows(db,invoice,xiaoman_service.get_settings_row(db),editing=True)
+            _,binding,issues,_=xiaoman_service._build_product_rows(
+                db,invoice,xiaoman_service.get_settings_row(db),editing=True,reconciling=True)
             if issues or xiaoman_service._assign_unique_ids(invoice,binding,validated):raise ValueError("Incomplete local assignment")
             with db.begin_nested():inventory.finalize_invoice_sync(db,invoice.id,attempt.inventory_key,attempt.actor_id)
-        except (ValueError,RuntimeError,SQLAlchemyError):
+        except (ValueError,RuntimeError,SQLAlchemyError) as error:
+            logger.warning('Accepted order local finalization requires recovery (%s)', type(error).__name__)
+            print(f'[invoice-push] accepted order finalization requires recovery ({type(error).__name__})', flush=True)
             result.update(okki_accepted=True,inventory_pending=bool(attempt.inventory_key),
                           xiaoman_order_id=invoice.xiaoman_order_id)
             invoice.sync_error=result["message"]
@@ -294,6 +339,9 @@ def run(db,invoice_id,user,*,linked_id=None,linked_token=None,follow_outbound=Tr
                 persist(db,attempt,tuple(observations),None)
                 raise
             observation,data=send(api_token,attempt,2);observations.append(observation)
+        if observation['result_class']=='accepted' and repeated_products(attempt):
+            persist(db,attempt,tuple(observations),None,finish=False)
+            data=read_accepted_products(api_token,attempt,observation)
         result=persist(db,attempt,tuple(observations),data)
         if result.get("ok") and follow_outbound:
             # Preserve the existing continuation; its executor remains separately audited.

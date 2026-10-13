@@ -1,3 +1,9 @@
+## 2026-10-13 重复 SKU 首次创建收尾与已受理恢复修复（Codex，本地验证，未发布）
+
+- 只读实查发票 1064 `ly1010复购库存单`：原小满订单 105851516280181 已受理，8 行、33 件商业数据一致；本地 8 个 UID 全空，卡在 sync_uncertain。两个同 SKU 的 5×18.20 与 1×18.21 分行在收尾/恢复时被编辑新增限制误拦截。已有原发货单 XSCK2610130502，未写生产数据。
+- 分支 `codex/invoice-create-line-recovery`，worktree `C:/Users/windb/.codex/worktrees/invoice-create-line-recovery/commission-system`。仅已有行核对跳过 fresh duplicate 发送限制；重复行匹配数量/价格/金额，既有 UID 商业含义不改绑；accepted 先落事实，再无锁 GET 原单核验，不重发。现有授权、租约、库存、回款及版本保护保留。
+- SQLite 117 passed；实际当前授权 MySQL 扩展 81 passed、6 个主分支已有绑定/迟到恢复失败（HEAD 基线同样复现）；最终新增场景独立复跑 4 passed。真实 8 行只读反序验证全部 UID 可在内存匹配，missing=0，线上仍为待核对。独立审查通过，diff/增量约定通过；完整约定仍阻断于既有 17 项发票 UI 债务。未合并、推送或部署。详见 [证据与限制](reports/2026-10-13-invoice-duplicate-line-recovery.md)。
+
 ## 2026-10-13 公告编辑器插图与截图粘贴修复（Codex，已验证并获合并推送授权，未部署）
 
 - 用户反馈编辑公告时截图/本地图片无法粘贴或插入。共享 `KnowledgeEditor` 的上传占位 ID 直接调用 `crypto.randomUUID()`；在缺此 API 的非安全页面环境，操作在上传前抛错。隔离 Edge 基线复现 `crypto.randomUUID is not a function`，上传请求为 0；正常环境的文件插入和原生 Ctrl+V 成功。未以推断替代用户实际访问地址核验。
