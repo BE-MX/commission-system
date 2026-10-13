@@ -35,6 +35,10 @@
 - `GET /api/whatsapp/internal/accounts/{uid}/authorization`：机器身份例外，必须非空 Connector Bearer key；只返回实时授权与代次，不返回正文或认证。
 
 Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务衔接。精确契约见 [实现说明](requirements/2026-10-13-whatsapp-baileys.md) 和 [Connector README](../services/whatsapp-connector/README.md)。
+## 客户下单门户密码认证（2026-10-10 候选）
+
+客户 POST /api/portal/v1/auth/login使用email/password、bootstrap Cookie/CSRF和同源Origin；员工POST /api/portal/admin/v1/customers/{access_id}/accounts使用当前Bearer授权、Idempotency-Key及email/contact_name/password。PATCH /accounts/{id}/password使用If-Match及password/reason并撤销旧会话。旧邀请、challenges、verify路由不挂载。详细契约和实际开放结果见客户下单门户03-api-contract.md和09-production-readiness-2026-10-10.md。
+
 
 ## 订单发票与回款备注编辑（2026-10-10）
 

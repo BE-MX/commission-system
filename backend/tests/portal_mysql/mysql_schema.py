@@ -42,7 +42,7 @@ def migrated(mysql_engine):
     heads = scripts.get_heads()
     assert len(heads) == 1
     assert '177_portal_pi_header' in {revision.revision for revision in scripts.walk_revisions()}
-    for filename in ('176_customer_order_portal.py', '177_portal_pi_header.py'):
+    for filename in ('176_customer_order_portal.py', '177_portal_pi_header.py', '183_portal_password_login.py'):
         spec = spec_from_file_location('migration_' + filename[:-3], backend / 'alembic/versions' / filename)
         module = module_from_spec(spec); spec.loader.exec_module(module)
         with engine.begin() as connection:

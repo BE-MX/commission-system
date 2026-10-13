@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import Column, MetaData, Table, inspect, select, text
 from sqlalchemy.orm import Session
 
-from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, ArkLoginLog, ArkRefreshToken
+from app.auth.models import ArkUser, ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, ArkLoginLog, ArkRefreshToken, ArkAccountUnlockAudit
 from app.customer.models import CustomerAccount, CustomerAssignment, CustomerExternalIdentity, CustomerObjectOwnership, CustomerSourceRecord, CustomerContactRelationship
 from app.invoice.models import Invoice, InvoiceItem, InvoiceDelegateGrant, StdPrice, PriceColorType, CustomerPriceRule
 from app.receipt.models import ReceiptIntent
@@ -31,7 +31,7 @@ def service_schema(migrated):
     # fixtures, NOT migrations or proof of the complete upstream schema.
     models = (ArkUser, CustomerAccount, CustomerAssignment, CustomerExternalIdentity, CustomerObjectOwnership, CustomerSourceRecord, CustomerContactRelationship,
         ArkRole, ArkPermission, ArkUserRole, ArkRolePermission, Invoice, InvoiceItem, InvoiceDelegateGrant,
-        ReceiptIntent, StdPrice, PriceColorType, CustomerPriceRule, ArkLoginLog, ArkRefreshToken)
+        ReceiptIntent, StdPrice, PriceColorType, CustomerPriceRule, ArkLoginLog, ArkRefreshToken, ArkAccountUnlockAudit)
     for model in models:
         with migrated.begin() as connection:
             inspector = inspect(connection)
@@ -83,7 +83,7 @@ def trade(service_schema, monkeypatch, request):
     request.addfinalizer(cleanup_owned_mailbox)
     suffix = uuid4().hex[:12]
     settings = SimpleNamespace(PORTAL_ENABLED=True, PORTAL_SITE_CODE='test' + suffix,
-        PORTAL_ORIGIN='https://orders.example.test', PORTAL_OTP_SECRET=secrets.token_urlsafe(32),
+        PORTAL_ORIGIN='https://orders.example.test', PORTAL_AUTH_SECRET=secrets.token_urlsafe(32),
         PORTAL_CSRF_KEYS={'v1': 'c'*32}, PORTAL_CSRF_KEY_VERSION='v1',
         PORTAL_MAIL_KEYS={'v1': 'ab'*32}, PORTAL_MAIL_KEY_VERSION='v1',
         PORTAL_OTP_MINUTES=5, PORTAL_SESSION_HOURS=12, PORTAL_SESSION_IDLE_MINUTES=30,

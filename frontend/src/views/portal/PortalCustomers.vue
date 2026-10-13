@@ -10,7 +10,7 @@ import MappingDialog from './MappingDialog.vue'
 import OnboardingDialog from './OnboardingDialog.vue'
 import CatalogAccessDialog from './CatalogAccessDialog.vue'
 import BindingReviewDialog from './BindingReviewDialog.vue'
-import { accessStatuses, accountStatuses, invitationStatuses } from './customerAccess.mjs'
+import { accessStatuses, accountStatuses } from './customerAccess.mjs'
 
 const auth = useAuthStore(), listError = ref(''), detailError = ref(''), notice = ref('')
 const detail = ref(null), detailVisible = ref(false), detailLoading = ref(false), accountPage = ref(1), accountPageSize = ref(20)
@@ -106,7 +106,7 @@ async function closeAction() {
   if (detailVisible.value && detail.value?.id === closing.access.id) {
     const buttons = [...(detailContent.value?.querySelectorAll('button[data-portal-action]') || [])]
     button = buttons.find(el => el.dataset.portalAction === closing.type && (el.dataset.portalAccount || '') === (closing.account?.id || '') && !el.disabled)
-      || buttons.find(el => el.dataset.portalAction === 'invite' && !el.dataset.portalAccount && !el.disabled)
+      || buttons.find(el => el.dataset.portalAction === 'createAccount' && !el.dataset.portalAccount && !el.disabled)
       || detailRefresh.value?.$el
   } else if (!detailVisible.value) {
     button = denied && !refreshed ? pageRefresh.value?.$el
@@ -116,7 +116,7 @@ async function closeAction() {
 }
 function openOnboarding() { ++onboardingFocusSequence; onboardingRefresh = Promise.resolve(); onboardingCreatedId = null; onboardingVisible.value = true }
 function created({ id, recovered }) {
-  notice.value = recovered ? '已找到现有客户授权，请核对当前设置；此查询不证明先前命令执行结果。' : '客户授权草稿已创建。请核对后设置为启用，再邀请采购联系人。'
+  notice.value = recovered ? '已找到现有客户授权，请核对当前设置；此查询不证明先前命令执行结果。' : '客户授权草稿已创建。请核对后设置为启用，再创建采购账号。'
   onboardingCreatedId = id; onboardingRefresh = Promise.all([fetchList(), loadDetail(id, 1)])
 }
 async function closeOnboarding() {
@@ -173,21 +173,19 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
           <GlassButton ref="bindingTrigger" @click="openReview('binding')">归属与身份复核</GlassButton>
           <GlassButton ref="catalogTrigger" :disabled="detail.status === 'review_required'" @click="openReview('catalog')">管理商品授权</GlassButton>
           <GlassButton :disabled="detail.status === 'review_required'" data-portal-action="access" @click="openAction('access')">设置客户访问</GlassButton>
-          <GlassButton variant="primary" :disabled="detail.status !== 'enabled'" data-portal-action="invite" @click="openAction('invite')">邀请采购账号</GlassButton>
+          <GlassButton variant="primary" :disabled="detail.status !== 'enabled'" data-portal-action="createAccount" @click="openAction('createAccount')">创建采购账号</GlassButton>
         </div>
         <GlassButton v-permission="'portal_mapping:read'" @click="$router.push({ name: 'PortalCustomerPreview', params: { accessId: detail.id } })">预览客户目录</GlassButton>
         <GlassButton ref="mappingTrigger" v-permission="'portal_mapping:read'" @click="openMapping">型号颜色映射</GlassButton>
         <h3>采购账号 <small>共 {{ detail.accounts.total }} 个</small></h3>
-        <p>公司成员共享该公司的订单。邮箱验证、账号状态和成员关系均须有效。</p>
-        <el-empty v-if="!detail.accounts.items.length" description="暂无采购账号，可在启用客户后发送邀请" />
+        <p>公司成员共享该公司的订单。账号密码、账号状态和成员关系均须有效。</p>
+        <el-empty v-if="!detail.accounts.items.length" description="暂无采购账号，可在启用客户后创建账号" />
         <article v-for="account in detail.accounts.items" :key="account.id" class="account-card">
           <strong>{{ account.contact_name || '采购联系人' }}</strong><p>{{ account.email }}</p>
-          <p>{{ accountStatuses[account.status] || '状态待核实' }} · {{ account.email_verified ? '邮箱已验证' : '邮箱未验证' }} · 成员{{ accountStatuses[account.membership_status] || account.membership_status }}</p>
-          <p v-if="account.invitation">最近邀请：{{ invitationStatuses[account.invitation.status] || '状态待核实' }}</p>
+          <p>{{ accountStatuses[account.status] || '状态待核实' }} · {{ account.password_configured ? '已设置密码' : '待设置密码' }} · 成员{{ accountStatuses[account.membership_status] || account.membership_status }}</p>
           <div v-permission="'portal_access:admin'" class="actions">
-            <GlassButton data-portal-action="account" :data-portal-account="account.id" @click="openAction('account', account)">{{ account.status === 'disabled' ? '恢复账号' : '停用账号' }}</GlassButton>
-            <GlassButton :disabled="detail.status !== 'enabled' || account.status === 'disabled' || account.membership_status === 'disabled'" data-portal-action="invite" :data-portal-account="account.id" @click="openAction('invite', account)">重新邀请</GlassButton>
-            <GlassButton v-if="account.invitation?.status === 'pending'" data-portal-action="revoke" :data-portal-account="account.id" @click="openAction('revoke', account)">撤销邀请</GlassButton>
+            <GlassButton data-portal-action="account" :data-portal-account="account.id" @click="openAction('account', account)">{{ account.status === 'active' ? '停用账号' : '恢复账号' }}</GlassButton>
+            <GlassButton data-portal-action="password" :data-portal-account="account.id" @click="openAction('password', account)">设置密码</GlassButton>
           </div>
         </article>
         <el-pagination :current-page="accountPage" v-model:page-size="accountPageSize" :page-sizes="[20, 50, 100]" :total="detail.accounts.total" layout="total, sizes, prev, pager, next" @current-change="value => loadDetail(detailId, value)" @size-change="loadDetail(detailId, 1)" />

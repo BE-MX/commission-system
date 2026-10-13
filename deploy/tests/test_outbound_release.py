@@ -111,6 +111,46 @@ def test_retry_preserves_original_active_baseline(host):
     assert host.state['active']
 
 
+def test_verify_drains_dispatched_batch_before_fence_and_restores_under_fence(host, monkeypatch):
+    host.call('freeze'); host.call('install'); host.call('activate')
+    host.state.update(pid='42', service='active')
+    events=[]
+    def finished(_):
+        assert not host.state['active'] and not host.state['enabled']
+        events.append('batch-finished')
+        host.state.update(pid='0', service='inactive')
+    monkeypatch.setattr(remote.time, 'sleep', finished)
+    original=remote.ModeFence
+    class Fence(original):
+        def __enter__(self):
+            assert host.state['pid']=='0' and host.state['service']=='inactive'
+            assert not host.state['active'] and not host.state['enabled']
+            events.append('fence')
+            return super().__enter__()
+    monkeypatch.setattr(remote, 'ModeFence', Fence)
+    run=remote.run
+    def checked(command, **kwargs):
+        if command[:2] in (['systemctl','enable'],['systemctl','start']):
+            assert host.state['held'] is True
+        return run(command, **kwargs)
+    monkeypatch.setattr(remote, 'run', checked)
+    assert host.call('verify')['schedule']=={'active':True,'enabled':True}
+    assert events==['batch-finished','fence']
+    assert not any(remote.SERVICE in c and c[1] in {'stop','kill'} for c in host.commands)
+
+
+def test_verify_drain_timeout_keeps_paused_and_never_claims_completed(host, monkeypatch):
+    host.call('freeze'); host.call('install'); host.call('activate')
+    host.state.update(pid='42', service='active')
+    monkeypatch.setattr(remote.time, 'monotonic', Mock(side_effect=[0,181]))
+    with pytest.raises(RuntimeError, match='still running'):
+        host.call('verify')
+    assert not host.state['active'] and not host.state['enabled']
+    assert host.state['pid']=='42'
+    journal=json.loads((host.root/'.deploy-state/ark-outbound/release-current.json').read_text())
+    assert journal['status']=='failed_paused' and journal['release_confirmed'] is False
+
+
 def test_busy_service_with_inactive_state_still_blocks_install(host, monkeypatch):
     host.state['pid'] = '42'
     monkeypatch.setattr(remote.time, 'monotonic', Mock(side_effect=[0, 181]))

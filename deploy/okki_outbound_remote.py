@@ -342,6 +342,17 @@ try {await c.query('SELECT id,status FROM ark_okki_outbound_tasks LIMIT 1'); awa
                 or previous.get('release_id') != release_id or previous.get('release_confirmed') is not True):
             raise RuntimeError('Outbound activation receipt is missing')
         if coordinated: confirm_baseline(previous, request)
+        # The timer can dispatch a batch immediately after activation releases
+        # its DB fence. Confirm the existing schedule, pause new dispatches and
+        # wait for that batch to finish before acquiring the verification fence.
+        # Never terminate a submission that may already have been accepted.
+        expected_schedule = target_schedule(observation, previous['baseline'])
+        if (previous['mode'] != observation['mode']
+                or previous.get('target_schedule') != expected_schedule
+                or timer_state() != expected_schedule):
+            raise RuntimeError('Outbound schedule differs from the mode target')
+        pause_schedule()
+        drain()
         with ModeFence(stage, config) as fence:
             observation = fence.observation
             confirm_target(observation, previous, request)
@@ -351,8 +362,12 @@ try {await c.query('SELECT id,status FROM ark_okki_outbound_tasks LIMIT 1'); awa
             if (not isinstance(recorded_schedule, dict) or set(recorded_schedule) != {'active', 'enabled'}
                     or any(type(value) is not bool for value in recorded_schedule.values())
                     or previous['mode'] != observation['mode'] or previous.get('target_schedule') != expected_schedule
-                    or timer_state() != expected_schedule):
+                    or timer_state() != PAUSED):
                 raise RuntimeError('Outbound schedule differs from the mode target')
+            run(['systemctl', 'enable' if expected_schedule['enabled'] else 'disable', TIMER])
+            if expected_schedule['active']: run(['systemctl', 'start', TIMER])
+            if timer_state() != expected_schedule:
+                raise RuntimeError('Outbound verification could not restore the mode target')
             fence.check()
             previous.update(status='target_verified', release_confirmed=False)
             save(journal, previous)
