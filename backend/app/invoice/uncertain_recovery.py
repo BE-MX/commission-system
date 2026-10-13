@@ -22,7 +22,7 @@ def confirm_existing(db, invoice, reason, actor, *, evidence=None):
     if not isinstance(data, dict) or str(data.get("company_id")) != str(invoice.customer_id) or data.get("currency") != invoice.currency:
         raise ValueError("原小满订单不存在或身份不符，禁止解除同步保护")
     rows, binding, issues, _ = xiaoman_service._build_product_rows(
-        db, invoice, xiaoman_service.get_settings_row(db), editing=True)
+        db, invoice, xiaoman_service.get_settings_row(db), editing=True, reconciling=True)
     if issues:
         raise ValueError("本地产品映射不完整，请管理员核对原单")
     verified_rows = verify_existing(invoice, rows, data)

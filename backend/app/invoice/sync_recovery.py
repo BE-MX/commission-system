@@ -41,7 +41,7 @@ def require_state(db, invoice, resolution, reason, *, target=None):
 
 def capture(db, invoice, resolution, reason):
     row = require_state(db, invoice, resolution, reason)
-    rows, _, issues, _ = xiaoman_service._build_product_rows(db, invoice, xiaoman_service.get_settings_row(db), editing=True)
+    rows, _, issues, _ = xiaoman_service._build_product_rows(db, invoice, xiaoman_service.get_settings_row(db), editing=True, reconciling=True)
     if issues:
         raise ValueError("本地产品映射尚未完整核对")
     allocations = db.scalars(select(InvoiceAllocation).where(InvoiceAllocation.invoice_id == invoice.id)
@@ -93,12 +93,11 @@ def late_context(db, invoice, resolution, reason, target):
             raise ValueError("迟到事实与当前绑定不同，禁止覆盖当前订单")
     elif resolution != "bind_order" or str(target) != reference:
         raise ValueError("迟到已受理事实只能绑定其原订单，不能宣称未创建")
-    payload, _, issues = xiaoman_service.build_push_payload(db, invoice)
-    rows, _, line_issues, _ = xiaoman_service._build_product_rows(db, invoice, xiaoman_service.get_settings_row(db), editing=True)
-    if issues or line_issues:
+    rows, _, line_issues, _ = xiaoman_service._build_product_rows(db, invoice, xiaoman_service.get_settings_row(db), editing=True, reconciling=True)
+    if line_issues:
         raise ValueError("当前订单映射不完整")
     fingerprint = order_push_facts.observation_fingerprint(db, invoice.id, key)
-    binding = (order_sync_execution.capture(db, invoice, payload), key, fingerprint)
+    binding = (order_sync_execution.capture(db, invoice, rows), key, fingerprint)
     return binding, reference, rows, attempt
 
 
@@ -132,7 +131,7 @@ def resolve_late(db, invoice, user, resolution, reason, target):
         invoice.sync_status = "sync_uncertain"
         xiaoman_service.resolve_sync_uncertain(db, invoice, resolution="bind_order", reason=reason,
             xiaoman_order_id=reference, operator_id=int(actor["id"]))
-    _, binding, issues, _ = xiaoman_service._build_product_rows(db, invoice, xiaoman_service.get_settings_row(db), editing=True)
+    _, binding, issues, _ = xiaoman_service._build_product_rows(db, invoice, xiaoman_service.get_settings_row(db), editing=True, reconciling=True)
     if issues or xiaoman_service._assign_unique_ids(invoice, binding, validated):
         raise ValueError("原已受理明细不能完整回写")
     order_push_facts.review(db, invoice, key, resolution)
