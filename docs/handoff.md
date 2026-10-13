@@ -1,3 +1,10 @@
+## 2026-10-13 销售研究 Agent 与资料不足修复 Git 交付（Codex，已授权合并推送，未发布）
+
+- 用户授权本次合并推送，仍保留“暂不发布”。从最新origin/main整合codex/sales-agent-cloud，交付范围为专用云端Agent配置/部署入口与research_gap_v1 API/MCP/UI修复；不合入独立候选分支中的其他门户历史提交，不执行生产发布、迁移或自动消费。
+- 独立生产修复候选a99af84079114d7b73f6de918539ea42c5993e22 / codex/private-research-gap-hotfix继续保留，及其受管worktree、恢复资料和页面证据；运行中的云端Agent仍是2026-10-12已验版本。后续发布需按当时线上版本重新核对差异，并单独同步专用MCP/Skills/HEARTBEAT。
+- 主目录他人未提交改动先做文件级备份与Git恢复快照，合并后核验恢复；不夹带其内容提交。实际集成验证与推送结果见本任务最终回执。
+- 最新main整合后的隔离SQLite回归153 passed；部署安全20 passed、1项POSIX检查在Windows跳过；MCP/策略14 passed、前端逻辑42 passed，前端构建通过（既有混合导入/chunk警告）。约定检查仍命中main本身的17项发票UI债务，相关两文件与main逐字一致，未扩为本次修复。备份及恢复核验位于主目录.deploy_state/sales-agent-main-merge-20261013。
+
 ## 2026-10-12 销售研究 Agent 北京接入（Codex，MiMo 已验证，资料不足修复待发布）
 
 - 独立分支 codex/sales-agent-cloud。专用runtime a9f0cd8856c9a5789c79a9e6a9ffec7424e283c1，deployer89ff4a2d；用户MiMo文件只通过SSH stdin进入私有0600文件。mimo-v2.6-flash真实提供商探针和Gateway回复、RPC/active/enabled读回通过，main heartbeat仍0m。专用profile清理未使用DeepSeek，原通用Gateway保留。
