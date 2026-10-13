@@ -25,6 +25,6 @@
 - 实际以ark-sales用户运行安装版SDK/stdio MCP，工具列表包含research_gap_v1，真实读取task251 context=completed、gap_contract=research_gap_v1。安装MCP源码归一化SHA256为81212caf8ca8af374c4f970cfba04b5e7c7c00d43b8d4e14aa6841c7c9a4e90b。
 - 新配置MCP路径和实际运行版本均3c7448cc；没有90:* running研究任务。主平台与既有邮件禁用状态保持。
 
-证据：主目录与办公室.deploy_state/sales-agent-followup-20261013，包含受管候选、七阶段日志/意图/结果、脱敏任务及最终验收摘要；云端同名目录保存受保护原始快照。没有将云端私有备份或密钥加入仓库。生产运行代码及195历史仍在codex/full-main-production，本轮不推送origin。
+证据：主目录与办公室.deploy_state/sales-agent-followup-20261013，包含受管候选、七阶段日志/意图/结果、脱敏任务及最终验收摘要；云端同名目录保存受保护原始快照。没有将云端私有备份或密钥加入仓库。上述部署阶段未推送origin；后续用户明确授权将生产运行代码、195历史及Agent部署修复整合回main并推送，保留主目录已有修改。本次Git交付不重复生产部署或模型探针。
 
 收尾清理：本轮已结束的Windows调度helper已按实际exit0注销，日志及恢复资料保留；云端claim恢复文件中的已结束租约明文已移除，只保留SHA256及原任务/Run身份。原配置私有备份保留用于回滚，不复制到开发机。

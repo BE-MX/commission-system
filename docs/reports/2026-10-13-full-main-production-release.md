@@ -36,4 +36,4 @@
 
 独立Agent已通过统一专用入口更新至3c7448cc，实际active/enabled、原MiMo/key不变、RPC及真实MCP只读契约通过、heartbeat0m。task251已按research_gap_v1完成，旧Run267取消保留、新Run268完成、正式档案/事实不变。主平台发布时曾因该任务running状态阻挡；用户随后明确授权核验收尾后，才完成此追加更新。详见[追加更新记录](2026-10-13-sales-agent-upgrade.md)。
 
-主线origin/main仍77622edf，本次没有另行推送origin。195及生产门户历史保存在codex/full-main-production；后续主线交付需集成这段已运行历史，不能用194代码直接覆盖195数据库。
+上述生产部署阶段没有另行推送origin，当时主线为77622edf。用户随后明确授权将本次保留的迁移历史和Agent部署修复合并回main并推送；主线交付收录183/186门户历史、195双父合并节点及已验证的部署修复，保留主目录已有修改。不得用194代码直接覆盖195数据库。本次Git交付不再次部署，生产主平台仍为a7d39aaa，专用Agent仍为3c7448cc。

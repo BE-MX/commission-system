@@ -1,3 +1,9 @@
+## 2026-10-13 生产历史与Agent修复主线交付（Codex）
+
+- 用户明确授权将本次生产保留的迁移历史和Agent部署修复合并回main并推送，保留主目录已有修改。交付包含183/186门户历史、195双父迁移节点、部署恢复与Connector准备预检、旧Agent安全暂停和云端原模型复用；不包含主目录其他未提交工作。
+- Git整合前对主目录29项未提交文件逐字备份并保存patch、状态和SHA256清单，暂存区为空。恢复时保留已有文档内容，生产报告由原未跟踪文件纳入版本控制；恢复证据保存在主目录tmp/full-main-integration-backup-20261013。
+- 本次只执行Git交付；生产主平台仍a7d39aaa/schema195，专用Agent仍3c7448cc，未重复部署、迁移或模型探针。部署与独立审查证据见两份2026-10-13报告；实际推送结果以origin/main读回为准。
+
 ## 2026-10-13 旧研究任务收尾与专用Agent发布完成（Codex）
 
 - 用户追加授权核验收尾task251/customer628并更新Agent。原private enrichment uncertain gate保留，事实0；现有API一次重领、一次完成research_gap_v1。旧Run267取消并保留、新Run268 completed，task completed/not_required，正式账号/事实/档案版本逐字不变，实际客户补全GET200。
