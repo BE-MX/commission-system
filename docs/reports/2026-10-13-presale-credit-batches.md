@@ -29,6 +29,10 @@
 
 临时产物：MySQL测试进程已退出并只读核验无本任务 mysqld 残留。清理 tmp/credit-mysql 至 credit-mysql-6 目录时，工具自动审批拒绝，返回 blocked by policy，没有更详细原因；目录保留，未通过其他入口删除。最终运行元数据另存 tmp/credit-mysql-runtime.json，验证日志和截图保留。
 
+## main整合复验
+
+整合个人收藏导航提交1eca312a后，唯一冲突为handoff顶部，两项记录完整保留，业务源码无冲突。整合后预售/资金/回款及导航权限回归327 passed，Node27 passed，生产构建通过；diff检查通过。覆盖基点1eca312a的严格约定检查仍为相同17项UI基线问题，Git巡检再次完成。本次不新增迁移。主目录27处原修改已按字节备份到tmp/presale-credit-main-backup-20261013，并另存命名stash，恢复时保留本次新增交接内容。
+
 ## 页面验收
 
 | Before | After | Why |
