@@ -1,3 +1,10 @@
+## 2026-10-13 公告编辑器插图与截图粘贴修复（Codex，本地验证完成，未部署）
+
+- 用户反馈编辑公告时截图/本地图片无法粘贴或插入。共享 `KnowledgeEditor` 的上传占位 ID 直接调用 `crypto.randomUUID()`；在缺此 API 的非安全页面环境，操作在上传前抛错。隔离 Edge 基线复现 `crypto.randomUUID is not a function`，上传请求为 0；正常环境的文件插入和原生 Ctrl+V 成功。未以推断替代用户实际访问地址核验。
+- 临时占位 ID 改为页内模块级单调序号；仅用于上传结果关联，不作为权限/幂等凭据，不进入保存正文。上传入口检查可编辑状态；公告和知识库共享修复，不改变图片 API、权限、私有存储或规范 `assetId/alt/caption`。分支 `codex/announcement-editor-images`，独立 worktree `C:/Users/windb/.codex/worktrees/announcement-editor-images/commission-system`，不夹带上轮目标群修复候选。
+- Node 回归 28 passed，前端生产构建通过（既有混合导入/chunk 警告）。`webapp-testing` 方法的真实 Vue/Tiptap + Edge 隔离适配器验证：选择文件、原生剪贴板图片 Ctrl+V、缺 UUID 情况、保存与重载、图片实际解码、上传中/失败保存阻断、撤销后再粘贴、重叠上传、知识库编辑与只读禁止上传全部通过，无真实业务写入或消息投递。浏览器回归入口 `frontend/tests/announcementImages.browser.py`，证据 `tmp/announcement-images/{before-confirmed,after}/`。
+- 独立审查通过，无新增 P1/P2。完整约定检查仍被主分支同样存在的 17 项发票 UI 债务阻断；增量代码规则为 0 项，未弱化门禁。未获本次合并、推送或发布授权，修复尚未上线。
+
 ## 2026-10-13 销售研究 Agent 与资料不足修复 Git 交付（Codex，已授权合并推送，未发布）
 
 - 用户授权本次合并推送，仍保留“暂不发布”。从最新origin/main整合codex/sales-agent-cloud，交付范围为专用云端Agent配置/部署入口与research_gap_v1 API/MCP/UI修复；不合入独立候选分支中的其他门户历史提交，不执行生产发布、迁移或自动消费。

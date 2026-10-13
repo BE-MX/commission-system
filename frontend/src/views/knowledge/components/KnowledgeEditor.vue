@@ -89,7 +89,7 @@ import EditorToolbar from './EditorToolbar.vue'
 import { ConfirmationMark } from './ConfirmationMark.js'
 import { TextColorMark } from './TextColorMark.js'
 import { KnowledgeImage } from './KnowledgeImage.js'
-import { contentForKnowledgeSave, pendingImageCount } from './knowledgeImageState.js'
+import { contentForKnowledgeSave, createImageUploadId, pendingImageCount } from './knowledgeImageState.js'
 import { deleteTemporaryKnowledgeImage, uploadKnowledgeImage } from '@/api/knowledge'
 import { useAuthStore } from '@/stores/auth'
 import AiOptimizationDrawer from './AiOptimizationDrawer.vue'
@@ -259,8 +259,9 @@ function findUploadPosition(uploadId) {
 }
 
 async function insertImageFiles(files) {
+  if (!editor.value?.isEditable || !actions.value.canSave) return
   for (const file of files) {
-    const uploadId = crypto.randomUUID()
+    const uploadId = createImageUploadId()
     editor.value.chain().focus().insertContent({
       type: 'knowledgeImage',
       attrs: {

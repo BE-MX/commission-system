@@ -1,3 +1,10 @@
+// Upload IDs only correlate placeholders within this page; they are never saved.
+let uploadSequence = 0
+
+export function createImageUploadId() {
+  return `image-upload-${++uploadSequence}`
+}
+
 export function pendingImageCount(content) {
   let count = 0
   function walk(node) {

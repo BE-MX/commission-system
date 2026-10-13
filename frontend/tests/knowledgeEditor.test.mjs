@@ -14,7 +14,7 @@ import {
   applyTextColor,
   normalizeTextColorTone,
 } from '../src/views/knowledge/components/TextColorMark.js'
-import { contentForKnowledgeSave, pendingImageCount } from '../src/views/knowledge/components/knowledgeImageState.js'
+import { contentForKnowledgeSave, createImageUploadId, pendingImageCount } from '../src/views/knowledge/components/knowledgeImageState.js'
 
 function read(relativePath) {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -57,6 +57,12 @@ test('semantic text color commands set registered tones and clear the default to
   const cleared = fakeEditor()
   assert.equal(applyTextColor(cleared.editor, null), true)
   assert.deepEqual(cleared.calls, [['focus'], ['unsetMark', 'textColor'], ['run']])
+})
+
+test('image placeholders have unique page-local IDs without secure-context crypto APIs', () => {
+  const ids = Array.from({ length: 1000 }, createImageUploadId)
+  assert.equal(new Set(ids).size, ids.length)
+  assert.ok(ids.every(id => typeof id === 'string' && id.length > 0))
 })
 
 test('knowledge image save content keeps only canonical image attributes', () => {
