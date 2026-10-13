@@ -17,7 +17,7 @@ from app.core.response import ok
 from app.portal import auth_service as service
 from app.portal.errors import PortalError, reject
 from app.portal.action_receipt_queries import ActionReceiptQuery
-from app.portal.schemas import ChallengeInput, PortalInput, VerifyInput, QuoteInput, SubmitInput, ReasonInput, AcceptInput, ReorderInput
+from app.portal.schemas import PasswordLogin, PortalInput, QuoteInput, SubmitInput, ReasonInput, AcceptInput, ReorderInput
 from app.portal.security import require_origin
 
 
@@ -110,32 +110,24 @@ def bootstrap(client_ip=Depends(_require_portal_proxy), db: Session = Depends(ge
     return response
 
 
-@router.post("/auth/challenges")
-def challenge(body: ChallengeInput, request: Request,
-              client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+@router.post("/auth/login")
+def login(body: PasswordLogin, request: Request,
+          client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    from app.portal import password_service
     try:
-        row = service.challenge(db, preauth(request, db), body, client_ip)
-        data = {"challenge_id": row.public_id, "expires_in": get_settings().PORTAL_OTP_MINUTES * 60,
-                "resend_after": 60}
+        token, csrf = request.cookies.get(cookie_name('preauth')), request.headers.get('x-portal-csrf')
+        attempt = password_service.prepare_login(db, token, csrf, body, client_ip)
+        # Failed attempts persist; expensive bcrypt holds no transaction or authority lock.
+        db.commit()
+        matched = password_service.check_password(attempt, body)
+        result = password_service.complete_login(db, token, csrf, attempt, matched)
+        data = service.session_view(result[0], result[1]) if result else None
         db.commit()
     except PortalError as error:
         failed_transaction(db, error)
         raise
-    return JSONResponse(ok(data, code=202), status_code=202)
-
-
-@router.post("/auth/verify")
-def verify(body: VerifyInput, request: Request,
-           client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
-    try:
-        result = service.verify(db, preauth(request, db), body, client_ip)
-        data = service.session_view(result[0], result[1]) if result else None
-        db.commit()  # Persist failed attempt counts BEFORE returning AUTH_FAILED.
-    except PortalError as error:
-        failed_transaction(db, error)
-        raise
     if result is None:
-        reject("AUTH_FAILED", "The code is invalid or expired. Please try again.", 401)
+        reject("AUTH_FAILED", "The email or password is incorrect, or access is unavailable.", 401)
     response = JSONResponse(ok(data))
     set_cookie(response, "session", result[2], get_settings().PORTAL_SESSION_HOURS * 3600)
     clear_cookie(response, "preauth")

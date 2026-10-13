@@ -46,7 +46,7 @@ def debit(db, key, limit, seconds):
     now = beijing_now()
     window = now.replace(hour=0, minute=0, second=0, microsecond=0)
     window += timedelta(seconds=int((now - window).total_seconds()) // seconds * seconds)
-    digest = keyed_digest(get_settings().PORTAL_OTP_SECRET, "rate", key)
+    digest = keyed_digest(get_settings().PORTAL_AUTH_SECRET, "rate", key)
     row = db.get(RateBucket, (digest, window), populate_existing=True)
     if row is None:
         row = RateBucket(scope_key_hash=digest, window_start=window, count=0,
@@ -98,7 +98,7 @@ def _code_digest(public_id, code, email_key, purpose, principal):
     binding = (principal.account.id, principal.membership.id, principal.access.id,
                principal.account.auth_version, principal.membership.version,
                principal.access.auth_version) if principal else (0, 0, 0, 0, 0, 0)
-    return keyed_digest(get_settings().PORTAL_OTP_SECRET, public_id, code, email_key,
+    return keyed_digest(get_settings().PORTAL_AUTH_SECRET, public_id, code, email_key,
                         purpose, *(str(value) for value in binding))
 
 
@@ -107,7 +107,7 @@ def challenge(db, preauth, body, client_ip):
     email = normalize_email(body.email)
     debit(db, "send-ip:" + client_ip, 30, 3600)
     debit(db, "send-email:" + email, 5, 3600)
-    email_key = keyed_digest(settings.PORTAL_OTP_SECRET, "email", email)
+    email_key = keyed_digest(settings.PORTAL_AUTH_SECRET, "email", email)
     recent = db.scalar(select(AuthChallenge).where(AuthChallenge.email_key_hash == email_key)
                        .order_by(AuthChallenge.created_at.desc(), AuthChallenge.id.desc()).limit(1))
     if recent and recent.created_at > beijing_now() - timedelta(seconds=60):

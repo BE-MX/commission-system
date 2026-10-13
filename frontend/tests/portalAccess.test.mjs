@@ -2,16 +2,16 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAccessMutation } from '../src/views/portal/customerAccess.mjs'
 
-test('invitation unknown outcome replays exact key/body and blocks replacement', async () => {
+test('account creation unknown outcome replays exact key/body and blocks replacement', async () => {
   const calls = []
-  const runner = createAccessMutation(async value => { calls.push(value); if (calls.length === 1) throw new Error('offline'); return { invitation_id: 'i', event_id: 'e', replayed: true } })
-  const original = { action: 'invite', id: 'customer', key: 'same-key', body: { email: 'buyer@example.com' } }
+  const runner = createAccessMutation(async value => { calls.push(value); if (calls.length === 1) throw new Error('offline'); return { id: 'a', row_version: 1, replayed: true } })
+  const original = { action: 'createAccount', id: 'customer', key: 'same-key', body: { email: 'buyer@example.com', password: 'original-password' } }
   await assert.rejects(runner.execute(original))
-  original.body.email = 'other@example.com'
+  original.body.email = 'other@example.com'; original.body.password = 'changed-password'
   await assert.rejects(runner.execute(original))
   assert.equal(calls.length, 1)
   await runner.execute()
-  assert.deepEqual(calls[0], calls[1]); assert.equal(runner.state, 'success')
+  assert.equal(calls[1].body.password, 'original-password'); assert.deepEqual(calls[0], calls[1]); assert.equal(runner.state, 'success')
 })
 test('versioned edits never retry an uncertain mutation', async () => {
   let calls = 0
@@ -21,10 +21,10 @@ test('versioned edits never retry an uncertain mutation', async () => {
   assert.equal(calls, 1); assert.equal(runner.state, 'uncertain')
   runner.clear(); assert.equal(runner.pending, null)
 })
-test('unknown invitation remains uncertain after a later 409', async () => {
+test('unknown account creation remains uncertain after a later 409', async () => {
   let count = 0
   const runner = createAccessMutation(async () => { if (++count === 1) throw new Error('offline'); throw { response: { status: 409 } } })
-  await assert.rejects(runner.execute({ action: 'invite', key: 'one', body: {} }))
+  await assert.rejects(runner.execute({ action: 'createAccount', key: 'one', body: {} }))
   await assert.rejects(runner.execute()); assert.equal(runner.state, 'uncertain')
 })
 test('double click and identity changes cannot apply a late receipt', async () => {

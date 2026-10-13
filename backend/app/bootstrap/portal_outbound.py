@@ -10,7 +10,10 @@ logger = logging.getLogger(__name__)
 
 def initialize_portal_outbound():
     try:
-        return initialize(SessionLocal, portal_enabled=get_settings().PORTAL_ENABLED)
+        settings = get_settings()
+        # Customer access ends at PI creation; executor takeover is a separate opt-in.
+        return initialize(SessionLocal, portal_enabled=(
+            settings.PORTAL_ENABLED and settings.PORTAL_OUTBOUND_WORKER_ENABLED))
     except Exception as error:
         logger.warning('Outbound bootstrap unavailable (%s)', type(error).__name__)
         print('[outbound-mode] bootstrap unavailable; writers remain paused', flush=True)

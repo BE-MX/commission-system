@@ -289,7 +289,13 @@ def probe_model(base_url, model, key):
 
 def connect_model(payload):
     state = verify(payload)
-    base_url, model, key = model_parameters(payload.get('model_config', {}))
+    if payload.get('reuse_model'):
+        if payload.get('model_config'):
+            raise ValueError('Only one model credential source is allowed')
+        model_config = reusable_model_config()
+    else:
+        model_config = payload.get('model_config', {})
+    base_url, model, key = model_parameters(model_config)
     result = probe_model(base_url, model, key)
     path = PROFILE / 'openclaw.json'
     config = json.loads(path.read_text())
@@ -331,6 +337,27 @@ def model_config_digest(config):
     # Exclude incidental CLI metadata, retain every permission and connection boundary.
     boundary = {key: config.get(key) for key in ('agents', 'models', 'secrets', 'gateway', 'mcp', 'tools')}
     return hashlib.sha256(json.dumps(boundary, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def reusable_model_config():
+    # pause saved the verified provider before configure replaces template defaults.
+    proof_path = ROOT / 'model-reuse-source.json'
+    key_path = PROFILE / 'secrets/mimo-api-key'
+    if proof_path.is_symlink() or key_path.is_symlink():
+        raise RuntimeError('Protected model reuse refuses symlink state')
+    proof = json.loads(proof_path.read_text())
+    ready = json.loads((ROOT / 'model-ready.json').read_text())
+    if proof != ready or proof.get('probe') != 'passed':
+        raise RuntimeError('Previous verified model identity changed')
+    key = key_path.read_text().strip()
+    if hashlib.sha256(key.encode()).hexdigest() != proof.get('key_digest'):
+        raise RuntimeError('Protected model key changed; refuse reuse')
+    if os.name == 'posix' and (stat.S_IMODE(proof_path.stat().st_mode) != 0o600
+                             or stat.S_IMODE(key_path.stat().st_mode) != 0o600):
+        raise RuntimeError('Protected model reuse requires private files')
+    data = {'base_url': proof['base_url'], 'model': proof['model'].removeprefix('mimo/'), 'api_key': key}
+    model_parameters(data)
+    return data
 
 
 def require_model_ready(payload):
@@ -396,6 +423,8 @@ def pause(payload):
     config = json.loads((PROFILE / 'openclaw.json').read_text())
     if config['agents']['entries']['main']['heartbeat']['every'] != '0m':
         raise RuntimeError('Freeze and drain scheduled research before pausing')
+    ready = require_model_ready(payload)
+    write(ROOT / 'model-reuse-source.json', json.dumps(ready))
     run(['systemctl', 'disable', '--now', SERVICE])
     inactive()
     return {'service': 'inactive', 'enabled': False}
@@ -404,7 +433,7 @@ def pause(payload):
 def execute(payload):
     files = validate(payload)
     action = payload['action']
-    if action != 'prepare':
+    if action not in {'prepare', 'pause'}:
         runtime_revision = payload.get('runtime_revision') or payload['revision']
         release = ROOT / 'releases' / runtime_revision
         for name, body in files.items():

@@ -21,6 +21,10 @@
 账号增加 provider、session_generation、consent_version、consent_state、crm_shared、ai_egress_allowed；旧行默认旧 Provider、待确认授权、客户共享和 AI 外发关闭。会话增加 history_state/gap_reason/earliest_seen_at/latest_seen_at/last_ingested_at；消息增加 source_revision/deleted_at，墓碑不被晚到历史复活。业务审计时间为北京时间。
 
 旧账号、会话、消息、附件、游标及客户绑定不删除；仅清除临时二维码。events checkpoint 与规范消息、来源映射和已有 CRM 投影在同一事务提交。downgrade 禁止删映射，回退保留扩展 schema。认证不在方舟业务库：独立 Connector 单主机加密 SQLite 保存认证域、规范投影域、变更指针与租约；不能复制到多主机充当单活协调器。MySQL 生产迁移未执行，隔离 SQLite 升级及 MySQL 离线 DDL 不等于生产容量与锁验证。
+## 客户采购账号密码（183_portal_password_login，候选）
+
+ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工设置的bcrypt；父revision182。无默认密码或迁移自动激活。重置增加授权/记录版本并撤销旧会话；明确恢复账号可激活invited成员。downgrade拒绝丢弃哈希，升级及备份/隔离恢复见deploy/customer-orders.md。
+
 
 ## 账号解锁（`178_account_unlock`，本地未部署）
 
@@ -635,6 +639,8 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 | ark_announcement_config | 单例 id=1；library_id 唯一；目标群、机器人、执行账号、配置版本、周报时刻和通道验证 |
 | ark_announcement_items | document_id 主键/FK；置顶、发布时间/发布人、撤回信息 |
 | ark_announcement_revision_meta | revision_id 主键/FK；类别名称快照、重要、生效/截止、变更说明；迁移 185 新增 push_dingtalk 非空布尔值，默认 true 保留历史推送行为 |
+
+迁移 186 汇合已部署的 183_portal_password_login 与 185_announcement_push_option 两支，保留原有 183/184/185 父节点，不重复修改密码列。生产实读 183 时升级计划为 184 → 185 → 186；186 本身不执行表结构或业务数据变更。
 | ark_announcement_publications | 发布/撤回事件；唯一 document_id+revision_id+kind |
 | ark_announcement_weekly | 唯一 library_id+period_start；冻结来源、正文、generation、旧版历史、生成租约 |
 | ark_announcement_deliveries | 唯一 source_key+sequence；内容和目标快照、授权指纹、租约、尝试、回执、错误 |
@@ -642,7 +648,7 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 
 新迁移接 154_okki_outbound_tasks，重复执行检查已存在结构，保留数据；降级拒绝自动删除历史。已验证 SQLite 升级/重复执行与 MySQL DDL 编译，未执行真实 MySQL 升级。生产按既有发布入口先备份与迁移演练。
 
-`182_announcement_reads` 接当前 main 的 `180_settlement_funding_amendment`。user_id 在 MySQL 使用 INT UNSIGNED，与 ark_users.id 一致；document_id/revision_id 使用 BIGINT。重复阅读保留首次时间，重新发布新的修订独立计算未读；全部已读只写当前可见版本，不改其他用户。撤回/失效/删除后保留阅读事实，但不计入提醒。升级重复执行保留数据，降级拒绝删除阅读历史。本次仅隔离 SQLite 升级及 MySQL DDL 编译；未执行共享或生产迁移。其他分支已有 181，集成时重新核对迁移链并保持单 head。
+`182_announcement_reads` 接当前 main 的 `180_settlement_funding_amendment`。user_id 在 MySQL 使用 INT UNSIGNED，与 ark_users.id 一致；document_id/revision_id 使用 BIGINT。重复阅读保留首次时间，重新发布新的修订独立计算未读；全部已读只写当前可见版本，不改其他用户。撤回/失效/删除后保留阅读事实，但不计入提醒。升级重复执行保留数据，降级拒绝删除阅读历史。该公告功能原实现阶段仅验证隔离 SQLite 升级及 MySQL DDL 编译；该阶段未执行生产迁移。客户门户任务随后实查生产已为182；未发布的密码迁移183接在182后，保持单 head。
 
 
 ### 发票客户等级（157）

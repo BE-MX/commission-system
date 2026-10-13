@@ -294,6 +294,7 @@ def publish(args):
             journal['completed'].append('beijing-mail-worker')
         atomic_json(STATE / "publish-current.json", journal)
         if office:
+            step('maintenance-resume', '全部制品验收后恢复数据库事件和镜像定时同步', schema_release.resume_maintenance, office)
             schema_release.complete(office)
         summary = {"revision": revision, "scope": "cloud-only" if args.cloud_only else "office-and-cloud",
                    "schema": backend["schema"], "transfer_bytes": sum(item["bytes"] for item in prepared),
@@ -327,12 +328,16 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument('--customer-portal-site', choices=['https', 'verify'], help='Configure or verify the approved Beijing customer-site HTTPS boundary; no business gates')
+    parser.add_argument('--customer-portal-db-backup', action='store_true', help='Protected full revision-182 snapshot on office; no migration or service activation')
+    parser.add_argument('--customer-portal-config', choices=['prepare', 'enable-access', 'stop-orders', 'close'], help='Merge protected Beijing password access config; order/PI/mail/outbound gates stay off')
     parser.add_argument('--static-retention-only', action='store_true', help='Prune expired main-frontend assets and backups without restarting applications')
     parser.add_argument('--colorwork-backup-policy', action='store_true', help='Install hourly retention of two recent Colorwork recovery backups')
     parser.add_argument('--agent-cloud-migration', choices=['prepare', 'validate-staged', 'freeze-source', 'copy-frozen-state', 'configure-target', 'activate-target', 'verify-target', 'retire-source', 'nginx-prepare', 'nginx-activate', 'nginx-verify', 'source-routes-prepare', 'source-routes-activate', 'source-routes-verify'], help='Execute one journalled phase of the inspected Agent migration')
     parser.add_argument('--storage-maintenance', metavar='PLAN_JSON', help='Freeze/restore API ingress and direct office LAN access')
     parser.add_argument('--recover-colorwork-start-order', metavar='PLAN_JSON', help='Recover the inspected schema-160 dependency-order interruption')
     parser.add_argument('--finalize-release', metavar='PLAN_JSON', help='Complete the inspected post-DDL activated release without repeating migrations')
+    parser.add_argument('--recover-office-activation', metavar='PLAN_JSON', help='Resume the inspected schema-186 office readiness interruption')
     parser.add_argument('--storage-cutover', metavar='PLAN_JSON', help='Execute a journalled COS cutover phase')
     parser.add_argument("--storage-routing-only", metavar="PROBES_JSON", help="Prepare/activate public COS routing with explicit cloud object probes")
     parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Beijing outbound worker")
@@ -340,6 +345,7 @@ if __name__ == "__main__":
     parser.add_argument('--mail-worker-stage', choices=['prepare', 'provision', 'configure', 'oauth', 'enable-sending'], help='Prepare Beijing mail service/OAuth without activating application code')
     parser.add_argument('--sales-agent-stage', choices=['prepare', 'configure', 'verify', 'model', 'activate', 'verify-active', 'pause'], help='Prepare or activate the dedicated Beijing research agent')
     parser.add_argument('--sales-agent-model-config', help='Local private model file; transferred through SSH stdin only')
+    parser.add_argument('--sales-agent-reuse-model', action='store_true', help='Revalidate the unchanged protected cloud model saved by the preceding pause')
     parser.add_argument('--sales-agent-runtime-revision', help='Full SHA of the existing prepared sales runtime')
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
@@ -361,19 +367,37 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
-        if (args.sales_agent_model_config or args.sales_agent_runtime_revision) and not args.sales_agent_stage:
+        if (args.sales_agent_model_config or args.sales_agent_runtime_revision or args.sales_agent_reuse_model) and not args.sales_agent_stage:
             raise RuntimeError('Sales parameters require --sales-agent-stage')
         if args.sales_agent_stage:
-            if any(value for key, value in vars(args).items() if key not in {'sales_agent_stage', 'sales_agent_model_config', 'sales_agent_runtime_revision', 'revision', 'live_root', 'no_pull'}):
+            if any(value for key, value in vars(args).items() if key not in {'sales_agent_stage', 'sales_agent_model_config', 'sales_agent_runtime_revision', 'sales_agent_reuse_model', 'revision', 'live_root', 'no_pull'}):
                 raise RuntimeError('Sales preparation cannot be combined with application release actions')
-            if bool(args.sales_agent_model_config) != (args.sales_agent_stage == 'model'):
-                raise RuntimeError('Model stage requires exactly one private model file')
+            if (int(bool(args.sales_agent_model_config)) + int(args.sales_agent_reuse_model)) != int(args.sales_agent_stage == 'model'):
+                raise RuntimeError('Model stage requires exactly one private file or protected cloud reuse')
             if bool(args.sales_agent_runtime_revision) != (args.sales_agent_stage in {'model', 'activate', 'verify-active', 'pause'}):
                 raise RuntimeError('Model activation must bind the existing runtime revision')
             from sales_agent_release import execute
             with deployment_lock():
                 execute(Path(__file__).resolve().parent.parent, args.revision, args.sales_agent_stage, STATE,
-                        args.sales_agent_model_config, args.sales_agent_runtime_revision)
+                        args.sales_agent_model_config, args.sales_agent_runtime_revision, reuse_model=args.sales_agent_reuse_model)
+            sys.exit(0)
+        if args.customer_portal_config:
+            if any(value for key, value in vars(args).items() if key not in {'customer_portal_config', 'revision'}):
+                raise RuntimeError('Customer configuration only accepts its phase and pinned revision')
+            from customer_portal_site import execute
+            execute(args.customer_portal_config, args.revision, config=True)
+            sys.exit(0)
+        if args.customer_portal_db_backup:
+            if any(value for key, value in vars(args).items() if key not in {'customer_portal_db_backup', 'revision', 'live_root', 'no_pull'}):
+                raise RuntimeError('Portal backup only accepts the installed root and pinned revision')
+            from customer_portal_backup import execute
+            execute(args.revision)
+            sys.exit(0)
+        if args.customer_portal_site:
+            if any(value for key, value in vars(args).items() if key not in {'customer_portal_site', 'prepare_only', 'revision'}):
+                raise RuntimeError('Customer-site infrastructure only accepts its phase and --prepare-only')
+            from customer_portal_site import execute
+            execute(args.customer_portal_site, args.revision, args.prepare_only)
             sys.exit(0)
         if args.static_retention_only:
             from static_retention_release import execute
@@ -421,6 +445,13 @@ if __name__ == "__main__":
                 raise RuntimeError('Storage cutover only accepts --prepare-only')
             from storage_cutover import execute
             execute(args.storage_cutover, args.prepare_only)
+        elif args.recover_office_activation:
+            if any(value for key, value in vars(args).items() if key not in {'recover_office_activation', 'prepare_only', 'live_root', 'revision', 'no_pull'}):
+                raise RuntimeError('Office recovery only accepts its pinned controller and reviewed plan')
+            from recover_office_activation import execute
+            if marker('publish-current').get('recovery', {}).get('phase') == 'outbound-activate':
+                from recover_release_completion import execute
+            print(json.dumps(execute(args.recover_office_activation, args.prepare_only)), flush=True)
         elif args.finalize_release:
             if any(value for key, value in vars(args).items() if key not in {'finalize_release', 'prepare_only'}):
                 raise RuntimeError('Release finalization only accepts --prepare-only')

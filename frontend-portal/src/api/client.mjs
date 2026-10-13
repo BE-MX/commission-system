@@ -180,15 +180,9 @@ export function createPortalClient({ fetchImpl = globalThis.fetch.bind(globalThi
       preauth = data.csrf_token
       return { expires_in: data.expires_in }
     }),
-    challenge({ email, invitationToken }) {
-      return authentication(() => request('/auth/challenges', { auth: 'preauth', method: 'POST', body: {
-        email, purpose: invitationToken ? 'activate' : 'login',
-        ...(invitationToken ? { invitation_token: invitationToken } : {}),
-      } }))
-    },
-    verify: (challengeId, code) => authentication(async () => {
+    login: (email, password) => authentication(async () => {
       const started = epoch
-      const data = await request('/auth/verify', { auth: 'preauth', method: 'POST', body: { challenge_id: segment(challengeId), code } })
+      const data = await request('/auth/login', { auth: 'preauth', method: 'POST', body: { email, password } })
       ensureEpoch(started)
       // Invalidate other pending authentication operations before installing this identity.
       clear('identity-changed', true)

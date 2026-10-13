@@ -12,9 +12,8 @@ import { createCheckout } from './state/checkout.mjs'
 import { createOrderDecision } from './state/orderDecision.mjs'
 import OrdersView from './components/OrdersView.vue'
 
-const props = defineProps({ invitation: { type: String, default: '' } })
 const session = shallowRef(null), stage = ref('restoring'), error = ref(null), signingOut = ref(false)
-const notice = ref(''), invitation = ref(props.invitation), recoveryError = shallowRef(null), decisionRecoveryError = shallowRef(null)
+const notice = ref(''), recoveryError = shallowRef(null), decisionRecoveryError = shallowRef(null)
 const channelNotice = ref('')
 const channel = browserChannel(window, () => { channelNotice.value = 'This browser cannot synchronize sessions across tabs. Use one tab and sign out when finished.' })
 const api = createPortalClient({ channel })
@@ -58,7 +57,7 @@ const unsubscribe = api.subscribe(event => {
   const wasAuthenticated = Boolean(session.value)
   session.value = event.session
   if (event.session) {
-    stage.value = 'collection'; error.value = null; invitation.value = ''; notice.value = ''
+    stage.value = 'collection'; error.value = null; notice.value = ''
     const recovering = restoreSubmission(), recoveringAction = restoreDecision()
     navigate(recovering ? 'checkout' : recoveringAction ? 'orders/' + decision.state.operation.request_id : pathRoute(), true)
   } else if (!['restoring'].includes(event.reason)) {
@@ -84,7 +83,7 @@ async function logout() {
   catch (problem) { if (problem.code !== 'STALE_SCOPE') { error.value = problem; stage.value = problem.status === 401 ? 'login' : 'logout-failed' } }
   finally { signingOut.value = false }
 }
-onMounted(() => { if (invitation.value) stage.value = 'login'; else restore() })
+onMounted(restore)
 onBeforeUnmount(() => { window.removeEventListener('popstate', back); unsubscribe(); offCheckout(); offDecision(); checkout.dispose(); submission.dispose(); decision.dispose(); api.dispose() })
 </script>
 
@@ -94,7 +93,7 @@ onBeforeUnmount(() => { window.removeEventListener('popstate', back); unsubscrib
   <div v-if="channelNotice" class="session-notice" role="status">{{ channelNotice }}</div>
   <div v-if="stage === 'restoring' || stage === 'signing-out'" id="main-content" class="gate-state" role="status"><BrandMark /><p>{{ stage === 'signing-out' ? 'Signing out…' : 'Opening your private collection…' }}</p></div>
   <div v-else-if="stage === 'unavailable' || stage === 'logout-failed'" id="main-content" class="gate-state"><BrandMark /><p class="eyebrow gold">PARTNER ACCESS</p><h1>{{ stage === 'logout-failed' ? 'Sign-out needs another try.' : 'We’ll be right with you.' }}</h1><p>{{ stage === 'logout-failed' ? 'Your private view is cleared, but we could not confirm sign-out with the server.' : 'Your collection is temporarily unavailable. Please try again shortly.' }}</p><p v-if="error" class="small muted">{{ error.message }}</p><button class="button primary" :disabled="signingOut" @click="stage === 'logout-failed' ? logout() : restore()">{{ signingOut ? 'Signing out…' : 'Try again' }}</button></div>
-  <LoginView v-else-if="!session" id="main-content" :api="api" :invitation="invitation" />
+  <LoginView v-else-if="!session" id="main-content" :api="api" />
   <div v-else class="portal-shell">
     <header class="portal-header"><a href="/collection" class="brand-link" aria-label="LeShine collection" @click.prevent="navigate('collection')"><BrandMark /></a><nav aria-label="Main navigation"><a href="/collection" :aria-current="route === 'collection' ? 'page' : undefined" @click.prevent="navigate('collection')">Collection</a><a v-if="session.capabilities.place_order" href="/checkout" :aria-current="route === 'checkout' ? 'page' : undefined" @click.prevent="navigate('checkout')">Selection <span class="nav-count">{{ checkoutState.lines.length }}</span></a><a href="/orders" :aria-current="route.startsWith('orders') ? 'page' : undefined" @click.prevent="navigate('orders')">Requests</a></nav><div class="account-menu"><span>{{ session.me.company_display_name }}<small>Private partner access</small></span><button class="text-button" :disabled="signingOut" @click="logout">{{ signingOut ? 'Signing out…' : 'Sign out' }}</button></div></header>
     <div v-if="recoveryError" class="session-notice" role="alert"><p>{{ recoveryError.message }}</p><button class="text-button" @click="checkRecoveryReference">Check recovery reference</button> <button class="text-button" @click="navigate('orders')">View existing requests</button></div>

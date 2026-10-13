@@ -21,7 +21,9 @@ def test_additive_migration_preserves_existing_evidence_and_has_single_head(monk
     backend,module = migration()
     config = Config()
     config.set_main_option("script_location",str(backend/"alembic"))
-    assert ScriptDirectory.from_config(config).get_heads() == [module.revision]
+    scripts = ScriptDirectory.from_config(config)
+    assert len(scripts.get_heads()) == 1
+    assert module.revision in {item.revision for item in scripts.iterate_revisions(scripts.get_heads()[0], 'base')}
     assert module.down_revision == "176_customer_order_portal" and len(module.revision) <= 32
     engine = create_engine("sqlite://")
     with engine.begin() as connection:

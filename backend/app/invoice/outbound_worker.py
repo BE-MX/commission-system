@@ -344,7 +344,9 @@ def install_mode(db):
 
 
 def run_once(factory):
-    if not get_settings().PORTAL_ENABLED:return {'status':'disabled','processed':0}
+    settings = get_settings()
+    if not (settings.PORTAL_ENABLED and settings.PORTAL_OUTBOUND_WORKER_ENABLED):
+        return {'status':'disabled','processed':0}
     with factory() as db:
         # Shared advisory executor fence; no authority/PI/task row lock crosses I/O.
         with outbound_mode.executor_fence(db) as acquired:

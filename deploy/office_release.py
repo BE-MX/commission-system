@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import time
 import urllib.request
 
@@ -19,6 +20,16 @@ def health(port):
         result = json.load(response)
     if result.get("status") != "ok" or result.get("database") != "connected":
         raise RuntimeError("Office HTTP/database readiness failed")
+
+
+def connector_environment(inherited, file_values, base, extra):
+    environment = dict(inherited) if base is None else dict(value.split("=", 1) for value in base if "=" in value)
+    environment.update(dict(value.split("=", 1) for value in extra if "=" in value))
+    # dotenv's default override=False must match the actual service entrypoint.
+    for name, value in file_values.items():
+        if value is not None:
+            environment.setdefault(name, value)
+    return environment
 
 
 def prepare(live, previous, revision, recover_149=False, recover_151=False, recover_168=False):
@@ -84,6 +95,25 @@ def prepare(live, previous, revision, recover_149=False, recover_151=False, reco
     if connector_changed:
         run([npm_command(), "ci", "--no-audit", "--no-fund"], cwd=connector)
         run([npm_command(), "run", "check"], cwd=connector)
+        # Validate protected live settings with the actual NSSM Node executable
+        # before any DDL or service stop. Never print environment values.
+        import winreg
+        from dotenv import dotenv_values
+        values_by_name = {"AppEnvironment": None, "AppEnvironmentExtra": []}
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\WhatsAppConnector\Parameters") as key:
+            for name in ("AppEnvironment", "AppEnvironmentExtra"):
+                try:
+                    values = winreg.QueryValueEx(key, name)[0]
+                except FileNotFoundError:
+                    continue
+                values_by_name[name] = values
+        environment = connector_environment(os.environ, dotenv_values(live / "services/whatsapp-connector/.env"),
+            values_by_name["AppEnvironment"], values_by_name["AppEnvironmentExtra"])
+        checked = subprocess.run([get("WhatsAppConnector", "Application"), str(ROOT / "deploy/whatsapp_connector_preflight.mjs")],
+            input=json.dumps({"source": str(connector), "env": environment}), text=True, capture_output=True, timeout=60)
+        if checked.returncode:
+            raise RuntimeError("Connector candidate cannot start; inspect Node and protected configuration before release")
+        print("Connector candidate isolated startup verified; no account connection attempted", flush=True)
     return {"nssm": nssm, "python": python, "application": application, "parameters": parameters,
             "port": int(port.group(1)), "schema": schema["schema"], "pending": schema["pending"], "live": live,
             "previous": previous, "revision": revision, "connector_changed": connector_changed,

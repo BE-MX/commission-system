@@ -3,7 +3,7 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, StrictInt, field_validator, model_validator
 
 
 ShortText = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=100)]
@@ -16,6 +16,37 @@ Quantity = Annotated[StrictInt, Field(ge=1, le=10000)]
 
 class PortalInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class PasswordInput(PortalInput):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=False)
+    password: SecretStr = Field(min_length=8, max_length=64, repr=False)
+
+    @field_validator('password')
+    @classmethod
+    def password_bytes(cls, value):
+        if len(value.get_secret_value().encode('utf-8')) > 72:
+            raise ValueError('Password must contain at most 72 UTF-8 bytes')
+        return value
+
+    @field_validator('email', 'contact_name', 'reason', check_fields=False)
+    @classmethod
+    def trim_public_fields(cls, value):
+        if not value.strip():
+            raise ValueError('A non-empty value is required')
+        return value.strip()
+
+
+class PasswordLogin(PasswordInput):
+    email: Annotated[str, StringConstraints(strict=True, min_length=3, max_length=254)]
+
+
+class AccountCreate(PasswordLogin):
+    contact_name: ShortText
+
+
+class AccountPasswordUpdate(PasswordInput):
+    reason: Reason
 
 
 class ChallengeInput(PortalInput):
@@ -165,7 +196,7 @@ class InvitationInput(PortalInput):
 
 
 class AccountUpdate(ReasonInput):
-    status: Literal["active", "disabled", "invited"]
+    status: Literal["active", "disabled"]
 
 
 class TransferInput(ReasonInput):
