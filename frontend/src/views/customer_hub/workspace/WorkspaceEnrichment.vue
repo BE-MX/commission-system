@@ -18,9 +18,10 @@
         <el-alert v-if="task.task_status === 'pending'" title="已入队，等待研究 Agent 领取；刷新状态可查看进展。" type="info" :closable="false" />
         <el-alert v-if="task.task_status === 'failed'" :title="`研究未完成（${task.error_code || '执行失败'}），已有内容已保留，可重新发起。`" type="warning" :closable="false" />
         <ResearchSummary v-if="task.result_json || task.research_summary" :detail="task" />
-        <p class="review-note">研究质量通过后仍保留为候选材料；正式档案变更需另行确认。</p>
+        <p v-if="task.result_schema_version === 'research_gap_v1'" class="review-note">资料不足结果无需质量复核。补充线索后可重新发起研究。</p>
+        <p v-else class="review-note">研究质量通过后仍保留为候选材料；正式档案变更需另行确认。</p>
       </template>
-      <template v-if="task?.task_status === 'completed' && task.result_review_status === 'pending'" #footer>
+      <template v-if="task?.task_status === 'completed' && task.result_review_status === 'pending' && task.result_schema_version !== 'research_gap_v1'" #footer>
         <GlassButton v-permission="'sales_automation:admin'" variant="success" :loading="reviewing" @click="review('accepted')">通过质量复核</GlassButton>
         <GlassButton v-permission="'sales_automation:admin'" variant="danger" :loading="reviewing" @click="review('rejected')">驳回结果</GlassButton>
       </template>
@@ -42,6 +43,7 @@ const active = computed(() => ['pending', 'running'].includes(task.value?.task_s
 const awaitingResult = computed(() => active.value || (task.value?.task_status === 'completed'
   && ['pending', 'revision_requested'].includes(task.value?.result_review_status)))
 const statusText = computed(() => {
+  if (task.value?.task_status === 'completed' && task.value.result_schema_version === 'research_gap_v1') return '资料不足 · 待补线索'
   if (task.value?.task_status === 'completed') {
     return { pending: '已完成 · 待审核', accepted: '质量已通过', rejected: '结果已驳回', revision_requested: '待修订' }[task.value.result_review_status] || '已完成'
   }

@@ -866,6 +866,10 @@ def complete_task_research(
     data_classification: str = "internal_business",
     visibility_scope: str = "customer_team",
 ) -> CustomerResearchTask:
+    if result_json.get("schema_version") == "research_gap_v1":
+        return complete_task_gap(db, task_id, actor_id, agent_id, lease_token, result_json,
+                                 agent_run_id=agent_run_id, data_classification=data_classification,
+                                 visibility_scope=visibility_scope)
     task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
     if task.gate_status not in {"passed", "not_required"}:
         raise service.ConflictError("行业门控未通过，不能提交完整研究")
@@ -933,6 +937,53 @@ def complete_task_research(
     return task
 
 
+def complete_task_gap(
+    db: Session, task_id: int, actor_id: int, agent_id: str, lease_token: str,
+    result_json: Mapping, *, agent_run_id: int, data_classification: str, visibility_scope: str,
+) -> CustomerResearchTask:
+    """Close an evidence-free, uncertain private task without inventing profile facts."""
+    from app.sales_automation.schemas import ResearchGapResult
+    task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
+    gate = task.result_json or {}
+    if (task.task_type != "full_research" or task.research_policy_version != "private-enrichment-v1"
+            or task.gate_status != "passed" or gate.get("schema_version") != "research_gate_v1"
+            or gate.get("industry_relevance") != "uncertain"):
+        raise service.ConflictError("仅主体未核实的私海补全可提交资料不足结果")
+    try:
+        contract = ResearchGapResult.model_validate(result_json)
+    except ValidationError as exc:
+        raise service.ConflictError("资料不足结果结构无效") from exc
+    input_hash = research_input_hash(task)
+    if contract.input_hash != input_hash:
+        raise service.ConflictError("资料不足结果与当前任务输入不匹配")
+    run = _validate_research_run_and_citations(db, task, actor_id, agent_run_id, input_hash, {}, [])
+    if db.query(CustomerFact.id).filter(CustomerFact.agent_run_id == run.id).first() is not None:
+        raise service.ConflictError("本次已写入事实，必须使用原有证据闭包提交研究结果")
+    classifications = [task.data_classification, data_classification]
+    visibilities = [task.visibility_scope, visibility_scope]
+    if any(value not in CLASSIFICATION_ORDER for value in classifications):
+        raise service.SalesAutomationError("研究数据分级无效")
+    if any(value not in VISIBILITY_ORDER for value in visibilities):
+        raise service.SalesAutomationError("研究可见范围无效")
+    task.data_classification = max(classifications, key=CLASSIFICATION_ORDER.index)
+    task.visibility_scope = max(visibilities, key=VISIBILITY_ORDER.index)
+    task.classification_reason = "strictest classification inherited from task and caller"
+    task.task_status = "completed"
+    task.result_review_status = "not_required"
+    task.result_schema_version = "research_gap_v1"
+    task.result_json = {**contract.model_dump(mode="json"), "industry_gate": gate}
+    task.research_summary = "资料不足，未确认新的档案信息。" + contract.gap_reason
+    task.evidence_fact_ids = []
+    task.error_code = task.error_message = None
+    from app.sales_automation.research_run_service import finish_run
+    finish_run(db, task, "completed")
+    task.finished_at = beijing_now()
+    task.claimed_by = task.lease_token_hash = task.lease_expires_at = None
+    db.commit()
+    db.refresh(task)
+    return task
+
+
 def fail_task(
     db: Session,
     task_id: int,
@@ -970,6 +1021,8 @@ def review_research_result(
     task = get_task(db, task_id, for_update=True)
     if task.task_status != "completed":
         raise service.ConflictError("只有已完成研究可进行质量审核")
+    if task.result_schema_version == "research_gap_v1":
+        raise service.ConflictError("资料不足结果不进入质量审核，请补充线索后重新研究")
     task.result_review_status = review_status
     task.reviewed_by = reviewer_id
     task.reviewed_at = beijing_now()
@@ -1089,6 +1142,7 @@ def submit_qualification_review(
             research.task_status != "completed"
             or research.gate_status != "passed"
             or research.result_review_status != "accepted"
+            or research.result_schema_version == "research_gap_v1"
         ):
             raise service.ConflictError("研究成果尚未完成质量审核")
     normalized_review_after = (
@@ -1239,6 +1293,8 @@ def list_pending_qualification(db: Session) -> list[CustomerResearchTask]:
     ).filter(
         CustomerResearchTask.task_status == "completed",
         CustomerResearchTask.result_review_status == "accepted",
+        or_(CustomerResearchTask.result_schema_version.is_(None),
+            CustomerResearchTask.result_schema_version != "research_gap_v1"),
     ).order_by(CustomerResearchTask.created_at, CustomerResearchTask.id).all()
     customer_ids = {int(owner) for _task, owner in task_rows}
     current_reviews = db.query(CustomerQualificationReview).filter(

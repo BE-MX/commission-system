@@ -354,3 +354,5 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 ## 开发分支1.25发布恢复共同凭据
 
 受管publish、migration resume及历史159/160 finalizer现共用outbound回执/候选/实际verify核验。managed timer不再按原running记录无条件start；已知v1目标暂停，初始legacy按经核验baseline。缺receipt或仅installed_paused不能finalize，历史凭据不补造，需受审协调发布。fresh mode floor不能由历史legacy降低。共同guard失败只向受信登记目标请求pause，保留active service/字节/mode/业务事实；SSH/IO/审计/状态不明固定报未确认，不宣称已排空。success摘要含最新绑定outbound，静态后再check。当前本地替身/实际函数体证据不代表生产、真实systemd/cgroup或完整协议回退；I78/I79/I80现场门禁保持，具体终态见docs/handoff.md。
+
+销售研究专用 Agent 的停用准备、凭据及验收见 [北京销售 Agent](sales-agent-cloud.md)。

@@ -25,6 +25,8 @@ const node = process.env.OPENCLAW_NODE || join(home, ".openclaw/tools/node/bin/n
 const parallelPlugin = process.env.OPENCLAW_PARALLEL_PLUGIN
   || "@openclaw/parallel-plugin@2026.8.1";
 const envFile = join(stateDir, ".env");
+// Cloud preparation deliberately creates no model requests or queue consumer.
+const prepareOnly = process.argv.includes("--prepare-only");
 const mainHeartbeat = {
   every: "5m",
   target: "none",
@@ -127,6 +129,7 @@ async function migrateModelKeyToSecretFile(envName, tokenFile, providerLabel) {
   try {
     metadata = await lstat(tokenFile);
   } catch {
+    if (prepareOnly) return;
     throw new Error(`${providerLabel} key is missing; store it as the only line in ${tokenFile} before bootstrap`);
   }
   if (!metadata.isFile() || metadata.isSymbolicLink()
@@ -252,6 +255,7 @@ function configureMainAgentTools() {
   // Keep queue automation scoped to the sales agent. A defaults-level
   // heartbeat would silently schedule unrelated agents such as email outreach.
   main.heartbeat = mainHeartbeat;
+  if (prepareOnly) main.heartbeat = { ...mainHeartbeat, every: "0m" };
   setConfig("agents.entries.main", main);
 }
 
@@ -266,7 +270,7 @@ async function main() {
     run(openclaw, ["--profile", profile, "setup", "--baseline", "--workspace", workspace]);
   }
   run(openclaw, [
-    "--profile", profile, "plugins", "install", parallelPlugin, "--pin", "--force",
+    "--profile", profile, "plugins", "install", parallelPlugin, "--pin", "--force", "--accept-capabilities",
   ]);
   setConfig("gateway.mode", "local");
   setConfig("gateway.port", 18791);
@@ -279,12 +283,6 @@ async function main() {
   setConfig("gateway.terminal.enabled", false);
   setConfig("gateway.controlUi.enabled", true);
   setConfig("agents.defaults.workspace", workspace);
-  setConfig("agents.defaults.model", { primary: "mimo/mimo-v2.5" });
-  setConfig("agents.defaults.models", {
-    "mimo/mimo-v2.5": { agentRuntime: { id: "openclaw" } },
-    "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
-    "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
-  }, { replace: true });
   setConfig("secrets.providers.mimo_key_file", {
     source: "file", path: mimoTokenFile, mode: "singleValue",
   });
@@ -310,6 +308,13 @@ async function main() {
   setConfig("models.providers.deepseek.apiKey", {
     source: "file", provider: "deepseek_key_file", id: "value",
   });
+  // Fresh profiles must register the provider before selecting its model.
+  setConfig("agents.defaults.models", {
+    "mimo/mimo-v2.5": { agentRuntime: { id: "openclaw" } },
+    "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
+    "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
+  }, { replace: true });
+  setConfig("agents.defaults.model", { primary: "mimo/mimo-v2.5" });
   setConfig("agents.defaults.skills", [
     "ark-lead-discovery", "ark-company-research", "ark-public-pool-research",
   ]);
@@ -359,7 +364,7 @@ async function main() {
   }
 
   run(openclaw, ["--profile", profile, "config", "validate"]);
-  run(openclaw, ["--profile", profile, "gateway", "install", "--force", "--json"]);
+  if (!prepareOnly) run(openclaw, ["--profile", profile, "gateway", "install", "--force", "--json"]);
   process.stdout.write(`\nOpenClaw profile '${profile}' prepared at ${stateDir}.\n`);
   process.stdout.write(`Add the Ark token to ${arkTokenFile} (mode 0600).\n`);
   process.stdout.write(`Optional runtime heartbeat token file: ${heartbeatTokenFile} (mode 0600).\n`);

@@ -51,6 +51,8 @@ test("lead discovery skill limits automatic selection to trusted local heartbeat
 test("bootstrap scopes heartbeat to main and outlasts the initial Ark lease", () => {
   const source = readFileSync(join(serviceDir, "scripts", "bootstrap.mjs"), "utf8");
   assert.match(source, /main\.heartbeat = mainHeartbeat/u);
+  assert.match(source, /if \(prepareOnly\) main\.heartbeat = \{ \.\.\.mainHeartbeat, every: "0m" \}/u);
+  assert.match(source, /if \(!prepareOnly\) run\(openclaw, \["--profile", profile, "gateway", "install"/u);
   assert.match(source, /timeoutSeconds: 1800/u);
   assert.doesNotMatch(source, /setConfig\("agents\.defaults\.heartbeat"/u);
   assert.match(source, /config", "unset", "agents\.defaults\.heartbeat/u);

@@ -1,3 +1,18 @@
+## 2026-10-13 销售研究 Agent 与资料不足修复 Git 交付（Codex，已授权合并推送，未发布）
+
+- 用户授权本次合并推送，仍保留“暂不发布”。从最新origin/main整合codex/sales-agent-cloud，交付范围为专用云端Agent配置/部署入口与research_gap_v1 API/MCP/UI修复；不合入独立候选分支中的其他门户历史提交，不执行生产发布、迁移或自动消费。
+- 独立生产修复候选a99af84079114d7b73f6de918539ea42c5993e22 / codex/private-research-gap-hotfix继续保留，及其受管worktree、恢复资料和页面证据；运行中的云端Agent仍是2026-10-12已验版本。后续发布需按当时线上版本重新核对差异，并单独同步专用MCP/Skills/HEARTBEAT。
+- 主目录他人未提交改动先做文件级备份与Git恢复快照，合并后核验恢复；不夹带其内容提交。实际集成验证与推送结果见本任务最终回执。
+- 最新main整合后的隔离SQLite回归153 passed；部署安全20 passed、1项POSIX检查在Windows跳过；MCP/策略14 passed、前端逻辑42 passed，前端构建通过（既有混合导入/chunk警告）。约定检查仍命中main本身的17项发票UI债务，相关两文件与main逐字一致，未扩为本次修复。备份及恢复核验位于主目录.deploy_state/sales-agent-main-merge-20261013。
+
+## 2026-10-12 销售研究 Agent 北京接入（Codex，MiMo 已验证，资料不足修复待发布）
+
+- 独立分支 codex/sales-agent-cloud。专用runtime a9f0cd8856c9a5789c79a9e6a9ffec7424e283c1，deployer89ff4a2d；用户MiMo文件只通过SSH stdin进入私有0600文件。mimo-v2.6-flash真实提供商探针和Gateway回复、RPC/active/enabled读回通过，main heartbeat仍0m。专用profile清理未使用DeepSeek，原通用Gateway保留。
+- MCP probe、实际 Parallel Free 搜索、HTTPS task251 context 契约与凭据权限通过；新凭据11有效、旧 Mac 凭据7已吊销，没有扩大90号账号权限。
+- Crystal customer628/task251按attempt1做一次CAS重试，旧Run266保留，新Run267/attempt2实际MiMo研究未核实到主体，零事实。用户确认无其他线索。线上完成接口必须有facts/citations，无法正常结束资料不足；任务仍running，未改档案或假标完成。
+- 已完成research_gap_v1 API/MCP/UI候选：仅私海full_research、uncertain门控、当前Run零事实；租约/Run/hash绑定仍有效，继承更严格分级，保留旧档案和门控，禁止质量审核/资格/编排采纳。独立审查修复两项风险后通过。原开发分支有线上外业务改动，另从两台后端实读9e16a4e1制作唯一修复提交a99af84079114d7b73f6de918539ea42c5993e22，worktree sales-gap-hotfix / codex/private-research-gap-hotfix；不发布原开发分支。
+- 北京邮件 Worker disabled/inactive、冻结和既有数据保留；Mac 历史队列/会话无源快照，未迁移。未发邮件、未推送或合并main；主应用资料不足修复尚未获发布授权。报告 docs/reports/2026-10-12-sales-agent-cloud-preparation.md；运行边界 deploy/sales-agent-cloud.md。发布后受控恢复task251并验收，完成前不启自动消费。
+
 # 当前交接与待办
 
 ## 2026-10-13 WhatsApp AI消息助手（Codex，已验证并获合并推送授权，未部署）
@@ -18,6 +33,13 @@
 - 聊天页面实测补修：账号管理在上、会话/正文在下全宽布局，避免 1440px 下正文过窄；手机分页换行。合成收件/发件/撤回截图 `frontend/tmp/whatsapp-baileys/chat-records.png`，没有真实聊天数据。
 - 迁移192接任务起点186；其他工作目录已占187–191，集成时必须对齐最新迁移链后保持单 head。只测试了隔离 SQLite 升级及 MySQL 离线 DDL。部署需 Node >=22.13、独立外部加密 key、API key、回调及单机 SQLite；真实账号/历史/注销和目标环境验收仍待发布授权。
 - 方案：[需求与实现约定](requirements/2026-10-13-whatsapp-baileys.md)；结果与运行限制：[本地验收报告](reports/2026-10-13-whatsapp-baileys.md)。合成临时目录递归清理被自动审批拒绝，已保留，不绕过删除限制。
+
+## 2026-10-13 订单通知采用 800×450 真彩卡片（Codex，用户认可预览并授权合并推送，未部署）
+
+- 用户反馈 1200×675 真彩 PNG 在钉钉中加载慢，已认可缩至 800×450 的 RGBA 预览并授权应用、合并推送。渲染仍先按 1200×675 排版，再 LANCZOS 缩图，保留真彩透明度，不恢复导致玻璃色带的 256 色量化；文案、头像、金额和投递行为不变。
+- Ivy 事件 1371 冻结同图预览 470,530 字节，较 925,951 字节减少 49.2%，用户已确认效果。预览、摘要回执在主目录 `tmp/order-card-quality-20261013/`；正式渲染需与用户确认的 `ivy-800-rgba.png` 像素一致。
+- 原 1200 实现下新体积/尺寸目标三类卡片测试 3 failed；修改后订单/投递回归 78 passed（1 项既有 Pillow 弃用警告），覆盖 800×450/RGBA/768 KiB 合理预算、透明边缘、头像及缩图后原材质玻璃区域的精确像素一致性。以该像素断言阻止缩图时重引入调色板量化。
+- 独立 agent 审查通过；正式渲染与用户认可预览逐像素一致。严格约定检查命中 main 既有的 17 项发票 UI 债务，两张相关表格文件与 main 逐字一致，main 上同命令复现相同 17 项，未弱化或修改门禁。基线日志和交付核验在主目录 `tmp/order-card-quality-20261013/git-integration/`。用户授权本次实现、测试和文档合并推送 main，主目录原有改动保留；仅 Git 交付，不部署、不发钉钉测试消息，实际客户端加载速度待发布后正常通知验收。
 
 ## 2026-10-12 内贸逐件分批发货与收款对账（Codex，验收完成并获合并推送授权，未部署）
 

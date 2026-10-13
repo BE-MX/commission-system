@@ -173,6 +173,21 @@
       "lock": "/tmp/okki-outbound.lock",
       "database_writer": "lsordertest.okki_outbound_records/items and commission_db shipping inspection contract",
       "deploy": "deploy/deploy.bat --okki-sync-only PLAN_JSON; explicit three-file scope"
+    },
+    {
+      "host": "beijing",
+      "name": "ark-sales-agent",
+      "manager": "systemd",
+      "user": "ark-sales",
+      "source": "services/openclaw-sales-agent",
+      "runtime": "/opt/ark-sales",
+      "state": "/var/lib/ark-sales/.openclaw-ark-sales",
+      "gateway": "127.0.0.1:18791",
+      "database_writer": false,
+      "write_path": "Authenticated HTTPS Ark API only; existing sales principal permissions",
+      "deploy": "deploy.bat --sales-agent-stage prepare/configure/verify/model/activate/verify-active/pause",
+      "status": "active RPC verified; mimo-v2.6-flash; heartbeat 0m; pending research-gap API deployment",
+      "migration_status": "configured-2026-10-12; Mac historical queue/session unavailable"
     }
   ],
   "terminals": [

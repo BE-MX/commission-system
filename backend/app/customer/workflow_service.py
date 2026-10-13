@@ -771,6 +771,7 @@ def _qualification_source_key(
             or task.task_status != "completed"
             or task.gate_status != "passed"
             or task.result_review_status != "accepted"
+            or task.result_schema_version == "research_gap_v1"
         ):
             raise CustomerWorkflowConflict("QUALIFICATION_SOURCE_INVALID")
         return (

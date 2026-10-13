@@ -41,6 +41,7 @@ export const canOpenCustomerDetail = permissions => permissions.includes('custom
 export const canReviewResearchDetail = (resource, taskId) => !resource.loading && !resource.error
   && resource.data?.research_task_id === taskId && resource.data?.task_status === 'completed'
   && resource.data?.content_redacted !== true
+  && resource.data?.result_schema_version !== 'research_gap_v1'
 export const canRequeueJob = job => job?.status === 'failed'
 export const isEmptyCompletedSearchJob = job => job?.status === 'completed' && Number(job?.result_count ?? 0) === 0
 export function getSearchJobFeedback(job) {
