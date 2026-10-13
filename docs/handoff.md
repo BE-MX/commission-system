@@ -15,6 +15,12 @@
 
 # 当前交接与待办
 
+## 2026-10-13 WhatsApp Git 集成交付（Codex，已授权合并推送，未部署）
+
+- 实现 `b9720ce8`，包含Baileys连接/全会话同步和AI消息助手；用户明确公司专用号全部会话（含群聊），清单只保留助手结果。任务分支已整合最新origin/main `5dc34122`，交接文档保留双方记录，不改变主分支销售研究Agent或订单卡片功能。
+- 整合代码验收：后端367 passed / 1 skipped；Connector41、前端逻辑10、同步Edge9及助手Edge19项通过（0pageerror），build通过。唯一迁移head193，增量约定无违规；全仓仅原发票17项UI债务。无真实扫码、模型调用或生产迁移。
+- 主目录原有27文件已保存文件副本/原HEAD/patch/指纹，恢复在新main上核对；交付不夹带这些改动。日志、截图、恢复核验和推送读回保留 `tmp/whatsapp-main-integration-20261013/`；[集成交付验收](reports/2026-10-13-whatsapp-main-integration.md)。代码使用授权main合并与origin/main推送，部署需单独授权，不向cloud推送或启动发布。
+
 ## 2026-10-13 WhatsApp AI消息助手（Codex，已验证并获合并推送授权，未部署）
 
 - 同 `codex/whatsapp-baileys` worktree，用户要求按时间段、聊天对象总结，结合知识给建议和待跟进清单；用户明确“仅保留在助手结果中”，不加入任务中心。
