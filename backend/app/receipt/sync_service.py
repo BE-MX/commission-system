@@ -317,6 +317,8 @@ def bind_remote(db, row, data, actor):
     row.next_attempt_at = beijing_now() + timedelta(minutes=30) if row.collect_status == 0 else None
     row.version += 1
     service.log(db, row, "reconciled", "已核对并绑定小满回款", actor)
+    from app.invoice.shipment_payment_policy import record_effective
+    record_effective(db, row, actor)
 
 
 def _reconcile(db, row, evidence, actor):

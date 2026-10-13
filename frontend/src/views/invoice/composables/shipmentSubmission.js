@@ -8,6 +8,7 @@ function valid(record, actor) {
   return record?.actor === actor && positiveId(record?.invoice_id)
     && /^[a-zA-Z0-9_-]{16,64}$/.test(body?.request_key || '') && /^[a-f0-9]{64}$/.test(body?.quote_hash || '')
     && money(body?.freight_amount) && Array.isArray(body?.items) && body.items.length > 0 && body.items.length <= 200
+    && (body.payment_term == null || ['pay_first', 'ship_first'].includes(body.payment_term))
     && body.items.every(row => positiveId(row.invoice_item_id) && positiveId(row.quantity))
     && new Set(body.items.map(row => row.invoice_item_id)).size === body.items.length
     && (!payment || (money(payment.amount) && Number(payment.amount) > 0 && money(payment.bank_charge)

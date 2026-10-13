@@ -5,6 +5,16 @@ export function cents(value) {
   const result = Number(match[1]) * 100 + Number((match[2] || '').padEnd(2, '0'))
   return Number.isSafeInteger(result) ? result : null
 }
+export function selectedPaymentSettlement(row) {
+  if (Array.isArray(row.balance?.payment_settlements)) {
+    return row.balance.payment_settlements.find(item => item.settlement_id === row.settlement_id)
+  }
+  return row.balance?.active_settlement
+}
+export function paymentBalance(row) {
+  return row.purpose === 'ordinary' && row.balance?.funding_mode === 'presale_pool'
+    ? selectedPaymentSettlement(row) : row.balance
+}
 export function validateAllocations(rows, amount) {
   const total = cents(amount)
   if (!rows.length || total == null || total <= 0) return '请选择订单并填写有效回款总金额'
@@ -14,9 +24,10 @@ export function validateAllocations(rows, amount) {
   let sum = 0
   for (const row of rows) {
     const pool = ['presale_deposit', 'presale_advance'].includes(row.purpose)
-    const balance = !pool && row.balance?.active_settlement ? row.balance.active_settlement : row.balance
+    const balance = !pool && row.balance?.funding_mode === 'presale_pool' ? selectedPaymentSettlement(row) : row.balance
     const allocated = cents(row.amount), remaining = cents(balance?.remaining_amount), charge = cents(row.bank_charge || 0)
     const order = row.invoice_no || '所选订单'
+    if (!pool && row.balance?.funding_mode === 'presale_pool' && !balance) return `${order}：请选择本次回款对应的发货批次`
     if (pool && row.balance?.active_settlement && row.balance.active_settlement.funding_version !== 2) return '存在旧版未完成发货结算，请选择本批补款'
     if (allocated == null || allocated <= 0) return `${order}：分配金额须大于 0，且最多保留两位小数`
     if (balance?.version == null || (!pool && remaining == null)) return `${order}：余额尚未核验，请刷新该订单后重试`
@@ -34,16 +45,17 @@ export function purposeForBalance(balance, selected = '') {
   const active = balance.active_settlement
   if (active && active.funding_version !== 2) return 'ordinary'
   if (['presale_advance', 'presale_deposit'].includes(selected)) return selected
+  if (Array.isArray(balance.payment_settlements)) return balance.payment_settlements.length ? 'ordinary' : 'presale_advance'
   if (active && (selected === 'ordinary' || cents(active.remaining_amount) > 0)) return 'ordinary'
   return 'presale_advance'
 }
 export function actualChargeForRow(row) {
   return ['presale_deposit', 'presale_advance'].includes(row.purpose)
-    || row.balance?.active_settlement?.funding_version === 2
+    || selectedPaymentSettlement(row)?.funding_version === 2
 }
 export function allocationForRow(row) {
   const pool = ['presale_deposit', 'presale_advance'].includes(row.purpose)
-  const balance = !pool && row.balance?.active_settlement ? row.balance.active_settlement : row.balance
+  const balance = !pool && row.balance?.funding_mode === 'presale_pool' ? selectedPaymentSettlement(row) : row.balance
   return { invoice_id: row.id, settlement_id: pool ? null : balance.settlement_id || null,
     amount: String(row.amount), balance_version: balance.version, purpose: row.purpose || 'ordinary',
     bank_charge: actualChargeForRow(row) ? String(row.bank_charge || 0) : '0' }

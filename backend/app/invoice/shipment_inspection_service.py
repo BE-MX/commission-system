@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 
 from app.core.time import beijing_now
 from app.invoice.models import Invoice
+from app.invoice import shipment_payment_policy as payment_policy
 from app.invoice.settlement_models import ShipmentOutbound, ShipmentSettlement, SettlementApplication, SettlementEvent
 from app.shipping_inspection import outbound_service, outbound_sync_state
 from app.shipping_inspection.models import ShippingInspection, ShippingOperationEvent
@@ -82,7 +83,9 @@ def apply(db, outbound, settlement, complete, *, funded=True, actor_id=None, bas
         applications = db.query(SettlementApplication).filter_by(settlement_id=settlement.id).order_by(
             SettlementApplication.id).populate_existing().with_for_update().all()
         for application in applications:
-            if application.status == 'reserved':
+            from app.receipt.models import Receipt
+            if application.status == 'reserved' and (not payment_policy.is_credit(settlement)
+                    or payment_policy.receipt_effective(db.get(Receipt, application.receipt_id))):
                 application.status = 'applied'
     if changed:
         if bump:
@@ -97,14 +100,14 @@ def sync_record(db, outbound, *, actor_id=None):
     """Submission/recall already owns Invoice and the inspection mutex. No IO."""
     if outbound is None or outbound.status not in {'pending_remote', 'shipped', 'shipped_unfunded', 'confirm_uncertain'}:
         return
-    from app.invoice.shipment_delivery import _funded
+    from app.invoice.shipment_delivery import _dispatchable
     db.flush()
     proof, complete = snapshot(db, outbound, current=True)
     settlement = db.query(ShipmentSettlement).filter_by(id=outbound.settlement_id).populate_existing().with_for_update().one()
     funded = True
     if complete:
         try:
-            funded = _funded(db, settlement, current=True)
+            funded = _dispatchable(db, settlement, current=True)
         except ValueError:
             funded = False
     apply(db, outbound, settlement, complete, funded=funded,

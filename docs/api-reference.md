@@ -214,6 +214,14 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
 
+## 预售按批次先出库后回款（2026-10-13，本地实现，未部署）
+
+- POST /api/invoices/{id}/shipment-quotes 与 shipment-settlements 增加 payment_term=pay_first|ship_first，默认 pay_first。条款参与报价及原请求摘要，历史缺字段保持先付款；同一 request_key 改条款返回409。
+- GET /api/shipments/order/{id}、GET /api/shipments/{id} 返回批次 payment_term、balance.outstanding_amount（真实欠款）、pending_amount（登记待生效），保留 remaining_amount（未登记额度），并返回 receipt_applications（原回款ID/编号、组件、应用金额与状态、同步和生效状态）。
+- /api/receipts/order-balance/{id}、invoice-summary/{id} 的预售余额增加 payment_settlements：可登记的当前先付款批及历史/当前信用批，包含 settlement_id/settlement_no/payment_term/state/funding_version/version 与资金余额。已有 active_settlement 仍描述未完成发货批，不代表唯一可还款批次。
+- POST /api/receipts/batches 沿用 allocations[].settlement_id 与所选批次的复合 balance_version，信用批在 outbound_pending/shipped 可补款且保留物理状态。回款详情返回 shipment_applications。未发送补款整批纠错沿用 void-entry 和 receipt:admin，不释放已用于出库的资金。
+- 继续使用当前 shipment:write、receipt:write 和订单财务范围；无新增权限、端点或生产迁移。详见 [业务约定](requirements/2026-10-13-presale-credit-batches.md)。
+
 ## 预售资金池规则更新（2026-10-09，已部署）
 
 - `POST /api/invoices/{id}/shipment-quotes` 与 `shipment-settlements` 增加 `is_final`（默认false，人工确认）；新报价 `funding_version=2`，返回 `advance_applied`、`deposit_applied`、`new_payment_due`、`pool_applications` 与 `pool_balances`。定金仅末批，预付货款可抵商品、包装、手续费与运费；不足才新登记现金。

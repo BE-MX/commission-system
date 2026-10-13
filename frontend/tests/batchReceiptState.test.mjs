@@ -110,3 +110,25 @@ test('new cash joins the pool during a current batch without changing its alloca
   delete payment.balance.active_settlement
   assert.equal(purposeForBalance(payment.balance, 'ordinary'), 'presale_advance')
 })
+
+test('historical credit debt requires an explicit batch and freezes its own version', () => {
+  const payment = row(1, '30', { purpose: 'ordinary', bank_charge: 0, balance: {
+    funding_mode: 'presale_pool', version: 'pool-v1',
+    active_settlement: { settlement_id: 10, funding_version: 2, remaining_amount: '0' },
+    payment_settlements: [
+      { settlement_id: 7, funding_version: 2, payment_term: 'ship_first', version: 'credit-v2',
+        remaining_amount: '40', outstanding_amount: '60', charge_remaining: '0' },
+      { settlement_id: 9, funding_version: 2, payment_term: 'ship_first', version: 'credit-v3',
+        remaining_amount: '20', outstanding_amount: '20', charge_remaining: '0' }] } })
+  assert.match(validateAllocations([payment], '30'), /请选择.*发货批次/)
+  payment.settlement_id = 7
+  assert.equal(validateAllocations([payment], '30'), '')
+  assert.equal(allocationForRow(payment).settlement_id, 7)
+  assert.equal(allocationForRow(payment).balance_version, 'credit-v2')
+  payment.settlement_id = 9
+  assert.match(validateAllocations([payment], '30'), /分配金额超过/)
+  payment.settlement_id = 999
+  assert.match(validateAllocations([payment], '30'), /请选择.*发货批次/)
+  payment.purpose = 'presale_advance'
+  assert.equal(allocationForRow(payment).settlement_id, null)
+})

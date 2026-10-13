@@ -49,6 +49,8 @@
 
 ## 预售结算与汇总回款（166_presale_settlement）
 
+2026-10-13 本地扩展（未部署、无 schema 迁移）：ark_shipment_settlements.quote.payment_term 冻结 pay_first|ship_first，历史缺字段按先付款；复用原快照金额与 ark_settlement_applications 记录批次应收和真实回款引用，欠款通过应收减生效应用计算，不创建虚拟 Receipt。ark_receipt_logs.action=credit_effective 保存先出库批次补款曾生效事实，撤生效不能变成普通欠款；可复用多批的原定金/预付货款不套用单批补款标记。详见 [批次约定](requirements/2026-10-13-presale-credit-batches.md)。
+
 开发分支新增 `170_presale_freight_name`（父 `169_pcw_customer_workbench`）：为 `ark_receivables` 增加唯一的 `remote_order_name`、冻结的 `remote_payload` 和摘要，以及发送令牌、租约、错误和版本列；为 `ark_shipment_outbounds` 增加首次远端明细核验快照和 `last_check_attempt_at`，分别用于确认实际出库时固定行 ID/成本单价、以及远端读取失败后的公平轮询。运费目标在远端写入前先预留可匹配名称；远端 ID 回读核验后绑定。生产迁移仍只能经候选发布入口执行，本地未对共享数据库升级。
 
 父 revision 为 `164_battle_posters`。八个新账本表，不更新原订单金额、不回填推测历史预售记录；详细实施限制见 [实现报告](reports/2026-09-23-presale-implementation.md)。

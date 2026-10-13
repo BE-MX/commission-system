@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Isolated credit receipt UI</title><div id="app"></div><script type="module">
+import {createApp, h, ref} from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import '../src/styles/app.css'
+import {createPinia} from 'pinia'
+import {createRouter, createWebHistory, RouterView} from 'vue-router'
+import {useAuthStore} from '../src/stores/auth'
+import {registerPermissionDirectives} from '../src/directives/permission'
+import Batch from '../src/views/receipt/BatchReceiptDialog.vue'
+const pinia = createPinia()
+const Host = {setup() {const visible = ref(false); return () => h('main', [
+  h('button', {onClick: () => visible.value = true}, '打开批次回款'),
+  visible.value ? h(Batch, {onClose: () => visible.value = false}) : null])}}
+const router = createRouter({history: createWebHistory(), routes: [
+  {path: '/tests/presaleCreditReceiptHarness.html', component: Host}]})
+const app = createApp({render: () => h(RouterView)})
+app.use(router); app.use(pinia); app.use(ElementPlus); registerPermissionDirectives(app)
+useAuthStore().user = {id: 1, roles: ['super_admin'], permissions: []}
+await router.isReady(); app.mount('#app')
+</script></html>

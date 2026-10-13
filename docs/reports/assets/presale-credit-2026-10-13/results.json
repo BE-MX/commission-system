@@ -1,0 +1,26 @@
+{
+  "syntheticApi": true,
+  "results": [
+    {
+      "width": 1440,
+      "creditCreates": 1,
+      "paymentCreates": 1,
+      "selectedBatch": 8,
+      "refreshPreservedSelection": true
+    },
+    {
+      "width": 390,
+      "creditCreates": 1,
+      "paymentCreates": 1,
+      "selectedBatch": 8,
+      "refreshPreservedSelection": true
+    },
+    {
+      "width": 320,
+      "creditCreates": 1,
+      "paymentCreates": 1,
+      "selectedBatch": 8,
+      "refreshPreservedSelection": true
+    }
+  ]
+}

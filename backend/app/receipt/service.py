@@ -61,6 +61,14 @@ def describe(db, row, invoice=None, *, detail=False):
                 order_id=row.xiaoman_order_id or invoice.xiaoman_order_id,
                 customer_name=invoice.customer_name, attachment_count=len(row.attachment_ids))
     if detail:
+        from app.invoice.settlement_models import SettlementApplication, ShipmentSettlement
+        data["shipment_applications"] = [{"settlement_id": settlement.id,
+            "settlement_no": settlement.settlement_no, "amount": str(app.amount),
+            "component": app.component, "status": app.status}
+            for app, settlement in db.query(SettlementApplication, ShipmentSettlement).join(
+                ShipmentSettlement, ShipmentSettlement.id == SettlementApplication.settlement_id).filter(
+                    SettlementApplication.receipt_id == row.id,
+                    ShipmentSettlement.invoice_id == row.invoice_id).all()]
         files = {a.id: a for a in db.query(ReceiptAttachment).filter(
             ReceiptAttachment.id.in_(row.attachment_ids)).all()}
         # Preserve the ledger order so refreshing details can be saved unchanged.
@@ -131,15 +139,20 @@ def order_balance(db, invoice):
 
 def _with_active_settlement(db, invoice, summary):
     from app.invoice import settlement_service
+    from app.invoice import shipment_payment_policy as payment_policy
     from app.invoice.settlement_models import ShipmentSettlement
-    row = db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id == invoice.id,
-        ShipmentSettlement.state.notin_(["shipped", "cancelled"])).order_by(ShipmentSettlement.id).first()
+    rows = db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id == invoice.id,
+        ShipmentSettlement.state != "cancelled").order_by(ShipmentSettlement.id).all()
     summary["funding_mode"] = "presale_pool"
-    if row:
+    summary["payment_settlements"] = []
+    for row in rows:
         data = settlement_service.funding_balance(db, row)
         data["version"] = settlement_service.digest([data["version"], summary["version"]])
-        data["state"] = row.state
-        summary["active_settlement"] = data
+        data.update(state=row.state, settlement_no=row.settlement_no)
+        if row.state != "shipped" and "active_settlement" not in summary:
+            summary["active_settlement"] = data
+        if payment_policy.accepts_payment(row) and Decimal(data["remaining_amount"]) > 0:
+            summary["payment_settlements"].append(data)
     return summary
 
 

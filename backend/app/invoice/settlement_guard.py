@@ -3,9 +3,7 @@ from decimal import Decimal
 from app.invoice.settlement_models import SettlementApplication, ShipmentSettlement, Receivable
 from app.invoice.models import Invoice
 from app.receipt.models import Receipt
-
-
-SENDABLE_STATES = {"awaiting_payment", "awaiting_verification", "ready"}
+from app.invoice import shipment_payment_policy as payment_policy
 
 
 def receipt_settlement(db, receipt, *, current=False):
@@ -38,6 +36,10 @@ def _validate_current_payment(db, receipt, application, settlement, *, current=F
     target = target_query.one_or_none()
     component = "freight" if receipt.purpose == "freight" else "goods"
     expected_key = f"settlement:{settlement.id}:freight" if component == "freight" else f"invoice:{settlement.invoice_id}:goods"
+    awaiting_binding = (component == "freight" and receipt.sync_status == "waiting_target"
+        and receipt.xiaoman_order_id is None and receipt.xiaoman_receipt_id is None
+        and receipt.attempt_token is None and receipt.lease_until is None
+        and target is not None and target.remote_status == "bound" and bool(target.remote_order_id))
     if (invoice is None or invoice.order_type != "presale" or receipt.status != "active"
             or receipt.amount <= 0 or receipt.bank_charge < 0 or receipt.bank_charge >= receipt.amount
             or receipt.customer_id != invoice.customer_id or receipt.currency != invoice.currency
@@ -46,7 +48,7 @@ def _validate_current_payment(db, receipt, application, settlement, *, current=F
             or target is None or target.invoice_id != invoice.id or target.business_key != expected_key
             or target.kind != component or target.customer_id != invoice.customer_id or target.currency != invoice.currency
             or target.settlement_id != (settlement.id if component == "freight" else None)
-            or target.remote_order_id != receipt.xiaoman_order_id
+            or target.remote_order_id != receipt.xiaoman_order_id and not awaiting_binding
             or component == "goods" and target.remote_order_id != invoice.xiaoman_order_id
             or component == "freight" and receipt.bank_charge):
         raise ValueError("本批补款与冻结资金分配或应收目标不一致，暂停发送")
@@ -75,6 +77,6 @@ def _validate_current_payment(db, receipt, application, settlement, *, current=F
 
 def ensure_receipt_sendable(db, receipt, *, current=False):
     settlement = receipt_settlement(db, receipt, current=current)
-    if settlement and settlement.state not in SENDABLE_STATES:
+    if settlement and not (payment_policy.accepts_payment(settlement) or settlement.state == "ready"):
         raise ValueError("本批结算已暂停或进入出库流程，回款不能继续发送")
     return settlement
