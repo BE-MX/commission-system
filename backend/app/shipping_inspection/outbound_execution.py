@@ -308,7 +308,7 @@ def review_finished(db,record,user,warehouse,attempt):
     db.commit();clear(db)
     return response(db,record,user,invoice_id,warehouse,result)
 
-def synchronize(db,record,user,version,*,check_only=False,confirm_recheck=False,desired_serial_id=None,
+def synchronize(db,record,user,version,*,check_only=False,confirm_recheck=False,desired_serial_id=None,expected_serial_id=None,
                 number_only=False,repair=False,auto_recall=False,source='pc',warehouse=False):
     try:
         from app.shipping_inspection import outbound_sync_service as legacy
@@ -327,6 +327,7 @@ def synchronize(db,record,user,version,*,check_only=False,confirm_recheck=False,
             warehouse=inherited
         db.commit();clear(db)
         invoice,event,plan=prepare.prepare(db,record,user,desired_serial_id=desired_serial_id,
+                                           expected_serial_id=expected_serial_id,
                                            number_only=number_only,warehouse=warehouse,expected_binding=preflight_binding)
         if plan is None:
             attempt=facts.load(db,event)

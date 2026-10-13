@@ -103,6 +103,84 @@ def _renamed_link(db, invoice, new_no):
     db.commit()
 
 
+def _ordinary_rename(db, invoice, old_no, new_no):
+    invoice.invoice_no = new_no
+    for action, name in [('create', old_no), ('update', new_no)]:
+        payload = {'name': name}
+        if action == 'update':
+            payload['order_id'] = int(invoice.xiaoman_order_id)
+        db.add(InvoiceSyncLog(invoice_id=invoice.id, action=action, success=1,
+            request_digest=json.dumps(payload),
+            response_body=json.dumps({'order_id': int(invoice.xiaoman_order_id)})))
+    db.commit()
+
+
+def test_ordinary_save_sync_rename_updates_original_outbound_without_linked_task(db, sync_case):
+    user, invoice, _, fake = sync_case
+    _ordinary_rename(db, invoice, fake['outbound']['serial_id'], 'ORDINARY-RENAME')
+    assert db.query(InvoiceLinkedSync).filter_by(invoice_id=invoice.id).count() == 0
+    result = followup.run(db, invoice, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'done'
+    assert len(fake['posts']) == 1
+    assert fake['posts'][0]['outbound_invoice_id'] == 77
+    assert fake['outbound']['serial_id'] == 'ORDINARY-RENAME'
+    assert outbound_service.get_outbound_record(db, 'OB001')['outbound_no'] == 'ORDINARY-RENAME'
+    result = followup.run(db, invoice, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'done' and len(fake['posts']) == 1
+
+
+@pytest.mark.parametrize('invalid', ['custom_serial', 'wrong_response', 'wrong_request',
+                                   'stale_latest', 'failed_update', 'malformed', 'shipped', 'collision'])
+def test_ordinary_rename_requires_successful_same_order_history(db, sync_case, invalid):
+    user, invoice, _, fake = sync_case
+    _ordinary_rename(db, invoice, fake['outbound']['serial_id'], 'ORDINARY-RENAME')
+    logs = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id).order_by(InvoiceSyncLog.id).all()
+    if invalid == 'custom_serial':
+        fake['outbound']['serial_id'] = 'WAREHOUSE-CUSTOM'
+    elif invalid == 'wrong_response':
+        logs[0].response_body = json.dumps({'order_id': 999})
+    elif invalid == 'wrong_request':
+        logs[1].request_digest = json.dumps({'name': invoice.invoice_no, 'order_id': 999})
+    elif invalid == 'stale_latest':
+        logs[1].request_digest = json.dumps({'name': 'OTHER-VERSION', 'order_id': 123})
+    elif invalid == 'failed_update':
+        logs[1].success = 0
+    elif invalid == 'malformed':
+        logs[0].request_digest = '{'
+    elif invalid == 'shipped':
+        fake['outbound']['status'] = 2
+    elif invalid == 'collision':
+        fake['serial_occupant'] = {'outbound_invoice_id': 999}
+    db.commit()
+    old_serial = fake['outbound']['serial_id']
+    followup.safely_run(db, invoice, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert fake['outbound']['serial_id'] == old_serial
+    assert all('serial_id' not in post for post in fake['posts'])
+
+
+def test_outbound_rename_rejects_stale_invoice_number_before_post(db, sync_case):
+    user, invoice, _, fake = sync_case
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    with pytest.raises(ValueError, match='发票号已变化'):
+        sync.preview(db, record, {'sub': str(user.id), 'permissions': PERMS, 'roles': []},
+                     desired_serial_id='STALE-NUMBER')
+    assert fake['posts'] == []
+
+
+def test_ordinary_rename_does_not_overwrite_warehouse_number_changed_after_scan(db, sync_case, monkeypatch):
+    user, invoice, _, fake = sync_case
+    _ordinary_rename(db, invoice, fake['outbound']['serial_id'], 'ORDINARY-RENAME')
+    def related(*args):
+        scanned = deepcopy(fake['outbound'])
+        fake['outbound']['serial_id'] = 'WAREHOUSE-CUSTOM'
+        return [scanned]
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', related)
+    result = followup.safely_run(db, invoice, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'manual'
+    assert fake['outbound']['serial_id'] == 'WAREHOUSE-CUSTOM'
+    assert fake['posts'] == []
+
+
 def test_invoice_rename_updates_same_pending_outbound_and_draft_number(db, sync_case):
     user, invoice, _, fake = sync_case
     _renamed_link(db, invoice, 'RENAMED-2026')
