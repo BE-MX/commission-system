@@ -13,10 +13,16 @@
           </el-select>
         </el-form-item>
         <p v-if="rows.length">{{ rows[0].customer_name }} · {{ rows[0].currency }}；同一笔凭证仅上传一次，按下表金额分配。</p>
-        <el-table class="list-table" :data="rows" border v-sticky-scrollbar>
+        <el-table class="list-table" :data="rows" row-key="id" border v-sticky-scrollbar>
           <el-table-column prop="invoice_no" label="订单发票" min-width="150" />
-          <el-table-column label="用途" min-width="170"><template #default="{ row }"><span v-if="pending">{{ purposeLabel(row.purpose) }}</span><el-select v-else-if="row.balance?.funding_mode === 'presale_pool'" v-model="row.purpose" aria-label="预售收款用途"><el-option value="presale_advance" label="预付货款" :disabled="Boolean(row.balance.active_settlement && row.balance.active_settlement.funding_version !== 2)" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" :disabled="Boolean(row.balance.active_settlement && row.balance.active_settlement.funding_version !== 2)" /><el-option v-if="row.balance.active_settlement" value="ordinary" label="本批补款" /></el-select><span v-else>订单款</span></template></el-table-column>
-          <el-table-column label="可分配余额" min-width="130"><template #default="{ row }">{{ row.balance?.funding_mode === 'presale_pool' && row.purpose !== 'ordinary' ? `预付余额 ${money(row.balance.pool_available_amount)}` : row.balance ? money(row.balance.active_settlement?.remaining_amount ?? row.balance.remaining_amount) : pending ? '原提交已冻结' : '未核验' }}</template></el-table-column>
+          <el-table-column label="用途" min-width="170"><template #default="{ row }"><span v-if="pending">{{ purposeLabel(row.purpose) }}</span><el-select v-else-if="row.balance?.funding_mode === 'presale_pool'" v-model="row.purpose" aria-label="预售收款用途"><el-option value="presale_advance" label="预付货款" :disabled="Boolean(row.balance.active_settlement && row.balance.active_settlement.funding_version !== 2)" /><el-option value="presale_deposit" label="定金（最后一批抵扣）" :disabled="Boolean(row.balance.active_settlement && row.balance.active_settlement.funding_version !== 2)" /><el-option v-if="row.balance.payment_settlements?.length || row.balance.active_settlement" value="ordinary" label="批次回款" /></el-select><span v-else>订单款</span></template></el-table-column>
+          <el-table-column v-if="rows.some(row => row.purpose === 'ordinary' && (row.balance?.funding_mode === 'presale_pool' || row.settlement_id))" label="关联发货批次" min-width="230"><template #default="{ row }">
+            <span v-if="pending">原批次 #{{ row.settlement_id }}</span>
+            <el-select v-else-if="row.purpose === 'ordinary' && row.balance?.funding_mode === 'presale_pool'" v-model="row.settlement_id" aria-label="关联发货批次" placeholder="选择本次回款对应批次">
+              <el-option v-for="batch in row.balance.payment_settlements || [row.balance.active_settlement].filter(Boolean)" :key="batch.settlement_id" :value="batch.settlement_id" :label="`${batch.settlement_no || batch.settlement_id} · ${batch.payment_term === 'ship_first' ? '先出库后回款' : '先付款后出库'} · 可登记 ${money(batch.remaining_amount)}`" />
+            </el-select>
+          </template></el-table-column>
+          <el-table-column label="可分配余额" min-width="130"><template #default="{ row }">{{ row.balance?.funding_mode === 'presale_pool' && row.purpose !== 'ordinary' ? `预付余额 ${money(row.balance.pool_available_amount)}` : paymentBalance(row) ? money(paymentBalance(row).remaining_amount) : pending ? '原提交已冻结' : '请选择批次' }}</template></el-table-column>
           <el-table-column label="本次分配" min-width="185"><template #default="{ row }"><span v-if="pending">{{ row.amount }}</span><el-input-number v-else v-model="row.amount" aria-label="本次分配金额" :min="0.01" :precision="2" controls-position="right" /></template></el-table-column>
           <el-table-column label="实际银行手续费" min-width="165"><template #default="{ row }"><span v-if="pending">{{ row.bank_charge || 0 }}</span><el-input-number v-else-if="actualChargeForRow(row)" v-model="row.bank_charge" aria-label="本次收款实际银行手续费" :min="0" :precision="2" controls-position="right" /><span v-else>按本批费用分摊</span></template></el-table-column>
           <el-table-column v-if="!pending" label="操作" class-name="table-action-column" min-width="120"><template #default="{ row }"><el-button link :loading="row.loading" :disabled="locked" @click="refresh(row)">刷新</el-button><el-button link :disabled="locked" @click="remove(row)">移除</el-button></template></el-table-column>
@@ -24,6 +30,7 @@
         <p>分配合计：{{ allocatedTotal }} {{ rows[0]?.currency }}</p>
         <p v-if="rows.some(row => row.balance?.funding_mode === 'presale_pool')">预付货款用于后续每批商品款和运费；定金留到人工确认的最后一批。金额按实际到账填写，可以超过当前商品明细金额。</p>
         <p v-if="rows.some(row => row.balance?.active_settlement?.funding_version === 2)">本批补款仅用于本批未付余额；另外新到账的款项请选择预付货款或定金，留作后续结算使用。</p>
+        <p v-if="rows.some(row => row.balance?.payment_settlements?.some(batch => batch.payment_term === 'ship_first'))">已出库欠款也可选择对应批次回款。已登记待生效的款项占用额度，财务生效后才减少欠款。</p>
         <ReceiptFields :form="form" :currency="rows[0]?.currency" :readonly="locked" @uploading="v => uploading = v" />
       </el-form>
     </div>
@@ -47,7 +54,7 @@ import { getReceiptOrders, getReceiptBalance, createReceiptBatch, inspectReceipt
 import { useAuthStore } from '@/stores/auth'
 import { currentBeijingDate } from '@/utils/datetime'
 import { confirmAction, msgError, msgSuccess } from '@/utils/feedback'
-import { cents, validateAllocations, latestRequest, allocationForRow, actualChargeForRow, purposeForBalance } from './batchReceiptState'
+import { cents, validateAllocations, latestRequest, allocationForRow, actualChargeForRow, purposeForBalance, paymentBalance } from './batchReceiptState'
 import { purposeLabel } from '@/views/invoice/components/invoiceDetailLabels'
 import { clearSubmission, copySubmission, isBatchReceipt, readSubmission, saveSubmission, uncertainSubmission } from './batchSubmission'
 import { money } from './useReceipts'
@@ -87,6 +94,10 @@ async function refresh(row) {
   const identity = generation; row.loading = true; row.balance = null
   try { const balance = await getReceiptBalance(row.id); if (current(identity) && !locked.value && rows.value.includes(row)) {
     row.balance = balance
+    const batches = balance.payment_settlements
+    if (Array.isArray(batches) && !batches.some(batch => batch.settlement_id === row.settlement_id)) {
+      row.settlement_id = batches.length === 1 ? batches[0].settlement_id : null
+    }
     row.purpose = purposeForBalance(balance, row.purpose)
   } }
   catch (e) { if (current(identity) && rows.value.includes(row)) failed(e) }
@@ -131,7 +142,7 @@ async function inspect() {
     if (result.state !== 'not_found' || !Array.isArray(result.invoices) || result.invoices.length !== ids.size
       || new Set(result.invoices.map(row => row.id)).size !== ids.size || !result.invoices.every(row => ids.has(row.id))) throw new Error('核对回执不完整，请保持原请求并再次核对')
     denied.value = false; Object.assign(form, copySubmission(frozen))
-    rows.value = frozen.allocations.map(item => ({ ...result.invoices.find(row => row.id === item.invoice_id), amount: item.amount, purpose: item.purpose, bank_charge: item.bank_charge, balance: null, loading: false }))
+    rows.value = frozen.allocations.map(item => ({ ...result.invoices.find(row => row.id === item.invoice_id), amount: item.amount, purpose: item.purpose, settlement_id: item.settlement_id, bank_charge: item.bank_charge, balance: null, loading: false }))
     void showError('尚未查到原批次，不能据此判断先前请求未执行。原内容仍冻结，可继续核对或按原请求重试。')
   } catch (e) { if (current(identity, key)) failed(e) }
   finally { if (current(identity, key)) checking.value = false }

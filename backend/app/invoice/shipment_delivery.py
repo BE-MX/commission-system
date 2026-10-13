@@ -24,6 +24,7 @@ from app.receipt.models import Receipt
 from app.receipt.sync_service import refresh_accepted
 from app.shipping_inspection import outbound_presence
 from app.invoice import shipment_inspection_service as inspection_completion
+from app.invoice import shipment_payment_policy as payment_policy
 
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,10 @@ def _funded(db, settlement, *, current=False):
 
 
 def _refresh_funding(db, settlement_id):
+    settlement = db.get(ShipmentSettlement, settlement_id)
+    if settlement is None:
+        return False
+    credit = payment_policy.is_credit(settlement)
     ids = [receipt_id for (receipt_id,) in db.query(SettlementApplication.receipt_id).filter(
         SettlementApplication.settlement_id == settlement_id,
         SettlementApplication.status != "released").distinct()]
@@ -57,10 +62,18 @@ def _refresh_funding(db, settlement_id):
         receipt = db.get(Receipt, identity)
         if receipt and receipt.status == "active" and receipt.xiaoman_receipt_id:
             refresh_accepted(db, identity)
+        elif credit and receipt and receipt.status == "active":
+            continue  # Pending credit payments occupy the ledger, not effective cash.
         else:
             db.rollback()
             return False
     return True
+
+
+def _dispatchable(db, settlement, *, current=False):
+    if payment_policy.is_credit(settlement):
+        return payment_policy.credit_funding_valid(db, settlement, current=current)
+    return _funded(db, settlement, current=True) if current else _funded(db, settlement)
 
 
 def _live_candidate(db, invoice, settlement, *, pending=None):
@@ -116,6 +129,10 @@ def _live_funding(db, invoice, settlement):
         SettlementApplication.settlement_id == settlement.id,
         SettlementApplication.status != "released").all()
     for application, receipt in applications:
+        if (payment_policy.is_credit(settlement)
+                and not payment_policy.requires_effective(db, application, receipt)
+                and not payment_policy.receipt_effective(receipt)):
+            continue
         rows = freight_rows if pools.source_component(application, receipt) == "freight" else goods_rows
         row = rows.get(str(receipt.xiaoman_receipt_id))
         if not row or str(row.get("collect_status")) != "1":
@@ -130,7 +147,7 @@ def queue_ready(db, settlement_id):
     settlement = db.get(ShipmentSettlement, settlement_id)
     if not settlement or settlement.state not in {"awaiting_payment", "awaiting_verification", "ready"}:
         return None
-    if not _funded(db, settlement):
+    if not _dispatchable(db, settlement):
         return None
     invoice = db.get(Invoice, settlement.invoice_id)
     # The remote read is outside a write lock; compare local versions after locking.
@@ -144,7 +161,7 @@ def queue_ready(db, settlement_id):
     if settlement.version != version or settlement.state not in {"awaiting_payment", "awaiting_verification", "ready"}:
         db.rollback()
         return None
-    if not _funded(db, settlement):
+    if not _dispatchable(db, settlement, current=True):
         db.rollback()
         return None
     existing = db.query(ShipmentOutbound).filter_by(settlement_id=settlement.id).first()
@@ -242,7 +259,7 @@ def refresh(db, outbound_id, *, confirmation_token=None):
             settlement_for_funding = db.get(ShipmentSettlement, outbound.settlement_id)
             invoice_for_funding = db.get(Invoice, outbound.invoice_id)
             _live_funding(db, invoice_for_funding, settlement_for_funding)
-            funding_ok = funding_ok and _funded(db, settlement_for_funding)
+            funding_ok = funding_ok and _dispatchable(db, settlement_for_funding)
         except Exception:
             db.rollback()
             funding_ok = False
@@ -266,7 +283,7 @@ def refresh(db, outbound_id, *, confirmation_token=None):
             db.rollback()
             raise ValueError('检验状态在核验期间已变化，请刷新原批次')
         if complete:
-            funding_ok = funding_ok and _funded(db, settlement, current=True)
+            funding_ok = funding_ok and _dispatchable(db, settlement, current=True)
         inspection_completion.apply(db, outbound, settlement, complete,
             funded=funding_ok, basis='inspection:' + proof, bump=False)
     outbound.version += 1
@@ -321,7 +338,7 @@ def deliver(db, outbound_id):
         ensure_active(invoice)
         if settlement.state != "outbound_pending":
             raise ValueError("本批结算已变化，出库任务不能发送")
-        if not _refresh_funding(db, settlement.id) or not _funded(db, settlement):
+        if not _refresh_funding(db, settlement.id) or not _dispatchable(db, settlement):
             raise ValueError("预售本批回款尚未全部生效")
         payload = _live_candidate(db, invoice, settlement)
         if digest(payload) != outbound.payload_hash:

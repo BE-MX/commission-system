@@ -14,12 +14,20 @@
           <el-table-column prop="quantity" label="原提交数量" min-width="120" />
         </el-table>
         <p>原运费：{{ recoveryInvoice.currency }} {{ frozen.body.freight_amount }}</p>
+        <p>原结算方式：{{ frozen.body.payment_term === 'ship_first' ? '先出库后回款' : '先付款后出库' }}</p>
         <p v-if="frozen.body.payment">原登记回款：{{ recoveryInvoice.currency }} {{ frozen.body.payment.amount }}；原日期 {{ frozen.body.payment.collection_date }} · {{ frozen.body.payment.payment_type }}，原凭证保持不变。</p>
       </section>
       <div v-if="!pending && !denied && !storageBlocked" v-loading="loading">
       <el-alert title="预付货款可扣减本批商品款和运费；定金只在人工确认最后一批时抵扣。提交生成本地结算单，实际出库以同步结果为准。" type="info" :closable="false" />
       <el-alert v-if="activeShipment" title="当前已有未完成的出库结算，请先处理下方记录后再创建下一批。" type="warning" :closable="false" />
       <el-form label-position="top" :disabled="saving">
+        <el-form-item label="本批结算方式">
+          <el-radio-group v-model="paymentTerm" :disabled="activeShipment || confirmationPending" aria-label="本批结算方式">
+            <el-radio value="pay_first">先付款后出库</el-radio>
+            <el-radio value="ship_first">先出库后回款</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-alert v-if="paymentTerm === 'ship_first'" title="本批允许欠款生成出库单。已有预付余额照常抵扣，未收金额保留为本批欠款；后续在回款单中选择本批登记。" type="info" :closable="false" />
         <el-table class="list-table" :data="lines" border v-sticky-scrollbar>
           <el-table-column :sort-by="row => (row.product_name || row.product_display)" label="产品" min-width="220"><template #default="{ row }">{{ row.product_name || row.product_display }} {{ row.model }} {{ row.color }} {{ row.length }}</template></el-table-column>
           <el-table-column prop="quantity" label="订单数量" min-width="110" /><el-table-column prop="remaining" label="可出库数量" min-width="110" />
@@ -29,7 +37,7 @@
         <el-checkbox v-model="isFinal">人工确认：这是最后一批发货，可抵扣定金</el-checkbox>
         <el-alert v-if="freight > 0" title="运费优先从预付货款余额扣减，不足部分再补款。小满保留独立运费订单，方舟记录原款抵扣，不重复登记实收。" type="info" :closable="false" />
         <ResponsiveDescriptions v-if="quote" :column="2" border class="quote-summary">
-          <el-descriptions-item v-for="field in quoteFields" :key="field[0]" :label="field[1]">{{ invoice.currency }} {{ money(quote[field[0]]) }}</el-descriptions-item>
+          <el-descriptions-item v-for="field in quoteFields" :key="field[0]" :label="field[0] === 'new_payment_due' && paymentTerm === 'ship_first' ? '本批待回款' : field[1]">{{ invoice.currency }} {{ money(quote[field[0]]) }}</el-descriptions-item>
           <el-descriptions-item label="出库批次">{{ quote.is_final ? '人工确认最后一批' : '本批发货，定金保留' }}</el-descriptions-item>
           <el-descriptions-item v-if="quote.pool_balances" label="扣减后可用预付货款">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => row.effective && row.purpose === 'presale_advance').reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
           <el-descriptions-item v-if="quote.pool_balances" label="留存定金（仅末批）">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => row.effective && row.purpose === 'presale_deposit').reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
@@ -41,6 +49,9 @@
       <ResponsiveDescriptions v-if="selectedSettlement" :column="2" border class="quote-summary">
         <el-descriptions-item label="结算单">{{ selectedSettlement.settlement_no }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ stateLabel(selectedSettlement.state) }}</el-descriptions-item>
+        <el-descriptions-item label="结算方式">{{ selectedSettlement.payment_term === 'ship_first' ? '先出库后回款' : '先付款后出库' }}</el-descriptions-item>
+        <el-descriptions-item label="本批欠款">{{ selectedSettlement.balance ? money(selectedSettlement.balance.outstanding_amount) : '待核对' }}</el-descriptions-item>
+        <el-descriptions-item label="已登记待生效">{{ selectedSettlement.balance ? money(selectedSettlement.balance.pending_amount) : '待核对' }}</el-descriptions-item>
         <el-descriptions-item label="待登记货款">{{ selectedSettlement.balance ? money(selectedSettlement.balance.goods_remaining) : '待核对' }}</el-descriptions-item>
         <el-descriptions-item label="待登记运费">{{ selectedSettlement.balance ? money(selectedSettlement.balance.freight_remaining) : '待核对' }}</el-descriptions-item>
         <el-descriptions-item v-if="selectedSettlement.outbound" label="小满出库单">{{ selectedSettlement.outbound.number }} · {{ selectedSettlement.outbound.remote_id || '待同步' }}</el-descriptions-item>
@@ -50,10 +61,20 @@
       <el-alert v-if="selectedSettlement?.balance_error" :title="selectedSettlement.balance_error" type="warning" :closable="false" />
       <el-alert v-if="selectedSettlement?.outbound?.last_error" :title="selectedSettlement.outbound.last_error" type="error" :closable="false" />
       <el-alert v-if="selectedSettlement?.outbound?.confirmation?.requires_review" :title="selectedSettlement.outbound.confirmation.message" type="warning" :closable="false" />
+      <template v-if="selectedSettlement?.receipt_applications?.length">
+        <h3>本批关联回款</h3>
+        <el-table class="list-table" :data="selectedSettlement.receipt_applications" border v-sticky-scrollbar>
+          <el-table-column prop="receipt_no" label="回款单号" min-width="200" />
+          <el-table-column label="分配金额" min-width="120"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
+          <el-table-column label="收款状态" min-width="120"><template #default="{ row }">{{ row.status === 'released' ? '已释放' : row.effective ? '已生效' : '待生效' }}</template></el-table-column>
+        </el-table>
+      </template>
       <h3>出库结算记录</h3>
       <el-table class="list-table" :data="settlements" border empty-text="暂无出库结算记录" v-sticky-scrollbar>
         <el-table-column prop="settlement_no" label="结算单号" min-width="180"><template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.settlement_no }}</el-button></template></el-table-column>
         <el-table-column prop="state" label="状态" min-width="160"><template #default="{ row }">{{ stateLabel(row.state) }}</template></el-table-column>
+        <el-table-column label="结算方式" min-width="150"><template #default="{ row }">{{ row.payment_term === 'ship_first' ? '先出库后回款' : '先付款后出库' }}</template></el-table-column>
+        <el-table-column label="本批欠款" min-width="130"><template #default="{ row }">{{ row.balance ? money(row.balance.outstanding_amount) : '待核对' }}</template></el-table-column>
         <el-table-column label="操作" class-name="table-action-column" min-width="200"><template #default="{ row }">
           <el-button v-permission="'shipment:write'" v-if="canChangeShipment(row, 'cancel')" link :disabled="saving" @click="change(row, 'cancel')"><el-icon><Close /></el-icon>取消</el-button>
           <el-button :type="row.state === 'paused' ? 'success' : 'warning'" v-permission="'shipment:write'" v-if="canChangeShipment(row, row.state === 'paused' ? 'resume' : 'pause')" link :disabled="saving" @click="change(row, row.state === 'paused' ? 'resume' : 'pause')"><el-icon><SwitchButton /></el-icon>{{ row.state === 'paused' ? '恢复' : '暂停' }}</el-button>
@@ -114,10 +135,10 @@ function failed(error) { if ([401,403,404].includes(error?.response?.status)) hi
 const quoteRequest = latestRequest(), detailRequest = latestRequest()
 const selectedSettlement = ref(null)
 const activeShipment = computed(() => hasActiveShipment(settlements.value))
-const isFinal = ref(false)
+const isFinal = ref(false), paymentTerm = ref('pay_first')
 const quoteFields = [['goods_amount','货款'],['packaging_amount','包装费'],['handling_amount','手续费'],['freight_amount','运费'],['deposit_applied','本批抵扣定金'],['advance_applied','本批抵扣预付货款'],['new_payment_due','本批需补款']]
 const stateLabel = state => ({ pending: '待处理', pending_remote: '待提交检验', confirming: '实际出库确认中', confirm_uncertain: '实际出库待核对', shipped_unfunded: '已出库·回款异常', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', failed: '处理失败', uncertain: '待核对' })[state] || state
-const body = () => ({ items: lines.value.filter(row => row.requested > 0).map(row => ({ invoice_item_id: row.id, quantity: row.requested })), freight_amount: String(freight.value || 0), is_final: isFinal.value })
+const body = () => ({ items: lines.value.filter(row => row.requested > 0).map(row => ({ invoice_item_id: row.id, quantity: row.requested })), freight_amount: String(freight.value || 0), is_final: isFinal.value, payment_term: paymentTerm.value })
 watch(() => JSON.stringify(body()), () => {
   quoteRequest.next(); quote.value = null; quoting.value = false
   if (error.value === '请填写本批出库数量' && body().items.length) error.value = ''

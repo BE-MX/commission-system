@@ -68,13 +68,19 @@ def _authorize(db, identity, body, user):
 
 
 def _replay(db, invoice, existing, identity, body, current):
+    from app.invoice.shipment_payment_policy import term
+    if body.payment_term != term(existing):
+        raise HTTPException(409, '原批结算方式已冻结，不能用原提交标识更改')
     from app.invoice.settlement_models import SettlementFundingAmendment
     if existing.quote_hash != body.quote_hash and db.scalar(select(SettlementFundingAmendment.id).where(
             SettlementFundingAmendment.settlement_id == existing.id).with_for_update()):
         raise HTTPException(409, '原批资金已受审计升级，请读取原批；旧创建请求不能重放为新报价')
     hashes = {shipments.digest(body.model_dump(mode='json'))}
+    if body.payment_term == 'pay_first' and 'payment_term' not in existing.quote:
+        hashes.add(shipments.digest(body.model_dump(mode='json', exclude={'payment_term'})))
     if existing.quote.get('funding_version') != 2:
-        legacy = body.model_dump(mode='json', exclude={'is_final'})
+        legacy = body.model_dump(mode='json', exclude={'is_final', 'payment_term'})
+        hashes.add(shipments.digest(body.model_dump(mode='json', exclude={'is_final'})))
         if legacy.get('payment') and legacy['payment'].get('purpose') == 'ordinary':
             legacy['payment'].pop('purpose', None)
         hashes.add(shipments.digest(legacy))

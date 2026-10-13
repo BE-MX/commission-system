@@ -16,6 +16,7 @@ class ShipmentQuote(BaseModel):
     items: list[ShipmentLine] = Field(min_length=1, max_length=200)
     freight_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
     is_final: bool = Field(default=False, strict=True)
+    payment_term: Literal["pay_first", "ship_first"] = "pay_first"
 
     @model_validator(mode="after")
     def unique_lines(self):

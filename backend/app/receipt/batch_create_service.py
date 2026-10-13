@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from app.core.storage.cos import StorageError
 from app.invoice import okki_client, settlement_service as shipments
+from app.invoice import shipment_payment_policy as payment_policy
 from app.invoice.models import Invoice
 from app.invoice.settlement_models import BatchAttachment, ReceiptBatch, Receivable, SettlementApplication, ShipmentSettlement
 from app.portal.authority import lock_authority
@@ -139,7 +140,7 @@ def _capture(db, invoices, body, current):
             settlement = by_settlement.get(item.settlement_id)
             if not settlement or settlement.invoice_id != item.invoice_id:
                 raise ValueError("结算不属于所选订单")
-            if settlement.state not in {'awaiting_payment','awaiting_verification'}:
+            if not payment_policy.accepts_payment(settlement):
                 raise ValueError("当前结算不接受新增付款")
             if not isinstance(settlement.quote, dict) or settlement.quote.get('currency') != invoices[item.invoice_id].currency:
                 raise ValueError("结算币种或资金快照异常，请核对原单")

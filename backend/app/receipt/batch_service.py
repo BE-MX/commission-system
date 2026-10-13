@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.time import beijing_now
 from app.invoice.models import Invoice
 from app.invoice import settlement_service as shipments
+from app.invoice import shipment_payment_policy as payment_policy
 from app.invoice.settlement_models import ReceiptBatch, BatchAttachment, SettlementApplication, ShipmentSettlement
 from app.invoice.settlement_pricing import split_payment, split_current_payment
 from app.receipt import access, attachments, authority, balance, fees, remote, service
@@ -95,7 +96,7 @@ def new_component(db, batch, invoice, target, amount, charge, fields, settlement
 
 
 def allocate_shipment(db, batch, invoice, settlement, amount, fields, *, current=False):
-    if settlement.state not in {"awaiting_payment", "awaiting_verification"}:
+    if not payment_policy.accepts_payment(settlement):
         raise ValueError("当前结算不接受新增付款")
     summary = shipments.funding_balance(db, settlement, current=current)
     if settlement.quote.get("funding_version") == 2:
@@ -110,7 +111,8 @@ def allocate_shipment(db, batch, invoice, settlement, amount, fields, *, current
         if value:
             target = shipments.target(db, invoice, settlement if kind == "freight" else None, current=current)
             new_component(db, batch, invoice, target, value, components["charge_amount"] if kind == "goods" else Decimal(0), fields, settlement)
-    settlement.state = "awaiting_verification" if Decimal(summary["remaining_amount"]) == Decimal(amount) else "awaiting_payment"
+    if settlement.state in payment_policy.PAYMENT_STATES:
+        settlement.state = "awaiting_verification" if Decimal(summary["remaining_amount"]) == Decimal(amount) else "awaiting_payment"
     settlement.version += 1
 
 
@@ -235,13 +237,14 @@ def _void_financial(db, row, children, current, version, reason):
         settlement = settlements.get(app.settlement_id)
         if settlement is None or settlement.invoice_id != members[app.receipt_id].invoice_id:
             raise ValueError("批次资金结算关联已变化，请核对原单")
-        if app.status == "applied" or settlement.state not in {"awaiting_payment", "awaiting_verification", "paused"}:
+        if app.status == "applied" or not (settlement.state in {"awaiting_payment", "awaiting_verification", "paused"}
+                or payment_policy.is_credit(settlement) and payment_policy.accepts_payment(settlement)):
             raise ValueError("资金已用于出库，不能作废")
     # Validate the whole graph before applying any financial mutation.
     for app in applications:
         settlement = settlements[app.settlement_id]
         app.status = "released"
-        if settlement.state != "paused":
+        if settlement.state in payment_policy.PAYMENT_STATES:
             settlement.state = "awaiting_payment"
         settlement.version += 1
     for child in children:

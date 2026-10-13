@@ -7,6 +7,7 @@ import logging
 logger=logging.getLogger(__name__)
 from app.invoice import settlement_service as shipments
 from app.invoice import presale_runtime as pools
+from app.invoice import shipment_payment_policy as payment_policy
 from app.invoice.freight_reconciliation_service import _canonical
 from app.receipt import balance, reconciliation_service, remote, service, sync_service
 
@@ -16,6 +17,7 @@ class FundingTarget:
     invoice: str
     freight: str | None
     receipts: tuple
+    credit: bool = False
 
 
 @dataclass(frozen=True)
@@ -27,7 +29,7 @@ class FundingEvidence:
     freight: str | None
 
 
-def freeze(invoice, graph):
+def freeze(invoice, graph, *, credit=False):
     main={'order_id':invoice.xiaoman_order_id,'customer_id':invoice.customer_id,
         'currency':invoice.currency,'total_amount':str(invoice.total_amount),
         'surcharge_amount':str(invoice.surcharge_amount or 0)}
@@ -38,7 +40,7 @@ def freeze(invoice, graph):
     selected=sorted({app.receipt_id for app in graph.applications if app.status!='released'})
     receipts=tuple((identity,graph.receipts[identity].status,graph.receipts[identity].xiaoman_receipt_id)
         for identity in selected)
-    return FundingTarget(json.dumps(main,sort_keys=True),freight,receipts)
+    return FundingTarget(json.dumps(main,sort_keys=True),freight,receipts,credit)
 
 
 def _records(rows):
@@ -69,6 +71,8 @@ def _main_detail(detail):
 def read(db, target):
     details=[];valid=True
     for identity,status,remote_id in target.receipts:
+        if status == 'active' and not remote_id and target.credit:
+            continue
         if status!='active' or not remote_id:
             valid=False;continue
         _canonical(remote_id)
@@ -134,10 +138,16 @@ def apply(db, invoice, settlement, graph, evidence):
         for app in graph.applications:
             if app.status=='released':continue
             receipt=graph.receipts[app.receipt_id]
+            if (payment_policy.is_credit(settlement)
+                    and not payment_policy.requires_effective(db,app,receipt)
+                    and not payment_policy.receipt_effective(receipt)):
+                continue
             counterpart=rows[pools.source_component(app,receipt)].get(receipt.xiaoman_receipt_id)
             if counterpart is None or str(counterpart.get('collect_status'))!='1':return False
         selected=[app for app in graph.applications if app.status!='released']
         expected=pools.required(settlement.quote)
+        if payment_policy.is_credit(settlement):
+            return payment_policy.credit_funding_valid(db,settlement,current=True)
         if sum((app.amount for app in selected),Decimal(0))!=expected:return False
         if any(graph.receipts[app.receipt_id].status!='active'
                 or graph.receipts[app.receipt_id].sync_status!='synced'

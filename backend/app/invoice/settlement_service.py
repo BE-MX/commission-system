@@ -12,6 +12,7 @@ from app.invoice.settlement_models import (ShipmentSettlement, SettlementItem, R
 from app.invoice.settlement_pricing import quote_current
 from app.invoice.presale_funding import plan_funding
 from app.invoice import presale_runtime as pools
+from app.invoice import shipment_payment_policy as payment_policy
 from app.invoice.presale_lines import remote_items
 from app.invoice.settlement_policy import require_enabled, capabilities
 from app.receipt import access, remote, service as receipts
@@ -104,18 +105,24 @@ def check_shipped_funding(db, invoice, evidence, shipped, *, current=False):
             SettlementApplication.status != "released")
         applications = _current(applications, current, SettlementApplication.id, Receipt.id).all()
         expected = pools.required(settlement.quote)
-        if sum((Decimal(app.amount) for app, _ in applications), Decimal(0)) != expected:
+        credit = payment_policy.is_credit(settlement)
+        if not credit and sum((Decimal(app.amount) for app, _ in applications), Decimal(0)) != expected:
             raise ValueError("历史已出库批次的资金分配已变化，不能继续安排")
         for app, receipt in applications:
+            if credit and not payment_policy.requires_effective(db, app, receipt, current=current) and not payment_policy.receipt_effective(receipt):
+                continue
             rows = freight_rows if pools.source_component(app, receipt) == "freight" else goods_rows
             remote_row = rows.get(str(receipt.xiaoman_receipt_id))
-            if (app.status != "applied" or receipt.status != "active"
+            if ((not credit and app.status != "applied") or receipt.status != "active"
                     or receipt.sync_status != "synced" or receipt.collect_status != 1
                     or receipt.last_error or not remote_row
                     or str(remote_row.get("collect_status")) != "1"):
                 raise ValueError("历史已出库批次的回款已失效，不能继续安排")
         balance = funding_balance(db, settlement, current=current)
-        if (Decimal(balance["remaining_amount"]) != 0
+        if credit:
+            if not payment_policy.credit_funding_valid(db, settlement, current=current):
+                raise ValueError("历史先出库批次的回款关联异常，不能继续安排")
+        elif (Decimal(balance["remaining_amount"]) != 0
                 or Decimal(balance["effective_amount"]) != expected):
             raise ValueError("历史已出库批次回款不足，不能继续安排")
 
@@ -187,7 +194,7 @@ def build_quote(db, invoice, body, evidence, *, current=False):
         invoice.surcharge_amount or 0 if handling is None else handling,
         freight=body.freight_amount, is_final=body.is_final)
     pool_receipts, lots = pools.pool_lots(db, invoice, evidence["receipt"], current=current)
-    if not lots:
+    if not lots and body.payment_term != payment_policy.SHIP_FIRST:
         raise ValueError("预售首款尚未生成，请先登记预付款")
     goods = Decimal(result["goods_amount"]) + Decimal(result["packaging_amount"])
     plan = plan_funding(str(goods), result["handling_amount"], result["freight_amount"], lots,
@@ -195,6 +202,7 @@ def build_quote(db, invoice, body, evidence, *, current=False):
     deposit = [app for app in plan["applications"] if app["purpose"] == "presale_deposit"]
     advance = [app for app in plan["applications"] if app["purpose"] == "presale_advance"]
     result.update(funding_version=2, pool_applications=plan["applications"], pool_balances=plan["balances"],
+        payment_term=body.payment_term,
         funding_total_amount=str(goods + Decimal(result["handling_amount"]) + Decimal(result["freight_amount"])),
         deposit_applied=format(sum((Decimal(app["amount"]) for app in deposit), Decimal(0)), ".2f"),
         deposit_charge_applied=format(sum((Decimal(app["bank_charge"]) for app in deposit), Decimal(0)), ".2f"),
@@ -330,7 +338,8 @@ def funding_balance(db, row, *, current=False):
                     new_charge += app.bank_charge
             else:
                 freight += app.amount
-        if receipt.sync_status == "synced" and receipt.collect_status == 1 and not receipt.last_error:
+        if (payment_policy.receipt_effective(receipt) if payment_policy.is_credit(row) else
+                receipt.sync_status == "synced" and receipt.collect_status == 1 and not receipt.last_error):
             effective += app.amount
     v2 = row.quote.get("funding_version") == 2
     goods_total = (Decimal(row.quote["goods_amount"]) + Decimal(row.quote["packaging_amount"]) +
@@ -339,11 +348,16 @@ def funding_balance(db, row, *, current=False):
     if v2:
         charge_remaining = min(charge_remaining, goods_total - goods)
     total = pools.required(row.quote) if v2 else Decimal(row.quote["new_payment_due"])
+    debt_total = total if v2 else total + sum(
+        (app.amount for app, _ in applications if app.component == "deposit"), Decimal(0))
     result = {"settlement_id": row.id, "goods_remaining": str(goods_total - goods),
+        "payment_term": payment_policy.term(row),
         "funding_version": row.quote.get("funding_version", 1),
         "freight_remaining": str(Decimal(row.quote["freight_amount"]) - freight),
         "charge_remaining": str(charge_remaining),
         "effective_amount": str(effective), "registered_amount": str(goods + freight),
+        "outstanding_amount": str(debt_total - effective),
+        "pending_amount": str(sum((app.amount for app, _ in applications), Decimal(0)) - effective),
         "remaining_amount": str(total - goods - freight),
         "currency": row.quote["currency"], "total_amount": str(total)}
     if any(Decimal(result[key]) < 0 for key in ("goods_remaining", "freight_remaining", "charge_remaining", "remaining_amount")):
@@ -377,6 +391,7 @@ def describe(db, row, *, current=False):
         invalid_funding=any(receipt.status!="active" for _,receipt in query.all())
     summary=None if invalid_funding else funding_balance(db,row,current=current)
     result={"id": row.id, "invoice_id": row.invoice_id, "settlement_no": row.settlement_no,
+        "payment_term": payment_policy.term(row),
         "state": row.state, "version": row.version, "quote": row.quote, "balance": summary,
         "outbound": {"id": outbound.id, "status": outbound.status, "number": outbound.outbound_no,
                      "remote_id": outbound.remote_id, "last_error": outbound.last_error} if outbound else None,
@@ -384,6 +399,13 @@ def describe(db, row, *, current=False):
                            "remote_order_id": freight.remote_order_id,
                            "last_error": freight.last_error} if freight else None,
         "capabilities": capabilities()}
+    result["receipt_applications"] = [{"receipt_id": receipt.id, "receipt_no": receipt.receipt_no,
+        "component": app.component, "amount": str(app.amount), "status": app.status,
+        "sync_status": receipt.sync_status, "collect_status": receipt.collect_status,
+        "effective": payment_policy.receipt_effective(receipt)}
+        for app, receipt in db.query(SettlementApplication, Receipt).join(
+            Receipt, Receipt.id == SettlementApplication.receipt_id).filter(
+                SettlementApplication.settlement_id == row.id).order_by(SettlementApplication.id).all()]
     if outbound:
         from app.invoice import shipment_confirmation_recovery
         result["outbound"]["confirmation"] = shipment_confirmation_recovery.summary(db,outbound,current=current)

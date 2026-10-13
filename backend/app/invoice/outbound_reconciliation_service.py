@@ -17,6 +17,7 @@ from app.portal.errors import PortalError, TransactionBusy
 from app.receipt import access, authority, remote
 from app.shipping_inspection import outbound_presence
 from app.invoice import shipment_inspection_service as inspection_completion
+from app.invoice import shipment_payment_policy as payment_policy
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,8 @@ def _capture(db, identity, body, user):
         if not target.payload or shipments.digest(target.payload)!=target.payload_hash:
             raise ValueError('原出库编号或冻结快照不完整，请核对原单')
         lookup=OutboundTarget(target.id,remote_id,target.outbound_no,
-            json.dumps(target.payload,sort_keys=True),json.dumps(target.remote_line_snapshot,sort_keys=True),funding.freeze(invoice,graph),
+            json.dumps(target.payload,sort_keys=True),json.dumps(target.remote_line_snapshot,sort_keys=True),
+            funding.freeze(invoice,graph,credit=payment_policy.is_credit(row)),
             inspection_completion.snapshot(db,target,current=True,remote_id=remote_id))
         return invoice,row,graph,current,(shipment_retry_service._binding(db,invoice,row),recovery.capture(db,target)),lookup
     except TransactionBusy:raise

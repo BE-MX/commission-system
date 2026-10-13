@@ -11,3 +11,13 @@ test('only matching original invoice/key/hash and complete authorized receipt ca
 test('unknown outcomes remain frozen even after later definitive rejections',()=>{for(const status of [401,403,404,409,422,503])assert.equal(uncertainShipment({response:{status}},true),true);for(const error of [Error('network'),{response:{status:408}},{response:{status:503}}])assert.equal(uncertainShipment(error),true);assert.equal(uncertainShipment({response:{status:409}}),false)})
 
 test('absence validates exact original item identities/quantities and is never a receipt',()=>{const original=command(),result={state:'not_found',request_key:original.body.request_key,invoice:{id:1,items:[{id:7,quantity:4}]}};assert.ok(isShipmentObservation(result,original));assert.ok(!isShipmentReceipt(result,original));for(const rows of [[],[{id:7,quantity:5}],[{id:8,quantity:4}],[{id:7,quantity:true}],[{id:7,quantity:4},{id:7,quantity:4}]])assert.ok(!isShipmentObservation({...result,invoice:{id:1,items:rows}},original));assert.ok(!isShipmentObservation({...result,state:'found'},original))})
+
+test('credit term is retained and cannot change on an unresolved shipment', () => {
+  const store = memory(), original = command()
+  original.body.payment_term = 'ship_first'
+  delete original.body.payment
+  saveShipmentSubmission(store, 1, original)
+  assert.equal(readShipmentSubmission(store, 1).body.payment_term, 'ship_first')
+  assert.throws(() => saveShipmentSubmission(store, 1, {...original, body: {...original.body, payment_term: 'pay_first'}}))
+  assert.throws(() => saveShipmentSubmission(memory(), 1, {...original, body: {...original.body, payment_term: 'force'}}))
+})

@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.invoice import okki_client
 from app.invoice.settlement_models import SettlementApplication, ShipmentSettlement
-from app.invoice.settlement_guard import SENDABLE_STATES
+from app.invoice import shipment_payment_policy as payment_policy
 from app.receipt import access, authority, fees, remote, service
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ def _settlement(db, row):
         .with_for_update().execution_options(populate_existing=True))
     if settlement is None or settlement.invoice_id != row.invoice_id:
         raise ValueError("预售回款结算身份异常，暂停发送")
-    if settlement.state not in SENDABLE_STATES:
+    if not (payment_policy.accepts_payment(settlement) or settlement.state == "ready"):
         raise ValueError("本批结算已暂停或进入出库流程，回款不能继续发送")
     return (_values(application), _values(settlement))
 
