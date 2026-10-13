@@ -248,6 +248,11 @@ def _follow_existing(db, invoice, user, related, *, force_authority=False):
                          and linked.before.get('invoice_no') != linked.after.get('invoice_no')
                          and linked.after.get('invoice_no') == invoice.invoice_no else None)
     live = related[0]
+    if desired_serial_id is None:
+        from app.invoice.outbound_number import desired_serial
+        desired_serial_id = desired_serial(db, invoice, live.get('serial_id'))
+    number_args = {'desired_serial_id': desired_serial_id,
+                   'expected_serial_id': live.get('serial_id') if desired_serial_id else None}
     # The invoice:sync action already authorizes reconciliation of this exact
     # order. _prepare checks the same invoice scope and the unique live binding.
     # The warehouse data scope must not prevent the order's own follow-up.
@@ -259,18 +264,18 @@ def _follow_existing(db, invoice, user, related, *, force_authority=False):
         raise ValueError('出库镜像与小满单据身份不一致，出库未处理')
     if enabled:
         db.commit()  # Only this method's freshly authorized read-only capture.
-    preview = outbound_sync_service.preview(db, record, user, desired_serial_id=desired_serial_id,
+    preview = outbound_sync_service.preview(db, record, user, **number_args,
                                             force_authority=enabled)
     if preview.get('recover'):
         result = outbound_sync_service.synchronize(db, record, user, None, check_only=True,
-                                                    desired_serial_id=desired_serial_id, force_authority=enabled)
+                                                    **number_args, force_authority=enabled)
     elif preview.get('requires_recheck'):
         result = outbound_sync_service.synchronize(db, record, user, preview['version'],
-                                                    confirm_recheck=True, desired_serial_id=desired_serial_id,
+                                                    confirm_recheck=True, **number_args,
                                                     auto_recall=True, source='invoice_sync', force_authority=enabled)
     else:
         result = outbound_sync_service.synchronize(db, record, user, preview['version'],
-                                                    desired_serial_id=desired_serial_id, source='invoice_sync', force_authority=enabled)
+                                                    **number_args, source='invoice_sync', force_authority=enabled)
     if result['status'] == 'sync_done':
         if outbound_sync_state.evidence(db, record['outbound_record_id'])[1]:
             return {'status': 'manual', 'category': 'inspection_recheck', 'outbound_updated': True,

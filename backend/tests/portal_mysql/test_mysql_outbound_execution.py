@@ -1,5 +1,6 @@
 """Actual JWT/MySQL outbound writer phases; only supplier HTTP/mirror are synthetic."""
 import asyncio
+import json
 from copy import deepcopy
 from threading import Event
 from concurrent.futures import ThreadPoolExecutor
@@ -12,8 +13,10 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
+from app.invoice import edit_authority, outbound_followup_service as followup
+from app.invoice.models import InvoiceSyncLog
 from app.portal.authority import lock_authority
-from app.shipping_inspection import outbound_sync_service as sync, outbound_sync_state as state
+from app.shipping_inspection import outbound_service, outbound_sync_service as sync, outbound_sync_state as state
 from app.shipping_inspection.models import ShippingOperationEvent, ShippingInspection, ShippingInspectionPhoto
 from test_mysql_outbound_prepare import setup, preview, snapshot
 from test_mysql_invoice_cancellation_refresh import demote_admin
@@ -44,6 +47,51 @@ def event(c):
         row=db.scalar(select(ShippingOperationEvent).where(ShippingOperationEvent.scope==state.SCOPE,
                        ShippingOperationEvent.request_id==c.record['outbound_record_id']))
         return row.action, deepcopy(row.payload), deepcopy(row.result)
+
+
+@pytest.mark.parametrize('drift', [None, 'serial', 'invoice'])
+def test_ordinary_rename_followup_uses_current_authority_and_fresh_number(editor, monkeypatch, tmp_path, drift):
+    c = setup(editor, monkeypatch, tmp_path)
+    with Session(editor.ctx.engine) as db:
+        lock_authority(db)
+        invoice = edit_authority.lock_document(db, editor.invoice_id)
+        invoice.invoice_no = 'ORDINARY-MYSQL-RENAME'
+        invoice.remark = c.outbound['remark']
+        for action, name in [('create', c.outbound['serial_id']), ('update', invoice.invoice_no)]:
+            payload = {'name': name}
+            if action == 'update':
+                payload['order_id'] = int(c.order['order_id'])
+            db.add(InvoiceSyncLog(invoice_id=invoice.id, action=action, success=1,
+                request_digest=json.dumps(payload), response_body=json.dumps({'order_id': int(c.order['order_id'])})))
+        db.commit()
+    monkeypatch.setattr(outbound_service, 'get_record_by_outbound_invoice_id', lambda *a, **kw: deepcopy(c.record))
+    monkeypatch.setattr(sync.okki_client, 'find_outbound_by_serial', lambda *a, **kw: None)
+    install_post(c, monkeypatch)
+    scanned = deepcopy(c.outbound)
+    if drift == 'serial':
+        c.outbound['serial_id'] = 'WAREHOUSE-CUSTOM'
+    elif drift == 'invoice':
+        original = sync.preview
+        def preview_after_edit(*args, **kwargs):
+            with Session(editor.ctx.engine) as changed:
+                lock_authority(changed)
+                edit_authority.lock_document(changed, editor.invoice_id).invoice_no = 'NEWER-INVOICE'
+                changed.commit()
+            return original(*args, **kwargs)
+        monkeypatch.setattr(sync, 'preview', preview_after_edit)
+    with Session(editor.ctx.engine) as db:
+        if drift:
+            with pytest.raises(HTTPException) as error:
+                followup._follow_existing(db, type('InvoiceRef', (), {'id': editor.invoice_id})(),
+                    {'sub': str(editor.ctx.admin)}, [scanned], force_authority=True)
+            assert error.value.status_code == 409
+            assert c.posts == []
+        else:
+            result = followup._follow_existing(db, type('InvoiceRef', (), {'id': editor.invoice_id})(),
+                {'sub': str(editor.ctx.admin)}, [scanned], force_authority=True)
+            assert result['status'] == 'done'
+            assert len(c.posts) == 1 and c.posts[0]['serial_id'] == 'ORDINARY-MYSQL-RENAME'
+            assert c.posts[0]['outbound_invoice_id'] == 701
 
 
 def test_post_releases_authority_and_invoice_locks_and_keeps_late_original_fact(editor, monkeypatch, tmp_path):

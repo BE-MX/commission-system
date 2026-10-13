@@ -147,11 +147,13 @@ def read_outbound(db, identity):
     except (ValueError, KeyError, TypeError):
         reject(503, '原出库证据身份或明细不完整')
 
-def evidence(db, record, local, business, desired_serial_id, number_only):
+def evidence(db, record, local, business, desired_serial_id, number_only, expected_serial_id=None):
     from app.invoice.outbound_followup_execution import read_order
     from app.shipping_inspection import outbound_sync_service as legacy
     try:
         before = read_outbound(db, record['outbound_invoice_id'])
+        if expected_serial_id is not None and before.get('serial_id') != expected_serial_id:
+            reject(409, '出库单号已变化，请重新核对，未自动改号')
         if str(before.get('company_info', {}).get('id')) != str(record.get('company_id')):
             reject(409, '原出库客户归属已变化')
         order = read_order(db, local['dto'], local['products'])
@@ -196,16 +198,20 @@ def evidence(db, record, local, business, desired_serial_id, number_only):
         db.rollback(); db.expire_all()
 
 
-def prepare(db, record, user, *, desired_serial_id=None, number_only=False, warehouse=False, expected_binding=None):
+def prepare(db, record, user, *, desired_serial_id=None, expected_serial_id=None,
+            number_only=False, warehouse=False, expected_binding=None):
     try:
         actor = current(db, user, warehouse)
         original = mirror(db, record, actor, warehouse)
         invoice, event, business, binding, local = capture(db, original, actor, executing=expected_binding is not None)
+        if desired_serial_id is not None and desired_serial_id != invoice.invoice_no:
+            reject(409, '发票号已变化，请重新核对出库单号')
         if expected_binding is not None and binding != expected_binding:
             reject(409, '前置授权后原任务或完整本地绑定已变化，请重新读取')
         active = local['recover']
         db.commit()  # Read-only local capture, never a pending event or recheck change.
-        plan = None if active else evidence(db, original, local, business, desired_serial_id, number_only)
+        plan = None if active else evidence(db, original, local, business, desired_serial_id,
+                                          number_only, expected_serial_id)
         db.rollback(); db.expire_all()
         actor = current(db, user, warehouse)
         latest = mirror(db, record, actor, warehouse)

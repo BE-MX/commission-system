@@ -74,27 +74,33 @@ def _idle(db, invoice, record_id):
         raise ValueError('该出库单存在删除任务，请先完成删除核对')
 
 
-def _prepare(db, record, user, *, desired_serial_id=None, number_only=False,
+def _prepare(db, record, user, *, desired_serial_id=None, expected_serial_id=None, number_only=False,
              force_authority=False, warehouse=False):
     from app.portal import authority
     if force_authority or authority.get_settings().PORTAL_ENABLED:
         from app.shipping_inspection import outbound_prepare
         return outbound_prepare.prepare(db, record, user, desired_serial_id=desired_serial_id,
+                                         expected_serial_id=expected_serial_id,
                                          number_only=number_only, warehouse=warehouse)
-    return _prepare_legacy(db, record, user, desired_serial_id=desired_serial_id, number_only=number_only)
+    return _prepare_legacy(db, record, user, desired_serial_id=desired_serial_id,
+                           expected_serial_id=expected_serial_id, number_only=number_only)
 
 
-def _prepare_legacy(db, record, user, *, desired_serial_id=None, number_only=False):
+def _prepare_legacy(db, record, user, *, desired_serial_id=None, expected_serial_id=None, number_only=False):
     before = _read(db, record['outbound_invoice_id'])
     if str(before.get('company_info', {}).get('id')) != str(record.get('company_id')):
         raise ValueError('出库单客户归属发生变化，请刷新后核对')
     invoice = _invoice(db, before, user)
+    if desired_serial_id is not None and desired_serial_id != invoice.invoice_no:
+        raise ValueError('发票号已变化，请重新核对出库单号')
     source_items = [{'unique_id': plans.canonical_identity(i.xiaoman_unique_id),
                      'model': i.model, 'size': i.length, 'color': i.color} for i in invoice.items]
     plans.index(source_items, 'unique_id')
     event = state.lock(db, record['outbound_record_id'], int(user['sub']))
     if event.action in state.ACTIVE:
         return invoice, event, None
+    if expected_serial_id is not None and before.get('serial_id') != expected_serial_id:
+        raise ValueError('出库单号已变化，请重新核对，未自动改号')
     _idle(db, invoice, record['outbound_record_id'])
     order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
     if str(order.get('order_id')) != invoice.xiaoman_order_id:
@@ -146,12 +152,13 @@ def _prepare_legacy(db, record, user, *, desired_serial_id=None, number_only=Fal
     return invoice, event, plan
 
 
-def preview(db, record, user, *, desired_serial_id=None, number_only=False,
+def preview(db, record, user, *, desired_serial_id=None, expected_serial_id=None, number_only=False,
             force_authority=False, warehouse=False):
     from app.portal import authority
     enabled = force_authority or authority.get_settings().PORTAL_ENABLED
     try:
         invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
+            expected_serial_id=expected_serial_id,
             number_only=number_only, force_authority=enabled, warehouse=warehouse)
         invoice_id = invoice.id
         if plan is None:
@@ -393,15 +400,17 @@ def _repair_missing(db, record, user, invoice, event):
 
 
 def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False,
-                desired_serial_id=None, number_only=False, repair=False, auto_recall=False,
+                desired_serial_id=None, expected_serial_id=None, number_only=False, repair=False, auto_recall=False,
                 source='pc', force_authority=False, warehouse=False):
     from app.portal import authority
     if force_authority or authority.get_settings().PORTAL_ENABLED:
         from app.shipping_inspection import outbound_execution
         return outbound_execution.synchronize(db, record, user, version, check_only=check_only,
             confirm_recheck=confirm_recheck, desired_serial_id=desired_serial_id, number_only=number_only,
+            expected_serial_id=expected_serial_id,
             repair=repair, auto_recall=auto_recall, source=source, warehouse=warehouse)
     invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
+                                    expected_serial_id=expected_serial_id,
                                     number_only=number_only, force_authority=force_authority, warehouse=warehouse)
     if not isinstance(record, dict):
         from app.shipping_inspection import outbound_service

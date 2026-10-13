@@ -4,6 +4,12 @@
 - 分支 `codex/invoice-create-line-recovery`，worktree `C:/Users/windb/.codex/worktrees/invoice-create-line-recovery/commission-system`。仅已有行核对跳过 fresh duplicate 发送限制；重复行匹配数量/价格/金额，既有 UID 商业含义不改绑；accepted 先落事实，再无锁 GET 原单核验，不重发。现有授权、租约、库存、回款及版本保护保留。
 - SQLite 117 passed；实际当前授权 MySQL 扩展 81 passed、6 个主分支已有绑定/迟到恢复失败（HEAD 基线同样复现）；最终新增场景独立复跑 4 passed。真实 8 行只读反序验证全部 UID 可在内存匹配，missing=0，线上仍为待核对。独立审查通过，diff/增量约定通过；完整约定仍阻断于既有 17 项发票 UI 债务。未合并、推送或部署。详见 [证据与限制](reports/2026-10-13-invoice-duplicate-line-recovery.md)。
 
+## 2026-10-13 发票改号后原发货单单号同步修复（Codex，本地验证，未发布）
+
+- 只读实查「翟 #261022」发票 1053：小满订单已在 11:25 更新新号；唯一待出库单 105851418127778 实时仍为 `Ginny-KC-1001`，与镜像一致；没有关联同步记录。根因是普通保存后同步未从成功推单历史恢复改号意图，原逻辑仅检查关联同步 before/after。
+- 分支 `codex/invoice-outbound-number`、独立 worktree `C:/Users/windb/.codex/worktrees/invoice-outbound-number/commission-system`。新旧号通过同订单成功请求/响应历史确认；每次预览及发送重新检查当前发票号和出库旧号，防止覆盖并发仓库改号；沿用多单/预售/已出库/重号/不确定结果保护。
+- 隔离 SQLite 143 passed；本地自有 MySQL 当前授权路径 3 passed；独立审查发现的旧号竞态已修复并复审通过。完整约定门禁仍被既有 17 项发票 UI 债务阻断，增量代码规则 0 项；diff 检查、Git 巡检已执行。诊断与证据见 [报告](reports/2026-10-13-invoice-outbound-number.md)。未合并、推送、部署或修改线上单据。
+
 ## 2026-10-13 公告编辑器插图与截图粘贴修复（Codex，已验证并获合并推送授权，未部署）
 
 - 用户反馈编辑公告时截图/本地图片无法粘贴或插入。共享 `KnowledgeEditor` 的上传占位 ID 直接调用 `crypto.randomUUID()`；在缺此 API 的非安全页面环境，操作在上传前抛错。隔离 Edge 基线复现 `crypto.randomUUID is not a function`，上传请求为 0；正常环境的文件插入和原生 Ctrl+V 成功。未以推断替代用户实际访问地址核验。
