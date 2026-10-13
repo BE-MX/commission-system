@@ -1,10 +1,17 @@
-## 2026-10-13 预售按批次先出库后回款（Codex，本地实现）
+## 2026-10-13 预售按批次先出库后回款（Codex，Git交付，未部署）
 
-- 分支 codex/presale-credit-batches，独立 worktree C:/Users/windb/.codex/worktrees/presale-credit-batches/commission-system；基点c15b1d2c。未合并、未推送、未部署，未写生产/小满或共享库；主目录已有修改未纳入。
+- 分支 codex/presale-credit-batches，独立 worktree C:/Users/windb/.codex/worktrees/presale-credit-batches/commission-system；基点c15b1d2c。本轮按用户授权合并main并推送origin；未部署，未写生产/小满或共享库；主目录已有27处修改备份并独立保留，不纳入本次提交。
 - 每批冻结 payment_term，默认及历史先付款；信用批保留应收、真实欠款和原回款引用，检验完成仍可后补款，后补款及未发送纠错不回退出库。历史正常欠款允许下一先款批按自身资金规则出库；真实已生效资金失效仍阻断。回款提供历史信用批候选，多候选明确选择并冻结目标版本；一次到账仍每订单选择一批。
 - 无新表/列/迁移。运费waiting_target精确绑定、共享预付款多批回读和旧版报价余额读取已覆盖。受影响后端312通过，最终信用/runtime63通过（重叠）；owned MySQL真实权限/并发/陈旧快照6通过；Node27通过；真实Vue/Chrome合成API桌面1440/手机390/320关键路径和生产构建通过；独立复审无阻断项。
 - 严格约定检查保留主目录同样的17项产品表UI基线问题；git巡检已跑no-fetch，已有186编号分叉不在本次修改范围。正式小满“先出库后回款”完整顺序尚未联测。详见 [验收记录](reports/2026-10-13-presale-credit-batches.md) 与 [业务规则](requirements/2026-10-13-presale-credit-batches.md)。
 - 测试进程已停止，无本任务mysqld残留；临时数据库目录清理被工具自动审批拦截（blocked by policy，未提供详细原因），tmp/credit-mysql至credit-mysql-6保留。日志、运行元数据和页面证据已保存。
+
+## 2026-10-13 常用导航（Codex，Git交付，未部署）
+
+- 分支 `codex/favorite-navigation`；worktree `C:/Users/windb/.codex/worktrees/favorite-navigation/commission-system`。侧栏顶部支持添加/移除、拖拽与键盘排序，服务端按当前用户隔离保存，刷新恢复；复用既有菜单权限与路由。
+- 新迁移 `194_navigation_preferences -> 193_wa_ai_assistant`，只新增本人配置表，已注册 Alembic metadata；未执行生产/共享库迁移。API、数据库与 DESIGN 文档已同步。
+- 用户追加限制已落实：候选同时满足route/menu/group权限，PUT新增以数据库实时权限校验，无权/未知键403，旧JWT不能绕过。构建生成带navigation.js源哈希的后端权限清单（需与源码一并交付）；不依赖独立部署的前端dist，缺失/过期清单拒绝新增503。
+- 后端隔离 SQLite 13 passed；前端权限/状态/导航/任务契约 24 passed、异步竞态5 passed；构建和真实侧栏+SQLite浏览器验收通过（含直接伪造无权新增403）。独立审查指出的迁移模型注册及北京清单部署路径已修复；本次增量规则0项，全仓仍有原17项发票UI债务。详见 [验收记录](reports/2026-10-13-favorite-navigation.md)。用户已授权提交、合并main并推送origin；不部署、不执行共享库迁移，保护主目录已有改动。
 
 ## 2026-10-13 两项发票同步修复合并推送与生产发布（Codex）
 

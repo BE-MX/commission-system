@@ -2,7 +2,8 @@
 
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Index
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Index, ForeignKey, JSON
+from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
 from app.core.time import beijing_now
@@ -28,3 +29,17 @@ class SysDict(Base):
         Index("idx_sys_dict_type_active", "type", "is_active", "sort"),
         {"comment": "系统字典表"},
     )
+
+
+class NavigationPreference(Base):
+    """Personal ordered route names; navigation.js owns labels and access rules."""
+
+    __tablename__ = "ark_navigation_preferences"
+    user_id = Column(
+        Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"),
+        ForeignKey("ark_users.id", ondelete="CASCADE"), primary_key=True,
+        comment="所属用户，一人一行",
+    )
+    items = Column(JSON, nullable=False, comment="按用户排序的常用导航标识列表")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建北京时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新北京时间")

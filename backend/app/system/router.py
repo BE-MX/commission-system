@@ -9,8 +9,30 @@ from app.auth.dependencies import get_current_user, require_permission
 from app.core.response import ok as _ok
 from app.system import service
 from app.system.schemas import DictItem, DictItemCreate, DictItemUpdate
+from app.system import navigation_service
+from app.system.navigation_schemas import NavigationPrefs
+from app.core.database import get_db as get_core_db
 
 router = APIRouter()
+
+
+# Personal preferences are available to every authenticated user, like auth/me.
+# No page permission exists; ownership always comes from JWT sub, never payload.
+@router.get("/navigation-preferences", summary="读取本人常用导航配置")
+def get_navigation_preferences(
+    db: Session = Depends(get_core_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return _ok(navigation_service.get_preferences(db, int(current_user["sub"])))
+
+
+@router.put("/navigation-preferences", summary="保存本人常用导航与顺序")
+def save_navigation_preferences(
+    payload: NavigationPrefs,
+    db: Session = Depends(get_core_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return _ok(navigation_service.save_preferences(db, int(current_user["sub"]), payload))
 
 
 @router.get("/dict-types")
