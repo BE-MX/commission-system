@@ -92,7 +92,7 @@ def render_order_card(event, assets_root, font, display_font, wrap):
     created_text = (created.strftime("%Y-%m-%d %H:%M") if isinstance(created, datetime)
                     else str(created or beijing_now().strftime("%Y-%m-%d %H:%M")))
     _engrave(image, (98, 565), f"方舟订单 · {created_text}", font(25))
-    # Keep the design resolution and full RGBA tones. Palette reduction turns
-    # the frosted texture and soft highlights into visible color bands.
-    # The caller uses lossless PNG compression for the image URL.
-    return image
+    # Render at the design resolution, then reduce dimensions without reducing
+    # RGBA tones. Palette quantization would flatten the frosted glass detail.
+    # The caller saves this lighter preview as a lossless transparent PNG.
+    return image.resize((800, 450), Image.Resampling.LANCZOS)
