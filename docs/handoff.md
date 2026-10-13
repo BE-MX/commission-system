@@ -1,3 +1,11 @@
+## 2026-10-13 两项发票同步修复合并推送与生产发布（Codex）
+
+- 普通保存后同步原发货单号、重复SKU首次创建收尾与原单恢复两项修复已合并推送main，代码合并点55b4c5b7。主目录27个原修改/未跟踪文件已保护、恢复并核验。
+- 生产使用固定f5269d9d候选，保留c797c45e现役门户及bf31b5f7部署恢复保护；仅挑入两修复，9个相关源码文件与main一致。未部署main的WhatsApp/内贸新模块或迁移，生产仍为186_portal_announcement_merge。后续全main发布必须保留这段生产历史并显式汇合迁移，不得覆盖/stamp/downgrade。
+- 统一deploy.bat先准备再完整切换，publish-current/publish-success=succeeded、deferred=[]；办公室/北京实际HEAD均f5269d9d，服务健康，两公网health均200/ok/connected。出库保持原legacy和timer active/enabled；邮件Worker保持原disabled/inactive；五静态目标无变化。最终执行/资源保留回执在本轮归档目录。
+- main整合及生产候选分别260回归passed；生产候选新增实际MySQL7 passed，部署协议102 passed。完整约定仍有既有17项发票UI债务。先前扩展恢复6项失败已在未修改主分支复现，未将其伪报通过。
+- 两历史单只读核验：1053目标号可识别为翟 #261022，原发货单仍Ginny-KC-1001；1064实时8行UID可在内存正确匹配，但本地持久UID仍空、仍sync_uncertain。未发送改号/恢复业务POST、未重复建单。发布候选分支codex/invoice-sync-production及恢复材料保留。详见[发布报告](reports/2026-10-13-invoice-sync-production-release.md)。
+
 ## 2026-10-13 重复 SKU 首次创建收尾与已受理恢复修复（Codex，本地验证，未发布）
 
 - 只读实查发票 1064 `ly1010复购库存单`：原小满订单 105851516280181 已受理，8 行、33 件商业数据一致；本地 8 个 UID 全空，卡在 sync_uncertain。两个同 SKU 的 5×18.20 与 1×18.21 分行在收尾/恢复时被编辑新增限制误拦截。已有原发货单 XSCK2610130502，未写生产数据。
