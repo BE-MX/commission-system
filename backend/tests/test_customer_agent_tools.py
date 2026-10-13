@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.agent_runtime import evaluation_service
 from app.agent_runtime.models import AgentRun
 from app.auth.models import ArkUser
+from app.whatsapp.models import WhatsAppAccount, WhatsAppBodyGrant
 from app.core.database import Base
 try:
     from app.customer import agent_service
@@ -58,6 +59,7 @@ def db():
         CustomerMessage.__table__, CustomerOrder.__table__, CustomerOrderItem.__table__,
         CustomerAction.__table__, CustomerObjectOwnership.__table__,
         CustomerAgentRunScope.__table__, CustomerSyncCursor.__table__,
+        WhatsAppAccount.__table__, WhatsAppBodyGrant.__table__,
     ])
     session = sessionmaker(bind=engine, autoflush=False)()
     session.add_all([

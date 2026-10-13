@@ -13,6 +13,9 @@ class ConnectorNotConfigured(RuntimeError):
 
 class ConnectorError(RuntimeError):
     """Raised when the external connector returns an invalid response."""
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class WhatsAppConnectorClient:
@@ -47,7 +50,7 @@ class WhatsAppConnectorClient:
             except ValueError:
                 detail = exc.response.text[:300]
             suffix = f" - {detail}" if detail else ""
-            raise ConnectorError(f"Connector 返回错误: HTTP {exc.response.status_code}{suffix}") from exc
+            raise ConnectorError(f"Connector 返回错误: HTTP {exc.response.status_code}{suffix}", status_code=exc.response.status_code) from exc
         except httpx.HTTPError as exc:
             raise ConnectorError(f"Connector 连接失败: {exc}") from exc
         except ValueError as exc:
@@ -60,14 +63,28 @@ class WhatsAppConnectorClient:
             return payload
         raise ConnectorError("Connector 返回结构不符合预期")
 
-    def create_bind_session(self, ark_user_id: int) -> dict[str, Any]:
-        return self._request("POST", "/internal/v1/bind-sessions", json={"ark_user_id": ark_user_id})
+    def create_bind_session(self, ark_user_id: int, **operation) -> dict[str, Any]:
+        return self._request("POST", "/internal/v1/bind-sessions", json={"ark_user_id": ark_user_id, **operation})
 
     def get_bind_session(self, bind_session_uid: str) -> dict[str, Any]:
         return self._request("GET", f"/internal/v1/bind-sessions/{bind_session_uid}")
 
     def revoke_account(self, account_uid: str) -> dict[str, Any]:
         return self._request("POST", f"/internal/v1/accounts/{account_uid}/revoke")
+
+    def get_account(self, account_uid: str) -> dict[str, Any]:
+        return self._request("GET", f"/internal/v2/accounts/{account_uid}")
+
+    def pause_account(self, account_uid: str) -> dict[str, Any]:
+        return self._request("POST", f"/internal/v2/accounts/{account_uid}/pause")
+
+    def reauthorize_account(self, account_uid: str) -> dict[str, Any]:
+        return self._request("POST", f"/internal/v2/accounts/{account_uid}/reauthorize")
+
+    def pull_changes(self, account_uid: str, cursor: str | None, limit: int) -> dict[str, Any]:
+        return self._request("GET", "/internal/v2/changes", params={
+            "account_uid": account_uid, "cursor": cursor or '', "limit": limit,
+        })
 
     def pull_conversations(self, account_uid: str, cursor: str | None, limit: int) -> dict[str, Any]:
         params = {"account_uid": account_uid, "limit": limit}

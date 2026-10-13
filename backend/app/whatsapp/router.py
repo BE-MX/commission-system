@@ -1,19 +1,25 @@
 """WhatsApp Connector API routes."""
 
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.response import ok as _ok
-from app.auth.models import ArkUser
+from app.auth.models import ArkUser, ArkUserRole, ArkRole, ArkRolePermission, ArkPermission
 from app.core.database import get_db
-from app.whatsapp import service
+from app.whatsapp import service, access, lifecycle
+from app.core.config import get_settings
+from app.core.time import beijing_now
 from app.whatsapp.connector_client import ConnectorError, ConnectorNotConfigured
-from app.whatsapp.models import WhatsAppPullCursor
-from app.whatsapp.schemas import BindSessionCreate, SyncPullRequest
+from app.whatsapp.models import WhatsAppPullCursor, WhatsAppBodyGrant
+from app.whatsapp.schemas import BindSessionCreate, SyncPullRequest, ConsentUpdate, RevokeConfirmation
+from app.whatsapp.assistant_router import router as assistant_router
 
 router = APIRouter()
+router.include_router(assistant_router, prefix='/ai-assistant', tags=['WhatsApp AI助手'])
 
 
 def _handle_connector_error(exc: Exception):
@@ -31,13 +37,23 @@ def create_bind_session(
     current_user=Depends(require_permission("whatsapp:write")),
 ):
     target_user_id = body.ark_user_id or service.current_user_id(current_user)
-    if target_user_id != service.current_user_id(current_user) and not service.can_manage_all(current_user):
-        raise HTTPException(status_code=403, detail="无权为其他用户创建绑定会话")
+    if target_user_id != service.current_user_id(current_user):
+        raise HTTPException(status_code=403, detail="采集授权必须由账号持有人本人确认")
     try:
-        session = service.create_bind_session(db, target_user_id)
+        session = lifecycle.bind(db, current_user, account_uid=body.account_uid,
+                                 company_account=body.company_account, crm_shared=body.crm_shared)
         db.commit()
         db.refresh(session)
         return _ok(_bind_session_data(session), "绑定会话已创建")
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         db.rollback()
         _handle_connector_error(exc)
@@ -74,7 +90,10 @@ def list_accounts(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("whatsapp:read")),
 ):
-    accounts = service.list_accounts(db, current_user)
+    try:
+        accounts = service.list_accounts(db, current_user)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     user_ids = [item.ark_user_id for item in accounts]
     users = {
         item.id: item
@@ -88,7 +107,7 @@ def list_accounts(
                 func.max(WhatsAppPullCursor.last_pulled_at),
             )
             .filter(
-                WhatsAppPullCursor.resource == "messages",
+                WhatsAppPullCursor.resource.in_(("messages", "events")),
                 WhatsAppPullCursor.account_uid.in_([item.account_uid for item in accounts]),
             )
             .group_by(WhatsAppPullCursor.account_uid)
@@ -100,6 +119,9 @@ def list_accounts(
             item,
             ark_user=users.get(item.ark_user_id),
             last_message_pull_at=message_pull_times.get(item.account_uid),
+            can_read_body=_can_read_body(db, item, current_user),
+            reader_user_ids=[grant.user_id for grant in db.query(WhatsAppBodyGrant).filter_by(account_uid=item.account_uid).all()]
+                if item.ark_user_id == service.current_user_id(current_user) else [],
         )
         for item in accounts
     ])
@@ -112,7 +134,7 @@ def revoke_account(
     current_user=Depends(require_permission("whatsapp:write")),
 ):
     try:
-        account = service.revoke_account(db, account_uid, current_user)
+        account = lifecycle.revoke(db, account_uid, current_user)
         db.commit()
         db.refresh(account)
         return _ok(_account_data(account), "已提交解绑")
@@ -207,14 +229,14 @@ def _bind_session_data(item):
         "account_uid": item.account_uid,
         "ark_user_id": item.ark_user_id,
         "status": item.status,
-        "qr_code_url": item.qr_code_url,
+        "qr_code_url": getattr(item, '_transient_qr', None) if item.status in ('pending', 'binding') and item.expires_at and item.expires_at > beijing_now() else None,
         "expires_at": item.expires_at,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
     }
 
 
-def _account_data(item, ark_user=None, last_message_pull_at=None):
+def _account_data(item, ark_user=None, last_message_pull_at=None, can_read_body=False, reader_user_ids=None):
     return {
         "id": item.id,
         "account_uid": item.account_uid,
@@ -224,6 +246,20 @@ def _account_data(item, ark_user=None, last_message_pull_at=None):
         "phone_number": item.phone_number,
         "display_name": item.display_name,
         "status": item.status,
+        "provider": item.provider,
+        "session_generation": item.session_generation,
+        "consent_version": item.consent_version,
+        "consent_state": item.consent_state,
+        "crm_shared": item.crm_shared,
+        "ai_egress_allowed": item.ai_egress_allowed,
+        "can_read_body": can_read_body,
+        "reader_user_ids": reader_user_ids or [],
+        "connection_state": (item.raw_payload or {}).get('connection_state') or item.connector_status,
+        "sync_state": (item.raw_payload or {}).get('sync_state') or 'unknown',
+        "history_state": (item.raw_payload or {}).get('history_state') or 'unknown',
+        "gap_reason": (item.raw_payload or {}).get('gap_reason'),
+        "revoke_state": (item.raw_payload or {}).get('revoke_state'),
+        "needs_user_action": (item.raw_payload or {}).get('needs_user_action', False),
         "connector_status": item.connector_status,
         "last_sync_at": item.last_sync_at,
         "last_message_pull_at": last_message_pull_at,
@@ -245,6 +281,11 @@ def _conversation_data(item):
         "is_group": item.is_group,
         "last_message_at": item.last_message_at,
         "last_message_preview": item.last_message_preview,
+        "history_state": item.history_state,
+        "gap_reason": item.gap_reason,
+        "earliest_seen_at": item.earliest_seen_at,
+        "latest_seen_at": item.latest_seen_at,
+        "last_ingested_at": item.last_ingested_at,
     }
 
 
@@ -264,4 +305,87 @@ def _message_data(item):
         "content_preview": item.content_preview,
         "sent_at": item.sent_at,
         "received_at": item.received_at,
+        "source_revision": item.source_revision,
+        "deleted_at": item.deleted_at,
+        "identity_state": (item.raw_payload or {}).get('identity_state'),
     }
+
+
+def _can_read_body(db, item, actor):
+    try:
+        access.require_body(db, item, service.current_user_id(actor))
+        return True
+    except PermissionError:
+        return False
+
+
+@router.put('/accounts/{account_uid}/consent', summary='持有人更新采集、正文范围和客户共享授权')
+def update_consent(account_uid: str, body: ConsentUpdate, db: Session = Depends(get_db),
+                   current_user=Depends(require_permission('whatsapp:write'))):
+    if body.enabled and not body.company_account:
+        raise HTTPException(status_code=400, detail='请确认公司业务号全部会话采集范围')
+    try:
+        account = lifecycle.update_consent(db, account_uid, current_user, enabled=body.enabled,
+            crm_shared=body.crm_shared, reader_user_ids=body.reader_user_ids, ai_egress_allowed=body.ai_egress_allowed)
+        db.commit()
+        return _ok(_account_data(account), '授权已更新')
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc))
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        db.rollback()
+        _handle_connector_error(exc)
+
+
+def _connector_identity(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
+    # Machine endpoint: fixed connector service identity, never an employee JWT.
+    key = get_settings().WHATSAPP_CONNECTOR_API_KEY.strip()
+    if not key or not secrets.compare_digest(credentials.credentials, key):
+        raise HTTPException(status_code=403, detail='Connector 服务身份无效')
+
+
+@router.get('/internal/accounts/{account_uid}/authorization', summary='Connector 实时采集授权检查')
+def connector_authorization(account_uid: str, db: Session = Depends(get_db), identity=Depends(_connector_identity)):
+    return _ok(access.authorization_snapshot(db, account_uid))
+
+
+@router.get('/accounts/{account_uid}/reader-candidates', summary='持有人查找正文授权员工')
+def reader_candidates(account_uid: str, q: str = Query('', max_length=50), db: Session = Depends(get_db),
+                      current_user=Depends(require_permission('whatsapp:write'))):
+    try:
+        lifecycle.owned_account(db, account_uid, current_user)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    query = db.query(ArkUser).filter(ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None))
+    eligible = db.query(ArkUserRole.user_id).join(ArkRole, ArkRole.id == ArkUserRole.role_id).outerjoin(
+        ArkRolePermission, ArkRolePermission.role_id == ArkRole.id,
+    ).outerjoin(ArkPermission, ArkPermission.id == ArkRolePermission.permission_id).filter(
+        (ArkRole.name == 'super_admin') | (ArkPermission.code == 'whatsapp:read'),
+    )
+    query = query.filter(ArkUser.id.in_(eligible))
+    if q.strip():
+        query = query.filter(ArkUser.real_name.contains(q.strip(), autoescape=True))
+    return _ok([{'id': user.id, 'name': user.real_name} for user in query.order_by(ArkUser.real_name, ArkUser.id).limit(50).all()])
+
+
+@router.post('/accounts/{account_uid}/revoke-confirmation', summary='持有人确认已在手机移除关联设备')
+def confirm_revoke(account_uid: str, body: RevokeConfirmation, db: Session = Depends(get_db),
+                   current_user=Depends(require_permission('whatsapp:write'))):
+    try:
+        account = lifecycle.confirm_phone_removal(db, account_uid, current_user, phone_device_removed=body.phone_device_removed)
+        db.commit()
+        return _ok(_account_data(account), '持有人已确认手机移除设备')
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc))
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))

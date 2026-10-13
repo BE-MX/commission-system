@@ -31,6 +31,7 @@ from app.customer.pcw_models import (
     CustomerFactReview,
 )
 from app.whatsapp.models import (
+    WhatsAppBodyGrant,
     WhatsAppAccount,
     WhatsAppAttachment,
     WhatsAppConversation,
@@ -71,6 +72,7 @@ def _wa_account(db, user, uid: str, status: str = "active") -> WhatsAppAccount:
         phone_number="+8613900000000",
         display_name=f"WA {uid}",
         status=status,
+        consent_state='active', consent_version=1, crm_shared=True, ai_egress_allowed=True,
     )
     db.add(row)
     db.flush()
@@ -238,7 +240,11 @@ def test_pending_bindings_scope_and_candidates(db):
     admin_view = svc.list_pending_bindings(
         db, actor_user_id=admin.id, actor_permissions=["customer:read_all"]
     )
-    assert admin_view["total"] == 2
+    assert admin_view["total"] == 0  # customer admin no longer bypasses source body authorization
+    db.add(WhatsAppBodyGrant(account_uid=own.account_uid, user_id=admin.id, consent_version=own.consent_version))
+    db.flush()
+    granted_view = svc.list_pending_bindings(db, actor_user_id=admin.id, actor_permissions=['customer:read_all'])
+    assert granted_view['total'] == 1
 
 
 def test_pending_queue_excludes_bound_conversation(db):
@@ -487,7 +493,11 @@ def test_rebind_stales_derivations_and_transfers_ownership(db, monkeypatch):
     new_view = svc.list_conversations(
         db, customer_id=customer_b.id, actor_user_id=9282
     )
-    assert new_view["total"] == 1
+    assert new_view["total"] == 0  # Customer reassignment cannot grant source body rights.
+    db.add(WhatsAppBodyGrant(account_uid=_wa_acct.account_uid, user_id=9282, consent_version=_wa_acct.consent_version))
+    db.flush()
+    new_view = svc.list_conversations(db, customer_id=customer_b.id, actor_user_id=9282)
+    assert new_view['total'] == 1
     assert new_view["items"][0]["binding_version"] == 2
 
 

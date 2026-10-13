@@ -101,6 +101,7 @@ class TestSchedulerRegistration:
                 "color_social_extract",
                 "color_sales_aggregate",
                 "whatsapp_auto_sync",
+                "whatsapp_event_sync",
                 "aftersales_notification_retry",
                 "festival_event_monitor",
                 "festival_daily_report",
@@ -125,6 +126,9 @@ class TestSchedulerRegistration:
                 "receipt_index_refresh",
                 "okki_outbound_delete_reconcile",
             }
+            whatsapp_events = scheduler.get_job('whatsapp_event_sync')
+            assert whatsapp_events.trigger.interval.total_seconds() == real_settings.WHATSAPP_EVENT_SYNC_INTERVAL_SECONDS
+            assert whatsapp_events.max_instances == 1 and whatsapp_events.coalesce is True
             task_brief = scheduler.get_job("task_daily_brief")
             task_brief_fields = {field.name: str(field) for field in task_brief.trigger.fields}
             assert task_brief_fields["hour"] == "8"

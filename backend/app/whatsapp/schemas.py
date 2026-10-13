@@ -8,6 +8,21 @@ from pydantic import BaseModel, Field
 
 class BindSessionCreate(BaseModel):
     ark_user_id: int | None = Field(default=None, description="管理员可指定绑定到哪个方舟用户")
+    account_uid: str | None = Field(default=None, max_length=80, description="重新关联保留原业务账号ID")
+    company_account: bool = Field(default=False, description="持有人确认公司专用业务号全部会话采集")
+    crm_shared: bool = Field(default=False, description="另外确认将已绑定会话共享到客户域")
+
+
+class ConsentUpdate(BaseModel):
+    enabled: bool
+    company_account: bool = False
+    crm_shared: bool = False
+    ai_egress_allowed: bool = False
+    reader_user_ids: list[int] = Field(default_factory=list, max_length=100)
+
+
+class RevokeConfirmation(BaseModel):
+    phone_device_removed: bool
 
 
 class BindSessionOut(BaseModel):

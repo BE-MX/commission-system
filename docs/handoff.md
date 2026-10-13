@@ -22,6 +22,31 @@
 
 # 当前交接与待办
 
+## 2026-10-13 WhatsApp Git 集成交付（Codex，已授权合并推送，未部署）
+
+- 实现 `b9720ce8`，包含Baileys连接/全会话同步和AI消息助手；用户明确公司专用号全部会话（含群聊），清单只保留助手结果。任务分支已整合最新origin/main `5dc34122`，交接文档保留双方记录，不改变主分支销售研究Agent或订单卡片功能。
+- 整合代码验收：后端367 passed / 1 skipped；Connector41、前端逻辑10、同步Edge9及助手Edge19项通过（0pageerror），build通过。唯一迁移head193，增量约定无违规；全仓仅原发票17项UI债务。无真实扫码、模型调用或生产迁移。
+- 主目录原有27文件已保存文件副本/原HEAD/patch/指纹，恢复在新main上核对；交付不夹带这些改动。日志、截图、恢复核验和推送读回保留 `tmp/whatsapp-main-integration-20261013/`；[集成交付验收](reports/2026-10-13-whatsapp-main-integration.md)。代码使用授权main合并与origin/main推送，部署需单独授权，不向cloud推送或启动发布。
+
+## 2026-10-13 WhatsApp AI消息助手（Codex，已验证并获合并推送授权，未部署）
+
+- 同 `codex/whatsapp-baileys` worktree，用户要求按时间段、聊天对象总结，结合知识给建议和待跟进清单；用户明确“仅保留在助手结果中”，不加入任务中心。
+- 已实现AI按钮、北京时间区间/账号或当前会话、后台进度/历史报告、知识来源与聊天引用、内部勾选持久化。正文与AI外发分别检查，CRM非前提；源消息/授权代次/知识ACL与修订变更阻断旧派生结果。客户端请求幂等，不确定只回查；显式重提交复用原ID和范围，后台不自动重调用。
+- 新增报告表迁移193接192，查过所有分支和工作目录，隔离升级/离线MySQL验证，不执行共享库迁移。独立AI预设 `whatsapp_message_assistant`、默认截止900秒，已有预设不覆盖；实际外发仍需持有人开启授权。
+- 后端范围回归145项通过；最终助手/API/知识/迁移38项通过。前端VM8、Edge19项（0pageerror）、build通过。独立审查关闭长UID合并超限与过期槽同请求ID竞态两项P2，最后复查无剩余已核实P1/P2。客户端明确404后才支持同原ID/参数手动重提交；清单409立即清空旧正文。真实模型/公司号未调用。2026-10-13 用户已授权本任务提交、合并和推送；不部署。
+- 约定：[需求与数据边界](requirements/2026-10-13-whatsapp-ai-assistant.md)；[验收报告](reports/2026-10-13-whatsapp-ai-assistant.md)。API/数据表/架构/runbook已同步；全仓约定仅既有发票17项UI债务，增量无违规，Git巡检仅本地快照。
+
+## 2026-10-13 WhatsApp Baileys 连接与全部会话同步（Codex，已验证并获合并推送授权，未部署）
+
+- 分支 `codex/whatsapp-baileys`，worktree `C:\Users\windb\.codex\worktrees\whatsapp-baileys\commission-system`。用户依据两份方案/评估要求实施，并确认公司专用业务号允许全部会话（含群聊）。开发验收未执行生产迁移、真实扫码或聊天收发；2026-10-13 用户已授权提交、合并和推送，不部署。
+- Connector 锁定 `baileys@7.0.0-rc14`，加密 SQLite auth/inbox/current projection/feed、单机账号租约和 generation/consent fencing；二维码不落盘，注销不冒充远端 ACK。方舟事件同步默认 5 秒/500 条，消息/来源/CRM/checkpoint 原子提交，编辑和撤回不会被旧事件覆盖。
+- 管理员仅元数据，正文读者、CRM 共享和 AI 外发分别授权；旧画像/分析快照按当前来源权限过滤，模型返回后复验当前授权和客户范围。保留旧业务数据，不猜配跨 provider 的群/LID；只显示实际历史覆盖，媒体仅元数据。
+- 后端 18 模块 283 passed / 1 skipped；最终受影响回归 33 passed；Connector 41 passed / audit 0；前端状态 2 passed、build 与 9 项 Edge 合成流程通过（0 pageerror，桌面/手机实际截图核对）。增量约定无违规；全仓约定仅既有发票 17 项 UI 债务拦截，额外 evidence_choices 的 3 项失败已在原 main 复现。
+- 独立后端/Connector 最终复查均无剩余 P1/P2；后端关闭审查另有 4 项回归通过。收尾 Git 巡检 `--no-fetch` exit 0，报告保留其他分支既有 186 撞号和未提交改动；仅为本地快照，未处理他人分支。
+- 聊天页面实测补修：账号管理在上、会话/正文在下全宽布局，避免 1440px 下正文过窄；手机分页换行。合成收件/发件/撤回截图 `frontend/tmp/whatsapp-baileys/chat-records.png`，没有真实聊天数据。
+- 迁移192接任务起点186；其他工作目录已占187–191，集成时必须对齐最新迁移链后保持单 head。只测试了隔离 SQLite 升级及 MySQL 离线 DDL。部署需 Node >=22.13、独立外部加密 key、API key、回调及单机 SQLite；真实账号/历史/注销和目标环境验收仍待发布授权。
+- 方案：[需求与实现约定](requirements/2026-10-13-whatsapp-baileys.md)；结果与运行限制：[本地验收报告](reports/2026-10-13-whatsapp-baileys.md)。合成临时目录递归清理被自动审批拒绝，已保留，不绕过删除限制。
+
 ## 2026-10-13 订单通知采用 800×450 真彩卡片（Codex，用户认可预览并授权合并推送，未部署）
 
 - 用户反馈 1200×675 真彩 PNG 在钉钉中加载慢，已认可缩至 800×450 的 RGBA 预览并授权应用、合并推送。渲染仍先按 1200×675 排版，再 LANCZOS 缩图，保留真彩透明度，不恢复导致玻璃色带的 256 色量化；文案、头像、金额和投递行为不变。

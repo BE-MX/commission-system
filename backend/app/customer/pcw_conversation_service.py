@@ -224,12 +224,13 @@ def _require_whatsapp_source(
         raise pcw_errors.not_found(
             "源会话不存在或无权访问", error_code="SOURCE_NOT_FOUND_OR_FORBIDDEN"
         )
-    if int(account.ark_user_id) != int(actor_user_id) and not (
-        perms & ACCOUNT_ADMIN_PERMISSIONS
-    ):
+    from app.whatsapp.access import require_body
+    try:
+        require_body(db, account, int(actor_user_id), crm=True)
+    except PermissionError as exc:
         raise pcw_errors.not_found(
             "源会话不存在或无权访问", error_code="SOURCE_NOT_FOUND_OR_FORBIDDEN"
-        )
+        ) from exc
     return account
 
 
@@ -440,13 +441,12 @@ def list_pending_bindings(
     """WhatsApp 会话待绑定队列；待绑定会话保留源域，不创建占位客户。"""
     perms = _perms(actor_permissions)
     page, page_size = _validate_page(page, page_size)
-    account_query = db.query(WhatsAppAccount.account_uid).filter(
-        WhatsAppAccount.status == "active"
-    )
-    if not perms & ACCOUNT_ADMIN_PERMISSIONS:
-        account_query = account_query.filter(
-            WhatsAppAccount.ark_user_id == int(actor_user_id)
-        )
+    from app.whatsapp.access import live_actor, readable_accounts
+    try:
+        live_actor(db, int(actor_user_id), *CUSTOMER_READ_PERMISSIONS, *CUSTOMER_WRITE_PERMISSIONS)
+    except PermissionError as exc:
+        raise pcw_errors.not_found('源会话不存在或无权访问', error_code='SOURCE_NOT_FOUND_OR_FORBIDDEN') from exc
+    account_query = readable_accounts(db, int(actor_user_id), crm=True)
     account_uids = sorted(row.account_uid for row in account_query.all())
     if not account_uids:
         return {"items": [], "total": 0, "page": page, "page_size": page_size}
@@ -581,21 +581,26 @@ def _project_messages(
     customer_id: int,
     contact_id: int | None,
     now: datetime,
+    message_uids: list[str] | None = None,
 ) -> dict:
     """把 WhatsAppMessage 逐条投影为 CustomerMessage；稳定源消息ID去重。"""
-    rows = (
+    rows_query = (
         db.query(WhatsAppMessage)
         .filter(
             WhatsAppMessage.account_uid == account.account_uid,
             WhatsAppMessage.conversation_uid == conversation.external_conversation_id,
         )
         .order_by(WhatsAppMessage.sent_at.asc(), WhatsAppMessage.id.asc())
-        .all()
     )
+    if message_uids is not None:
+        rows_query = rows_query.filter(WhatsAppMessage.message_uid.in_(message_uids))
+    rows = rows_query.yield_per(200)
     inserted = unchanged = 0
+    total_rows = 0
     sent_times: list[datetime] = []
     latest_source_record_id: int | None = None
     for message in rows:
+        total_rows += 1
         attachment_rows = (
             db.query(WhatsAppAttachment)
             .filter(WhatsAppAttachment.message_uid == message.message_uid)
@@ -649,6 +654,18 @@ def _project_messages(
         )
         existing = message_query.one_or_none()
         if existing is not None:
+            existing.source_record_id = source.id
+            existing.direction = _normalize_direction(message.direction)
+            existing.content_type = _normalize_content_type(message.content_type, has_text=bool(message.content_text))
+            existing.captured_at = now
+            updated_hash = _message_content_hash(message, attachments)
+            if existing.content_hash != updated_hash or existing.content_text != message.content_text:
+                existing.content_text = message.content_text
+                existing.attachment_meta_json = attachments
+                existing.content_hash = updated_hash
+                existing.source_record_id = source.id
+                existing.content_type = _normalize_content_type(message.content_type, has_text=bool(message.content_text))
+                existing.captured_at = now
             unchanged += 1
             if existing.sent_at is not None:
                 sent_times.append(existing.sent_at)
@@ -719,7 +736,7 @@ def _project_messages(
     if latest_source_record_id is not None:
         conversation.latest_source_record_id = latest_source_record_id
     conversation.updated_at = now
-    return {"inserted": inserted, "unchanged": unchanged, "total": len(rows)}
+    return {"inserted": inserted, "unchanged": unchanged, "total": total_rows}
 
 
 def _ensure_projected_conversation(
@@ -1045,7 +1062,7 @@ def _stale_conversation_derivations(
             .filter(
                 ConversationAnalysisJob.conversation_id
                 == binding.projected_conversation_id,
-                ConversationAnalysisJob.status == "succeeded",
+                ConversationAnalysisJob.status.in_(("queued", "running", "succeeded")),
             )
             .all()
         )
@@ -1289,6 +1306,8 @@ def list_conversations(
             ConversationBinding.customer_id == canonical_customer_id,
         )
     )
+    from app.whatsapp.access import readable_accounts
+    query = query.filter(ConversationBinding.source_account_key.in_(readable_accounts(db, int(actor_user_id), crm=True)))
     if channel:
         query = query.filter(CustomerConversation.channel == str(channel))
     if contact_id is not None:
@@ -1927,7 +1946,9 @@ def run_analysis_job(
         )
     if job.status == "succeeded":
         return job
-    if job.status in {"stale", "cancelled"}:
+    if job.status == "stale":
+        return job
+    if job.status == "cancelled":
         raise pcw_errors.conflict(
             "分析任务已失效，请重新创建", error_code="JOB_NOT_RUNNABLE"
         )
@@ -1948,6 +1969,19 @@ def run_analysis_job(
         job.updated_at = now
         db.flush()
         return job
+    # Check the actual human and separate egress consent at execution, after
+    # queueing and immediately before any model receives source content.
+    _roles, live_permissions = get_live_user_authorization(db, int(job.created_by))
+    try:
+        _require_conversation_access(db, conversation_id=job.conversation_id,
+            actor_user_id=int(job.created_by), actor_permissions=live_permissions)
+        source_account = db.query(WhatsAppAccount).filter_by(account_uid=binding.source_account_key).populate_existing().first()
+        if source_account is None or not source_account.ai_egress_allowed:
+            return _fail_job(db, job=job, failure_code="AI_EGRESS_NOT_AUTHORIZED")
+    except pcw_errors.PcwError:
+        logger.warning('PCW analysis authorization revoked before model call')
+        print('[PCW] analysis authorization revoked before model call', flush=True)
+        return _fail_job(db, job=job, failure_code="AI_AUTH_REVOKED")
     coverage = dict(job.coverage_json or {})
     window_end = coverage.get("window_end_message_id")
     messages = _conversation_messages(
@@ -1981,6 +2015,10 @@ def run_analysis_job(
             )
 
     ai_messages = _build_ai_messages(messages)
+    source_version = (source_account.session_generation, source_account.consent_version)
+    # This executor owns a dedicated job transaction. Never call it inside an
+    # ingestion transaction: release job locks and snapshots before external AI.
+    db.commit()
     try:
         response = runner(messages=ai_messages, timeout_sec=timeout_sec)
     except Exception as exc:
@@ -2006,6 +2044,32 @@ def run_analysis_job(
             reason = "AI_TIMEOUT"
         return _fail_job(db, job=job, failure_code=reason)
 
+    db.flush()
+    current_source = db.query(WhatsAppAccount).filter_by(account_uid=binding.source_account_key).populate_existing().with_for_update().first()
+    if current_source is None:
+        return _fail_job(db, job=job, failure_code='AI_AUTH_REVOKED')
+    from app.whatsapp.access import require_body, live_actor
+    try:
+        current_actor = live_actor(db, int(job.created_by), *CUSTOMER_READ_PERMISSIONS, fresh=True)
+        require_body(db, current_source, int(job.created_by), crm=True, fresh=True)
+        require_customer_access(db, customer_id=binding.customer_id, user=current_actor,
+            action_permissions=CUSTOMER_READ_PERMISSIONS, manage_permissions=CUSTOMER_MANAGE_PERMISSIONS, fresh=True)
+        if not current_source.ai_egress_allowed or (current_source.session_generation, current_source.consent_version) != source_version:
+            return _fail_job(db, job=job, failure_code='AI_AUTH_REVOKED')
+    except (PermissionError, CustomerAccessDenied):
+        logger.warning('PCW analysis authorization changed during model call')
+        print('[PCW] analysis authorization changed during model call', flush=True)
+        return _fail_job(db, job=job, failure_code='AI_AUTH_REVOKED')
+    job = db.query(ConversationAnalysisJob).filter_by(id=job.id).populate_existing().with_for_update().one()
+    if job.status != 'running':
+        return job
+    current_binding = db.query(ConversationBinding).filter_by(id=job.binding_id).populate_existing().with_for_update().first()
+    current_messages = db.query(CustomerMessage).filter(CustomerMessage.conversation_id == job.conversation_id)
+    if window_end:
+        current_messages = current_messages.filter(CustomerMessage.id <= window_end)
+    current_messages = current_messages.order_by(CustomerMessage.sent_at, CustomerMessage.id).populate_existing().with_for_update().all()
+    if current_binding is None or current_binding.state != 'active' or current_binding.version != job.binding_version or _compute_manifest(current_messages)[1] != job.input_manifest_hash:
+        return _fail_job(db, job=job, failure_code='AI_INPUT_CHANGED')
     content = response.get("content") if isinstance(response, Mapping) else None
     parsed = _extract_json_object(content)
     if parsed is None:

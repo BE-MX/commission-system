@@ -1,5 +1,21 @@
 # 莱莎方舟 数据库表参考
 
+## WhatsApp AI 消息助手（193，本地候选）
+
+`ark_whatsapp_assistant_runs` 保存请求人私有报告：账号/请求人/客户端请求ID、带北京时间语义的起止范围、可选单会话范围、运行状态/唯一活动槽、generation/consent版本、消息/会话数与进度、输入hash和知识引用元数据、按对象的结构化结果、清单完成状态、错误分类与业务时间。输入manifest不复制聊天正文，AI调用日志仅元数据。
+
+唯一键 `(requested_by,client_request_uid)` 保证提交幂等，`(account_uid,requested_by,active_slot)` 约束单个账号的本员工在途分析；终态活动槽为NULL。正文和知识来源变更时结果失效并清空可读派生结果，历史运行元数据保留。报告访问/清单更新均重验来源，不因管理权限开放结果。
+
+迁移 `193_wa_ai_assistant` 接 `192_wa_sync_fencing`，只建报告表和索引；用户FK为MySQL unsigned INTEGER，账号FK匹配原account_uid。隔离SQLite升级保留原消息，离线MySQL DDL已验证。降级阻止删除报告，回退代码保留扩展结构。集成并行分支时仍须对账其他迁移及唯一head。
+
+## WhatsApp 接入、版本与正文范围（192，本地未部署）
+
+`192_wa_sync_fencing` 父节点 186，号码避开并行未合并 187–191。新增 `ark_whatsapp_body_grants`（account_uid+user_id 唯一，MySQL 用户外键 INTEGER UNSIGNED，consent_version）、`ark_whatsapp_message_sources`（account_uid+provider+完整来源键 SHA256 唯一，source_key JSON、稳定 message_uid、exact/new/unverified）。不按文本、时间或昵称合并身份，LID 保留原键。
+
+账号增加 provider、session_generation、consent_version、consent_state、crm_shared、ai_egress_allowed；旧行默认旧 Provider、待确认授权、客户共享和 AI 外发关闭。会话增加 history_state/gap_reason/earliest_seen_at/latest_seen_at/last_ingested_at；消息增加 source_revision/deleted_at，墓碑不被晚到历史复活。业务审计时间为北京时间。
+
+旧账号、会话、消息、附件、游标及客户绑定不删除；仅清除临时二维码。events checkpoint 与规范消息、来源映射和已有 CRM 投影在同一事务提交。downgrade 禁止删映射，回退保留扩展 schema。认证不在方舟业务库：独立 Connector 单主机加密 SQLite 保存认证域、规范投影域、变更指针与租约；不能复制到多主机充当单活协调器。MySQL 生产迁移未执行，隔离 SQLite 升级及 MySQL 离线 DDL 不等于生产容量与锁验证。
+
 ## 账号解锁（`178_account_unlock`，本地未部署）
 
 `ark_account_unlock_audits` 记录被解锁用户、操作人 ID/用户名快照、解除的失败日志 ID 上界、失败次数和北京时间。用户外键为 MySQL `INTEGER UNSIGNED`，按 `user_id` 建索引；原 `ark_login_logs` 的状态、原因和时间不变。窗口内仅计入最近解锁边界之后的新失败，避免同秒失败被误清除。管理员解锁和密码登录以目标用户行锁串行化；重复解锁未锁定账号不写审计。迁移只新增表，父 revision 为 `177_portal_pi_header`；禁止删除审计数据的 downgrade，生产迁移走统一发布入口。

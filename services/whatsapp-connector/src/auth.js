@@ -1,3 +1,5 @@
+import { bearerMatches } from './crypto.js'
+
 export function connectorConfig(env) {
   const apiKey = (env.WHATSAPP_CONNECTOR_API_KEY || '').trim()
   if (!apiKey) throw new Error('WHATSAPP_CONNECTOR_API_KEY is required')
@@ -7,7 +9,7 @@ export function connectorConfig(env) {
 export function authenticateWith(apiKey) {
   if (!apiKey) throw new Error('Connector authentication requires an API key')
   return (req, res, next) => {
-    if (req.headers.authorization !== `Bearer ${apiKey}`) {
+    if (!bearerMatches(req.headers.authorization, apiKey)) {
       return res.status(401).json({ code: 401, message: 'unauthorized' })
     }
     next()
