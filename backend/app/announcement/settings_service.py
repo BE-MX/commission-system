@@ -24,9 +24,11 @@ def update_config(db, identity, data):
     changed_target = any(data[k] != getattr(row, k) for k in ('conversation_id', 'robot_code'))
     if changed_target:
         from app.knowledge.models import KnowledgeDocument
-        from app.announcement.models import Delivery
-        active = db.query(KnowledgeDocument.id).filter(KnowledgeDocument.library_id == row.library_id,
-            KnowledgeDocument.published_revision_id.is_not(None)).first()
+        from app.announcement.models import Delivery, AnnouncementMeta
+        published = db.query(KnowledgeDocument.id, AnnouncementMeta.push_dingtalk).join(
+            AnnouncementMeta, AnnouncementMeta.revision_id == KnowledgeDocument.published_revision_id).filter(
+            KnowledgeDocument.library_id == row.library_id).all()
+        active = any(push or service.group_exposed(db, document_id) for document_id, push in published)
         outstanding = db.query(Delivery.id).filter(Delivery.status.notin_(['sent', 'cancelled'])).first()
         if active or outstanding:
             raise knowledge.ConflictError('请先撤回原群的已发布公告并处理完投递记录，再更换目标群')

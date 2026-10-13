@@ -22,6 +22,7 @@ from app.domestic import price_review
 from app.domestic import (
     attribute_service,
     balance_service,
+    shipment_service,
     order_kind_service,
     customer_service,
     pricing_service,
@@ -1128,6 +1129,7 @@ def get_order_detail(
             "style_images": item.style_images or [],
             "remark": item.remark,
             "remark_images": item.remark_images or [],
+            "shipped_qty": shipment_service.ready_units(db, item)[2],
             "ship_time": item.ship_time,
             "ship_weight": float(item.ship_weight) if item.ship_weight is not None else None,
         })
@@ -1563,8 +1565,8 @@ def update_item(
         raise ValueError("已终止/已发货的订单不能修改明细")
     if order.status in (C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
         raise ValueError("订单待审核/已驳回，审核通过前不能修改明细")
-    if item.status == C.ITEM_SHIPPED:
-        raise ValueError("已发货的明细不能编辑")
+    from app.domestic.shipment_service import assert_item_unshipped
+    assert_item_unshipped(db, item)
 
     data = payload.model_dump(exclude_unset=True)
     if order_kind_service.is_production(order):
@@ -1642,6 +1644,8 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
     """有报工记录的明细不能删 —— 删了车间的工时就凭空消失了。"""
     db.info["domestic_actor_id"] = user_id
     order, item = _lock_order_then_item(db, item_id)
+    from app.domestic.shipment_service import assert_item_unshipped
+    assert_item_unshipped(db, item)
     _ensure_order_creator(order, user_id)
     reported = db.query(func.count(DomesticReportLog.id)).filter(
         DomesticReportLog.item_id == item_id
@@ -1935,32 +1939,27 @@ def review_order(
         raise
 
 
-def ship_item(
-    db: Session,
-    item_id: int,
-    payload: ItemShipRequest,
-    user_id: int | None = None,
-) -> DomesticOrderItem:
-    """登记发货。首版要求全工序做齐才允许发货。"""
-    db.info["domestic_actor_id"] = user_id
+def ship_item(db: Session, item_id: int, payload: ItemShipRequest, user_id: int | None = None) -> DomesticOrderItem:
+    """Existing whole-line action creates a delivery batch through the same unit guards."""
+    from app.domestic.shipment_service import create_shipment
+    from app.domestic.shipment_schemas import ShipmentCreate, ShipmentItemInput
     order, item = _lock_order_then_item(db, item_id)
     _ensure_order_creator(order, user_id)
     if order_kind_service.is_production(order):
-        raise ValueError("生产订单在入库工序完成后完工，无需登记发货")
+        raise ValueError("生产订单无需登记发货")
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("该明细已发货")
-    if order.status == C.ORDER_TERMINATED:
-        # 否则会出现「订单已终止但货已发出」的自相矛盾状态，且此后撤销被永久锁死
-        raise ValueError("订单已终止，不能登记发货")
     progress_service.recalc_item_status(db, item)
     if item.status != C.ITEM_DONE:
         raise ValueError("该明细还没做完，不能登记发货")
-
-    item.ship_time = payload.ship_time
-    item.ship_weight = payload.ship_weight
-    item.status = C.ITEM_SHIPPED
-    progress_service.sync_order_status(db, item.order_id)
-    db.commit()
+    from app.domestic.shipment_service import shipped_unit_ids
+    remaining = item.order_qty - len(shipped_unit_ids(db, item.id, lock=True))
+    create_shipment(db, ShipmentCreate(
+        customer_id=order.customer_id, ship_time=payload.ship_time,
+        request_id=f"legacy-ship:{item.id}", items=[ShipmentItemInput(
+            item_id=item.id, quantity=remaining, ship_weight=payload.ship_weight,
+        )],
+    ), user_id or order.created_by)
     return item
 
 
@@ -2000,6 +1999,9 @@ def delete_order(
     db.info["domestic_actor_id"] = user_id
     order = _get_order_or_raise(db, order_id, lock=True)
     _ensure_order_creator(order, user_id)
+    from app.domestic.shipment_service import assert_item_unshipped
+    for item in db.query(DomesticOrderItem).filter_by(order_id=order.id).all():
+        assert_item_unshipped(db, item)
     if not allow_non_draft and order.status != C.ORDER_DRAFT:
         raise ValueError("只能删除自己的草稿订单；非草稿订单需要内贸管理权限")
     reported = (

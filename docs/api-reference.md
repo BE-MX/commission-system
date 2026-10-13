@@ -1653,8 +1653,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | POST | `/inbox/read-all` | 标记当前用户此刻可见的发布版本全部已读 |
 | GET / PUT / DELETE | `/{document_id}` | 查看 / 保存版本 / 删除未发布草稿 |
 | GET | `/{document_id}/preview` | 保存版本的钉钉图文分片预览 |
-| POST | `/{document_id}/submit` | 提交审核（须已验证推送通道） |
-| POST | `/{document_id}/review` | approve、remark；审批通过同事务创建发布事件与投递 |
+| POST | `/{document_id}/submit` | 提交审核；仅 push_dingtalk=true 的修订须已验证并启用群推送 |
+| POST | `/{document_id}/review` | approve、remark；审批通过创建发布事件，仅选择群推送时同事务创建投递 |
 | POST | `/{document_id}/withdraw` | 管理员撤回，必填 reason |
 | PUT | `/{document_id}/pin` | 管理员设置 pinned |
 | POST | `/channel-test` | 显式排队向配置群发送测试文字和图片 |
@@ -1664,7 +1664,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | GET / POST | `/weekly` | 最近 52 期 / 手动生成上周预览（regenerate 可重生成） |
 | POST | `/weekly/{id}/send` | 显式发送已生成版本；同版不得重复入队 |
 
-保存参数：title、content（Tiptap JSON）、category_id、base_revision_id（更新必需）、important、effective_at、expires_at、change_note。列表参数 q/category_id/status/page/page_size。审核中禁止改稿；已发布公告更新后，读者仍看上一发布版本。时间按北京时间保存。
+保存参数：title、content（Tiptap JSON）、category_id、base_revision_id（更新必需）、important、push_dingtalk、effective_at、expires_at、change_note。push_dingtalk 为修订级布尔值，API 省略默认 true 保留既有调用行为；界面新建默认跟随群推送总开关，更新沿用该修订选择。详情与列表返回 push_dingtalk。false 时仅站内发布，不要求钉钉通道，也不纳入钉钉周报；旧版本已发送或结果不确定时，撤回仍生成更正投递。列表参数 q/category_id/status/page/page_size。审核中禁止改稿；已发布公告更新后，读者仍看上一发布版本。时间按北京时间保存。
 
 平台权限 `announcement:read/write/admin`；审批端点允许 `knowledge:review/knowledge:admin/announcement:admin`，仍需公告阅读权限和库审核 ACL。普通知识库接口不能修改 managed 公告库。
 
@@ -2400,3 +2400,20 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 `POST /api/shipments/{id}/upgrade-funding`：`FundingUpgrade` 包含严格正整数 `version`、`receipt_id`、`receipt_version`，`purpose=presale_advance`，10..500字符理由及16..64字符独立 `request_key`。实时检查 `invoice:write`、`shipment:write`、`receipt:write` 和原订单范围；请求只读取小满，不新增远端现金、运费或实际出库。成功用 `ok` 返回 amendment 摘要和当前 settlement。
 
 仅 V1 唯一活动、未分配资金/未出库的待付款或暂停批次可升级；按原产品与费用快照计算资金引用，保留原运费订单、创建请求与末批标记。锁外完整远端取证后重读当前权限及关联版本，变化拒绝；用途、Intent、审计、报价及占额同一事务。完整升级前后证据写入 amendment。原创建 key/hash 不改，原报价创建请求返回409并指引读取原批；升级原key重读核对内容、操作人及真实占额，不重复生成款项或分配。原批暂停状态保持，正常派发只创建待出库。
+
+
+## 内贸交付对账（186）
+
+统一 `/api/domestic` 前缀，响应 `ok()`。
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/delivery-customers?keyword=` | 可见客户远程选择，最多100条，返回数组，含可操作资金标志 |
+| GET | `/shipment-candidates?customer_id=` | 本人业务订单的逐件可发明细，含顾客和可用件号；read/write/recharge/admin可读 |
+| POST | `/shipments` | 同客户跨订单发货；request_id幂等，items含item_id/quantity及可选unit_ids/ship_weight |
+| GET | `/customers/{id}/delivery` | 批次、收款及交付金额汇总；owner/admin/read_all全客户，其余仅本人订单 |
+| POST | `/shipments/{id}/receive` | 创建人登记received_date，保留审计且不覆盖历史日期 |
+| POST | `/customers/{id}/receipts` | multipart data=ReceiptCreate JSON + file凭证；客户资金权限；提交后待审核 |
+| POST | `/customer-requests/{id}/allocate` | 已入账收款补核销，数组shipment_id/amount（累计目标）；只增不减，追加增量证据 |
+
+现有 `/customer-requests` 类型筛选新增 receipt；审核通过在同事务执行货款入账及核销，不改会员。单条 `/items/{id}/ship` 沿用入口并生成逐件批次。数量与资金边界见 [说明](domestic-delivery.md)。

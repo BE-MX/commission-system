@@ -461,7 +461,9 @@ class DomesticCustomerRequest(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=False)
-    request_type = Column(String(16), nullable=False, comment="recharge=充值,adjust=调整")
+    request_type = Column(String(16), nullable=False, comment="recharge=充值,adjust=调整,receipt=货款收款")
+    receipt_date = Column(Date, comment="实际收款日期，北京时间业务日期")
+    payload_hash = Column(String(64), comment="收款内容指纹，含核销分配")
     amount = Column(Numeric(14, 2), nullable=False, default=0, comment="充值金额/余额调整额（正加负减，仅调等级为 0）")
     change_membership = Column(SmallInteger, nullable=False, default=0, comment="1=调整会员等级到 membership_level（NULL=取消会员）")
     membership_level = Column(String(16), comment="目标会员等级 silver/black/supreme；change_membership=1 且为 NULL 表示取消会员")
@@ -480,7 +482,7 @@ class DomesticCustomerRequest(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "request_type IN ('recharge', 'adjust')",
+            "request_type IN ('recharge', 'adjust', 'receipt')",
             name="ck_dom_request_type",
         ),
         CheckConstraint(
@@ -640,3 +642,6 @@ class DomesticSkipUnit(Base):
 
 # Register transactional evidence capture after all business models exist.
 from app.domestic_decision import event_hooks as _analysis_event_hooks  # noqa: E402,F401
+
+# Register delivery metadata with the existing domestic model import.
+from app.domestic import shipment_models as _shipment_models  # noqa: E402,F401

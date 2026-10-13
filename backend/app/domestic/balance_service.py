@@ -225,17 +225,22 @@ def refund_order_charge(
     charged = money(order.charged_amount)
     if charged <= 0:
         return Decimal("0.00")
+    from app.domestic.shipment_service import shipped_item_amount
+    retained = money(sum((shipped_item_amount(db, item) for item in db.query(DomesticOrderItem).filter_by(order_id=order.id).populate_existing().with_for_update().all()), Decimal(0)))
+    refund = money(charged - retained)
+    if refund <= 0:
+        return Decimal("0.00")
     apply_balance_change(
         db,
         customer_id=order.customer_id,
-        amount=charged,
+        amount=refund,
         transaction_type="order_refund",
         user_id=user_id,
         order_id=order.id,
         remark=reason,
     )
-    order.charged_amount = Decimal("0.00")
-    return charged
+    order.charged_amount = retained
+    return refund
 
 
 def order_balance_snapshot(db: Session, order: DomesticOrder, customer: DomesticCustomer | None) -> dict | None:

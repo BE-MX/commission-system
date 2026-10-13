@@ -314,3 +314,17 @@ export function getCustomerRequestPendingCount() {
 export function exportOrderDetails(params) {
   return domesticClient.get('/orders/export-details', { params, responseType: 'blob' })
 }
+
+// Unit delivery and receipt reconciliation.
+export const getShipmentCandidates = customer_id => domesticClient.get('/shipment-candidates', { params: { customer_id } })
+export const getCustomerDelivery = id => domesticClient.get(`/customers/${id}/delivery`)
+export const createShipment = data => domesticClient.post('/shipments', data)
+export const receiveShipment = (id, data) => domesticClient.post(`/shipments/${id}/receive`, data)
+export function createDomesticReceipt(id, data, file) {
+  const form = new FormData()
+  form.append('data', JSON.stringify(data)); form.append('file', file)
+  return requestReviewsChanged(domesticClient.post(`/customers/${id}/receipts`, form))
+}
+export const allocateDomesticReceipt = (id, data) => domesticClient.post(`/customer-requests/${id}/allocate`, data)
+
+export const getDeliveryCustomers = (keyword = '') => domesticClient.get('/delivery-customers', { params: { keyword } })

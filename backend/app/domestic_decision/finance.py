@@ -198,7 +198,7 @@ def build_finance(db, customers, payload, commercial_orders, config=None):
                                      "order_charge": number(-sum((decimal(r.amount) for r in during if r.transaction_type == "order_charge" and decimal(r.amount) < 0), decimal(0))),
                                      "order_adjustment_positive": number(sum((decimal(r.amount) for r in during if r.transaction_type == "order_adjustment" and decimal(r.amount) > 0), decimal(0))),
                                      "order_adjustment_negative": number(-sum((decimal(r.amount) for r in during if r.transaction_type == "order_adjustment" and decimal(r.amount) < 0), decimal(0))),
-                                     "order_refund": components.get("order_refund", 0), "init": components.get("init", 0), "adjust": components.get("adjust", 0), "level_adjust": components.get("level_adjust", 0)},
+                                     "receipt": components.get("receipt", 0), "order_refund": components.get("order_refund", 0), "init": components.get("init", 0), "adjust": components.get("adjust", 0), "level_adjust": components.get("level_adjust", 0)},
                "positive_balance": number(max(closing, decimal(0))) if closing is not None else None,
                "debt": number(max(-closing, decimal(0))) if closing is not None else None,
                "recharge_amount": number(sum((decimal(r.amount) for r in recharges), decimal(0))),

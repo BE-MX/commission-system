@@ -6,6 +6,7 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
+    <DomesticDeliveryDialog ref="deliveryDialog" @changed="fetchList" />
     <div ref="panelRef" class="table-card orders-panel">
       <DomesticOrderFilters ref="filtersRef" :form="searchForm" :applied-form="appliedSearchForm" :options="filterOptions" :loading="loading" :pending="hasPendingSearch"
         @search="handleSearch" />
@@ -16,6 +17,7 @@
       </el-tabs>
       <!-- 操作行：主操作按钮组 + TableTools 四图标（Action Bar Spec） -->
       <div class="action-bar">
+        <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Van" @click="deliveryDialog.open()">发货与收款</GlassButton>
         <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务下单</GlassButton>
         <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产下单</GlassButton>
         <GlassButton v-any-permission="['domestic:read', 'domestic:write', 'domestic:admin']" variant="secondary" left-icon="Download" :loading="exportingDetails" :disabled="loading || exportingDetails || !!listErrorMessage" @click="handleExportDetails">导出订单明细</GlassButton>
@@ -208,7 +210,7 @@
           </div>
 
           <div v-if="item.ship_time" class="ship-line">
-            已发货：{{ item.ship_time }} · {{ item.ship_weight }}g
+            已发 {{ item.shipped_qty }}/{{ item.order_qty }} 件 · 最近发货 {{ item.ship_time }}<template v-if="item.ship_weight"> · {{ item.ship_weight }}g</template>
           </div>
         </div>
       </template>
@@ -361,6 +363,11 @@
 </template>
 
 <script setup>
+import { ref as deliveryRef } from 'vue'
+const deliveryDialog = deliveryRef(null)
+
+import DomesticDeliveryDialog from './components/DomesticDeliveryDialog.vue'
+
 import { formatMoney } from '../../utils/money.js'
 
 /**

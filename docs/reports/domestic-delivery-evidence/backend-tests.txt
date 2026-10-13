@@ -1,0 +1,84 @@
+........................................................................ [ 30%]
+........................................................................ [ 61%]
+........................................................................ [ 92%]
+.................                                                        [100%]
+============================== warnings summary ===============================
+tests/test_domestic_delivery.py: 14 warnings
+tests/test_domestic_conditional_routing.py: 75 warnings
+tests/test_domestic_order_improvements.py: 2 warnings
+tests/test_domestic_order_kinds.py: 7 warnings
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\progress_service.py:254: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    order = db.query(DomesticOrder).get(order_id)
+
+tests/test_domestic_review_flow.py::test_pending_review_order_blocks_mutations_and_scan
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\report_service.py:324: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    item = db.query(DomesticOrderItem).get(item_id)
+
+tests/test_domestic_review_flow.py::test_pending_review_order_blocks_mutations_and_scan
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\report_service.py:329: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    order = db.query(DomesticOrder).get(item.order_id)
+
+tests/test_domestic_conditional_routing.py::test_production_only_step_save_blocks_changed_conditional_route_atomically
+tests/test_domestic_conditional_routing.py::test_production_only_step_save_allows_routes_without_domestic_rules
+tests/test_domestic_conditional_routing.py::test_production_only_same_steps_are_noop_for_conditional_route
+tests/test_domestic_conditional_routing.py::test_atomic_route_configuration_updates_steps_and_rules_together
+tests/test_domestic_conditional_routing.py::test_atomic_route_configuration_invalid_rules_rolls_back_steps_and_rules
+tests/test_domestic_conditional_routing.py::test_atomic_route_configuration_reorder_cannot_move_skip_target_before_trigger
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\production\route_service.py:138: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    route = db.query(ProcessRoute).get(route_id)
+
+tests/test_domestic_conditional_routing.py: 36 warnings
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\production\route_service.py:148: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    proc = db.query(Process).get(pid)
+
+tests/test_domestic_conditional_routing.py: 62 warnings
+tests/test_domestic_order_kinds.py: 4 warnings
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\report_service.py:486: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    preview_item = db.query(DomesticOrderItem).get(item_id)
+
+tests/test_domestic_conditional_routing.py: 62 warnings
+tests/test_domestic_order_kinds.py: 4 warnings
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\report_service.py:487: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    preview_progress = db.query(DomesticItemProgress).get(progress_id)
+
+tests/test_domestic_conditional_routing.py: 57 warnings
+tests/test_domestic_order_kinds.py: 4 warnings
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\report_service.py:577: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    worker = db.query(ArkUser).get(worker_id)
+
+tests/test_domestic_conditional_routing.py::test_optional_predecessor_is_bypassed_by_downstream_report
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\tests\test_domestic_conditional_routing.py:986: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    order = db.query(DomesticOrder).get(case.item.order_id)
+
+tests/test_domestic_conditional_routing.py::test_decision_request_replay_compares_normalized_outcomes
+tests/test_domestic_conditional_routing.py::test_report_request_unique_race_recovers_as_idempotent_replay
+tests/test_domestic_conditional_routing.py::test_request_deadlock_recovers_or_returns_retryable_business_error
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\report_service.py:219: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    progress = db.query(DomesticItemProgress).get(log.progress_id)
+
+tests/test_domestic_conditional_routing.py::test_decision_request_replay_compares_normalized_outcomes
+tests/test_domestic_conditional_routing.py::test_report_request_unique_race_recovers_as_idempotent_replay
+tests/test_domestic_conditional_routing.py::test_request_deadlock_recovers_or_returns_retryable_business_error
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\report_service.py:220: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    item = db.query(DomesticOrderItem).get(log.item_id)
+
+tests/test_domestic_conditional_routing.py::test_manual_skip_can_be_revoked_without_downstream_actual_work
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\tests\test_domestic_conditional_routing.py:1489: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    audit = db.query(DomesticSkipLog).get(skipped["skip_log_id"])
+
+tests/test_domestic_conditional_routing.py::test_manual_skip_replay_survives_item_shipping
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\tests\test_domestic_conditional_routing.py:1688: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    item = db.query(DomesticOrderItem).get(case.item.id)
+
+tests/test_domestic_order_kinds.py::test_production_can_select_customer_without_sales_side_effects[False]
+tests/test_domestic_order_kinds.py::test_production_can_select_customer_without_sales_side_effects[True]
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\router.py:1190: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    item = db.query(DomesticOrderItem).get(item_id)
+
+tests/test_domestic_order_kinds.py::test_production_can_select_customer_without_sales_side_effects[False]
+tests/test_domestic_order_kinds.py::test_production_can_select_customer_without_sales_side_effects[True]
+  C:\Users\windb\.codex\worktrees\domestic-shipment-settlement\commission-system\backend\app\domestic\unit_service.py:279: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    order = db.query(DomesticOrder).get(item.order_id)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+233 passed, 348 warnings in 61.54s (0:01:01)

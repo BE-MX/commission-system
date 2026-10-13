@@ -73,7 +73,7 @@
           </template>
         </el-table-column>
         <el-table-column sortable="custom" prop="delivery" v-if="visibleKeys.includes('delivery')" label="群推送" min-width="135">
-          <template #default="{ row }">{{ deliveryLabel(row.deliveries) }}</template>
+          <template #default="{ row }">{{ row.push_dingtalk === false ? '不推送（仅站内）' : deliveryLabel(row.deliveries) }}</template>
         </el-table-column>
         <el-table-column label="操作" min-width="260" class-name="table-action-column" fixed="right">
           <template #default="{ row }">
@@ -161,7 +161,7 @@ async function closeEditor(value) {
 async function pin(row) { await api.put(`/${row.id}/pin`, { pinned: !row.pinned }); await listPageState.refreshUpdate() }
 async function withdraw(row) {
   let reason
-  try { reason = (await promptAction('撤回后将停止展示，并向公告群发送撤回说明。请填写原因。', '撤回公告', { inputPattern: /\S+/, inputErrorMessage: '请填写原因' })).value }
+  try { reason = (await promptAction('撤回后将停止站内展示；选择了群推送或旧版本已送达群的公告，还会发送撤回说明。请填写原因。', '撤回公告', { inputPattern: /\S+/, inputErrorMessage: '请填写原因' })).value }
   catch { return }
   await api.post(`/${row.id}/withdraw`, { reason }); await listPageState.refreshUpdate(); msgSuccess('撤回')
 }

@@ -13,6 +13,7 @@
         />
 <el-select v-model="searchForm.request_type" placeholder="类型" clearable class="filter-w-sm" >
           <el-option label="充值" value="recharge" />
+          <el-option label="货款收款" value="receipt" />
           <el-option label="调整" value="adjust" />
         </el-select>
 <el-select v-model="searchForm.status" placeholder="状态" clearable class="filter-w-sm" >
@@ -45,6 +46,7 @@
         <el-table-column v-if="visibleKeys.includes('membership')" label="会员等级" min-width="100" prop="membership_level" sortable="custom">
           <template #default="{ row }">{{ membershipText(row) }}</template>
         </el-table-column>
+        <el-table-column label="收款核销批次" min-width="240" :sortable="false" show-overflow-tooltip><template #default="{ row }">{{ row.allocations?.map(a => a.shipment_no + '：' + amountText({ amount: a.amount, request_type: 'receipt' })).join('；') || '—' }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('remark')" prop="remark" label="申请说明" min-width="160" show-overflow-tooltip sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('voucher')" :sortable="false" label="凭证" min-width="90">
           <template #default="{ row }">

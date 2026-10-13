@@ -9,6 +9,7 @@ class AnnouncementInput(BaseModel):
     category_id: int = Field(gt=0)
     base_revision_id: int | None = None
     important: bool = False
+    push_dingtalk: bool = True
     effective_at: datetime | None = None
     expires_at: datetime | None = None
     change_note: str = Field(default='', max_length=500)

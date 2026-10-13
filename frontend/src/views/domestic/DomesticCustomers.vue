@@ -8,6 +8,7 @@
 
     <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级默认按最近一次充值金额核定；管理员可「初始化」期初或「调整」临时覆盖，下一次充值会重新按金额核定。" />
 
+    <DomesticDeliveryDialog ref="deliveryDialog" @changed="fetchList" />
     <div ref="panelRef" class="table-card customers-panel">
       <FilterBar ref="filtersRef" class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value" @search="handleSearch" @reset="resetFilters"><el-input
           v-model="searchForm.keyword" placeholder="搜索编码 / 店名 / 联系人 / 电话" clearable
@@ -107,9 +108,9 @@
             </StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="visibleKeys.includes('balance')" label="充值余额" min-width="110" align="right" prop="balance" sortable="custom">
+        <el-table-column v-if="visibleKeys.includes('balance')" label="账户净额（含未发货）" min-width="110" align="right" prop="balance" sortable="custom">
           <template #default="{ row }">
-            <span v-if="Number(row.balance || 0) < 0" class="debt-value">欠款 {{ formatMoney(Math.abs(Number(row.balance)), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
+            <span v-if="Number(row.balance || 0) < 0" class="debt-value">订单未结 {{ formatMoney(Math.abs(Number(row.balance)), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
             <span v-else class="balance-value">{{ formatMoney(Number(row.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
           </template>
         </el-table-column>
@@ -121,6 +122,7 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
             <div v-if="canOperateCustomer(row)" class="table-actions">
+              <GlassButton v-any-permission="['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin']" variant="link" left-icon="Van" @click="deliveryDialog.open(row)">交付对账</GlassButton>
               <GlassButton v-permission="'domestic:write'" variant="link" left-icon="Edit" @click="openDialog(row)">编辑</GlassButton>
               <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
               <div v-any-permission="['domestic:write', 'domestic:recharge', 'domestic:admin']" class="customer-more">
@@ -382,7 +384,7 @@
       </template>
     </el-dialog>
 
-    <DetailDrawer v-model="ledgerDrawer.visible" :title="`${ledgerDrawer.customer?.shop_name || ''} · 余额流水`" width="760px">
+    <DetailDrawer v-model="ledgerDrawer.visible" :title="`${ledgerDrawer.customer?.shop_name || ''} · 资金流水`" width="760px">
       <ListPageStatus v-if="ledgerState.hasData.value" :error="ledgerState.errorMessage.value" :loading="ledgerDrawer.loading" :has-data="true" :data-page="ledgerState.dataPage.value" @retry="loadLedger()" />
       <el-table :data="ledgerDrawer.items" v-loading="ledgerDrawer.loading" border size="small" class="list-table" @sort-change="listPageState.sortLedger" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="ledgerState.errorMessage.value" :loading="ledgerDrawer.loading" @retry="loadLedger()"><el-empty description="暂无余额流水" :image-size="96" /></ListPageStatus></template>
@@ -409,6 +411,11 @@
 </template>
 
 <script setup>
+import { ref as deliveryRef } from 'vue'
+const deliveryDialog = deliveryRef(null)
+
+import DomesticDeliveryDialog from './components/DomesticDeliveryDialog.vue'
+
 import { ENABLED_STATUS } from '@/utils/status'
 import { formatMoney } from '../../utils/money.js'
 

@@ -225,7 +225,7 @@
 }
 
 .drawer-panes.is-side-collapsed .pane-main {
-  padding-right: 30px;
+  padding-right: 40px;
 }
 
 .side-toggle {
@@ -248,8 +248,9 @@
   transition: transform 140ms var(--invoice-ease-out), color 140ms var(--invoice-ease-out), border-color 140ms var(--invoice-ease-out);
 }
 
+/* 收起后让开主栏自身的竖向滚动条（贴右缘约 10px） */
 .is-side-collapsed > .side-toggle {
-  right: 12px;
+  right: 28px;
 }
 
 .side-toggle:focus-visible {

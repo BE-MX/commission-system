@@ -39,8 +39,9 @@ export function useLineSelection(tableRef, items, pagedItems) {
     for (const row of pagedItems.value) table.toggleRowSelection(row, selected.value.has(row))
   }
   watch(pagedItems, syncTableSelection, { flush: 'post' })
-  // 行被删除（单条/批量/导入清空空行）后，集合里不能留下已不在表里的引用
-  watch(() => items.value.length, () => {
+  // 行被删除/整单重载后，集合里不能留下已不在表里的引用。
+  // 必须看数组本身而不是长度：保存草稿、切换发票会换一批同样行数的新行对象
+  watch(items, () => {
     const alive = new Set(items.value)
     let changed = false
     for (const row of selected.value) {

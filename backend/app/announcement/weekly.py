@@ -32,6 +32,9 @@ def collect_sources(db, start, end):
         if event.kind != 'withdraw' and not document.published_revision_id:
             continue
         meta = db.get(AnnouncementMeta, event.revision_id)
+        current_meta = db.get(AnnouncementMeta, document.published_revision_id) if document.published_revision_id else meta
+        if not meta or not meta.push_dingtalk or not current_meta or not current_meta.push_dingtalk:
+            continue
         result.append({'event_id': event.id, 'document_id': event.document_id, 'revision_id': event.revision_id,
                        'kind': event.kind, 'title': event.title, 'reason': event.reason,
                        'category': meta.category_name, 'important': meta.important})
@@ -42,6 +45,10 @@ def sources_valid(db, sources):
     for source in sources:
         document = db.get(KnowledgeDocument, source['document_id'])
         if not document or document.deleted_at or (source['kind'] != 'withdraw' and not document.published_revision_id):
+            return False
+        meta = db.get(AnnouncementMeta, source['revision_id'])
+        current_meta = db.get(AnnouncementMeta, document.published_revision_id) if document.published_revision_id else meta
+        if not meta or not meta.push_dingtalk or not current_meta or not current_meta.push_dingtalk:
             return False
     return True
 

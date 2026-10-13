@@ -978,6 +978,8 @@ def revoke_manual_skip(db: Session, skip_log_id: int, user_id: int) -> dict:
     if not progress:
         raise ValueError("工序进度不存在")
     units = routing_service.skip_units(db, skip_log.id)
+    from app.domestic.shipment_service import assert_units_unshipped
+    assert_units_unshipped(db, {unit.id for unit in units})
     routing_service.assert_no_downstream_actual_work(
         db,
         item=item,
@@ -1034,6 +1036,8 @@ def revoke_report(db: Session, log_id: int, user_id: int, is_admin: bool = False
         raise ValueError("工序进度不存在")
 
     units = unit_service.units_for_log(db, log.id)
+    from app.domestic.shipment_service import assert_units_unshipped
+    assert_units_unshipped(db, {unit.id for unit in units})
     routing_service.assert_no_downstream_actual_work(
         db,
         item=item,
