@@ -1,5 +1,17 @@
 # 莱莎方舟平台 架构说明
 
+## WhatsApp AI 消息助手（本地候选）
+
+聊天页提交北京时间范围 → 服务端当前正文/外发许可检查、完整范围容量检查与幂等入库 → FastAPI同步BackgroundTask在线程内自建Session → 按对象检索本人可读发布知识 → 完整消息分段分析并合并 → 当前消息hash/授权版本/知识ACL及修订复验 → 发布请求人私有报告。消息引用在模型传输中使用短ID，最终映射回稳定方舟UID，避免长历史引用膨胀。
+
+模型统一走AI facade、独立 `whatsapp_message_assistant` 可配置预设，日志metadata-only；不执行聊天内指令，模型引用必须在输入集合。运行进度持久化，原始聊天/模型中间结果不入运行manifest；最终结果、清单在助手内保存。读取和勾选也重验来源。运行是进程内后台任务，进程退出不自动恢复或再次调用模型；900秒默认截止后释放活动槽，由员工明确新建分析。
+
+## WhatsApp Baileys 接入候选（2026-10-13，未部署）
+
+独立 Connector 以每号 Baileys Socket 接收事件，认证和规范当前投影保存在单主机加密 SQLite；engine 时钟、单调 fencing token 和 CAS 保护凭据与事件提交。变更记录只存对象指针，编辑/撤回不在队列复制旧正文。方舟按持久 sequence 每 5 秒消费，标准消息、来源映射、既有客户投影与 checkpoint 原子提交。
+
+业务 account_uid 保持稳定。原文范围、CRM 共享与已有 AI 外发独立授权；管理权只提供运行元数据。实时员工状态和 consent/generation 在 Socket、feed、消费、正文读取和 AI 执行前后复查。普通号协议与历史可得性仍受上游影响；单主机实现不能作为多主机分布式租约。现有翻译扩展保持独立设备链路。详见 [实施说明](requirements/2026-10-13-whatsapp-baileys.md)。
+
 > 2026-09-26 Agent 拓扑更新：OpenClaw、钉钉群监听、客户/库存/物流/社媒 MCP、中继、OKKI 与 Shopify 配套同步统一运行在北京 `154.8.205.162`，公网入口为 `leshine.cloud`。新加坡只转发旧 Agent URL，实例与业务调度均已退役；办公室/方舟后端归属不变。后续 Agent 服务同样部署北京，详见 [部署约定](../deploy/agent-cloud-migration.md)。
 
 ## 云存储结构（2026-10-10 核对）

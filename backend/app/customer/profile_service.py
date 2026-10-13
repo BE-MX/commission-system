@@ -11,7 +11,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Callable, Mapping, Protocol
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
@@ -375,7 +375,11 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     terminal_tombstones = []
     fact_rows = logical_root_query(
         db, CustomerFact, "fact", customer.id,
-    ).all()
+    ).filter(or_(CustomerFact.source_record_id.is_(None), CustomerFact.source_record_id.in_(
+        db.query(CustomerSourceRecord.id).filter(or_(
+            CustomerSourceRecord.source_system != 'whatsapp', CustomerSourceRecord.processing_status != 'superseded',
+        ))
+    ))).all()
     fact_by_id = {row.id: row for row in fact_rows}
     # Enrichment quality review never authorizes replacing the customer's existing profile.
     # Join through historical Runs: a task's current agent_run_id changes on retry.

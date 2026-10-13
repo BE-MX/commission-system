@@ -61,6 +61,10 @@ def _profile_row(db: Session, account: CustomerAccount, *, access=None) -> dict:
             else {}
         )
         profile_projection = "customer_context_v1"
+    visible_fact_ids = list(version.evidence_fact_ids or []) if version else []
+    if version is not None and profile_json:
+        from app.whatsapp.derived_access import filter_snapshot
+        profile_json, visible_fact_ids = filter_snapshot(db, profile_json, version, access=access)
     if profile_projection == "public_business":
         return {
             "customer_id": account.id,
@@ -86,7 +90,7 @@ def _profile_row(db: Session, account: CustomerAccount, *, access=None) -> dict:
         "profile_compiled_at": version.compiled_at if version is not None else None,
         "profile_data_as_of": version.data_as_of if version is not None else None,
         "profile_section_data_as_of": dict(version.section_data_as_of or {}) if version is not None else None,
-        "profile_evidence_fact_ids": list(version.evidence_fact_ids or []) if version is not None else None,
+        "profile_evidence_fact_ids": visible_fact_ids if version is not None else None,
         "commercial_value_score": (
             projection.commercial_value_score if projection is not None else 0
         ),

@@ -47,6 +47,7 @@ JOB_TRACKING_POLL_ACTIVE = "tracking_poll_active"
 JOB_COLOR_SOCIAL_EXTRACT = "color_social_extract"
 JOB_COLOR_SALES_AGGREGATE = "color_sales_aggregate"
 JOB_WHATSAPP_AUTO_SYNC = "whatsapp_auto_sync"
+JOB_WHATSAPP_EVENT_SYNC = "whatsapp_event_sync"
 JOB_AFTERSALES_NOTIFICATION_RETRY = "aftersales_notification_retry"
 JOB_FESTIVAL_EVENT_MONITOR = "festival_event_monitor"
 JOB_FESTIVAL_DAILY_REPORT = "festival_daily_report"
@@ -95,7 +96,7 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     from app.insight.scheduler import generate_industry_daily, generate_ai_tools, generate_intelligence_overview
     from app.stock.scheduler import generate_stock_daily_report
     from app.color.social_extract_service import extract_social_colors, aggregate_sales_by_color
-    from app.whatsapp.scheduler import sync_whatsapp_accounts_job
+    from app.whatsapp.scheduler import sync_whatsapp_accounts_job, sync_whatsapp_events_job
     from app.aftersales.notification_service import process_due_notifications
     from app.aftersales.ai_service import recover_stale_analyses
     from app.festival.notification_service import (
@@ -362,6 +363,11 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
         id=JOB_COLOR_SALES_AGGREGATE, replace_existing=True,
     )
     if settings.WHATSAPP_AUTO_SYNC_ENABLED:
+        scheduler.add_job(
+            sync_whatsapp_events_job,
+            trigger="interval", seconds=settings.WHATSAPP_EVENT_SYNC_INTERVAL_SECONDS,
+            id=JOB_WHATSAPP_EVENT_SYNC, replace_existing=True, max_instances=1, coalesce=True,
+        )
         scheduler.add_job(
             sync_whatsapp_accounts_job,
             trigger="interval", minutes=settings.WHATSAPP_AUTO_SYNC_INTERVAL_MINUTES,

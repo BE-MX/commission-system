@@ -9,6 +9,7 @@ from sqlalchemy import and_, exists, or_
 from sqlalchemy.orm import Query, Session
 
 from app.auth.models import ArkUser
+from app.whatsapp.models import WhatsAppAccount, WhatsAppBodyGrant  # register source ACL schema before isolated create_all
 from app.customer.models import (
     CustomerAccount,
     CustomerAgentRunScope,
@@ -74,8 +75,11 @@ def require_customer_access(
     action_permissions: Iterable[str],
     manage_permissions: Iterable[str],
     allow_public_pool: bool = False,
+    fresh: bool = False,
 ) -> CustomerAccess:
     """Intersect action permission, live customer scope, visibility and Run scope."""
+    def current(query):
+        return (query.with_for_update() if fresh else query).first()
     canonical_customer_id = resolve_canonical_customer_id(db, customer_id)
     if canonical_customer_id is None:
         raise CustomerAccessDenied("CUSTOMER_NOT_FOUND_OR_FORBIDDEN")
@@ -112,35 +116,35 @@ def require_customer_access(
             run_id = int(run_scope["run_id"])
         except (KeyError, TypeError, ValueError) as exc:
             raise CustomerAccessDenied("CUSTOMER_NOT_FOUND_OR_FORBIDDEN") from exc
-        membership = db.query(CustomerAgentRunScope.id).filter(
+        membership = current(db.query(CustomerAgentRunScope.id).filter(
             CustomerAgentRunScope.run_id == run_id,
             CustomerAgentRunScope.customer_id == customer_id,
-        ).first()
+        ))
         if membership is None:
             raise CustomerAccessDenied("CUSTOMER_NOT_FOUND_OR_FORBIDDEN")
 
     is_global = role_bypass or "customer:read_all" in permissions
-    assigned = db.query(CustomerAssignment.id).filter(
+    assigned = current(db.query(CustomerAssignment.id).filter(
             CustomerAssignment.customer_id == customer_id,
             CustomerAssignment.user_id == actor_user_id,
             CustomerAssignment.assignment_role.in_(("primary", "collaborator")),
             CustomerAssignment.assignment_status == "active",
             CustomerAssignment.effective_to.is_(None),
-    ).first()
+    ))
     scope_kind: str | None = None
     if is_global:
         scope_kind = "global"
     elif assigned is not None:
         scope_kind = "customer_team"
     elif can_manage:
-        actor = db.query(ArkUser.okki_department_id).filter(
+        actor = current(db.query(ArkUser.okki_department_id).filter(
             ArkUser.id == actor_user_id,
             ArkUser.is_active.is_(True),
             ArkUser.deleted_at.is_(None),
-        ).one_or_none()
+        ))
         department_id = actor.okki_department_id if actor else None
         if department_id is not None:
-            same_department = db.query(CustomerAssignment.id).join(
+            same_department = current(db.query(CustomerAssignment.id).join(
                 ArkUser,
                 ArkUser.id == CustomerAssignment.user_id,
             ).filter(
@@ -150,19 +154,19 @@ def require_customer_access(
                 ArkUser.okki_department_id == department_id,
                 ArkUser.is_active.is_(True),
                 ArkUser.deleted_at.is_(None),
-            ).first()
+            ))
             if same_department is not None:
                 scope_kind = "department"
     if scope_kind is None and allow_public_pool:
-        active_primary = db.query(CustomerAssignment.id).filter(
+        active_primary = current(db.query(CustomerAssignment.id).filter(
             CustomerAssignment.customer_id == customer_id,
             CustomerAssignment.assignment_role == "primary",
             CustomerAssignment.assignment_status == "active",
             CustomerAssignment.effective_to.is_(None),
-        ).first()
+        ))
         if active_primary is None:
             scope_kind = "public_pool"
-    if scope_kind is None or account_query.first() is None:
+    if scope_kind is None or current(account_query) is None:
         raise CustomerAccessDenied("CUSTOMER_NOT_FOUND_OR_FORBIDDEN")
 
     if scope_kind == "global":
@@ -309,11 +313,34 @@ def apply_record_access(
         if logical_object_type is not None
         else model.customer_id == access.customer_id
     )
-    return query.filter(
+    scoped_query = query.filter(
         customer_predicate,
         visibility_predicate,
         classification.in_(access.allowed_classifications()),
     )
+    # Customer management scope is not permission to read WhatsApp bodies or
+    # archived edits. This also protects message evidence and Agent context.
+    from app.whatsapp.access import readable_accounts
+    from app.customer.models import CustomerSourceRecord, CustomerConversation
+    accounts = readable_accounts(query.session, access.actor_user_id, crm=True, ai=access.run_id is not None)
+    def source_allowed(source):
+        return or_(source.source_system != 'whatsapp', and_(
+            source.source_account_key.in_(accounts), source.processing_status != 'superseded',
+        ))
+    if hasattr(model, 'source_system') and hasattr(model, 'source_account_key'):
+        if model is CustomerSourceRecord:
+            scoped_query = scoped_query.filter(source_allowed(model))
+        else:
+            scoped_query = scoped_query.filter(or_(model.source_system != 'whatsapp', model.source_account_key.in_(accounts)))
+    if hasattr(model, 'source_record_id'):
+        allowed_sources = query.session.query(CustomerSourceRecord.id).filter(source_allowed(CustomerSourceRecord))
+        scoped_query = scoped_query.filter(or_(model.source_record_id.is_(None), model.source_record_id.in_(allowed_sources)))
+    if hasattr(model, 'conversation_id'):
+        allowed_conversations = query.session.query(CustomerConversation.id).filter(or_(
+            CustomerConversation.source_system != 'whatsapp', CustomerConversation.source_account_key.in_(accounts),
+        ))
+        scoped_query = scoped_query.filter(or_(model.conversation_id.is_(None), model.conversation_id.in_(allowed_conversations)))
+    return scoped_query
 
 
 __all__ = [

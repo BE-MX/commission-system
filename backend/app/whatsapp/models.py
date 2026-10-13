@@ -1,5 +1,7 @@
 """WhatsApp Connector local projection models."""
 
+from app.whatsapp.assistant_models import WhatsAppAssistantRun  # noqa: F401 -- register expanded schema
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -17,6 +19,7 @@ from sqlalchemy import (
 
 from app.core.database import Base
 from app.auth import models as _auth_models  # noqa: F401 - register ark_users for FK resolution
+from sqlalchemy.dialects import mysql
 
 
 class WhatsAppAccount(Base):
@@ -30,6 +33,12 @@ class WhatsAppAccount(Base):
     phone_number = Column(String(50), nullable=True, comment="WhatsApp 手机号")
     display_name = Column(String(120), nullable=True, comment="WhatsApp 显示名称")
     status = Column(String(30), nullable=False, default="binding", comment="绑定状态 binding/active/revoked")
+    provider = Column(String(30), nullable=False, default="whatsapp-web.js", server_default="whatsapp-web.js", comment="当前接入Provider")
+    session_generation = Column(Integer, nullable=False, default=0, server_default="0", comment="接入代次")
+    consent_version = Column(Integer, nullable=False, default=0, server_default="0", comment="授权版本")
+    consent_state = Column(String(20), nullable=False, default="pending", server_default="pending", comment="授权 pending/active/paused/revoked")
+    crm_shared = Column(Boolean, nullable=False, default=False, server_default="0", comment="持有人明确允许客户域共享")
+    ai_egress_allowed = Column(Boolean, nullable=False, default=False, server_default="0", comment="持有人允许已有供应商分析外发")
     connector_status = Column(String(60), nullable=True, comment="连接器侧状态原文")
     last_sync_at = Column(DateTime, nullable=True, comment="最近同步时间")
     last_message_at = Column(DateTime, nullable=True, comment="最近消息时间")
@@ -79,6 +88,11 @@ class WhatsAppConversation(Base):
     contact_phone = Column(String(80), nullable=True, comment="联系人手机号")
     contact_name = Column(String(160), nullable=True, comment="联系人名称")
     is_group = Column(Boolean, nullable=False, default=False, comment="是否群聊")
+    history_state = Column(String(30), nullable=False, default="unknown", server_default="unknown", comment="平台历史覆盖状态")
+    gap_reason = Column(String(120), nullable=True, comment="历史缺口原因")
+    earliest_seen_at = Column(DateTime, nullable=True, comment="已观察最早消息北京时间")
+    latest_seen_at = Column(DateTime, nullable=True, comment="已观察最新消息北京时间")
+    last_ingested_at = Column(DateTime, nullable=True, comment="最近入库北京时间")
     last_message_at = Column(DateTime, nullable=True, comment="最近消息时间")
     last_message_preview = Column(String(500), nullable=True, comment="最近消息预览")
     raw_payload = Column(JSON, nullable=True, comment="连接器原始载荷")
@@ -109,6 +123,8 @@ class WhatsAppMessage(Base):
     content_type = Column(String(40), nullable=False, default="text", comment="内容类型 text/image/video/document")
     content_text = Column(Text, nullable=True, comment="消息文本内容")
     content_preview = Column(String(500), nullable=True, comment="消息内容预览")
+    source_revision = Column(BigInteger, nullable=False, default=0, server_default="0", comment="来源消息版本序号")
+    deleted_at = Column(DateTime, nullable=True, comment="上游撤回北京时间，晚到历史不得复活")
     sent_at = Column(DateTime, nullable=True, comment="发送时间")
     received_at = Column(DateTime, nullable=True, comment="接收时间")
     raw_payload_hash = Column(String(80), nullable=True, comment="原始载荷哈希（去重用）")
@@ -162,6 +178,33 @@ class WhatsAppPullCursor(Base):
         UniqueConstraint("account_uid", "resource", "scope_uid", name="uk_wa_cursor_account_resource_scope"),
         {"comment": "WhatsApp 增量拉取游标表"},
     )
+
+
+class WhatsAppBodyGrant(Base):
+    """Explicit body scope, independent of administrative metadata rights."""
+
+    __tablename__ = "ark_whatsapp_body_grants"
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="正文授权ID")
+    account_uid = Column(String(80), nullable=False, comment="账号范围")
+    user_id = Column(Integer().with_variant(mysql.INTEGER(unsigned=True), 'mysql'), ForeignKey("ark_users.id"), nullable=False, comment="获授权员工")
+    consent_version = Column(Integer, nullable=False, comment="授权版本，变更即失效")
+    created_at = Column(DateTime, nullable=False, server_default=func.now(), comment="授权北京时间")
+    __table_args__ = (UniqueConstraint("account_uid", "user_id", name="uk_wa_body_grant"),)
+
+
+class WhatsAppMessageSource(Base):
+    """Complete provider key digest to stable Ark message identity."""
+
+    __tablename__ = "ark_whatsapp_message_sources"
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="来源映射ID")
+    account_uid = Column(String(80), nullable=False, comment="账号范围")
+    provider = Column(String(30), nullable=False, comment="接入Provider")
+    source_digest = Column(String(64), nullable=False, comment="完整来源键SHA256")
+    source_key = Column(JSON, nullable=False, comment="完整原始来源身份，不含正文")
+    message_uid = Column(String(160), nullable=False, comment="稳定方舟消息ID")
+    match_state = Column(String(30), nullable=False, comment="exact/new/unverified")
+    created_at = Column(DateTime, nullable=False, server_default=func.now(), comment="创建北京时间")
+    __table_args__ = (UniqueConstraint("account_uid", "provider", "source_digest", name="uk_wa_message_source"),)
 
 
 class WhatsAppAuditLog(Base):

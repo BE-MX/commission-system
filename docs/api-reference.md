@@ -1,5 +1,30 @@
 # 莱莎方舟 API 参考
 
+## WhatsApp AI 消息助手（本地候选，2026-10-13）
+
+接口前缀 `/api/whatsapp/ai-assistant`，均要求 `whatsapp:read`，再以实时员工状态、账号正文授权和请求人身份检查数据范围。生成另需独立 `ai_egress_allowed`，不要求 CRM 共享。
+
+- `GET /options?account_uid=`：AI授权、预设可用性、知识平台权限和容量限制。
+- `POST /runs`：`account_uid/start_at/end_at/client_request_uid`，可选 `conversation_uid`；时间必须带时区且包含起止。响应运行元数据；后台线程执行模型任务，不占请求事务。
+- `GET /runs?account_uid=`：请求人最近10份运行元数据；`GET /runs/{run_uid}`：进度、当前有效结果和清单。其他员工不可读取本人的报告。
+- `GET /runs/requests/{client_request_uid}?account_uid=`：提交不确定时只读回查，缺失404；同请求ID重提交同范围幂等，变更范围409。无自动再外发。
+- `PATCH /runs/{run_uid}/tasks/{task_uid}`，`{completed:bool}`：仅保存报告内勾选，不创建任务中心/客户行动，不发消息。失效结果409。
+
+运行状态 `pending/running/succeeded/failed/stale`，返回消息数/会话数/已处理对象数和缺口警示。按对象的结果含 `summary/open_questions/follow_up_suggestions/tasks/knowledge_sources/coverage`，建议/清单引用有效稳定消息UID与当前发布知识版本。来源或授权/知识变化后不返回旧派生结果。容量超限400明确缩小范围，不用页面分页截断输入。
+
+## WhatsApp Baileys 连接与同步候选（2026-10-13，未部署）
+
+既有 `/api/whatsapp/accounts`、`sync/pull`、`conversations`、`messages` 路径及分页信封保留；`sync/pull` 仍同步返回本批 `pulled`，messages 的 `next_cursor` 保持 null，不代表全部历史完成。账号结果增加 provider、connection_state、sync_state、history_state、consent_state、consent_version、can_read_body、crm_shared、ai_egress_allowed、revoke_state。管理员元数据范围不授予正文；员工状态与角色权限实时查库。
+
+- `POST /api/whatsapp/bind-sessions`：`{account_uid?,company_account:true,crm_shared:false}`；仅持有人可确认。传原 account_uid 保留客户绑定、会话与消息，新增接入代次。二维码临时返回，不写业务库。
+- `PUT /api/whatsapp/accounts/{uid}/consent`：`{enabled,company_account,crm_shared,ai_egress_allowed,reader_user_ids}`；独立设置原文、客户共享和已有 AI 外发。授权版本变化使旧 Worker/任务失效；读者仍需相应功能权限。
+- `GET /api/whatsapp/accounts/{uid}/reader-candidates?q=`：持有人按姓名搜索具备阅读权限的员工。
+- `POST /api/whatsapp/accounts/{uid}/revoke`：先停止采集/访问，再尝试设备注销；请求完成不是远端确认。revoke_pending/remote_unconfirmed 提示手机核对。
+- `POST /api/whatsapp/accounts/{uid}/revoke-confirmation`：`{phone_device_removed:true}`；仅持有人可在待核对阶段确认，审计 owner_confirmed 与协议 ACK 分开。
+- `GET /api/whatsapp/internal/accounts/{uid}/authorization`：机器身份例外，必须非空 Connector Bearer key；只返回实时授权与代次，不返回正文或认证。
+
+Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务衔接。精确契约见 [实现说明](requirements/2026-10-13-whatsapp-baileys.md) 和 [Connector README](../services/whatsapp-connector/README.md)。
+
 ## 订单发票与回款备注编辑（2026-10-10）
 
 - `PATCH /api/invoice/invoices/{invoice_id}/remark`：现有 `invoice:write` 和实时订单数据范围；body `{remark,expected_version}`，版本取详情 `edit_version`，备注最多5000字符，空字符串清空。返回 `{id,remark,edit_version}`。

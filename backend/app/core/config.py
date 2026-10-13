@@ -327,6 +327,10 @@ class Settings(BaseSettings):
     WHATSAPP_AUTO_SYNC_INTERVAL_MINUTES: int = 5
     WHATSAPP_AUTO_SYNC_BATCH_SIZE: int = 100
     WHATSAPP_SYNC_MESSAGES_PER_CHAT: int = 100
+    WHATSAPP_EVENT_SYNC_INTERVAL_SECONDS: _PositiveInt = 5
+    WHATSAPP_EVENT_SYNC_BATCH_SIZE: _PositiveInt = 500
+    WHATSAPP_ASSISTANT_PRESET_NAME: str = "whatsapp_message_assistant"
+    WHATSAPP_ASSISTANT_TIMEOUT_SECONDS: _PositiveInt = 900
 
     # ── WhatsApp 实时翻译扩展（与 WhatsApp connector 完全隔离）──
     WHATSAPP_TRANSLATION_EXTENSION_ORIGIN: str = "chrome-extension://bnkecbkoidckffckbefjjcbchmngjobi"

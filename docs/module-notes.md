@@ -1,5 +1,9 @@
 # 莱莎方舟 模块专题笔记（含各模块已踩坑）
 
+## WhatsApp AI 消息助手（2026-10-13，本地候选）
+
+聊天页“AI消息助手”选择北京时间区间，按整个账号或当前会话生成逐对象总结、未决问题、知识引用建议和跟进清单。用户明确清单仅留助手，勾选持久保存，不自动建任务中心事项或发送WhatsApp消息。当前正文权限与AI外发独立检查，知识只用本人可读已发布版本；数据更新/撤权后旧结果不再展示。短证据ID只用于模型传输，最终还原稳定消息UID。迁移193接192，部署需核对并行链。详见 [实现约定](requirements/2026-10-13-whatsapp-ai-assistant.md)。
+
 ## 订单发票关联详情（2026-10-08）
 
 - 发票号打开只读弹框，订单、出库、回款三页签；回款财务生效和实际出库分别展示进度。只读入口不能复用编辑器内部回款草稿作为资金事实。
@@ -247,7 +251,8 @@ nssm start CommissionSystem    # 正常启动
   - `stock_daily_report` — 安全库存日报 + 低库存钉钉推送，cron 每天 08:30
   - `color_social_extract` — 社媒发色提取，cron 每天 08:00（Xpoz 竞品帖子图片 → OpenCV 提取主色 → 匹配色族 → 写入 trend_data）
   - `color_sales_aggregate` — 销售色彩聚合，cron 每周一 06:00（okki_orders 按颜色字段聚合 → 写入 trend_data）
-  - `whatsapp_auto_sync` — WhatsApp 增量同步，interval 每 5 分钟（`sync_whatsapp_accounts_job()`，遍历 active 账号拉取会话+消息增量，受 `WHATSAPP_AUTO_SYNC_ENABLED` 开关控制）
+  - `whatsapp_auto_sync` — 旧 provider 的 WhatsApp 增量同步，interval 每 5 分钟（`sync_whatsapp_accounts_job()`，受 `WHATSAPP_AUTO_SYNC_ENABLED` 开关控制）
+  - `whatsapp_event_sync` — Baileys provider 事件变更同步，默认每 5 秒/500 条，`max_instances=1`、coalesce；在线程内消费并原子提交消息/来源/CRM/checkpoint。同样受自动同步开关控制。
 
 **运行与自动化中心（2026-08-12）**：`/system/operations` 显示全部 20 个稳定 job ID、注册状态、下次执行、持久运行结果、服务健康和云端实例心跳。`operations:read/admin` 分离；控制权限不自动补授给 admin，须显式授权，动作只限本实例白名单任务。“立即执行”在线程安全的 scheduler loop 上向原 executor 提交一次运行，不改变 recurring trigger；暂停按实例写入 `ark_scheduler_job_policies` 并在重启后重放；控制审计写入 `ark_operation_audits`。`ark_job_runs` 默认保留 90 天并在重启时对账遗留 running；`ark_runtime_instances/heartbeats` 以服务+实例 claim 汇总 Shopify、OpenClaw、MCP 等独立实例，按部署策略失联降级、告警和自动退役。外部健康探测只使用部署环境的固定 URL + hostname allowlist，响应只显示 origin；页面不保存 root/SSH 凭证，也不提供任意远程命令。
 
@@ -266,6 +271,9 @@ nssm start CommissionSystem    # 正常启动
 - `WHATSAPP_AUTO_SYNC_INTERVAL_MINUTES` — 同步间隔分钟数（默认 5）
 - `WHATSAPP_AUTO_SYNC_BATCH_SIZE` — 每次同步拉取会话数上限（默认 100）
 - `WHATSAPP_SYNC_MESSAGES_PER_CHAT` — 每会话拉取消息数上限（默认 100）
+- `WHATSAPP_EVENT_SYNC_INTERVAL_SECONDS` / `WHATSAPP_EVENT_SYNC_BATCH_SIZE` — Baileys 事件调度间隔/批次上限（默认 5/500，必须为正数）。
+
+**Baileys 连接与同步（2026-10-13，本地候选，未部署）**：公司专用业务号明确授权全部会话（含群聊）；正文读者、CRM 共享、AI 外发分别授权，管理员默认只看元数据。二维码仅内存保存，事件按变更序号消费，编辑/撤回有 revision 与 tombstone，展示实际覆盖和历史缺口。单机加密 SQLite、账号租约及代际/授权 fence；Node >=22.13。旧数据保留，切换需手机重新关联，不能导入旧浏览器凭据。详见 [实现约定](requirements/2026-10-13-whatsapp-baileys.md)、[验收报告](reports/2026-10-13-whatsapp-baileys.md)；运行配置见 Connector README 与 runbook。
 
 ## Design System
 

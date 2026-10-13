@@ -8,6 +8,7 @@ import json
 from typing import Iterable
 
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.core.time import beijing_now
 from app.customer.access_service import (
@@ -116,6 +117,9 @@ def get_customer_profile(
         and access.allows_classification(context.max_data_classification)
     )
     source = context.context_json if context_allowed else {}
+    if context_allowed:
+        from app.whatsapp.derived_access import filter_snapshot
+        source, _visible_fact_ids = filter_snapshot(db, source, version, access=access)
     output, truncated = {}, False
     for name in requested:
         clipped, changed = _clip(source.get(name, {}))
@@ -286,14 +290,25 @@ def search_customer_messages(
     customer_id = access.customer_id
     if not access.allows_classification("restricted_internal"):
         _deny()
+    from app.whatsapp.access import readable_accounts
     conversations = db.query(CustomerConversation.id).filter(
         logical_root_predicate(CustomerConversation, "conversation", customer_id),
     )
+    conversations = conversations.filter(or_(
+        CustomerConversation.source_system != 'whatsapp',
+        CustomerConversation.source_account_key.in_(readable_accounts(db, access.actor_user_id, crm=True, ai=access.run_id is not None)),
+    ))
     if conversation_id is not None and conversations.filter(
         CustomerConversation.id == conversation_id,
     ).first() is None:
         _deny()
     message_query = db.query(CustomerMessage).filter(CustomerMessage.conversation_id.in_(conversations))
+    visible_sources = apply_record_access(db.query(CustomerSourceRecord.id), CustomerSourceRecord,
+        access, logical_object_type='source_record')
+    # Non-WhatsApp sources retain the existing logical conversation ownership
+    # rule; WhatsApp copies additionally require current source authorization.
+    non_whatsapp_sources = db.query(CustomerSourceRecord.id).filter(CustomerSourceRecord.source_system != 'whatsapp')
+    message_query = message_query.filter(or_(CustomerMessage.source_record_id.in_(non_whatsapp_sources), CustomerMessage.source_record_id.in_(visible_sources)))
     if conversation_id is not None:
         message_query = message_query.filter(CustomerMessage.conversation_id == conversation_id)
     cleaned = (query or "").strip()

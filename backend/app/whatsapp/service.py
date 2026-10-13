@@ -1,13 +1,17 @@
 """Service layer for WhatsApp Connector integration."""
 
 from datetime import datetime
+import logging
 from typing import Any
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now, to_beijing_naive
-from app.whatsapp.connector_client import WhatsAppConnectorClient
+from app.whatsapp.connector_client import WhatsAppConnectorClient, ConnectorError
+from app.whatsapp import access
+from app.whatsapp.payload import parse_dt as _parse_dt
+from app.whatsapp.message_projection import upsert_message as _upsert_message
 from app.whatsapp.models import (
     WhatsAppAccount,
     WhatsAppAttachment,
@@ -18,21 +22,8 @@ from app.whatsapp.models import (
     WhatsAppPullCursor,
 )
 
+logger = logging.getLogger(__name__)
 
-def _parse_dt(value: Any) -> datetime | None:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return to_beijing_naive(value)
-    if isinstance(value, str):
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            # Connector 带 Z/offset 时先换算为北京时间，绝不只丢
-            # tzinfo；无 offset 按双方约定的北京业务钟面处理。
-            return to_beijing_naive(parsed)
-        except ValueError:
-            return None
-    return None
 
 
 def can_manage_all(current_user: dict) -> bool:
@@ -70,20 +61,30 @@ def _upsert_account(db: Session, payload: dict[str, Any], fallback_user_id: int)
     if not account_uid:
         return None
 
-    account = db.query(WhatsAppAccount).filter(WhatsAppAccount.account_uid == account_uid).first()
+    account = db.query(WhatsAppAccount).filter(WhatsAppAccount.account_uid == account_uid).populate_existing().with_for_update().first()
     if not account:
         account = WhatsAppAccount(account_uid=account_uid, ark_user_id=fallback_user_id)
         db.add(account)
-
-    account.ark_user_id = int(payload.get("ark_user_id") or account.ark_user_id or fallback_user_id)
+    elif account.consent_state in ('paused', 'revoked') or account.status in ('revoked', 'revoking', 'revoke_pending'):
+        return account  # In-flight status readback cannot undo a local lifecycle decision.
+    elif account.provider == 'baileys' and (
+        str(payload.get('session_generation')) != str(account.session_generation)
+        or str(payload.get('consent_version')) != str(account.consent_version)
+    ):
+        return account
+    supplied_user_id = int(payload.get("ark_user_id") or account.ark_user_id or fallback_user_id)
+    if account.ark_user_id != supplied_user_id:
+        raise ValueError("Connector 不得改变账号持有人")
     account.phone_number = payload.get("phone_number") or payload.get("phone") or account.phone_number
     account.display_name = payload.get("display_name") or payload.get("name") or account.display_name
     account.status = payload.get("status") or account.status or "active"
     account.connector_status = payload.get("connector_status") or payload.get("state")
     account.last_sync_at = _parse_dt(payload.get("last_sync_at")) or account.last_sync_at
     account.last_message_at = _parse_dt(payload.get("last_message_at")) or account.last_message_at
-    account.last_error = payload.get("last_error")
-    account.raw_payload = payload
+    account.last_error = payload.get("last_error") or payload.get('last_error_code')
+    coverage = payload.get('coverage') if isinstance(payload.get('coverage'), dict) else {}
+    account.raw_payload = {**{key: value for key, value in payload.items() if key not in {'qr_code_url', 'qr'}},
+        'gap_reason': payload.get('gap_reason') or coverage.get('gap_reason')}
     return account
 
 
@@ -100,35 +101,44 @@ def _upsert_bind_session(db: Session, payload: dict[str, Any], ark_user_id: int)
     if not session:
         session = WhatsAppBindSession(bind_session_uid=bind_session_uid, ark_user_id=ark_user_id)
         db.add(session)
+    elif payload.get('account_uid') and session.account_uid != payload['account_uid']:
+        raise ValueError('Connector 不得替换保留的业务账号')
+    if int(payload.get('ark_user_id') or ark_user_id) != ark_user_id:
+        raise ValueError('Connector 绑定操作持有人不匹配')
 
     session.ark_user_id = int(payload.get("ark_user_id") or session.ark_user_id or ark_user_id)
     session.account_uid = payload.get("account_uid") or session.account_uid
     session.status = payload.get("status") or session.status or "pending"
-    session.qr_code_url = payload.get("qr_code_url") or payload.get("qr")
+    session._transient_qr = payload.get("qr_code_url") or payload.get("qr")
+    session.qr_code_url = None
     session.expires_at = _parse_dt(payload.get("expires_at"))
-    session.last_payload = payload
+    session.last_payload = {key: value for key, value in payload.items() if key not in {'qr_code_url', 'qr'}}
     account_payload = payload.get("account") if isinstance(payload.get("account"), dict) else None
     if account_payload:
-        _upsert_account(db, account_payload, session.ark_user_id)
+        account = _upsert_account(db, account_payload, session.ark_user_id)
+        if account and account.consent_state != 'active' and account.provider == 'baileys':
+            session.status = account.status
+            session._transient_qr = None
     return session
 
-
-def create_bind_session(db: Session, ark_user_id: int) -> WhatsAppBindSession:
-    client = WhatsAppConnectorClient()
-    payload = client.create_bind_session(ark_user_id)
-    session = _upsert_bind_session(db, payload, ark_user_id)
-    _audit(db, action="create_bind_session", result="success", ark_user_id=ark_user_id)
-    return session
 
 
 def refresh_bind_session(db: Session, bind_session_uid: str) -> WhatsAppBindSession:
     client = WhatsAppConnectorClient()
-    payload = client.get_bind_session(bind_session_uid)
     existing = (
         db.query(WhatsAppBindSession)
         .filter(WhatsAppBindSession.bind_session_uid == bind_session_uid)
         .first()
     )
+    try:
+        payload = client.get_bind_session(bind_session_uid)
+    except ConnectorError as exc:
+        if exc.status_code != 404 or existing is None:
+            raise
+        existing.status = 'expired'
+        existing.qr_code_url = None
+        existing._transient_qr = None
+        return existing
     ark_user_id = existing.ark_user_id if existing else int(payload.get("ark_user_id") or 0)
     if not ark_user_id:
         raise ValueError("绑定会话缺少 ark_user_id")
@@ -138,6 +148,7 @@ def refresh_bind_session(db: Session, bind_session_uid: str) -> WhatsAppBindSess
 
 
 def get_bind_session_for_user(db: Session, bind_session_uid: str, current_user: dict) -> WhatsAppBindSession:
+    live = access.live_actor(db, current_user_id(current_user), "whatsapp:read", "whatsapp:write")
     session = (
         db.query(WhatsAppBindSession)
         .filter(WhatsAppBindSession.bind_session_uid == bind_session_uid)
@@ -145,12 +156,13 @@ def get_bind_session_for_user(db: Session, bind_session_uid: str, current_user: 
     )
     if not session:
         raise LookupError("绑定会话不存在")
-    if not can_manage_all(current_user) and session.ark_user_id != current_user_id(current_user):
+    if session.ark_user_id != current_user_id(live):
         raise PermissionError("无权查看该绑定会话")
     return session
 
 
 def list_accounts(db: Session, current_user: dict) -> list[WhatsAppAccount]:
+    current_user = access.live_actor(db, current_user_id(current_user), "whatsapp:read")
     query = db.query(WhatsAppAccount)
     if not can_manage_all(current_user):
         query = query.filter(WhatsAppAccount.ark_user_id == current_user_id(current_user))
@@ -158,6 +170,7 @@ def list_accounts(db: Session, current_user: dict) -> list[WhatsAppAccount]:
 
 
 def get_account_for_user(db: Session, account_uid: str, current_user: dict) -> WhatsAppAccount:
+    current_user = access.live_actor(db, current_user_id(current_user), "whatsapp:read", "whatsapp:write")
     account = db.query(WhatsAppAccount).filter(WhatsAppAccount.account_uid == account_uid).first()
     if not account:
         raise LookupError("WhatsApp 账号不存在")
@@ -165,16 +178,6 @@ def get_account_for_user(db: Session, account_uid: str, current_user: dict) -> W
         raise PermissionError("无权访问该 WhatsApp 账号")
     return account
 
-
-def revoke_account(db: Session, account_uid: str, current_user: dict) -> WhatsAppAccount:
-    account = get_account_for_user(db, account_uid, current_user)
-    client = WhatsAppConnectorClient()
-    payload = client.revoke_account(account_uid)
-    account.status = payload.get("status") or "revoked"
-    account.connector_status = payload.get("connector_status") or "revoked"
-    account.raw_payload = payload
-    _audit(db, action="revoke_account", result="success", ark_user_id=account.ark_user_id, account_uid=account_uid)
-    return account
 
 
 def _get_cursor(
@@ -203,6 +206,8 @@ def _upsert_conversation(db: Session, account_uid: str, payload: dict[str, Any])
     if not chat_id:
         raise ValueError("conversation 缺少 chat_id")
     conversation_uid = payload.get("conversation_uid") or f"{account_uid}:{chat_id}"
+    if len(conversation_uid) > 120 or len(str(chat_id)) > 160:
+        raise ValueError("会话身份超出已登记范围")
     conv = (
         db.query(WhatsAppConversation)
         .filter(WhatsAppConversation.conversation_uid == conversation_uid)
@@ -211,54 +216,20 @@ def _upsert_conversation(db: Session, account_uid: str, payload: dict[str, Any])
     if not conv:
         conv = WhatsAppConversation(conversation_uid=conversation_uid, account_uid=account_uid, chat_id=chat_id)
         db.add(conv)
-    conv.contact_phone = payload.get("contact_phone") or payload.get("phone")
-    conv.contact_name = payload.get("contact_name") or payload.get("name")
+    if conv.account_uid != account_uid:
+        raise ValueError("会话身份跨账号")
+    conv.contact_phone = payload.get("contact_phone") or payload.get("phone") or conv.contact_phone
+    conv.contact_name = payload.get("contact_name") or payload.get("name") or conv.contact_name
     conv.is_group = bool(payload.get("is_group", False))
     conv.last_message_at = _parse_dt(payload.get("last_message_at")) or conv.last_message_at
     conv.last_message_preview = payload.get("last_message_preview") or payload.get("preview")
+    conv.history_state = payload.get("history_state") or conv.history_state or "unknown"
+    conv.gap_reason = payload.get("gap_reason")
+    conv.earliest_seen_at = _parse_dt(payload.get("earliest_seen_at")) or conv.earliest_seen_at
+    conv.latest_seen_at = _parse_dt(payload.get("latest_seen_at")) or conv.latest_seen_at
     conv.raw_payload = payload
     return conv
 
-
-def _upsert_message(db: Session, account_uid: str, payload: dict[str, Any]) -> WhatsAppMessage:
-    external_id = payload.get("external_message_id") or payload.get("message_id") or payload.get("id")
-    if not external_id:
-        raise ValueError("message 缺少 external_message_id")
-    message_uid = payload.get("message_uid") or f"{account_uid}:{external_id}"
-    msg = db.query(WhatsAppMessage).filter(WhatsAppMessage.message_uid == message_uid).first()
-    if not msg:
-        msg = WhatsAppMessage(message_uid=message_uid, account_uid=account_uid, external_message_id=external_id)
-        db.add(msg)
-
-    msg.conversation_uid = payload.get("conversation_uid") or msg.conversation_uid
-    msg.direction = payload.get("direction") or msg.direction or "inbound"
-    msg.sender_wa_id = payload.get("sender_wa_id") or payload.get("sender_id") or msg.sender_wa_id
-    msg.sender_phone = payload.get("sender_phone")
-    msg.sender_name = payload.get("sender_name") or payload.get("sender_display_name")
-    msg.content_type = payload.get("content_type") or payload.get("type") or "text"
-    msg.content_text = payload.get("content_text") or payload.get("text")
-    msg.content_preview = payload.get("content_preview") or (msg.content_text[:500] if msg.content_text else None)
-    msg.sent_at = _parse_dt(payload.get("sent_at")) or _parse_dt(payload.get("timestamp")) or msg.sent_at
-    msg.received_at = _parse_dt(payload.get("received_at")) or msg.received_at
-    msg.raw_payload_hash = payload.get("raw_payload_hash")
-    msg.raw_payload = payload
-
-    attachments = payload.get("attachments")
-    if isinstance(attachments, list):
-        db.query(WhatsAppAttachment).filter(WhatsAppAttachment.message_uid == message_uid).delete()
-        for item in attachments:
-            if not isinstance(item, dict):
-                continue
-            db.add(
-                WhatsAppAttachment(
-                    message_uid=message_uid,
-                    file_name=item.get("file_name") or item.get("name"),
-                    mime_type=item.get("mime_type"),
-                    file_size=item.get("file_size"),
-                    storage_url=item.get("storage_url") or item.get("url"),
-                )
-            )
-    return msg
 
 
 def _pull_conversations_for_account(db: Session, account: WhatsAppAccount, limit: int) -> tuple[int, str | None]:
@@ -369,7 +340,16 @@ def _pull_resource_for_account(
 
 
 def pull_resource(db: Session, account_uid: str, resource: str, limit: int, current_user: dict) -> tuple[int, str | None]:
+    access.live_actor(db, current_user_id(current_user), "whatsapp:write")
     account = get_account_for_user(db, account_uid, current_user)
+    access.require_body(db, account, current_user_id(current_user))
+    if not access.owner_enabled(db, account):
+        raise PermissionError("账号尚未授权采集或员工已停用")
+    if account.provider == 'baileys':
+        from app.whatsapp.event_sync import pull_changes
+        count, _cursor = pull_changes(db, account_uid, limit, resource=resource)
+        # v1 messages contract remains synchronous count, next_cursor=None.
+        return count, None
     return _pull_resource_for_account(db, account, resource, limit)
 
 
@@ -377,15 +357,18 @@ def auto_sync_accounts(
     db: Session,
     conversation_limit: int = 100,
     message_limit_per_chat: int = 100,
+    provider: str | None = None,
 ) -> dict[str, int]:
     conversation_limit = max(1, min(int(conversation_limit or 100), 500))
     message_limit_per_chat = max(1, min(int(message_limit_per_chat or 100), 500))
-    accounts = (
+    account_query = (
         db.query(WhatsAppAccount)
-        .filter(WhatsAppAccount.status == "active")
+        .filter(WhatsAppAccount.status.in_(("active", "binding", "reconnecting")), WhatsAppAccount.consent_state == "active")
         .order_by(WhatsAppAccount.last_sync_at.asc(), WhatsAppAccount.id.asc())
-        .all()
     )
+    if provider:
+        account_query = account_query.filter(WhatsAppAccount.provider == provider)
+    accounts = account_query.all()
     stats = {
         "accounts": len(accounts),
         "ok": 0,
@@ -399,6 +382,19 @@ def auto_sync_accounts(
     for account in accounts:
         account_uid = account.account_uid
         try:
+            if not access.owner_enabled(db, account):
+                account.consent_state = "paused"
+                account.consent_version += 1
+                account.status = "paused"
+                db.commit()
+                continue
+            if account.provider == 'baileys':
+                from app.whatsapp.event_sync import pull_changes
+                count, _cursor = pull_changes(db, account_uid, message_limit_per_chat)
+                db.commit()
+                stats['ok'] += 1
+                stats['messages'] += count
+                continue
             conversation_count, _ = _pull_conversations_for_account(db, account, conversation_limit)
             message_count, message_conversations, message_errors = _pull_messages_for_account(
                 db,
@@ -421,6 +417,8 @@ def auto_sync_accounts(
             )
             db.commit()
         except Exception as exc:
+            logger.warning("WhatsApp account sync failed (%s)", type(exc).__name__)
+            print(f"[WhatsApp] account sync failed ({type(exc).__name__})", flush=True)
             db.rollback()
             stats["error"] += 1
             failed_account = (
@@ -429,8 +427,16 @@ def auto_sync_accounts(
                 .first()
             )
             if failed_account:
-                failed_account.connector_status = "sync_error"
-                failed_account.last_error = str(exc)[:1000]
+                if failed_account.provider == 'baileys':
+                    try:
+                        metadata = WhatsAppConnectorClient().get_account(account_uid)
+                        _upsert_account(db, metadata, failed_account.ark_user_id)
+                    except ConnectorError:
+                        logger.warning('WhatsApp metadata readback unavailable after feed failure')
+                        print('[WhatsApp] metadata readback unavailable after feed failure', flush=True)
+                if failed_account.status in ('active', 'binding', 'reconnecting'):
+                    failed_account.connector_status = "sync_error"
+                failed_account.last_error = failed_account.last_error or type(exc).__name__
                 _audit(
                     db,
                     action="auto_sync",
@@ -445,7 +451,10 @@ def auto_sync_accounts(
 
 
 def list_conversations(db: Session, account_uid: str, current_user: dict, page: int, page_size: int):
-    get_account_for_user(db, account_uid, current_user)
+    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).first()
+    if account is None:
+        raise LookupError("WhatsApp 账号不存在")
+    access.require_body(db, account, current_user_id(current_user))
     query = db.query(WhatsAppConversation).filter(WhatsAppConversation.account_uid == account_uid)
     total = query.count()
     items = (
@@ -465,7 +474,10 @@ def list_messages(
     page_size: int,
     conversation_uid: str | None = None,
 ):
-    get_account_for_user(db, account_uid, current_user)
+    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).first()
+    if account is None:
+        raise LookupError("WhatsApp 账号不存在")
+    access.require_body(db, account, current_user_id(current_user))
     query = db.query(WhatsAppMessage).filter(WhatsAppMessage.account_uid == account_uid)
     if conversation_uid:
         query = query.filter(WhatsAppMessage.conversation_uid == conversation_uid)
