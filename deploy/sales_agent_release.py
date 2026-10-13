@@ -48,13 +48,17 @@ def read_model_config(path):
     return values
 
 
-def execute(source, revision, action, state, model_path=None, runtime_revision=None):
+def execute(source, revision, action, state, model_path=None, runtime_revision=None, *, reuse_model=False):
     source = Path(source)
     actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip()
     dirty = subprocess.check_output(['git', 'status', '--porcelain'], cwd=source, text=True).strip()
     if actual != revision or dirty:
         raise RuntimeError('Sales preparation requires a clean pinned candidate')
     payload = {'revision': revision, 'action': action, 'files': artifact(source)}
+    if reuse_model:
+        if action != 'model' or model_path:
+            raise ValueError('Protected model reuse requires only the model stage')
+        payload['reuse_model'] = True
     if model_path:
         payload['model_config'] = read_model_config(model_path)
     if runtime_revision:

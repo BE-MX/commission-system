@@ -17,3 +17,11 @@ Crystal Picklesimer是customer #628，旧task #251 / Run #266。已通过真实�
 北京已有ark-mail-outreach的OAuth、freeze、回执和收件游标完整保留，本次不启用发送。Mac本地outreach-queue/outreach-dispatch与北京数据库Worker是两套状态，不能互相覆盖或把sending改成queued。没有源快照就不宣称旧队列、会话和OAuth已迁移。当前后端未配置独立排程侧车；后续邮件操作按[邮件Worker](mail-worker.md)的具体发送授权和受管入口执行。
 
 非敏感准备回执留在本地`.deploy_state/sales-agent`。模型已提供，但资料不足契约上线与固定任务验收完成前，heartbeat保持0m。旧候选保留用于核对，不得用旧快照覆盖新的凭据或任务状态。
+
+## 已有运行版本的更新
+
+先核验并收尾旧研究任务，保存任务/Run、正式档案和原模型配置。新版受管部署器可使用 `--sales-agent-stage pause --sales-agent-runtime-revision <原运行SHA>` 暂停原服务：必须精确匹配实际unit、原模型ready的runtime/config/key/地址和heartbeat 0m；仅暂停动作允许controller与运行版本不同，其他动作仍要求制品一致。
+
+依次 prepare/configure/verify 新固定SHA后，模型阶段使用 `--sales-agent-stage model --sales-agent-reuse-model --sales-agent-runtime-revision <新SHA>`。这与私有模型文件互斥；仅从本次暂停保存的旧ready及云端0600密钥恢复原模型和地址，拒绝key或证明漂移。不会把密钥搬到办公室或开发机，也不沿用configure的模板模型。重新执行一次最小模型探针并写新ready后，方可activate/verify-active；heartbeat仍保持0m。
+
+模型探针结果未知时保持暂停并只读核验，不自动重复model。若新ready已经写入，可按实际绑定核验后继续激活；旧证明与新ready不匹配会阻止重复复用。如果探针已发送但新ready未写入，不能据失败标签假定没有调用或再次盲发，需受审恢复。主应用、邮件发送及原通用Gateway不属于此专用更新入口。

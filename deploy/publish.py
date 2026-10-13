@@ -345,6 +345,7 @@ if __name__ == "__main__":
     parser.add_argument('--mail-worker-stage', choices=['prepare', 'provision', 'configure', 'oauth', 'enable-sending'], help='Prepare Beijing mail service/OAuth without activating application code')
     parser.add_argument('--sales-agent-stage', choices=['prepare', 'configure', 'verify', 'model', 'activate', 'verify-active', 'pause'], help='Prepare or activate the dedicated Beijing research agent')
     parser.add_argument('--sales-agent-model-config', help='Local private model file; transferred through SSH stdin only')
+    parser.add_argument('--sales-agent-reuse-model', action='store_true', help='Revalidate the unchanged protected cloud model saved by the preceding pause')
     parser.add_argument('--sales-agent-runtime-revision', help='Full SHA of the existing prepared sales runtime')
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
@@ -366,19 +367,19 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
-        if (args.sales_agent_model_config or args.sales_agent_runtime_revision) and not args.sales_agent_stage:
+        if (args.sales_agent_model_config or args.sales_agent_runtime_revision or args.sales_agent_reuse_model) and not args.sales_agent_stage:
             raise RuntimeError('Sales parameters require --sales-agent-stage')
         if args.sales_agent_stage:
-            if any(value for key, value in vars(args).items() if key not in {'sales_agent_stage', 'sales_agent_model_config', 'sales_agent_runtime_revision', 'revision', 'live_root', 'no_pull'}):
+            if any(value for key, value in vars(args).items() if key not in {'sales_agent_stage', 'sales_agent_model_config', 'sales_agent_runtime_revision', 'sales_agent_reuse_model', 'revision', 'live_root', 'no_pull'}):
                 raise RuntimeError('Sales preparation cannot be combined with application release actions')
-            if bool(args.sales_agent_model_config) != (args.sales_agent_stage == 'model'):
-                raise RuntimeError('Model stage requires exactly one private model file')
+            if (int(bool(args.sales_agent_model_config)) + int(args.sales_agent_reuse_model)) != int(args.sales_agent_stage == 'model'):
+                raise RuntimeError('Model stage requires exactly one private file or protected cloud reuse')
             if bool(args.sales_agent_runtime_revision) != (args.sales_agent_stage in {'model', 'activate', 'verify-active', 'pause'}):
                 raise RuntimeError('Model activation must bind the existing runtime revision')
             from sales_agent_release import execute
             with deployment_lock():
                 execute(Path(__file__).resolve().parent.parent, args.revision, args.sales_agent_stage, STATE,
-                        args.sales_agent_model_config, args.sales_agent_runtime_revision)
+                        args.sales_agent_model_config, args.sales_agent_runtime_revision, reuse_model=args.sales_agent_reuse_model)
             sys.exit(0)
         if args.customer_portal_config:
             if any(value for key, value in vars(args).items() if key not in {'customer_portal_config', 'revision'}):
