@@ -27,5 +27,18 @@ export function buildNavManifest(menuGroups, navEntries, gitSha = null) {
     if (seen.has(entry.key)) throw new Error(`导航路由 name 重复：${entry.key}`)
     seen.add(entry.key)
   }
-  return { version: NAV_MANIFEST_VERSION, git_sha: gitSha, entries }
+  // Separate from task modules, including external menus. Permissions still have
+  // one source: navigation.js. Backend validates newly added favorites with this.
+  const favoriteAccess = Object.fromEntries(navEntries
+    .filter(entry => entry.menu && !entry.hideInMenu)
+    .map(entry => {
+      const group = entry.menu.group ? menuGroups[entry.menu.group] : null
+      if (entry.menu.group && !group) throw new Error(`未知导航分组：${entry.menu.group}`)
+      const rules = [entry, entry.menu, group].filter(Boolean).map(rule => ({
+        ...(rule.permission ? { permission: rule.permission } : {}),
+        ...(rule.anyPermission ? { anyPermission: rule.anyPermission } : {}),
+      }))
+      return [entry.name || entry.path, rules]
+    }))
+  return { version: NAV_MANIFEST_VERSION, git_sha: gitSha, entries, favorite_access: favoriteAccess }
 }

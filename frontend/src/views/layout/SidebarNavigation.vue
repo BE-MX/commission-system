@@ -12,6 +12,8 @@
       </transition>
     </div>
 
+    <FavoriteNavigation :collapsed="collapsed" :available="favoriteCandidates" />
+
     <template v-if="!collapsed">
       <div class="menu-label">NAVIGATION</div>
       <div class="nav-search">
@@ -143,6 +145,8 @@ import { useAuthStore } from '@/stores/auth'
 import { MENU_GROUPS, NAV_ENTRIES } from '@/config/navigation'
 import { useQuickTask } from '@/composables/useQuickTask'
 import { filterNavigationSections, normalizeNavigationQuery } from './navigationSearch'
+import FavoriteNavigation from './FavoriteNavigation.vue'
+import { canConfigureNavigation } from './favoriteNavigationState'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -213,6 +217,11 @@ const filteredNavigation = computed(() => filterNavigationSections(
   accessibleGroups.value,
   normalizedQuery.value,
 ))
+const favoriteEntryByPath = new Map(NAV_ENTRIES.map(entry => [entry.path, entry]))
+const favoriteCandidates = computed(() => [
+  ...accessibleTopLevelItems.value.map(item => ({ ...item, name: item.name || item.path, groupTitle: '一级页面' })),
+  ...accessibleGroups.value.flatMap(group => group.items.map(item => ({ ...item, name: item.name || item.path, groupTitle: group.title }))),
+].filter(item => canConfigureNavigation(favoriteEntryByPath.get(item.path), MENU_GROUPS, authStore)))
 const topLevelItems = computed(() => filteredNavigation.value.topLevelItems)
 const visibleGroups = computed(() => filteredNavigation.value.groups)
 

@@ -1,3 +1,10 @@
+## 2026-10-13 常用导航（Codex，Git交付，未部署）
+
+- 分支 `codex/favorite-navigation`；worktree `C:/Users/windb/.codex/worktrees/favorite-navigation/commission-system`。侧栏顶部支持添加/移除、拖拽与键盘排序，服务端按当前用户隔离保存，刷新恢复；复用既有菜单权限与路由。
+- 新迁移 `194_navigation_preferences -> 193_wa_ai_assistant`，只新增本人配置表，已注册 Alembic metadata；未执行生产/共享库迁移。API、数据库与 DESIGN 文档已同步。
+- 用户追加限制已落实：候选同时满足route/menu/group权限，PUT新增以数据库实时权限校验，无权/未知键403，旧JWT不能绕过。构建生成带navigation.js源哈希的后端权限清单（需与源码一并交付）；不依赖独立部署的前端dist，缺失/过期清单拒绝新增503。
+- 后端隔离 SQLite 13 passed；前端权限/状态/导航/任务契约 24 passed、异步竞态5 passed；构建和真实侧栏+SQLite浏览器验收通过（含直接伪造无权新增403）。独立审查指出的迁移模型注册及北京清单部署路径已修复；本次增量规则0项，全仓仍有原17项发票UI债务。详见 [验收记录](reports/2026-10-13-favorite-navigation.md)。用户已授权提交、合并main并推送origin；不部署、不执行共享库迁移，保护主目录已有改动。
+
 ## 2026-10-13 两项发票同步修复合并推送与生产发布（Codex）
 
 - 普通保存后同步原发货单号、重复SKU首次创建收尾与原单恢复两项修复已合并推送main，代码合并点55b4c5b7。主目录27个原修改/未跟踪文件已保护、恢复并核验。

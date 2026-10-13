@@ -1,5 +1,11 @@
 # 莱莎方舟 数据库表参考
 
+## 常用导航（194，本地候选，未迁移生产）
+
+`ark_navigation_preferences`：`user_id` 为 `INT UNSIGNED` 主键，外键指向 `ark_users.id`，删除用户时级联删除配置；`items` JSON 保存按用户排列的导航标识数组；`created_at/updated_at` 为无时区北京时间。每用户一行；清空以空数组保存。配置与工作台布局独立，重置工作台不影响常用导航。
+
+迁移 `194_navigation_preferences` 父版本 `193_wa_ai_assistant`，只新增表。ORM 已注册到 Alembic metadata。开发验收仅使用隔离 SQLite；生产迁移仍由统一部署入口执行，不从开发机升级共享库。
+
 ## WhatsApp AI 消息助手（193，本地候选）
 
 `ark_whatsapp_assistant_runs` 保存请求人私有报告：账号/请求人/客户端请求ID、带北京时间语义的起止范围、可选单会话范围、运行状态/唯一活动槽、generation/consent版本、消息/会话数与进度、输入hash和知识引用元数据、按对象的结构化结果、清单完成状态、错误分类与业务时间。输入manifest不复制聊天正文，AI调用日志仅元数据。

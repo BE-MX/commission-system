@@ -312,3 +312,5 @@ __all__ = [
 from app.domestic_decision import models as _domestic_decision_models  # noqa: F401
 # Customer order portal metadata for Alembic and bootstrap.
 from app.portal import models as _order_portal_models  # noqa: F401
+# System navigation preferences must be visible to Alembic target_metadata.
+from app.system import models as _system_models  # noqa: F401

@@ -1,0 +1,2858 @@
+{
+  "source_sha256": "0020fddcb100a8b0d3ff5a1fcc670977b6b13a88f62a7b640c2854eefcaa1a9a",
+  "favorite_access": {
+    "PortalCatalog": [
+      {
+        "permission": "portal_site:admin"
+      },
+      {
+        "permission": "portal_site:admin"
+      },
+      {
+        "anyPermission": [
+          "portal_order:read",
+          "portal_access:read",
+          "portal_site:admin"
+        ]
+      }
+    ],
+    "PortalSettings": [
+      {
+        "permission": "portal_site:admin"
+      },
+      {
+        "permission": "portal_site:admin"
+      },
+      {
+        "anyPermission": [
+          "portal_order:read",
+          "portal_access:read",
+          "portal_site:admin"
+        ]
+      }
+    ],
+    "PortalCustomers": [
+      {
+        "permission": "portal_access:read"
+      },
+      {
+        "permission": "portal_access:read"
+      },
+      {
+        "anyPermission": [
+          "portal_order:read",
+          "portal_access:read",
+          "portal_site:admin"
+        ]
+      }
+    ],
+    "PortalOrders": [
+      {
+        "permission": "portal_order:read"
+      },
+      {
+        "permission": "portal_order:read"
+      },
+      {
+        "anyPermission": [
+          "portal_order:read",
+          "portal_access:read",
+          "portal_site:admin"
+        ]
+      }
+    ],
+    "Dashboard": [
+      {},
+      {}
+    ],
+    "Announcements": [
+      {
+        "anyPermission": [
+          "announcement:read",
+          "announcement:write",
+          "announcement:admin"
+        ]
+      },
+      {}
+    ],
+    "AgentTaskCenter": [
+      {
+        "anyPermission": [
+          "agent_runtime:read",
+          "agent_runtime:write",
+          "agent_runtime:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "agent_runtime:read",
+          "agent_runtime:write",
+          "agent_runtime:admin"
+        ]
+      }
+    ],
+    "KnowledgeWorkbench": [
+      {
+        "anyPermission": [
+          "knowledge:read",
+          "knowledge:write",
+          "knowledge:review",
+          "knowledge:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "knowledge:read",
+          "knowledge:write",
+          "knowledge:review",
+          "knowledge:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "knowledge:read",
+          "knowledge:write",
+          "knowledge:review",
+          "knowledge:admin",
+          "knowledge_ai:write",
+          "knowledge_ai:admin"
+        ]
+      }
+    ],
+    "KnowledgeAiSettings": [
+      {
+        "permission": "knowledge_ai:admin"
+      },
+      {
+        "permission": "knowledge_ai:admin"
+      },
+      {
+        "anyPermission": [
+          "knowledge:read",
+          "knowledge:write",
+          "knowledge:review",
+          "knowledge:admin",
+          "knowledge_ai:write",
+          "knowledge_ai:admin"
+        ]
+      }
+    ],
+    "EmployeeAttribute": [
+      {
+        "anyPermission": [
+          "employee:read",
+          "employee:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "employee:read",
+          "employee:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "employee:read",
+          "employee:write",
+          "supervisor:read",
+          "supervisor:write"
+        ]
+      }
+    ],
+    "SupervisorRelation": [
+      {
+        "anyPermission": [
+          "supervisor:read",
+          "supervisor:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "supervisor:read",
+          "supervisor:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "employee:read",
+          "employee:write",
+          "supervisor:read",
+          "supervisor:write"
+        ]
+      }
+    ],
+    "CustomerSnapshot": [
+      {
+        "anyPermission": [
+          "customer:read",
+          "customer:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "customer:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "customer:write"
+        ]
+      }
+    ],
+    "CustomerHubProfiles": [
+      {
+        "anyPermission": [
+          "customer:read",
+          "customer_radar:read",
+          "customer_pcw:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "customer_radar:read",
+          "customer_pcw:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
+    "CustomerHubAcquisition": [
+      {
+        "anyPermission": [
+          "sales_automation:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "sales_automation:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
+    "CustomerHubResearch": [
+      {
+        "anyPermission": [
+          "sales_automation:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "sales_automation:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
+    "CustomerHubOpportunities": [
+      {
+        "anyPermission": [
+          "customer_opportunity:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer_opportunity:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
+    "CustomerHubCalendar": [
+      {
+        "anyPermission": [
+          "customer_pcw:read",
+          "customer_radar:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer_pcw:read",
+          "customer_radar:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
+    "MailOutreachQueue": [
+      {
+        "anyPermission": [
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer:read",
+          "sales_automation:read",
+          "customer_opportunity:read",
+          "customer_radar:read",
+          "mail_outreach:read",
+          "mail_outreach:write",
+          "mail_outreach:admin"
+        ]
+      }
+    ],
+    "InvoiceManage": [
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync"
+        ]
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync"
+        ]
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "ReceiptManage": [
+      {
+        "anyPermission": [
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "InvoicePriceConfig": [
+      {
+        "permission": "invoice_price:read"
+      },
+      {
+        "permission": "invoice_price:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "OkkiSyncSettings": [
+      {
+        "permission": "invoice_okki:read"
+      },
+      {
+        "permission": "invoice_okki:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "ReceiptDateRepair": [
+      {
+        "permission": "invoice_repair:read"
+      },
+      {
+        "permission": "invoice_repair:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "FestivalOrderDetail": [
+      {
+        "permission": "festival_order:read"
+      },
+      {
+        "permission": "festival_order:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "BattleReports": [
+      {
+        "anyPermission": [
+          "battle_report:read",
+          "battle_report:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "battle_report:read",
+          "battle_report:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "OrderIntelligence": [
+      {
+        "permission": "order_intelligence:read"
+      },
+      {
+        "permission": "order_intelligence:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "FxSettlement": [
+      {
+        "permission": "fx_settlement:read"
+      },
+      {
+        "permission": "fx_settlement:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "AfterSalesList": [
+      {
+        "permission": "aftersales:read"
+      },
+      {
+        "permission": "aftersales:read"
+      },
+      {
+        "anyPermission": [
+          "aftersales:read",
+          "aftersales:write",
+          "aftersales:review",
+          "aftersales:admin",
+          "aftersales_analytics:read"
+        ]
+      }
+    ],
+    "AfterSalesReviews": [
+      {
+        "permission": "aftersales:review"
+      },
+      {
+        "permission": "aftersales:review"
+      },
+      {
+        "anyPermission": [
+          "aftersales:read",
+          "aftersales:write",
+          "aftersales:review",
+          "aftersales:admin",
+          "aftersales_analytics:read"
+        ]
+      }
+    ],
+    "AfterSalesSop": [
+      {
+        "permission": "aftersales:admin"
+      },
+      {
+        "permission": "aftersales:admin"
+      },
+      {
+        "anyPermission": [
+          "aftersales:read",
+          "aftersales:write",
+          "aftersales:review",
+          "aftersales:admin",
+          "aftersales_analytics:read"
+        ]
+      }
+    ],
+    "AfterSalesAnalytics": [
+      {
+        "anyPermission": [
+          "aftersales_analytics:read",
+          "aftersales:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "aftersales_analytics:read",
+          "aftersales:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "aftersales:read",
+          "aftersales:write",
+          "aftersales:review",
+          "aftersales:admin",
+          "aftersales_analytics:read"
+        ]
+      }
+    ],
+    "ExpoWigLibrary": [
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:write",
+          "expo:admin",
+          "expo_lead:read",
+          "expo_lead:write",
+          "expo_hair_color:read",
+          "expo_scene:read",
+          "expo_script:read",
+          "expo_store:admin",
+          "expo_store:recharge",
+          "card:read",
+          "card:write"
+        ]
+      }
+    ],
+    "ExpoHairColorLibrary": [
+      {
+        "permission": "expo_hair_color:read"
+      },
+      {
+        "permission": "expo_hair_color:read"
+      },
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:write",
+          "expo:admin",
+          "expo_lead:read",
+          "expo_lead:write",
+          "expo_hair_color:read",
+          "expo_scene:read",
+          "expo_script:read",
+          "expo_store:admin",
+          "expo_store:recharge",
+          "card:read",
+          "card:write"
+        ]
+      }
+    ],
+    "ExpoSceneImages": [
+      {
+        "permission": "expo_scene:read"
+      },
+      {
+        "permission": "expo_scene:read"
+      },
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:write",
+          "expo:admin",
+          "expo_lead:read",
+          "expo_lead:write",
+          "expo_hair_color:read",
+          "expo_scene:read",
+          "expo_script:read",
+          "expo_store:admin",
+          "expo_store:recharge",
+          "card:read",
+          "card:write"
+        ]
+      }
+    ],
+    "ExpoPromptVersions": [
+      {
+        "permission": "expo:admin"
+      },
+      {
+        "permission": "expo:admin"
+      },
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:write",
+          "expo:admin",
+          "expo_lead:read",
+          "expo_lead:write",
+          "expo_hair_color:read",
+          "expo_scene:read",
+          "expo_script:read",
+          "expo_store:admin",
+          "expo_store:recharge",
+          "card:read",
+          "card:write"
+        ]
+      }
+    ],
+    "ExpoScriptLibrary": [
+      {
+        "permission": "expo_script:read"
+      },
+      {
+        "permission": "expo_script:read"
+      },
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:write",
+          "expo:admin",
+          "expo_lead:read",
+          "expo_lead:write",
+          "expo_hair_color:read",
+          "expo_scene:read",
+          "expo_script:read",
+          "expo_store:admin",
+          "expo_store:recharge",
+          "card:read",
+          "card:write"
+        ]
+      }
+    ],
+    "ExpoLeads": [
+      {
+        "anyPermission": [
+          "expo_lead:read",
+          "expo_lead:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "expo_lead:read",
+          "expo_lead:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:write",
+          "expo:admin",
+          "expo_lead:read",
+          "expo_lead:write",
+          "expo_hair_color:read",
+          "expo_scene:read",
+          "expo_script:read",
+          "expo_store:admin",
+          "expo_store:recharge",
+          "card:read",
+          "card:write"
+        ]
+      }
+    ],
+    "ExpoStoreManagement": [
+      {
+        "anyPermission": [
+          "expo_store:admin",
+          "expo_store:recharge"
+        ]
+      },
+      {
+        "anyPermission": [
+          "expo_store:admin",
+          "expo_store:recharge"
+        ]
+      },
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:write",
+          "expo:admin",
+          "expo_lead:read",
+          "expo_lead:write",
+          "expo_hair_color:read",
+          "expo_scene:read",
+          "expo_script:read",
+          "expo_store:admin",
+          "expo_store:recharge",
+          "card:read",
+          "card:write"
+        ]
+      }
+    ],
+    "CardButler": [
+      {
+        "anyPermission": [
+          "card:read",
+          "card:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "card:read",
+          "card:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "expo:read",
+          "expo:write",
+          "expo:admin",
+          "expo_lead:read",
+          "expo_lead:write",
+          "expo_hair_color:read",
+          "expo_scene:read",
+          "expo_script:read",
+          "expo_store:admin",
+          "expo_store:recharge",
+          "card:read",
+          "card:write"
+        ]
+      }
+    ],
+    "/festival/": [
+      {},
+      {
+        "permission": "festival:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "PaymentSync": [
+      {
+        "anyPermission": [
+          "payment:read",
+          "payment:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "payment:read",
+          "payment:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "commission:read",
+          "commission:write",
+          "commission:self_read",
+          "commission_my:read",
+          "payment:read",
+          "payment:write"
+        ]
+      }
+    ],
+    "SalesCommission": [
+      {
+        "permission": "commission_my:read"
+      },
+      {
+        "permission": "commission_my:read"
+      },
+      {
+        "anyPermission": [
+          "commission:read",
+          "commission:write",
+          "commission:self_read",
+          "commission_my:read",
+          "payment:read",
+          "payment:write"
+        ]
+      }
+    ],
+    "CommissionBatch": [
+      {
+        "anyPermission": [
+          "commission:read",
+          "commission:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "commission:read",
+          "commission:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "commission:read",
+          "commission:write",
+          "commission:self_read",
+          "commission_my:read",
+          "payment:read",
+          "payment:write"
+        ]
+      }
+    ],
+    "TrackingList": [
+      {
+        "anyPermission": [
+          "tracking:read",
+          "tracking:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "tracking:read",
+          "tracking:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "tracking:read",
+          "tracking:write",
+          "tracking:daily_report"
+        ]
+      }
+    ],
+    "WaybillUpload": [
+      {
+        "permission": "tracking:write"
+      },
+      {
+        "anyPermission": [
+          "tracking:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "tracking:read",
+          "tracking:write",
+          "tracking:daily_report"
+        ]
+      }
+    ],
+    "ShippingDailyReport": [
+      {
+        "permission": "tracking:daily_report"
+      },
+      {
+        "anyPermission": [
+          "tracking:daily_report"
+        ]
+      },
+      {
+        "anyPermission": [
+          "tracking:read",
+          "tracking:write",
+          "tracking:daily_report"
+        ]
+      }
+    ],
+    "StockOverview": [
+      {
+        "permission": "stock:read"
+      },
+      {
+        "permission": "stock:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "SafetyConfig": [
+      {
+        "permission": "stock:write"
+      },
+      {
+        "permission": "stock:write"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "StockDailyReport": [
+      {
+        "permission": "stock_daily:read"
+      },
+      {
+        "permission": "stock_daily:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "ProductionOrderManage": [
+      {
+        "permission": "production:read"
+      },
+      {
+        "permission": "production:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "ProductionOrderPrint": [
+      {
+        "permission": "production:print"
+      },
+      {
+        "permission": "production:print"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "SemifinishedMaterials": [
+      {
+        "permission": "semifinished:read"
+      },
+      {
+        "permission": "semifinished:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "SemifinishedOrders": [
+      {
+        "permission": "semifinished:read"
+      },
+      {
+        "permission": "semifinished:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "SemifinishedInventory": [
+      {
+        "permission": "semifinished:read"
+      },
+      {
+        "permission": "semifinished:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "ProductManage": [
+      {
+        "permission": "production_product:read"
+      },
+      {
+        "permission": "production_product:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "ProcessManage": [
+      {
+        "permission": "production:admin"
+      },
+      {
+        "permission": "production:admin"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "ProcessRouteManage": [
+      {
+        "permission": "production_route:read"
+      },
+      {
+        "permission": "production_route:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "ProductionDashboard": [
+      {
+        "permission": "production_dashboard:read"
+      },
+      {
+        "permission": "production_dashboard:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "DomesticDecision": [
+      {
+        "permission": "domestic_decision:read"
+      },
+      {
+        "permission": "domestic_decision:read"
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin",
+          "domestic_decision:read"
+        ]
+      }
+    ],
+    "DomesticOrders": [
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin",
+          "domestic_decision:read"
+        ]
+      }
+    ],
+    "DomesticOrderCreate": [
+      {
+        "permission": "domestic:write"
+      },
+      {
+        "permission": "domestic:write"
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin",
+          "domestic_decision:read"
+        ]
+      }
+    ],
+    "DomesticProductionOrderCreate": [
+      {
+        "permission": "domestic:write"
+      },
+      {
+        "permission": "domestic:write"
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin",
+          "domestic_decision:read"
+        ]
+      }
+    ],
+    "DomesticProducts": [
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin",
+          "domestic_decision:read"
+        ]
+      }
+    ],
+    "DomesticCustomers": [
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin",
+          "domestic_decision:read"
+        ]
+      }
+    ],
+    "DomesticCustomerRequests": [
+      {
+        "anyPermission": [
+          "domestic:review",
+          "domestic:admin",
+          "domestic:recharge"
+        ]
+      },
+      {
+        "anyPermission": [
+          "domestic:review",
+          "domestic:admin",
+          "domestic:recharge"
+        ]
+      },
+      {
+        "anyPermission": [
+          "domestic:read",
+          "domestic:write",
+          "domestic:recharge",
+          "domestic:admin",
+          "domestic_decision:read"
+        ]
+      }
+    ],
+    "ShippingOutbound": [
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "ShippingInspections": [
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "ShippingScan": [
+      {
+        "permission": "shipping_station:write"
+      },
+      {
+        "permission": "shipping_station:write"
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      }
+    ],
+    "AssetLibrary": [
+      {
+        "permission": "asset:read"
+      },
+      {
+        "permission": "asset:read"
+      },
+      {
+        "anyPermission": [
+          "asset:read",
+          "asset:write",
+          "asset:delete",
+          "asset:admin",
+          "asset_favorites:read",
+          "asset_stats:read"
+        ]
+      }
+    ],
+    "AssetUpload": [
+      {
+        "permission": "asset:write"
+      },
+      {
+        "permission": "asset:write"
+      },
+      {
+        "anyPermission": [
+          "asset:read",
+          "asset:write",
+          "asset:delete",
+          "asset:admin",
+          "asset_favorites:read",
+          "asset_stats:read"
+        ]
+      }
+    ],
+    "AssetFavorites": [
+      {
+        "permission": "asset_favorites:read"
+      },
+      {
+        "permission": "asset_favorites:read"
+      },
+      {
+        "anyPermission": [
+          "asset:read",
+          "asset:write",
+          "asset:delete",
+          "asset:admin",
+          "asset_favorites:read",
+          "asset_stats:read"
+        ]
+      }
+    ],
+    "AssetStats": [
+      {
+        "permission": "asset_stats:read"
+      },
+      {
+        "permission": "asset_stats:read"
+      },
+      {
+        "anyPermission": [
+          "asset:read",
+          "asset:write",
+          "asset:delete",
+          "asset:admin",
+          "asset_favorites:read",
+          "asset_stats:read"
+        ]
+      }
+    ],
+    "TagDimensionManage": [
+      {
+        "permission": "asset:admin"
+      },
+      {
+        "permission": "asset:admin"
+      },
+      {
+        "anyPermission": [
+          "asset:read",
+          "asset:write",
+          "asset:delete",
+          "asset:admin",
+          "asset_favorites:read",
+          "asset_stats:read"
+        ]
+      }
+    ],
+    "ColorPalette": [
+      {
+        "permission": "color:read"
+      },
+      {
+        "permission": "color:read"
+      },
+      {
+        "anyPermission": [
+          "color:read",
+          "color:write",
+          "color:admin",
+          "color_blend:read",
+          "color_trend:read"
+        ]
+      }
+    ],
+    "ColorBlends": [
+      {
+        "permission": "color_blend:read"
+      },
+      {
+        "permission": "color_blend:read"
+      },
+      {
+        "anyPermission": [
+          "color:read",
+          "color:write",
+          "color:admin",
+          "color_blend:read",
+          "color_trend:read"
+        ]
+      }
+    ],
+    "ColorTrends": [
+      {
+        "permission": "color_trend:read"
+      },
+      {
+        "permission": "color_trend:read"
+      },
+      {
+        "anyPermission": [
+          "color:read",
+          "color:write",
+          "color:admin",
+          "color_blend:read",
+          "color_trend:read"
+        ]
+      }
+    ],
+    "ColorSwatchGenerator": [
+      {
+        "permission": "color:write"
+      },
+      {
+        "permission": "color:write"
+      },
+      {
+        "anyPermission": [
+          "color:read",
+          "color:write",
+          "color:admin",
+          "color_blend:read",
+          "color_trend:read"
+        ]
+      }
+    ],
+    "TrainingList": [
+      {
+        "anyPermission": [
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "InsightIntelligenceOverview": [
+      {
+        "permission": "insight:read"
+      },
+      {
+        "permission": "insight:read"
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "InsightIntelligenceLibrary": [
+      {
+        "permission": "insight_library:read"
+      },
+      {
+        "permission": "insight_library:read"
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "InsightIndustryDaily": [
+      {
+        "permission": "insight_daily:read"
+      },
+      {
+        "permission": "insight_daily:read"
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "InsightAITools": [
+      {
+        "permission": "insight_ai_tools:read"
+      },
+      {
+        "permission": "insight_ai_tools:read"
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "InsightInternalReports": [
+      {
+        "permission": "insight:internal_read"
+      },
+      {
+        "anyPermission": [
+          "insight:internal_read",
+          "insight:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "InsightCaseLibrary": [
+      {
+        "anyPermission": [
+          "insight_case:read",
+          "insight_case:write",
+          "insight:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "insight_case:read",
+          "insight_case:write",
+          "insight:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "InsightMeetingMinutes": [
+      {
+        "anyPermission": [
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "insight:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "insight:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "InsightSources": [
+      {
+        "permission": "insight:admin"
+      },
+      {
+        "permission": "insight:admin"
+      },
+      {
+        "anyPermission": [
+          "insight:read",
+          "insight:internal_read",
+          "insight:admin",
+          "insight_library:read",
+          "insight_daily:read",
+          "insight_ai_tools:read",
+          "insight_case:read",
+          "insight_case:write",
+          "insight_minutes:read",
+          "insight_minutes:write",
+          "training:read",
+          "training:write",
+          "training:admin"
+        ]
+      }
+    ],
+    "DesignImageStudio": [
+      {
+        "anyPermission": [
+          "design_image:read",
+          "ai_chat:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "ai_chat:read"
+        ]
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "CustomerImageAdmin": [
+      {
+        "anyPermission": [
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "DesignGantt": [
+      {
+        "permission": "design_gantt:read"
+      },
+      {
+        "permission": "design_gantt:read"
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "DesignSubmit": [
+      {
+        "permission": "design:write"
+      },
+      {
+        "anyPermission": [
+          "design:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "MyRequests": [
+      {
+        "permission": "design_my:read"
+      },
+      {
+        "permission": "design_my:read"
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "CustomerMediaPortalPreview": [
+      {
+        "anyPermission": [
+          "customer_media_portal:read",
+          "customer_media:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer_media_portal:read",
+          "customer_media:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "CustomerMediaReview": [
+      {
+        "anyPermission": [
+          "customer_media:read",
+          "customer_media:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "customer_media:read",
+          "customer_media:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "CustomerMediaAccounts": [
+      {
+        "permission": "customer_media:admin"
+      },
+      {
+        "permission": "customer_media:admin"
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "DesignAudit": [
+      {
+        "permission": "design:audit"
+      },
+      {
+        "permission": "design:audit"
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "DesignManage": [
+      {
+        "permission": "design:manage"
+      },
+      {
+        "permission": "design:manage"
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "DesignStats": [
+      {
+        "permission": "design_stats:read"
+      },
+      {
+        "permission": "design_stats:read"
+      },
+      {
+        "anyPermission": [
+          "design_image:read",
+          "customer_image:read",
+          "customer_image:write",
+          "customer_image:admin",
+          "ai_chat:read",
+          "design:read",
+          "design:write",
+          "design:audit",
+          "design:manage",
+          "design_gantt:read",
+          "design_my:read",
+          "design_stats:read",
+          "customer_media:read",
+          "customer_media:write",
+          "customer_media:admin",
+          "customer_media_portal:read"
+        ]
+      }
+    ],
+    "SalaryProfiles": [
+      {
+        "anyPermission": [
+          "salary:read",
+          "salary:write",
+          "salary:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "salary:read",
+          "salary:write",
+          "salary:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "salary:read",
+          "salary:write",
+          "salary:admin"
+        ]
+      }
+    ],
+    "SalaryRules": [
+      {
+        "anyPermission": [
+          "salary:read",
+          "salary:write",
+          "salary:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "salary:read",
+          "salary:write",
+          "salary:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "salary:read",
+          "salary:write",
+          "salary:admin"
+        ]
+      }
+    ],
+    "SalaryPeriods": [
+      {
+        "anyPermission": [
+          "salary:read",
+          "salary:write",
+          "salary:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "salary:read",
+          "salary:write",
+          "salary:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "salary:read",
+          "salary:write",
+          "salary:admin"
+        ]
+      }
+    ],
+    "UserManagement": [
+      {
+        "permission": "user:read"
+      },
+      {
+        "permission": "user:read"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "RoleManagement": [
+      {
+        "permission": "role:read"
+      },
+      {
+        "permission": "role:read"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "DictManagement": [
+      {
+        "permission": "dict:read"
+      },
+      {
+        "permission": "dict:read"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "AIManager": [
+      {
+        "permission": "ai:admin"
+      },
+      {
+        "permission": "ai:admin"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "OperationsCenter": [
+      {
+        "anyPermission": [
+          "operations:read",
+          "operations:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "operations:read",
+          "operations:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "McpTokenManagement": [
+      {
+        "permission": "mcp:admin"
+      },
+      {
+        "permission": "mcp:admin"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "IntegrationAppManagement": [
+      {
+        "permission": "integration:admin"
+      },
+      {
+        "permission": "integration:admin"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "GmvDailyConfig": [
+      {
+        "permission": "dingtalk:admin"
+      },
+      {
+        "permission": "dingtalk:admin"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "ExternalBindings": [
+      {
+        "permission": "external_binding:read"
+      },
+      {
+        "permission": "external_binding:read"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "WhatsAppConnector": [
+      {
+        "permission": "whatsapp:read"
+      },
+      {
+        "permission": "whatsapp:read"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "WhatsAppTranslation": [
+      {
+        "permission": "whatsapp_translation:admin"
+      },
+      {
+        "permission": "whatsapp_translation:admin"
+      },
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
+    "ReportCenter": [
+      {
+        "anyPermission": [
+          "report:read",
+          "report:design",
+          "report:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "report:read",
+          "report:design",
+          "report:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "report:read",
+          "report:design",
+          "report:admin"
+        ]
+      }
+    ],
+    "ConceptRegistry": [
+      {
+        "anyPermission": [
+          "governance:read",
+          "governance:write",
+          "governance:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "governance:read",
+          "governance:write",
+          "governance:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "governance:read",
+          "governance:write",
+          "governance:admin",
+          "governance_graph:read",
+          "governance_log:read"
+        ]
+      }
+    ],
+    "ConceptGraph": [
+      {
+        "permission": "governance_graph:read"
+      },
+      {
+        "permission": "governance_graph:read"
+      },
+      {
+        "anyPermission": [
+          "governance:read",
+          "governance:write",
+          "governance:admin",
+          "governance_graph:read",
+          "governance_log:read"
+        ]
+      }
+    ],
+    "ChangeLog": [
+      {
+        "permission": "governance_log:read"
+      },
+      {
+        "permission": "governance_log:read"
+      },
+      {
+        "anyPermission": [
+          "governance:read",
+          "governance:write",
+          "governance:admin",
+          "governance_graph:read",
+          "governance_log:read"
+        ]
+      }
+    ],
+    "ColorworkDownload": [
+      {
+        "permission": "colorwork_download:read"
+      },
+      {
+        "permission": "colorwork_download:read"
+      },
+      {
+        "anyPermission": [
+          "colorwork_download:read",
+          "colorwork_edit:read",
+          "colorwork_master:read"
+        ]
+      }
+    ],
+    "ColorworkEdit": [
+      {
+        "permission": "colorwork_edit:read"
+      },
+      {
+        "permission": "colorwork_edit:read"
+      },
+      {
+        "anyPermission": [
+          "colorwork_download:read",
+          "colorwork_edit:read",
+          "colorwork_master:read"
+        ]
+      }
+    ],
+    "ColorworkMaster": [
+      {
+        "permission": "colorwork_master:read"
+      },
+      {
+        "permission": "colorwork_master:read"
+      },
+      {
+        "anyPermission": [
+          "colorwork_download:read",
+          "colorwork_edit:read",
+          "colorwork_master:read"
+        ]
+      }
+    ],
+    "TaskCenter": [
+      {
+        "anyPermission": [
+          "task:read",
+          "task:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "task:read",
+          "task:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "task:read",
+          "task:write"
+        ]
+      }
+    ]
+  }
+}
