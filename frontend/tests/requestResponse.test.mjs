@@ -107,6 +107,26 @@ test('real Axios serialization failure releases only its own loading slot', asyn
   assert.equal(loadingState.count, 0)
 })
 
+test('quiet background reads leave interactive loading feedback intact', async () => {
+  const { client, loadingState } = loadResponseHandlers(realAxios)
+  const pending = new Map()
+  client.defaults.adapter = config => new Promise(resolve => {
+    pending.set(config.url, () => resolve({ config, status: 200, data: { code: 200 }, headers: {} }))
+  })
+  const quiet = client.get('/pending-count', { showLoading: false })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(loadingState.count, 0)
+  const interactive = client.get('/manual-search')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(loadingState.count, 1)
+  pending.get('/pending-count')()
+  await quiet
+  assert.equal(loadingState.count, 1)
+  pending.get('/manual-search')()
+  await interactive
+  assert.equal(loadingState.count, 0)
+})
+
 test('response interceptor still rejects non-2xx business codes', async () => {
   const { handlers, messages } = loadResponseHandlers()
   const response = code => handlers.success({

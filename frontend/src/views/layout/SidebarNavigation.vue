@@ -103,7 +103,7 @@
             @keydown.esc.prevent.stop="closeKeyboardGroup($event, group.key)" @focusout="leaveKeyboardGroup($event, group.key)">
             <el-icon><component :is="item.icon" /></el-icon>
             <template #title>
-              <el-badge v-if="item.badge === 'domesticReviews'" :value="pendingReviews" :max="Number.MAX_SAFE_INTEGER" :hidden="pendingReviews === 0" class="nav-review-badge" :aria-label="`${item.title}，${pendingReviews}笔待审核`">
+              <el-badge v-if="item.badge === 'domesticReviews'" :value="pendingReviews ?? 0" :max="Number.MAX_SAFE_INTEGER" :hidden="pendingReviews == null || pendingReviews === 0" class="nav-review-badge" :aria-label="pendingReviews == null ? `${item.title}，待审核数量暂未获取` : `${item.title}，${pendingReviews}笔待审核`">
                 <span>{{ item.title }}</span>
               </el-badge>
               <span v-else class="nav-document-label" :title="documentBadgeTitle(item)">{{ item.title }}<template v-if="documentAnomalies[item.anomalyDomain]?.has_anomaly"><button v-if="item.anomalyDomain === 'outbound'" type="button" class="nav-document-anomaly nav-document-anomaly-button" :aria-label="documentBadgeTitle(item)" @click.stop.prevent="outboundProblemsVisible = true" @keydown.enter.stop @keydown.space.stop>!</button><span v-else class="nav-document-anomaly" :aria-label="documentBadgeTitle(item)">!</span></template></span>
