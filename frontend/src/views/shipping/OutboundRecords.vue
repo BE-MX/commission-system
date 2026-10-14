@@ -89,8 +89,9 @@
         <el-table-column sortable="custom" v-if="visibleKeys.includes('photo-count')" prop="photo_count" label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="370" fixed="right">
           <template #default="{ row }">
+            <GlassButton variant="link" left-icon="Box" @click="inventoryRow = row; inventoryVisible = true">库存详情</GlassButton>
             <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
             <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Printer"
@@ -130,6 +131,7 @@
     </div>
     <OutboundSyncDialog v-model:visible="syncVisible" :busy="syncingId !== null" :preview="syncPreview" :row="syncRow" @apply="applySync" />
     <OutboundProblemsDrawer v-if="problemsVisible" v-model="problemsVisible" />
+    <OutboundInventoryDrawer v-if="inventoryVisible" v-model="inventoryVisible" :row="inventoryRow" />
   </div>
 </template>
 
@@ -150,6 +152,9 @@ import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from 
 import { formatBeijingDateTime } from '@/utils/datetime'
 const OutboundProblemsDrawer = defineAsyncComponent(() => import('./OutboundProblemsDrawer.vue'))
 const problemsVisible = ref(false)
+const OutboundInventoryDrawer = defineAsyncComponent(() => import('./OutboundInventoryDrawer.vue'))
+const inventoryVisible = ref(false)
+const inventoryRow = ref(null)
 
 const listPageState = useOutboundRecords()
 const {

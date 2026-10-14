@@ -38,6 +38,8 @@ from app.shipping_inspection.station_router import router as station_router
 router.include_router(station_router)
 from app.shipping_inspection.outbound_sync_router import router as outbound_sync_router
 router.include_router(outbound_sync_router)
+from app.shipping_inspection.outbound_inventory_router import router as outbound_inventory_router
+router.include_router(outbound_inventory_router)
 
 _READ = ("shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:admin")
 

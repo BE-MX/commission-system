@@ -22,6 +22,10 @@ export function getOutboundPrintData(id) {
   return shippingClient.get(`/outbound-records/${id}/print-data`)
 }
 
+export function getOutboundInventory(id, config = {}) {
+  return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/inventory`, config)
+}
+
 export function downloadOutboundWord(id) {
   return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/word`, { responseType: 'blob' })
 }

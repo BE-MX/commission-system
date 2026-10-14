@@ -1420,6 +1420,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
 
+2026-10-14 库存详情：`GET /api/shipping-inspection/outbound-records/{record_id}/inventory`，任一 `shipping_inspection:read/write/admin`，沿用出库归属及 `read_all` 范围；支持 `task:<id>` 和正式出库记录，响应 `Cache-Control: private, no-store`。只读 `okki_inventory` 镜像，无远端写入或出库触发。返回 `record`、`warehouse_id/name`、`source=okki_inventory_mirror`、北京时间 `queried_at`、`shortage_count/unknown_count`、`items[]`。每项按 `(product_id,sku_id)` 合计本单需求，保留 `line_numbers`，返回 `required/available/real_count/unavailable_count/shortage/unit/status/disabled/synced_at/warehouses[]`；缺口只比较目标仓库可用量，不合计其他仓库。待出库目标沿用自动生成仓库；正式单读取自身仓库，已核实快照优先于滞后镜像明细。缺失映射、目标库存、同步时间或无效数量显示 `unknown`，不推断为零库存。`unavailable_count` 仅为实存减可用，不声称全部属于占用。正式单及已生成待同步任务可能已占用/扣减库存，库存对照不构成再次补货或出库依据。入口位于出库单列表每行操作区「库存详情」，支持刷新、只看缺货/待核对及展开各仓库详情。
+
 2026-10-08 自动重试状态：本地待出库记录 `outbound_state` 新增 `retrying`（前端显示“重新生成中”，包括等待自动重试的退避阶段）。仅执行端已记录 `pre_submit_failed`、认领次数与重试策略吻合、尚未耗尽上限，且发票仍同步成功、未取消、无关联同步任务时返回此状态。相应本地行新增 `retry_next_at`（无时区北京时间字符串，最早认领时间）、`retry_attempt`（下一次尝试序号）；其他本地状态两字段为 `null`。排序在分页前使用相同的显示状态。重试行仍为 `can_print=false`，不能打印、下载或扫码验货；不向客户端返回执行日志及业务差异原值。缺少已核实策略、最终失败及提交不确定任务仍须管理员核对。生成端按实际出库业务快照核对变化，说明见 `deploy/okki_outbound_poller.md`。
 
 2026-09-18：手机网页和小程序的扫码、刷新响应 `items` 与出库单打印、Word 共用排序函数：规格自然升序，同规格按尺寸数值升序；相同排序键保持原相对顺序。数量及照片/视频的 `item_id` 归属不变。
