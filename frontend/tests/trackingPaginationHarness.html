@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Isolated tracking pagination</title>
+<div id="app"></div>
+<script type="module">
+import { createApp, h } from 'vue'
+import { createPinia } from 'pinia'
+import { createRouter, createWebHistory, RouterView } from 'vue-router'
+import ElementPlus from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import * as icons from '@element-plus/icons-vue'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import '../src/styles/liquid-glass.css'
+import '../src/styles/dashboard-theme.css'
+import '../src/styles/app.css'
+import MainLayout from '../src/views/layout/MainLayout.vue'
+import TrackingList from '../src/views/tracking/TrackingList.vue'
+import GlassButton from '../src/components/GlassButton.vue'
+import StatusBadge from '../src/components/StatusBadge.vue'
+import FilterBar from '../src/components/FilterBar.vue'
+import ListPageStatus from '../src/components/ListPageStatus.vue'
+import { useAuthStore } from '../src/stores/auth'
+import { registerPermissionDirectives } from '../src/directives/permission'
+import { registerSortableTables } from '../src/components/SortableTableColumn'
+import { registerStickyScrollbarDirective } from '../src/directives/stickyScrollbar'
+
+const app = createApp({ render: () => h(RouterView) })
+const router = createRouter({ history: createWebHistory(), routes: [{
+  path: '/', component: MainLayout, children: [{
+    path: 'tests/trackingPaginationHarness.html', name: 'TrackingList',
+    component: TrackingList, meta: { title: '物流跟踪', activeMenu: '/tracking' },
+  }],
+}] })
+app.use(createPinia()).use(router).use(ElementPlus, { locale: zhCn })
+for (const [name, component] of Object.entries(icons)) app.component(name, component)
+for (const [name, component] of Object.entries({ GlassButton, StatusBadge, FilterBar, ListPageStatus })) app.component(name, component)
+registerPermissionDirectives(app)
+registerSortableTables(app)
+registerStickyScrollbarDirective(app)
+useAuthStore().user = { id: 1, real_name: 'Layout test', roles: [], permissions: ['tracking:read'] }
+await router.isReady()
+app.mount('#app')
+</script>
+</html>
