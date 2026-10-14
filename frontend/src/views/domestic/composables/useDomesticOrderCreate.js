@@ -12,6 +12,7 @@ import {
   createOrder, getOptions, listCustomers, quoteDomesticPrices, uploadImage,
 } from '@/api/domestic'
 import { currentBeijingDate } from '@/utils/datetime'
+import { expectedCommission, retainSelectedCustomer } from '../domesticCommission'
 import {
   attributeFieldLabel,
   attributeOptions,
@@ -232,7 +233,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
     customerLoading.value = true
     await runLatestCustomerSearch(
       () => listCustomers({ page: 1, page_size: 50, keyword, status: 1 }),
-      res => { customers.value = res.data?.items || [] },
+      res => { customers.value = retainSelectedCustomer(res.data?.items || [], selectedCustomer.value) },
       () => { customerLoading.value = false },
     )
   }
@@ -305,6 +306,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
     if (!form.order_date) return '请选择下单日期'
     if (!isProduction && !form.required_ship_date) return '请选择要求发货日期'
     if (!isProduction && !form.customer_id && !form.customer_shop_name.trim()) return '请选择或填写客户店名'
+    if (!isProduction && form.customer_id && !selectedCustomer.value?.commission_allocations?.length) return '客户未配置提成分配，请先在客户管理中配置'
     if (!isProduction && !form.order_category) return '请选择订单类别'
     if (!isProduction && !form.order_type) return '请选择订单类型'
     if (!isProduction && !form.order_channel) return '请选择订单渠道'
@@ -334,6 +336,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       required_ship_date: form.required_ship_date,
       customer_id: form.customer_id || null,
       customer_shop_name: form.customer_id ? null : form.customer_shop_name.trim(),
+      expected_commission_allocations: form.customer_id ? expectedCommission(selectedCustomer.value?.commission_allocations) : null,
       order_category: form.order_category,
       order_type: form.order_type,
       order_channel: form.order_channel,
@@ -360,6 +363,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
         { suppressToast: true },
       )
     } catch (error) {
+      if (handleCommissionChanged(error)) return null
       const changed = quoteChangedDetail(error)
       if (!changed) {
         const detail = error?.response?.data?.detail
@@ -406,6 +410,14 @@ export function useDomesticOrderCreate(orderKind = 'business') {
 
   function goProducts() {
     router.push({ name: 'DomesticProducts', query: { price_status: 'missing' } })
+  }
+
+  function handleCommissionChanged(error) {
+    const detail = error?.response?.data?.detail
+    if (detail?.code !== 'COMMISSION_ALLOCATION_CHANGED') return false
+    if (selectedCustomer.value) selectedCustomer.value.commission_allocations = detail.commission_allocations
+    msgWarning(detail.message)
+    return true
   }
 
   async function submit(isDraft = false) {
@@ -455,7 +467,9 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       }
       resetForm()
       router.push({ name: 'DomesticOrders', query: { keyword: data.domestic_no, order_kind: orderKind } })
-    } catch { /* 拦截器已提示 */ } finally {
+    } catch (error) {
+      if (!handleCommissionChanged(error)) msgError(error?.response?.data?.detail?.message || error.message || '下单失败，请重试', error)
+    } finally {
       submitting.value = false
     }
   }

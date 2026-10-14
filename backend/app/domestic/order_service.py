@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from app.auth.models import ArkUser
 from app.domestic import constants as C
 from app.domestic import price_review
+from app.domestic import commission_service
 
 
 from app.domestic import (
@@ -90,6 +91,8 @@ def _public_progress_step(step: dict) -> dict:
 def _order_request_hash(payload: OrderCreate) -> str:
     """Canonical fingerprint used to reject accidental request-id reuse."""
     data = payload.model_dump(mode="json", exclude={"request_id"})
+    if data.get("expected_commission_allocations") is None:
+        data.pop("expected_commission_allocations", None)
     # Preserve persisted fingerprints for requests created before the optional field existed.
     for item in data["items"]:
         for field in ("guest_name", "guest_order_date"):
@@ -498,6 +501,10 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
         if not production and customer.owner_user_id != user_id:
             raise ValueError("只有客户归属销售可以对该客户下单")
 
+        allocations = [] if production else commission_service.locked_allocations(
+            db, customer.id, payload.expected_commission_allocations,
+        )
+
         prepared = _prepare_order_products(
             db,
             payload.items,
@@ -615,6 +622,9 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 print("[domestic] 单号撞号，换序号重试", flush=True)
         if order is None:
             raise ValueError("订单号生成冲突，请重试")
+
+        if not production:
+            commission_service.save_order_snapshot(db, order.id, allocations)
 
         warnings = []
         for line_no, ((item_payload, product), quote) in enumerate(
@@ -1166,6 +1176,7 @@ def get_order_detail(
     # 实际扣款和客户余额属于内部财务数据；免登录进度页、普通绑定小程序
     # 都不返回。主站 RBAC 详情才包含这两个字段。
     if include_finance:
+        detail["commission_allocations"] = commission_service.order_snapshot(db, order.id)
         detail["created_by"] = order.created_by
         detail["review_version"] = order.review_version
         detail["created_by_name"] = db.query(ArkUser.real_name).filter(
@@ -1287,6 +1298,7 @@ def update_order(
         if "order_category" in data and data["order_category"] != order.order_category:
             raise ValueError("订单类别决定工艺路线，创建后不能切换；请重新下单")
         changes_customer = "customer_id" in data
+        actual_customer_change = changes_customer and payload.customer_id != order.customer_id
 
         if changes_customer:
             update_fields = payload.model_dump(
@@ -1313,6 +1325,8 @@ def update_order(
                 raise ValueError("只有草稿订单可以更换客户并重新报价")
 
             customer = _lock_customer(db, payload.customer_id)
+            if actual_customer_change:
+                allocations = commission_service.locked_allocations(db, customer.id)
             items = _lock_draft_items(db, order.id)
             _validate_expected_item_set(items, payload.expected_quotes)
             quotes = _lock_and_validate_saved_item_quotes(
@@ -1374,6 +1388,10 @@ def update_order(
             _apply_saved_item_quotes(items, quotes)
         for field, value in persisted_data.items():
             setattr(order, field, value)
+        if actual_customer_change:
+            # Audit hooks must observe the new customer's identity for the new snapshot.
+            db.flush()
+            commission_service.save_order_snapshot(db, order.id, allocations, replace=True)
 
         if changes_customer:
             db.flush()

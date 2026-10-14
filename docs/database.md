@@ -347,6 +347,8 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 
 ## 内贸订单（迁移 081～145，2026-07-27 至 2026-09-11）
 
+迁移 `196_domestic_commission`（接 `195_main_portal_merge`，本地实现）：新增客户配置表 `ark_domestic_customer_commissions`（id/customer_id/user_id/rate/created_at）及订单快照表 `ark_domestic_order_commissions`（id/order_id/user_id/user_name_snapshot/rate/created_at）。`rate NUMERIC(5,4)` 是订单金额直接提成率，0.04=4%；客户与订单分别以父 ID + user_id 唯一，用户 FK 为 INT UNSIGNED / RESTRICT。配置由服务校验 1～2 名不同在职用户、单项正数且合计不超过 100%，默认新客户归属销售 4%；时间为无时区北京时间。订单与快照在同一事务创建。配置和快照变化复用 `ark_domestic_analysis_events` 留痕。迁移不回填存量客户或订单、不修改余额、账本、金额；降级拒绝删除业务证据，只由正式部署入口升级生产。
+
 迁移 `184_domestic_request_withdraw`：`ark_domestic_orders.review_version INT NOT NULL DEFAULT 0`记录价格审核提交轮次，存量默认0，新待审建单为1，后续进入待审递增；锁内比对页面所见版本，防止旧页面批准撤回后重新提交的新报价。`ark_domestic_customer_requests.status`的CHECK增加`withdrawn`，新增可空`withdrawn_at DATETIME`（北京时间）与`resubmitted_request_id BIGINT`（关联重新提交的新申请ID，逻辑引用）；原申请保留，不覆盖金额、说明与凭证。无账本或余额回填，迁移只由统一部署入口执行，降级禁止删除这些业务证据。
 
 迁移 `160_domestic_price_review` 新增 `ark_domestic_order_items.default_discount_price DECIMAL(14,2) NULL`，保存系统默认商品优惠价，供审核比较，独立于手工成交价且不含手工费。新报价写入；历史 NULL 使用已保存系统价或按原价、会员及属性快照重建人工价的默认对照。新增 `sys_dict.domestic_order_type` 的 `sample=样单`，保留已有同编码配置。迁移不更改历史订单状态、金额或客户等级，生产由统一部署入口执行。

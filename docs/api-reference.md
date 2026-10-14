@@ -947,6 +947,16 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 
 ## 内贸订单（`/api/domestic`，081～140 相关迁移，2026-07-27 至 2026-09-07）
 
+### 客户提成分配与订单快照（2026-10-14，本地实现，迁移 196）
+
+- `POST /customers`：默认自动为保存时的归属销售创建 4% 配置；未指定归属的内部创建链路使用当前销售。下单就地建档及导入新客户同样初始化；导入更新已有客户不覆盖配置。
+- `GET /customers`：每行新增 `commission_allocations: [{user_id, user_name, rate}]`，rate 为四位小数字符串（如 `"0.0300"`），名称为当前用户名。
+- `PUT /customers/{id}`：可整体替换 `commission_allocations: [{user_id, rate}]`；沿用 `domestic:write` 和客户当前操作范围。未传保持不变，显式 null/空列表拒绝。限 1～2 名不同在职用户，直接提成率为正且合计不超过 100%。更换客户归属不自动重设配置，也不因提成分配扩大下单权限。
+- `POST /orders`：业务单首次保存（含草稿）在客户锁内以当前读取得配置，并同事务保存姓名、人员及比例快照。可传 `expected_commission_allocations: [{user_id, rate}]` 校验页面所见配置；主站选已有客户时始终传此字段，变化返回 HTTP 409 / `detail.code=COMMISSION_ALLOCATION_CHANGED`，带最新 `commission_allocations`。页面刷新显示后须再次提交，不自动重发。就地新建客户使用自动 4%。无配置拒绝新业务单，生产单不参与。
+- `GET /orders/{id}`：内部详情新增 `commission_allocations`，读取本单快照；公共进度及 `include_finance=False` 不返回。历史空快照显示“未记录提成分配”，不根据当前配置补算。
+- 草稿实际更换客户时同步重建快照并审计；同一客户普通编辑、提交、重审、追加明细以及幂等重放保留原快照。未提供 expected 字段时不改变发布前请求的指纹。
+
+
 ### 审核撤回与重新提交（2026-10-12，本地实现）
 
 - `POST /orders/{id}/withdraw-review`：`domestic:write`且本人创建；JSON必填`review_version`（页面所见轮次）。仅待审核且尚未扣款可退回草稿，然后沿用明细编辑与草稿提交。与审批共用订单行锁。

@@ -92,6 +92,8 @@ def _create_order(db, user, item_count=1):
     )
     db.add(customer)
     db.flush()
+    from app.domestic.commission_service import initialize_default
+    initialize_default(db, customer)
     items = []
     shared_base = None
     from app.domestic import pricing_service

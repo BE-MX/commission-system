@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
 from app.domestic import balance_service
+from app.domestic import commission_service
 from app.domestic import constants as C
 from app.domestic.models import DomesticCustomer, DomesticCustomerLedger, DomesticOrder
 from app.domestic.pricing_service import membership_label
@@ -229,6 +230,7 @@ def list_customers(
                 .all()
             )
 
+    commissions = commission_service.customer_allocations(db, [r.id for r in rows])
     items = [{
         "id": r.id,
         "shop_name": r.shop_name,
@@ -254,6 +256,7 @@ def list_customers(
         "lifecycle_status": r.lifecycle_status,
         "owner_user_id": r.owner_user_id,
         "owner_name": owner_names.get(r.owner_user_id),
+        "commission_allocations": commissions[r.id],
         "first_contact_date": r.first_contact_date.isoformat() if r.first_contact_date else None,
         "first_order_date": r.first_order_date.isoformat() if r.first_order_date else None,
         "last_order_date": r.last_order_date.isoformat() if r.last_order_date else None,
@@ -293,6 +296,7 @@ def find_or_create_by_shop_name(db: Session, shop_name: str, user_id: int) -> Do
     db.add(customer)
     try:
         db.flush()
+        commission_service.initialize_default(db, customer)
         savepoint.commit()
     except IntegrityError:
         # 并发：两笔下单同时新建同一店名，撞 unique 后改取已存在的行
@@ -338,10 +342,15 @@ def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Domes
     )
     db.add(customer)
     try:
+        db.flush()
+        commission_service.initialize_default(db, customer)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise ValueError("客户店名或客户编码已存在") from exc
+    except Exception:
+        db.rollback()
+        raise
     return customer
 
 
@@ -356,7 +365,7 @@ def update_customer(
     db.info["domestic_actor_id"] = operator_id
     customer = db.query(DomesticCustomer).filter(
         DomesticCustomer.id == customer_id
-    ).with_for_update().first()
+    ).populate_existing().with_for_update().first()
     if not customer:
         raise ValueError("客户不存在")
     _ensure_customer_operator(customer, operator_id, can_operate_all=can_operate_all)
@@ -376,6 +385,14 @@ def update_customer(
         customer.custom_code = data["custom_code"]
     if "owner_user_id" in data:
         _validate_owner(db, data["owner_user_id"])
+    if "commission_allocations" in data:
+        try:
+            if data["commission_allocations"] is None:
+                raise ValueError("提成分配不能为空")
+            commission_service.replace_allocations(db, customer.id, data["commission_allocations"])
+        except Exception:
+            db.rollback()
+            raise
     for field in (*CUSTOMER_PROFILE_FIELDS, "status", "settle_mode"):
         if field in data:
             setattr(customer, field, data[field])
@@ -409,6 +426,10 @@ def delete_customer(
     ).scalar() or 0
     if ledger_count:
         raise ValueError(f"该客户已有 {ledger_count} 条充值或资金流水，不能删除；可改为停用")
+    # Explicit deletes also work in isolated SQLite (which may not enable FK cascades).
+    from app.domestic.models import DomesticCustomerCommission
+    for allocation in db.query(DomesticCustomerCommission).filter_by(customer_id=customer.id).all():
+        db.delete(allocation)
     db.delete(customer)
     try:
         db.commit()

@@ -118,6 +118,7 @@
             <span v-if="detail.order_kind !== 'production'"><strong>订单总金额：{{ formatMoney(Number(detail.total_amount || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</strong></span>
             <span v-if="detail.customer_custom_code">客户编码：{{ detail.customer_custom_code }}</span>
             <span v-if="detail.order_kind !== 'production'">当前会员：{{ membershipLevelLabel(detail.customer_membership_level) }}</span>
+            <span v-if="detail.order_kind !== 'production'">本单提成：{{ commissionSummary(detail.commission_allocations, '未记录提成分配') }}</span>
             <span v-if="detail.customer_province || detail.customer_city">地区：{{ [detail.customer_province, detail.customer_city].filter(Boolean).join(' / ') }}</span>
             <span v-if="detail.customer_contact">联系人：{{ detail.customer_contact }}</span>
             <span v-if="detail.customer_phone">电话：{{ detail.customer_phone }}</span>
@@ -363,6 +364,7 @@
 </template>
 
 <script setup>
+import { commissionSummary } from './domesticCommission'
 import { ref as deliveryRef } from 'vue'
 const deliveryDialog = deliveryRef(null)
 

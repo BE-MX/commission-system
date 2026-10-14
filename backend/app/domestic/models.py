@@ -79,6 +79,37 @@ class DomesticCustomer(Base):
     )
 
 
+class DomesticCustomerCommission(Base):
+    """客户当前提成配置；与客户归属权限分别管理。"""
+
+    __tablename__ = "ark_domestic_customer_commissions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(_UINT, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="提成业务员")
+    rate = Column(Numeric(5, 4), nullable=False, comment="订单金额直接提成率，0.04=4%")
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    __table_args__ = (
+        UniqueConstraint("customer_id", "user_id", name="uq_dom_customer_commission_user"),
+        CheckConstraint("rate > 0 AND rate <= 1", name="ck_dom_customer_commission_rate"),
+    )
+
+
+class DomesticOrderCommission(Base):
+    """建单时的人员和比例快照，不随客户配置更新。"""
+
+    __tablename__ = "ark_domestic_order_commissions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(Integer, ForeignKey("ark_domestic_orders.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(_UINT, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, index=True, comment="提成业务员")
+    user_name_snapshot = Column(String(50), nullable=False, comment="建单时业务员姓名")
+    rate = Column(Numeric(5, 4), nullable=False, comment="建单时直接提成率")
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    __table_args__ = (
+        UniqueConstraint("order_id", "user_id", name="uq_dom_order_commission_user"),
+        CheckConstraint("rate > 0 AND rate <= 1", name="ck_dom_order_commission_rate"),
+    )
+
+
 class DomesticProduct(Base):
     """内贸产品 — 下单选属性后 find-or-create 沉淀，attrs_key 是身份"""
 

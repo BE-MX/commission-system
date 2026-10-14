@@ -26,6 +26,7 @@ from app.domestic import constants as C
 from app.domestic import (
     attribute_service,
     balance_service,
+    commission_service,
     customer_service,
     export_service,
     order_details_export_service,
@@ -816,6 +817,8 @@ def create_order(
 ):
     try:
         data = order_service.create_order(db, payload, _uid(current_user))
+    except commission_service.CommissionAllocationChanged as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     except pricing_service.DomesticQuoteChangedError as exc:
         raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:

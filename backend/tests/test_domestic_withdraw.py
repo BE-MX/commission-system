@@ -174,4 +174,4 @@ def test_review_migration_compiles_for_mysql_and_has_one_head():
     sql = output.getvalue()
     assert "withdrawn" in sql and "review_version" in sql and "resubmitted_request_id" in sql
     assert "DELETE" not in sql and "UPDATE" not in sql
-    assert ScriptDirectory(str(root / "alembic")).get_heads() == ["186_portal_announcement_merge"]
+    assert ScriptDirectory(str(root / "alembic")).get_heads() == ["196_domestic_commission"]

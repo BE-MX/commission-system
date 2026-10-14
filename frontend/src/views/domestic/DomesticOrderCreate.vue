@@ -19,14 +19,18 @@
               >
                 <el-option
                   v-for="c in customers" :key="c.id"
-                  :label="isProduction ? c.shop_name : `${c.shop_name}（${c.settle_mode === 'credit' ? '先下单后付款 · ' : ''}${c.membership_label || '普通客户'} · 余额 ${formatMoney(Number(c.balance || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })}）`"
+                  :label="isProduction ? c.shop_name : `${c.shop_name} · ${commissionSummary(c.commission_allocations)}`"
                   :value="c.id"
                 />
               </el-select>
+              <div v-if="!isProduction && selectedCustomer" class="balance-hint" role="status" aria-live="polite">
+                {{ selectedCustomer.shop_name }} · {{ commissionSummary(selectedCustomer.commission_allocations) }}
+              </div>
               <el-input
                 v-if="!isProduction && !form.customer_id" v-model="form.customer_shop_name"
                 placeholder="新客户：直接输入店名，下单时自动建档" class="new-customer"
               />
+              <div v-if="!isProduction && !form.customer_id && form.customer_shop_name.trim()" class="balance-hint">新客户将自动为当前归属销售配置 4% 提成</div>
               <div v-if="isProduction" class="balance-hint">可选择已有客户；不选则为公司备货</div>
               <div v-if="!isProduction && selectedCustomer" class="balance-hint">
                 <template v-if="selectedCustomer.settle_mode === 'credit'">
@@ -336,6 +340,7 @@
 </template>
 
 <script setup>
+import { commissionSummary } from './domesticCommission'
 import { formatMoney } from '../../utils/money.js'
 
 import { beijingCalendarDate } from '@/utils/datetime'

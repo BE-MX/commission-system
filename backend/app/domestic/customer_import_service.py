@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
+from app.domestic import commission_service
 from app.domestic.models import DomesticCustomer
 
 logger = logging.getLogger("commission")
@@ -302,6 +303,7 @@ def import_customers(
                 _apply_row(customer, row, owner_id, fill_only=False)
                 db.add(customer)
                 db.flush()
+                commission_service.initialize_default(db, customer)
                 result["created"] += 1
             elif existing.custom_code == row["custom_code"]:
                 _apply_row(existing, row, owner_id, fill_only=False)

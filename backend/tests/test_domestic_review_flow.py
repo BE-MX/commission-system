@@ -68,6 +68,8 @@ def _customer(db, user, name, **overrides):
     customer = DomesticCustomer(**values)
     db.add(customer)
     db.flush()
+    from app.domestic.commission_service import initialize_default
+    initialize_default(db, customer)
     return customer
 
 

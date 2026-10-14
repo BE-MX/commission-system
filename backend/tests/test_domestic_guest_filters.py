@@ -89,7 +89,7 @@ def test_empty_guest_preserves_existing_request_hash(db, kind):
     data = payload.model_dump()
     data["order_kind"] = kind
     payload = OrderCreate.model_validate(data)
-    old_data = payload.model_dump(mode="json", exclude={"request_id", "guest_name"})
+    old_data = payload.model_dump(mode="json", exclude={"request_id", "guest_name", "expected_commission_allocations"})
     for item in old_data["items"]:
         item.pop("guest_name", None)
         item.pop("guest_order_date", None)

@@ -113,6 +113,8 @@ const {
       total_sales_amount: row?.total_sales_amount ?? null,
       remark: row?.remark || '',
       settle_mode: row?.settle_mode || 'prepay',
+      commission_allocations: (row?.commission_allocations || []).map(item => ({ ...item })),
+      commission_original: JSON.stringify(row?.commission_allocations || []),
     })
   }
 
@@ -150,6 +152,13 @@ const {
       settle_mode: dialog.settle_mode,
     }
     saving.value = true
+    if (dialog.id && JSON.stringify(dialog.commission_allocations) !== dialog.commission_original) {
+      if (!dialog.commission_allocations.length || dialog.commission_allocations.some(row => !row.user_id || !(Number(row.rate) > 0))) {
+        saving.value = false
+        return msgWarning('请配置 1～2 名业务员及大于零的提成率')
+      }
+      payload.commission_allocations = dialog.commission_allocations.map(({ user_id, rate }) => ({ user_id, rate }))
+    }
     try {
       if (dialog.id) await updateCustomer(dialog.id, payload)
       else await createCustomer(payload)

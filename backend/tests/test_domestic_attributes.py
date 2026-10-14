@@ -441,6 +441,10 @@ def _seed_attribute_context(db, *, piece_route: bool = True):
     )
     db.add(customer)
 
+    db.flush()
+    from app.domestic.commission_service import initialize_default
+    initialize_default(db, customer)
+
     process = Process(name=f"属性测试工序-{id(db)}", status=1)
     cap_route = ProcessRoute(name=C.DEFAULT_ROUTE_NAMES["cap"], status=1)
     db.add_all([process, cap_route])

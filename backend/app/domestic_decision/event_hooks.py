@@ -11,17 +11,21 @@ from uuid import uuid4
 from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session
 from app.domestic.models import DomesticCustomer, DomesticOrder, DomesticOrderItem, DomesticCustomerLedger
+from app.domestic.models import DomesticCustomerCommission, DomesticOrderCommission
 from app.domestic_decision.models import DecisionEvent
 from app.core.time import beijing_now
 from app.domestic_decision.schemas import PRODUCT_FIELDS
 
 FIELDS = {
+    DomesticCustomerCommission: ("id", "customer_id", "user_id", "rate"),
+    DomesticOrderCommission: ("id", "order_id", "user_id", "user_name_snapshot", "rate"),
     DomesticCustomer: ("id", "owner_user_id", "membership_level", "settle_mode", "status", "province", "city", "customer_source", "store_type", "customer_level", "lifecycle_status"),
     DomesticOrder: ("id", "customer_id", "order_kind", "order_date", "order_category", "order_type", "order_channel", "status", "review_version", "total_amount", "charged_amount", "deleted_flag", "created_by"),
     DomesticOrderItem: ("id", "order_id", "line_no", "attrs_snapshot", "order_qty", "unit_price", "original_price", "default_discount_price", "discount_amount", "labor_fee", "membership_level_snapshot", "pricing_rule", "pricing_version", "status", "ship_time", "color"),
     DomesticCustomerLedger: ("id", "customer_id", "order_id", "transaction_type", "amount", "balance_before", "balance_after", "business_key", "created_by", "created_at"),
 }
 NAMES = {DomesticCustomer: "customer", DomesticOrder: "order", DomesticOrderItem: "item", DomesticCustomerLedger: "ledger"}
+NAMES.update({DomesticCustomerCommission: "customer_commission", DomesticOrderCommission: "order_commission"})
 
 
 def _json(value):

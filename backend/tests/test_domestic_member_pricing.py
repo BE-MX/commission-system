@@ -3097,6 +3097,9 @@ def _order_pricing_context(
         created_by=user.id,
     )
     db.add(customer)
+    db.flush()
+    from app.domestic.commission_service import initialize_default
+    initialize_default(db, customer)
     _seed_order_dicts(db, attrs)
     product = _persist_product(db, attrs)
     key = pricing_service.price_key_for_product(product)
@@ -3520,6 +3523,8 @@ def test_reprice_customer_flushes_items_with_autoflush_disabled_without_charge(d
     db.add(target)
     db.commit()
     current = _current_item_expected(db, item, target)
+    db.add(domestic_models.DomesticCustomerCommission(customer_id=target.id, user_id=user.id, rate=D("0.04")))
+    db.commit()
     NoAutoflushSession = sessionmaker(
         bind=db.get_bind(), autoflush=False, expire_on_commit=False
     )
@@ -3629,6 +3634,8 @@ def test_update_draft_customer_409_is_atomic_then_confirm_updates_all_fields(db)
         created_by=user.id,
     )
     db.add(target)
+    db.flush()
+    db.add(domestic_models.DomesticCustomerCommission(customer_id=target.id, user_id=user.id, rate=D("0.04")))
     db.commit()
     stale = _customer_reprice_payload(
         "draft-customer-atomic-stale",
@@ -4641,6 +4648,9 @@ def test_order_pricing_configuration_error_rolls_back_new_product_and_order(db):
         created_by=user.id,
     )
     db.add(customer)
+    db.flush()
+    from app.domestic.commission_service import initialize_default
+    initialize_default(db, customer)
     _seed_order_dicts(db, attrs)
     db.add(domestic_models.DomesticBasePrice(
         product_type="cap",

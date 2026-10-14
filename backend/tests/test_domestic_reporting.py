@@ -121,6 +121,10 @@ def _pricing_customer(db, user):
         customer.owner_user_id = user.id
         customer.membership_level = "black"
     db.flush()
+    from app.domestic.models import DomesticCustomerCommission
+    from app.domestic.commission_service import initialize_default
+    if not db.query(DomesticCustomerCommission).filter_by(customer_id=customer.id).first():
+        initialize_default(db, customer)
     return customer
 
 

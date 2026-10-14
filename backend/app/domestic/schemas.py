@@ -10,6 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # ── 客户 ──────────────────────────────────────────────
 
 
+class CommissionAllocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: int = Field(..., gt=0)
+    rate: Decimal = Field(..., gt=0, le=1, max_digits=5, decimal_places=4)
+
+
 class CustomerCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -91,6 +98,8 @@ class CustomerManagementCreate(CustomerCreate):
 
 class CustomerUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    commission_allocations: list[CommissionAllocation] | None = Field(None, min_length=1, max_length=2)
 
     shop_name: str | None = Field(None, min_length=1, max_length=120)
     custom_code: str | None = Field(None, max_length=64)
@@ -565,6 +574,8 @@ class OrderItemAppend(ProductionOrderItemInput):
 
 class OrderCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    expected_commission_allocations: list[CommissionAllocation] | None = Field(None, min_length=1, max_length=2)
 
     request_id: str = Field(..., min_length=8, max_length=64, description="客户端建单幂等键")
     order_kind: Literal["business", "production"] = "business"

@@ -200,6 +200,10 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="提成分配">
+          <DomesticCommissionEditor v-if="dialog.id" v-model="dialog.commission_allocations" :owners="options.owners" />
+          <span v-else class="muted">保存后自动为所选归属销售配置 4% 提成，无需手动添加。</span>
+        </el-form-item>
         <el-row :gutter="12">
           <el-col :span="8">
             <el-form-item label="客户等级" :required="!dialog.id">
@@ -411,6 +415,7 @@
 </template>
 
 <script setup>
+import DomesticCommissionEditor from './components/DomesticCommissionEditor.vue'
 import { ref as deliveryRef } from 'vue'
 const deliveryDialog = deliveryRef(null)
 
