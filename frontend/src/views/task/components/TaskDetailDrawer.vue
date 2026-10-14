@@ -110,6 +110,8 @@
 </template>
 
 <script setup>
+import { copyText } from '../../../utils/clipboard.js'
+
 import { computed, reactive, watch } from 'vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
@@ -240,7 +242,7 @@ async function copyBrief() {
     '完成后提议完成，不要自行标记完成。',
   ].join('\n')
   try {
-    await navigator.clipboard.writeText(text)
+    if (!await copyText(text)) throw new Error('Copy blocked')
     msgSuccess('复制代理任务书')
   } catch {
     msgError('浏览器不允许写剪贴板，请在抽屉里手动复制验收标准')

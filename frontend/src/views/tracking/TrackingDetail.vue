@@ -116,9 +116,11 @@
 </template>
 
 <script setup>
+import { copyText } from '../../utils/clipboard.js'
+
 import { TRACKING_STATUS, TRACKING_STATUS_LABELS as STATUS_MAP, TRACKING_STATUS_TYPES as STATUS_TAG } from './trackingStatus.js'
 import { resolveStatus } from '@/utils/status'
-import { msgSuccessText } from '@/utils/feedback'
+import { msgSuccessText, msgError } from '@/utils/feedback'
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -131,10 +133,9 @@ const shipment = ref(null)
 const loading = ref(false)
 const refreshing = ref(false)
 
-function copyLink(link) {
-  navigator.clipboard.writeText(link).then(() => {
-    msgSuccessText('短链接已复制')
-  })
+async function copyLink(link) {
+  if (await copyText(link)) msgSuccessText('短链接已复制')
+  else msgError('复制失败，请手动选择链接复制')
 }
 
 

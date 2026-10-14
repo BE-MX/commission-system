@@ -147,6 +147,9 @@ def collect(db, invoice, user):
     for row in local:
         if row.status != "active":
             continue
+        from app.receipt.deletion_service import pending
+        if pending(db, row):
+            blockers.append(f"回款 {row.receipt_no} 的单独删除正在核验，请先在回款删除入口完成原任务")
         if row.batch_id or row.purpose == "presale_deposit":
             blockers.append("回款属于汇总批次或预售首款，不能整单自动删除")
         if row.currency != invoice.currency or str(row.customer_id) != str(invoice.customer_id):

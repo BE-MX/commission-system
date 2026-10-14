@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Browser HTTP compatibility regression</title>
+<textarea id="original">keep my selection</textarea><button id="copy">复制</button><output id="result"></output>
+<textarea id="paste" aria-label="粘贴验证"></textarea>
+<script type="module">
+import { copyText } from '../src/utils/clipboard.js'
+import { newRequestKey } from '../src/utils/requestKey.js'
+window.newRequestKey = newRequestKey
+const button = document.querySelector('#copy')
+button.addEventListener('mousedown', event => event.preventDefault())
+button.addEventListener('click', async () => {
+  document.querySelector('#result').textContent = String(await copyText('内网复制验证 · HTTP'))
+})
+</script></html>

@@ -1,4 +1,6 @@
 <script setup>
+import { newRequestKey } from '../../utils/requestKey.js'
+
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useListPage } from '@/composables/useListPage'
@@ -64,7 +66,7 @@ async function submit(replay = false) {
   let value
   if (!replay) {
     if (busy.value || !selected.value || !confirmed.value || !reason.value.trim()) return
-    value = { id: objectId.value, eventId: selected.value.id, key: crypto.randomUUID(), body: { fingerprint: selected.value.fingerprint, reason: reason.value.trim() } }
+    value = { id: objectId.value, eventId: selected.value.id, key: newRequestKey(), body: { fingerprint: selected.value.fingerprint, reason: reason.value.trim() } }
   }
   error.value = ''; notice.value = ''
   try {

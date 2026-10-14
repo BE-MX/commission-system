@@ -147,6 +147,9 @@ def local_group(db, identity, user, *permissions, any_permission=False):
             raise HTTPException(409, "回款关联已变化，请重新读取")
         for child in children:
             access.ensure_invoice(db, invoices[child.invoice_id], current)
+        from app.receipt.deletion_service import pending
+        if permissions != ("receipt:delete",) and any(pending(db, child) for child in children):
+            raise HTTPException(409, "原回款删除正在核验，请从删除入口继续核验，不能修改或恢复原款")
         return row, invoices[invoice_id], current, batch, children
     except TransactionBusy:
         raise

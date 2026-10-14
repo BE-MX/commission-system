@@ -25,12 +25,14 @@
         <GlassButton v-permission="'receipt:write'" left-icon="Plus" :disabled="writeBlocked || (form.order_type !== 'presale' && Number(summary.balance?.remaining_amount) <= 0)" @click="mode = 'create'">{{ form.order_type === 'presale' ? '登记预售收款' : '补登记回款' }}</GlassButton>
         <ReceiptPurposeCorrection v-if="form.order_type === 'presale' && receipt" :receipt="receipt" :disabled="writeBlocked" @updated="updated" @busy="value => remoteBusy = value" @open="value => remoteOpen = value" />
         <ReceiptRemoteChange v-if="receipt?.status === 'active' && receipt.xiaoman_receipt_id && !receipt.batch_id && receipt.purpose !== 'presale_deposit'"
-          :receipt-id="receipt.id" :disabled="localBlocked" @busy="value => remoteBusy = value" @open="value => remoteOpen = value" @updated="updated" />
+          :receipt-id="receipt.id" :disabled="localBlocked || deletionBusy || deletionOpen || receipt.deletion_pending" @busy="value => remoteBusy = value" @open="value => remoteOpen = value" @updated="updated" />
+        <ReceiptDelete v-if="receipt?.status === 'active'" :receipt="receipt" :disabled="localBlocked || remoteBusy || remoteOpen"
+          @busy="value => deletionBusy = value" @open="value => deletionOpen = value" @updated="updated" />
       </div>
     </template>
     <p v-if="error" class="funds-error" role="alert">{{ error }}</p>
     <div class="funds-actions">
-      <GlassButton left-icon="Refresh" :disabled="busy || remoteBusy || Boolean(mode) || form.receipt_uploading || form.receipt_proof_dirty || form.receipt_remark_editing || form.receipt_remark_saving" @click="load">刷新资金汇总</GlassButton>
+      <GlassButton left-icon="Refresh" :disabled="busy || remoteBusy || deletionBusy || deletionOpen || Boolean(mode) || form.receipt_uploading || form.receipt_proof_dirty || form.receipt_remark_editing || form.receipt_remark_saving" @click="load">刷新资金汇总</GlassButton>
       <a :href="managementUrl" target="_blank" rel="noopener" class="funds-link">查看 / 核对回款单</a>
     </div>
     <InvoiceReceiptPaymentDialog v-if="mode" :key="`${form.id}:${mode}`" :invoice="form" :receipt="mode === 'edit' ? receipt : undefined"
@@ -45,6 +47,7 @@ import { getInvoiceReceiptSummary, retryReceipt } from '@/api/receipt'
 import { formatMoney } from '@/utils/money'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptRemoteChange from '@/views/receipt/ReceiptRemoteChange.vue'
+import ReceiptDelete from '@/views/receipt/ReceiptDelete.vue'
 import ReceiptPurposeCorrection from '@/views/receipt/ReceiptPurposeCorrection.vue'
 import { purposeLabel } from './invoiceDetailLabels'
 import InvoiceReceiptPaymentDialog from './InvoiceReceiptPaymentDialog.vue'
@@ -55,6 +58,7 @@ const auth = useAuthStore()
 const canRead = computed(() => auth.hasAnyPermission(['receipt:read', 'receipt:write', 'receipt:admin']))
 const loading = ref(false), busy = ref(false), dialogBusy = ref(false), remoteBusy = ref(false)
 const remoteOpen = ref(false)
+const deletionBusy = ref(false), deletionOpen = ref(false)
 const summary = ref(null), mode = ref(null), error = ref('')
 const receipt = computed(() => summary.value?.initial_receipt)
 const action = computed(() => receiptActionState(receipt.value))
@@ -65,7 +69,7 @@ const blockedReason = computed(() => props.form.receipt_order_dirty
     : '订单有未保存修改，请先保存并完成关联同步，再处理回款。'
   : summary.value?.action_blocked_reason)
 const localBlocked = computed(() => loading.value || busy.value || dialogBusy.value || Boolean(props.form.receipt_order_dirty || props.form.receipt_uploading || props.form.receipt_proof_dirty || props.form.receipt_remark_editing || props.form.receipt_remark_saving))
-const writeBlocked = computed(() => localBlocked.value || remoteBusy.value || Boolean(blockedReason.value) || !summary.value?.balance)
+const writeBlocked = computed(() => localBlocked.value || remoteBusy.value || deletionBusy.value || deletionOpen.value || Boolean(blockedReason.value) || !summary.value?.balance)
 const managementUrl = computed(() => props.form.xiaoman_order_id
   ? `/invoice/receipts?order_id=${encodeURIComponent(props.form.xiaoman_order_id)}`
   : `/invoice/receipts?keyword=${encodeURIComponent(props.form.invoice_no || '')}`)
@@ -108,8 +112,8 @@ async function retry() {
 watch(() => [props.form.id, props.form.sync_status, props.form.linked_sync_id, canRead.value], () => {
   sequence += 1; summary.value = null; mode.value = null; load()
 }, { immediate: true })
-watch(() => Boolean(mode.value || remoteOpen.value), value => { props.form.receipt_action_open = value })
-watch(() => busy.value || dialogBusy.value || remoteBusy.value, value => { props.form.receipt_action_busy = value })
+watch(() => Boolean(mode.value || remoteOpen.value || deletionOpen.value), value => { props.form.receipt_action_open = value })
+watch(() => busy.value || dialogBusy.value || remoteBusy.value || deletionBusy.value, value => { props.form.receipt_action_busy = value })
 onBeforeUnmount(() => { disposed = true; sequence += 1; props.form.receipt_action_open = false; props.form.receipt_action_busy = false })
 </script>
 

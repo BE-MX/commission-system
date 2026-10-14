@@ -13,9 +13,10 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.core.config import get_settings
 from app.invoice.models import Invoice
+from app.invoice.okki_client import OkkiApiError
 from app.receipt import access, attachments, authority, create_service, edit_service, proof_service, reconciliation_service, remote, retry_service, service, storage_proxy, upload_service
 from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent
-from app.receipt.schemas import ReceiptCreate, ReceiptProofUpdate, ReceiptUpdate, Reason, Resolution
+from app.receipt.schemas import ReceiptCreate, ReceiptProofUpdate, ReceiptUpdate, Reason, Resolution, ReceiptDeletion
 from app.receipt.schemas import PresalePurposeUpdate, ReceiptRemarkUpdate
 
 router = APIRouter()
@@ -187,6 +188,36 @@ def edit(identity: int, body: ReceiptUpdate, db: Session = Depends(get_db), user
         return execute(db, apply)
     except SQLAlchemyError as error:
         edit_service.result_unavailable(error)
+
+
+@router.get("/{identity}/deletion", summary="Preview deletion of an owned receipt")
+def deletion_preview(identity: int, db: Session = Depends(get_db),
+                     user=Depends(require_any_permission("receipt:delete"))):
+    from app.receipt import deletion_service
+    def read():
+        try:
+            return deletion_service.preview(db, identity, user)
+        except (OkkiApiError, OSError) as error:
+            reconciliation_service.unavailable(error)
+    try:
+        return execute(db, read)
+    except SQLAlchemyError as error:
+        reconciliation_service.unavailable(error)
+
+
+@router.post("/{identity}/deletion", summary="Delete one receipt or verify its original deletion without resending")
+def delete_receipt(identity: int, body: ReceiptDeletion, db: Session = Depends(get_db),
+                   user=Depends(require_any_permission("receipt:delete"))):
+    from app.receipt import deletion_service
+    def apply():
+        try:
+            return deletion_service.remove(db, identity, body, user)
+        except (OkkiApiError, OSError) as error:
+            reconciliation_service.unavailable(error)
+    try:
+        return execute(db, apply)
+    except SQLAlchemyError as error:
+        reconciliation_service.unavailable(error, result=True)
 
 
 @router.patch("/{identity}/remark", summary="Edit local receipt remark without resending")

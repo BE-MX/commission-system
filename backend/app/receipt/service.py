@@ -60,6 +60,8 @@ def describe(db, row, invoice=None, *, detail=False):
     data.update(batch_id=row.batch_id, purpose=row.purpose, amount=str(row.amount), bank_charge=str(row.bank_charge), invoice_no=invoice.invoice_no,
                 order_id=row.xiaoman_order_id or invoice.xiaoman_order_id,
                 customer_name=invoice.customer_name, attachment_count=len(row.attachment_ids))
+    from app.receipt.deletion_service import pending
+    data["deletion_pending"] = pending(db, row)
     if detail:
         from app.invoice.settlement_models import SettlementApplication, ShipmentSettlement
         data["shipment_applications"] = [{"settlement_id": settlement.id,
@@ -74,7 +76,7 @@ def describe(db, row, invoice=None, *, detail=False):
         # Preserve the ledger order so refreshing details can be saved unchanged.
         data["attachments"] = [attachments.describe(files[identity])
                                for identity in row.attachment_ids if identity in files]
-        data["logs"] = [{"action": x.action, "message": x.message, "created_at": x.created_at}
+        data["logs"] = [{"action": x.action, "message": _log_message(x), "created_at": x.created_at}
                         for x in db.query(ReceiptLog).filter(ReceiptLog.receipt_id == row.id)
                         .order_by(ReceiptLog.id.desc()).limit(100).all()]
     if row.purpose in {"presale_deposit", "presale_advance"}:
@@ -87,6 +89,13 @@ def describe(db, row, invoice=None, *, detail=False):
             available_charge=str(row.bank_charge - allocated_charge),
             available_principal=str(row.amount - allocated - row.bank_charge + allocated_charge))
     return data
+
+
+def _log_message(row):
+    if row.action == "delete_started":
+        data = json.loads(row.message)
+        return f"{data['message']}；原因：{data['reason']}"
+    return row.message
 
 
 def list_receipts(db, user, page=1, page_size=20, keyword="", sync_status="", source="", status="",

@@ -26,6 +26,8 @@ test('converted local receipt actions depend on receipt state and remote identit
   assert.equal(receiptActionState({ status: 'active', sync_status: 'failed', batch_id: 1 }).editable, false)
   assert.equal(receiptActionState({ status: 'active', sync_status: 'pending', purpose: 'presale_deposit' }).editable, false)
   assert.equal(receiptActionState({ status: 'voided', sync_status: 'pending' }).editable, false)
+  assert.equal(receiptActionState({ status: 'active', sync_status: 'failed', deletion_pending: true }).editable, false)
+  assert.equal(receiptActionState({ status: 'active', sync_status: 'synced', deletion_pending: true }).label, '删除待核验')
 })
 
 test('receipt refresh never marks unrelated order edits as saved', () => {

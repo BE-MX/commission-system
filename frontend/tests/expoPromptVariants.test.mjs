@@ -17,6 +17,6 @@ test('customer flow has no prompt-version picker or payload', () => {
 test('upload flow owns the only photo-processing choice', () => {
   assert.match(flow, /photoProcessingMode/)
   assert.match(api, /photo_processing_mode/)
-  assert.match(flow, /randomUUID/)
+  assert.match(flow, /newRequestKey/)
   assert.match(api, /client_request_id/)
 })

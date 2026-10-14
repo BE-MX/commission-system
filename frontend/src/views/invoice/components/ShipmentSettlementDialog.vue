@@ -101,6 +101,8 @@
   </el-dialog>
 </template>
 <script setup>
+import { newRequestKey } from '../../../utils/requestKey.js'
+
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { getInvoice } from '@/api/invoice'
@@ -216,7 +218,7 @@ async function submit(retry = false) {
       if (readConfirmation(window.sessionStorage, actor)) { await restore(); return }
       const previous = readShipmentSubmission(window.sessionStorage, actor)
       if (previous) { frozen.value = previous; persisted.value = true; mayHaveSubmitted.value = true; state.value = 'uncertain'; hidePrivate(); await inspect(); return }
-      frozen.value = { invoice_id: props.invoice.id, body: { ...body(), quote_hash: quote.value.quote_hash, request_key: crypto.randomUUID(),
+      frozen.value = { invoice_id: props.invoice.id, body: { ...body(), quote_hash: quote.value.quote_hash, request_key: newRequestKey(),
         ...(registerPayment.value ? { payment: { ...copyShipment(payment), amount: String(payment.amount), bank_charge: String(payment.bank_charge || 0) } } : {}) } }
     } catch (e) { storageBlocked.value = true; hidePrivate(); void showError(e.message); return }
   }

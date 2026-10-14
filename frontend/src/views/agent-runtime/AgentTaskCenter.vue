@@ -163,7 +163,9 @@
   </div>
 </template>
 
-<script setup>import { msgWarning, confirmAction, msgSuccessText } from '@/utils/feedback'
+<script setup>
+import { newRequestKey } from '../../utils/requestKey.js'
+import { msgWarning, confirmAction, msgSuccessText } from '@/utils/feedback'
 import { computed, onMounted, ref } from 'vue'
 
 import { useRouter } from 'vue-router'
@@ -282,8 +284,7 @@ async function startEvaluation(item) {
     if (!evaluationRequestKeys.has(requestKey)) {
       evaluationRequestKeys.set(
         requestKey,
-        globalThis.crypto?.randomUUID?.()
-          || `evaluation-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        newRequestKey(),
       )
     }
     const response = await startCopilotEvaluationCase(item.case_id, {

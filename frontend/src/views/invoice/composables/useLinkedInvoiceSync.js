@@ -1,3 +1,4 @@
+import { newRequestKey } from '../../../utils/requestKey.js'
 import { msgSuccessText, msgError, msgWarning, promptAction } from '@/utils/feedback'
 import { ref } from 'vue'
 
@@ -48,7 +49,7 @@ export function useLinkedInvoiceSync(onSaved) {
       msgWarning('上次提交结果尚待核对，请先刷新订单后再修改')
       return null
     }
-    if (!pending) pending = { signature, body: { invoice, expected_version: updatedAt, request_key: crypto.randomUUID() } }
+    if (!pending) pending = { signature, body: { invoice, expected_version: updatedAt, request_key: newRequestKey() } }
     requests.set(id, pending)
     let result
     try { result = await saveInvoiceLinked(id, pending.body) } catch (error) {

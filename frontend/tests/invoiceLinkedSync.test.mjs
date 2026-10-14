@@ -2,10 +2,11 @@ import { feedbackFixture } from './helpers/feedbackFixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { newRequestKey } from '../src/utils/requestKey.js'
 const source = readFileSync(new URL('../src/views/invoice/composables/useLinkedInvoiceSync.js', import.meta.url), 'utf8')
   .replace(/^import .*$/gm, '').replace('export function', 'function')
 function setup(api = {}, saved = () => {}) {
-  const mocks = { ref: value => ({ value }), ElMessage: { warning() {} }, ElMessageBox: {},
+  const mocks = { newRequestKey, ref: value => ({ value }), ElMessage: { warning() {} }, ElMessageBox: {},
     saveInvoiceLinked: async () => ({ invoice: { id: 1 }, operation: { id: 'op', invoice_id: 1 } }),
     getInvoiceLinked: async () => null, runInvoiceLinked: async () => ({ id: 'op', invoice_id: 1, status: 'manual' }),
     closeInvoiceLinked: async () => ({ id: 'op', invoice_id: 1, status: 'manual' }), resolveInvoiceLinked() {}, ...api }

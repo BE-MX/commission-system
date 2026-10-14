@@ -1,3 +1,4 @@
+import { newRequestKey } from '../utils/requestKey.js'
 import { agentRuntimeClient } from './clients'
 
 const quiet = { showLoading: false }
@@ -40,8 +41,7 @@ export async function startCustomerCopilot({ profileId, customerName, question }
     context_id: String(profileId),
   })
   const session = sessionResponse.data
-  const idempotencyKey = globalThis.crypto?.randomUUID?.()
-    || `copilot-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const idempotencyKey = newRequestKey()
   const runResponse = await createAgentRun(session.id, {
     idempotency_key: idempotencyKey,
     input: { question, customer_profile_id: profileId },

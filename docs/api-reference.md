@@ -1,5 +1,14 @@
 # 莱莎方舟 API 参考
 
+## 单笔回款删除（2026-10-14，本地实现，未部署）
+
+- `GET /api/receipts/{identity}/deletion`：读取删除预览。返回回款及订单编号、原币含费金额/手续费/净额、远端状态、`expected_version`、`can_delete/can_resume`；已归档返回真实原记录，不执行删除。
+- `POST /api/receipts/{identity}/deletion`：body `{expected_version, reason, confirmed:true}`，原因2～500字；响应统一信封，data含 `status=deleted|uncertain`、下一步提示和完整 `receipt`。有效回款详情/列表新增 `deletion_pending`。
+
+两端点使用既有 `receipt:delete` 独立动作权限；每次从当前数据库复查员工状态、权限及原订单归属，其他人的回款需现有 `receipt:read_all` 数据范围。`receipt:write/admin` 不隐含删除权；本次不自动分配角色权限。未发送/明确失败且无小满结果的本地普通回款作废；已绑定回款需金额、日期、客户/币种、原订单及稳定有效/已删除列表证据。Not Found 必须核验完整全局有效索引无原ID。
+
+删除前持久化 `delete_started` 审计与 `uncertain/blocked` 冻结状态，再最多发送一次小满删除请求。已存在原删除记录的请求只查询和核验，不重复发送；结果未知时保持额度冻结。核验成功后归档原款为 `remote_deleted`，金额/手续费/凭证/小满ID/自动生成意图保留，不退款、不改订单或出库、不自动创建替代回款。批次、预售、发货资金分配及正在发送的款项不允许单笔删除；原回款修改、恢复、整单删除和后台绑定均不得覆盖删除冻结状态。重新登记需资金汇总实时核验通过，旧索引触发系统后台重建时提示等待刷新。
+
 ## 常用导航（本地候选，2026-10-13）
 
 - `GET /api/system/navigation-preferences`：读取当前用户配置，首次返回 `{"items": []}`。

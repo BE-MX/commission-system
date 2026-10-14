@@ -156,7 +156,9 @@
   </el-dialog>
 </template>
 
-<script setup>import { msgSuccessText, msgError } from '@/utils/feedback'
+<script setup>
+import { copyText } from '../../../utils/clipboard.js'
+import { msgSuccessText, msgError } from '@/utils/feedback'
 import { ref, computed } from 'vue'
 
 import {
@@ -179,22 +181,7 @@ const dialogVisible = computed({
 const copiedLink = ref(false)
 const copiedTemplate = ref(false)
 
-async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(textarea)
-    return ok
-  }
-}
+async function copyToClipboard(text) { return copyText(text) }
 
 async function copyLink() {
   const ok = await copyToClipboard(props.resultData.short_link)

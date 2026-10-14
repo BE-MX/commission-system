@@ -1,3 +1,4 @@
+import { newRequestKey } from '../../../utils/requestKey.js'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { formatBeijingDateTime, parseApiDateTime } from '@/utils/datetime'
 import {
@@ -120,7 +121,7 @@ export function useWhatsAppAssistant(props, close) {
   }
   async function createRun() {
     if (!canCreate.value) return
-    const uid = crypto.randomUUID()
+    const uid = newRequestKey()
     const payload = { account_uid: props.account.account_uid, conversation_uid: scope.value === 'current'
       ? props.conversation?.conversation_uid || null : null,
     start_at: `${range.value[0].replace(' ', 'T')}+08:00`, end_at: `${range.value[1].replace(' ', 'T')}+08:00`, client_request_uid: uid }

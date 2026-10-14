@@ -1,8 +1,9 @@
+import { newRequestKey } from '../../../utils/requestKey.js'
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { stationApi } from '@/api/shippingStation'
 import { compressInspectionVideo, prepareInspectionVideo } from './compressInspectionVideo'
 import { confirmDanger } from '@/utils/feedback'
-const requestId = () => crypto.randomUUID()
+const requestId = () => newRequestKey()
 export function useShippingStation(api = stationApi) {
   const operators = ref([]), selected = ref(null), view = ref(null), remark = ref('')
   const busy = ref(false), loading = ref(false), scannerOpen = ref(false), error = ref('')

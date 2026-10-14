@@ -72,7 +72,9 @@
   </div>
 </template>
 
-<script setup>import { msgWarning, msgSuccessText } from '@/utils/feedback'
+<script setup>
+import { newRequestKey } from '../../utils/requestKey.js'
+import { msgWarning, msgSuccessText } from '@/utils/feedback'
 import { computed, reactive, ref, toRef } from 'vue'
 import { useListPage } from '@/composables/useListPage'
 import { watchListResourceScope } from '@/composables/useListResourceScope'
@@ -120,7 +122,7 @@ const search = listState.handleSearch
 const reset = listState.handleReset
 const handleSizeChange = listState.handleSizeChange
 async function openLedger(row) { ledgerMaterial.value = row; ledgerVisible.value = true; ledgerState.searchForm.material_id = row.material_id; return ledgerState.handleSearch() }
-function openAdjust(row) { currentMaterial.value = row; Object.assign(adjustForm, { quantity_grams: 0, remark: '' }); adjustIdempotencyKey.value = crypto.randomUUID(); adjustVisible.value = true }
+function openAdjust(row) { currentMaterial.value = row; Object.assign(adjustForm, { quantity_grams: 0, remark: '' }); adjustIdempotencyKey.value = newRequestKey(); adjustVisible.value = true }
 async function submitAdjust() { if (!Number(adjustForm.quantity_grams)) return msgWarning('调整数量不能为0'); if (!adjustForm.remark.trim()) return msgWarning('请填写调整原因'); const materialId = currentMaterial.value.material_id; adjustSubmitting.value = true; try { await adjustSemifinishedInventory(materialId, { ...adjustForm, idempotency_key: adjustIdempotencyKey.value }); msgSuccessText('库存调整成功'); adjustVisible.value = false; listState.refreshUpdate(); if (ledgerVisible.value && ledgerState.appliedSearchForm.value.material_id === materialId) ledgerState.refreshUpdate() } finally { adjustSubmitting.value = false } }
 function sortTable0({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 function sortTable1({ prop, order }) { return ledgerState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }

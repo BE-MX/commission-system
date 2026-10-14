@@ -1,3 +1,4 @@
+import { newRequestKey } from '../../utils/requestKey.js'
 import { customerImageMessage } from './i18n.js'
 
 const ACTIVE_STATUSES = new Set(['queued', 'running'])
@@ -124,9 +125,4 @@ export function hasActiveGenerations(generations) {
   return (generations || []).some(item => ACTIVE_STATUSES.has(item.status))
 }
 
-function defaultRequestId() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
-  const bytes = new Uint32Array(4)
-  globalThis.crypto?.getRandomValues?.(bytes)
-  return [...bytes].map(value => value.toString(36)).join('-') || `${Date.now()}`
-}
+function defaultRequestId() { return newRequestKey() }

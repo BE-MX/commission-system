@@ -16,6 +16,7 @@ export function projectReceiptBalance(balance, total) {
 export function receiptActionState(receipt) {
   if (!receipt) return { editable: false, label: '尚未生成回款', hint: '首次回款在订单完整同步后生成。' }
   if (receipt.status !== 'active') return { editable: false, label: receipt.status === 'voided' ? '已作废' : '远端删除已核实', hint: '原回款记录与凭证保留，新增收款请另行登记。' }
+  if (receipt.deletion_pending) return { editable: false, label: '删除待核验', hint: '原删除请求已记录，请继续核验删除；核验通过前不能登记替代回款。' }
   if (receipt.batch_id || ['presale_deposit', 'presale_advance'].includes(receipt.purpose)) return { editable: false, label: '预售 / 批次回款', hint: '原款用于后续发货抵扣，新增收款请单独登记；用途纠错请在回款单中核对。' }
   const editable = ['pending', 'failed'].includes(receipt.sync_status) && !receipt.xiaoman_receipt_id
   const labels = { pending: '待发送', failed: '同步失败', syncing: '发送中', synced: '已同步小满', uncertain: '结果待核对' }

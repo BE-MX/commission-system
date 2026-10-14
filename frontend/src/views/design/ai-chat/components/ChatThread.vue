@@ -76,6 +76,8 @@
 </template>
 
 <script setup>
+import { copyText } from '../../../../utils/clipboard.js'
+
 import { nextTick, ref, watch } from 'vue'
 import { ArrowDown, CopyDocument, Paperclip, RefreshRight } from '@element-plus/icons-vue'
 import DOMPurify from 'dompurify'
@@ -102,7 +104,7 @@ function renderMarkdown(raw) {
 
 async function copyMessage(message) {
   try {
-    await navigator.clipboard.writeText(message.content || '')
+    if (!await copyText(message.content || '')) throw new Error('Copy blocked')
     msgSuccess('复制')
   } catch {
     msgError('复制失败，请手动选择文本')

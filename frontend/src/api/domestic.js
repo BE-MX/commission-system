@@ -1,3 +1,4 @@
+import { newRequestKey } from '../utils/requestKey.js'
 import { requestReviewsChanged } from '@/utils/domesticReviewEvents'
 // 内贸订单 API（响应拦截器已解包信封，调用方取数用 res.data）
 import { domesticClient } from './clients'
@@ -54,10 +55,7 @@ export function listProcessWorkers(processId) {
 }
 
 // 报工幂等键：提交失败重试时复用同一个值，服务端不会重复累加数量
-export function newRequestId() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
-}
+export function newRequestId() { return newRequestKey() }
 
 // ── 客户 ──
 export function listCustomers(params, config = {}) {

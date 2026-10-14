@@ -193,13 +193,15 @@
 </template>
 
 <script setup>
+import { copyText } from '../../utils/clipboard.js'
+
 import { useListPage } from '@/composables/useListPage'
 import { useAsyncResource } from '@/composables/useAsyncResource'
 import { toRef } from 'vue'
 
 import { TRACKING_STATUS, TRACKING_STATUS_LABELS as STATUS_MAP, TRACKING_STATUS_TYPES as STATUS_TAG } from './trackingStatus.js'
 import { resolveStatus } from '@/utils/status'
-import { msgSuccessText, confirmAction } from '@/utils/feedback'
+import { msgSuccessText, msgError, confirmAction } from '@/utils/feedback'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -374,10 +376,9 @@ function goDetail(row) {
   router.push(`/tracking/${row.waybill_no}`)
 }
 
-function copyLink(link) {
-  navigator.clipboard.writeText(link).then(() => {
-    msgSuccessText('短链接已复制')
-  })
+async function copyLink(link) {
+  if (await copyText(link)) msgSuccessText('短链接已复制')
+  else msgError('复制失败，请手动选择链接复制')
 }
 
 function fmtDateShort(dateStr) {

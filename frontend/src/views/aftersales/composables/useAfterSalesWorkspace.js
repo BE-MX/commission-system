@@ -1,3 +1,5 @@
+import { copyText } from '../../../utils/clipboard.js'
+import { newRequestKey } from '../../../utils/requestKey.js'
 import { formatMoney } from '../../../utils/money.js'
 import { promptAction, confirmAction, msgError, msgSuccess } from '@/utils/feedback'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
@@ -342,7 +344,7 @@ export function useAfterSalesWorkspace() {
       if (registrationDirty.value) await saveDraft({ silent: true })
       await saveDecision({ silent: true, validateForSubmit: true })
     } catch (error) { msgError(error.message, error); return }
-    const response = await submitAfterSalesCase(caseData.id, { version: caseData.version, idempotency_key: crypto.randomUUID() })
+    const response = await submitAfterSalesCase(caseData.id, { version: caseData.version, idempotency_key: newRequestKey() })
     Object.assign(caseData, response.data); dirty.value = false
     msgSuccess(`提交审核，下一节点：${caseData.current_status === 'awaiting_supervisor' ? '直属主管' : '销售总监'}`)
     await loadCase()
@@ -365,7 +367,7 @@ export function useAfterSalesWorkspace() {
       if (!result) return
       proxyReason = result.value
     }
-    const response = await reviewAfterSalesCase(caseData.id, { decision, comment, proxy_reason: proxyReason, version: caseData.version, idempotency_key: crypto.randomUUID() })
+    const response = await reviewAfterSalesCase(caseData.id, { decision, comment, proxy_reason: proxyReason, version: caseData.version, idempotency_key: newRequestKey() })
     Object.assign(caseData, response.data); msgSuccess('审核'); await loadCase()
   }
 
@@ -379,7 +381,7 @@ export function useAfterSalesWorkspace() {
     const response = await requestAfterSalesEvidenceWaiver(caseData.id, {
       reason: result.value,
       version: caseData.version,
-      idempotency_key: crypto.randomUUID(),
+      idempotency_key: newRequestKey(),
     })
     Object.assign(caseData, response.data)
     msgSuccess('证据豁免申请已提交直属主管')
@@ -397,7 +399,7 @@ export function useAfterSalesWorkspace() {
       decision,
       comment: result.value,
       version: caseData.version,
-      idempotency_key: crypto.randomUUID(),
+      idempotency_key: newRequestKey(),
     })
     Object.assign(caseData, response.data)
     msgSuccess(title)
@@ -409,7 +411,7 @@ export function useAfterSalesWorkspace() {
       new_reviewer_user_id: newReviewerUserId,
       reason,
       version: caseData.version,
-      idempotency_key: crypto.randomUUID(),
+      idempotency_key: newRequestKey(),
     })
     Object.assign(caseData, response.data)
     msgSuccess('当前审批已转交')
@@ -422,7 +424,7 @@ export function useAfterSalesWorkspace() {
   }
 
   async function withdraw() {
-    const response = await withdrawAfterSalesCase(caseData.id, { version: caseData.version, idempotency_key: crypto.randomUUID() })
+    const response = await withdrawAfterSalesCase(caseData.id, { version: caseData.version, idempotency_key: newRequestKey() })
     Object.assign(caseData, response.data); msgSuccess('撤回'); await loadCase()
   }
   async function execute() {
@@ -445,7 +447,10 @@ export function useAfterSalesWorkspace() {
     const response = await reopenAfterSalesCase(caseData.id, { reason: result.value })
     Object.assign(caseData, response.data); msgSuccess('重新打开售后单'); await loadCase()
   }
-  async function copyReply() { await navigator.clipboard.writeText(replyDraft.value); msgSuccess('复制话术') }
+  async function copyReply() {
+    if (await copyText(replyDraft.value)) msgSuccess('复制话术')
+    else msgError('复制失败，请手动选择话术复制')
+  }
 
   watch(form, () => {
     if (!hydrating.value) { dirty.value = true; registrationDirty.value = true }

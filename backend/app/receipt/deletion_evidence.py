@@ -5,6 +5,38 @@ from app.invoice import lifecycle_remote
 from app.receipt import remote
 
 
+def verified_state(db, order_id, identity, currency):
+    """Exact stable active/deleted membership, or explicit Not Found + global absence."""
+    detail = lifecycle_remote.read(db, "receipt", identity)
+    if detail is None:
+        from app.receipt.receipt_index import verified_rows
+        if any(str(row["cash_collection_id"]) == str(identity) for row in verified_rows(db)):
+            raise ValueError("小满有效索引仍存在原回款，不能确认删除")
+        return {"status": "deleted", "detail": None}
+    binding = _binding(detail)
+    if binding[:3] != (str(identity), str(order_id), str(currency)):
+        raise ValueError("小满回款关联订单或币种已变化，未执行删除")
+    stamp = detail.get("update_time")
+    try:
+        if datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M:%S") != stamp:
+            raise ValueError("noncanonical timestamp")
+    except (TypeError, ValueError) as error:
+        raise ValueError("小满回款缺少有效更新时间，无法核验删除") from error
+    first = (_window(db, stamp, 0), _window(db, stamp, 1))
+    second = (_window(db, stamp, 0), _window(db, stamp, 1))
+    if first != second or lifecycle_remote.read(db, "receipt", identity) != detail:
+        raise ValueError("小满回款在核验期间变化，请重新预览")
+    active, deleted = second
+    key = str(identity)
+    if key in active and key in deleted:
+        raise ValueError("小满回款同时出现在有效与删除列表，证据不一致")
+    if active.get(key) == binding and key not in deleted:
+        return {"status": "active", "detail": detail}
+    if deleted.get(key) == binding and key not in active:
+        return {"status": "deleted", "detail": detail}
+    raise ValueError("小满回款缺少完整有效或已删除证据，未确认删除")
+
+
 def _binding(detail):
     return tuple(str(detail.get(key) or "") for key in
                  ("cash_collection_id", "order_id", "currency", "update_time"))
