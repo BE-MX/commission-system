@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
 from app.core.time import beijing_now, beijing_today
 
@@ -1513,11 +1514,12 @@ def _apply_item_attrs(
     raw_attrs: dict,
     *,
     user_id: int | None,
+    unit_price: Decimal | None = None,
 ) -> None:
-    """改明细规格：只换属性快照与产品归属。
+    """改明细规格，并在定价维度变化时刷新默认价格快照。
 
     工艺路线只随产品类型走，而产品类型不允许在这里改（改了会让在制工序失真）；
-    成交价保持下单口径，不随规格重算 —— 需要改价走 unit_price。
+    成交价保持下单口径；同次显式改价按新规格的原价上限校验。
     """
     db.info["domestic_actor_id"] = user_id
     production = order_kind_service.is_production(order)
@@ -1540,7 +1542,36 @@ def _apply_item_attrs(
     snapshot = attrs.model_dump()
     if snapshot == (item.attrs_snapshot or {}):
         return
+    # Match create/append lock order: customer, product identity, then base price.
+    normal = not production and order.order_category == "normal"
+    customer = _lock_customer(db, order.customer_id) if normal else None
     product = product_service.find_or_create_product(db, attrs)
+    discount = None
+    if normal:
+        old_attrs = item.attrs_snapshot or {}
+        old_key = pricing_service.price_key_for_attrs(
+            product_type=old_attrs.get("product_type"), craft=old_attrs.get("craft"),
+            length=old_attrs.get("length"), size=old_attrs.get("size"),
+        )
+        new_key = pricing_service.price_key_for_attrs(
+            product_type=attrs.product_type, craft=attrs.craft,
+            length=attrs.length, size=attrs.size,
+        )
+        if old_key != new_key:
+            base = pricing_service.get_base_price_row(db, new_key, for_update=True)
+            if base is None:
+                raise ValueError("新规格尚未配置原始价格，请先维护价格后再保存")
+            discount = pricing_service.resolve_discount(
+                product_type=attrs.product_type, craft=attrs.craft,
+                length=attrs.length, size=attrs.size,
+                original_price=base.original_price, membership_level=customer.membership_level,
+            )
+            price = balance_service.money(item.unit_price if unit_price is None else unit_price)
+            labor_fee = balance_service.money(item.labor_fee)
+            if price < labor_fee or (price == labor_fee and order.order_type != "sample"):
+                raise ValueError("成交单价必须高于手工费，优惠后商品单价必须大于 0")
+            if price > discount.original_price + labor_fee:
+                raise ValueError(f"优惠价不能高于新规格原价 ¥{discount.original_price:.2f}")
     if product.id != item.product_id:
         old_product = db.get(DomesticProduct, item.product_id)
         if old_product is not None:
@@ -1549,6 +1580,14 @@ def _apply_item_attrs(
         item.product_id = product.id
         item.product_name = product.name
     item.attrs_snapshot = snapshot
+    if discount is not None:
+        item.original_price = discount.original_price
+        item.default_discount_price = discount.final_price
+        item.discount_amount = balance_service.money(discount.original_price - (price - labor_fee))
+        item.membership_level_snapshot = customer.membership_level
+        item.base_price_version_snapshot = base.version
+        item.pricing_version = pricing_service.PRICING_VERSION
+        item.pricing_rule = discount.pricing_rule if price - labor_fee == discount.final_price else "manual_override"
 
 
 def update_item(
@@ -1556,6 +1595,20 @@ def update_item(
     item_id: int,
     payload: OrderItemUpdate,
     user_id: int | None = None,
+) -> DomesticOrderItem:
+    """Keep specification, price, quantity and balance changes in one transaction."""
+    try:
+        return _update_item(db, item_id, payload, user_id)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _update_item(
+    db: Session,
+    item_id: int,
+    payload: OrderItemUpdate,
+    user_id: int | None,
 ) -> DomesticOrderItem:
     """改明细。数量不能改到低于任一工序已完成的数量 —— 那会让守恒关系失真。"""
     db.info["domestic_actor_id"] = user_id
@@ -1596,6 +1649,10 @@ def update_item(
         for row in rows:
             progress_service.sync_progress_row_status(row, new_qty)
 
+    if data.get("attrs") is not None:
+        _apply_item_attrs(
+            db, order, item, data["attrs"], user_id=user_id, unit_price=data.get("unit_price"),
+        )
     new_price = data.get("unit_price")
     if new_price is not None:
         # unit_price 为含手工费的成交单价。优惠金额只比较商品原价与
@@ -1613,7 +1670,8 @@ def update_item(
             item.default_discount_price = price_review.default_price(item)
             item.unit_price = price
             item.discount_amount = balance_service.money(original - (price - labor_fee))
-            item.pricing_rule = "manual_override"
+            if price - labor_fee != price_review.default_price(item):
+                item.pricing_rule = "manual_override"
 
     if "guest_order_date" in data:
         item.guest_order_date = data["guest_order_date"]
@@ -1623,8 +1681,6 @@ def update_item(
     for field in _IMAGE_FIELDS:
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
-    if data.get("attrs") is not None:
-        _apply_item_attrs(db, order, item, data["attrs"], user_id=user_id)
 
     progress_service.recalc_item_status(db, item)
     progress_service.sync_order_status(db, item.order_id)
