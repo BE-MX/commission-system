@@ -1147,6 +1147,48 @@ def test_plan_uses_explicit_deletion_and_preserves_existing_identity(db, sync_ca
     assert plan['payload']['remark'] == ''
 
 
+@pytest.mark.parametrize('operation', ['add', 'change', 'remove'])
+@pytest.mark.parametrize('pending_recheck', [False, True])
+def test_fee_only_sync_preserves_inspection_and_existing_recheck(db, sync_case, operation, pending_recheck):
+    user, inv, item, fake = sync_case
+    inv.remark = fake['outbound']['remark']
+    aligned = plans.build(fake['outbound'], fake['order'], fake['order']['product_list'], inv.remark)
+    fake['outbound']['record_list'] = deepcopy(aligned['expected'])
+    fee = dict(fake['outbound']['record_list'][0], outbound_record_id=702, order_record_id=101,
+               product_id=33, sku_id=330, product_name='Other Items', outbound_count=1, sale_price=35)
+    if operation != 'add':
+        fake['outbound']['record_list'].append(fee)
+    if operation != 'remove':
+        db.add(InvoiceItem(invoice_id=inv.id, sort_order=2, product_id=33, sku_id=330,
+            product_name='Other Items', product_display='Other Items', color='', length='', quantity=2,
+            price_per_piece=40, total_price=40, xiaoman_unique_id='101'))
+        fake['order']['product_list'].append(dict(unique_id=101, product_id=33, sku_id=330,
+            count=2, unit_price=40, product_name='Other Items', unit='Piece', product_model='Weft'))
+    original_status = 'draft' if pending_recheck else 'submitted'
+    inspection = ShippingInspection(outbound_record_id='OB001', status=original_status, created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    whole = ShippingInspectionPhoto(inspection_id=inspection.id, item_id=None, file_path='whole.jpg')
+    db.add(whole)
+    db.flush()
+    prior = {'stale_media_ids': [whole.id], 'required_recheck_ids': ['__whole__', 'okki:999']} if pending_recheck else {}
+    db.add(ShippingOperationEvent(scope=state.SCOPE, request_id='OB001', source='pc', action='sync_done',
+        login_user_id=user.id, operator_user_id=user.id, operator_name='Inspector', login_name='Inspector',
+        outbound_record_id='OB001', payload={}, result=prior))
+    db.commit()
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    preview = sync.preview(db, record, actor)
+    assert preview['changed'] and not preview['requires_recheck']
+    assert sync.synchronize(db, record, actor, preview['version'], auto_recall=True)['status'] == 'sync_done'
+    db.refresh(inspection)
+    assert inspection.status == original_status and inspection.edit_version == 0
+    stale, required = state.evidence(db, 'OB001')
+    assert stale == prior.get('stale_media_ids', []) and required == prior.get('required_recheck_ids', [])
+    assert db.query(ShippingOperationEvent).filter_by(action='recall').count() == 0
+    assert len(fake['posts']) == 1
+
+
 def test_overlay_expires_when_mirror_is_newer(db, sync_case):
     user, _, _, fake = sync_case
     record = outbound_service.get_outbound_record(db, 'OB001')

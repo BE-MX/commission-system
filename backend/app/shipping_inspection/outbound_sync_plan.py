@@ -4,6 +4,23 @@ import json
 from decimal import Decimal, InvalidOperation
 
 
+def physical(row):
+    return str(row.get('product_name') or '').strip().casefold() != 'other items'
+
+
+def physical_changes(before, after, changed_ids, removed_ids):
+    """Fee-only edits leave physical evidence valid; unknown rows stay conservative."""
+    old = {str(row['order_record_id']): row for row in before}
+    current = {str(row['order_record_id']): row for row in after}
+    changed = set()
+    for key in map(str, changed_ids):
+        candidates = [rows[key] for rows in (old, current) if key in rows]
+        if not candidates or any(physical(row) for row in candidates):
+            changed.add(key)
+    removed = {str(key) for key in removed_ids if str(key) not in old or physical(old[str(key)])}
+    return changed, removed
+
+
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
@@ -113,6 +130,8 @@ def build(before, order, products, remark, *, serial_id=None):
     if serial_changed:
         payload['serial_id'] = serial_id
     remark_changed = not remarks_match(before.get('remark'), remark)
+    physical_changed, physical_removed = physical_changes(
+        before['record_list'], expected, material_order_ids, removed_order_ids)
     return {'payload': payload, 'expected': expected, 'changes': changes,
             'serial_before': before.get('serial_id'),
             'serial_after': serial_id if serial_changed else before.get('serial_id'), 'serial_changed': serial_changed,
@@ -120,8 +139,8 @@ def build(before, order, products, remark, *, serial_id=None):
             'changed': bool(changes) or remark_changed or serial_changed,
             'material_order_ids': material_order_ids, 'removed_order_ids': removed_order_ids,
             'remark_changed': remark_changed,
-            'requires_whole_recheck': remark_changed or bool(removed_order_ids),
-            'material_changed': bool(material_order_ids or removed_order_ids or remark_changed)}
+            'requires_whole_recheck': remark_changed or bool(physical_changed or physical_removed),
+            'material_changed': bool(physical_changed or physical_removed or remark_changed)}
 
 
 def display(row):

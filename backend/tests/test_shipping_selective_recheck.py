@@ -9,6 +9,7 @@ from app.shipping_inspection import outbound_recheck as recheck, outbound_sync_s
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingOperationEvent
 from app.invoice.models import InvoiceItem
 from app.shipping_inspection import outbound_sync_service as sync, outbound_service
+from app.shipping_inspection.outbound_sync_plan import physical_changes
 from tests.test_shipping_snapshot_refresh import caught_up, sync_case, case, product_display_source, outbound_scope_seed
 
 
@@ -46,6 +47,44 @@ def test_changed_fee_row_needs_only_whole_photo():
     stale, required = recheck.changes(plan, {'record_list': [dict(row(701, 100), product_name='Other Items')]}, [],
                                      [media(1, 'okki:701'), media(2, None)], {})
     assert stale == [1, 2] and required == ['__whole__']
+
+
+@pytest.mark.parametrize('operation', ['add', 'change', 'remove'])
+def test_fee_only_changes_keep_whole_and_product_evidence(operation):
+    hair, fee = row(701, 100), dict(row(702, 101), product_name='Other Items')
+    old = [hair] if operation == 'add' else [hair, fee]
+    after = [hair] if operation == 'remove' else [hair, fee]
+    plan = dict(before={'record_list': old}, material_order_ids=[] if operation == 'remove' else ['101'],
+                removed_order_ids=['101'] if operation == 'remove' else [], remark_changed=False)
+    stale, required = recheck.changes(plan, {'record_list': after},
+        [dict(local_item_id='LOCAL1', remote_item_id=701)],
+        [media(1, 'LOCAL1'), media(2, None)], {})
+    assert stale == []
+    assert required == []
+
+
+def test_fee_only_changes_preserve_prior_recheck_and_remark_changes_still_need_whole():
+    old = [row(701, 100), dict(row(702, 101), product_name='Other Items')]
+    plan = dict(before={'record_list': old}, material_order_ids=[], removed_order_ids=['101'], remark_changed=False)
+    previous = {'stale_media_ids': [1], 'required_recheck_ids': ['okki:701', '__whole__']}
+    stale, required = recheck.changes(plan, {'record_list': old[:1]}, [], [media(1, 'UNKNOWN'), media(2, None)], previous)
+    assert stale == [1] and required == ['__whole__', 'okki:701']
+    plan['remark_changed'] = True
+    stale, required = recheck.changes(plan, {'record_list': old[:1]}, [], [media(2, None)], {})
+    assert stale == [2] and required == ['__whole__']
+
+
+@pytest.mark.parametrize('before_name,after_name', [
+    ('Hair', 'Other Items'), ('Other Items', 'Hair'), ('Other', 'Other Items'), (None, 'Other Items'),
+])
+def test_product_fee_transitions_and_unknown_names_are_still_physical(before_name, after_name):
+    before = [dict(row(701, 100), product_name=before_name)]
+    after = [dict(row(701, 100), product_name=after_name)]
+    assert physical_changes(before, after, ['100'], []) == ({'100'}, set())
+
+
+def test_missing_changed_or_removed_identity_is_not_assumed_to_be_a_fee():
+    assert physical_changes([], [], ['100'], ['101']) == ({'100'}, {'101'})
 
 
 def test_unknown_legacy_local_photo_cannot_be_guessed_from_product_name():
