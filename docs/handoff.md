@@ -1,10 +1,11 @@
-## 2026-10-14 WhatsApp业务号关联失败（Codex，本地修复，路由已准备）
+## 2026-10-14 WhatsApp业务号关联失败（Codex，已合并推送并部署）
 
 - 北京连接器回环8787指向色块服务（健康404）；办公室唯一Baileys connector健康200。云端关联走错服务，原始创建错误被回查404覆盖。
 - 分支 `codex/whatsapp-bind-error`：补云端域路由及原始错误保留；办公室另有同步锁账号后HTTP、connector回调再锁账号的互等路径，已改无锁fetch后锁定当前读验授权/游标，pending回查前释放锁，停止状态不再无限轮询。后端50项、部署99项、前端6项通过，独立审查通过。
 - 最近关联13:37创建成功后自动同步两次失败authorization_unavailable、刷新502；13:38用户已发起撤销，现revoke_pending/consent revoked，保持该授权。后端与前端需普通应用发布，路由专项不能替代；并发回归为隔离SQLite，真实扫码与MySQL双事务未验收。
 - 完整前端同源码镜像构建通过，临时依赖junction清理被自动审批拒绝并保留；构建证据在tmp/whatsapp-build。
-- 两站 `deploy.bat --whatsapp-routing-only --prepare-only` 已通过Nginx语法检查，尚未切流量，未操作真实账号。待生产路由授权，未提交、合并、推送或发布。见[修复记录](reports/2026-10-14-whatsapp-bind-error.md)。
+- 用户授权后，修复4242440b接入最新main、合并推送974bfd8a；两地应用受管发布准备/正式均exit0，schema195不变，无迁移，发布身份47c2429b76ce4571b61623d692f86792。静态保留清理结束，发布锁释放。
+- 两站WhatsApp路由已受管激活，配置摘要与候选一致。三个入口账号/关联查询均200，已有撤销关联显示revoke_pending且无QR；北京运行环境登录JWT经路由也通过办公室鉴权。原账号授权字段完全保留，两域前端摘要与构建一致；未代重新授权，真实扫码/历史同步仍待持有人验收。证据见主目录.deploy_state/whatsapp-bind-release-20261014/及[修复记录](reports/2026-10-14-whatsapp-bind-error.md)。
 
 ## 2026-10-14 出库费用行误触发整单补验（Codex，Git交付；固定单据已纠正，未部署）
 
