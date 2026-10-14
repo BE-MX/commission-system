@@ -647,3 +647,85 @@ def test_reconcile_never_treats_binding_as_complete_sync(db):
     assert outbound_task_service._reconcile_missing_outbound_tasks(db)["enqueued"] == 0
     assert _tasks(db) == []
 
+
+def _accepted_current_update(db, monkeypatch, *, enrolled=1, enabled=True, order_type="stock"):
+    from app.invoice import order_sync_execution as execution
+    invoice = _make_invoice(db, order_type=order_type, xiaoman_order_id="424242",
+                            outbound_auto_requested=enrolled, status="sync_uncertain",
+                            sync_status="sync_uncertain")
+    invoice.items.append(_stock_item(xiaoman_unique_id="111"))
+    db.commit()
+    rows, _, issues, _ = xiaoman_service._build_product_rows(db, invoice, None, editing=True)
+    assert not issues
+    attempt = SimpleNamespace(data={"action":"update"}, payload={"product_list":rows},
+        key="recovered-update", actor_id=1, inventory_key=None, receipt_token=None)
+    observation = {"result_class":"accepted", "provider_reference":"424242"}
+    response = {"product_list":rows}
+    monkeypatch.setattr(xiaoman_service, "get_settings", lambda: SimpleNamespace(OKKI_OUTBOUND_AUTO_ENABLED=enabled))
+    monkeypatch.setattr(execution.inventory, "finalize_invoice_sync", lambda *args: None)
+    monkeypatch.setattr(execution.invoice_link, "mark_success", lambda *args: {})
+    monkeypatch.setattr(execution.invoice_link, "finish_attempt", lambda *args: None)
+    return execution, invoice, attempt, observation, response
+
+
+@pytest.mark.parametrize("enrolled,enabled,order_type,wanted", [
+    (1, True, "stock", 1), (1, True, "production", 1),
+    (0, True, "stock", 0), (1, False, "stock", 0), (1, True, "presale", 0),
+])
+def test_current_update_completes_original_outbound_enrollment(db, monkeypatch, enrolled, enabled, order_type, wanted):
+    execution, invoice, attempt, observation, response = _accepted_current_update(
+        db, monkeypatch, enrolled=enrolled, enabled=enabled, order_type=order_type)
+    assert execution.apply(db, invoice, attempt, observation, response)["ok"] is True
+    db.flush()
+    assert len(_tasks(db)) == wanted
+    assert execution.apply(db, invoice, attempt, observation, response)["ok"] is True
+    db.flush()
+    assert len(_tasks(db)) == wanted
+    if wanted:
+        assert _tasks(db)[0].order_id == "424242" and _tasks(db)[0].status == "pending"
+
+
+@pytest.mark.parametrize("status", ["pending", "done", "uncertain", "running", "skipped"])
+def test_current_update_preserves_existing_outbound_task(db, monkeypatch, status):
+    execution, invoice, attempt, observation, response = _accepted_current_update(db, monkeypatch)
+    task = OkkiOutboundTask(invoice_id=invoice.id, order_id="424242", status=status,
+                            attempts=3, reason="Original task", last_error="Original evidence")
+    db.add(task); db.commit()
+    assert execution.apply(db, invoice, attempt, observation, response)["ok"] is True
+    db.flush()
+    assert len(_tasks(db)) == 1
+    assert (task.status, task.attempts, task.reason, task.last_error) == (status, 3, "Original task", "Original evidence")
+
+
+def test_current_update_wakes_original_stock_wait_without_new_task(db, monkeypatch):
+    execution, invoice, attempt, observation, response = _accepted_current_update(db, monkeypatch)
+    task = OkkiOutboundTask(invoice_id=invoice.id, order_id="424242", status="waiting_stock",
+                            attempts=3, reason="Insufficient stock", last_error="Old shortage")
+    db.add(task); db.commit()
+    assert execution.apply(db, invoice, attempt, observation, response)["ok"] is True
+    db.flush()
+    assert len(_tasks(db)) == 1
+    assert (task.status, task.attempts, task.reason, task.last_error) == ("pending", 0, None, None)
+
+
+@pytest.mark.parametrize("failure", ["missing_rows", "inventory_finalize"])
+def test_current_update_never_queues_incomplete_acceptance(db, monkeypatch, failure):
+    execution, invoice, attempt, observation, response = _accepted_current_update(db, monkeypatch)
+    if failure == "missing_rows":
+        response = {"product_list":[]}
+    else:
+        def fail(*args):
+            raise RuntimeError("Inventory finalization failed")
+        monkeypatch.setattr(execution.inventory, "finalize_invoice_sync", fail)
+    assert execution.apply(db, invoice, attempt, observation, response)["ok"] is False
+    assert invoice.sync_status == "sync_uncertain" and _tasks(db) == []
+
+
+def test_current_update_queue_rolls_back_with_order_finalization(db, monkeypatch):
+    execution, invoice, attempt, observation, response = _accepted_current_update(db, monkeypatch)
+    assert execution.apply(db, invoice, attempt, observation, response)["ok"] is True
+    db.flush()
+    assert len(_tasks(db)) == 1
+    db.rollback(); db.refresh(invoice)
+    assert invoice.sync_status == "sync_uncertain" and _tasks(db) == []
+
