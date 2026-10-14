@@ -115,7 +115,7 @@ def test_positive_missing_bind_readback_allows_next_explicit_retry(db, account, 
             calls.append('get'); raise ConnectorError('not found', status_code=404)
     monkeypatch.setattr(lifecycle, 'WhatsAppConnectorClient', Client)
     actor = {'sub': str(account.ark_user_id)}
-    with pytest.raises(ValueError):
+    with pytest.raises(ConnectorError, match='network refusal'):
         lifecycle.bind(db, actor, account_uid=account.account_uid, company_account=True, crm_shared=False)
     result = lifecycle.bind(db, actor, account_uid=account.account_uid, company_account=True, crm_shared=False)
     assert calls == ['post', 'get', 'post']

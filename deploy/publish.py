@@ -357,6 +357,7 @@ if __name__ == "__main__":
     parser.add_argument("--shipping-video-routing-only", action="store_true", help="Enable 100MB private shipping video uploads on existing backends")
     parser.add_argument("--voucher-routing-only", action="store_true", help="Route recharge uploads and voucher reads to each site's COS backend")
     parser.add_argument("--receipt-routing-only", action="store_true", help="Route receipts and 10MiB proofs to the office only")
+    parser.add_argument("--whatsapp-routing-only", action="store_true", help="Route WhatsApp connector APIs to the single office connector")
     parser.add_argument("--colorwork-routing-only", action="store_true", help="Route colorwork to the existing healthy Beijing module")
     parser.add_argument("--migrate-only", metavar="PLAN", help="Execute only the reviewed 137 -> 138 migration using a verified local plan")
     parser.add_argument("--recover-migration-168", action="store_true", help="Recover only the inspected 168 collation incident")
@@ -367,6 +368,9 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if args.whatsapp_routing_only and any(value for key, value in vars(args).items()
+                                               if key not in {"whatsapp_routing_only", "prepare_only"}):
+            raise RuntimeError("WhatsApp routing only accepts --prepare-only")
         if (args.sales_agent_model_config or args.sales_agent_runtime_revision or args.sales_agent_reuse_model) and not args.sales_agent_stage:
             raise RuntimeError('Sales parameters require --sales-agent-stage')
         if args.sales_agent_stage:
@@ -487,6 +491,9 @@ if __name__ == "__main__":
                 raise RuntimeError("Office LAN HTTPS only accepts its plan and --prepare-only")
             from office_lan_https import execute
             execute(args.office_lan_https, args.prepare_only)
+        elif args.whatsapp_routing_only:
+            from voucher_routing import execute
+            execute(args.prepare_only, feature="whatsapp")
         elif args.shipping_video_routing_only:
             if args.colorwork_routing_only or args.voucher_routing_only or args.migrate_only or args.cloud_only or args.no_pull or args.revision or args.recover_migration_149 or args.recover_migration_151 or args.migration_credentials:
                 raise RuntimeError("Shipping video routing only accepts --prepare-only")
@@ -525,7 +532,7 @@ if __name__ == "__main__":
         if any(getattr(locals().get('args'), key, None) for key in ['static_retention_only', 'okki_sync_only', 'mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
-        if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
+        if not getattr(locals().get("args"), "whatsapp_routing_only", False) and not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
             journal = marker("publish-current")
             if journal.get('status') != 'succeeded':
                 journal.update(status="failed", error_type=type(error).__name__)

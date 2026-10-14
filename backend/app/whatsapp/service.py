@@ -133,6 +133,29 @@ def refresh_bind_session(db: Session, bind_session_uid: str) -> WhatsAppBindSess
     try:
         payload = client.get_bind_session(bind_session_uid)
     except ConnectorError as exc:
+        if exc.status_code == 403 and existing is not None and existing.account_uid:
+            # Body/QR access remains denied. Read only safe account metadata so
+            # protected pause/revocation is shown as a terminal binding state.
+            logger.warning('WhatsApp bind status denied; reading safe account metadata')
+            print('[WhatsApp] bind status denied; reading safe account metadata', flush=True)
+            metadata = client.get_account(existing.account_uid)
+            if metadata.get('account_uid') != existing.account_uid or metadata.get('ark_user_id') != existing.ark_user_id:
+                raise ValueError('Connector 账号范围不匹配')
+            if metadata.get('status') not in ('paused', 'blocked', 'revoking', 'revoked', 'reconnect_required'):
+                raise exc
+            account = _upsert_account(db, metadata, existing.ark_user_id)
+            if account.status not in ('paused', 'blocked', 'revoking', 'revoked', 'revoke_pending', 'reconnect_required'):
+                raise exc  # Stale metadata cannot change the current account.
+            existing.status = account.status
+            existing.qr_code_url = None
+            existing._transient_qr = None
+            existing.expires_at = None
+            existing.last_payload = {'status': account.status, 'account': {
+                'connector_status': account.connector_status, 'last_error': account.last_error,
+            }}
+            _audit(db, action='refresh_bind_session', result='stopped', ark_user_id=existing.ark_user_id,
+                   account_uid=existing.account_uid)
+            return existing
         if exc.status_code != 404 or existing is None:
             raise
         existing.status = 'expired'

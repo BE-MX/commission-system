@@ -36,18 +36,21 @@ def digest(content):
 
 def render(original, snippet, region, feature="voucher"):
     _, port, expected = SPECS[region]
-    if feature not in {"voucher", "shipping-video", "receipt"}:
+    if feature not in {"voucher", "shipping-video", "receipt", "whatsapp"}:
         raise ValueError("Unknown routing feature")
     begin, end, conflict = (BEGIN, END, "/api/domestic/") if feature == "voucher" else (
         "# BEGIN ARK SHIPPING VIDEO ROUTING", "# END ARK SHIPPING VIDEO ROUTING", "/api/mini/shipping-inspection/videos")
     if feature == "receipt":
         begin, end, conflict = "# BEGIN ARK RECEIPT ROUTING", "# END ARK RECEIPT ROUTING", "/api/receipts"
+    if feature == "whatsapp":
+        begin, end, conflict = "# BEGIN ARK WHATSAPP ROUTING", "# END ARK WHATSAPP ROUTING", "/api/whatsapp(?:"
     # Replace only our blocks. Unknown layout or conflicting rules must be reviewed.
     clean = re.sub(re.escape(begin) + r".*?" + re.escape(end) + r"\n?", "", original, flags=re.S)
     checked = clean
     if feature == 'shipping-video' and region == 'office' and checked.count(OFFICE_PHOTO_RULE) == 1:
         checked = checked.replace(OFFICE_PHOTO_RULE, '')
-    if begin in checked or end in checked or conflict in checked or (feature == 'shipping-video' and 'shipping-inspection' in checked):
+    whatsapp_conflict = feature == 'whatsapp' and re.search(r'/api/whatsapp(?![-\w])', checked)
+    if begin in checked or end in checked or conflict in checked or whatsapp_conflict or (feature == 'shipping-video' and 'shipping-inspection' in checked):
         raise ValueError("Conflicting domestic routing; inspect the current configuration")
     anchor = re.compile(r"location /api/\s*\{\s*proxy_pass http://127\.0\.0\.1:" + port + r";")
     if len(anchor.findall(clean)) != expected:

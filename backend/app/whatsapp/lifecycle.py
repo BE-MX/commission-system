@@ -20,7 +20,7 @@ def owned_account(db, uid: str, actor: dict, *, allow_manager=False):
     return account
 
 
-def _read_operation(db, client, session):
+def _read_operation(db, client, session, *, create_error=None):
     try:
         return client.get_bind_session(session.bind_session_uid)
     except ConnectorError as exc:
@@ -31,6 +31,10 @@ def _read_operation(db, client, session):
             session.qr_code_url = None
             session.updated_at = beijing_now()
             db.commit()
+            if create_error is not None:
+                # The missing operation explains the outcome, not why creation
+                # failed. Preserve the original HTTP/transport diagnosis.
+                raise create_error from exc
             raise ValueError('连接器确认关联操作未建立，请重新点击关联') from exc
         raise
 
@@ -51,6 +55,9 @@ def bind(db, actor: dict, *, account_uid: str | None, company_account: bool, crm
         ).order_by(WhatsAppBindSession.id.desc()).first()
     if pending:
         # A lost bind response is read back using the exact durable operation.
+        # owned_account may have locked the account. The connector's readback
+        # calls Ark authorization on that row, so release before external I/O.
+        db.commit()
         payload = _read_operation(db, WhatsAppConnectorClient(), pending)
         return _upsert_bind_session(db, payload, user_id)
     if account is None:
@@ -80,11 +87,11 @@ def bind(db, actor: dict, *, account_uid: str | None, company_account: bool, crm
         payload = client.create_bind_session(user_id, account_uid=account.account_uid,
             bind_session_uid=session.bind_session_uid, provider='baileys', consent_version=account.consent_version,
             session_generation=account.session_generation)
-    except ConnectorError:
-        logger.warning('WhatsApp bind result uncertain; reading reserved operation')
-        print('[WhatsApp] bind result uncertain; reading reserved operation', flush=True)
+    except ConnectorError as exc:
+        logger.warning('WhatsApp bind result uncertain (HTTP %s); reading reserved operation', exc.status_code)
+        print(f'[WhatsApp] bind result uncertain (HTTP {exc.status_code}); reading reserved operation', flush=True)
         # No retry POST. Keep the reservation if readback is also unavailable.
-        payload = _read_operation(db, client, session)
+        payload = _read_operation(db, client, session, create_error=exc)
     return _upsert_bind_session(db, payload, user_id)
 
 

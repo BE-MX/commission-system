@@ -4,22 +4,40 @@ import logging
 from app.core.time import beijing_now
 from app.whatsapp import access, identity
 from app.whatsapp.connector_client import WhatsAppConnectorClient
-from app.whatsapp.models import WhatsAppAccount, WhatsAppConversation, WhatsAppMessage
+from app.whatsapp.models import WhatsAppAccount, WhatsAppConversation, WhatsAppMessage, WhatsAppPullCursor
 
 logger = logging.getLogger(__name__)
 
 
 def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -> tuple[int, str | None]:
     from app.whatsapp.service import _get_cursor, _upsert_account, _upsert_conversation, _upsert_message, _audit
-    # Serialize manual/scheduler consumers and consent changes through this row.
-    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).populate_existing().with_for_update().first()
+    # The connector calls Ark back to lock/read this account's authorization.
+    # Never hold that row lock while waiting for its HTTP response.
+    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).populate_existing().first()
     if account is None:
         raise LookupError('WhatsApp 账号不存在')
     if not access.owner_enabled(db, account):
         raise PermissionError('账号或员工已停止采集授权')
     expected = (account.session_generation, account.consent_version)
-    cursor = _get_cursor(db, account_uid, 'events', 'global')
-    page = WhatsAppConnectorClient().pull_changes(account_uid, cursor.cursor_value, limit)
+    expected_owner = account.ark_user_id
+    checkpoint = db.query(WhatsAppPullCursor.cursor_value).filter_by(
+        account_uid=account_uid, resource='events', scope_uid='global',
+    ).first()
+    fetched_cursor = checkpoint[0] if checkpoint else None
+    page = WhatsAppConnectorClient().pull_changes(account_uid, fetched_cursor, limit)
+    # Serialize only the apply phase. Locking reads observe the current MySQL
+    # rows even if the unlocked fetch began in an earlier REPEATABLE READ view.
+    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).populate_existing().with_for_update().first()
+    if account is None or account.ark_user_id != expected_owner or (
+        account.session_generation, account.consent_version
+    ) != expected or not access.owner_enabled(db, account, fresh=True):
+        raise PermissionError('批次应用前账号授权已失效')
+    cursor = db.query(WhatsAppPullCursor).filter_by(
+        account_uid=account_uid, resource='events', scope_uid='global',
+    ).populate_existing().with_for_update().first()
+    if (cursor.cursor_value if cursor else None) != fetched_cursor:
+        raise ValueError('同步游标已变化，请重新同步')
+    cursor = cursor or _get_cursor(db, account_uid, 'events', 'global')
     metadata = page.get('account') or {}
     if (str(metadata.get('session_generation')), str(metadata.get('consent_version'))) != tuple(map(str, expected)):
         raise PermissionError('连接器返回过期接入代次或授权版本')

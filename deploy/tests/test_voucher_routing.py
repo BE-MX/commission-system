@@ -24,6 +24,44 @@ def config(region):
             + port + ";\n    }\n}\n") * count
 
 
+@pytest.mark.parametrize('region', ['office', 'cloud'])
+def test_whatsapp_routes_only_connector_domain_to_office(region):
+    source = (DEPLOY / 'nginx' / f'whatsapp-{region}.conf').read_text()
+    candidate = routing.render(config(region), source, region, 'whatsapp')
+    assert routing.render(candidate, source, region, 'whatsapp') == candidate
+    pattern = re.search(r'location ~ (.+) \{', source).group(1)
+    for path in ['/api/whatsapp', '/api/whatsapp/bind-sessions', '/api/whatsapp/ai-assistant/runs']:
+        assert re.match(pattern, path)
+    for path in ['/api/whatsapp-translation/pairing', '/api/colorwork/', '/api/whatsapp-other']:
+        assert not re.match(pattern, path)
+    assert 'proxy_next_upstream off;' in source
+    assert 'proxy_buffering off;' in source
+    assert 'proxy_set_header Authorization $http_authorization;' in source
+    assert 'proxy_cache off;' in source
+    assert 'access_log off;' in source
+    if region == 'cloud':
+        assert 'proxy_pass https://119.28.107.92;' in source
+        assert 'proxy_ssl_verify on;' in source
+        assert 'proxy_ssl_name leshine.work;' in source
+    else:
+        assert 'proxy_pass http://127.0.0.1:8002;' in source
+    with pytest.raises(ValueError, match='Conflicting'):
+        routing.render(config(region) + '\nlocation /api/whatsapp/ {}', source, region, 'whatsapp')
+
+
+@pytest.mark.parametrize('pattern', ['^/api/whatsapp(/|$)', '^/api/whatsapp$', '^/api/whatsapp(?:/|$)'])
+def test_whatsapp_rejects_unowned_regex_routes(pattern):
+    source = (DEPLOY / 'nginx/whatsapp-cloud.conf').read_text()
+    with pytest.raises(ValueError, match='Conflicting'):
+        routing.render(config('cloud') + f'\nlocation ~ {pattern} {{}}', source, 'cloud', 'whatsapp')
+
+
+def test_whatsapp_preserves_independent_translation_route():
+    source = (DEPLOY / 'nginx/whatsapp-cloud.conf').read_text()
+    original = config('cloud') + '\nlocation /api/whatsapp-translation/ { proxy_pass http://127.0.0.1:8001; }'
+    assert '/api/whatsapp-translation/' in routing.render(original, source, 'cloud', 'whatsapp')
+
+
 @pytest.fixture
 def backend_context_fixture(tmp_path, monkeypatch):
     backend = tmp_path / "backend"

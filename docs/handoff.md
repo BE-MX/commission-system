@@ -1,3 +1,11 @@
+## 2026-10-14 WhatsApp业务号关联失败（Codex，本地修复，路由已准备）
+
+- 北京连接器回环8787指向色块服务（健康404）；办公室唯一Baileys connector健康200。云端关联走错服务，原始创建错误被回查404覆盖。
+- 分支 `codex/whatsapp-bind-error`：补云端域路由及原始错误保留；办公室另有同步锁账号后HTTP、connector回调再锁账号的互等路径，已改无锁fetch后锁定当前读验授权/游标，pending回查前释放锁，停止状态不再无限轮询。后端50项、部署99项、前端6项通过，独立审查通过。
+- 最近关联13:37创建成功后自动同步两次失败authorization_unavailable、刷新502；13:38用户已发起撤销，现revoke_pending/consent revoked，保持该授权。后端与前端需普通应用发布，路由专项不能替代；并发回归为隔离SQLite，真实扫码与MySQL双事务未验收。
+- 完整前端同源码镜像构建通过，临时依赖junction清理被自动审批拒绝并保留；构建证据在tmp/whatsapp-build。
+- 两站 `deploy.bat --whatsapp-routing-only --prepare-only` 已通过Nginx语法检查，尚未切流量，未操作真实账号。待生产路由授权，未提交、合并、推送或发布。见[修复记录](reports/2026-10-14-whatsapp-bind-error.md)。
+
 ## 2026-10-14 待审核角标静默刷新（Codex，已授权合并推送，未部署）
 
 - 分支 `codex/quiet-review-badge`：内贸待审核数量请求关闭全屏遮罩，轮询改 60 秒；焦点与可见性事件合并，慢请求不重叠，成功操作仍补查更新。

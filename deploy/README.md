@@ -225,6 +225,14 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 - `--cloud-only` 若发现新加坡前端有变化，会等待对应办公室后端发布并列为 deferred；不提前上线依赖旧 API 的新页面。完全一致的页面可核验并接入受管目录。
 - `tls_setup.py` 用于已有域名的 ACME 路径与证书路径调整；正式配置切换前先 `nginx -t`，每次备份到服务器受限目录。新发型站配置见 `nginx/hair.leshine.cloud.conf`。
 
+## WhatsApp业务号API路由
+
+`deploy/deploy.bat --whatsapp-routing-only --prepare-only` 准备两站路由并检查Nginx语法，保持线上流量。获得生产切换授权后移除 `--prepare-only` 激活；专项不可与其他发布动作混用。
+
+办公室持有唯一业务号connector，北京回环8787属于色块服务。云端 `/api/whatsapp(?:/|$)` 经验证TLS的新加坡入口透传原URI和Authorization至办公室后端，涵盖关联、状态、同步和AI助手；独立 `/api/whatsapp-translation` 不受影响。关闭重试、缓存及访问日志，不复制凭据、不启动第二个connector、不迁移数据库。沿用受管路由摘要防漂移、备份及失败恢复；服务器备份在 `/etc/nginx/.ark-backups/whatsapp/`，本地状态在 `.deploy_state/whatsapp-routing.json`。激活前核验办公室后端和connector健康；真实扫码和历史同步另需业务验收证据。
+
+诊断及候选准备状态见[关联修复记录](../docs/reports/2026-10-14-whatsapp-bind-error.md)。准备成功不代表生产流量已切换。
+
 ## 库存色块内部模块
 
 北京后端发布同时纳管 colorwork-workbench：浏览器使用方舟 `/api/colorwork/workbench/`，不使用子域名。

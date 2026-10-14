@@ -8,6 +8,7 @@ from app.auth.models import ArkUser
 from app.whatsapp import access, event_sync, identity, lifecycle, service
 from app.whatsapp.models import WhatsAppAccount, WhatsAppMessage, WhatsAppMessageSource, WhatsAppPullCursor, WhatsAppBodyGrant, WhatsAppBindSession
 from tests.test_customer_workflow import _user, _grant_permission
+from sqlalchemy import event
 
 
 @pytest.fixture
@@ -224,3 +225,150 @@ def test_automatic_sync_reads_protected_pause_metadata_after_feed_rejection(db, 
     assert stats['error'] == 1
     assert account.status == 'paused' and account.connector_status == 'protected_pause'
     assert account.raw_payload['gap_reason'] == 'disk_capacity' and account.raw_payload['needs_user_action']
+
+
+@pytest.mark.parametrize('status,detail', [(404, 'wrong_service'), (503, 'authorization_unavailable')])
+def test_bind_missing_operation_preserves_original_connector_failure(db, account, monkeypatch, status, detail):
+    from app.whatsapp.connector_client import ConnectorError
+    calls = []
+    failure = ConnectorError(f'Connector 返回错误: HTTP {status} - {detail}', status_code=status)
+    class Client:
+        def create_bind_session(self, user_id, **operation):
+            calls.append(('post', operation['bind_session_uid']))
+            raise failure
+        def get_bind_session(self, uid):
+            calls.append(('get', uid))
+            raise ConnectorError('bind_session_not_found', status_code=404)
+    monkeypatch.setattr(lifecycle, 'WhatsAppConnectorClient', Client)
+    with pytest.raises(ConnectorError) as caught:
+        lifecycle.bind(db, {'sub': str(account.ark_user_id)}, account_uid=account.account_uid,
+                       company_account=True, crm_shared=False)
+    assert caught.value is failure
+    assert calls == [('post', calls[0][1]), ('get', calls[0][1])]
+    assert db.query(WhatsAppBindSession).one().status == 'error'
+
+
+def test_bind_unavailable_readback_retains_reservation_without_reposting(db, account, monkeypatch):
+    from app.whatsapp.connector_client import ConnectorError
+    calls = []
+    class Client:
+        def create_bind_session(self, user_id, **operation):
+            calls.append(('post', operation['bind_session_uid']))
+            raise ConnectorError('timeout')
+        def get_bind_session(self, uid):
+            calls.append(('get', uid))
+            raise ConnectorError('unavailable', status_code=503)
+    monkeypatch.setattr(lifecycle, 'WhatsAppConnectorClient', Client)
+    for _ in range(2):
+        with pytest.raises(ConnectorError, match='unavailable'):
+            lifecycle.bind(db, {'sub': str(account.ark_user_id)}, account_uid=account.account_uid,
+                           company_account=True, crm_shared=False)
+    assert calls == [('post', calls[0][1]), ('get', calls[0][1]), ('get', calls[0][1])]
+    assert db.query(WhatsAppBindSession).one().status == 'pending'
+
+
+def test_feed_fetch_does_not_hold_row_locks_needed_by_connector_callback(db, account, monkeypatch):
+    locking_reads = []
+    def record(execution):
+        if getattr(execution.statement, '_for_update_arg', None) is not None:
+            locking_reads.append(execution.statement)
+    event.listen(db, 'do_orm_execute', record)
+    def fetch(*args):
+        assert locking_reads == [], 'connector callback would wait on the caller row lock'
+        return page(account, [msg()])
+    try:
+        monkeypatch.setattr(event_sync, 'WhatsAppConnectorClient', lambda: SimpleNamespace(pull_changes=fetch))
+        event_sync.pull_changes(db, account.account_uid, 100)
+        assert locking_reads, 'apply must still serialize writes and recheck live authorization'
+    finally:
+        event.remove(db, 'do_orm_execute', record)
+
+
+def test_feed_changed_consent_during_fetch_cannot_apply(db, account, monkeypatch):
+    original = page(account, [msg()])
+    def fetch(*args):
+        account.consent_version += 1
+        db.flush()
+        return original
+    monkeypatch.setattr(event_sync, 'WhatsAppConnectorClient', lambda: SimpleNamespace(pull_changes=fetch))
+    with pytest.raises(PermissionError):
+        event_sync.pull_changes(db, account.account_uid, 100)
+    assert db.query(WhatsAppMessage).count() == 0
+
+
+def test_concurrent_feed_cursor_advance_cannot_be_rewound(db, account, monkeypatch):
+    def fetch(*args):
+        cursor = service._get_cursor(db, account.account_uid, 'events', 'global')
+        cursor.cursor_value = 'newer_cursor'
+        db.flush()
+        return page(account, [msg()])
+    monkeypatch.setattr(event_sync, 'WhatsAppConnectorClient', lambda: SimpleNamespace(pull_changes=fetch))
+    with pytest.raises(ValueError, match='游标'):
+        event_sync.pull_changes(db, account.account_uid, 100)
+    assert db.query(WhatsAppMessage).count() == 0
+    assert db.query(WhatsAppPullCursor).one().cursor_value == 'newer_cursor'
+
+
+def test_paused_binding_returns_terminal_status_instead_of_repeated_query_error(db, account, monkeypatch):
+    from app.whatsapp.connector_client import ConnectorError
+    session = WhatsAppBindSession(bind_session_uid='bind_paused', account_uid=account.account_uid,
+                                 ark_user_id=account.ark_user_id, status='pending')
+    db.add(session); db.commit()
+    metadata = page(account, [])['account']
+    metadata.update(status='paused', connector_status='protected_pause', last_error_code='authorization_unavailable')
+    class Client:
+        def get_bind_session(self, uid):
+            raise ConnectorError('account_paused', status_code=403)
+        def get_account(self, uid):
+            return metadata
+    monkeypatch.setattr(service, 'WhatsAppConnectorClient', Client)
+    result = service.refresh_bind_session(db, session.bind_session_uid)
+    assert result.status == 'paused'
+    assert result.qr_code_url is None
+    assert account.last_error == 'authorization_unavailable'
+
+
+def test_pending_rebind_readback_releases_owner_lock_before_callback(db, account, monkeypatch):
+    from app.whatsapp.connector_client import ConnectorError
+    pending = WhatsAppBindSession(bind_session_uid='bind_pending', account_uid=account.account_uid,
+                                 ark_user_id=account.ark_user_id, status='pending')
+    db.add(pending); db.commit()
+    held = []
+    def record(execution):
+        if getattr(execution.statement, '_for_update_arg', None) is not None:
+            held.append(execution.statement)
+    def release(*args):
+        held.clear()
+    class Client:
+        def get_bind_session(self, uid):
+            assert not held, 'authorization callback needs the account lock held by owned_account'
+            raise ConnectorError('temporary_unavailable', status_code=503)
+    event.listen(db, 'do_orm_execute', record)
+    event.listen(db, 'after_commit', release)
+    try:
+        monkeypatch.setattr(lifecycle, 'WhatsAppConnectorClient', Client)
+        with pytest.raises(ConnectorError):
+            lifecycle.bind(db, {'sub': str(account.ark_user_id)}, account_uid=account.account_uid,
+                           company_account=True, crm_shared=False)
+    finally:
+        event.remove(db, 'do_orm_execute', record)
+        event.remove(db, 'after_commit', release)
+
+
+def test_stale_pause_metadata_cannot_stop_current_binding(db, account, monkeypatch):
+    from app.whatsapp.connector_client import ConnectorError
+    session = WhatsAppBindSession(bind_session_uid='bind_current', account_uid=account.account_uid,
+                                 ark_user_id=account.ark_user_id, status='pending')
+    db.add(session); db.commit()
+    metadata = page(account, [])['account']
+    metadata.update(status='paused', session_generation=account.session_generation - 1)
+    class Client:
+        def get_bind_session(self, uid):
+            raise ConnectorError('account_paused', status_code=403)
+        def get_account(self, uid):
+            return metadata
+    monkeypatch.setattr(service, 'WhatsAppConnectorClient', Client)
+    with pytest.raises(ConnectorError):
+        service.refresh_bind_session(db, session.bind_session_uid)
+    assert session.status == 'pending'
+    assert account.status == 'active'

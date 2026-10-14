@@ -24,7 +24,7 @@ export function useWhatsAppBinding(loadAccounts) {
   function schedule(id) {
     if (id !== generation || disposed || !bindDialogVisible.value) return
     clearTimer()
-    if (!['active', 'expired', 'error', 'revoked', 'reconnect_required', 'paused'].includes(bindSession.value?.status)) {
+    if (!['active', 'expired', 'error', 'revoking', 'revoke_pending', 'revoked', 'reconnect_required', 'paused', 'blocked'].includes(bindSession.value?.status)) {
       poll = setTimeout(() => refresh(id), 3000)
     }
   }
