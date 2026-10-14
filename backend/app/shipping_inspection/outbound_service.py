@@ -143,9 +143,11 @@ def _owner_scope_clause(db: Session, rm: dict[str, str | None]) -> str:
             f"业务库表 {_schema()}.{RECORDS_TABLE} 缺少 company_id 列，无法按归属过滤；实际列：{columns}"
         )
     schema = _schema()
+    # Materialize this user's customer set once. A correlated EXISTS caused
+    # MySQL to probe customer orders for every outbound header (also on search).
     mirror_scope = (
-        f"EXISTS (SELECT 1 FROM `{schema}`.`okki_orders` o "
-        f"WHERE o.`company_id` = r.`{rm['company_id']}` AND o.`user_id` = :scope_okki_user_id)"
+        f"r.`{rm['company_id']}` IN (SELECT o.`company_id` FROM `{schema}`.`okki_orders` o "
+        f"WHERE o.`user_id` = :scope_okki_user_id)"
     )
     link, _, im = _link(db)
     if link is None or "order_id" not in _table_columns(db, ITEMS_TABLE):

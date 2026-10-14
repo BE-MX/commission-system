@@ -54,8 +54,8 @@ def test_html_payload_and_word_show_same_owner(db, monkeypatch):
     bind(db, user, name="王小红")
     from app.shipping_inspection import outbound_service
     monkeypatch.setattr(outbound_service, "get_outbound_record", lambda *a, **k: {
-        "owner_name": "Alice", "outbound_no": "TEST"})
-    monkeypatch.setattr(outbound_service, "list_outbound_items", lambda *a: [])
+        "outbound_record_id": "TEST", "owner_name": "Alice", "outbound_no": "TEST"})
+    monkeypatch.setattr(outbound_service, "list_outbound_items", lambda *a, **k: [])
     with _pc_client(db, user, [], roles=["super_admin"]) as client:
         data = client.get("/api/shipping-inspection/outbound-records/TEST/print-data")
         assert data.status_code == 200
@@ -136,8 +136,8 @@ def test_html_and_word_use_live_outbound_handler(db, monkeypatch):
         "outbound_invoice_id": 123, "handler_info": [{"nickname": "Eva"}],
     })
     monkeypatch.setattr(outbound_service, "get_outbound_record", lambda *a, **k: {
-        "outbound_invoice_id": "123", "owner_name": "Rainy", "outbound_no": "ly914首返出库单"})
-    monkeypatch.setattr(outbound_service, "list_outbound_items", lambda *a: [])
+        "outbound_record_id": "123", "outbound_invoice_id": "123", "owner_name": "Rainy", "outbound_no": "ly914首返出库单"})
+    monkeypatch.setattr(outbound_service, "list_outbound_items", lambda *a, **k: [])
     with _pc_client(db, user, [], roles=["super_admin"]) as client:
         response = client.get("/api/shipping-inspection/outbound-records/123/print-data")
         assert response.status_code == 200
