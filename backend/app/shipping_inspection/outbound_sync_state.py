@@ -11,7 +11,7 @@ BLOCKED = ACTIVE + (RECHECK,)
 
 def requires_recheck_photo(item):
     """Other Items is a fee row, so it has no physical product to photograph."""
-    from app.shipping_inspection.outbound_recheck import physical
+    from app.shipping_inspection.outbound_sync_plan import physical
     return physical(item)
 
 

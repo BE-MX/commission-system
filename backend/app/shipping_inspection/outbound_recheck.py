@@ -1,10 +1,7 @@
 """Selective photo invalidation using stable OKKI detail identities."""
 from app.shipping_inspection import outbound_service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingOperationEvent
-
-
-def physical(row):
-    return str(row.get('product_name') or '').strip().casefold() != 'other items'
+from app.shipping_inspection.outbound_sync_plan import physical, physical_changes
 
 
 def remote_id(row):
@@ -12,12 +9,13 @@ def remote_id(row):
 
 
 def changes(plan, after, links, photos, previous):
-    changed_orders = set(map(str, plan['material_order_ids']))
-    removed_orders = set(map(str, plan['removed_order_ids']))
     old = plan['before']['record_list']
+    changed_orders, removed_orders = physical_changes(
+        old, after['record_list'], plan['material_order_ids'], plan['removed_order_ids'])
+    all_removed_orders = set(map(str, plan['removed_order_ids']))
     invalid = {remote_id(row) for row in old
                if str(row['order_record_id']) in changed_orders | removed_orders}
-    removed = {remote_id(row) for row in old if str(row['order_record_id']) in removed_orders}
+    removed = {remote_id(row) for row in old if str(row['order_record_id']) in all_removed_orders}
     old_ids = {remote_id(row) for row in old}
     aliases = {str(row['local_item_id']): 'okki:' + str(row['remote_item_id']) for row in links
                if 'okki:' + str(row['remote_item_id']) in old_ids}
