@@ -361,6 +361,8 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 
 `--shipping-video-routing-only` 同时纳管整个 `/api/shipping-inspection` 与 `/api/mini/shipping-inspection` 模块。北京经验证 TLS 的新加坡 HTTPS 转发到办公室 8002 隧道；新加坡直达该隧道。原用户 Authorization/URI 保留，业务权限在办公室后端照常验证，禁止公开静态媒体和失败自动重试/缓存。具体上传规则先匹配：视频 101m，照片/其他模块请求 21m、300 秒超时，其他业务 API 不变。打印签名、扫描会话、上传、删除和读取均由同一后端处理，避免共享 DB 记录与两台机器私有文件分离。
 
+2026-10-14 候选增加三类业务读取例外（本记录不代表生产已激活）：北京 exact `/api/shipping-inspection/outbound-records` 列表，以及严格正则 `/api/shipping-inspection/outbound-records/[^/]+/(print-data|word)$` 的打印/Word 端点，直达本机 8001。这三个 URL 当前只有 GET 处理器，不读取私有媒体或扫码会话；打印/Word 沿用共享数据库的打印状态行锁、小满负责人读取及惰性 token 刷新提交，不能称为严格无数据库写入。URI、查询参数和 Bearer 保留，权限仍由北京应用验证，响应不缓存、失败不自动重试；后续增加同 URL 写处理器时必须重审归属。同步、删除、验货资料、上传和媒体仍由办公室处理。上线前核对两端运行配置的 JWT、共享数据库、当前/旧版 QR_SIGN_SECRET、小满 API base/client 凭据、相关代码和 qrcode/python-docx 运行依赖，并用同一登录身份验证权限、打印限制与办公室扫码验签；配置指纹与现有 token 的 GET 成功不冒充 OAuth 换新验证。应用后端查询优化与专项路由需分别交付，普通应用发布不会自动应用此路由。沿用本专项入口，在取得生产路由变更授权后执行 `--shipping-video-routing-only --prepare-only`（含隔离 `nginx -t`），审阅候选再激活，不能手工改 live Nginx。
+
 激活前核实现存媒体的实际存储、办公室后端版本/健康及云端已无独有媒体，再经同一入口 prepare-only、正式激活。本入口不迁移文件或修改数据库。候选渲染替换既有受管 shipping 块，发现未知块外 shipping 路由即拒绝；激活前检查配置摘要，失败恢复原配置，备份保留在各机 `/etc/nginx/.ark-backups/shipping-video/`。
 
 办公室已有独立的 exact `/api/mini/shipping-inspection/photos` 规则保留原文：21m、办公室 8002、120 秒超时。渲染器只允许该完整固定内容且仅出现一次；其他内容、重复规则或云端同类规则仍阻断。上述 300 秒、禁缓存/重试保证仅适用于本次受管规则。

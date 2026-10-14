@@ -1192,6 +1192,10 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 
 `/shipping/outbound` 首次加载慢的主要耗时在后端归属过滤：旧查询对每张镜像单重复扫描本地发票，并把同一出库队列的计数、分页各算一次。`outbound_service._owner_scope_clause` 现在先按有效 OKKI 绑定、成功创建日志、精确订单和客户关系汇成可见出库关联；MySQL 固定从绑定/发票走索引连接，避免相关子查询放大。`outbound_queue_service` 用窗口计数与分页同查，空页单独补总数；当页同步状态批量读取。权限口径、待出库去重和打印数据未变。只读实库同一 20 条列表口径：普通业务员约 12.2 秒降到 0.73 秒，管理员约 1.8 秒降到 0.75 秒；这是服务层单次测量，不含浏览器网络和渲染。
 
+2026-10-14 继续优化镜像归属分支：`company_id IN (SELECT company_id FROM okki_orders WHERE user_id=:scope_okki_user_id)` 取代逐出库记录相关 `EXISTS`，避免对同一客户的订单重复探测；本地方舟首推订单归属分支保持原规则。首页无结果直接返回总数 0，只有后续越界空页补查总数。北京云端对「翟 #261023」按实际数据执行只读处理函数对比，带归属权限的中位耗时从 540ms 降至 134ms，首次列表从 708ms 降至 151ms；6 组完整响应摘要一致。此为独立诊断进程中的候选代码测量，不含 HTTP 网络/浏览器渲染，也不代表已部署。见[验证记录](reports/2026-10-14-outbound-search-performance.md)。
+
+用户请求截图后进一步核实：线上 `www.leshine.cloud` 的列表仍命中整个 shipping 模块的办公室归属路由，经北京→新加坡→办公室，不能用北京本机函数耗时代表线上 API。候选 `deploy/nginx/shipping-video-cloud.conf` 为纯列表 URL 增加北京 exact 本机规则；该 GET 仅查共享数据库，权限与实时照片 COUNT 不变，不需要本地媒体/扫码会话/打印签名。用户随后要求打印与 Word 也在北京：核验两端当前/旧版二维码密钥、小满 base/client 与共享 token 一致，现有 token 的实单 GET 均成功，运行 venv 的 qrcode/python-docx 可生成含二维码文档后，增加严格 `outbound-records/[^/]+/(print-data|word)$` 本机规则。原打印状态行锁与小满 token 懒刷新提交不变；同步/删除、上传、验货资料和媒体继续办公室。这些例外需通过 `--shipping-video-routing-only` 单独授权、预检并激活；普通代码发布不会应用。激活前还需复核运行配置与同登录身份 HTTP/扫码验签。
+
 
 ### 2026-09-17 扫描返回主页与通知 PDF
 
