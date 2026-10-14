@@ -72,7 +72,7 @@ test('web proxy reporting separates completed work from skipped quantities', () 
   assert.match(view, /异常跳过/)
   assert.match(view, /不计工资/)
   assert.match(view, /DomesticSkipAuditDialog/)
-  assert.match(view, /v-permission="'domestic:admin'"[\s\S]*?>异常跳过记录</)
+  assert.match(view, /v-permission="'domestic_skip:write'"[\s\S]*?>异常跳过记录</)
 })
 
 
@@ -98,6 +98,6 @@ test('manual skip audit dialog exposes only real manual records and keeps revoke
   assert.match(dialog, /audit\.operator_name/)
   assert.match(dialog, /audit\.unit_codes/)
   assert.match(dialog, /audit\.revoked/)
-  assert.match(dialog, /v-if="!audit\.revoked"[\s\S]*?v-permission="'domestic:admin'"/)
+  assert.match(dialog, /v-if="!audit\.revoked"[\s\S]*?v-permission="'domestic_skip:write'"/)
   assert.match(dialog, /emit\('revoke', audit\)/)
 })

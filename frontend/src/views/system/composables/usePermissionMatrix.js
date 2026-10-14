@@ -81,6 +81,8 @@ export const PREFIX_LABELS = {
   domestic_decision_action: '内贸经营决策台 · 内部行动',
   domestic_decision_report: '内贸经营决策台 · 简报与导出',
   domestic_customer: '内贸客户管理',
+  domestic_report: '内贸订单代报工',
+  domestic_skip: '内贸订单异常跳过',
   domestic_quantity_report: '内贸数量报工模式',
   domestic_unit_report: '内贸逐件扫码模式',
   colorwork: '库存色块图',
@@ -118,6 +120,8 @@ export const PREFIX_LABELS = {
  */
 export const PAGE_PARENTS = {
   domestic_customer: 'domestic',
+  domestic_report: 'domestic',
+  domestic_skip: 'domestic',
   domestic_quantity_report: 'domestic',
   domestic_unit_report: 'domestic',
   colorwork_download: 'colorwork',
@@ -159,7 +163,7 @@ const ROW_GROUPS = [
   { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'sales_automation', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
     'invoice', 'receipt', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'battle_report', 'order_intelligence', 'domestic',
-    'domestic_customer', 'domestic_quantity_report', 'domestic_unit_report',
+    'domestic_customer', 'domestic_report', 'domestic_skip', 'domestic_quantity_report', 'domestic_unit_report',
     'aftersales', 'aftersales_analytics', 'tracking', 'shipping_inspection',
     'stock', 'stock_daily',
     'production', 'production_product', 'production_dashboard', 'production_route',

@@ -1565,7 +1565,7 @@ def test_manual_skip_audit_api_lists_active_and_revoked_only_for_admin(
     )
     assert denied.status_code == 403
 
-    app.dependency_overrides[get_current_user] = lambda: claims("domestic:admin")
+    app.dependency_overrides[get_current_user] = lambda: claims("domestic_skip:write")
     response = client.get(
         "/api/domestic/reports/skips", params={"item_id": case.item.id}
     )
@@ -1610,7 +1610,7 @@ def test_manual_skip_audit_api_returns_stable_error_for_missing_item(
     app.dependency_overrides[get_current_user] = lambda: {
         "sub": str(conditional_order.worker.id),
         "roles": [],
-        "permissions": ["domestic:admin"],
+        "permissions": ["domestic_skip:write"],
     }
     response = TestClient(app).get(
         "/api/domestic/reports/skips", params={"item_id": 999999}

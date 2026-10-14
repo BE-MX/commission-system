@@ -1323,7 +1323,7 @@ def list_reports(
 def list_manual_skip_audits(
     item_id: int = Query(..., gt=0),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("domestic:admin")),
+    _user: dict = Depends(require_permission("domestic_skip:write")),
 ):
     try:
         data = report_service.list_manual_skip_audits(db, item_id=item_id)
@@ -1336,7 +1336,7 @@ def list_manual_skip_audits(
 def submit_report(
     payload: ReportSubmit,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_permission("domestic:write")),
+    current_user: dict = Depends(require_permission("domestic_report:write")),
 ):
     """跟单替车间录入。必须指明实际做活的工人 —— 件数记错人就等于工资算错人。"""
     try:
@@ -1356,7 +1356,7 @@ def submit_report(
 def list_process_workers(
     process_id: int = Query(..., gt=0),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission(*_READ)),
+    _user: dict = Depends(require_permission("domestic_report:write")),
 ):
     rows = (
         db.query(ArkUser.id, ArkUser.real_name)
@@ -1372,7 +1372,7 @@ def list_process_workers(
 def revoke_report(
     payload: ReportRevoke,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_permission("domestic:write")),
+    current_user: dict = Depends(require_permission("domestic_report:write")),
 ):
     try:
         data = report_service.revoke_report(
@@ -1387,7 +1387,7 @@ def revoke_report(
 def submit_manual_skip(
     payload: ManualSkipSubmit,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_permission("domestic:admin")),
+    current_user: dict = Depends(require_permission("domestic_skip:write")),
 ):
     try:
         data = report_service.submit_manual_skip(
@@ -1409,7 +1409,7 @@ def submit_manual_skip(
 def revoke_manual_skip(
     skip_log_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_permission("domestic:admin")),
+    current_user: dict = Depends(require_permission("domestic_skip:write")),
 ):
     try:
         data = report_service.revoke_manual_skip(
