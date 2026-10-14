@@ -1065,6 +1065,8 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 编辑器工具栏、文件拖放及剪贴板 `files/items` 都进入同一上传链路。前端先插入带进度的临时 `knowledgeImage`，成功后只持久化 `assetId/alt/caption`；有上传中或失败节点时禁止保存。服务端仅接受 JPEG/PNG/WebP，验证真实格式、像素数与大小后用 Pillow 重新编码（移除 EXIF/文本元数据并缩放最长边），原子写入 `KNOWLEDGE_STORAGE_ROOT`。不得把该目录挂到 Nginx `/uploads`。
 
+公告复用上述上传链路。2026-10-14 本地修复：图片请求单独使用 180 秒超时，普通知识库请求仍为 30 秒；超过 400KiB 的 JPEG/PNG/WebP 在浏览器尝试按服务端 2400px 上限重编码，仅采用更小且同格式的结果，PNG/WebP 保留透明背景；超过 10MiB 或 60MP 的输入交回服务端按其配置验证。传输达到 100% 后显示后端处理阶段；超时、断网、413 和业务错误分别说明原因，不自动重发。启用 `knowledge` COS 时，浏览器先上传业务后端，后端验证并规范化后写 COS；存储位置不能证明网络或处理速度。验证见 [大图上传修复](reports/2026-10-14-announcement-large-image.md)，用户已授权 Git 合并推送，结果以远端回读为准；未部署。
+
 图片读取永远走 `/api/knowledge/assets/{id}/content`：临时图仅上传者，已附着草稿图仅编辑者，待审修订图对 reviewer，已发布修订图对库内 reader。无权统一 404。修订保存会冻结图片引用；每日 03:45 清除超过 `KNOWLEDGE_IMAGE_DRAFT_TTL_HOURS` 且从未附着的临时图。MCP 仍不返回文件，只把 caption/alt 写入派生纯文本。
 
 ### AI 优化（2026-08-13，迁移 112）

@@ -2,6 +2,7 @@
 import { createApp, h } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
+import axios from 'axios'
 import 'element-plus/dist/index.css'
 import '../../../src/styles/tokens.css'
 import Editor from '../../../src/views/announcement/AnnouncementEditor.vue'
@@ -36,6 +37,8 @@ announcementClient.defaults.adapter = async request => {
   return response(request, { id: 1 })
 }
 knowledgeClient.defaults.adapter = async request => {
+  // Opt-in real XHR for transport tests; Playwright intercepts every API request.
+  if (state.realTransport) return axios.getAdapter('xhr')(request)
   if (request.method === 'post' && request.url === '/libraries/1/assets') {
     const file = request.data.get('file')
     state.uploads.push({ name: file.name, type: file.type, size: file.size })

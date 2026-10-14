@@ -1,12 +1,15 @@
 import { knowledgeClient } from './clients'
+import { prepareKnowledgeImage } from '@/utils/prepareKnowledgeImage'
 
 const SILENT = { showLoading: false, suppressToast: true }
 
-export function uploadKnowledgeImage(libraryId, file, onProgress) {
+export async function uploadKnowledgeImage(libraryId, file, onProgress) {
+  const prepared = await prepareKnowledgeImage(file)
   const form = new FormData()
-  form.append('file', file)
+  form.append('file', prepared)
   return knowledgeClient.post(`/libraries/${libraryId}/assets`, form, {
     ...SILENT,
+    timeout: 180000,
     onUploadProgress: event => {
       if (event.total && onProgress) onProgress(Math.round(event.loaded / event.total * 100))
     },

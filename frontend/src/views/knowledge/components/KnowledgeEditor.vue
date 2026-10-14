@@ -89,7 +89,7 @@ import EditorToolbar from './EditorToolbar.vue'
 import { ConfirmationMark } from './ConfirmationMark.js'
 import { TextColorMark } from './TextColorMark.js'
 import { KnowledgeImage } from './KnowledgeImage.js'
-import { contentForKnowledgeSave, createImageUploadId, pendingImageCount } from './knowledgeImageState.js'
+import { contentForKnowledgeSave, createImageUploadId, knowledgeImageUploadError, pendingImageCount } from './knowledgeImageState.js'
 import { deleteTemporaryKnowledgeImage, uploadKnowledgeImage } from '@/api/knowledge'
 import { useAuthStore } from '@/stores/auth'
 import AiOptimizationDrawer from './AiOptimizationDrawer.vue'
@@ -314,7 +314,7 @@ async function insertImageFiles(files) {
           tr.setNodeMarkup(pos, undefined, {
             ...tr.doc.nodeAt(pos).attrs,
             uploadStatus: 'error',
-            uploadError: error?.response?.data?.detail || '上传失败，请移除后重试',
+            uploadError: knowledgeImageUploadError(error),
           })
           return true
         })

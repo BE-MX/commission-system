@@ -10,7 +10,7 @@
         :indeterminate="!node.attrs.uploadProgress"
       />
       <span v-if="node.attrs.uploadStatus === 'error'" class="upload-error">上传失败</span>
-      <small>{{ node.attrs.uploadError || '正在安全上传图片…' }}</small>
+      <small>{{ node.attrs.uploadError || (node.attrs.uploadProgress >= 100 ? '图片已传输，正在处理并保存…' : '正在安全上传图片…') }}</small>
       <button v-if="editor.isEditable && node.attrs.uploadStatus === 'error'" type="button" @click="retry">重新选择图片</button>
       <button v-if="editor.isEditable" type="button" @click="deleteNode">移除</button>
     </div>
