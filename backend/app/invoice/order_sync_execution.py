@@ -247,10 +247,14 @@ def apply(db,invoice,attempt,observation,data):
         invoice.sync_attempt=None
         sent_removals=[row for row in attempt.payload["product_list"] if row.get("remove")]
         if sent_removals:invoice.xiaoman_removed_lines=None
-        if attempt.data["action"]=="create" and xiaoman_service.get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
+        outbound_enabled=xiaoman_service.get_settings().OKKI_OUTBOUND_AUTO_ENABLED
+        if attempt.data["action"]=="create" and outbound_enabled:
             invoice.outbound_auto_requested=int(invoice.order_type!="presale")
+        # A partial first acceptance is retried as an update. Complete its
+        # existing enrollment after full verification, without resetting tasks.
+        if invoice.outbound_auto_requested and outbound_enabled:
             outbound_task_service.enqueue_outbound_task(db,invoice)
-        elif attempt.data["action"]=="update":
+        if attempt.data["action"]=="update":
             outbound_task_service.requeue_waiting_stock_after_invoice_sync(db,invoice)
         result.update(ok=True,message="已同步到小满",xiaoman_order_id=invoice.xiaoman_order_id)
         result.update(invoice_link.mark_success(db,invoice,attempt.receipt_token))
