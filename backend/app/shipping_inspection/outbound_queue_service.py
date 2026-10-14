@@ -182,9 +182,11 @@ def list_outbound_records(db, *, keyword=None, order_id=None, date_from=None, da
         ORDER BY {order_by}
         LIMIT :limit OFFSET :offset"""),
         {**params, "limit": page_size, "offset": (page - 1) * page_size}).mappings().all()
-    # An out-of-range page has no window row to carry the total.
-    total = (keys[0]["total"] if keys else
-             db.execute(text(f"SELECT COUNT(*) FROM ({query}) q"), params).scalar() or 0)
+    # An empty first page proves total=0; only later out-of-range pages need
+    # another count because they have no window row to carry a nonzero total.
+    total = keys[0]["total"] if keys else 0
+    if not keys and page > 1:
+        total = db.execute(text(f"SELECT COUNT(*) FROM ({query}) q"), params).scalar() or 0
     mirror_ids = [k["entry_id"] for k in keys if not k["local_entry"]]
     mirror_rows = []
     if mirror_ids:

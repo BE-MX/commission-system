@@ -173,7 +173,7 @@ def test_voucher_update_preserves_other_attachment_owners():
     old = routing.render(config("cloud"), legacy, "cloud") + other
     candidate = routing.render(old, snippet("cloud"), "cloud")
     assert candidate.endswith(other)
-    assert candidate.count("proxy_pass http://127.0.0.1:8001;") == 4
+    assert candidate.count("proxy_pass http://127.0.0.1:8001;") == 4 + other.count("proxy_pass http://127.0.0.1:8001;")
     assert candidate.count(routing.BEGIN) == 2
     assert routing.render(candidate, snippet("cloud"), "cloud") == candidate
 
@@ -351,7 +351,7 @@ def test_shipping_video_routing_coexists_with_vouchers_using_office_storage(regi
 def test_station_upload_limits_precede_shared_office_module_route(region):
     content = (DEPLOY / 'nginx' / f'shipping-video-{region}.conf').read_text()
     patterns = re.findall(r'location ~ (\S+) \{', content)
-    assert len(patterns) == 3
+    assert len(patterns) == (4 if region == 'cloud' else 3)
     upload_patterns = patterns[:2]
     for suffix in ['photos', 'videos']:
         path = '/api/shipping-inspection/station/sessions/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/' + suffix
@@ -388,12 +388,83 @@ def test_entire_shipping_module_uses_one_store_without_public_media_or_retries(r
         assert re.match(pattern, path)
     for path in ['/api/assets/upload', '/api/shipping-inspection-other', '/api/mini/shipping-inspection-other', '/uploads/a.jpg']:
         assert not re.match(pattern, path)
-    assert content.count('proxy_cache off;') == 4
-    assert content.count('proxy_next_upstream off;') == 4
-    assert content.count('proxy_set_header Authorization $http_authorization;') == 4
+    expected_routes = 6 if region == 'cloud' else 4
+    assert content.count('proxy_cache off;') == expected_routes
+    assert content.count('proxy_next_upstream off;') == expected_routes
+    assert content.count('proxy_set_header Authorization $http_authorization;') == expected_routes
     if region == 'cloud':
         assert content.count('proxy_ssl_verify on;') == 4
-        assert '127.0.0.1:8001' not in content
+
+
+@pytest.mark.parametrize('region', ['office', 'cloud'])
+def test_only_cloud_outbound_document_reads_bypass_office_without_moving_media_or_writes(region):
+    from urllib.parse import urlsplit
+
+    content = (DEPLOY / 'nginx' / f'shipping-video-{region}.conf').read_text()
+    locations = re.findall(r'location\s+(=|~)\s+(\S+)\s*\{([^{}]*)\}', content, re.S)
+
+    def resolve(uri):
+        # Nginx selects exact paths before ordered regexes, excluding query args.
+        path = urlsplit(uri).path
+        for modifier, pattern, body in locations:
+            if modifier == '=' and pattern == path:
+                return body
+        return next(body for modifier, pattern, body in locations
+                    if modifier == '~' and re.match(pattern, path))
+
+    local = 'proxy_pass http://127.0.0.1:8001;'
+    office = 'proxy_pass https://119.28.107.92;' if region == 'cloud' else 'proxy_pass http://127.0.0.1:8002;'
+    listing = resolve('/api/shipping-inspection/outbound-records?page=1&page_size=20&keyword=%E7%BF%9F+%23261023')
+    assert (local if region == 'cloud' else office) in listing
+    assert 'proxy_set_header Authorization $http_authorization;' in listing
+    assert 'proxy_cache off;' in listing and 'private, no-store' in listing
+    assert 'proxy_next_upstream off;' in listing
+    assert 'proxy_pass http://127.0.0.1:8001/;' not in listing  # Preserve original URI and args.
+    for suffix in ['print-data', 'word']:
+        body = resolve('/api/shipping-inspection/outbound-records/123/' + suffix + '?download=1')
+        assert (local if region == 'cloud' else office) in body
+        assert 'proxy_set_header Authorization $http_authorization;' in body
+        assert 'proxy_cache off;' in body and 'private, no-store' in body
+        assert 'proxy_next_upstream off;' in body
+        assert 'proxy_pass http://127.0.0.1:8001/;' not in body
+    for path in [
+        '/api/shipping-inspection/outbound-records/123',
+        '/api/shipping-inspection/outbound-records/123/print-data-extra',
+        '/api/shipping-inspection/outbound-records/123/word/extra',
+        '/api/shipping-inspection/outbound-records/123/allow-print-before-recheck',
+        '/api/shipping-inspection/outbound-records/123/invoice-sync/preview',
+        '/api/shipping-inspection/outbound-records/123/invoice-sync',
+        '/api/shipping-inspection/outbound-records/123/delete-recovery',
+        '/api/shipping-inspection/images/aa/photo.jpg',
+        '/api/shipping-inspection/videos/aa/video.mp4',
+        '/api/shipping-inspection/station/sessions/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/photos',
+        '/api/shipping-inspection/station/scan',
+        '/api/mini/shipping-inspection/videos',
+        '/api/mini/shipping-inspection/photos',
+    ]:
+        body = resolve(path)
+        assert office in body, path
+        assert local not in body, path
+
+
+@pytest.mark.parametrize('path', ['/outbound-records', '/outbound-records/{record_id}/print-data',
+                                  '/outbound-records/{record_id}/word'])
+def test_local_outbound_document_paths_have_only_read_handlers(path):
+    import ast
+
+    source = (DEPLOY.parent / 'backend/app/shipping_inspection/router.py').read_text(encoding='utf-8')
+    methods = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for decorator in node.decorator_list:
+            if (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)
+                    and decorator.args and isinstance(decorator.args[0], ast.Constant)
+                    and decorator.args[0].value == path):
+                methods.add(decorator.func.attr)
+    # The exact Nginx location does not override application method handling.
+    # Adding a write handler here requires reviewing the storage-owner boundary.
+    assert methods == {'get'}
 
 
 @pytest.mark.parametrize('rule', [
