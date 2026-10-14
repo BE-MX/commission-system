@@ -1,5 +1,5 @@
 <template>
-  <NodeViewWrapper as="figure" class="knowledge-image" :class="{ selected }" data-knowledge-image>
+  <NodeViewWrapper as="figure" class="knowledge-image" :class="{ selected: selected && editor.isEditable }" data-knowledge-image>
     <div v-if="isPending" class="image-placeholder" contenteditable="false">
       <el-progress
         v-if="node.attrs.uploadStatus !== 'error'"
@@ -15,7 +15,7 @@
       <button v-if="editor.isEditable" type="button" @click="deleteNode">移除</button>
     </div>
     <template v-else>
-      <div class="image-frame" contenteditable="false">
+      <div class="image-frame" :class="{ 'is-loaded': objectUrl }" contenteditable="false">
         <img v-if="objectUrl" :src="objectUrl" :alt="node.attrs.alt || ''" />
         <span v-else-if="loadError" class="upload-error">图片暂时无法加载</span>
         <span v-else>加载图片…</span>
@@ -84,10 +84,11 @@ onBeforeUnmount(releaseUrl)
 </script>
 
 <style scoped>
-.knowledge-image { margin: 18px 0; padding: 8px; border: 1px solid transparent; border-radius: 10px; }
-.knowledge-image.selected { border-color: var(--color-primary); background: var(--color-primary-light); }
+.knowledge-image { margin: 18px 0; padding: 0; border: 0; }
+.knowledge-image.selected .image-frame img { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .image-frame { display: grid; min-height: 120px; place-items: center; color: var(--text-muted-blue); background: var(--toolbar-bg); }
-.image-frame img { display: block; max-width: 100%; max-height: 640px; object-fit: contain; }
+.image-frame.is-loaded { display: block; min-height: 0; background: transparent; }
+.image-frame img { display: block; width: auto; height: auto; max-width: 100%; margin: 0 auto; object-fit: contain; }
 .image-placeholder { display: grid; min-height: 160px; place-items: center; gap: 8px; border: 1px dashed var(--border-color); border-radius: 9px; color: var(--text-secondary); background: var(--toolbar-bg); }
 .image-placeholder small { color: var(--text-muted-blue); }
 .image-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin-top: 8px; }
