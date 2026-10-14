@@ -39,8 +39,8 @@
     </div>
     <div class="line-table-wrap">
       <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
-        <el-table-column type="selection" width="42" fixed />
-        <el-table-column label="#" type="index" :index="indexBase" width="48" fixed />
+        <el-table-column type="selection" min-width="42" fixed />
+        <el-table-column label="#" type="index" :index="indexBase" min-width="48" fixed />
         <el-table-column v-if="isProduction" label="Product" min-width="190" prop="product_display" sortable="custom">
           <template #default="{ row }">
             <el-select v-model="row.product_display" filterable allow-create default-first-option placeholder="系列描述，可输入" @change="onCustomFieldChange(row)">
@@ -124,7 +124,7 @@
               <template v-if="row.semifinished_enabled">
                 <div v-for="item in row.semifinished_plan" :key="item.material_id" class="semifinished-line">
                   <span>{{ item.size && item.color_code ? `${item.size}/${item.color_code}` : `物料 #${item.material_id}` }}</span>
-                  <el-input-number v-model="item.quantity_grams" :min="0.001" :precision="3" :controls="false" />
+                  <el-input-number class="line-number-input" v-model="item.quantity_grams" :min="0.001" :precision="3" :controls="false" />
                   <small>g · 可用 {{ item.available_grams == null ? '--' : Number(item.available_grams).toLocaleString() }}g</small>
                 </div>
                 <el-button link type="primary" :loading="row.semifinished_loading" @click="loadSemifinished(row)">重新计算</el-button>
@@ -157,7 +157,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="标准价" width="110" align="right" prop="standard_price" sortable="custom">
+        <el-table-column label="标准价" min-width="110" align="right" prop="standard_price" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.standard_price != null" class="std-price">
               {{ money(row.standard_price) }}
@@ -168,30 +168,30 @@
             <StatusBadge v-else size="small" type="warning" effect="plain">无标准价</StatusBadge>
           </template>
         </el-table-column>
-        <el-table-column v-if="showDiscountCol" label="折扣" width="100" prop="discount_amount" sortable="custom">
-          <template #default="{ row }"><el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="onLineDiscountChange(row)" /></template>
+        <el-table-column v-if="showDiscountCol" label="折扣" min-width="100" prop="discount_amount" sortable="custom">
+          <template #default="{ row }"><el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input line-number-input" @change="onLineDiscountChange(row)" /></template>
         </el-table-column>
-        <el-table-column label="客户价" width="130" align="right" prop="price_per_piece" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="客户价" min-width="130" align="right" prop="price_per_piece" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
             <!-- 手改只用底色提示，整格留给数字；标准价与被两位显示藏住的小数位在悬停里对照 -->
             <el-tooltip :disabled="!priceHint(row)" :content="priceHint(row)" placement="top">
               <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
                 <!-- blur 也要提交：重输同样的两位值时 EP 不触发 change，行合计会停在旧值 -->
-                <el-input-number v-model="row.price_per_piece" :min="0" :precision="2" :controls="false" :aria-label="row.price_source === 'manual' ? '客户价（已手改）' : '客户价'" @change="onPriceInput(row)" @blur="onPriceInput(row)" />
+                <el-input-number class="line-price-input" v-model="row.price_per_piece" :min="0" :precision="2" :controls="false" :aria-label="row.price_source === 'manual' ? '客户价（已手改）' : '客户价'" @change="onPriceInput(row)" @blur="onPriceInput(row)" />
               </div>
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="Quantity" min-width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
-            <el-input-number v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="onQuantityChange(row)" />
+            <el-input-number class="line-number-input" v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="onQuantityChange(row)" />
             <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
-        <el-table-column label="TotalPrice" width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="TotalPrice" min-width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" width="56" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="56" fixed="right">
           <template #default="{ row }"><el-button link type="danger" aria-label="删除产品" @click="$emit('remove', row)"><el-icon><Delete /></el-icon></el-button></template>
         </el-table-column>
       </el-table>
@@ -378,7 +378,8 @@ function lineOptionGroups(options, key) {
 .std-price { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .price-cell.is-manual :deep(.el-input__wrapper) { background: var(--color-warning-bg); }
 .price-cell { width: 100%; }
-.price-cell :deep(.el-input-number) { width: 100%; }
+.line-price-input { width: 100%; }
+.line-number-input { width: 100%; }
 .price-cell :deep(input) { text-align: right; font-variant-numeric: tabular-nums; }
 .line-discount-input :deep(input) { color: var(--color-danger); font-variant-numeric: tabular-nums; }
 .quantity-error { outline: 1px solid var(--color-danger); }

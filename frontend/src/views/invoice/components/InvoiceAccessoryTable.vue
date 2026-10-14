@@ -31,8 +31,8 @@
     </div>
     <div class="line-table-wrap accessory-line-table-wrap">
       <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table accessory-line-table" max-height="560" v-sticky-scrollbar>
-        <el-table-column type="selection" width="42" fixed />
-        <el-table-column label="#" type="index" :index="indexBase" width="48" fixed />
+        <el-table-column type="selection" min-width="42" fixed />
+        <el-table-column label="#" type="index" :index="indexBase" min-width="48" fixed />
         <el-table-column label="Name" min-width="190" prop="product_name" sortable="custom">
           <template #default="{ row }">
             <!-- 不要加 @visible-change 预取：EP 2.13 起该事件绑内部 dropdownMenuVisible
@@ -66,19 +66,19 @@
         <el-table-column label="Color" min-width="130" prop="color" sortable="custom">
           <template #default="{ row }"><el-input :model-value="row.color" readonly /></template>
         </el-table-column>
-        <el-table-column label="标准价" width="110" align="right" prop="standard_price" sortable="custom">
+        <el-table-column label="标准价" min-width="110" align="right" prop="standard_price" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.standard_price != null" class="std-price">{{ money(row.standard_price) }}</span>
             <StatusBadge v-else-if="accessoryStandardPriceState(row) === 'invalid'" size="small" type="warning" effect="plain">需重新配置</StatusBadge>
             <span v-else class="std-price">—</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="showDiscountCol" label="折扣" width="100" prop="discount_amount" sortable="custom">
+        <el-table-column v-if="showDiscountCol" label="折扣" min-width="100" prop="discount_amount" sortable="custom">
           <template #default="{ row }">
             <el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="$emit('change', row)" />
           </template>
         </el-table-column>
-        <el-table-column label="客户价" width="130" align="right" prop="price_per_piece" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="客户价" min-width="130" align="right" prop="price_per_piece" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
             <!-- 输入框占满整格；客户参考价移到下方小字，手改只用底色提示 -->
             <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
@@ -99,16 +99,16 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="Quantity" min-width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
             <el-input-number v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="$emit('change', row)" />
             <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
-        <el-table-column label="TotalPrice" width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="TotalPrice" min-width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" width="56" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="56" fixed="right">
           <template #default="{ row }">
             <el-button link type="danger" aria-label="删除配件" @click="$emit('remove', row)">
               <el-icon><Delete /></el-icon>

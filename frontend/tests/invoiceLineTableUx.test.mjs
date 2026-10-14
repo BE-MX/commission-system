@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-// 明细表录入体验（2026-10-12）：价格列够宽、核心数字固定右侧、批量删除/清空
+// 明细表录入体验：核心数字保留最小输入空间与桌面固定列、批量删除/清空
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const hairTable = read('../src/views/invoice/components/InvoiceHairTable.vue')
 const accessoryTable = read('../src/views/invoice/components/InvoiceAccessoryTable.vue')
@@ -14,11 +14,12 @@ const legacyDrawer = read('../src/views/invoice/components/legacy/InvoiceLegacyD
 
 test('price, quantity, total and action columns stay pinned on the right', () => {
   for (const source of [hairTable, accessoryTable]) {
-    assert.match(source, /label="客户价" width="130" align="right"[^>]*:fixed="pinColumns \? 'right' : false"/)
-    assert.match(source, /label="Quantity" width="96"[^>]*:fixed="pinColumns \? 'right' : false"/)
-    assert.match(source, /label="TotalPrice" width="110"[^>]*:fixed="pinColumns \? 'right' : false"/)
+    assert.match(source, /label="客户价" min-width="130" align="right"[^>]*:fixed="pinColumns \? 'right' : false"/)
+    assert.match(source, /label="Quantity" min-width="96"[^>]*:fixed="pinColumns \? 'right' : false"/)
+    assert.match(source, /label="TotalPrice" min-width="110"[^>]*:fixed="pinColumns \? 'right' : false"/)
     assert.match(source, /pinColumns: { type: Boolean, default: true }/)
-    assert.match(source, /label="操作" width="56" fixed="right"/)
+    assert.match(source, /label="操作" min-width="56" fixed="right"/)
+    assert.doesNotMatch(source, /<el-table-column[^>]*(?<![-:])\bwidth="\d+/)
     // max-width 不是 el-table-column 的属性，写了等于没写
     assert.doesNotMatch(source, /<el-table-column[^>]*max-width=/)
   }
@@ -33,6 +34,9 @@ test('price cell gives the whole width to the number', () => {
   assert.match(hairTable, /parts\.push\(`按 \$\{precise\} 计价`\)/)
   assert.match(accessoryTable, /客户价 \$\{preciseMoney\(row\.customer_price\)\}/)
   assert.match(hairTable, /\.price-cell :deep\(input\) { text-align: right; font-variant-numeric: tabular-nums; }/)
+  assert.match(hairTable, /<el-input-number class="line-price-input" v-model="row.price_per_piece"/)
+  assert.match(hairTable, /\.line-price-input { width: 100%; }/)
+  assert.doesNotMatch(hairTable, /\.price-cell :deep\(\.el-input-number\)/)
   // 配件客户参考价移到输入框下方小字
   assert.match(accessoryTable, /\.price-cell { display: flex; flex-direction: column;/)
   assert.match(accessoryTable, /@blur="commitPrice\(row\)"\s*\/>[\s\S]{0,120}?<span class="customer-price-reference"/)
@@ -57,7 +61,7 @@ test('discount column folds away unless a row carries a discount', () => {
 
 test('both tables support multi-select delete and clear-all with confirmation', () => {
   for (const [source, noun] of [[hairTable, '产品明细'], [accessoryTable, '配件']]) {
-    assert.match(source, /<el-table-column type="selection" width="42" fixed/)
+    assert.match(source, /<el-table-column type="selection" min-width="42" fixed/)
     assert.match(source, /@select="onSelect" @select-all="onSelectAll"/)
     assert.match(source, /<template v-if="selectedCount">[\s\S]*?删除所选[\s\S]*?取消选择/)
     assert.match(source, /:disabled="!items\.length" @click="clearAll"/)
