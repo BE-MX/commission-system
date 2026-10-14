@@ -21,6 +21,13 @@
 - 未知结果显示「删除待核验」，业务员可从原入口继续GET核验；额度继续冻结，后台回读、其他编辑/恢复及整单删除不能覆盖原删除意图。原生成意图保留converted。索引未反映移除时，等待现有后台重建后刷新资金汇总再补登记；无schema变更或手工改索引。
 - 隔离SQLite相关联合回归220项、补充删除专项/证据39项、Node 11项、7组实际浏览器交互与最终前端构建通过，独立审查发现的后台回读竞态已修复且独立复现复审通过。审计只存财务证据，不存提供方私有文件URL。约定/diff检查通过，Git巡检为no-fetch本地快照。未合并、推送、部署或再次操作生产回款；详见[实现及验证记录](reports/2026-10-14-receipt-delete-entry.md)。
 
+## 2026-10-14 物流跟踪分页被裁切（Codex，本地修复，未部署）
+
+- 分支 `codex/tracking-pagination`，独立工作区 `C:/Users/windb/.codex/worktrees/tracking-pagination/commission-system`。分页进入表格卡片后，页面仍限制 `100vh - 100px` 高度并隐藏溢出，表格卡片被 flex 压缩，普通滚动无法到达分页；模拟运单在 1440×900 下复现。
+- 移除旧页面高度与 flex 限制，让主内容区按内容滚动；CSS 全屏卡片显式允许纵向滚动。只调整物流页布局，不改变查询、分页参数或业务数据。
+- `frontend/tests/trackingPagination.browser.mjs` 与真实 MainLayout/TrackingList 隔离测试入口覆盖 1440×900、1366×768、1024×600、390×844：正常翻页、每页100条、全屏翻页均通过，无浏览器运行异常。测试拦截全部 API，不连接业务库；截图和结果保存在 `tmp/tracking-pagination/`。
+- 前端 `npm run build`、`python scripts/check_conventions.py` 与 diff 检查通过；构建仅有已有分包大小/混合导入提示。Git 巡检为 `--no-fetch` 本地快照。未提交、合并、推送或部署。
+
 ## 2026-10-14 内贸客户提成分配与订单快照（Codex，Git 交付，未部署）
 
 - 分支 `codex/domestic-commission-snapshot`：新客户为保存时归属销售默认配置 4%；客户管理、下单就地建档和导入新客户均覆盖。客户编辑支持 1～2 人直接提成率，新建订单选客后展示分配及合计，配置变动返回 409 更新显示后再提交。
