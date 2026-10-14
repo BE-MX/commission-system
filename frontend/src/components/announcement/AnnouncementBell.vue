@@ -4,8 +4,10 @@
     :aria-label="label" :title="label" aria-haspopup="dialog" :aria-expanded="state.open"
     @click="controller.open()">
     <el-icon><Bell /></el-icon>
-    <span v-if="state.unreadCount" class="unread-count" aria-hidden="true">{{ state.unreadCount > 99 ? '99+' : state.unreadCount }}</span>
-    <span v-if="state.unreadCount" class="unread-glow" aria-hidden="true" />
+    <span v-if="state.unreadCount > 0" class="unread-indicator" aria-hidden="true">
+      <span class="unread-indicator-ping" />
+      <span class="unread-indicator-dot" />
+    </span>
   </button>
   <AnnouncementDialog v-if="state.open" :state="state" @close="close" @content-ready="contentReady"
     @select="controller.selectNotice" @filter="controller.changeFilter" @page="changePage"
@@ -77,13 +79,12 @@ onErrorCaptured(() => {
 .announcement-bell { position: relative; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 38px; height: 38px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-secondary); cursor: pointer; }
 .announcement-bell > .el-icon { font-size: 21px; position: relative; z-index: 1; }
 .announcement-bell.has-unread { color: var(--button-primary-text); background: var(--button-primary-soft); }
-.announcement-bell.has-unread::before { content: ''; position: absolute; inset: 1px; border-radius: inherit; background: radial-gradient(circle, var(--button-focus), transparent 72%); pointer-events: none; animation: announcement-halo 3.2s ease-in-out infinite; }
-.unread-count { position: absolute; z-index: 2; right: -4px; top: -3px; min-width: 19px; height: 19px; padding: 0 4px; border: 2px solid var(--card-bg); border-radius: 10px; background: var(--button-danger); color: var(--button-surface); font-size: 10px; line-height: 15px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; }
-.unread-glow { position: absolute; left: 5px; bottom: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--button-primary); box-shadow: 0 0 7px var(--button-focus); animation: announcement-glow 3.2s ease-in-out infinite; }
+.unread-indicator { position: absolute; z-index: 2; right: 4px; top: 4px; width: 8px; height: 8px; pointer-events: none; }
+.unread-indicator-ping, .unread-indicator-dot { position: absolute; inset: 0; border-radius: 50%; background: var(--color-primary); }
+.unread-indicator-ping { opacity: .4; animation: announcement-unread-ping 1s cubic-bezier(0, 0, .2, 1) infinite; }
 .announcement-bell:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 3px; }
-@keyframes announcement-halo { 0%,100% { opacity: .25; transform: scale(.84); } 50% { opacity: .9; transform: scale(1.1); } }
-@keyframes announcement-glow { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+@keyframes announcement-unread-ping { 0% { transform: scale(1); opacity: .4; } 75%,100% { transform: scale(2); opacity: 0; } }
 @media (hover: hover) and (pointer: fine) { .announcement-bell:hover { background: var(--button-primary-soft); color: var(--button-primary-text); } }
 @media (pointer: coarse) { .announcement-bell { width: 44px; height: 44px; } }
-@media (prefers-reduced-motion: reduce) { .announcement-bell.has-unread::before, .unread-glow { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .unread-indicator-ping { display: none; animation: none; } }
 </style>
