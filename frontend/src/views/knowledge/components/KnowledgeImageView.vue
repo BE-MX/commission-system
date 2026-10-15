@@ -16,7 +16,11 @@
     </div>
     <template v-else>
       <div class="image-frame" :class="{ 'is-loaded': objectUrl }" contenteditable="false">
-        <img v-if="objectUrl" :src="objectUrl" :alt="node.attrs.alt || ''" />
+        <button v-if="objectUrl && !editor.isEditable" ref="previewTrigger" type="button" class="image-preview-trigger"
+          :aria-label="node.attrs.alt ? `查看原图：${node.attrs.alt}` : '查看原图'" title="点击查看原图" @click="previewOpen = true">
+          <img :src="objectUrl" :alt="node.attrs.alt || ''" />
+        </button>
+        <img v-else-if="objectUrl" :src="objectUrl" :alt="node.attrs.alt || ''" />
         <span v-else-if="loadError" class="upload-error">图片暂时无法加载</span>
         <span v-else>加载图片…</span>
       </div>
@@ -37,20 +41,32 @@
       </div>
       <figcaption v-else-if="node.attrs.caption">{{ node.attrs.caption }}</figcaption>
     </template>
+    <el-image-viewer v-if="previewOpen && objectUrl" teleported :url-list="[objectUrl]" @close="closePreview" />
   </NodeViewWrapper>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { ElImageViewer } from 'element-plus'
 import { nodeViewProps, NodeViewWrapper } from '@tiptap/vue-3'
 import { getKnowledgeImageBlob } from '@/api/knowledge'
 
 const props = defineProps(nodeViewProps)
 const objectUrl = ref('')
 const loadError = ref(false)
+const previewOpen = ref(false)
+const previewTrigger = ref(null)
+let disposed = false
 const isPending = computed(() => !Number.isInteger(props.node.attrs.assetId))
 
+async function closePreview() {
+  previewOpen.value = false
+  await nextTick()
+  previewTrigger.value?.focus({ preventScroll: true })
+}
+
 function releaseUrl() {
+  previewOpen.value = false
   if (objectUrl.value) URL.revokeObjectURL(objectUrl.value)
   objectUrl.value = ''
 }
@@ -67,7 +83,7 @@ async function load() {
   const expected = props.node.attrs.assetId
   try {
     const response = await getKnowledgeImageBlob(expected)
-    if (props.node.attrs.assetId !== expected) return
+    if (disposed || props.node.attrs.assetId !== expected) return
     const nextUrl = URL.createObjectURL(response.data)
     if (props.node.attrs.assetId !== expected) {
       URL.revokeObjectURL(nextUrl)
@@ -75,12 +91,12 @@ async function load() {
     }
     objectUrl.value = nextUrl
   } catch {
-    loadError.value = true
+    if (!disposed && props.node.attrs.assetId === expected) loadError.value = true
   }
 }
 
 watch(() => props.node.attrs.assetId, load, { immediate: true })
-onBeforeUnmount(releaseUrl)
+onBeforeUnmount(() => { disposed = true; releaseUrl() })
 </script>
 
 <style scoped>
@@ -89,6 +105,8 @@ onBeforeUnmount(releaseUrl)
 .image-frame { display: grid; min-height: 120px; place-items: center; color: var(--text-muted-blue); background: var(--toolbar-bg); }
 .image-frame.is-loaded { display: block; min-height: 0; background: transparent; }
 .image-frame img { display: block; width: auto; height: auto; max-width: 100%; margin: 0 auto; object-fit: contain; }
+.image-preview-trigger { display: block; max-width: 100%; margin: 0 auto; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: zoom-in; }
+.image-preview-trigger:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 .image-placeholder { display: grid; min-height: 160px; place-items: center; gap: 8px; border: 1px dashed var(--border-color); border-radius: 9px; color: var(--text-secondary); background: var(--toolbar-bg); }
 .image-placeholder small { color: var(--text-muted-blue); }
 .image-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin-top: 8px; }
