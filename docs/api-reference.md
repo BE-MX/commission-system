@@ -229,12 +229,17 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | --- | --- |
 | GET `/shipments/capabilities` | invoice:read/write、receipt:write 或 shipment:read；返回登记开关及两项外发能力，后两者目前固定 false |
 | POST `/invoices/{id}/shipment-quotes` | invoice:read/write；items[{invoice_item_id,quantity}]、freight_amount，返回金额分解与 quote_hash |
+| GET `/invoices/{id}/shipment-inventory` | 当前 invoice:read/write 与订单数据范围；实时查询预售出库仓库可用库存，private, no-store；返回 invoice_id/warehouse_id/source=okki_live/queried_at/items[{invoice_item_id,product_id,sku_id,available_stock,reason}]。available_stock 为十进制字符串，查不到或异常为 null，不能当成零 |
 | POST `/invoices/{id}/shipment-settlements` | invoice:write + shipment:write；报价字段加 quote_hash/request_key，可选 payment（另需 receipt:write） |
 | GET `/shipments/order/{id}`、`/shipments/{id}` | shipment:read/write；items 列表或含 quote/balance/outbound/capabilities 的详情 |
 | POST `/shipments/{id}/cancel`、`pause`、`resume` | shipment:write；version/reason，订单归属与状态二次检查 |
 | POST `/receipts/batches` | receipt:write；amount/date/type/remark/attachment_ids、request_key、allocations[{invoice_id,settlement_id?,amount,balance_version}]。日期字段 collection_date，方式字段 payment_type；bank_charge 只能零，服务端自动分摊 |
 | GET `/receipts/batches/{id}` | receipt:read/write/admin；batch_no/amount/bank_charge/currency/status/version/items/attachment_ids，须能访问全部子订单 |
 | POST `/receipts/batches/{id}/void-entry` | receipt:admin；version/reason，仅本地且无远端效果的整批录入纠错 |
+
+预售库存按 `OKKI_PRESALE_WAREHOUSE_ID` 与产品/SKU 精确读取小满 `/v1/product/inventory-list` 的启用 `enable_count`，不合计其他仓库、不用 `real_count` 或镜像替代。单次查询独立申请含 `product` scope 的临时 token，不覆盖原发票 token 缓存。`queried_at` 为本次查询完成的北京时间，并非供应商更新时间。查询在业务锁外执行，返回前重查当前权限、订单范围和产品/仓库绑定。部分缺记录、停用以外的异常值或查询失败为待核对；明确停用或零数值为零。
+
+报价和首次创建结算各自实时复查所选 SKU，同 SKU 多行按本批合计校验，超库存或库存未知返回409，且不写结算/回款。库存快照不参与资金报价 hash，库存变化但仍足量可继续提交；原已创建请求的幂等读取先于新库存门禁。前端“剩余待出库”与“可用库存”分别显示，整数上限取两者较小值向下取整；刷新清旧报价但保留原填写数量，超限时要求调整。库存读取不预占库存，最终小满创建仍会校验当时可用数量。
 
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
 

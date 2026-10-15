@@ -2,6 +2,7 @@ import { shipmentClient as request } from './clients'
 const unwrap = promise => promise.then(res => res.data ?? res)
 export const getShipmentCapabilities = () => unwrap(request.get('/shipments/capabilities', { showLoading: false }))
 export const quoteShipment = (id, body) => unwrap(request.post(`/invoices/${id}/shipment-quotes`, body, { showLoading: false }))
+export const getShipmentInventory = id => unwrap(request.get(`/invoices/${id}/shipment-inventory`, { showLoading: false, suppressToast: true, redirectOnUnauthorized: false }))
 const shipmentRecoveryOptions = { showLoading: false, suppressToast: true, redirectOnUnauthorized: false }
 export const createShipment = (id, body, signal) => unwrap(request.post(`/invoices/${id}/shipment-settlements`, body, { ...shipmentRecoveryOptions, signal }))
 export const inspectShipmentSubmission = (id, body, signal) => unwrap(request.post(`/invoices/${id}/shipment-settlements/submission-status`, body, { ...shipmentRecoveryOptions, signal }))

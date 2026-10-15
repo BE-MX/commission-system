@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {shipmentInventoryFixture} from './shipmentInventoryFixture.mjs'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url), {chromium} = require(process.argv[2]), {expect} = require(process.argv[2]+'/test.js')
 const base = process.argv[3]
@@ -60,6 +61,7 @@ try {
       if (path === '/api/invoice/invoices/1') return respond({id:1,invoice_no:'TEST-SHIP',currency:'USD',
         items:[{id:7,product_name:'Product A',quantity:4}]})
       if (path === '/api/shipments/order/1') return respond({items:[]})
+      if (path === '/api/invoices/1/shipment-inventory') return respond(shipmentInventoryFixture({id:1,items:[{id:7}]}))
       if (path === '/api/invoices/1/shipment-quotes') {
         const body = request.postDataJSON(); quotes.push(body)
         return respond({quote_hash:'a'.repeat(64),funding_version:2,is_final:body.is_final,goods_amount:'627',

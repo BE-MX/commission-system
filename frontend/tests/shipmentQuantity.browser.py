@@ -22,6 +22,10 @@ def api(route):
         data = invoice
     elif path == 'shipments/order/1':
         data = {'items': []}
+    elif path == 'invoices/1/shipment-inventory':
+        data = {'invoice_id': 1, 'source': 'okki_live', 'queried_at': '2026-10-16T00:01:00',
+                'items': [{'invoice_item_id': row['id'], 'product_id': None, 'sku_id': None,
+                           'available_stock': '100'} for row in invoice['items']]}
     elif path == 'invoices/1/shipment-quotes':
         quotes.append(body)
         data = dict(quote_hash='a' * 64, goods_amount='80', packaging_amount='0',

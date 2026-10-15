@@ -35,6 +35,7 @@ try {
         const ok = data => route.fulfill({ json: { code: 200, message: 'ok', data } })
         if (url.pathname === '/api/invoice/invoices/1') return ok({ id: 1, invoice_no: 'TEST', currency: 'USD',
           items: [{ id: 7, product_name: 'Test product', quantity: 10 }] })
+        if (url.pathname === '/api/invoices/1/shipment-inventory') return ok({ invoice_id: 1, source: 'okki_live', queried_at: '2026-10-16T00:01:00', items: [{ invoice_item_id: 7, product_id: null, sku_id: null, available_stock: '100' }] })
         if (url.pathname === '/api/shipments/order/1') { listReads++; return ok({ items: [row()] }) }
         if (url.pathname === '/api/shipments/8') return ok(row())
         if (['/api/shipments/8/pause', '/api/shipments/8/cancel'].includes(url.pathname)) {

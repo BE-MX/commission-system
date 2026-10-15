@@ -5414,3 +5414,18 @@ I38：启用refresh初次当前授权+request/conversion→invoice完整绑定/�
 实现分支：`codex/domestic-order-details-export`。列表操作行新增“导出订单明细”，调用 `GET /api/domestic/orders/export-details`。沿用已应用筛选与订单读权限，后端共享 `order_query_service.filtered_order_query` 保持列表/导出条件一致；独立只读明细查询避免逐单详情接口的编号修复和进度计算。随代码保存用户提供的空模板，按其 14 列和格式输出全部筛选明细；按下单日期升序，多销售总表+个人页，单销售无总表，未归属与空结果有明确 sheet。同名销售按 ID 分组且 sheet 自动消歧，客户订单号/用户内容以 Excel 文本写入。
 
 验证：后端模板、所有筛选、跨分页、多销售/单销售、删除过滤、无归属生产单、空结果、公式文本防护、HTTP 权限/下载回归，以及既有订单/导出范围测试；前端导出参数、Blob API、加载/连点/失败恢复行为测试。后端 89 项回归通过（86 项既有与新增范围回归，审查修复后 9 项明细导出测试复验，其中新增 3 项）；前端 4 项通过，`npm run build` 通过（仅既有包体积/动态导入警告）。独立 agent 审查发现并闭环控制字符和复制 sheet 临时名冲突。隔离 SQLite + 浏览器实际点击验证全部销售、未应用筛选仍导出原范围、查询单销售后三种下载；已读取下载文件确认 sheet、行数和日期顺序，证据在主目录 `tmp/domestic-order-details-export/order-details-*.xlsx` 与 `tmp/domestic-order-details-export/order-details-export-review.jpg`。`check_conventions` 与 `git_sweep --no-fetch` 通过（巡检只代表本地快照）。本次授权交付范围为合并与推送；未发布，无数据库迁移。
+
+
+## 2026-10-16 预售出库实时可用库存（Codex，本地实现）
+
+工作树 presale-cancel-actions，分支 codex/presale-cancel-actions，基点 a2673e03；本轮未 commit/push/merge/部署，无迁移，无生产业务写入。生成出库弹框的“可出库数量”更名“剩余待出库”，右侧新增“可用库存”。打开与手工刷新查询预售目标仓库启用 enable_count；数量上限取剩余与可用库存最小值的整数部分，同 SKU 多行合计另行阻断核算/创建。零库存为0，缺映射/无目标仓库/列表不完整/无效字段/接口失败为“待核对”并禁填对应行。库存下降刷新不静默改写原填写值，清旧报价、提示调整；保留原冻结提交与恢复协议。
+
+新 GET /api/invoices/{id}/shipment-inventory 在业务锁外读取，返回前重新授权及核对订单数据范围、产品/SKU/预售仓库绑定，private,no-store。quote/create 各自实时复查所选 SKU；库存不进入 quote_hash，库存变化但足量仍可使用原资金报价；已创建请求的 replay 先于库存门禁。查询时间为北京时间查询完成时刻，非供应商更新时间；此功能不预占库存，最终远端出库仍以小满校验为准。
+
+只读运行核验：北京应用原缓存token仅 invoices company，库存 GET 返回 no permission invoices scopes。受管consumer auth.js使用 invoices company product user；同一应用凭据独立申请 invoices company product 后，一次目标SKU查询成功，仓库8193514242746、product86457591882862、sku86457591882945、enable_count62（仅该次读数，非持久库存保证）。新增 fetch_token(scope=...) 默认保持原范围；库存单次查询用临时 product token，不写共享缓存、不改配置/凭据、不用镜像伪装实时。
+
+验证：SQLite库存/原结算/取消回归82 passed；实际JWT+ASGI+全新隔离MySQL库存专项6项及原行顺序报价/创建1项共7 passed，覆盖库存下降拒绝的财务全图不变、库存仍足量旧报价成功、同SKU合计、unknown、read/quote/create锁外撤权、原请求重放不再查库存。Node库存/原状态/确认/提交23 passed。实际Chrome1440/390库存2场景、原取消10场景、原提交恢复1440/390/320三个完整流程通过，库存小数上限/零/unknown/聚合/刷新降库存保留输入/ARIA/内部滚动均有断言。npm build、strict conventions、6项UI gate验证通过；独立agent代码审查通过，并独立跑过23Node及库存解析20项（后续仅补2项北京时间零点边界）。
+
+曾遇两处验证问题：首次新MySQL正向用例调用原嵌入回款 created() helper，复现既有 presale_goods bank_charge 预期2而实际0的断言（前次发布已在未改基线复现），未改金额逻辑或断言；库存专项改为无嵌入回款正向，超库存拒绝仍对完整财务图做比较。原反序产品测试追加product3/sku4，初始库存替身只有product1导致409；补足受控SKU映射后7项通过。库存浏览器首次等候被更具体库存提示覆盖的通用失败提示，调整为断言可用库存待核对，未弱化阻断/输入保留条件。
+
+证据位于本工作树 tmp/shipment-inventory-browser、shipment-inventory-cancellation、shipment-inventory-recovery、shipment-inventory-build.log。MySQL三次独立workspace为 shipment-inventory-mysql-20261016-01至03，进程均已由fixture关闭；保留失败/通过运行与恢复材料，不触碰旧轮被拒绝清理的目录。主目录无关改动未修改。Git巡检使用 --no-fetch，仅为本地快照，不代表远端最新。

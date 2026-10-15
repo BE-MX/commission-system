@@ -45,7 +45,7 @@ def _base_url() -> str:
     return get_settings().OKKI_API_BASE.rstrip("/")
 
 
-def fetch_token() -> tuple[str, datetime]:
+def fetch_token(*, scope: str = TOKEN_SCOPE) -> tuple[str, datetime]:
     """Fetch a fresh access token via client_credentials.
 
     Returns (access_token, expires_at_utc).
@@ -60,7 +60,7 @@ def fetch_token() -> tuple[str, datetime]:
                 "grant_type": "client_credentials",
                 "client_id": settings.OKKI_CLIENT_ID,
                 "client_secret": settings.OKKI_CLIENT_SECRET,
-                "scope": TOKEN_SCOPE,
+                "scope": scope,
             },
             timeout=REQUEST_TIMEOUT,
         )

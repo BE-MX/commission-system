@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {shipmentInventoryFixture} from './shipmentInventoryFixture.mjs'
 import {createRequire} from 'node:module'
 import {mkdir,writeFile} from 'node:fs/promises'
 const require=createRequire(import.meta.url),{chromium}=require(process.argv[2]),base=process.argv[3],output=process.argv[4],red=process.argv[5]==='--red-close'
@@ -15,6 +16,7 @@ try { for(const width of red?[1440]:[1440,390,320]) {
  await page.route(base+'/api/**',async route=>{
   const request=route.request(),path=new URL(request.url()).pathname
   if(/^\/api\/invoice\/invoices\/[12]$/.test(path))return ok(route,invoice)
+  if(/^\/api\/invoices\/[12]\/shipment-inventory$/.test(path))return ok(route,shipmentInventoryFixture(invoice))
   if(/^\/api\/shipments\/order\/[12]$/.test(path))return ok(route,{items:[]})
   if(path==='/api/invoices/1/shipment-quotes')return ok(route,{quote_hash:'a'.repeat(64),goods_amount:'80',packaging_amount:'0',handling_amount:'0',freight_amount:'20',deposit_applied:'0',new_payment_due:'100',is_final:false})
   if(path==='/api/receipts/types')return ok(route,['T/T'])

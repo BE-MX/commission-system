@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {shipmentInventoryFixture} from './shipmentInventoryFixture.mjs'
 import {createRequire} from 'node:module'
 import {mkdir,writeFile} from 'node:fs/promises'
 const require=createRequire(import.meta.url),{chromium}=require(process.argv[2]),base=process.argv[3],output=process.argv[4]
@@ -27,6 +28,7 @@ async function setup(width,previous='none') {
       state.reads.push(url.pathname)
       if(state.deny)return route.fulfill({status:403,json:{detail:'Current original scope revoked'}})
       if(url.pathname==='/api/invoice/invoices/1')return ok(route,invoice)
+      if(url.pathname==='/api/invoices/1/shipment-inventory')return ok(route,shipmentInventoryFixture(invoice))
       if(url.pathname==='/api/shipments/order/1')return ok(route,{items:state.showRow?[row()]:[]})
       if(url.pathname==='/api/shipments/8')return ok(route,state.wrongDetail?other():row())
     }
