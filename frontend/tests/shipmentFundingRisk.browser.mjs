@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {shipmentInventoryFixture} from './shipmentInventoryFixture.mjs'
 import {createRequire} from 'node:module'
 import {mkdir,writeFile} from 'node:fs/promises'
 const require=createRequire(import.meta.url),{chromium}=require(process.argv[2]),base=process.argv[3],output=process.argv[4]
@@ -21,6 +22,7 @@ try {for (const width of [1440,390,320]) {
     if(!url.pathname.startsWith('/api/'))return route.continue()
     if(request.method()!=='GET'){writes.push(url.pathname);return route.fulfill({status:503,json:{detail:'Unexpected financial write'}})}
     if(url.pathname==='/api/invoice/invoices/1')return ok(route,invoice)
+    if(url.pathname==='/api/invoices/1/shipment-inventory')return ok(route,shipmentInventoryFixture(invoice))
     if(url.pathname==='/api/shipments/order/1')return ok(route,{items:[row()]})
     if(url.pathname==='/api/shipments/8')return ok(route,row())
     unexpected.push(url.pathname);return route.fulfill({status:503,json:{detail:'Unexpected isolated endpoint'}})

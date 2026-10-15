@@ -8,6 +8,7 @@ from app.invoice.models import InvoiceItem
 from app.portal.authority import lock_authority
 from app.portal.errors import PortalError, TransactionBusy
 from app.receipt import access, authority, retry_service
+from app.invoice import shipment_inventory_service as inventory
 
 
 def _authorize(db, identity, user):
@@ -48,9 +49,11 @@ def quote(db, identity, body, user):
     try:
         invoice,current = _authorize(db,identity,user)
         expected,target,freight,_ = facts._capture(db,invoice,body,current)
+        stock_target = inventory.capture(invoice)
         db.commit()
         try:
             evidence = facts._evidence(db,target,freight)
+            stock = inventory.observe(stock_target, {item.invoice_item_id for item in body.items})
             db.commit()  # End provider token/cache work before final authority.
         except (ValueError,TypeError,okki_client.OkkiApiError,SQLAlchemyError,OSError,HTTPException) as error:
             unavailable(error)
@@ -60,6 +63,7 @@ def quote(db, identity, body, user):
         actual,_,_,_ = facts._capture(db,invoice,body,current)
         if actual != expected:
             raise HTTPException(409,'订单或发货资金在核验期间已变化，请重新获取报价')
+        inventory.require_stock(invoice, body, stock_target, stock)
         result = shipments.build_quote(db,invoice,body,evidence,current=True)
         # Detach all returned values before releasing the final read locks.
         return json.loads(json.dumps(result))

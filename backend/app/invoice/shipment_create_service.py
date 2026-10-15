@@ -19,6 +19,7 @@ from app.portal.errors import PortalError, TransactionBusy
 from app.receipt import access, attachments, authority, batch_service, edit_service, remote, retry_service, service
 from app.receipt.models import Receipt, ReceiptIntent, ReceiptAttachment, ReceiptLog
 from app.semifinished.models import InvoiceAllocation
+from app.invoice import shipment_inventory_service as inventory
 
 
 def _rows(db, model, predicate):
@@ -303,9 +304,11 @@ def create(db, identity, body, user):
     if existing is not None:
         return existing
     expected,target,freight,files = _capture(db,invoice,body,current,payment=body.payment,request_key=body.request_key)
+    stock_target = inventory.capture(invoice)
     db.commit()
     try:
         evidence = _evidence(db,target,freight)
+        stock = inventory.observe(stock_target, {item.invoice_item_id for item in body.items})
         payment_types = tuple(remote.receipt_types(db)) if body.payment else ()
         if body.payment and (not payment_types or any(not isinstance(value,str) or not value for value in payment_types)):
             raise ValueError('回款方式证据不完整')
@@ -326,6 +329,7 @@ def create(db, identity, body, user):
     actual,_,_,final_files = _capture(db,invoice,body,current,payment=body.payment,request_key=body.request_key)
     if actual != expected or final_files != files:
         raise HTTPException(409, '订单、发货资金或凭证在核验期间已变化，请保持原提交核对')
+    inventory.require_stock(invoice, body, stock_target, stock)
     if body.payment and body.payment.payment_type not in payment_types:
         raise ValueError('请选择有效的回款方式')
     return shipments._create_verified(db,invoice,body,current,evidence,file_evidence)
