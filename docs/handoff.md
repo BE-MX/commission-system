@@ -4,6 +4,14 @@
 - 后端隔离回归 44 项、Connector 全套 45 项通过（含真实本地 WebSocket 与历史下载 CONNECT 传输）；独立审查发现的历史下载 dispatcher 缺口已修复，约定检查和本地 Git 巡检完成。用户授权本次合并推送，保留主目录既有修改；不含生产部署或代理配置。真实二维码/扫码尚未验收，上线仍需明确授权。
 - [现场证据、修复与上线范围](reports/2026-10-15-whatsapp-qr-recovery.md)。
 
+
+## 2026-10-15 公告图片点击查看原图（Codex，Git交付，未部署）
+
+- 分支 `codex/announcement-image-preview`：右上角公告通知 → 选择公告 → 点击正文图片，打开原图预览，支持缩放、旋转与适应窗口/原始尺寸切换；关闭预览保留当前公告，焦点回到图片。Enter/空格可打开，Esc 只关闭最上层预览。
+- 复用 `KnowledgeImageView.vue` 的鉴权 Blob 与 Element Plus 图片预览，不重新请求图片；同组件的知识文档阅读模式同步支持预览，编辑模式保留原有图片选择和编辑。加载失败图片无预览入口，组件卸载后丢弃迟到的加载结果并释放 Blob URL。
+- 验证：公告 Node 回归 9 项、既有图片上传/粘贴/保存/编辑浏览器回归、前端生产构建、约定检查通过；隔离浏览器验证 1280px/390px 的通知入口、阅读状态、1600px 原始图片、缩放、键盘、焦点、公告切换与加载失败状态通过。业务请求全部使用本地替身；构建保留既有混合导入/大分包提示。Git 巡检为 `--no-fetch` 本地快照。
+- 本次交付范围为合并推送至 main，不含部署；回归入口 `frontend/tests/announcementPreview.browser.py`，夹具 `frontend/tests/fixtures/announcement-preview/`。
+
 ## 2026-10-14 内贸订单详情操作权限拆分（Codex，已授权合并推送部署）
 
 - 分支 `codex/domestic-operation-permissions`：新增 `domestic_report:write`（代报工、选工人、撤销报工）与 `domestic_skip:write`（异常跳过、跳过审计及撤销跳过）；按钮与后端接口同步校验。角色权限矩阵展示两个独立中文选项。
