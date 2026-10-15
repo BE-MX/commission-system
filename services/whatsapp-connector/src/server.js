@@ -7,6 +7,7 @@ import { error } from './crypto.js'
 import { Store } from './store.js'
 import { Manager, backendAuthorizer } from './manager.js'
 import { hash } from './projection.js'
+import { whatsappProxyAgent, whatsappProxyDispatcher } from './proxy.js'
 
 const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next)
 function pagination(query) {
@@ -67,16 +68,22 @@ export async function main(env = process.env) {
   const { apiKey, host } = connectorConfig(env)
   if ((env.WHATSAPP_PROVIDER || 'baileys') !== 'baileys') throw error('unsupported_provider', 500)
   if (!env.ARK_API_BASE_URL) throw error('ARK_API_BASE_URL_required', 500)
+  const agent = whatsappProxyAgent(env)
+  const dispatcher = whatsappProxyDispatcher(env)
   const store = new Store(path.resolve(env.WHATSAPP_DATA_DIR || './data', 'connector.sqlite'), {
     encryptionKey: env.WHATSAPP_ENCRYPTION_KEY, keyVersion: env.WHATSAPP_KEY_VERSION || '1',
     maxBytes: Number(env.WHATSAPP_MAX_DISK_BYTES || 1024 ** 3), maxRows: Number(env.WHATSAPP_MAX_CHANGE_ROWS || 1000000),
   })
-  const manager = new Manager(store, { authorize: backendAuthorizer(env.ARK_API_BASE_URL, apiKey) })
+  const manager = new Manager(store, { authorize: backendAuthorizer(env.ARK_API_BASE_URL, apiKey), agent, dispatcher })
   const server = createApp(manager, apiKey).listen(Number(env.PORT || 8787), host, () => {
     console.log(`WhatsApp connector listening on ${host}:${env.PORT || 8787} (baileys, single host)`)
     if (env.WHATSAPP_RESTORE_ON_START !== 'false') void manager.restore()
   })
-  const shutdown = () => { manager.shutdown(); server.close(() => store.close()) }
+  const shutdown = () => {
+    manager.shutdown(); agent?.destroy()
+    if (dispatcher) void dispatcher.destroy().catch(() => console.warn('connector_proxy_shutdown_failed'))
+    server.close(() => store.close())
+  }
   process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown)
   return { server, store, manager }
 }

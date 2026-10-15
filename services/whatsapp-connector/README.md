@@ -78,6 +78,14 @@ account 包含 provider、session_generation、consent_version、status、connec
 
 ## 迁移与发布边界
 
+### 办公室出网与关联恢复
+
+`WHATSAPP_PROXY_URL` 可配置 HTTP(S) CONNECT 代理，例如办公室已验证的 `http://127.0.0.1:1080`。仅 WhatsApp WebSocket 和媒体请求使用该代理，Ark 授权回调仍走原地址；不依赖交互用户的系统代理，也不读取通用 `HTTPS_PROXY` 作为隐式回退。无此配置保持直连，非法协议/路径阻断启动且不输出配置内容。服务环境优先于 `.env`，发布准备与 NSSM 实际启动保持同一优先级。
+
+创建关联时先提交授权，再连接 WhatsApp；返回 `pending` 仅代表操作建立，不表示二维码已经生成。受保护暂停、撤销或要求重连时，绑定查询返回相应终态，停止等待二维码。Ark 解绑先关闭尚未结束的绑定会话；历史残留的已停止会话在用户明确发起关联时退出待处理队列，不恢复原账号授权。连接结果仍未知且授权有效的操作继续按原 UID 查询，不自动重复 POST。
+
+2026-10-15 故障证据和未发布修复见 [二维码与关联恢复报告](../../docs/reports/2026-10-15-whatsapp-qr-recovery.md)。HTTPS/WebSocket 网络验证不能代替持有人扫码验收。
+
 不会读取、转换或导入 `.wwebjs_auth`、旧 session 文件或旧正文库。旧账户只通过 Ark 已批准的稳定 UID/owner metadata 重新登记，再建立 Baileys 连接；旧设备 logout 与新设备 rebind 的顺序由发布流程控制，不能让旧 whatsapp-web.js 与新 Baileys 同时采集同一账号。
 
 备份/恢复必须停掉所有本机 writer，用一致的 SQLite 备份保留数据库，并在独立秘密管理系统保存密钥。旧发布回滚需要原有依赖/原有状态；不能把 Baileys 凭据交给旧实现。生产只通过项目 `deploy/deploy.bat` 与登记的北京 Agent 服务入口执行；这份实现是本地候选，未关联任何真实账号、未迁移生产数据、未部署。

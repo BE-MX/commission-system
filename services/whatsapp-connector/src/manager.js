@@ -40,11 +40,11 @@ export function backendAuthorizer(baseUrl, apiKey, fetcher = fetch) {
 export class Manager {
   constructor(store, { authorize, socketFactory = makeWASocket, encodeQR = qrcode.toDataURL,
     authInterval = 10000, leaseTTL = 30000, maxQueueEvents = 64, maxQueueBytes = 16 * 1024 ** 2,
-    maxEventBytes = 8 * 1024 ** 2, maxRetries = 5, retryBase = 1000, random = Math.random } = {}) {
+    maxEventBytes = 8 * 1024 ** 2, maxRetries = 5, retryBase = 1000, random = Math.random, agent, dispatcher } = {}) {
     if (!authorize) throw error('authorizer_required', 500)
     if (authInterval > 15000 || authInterval < 20 || leaseTTL <= authInterval * 2) throw error('invalid_lease_interval', 500)
     Object.assign(this, { store, authorize, socketFactory, encodeQR, authInterval, leaseTTL,
-      maxQueueEvents, maxQueueBytes, maxEventBytes, maxRetries, retryBase, random })
+      maxQueueEvents, maxQueueBytes, maxEventBytes, maxRetries, retryBase, random, agent, dispatcher })
     this.projector = new Projector(store)
     this.entries = new Map()
     this.sessions = new Map()
@@ -104,7 +104,8 @@ export class Manager {
     const account = this.store.account(session.account_uid)
     const current = session.session_generation === account?.session_generation && session.consent_version === account?.consent_version
     const qr = current && entry?.session?.bind_session_uid === bindUid && entry.qr && entry.qr.expires > Date.now() ? entry.qr : null
-    return { ...session, status: !current ? 'expired' : account?.status === 'active' ? 'active' : session.status,
+    const status = !current ? 'expired' : ['active', 'paused', 'blocked', 'revoking', 'revoked', 'revoke_pending', 'reconnect_required'].includes(account?.status) ? account.status : session.status
+    return { ...session, status,
       qr_code_url: qr?.url || null, expires_at: qr ? new Date(qr.expires).toISOString() : null, account: this.metadata(account) }
   }
   metadata(account) {
@@ -157,7 +158,9 @@ export class Manager {
     this.store.renew(entry.lease)
     const auth = authState(this.store, entry.lease, err => this.protect(entry, err.code || 'auth_store_failed'))
     entry.auth = auth.state
-    const socket = this.socketFactory({ auth: auth.state, logger, markOnlineOnConnect: false, syncFullHistory: true,
+    const socket = this.socketFactory({ auth: auth.state, logger, agent: this.agent, fetchAgent: this.agent,
+      options: { dispatcher: this.dispatcher },
+      markOnlineOnConnect: false, syncFullHistory: true,
       shouldSyncHistoryMessage: () => true, emitOwnEvents: true, fireInitQueries: true,
       getMessage: async () => undefined, connectTimeoutMs: 20000, defaultQueryTimeoutMs: 20000 })
     entry.socket = socket

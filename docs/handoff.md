@@ -1,3 +1,9 @@
+## 2026-10-15 WhatsApp 二维码与关联恢复（Codex，Git 交付，未发布）
+
+- 办公室 Connector 直连 WhatsApp 超时，本机 1080 HTTP 代理 HTTPS 200/WebSocket 101；补专用代理接入。解绑后旧绑定仍 pending 导致再次关联 403；修复解绑关闭会话、历史停止会话退出待处理队列、停止状态安全回读。有效未知操作不重复 POST，原撤销授权不恢复。
+- 后端隔离回归 44 项、Connector 全套 45 项通过（含真实本地 WebSocket 与历史下载 CONNECT 传输）；独立审查发现的历史下载 dispatcher 缺口已修复，约定检查和本地 Git 巡检完成。用户授权本次合并推送，保留主目录既有修改；不含生产部署或代理配置。真实二维码/扫码尚未验收，上线仍需明确授权。
+- [现场证据、修复与上线范围](reports/2026-10-15-whatsapp-qr-recovery.md)。
+
 ## 2026-10-14 内贸订单详情操作权限拆分（Codex，已授权合并推送部署）
 
 - 分支 `codex/domestic-operation-permissions`：新增 `domestic_report:write`（代报工、选工人、撤销报工）与 `domestic_skip:write`（异常跳过、跳过审计及撤销跳过）；按钮与后端接口同步校验。角色权限矩阵展示两个独立中文选项。

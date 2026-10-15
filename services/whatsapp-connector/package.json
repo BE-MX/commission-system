@@ -12,8 +12,10 @@
     "baileys": "7.0.0-rc14",
     "dotenv": "^16.4.7",
     "express": "^5.3.0",
+    "https-proxy-agent": "7.0.6",
     "pino": "^9.14.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "undici": "7.30.0"
   },
   "engines": {
     "node": ">=22.13.0"

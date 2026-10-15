@@ -124,12 +124,19 @@ def _upsert_bind_session(db: Session, payload: dict[str, Any], ark_user_id: int)
 
 
 def refresh_bind_session(db: Session, bind_session_uid: str) -> WhatsAppBindSession:
+    from app.whatsapp.lifecycle import close_binding, stopped_binding_status
     client = WhatsAppConnectorClient()
     existing = (
         db.query(WhatsAppBindSession)
         .filter(WhatsAppBindSession.bind_session_uid == bind_session_uid)
         .first()
     )
+    if existing is not None and existing.account_uid:
+        local = db.query(WhatsAppAccount).filter_by(account_uid=existing.account_uid).populate_existing().first()
+        stopped = stopped_binding_status(local) if local else None
+        if stopped:
+            close_binding(existing, stopped)
+            return existing
     try:
         payload = client.get_bind_session(bind_session_uid)
     except ConnectorError as exc:
