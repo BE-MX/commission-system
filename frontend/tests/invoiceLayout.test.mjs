@@ -49,7 +49,8 @@ test('drawer body splits into two independently scrolling panes', () => {
   assert.doesNotMatch(invoiceStyles, /\.invoice-page\s+:deep\(\.el-drawer__body\)/)
   assert.doesNotMatch(legacyDrawer, /invoice-modern-drawer-body/)
   // 窄屏降级为单栏整页滚动
-  assert.match(invoiceStyles, /@media \(max-width: 1200px\)[\s\S]*\.drawer-panes\s*{[^}]*grid-template-columns:\s*1fr/s)
+  assert.match(invoiceStyles, /@media \(max-width: 1200px\)[\s\S]*\.drawer-panes\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s)
+  assert.match(invoiceStyles, /@media \(max-width: 1200px\)[\s\S]*\.drawer-panes\s*{[^}]*grid-auto-rows:\s*max-content/s)
 })
 
 test('side pane cards keep natural height so fee summary is not clipped', () => {
