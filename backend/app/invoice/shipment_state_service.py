@@ -1,4 +1,4 @@
-"""Current-authorized, local-only settlement state commands; caller commits once."""
+"""Current-authorized state commands; failed cancellation verifies remote absence."""
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import logging
@@ -136,7 +136,7 @@ def _capture(db, invoice, identity, action):
     return row, StateGraph(selected, selected_receipts, freight, outbounds[0] if outbounds else None, balance)
 
 
-def change(db, identity, user, action, version, reason):
+def _authorize(db, identity, user, action):
     # Dirty caller rejection must not flush or roll back somebody else's work.
     authority.fresh_boundary(db)
     try:
@@ -156,17 +156,24 @@ def change(db, identity, user, action, version, reason):
         if invoice.shipping_fee:
             raise ValueError('预售主单运费必须为零')
         row, graph = _capture(db, invoice, identity, action)
-        shipments._change_state_verified(db, row, current, action, version, reason, graph)
-        # Production SessionLocal disables autoflush. Persist this transaction's
-        # state/App/event before populate_existing current reads can replace
-        # pending ORM values; this is not a commit or a lock-release boundary.
-        db.flush()
-        return shipments.describe(db, row, current=True)
+        return invoice, row, graph, current
     except TransactionBusy:
         raise
     except PortalError as error:
         raise HTTPException(error.status, '发货结算授权暂不可用',
             headers={'Cache-Control': 'private, no-store', 'Pragma': 'no-cache'}) from None
+
+
+def change(db, identity, user, action, version, reason):
+    captured = _authorize(db, identity, user, action)
+    _, row, graph, current = captured
+    if action == 'cancel' and graph.outbound is not None:
+        from app.invoice import shipment_cancel_service
+        return shipment_cancel_service.cancel_failed(db, captured, user, version, reason)
+    shipments._change_state_verified(db, row, current, action, version, reason, graph)
+    # Persist before populate_existing current reads can replace pending values.
+    db.flush()
+    return shipments.describe(db, row, current=True)
 
 
 def result_unavailable(error):
