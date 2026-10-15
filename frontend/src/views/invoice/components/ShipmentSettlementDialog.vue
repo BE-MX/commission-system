@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="true" :title="pending ? '核对原发货提交' : confirmationPending ? '核对原实际出库确认' : denied ? '出库结算' : `生成出库单 · ${invoice.invoice_no}`" width="760px" class="shipment-settlement-dialog" append-to-body :before-close="close" :close-on-click-modal="false" :close-on-press-escape="!closingBlocked" :show-close="!closingBlocked">
+  <el-dialog :model-value="true" :title="pending ? '核对原发货提交' : confirmationPending ? '核对原实际出库确认' : denied ? '出库结算' : `生成出库单 · ${invoice.invoice_no}`" width="1120px" class="shipment-settlement-dialog" append-to-body :before-close="close" :close-on-click-modal="false" :close-on-press-escape="!closingBlocked" :show-close="!closingBlocked">
     <div class="shipment-content" :aria-busy="busy || undefined">
       <p v-if="!denied">对应出库单的检验已提交即视为出库完成；撤回检验后恢复为未完成。小满出库单保持草稿状态。</p>
       <p v-if="busy" role="status">{{ checking ? '正在只读核对原提交…' : '正在处理原发货请求，请等待回执…' }}</p>
@@ -9,8 +9,8 @@
       <p v-if="denied" role="status">当前身份或订单授权需重新确认，原提交内容已隐藏。</p>
       <section v-if="pending && !denied && recoveryInvoice">
         <h3>原订单 · {{ recoveryInvoice.invoice_no }}</h3>
-        <el-table class="list-table" :data="recoveryInvoice.items" border v-sticky-scrollbar>
-          <el-table-column label="产品" min-width="200"><template #default="{ row }">{{ row.product_name }} {{ row.model }} {{ row.color }} {{ row.length }}</template></el-table-column>
+        <el-table class="list-table density-compact shipment-products-table" :data="recoveryInvoice.items" max-height="clamp(220px, 42dvh, 420px)" :scrollbar-tabindex="0" scrollbar-always-on border v-sticky-scrollbar>
+          <el-table-column label="产品" min-width="200" show-overflow-tooltip><template #default="{ row }">{{ row.product_name }} {{ row.model }} {{ row.color }} {{ row.length }}</template></el-table-column>
           <el-table-column prop="quantity" label="原提交数量" min-width="120" />
         </el-table>
         <p>原运费：{{ recoveryInvoice.currency }} {{ frozen.body.freight_amount }}</p>
@@ -28,8 +28,8 @@
           </el-radio-group>
         </el-form-item>
         <el-alert v-if="paymentTerm === 'ship_first'" title="本批允许欠款生成出库单。已有预付余额照常抵扣，未收金额保留为本批欠款；后续在回款单中选择本批登记。" type="info" :closable="false" />
-        <el-table class="list-table" :data="lines" border v-sticky-scrollbar>
-          <el-table-column :sort-by="row => (row.product_name || row.product_display)" label="产品" min-width="220"><template #default="{ row }">{{ row.product_name || row.product_display }} {{ row.model }} {{ row.color }} {{ row.length }}</template></el-table-column>
+        <el-table class="list-table density-compact shipment-products-table" :data="lines" max-height="clamp(220px, 42dvh, 420px)" :scrollbar-tabindex="0" scrollbar-always-on border v-sticky-scrollbar>
+          <el-table-column :sort-by="row => (row.product_name || row.product_display)" label="产品" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.product_name || row.product_display }} {{ row.model }} {{ row.color }} {{ row.length }}</template></el-table-column>
           <el-table-column prop="quantity" label="订单数量" min-width="110" /><el-table-column prop="remaining" label="可出库数量" min-width="110" />
           <el-table-column prop="requested" label="本批数量" min-width="200"><template #default="{ row }"><el-input-number :key="`${row.id}:${row.remaining}:${activeShipment || confirmationPending || saving}`" v-model="row.requested" :precision="0" :min="0" :max="row.remaining" :disabled="activeShipment || confirmationPending" controls-position="right" /></template></el-table-column>
         </el-table>
