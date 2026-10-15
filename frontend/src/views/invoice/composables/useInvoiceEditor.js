@@ -68,6 +68,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const previousInvoiceNo = ref('')
 
   const form = reactive(emptyInvoiceForm())
+  const contactDetailsExpanded = ref(true)
+  const contactDetailsComplete = computed(() => [
+    form.contact_name, form.contact_phone, form.contact_email, form.delivery_address,
+  ].every(value => String(value ?? '').trim().length > 0))
+  // 缺项始终可见；手动补齐时不自动收起，避免输入中途丢失焦点。
+  watch(contactDetailsComplete, complete => {
+    if (!complete) contactDetailsExpanded.value = true
+  }, { flush: 'sync' })
   const quantityErrorRow = ref(null)
   watch(() => quantityErrorRow.value?.quantity, quantity => {
     if (Number.isInteger(quantity) && quantity > 0) quantityErrorRow.value = null
@@ -252,6 +260,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       items: (data.items || []).map(normalizeLine),
     })
     loadedOrderSignature.value = invoiceOrderSignature(buildInvoicePayload(form))
+    contactDetailsExpanded.value = !contactDetailsComplete.value
     selectedCustomer.value = form.customer_id
       ? { company_id: form.customer_id, company_name: form.customer_name }
       : null
@@ -354,6 +363,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   async function onCustomerChange(customer) {
     const seq = ++customerSelectionSeq
+    contactDetailsExpanded.value = true
     const sameCompanyContact = customer?.kind === 'contact' && String(customer.company_id) === form.customer_id
     const contextSeq = sameCompanyContact ? customerContextSeq : ++customerContextSeq
     selectedCustomer.value = customer || null
@@ -375,6 +385,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       form.contact_phone = customer.tel || ''
       form.contact_email = customer.email || ''
     }
+    if (seq === customerSelectionSeq) contactDetailsExpanded.value = !contactDetailsComplete.value
     if (!sameCompanyContact) {
       await Promise.all(accessories.hairItems.value.map(line => refreshLinePrice(line)))
       if (contextSeq === customerContextSeq) await accessories.refreshAccessoryPrices()
@@ -745,6 +756,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     closeLinked: linked.close, resolveLinked: linked.resolve,
     entryOptions,
     form,
+    contactDetailsExpanded,
+    contactDetailsComplete,
     hairItems: accessories.hairItems,
     accessoryItems: accessories.accessoryItems,
     accessoryOptions: accessories.accessoryOptions,

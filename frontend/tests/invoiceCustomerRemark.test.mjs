@@ -12,7 +12,7 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 const customer = id => ({ company_id: id, company_name: `Customer ${id}` })
 const defaults = remark => ({ remark, customer_grade: 'A', contact_name: 'Alice', contact_phone: '123', contact_email: 'a@example.test', delivery_address: 'Address' })
 
-async function harness(request = async () => defaults('上单备注'), createRequest) {
+async function harness(request = async () => defaults('上单备注'), createRequest, invoiceData = {}) {
   const saved = [], warnings = []
   const api = Object.fromEntries(['checkInvoiceNo', 'createInvoice', 'createInvoiceFromScreenshot',
     'getCustomerContactDefaults', 'getCustomerRule', 'getInvoice', 'getInvoiceAssignees',
@@ -20,7 +20,7 @@ async function harness(request = async () => defaults('上单备注'), createReq
     'suggestInvoiceNo', 'updateInvoice'].map(name => [name, async () => ({})]))
   Object.assign(api, {
     getCustomerContactDefaults: request, getCustomerRule: async () => null,
-    getInvoice: async id => ({ ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id, customer_id: 'C1' }),
+    getInvoice: async id => ({ ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id, customer_id: 'C1', ...invoiceData }),
     createInvoice: async payload => { saved.push(payload); return createRequest ? createRequest(payload) : { ...payload, id: 10 } },
     updateInvoice: async (id, payload) => { saved.push(payload); return { ...payload, id } },
   })
@@ -64,6 +64,74 @@ async function run(fn, request) {
   const h = await harness(request)
   try { await fn(h) } finally { h.stop() }
 }
+
+test('complete customer details collapse, can reopen, and remain expanded while filling a cleared field', () => run(async h => {
+  assert.equal(h.editor.contactDetailsExpanded.value, true)
+  await h.editor.onCustomerChange(customer('C1'))
+  assert.equal(h.editor.contactDetailsComplete.value, true)
+  assert.equal(h.editor.contactDetailsExpanded.value, false)
+  h.editor.contactDetailsExpanded.value = true
+  h.editor.form.contact_email = ''
+  assert.equal(h.editor.contactDetailsComplete.value, false)
+  h.editor.form.contact_email = 'new@example.test'
+  assert.equal(h.editor.contactDetailsExpanded.value, true)
+  await h.editor.onCustomerChange(null)
+  assert.equal(h.editor.contactDetailsExpanded.value, true)
+}))
+
+for (const field of ['contact_name', 'contact_phone', 'contact_email', 'delivery_address']) {
+  for (const blank of ['', '  ', null]) {
+    test(`customer with ${field}=${JSON.stringify(blank)} stays expanded`, () => run(async h => {
+      await h.editor.onCustomerChange(customer('C1'))
+      assert.equal(h.editor.contactDetailsComplete.value, false)
+      assert.equal(h.editor.contactDetailsExpanded.value, true)
+    }, async () => ({ ...defaults(''), [field]: blank })))
+  }
+}
+
+test('same-company explicit contact completeness overrides the previous snapshot', () => run(async h => {
+  await h.editor.onCustomerChange(customer('C1'))
+  await h.editor.onCustomerChange({ ...customer('C1'), kind: 'contact', name: 'Bob', tel: '', email: 'b@example.test' })
+  assert.equal(h.editor.contactDetailsExpanded.value, true)
+  await h.editor.onCustomerChange({ ...customer('C1'), kind: 'contact', name: 'Bob', tel: '456', email: 'b@example.test' })
+  assert.equal(h.editor.contactDetailsExpanded.value, false)
+}))
+
+test('late complete customer response cannot collapse the current incomplete customer', async () => {
+  const first = deferred()
+  await run(async h => {
+    const pending = h.editor.onCustomerChange(customer('C1'))
+    await h.editor.onCustomerChange(customer('C2'))
+    first.resolve(defaults('old'))
+    await pending
+    assert.equal(h.editor.form.customer_id, 'C2')
+    assert.equal(h.editor.contactDetailsExpanded.value, true)
+  }, id => id === 'C1' ? first.promise : Promise.resolve({ ...defaults(''), contact_phone: '' }))
+})
+
+for (const invoiceData of [{}, { contact_phone: '' }]) {
+  test(`edit uses stored contact completeness ${JSON.stringify(invoiceData)}`, async () => {
+    const h = await harness(async () => defaults(''), undefined, invoiceData)
+    try {
+      await h.editor.openEdit(7)
+      assert.equal(h.editor.contactDetailsExpanded.value, Boolean('contact_phone' in invoiceData))
+    } finally { h.stop() }
+  })
+}
+
+test('collapsed contact values and shipping fee survive save and edit readback', () => run(async h => {
+  await h.editor.onCustomerChange(customer('C1'))
+  Object.assign(h.editor.form, { express_channel: 'FEDEX', shipping_fee: 123.45 })
+  assert.equal(h.editor.contactDetailsExpanded.value, false)
+  assert.equal(h.editor.formTotal.value, 123.45)
+  await h.editor.saveDraft()
+  assert.equal(h.saved[0].shipping_fee, 123.45)
+  for (const field of ['contact_name', 'contact_phone', 'contact_email', 'delivery_address']) {
+    assert.equal(h.saved[0][field], defaults('')[field])
+  }
+  assert.equal(h.editor.form.shipping_fee, 123.45)
+  assert.equal(h.editor.contactDetailsExpanded.value, false)
+}))
 
 test('select customer fills previous remark and saves the manually edited text', () => run(async h => {
   await h.editor.onCustomerChange(customer('C1'))

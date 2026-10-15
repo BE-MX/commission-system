@@ -76,6 +76,12 @@ account 包含 provider、session_generation、consent_version、status、connec
 
 本应用不调用发送业务消息、readMessages、chatModify 或主动 presence API。配置 `markOnlineOnConnect:false`。**已核对 rc14 源码：上游仍会在连接打开时发送协议级 `unavailable` presence，并进行连接/密钥/历史同步等协议请求；不能宣称网络上完全没有 presence 或写报文。** 应用日志只记录安全错误码，不记录正文、二维码、JID、凭据或原始事件。
 
+### 扫码与授权诊断
+
+结构化日志以 `source=whatsapp_connector` 标记，时间固定北京时间并带 `+08:00`；`account` 为 account UID 的 SHA256 前 16 位，供同一关联过程对照。日志仅使用固定事件和字段白名单：socket 建立、二维码就绪、注册刷新通知、凭据注册/身份存在标志、连接成功、断线数字码/分类、保护暂停，以及授权失败的阶段/类型/HTTP 状态/耗时/允许的传输错误码。不会输出 URL、HTTP 头、异常原文、协议节点、二维码、手机号、JID、凭据或正文；上游 logger 继续 silent。
+
+`authorization_failed` 区分 `timeout`、`transport`、`http_error`、`invalid_response`、`denied`；这些只解释失败，不改变 5 秒超时及现有拒绝/保护暂停规则。`companion_reg_refresh` 仅观察上游通知的事件名称，不发送 ACK、不修改配对材料、不实现上游未合并补丁。`pairing_credentials` 只证明凭据阶段变化，必须见到 `connection_open` 并经实际业务验收后才能确认关联可用。排障结论与本地验证见 [扫码失败调查](../../docs/reports/2026-10-15-whatsapp-pairing-diagnosis.md)。
+
 ## 迁移与发布边界
 
 ### 办公室出网与关联恢复

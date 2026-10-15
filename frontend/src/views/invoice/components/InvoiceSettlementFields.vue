@@ -22,7 +22,7 @@
         <el-input-number v-model="form.internal_accessory" :min="0" :precision="2" controls-position="right" />
       </el-form-item>
       <el-form-item label="运费">
-        <el-input-number v-model="form.shipping_fee" :disabled="form.order_type === 'presale'" :min="0" :precision="2" controls-position="right" />
+        <el-input :model-value="money(form.shipping_fee || 0)" readonly class="balance-field" />
       </el-form-item>
       <el-form-item label="手续费" class="c2">
         <el-input-number
