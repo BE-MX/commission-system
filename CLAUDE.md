@@ -1,16 +1,20 @@
 # LeShine Ark Platform - 莱莎方舟平台
 
-企业内部综合中台，采用 FastAPI + Vue 3 模块化单体。平台定位和文档入口见 [README.md](README.md) 与 [docs/README.md](docs/README.md)；业务模块清单不在本规则文件重复维护。
+企业内部综合中台，采用 FastAPI + Vue 3 模块化单体。平台定位和文档入口见 [README.md](README.md) 与 [docs/README.md](docs/README.md)。
 
-**本文件是宪法：只写改变行为的规则。参考资料在指针区按需查阅，不要凭记忆写 API/表结构。**
+**本文件是宪法：只写改变行为的规则。清单类内容（模块、端点、表）只放指针区对应文档，不要凭记忆写 API/表结构。**
 
 ## 技术栈与环境
 
 - 后端：Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic + APScheduler
 - 前端：Vue 3 + Element Plus + Vite 5；微信小程序（生产报工）
-- 数据库：腾讯云 RDS MySQL 双库——`commission_db`（读写）+ `lsordertest`（业务镜像默认只读跨查；唯一写例外是管理员回款日期修复对 `okki_receipts.collection_date` 的受审计单列 UPDATE）。**生产迁移由部署入口统一检查并只执行一次，禁止开发机自行升级共享生产库**（2026-09-05 部署调整）。数据库未知 revision、领先于发布代码或多 head 必须阻断；不能 stamp/downgrade 掩盖差异。涉及破坏性 schema 的迁移必须先冻结全部相关写实例；普通发布不复制或覆盖数据库。开发验证使用隔离库，现存开发配置尚未隔离前不得执行迁移或写入型测试。
-- 部署：统一使用 `deploy/deploy.bat` 候选发布入口；目标、增量传输、迁移和恢复规则见 `deploy/README.md`，已验证拓扑见 `docs/architecture.md`。Scheduler 保持单活，不把历史 `git push cloud` 流程作为发布入口。
-- Agent 服务部署归属：OpenClaw 及后续新增 Agent、MCP、Agent 中继统一部署在北京 `leshine.cloud`（`154.8.205.162`）；在 `deploy/platforms.json` 登记服务管理器、健康入口和数据库 writer，按 `deploy/agent-cloud-migration.md` 的单活与回滚规则切换，不能重新在新加坡启用已迁服务。
+- 数据库：腾讯云 RDS MySQL 双库
+  - `commission_db` 读写；`lsordertest` 业务镜像默认只读跨查，唯一写例外是管理员回款日期修复对 `okki_receipts.collection_date` 的受审计单列 UPDATE
+  - **生产迁移只由部署入口统一检查并执行一次，禁止开发机升级共享生产库**（2026-09-05 起；此前「开发机直接 upgrade head」的做法已作废）
+  - 数据库未知 revision、领先于发布代码或多 head 必须阻断，不能 stamp/downgrade 掩盖差异；破坏性 schema 迁移先冻结全部相关写实例；普通发布不复制或覆盖数据库
+  - 开发验证只用隔离库；现存开发配置尚未隔离前，不执行迁移或写入型测试
+- 部署：只用 `deploy/deploy.bat` 候选发布入口（目标、增量传输、迁移与恢复见 `deploy/README.md`，拓扑见 `docs/architecture.md`）。Scheduler 保持单活；历史 `git push cloud` 不是发布入口。**「已合入 main」≠「已部署」**，生产状态以 `docs/handoff.md` 最新一条发布记录（含已部署 commit）为准
+- Agent 服务归属：OpenClaw 及后续新增 Agent、MCP、Agent 中继统一部署在北京 `leshine.cloud`（`154.8.205.162`），在 `deploy/platforms.json` 登记服务管理器、健康入口和数据库 writer，按 `deploy/agent-cloud-migration.md` 的单活与回滚规则切换；不能在新加坡重新启用已迁服务
 - 环境变量：`backend/.env`（不进 git）；配置一律走 `app/core/config.py` 的 Settings，**禁止直读 os.environ**
 
 ## 命令与端口
@@ -27,28 +31,32 @@ python scripts/git_sweep.py --open         # git 欠账巡检 + 可视化看板�
 deploy\deploy.bat                           # 统一候选发布、一次 schema 检查、增量传输；范围与恢复见 deploy/README.md
 ```
 
-后端 API :8001 / 前端 dev :3000 / 生产 :443（云 Nginx）+ 本地 :8002。服务器上**只能用 deploy.bat**，手动 uvicorn 会抢端口。
+后端 API :8001 / 前端 dev :3000 / 生产 HTTPS :443；办公室后端 :8001，新加坡 frps :8002 转发到办公室（不是本机后端端口）。服务器上**只能用 deploy.bat**，手动 uvicorn 会抢端口。
 
-## 项目结构（速览）
+## 项目结构（分层规则，不是模块清单）
+
+模块清单以源码注册为准：后端看 `backend/app/routers.py`，前端看 `frontend/src/config/navigation.js`。
 
 ```
 backend/app/
-├── core/ bootstrap/ schedulers/ routers.py      # 基建；router 统一在 routers.py 注册
-├── api/ services/ models/ schemas/ utils/       # 共享层（提成域老代码）——已冻结，不加新业务
-├── auth/ design/ system/ dingtalk/ ai/ insight/ # 领域模块：app/<domain>/ 自包含
-│   stock/ tracking/ asset/ color/ production/   #   router.py models.py schemas.py service.py(+子service)
-│   report/ governance/ invoice/ expo/ mini/ whatsapp/ pm/   # pm=资料协作站(独立鉴权,不接RBAC)
-│   training/ mcp/                                # mcp=MCP网关(个人token,mount /mcp,物流+素材工具)
+├── core/ bootstrap/ schedulers/ routers.py   # 基建；router 统一在 routers.py 注册
+├── api/ services/ models/ schemas/ utils/    # 共享层（提成域老代码）——已冻结，不加新业务
+└── <domain>/                                  # 领域模块，自包含：router/models/schemas/service(+子service)
+    ├── pm/                                    #   特例：资料协作站，独立 HMAC 门牌鉴权，不接平台 RBAC
+    └── mcp/                                   #   特例：MCP 网关，mount /mcp，个人 token 鉴权
 frontend/src/
 ├── config/navigation.js    # 路由+菜单唯一来源
 ├── api/clients.js          # axios client 唯一来源（auth.js 是唯一例外）
 ├── views/<domain>/         # 页面按域分目录；大页拆 composables/use*.js
-├── composables/ components/ styles/tokens.css   # 共享层；tokens.css 是颜色唯一真相源
+└── composables/ components/ styles/tokens.css   # 共享层；tokens.css 是颜色唯一真相源
 frontend-pm/                # PM 协作站独立前端（自研设计系统，无 Element Plus，与主站互不引用）
-miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
+frontend-portal/            # 客户下单门户独立前端（pnpm；开发与验收见 docs/requirements/2026-09-30-customer-order-portal/）
+miniprogram/  pda-reporting/  tablet-kiosk/  services/whatsapp-connector/  deploy/  docs/  config/
 ```
 
 ## 硬约定（红线，违反即返工）
+
+> 编号被代码注释引用（如「红线 6」），**只追加、不重排**。
 
 ### 后端
 
@@ -56,53 +64,61 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 2. **业务逻辑写 service 层**，不写在路由层；router 在 `app/routers.py` 注册
 3. **新端点必须**：权限 `Depends(require_permission/require_any_permission)`（super_admin 自动绕过；机器对机器端点白名单需注释说明）+ 统一信封 `from app.core.response import ok`（`{"code","message","data"}`）
 4. **session**：请求用 `from app.core.database import get_db`；仅 scheduler / 线程池 / bootstrap 三类场景允许自建 `SessionLocal()`
-5. **数据库变更只走 Alembic**：revision ID ≤32 字符；创建后立即 `git add`；FK 类型与目标列完全一致（含 unsigned）；MySQL DDL 不可回滚，迁移前自查
+5. **数据库变更只走 Alembic**：revision ID ≤32 字符；创建后立即 `git add`；FK 类型与目标列完全一致（含 unsigned）；MySQL DDL 不可回滚，迁移前自查；建迁移前查全部分支的最新编号（见 AGENTS.md）
 6. **异常不许无声吞**：except 至少 `logger.warning` + `print(flush=True)`（NSSM service.log 只认 print）；批量循环用 savepoint 隔离单条失败，commit 失败后必须 rollback
-7. **AI 调用**统一走 `app.ai.service` facade：文本调用用 `from app.ai.service import chat`，业务图片调用只允许从同一 facade 导入 `generate_image` / `edit_image`，业务域禁止自建模型 HTTP client；preset 后台可配；多模态 image_url 不传 detail；参数用 max_tokens；**枚举值域禁止写死在 prompt 里**，必须运行时从 DB 注入 user message（写死则体系一变静默失效，见 cerebrum 2026-07-22）
-8. **新增权限三步**：`auth/service.py` 的 `seed_role_permissions` 加 code（seed 是 **upsert**，元数据每次启动刷新）→ 重启后端 → 角色管理页分配。动作词汇只允许 read/write/delete/admin + 已登记特例（白名单见 scripts/check_conventions.py 的 ALLOWED_PERM_ACTIONS）；数据范围权限（read_all/self_read 类）kind=data，控查询口径不控显隐
+7. **AI 调用**统一走 `app.ai.service` facade：文本用 `from app.ai.service import chat`，业务图片只允许从同一 facade 导入 `generate_image` / `edit_image`，业务域禁止自建模型 HTTP client；preset 后台可配；多模态 image_url 不传 detail；参数用 max_tokens；**枚举值域禁止写死在 prompt 里**，必须运行时从 DB 注入 user message（写死则体系一变静默失效）
+8. **新增权限三步**：`auth/service.py` 的 `seed_role_permissions` 加 code（seed 是 **upsert**，元数据每次启动刷新）→ 重启后端 → 角色管理页分配。动作词汇只允许 read/write/delete/admin + 已登记特例（白名单见 `scripts/check_conventions.py` 的 `ALLOWED_PERM_ACTIONS`）；数据范围权限（read_all/self_read 类）kind=data，控查询口径不控显隐
 9. ORM relationship 默认 `noload`，由查询显式 selectinload/joinedload（主表有 LIMIT 或关联均值 >3 行用 selectinload）
 
 ### 前端
 
 10. **navigation.js 是路由+菜单唯一来源**：新页面只加一条 entry（permission/anyPermission 声明，守卫统一拦截）；全屏页（如 /expo/kiosk）例外，在 router/index.js 顶层注册
 11. **禁止自建 axios**：API 模块从 `api/clients.js` 取 client 并登记（auth.js 是唯一例外）
-12. **按职责拆分前端文件**：超过 500 行时检查是否存在独立职责，可用 `views/<domain>/composables/use<Page>.js` 提取相关状态与方法；不为凑行数移动全部代码。自动约定检查仍需运行，机械阈值命中应说明原因，不伪报无红项。
+12. **按职责拆分前端文件**：超过 500 行时检查是否存在独立职责，可用 `views/<domain>/composables/use<Page>.js` 提取相关状态与方法；不为凑行数移动全部代码。自动约定检查仍需运行，机械阈值命中应说明原因，不伪报无红项
 13. **颜色用 tokens.css 变量**，不写裸 hex；UI 决策以 `DESIGN.md` 为准
-13.5 **原型设计 / UI 动效任务强制加载 Emil Kowalski skill 组**：动手前先 `Skill: emil-design-eng`（UI 打磨与动效决策哲学）；动效代码完工后按 `~/.claude/skills/review-animations/STANDARDS.md` 逐条自查（该 skill 限用户 `/review-animations` 手动触发，模型侧读标准文件执行同级审查）；描述不清的动效效果用 `animation-vocabulary` 定位术语
+13.5 **原型设计 / UI 动效任务强制加载 Emil Kowalski skill 组**：动手前加载 `emil-design-eng`；动效完工后由模型读 `~/.claude/skills/review-animations/STANDARDS.md` 逐条自查（该 skill 本身限用户手动触发，自查不等用户触发）；动效术语不明用 `animation-vocabulary`
 14. **新列表页两个标杆**：标记/样式复制 `system/DictManagement.vue`；分页/搜索/反馈编排照 `views/expo/ExpoLeads.vue`（useListPage + utils/feedback + DetailDrawer；上传用 components/AppUpload）
 15. 认证初始化判据是 `!auth.user` 而非 `!isLoggedIn`（accessToken 从 localStorage 预恢复，谨防"半登录态"）；**按钮级权限用全局指令 `v-permission` / `v-any-permission`**（directives/permission.js），新页面不再手写 `v-if="hasPermission(...)"`
 
 ### 通用
 
 16. bat 脚本：UTF-8 + 首行 `chcp 65001 >nul`；`set VAR=value` 不带引号
-17. 密钥/token/密码不进代码；Git 推送与合并只遵守根目录 `AGENTS.md`，不在此重复维护授权规则。
+17. 密钥/token/密码不进代码
 18. **搬移/重命名函数前全局 grep 旧引用**（含函数体内延迟 import）——注册期不报错、运行期才炸
-19. **提交按变更意图组织**：每个提交保持可理解、可验证；不固定拆成 3~5 个，不为了流程制造提交。
+19. **提交按变更意图组织**：每个提交保持可理解、可验证；不固定拆成 3~5 个，不为了流程制造提交
 20. 展会试戴(expo)文案禁用词：便宜/划算/性价比/打折/薅羊毛；发量头皮判断只进 internal 字段
 21. **移动端 `/m/` 冻结为素材域专用**，不再往里加新领域；新移动端需求走主站响应式或微信小程序两条既有路径
-22. **多智能体 Git**：唯一规范见根目录 `AGENTS.md`（worktree 归属、远端写入授权、交接、迁移编号与巡检）。
-23. **全平台业务时间统一北京时间**：①写 MySQL `DATETIME` 一律用 `app.core.time.beijing_now()`（naive UTC+8），业务日期用 `beijing_today()`，禁止任何直接 `datetime.now(...)` / `datetime.utcnow()` / `datetime.today()` / `date.today()`；②`NOW()` / `CURRENT_TIMESTAMP` 依赖数据库连接初始化 `SET time_zone='+08:00'`；③主站展示、“今日”和日期默认值统一走 `frontend/src/utils/datetime.js`，PM 站走 `frontend-pm/src/utils/labels.js` 的北京时间函数，小程序走 `miniprogram/utils/time.js`，全部固定 `Asia/Shanghai`/UTC+8，禁止直接用客户端本地时区或 `toISOString().slice(0,10)`；④JWT/OAuth 签名、外部协议、跨机器租约可保留 UTC，但必须显式使用 `utc_now()` / `utc_now_naive()`、在 `scripts/check_conventions.py` 的 UTC 窄白名单登记文件与用途，普通 created/updated/started/finished 审计字段不得使用 UTC；外部 Z/offset 时间必须先换算后再去 tzinfo，禁止直接 `.replace(tzinfo=None)` 丢偏移；⑤新增时间字段的测试必须同时覆盖“服务器非东八区”和“北京时间 00:00 跨日”；⑥历史时间迁移只能转换有确定写入证据的列，混合 `NOW()`/UTC/外来时间不得猜测平移，且必须在停掉所有写实例的维护窗口执行。
+22. **多智能体 Git**：唯一规范见根目录 `AGENTS.md`（worktree 归属、推送与合并授权、交接、迁移编号与巡检），不在此重复
+23. **全平台业务时间统一北京时间**：
+    - 写 MySQL `DATETIME` 一律用 `app.core.time.beijing_now()`（naive UTC+8），业务日期用 `beijing_today()`；禁止任何直接 `datetime.now(...)` / `datetime.utcnow()` / `datetime.today()` / `date.today()`
+    - `NOW()` / `CURRENT_TIMESTAMP` 依赖数据库连接初始化 `SET time_zone='+08:00'`
+    - 展示、"今日"和日期默认值：主站走 `frontend/src/utils/datetime.js`，PM 站走 `frontend-pm/src/utils/labels.js` 的北京时间函数，小程序走 `miniprogram/utils/time.js`，全部固定 `Asia/Shanghai`/UTC+8；禁止用客户端本地时区或 `toISOString().slice(0,10)`
+    - JWT/OAuth 签名、外部协议、跨机器租约可保留 UTC，但必须显式用 `utc_now()` / `utc_now_naive()` 并在 `scripts/check_conventions.py` 的 UTC 窄白名单登记文件与用途；普通 created/updated/started/finished 审计字段不得用 UTC
+    - 外部 Z/offset 时间先换算再去 tzinfo，禁止直接 `.replace(tzinfo=None)` 丢偏移
+    - 新增时间字段的测试必须同时覆盖「服务器非东八区」和「北京时间 00:00 跨日」
+    - 历史时间迁移只转换有确定写入证据的列，混合 `NOW()`/UTC/外来时间不得猜测平移，且须在停掉所有写实例的维护窗口执行
 
 ## 完工 DoD
 
-完成标准与按改动类型选择的检查只维护在 `.agents/skills/completion-checklist/SKILL.md`。本机 `.claude/skills/completion-checklist/SKILL.md` 是被 Git 忽略的跨工具副本，存在时保持与维护来源一致；新检出直接使用维护来源。按影响范围执行适用项；不适用项不扩成需求。验证失败先定位修复，环境阻塞如实报告；不能因阶段结束、子代理已启动或仍待外部动作就宣称完成。
+完成标准与按改动类型选择的检查只维护在 `.agents/skills/completion-checklist/SKILL.md`（本机 `.claude/skills/completion-checklist/SKILL.md` 是 Git 忽略的副本，存在时保持一致）。按影响范围执行适用项，不适用项不扩成需求。验证失败先定位修复，环境阻塞如实报告；不能因阶段结束、子代理已启动或仍待外部动作就宣称完成。
 
 ## 记忆协议
 
-唯一维护来源是 [AGENTS.md](AGENTS.md) 的「跨 Agent 共享记忆」：claude-mem 仅本机捕获，Mem0 仅存稳定且已验证的知识；权限、检索参数、敏感信息和历史回填边界均遵循该处约定。操作入口见 [scripts/memory/README.md](scripts/memory/README.md)。现存领域笔记的定位与入口见 [docs/memory/README.md](docs/memory/README.md)；旧 `.wolf` 仅作历史只读材料，全量 hooks 继续保持退役，勿复挂。
+唯一维护来源是 [AGENTS.md](AGENTS.md) 的「跨 Agent 共享记忆」：claude-mem 仅本机捕获，Mem0 仅存稳定且已验证的知识；权限、检索参数、敏感信息和历史回填边界均遵循该处。操作入口见 [scripts/memory/README.md](scripts/memory/README.md)，现存领域笔记见 [docs/memory/README.md](docs/memory/README.md)。旧 `.wolf` 仅作历史只读材料，全量 hooks 保持退役，勿复挂。
 
-## 指针区（参考资料按需查阅，改动时同步更新对应文件——**清单类内容永远不写回本文件**，文档同步类任务如 /neat-freak 同样遵守此分层）
+## 指针区（参考资料按需查阅，改动时同步更新对应文件；文档同步类任务如 /neat-freak 同样遵守此分层）
 
 | 要查什么 | 去哪 |
 |----------|------|
+| 模块清单 | 后端 `backend/app/routers.py`；前端 `frontend/src/config/navigation.js`；按业务找文档见 `docs/README.md` |
 | API 端点清单（全模块） | `docs/api-reference.md` |
 | 数据库表结构清单 | `docs/database.md` |
 | 模块专题细节 + 各模块已踩坑（钉钉/报表/OCR/洞见管线/短链等） | `docs/module-notes.md` |
 | 系统架构 / 数据流 / 部署拓扑 | `docs/architecture.md` |
-| 项目状态 / 待办 / 技术债 | `docs/handoff.md` |
+| 项目状态 / 待办 / 技术债 / 生产发布状态 | `docs/handoff.md` |
 | 发布入口 / 迁移与恢复 | `deploy/README.md` |
 | 故障排查 / 备份 | `docs/runbook.md` |
 | 架构评估与治理路线图 | `docs/2026-07-03-architecture-assessment.md` |
 | 设计系统（颜色/字体/间距/组件） | `DESIGN.md` |
 | 稳定知识与历史领域笔记 | `docs/memory/README.md`；共享记忆协议见 `AGENTS.md` |
-| 需求与原型 | `docs/requirements/`（现役约定）；另有设计稿与实施计划在 `docs/superpowers/{specs,plans}/`（2026-07 起持续新增，skill 默认路径遗留，未合并进 requirements，找不到时记得也翻这里） |
+| 需求与原型 | `docs/requirements/`（现役约定）；设计稿与实施计划另在 `docs/superpowers/{specs,plans}/`（2026-07 起持续新增，找不到时也翻这里） |
