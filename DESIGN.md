@@ -535,6 +535,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 ### 2. 宽度档位
 
 - `el-dialog` 宽度只允许三档：`480px`（简单表单/确认）/ `640px`（标准表单）/ `760px`（宽表单、多列栅格）**[可门禁：`_tags("el-dialog")` 的 `width` 值白名单比对，其余值计数进债务基线]**
+- 预售出库专用例外（2026-10-15 用户明确要求）：`ShipmentSettlementDialog` 使用 `1120px`，仍限制为视口减 24px；产品表固定表头、内部纵向滚动，上限 `clamp(220px, 42dvh, 420px)`，使用现有 `density-compact`。恢复原提交时的产品表沿用同一规则。例外仅在 `scripts/ui_component_exceptions.json` 登记该组件的一处宽度。
 - `el-drawer` 默认 `640px`（DetailDrawer 默认值即锚点），宽详情可用 `760px`；**禁止**新增 `94%` 等百分比尺寸 **[可门禁：`_tags("el-drawer")` 的 `size` 值白名单比对]**
 - 仍受「Overlay boundaries」节约束：最大宽度为视口减 24px
 
