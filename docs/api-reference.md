@@ -238,6 +238,13 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
 
+## 预售批次取消与暂停操作（2026-10-15，本地实现，未部署）
+
+- 批次列表、详情及状态操作回执增加 `actions.cancel/pause/resume: {allowed, reason}`。前端使用后端规则显示操作及不可用原因，不再用 `balance.registered_amount > 0` 推断不能取消；动作请求仍在当前权限、订单行锁和版本检查下重新校验，读取结果不是写入授权。明确失败的出库创建任务可取消时，`actions.cancel.requires_remote_check=true` 表示提交还须实时核实小满无单。
+- 仅预占定金/预付货款、没有实际非池付款或已绑定运费目标的批次可以取消。尚无出库任务时保持本地操作；`review_required + outbound.failed` 且无远端 ID、租约、远端基线，原编号与 payload hash 完整、无出库确认历史时，也可通过原 `POST /shipments/{id}/cancel` 手工取消。该分支先释放业务锁，仅 GET 精确编号查询小满；只有规范“查无单”才继续。查询后重新验证当前权限、归属、原版本、全资金/订单/任务绑定及确认历史，任何变化均拒绝；小满已有单、查询异常或结果不完整时保留原批次和占用，不发删除/重试等远端写入。
+- 取消失败批次在同一最终事务中将结算及失败任务设为 `cancelled`、释放本批资金应用；原回款、批次明细、失败 payload/error/attempt token 保留，`cancel` 事件保存用户原因，另记 `cancel_verified` 事件保存服务端无单核验依据。取消后旧任务不再调度或重试，新建使用递增批次号。结果待核对、执行中、已出库及有确认历史的任务仍阻断取消重建。
+- 暂停保留数量及资金占用，继续阻止新建；重新安排使用“取消本批次”。取消回执必须匹配批次、订单、新版本和目标状态；成功后清旧报价、刷新数量及当前详情，再按当前资金池重新核算。刷新失败区分“操作已完成”和列表未更新，不自动重发状态命令。
+
 ## 预售按批次先出库后回款（2026-10-13，本地实现，未部署）
 
 - POST /api/invoices/{id}/shipment-quotes 与 shipment-settlements 增加 payment_term=pay_first|ship_first，默认 pay_first。条款参与报价及原请求摘要，历史缺字段保持先付款；同一 request_key 改条款返回409。

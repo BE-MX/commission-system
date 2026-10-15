@@ -1,3 +1,13 @@
+## 2026-10-15 预售批次取消入口与暂停提示（Codex，本地实现，未合并发布）
+
+- 分支 `codex/presale-cancel-actions`。修复资金池预占金额被前端误判为实际批次付款、导致取消入口隐藏的问题。批次读取返回后端共用的 `actions` 判定和原因，取消命令继续校验当前权限、版本、资金与出库关联；不放宽实际付款、运费绑定、执行中/不确定或已生成出库单的保护。
+- 后续补齐缺货等“明确失败、没有生成小满出库单”的手工取消：`review_required + failed`、无远端 ID/租约/基线、编号及快照完整、无确认历史的任务可从同一取消入口提交。先锁外 GET 精确单号，规范无单后重新授权并比对完整业务绑定，最终一次提交取消结算/任务和释放占用；保留原失败证据及回款，两条审计分别保留完整用户原因和无单核验依据。远端已存在、查不清、版本/权限/资金/确认历史变化均不释放占用；原失败任务不再调度或重试。
+- 暂停提示明确保留数量和资金占用；取消按钮显示不可用原因。取消成功后校验回执目标与版本、清除旧报价，刷新可出库数量和当前结算详情；原回款与审计保留，后续报价使用释放后的资金池。数量输入在额度/可用状态变化时重建，避免组件挂载时写入的 ARIA 上限和禁用状态残留。
+- 验证入口：`backend/tests/test_shipment_actions.py`、既有预售 runtime/settlement 测试；`frontend/tests/shipmentSettlementState.test.mjs`、`shipmentCancellation.browser.mjs`。浏览器使用真实 Vue 组件和客户端、本地替身 API，覆盖桌面/手机的暂停、取消、重新报价和不可取消原因；不代表线上业务验收。本次未新增生产写入、迁移、合并、推送或部署。
+- 最终验证：SQLite 联合回归 144 项、Node 状态/回执/恢复回归 19 项、1440px/390px 两种宽度各五类页面场景通过。独占 MySQL 8.4.6 上新增手工取消专项 15 项全部通过，涵盖真实 JWT/当前权限、锁外查询、最终授权和资金/任务/确认历史变更拒绝、全表变更白名单、取消后新建与阻止旧任务重试；扩大状态回归累计 72 passed 后遇既有手续费断言失败，不能称 MySQL 全套通过。在未修改的 Git `220632a34cea90e054a04bdd1ae71b8d3cfa1a8c` 完整源码快照上独立复现 `test_original_funding_sync_guard[syncing-cancel]` 同一创建阶段失败：`presale_goods.bank_charge` 实际 0.00、旧断言期待 2；未改动费用逻辑或弱化断言。
+- 前端生产构建、增量约定和 diff 检查通过，独立审查无阻断。构建保留既有混合导入/大分包提示；Git 巡检为 `--no-fetch` 本地快照。最新浏览器证据在本 worktree 的 `tmp/shipment-failed-cancellation-browser/`，构建日志为 `tmp/presale-failed-cancel-build.log`，原版本复现日志为 `tmp/failed-cancel-baseline-pytest.log`；三个独占 MySQL 实例均正常关闭。测试使用合成业务数据和远端替身，没有生产写入。
+- 收尾：Vite 本地预览已停止。自动审批拒绝清理本任务的独占 MySQL 数据目录和原版本源码快照，工具仅返回 `blocked by policy`；未改用其他路径绕过，`tmp/failed-cancel-*-mysql-*`、`tmp/failed-cancel-baseline*` 及日志保留。此限制不影响功能实现，但不能宣称临时目录已清理。
+
 ## 2026-10-15 WhatsApp 手机扫码失败调查（Codex，Git 交付，未部署）
 
 - 现场只读确认本次凭据未注册、没有设备身份；15:43:13 发生内部 `authorization_unavailable` 并保护暂停。已记录的 133 次后端授权请求均 HTTP 200，旧日志无失败细分和耗时，不能锁定唯一根因。rc14 缺少上游提及的注册刷新处理，但尚无本次触发证据。
