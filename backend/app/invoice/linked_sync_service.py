@@ -99,6 +99,10 @@ def create(db, invoice, body, actor, *, receipt_rows=None):
     db.flush()
     db.refresh(invoice)
     db.expire(invoice, ["items"])
+    issues = service.validate_invoice(invoice)
+    if issues:
+        detail = "；".join(f"{issue.get('field', 'items')}：{issue.get('message', '校验失败')}" for issue in issues)
+        raise ValueError("发票未通过同步前校验：" + detail)
     row = InvoiceLinkedSync(id=beijing_now().strftime("%Y%m%d%H%M%S%f") + "_" + uuid4().hex, invoice_id=invoice.id, request_key=body.request_key,
         request_hash=digest, created_by=actor, status="pending", before=before, after=snapshot(invoice),
         steps={k: {"status": "pending", "message": "等待处理"} for k in ("order", "outbound", "receipt")})

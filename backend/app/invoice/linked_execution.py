@@ -151,7 +151,17 @@ def run(db,invoice_id,identity,user,*,recheck=False):
         db.commit()
         if not order_done:
             _step(db,invoice_id,identity,user,token,'order',{'status':'sending','message':'正在更新原小满订单'})
-            result=orders.run(db,invoice_id,user,linked_id=identity,linked_token=token,follow_outbound=False)
+            try:
+                result=orders.run(db,invoice_id,user,linked_id=identity,linked_token=token,follow_outbound=False)
+            except HTTPException as error:
+                if error.status_code!=409:raise
+                db.rollback();db.expire_all()
+                invoice,row,current=_phase(db,invoice_id,identity,user,token)
+                status='uncertain' if invoice.sync_status=='sync_uncertain' or orders.facts.unresolved(db,invoice) else 'failed'
+                db.commit()
+                _step(db,invoice_id,identity,user,token,'order',{'status':status,'message':str(error.detail)[:500]})
+                _finish(db,invoice_id,identity,user,token,status)
+                invoice,row,current=_phase(db,invoice_id,identity,user);return row,invoice,current
             _end_reads(db)
             if not result.get('ok'):
                 invoice,row,current=_phase(db,invoice_id,identity,user,token)
