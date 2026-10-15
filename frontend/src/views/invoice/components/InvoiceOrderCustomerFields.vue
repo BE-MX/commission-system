@@ -78,18 +78,27 @@
         <span>上次订单成交日期 <b>{{ lastOrderDate }}</b></span>
       </template>
     </div>
-    <el-form-item label="联系人" required>
-      <el-input v-model="form.contact_name" maxlength="100" placeholder="To" />
-    </el-form-item>
-    <el-form-item label="电话" required>
-      <el-input v-model="form.contact_phone" maxlength="50" placeholder="TEL/Fax" />
-    </el-form-item>
-    <el-form-item label="邮箱" required>
-      <el-input v-model="form.contact_email" maxlength="100" placeholder="E-mail" />
-    </el-form-item>
-    <el-form-item label="收货地址" required class="fgrid-c3">
-      <el-input v-model="form.delivery_address" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" placeholder="Delivery address" />
-    </el-form-item>
+    <div class="fgrid-c3 contact-details-heading">
+      <span>联系与收货信息{{ contactDetailsComplete ? '（已填写）' : '（待补全）' }}</span>
+      <el-button v-if="contactDetailsComplete" link type="primary"
+                 :aria-expanded="contactDetailsExpanded" @click="contactDetailsExpanded = !contactDetailsExpanded">
+        {{ contactDetailsExpanded ? '收起联系与收货信息' : '展开联系与收货信息' }}
+      </el-button>
+    </div>
+    <div v-show="contactDetailsExpanded || !contactDetailsComplete" class="fgrid-c3 fgrid">
+      <el-form-item label="联系人" required>
+        <el-input v-model="form.contact_name" maxlength="100" placeholder="To" />
+      </el-form-item>
+      <el-form-item label="电话" required>
+        <el-input v-model="form.contact_phone" maxlength="50" placeholder="TEL/Fax" />
+      </el-form-item>
+      <el-form-item label="邮箱" required>
+        <el-input v-model="form.contact_email" maxlength="100" placeholder="E-mail" />
+      </el-form-item>
+      <el-form-item label="收货地址" required class="fgrid-c3">
+        <el-input v-model="form.delivery_address" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" placeholder="Delivery address" />
+      </el-form-item>
+    </div>
   </div>
 
   <div class="subdiv">订单信息</div>
@@ -151,10 +160,12 @@ import InvoiceCustomerSyncEntry from './InvoiceCustomerSyncEntry.vue'
 
 const selectedCustomer = defineModel('selectedCustomer')
 const privateOnlyCompany = defineModel('privateOnlyCompany')
+const contactDetailsExpanded = defineModel('contactDetailsExpanded', { default: true })
 
 defineEmits(['open-whole-order-paste'])
 defineProps({
   form: { type: Object, required: true },
+  contactDetailsComplete: Boolean,
   salesUserOptions: { type: Array, required: true },
   customerOptions: { type: Array, required: true },
   customerLoading: Boolean,
@@ -178,3 +189,16 @@ defineProps({
   markOkkiFlagTouched: { type: Function, required: true },
 })
 </script>
+
+<style scoped>
+.contact-details-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+</style>

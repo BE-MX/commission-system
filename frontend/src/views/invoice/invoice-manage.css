@@ -566,11 +566,13 @@
 /* 窄屏降级：双窗格还原为单栏整页滚动 */
 @media (max-width: 1200px) {
   .drawer-panes {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
     overflow-y: auto;
   }
 
   .pane {
+    min-width: 0;
     overflow: visible;
   }
 

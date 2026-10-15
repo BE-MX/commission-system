@@ -1,0 +1,95 @@
+"""Real invoice create/edit UI with in-memory APIs; never uses the backend."""
+import argparse
+import re
+from pathlib import Path
+from playwright.sync_api import sync_playwright, expect
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--base-url', default='http://127.0.0.1:3043')
+parser.add_argument('--output', default='tmp/invoice-contact-freight')
+args = parser.parse_args()
+out = Path(args.output)
+out.mkdir(parents=True, exist_ok=True)
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(channel='msedge', headless=True)
+    for width in (1440, 390):
+        page = browser.new_page(viewport={'width': width, 'height': 900}, reduced_motion='reduce')
+        page.set_default_timeout(10000)
+        errors = []
+        page.on('pageerror', lambda error: errors.append(error.stack))
+        page.route(re.compile(r'^https?://[^/]+/api/'), lambda route: route.abort())
+        page.goto(args.base_url + '/tests/fixtures/invoice-contact-freight/index.html')
+        page.get_by_role('button', name='新建库存单', exact=True).click()
+        drawer = page.locator('.el-drawer:visible')
+        contact_input = drawer.locator('input[placeholder="To"]')
+        expect(contact_input).to_be_visible()
+        customer = drawer.locator('.customer-filter-select')
+        customer.click()
+        page.get_by_role('option', name='complete · 客户', exact=True).click()
+        expand = drawer.get_by_role('button', name='展开联系与收货信息', exact=True)
+        expect(expand).to_be_visible()
+        expect(contact_input).to_be_hidden()
+        expand.focus()
+        page.keyboard.press('Enter')
+        expect(contact_input).to_have_value('Alice')
+        phone = drawer.locator('input[placeholder="TEL/Fax"]')
+        phone.fill('')
+        expect(drawer.get_by_text('联系与收货信息（待补全）', exact=True)).to_be_visible()
+        phone.fill('999')
+        expect(phone).to_be_visible()
+        address = drawer.locator('textarea[placeholder="Delivery address"]')
+        short_height = address.evaluate('(el) => el.offsetHeight')
+        address.fill('\n'.join(['Long delivery address'] * 8))
+        address.press('Tab')
+        page.wait_for_function('(args) => args.el.offsetHeight > args.height', arg={'el': address.element_handle(), 'height': short_height})
+        drawer.get_by_role('button', name='收起联系与收货信息', exact=True).click()
+        expand.click()
+        expect(address).to_be_visible()
+        assert address.evaluate('(el) => el.offsetHeight') > short_height
+        page.screenshot(path=str(out / f'contact-{width}.png'))
+        drawer.get_by_role('button', name='收起联系与收货信息', exact=True).click()
+        customer.click()
+        page.get_by_role('option', name='incomplete · 客户', exact=True).click()
+        expect(phone).to_be_visible()
+        expect(phone).to_have_value('')
+        phone.fill('999')
+        drawer.get_by_role('button', name='收起联系与收货信息', exact=True).click()
+        main = drawer.locator('.pane-main')
+        freight = main.locator('.el-form-item').filter(has=page.locator('label', has_text=re.compile(r'^运费$'))).locator('input')
+        readout = drawer.locator('.settlement-card .el-form-item').filter(has=page.locator('label', has_text=re.compile(r'^运费$'))).locator('input')
+        main.locator('.el-radio').filter(has_text='FEDEX').click()
+        freight.fill('123.45')
+        freight.press('Tab')
+        expect(readout).to_have_value('123.45')
+        expect(readout).to_have_attribute('readonly', '')
+        freight.fill('0')
+        freight.press('Tab')
+        expect(readout).to_have_value('0.00')
+        freight.fill('123.45')
+        freight.press('Tab')
+        page.evaluate('invoiceTest.editor.form.items = []')
+        drawer.get_by_role('button', name='保存', exact=True).click()
+        page.wait_for_function('invoiceTest.saved.length === 1')
+        saved = page.evaluate('invoiceTest.saved[0]')
+        assert saved['shipping_fee'] == 123.45
+        assert saved['contact_phone'] == '999'
+        assert saved['contact_name'] == 'Alice'
+        page.evaluate('invoiceTest.editor.openEdit(7)')
+        expect(expand).to_be_visible()
+        expect(readout).to_have_value('123.45')
+        expect(freight).to_have_value('123.45')
+        readout.scroll_into_view_if_needed()
+        if width == 390:
+            side = drawer.locator('.pane-side').bounding_box()
+            left = main.bounding_box()
+            assert side['y'] >= left['y'] + left['height'] - 1
+            assert side['x'] + side['width'] <= width
+        page.screenshot(path=str(out / f'edit-{width}.png'), full_page=True)
+        page.evaluate("invoiceTest.editor.form.order_type = 'presale'")
+        expect(freight).to_be_disabled()
+        expect(readout).to_have_value('0.00')
+        assert not errors, errors
+        page.close()
+    browser.close()
+print('PASS: create/edit contact collapse, keyboard, missing field, freight readout, zero, save/readback, presale; desktop and mobile')
