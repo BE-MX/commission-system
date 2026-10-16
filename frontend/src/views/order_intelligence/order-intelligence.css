@@ -1,6 +1,8 @@
 .oi-page { position: relative; min-height: calc(100vh - var(--header-height)); }
 .oi-aurora { inset: -24px -28px; }
 .oi-header, .oi-error, .oi-toolbar, .oi-metrics, .oi-tabs { position: relative; z-index: 1; }
+/* The toolbar is in normal flow; clear the shared sticky toolbar's top offset. */
+.oi-toolbar { top: auto; }
 .oi-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
 .oi-header h2 { margin: 4px 0 5px; color: var(--text-primary); font: 800 28px/1.2 var(--font-display); }
 .oi-header p { margin: 0; color: var(--text-secondary); font-size: 13px; }
