@@ -1,3 +1,9 @@
+## 2026-10-16 订单经营决策台筛选遮挡修复（Codex，本地修改，未部署）
+
+- 分支 `codex/order-intelligence-filter-layout`。筛选卡使用 `position: relative` 时仍继承全局 `.toolbar` 的导航高度 `top`，造成视觉下移和指标卡覆盖；页面局部设置 `top: auto`，保持原有文档流和层级。
+- 本地浏览器使用真实 OrderFilters、FilterBar 和页面 scoped CSS 隔离复现：修复前 99px 偏移造成 81px 重叠；修复后在 2383、1440、1280、820、390px 宽度下，收起/展开、查询/重置事件、滚动及横向溢出检查通过，筛选卡与指标区保持 18px 间距。使用合成数据，无生产请求；证据及复验脚本在本 worktree 的 `tmp/oi-layout/`，夹具位于 `frontend/tmp/oi-layout/`。
+- 验证：前端生产构建、严格增量约定检查及 diff 检查通过；构建保留现有混合导入/大分包提示。Git 巡检已执行，为 `--no-fetch` 本地快照。
+
 ## 2026-10-16 新版订单发票录入布局与包装费用入口（Codex，Git 交付，未部署）
 
 - 分支 `codex/invoice-entry-packaging`：新建时隐藏币种输入，编辑已有单据保留；订单号/发票号、下单日期和小满标记前移至联系与收货信息上方。单号框沿用备注金色边框，文字增至 16px、金色加粗。
