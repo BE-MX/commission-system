@@ -28,19 +28,22 @@
       class="review-alert"
     />
 
-    <el-dialog v-model="uploadDialog" title="上传客户拍摄素材" width="760px" :before-close="beforeUploadClose">
+    <el-dialog v-model="uploadDialog" title="上传客户拍摄素材" width="760px" :before-close="beforeUploadClose" @close="clearTagLocks">
       <CustomerTagBoard
         :dimensions="tagDimensions"
         :tags="customerTags"
         :selected-tag-ids="selectedTagIds"
+        :locked-tag-ids="lockedTagIds"
         selectable
         deletable
+        lockable
         :disabled="busy"
         @add="tagPickerVisible = true"
         @toggle="toggleTag"
+        @toggle-lock="toggleTagLock"
         @delete="removeCustomerTag"
       />
-      <p class="upload-selection-hint">已选 {{ selectedTagIds.length }} 个标签。单独添加文件前请先选标签；添加文件夹会按顶层文件夹名自动匹配并替换所选标签。</p>
+      <p class="upload-selection-hint">已选 {{ selectedTagIds.length }} 个标签，已锁定 {{ lockedTagIds.length }} 个。点击标签旁的锁图标可锁定选择；文件夹识别时保留锁定标签，仅替换未锁定项。关闭此窗口后锁定失效。</p>
       <p v-if="preparingFolders" role="status" class="upload-selection-hint">正在读取文件夹并匹配客户标签，请稍候…</p>
     <section class="upload-panel lg-card">
       <div class="upload-entries">
@@ -226,6 +229,7 @@ import CustomerMediaProductTypeFilter from './customer-media/CustomerMediaProduc
 import { createCustomerMediaPreviewPayload } from './customer-media/customerMediaPreviewPayload'
 import { useCustomerMediaUpload } from './customer-media/composables/useCustomerMediaUpload'
 import { useCustomerMediaFolderUpload } from './customer-media/composables/useCustomerMediaFolderUpload'
+import { useCustomerMediaTagSelection } from './customer-media/composables/useCustomerMediaTagSelection'
 
 const route = useRoute()
 const router = useRouter()
@@ -233,7 +237,6 @@ const taskId = Number(route.params.taskId)
 const batch = ref(null)
 const tagDimensions = ref([])
 const customerTags = ref([])
-const selectedTagIds = ref([])
 const uploadDialog = ref(false)
 const showDirectoryDialog = ref(false)
 const tagPickerVisible = ref(false)
@@ -247,7 +250,11 @@ const customerPreviewFrame = ref(null)
 const assets = computed(() => batch.value?.assets || [])
 const directories = computed(() => batch.value?.directories || [])
 const editable = computed(() => ['draft', 'changes_requested'].includes(batch.value?.status))
-const selectedTags = computed(() => customerTags.value.filter(tag => selectedTagIds.value.includes(tag.tag_value_id)))
+const { selectedTagIds, selectedTags, lockedTagIds, toggleTag, toggleTagLock, selectFolderTag, clearTagLocks } = useCustomerMediaTagSelection({
+  customerTags, tagDimensions,
+  isBlocked: () => uploading.value || preparingFolders.value,
+  onConflict: msgWarning,
+})
 const assetGroups = computed(() => groupMediaByTags(assets.value, tagDimensions.value))
 const productTypes = computed(() => productTypeOptions(assets.value, tagDimensions.value))
 const selectedProductTypeIds = ref([])
@@ -287,7 +294,7 @@ const { preparingFolders, queueFile, onDropFolders, onFolderSelected } = useCust
   getCustomerTags: () => customerTags.value,
   getTagDimensions: () => tagDimensions.value,
   getSelectedTags: () => selectedTags.value,
-  selectTag: tag => { selectedTagIds.value = [tag.tag_value_id] },
+  selectFolderTag,
   onTagCreated,
   refreshTags: () => Promise.all([loadCustomerTags(), loadTagDimensions()]),
   addFiles,
@@ -311,20 +318,6 @@ function directoryLabel(asset) {
   return directories.value.find(d => d.id === asset.directory_id)?.name || '未分类'
 }
 function tagLabel(tag) { return tag.dimension_label ? `${tag.dimension_label}：${tag.value}` : tag.value }
-
-function toggleTag(tag) {
-  if (busy.value) return
-  if (selectedTagIds.value.includes(tag.tag_value_id)) {
-    selectedTagIds.value = selectedTagIds.value.filter(id => id !== tag.tag_value_id)
-    return
-  }
-  const dim = tagDimensions.value.find(item => item.id === tag.dimension_id)
-  if (dim?.is_single_select) {
-    const sameDim = new Set(customerTags.value.filter(item => item.dimension_id === dim.id).map(item => item.tag_value_id))
-    selectedTagIds.value = selectedTagIds.value.filter(id => !sameDim.has(id))
-  }
-  selectedTagIds.value = [...selectedTagIds.value, tag.tag_value_id]
-}
 
 async function saveCustomerTags({ tags, flat }) {
   if (!tags.some(item => item.tag_value_ids.length)) { msgWarning('请选择至少一个标签'); return }

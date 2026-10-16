@@ -178,11 +178,99 @@ with sync_playwright() as p, tempfile.TemporaryDirectory() as temp:
     expect(page.locator('.asset-info strong')).to_have_text(['cap.png'])
     product_filter.get_by_role('button', name='全部').click()
     expect(page.locator('.asset-dimension')).to_have_count(2)
+
+    # A locked manual selection survives both matched and newly-created folder tags.
+    page.get_by_role('button', name='上传素材').click()
+    dialog = page.get_by_role('dialog', name='上传客户拍摄素材')
+    expect(dialog.get_by_role('button', name='锁定选择 旧标签', exact=True)).to_be_disabled()
+    dialog.get_by_role('button', name='旧标签', exact=True).click()
+    lock = dialog.get_by_role('button', name='锁定选择 旧标签', exact=True)
+    lock.focus()
+    lock.press('Enter')
+    expect(dialog.get_by_role('button', name='取消锁定 旧标签', exact=True)).to_have_attribute('aria-pressed', 'true')
+    expect(dialog.get_by_role('button', name='旧标签', exact=True)).to_be_disabled()
+    dialog.get_by_role('button', name='外景', exact=True).click()
+    drop_folders(page, [
+        {'name': '婚纱', 'children': [{'name': 'locked-existing.png'}]},
+        {'name': '新 系 列', 'children': [{'name': 'locked-new.png'}]},
+    ])
+    prompt = page.get_by_role('dialog', name='发现新标签').last
+    expect(prompt).to_be_visible()
+    expect(dialog.get_by_role('button', name='取消锁定 旧标签', exact=True)).to_be_disabled()
+    prompt.get_by_role('button', name='创建并选中').click()
+    expect(dialog.locator('.manifest-row')).to_have_count(2)
+    for row in dialog.locator('.manifest-row').all():
+        expect(row.get_by_text('客户标签：旧标签', exact=True)).to_be_visible()
+        expect(row.get_by_text('客户标签：外景', exact=True)).to_have_count(0)
+    expect(dialog.get_by_role('button', name='旧标签', exact=True)).to_have_attribute('aria-pressed', 'true')
+    expect(dialog.get_by_role('button', name='新系列', exact=True)).to_have_attribute('aria-pressed', 'true')
+    # Unlock leaves prior queued snapshots intact; subsequent files stop inheriting it.
+    dialog.get_by_role('button', name='取消锁定 旧标签', exact=True).click()
+    expect(dialog.get_by_role('button', name='旧标签', exact=True)).to_have_attribute('aria-pressed', 'true')
+    drop_folders(page, [{'name': '婚纱', 'children': [{'name': 'unlocked.png'}]}])
+    expect(dialog.locator('.manifest-row')).to_have_count(3)
+    unlocked_row = dialog.locator('.manifest-row', has_text='unlocked.png')
+    expect(unlocked_row.get_by_text('客户标签：旧标签', exact=True)).to_have_count(0)
+    expect(dialog.locator('.manifest-row', has_text='locked-existing.png')
+           .get_by_text('客户标签：旧标签', exact=True)).to_be_visible()
+    dialog.get_by_role('button', name='开始上传（3）').click()
+    expect(dialog.locator('.manifest-row')).to_have_count(0)
+    assert 'name="tags_json"\r\n\r\n[{"dimension_id":3,"tag_value_ids":[12,11]}]' in uploads[-3]
+    assert 'name="tags_json"\r\n\r\n[{"dimension_id":3,"tag_value_ids":[12,22]}]' in uploads[-2]
+    assert 'name="tags_json"\r\n\r\n[{"dimension_id":3,"tag_value_ids":[11]}]' in uploads[-1]
+
+    # All supported dialog closing paths invalidate the lock.
+    for method in ['header', 'escape', 'backdrop']:
+        dialog.get_by_role('button', name='旧标签', exact=True).click()
+        dialog.get_by_role('button', name='锁定选择 旧标签', exact=True).click()
+        if method == 'header':
+            dialog.locator('.el-dialog__headerbtn').click()
+        elif method == 'escape':
+            page.keyboard.press('Escape')
+        else:
+            page.locator('.el-overlay-dialog:visible').click(position={'x': 3, 'y': 3})
+        expect(dialog).to_be_hidden()
+        page.get_by_role('button', name='上传素材').click()
+        expect(dialog.get_by_role('button', name='锁定选择 旧标签', exact=True)).to_have_attribute('aria-pressed', 'false')
+        drop_folders(page, [{'name': '婚纱', 'children': [{'name': f'close-{method}.png'}]}])
+        expect(dialog.locator('.manifest-row')).to_have_count(1)
+        expect(dialog.get_by_role('button', name='旧标签', exact=True)).to_have_attribute('aria-pressed', 'false')
+        dialog.get_by_role('button', name='清空清单').click()
+
+    # Responsive icon targets and keyboard toggle do not depend on motion.
+    evidence = Path('../tmp/customer-media-tag-lock')
+    evidence.mkdir(parents=True, exist_ok=True)
+    dialog.get_by_role('button', name='旧标签', exact=True).click()
+    dialog.get_by_role('button', name='锁定选择 旧标签', exact=True).click()
+    for width, height in [(1440, 1000), (390, 844)]:
+        page.set_viewport_size({'width': width, 'height': height})
+        page.emulate_media(reduced_motion='reduce')
+        unlock = dialog.get_by_role('button', name='取消锁定 旧标签', exact=True)
+        unlock.scroll_into_view_if_needed()
+        box = unlock.bounding_box()
+        assert box and box['width'] >= 28 and box['height'] >= 28, box
+        assert box['x'] >= 0 and box['x'] + box['width'] <= width, box
+        delete_box = unlock.locator('..').get_by_role('button', name='删除标签 旧标签', exact=True).bounding_box()
+        assert delete_box['x'] >= box['x'] + box['width'], (box, delete_box)
+        page.screenshot(path=str(evidence / f'locked-{width}.png'), full_page=True)
+        unlock.focus()
+        unlock.press('Space')
+        expect(dialog.get_by_role('button', name='锁定选择 旧标签', exact=True)).to_have_attribute('aria-pressed', 'false')
+        dialog.get_by_role('button', name='锁定选择 旧标签', exact=True).click()
+    page.reload()
+    page.get_by_role('button', name='上传素材').click()
+    expect(page.get_by_role('dialog', name='上传客户拍摄素材')
+           .get_by_role('button', name='锁定选择 旧标签', exact=True)).to_be_disabled()
     assert not errors, errors
     print(json.dumps({'passed': ['folder drop without prior selection', 'top folder whitespace normalization',
                                  'previous labels replaced', 'new-label cancel and close',
                                  'confirmed customer tag creation', 'separate root folder labels',
                                  'upload tag payloads associated', 'missing row headings hidden',
-                                 'draft preview without portal login', 'batch product type filter'],
+                                 'draft preview without portal login', 'batch product type filter',
+                                 'selected-only lock control', 'keyboard lock and unlock',
+                                 'lock retained across matched and created folder tags',
+                                 'unlock preserves queued snapshots', 'locked tags_json upload payloads',
+                                 'header escape backdrop clear locks', 'desktop and mobile lock controls',
+                                 'page reload clears lock state'],
                       'page_errors': errors}, ensure_ascii=False))
     browser.close()
