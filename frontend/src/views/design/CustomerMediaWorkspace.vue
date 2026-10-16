@@ -40,7 +40,8 @@
         @toggle="toggleTag"
         @delete="removeCustomerTag"
       />
-      <p class="upload-selection-hint">已选 {{ selectedTagIds.length }} 个标签。先选标签，再添加文件；本次所选标签会关联到添加的每个文件。</p>
+      <p class="upload-selection-hint">已选 {{ selectedTagIds.length }} 个标签。单独添加文件前请先选标签；添加文件夹会按顶层文件夹名自动匹配并替换所选标签。</p>
+      <p v-if="preparingFolders" role="status" class="upload-selection-hint">正在读取文件夹并匹配客户标签，请稍候…</p>
     <section class="upload-panel lg-card">
       <div class="upload-entries">
         <div class="upload-drop" @drop.capture="onDropFolders">
@@ -49,19 +50,19 @@
             multiple
             :auto-upload="false"
             :show-file-list="false"
-            :disabled="!editable || busy || !selectedTagIds.length"
+            :disabled="!editable || busy"
             accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
             :on-change="queueFile"
           >
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
             <div class="el-upload__text">拖入图片、视频或文件夹，或点击选择文件</div>
             <template #tip>
-              <div class="upload-tip">文件夹只用于一次选择多个文件；不会根据文件夹名称创建目录或标签。支持 JPG、PNG、WebP、GIF、MP4、MOV、WebM。</div>
+              <div class="upload-tip">文件夹名去除空格后匹配当前客户标签，子目录不参与；新标签确认后创建。支持 JPG、PNG、WebP、GIF、MP4、MOV、WebM。</div>
             </template>
           </el-upload>
         </div>
         <div class="entry-side">
-          <button type="button" class="portal-entry" :disabled="!editable || busy || !selectedTagIds.length" @click="folderInput?.click()">
+          <button type="button" class="portal-entry" :disabled="!editable || busy" @click="folderInput?.click()">
             <el-icon class="portal-entry-icon"><Folder /></el-icon>
             <strong>选择文件夹</strong>
             <span>支持多级 / 多个文件夹</span>
@@ -140,7 +141,7 @@
         <GlassButton
           variant="warning"
           left-icon="Promotion"
-          :disabled="!editable || !assets.length || uploading || incompleteCount"
+          :disabled="!editable || !assets.length || busy || incompleteCount"
           :loading="submitting"
           @click="submitForReview"
         >完成拍摄并送审</GlassButton>
@@ -207,7 +208,7 @@
   </div>
 </template>
 
-<script setup>import { msgWarning, msgSuccessText, confirmAction, msgError } from '@/utils/feedback'
+<script setup>import { msgWarning, msgSuccessText, confirmAction } from '@/utils/feedback'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -223,8 +224,8 @@ import CustomerTagBoard from './customer-media/CustomerTagBoard.vue'
 import { filterMediaByTags, filterProductGroups, groupMediaByColorAndTexture, groupMediaByTags, productTypeOptions } from './customer-media/customerMediaGrouping'
 import CustomerMediaProductTypeFilter from './customer-media/CustomerMediaProductTypeFilter.vue'
 import { createCustomerMediaPreviewPayload } from './customer-media/customerMediaPreviewPayload'
-import { collectDroppedFiles, dropHasDirectory, webkitPathSegments } from './customer-media/droppedFiles'
 import { useCustomerMediaUpload } from './customer-media/composables/useCustomerMediaUpload'
+import { useCustomerMediaFolderUpload } from './customer-media/composables/useCustomerMediaFolderUpload'
 
 const route = useRoute()
 const router = useRouter()
@@ -274,13 +275,25 @@ const statusMeta = computed(() => ({
 }[batch.value?.status] || { label: batch.value?.status, type: 'info' }))
 
 const {
-  items, uploading, busy, pendingCount, incompleteCount, hasItems,
+  items, uploading, pendingCount, incompleteCount, hasItems,
   addFiles, removeItem, clearItems, removeTagFromItems, reset, startUpload, retryItem,
 } = useCustomerMediaUpload({
   getBatch: () => batch.value,
   onBatch: data => { batch.value = data },
   getSelectedTags: () => selectedTags.value,
 })
+const { preparingFolders, queueFile, onDropFolders, onFolderSelected } = useCustomerMediaFolderUpload({
+  getContext: () => ({ customerId: batch.value?.customer_id, taskId }),
+  getCustomerTags: () => customerTags.value,
+  getTagDimensions: () => tagDimensions.value,
+  getSelectedTags: () => selectedTags.value,
+  selectTag: tag => { selectedTagIds.value = [tag.tag_value_id] },
+  onTagCreated,
+  refreshTags: () => Promise.all([loadCustomerTags(), loadTagDimensions()]),
+  addFiles,
+  isBlocked: () => !editable.value || uploading.value || tagSaving.value,
+})
+const busy = computed(() => uploading.value || preparingFolders.value || tagSaving.value)
 
 function formatSize(bytes) {
   if (!bytes) return '0 B'
@@ -371,35 +384,8 @@ function sendCustomerPreview() {
 }
 function openCustomerPreview() { customerPreviewVisible.value = true }
 
-const FOLDER_ACCEPT_RE = /\.(jpe?g|png|webp|gif|mp4|mov|webm)$/i
-function filterAccepted(files) {
-  const accepted = files.filter(({ file }) => FOLDER_ACCEPT_RE.test(file.name))
-  const skipped = files.length - accepted.length
-  if (skipped) msgWarning(`已忽略 ${skipped} 个不支持的文件`)
-  return accepted
-}
-function queueFile(uploadFile) {
-  if (!editable.value || busy.value) return
-  addFiles(filterAccepted([{ file: uploadFile.raw, pathSegments: [] }]))
-}
-async function onDropFolders(event) {
-  if (!editable.value || busy.value || !selectedTagIds.value.length) return
-  if (!dropHasDirectory(event.dataTransfer)) return
-  event.preventDefault()
-  event.stopPropagation()
-  try {
-    const { files } = await collectDroppedFiles(event.dataTransfer)
-    addFiles(filterAccepted(files))
-  } catch (error) { msgError(`读取文件夹失败：${error.message || '请重试'}`, error) }
-}
-function onFolderSelected(event) {
-  const files = [...event.target.files]
-  event.target.value = ''
-  if (!editable.value || busy.value || !selectedTagIds.value.length) return
-  addFiles(filterAccepted(files.map(file => ({ file, pathSegments: webkitPathSegments(file) }))))
-}
 function beforeUploadClose(done) {
-  if (busy.value) { msgWarning('文件上传中，请等待完成'); return }
+  if (busy.value) { msgWarning('正在处理文件或标签，请等待完成'); return }
   done()
 }
 

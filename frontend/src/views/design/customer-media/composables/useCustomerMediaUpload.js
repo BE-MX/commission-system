@@ -1,6 +1,5 @@
 import { msgWarning, msgInfo, msgSuccessText } from '@/utils/feedback'
-// One upload flow for loose files and folders. Folder names are display paths
-// only: they never create customer labels or destination directories.
+// One upload queue for loose files and folders, with labels frozen on entry.
 import { computed, ref } from 'vue'
 
 import { uploadMediaAsset } from '@/api/customerMedia'
@@ -18,9 +17,9 @@ export function useCustomerMediaUpload({ getBatch, onBatch, getSelectedTags }) {
 
   function release(item) { URL.revokeObjectURL(item.previewUrl) }
 
-  function addFiles(rawItems) {
+  function addFiles(rawItems, selectedTags = getSelectedTags()) {
     if (!rawItems.length) return
-    const tags = (getSelectedTags() || []).map(tag => ({ ...tag }))
+    const tags = (selectedTags || []).map(tag => ({ ...tag }))
     if (!tags.length) { msgWarning('请先选择至少一个客户标签'); return }
     const seen = new Set(items.value.map(item => `${item.displayPath}:${item.file.size}`))
     let skipped = 0
