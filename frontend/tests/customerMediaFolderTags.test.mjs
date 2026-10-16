@@ -11,7 +11,7 @@ function setup(tags = [oldTag, wedding]) {
   const options = {
     getCustomerTags: () => state.tags,
     getSelectedTags: () => state.selected,
-    selectTag: tag => { state.selected = [tag] },
+    selectFolderTag: tag => { state.selected = [tag]; return state.selected },
     confirmCreate: async name => { state.prompts.push(name); return true },
     createTag: async name => {
       state.created.push(name)

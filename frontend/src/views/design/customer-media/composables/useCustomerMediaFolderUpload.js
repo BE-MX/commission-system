@@ -8,7 +8,7 @@ const ACCEPT_RE = /\.(jpe?g|png|webp|gif|mp4|mov|webm)$/i
 
 export function useCustomerMediaFolderUpload({
   getContext, getCustomerTags, getTagDimensions, getSelectedTags,
-  selectTag, onTagCreated, refreshTags, addFiles, isBlocked,
+  selectFolderTag, onTagCreated, refreshTags, addFiles, isBlocked,
 }) {
   const preparingFolders = ref(false)
   const blocked = () => isBlocked() || preparingFolders.value
@@ -52,7 +52,7 @@ export function useCustomerMediaFolderUpload({
       if (!files.length) return
       await refreshTags()
       await queueFolderFiles(files, {
-        getCustomerTags, getSelectedTags, selectTag, confirmCreate, createTag, addFiles,
+        getCustomerTags, getSelectedTags, selectFolderTag, confirmCreate, createTag, addFiles,
       })
     } catch (error) {
       msgError(`添加文件夹失败：${error.message || '请重试'}`, error)

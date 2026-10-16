@@ -1,6 +1,6 @@
 // Use only the dropped root folder; descendants remain display paths.
 export async function queueFolderFiles(rawItems, {
-  getCustomerTags, getSelectedTags, selectTag, confirmCreate, createTag, addFiles,
+  getCustomerTags, getSelectedTags, selectFolderTag, confirmCreate, createTag, addFiles,
 }) {
   const originalTags = getSelectedTags().map(tag => ({ ...tag }))
   const groups = new Map()
@@ -18,8 +18,8 @@ export async function queueFolderFiles(rawItems, {
       if (!await confirmCreate(name)) continue
       tag = await createTag(name)
     }
-    selectTag(tag)
-    addFiles(files, [tag])
+    const tags = selectFolderTag(tag)
+    addFiles(files, tags)
   }
   if (looseFiles.length) addFiles(looseFiles, originalTags)
 }
