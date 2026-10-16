@@ -49,6 +49,7 @@ try { for(const width of red?[1440]:[1440,390,320]) {
  await page.goto(base+'/tests/shipmentSubmissionHarness.html');await open();await fill();mode='unknown';await send();await waitText('Synthetic original result unknown')
  const original=writes.at(-1),before=writes.length
  assert.equal(await page.locator('textarea').count(),0);assert.equal(await page.getByRole('spinbutton').count(),0)
+ assert.equal(await page.getByRole('button',{name:'一键填充',exact:true}).count(),0)
  mode='status-denied';await inspect();await waitText('Synthetic current recovery denied')
  assert.equal(await close().isDisabled(),false,'Persisted unknown must permit safe exit after current authorization denial')
  await close().click();await page.getByRole('dialog').waitFor({state:'hidden'});assert.equal(writes.length,before)

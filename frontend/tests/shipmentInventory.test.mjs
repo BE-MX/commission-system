@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { stockRows, shipmentQuantityLimit, shipmentStockError } from '../src/views/invoice/composables/shipmentInventory.js'
+import { stockRows, shipmentQuantityLimit, shipmentStockError, fillShipmentQuantities } from '../src/views/invoice/composables/shipmentInventory.js'
 
 const lines = () => [{ id: 7, product_id: 11, sku_id: 22, remaining: 10, requested: 0 },
   { id: 8, product_id: 11, sku_id: 22, remaining: 4, requested: 0 }]
@@ -34,4 +34,21 @@ test('foreign invoice, mirror, changed mapping and duplicate identities rejected
     { ...snapshot(), items: [{ ...snapshot().items[0], sku_id: 23 }] },
     { ...snapshot(), items: [snapshot().items[0], snapshot().items[0]] } ]
   for (const data of bad) assert.throws(() => stockRows(data, 1, lines()))
+})
+
+test('one click fills remaining quantities using a shared SKU budget in order', () => {
+  const rows = lines(); rows[0].remaining = 3; rows[0].requested = 1; rows[1].requested = 4
+  const stocks = stockRows(snapshot('6.9'), 1, rows), before = JSON.stringify(rows)
+  assert.deepEqual(fillShipmentQuantities(rows, stocks), [3, 3])
+  assert.equal(JSON.stringify(rows), before)
+  assert.deepEqual(fillShipmentQuantities(rows, stockRows(snapshot('100'), 1, rows)), [3, 4])
+})
+
+test('fill skips unknown/zero/fractional stock, exhausted lines and inconsistent SKU facts', () => {
+  const rows = lines()
+  for (const amount of [null, '0', '0.99999999999999999999']) assert.deepEqual(fillShipmentQuantities(rows, stockRows(snapshot(amount), 1, rows)), [0, 0])
+  rows[0].remaining = 0
+  assert.deepEqual(fillShipmentQuantities(rows, stockRows(snapshot('3'), 1, rows)), [0, 3])
+  const stocks = stockRows(snapshot('3'), 1, rows); stocks.get(8).limit = 4
+  assert.deepEqual(fillShipmentQuantities(rows, stocks), [0, 0])
 })

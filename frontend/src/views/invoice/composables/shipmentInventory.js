@@ -32,3 +32,22 @@ export function shipmentStockError(lines, stocks) {
   }
   return [...requested.values()].some(row => row.quantity > row.available) ? '同一产品本批数量合计超过可用库存，请调整数量' : ''
 }
+
+export function fillShipmentQuantities(lines, stocks) {
+  const budgets = new Map()
+  for (const row of lines) {
+    const stock = stocks.get(row.id)
+    if (stock?.available == null) continue
+    const key = String(row.sku_id), previous = budgets.get(key)
+    if (previous && (previous.limit !== stock.limit || previous.product !== String(row.product_id))) previous.invalid = true
+    else if (!previous) budgets.set(key, { limit: stock.limit, remaining: stock.limit, product: String(row.product_id) })
+  }
+  // Use the original order rows, independent of the table's visual sort.
+  return lines.map(row => {
+    const budget = budgets.get(String(row.sku_id))
+    if (stocks.get(row.id)?.available == null || !budget || budget.invalid || !Number.isSafeInteger(row.remaining)) return 0
+    const quantity = Math.max(0, Math.min(row.remaining, budget.remaining))
+    budget.remaining -= quantity
+    return quantity
+  })
+}

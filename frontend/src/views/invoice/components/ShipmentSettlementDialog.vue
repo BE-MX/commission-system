@@ -30,7 +30,10 @@
         <el-alert v-if="paymentTerm === 'ship_first'" title="本批允许欠款生成出库单。已有预付余额照常抵扣，未收金额保留为本批欠款；后续在回款单中选择本批登记。" type="info" :closable="false" />
         <div class="shipment-inventory-status">
           <span role="status">{{ stockLoading ? '正在查询实时可用库存…' : stockTime ? `小满预售出库仓库 · 查询完成 ${stockTime}` : '可用库存待核对' }}；提交时会再次核验库存。</span>
-          <el-button link type="primary" :loading="stockLoading" :disabled="saving || confirmationPending" @click="refreshStock"><el-icon><Refresh /></el-icon>刷新库存</el-button>
+          <div class="shipment-inventory-actions">
+            <el-button type="primary" :disabled="fillBlocked" title="按订单行顺序填满本批数量，覆盖已填写数量；同一SKU共用库存，待核对项填0" @click="fillQuantities">一键填充</el-button>
+            <el-button link type="primary" :loading="stockLoading" :disabled="saving || loading || confirmationPending" @click="refreshStock()"><el-icon><Refresh /></el-icon>刷新库存</el-button>
+          </div>
         </div>
         <el-alert v-if="stockWarning || stockError" :title="stockError || stockWarning" type="warning" :closable="false" />
         <el-table class="list-table density-compact shipment-products-table" :data="lines" max-height="clamp(220px, 42dvh, 420px)" :scrollbar-tabindex="0" scrollbar-always-on border v-sticky-scrollbar>
@@ -114,7 +117,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { onBeforeRouteLeave } from 'vue-router'
 import { getInvoice } from '@/api/invoice'
 import { quoteShipment, getShipmentInventory, createShipment, inspectShipmentSubmission, listShipments, getShipment, changeShipment, reconcileShipmentTarget, retryShipmentTarget } from '@/api/shipment'
-import { stockRows, shipmentQuantityLimit, shipmentStockError } from '../composables/shipmentInventory'
+import { stockRows, shipmentQuantityLimit, shipmentStockError, fillShipmentQuantities } from '../composables/shipmentInventory'
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
@@ -156,6 +159,14 @@ function failed(error) { if ([401,403,404].includes(error?.response?.status)) hi
 const quoteRequest = latestRequest(), detailRequest = latestRequest(), stockRequest = latestRequest()
 const selectedSettlement = ref(null)
 const activeShipment = computed(() => hasActiveShipment(settlements.value))
+const fillBlocked = computed(() => loading.value || stockLoading.value || busy.value || pending.value || confirmationPending.value || denied.value || storageBlocked.value || activeShipment.value || !lines.value.some(row => stocks.value.get(row.id)?.available != null))
+function fillQuantities() {
+  if (fillBlocked.value) return
+  const quantities = fillShipmentQuantities(lines.value, stocks.value)
+  quoteRequest.next(); quote.value = null; quoting.value = false
+  lines.value.forEach((row, index) => { row.requested = quantities[index] })
+  msgSuccessText(`已填充 ${quantities.filter(quantity => quantity > 0).length} 项；库存待核对项填0。可继续手工调整。`)
+}
 const activeShipmentMessage = computed(() => settlements.value.some(row => row.actions?.cancel?.requires_remote_check)
   ? '本批出库创建失败。可取消本批次后调整数量重新创建；系统会先核实小满未生成原出库单。'
   : settlements.value.some(row => row.state === 'paused')
@@ -363,23 +374,29 @@ async function restore() {
   if (frozen.value) { state.value = 'uncertain'; hidePrivate(); loading.value = false; await inspect(); return }
   denied.value = false; loading.value = true; const identity = generation
   const expectedInvoice = confirmation.value?.invoice_id || props.invoice.id
+  // Start the independent read alongside document/history loading. Catch here
+  // even if the document fails, so a late stock rejection is never unhandled.
+  const observation = confirmationPending.value ? null : getShipmentInventory(expectedInvoice).then(data => ({ data }), error => ({ error }))
   try {
     const [detail] = await Promise.all([getInvoice(expectedInvoice), reload()])
     if (current(identity) && !denied.value) {
       if (detail.id !== expectedInvoice || !Array.isArray(detail.items)) throw new Error('订单详情与原请求不一致，请保持原记录核对')
       lines.value = detail.items.map(row => ({ ...row, requested: 0, remaining: remainingShipmentQuantity(row, settlements.value) }))
-      await refreshStock()
+      loading.value = false
+      void refreshStock(observation)
     }
   }
   catch (e) { if (current(identity)) failed(e) }
   finally { if (current(identity)) loading.value = false }
 }
-async function refreshStock() {
+async function refreshStock(observation = null) {
   if (pending.value || denied.value || confirmationPending.value || stockLoading.value) return
   const identity = generation, sequence = stockRequest.next()
   quoteRequest.next(); quote.value = null; quoting.value = false; stockLoading.value = true; stockWarning.value = ''; stockTime.value = ''
   try {
-    const result = await getShipmentInventory(props.invoice.id)
+    const response = observation ? await observation : { data: await getShipmentInventory(props.invoice.id) }
+    if (response.error) throw response.error
+    const result = response.data
     if (!current(identity) || !stockRequest.isCurrent(sequence) || pending.value || denied.value) return
     stocks.value = stockRows(result, props.invoice.id, lines.value); stockTime.value = result.queried_at?.replace('T', ' ') || ''
     if (lines.value.some(row => stocks.value.get(row.id)?.available == null)) stockWarning.value = '部分产品库存待核对，暂不能填写其本批数量。可刷新重试；仍不可用请联系管理员检查产品映射、小满权限或仓库配置。'
@@ -402,6 +419,7 @@ onMounted(restore)
 .quote-summary { margin: 16px 0; }
 .shipment-action-reason { margin-top: 4px; color: var(--text-secondary); font-size: 12px; white-space: normal; }
 .shipment-inventory-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; color: var(--text-secondary); font-size: 12px; }
+.shipment-inventory-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 h3 { font-size: 15px; margin-top: 24px; color: var(--text-primary); }
 </style>
 <style>.shipment-settlement-dialog { max-width: calc(100vw - 24px); }</style>

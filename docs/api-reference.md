@@ -237,9 +237,11 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | GET `/receipts/batches/{id}` | receipt:read/write/admin；batch_no/amount/bank_charge/currency/status/version/items/attachment_ids，须能访问全部子订单 |
 | POST `/receipts/batches/{id}/void-entry` | receipt:admin；version/reason，仅本地且无远端效果的整批录入纠错 |
 
-预售库存按 `OKKI_PRESALE_WAREHOUSE_ID` 与产品/SKU 精确读取小满 `/v1/product/inventory-list` 的启用 `enable_count`，不合计其他仓库、不用 `real_count` 或镜像替代。单次查询独立申请含 `product` scope 的临时 token，不覆盖原发票 token 缓存。`queried_at` 为本次查询完成的北京时间，并非供应商更新时间。查询在业务锁外执行，返回前重查当前权限、订单范围和产品/仓库绑定。部分缺记录、停用以外的异常值或查询失败为待核对；明确停用或零数值为零。
+预售库存按 `OKKI_PRESALE_WAREHOUSE_ID` 与产品/SKU 精确读取小满 `/v1/product/inventory-list` 的启用 `enable_count`，不合计其他仓库、不用 `real_count` 或镜像替代。单次查询独立申请含 `product` scope 的临时 token，不覆盖原发票 token 缓存。查询内复用连接，首个SKU确认鉴权后，后续每波最多4路并发；每个库存GET超时15秒，鉴权/网络等系统错误停止后续波，未知仍不当作零；不缓存库存快照。`queried_at` 为本次查询完成的北京时间，并非供应商更新时间。查询在业务锁外执行，返回前重查当前权限、订单范围和产品/仓库绑定。部分缺记录、停用以外的异常值或查询失败为待核对；明确停用或零数值为零。
 
 报价和首次创建结算各自实时复查所选 SKU，同 SKU 多行按本批合计校验，超库存或库存未知返回409，且不写结算/回款。库存快照不参与资金报价 hash，库存变化但仍足量可继续提交；原已创建请求的幂等读取先于新库存门禁。前端“剩余待出库”与“可用库存”分别显示，整数上限取两者较小值向下取整；刷新清旧报价但保留原填写数量，超限时要求调整。库存读取不预占库存，最终小满创建仍会校验当时可用数量。
+
+弹框同时加载订单/历史和实时库存；产品信息就绪即展示，库存单独显示查询进度。“一键填充”按原订单行顺序重新分配每行 `min(剩余待出库, 可用库存整数剩余额)`，同SKU共享库存，未知/零/不足一件或同SKU事实冲突项填0；覆盖原填写，清旧报价，允许继续手工调整后重新核算。表格排序不改变填充分配顺序；查询中、活动批次、原提交恢复和保存期间不可填充。不触发创建/回款请求。
 
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
 
