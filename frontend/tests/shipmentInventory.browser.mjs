@@ -10,7 +10,8 @@ try {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' })
     const page = await context.newPage(), errors = [], unexpected = [], posts = []
-    let available = '5.9', stockReads = 0, unavailable = false
+    let available = '5.9', stockReads = 0, unavailable = false, releaseFirstStock
+    const firstStock = new Promise(resolve => { releaseFirstStock = resolve })
     const items = Array.from({ length: 33 }, (_, index) => ({ id: index + 7, product_id: 11,
       sku_id: index < 3 ? 22 : index + 100, product_name: `Stock product ${index + 1}`,
       quantity: index === 1 ? 2 : 10 }))
@@ -24,6 +25,7 @@ try {
       if (url.pathname === '/api/shipments/order/1') return ok({ items: [] })
       if (url.pathname === '/api/invoices/1/shipment-inventory') {
         stockReads++
+        if (stockReads === 1) await firstStock
         if (unavailable) return route.fulfill({ status: 503, json: { detail: 'stock unavailable' } })
         return ok({ invoice_id: 1, warehouse_id: '17', source: 'okki_live', queried_at: '2026-10-16T00:01:00',
           items: items.map((row, index) => ({ invoice_item_id: row.id, product_id: '11', sku_id: String(row.sku_id),
@@ -41,6 +43,12 @@ try {
     await page.getByRole('button', { name: '打开出库结算', exact: true }).click()
     const table = page.locator('.shipment-products-table'), inputs = table.getByRole('spinbutton')
     const preview = page.getByRole('button', { name: '核算本批金额', exact: true })
+    const fill = page.getByRole('button', { name: '一键填充', exact: true })
+    await table.getByText('Stock product 1', { exact: true }).waitFor()
+    assert.equal(await fill.isDisabled(), true)
+    await page.getByText(/正在查询实时可用库存/).waitFor()
+    await page.waitForFunction(() => [...document.querySelectorAll('.shipment-content .el-loading-mask')].every(node => getComputedStyle(node).display === 'none' || getComputedStyle(node).opacity === '0'))
+    releaseFirstStock()
     await table.getByText('5.9', { exact: true }).first().waitFor()
     await table.getByRole('columnheader', { name: /剩余待出库/ }).waitFor()
     await table.getByRole('columnheader', { name: /可用库存/ }).waitFor()
@@ -57,6 +65,25 @@ try {
     await inputs.nth(2).fill('2'); await inputs.nth(2).press('Tab')
     await preview.click(); await page.getByText('USD 50.00', { exact: true }).first().waitFor()
     assert.deepEqual(posts[0].items, [{ invoice_item_id: 7, quantity: 3 }, { invoice_item_id: 9, quantity: 2 }])
+    const productHeader = table.getByRole('columnheader', { name: /^产品/ })
+    await productHeader.click(); await productHeader.click() // Visual descending sort cannot change allocation priority.
+    await fill.click()
+    const productInput = name => table.locator('.el-table__body tr').filter({ has: page.getByText(name, { exact: true }) }).getByRole('spinbutton')
+    assert.equal(await productInput('Stock product 1').inputValue(), '5')
+    assert.equal(await productInput('Stock product 2').inputValue(), '0')
+    assert.equal(await productInput('Stock product 3').inputValue(), '0')
+    assert.equal(await productInput('Stock product 4').inputValue(), '0')
+    assert.equal(await productInput('Stock product 5').inputValue(), '0')
+    assert.equal(posts.length, 1)
+    assert.equal(await page.getByRole('button', { name: '生成本批结算单', exact: true }).isDisabled(), true)
+    await preview.click()
+    await page.getByText('USD 50.00', { exact: true }).first().waitFor()
+    assert.equal(posts[1].items.length, 29)
+    assert.equal(posts[1].items[0].invoice_item_id, 7)
+    assert.equal(posts[1].items.reduce((sum, row) => sum + row.quantity, 0), 145)
+    await productHeader.click()
+    await inputs.nth(0).fill('3'); await inputs.nth(0).press('Tab')
+    await inputs.nth(2).fill('2'); await inputs.nth(2).press('Tab')
     await page.screenshot({ path: `${output}/inventory-available-${width}.png`, fullPage: true })
     available = '1'
     await page.getByRole('button', { name: '刷新库存', exact: true }).click()
@@ -77,9 +104,9 @@ try {
     })
     assert.ok(metrics.scrollHeight > metrics.height)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
-    assert.deepEqual(errors, []); assert.deepEqual(unexpected, []); assert.equal(stockReads, 3); assert.equal(posts.length, 1)
+    assert.deepEqual(errors, []); assert.deepEqual(unexpected, []); assert.equal(stockReads, 3); assert.equal(posts.length, 2)
     await page.screenshot({ path: `${output}/inventory-${width}.png`, fullPage: true })
-    results.push({ width, stockReads, metrics, preservedDraft: true, unknownBlocked: true, skuAggregateBlocked: true, scope: 'Actual Vue/Chrome, synthetic API; no production writes' })
+    results.push({ width, stockReads, metrics, earlyProductList: true, fillRespectsOriginalOrderAndSkuBudget: true, filledItems: 29, preservedDraft: true, unknownBlocked: true, skuAggregateBlocked: true, scope: 'Actual Vue/Chrome, synthetic API; no production writes' })
     await context.close()
   }
   await writeFile(output + '/results.json', JSON.stringify(results, null, 2))

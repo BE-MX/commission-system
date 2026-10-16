@@ -1,8 +1,10 @@
 """Live presale warehouse stock. No mirror fallback or business writes."""
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import re
+import httpx
 
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,6 +12,9 @@ from app.core.config import get_settings
 from app.core.time import beijing_now
 from app.invoice import okki_client
 from app.invoice.presale_lines import current_items
+
+MAX_CONCURRENT_STOCK_READS = 4
+STOCK_REQUEST_TIMEOUT = 15
 
 
 def identifier(value):
@@ -62,15 +67,36 @@ def observe(target, item_ids=None):
             # Existing cached invoice tokens lack product scope. Never overwrite
             # the shared token or mislabel the mirror as a successful live read.
             token, _ = okki_client.fetch_token(scope=f'{okki_client.TOKEN_SCOPE} product')
-            for product, sku in sorted(pairs):
-                data = okki_client._get_json('/v1/product/inventory-list', token,
-                    context='预售库存查询', params={'sku_id':sku, 'count':100, 'start_index':1})
-                if data is None:
-                    raise okki_client.OkkiApiError('库存查询鉴权失效')
-                try:
-                    quantities[(product, sku)] = _available(data, product, sku, target.warehouse_id)
-                except ValueError as error:
-                    reasons[(product, sku)] = str(error)
+            with httpx.Client(limits=httpx.Limits(max_connections=MAX_CONCURRENT_STOCK_READS,
+                    max_keepalive_connections=MAX_CONCURRENT_STOCK_READS)) as client:
+                def fetch(pair):
+                    product, sku = pair
+                    data = okki_client._get_json('/v1/product/inventory-list', token,
+                        context='预售库存查询', params={'sku_id':sku, 'count':100, 'start_index':1},
+                        client=client, timeout=STOCK_REQUEST_TIMEOUT)
+                    if data is None:
+                        raise okki_client.OkkiApiError('库存查询鉴权失效')
+                    try:
+                        return _available(data, product, sku, target.warehouse_id), ''
+                    except ValueError as error:
+                        return None, str(error)
+                def record(pair, result):
+                    quantity, reason = result
+                    if quantity is None:
+                        reasons[pair] = reason
+                    else:
+                        quantities[pair] = quantity
+                ordered = sorted(pairs)
+                # Validate auth once before fan-out; subsequent batches bound both
+                # concurrency and the number of requests after a systemic error.
+                record(ordered[0], fetch(ordered[0]))
+                if len(ordered) > 1:
+                    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_STOCK_READS) as pool:
+                        for offset in range(1, len(ordered), MAX_CONCURRENT_STOCK_READS):
+                            wave = ordered[offset:offset + MAX_CONCURRENT_STOCK_READS]
+                            results = list(pool.map(fetch, wave))
+                            for pair, result in zip(wave, results):
+                                record(pair, result)
         except (okki_client.OkkiApiError, OSError):
             # A denied scope/network error is systemic: don't repeat it per SKU.
             reasons.update({pair:'实时库存暂不可用，请刷新重试或联系管理员检查小满权限' for pair in pairs if pair not in quantities})

@@ -5436,3 +5436,16 @@ I38：启用refresh初次当前授权+request/conversion→invoice完整绑定/�
 曾遇两处验证问题：首次新MySQL正向用例调用原嵌入回款 created() helper，复现既有 presale_goods bank_charge 预期2而实际0的断言（前次发布已在未改基线复现），未改金额逻辑或断言；库存专项改为无嵌入回款正向，超库存拒绝仍对完整财务图做比较。原反序产品测试追加product3/sku4，初始库存替身只有product1导致409；补足受控SKU映射后7项通过。库存浏览器首次等候被更具体库存提示覆盖的通用失败提示，调整为断言可用库存待核对，未弱化阻断/输入保留条件。
 
 证据位于本工作树 tmp/shipment-inventory-browser、shipment-inventory-cancellation、shipment-inventory-recovery、shipment-inventory-build.log。MySQL三次独立workspace为 shipment-inventory-mysql-20261016-01至03，进程均已由fixture关闭；保留失败/通过运行与恢复材料，不触碰旧轮被拒绝清理的目录。主目录无关改动未修改。Git巡检使用 --no-fetch，仅为本地快照，不代表远端最新。
+
+
+## 2026-10-16 预售库存查询加速与一键填充（Codex，本地实现）
+
+基点86f1c44e，工作树presale-cancel-actions/分支codex/presale-cancel-actions。本轮未commit/merge/push/部署。现有每SKU串行httpx.get重复建立连接，改为单次查询复用HTTPX Client，先1项确认鉴权，后续分波最多4并发、每GET15秒；系统错误终止后续波，所有in-flight结束后再关闭连接，不在线程共享DB session/ORM，不添加库存缓存，quote/create最终授权、映射/仓库绑定与鲜读仍保留。标准okki_client._get_json增加可选client，默认调用保持。
+
+弹框库存与详情/历史同时请求，详情就绪先展示产品，库存单独loading。产品表上方“一键填充”覆盖原填写，按原订单行顺序分配min(剩余待出库,库存整数剩余额)，同SKU共用额度；unknown/零/不足一件为0，冲突SKU整组0。表头排序不改分配顺序；查询、活动批次、保存、冻结恢复期间按钮与handler均阻断。填充清原quote并作废在途报价回执，不发送创建或回款；用户仍可手工调整后重新核算。
+
+只读性能对比：北京同一Janny1033、同仓库8193514242746、同33项，原线上observe串行10.729s，候选仅在独立进程内存执行2.125s，约5.05倍，两次33/33已知。只作读取和临时鉴权，无生产源码/配置/业务数据写入；不是已部署或整个弹框端到端延迟保证。原始summary/stdout及可复现实验脚本在tmp/shipment-stock-benchmark*。
+
+验证：91项SQLite/OKKI client/原结算/取消回归通过；7项实际JWT+ASGI+全新隔离MySQL库存/原行顺序报价创建通过（tmp/shipment-fast-fill-mysql-20261016-01，fixture正常停服）；25项Node通过。Chrome1440/390新库存2场景验证慢请求时先显示列表且填充禁用、排序后共享SKU优先原首行、29项合计145、unknown0、清原quote、刷新降库存保留草稿；原取消10场景与冻结恢复1440/390/320三个完整流程通过。一项并发异常测试最初错误要求未启动future也必须执行；使用Barrier明确构造同波4个请求全部在途再报错后原断言通过，产品代码未为测试放宽。线程池4路上限/单client关闭/错误停后续波/坏首SKU仍读后续、标准HTTP解析均有断言。构建通过（既有chunk/动态导入提示），独立agent审查无具体问题并独立重跑26库存+25Node通过。strict、6项UI gate、diff及no-fetch巡检在本记录写入后执行。
+
+证据：tmp/shipment-inventory-fast-fill-browser、shipment-fast-fill-cancellation、shipment-fast-fill-recovery、shipment-inventory-fast-fill-build.log及benchmark JSON。没有真实发货/结算/回款POST，没有合并推送或发布；源功能本地可审阅。临时Vite预览收尾停止，验证/恢复材料保留，原旧轮被阻止清理目录未碰。

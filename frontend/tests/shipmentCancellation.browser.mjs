@@ -66,6 +66,7 @@ try {
       const cancel = page.getByRole('button', { name: '取消本批次', exact: true })
       const preview = page.getByRole('button', { name: '核算本批金额', exact: true })
       await cancel.waitFor()
+      assert.equal(await page.getByRole('button', { name: '一键填充', exact: true }).isDisabled(), true)
       if (blocked) {
         assert.equal(await cancel.isDisabled(), true)
         await page.getByText(reason, { exact: true }).waitFor()

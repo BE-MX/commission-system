@@ -271,6 +271,7 @@ def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | 
 def _get_json(
     path: str, token: str, *, context: str, params: dict | None = None,
     timeout: float = REQUEST_TIMEOUT, allow_missing: bool = False,
+    client: httpx.Client | None = None,
 ) -> dict | bool | None:
     """GET with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
@@ -278,7 +279,8 @@ def _get_json(
     try:
         # params 仅在显式传入时下发：既有测试桩/调用方按 (url, headers, timeout) 签名 mock
         extra = {"params": params} if params is not None else {}
-        resp = httpx.get(
+        get = client.get if client is not None else httpx.get
+        resp = get(
             f"{_base_url()}{path}",
             headers={"Authorization": f"Bearer {token}"},
             timeout=timeout,
