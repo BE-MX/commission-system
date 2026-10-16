@@ -1,4 +1,4 @@
-// 拖拽上传的目录遍历工具：递归提取文件；路径仅供清单展示。
+// 拖拽上传的目录遍历工具：递归提取文件，保留顶层目录供标签匹配。
 // dataTransfer.items 必须在 drop 事件回调内同步取出，因此 collectDroppedFiles
 // 先同步 webkitGetAsEntry()，再异步逐层 readEntries（需循环读到空，Chrome 单次最多 100 条）。
 
@@ -21,7 +21,7 @@ async function collectEntryFiles(entry, files, segments = []) {
     const file = await new Promise((resolve, reject) => entry.file(resolve, reject))
     files.push({ file, pathSegments: segments })
   } else if (entry.isDirectory) {
-    // 路径段仅供上传清单显示，不参与标签或目录创建。
+    // 第一段是拖入的顶层文件夹，其余路径段仅供上传清单展示。
     const children = await readAllEntries(entry.createReader())
     for (const child of children) {
       await collectEntryFiles(child, files, [...segments, entry.name])
