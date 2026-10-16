@@ -404,6 +404,27 @@
   gap: 4px 22px;
 }
 
+/* 物流费用同行录入；窄屏沿用 fgrid 单列规则。 */
+.logistics-fees-row :deep(.el-input-number) {
+  width: 100%;
+}
+
+/* 单号与备注使用相同金色边框；单号文字在默认 14px 上增大一号。 */
+.invoice-order-fields :deep(.invoice-no-gold .el-input__wrapper) {
+  border: 2px solid var(--color-gold-muted);
+  box-shadow: none;
+}
+
+.invoice-order-fields :deep(.invoice-no-gold .el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 2px var(--invoice-gold-light);
+}
+
+.invoice-order-fields :deep(.invoice-no-gold .el-input__inner) {
+  color: var(--color-gold-muted);
+  font-size: 16px;
+  font-weight: 700;
+}
+
 /* 备注：深金色加粗字体 + 深金色加粗边框 */
 .remark-gold :deep(.el-textarea__inner) {
   border: 2px solid var(--color-gold-muted);

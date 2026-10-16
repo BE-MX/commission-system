@@ -16,10 +16,10 @@
         <div class="field-hint">根据订单总额与预付款自动计算</div>
       </el-form-item>
       <el-form-item label="包装数量">
-        <el-input-number v-model="form.packaging_quantity" :min="0" :precision="0" controls-position="right" />
+        <el-input :model-value="form.packaging_quantity || 0" readonly class="balance-field" />
       </el-form-item>
       <el-form-item label="包装费用">
-        <el-input-number v-model="form.internal_accessory" :min="0" :precision="2" controls-position="right" />
+        <el-input :model-value="money(form.internal_accessory || 0)" readonly class="balance-field" />
       </el-form-item>
       <el-form-item label="运费">
         <el-input :model-value="money(form.shipping_fee || 0)" readonly class="balance-field" />

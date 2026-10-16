@@ -78,6 +78,54 @@
         <span>上次订单成交日期 <b>{{ lastOrderDate }}</b></span>
       </template>
     </div>
+    <div class="fgrid-c3 subdiv">订单信息</div>
+
+    <div class="fgrid-c3 fgrid">
+      <el-alert
+        v-if="form.source_type === 'okki_screenshot'"
+        class="fgrid-c3 source-order-alert"
+        title="来自外部 OKKI 截图；保存并同步时会校验本系统 OKKI 是否已有同一订单。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
+      <el-form-item label="订单号/发票号" :error="invoiceNoTaken ? '该单号已存在，请更换' : ''">
+        <el-input
+          v-model="form.invoice_no"
+          class="invoice-no-gold"
+          maxlength="64"
+          placeholder="已自动生成，可修改"
+          @input="onInvoiceNoInput"
+          @blur="onInvoiceNoBlur"
+        />
+        <div v-if="previousInvoiceNo" class="prev-order-tip">该业务员上一张{{ orderTypeLabel(form.order_type) }}：{{ previousInvoiceNo }}</div>
+      </el-form-item>
+      <el-form-item label="下单日期" required>
+        <el-date-picker v-model="form.invoice_date" value-format="YYYY-MM-DD" style="width: 100%" />
+      </el-form-item>
+      <el-form-item v-if="form.id" label="币种">
+        <el-input v-model="form.currency" maxlength="16" @change="onCurrencyChange" />
+      </el-form-item>
+      <el-form-item label="小满标记" required class="fgrid-c3">
+        <div class="okki-flags-row">
+          <span class="okki-flag">
+            新成交
+            <el-switch v-model="form.okki_new_deal" :active-value="1" :inactive-value="0"
+                       @change="markOkkiFlagTouched('newDeal')" />
+          </span>
+          <span class="okki-flag">
+            包邮
+            <el-switch v-model="form.okki_free_shipping" :active-value="1" :inactive-value="0"
+                       @change="markOkkiFlagTouched('freeShipping')" />
+          </span>
+          <span class="okki-flag">
+            首返
+            <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0" />
+          </span>
+          <span class="okki-flag-tip">推小满必填，已按历史预判</span>
+        </div>
+      </el-form-item>
+    </div>
     <div class="fgrid-c3 contact-details-heading">
       <span>联系与收货信息{{ contactDetailsComplete ? '（已填写）' : '（待补全）' }}</span>
       <el-button v-if="contactDetailsComplete" link type="primary"
@@ -99,54 +147,6 @@
         <el-input v-model="form.delivery_address" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" placeholder="Delivery address" />
       </el-form-item>
     </div>
-  </div>
-
-  <div class="subdiv">订单信息</div>
-
-  <div class="fgrid">
-    <el-alert
-      v-if="form.source_type === 'okki_screenshot'"
-      class="fgrid-c3 source-order-alert"
-      title="来自外部 OKKI 截图；保存并同步时会校验本系统 OKKI 是否已有同一订单。"
-      type="info"
-      :closable="false"
-      show-icon
-    />
-    <el-form-item label="订单号/发票号" :error="invoiceNoTaken ? '该单号已存在，请更换' : ''">
-      <el-input
-        v-model="form.invoice_no"
-        maxlength="64"
-        placeholder="已自动生成，可修改"
-        @input="onInvoiceNoInput"
-        @blur="onInvoiceNoBlur"
-      />
-      <div v-if="previousInvoiceNo" class="prev-order-tip">该业务员上一张{{ orderTypeLabel(form.order_type) }}：{{ previousInvoiceNo }}</div>
-    </el-form-item>
-    <el-form-item label="下单日期" required>
-      <el-date-picker v-model="form.invoice_date" value-format="YYYY-MM-DD" style="width: 100%" />
-    </el-form-item>
-    <el-form-item label="币种">
-      <el-input v-model="form.currency" maxlength="16" @change="onCurrencyChange" />
-    </el-form-item>
-    <el-form-item label="小满标记" required class="fgrid-c3">
-      <div class="okki-flags-row">
-        <span class="okki-flag">
-          新成交
-          <el-switch v-model="form.okki_new_deal" :active-value="1" :inactive-value="0"
-                     @change="markOkkiFlagTouched('newDeal')" />
-        </span>
-        <span class="okki-flag">
-          包邮
-          <el-switch v-model="form.okki_free_shipping" :active-value="1" :inactive-value="0"
-                     @change="markOkkiFlagTouched('freeShipping')" />
-        </span>
-        <span class="okki-flag">
-          首返
-          <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0" />
-        </span>
-        <span class="okki-flag-tip">推小满必填，已按历史预判</span>
-      </div>
-    </el-form-item>
   </div>
 </section>
 </template>
