@@ -6,6 +6,7 @@ from pathlib import Path
 import office_static_retention
 import static_sync
 from static_retention import atomic_json
+from desktop_events import step
 
 
 def run(live, source, prepare_only=False, include_office=True):
@@ -21,11 +22,13 @@ def run(live, source, prepare_only=False, include_office=True):
         print('RETENTION PREVIEW office: validating manifests and deletion trees', flush=True)
         from office_release import health
         health(8001)
-        results['targets']['office'] = office_static_retention.cleanup(live, True)
+        results['targets']['office'] = step('retention-preview:office', '预检办公室资源保留',
+                                            office_static_retention.cleanup, live, True)
     rollback_hints = results['targets'].get('office', {}).get('rollback_artifacts', [])
     for target in targets:
         print('RETENTION PREVIEW ' + target['domain'], flush=True)
-        results['targets'][target['domain']] = static_sync.remote(target['host'], {
+        results['targets'][target['domain']] = step('retention-preview:' + target['domain'],
+            '预检资源保留 ' + target['domain'], static_sync.remote, target['host'], {
             'action': 'retention', 'root': target['root'], 'host': target['domain'],
             'prepare_only': True, 'rollback_hints': rollback_hints})
     receipt = state / 'static-retention-current.json'
@@ -40,12 +43,14 @@ def run(live, source, prepare_only=False, include_office=True):
             print('RETENTION APPLY office', flush=True)
             from office_release import health
             health(8001)
-            results['targets']['office'] = office_static_retention.cleanup(live)
+            results['targets']['office'] = step('retention-apply:office', '执行办公室资源保留',
+                                                office_static_retention.cleanup, live)
             results['completed'].append('office')
             atomic_json(receipt, results)
         for target in targets:
             print('RETENTION APPLY ' + target['domain'], flush=True)
-            results['targets'][target['domain']] = static_sync.remote(target['host'], {
+            results['targets'][target['domain']] = step('retention-apply:' + target['domain'],
+                '执行资源保留 ' + target['domain'], static_sync.remote, target['host'], {
                 'action': 'retention', 'root': target['root'], 'host': target['domain'],
                 'prepare_only': False, 'rollback_hints': rollback_hints})
             results['completed'].append(target['domain'])

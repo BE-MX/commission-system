@@ -1,5 +1,36 @@
 # 统一部署入口
 
+## 办公室候选清理与耗时记录
+
+完整发布验收成功、既有静态资源保留成功后，在同一个 `publish.lock` 内自动清理本部署器新建并登记的 `sources/<SHA>` 和 `office-next-(frontend|frontend-pm|pm-lan)-<时间戳>`。准备、失败、云端专项发布不触发办公室候选清理。首次使用须从含此实现的候选部署器启动；已运行的旧部署器不会随源码更新自动替换自身。
+
+- 候选创建满 7 天才进入检查；源码保留当前、最近两级已安装版本、执行中的控制源码，以及部署控制/恢复计划、运行进程、服务、启用计划任务、安装配置中的引用。静态暂存按目录引用保护，当前 SHA 的废弃“仅准备”副本也可在宽限期后清理。
+- 每次最多删除 8 个目录，60 秒为开始下一项前的软预算；已开始的一项完成核验与删除后才停，单个大目录可能超过 60 秒。未处理项留给后续成功发布。无待清理项时跳过 Windows 运行引用枚举。
+- 源码须为注册的分离 HEAD、当前版本祖先、无本地改动和未知忽略数据。部署器复制的 `.env*` 只记录路径和 SHA256，改动后保留；不会记录内容。已知依赖目录里的链接只解除链接本身，不跟随目标；其他位置出现链接则保留。
+- 无创建回执的旧源码、旧静态副本不自动接管；现存恢复候选继续保留。构建缓存、Python 环境、`office-previous-*`（已有主站保留策略仍负责它）、业务上传和数据库不属于本机制。
+
+回执位于 `.deploy_state/candidate-retention/`：`inventory.json` 为归属与最近成功版本，`current.json` 为当前处理状态，按 run id 归档结果包含已删、跳过、剩余数量。先写删除 intent，再删除并读回目录/Git 注册；删除失败或进程中断后拒绝自动重发。控制记录损坏、引用读取失败时停止清理，应用成功状态保留并单独记录 `candidate_retention_error`。
+
+可通过相同部署入口单独预览或执行清理，不重启服务、不重跑应用发布：
+
+```powershell
+deploy\deploy.bat --candidate-retention-only --live-root D:/commission-system --revision <controller-full-SHA> --no-pull --prepare-only
+# 核验后去掉 --prepare-only 执行同一受管范围；仍需实际发布成功和干净的固定控制源码。
+```
+
+中断恢复先检查 `current.json` 的 intent、路径是否存在及 Git worktree 注册；预览不会覆盖中断回执。完成独立读回、明确未完成/已完成对象后，将原回执保留为事故证据，再以专项入口继续；不能直接删锁或清除回执后盲目重试。
+
+普通准备及完整发布都会写 `.deploy_state/timings/<run-id>.json`，含北京时间开始/结束、单调时钟耗时、每阶段状态和异常类型；不记录命令参数或错误原文。依赖安装、各前端编译、PM 内网站、办公室与各云端资源保留均有独立阶段。父阶段包含子阶段，不可把所有行相加当总时长；应使用顶层 `elapsed_ms`。写计时失败仅告警，不改变部署动作结果。桌面进度协议追加 `elapsed_ms`，原消费者仍可读取。
+
+```powershell
+$timing = Get-ChildItem .deploy_state/timings/*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$record = Get-Content -LiteralPath $timing.FullName -Raw | ConvertFrom-Json
+$record | Select-Object revision,prepare_only,status,elapsed_ms
+$record.steps | Sort-Object elapsed_ms -Descending | Select-Object key,status,elapsed_ms
+```
+
+2026-10-17 的日志证据、重复开销及优化顺序见 [部署耗时检查](../docs/reports/2026-10-17-deployment-mechanism-audit.md)。代码实现与本地测试不代表服务器已安装。
+
 ## 2026-10-12 办公室启动等待中断接续
 
 `deploy.bat --recover-office-activation PLAN --prepare-only` 仅核验已审查的 c797c45e 候选、schema186、原 release_id b68389384a5e4e8b8f69bf4223f0ee8e、全部停止 writer 和 installed_paused 出库回执。计划固定包含 revision 与 release_id；去掉 prepare-only 接续同次发布，不重跑 DDL、不回退旧代码、不生成新的发布身份。
