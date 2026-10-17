@@ -115,7 +115,8 @@ class PreCommitTests(RepoCase):
         self.assertEqual(self.pre_commit(), 0)
 
     def test_private_key_content_blocked(self):
-        self.stage("conf/k.txt", "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n")
+        # Split so this test file does not trip the private-key gate itself.
+        self.stage("conf/k.txt", "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nabc\n")
         self.assertEqual(self.pre_commit(), 1)
 
     def test_second_alembic_head_blocked(self):
