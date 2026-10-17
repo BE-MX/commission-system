@@ -35,15 +35,19 @@ def test_static_archive_includes_nested_public_artifacts_and_uses_ssh_retries(tm
     remote = Mock(side_effect=[{"missing": list(files), "initialized": False,
                                "active_artifact": None, "artifact": "a" * 64}, {}])
     monkeypatch.setattr(static_sync, "remote", remote)
-    command = Mock()
+    uploaded = []
+    def upload(args, **kwargs):
+        with tarfile.open(args[-2]) as archive:
+            uploaded.extend(archive.getnames())
+    command = Mock(side_effect=upload)
     monkeypatch.setattr(static_sync, "run", command)
     static_sync.prepare(source, "example.test", "/registered", tmp_path / "state", "example.test")
     args = command.call_args.args[0]
     assert args[:1] == ["scp"]
     assert ["-o", "ConnectionAttempts=3"] == args[args.index("ConnectionAttempts=3") - 1:args.index("ConnectionAttempts=3") + 1]
     assert "BatchMode=yes" in args and "StrictHostKeyChecking=yes" in args
-    with tarfile.open(args[-2]) as archive:
-        assert set(archive.getnames()) == set(files)
+    assert set(uploaded) == set(files)
+    assert not Path(args[-2]).exists()
     assert remote.call_args.args[1]["action"] == "stage"
 
 
@@ -560,6 +564,16 @@ def test_guard_install_failure_never_starts_backend_or_marks_success(pipeline):
     cloud_backend.activate.assert_not_called()
     assert not (pipeline.state / 'publish-success.json').exists()
     assert json.loads((pipeline.state / 'publish-current.json').read_text())['status'] != 'succeeded'
+
+
+def test_static_prepare_failure_prevents_freeze_and_activation(pipeline, monkeypatch):
+    monkeypatch.setattr(static_sync, 'prepare', Mock(side_effect=RuntimeError('staging failed')))
+    with pytest.raises(RuntimeError, match='staging failed'):
+        publish.publish(pipeline.args)
+    pipeline.outbound_phase.assert_not_called()
+    pipeline.office_activate.assert_not_called()
+    cloud_backend.activate.assert_not_called()
+    assert not (pipeline.state / 'publish-success.json').exists()
 
 
 def test_retention_failure_preserves_verified_application_success(pipeline, monkeypatch):

@@ -123,25 +123,49 @@ def plan_cleanup(kept, removed, assets, asset_sources=()):
     """Validate everything first, including all deletion paths and protected bytes."""
     copies, deletes, size = [], [], 0
     sources = {}
+    observed = {}
     for folder, files in kept:
-        verify(folder, files)
-    for name, digest in assets.items():
-        sources[name] = next((folder / name for folder in [*(p for p, _ in kept), *asset_sources]
-                              if matching(folder, name, digest)), None)
-        if sources[name] is None:
-            raise ValueError('Protected browser asset missing: ' + name)
+        validate_manifest(files)
+        # One bounded, link-checked tree walk and one hash per relevant file.
+        # This snapshot exists only inside this planning call, never across runs
+        # or between preview and apply. No mtime-based trust of previous bytes.
+        rows = {}
+        wanted = files.keys() | assets.keys()
+        for path, length in walk_files(folder):
+            name = path.relative_to(folder).as_posix()
+            rows[name] = (sha(path) if name in wanted else None, length)
+        if any(rows.get(name, (None,))[0] != digest for name, digest in files.items()):
+            raise ValueError('Missing/corrupt retained release: ' + str(folder))
+        observed[folder] = rows
+        for name, digest in assets.items():
+            if rows.get(name, (None,))[0] == digest:
+                sources.setdefault(name, folder / name)
+    # Extra historical sources are searched only for assets absent from kept
+    # releases; do not hash a history of thousands of already resolved chunks.
+    for folder in asset_sources:
+        missing = assets.keys() - sources.keys()
+        if not missing:
+            break
+        for path, _ in walk_files(folder):
+            name = path.relative_to(folder).as_posix()
+            if name in missing and sha(path) == assets[name]:
+                sources[name] = path
+    if assets.keys() - sources.keys():
+        raise ValueError('Protected browser asset missing: ' + sorted(assets.keys() - sources.keys())[0])
     for folder, _ in kept:
         for name, digest in assets.items():
             destination = folder / name
-            no_links(destination)
-            if destination.exists():
-                if sha(destination) != digest:
+            if name in observed[folder]:
+                if observed[folder][name][0] != digest:
                     raise ValueError('Retained asset checksum mismatch: ' + name)
             else:
+                no_links(destination)
+                if destination.exists():
+                    raise ValueError('Asset destination is not a regular file: ' + name)
                 copies.append((sources[name], destination))
-        for path, length in walk_files(folder / 'assets'):
-            if path.relative_to(folder).as_posix() not in assets:
-                deletes.append(path)
+        for name, (_, length) in observed[folder].items():
+            if name.startswith('assets/') and name not in assets:
+                deletes.append(folder / name)
                 size += length
     for folder in removed:
         for _, length in walk_files(folder):

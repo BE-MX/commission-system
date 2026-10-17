@@ -83,12 +83,28 @@ def npm_command():
 
 
 def npm_install(folder):
+    import npm_cache
+    npm = npm_command()
+    key = npm_cache.fingerprint(folder, npm, run)
     stamp = input_digest([folder / "package.json", folder / "package-lock.json"],
                          run(["node", "--version"], capture=True))
+    if key:
+        stamp = key
     name = "deps-" + folder.name
     if marker(name).get("digest") != stamp or not (folder / "node_modules").exists():
-        step('dependencies:' + folder.name, '安装依赖 ' + folder.name,
-             run, [npm_command(), "ci", "--no-audit", "--no-fund"], cwd=folder)
+        restored = key and step('dependency-cache-restore:' + folder.name, '恢复独立依赖副本 ' + folder.name,
+                                npm_cache.restore, folder, STATE, key)
+        if not restored:
+            step('dependencies:' + folder.name, '安装依赖 ' + folder.name,
+                 run, [npm, "ci", "--prefer-offline", "--no-audit", "--no-fund"], cwd=folder)
+            if key:
+                try:
+                    step('dependency-cache-store:' + folder.name, '保存依赖缓存 ' + folder.name,
+                         npm_cache.store, folder, STATE, key)
+                except (OSError, ValueError):
+                    # A cache write is optional; npm ci already succeeded. Never
+                    # hide install failures or record unvalidated restored data.
+                    print('WARNING: dependency cache not saved; isolated installation retained', flush=True)
         atomic_json(STATE / (name + ".json"), {"digest": stamp})
 
 
@@ -238,7 +254,7 @@ def publish(args):
             atomic_json(STATE / 'publish-current.json', journal)
         import colorwork_routing
         colorwork_routes = step("routing-prepare", "校验色块路由配置", colorwork_routing.prepare, ROOT / "deploy")
-        prepared = []
+        targets = []
         outputs["customer-media"] = outputs["frontend"] / "customer-media"
         for target in inventory["static_targets"]:
             if args.cloud_only and target.get("backend_owner") == "office":
@@ -249,8 +265,9 @@ def publish(args):
                     print("DEFERRED " + journal["deferred"][-1], flush=True)
                     atomic_json(STATE / "publish-current.json", journal)
                     continue
-            prepared.append(step("static-prepare:" + target["domain"], "增量准备 " + target["domain"], static_sync.prepare, outputs[target["component"]], target["host"], target["root"],
-                            STATE / "transfers", target["domain"]))
+            targets.append(target)
+        from static_prepare import prepare_all
+        prepared = step('static-prepare-all', '准备全部云端静态站', prepare_all, targets, outputs, STATE / 'transfers')
         if args.prepare_only:
             journal["status"] = "prepared"
             atomic_json(STATE / "publish-current.json", journal)
