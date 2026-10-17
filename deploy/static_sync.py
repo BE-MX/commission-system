@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import subprocess
 import tarfile
+import tempfile
+from desktop_events import log_line
 
 SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10",
                "-o", "ConnectionAttempts=3",
@@ -65,18 +67,24 @@ def prepare(source, target, root, state, host):
     result = remote(target, {**common, "action": "plan"})
     transferred = 0
     if not result.get("staged") and (result["missing"] or not result["initialized"] or result["active_artifact"] != result["artifact"]):
-        archive = state / (result["artifact"] + ".tar.gz")
-        archive.parent.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(archive, "w:gz") as bundle:
-            for name in result["missing"]:
-                bundle.add(source / name, arcname=name, recursive=False)
-        transferred = archive.stat().st_size
-        remote_archive = "/tmp/ark-static-" + result["artifact"] + ".tar.gz"
-        run(["scp", *SSH_OPTIONS, str(archive), target + ":" + remote_archive], timeout=300)
-        remote(target, {**common, "action": "stage", "archive": remote_archive})
+        from static_retention import no_links
+        no_links(state)
+        state.mkdir(parents=True, exist_ok=True)
+        # A unique owned directory isolates even direct concurrent callers with
+        # identical artifacts but different missing files. Remove only this
+        # ephemeral local upload package; remote recovery evidence is retained.
+        with tempfile.TemporaryDirectory(prefix='upload-', dir=state) as temporary:
+            archive = Path(temporary) / (result["artifact"] + ".tar.gz")
+            with tarfile.open(archive, "w:gz") as bundle:
+                for name in result["missing"]:
+                    bundle.add(source / name, arcname=name, recursive=False)
+            transferred = archive.stat().st_size
+            remote_archive = "/tmp/ark-static-" + result["artifact"] + ".tar.gz"
+            run(["scp", *SSH_OPTIONS, str(archive), target + ":" + remote_archive], timeout=300)
+            remote(target, {**common, "action": "stage", "archive": remote_archive})
     elif result.get('staged') and result['active_artifact'] != result['artifact']:
         remote(target, {**common, 'action': 'prepared'})
-    print(f"  {target}:{root}: {len(result['missing'])} changed files, {transferred} transfer bytes, staged={result.get('staged', False)}", flush=True)
+    log_line(f"  {target}:{root}: {len(result['missing'])} changed files, {transferred} transfer bytes, staged={result.get('staged', False)}")
     common["expected"] = result["active_artifact"]
     return {"target": target, "request": common, "bytes": transferred}
 
