@@ -613,7 +613,9 @@ done
 
 ## 开发机 git 巡检（多智能体协作）
 
-开发机由 Claude Code / Codex / Kimi 三个 AI 代理在各自 git worktree 并行开发，协作约定见仓库根 `AGENTS.md`（与 CLAUDE.md 硬约定 22 同步维护）。
+开发机由 Claude Code / Codex / Kimi / Accio Work 四个 AI 代理在各自 git worktree 并行开发，协作约定见仓库根 `AGENTS.md`（与 CLAUDE.md 硬约定 22 同步维护）。
+
+- Git 门禁：`python scripts/git_hooks.py install` 启用共享 pre-commit/pre-push（`core.hooksPath=.githooks`，全部 worktree 生效）；规则与放行变量见 `AGENTS.md`「Git 门禁」。
 
 - 手动巡检：`python scripts/git_sweep.py --open` — 扫全部 worktree/分支的未提交、未推送、未合并、可删分支、stash、跨分支 Alembic 迁移撞号，生成 `tmp/git-sweep.html` 可视化看板
 - 定时巡检：Windows 计划任务 `LeShine-GitSweep`（每日 18:00，`--notify` 只在有结构性欠账时推钉钉告警群）。重建命令：

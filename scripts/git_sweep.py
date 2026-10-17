@@ -37,7 +37,7 @@ from zoneinfo import ZoneInfo
 REPO_ROOT = Path(__file__).resolve().parents[1]  # 锚定仓库根，cwd 无关（定时任务 cwd=system32）
 OUTPUT_HTML = REPO_ROOT / "tmp" / "git-sweep.html"
 MAIN = "main"
-TOOL_PREFIXES = {"claude": "Claude", "codex": "Codex", "kimi": "Kimi"}
+TOOL_PREFIXES = {"claude": "Claude", "codex": "Codex", "kimi": "Kimi", "accio": "Accio"}
 MIGRATION_DIR = "backend/alembic/versions"
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
 

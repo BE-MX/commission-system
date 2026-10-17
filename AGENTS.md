@@ -1,15 +1,24 @@
-# AGENTS.md — 多智能体 Git 协作约定（codex / kimi / claude 通用）
+# AGENTS.md — 多智能体 Git 协作约定（codex / kimi / claude / accio 通用）
 
-本仓库由多个 AI 编码代理并行开发（Claude Code / Codex / Kimi Code），各自工作在独立 git worktree。完整项目规范见同目录 `CLAUDE.md`（宪法）与 `.agents/skills/completion-checklist/SKILL.md`（完工 DoD 与新模块 checklist 的维护来源）；本文件是跨代理 Git 约定的唯一来源；CLAUDE.md 只引用它。协作中的自主性、澄清、批准与完成默认值遵守用户级 AGENTS.md，项目技术和数据安全约束仍然适用。
+本仓库由多个 AI 编码代理并行开发（Claude Code / Codex / Kimi Code / Accio Work），各自工作在独立 git worktree。完整项目规范见同目录 `CLAUDE.md`（宪法）与 `.agents/skills/completion-checklist/SKILL.md`（完工 DoD 与新模块 checklist 的维护来源）；本文件是跨代理 Git 约定的唯一来源；CLAUDE.md 只引用它。协作中的自主性、澄清、批准与完成默认值遵守用户级 AGENTS.md，项目技术和数据安全约束仍然适用。
 
 ## Worktree 与分支
 
 - 代码开发使用各自 worktree；用户明确要求维护当前路径的指令或文档时，可直接修改指定文件，保留未提交 diff 供审阅，不自动 commit。**禁止在别的代理的目录里 commit**；worktree 归属以其检出分支的 `<tool>/` 前缀为准，目录名不作准：
   - `commission-system`（主目录）= Claude Code，**merge 回 main 只能在这里做**
   - `commission-system-kimi` = Kimi Code
+  - `commission-system-accio-<topic>` = Accio Work，按任务创建，用完 `git worktree remove` 清理
   - 其余 `commission-system-*` = 按任务临时创建，用完 `git worktree remove` 清理
-- 分支命名 `<tool>/<topic>`：`claude/...`、`codex/...`、`kimi/...`
+- 分支命名 `<tool>/<topic>`：`claude/...`、`codex/...`、`kimi/...`、`accio/...`
 - commit 前用 `git rev-parse --show-toplevel`、`git branch --show-current` 和 `git diff --cached` 核对目录、分支及提交内容。各 worktree 的 HEAD 和 index 独立，objects 和分支 refs 共享；不要在错误目录执行命令。
+
+## Git 门禁（共享 hooks）
+
+- `.githooks/` + `scripts/git_hooks.py` 把本文件中可机器判定的规则下沉到 git，所有代理和人工都会经过。启用一次即对全部 worktree 生效：`python scripts/git_hooks.py install`（`status` 查看，`uninstall` 停用）。
+- 代理在执行 git 的 shell 里设置 `ARK_AGENT=<claude|codex|kimi|accio>`；未设置按人工处理，只做通用检查。
+- pre-commit 拦截：在链接 worktree 提交 main；代理在非本前缀分支提交（main 仅 claude）；暂存区空白/冲突标记；`.env`、私钥等密钥文件或私钥内容；提交后 Alembic 多 head 或 revision 重复。`check_conventions --strict` 默认只提示，`ARK_HOOKS_STRICT=1` 时阻断。合并提交的空白问题只提示。
+- pre-push 拦截：代理推送未带 `ARK_PUSH_APPROVED=1`（仅在亮哥授权后对该次推送设置）；推送其他代理前缀的分支；删除或非快进覆盖 main/master/tag（代理对任何分支）未带 `ARK_PUSH_FORCE_APPROVED=1`。
+- 代理禁止使用 `--no-verify` 或改 `core.hooksPath` 绕过；误拦应修脚本白名单并补测试（`python -m unittest scripts.tests.test_git_hooks`）。
 
 ## 推送与合并
 

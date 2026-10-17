@@ -1,0 +1,9 @@
+#!/bin/sh
+# Shared ark git gate; logic lives in scripts/git_hooks.py.
+for candidate in python3 python "py -3"; do
+    if $candidate -c "import sys; sys.exit(sys.version_info < (3, 9))" >/dev/null 2>&1; then
+        exec $candidate scripts/git_hooks.py "$(basename "$0")" "$@"
+    fi
+done
+echo "[ark-hooks] warning: no Python 3.9+ found, $(basename "$0") checks skipped" >&2
+exit 0
