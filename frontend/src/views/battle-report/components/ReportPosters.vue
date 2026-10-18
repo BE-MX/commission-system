@@ -4,30 +4,30 @@
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <template v-if="config">
         <el-form label-position="top" :disabled="saving || generating || report.status === 'archived'">
-          <el-form-item label="计时工作日">
+          <el-form-item v-if="report.award_kind === 'gmv'" label="计时工作日">
             <el-date-picker v-model="dates" type="dates" value-format="YYYY-MM-DD" format="MM-DD" placeholder="选择战报周期内的工作日" />
           </el-form-item>
-          <p class="poster-help">共 {{ dates?.length || 0 }} 个工作日，每个工作日北京时间 16:00 累计 {{ dailyStep }} 个百分点，最后一天达到 100%。完成率严格高于时间进度为绿色，相等或落后为红色。</p>
+          <p v-if="report.award_kind === 'gmv'" class="poster-help">共 {{ dates?.length || 0 }} 个工作日，每个工作日北京时间 16:00 累计 {{ dailyStep }} 个百分点，最后一天达到 100%。完成率严格高于时间进度为绿色，相等或落后为红色。</p>
           <el-form-item label="钉钉群定时推送">
             <el-switch v-model="enabled" :disabled="!config.push_ready || report.visibility !== 'activity'" />
-            <span class="poster-switch-label">活动周期内每天 {{ config.send_times.join('、') }} 各推送团队和个人海报至「{{ config.group_name }}」</span>
+            <span class="poster-switch-label">从{{ config.push_start_date }}至{{ report.end_date }}，{{ report.award_kind === 'gmv' ? '每天' : '周一、三、五' }} {{ config.send_times.join('、') }} 推送至「{{ config.group_name }}」</span>
           </el-form-item>
           <el-alert v-if="!config.push_ready" type="warning" :closable="false" title="尚未配置战报专用群机器人及公网海报地址，当前可预览下载，不能开启自动推送。" />
           <el-alert v-else-if="report.visibility !== 'activity'" type="warning" :closable="false" title="群海报展示全部参与人；须将战报可见范围设为全活动后才能启用推送。" />
           <el-alert v-else-if="report.status === 'draft'" type="info" :closable="false" title="草稿可保存推送设置，发布战报后才会按时发送。" />
-          <p class="poster-help">非工作日仍按时推送，时间进度不增加。归档或活动结束后停止发送。</p>
+          <p class="poster-help">{{ report.award_kind === 'gmv' ? '非工作日仍按时推送，时间进度不增加。' : '奖项战报仅在指定星期推送，每次取当前OKKI镜像数据。' }}归档或活动结束后停止发送。</p>
           <GlassButton v-permission="'battle_report:admin'" variant="primary" :loading="saving" :disabled="generating || report.status === 'archived'" @click="save">保存设置</GlassButton>
         </el-form>
-        <div class="poster-toolbar"><GlassButton v-permission="'battle_report:admin'" :loading="generating" :disabled="saving || dirty" @click="preview">生成两张海报</GlassButton><span>{{ dirty ? '请先保存修改，再生成海报' : '预览和下载不会发送群消息' }}</span></div>
+        <div class="poster-toolbar"><GlassButton v-permission="'battle_report:admin'" :loading="generating" :disabled="saving || dirty" @click="preview">生成战报海报</GlassButton><span>{{ dirty ? '请先保存修改，再生成海报' : '预览和下载不会发送群消息' }}</span></div>
         <p v-if="calculatedAt" class="poster-help">同一数据快照：{{ formatBeijingDateTime(calculatedAt) }}（北京时间）</p>
         <div v-if="images" class="poster-grid">
-          <article v-for="kind in ['team', 'personal']" :key="kind"><h3>{{ kind === 'team' ? '团队' : '个人' }}海报</h3><a :href="images[kind]" :download="`${report.name}-${kind}.png`">下载完整海报</a><el-image :src="images[kind]" :preview-src-list="[images[kind]]" fit="contain" /></article>
+          <article v-for="kind in config.poster_kinds" :key="kind"><h3>{{ kind === 'team' ? '团队' : '个人' }}海报</h3><a :href="images[kind]" :download="`${report.name}-${kind}.png`">下载完整海报</a><el-image :src="images[kind]" :preview-src-list="[images[kind]]" fit="contain" /></article>
         </div>
         <h3>最近推送记录</h3>
         <el-empty v-if="!config.history.length" description="暂无推送记录" :image-size="60" />
         <el-table v-else :data="config.history" class="list-table" border v-sticky-scrollbar>
           <el-table-column prop="date" label="推送时段" min-width="160"><template #default="{ row }">{{ row.date }} {{ row.slot }}</template></el-table-column>
-          <el-table-column :sort-by="row => (statusLabels[row.deliveries[kind].status] || row.deliveries[kind].status)" v-for="kind in ['team', 'personal']" :key="kind" :label="kind === 'team' ? '团队海报' : '个人海报'" min-width="180"><template #default="{ row }"><StatusBadge :type="statusType(row.deliveries[kind].status)">{{ statusLabels[row.deliveries[kind].status] || row.deliveries[kind].status }}</StatusBadge><p v-if="row.deliveries[kind].error" class="poster-help">{{ row.deliveries[kind].error }}</p></template></el-table-column>
+          <el-table-column :sort-by="row => statusLabels[row.deliveries[kind]?.status] || '无此海报'" v-for="kind in config.poster_kinds" :key="kind" :label="kind === 'team' ? '团队海报' : '个人海报'" min-width="180"><template #default="{ row }"><StatusBadge :type="statusType(row.deliveries[kind]?.status)">{{ statusLabels[row.deliveries[kind]?.status] || '无此海报' }}</StatusBadge><p v-if="row.deliveries[kind]?.error" class="poster-help">{{ row.deliveries[kind].error }}</p></template></el-table-column>
         </el-table>
       </template>
     </div>
@@ -51,7 +51,7 @@ const statusType = value => value === 'sent' ? 'success' : ['failed', 'uncertain
 function apply(value) { config.value = value; dates.value = [...value.work_dates]; enabled.value = value.push_enabled }
 async function load() { loading.value = true; try { const result = await battleReportApi.posterConfig(props.report.id); if (alive) apply(result) } catch (e) { if (alive) error.value = errorText(e) } finally { if (alive) loading.value = false } }
 async function save() {
-  if (!dates.value?.length) { error.value = '请至少选择一个工作日'; return }
+  if (props.report.award_kind === 'gmv' && !dates.value?.length) { error.value = '请至少选择一个工作日'; return }
   saving.value = true; error.value = ''
   try { const result = await battleReportApi.savePosterConfig(props.report.id, { version: config.value.version, work_dates: dates.value, push_enabled: enabled.value }); if (alive) { apply(result); images.value = null; msgSuccess('保存海报设置'); emit('saved') } }
   catch (e) { if (alive) error.value = errorText(e) } finally { if (alive) saving.value = false }

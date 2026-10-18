@@ -21,6 +21,19 @@ class MemberInput(Command):
     is_captain: bool = False
 
 
+class AwardBaseline(Command):
+    ark_user_id: int = Field(gt=0)
+    hired_date: date
+    gmv_2025_usd: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
+    target_gmv_usd: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
+
+
+class AwardRules(Command):
+    baselines: list[AwardBaseline] = Field(default_factory=list, max_length=200)
+    push_start_date: date
+    source_sha256: str = Field(default="", max_length=64)
+
+
 class ReportInput(Command):
     name: Name
     start_date: date
@@ -28,6 +41,8 @@ class ReportInput(Command):
     target_deadline: datetime
     visibility: Literal["activity", "team", "self"] = "activity"
     members: list[MemberInput] = Field(min_length=1, max_length=200)
+    award_kind: Literal["gmv", "annual_repurchase", "new_sign_pk"] = "gmv"
+    award_rules: AwardRules | None = None
 
     @field_validator("target_deadline")
     @classmethod
@@ -45,6 +60,32 @@ class ReportInput(Command):
         ids = [m.ark_user_id for m in self.members]
         if len(ids) != len(set(ids)):
             raise ValueError("同一个业务员只能加入一个活动小组")
+        if self.award_kind == "gmv":
+            if self.award_rules is not None:
+                raise ValueError("GMV战报不使用奖项规则")
+            return self
+        rules = self.award_rules
+        if rules is None or not self.start_date <= rules.push_start_date <= self.end_date:
+            raise ValueError("请配置奖项规则及周期内的推送开始日")
+        if self.visibility != "activity":
+            raise ValueError("奖项战报须允许全活动查看，保证排名与PK完整")
+        if self.award_kind == "annual_repurchase":
+            if (self.start_date, self.end_date) != (date(2026, 1, 1), date(2026, 12, 31)):
+                raise ValueError("年度奖统计周期为2026全年")
+            baseline_ids = [b.ark_user_id for b in rules.baselines]
+            if len(baseline_ids) != len(set(baseline_ids)) or set(baseline_ids) != set(ids):
+                raise ValueError("每位参评人须有唯一的2025年GMV基数")
+            cutoff = rules.push_start_date.replace(year=rules.push_start_date.year - 2)
+            if any(b.hired_date > cutoff for b in rules.baselines):
+                raise ValueError("参评人须在推送开始日已入职两年以上")
+        else:
+            if (self.start_date, self.end_date) != (date(2026, 11, 1), date(2026, 11, 30)):
+                raise ValueError("新签PK奖统计周期为2026年11月")
+            teams = {m.team for m in self.members}
+            if len(teams) != 2 or any(sum(m.is_captain for m in self.members if m.team == t) != 1 for t in teams):
+                raise ValueError("PK须有两个团队，每队恰好一位队长")
+            if rules.baselines:
+                raise ValueError("PK奖不使用年度GMV基数")
         return self
 
 
@@ -78,7 +119,7 @@ class TargetUpdate(Command):
 
 class PosterConfigUpdate(Command):
     version: int = Field(gt=0)
-    work_dates: list[date] = Field(min_length=1, max_length=366)
+    work_dates: list[date] = Field(default_factory=list, max_length=366)
     push_enabled: bool = False
 
     @field_validator("work_dates")

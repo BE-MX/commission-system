@@ -1,11 +1,11 @@
 <template>
   <div class="battle-page">
     <header class="battle-header"><div><h2>{{ report?.name || '临时战报' }}</h2><p>目标有方向，业绩有依据，复盘到每一笔订单。</p></div><div class="battle-actions"><GlassButton left-icon="Refresh" :loading="loading" @click="refresh">刷新</GlassButton><GlassButton v-permission="'battle_report:admin'" variant="primary" left-icon="Plus" @click="openSettings(false)">新建战报</GlassButton></div></header>
-    <div class="battle-actions battle-picker"><el-select v-model="selectedId" placeholder="选择战报" aria-label="选择战报" @change="changeReport"><el-option v-for="item in reports" :key="item.id" :label="`${item.name} · ${stageLabels[item.stage]}`" :value="item.id" /></el-select><el-checkbox v-model="archived" @change="loadReports()">查看归档</el-checkbox><el-select v-if="report" v-model="team" clearable placeholder="全部可查看业务组" aria-label="业务组筛选" @change="changeTeam"><el-option v-for="item in teams" :key="item" :label="item" :value="item" /></el-select></div>
+    <div class="battle-actions battle-picker"><el-select v-model="selectedId" placeholder="选择战报" aria-label="选择战报" @change="changeReport"><el-option v-for="item in reports" :key="item.id" :label="`${item.name} · ${stageLabels[item.stage]}`" :value="item.id" /></el-select><el-checkbox v-model="archived" @change="loadReports()">查看归档</el-checkbox><el-select v-if="report?.award_kind === 'gmv'" v-model="team" clearable placeholder="全部可查看业务组" aria-label="业务组筛选" @change="changeTeam"><el-option v-for="item in teams" :key="item" :label="item" :value="item" /></el-select></div>
     <ListPageStatus v-if="selectorResource.error.value || selectorResource.loading.value" :paged="false" :error="selectorResource.errorMessage.value" :loading="selectorResource.loading.value" :has-data="selectorResource.hasData.value" @retry="loadReports()" />
     <ListPageStatus v-if="selectedId" :paged="false" :error="detailResource.errorMessage.value" :loading="detailResource.loading.value" :has-data="detailResource.hasData.value" @retry="loadReport"><el-empty v-if="!report" description="暂无战报详情" :image-size="96" /></ListPageStatus>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
-    <div v-if="report" class="battle-meta"><StatusBadge size="small" effect="plain">{{ stageLabels[report.stage] }}</StatusBadge><span>{{ report.start_date }} — {{ report.end_date }} · USD</span><span>核算日期 · 订单 GMV · 活动小组</span></div>
+    <div v-if="report" class="battle-meta"><StatusBadge size="small" effect="plain">{{ stageLabels[report.stage] }}</StatusBadge><span>{{ report.start_date }} — {{ report.end_date }} · {{ report.currency }}</span><span>核算日期 · {{ report.award_kind === 'gmv' ? '订单 GMV · 活动小组' : '新签客户 · 奖项规则' }}</span></div>
     <div v-if="report" class="battle-actions battle-manage">
       <GlassButton v-permission="'battle_report:admin'" :disabled="report.status === 'archived' || busy" left-icon="Setting" @click="openSettings(true)">战报设置</GlassButton>
       <GlassButton v-if="report.status === 'draft'" v-permission="'battle_report:admin'" variant="primary" :loading="busy" @click="transition('publish')">发布战报</GlassButton>
@@ -14,16 +14,16 @@
       <GlassButton v-permission="'battle_report:admin'" left-icon="Clock" @click="openAudits">修改记录</GlassButton>
       <GlassButton v-permission="'battle_report:admin'" left-icon="Picture" @click="postersVisible = true">战报海报</GlassButton>
     </div>
-    <el-alert v-if="report?.status === 'draft'" type="info" :closable="false" title="当前为草稿，仅管理员可查看。核对名单和日期后发布，参与人即可填报目标。" />
+    <el-alert v-if="report?.status === 'draft'" type="info" :closable="false" :title="report.award_kind === 'gmv' ? '当前为草稿，仅管理员可查看。核对名单和日期后发布，参与人即可填报目标。' : '当前为草稿，仅管理员可查看。核对名单和规则后发布，参与人即可查看奖项进度；目标由规则自动计算。'" />
     <div v-loading="loading" class="battle-content">
       <el-tabs v-if="report" v-model="tab">
-        <el-tab-pane label="战报总览" name="overview"><ListPageStatus :paged="false" :error="overviewResource.errorMessage.value" :loading="overviewResource.loading.value" :has-data="overviewResource.hasData.value" @retry="loadOverview"><el-empty v-if="!overview" description="暂无战报汇总" :image-size="96" /></ListPageStatus><ReportOverview v-if="overview" :data="overview" @team="chooseTeam" @review="review" /></el-tab-pane>
-        <el-tab-pane label="每日复盘" name="daily"><ReportDaily v-if="tab === 'daily'" :key="`${report.id}:${team}:${refreshKey}`" :report="report" :team="team" :selection="selection" /></el-tab-pane>
-        <el-tab-pane label="目标填报" name="targets"><ReportTargets v-if="tab === 'targets'" :report="report" :team="team" @saved="refresh" /></el-tab-pane>
+        <el-tab-pane label="战报总览" name="overview"><ListPageStatus :paged="false" :error="overviewResource.errorMessage.value" :loading="overviewResource.loading.value" :has-data="overviewResource.hasData.value" @retry="loadOverview"><el-empty v-if="!overview" description="暂无战报汇总" :image-size="96" /></ListPageStatus><AwardOverview v-if="overview && report.award_kind !== 'gmv'" :data="overview" /><ReportOverview v-else-if="overview" :data="overview" @team="chooseTeam" @review="review" /></el-tab-pane>
+        <el-tab-pane v-if="report.award_kind === 'gmv'" label="每日复盘" name="daily"><ReportDaily v-if="tab === 'daily'" :key="`${report.id}:${team}:${refreshKey}`" :report="report" :team="team" :selection="selection" /></el-tab-pane>
+        <el-tab-pane v-if="report.award_kind === 'gmv'" label="目标填报" name="targets"><ReportTargets v-if="tab === 'targets'" :report="report" :team="team" @saved="refresh" /></el-tab-pane>
       </el-tabs>
       <el-empty v-else-if="!loading && !selectorResource.error.value && !detailResource.error.value" :description="error ? '暂时无法读取战报，请重试' : '暂无可查看的战报，管理员可新建战报并邀请业务员参与'" />
     </div>
-    <footer v-if="overview" class="battle-footer"><span>计算时间：{{ formatBeijingDateTime(overview.calculated_at) }}（北京时间）</span><span>源同步时间未知 · 以当前业务镜像数据为准</span></footer>
+    <footer v-if="overview" class="battle-footer"><span>计算时间：{{ formatBeijingDateTime(overview.calculated_at) }}（北京时间）</span><span v-if="report.award_kind === 'gmv'">源同步时间未知 · 以当前业务镜像数据为准</span><span v-else>OKKI镜像同步：{{ overview.source_synced_at ? formatBeijingDateTime(overview.source_synced_at) : '未知' }} · 每次刷新重算，存在同步延迟</span></footer>
     <ReportSettings v-model="settingsVisible" :report="editingReport" @saved="settingsSaved" />
     <ReportPosters v-if="postersVisible && report" v-model="postersVisible" :report="report" @saved="refresh" />
     <DetailDrawer v-model="auditsVisible" title="战报修改记录" :loading="auditsLoading"><ListPageStatus :error="auditError" :loading="auditsLoading" :has-data="auditState.hasData.value" :data-page="auditState.dataPage.value" @retry="loadAudits" /><el-empty v-if="auditState.isEmpty.value" description="暂无修改记录" /><article v-for="item in audits" :key="item.id" class="battle-audit"><h4>{{ auditLabels[item.action] || item.action }} · {{ formatBeijingDateTime(item.created_at) }}</h4><p>操作人 ID：{{ item.actor_id }} · {{ item.reason || '常规操作' }}</p><details><summary>查看修改前后内容</summary><p>修改前</p><pre>{{ JSON.stringify(item.before, null, 2) }}</pre><p>修改后</p><pre>{{ JSON.stringify(item.after, null, 2) }}</pre></details></article><el-pagination class="pager" :page-sizes="[20, 50, 100]" v-model:current-page="auditPage" v-model:page-size="auditPageSize" :total="auditTotal" layout="total, sizes, prev, pager, next" @current-change="changeAuditPage" @size-change="changeAuditSize" /></DetailDrawer>
@@ -42,6 +42,7 @@ import { battleReportApi } from '@/api/battleReport'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { msgSuccess } from '@/utils/feedback'
 import ReportOverview from './components/ReportOverview.vue'
+import AwardOverview from './components/AwardOverview.vue'
 import ReportDaily from './components/ReportDaily.vue'
 import ReportTargets from './components/ReportTargets.vue'
 import ReportSettings from './components/ReportSettings.vue'
@@ -88,6 +89,7 @@ function loadReport() {
   return Promise.all([detailResource.load(selectedId.value), loadOverview()])
 }
 function changeReport() {
+  tab.value = 'overview'
   scopeVersion++; detailResource.clear(); overviewResource.clear(); team.value = ''; selection.value = {}; error.value = ''
   return loadReport()
 }

@@ -3,13 +3,15 @@
     <ListPageStatus v-if="participantsResource.error.value" :paged="false" :error="participantsResource.errorMessage.value" :loading="loading" :has-data="participantsResource.hasData.value" @retry="loadParticipants" />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-form label-position="top" v-loading="loading" @submit.prevent="save">
+      <div v-if="!report" class="battle-actions"><GlassButton v-for="preset in presets" :key="preset.payload.award_kind" :disabled="!preset.ready" @click="applyPreset(preset)">{{ preset.payload.name }}{{ preset.ready ? '' : ' · 名单绑定待核对' }}</GlassButton></div>
+      <p v-if="form.award_kind !== 'gmv'" class="battle-muted">{{ form.award_kind === 'annual_repurchase' ? '美元目标直接引用附件“评比需满足最低门槛”列；2026年美元GMV直接比较，复购成果归原新签人。' : '两队PK：每人6个新签目标，队长与参赛人数按活动名单计算。' }} 推送从 {{ form.award_rules?.push_start_date }} 起，每周一、三、五09:00 / 16:00。</p>
       <div class="battle-form-grid">
         <el-form-item label="战报名"><el-input v-model="form.name" maxlength="100" placeholder="例如：九月冲刺战报" /></el-form-item>
         <el-form-item label="汇总可见范围"><el-select v-model="form.visibility"><el-option label="本活动参与人互看汇总" value="activity" /><el-option label="仅本组汇总" value="team" /><el-option label="仅本人汇总" value="self" /></el-select></el-form-item>
         <el-form-item label="开始日期"><el-date-picker v-model="form.start_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="结束日期"><el-date-picker v-model="form.end_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="目标填报截止时间（北京时间）"><el-date-picker v-model="form.target_deadline" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
-        <el-form-item label="统计口径"><span>订单核算日期 · USD · 活动小组</span></el-form-item>
+        <el-form-item label="统计口径"><span>订单核算日期 · USD · {{ form.award_kind === 'gmv' ? 'GMV' : '新签奖项' }} · 活动小组</span></el-form-item>
       </div>
       <el-form-item label="参与业务员（有效 OKKI 绑定）"><el-select v-model="selected" multiple filterable placeholder="选择参与人" @change="syncMembers"><el-option v-for="person in options" :key="person.ark_user_id" :label="`${person.user_name} · ${person.team || '未分组'}`" :value="person.ark_user_id" /></el-select></el-form-item>
       <div class="table-card"><el-table :data="form.members" class="list-table" border v-sticky-scrollbar><el-table-column :sort-by="row => nameOf(row.ark_user_id)" label="业务员" min-width="120" max-width="160"><template #default="{ row }">{{ nameOf(row.ark_user_id) }}</template></el-table-column><el-table-column prop="team" label="本次活动小组" min-width="220" max-width="300"><template #default="{ row }"><el-input v-model="row.team" maxlength="100" :aria-label="`${nameOf(row.ark_user_id)}的活动组`" placeholder="填写组名，相同组名合并统计" /></template></el-table-column><el-table-column prop="is_captain" label="组长（可看本组订单）" min-width="230" max-width="280"><template #default="{ row }"><el-checkbox v-model="row.is_captain" :aria-label="`${nameOf(row.ark_user_id)}作为组长`">组长</el-checkbox></template></el-table-column></el-table></div>
@@ -37,19 +39,34 @@ const participantsResource = useAsyncResource(async ({ members }, { signal }) =>
   return items
 }, { initialData: [] })
 const options = participantsResource.data, loading = participantsResource.loading
-const selected = ref([]), saving = ref(false), error = ref('')
-const form = reactive({ name: '', start_date: '', end_date: '', target_deadline: '', visibility: 'activity', members: [], reason: '' })
+const selected = ref([]), saving = ref(false), error = ref(''), presets = ref([])
+const form = reactive({ name: '', start_date: '', end_date: '', target_deadline: '', visibility: 'activity', members: [], reason: '', award_kind: 'gmv', award_rules: null })
 let scopeVersion = 0
-function loadParticipants() { return participantsResource.load({ members: props.report?.members || [] }) }
+async function loadParticipants() {
+  const scope = scopeVersion
+  const loaded = await participantsResource.load({ members: props.report?.members || [] })
+  if (loaded && !props.report) {
+    try { const result = await battleReportApi.awardPresets(); if (scope === scopeVersion) presets.value = result.items }
+    catch (e) { if (scope === scopeVersion) error.value = errorText(e) }
+  }
+  return loaded
+}
+function applyPreset(preset) {
+  Object.assign(form, JSON.parse(JSON.stringify(preset.payload)))
+  selected.value = form.members.map(m => m.ark_user_id)
+}
 const nameOf = id => options.value.find(p => p.ark_user_id === id)?.user_name || `账号 ${id}`
 watch(() => [props.modelValue, props.report?.id], ([open]) => {
   scopeVersion++
   participantsResource.clear()
   if (!open) return
   error.value = ''
+  presets.value = []
   const today = currentBeijingDate(), report = props.report
   Object.assign(form, report ? { name: report.name, start_date: report.start_date, end_date: report.end_date, target_deadline: report.target_deadline, visibility: report.visibility, reason: '', members: report.members.map(m => ({ ark_user_id: m.ark_user_id, team: m.team, is_captain: m.is_captain })) } : { name: '', start_date: today, end_date: addDays(today, 13), target_deadline: `${today}T23:59:59`, visibility: 'activity', members: [], reason: '' })
   selected.value = form.members.map(m => m.ark_user_id)
+  form.award_kind = report?.award_kind || 'gmv'
+  form.award_rules = report?.award_rules ? JSON.parse(JSON.stringify(report.award_rules)) : null
   void loadParticipants()
 }, { flush: 'sync' })
 function syncMembers(ids) {

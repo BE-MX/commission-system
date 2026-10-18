@@ -65,6 +65,8 @@ def posters(setup, monkeypatch, tmp_path):
     monkeypatch.setattr(poster_images, "UPLOADS_ROOT", tmp_path / "uploads")
     monkeypatch.setattr(poster_delivery, "beijing_now", lambda: datetime(2026, 9, 22, 13))
     monkeypatch.setattr(poster_service, "beijing_now", lambda: datetime(2026, 9, 22, 13))
+    from app.core.time import BEIJING_TIMEZONE
+    monkeypatch.setattr(poster_images, "beijing_now_aware", lambda: datetime(2026, 9, 22, 13, tzinfo=BEIJING_TIMEZONE))
     report = s.db.get(BattleReport, s.report["id"])
     report.start_date, report.end_date = date(2026, 9, 22), date(2026, 9, 30)
     s.db.commit()

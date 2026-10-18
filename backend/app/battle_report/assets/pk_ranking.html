@@ -1,0 +1,25 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>11月新签对抗榜</title><style>{{ css | safe }}</style></head><body>
+<main class="pk-sheet" data-background="{{ mode }}" aria-label="11月新签对抗榜">
+  {% if mode == 'neutral' %}
+    <img class="pk-background neutral-left" src="{{ background_two }}" alt="一组中立底图">
+    <img class="pk-background neutral-right" src="{{ background_one }}" alt="二组中立底图">
+    <div class="pk-neutral-divider" aria-label="双方对阵，无领先">VS</div>
+  {% else %}<img class="pk-background" src="{{ background_one if mode == 'one' else background_two }}" alt="{{ '一组' if mode == 'one' else '二组' }}领先底图">{% endif %}
+  {% for person in people %}
+    <section aria-label="{{ person.name }}{% if person.captain %} 队长{% endif %}">
+      <div class="pk-name pk-fit {{ person.tone }} {% if person.captain %}captain{% endif %}" style="{{ person.name_style }}">{{ person.name }}</div>
+      <div class="pk-count pk-fit {% if person.captain %}captain{% endif %}" style="{{ person.count_style }}">{{ person.count }}</div>
+    </section>
+  {% endfor %}
+  {% for team in totals %}<section class="pk-total {{ team.tone }}" aria-label="{{ team.team }}团队进展" style="{{ team.style }}">
+    <strong class="pk-fit">{{ team.count }}</strong><div class="pk-target pk-fit">{{ team.progress }}</div><div class="pk-track"><span style="width:{{ team.fill }}%"></span></div>
+  </section>{% endfor %}
+  <section class="pk-reward" aria-label="团队奖励"><div class="pk-fit">{{ heading }}</div><strong class="pk-fit">{{ amount }}</strong><small class="pk-fit">{{ detail }}</small></section>
+  {% if demo %}<div class="pk-mode">版式样张 · 全部数值为模拟数据</div>{% elif not visible %}<div class="pk-mode">数据待核对 · 未填正式数据</div>{% endif %}
+</main>
+<footer class="pk-notes">
+  {% if demo %}<strong>版式样张：仅使用已确认名单和模拟数值展示布局，不代表真实业绩或已获奖励。</strong>{% else %}<strong>数据计算：{{ calculated_at }}（北京时间） · OKKI镜像最近同步：{{ source_synced_at }}</strong>{% endif %}
+  <div>活动：2026.11.01—11.30 · 新签按客户去重。每队目标＝参赛人数×6，基础奖金＝人数×100元，超额10%及以上加奖10%。</div>
+  <div>{{ team_rewards }}。双方达标后，按人均新签数→人均新签金额→人均月GMV决胜；胜队另奖500元，队长另奖10个官网询盘。</div>
+  <div>皇冠表示当前领先；{% if ended %}展示计算结果，奖金与询盘尚未发放。{% else %}活动期间奖励均为预测，结束后确认。{% endif %}进度条封顶100%，数值可超100%。</div>
+</footer></body></html>

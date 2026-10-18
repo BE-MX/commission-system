@@ -1,0 +1,23 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>2026新签复购业绩榜</title><style>{{ css | safe }}</style></head><body>
+<main class="annual-sheet" aria-label="2026新签复购业绩榜">
+  <img class="annual-background" src="{{ background }}" alt="莱莎2026新签复购业绩榜底图">
+  {% if demo %}<div class="annual-mode">版式样张 · 模拟数据</div>{% elif not visible %}<div class="annual-mode">待核对 · 未填正式数据</div>{% elif cutoff_tie %}<div class="annual-mode">第五名同分 · 待裁定</div>{% endif %}
+  {% for card in podium %}
+    <section aria-label="第{{ card.rank }}名展示位">
+      {% for field in card.fields %}<div class="annual-field podium-field {{ field.kind }}" style="{{ field.style }}">{{ field.text }}</div>{% endfor %}
+      <div class="annual-progress podium-progress {{ card.tone }}" style="{{ card.style }}"><div class="annual-track"><span style="width:{{ card.fill }}%"></span></div><b>{{ card.label }}</b></div>
+    </section>
+  {% endfor %}
+  {% for row in table %}
+    <section aria-label="第{{ row.rank }}名展示位">
+      {% for field in row.fields %}<div class="annual-field table-field {{ field.kind }}" style="{{ field.style }}">{{ field.text }}</div>{% endfor %}
+      <div class="annual-progress table-progress" style="{{ row.style }}"><div class="annual-track"><span style="width:{{ row.fill }}%"></span></div><b>{{ row.label }}</b></div>
+    </section>
+  {% endfor %}
+</main>
+<footer class="annual-notes">
+  {% if demo %}<strong>版式样张：全部姓名与数值为模拟示例，正式数据待标记核对后填入。</strong>{% elif not visible %}<strong>正式数据待核对：{{ issue_count }}项数据异常，未填正式数据；席位编号不代表排名。</strong>{% else %}<strong>数据计算：{{ calculated_at }}（北京时间） · OKKI镜像最近同步：{{ source_synced_at }}</strong>{% endif %}
+  {% if visible %}<div>{{ group_label }}。前五席位为总榜展示，获奖资格须先达GMV门槛。</div>{% endif %}
+  <div>排序：达100%者优先，按积分降序；未达100%者先按完成进度、再按积分降序。</div>
+  <div>复购金额：USD；复购个数按客户去重。目标直接引用Excel最低门槛列。进度条封顶100%，数值可超过100%。{% if cutoff_tie %} 同分边界待裁定。{% endif %}</div>
+</footer></body></html>

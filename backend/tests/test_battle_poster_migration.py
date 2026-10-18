@@ -13,13 +13,14 @@ from tests.test_outbound_presence_migration import migration as presence_migrati
 
 def test_release_advances_deployed_presence_revision_without_recreating_evidence():
     script = ScriptDirectory(str(Path(__file__).resolve().parents[1] / 'alembic'))
-    assert script.get_heads() == ['164_battle_posters']
+    assert len(script.get_heads()) == 1
+    assert '164_battle_posters' in {revision.revision for revision in script.walk_revisions()}
     pending = list(reversed(list(script.iterate_revisions(
-        script.get_current_head(), '163_okki_presence_days', implicit_base=True,
+        '164_battle_posters', '163_okki_presence_days', implicit_base=True,
     ))))
     assert [revision.revision for revision in pending] == ['164_battle_posters']
     assert [revision.revision for revision in reversed(list(script.iterate_revisions(
-        script.get_current_head(), '162_battle_reports', implicit_base=True,
+        '164_battle_posters', '162_battle_reports', implicit_base=True,
     )))] == ['163_okki_presence_days', '164_battle_posters']
 
     engine = sa.create_engine('sqlite:///:memory:')

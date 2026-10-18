@@ -65,6 +65,7 @@ JOB_AGENT_RAW_EVENT_REDACTION = "agent_raw_event_redaction"
 JOB_DINGTALK_GMV_DAILY = "dingtalk_gmv_daily"
 JOB_BATTLE_POSTERS_NOON = "battle_posters_noon"
 JOB_BATTLE_POSTERS_AFTERNOON = "battle_posters_afternoon"
+JOB_BATTLE_AWARDS = "battle_awards"
 JOB_WHATSAPP_TRANSLATION_PAIRING_CLEANUP = "whatsapp_translation_pairing_cleanup"
 JOB_DOMESTIC_PUBLIC_SEA_DAILY = "domestic_public_sea_daily"
 JOB_PCW_DAILY_EVALUATION = "pcw_daily_evaluation"
@@ -335,6 +336,9 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
                       max_instances=1, coalesce=True, misfire_grace_time=60)
     scheduler.add_job(send_battle_posters_job, trigger="cron", hour=17, minute="1,6,16",
                       timezone="Asia/Shanghai", id=JOB_BATTLE_POSTERS_AFTERNOON, replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=60)
+    scheduler.add_job(send_battle_posters_job, trigger="cron", day_of_week="mon,wed,fri", hour="9,16", minute="0,5,15",
+                      timezone="Asia/Shanghai", id=JOB_BATTLE_AWARDS, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
 
     # ── 色彩趋势 ──────────────────────────────────────────

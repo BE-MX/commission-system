@@ -30,7 +30,11 @@ def get_config(db, report_id, user):
     logs = db.query(BattleReportDelivery).filter_by(report_id=report_id).order_by(BattleReportDelivery.id.desc()).limit(10).all()
     return {"version": report.version, "work_dates": work_dates(report),
             "push_enabled": bool(report.poster_push_enabled), "push_ready": bool(push_ready(settings)),
-            "group_name": settings.BATTLE_REPORT_GROUP_NAME, "send_times": ["13:00", "17:01"],
+            "group_name": settings.BATTLE_REPORT_GROUP_NAME,
+            "send_times": ["13:00", "17:01"] if report.award_kind == "gmv" else ["09:00", "16:00"],
+            "send_weekdays": list(range(7)) if report.award_kind == "gmv" else [0, 2, 4],
+            "push_start_date": report.start_date.isoformat() if report.award_kind == "gmv" else report.award_rules["push_start_date"],
+            "poster_kinds": poster_kinds(report),
             "history": [{"id": row.id, "date": row.report_date.isoformat(), "slot": row.slot,
                          "deliveries": row.deliveries, "calculated_at": row.snapshot["calculated_at"]} for row in logs]}
 
@@ -41,6 +45,8 @@ def save_config(db, report_id, user, payload):
         report, _, _ = load_report(db, report_id, user, lock=True)
         if report.status == "archived":
             raise HTTPException(409, "归档战报不可修改海报设置")
+        if report.award_kind == "gmv" and not payload.work_dates:
+            raise HTTPException(422, "请至少选择一个计时工作日")
         if any(not report.start_date <= d <= report.end_date for d in payload.work_dates):
             raise HTTPException(422, "计时工作日必须位于战报周期内")
         if payload.push_enabled and (not push_ready() or report.visibility != "activity"):
@@ -55,6 +61,15 @@ def save_config(db, report_id, user, payload):
 
 def build_snapshot(db, report, members, now=None):
     now = now or beijing_now()
+    if report.award_kind != "gmv":
+        from app.battle_report.award_statistics import build_snapshot as awards
+        data = awards(db, report, members, now)
+        if not data["data_complete"] or not members:
+            raise HTTPException(422, "订单数据待核对，暂不能生成排名海报")
+        if now.date() >= report.start_date and data["source_synced_at"] is None:
+            raise HTTPException(422, "缺少OKKI源同步时间，请核对数据源后生成海报")
+        data["report"] = report_payload(report, now)
+        return data
     if calendar_progress(report, now) is None:
         raise HTTPException(422, "请先在海报设置中配置周期内的计时工作日")
     orders, issues = source_orders(db, report, members, now)
@@ -75,4 +90,17 @@ def build_snapshot(db, report, members, now=None):
 def preview_snapshot(db, report_id, user):
     require_admin(user)
     report, members, _ = load_report(db, report_id, user)
+    if report.award_kind != "gmv":
+        from app.battle_report.award_statistics import build_snapshot as awards
+        data = awards(db, report, members, beijing_now())
+        data["report"] = report_payload(report)
+        return data  # Incomplete facts are visibly marked; scheduled sends still use strict build_snapshot.
     return build_snapshot(db, report, members)
+
+
+def poster_kinds(report):
+    if report.award_kind == "annual_repurchase":
+        return ["personal"]
+    if report.award_kind == "new_sign_pk":
+        return ["team"]
+    return ["team", "personal"]

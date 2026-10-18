@@ -13,6 +13,20 @@ from app.core.config import get_settings
 ASSETS = Path(__file__).resolve().parent / "assets"
 _RENDER_SLOTS = BoundedSemaphore(1)
 logger = logging.getLogger(__name__)
+PK_FIT_JS = """() => {
+  for (const el of document.querySelectorAll('.pk-fit')) {
+    let size=parseFloat(getComputedStyle(el).fontSize);
+    while (el.scrollWidth>el.clientWidth+.5 && size>12) el.style.fontSize=(size-=.5)+'px';
+    if (el.scrollWidth>el.clientWidth+1) throw new Error('PK poster value exceeds its cell; adjust the template');
+  }
+}"""
+ANNUAL_FIT_JS = """() => {
+  for (const el of document.querySelectorAll('.annual-field,.annual-progress>b')) {
+    let size=parseFloat(getComputedStyle(el).fontSize);
+    while (el.scrollWidth>el.clientWidth+.5 && size>10) el.style.fontSize=(size-=.5)+'px';
+    if (el.scrollWidth>el.clientWidth+1) throw new Error('Annual poster value exceeds its cell; adjust the template');
+  }
+}"""
 
 # Fallback when Playwright's bundled Chromium is missing (stale cache after upgrade)
 # and BATTLE_REPORT_BROWSER_PATH is unset. First existing executable wins.
@@ -86,6 +100,16 @@ def render_html(snapshot, kind):
     env = Environment(loader=FileSystemLoader(ASSETS), autoescape=select_autoescape(["html"]))
     env.filters["money"] = lambda value: format(Decimal(value), ",.2f")
     env.filters["stamp"] = lambda value: value.replace("T", " ")[:19]
+    if snapshot.get("award_kind") == "annual_repurchase":
+        from app.battle_report.annual_poster import render_html as annual_html
+        return annual_html(snapshot, ASSETS, asset_uri("annual-ranking-background.png"))
+    if snapshot.get("award_kind") == "new_sign_pk":
+        from app.battle_report import pk_poster
+        if pk_poster.matches_roster(snapshot):
+            return pk_poster.render_html(snapshot, ASSETS, asset_uri("pk-team-one-leading.png"), asset_uri("pk-team-two-leading.png"))
+        css = (ASSETS / "poster.css").read_text(encoding="utf-8")
+        css += (ASSETS / "award_poster.css").read_text(encoding="utf-8")
+        return env.get_template("award_poster.html").render(**snapshot, css=css, logo=asset_uri("company-logo.png"))
     css = (ASSETS / "poster.css").read_text(encoding="utf-8").replace("battle-poster-art-v2.png", asset_uri("background.png"))
     css += ".hero.generic{background-position:center center}.generic-title{position:absolute;top:115px;width:100%;text-align:center;font-size:100px}.name{white-space:normal;overflow-wrap:anywhere}.team-tag{overflow-wrap:anywhere}.percentage{font-size:50px}.metric-value{font-size:44px}.details b{font-size:30px}.details{font-size:24px}.pace-row{font-size:23px}.report-name{overflow-wrap:anywhere}"
     css += ".details{display:grid;grid-template-columns:1fr 1px 1fr;gap:20px}.details>span{min-width:0;display:flex;align-items:baseline;gap:8px}.details b{display:block;flex:1;min-width:0;margin-left:0}.details>span:last-child b{text-align:right}.percentage{width:190px;min-width:0;flex-shrink:0}"
@@ -108,6 +132,11 @@ def render_html(snapshot, kind):
 def render_posters(snapshot, kinds=("team", "personal")):
     """Must run in a sync worker thread (Windows subprocess support included)."""
     from playwright.sync_api import sync_playwright
+    from app.battle_report.pk_poster import matches_roster
+    if snapshot.get("award_kind") == "annual_repurchase":
+        kinds = tuple(k for k in kinds if k == "personal")
+    elif snapshot.get("award_kind") == "new_sign_pk":
+        kinds = tuple(k for k in kinds if k == "team")
     if not _RENDER_SLOTS.acquire(timeout=30):
         raise RuntimeError("海报生成繁忙，请稍后重试")
     try:
@@ -120,6 +149,12 @@ def render_posters(snapshot, kinds=("team", "personal")):
                 page.route("**/*", lambda route: route.abort())
                 result = {}
                 for kind in kinds:
+                    if snapshot.get("award_kind") == "annual_repurchase":
+                        page.set_viewport_size({"width":1199,"height":1312})
+                    elif snapshot.get("award_kind") == "new_sign_pk" and matches_roster(snapshot):
+                        page.set_viewport_size({"width":1672,"height":941})
+                    else:
+                        page.set_viewport_size({"width":1080,"height":1800})
                     page.set_content(render_html(snapshot, kind), wait_until="load")
                     page.evaluate("async () => { await document.fonts.ready; await Promise.all([...document.images].map(i=>i.decode())); }")
                     # Fit long amounts without silently clipping valid business data.
@@ -127,6 +162,8 @@ def render_posters(snapshot, kinds=("team", "personal")):
                       let size=parseFloat(getComputedStyle(el).fontSize);
                       while(el.scrollWidth>el.clientWidth+1 && size>20) el.style.fontSize=(--size)+'px';
                     }}""")
+                    page.evaluate(ANNUAL_FIT_JS)
+                    page.evaluate(PK_FIT_JS)
                     result[kind] = page.screenshot(full_page=True, type="png", timeout=60000)
                 return result
             finally:

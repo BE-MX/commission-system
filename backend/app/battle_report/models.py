@@ -21,6 +21,8 @@ class BattleReport(Base):
     visibility = Column(String(16), nullable=False, default="activity", comment="汇总可见范围")
     currency = Column(String(3), nullable=False, default="USD", comment="统计币种")
     basis_version = Column(String(32), nullable=False, default="order_gmv_roster_v1", comment="统计口径版本")
+    award_kind = Column(String(24), nullable=False, default="gmv", comment="GMV、年度新签复购或新签PK")
+    award_rules = Column(JSON, nullable=True, comment="附件基数及奖项推送周期快照")
     version = Column(Integer, nullable=False, default=1, comment="并发修改版本")
     work_dates = Column(JSON, nullable=True, comment="北京时间计时工作日，ISO 日期数组")
     poster_push_enabled = Column(Boolean, nullable=False, default=False, comment="13:00/17:00 群海报开关")

@@ -21,6 +21,12 @@ def context(db, report_id, user, *, details=False, team=None, member_id=None):
 
 
 def get_overview(db, report_id, user, team=None):
+    report, members, own = load_report(db, report_id, user)
+    if report.award_kind != "gmv":
+        from app.battle_report.award_statistics import build_snapshot
+        select_members(visible_members(report, members, own, user), team=team)
+        # Always compute ranks and PK against the complete authorized activity roster.
+        return build_snapshot(db, report, members, beijing_now())
     report, members, orders, issues, now, detail_ids = context(db, report_id, user, team=team)
     return overview(report, members, orders, issues, now, detail_ids)
 

@@ -71,6 +71,12 @@ def participants(db: Session = Depends(get_db), user=Depends(_require_battle_adm
     return ok({"items": bound_accounts(db)})
 
 
+@router.get("/award-presets")
+def award_presets(db: Session = Depends(get_db), user=Depends(_require_battle_admin)):
+    from app.battle_report.award_presets import presets
+    return ok(presets(db))
+
+
 @router.post("")
 def create(payload: ReportInput, db: Session = Depends(get_db), user=Depends(_require_battle_admin)):
     return ok(service.create_report(db, user, payload))

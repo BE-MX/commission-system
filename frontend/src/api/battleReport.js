@@ -5,6 +5,7 @@ const options = params => ({ params, showLoading: false })
 export const battleReportApi = {
   list: (params, config = {}) => unwrap(client.get('', { ...config, ...options(params) })),
   participants: (config = {}) => unwrap(client.get('/participants', { ...config, ...options() })),
+  awardPresets: (config = {}) => unwrap(client.get('/award-presets', { ...config, ...options() })),
   create: payload => unwrap(client.post('', payload)),
   get: (id, config = {}) => unwrap(client.get(`/${id}`, { ...config, ...options() })),
   update: (id, payload) => unwrap(client.put(`/${id}`, payload)),

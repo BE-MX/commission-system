@@ -41,7 +41,8 @@ def report_payload(report, now=None):
     return {"id": report.id, "name": report.name, "start_date": report.start_date.isoformat(),
             "end_date": report.end_date.isoformat(), "target_deadline": report.target_deadline.isoformat(),
             "status": report.status, "stage": stage, "visibility": report.visibility,
-            "version": report.version, "currency": report.currency, "basis_version": report.basis_version}
+            "version": report.version, "currency": report.currency, "basis_version": report.basis_version,
+            "award_kind": report.award_kind, "award_rules": report.award_rules}
 
 
 def audit(db, report, user, action, before=None, after=None, reason=""):
@@ -86,7 +87,9 @@ def create_report(db, user, payload):
     require_admin(user)
     with write_transaction(db):
         roster = validate_roster(db, payload.members)
-        report = BattleReport(**payload.model_dump(exclude={"members"}), created_by=actor_id(user))
+        values = payload.model_dump(exclude={"members"})
+        values["award_rules"] = payload.award_rules.model_dump(mode="json") if payload.award_rules else None
+        report = BattleReport(**values, created_by=actor_id(user), currency="USD")
         db.add(report)
         db.flush()
         for item in roster:
@@ -134,8 +137,11 @@ def update_report(db, report_id, user, payload):
         before = {**report_payload(report), "members": [member_payload(m, report, own, user) for m in members]}
         roster = validate_roster(db, payload.members, members)
         changes = payload.model_dump(exclude={"members", "reason", "version"})
+        changes["award_rules"] = payload.award_rules.model_dump(mode="json") if payload.award_rules else None
+        changes["currency"] = "USD"
         # A changed campaign period needs an explicitly rechecked calendar before pushing.
-        if (payload.start_date, payload.end_date) != (report.start_date, report.end_date):
+        if ((payload.start_date, payload.end_date) != (report.start_date, report.end_date)
+                or payload.award_kind != report.award_kind or changes["award_rules"] != report.award_rules):
             changes.update(work_dates=None, poster_push_enabled=False)
         elif payload.visibility != "activity":
             changes["poster_push_enabled"] = False
@@ -181,6 +187,8 @@ def change_state(db, report_id, user, payload):
 def save_targets(db, report_id, user, payload):
     with write_transaction(db):
         report, members, own = load_report(db, report_id, user, lock=True)
+        if report.award_kind != "gmv":
+            raise HTTPException(422, "奖项门槛由奖项规则自动计算，无需填报USD目标")
         if report.status == "archived":
             raise HTTPException(409, "归档战报不可修改目标")
         admin = is_admin(user)

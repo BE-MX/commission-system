@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def send_battle_posters_job():
     now = beijing_now()
-    if not due_slot(now):
+    if not due_slot(now) and not (now.hour in (9, 16) and now.minute in (0, 5, 15)):
         return
     failed = False
     with SessionLocal() as db:

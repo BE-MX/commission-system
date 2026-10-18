@@ -255,6 +255,7 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | --- | --- | --- |
 | GET 空路径 | archived=false/true，返回有权查看的战报及阶段 | read/admin |
 | GET `/participants` | 返回有唯一有效 OKKI 主账号绑定的可选人员 | admin |
+| GET `/award-presets` | 年度新签复购奖/11月新签PK奖模板；实时解析有效绑定，返回ready/missing/payload，缺失身份不创建残缺名单 | admin |
 | POST 空路径 | name/start_date/end_date/target_deadline/visibility/members，创建草稿 | admin |
 | GET `/{id}` | 配置、可见成员、成员 version/can_edit、detail_member_ids | read/admin |
 | PUT `/{id}` | 完整配置 + version/reason；开始后更正需原因；使旧目标表单版本失效 | admin |
@@ -269,6 +270,12 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 成员输入为 ark_user_id/team/is_captain；visibility 为 activity/team/self。周期最长366天、最多200人；目标为正数，NUMERIC(16,2)。普通用户只能在截止前修改本人目标。普通用户明细仅本人，活动组长本组，管理员全活动。403表示越权/填报已截止；404表示不可见对象；409表示版本冲突或非法状态；422表示校验失败或绑定需修复。刷新后重新填写可解决版本冲突，客户端保留失败输入。
 
 源订单只读，按核算日和活动小组统计；source_synced_at=null 明确表示源同步时间未知，calculated_at 不能充当同步时间。归档不冻结镜像数据，不提供删除接口。
+
+2026-10-14奖项扩展（迁移197，尚未部署）：创建/更正配置增加 `award_kind=gmv|annual_repurchase|new_sign_pk`、`award_rules={push_start_date,source_sha256,baselines:[{ark_user_id,hired_date,gmv_2025_usd,target_gmv_usd}]}`。年度基数保留附件小数位；业绩金额统一USD，人民币仅用于奖金，分档不参与当前目标计算；年度直接使用Excel I列的target_gmv_usd，2026美元GMV直接比较和相除；无汇率或分档计算。美元目标必填且保留小数精度，更正目标留存审计并关闭推送。奖项仅允许全活动可见，年度周期固定2026全年，PK固定2026年11月；PK恰好两组，每组一位队长。奖项目标自动计算，PUT targets返回422。
+
+奖项overview返回 `award_kind/people/teams/data_complete/issues/currency/calculated_at/source_synced_at`，年度另含 `qualified/unqualified/pending/cutoff_tie/ranking_rule`，PK另含 `winner/pk_eligible/pk_status/rewards_provisional`。年度 `ranking_rule=qualified_score_then_progress_score_v2`：达标组先列并按积分降序，未达标组按精确GMV/目标比例降序、再按积分降序；`overall_rank` 为总榜席位，`rank` 仍为达标组积分竞争名次，异常时均不判名次。奖项始终对完整活动名单计算排名，不以team筛选重排。金额计算保留Decimal原精度，显示再格式化；新签与复购以客户去重，复购成果归原新签负责人。
+
+poster-config增加 `send_weekdays/push_start_date/poster_kinds`，奖项周一三五09:00/16:00；年度仅personal，PK仅team，原GMV仍两图和旧时段。奖项work_dates可空；GMV不可空。年度personal使用用户提供17人底图；数据不完整时不填正式姓名和数值，仅展示待填及异常提示，席位编号不代表排名。PK确认10人/两位队长的固定名单使用双底图，按leading而非winner切换；按姓名映射数值，其他自定义名单仍通用PK布局。固定底图在持平/未开赛/异常时无皇冠，异常时计数/进度/奖金均待填；调度生成仍严格阻止异常数据或缺同步时间的推送。模拟版式仅为本地生成证据，不是活动实绩或推送内容。详见[奖项说明](requirements/2026-10-14-battle-awards.md)。
 
 ## 云存储接口行为（本地实现，尚未切换生产）
 

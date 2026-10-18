@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from datetime import timedelta
 from hashlib import sha256
 import logging
+import re
 from threading import Lock
 
 import httpx
@@ -12,7 +13,7 @@ from sqlalchemy import or_, text
 from app.battle_report.models import BattleReport, BattleReportDelivery, BattleReportMember
 from app.battle_report.poster_images import image_url, store_image
 from app.battle_report.poster_renderer import render_posters
-from app.battle_report.poster_service import build_snapshot, push_ready
+from app.battle_report.poster_service import build_snapshot, push_ready, poster_kinds
 from app.core.config import get_settings
 from app.core.time import beijing_now, to_beijing_naive
 from app.dingtalk.webhook import DingTalkWebhookError, WebhookSender
@@ -21,8 +22,12 @@ logger = logging.getLogger(__name__)
 _LOCAL_LOCK = Lock()
 
 
-def due_slot(now):
+def due_slot(now, report=None):
     now = to_beijing_naive(now)
+    if report is not None and report.award_kind != "gmv":
+        if now.weekday() in (0, 2, 4) and now.hour in (9, 16) and now.minute in (0, 5, 15):
+            return f"{now.hour:02d}:00"
+        return None
     if now.hour == 13 and now.minute in (0, 5, 15):
         return "13:00"
     if now.hour == 17 and now.minute in (1, 6, 16):
@@ -31,6 +36,10 @@ def due_slot(now):
 
 
 def eligible(report, now):
+    now = to_beijing_naive(now)
+    if report and report.award_kind != "gmv":
+        if now.weekday() not in (0, 2, 4) or now.date().isoformat() < report.award_rules["push_start_date"]:
+            return False
     return bool(report and report.poster_push_enabled and report.status == "published"
                 and report.visibility == "activity" and report.start_date <= now.date() <= report.end_date)
 
@@ -79,14 +88,16 @@ def set_status(db, delivery, kind, status, error=None):
 def send_slot(db, report_id, now=None, sender=None):
     """Sync scheduler worker; the HTTP sender remains async. Never called by preview."""
     now = to_beijing_naive(now or beijing_now())
-    slot = due_slot(now)
-    if not slot or not push_ready():
+    if not push_ready():
         return {"status": "skipped"}
     with delivery_lock(db, report_id) as acquired:
         if not acquired:
             return {"status": "busy"}
         db.expire_all()
         report = db.get(BattleReport, report_id)
+        slot = due_slot(now, report)
+        if not slot:
+            return {"status": "skipped"}
         if not eligible(report, now):
             return {"status": "skipped"}
         settings = get_settings()
@@ -100,7 +111,7 @@ def send_slot(db, report_id, now=None, sender=None):
             members = db.query(BattleReportMember).filter_by(report_id=report_id).order_by(BattleReportMember.id).all()
             delivery = BattleReportDelivery(report_id=report_id, report_date=now.date(), slot=slot,
                 snapshot=build_snapshot(db, report, members, now), destination_hash=destination,
-                deliveries={k: {"status": "pending", "attempts": 0} for k in ("team", "personal")},
+                deliveries={k: {"status": "pending", "attempts": 0} for k in poster_kinds(report)},
                 created_at=now, updated_at=now)
             db.add(delivery)
             persist(db)  # Freeze both posters before any rendering or external send.
@@ -141,8 +152,9 @@ def send_slot(db, report_id, now=None, sender=None):
                 break
             set_status(db, delivery, kind, "sending")
             label = "团队" if kind == "team" else "个人"
-            # No user-controlled markdown; report name is already safely rendered into PNG.
-            title = f"九月百团冲刺·{label}目标完成榜"
+            # Render report names as plain text, without allowing Markdown links or mentions.
+            name = re.sub(r"[\[\]()*_#>`!\\]", "", " ".join(delivery.snapshot['report']['name'].split()))
+            title = f"{name}·{label}战报"
             content = f"### {title}\n\n{delivery.report_date} {slot}（北京时间）\n\n![{label}海报]({image_url(delivery, kind)})\n\n[查看完整海报]({image_url(delivery, kind)})"
             try:
                 result = asyncio.run(notifier.send_markdown(title, content))

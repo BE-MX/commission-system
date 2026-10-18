@@ -80,6 +80,8 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 
 ## 临时战报（162_battle_reports，本地实现，未部署）
 
+奖项扩展迁移 `197_battle_awards`（父 `196_domestic_commission`，本地实现未部署）为 `ark_battle_reports` 增加 `award_kind VARCHAR(24) NOT NULL DEFAULT 'gmv'` 和可空 `award_rules JSON`。旧战报默认gmv；规则快照含附件2025美元基数gmv_2025_usd、入职日、source_sha256、push_start_date及Excel I列美元目标target_gmv_usd，与配置更正及审计同事务。奖项currency=USD，人民币只用于奖金，年度直接以USD实绩比较附件USD目标；旧target_usd仅供gmv，奖项目标不写该列。迁移只加列，downgrade拒绝删除奖项基数，应用回滚保留数据。业务镜像保持只读；无需复制或修正OKKI订单。
+
 | 表 | 责任与关键约束 |
 | --- | --- |
 | `ark_battle_reports` | 名称、日期范围、目标截止时间、draft/published/archived、visibility、USD币种、order_gmv_roster_v1口径、version、创建人及时间 |

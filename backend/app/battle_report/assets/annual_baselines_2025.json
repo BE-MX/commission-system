@@ -1,0 +1,108 @@
+{
+  "source": "年会奖项(1).xlsx / 两年以上（除5000） / A2:B18,H2:I18",
+  "source_sha256": "5a89d0deaa06293e22b75f7eaba6dce79fa806db093febc363c85f7194f8d062",
+  "baselines": [
+    {
+      "name": "翟佳盟",
+      "hired_date": "2021-06-07",
+      "gmv_2025_usd": "648734.07",
+      "target_gmv_usd": "843354.291"
+    },
+    {
+      "name": "尹德魁",
+      "hired_date": "2023-01-30",
+      "gmv_2025_usd": "1502319.7225",
+      "target_gmv_usd": "1802783.667"
+    },
+    {
+      "name": "张砚斐",
+      "hired_date": "2023-03-08",
+      "gmv_2025_usd": "239376.51",
+      "target_gmv_usd": "311189.463"
+    },
+    {
+      "name": "周露露",
+      "hired_date": "2022-11-07",
+      "gmv_2025_usd": "347739.48",
+      "target_gmv_usd": "452061.324"
+    },
+    {
+      "name": "潘康衡",
+      "hired_date": "2019-04-16",
+      "gmv_2025_usd": "187202.83",
+      "target_gmv_usd": "243363.679"
+    },
+    {
+      "name": "宋化通",
+      "hired_date": "2020-09-08",
+      "gmv_2025_usd": "587744.32",
+      "target_gmv_usd": "764067.616"
+    },
+    {
+      "name": "刘源",
+      "hired_date": "2021-09-22",
+      "gmv_2025_usd": "202006.86",
+      "target_gmv_usd": "262608.918"
+    },
+    {
+      "name": "张笑",
+      "hired_date": "2024-08-26",
+      "gmv_2025_usd": "142705.66",
+      "target_gmv_usd": "185517.358"
+    },
+    {
+      "name": "毕晓珍",
+      "hired_date": "2017-12-18",
+      "gmv_2025_usd": "3049482.53",
+      "target_gmv_usd": "3354430.783"
+    },
+    {
+      "name": "刘琳琳",
+      "hired_date": "2017-11-13",
+      "gmv_2025_usd": "731582.116",
+      "target_gmv_usd": "951056.7508"
+    },
+    {
+      "name": "曲冉",
+      "hired_date": "2024-09-18",
+      "gmv_2025_usd": "79248.466",
+      "target_gmv_usd": "103023.0058"
+    },
+    {
+      "name": "宋皓月",
+      "hired_date": "2020-07-21",
+      "gmv_2025_usd": "560291.28",
+      "target_gmv_usd": "728378.664"
+    },
+    {
+      "name": "田雯",
+      "hired_date": "2021-12-08",
+      "gmv_2025_usd": "447849.064",
+      "target_gmv_usd": "582203.7832"
+    },
+    {
+      "name": "刘行行",
+      "hired_date": "2024-03-25",
+      "gmv_2025_usd": "208108.27",
+      "target_gmv_usd": "270540.751"
+    },
+    {
+      "name": "夏新月",
+      "hired_date": "2018-09-25",
+      "gmv_2025_usd": "1414922.181",
+      "target_gmv_usd": "1697906.6172"
+    },
+    {
+      "name": "李宝珠",
+      "hired_date": "2021-03-22",
+      "gmv_2025_usd": "2085945.473",
+      "target_gmv_usd": "2398837.29395"
+    },
+    {
+      "name": "代晴玉",
+      "hired_date": "2017-11-27",
+      "gmv_2025_usd": "479073.89",
+      "target_gmv_usd": "622796.057"
+    }
+  ]
+}

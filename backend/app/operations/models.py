@@ -36,6 +36,7 @@ JOB_METADATA = {
     "dingtalk_gmv_daily": JobMetadata("业务队 GMV 日报", "钉钉集成", "业务运营"),
     "battle_posters_noon": JobMetadata("战报海报 13:00", "临时战报", "业务运营"),
     "battle_posters_afternoon": JobMetadata("战报海报 17:01", "临时战报", "业务运营"),
+    "battle_awards": JobMetadata("奖项战报 周一三五09:00/16:00", "临时战报", "业务运营"),
     "announcement_dispatch": JobMetadata("公告群消息投递", "公告管理", "公告管理员"),
     "announcement_weekly": JobMetadata("公告 AI 周报", "公告管理", "公告管理员"),
     "task_daily_brief": JobMetadata("任务中心每日简报", "任务中心", "平台研发"),

@@ -116,6 +116,7 @@ class TestSchedulerRegistration:
                 "dingtalk_gmv_daily",
                 "battle_posters_noon",
                 "battle_posters_afternoon",
+                "battle_awards",
                 "announcement_dispatch",
                 "announcement_weekly",
                 "task_daily_brief",
@@ -172,6 +173,12 @@ class TestSchedulerRegistration:
             assert gmv_daily_fields["hour"] == "8"
             assert gmv_daily_fields["minute"] == "0,5,15,30"
             assert gmv_daily.max_instances == 1
+            awards = scheduler.get_job('battle_awards')
+            award_fields = {field.name: str(field) for field in awards.trigger.fields}
+            assert award_fields['hour'] == '9,16' and award_fields['minute'] == '0,5,15'
+            assert award_fields['day_of_week'] == 'mon,wed,fri'
+            assert str(awards.trigger.timezone) == 'Asia/Shanghai'
+            assert awards.max_instances == 1 and awards.misfire_grace_time == 60
             for job_id, hour, minutes in [('battle_posters_noon', '13', '0,5,15'), ('battle_posters_afternoon', '17', '1,6,16')]:
                 poster = scheduler.get_job(job_id)
                 fields = {field.name: str(field) for field in poster.trigger.fields}
