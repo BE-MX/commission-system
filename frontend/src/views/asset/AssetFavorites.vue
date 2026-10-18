@@ -179,7 +179,9 @@
   </div>
 </template>
 
-<script setup>import { msgError, msgSuccessText, confirmAction } from '@/utils/feedback'
+<script setup>
+import { copyText } from '../../utils/clipboard.js'
+import { msgError, msgSuccessText, confirmAction } from '@/utils/feedback'
 import { ref, computed, watch, onMounted } from 'vue'
 import { useAsyncResource } from '@/composables/useAsyncResource'
 import { useAuthStore } from '@/stores/auth'
@@ -311,10 +313,9 @@ async function handleRevokeShare(folder) {
   }
 }
 
-function copyShareUrl() {
-  navigator.clipboard.writeText(shareUrl.value).then(() => {
-    msgSuccessText('链接已复制')
-  })
+async function copyShareUrl() {
+  if (await copyText(shareUrl.value)) msgSuccessText('链接已复制')
+  else msgError('复制失败，请手动选择链接复制')
 }
 
 // ── 移除收藏 ────────────────────────────────────────────

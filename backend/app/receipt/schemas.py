@@ -78,6 +78,13 @@ class Reason(BaseModel):
     reason: str = Field(min_length=2, max_length=500)
 
 
+class ReceiptDeletion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reason: str = Field(min_length=2, max_length=500)
+    confirmed: bool
+
+
 class PresalePurposeUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     version: int = Field(gt=0)

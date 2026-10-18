@@ -198,6 +198,8 @@
                 @resolve="resolveLinked"
               />
               <InvoiceOrderCustomerFields
+                v-model:contact-details-expanded="editor.contactDetailsExpanded.value"
+                :contact-details-complete="editor.contactDetailsComplete.value"
                 v-model:selected-customer="selectedCustomer"
                 v-model:private-only-company="privateOnlyCompany"
                 :form="form" :sales-user-options="salesUserOptions" :customer-options="customerOptions"
@@ -251,7 +253,7 @@
                 @remove-many="removeAccessories"
               />
 
-              <!-- 卡片 4：物流与备注（快递渠道必填单选 → 指定跟单员 → 备注） -->
+              <!-- 卡片 4：物流与备注（快递渠道 → 运费/包装 → 指定跟单员 → 备注） -->
               <section class="form-card">
                 <div class="card-title"><span class="step">4</span>物流与备注</div>
                 <el-form-item label="快递渠道" required>
@@ -259,6 +261,18 @@
                     <el-radio v-for="option in EXPRESS_CHANNEL_OPTIONS" :key="option" :value="option">{{ option }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
+                <div class="fgrid logistics-fees-row">
+                  <el-form-item label="运费">
+                    <el-input-number v-model="form.shipping_fee" :disabled="form.order_type === 'presale'"
+                                     :min="0" :precision="2" controls-position="right" />
+                  </el-form-item>
+                  <el-form-item label="包装数量">
+                    <el-input-number v-model="form.packaging_quantity" :min="0" :precision="0" controls-position="right" />
+                  </el-form-item>
+                  <el-form-item label="包装费用">
+                    <el-input-number v-model="form.internal_accessory" :min="0" :precision="2" controls-position="right" />
+                  </el-form-item>
+                </div>
                 <el-form-item label="指定跟单员">
                   <el-select
                     v-model="form.merchandiser_id"

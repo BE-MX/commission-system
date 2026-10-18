@@ -1,3 +1,4 @@
+import { newRequestKey } from '../../../utils/requestKey.js'
 import { formatMoney } from '../../../utils/money.js'
 import { msgInfo, msgWarning, alertAction, confirmAction, msgSuccessText, msgError } from '@/utils/feedback'
 /**
@@ -34,10 +35,7 @@ function todayStr() {
   return currentBeijingDate()
 }
 
-function makeRequestId() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
-  return `order-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
-}
+function makeRequestId() { return newRequestKey() }
 
 function emptyItem() {
   return {

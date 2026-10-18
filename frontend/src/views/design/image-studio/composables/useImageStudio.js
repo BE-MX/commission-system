@@ -1,3 +1,4 @@
+import { newRequestKey } from '../../../../utils/requestKey.js'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   createSession, createTurn, deleteAsset, getActiveJobs, getConfig, getJob, getSession,
@@ -16,8 +17,7 @@ import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
 const ACTIVE_STATUSES = new Set(['queued', 'running'])
 function requestId(prefix) {
-  const uuid = globalThis.crypto?.randomUUID?.()
-  return `${prefix}-${uuid || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`
+  return `${prefix}-${newRequestKey()}`
 }
 function safeRequestMessage(error) {
   if (error?.message === 'unsupported reference upload type') return '仅支持 JPG、PNG、WebP、SVG 或单页 PDF 参考文件'

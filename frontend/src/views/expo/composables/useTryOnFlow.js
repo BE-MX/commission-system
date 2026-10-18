@@ -1,3 +1,4 @@
+import { newRequestKey } from '../../../utils/requestKey.js'
 /**
  * 展会试戴 kiosk 流程状态机（双入口）。
  *
@@ -251,7 +252,7 @@ export function useTryOnFlow() {
       const requestShape = [blob, pendingName.value || '', mode.value, photoProcessingMode.value]
       if (!sessionRequest || requestShape.some((value, index) => sessionRequest.shape[index] !== value)) {
         sessionRequest = {
-          id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          id: newRequestKey(),
           shape: requestShape,
         }
       }

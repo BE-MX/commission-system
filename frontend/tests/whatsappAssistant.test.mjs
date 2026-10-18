@@ -3,20 +3,23 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import * as vue from 'vue'
+import { webcrypto } from 'node:crypto'
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
 async function harness() {
   const queue = [], timers = new Map(), cleanup = []
   let timerUid = 0
-  const context = vm.createContext({ AbortController, Date, Intl, crypto: { randomUUID: () => 'synthetic-request' },
+  const context = vm.createContext({ AbortController, Date, Intl, crypto: { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) },
     setTimeout: fn => { timers.set(++timerUid, fn); return timerUid }, clearTimeout: uid => timers.delete(uid) })
   const synthetic = exports => new vm.SyntheticModule(Object.keys(exports), function () { for (const [name, value] of Object.entries(exports)) this.setExport(name, value) }, { context })
   const dates = new vm.SourceTextModule(fs.readFileSync(new URL('../src/utils/datetime.js', import.meta.url), 'utf8'), { context })
   await dates.link(() => { throw new Error('Unexpected date import') }); await dates.evaluate()
+  const keys = new vm.SourceTextModule(fs.readFileSync(new URL('../src/utils/requestKey.js', import.meta.url), 'utf8'), { context })
+  await keys.link(() => { throw new Error('Unexpected key import') }); await keys.evaluate()
   const names = ['getWhatsAppAssistantOptions', 'createWhatsAppAssistantRun', 'listWhatsAppAssistantRuns', 'getWhatsAppAssistantRun', 'getWhatsAppAssistantRequest', 'updateWhatsAppAssistantTask']
   const api = Object.fromEntries(names.map(name => [name, (...args) => new Promise((resolve, reject) => queue.push({ name, args, resolve, reject }))]))
   const module = new vm.SourceTextModule(fs.readFileSync(new URL('../src/views/system/composables/useWhatsAppAssistant.js', import.meta.url), 'utf8'), { context })
-  await module.link(name => name.endsWith('/datetime') ? dates : synthetic(name === 'vue' ? { ...vue, onUnmounted: fn => cleanup.push(fn) } : api))
+  await module.link(name => name.endsWith('/requestKey.js') ? keys : name.endsWith('/datetime') ? dates : synthetic(name === 'vue' ? { ...vue, onUnmounted: fn => cleanup.push(fn) } : api))
   await module.evaluate()
   const props = vue.reactive({ modelValue: true, account: { account_uid: 'test', can_read_body: true, consent_version: 1, ai_egress_allowed: true }, accessKey: 'owner', conversation: { conversation_uid: 'chat' } })
   const state = module.namespace.useWhatsAppAssistant(props, () => { props.modelValue = false })
@@ -46,13 +49,15 @@ test('uncertain submission queries original UID, never resends, and persists acr
   const pending = h.state.createRun(), post = h.take('createWhatsAppAssistantRun')
   assert.equal(post.args[0].start_at, '2026-10-13T00:00:00+08:00')
   assert.equal(post.args[0].conversation_uid, null)
+  const originalUid = post.args[0].client_request_uid
+  assert.match(originalUid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   post.reject(new Error('connection interrupted')); await tick()
   h.take('getWhatsAppAssistantRequest').reject({ response: { status: 404 } }); await pending
-  assert.equal(h.state.unresolvedUid.value, 'synthetic-request')
+  assert.equal(h.state.unresolvedUid.value, originalUid)
   await h.state.createRun(); assert.equal(h.queue.length, 0)
   h.props.modelValue = false; await tick(); h.props.modelValue = true; await tick(); await h.initialized()
   const lookup = h.take('getWhatsAppAssistantRequest')
-  assert.equal(lookup.args[0], 'synthetic-request')
+  assert.equal(lookup.args[0], originalUid)
   assert.deepEqual(Array.from(h.state.range.value), ['2026-10-13 00:00:00', '2026-10-13 23:59:59'])
   lookup.resolve({ data: { run_uid: 'saved', status: 'running' } }); await tick()
   assert.equal(h.state.run.value.run_uid, 'saved'); assert.equal(h.timers.size, 1)

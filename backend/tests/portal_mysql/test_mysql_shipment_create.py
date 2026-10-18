@@ -15,6 +15,7 @@ from app.invoice.settlement_models import (ShipmentSettlement, SettlementItem, S
     SettlementEvent, Receivable, SettlementApplication, ReceiptBatch, BatchAttachment)
 from app.receipt import attachments, remote
 from app.invoice import shipment_create_service
+from app.invoice import shipment_inventory_service
 from app.semifinished.models import InvoiceAllocation
 from app.portal import authority as portal_authority
 from test_mysql_receipt_batch_presale import separate_proof
@@ -35,6 +36,16 @@ def shipment_app(batch_create_app,monkeypatch):
     c.app.settings.PRESALE_SETTLEMENT_ENABLED=True;c.app.settings.PRESALE_DELIVERY_ENABLED=True
     c.app.settings.OKKI_PRESALE_WAREHOUSE_ID=17
     monkeypatch.setattr(settlement_policy,'get_settings',lambda:c.app.settings)
+    monkeypatch.setattr(shipment_inventory_service,'get_settings',lambda:c.app.settings)
+    monkeypatch.setattr(shipment_inventory_service.okki_client,'fetch_token',lambda **_:('owned-inventory-token',None))
+    c.stock = '100'
+    c.stock_products = {2:1, 4:3}
+    def inventory(path,token,**options):
+        assert path == '/v1/product/inventory-list' and token == 'owned-inventory-token'
+        sku = int(options['params']['sku_id'])
+        return {'count':1,'list':[{'product_id':c.stock_products[sku],'sku_id':sku,
+            'warehouse_id':17,'enable_count':c.stock,'disable_flag':0}]}
+    monkeypatch.setattr(shipment_inventory_service.okki_client,'_get_json',inventory)
     metadata=MetaData()
     for model in (SettlementItem,ShipmentOutbound,SettlementEvent):
         Table(model.__tablename__,metadata,*(Column(col.name,col.type,primary_key=col.primary_key,

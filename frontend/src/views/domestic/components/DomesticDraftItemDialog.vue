@@ -57,6 +57,8 @@
 </template>
 
 <script setup>
+import { newRequestKey } from '../../../utils/requestKey.js'
+
 import { formatMoney } from '../../../utils/money.js'
 import { confirmAction, msgWarning, msgSuccessText } from '@/utils/feedback'
 import { beijingCalendarDate } from '@/utils/datetime'
@@ -73,7 +75,7 @@ import { applyQuoteChange, applyQuoteResult, buildCreateItems, buildQuoteRequest
 
 const props = defineProps({ order: { type: Object, required: true }, options: { type: Object, required: true } })
 const emit = defineEmits(['close', 'saved'])
-const makeRequestId = () => globalThis.crypto?.randomUUID?.() || `draft-item-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+const makeRequestId = () => newRequestKey()
 const item = reactive({ key: makeRequestId(), attrs: { product_type: 'cap' }, order_qty: 1, guest_name: '', guest_order_date: '',
   quoteStatus: 'pending', quote: null, expectedQuote: null, manualDiscountPrice: null, laborFee: 0, specialPrice: null,
   hairstyle: '', hairstyle_images: [], color: '', color_images: [], style_requirement: '', style_images: [], remark: '', remark_images: [] })

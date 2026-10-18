@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { randomUUID } from 'node:crypto'
+import { newRequestKey } from '../src/utils/requestKey.js'
 import { isShippingStationPath } from '../src/router/shippingStationRoute.js'
 
 const source = fs.readFileSync(new URL('../src/views/shipping/composables/useShippingStation.js', import.meta.url), 'utf8')
@@ -21,7 +22,7 @@ function setup(overrides = {}, compressor = async file => file, confirm = async 
   }
   let mounted
   const context = vm.createContext({
-    ref: value => ({ value }), computed: getter => ({ get value() { return getter() } }),
+    newRequestKey, ref: value => ({ value }), computed: getter => ({ get value() { return getter() } }),
     onMounted: fn => { mounted = fn }, onBeforeUnmount() {}, stationApi: api,
     confirmDanger: confirm, setTimeout: fn => { const id=randomUUID(); timers.set(id,fn); return id },
     clearTimeout: id => timers.delete(id), setInterval() {}, clearInterval() {},

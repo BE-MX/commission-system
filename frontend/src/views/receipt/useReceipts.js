@@ -1,3 +1,4 @@
+import { newRequestKey } from '../../utils/requestKey.js'
 import { formatMoney } from '../../utils/money.js'
 import { confirmAction, promptAction, msgSuccess, msgError } from '@/utils/feedback'
 import { computed, reactive, ref, watch } from 'vue'
@@ -70,7 +71,7 @@ export function useReceipts() {
     editing.value = null; balance.value = null; error.value = ''; balanceSequence += 1
     Object.assign(form, { invoice_id: invoiceId, amount: null, collection_date: currentBeijingDate(),
       payment_type: '', purpose: 'ordinary', bank_charge: 0, attachment_ids: [], remark: '' })
-    idempotencyKey = crypto.randomUUID(); initialForm = JSON.stringify(form); editorVisible.value = true
+    idempotencyKey = newRequestKey(); initialForm = JSON.stringify(form); editorVisible.value = true
     await searchOrders()
     if (invoiceId) await selectOrder(invoiceId)
   }

@@ -1,4 +1,6 @@
 import { formatMoney } from '../src/utils/money.js'
+import { newRequestKey } from '../src/utils/requestKey.js'
+import { expectedCommission, retainSelectedCustomer } from '../src/views/domestic/domesticCommission.js'
 import { feedbackFixture } from './helpers/feedbackFixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -21,7 +23,7 @@ function harness(t, kind = 'business', overrides = {}) {
   let serial = 0
   const scope = effectScope()
   const env = {
-    reactive, ref, computed, watch, nextTick,
+    newRequestKey, expectedCommission, retainSelectedCustomer, reactive, ref, computed, watch, nextTick,
     ...pricing, ...attributes, ...kinds, createLatestRequestRunner,
     onMounted: () => {}, onBeforeUnmount: () => {},
     useRouter: () => ({ push: async value => navigations.push(value) }),
@@ -49,7 +51,7 @@ function harness(t, kind = 'business', overrides = {}) {
   Object.assign(page.form, { order_no: 'test-001', order_date: '2026-09-07', required_ship_date: '2026-09-10',
     customer_id: 7, order_type: 'first_order', order_channel: 'wechat' })
   Object.assign(page.form.items[0].attrs, validAttrs)
-  page.customers.value = [{ id: 7, balance: 10000 }]
+  page.customers.value = [{ id: 7, balance: 10000, commission_allocations: [{ user_id: 1, rate: '0.04' }] }]
   async function settle() {
     await nextTick()
     for (const [id, callback] of [...timers]) { timers.delete(id); await callback() }

@@ -121,6 +121,10 @@
 </template>
 
 <script setup>
+import { copyText } from '../../../utils/clipboard.js'
+
+import { newRequestKey } from '../../../utils/requestKey.js'
+
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAsyncResource } from '@/composables/useAsyncResource'
 import { useAuthStore } from '@/stores/auth'
@@ -215,7 +219,7 @@ async function start() {
       mode: mode.value,
       profile_id: profileId.value,
       base_revision_id: props.document.revision_id,
-      idempotency_key: crypto.randomUUID().replaceAll('-', ''),
+      idempotency_key: newRequestKey().replaceAll('-', ''),
     })
     if (scope !== scopeGeneration || !props.modelValue) return
     job.value = response.data
@@ -281,7 +285,7 @@ function handleClosed() { if (!props.modelValue) clearScope() }
 
 async function copyAdvice(section) {
   try {
-    await navigator.clipboard.writeText(`${section.label}\n${section.items.map(item => `- ${item}`).join('\n')}`)
+    if (!await copyText(`${section.label}\n${section.items.map(item => `- ${item}`).join('\n')}`)) throw new Error('Copy blocked')
     msgSuccess('已复制')
   } catch { msgError('复制失败，请手动选择文本') }
 }

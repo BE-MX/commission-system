@@ -35,15 +35,19 @@ def test_static_archive_includes_nested_public_artifacts_and_uses_ssh_retries(tm
     remote = Mock(side_effect=[{"missing": list(files), "initialized": False,
                                "active_artifact": None, "artifact": "a" * 64}, {}])
     monkeypatch.setattr(static_sync, "remote", remote)
-    command = Mock()
+    uploaded = []
+    def upload(args, **kwargs):
+        with tarfile.open(args[-2]) as archive:
+            uploaded.extend(archive.getnames())
+    command = Mock(side_effect=upload)
     monkeypatch.setattr(static_sync, "run", command)
     static_sync.prepare(source, "example.test", "/registered", tmp_path / "state", "example.test")
     args = command.call_args.args[0]
     assert args[:1] == ["scp"]
     assert ["-o", "ConnectionAttempts=3"] == args[args.index("ConnectionAttempts=3") - 1:args.index("ConnectionAttempts=3") + 1]
     assert "BatchMode=yes" in args and "StrictHostKeyChecking=yes" in args
-    with tarfile.open(args[-2]) as archive:
-        assert set(archive.getnames()) == set(files)
+    assert set(uploaded) == set(files)
+    assert not Path(args[-2]).exists()
     assert remote.call_args.args[1]["action"] == "stage"
 
 
@@ -108,6 +112,9 @@ def test_unchanged_static_does_not_upload(tmp_path, monkeypatch):
 @pytest.fixture
 def pipeline(tmp_path, monkeypatch):
     import static_retention_release
+    import candidate_retention
+    monkeypatch.setattr(candidate_retention, 'run', Mock(return_value={'status': 'succeeded'}))
+    monkeypatch.setattr(candidate_retention, 'record_success', Mock())
     monkeypatch.setattr(static_retention_release, 'run', Mock(return_value={'status': 'succeeded'}))
     monkeypatch.setattr(okki_outbound_release,'pause_registered',Mock())
     (tmp_path / "deploy").mkdir()
@@ -559,9 +566,21 @@ def test_guard_install_failure_never_starts_backend_or_marks_success(pipeline):
     assert json.loads((pipeline.state / 'publish-current.json').read_text())['status'] != 'succeeded'
 
 
+def test_static_prepare_failure_prevents_freeze_and_activation(pipeline, monkeypatch):
+    monkeypatch.setattr(static_sync, 'prepare', Mock(side_effect=RuntimeError('staging failed')))
+    with pytest.raises(RuntimeError, match='staging failed'):
+        publish.publish(pipeline.args)
+    pipeline.outbound_phase.assert_not_called()
+    pipeline.office_activate.assert_not_called()
+    cloud_backend.activate.assert_not_called()
+    assert not (pipeline.state / 'publish-success.json').exists()
+
+
 def test_retention_failure_preserves_verified_application_success(pipeline, monkeypatch):
     import static_retention_release
+    import candidate_retention
     def fail(*args, **kwargs):
+        candidate_retention.record_success.assert_called_once_with(pipeline.state, 'a' * 40, 'old')
         assert json.loads((pipeline.state / 'publish-current.json').read_text())['status'] == 'succeeded'
         raise RuntimeError('Retention failed')
     monkeypatch.setattr(static_retention_release, 'run', fail)
@@ -574,11 +593,51 @@ def test_retention_failure_preserves_verified_application_success(pipeline, monk
 
 def test_prepare_only_never_runs_retention(pipeline, monkeypatch):
     import static_retention_release
+    import candidate_retention
     retention = Mock()
     monkeypatch.setattr(static_retention_release, 'run', retention)
     pipeline.args.prepare_only = True
     publish.publish(pipeline.args)
     retention.assert_not_called()
+    candidate_retention.run.assert_not_called()
+
+
+def test_candidate_cleanup_runs_after_static_retention_and_preserves_app_success_on_failure(pipeline, monkeypatch):
+    import candidate_retention
+    import static_retention_release
+    def fail(*args, **kwargs):
+        static_retention_release.run.assert_called_once()
+        assert json.loads((pipeline.state / 'publish-current.json').read_text())['status'] == 'succeeded'
+        raise RuntimeError('Candidate cleanup blocked')
+    monkeypatch.setattr(candidate_retention, 'run', fail)
+    with pytest.raises(RuntimeError, match='Candidate cleanup blocked'):
+        publish.publish(pipeline.args)
+    journal = json.loads((pipeline.state / 'publish-current.json').read_text())
+    assert journal['status'] == 'succeeded' and journal['candidate_retention_error'] == 'RuntimeError'
+
+
+def test_cloud_only_does_not_clean_office_candidates(pipeline):
+    import candidate_retention
+    pipeline.args.cloud_only = True
+    publish.publish(pipeline.args)
+    candidate_retention.run.assert_not_called()
+
+
+def test_cli_timing_binds_resolved_revision_when_no_revision_argument(pipeline):
+    publish.publish(pipeline.args)
+    record = json.loads(next((pipeline.state / 'timings').glob('*.json')).read_text())
+    assert record['revision'] == 'a' * 40 and record['previous'] == 'old'
+    assert record['release_id'] == json.loads((pipeline.state / 'publish-current.json').read_text())['release_id']
+
+
+def test_history_write_failure_is_post_release_maintenance_error(pipeline):
+    import candidate_retention
+    candidate_retention.record_success.side_effect = OSError('disk full')
+    with pytest.raises(OSError):
+        publish.publish(pipeline.args)
+    journal = json.loads((pipeline.state / 'publish-current.json').read_text())
+    assert journal['status'] == 'succeeded' and journal['candidate_retention_error'] == 'OSError'
+    candidate_retention.run.assert_not_called()
 
 
 @pytest.mark.parametrize('field,value',[('release_confirmed',False),('database_fingerprint','f'*64),

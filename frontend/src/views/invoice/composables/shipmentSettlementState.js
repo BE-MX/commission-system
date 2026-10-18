@@ -9,13 +9,17 @@ export function remainingShipmentQuantity(line, settlements) {
 }
 
 export function canChangeShipment(row, action) {
-  if (['cancelled', 'completed', 'shipped', 'outbound_uncertain', 'review_required'].includes(row.state) || row.outbound) return false
-  if (['sending', 'verifying', 'uncertain'].includes(row.freight_target?.status)) return false
-  if (action === 'cancel') {
-    return !row.freight_target?.remote_order_id && row.freight_target?.status !== 'bound' &&
-      Number(row.balance?.registered_amount || 0) === 0
-  }
-  return action === 'pause' ? row.state !== 'paused' : action === 'resume' && row.state === 'paused'
+  return row.actions?.[action]?.allowed === true
+}
+
+export function shipmentActionReason(row, action) {
+  return row.actions?.[action]?.reason || (canChangeShipment(row, action) ? '' : '操作条件尚未核实，请刷新原批次')
+}
+
+export function isShipmentStateReceipt(row, action, result) {
+  const states = { cancel: ['cancelled'], pause: ['paused'], resume: ['awaiting_payment', 'awaiting_verification'] }
+  return result?.id === row.id && result.invoice_id === row.invoice_id &&
+    Number.isSafeInteger(result.version) && result.version > row.version && states[action]?.includes(result.state) === true
 }
 
 export function canReconcileOutbound(row) {

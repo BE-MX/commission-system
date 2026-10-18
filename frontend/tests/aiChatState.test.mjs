@@ -232,7 +232,7 @@ test('starter cards fill without sending and Markdown is sanitized before inject
   assert.match(starters, /emit\(['"]select['"]/)
   assert.doesNotMatch(starters, /emit\(['"](?:send|submit)['"]/)
   assert.match(thread, /DOMPurify\.sanitize\(marked\.parse\(raw\)\)/)
-  assert.match(thread, /navigator\.clipboard\.writeText\(message\.content/)
+  assert.match(thread, /copyText\(message\.content/)
 })
 
 test('isolates terminal detail refresh failures from the completed stream result', () => {

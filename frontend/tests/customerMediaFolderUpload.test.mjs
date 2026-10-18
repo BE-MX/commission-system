@@ -20,7 +20,7 @@ function folder(name, batches) {
   } }
 }
 
-test('drop traversal extracts nested files and retains paths only for display', async () => {
+test('drop traversal preserves root and nested paths for tag matching and display', async () => {
   const entries = [folder('产品图', [[file('a.png')], [folder('详情', [[file('b.png')]])]]), folder('视频', [[file('c.mp4')]]), file('loose.png')]
   const result = await collectDroppedFiles({ items: entries.map(entry => ({ webkitGetAsEntry: () => entry })) })
   assert.equal(result.hasDirectory, true)

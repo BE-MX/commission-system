@@ -92,3 +92,22 @@ def test_detail_move_during_list_reads_is_rejected(proof, monkeypatch):
     monkeypatch.setattr(lifecycle_remote, "read", lambda *a: next(reads))
     with pytest.raises(ValueError):
         absent()
+
+
+def test_standalone_deletion_proves_active_or_deleted_membership(proof):
+    assert deletion_evidence.verified_state(None, '123', '88', 'USD')['status'] == 'deleted'
+    proof['active'], proof['deleted'] = [deepcopy(proof['detail'])], []
+    assert deletion_evidence.verified_state(None, '123', '88', 'USD')['status'] == 'active'
+
+
+def test_standalone_deletion_rejects_missing_membership(proof):
+    proof['deleted'] = []
+    with pytest.raises(ValueError, match='完整有效或已删除证据'):
+        deletion_evidence.verified_state(None, '123', '88', 'USD')
+
+
+def test_standalone_deletion_rejects_same_second_financial_change(proof, monkeypatch):
+    reads = iter([deepcopy(proof['detail']), {**proof['detail'], 'amount': '999'}])
+    monkeypatch.setattr(lifecycle_remote, 'read', lambda *a: next(reads))
+    with pytest.raises(ValueError, match='核验期间变化'):
+        deletion_evidence.verified_state(None, '123', '88', 'USD')

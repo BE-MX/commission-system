@@ -13,7 +13,7 @@ import uuid
 
 import cloud_backend
 import static_sync
-from desktop_events import emit, step, enabled as desktop_enabled
+from desktop_events import emit, step, timing_session, enabled as desktop_enabled
 from runtime_root import resolve_live_root
 
 ROOT = resolve_live_root(sys.argv[1:], __file__)
@@ -83,11 +83,28 @@ def npm_command():
 
 
 def npm_install(folder):
+    import npm_cache
+    npm = npm_command()
+    key = npm_cache.fingerprint(folder, npm, run)
     stamp = input_digest([folder / "package.json", folder / "package-lock.json"],
                          run(["node", "--version"], capture=True))
+    if key:
+        stamp = key
     name = "deps-" + folder.name
     if marker(name).get("digest") != stamp or not (folder / "node_modules").exists():
-        run([npm_command(), "ci", "--no-audit", "--no-fund"], cwd=folder)
+        restored = key and step('dependency-cache-restore:' + folder.name, '恢复独立依赖副本 ' + folder.name,
+                                npm_cache.restore, folder, STATE, key)
+        if not restored:
+            step('dependencies:' + folder.name, '安装依赖 ' + folder.name,
+                 run, [npm, "ci", "--prefer-offline", "--no-audit", "--no-fund"], cwd=folder)
+            if key:
+                try:
+                    step('dependency-cache-store:' + folder.name, '保存依赖缓存 ' + folder.name,
+                         npm_cache.store, folder, STATE, key)
+                except (OSError, ValueError):
+                    # A cache write is optional; npm ci already succeeded. Never
+                    # hide install failures or record unvalidated restored data.
+                    print('WARNING: dependency cache not saved; isolated installation retained', flush=True)
         atomic_json(STATE / (name + ".json"), {"digest": stamp})
 
 
@@ -106,7 +123,8 @@ def portal_install(folder):
                          run(["node", "--version"], capture=True) + run([executable, "--version"], capture=True))
     name = "deps-" + folder.name
     if marker(name).get("digest") != stamp or not (folder / "node_modules").exists():
-        run([executable, "install", "--frozen-lockfile", "--ignore-scripts"], cwd=folder)
+        step('dependencies:' + folder.name, '安装依赖 ' + folder.name,
+             run, [executable, "install", "--frozen-lockfile", "--ignore-scripts"], cwd=folder)
         atomic_json(STATE / (name + ".json"), {"digest": stamp})
 
 
@@ -132,10 +150,12 @@ def build_frontends(include_portal=False):
         if not (dist / "index.html").exists() or marker("build-" + name).get("digest") != stamp:
             if name == "frontend-portal":
                 portal_install(folder)
-                run([pnpm_command(), "exec", "vite", "build", "--outDir", dist], cwd=folder)
+                step('compile:' + name, '编译 ' + name, run,
+                     [pnpm_command(), "exec", "vite", "build", "--outDir", dist], cwd=folder)
             else:
                 npm_install(folder)
-                run([npm_command(), "run", "build", "--", "--outDir", dist], cwd=folder)
+                step('compile:' + name, '编译 ' + name, run,
+                     [npm_command(), "run", "build", "--", "--outDir", dist], cwd=folder)
             atomic_json(STATE / ("build-" + name + ".json"), {"digest": stamp, "files": static_sync.manifest(dist)})
         elif static_sync.manifest(dist) != marker("build-" + name)["files"]:
             raise RuntimeError("Cached build is corrupt: " + name)
@@ -172,9 +192,10 @@ def publish(args):
     import source_release
     live = ROOT
     emit("begin", prepare_only=args.prepare_only)
-    with deployment_lock():
+    with deployment_lock(), timing_session(STATE, prepare_only=args.prepare_only, revision=args.revision) as timings:
         ROOT, revision, previous = step("source", "获取并校验候选源码", source_release.prepare, live, STATE, not args.no_pull,
                                                          pinned_revision=args.revision)
+        timings.update(revision=revision, previous=previous)
         if desktop_enabled():
             emit("plan", revision=revision, previous=previous,
                  files=run(["git", "diff", "--name-status", previous, revision], cwd=live, capture=True).splitlines())
@@ -209,6 +230,7 @@ def publish(args):
                       and previous_release.get('status') != 'succeeded' else None) or uuid.uuid4().hex
         if recovery_original:
             release_id = recovery_original["release_id"]
+        timings['release_id'] = release_id
         journal = {"revision": revision, "release_id": release_id,
                    "scope": scope, "status": "preparing", "completed": [], "deferred": []}
         outbound_revision = recovery_original["revision"] if recovery_original else revision
@@ -221,7 +243,8 @@ def publish(args):
         outputs = step("build", "构建已登记站点与浏览器扩展", build_frontends,
                        include_portal=any(target["component"] == "frontend-portal" for target in inventory["static_targets"]))
         if office:
-            step("office-static", "准备办公室静态文件与内网 PM 站", stage_static, {**{name: dist for name, dist in outputs.items() if name in {"frontend", "frontend-pm"}}, "pm-lan": build_lan()}, office)
+            lan = step('build-pm-lan', '构建内网 PM 站', build_lan)
+            step("office-static", "准备办公室静态文件与内网 PM 站", stage_static, {**{name: dist for name, dist in outputs.items() if name in {"frontend", "frontend-pm"}}, "pm-lan": lan}, office)
         backend = step("beijing-prepare", "准备北京后端与色块服务", cloud_backend.prepare, ROOT, revision, allow_pending=bool(office), **office_options)
         import mail_worker_release
         mail_worker = None
@@ -231,7 +254,7 @@ def publish(args):
             atomic_json(STATE / 'publish-current.json', journal)
         import colorwork_routing
         colorwork_routes = step("routing-prepare", "校验色块路由配置", colorwork_routing.prepare, ROOT / "deploy")
-        prepared = []
+        targets = []
         outputs["customer-media"] = outputs["frontend"] / "customer-media"
         for target in inventory["static_targets"]:
             if args.cloud_only and target.get("backend_owner") == "office":
@@ -242,8 +265,9 @@ def publish(args):
                     print("DEFERRED " + journal["deferred"][-1], flush=True)
                     atomic_json(STATE / "publish-current.json", journal)
                     continue
-            prepared.append(step("static-prepare:" + target["domain"], "增量准备 " + target["domain"], static_sync.prepare, outputs[target["component"]], target["host"], target["root"],
-                            STATE / "transfers", target["domain"]))
+            targets.append(target)
+        from static_prepare import prepare_all
+        prepared = step('static-prepare-all', '准备全部云端静态站', prepare_all, targets, outputs, STATE / 'transfers')
         if args.prepare_only:
             journal["status"] = "prepared"
             atomic_json(STATE / "publish-current.json", journal)
@@ -307,6 +331,14 @@ def publish(args):
         atomic_json(STATE / "publish-success.json", summary)
         journal["status"] = "succeeded"
         atomic_json(STATE / "publish-current.json", journal)
+        if office:
+            from candidate_retention import record_success
+            try:
+                record_success(STATE, revision, previous)
+            except Exception as error:
+                journal['candidate_retention_error'] = type(error).__name__
+                atomic_json(STATE / 'publish-current.json', journal)
+                raise
         from static_retention_release import run as retain_static
         try:
             summary['static_retention'] = step('static-retention', '清理过期前端资源与回滚备份',
@@ -316,6 +348,16 @@ def publish(args):
             atomic_json(STATE / 'publish-current.json', journal)
             raise
         atomic_json(STATE / 'publish-success.json', summary)
+        if office:
+            from candidate_retention import run as retain_candidates
+            try:
+                summary['candidate_retention'] = step('candidate-retention', '清理过期源码与静态暂存副本',
+                                                       retain_candidates, live, ROOT, previous)
+            except Exception as error:
+                journal['candidate_retention_error'] = type(error).__name__
+                atomic_json(STATE / 'publish-current.json', journal)
+                raise
+            atomic_json(STATE / 'publish-success.json', summary)
         emit("result", status="succeeded", revision=revision, completed=journal["completed"],
              unmanaged_services=summary["unmanaged_services"], deferred=journal["deferred"])
         print("CLOUD RELEASE COMPLETED (office not included)" if args.cloud_only else "MANAGED APPLICATION RELEASE COMPLETED")
@@ -332,6 +374,7 @@ if __name__ == "__main__":
     parser.add_argument('--customer-portal-db-backup', action='store_true', help='Protected full revision-182 snapshot on office; no migration or service activation')
     parser.add_argument('--customer-portal-config', choices=['prepare', 'enable-access', 'stop-orders', 'close'], help='Merge protected Beijing password access config; order/PI/mail/outbound gates stay off')
     parser.add_argument('--static-retention-only', action='store_true', help='Prune expired main-frontend assets and backups without restarting applications')
+    parser.add_argument('--candidate-retention-only', action='store_true', help='Inspect or retire owned office source/static candidates without replaying deployment')
     parser.add_argument('--colorwork-backup-policy', action='store_true', help='Install hourly retention of two recent Colorwork recovery backups')
     parser.add_argument('--agent-cloud-migration', choices=['prepare', 'validate-staged', 'freeze-source', 'copy-frozen-state', 'configure-target', 'activate-target', 'verify-target', 'retire-source', 'nginx-prepare', 'nginx-activate', 'nginx-verify', 'source-routes-prepare', 'source-routes-activate', 'source-routes-verify'], help='Execute one journalled phase of the inspected Agent migration')
     parser.add_argument('--storage-maintenance', metavar='PLAN_JSON', help='Freeze/restore API ingress and direct office LAN access')
@@ -405,6 +448,10 @@ if __name__ == "__main__":
             sys.exit(0)
         if args.static_retention_only:
             from static_retention_release import execute
+            print(json.dumps(execute(args, ROOT, Path(__file__).resolve().parent.parent, deployment_lock)), flush=True)
+            sys.exit(0)
+        if args.candidate_retention_only:
+            from candidate_retention import execute
             print(json.dumps(execute(args, ROOT, Path(__file__).resolve().parent.parent, deployment_lock)), flush=True)
             sys.exit(0)
         if args.okki_sync_only:
@@ -529,7 +576,7 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if any(getattr(locals().get('args'), key, None) for key in ['static_retention_only', 'okki_sync_only', 'mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
+        if any(getattr(locals().get('args'), key, None) for key in ['candidate_retention_only', 'static_retention_only', 'okki_sync_only', 'mail_worker_stage', 'colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
         if not getattr(locals().get("args"), "whatsapp_routing_only", False) and not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):

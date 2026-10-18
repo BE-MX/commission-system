@@ -160,7 +160,7 @@
             <GlassButton v-if="![0, 5, 6].includes(detail.status)" variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
             <GlassButton v-if="![0, 5, 6].includes(detail.status)" variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
             <GlassButton
-              v-if="item.route_id" v-permission="'domestic:admin'"
+              v-if="item.route_id" v-permission="'domestic_skip:write'"
               variant="link" left-icon="Warning" @click="openSkipAudits(item)"
             >异常跳过记录</GlassButton>
             <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
@@ -189,11 +189,11 @@
             <el-table-column class-name="table-action-column" label="操作" min-width="170">
               <template #default="{ row }">
                 <GlassButton
-                  v-if="row.reportable_qty > 0 && item.status === 0" v-permission="'domestic:write'"
+                  v-if="row.reportable_qty > 0 && item.status === 0" v-permission="'domestic_report:write'"
                   variant="link" left-icon="EditPen" @click="openReport(item, row)"
                 >代报工</GlassButton>
                 <GlassButton
-                  v-if="row.reportable_qty > 0 && item.status === 0" v-permission="'domestic:admin'"
+                  v-if="row.reportable_qty > 0 && item.status === 0" v-permission="'domestic_skip:write'"
                   variant="link" link-tone="danger" left-icon="Warning" @click="openSkip(item, row)"
                 >异常跳过</GlassButton>
               </template>
@@ -305,7 +305,7 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="90">
           <template #default="{ row }">
             <GlassButton
-              v-if="!row.revoked" v-permission="'domestic:write'"
+              v-if="!row.revoked" v-permission="'domestic_report:write'"
               variant="link" link-tone="danger" left-icon="RefreshLeft"
               @click="handleRevokeReport(row.log_id)"
             >撤销</GlassButton>

@@ -6,7 +6,7 @@ import pytest
 from app.core.time import beijing_now
 from app.invoice import linked_sync_service as linked, linked_outbound_service as outbound, sync_coordinator
 from app.invoice import outbound_followup_service as followup
-from app.invoice.models import Invoice, InvoiceLinkedSync
+from app.invoice.models import Invoice, InvoiceItem, InvoiceLinkedSync
 from app.invoice.router import _linked_result
 from app.invoice import router as invoice_router
 from app.receipt import remote
@@ -35,6 +35,13 @@ def operation(db, order, status="pending"):
     order.linked_sync_id = row.id
     db.add(row); db.commit()
     return row
+
+
+def add_valid_item(db, order):
+    db.add(InvoiceItem(invoice_id=order.id, sort_order=1, product_kind="hair", item_type="stock",
+        product_id=1, sku_id=1, product_name="Product", product_display="Product", net_weight_grams="20g",
+        color="1", length="20", quantity=1, price_per_piece=Decimal("100"), total_price=Decimal("100")))
+    db.commit()
 
 
 def successful_reads(monkeypatch):
@@ -151,6 +158,7 @@ def test_same_second_edit_changes_version(db, order):
 
 
 def test_create_idempotency(db, order, monkeypatch):
+    add_valid_item(db, order)
     monkeypatch.setattr(linked.service, "update_invoice", lambda *a, **kw: None)
     body = SimpleNamespace(request_key="fresh-key", expected_version=linked.edit_version(order), invoice=None, model_dump_json=lambda: "{}")
     first = linked.create(db, order, body, 1); db.commit()
@@ -161,6 +169,7 @@ def test_create_idempotency(db, order, monkeypatch):
 
 
 def test_saved_linked_snapshot_matches_reloaded_decimal_values(db, order, monkeypatch):
+    add_valid_item(db, order)
     def update(_db, invoice, _body, _actor, **_kwargs):
         invoice.surcharge_amount = Decimal("19.6")
         invoice.total_amount = Decimal("119.6")

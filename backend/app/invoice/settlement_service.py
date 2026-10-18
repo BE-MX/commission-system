@@ -13,10 +13,11 @@ from app.invoice.settlement_pricing import quote_current
 from app.invoice.presale_funding import plan_funding
 from app.invoice import presale_runtime as pools
 from app.invoice import shipment_payment_policy as payment_policy
+from app.invoice.shipment_action_policy import action_reason, failed_outbound_candidate
 from app.invoice.presale_lines import remote_items
 from app.invoice.settlement_policy import require_enabled, capabilities
 from app.receipt import access, remote, service as receipts
-from app.receipt.models import Receipt
+from app.receipt.models import Receipt, ReceiptLog
 
 
 def digest(value):
@@ -399,44 +400,56 @@ def describe(db, row, *, current=False):
                            "remote_order_id": freight.remote_order_id,
                            "last_error": freight.last_error} if freight else None,
         "capabilities": capabilities()}
+    applications = _current(db.query(SettlementApplication, Receipt).join(
+        Receipt, Receipt.id == SettlementApplication.receipt_id).filter(
+            SettlementApplication.settlement_id == row.id).order_by(SettlementApplication.id),
+        current, SettlementApplication.id, Receipt.id).all()
     result["receipt_applications"] = [{"receipt_id": receipt.id, "receipt_no": receipt.receipt_no,
         "component": app.component, "amount": str(app.amount), "status": app.status,
         "sync_status": receipt.sync_status, "collect_status": receipt.collect_status,
         "effective": payment_policy.receipt_effective(receipt)}
-        for app, receipt in db.query(SettlementApplication, Receipt).join(
-            Receipt, Receipt.id == SettlementApplication.receipt_id).filter(
-                SettlementApplication.settlement_id == row.id).order_by(SettlementApplication.id).all()]
+        for app, receipt in applications]
+    active_receipts = {app.receipt_id for app, _ in applications if app.status != 'released'}
+    late = bool(active_receipts and _current(db.query(ReceiptLog.id).filter(
+        ReceiptLog.receipt_id.in_(active_receipts), ReceiptLog.action == 'late_result'), current, ReceiptLog.id).first())
+    confirmation = None
     if outbound:
         from app.invoice import shipment_confirmation_recovery
-        result["outbound"]["confirmation"] = shipment_confirmation_recovery.summary(db,outbound,current=current)
+        confirmation = shipment_confirmation_recovery.summary(db,outbound,current=current)
+        result["outbound"]["confirmation"] = confirmation
+    result['actions'] = {}
+    for action in ('cancel', 'pause', 'resume'):
+        reason = action_reason(row, action, outbound=outbound, freight=freight,
+            applications=[app for app, _ in applications],
+            receipts={receipt.id: receipt for _, receipt in applications}, late_result=late)
+        failed_cancel = action == 'cancel' and failed_outbound_candidate(row, outbound)
+        if failed_cancel and not reason and (confirmation['state'] != 'none' or confirmation['attempt_count'] != 0):
+            reason = '原任务存在出库确认历史或事实待核对，不能取消重建'
+        result['actions'][action] = {'allowed': not bool(reason), 'reason': reason}
+        if failed_cancel and not reason:
+            result['actions'][action]['requires_remote_check'] = True
     if invalid_funding:
         result["balance_error"]="本批关联回款已失效，余额暂不可计算，请核对原单"
     return result
 
 
-def _change_state_verified(db, row, user, action, version, reason, graph):
+def _change_state_verified(db, row, user, action, version, reason, graph, *, failed_outbound_absent=False):
     """Pure local state algorithm; current authority/bindings are caller-owned."""
     if row.version != version:
         raise ValueError("结算已变化，请刷新")
-    if row.state in {"shipped", "cancelled", "outbound_uncertain", "review_required"}:
-        raise ValueError("当前结算状态不能执行此操作")
-    if graph.outbound:
-        raise ValueError("已有出库任务，请先核实远端效果")
-    freight = graph.freight
-    if freight and freight.remote_status in {"sending", "verifying", "uncertain"}:
-        raise ValueError("运费目标正在发送或结果待核对，请先核实远端效果")
-    if any(app.status != "released" and graph.receipts[app.receipt_id].sync_status in {"syncing", "uncertain"}
-            for app in graph.applications):
-        raise ValueError("本批回款正在发送或结果待核对，请先核实远端效果")
+    blocked = action_reason(row, action, outbound=graph.outbound, freight=graph.freight,
+        applications=graph.applications, receipts=graph.receipts)
+    if blocked:
+        raise ValueError(blocked)
+    if graph.outbound is not None and not failed_outbound_absent:
+        raise ValueError('请先实时核实小满未生成原出库单，再取消失败批次')
     if action == "cancel":
-        paid = any(app.component != "deposit" and graph.receipts[app.receipt_id].purpose not in pools.POOL_PURPOSES
-            and app.status != "released" for app in graph.applications)
-        if paid or (freight and (freight.remote_order_id or freight.remote_status in {
-                "sending", "verifying", "uncertain", "bound"})):
-            raise ValueError("已有真实付款或运费目标，仅支持原批暂停/恢复")
         for app in graph.applications:
             app.status = "released"
         row.state = "cancelled"
+        if graph.outbound is not None:
+            graph.outbound.status = 'cancelled'
+            graph.outbound.version += 1
     elif action == "pause":
         row.state = "paused"
     elif action == "resume" and row.state == "paused":

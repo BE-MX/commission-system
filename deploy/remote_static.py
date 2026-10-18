@@ -202,21 +202,20 @@ def plan(root, manifest):
 
 def retain_assets(base, candidate):
     assets = base / "assets"
-    no_links(assets)
-    if not assets.exists():
-        return
-    for old in assets.rglob("*"):
-        no_links(old)
-        if old.is_file():
-            destination = candidate / old.relative_to(base)
-            no_links(destination)
-            if destination.exists():
-                if sha(old) != sha(destination):
-                    raise ValueError("Asset name reused with different bytes: " + old.name)
-            else:
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(old, destination)
-                destination.chmod(0o644)
+    # Validate the source tree once, including reparse points, before copying.
+    # walk_files checks every entry without repeatedly lstat'ing every ancestor
+    # of every chunk. Destination checks and real independent copies remain.
+    originals = list(retention.walk_files(assets))
+    for old, _ in originals:
+        destination = candidate / old.relative_to(base)
+        no_links(destination)
+        if destination.exists():
+            if sha(old) != sha(destination):
+                raise ValueError("Asset name reused with different bytes: " + old.name)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(old, destination)
+            destination.chmod(0o644)
 
 
 def stage(root, manifest, archive):

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Receipt deletion regression</title><div id="app"></div>
+<script type="module">
+import { createApp, h, reactive } from 'vue'
+import { createPinia } from 'pinia'
+import ElementPlus from 'element-plus'
+import * as icons from '@element-plus/icons-vue'
+import 'element-plus/dist/index.css'
+import '../src/styles/tokens.css'
+import { useAuthStore } from '../src/stores/auth'
+import { registerPermissionDirectives } from '../src/directives/permission'
+import StatusBadge from '../src/components/StatusBadge.vue'
+import ReceiptDelete from '../src/views/receipt/ReceiptDelete.vue'
+import InvoiceReceiptActions from '../src/views/invoice/components/InvoiceReceiptActions.vue'
+import ReceiptManage from '../src/views/receipt/ReceiptManage.vue'
+import { createRouter, createMemoryHistory } from 'vue-router'
+const receipt = reactive({ id: 11, invoice_id: 1, receipt_no: 'HK-DELETE', source: 'auto', status: 'active', sync_status: 'synced',
+  version: 1, amount: '3282.54', bank_charge: '156.31', currency: 'USD', purpose: 'ordinary', xiaoman_receipt_id: '701',
+  attachment_ids: ['proof'], attachments: [{ id: 'proof' }], deletion_pending: false })
+const form = reactive({ id: 1, order_type: 'stock', currency: 'USD', total_amount: 3282.54,
+  xiaoman_order_id: '2001', receipt_draft: { status: 'converted', receipt_id: 11, receipt_version: 1,
+    receipt_status: 'active', receipt_sync_status: 'synced', amount: 3282.54, attachment_ids: ['proof'] } })
+window.receipt = receipt; window.form = form
+window.switchReceipt = () => { receipt.id = 22; receipt.receipt_no = 'HK-OTHER' }
+const pinia = createPinia()
+const app = createApp({ render: () => h('main', {}, [h('h2', {}, '实际回款与待收'),
+  location.search.includes('manage') ? h(ReceiptManage) : location.search.includes('invoice') ? h(InvoiceReceiptActions, { form, total: 3282.54 })
+    : h(ReceiptDelete, { receipt, onUpdated: row => Object.assign(receipt, row) }),
+  h('p', { id: 'saved-state' }, `${receipt.status} ${receipt.deletion_pending ? '删除待核验' : ''}`)]) })
+app.use(pinia); app.use(ElementPlus); app.component('StatusBadge', StatusBadge)
+const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: ReceiptManage }] })
+app.use(router); await router.push('/'); await router.isReady()
+for (const [name, icon] of Object.entries(icons)) app.component(name, icon)
+registerPermissionDirectives(app)
+const auth = useAuthStore()
+auth.user = { id: 1, roles: [], permissions: ['receipt:read', 'receipt:write', 'receipt:delete'] }
+window.setRoles = value => { auth.user.roles = value }
+window.revoke = () => { auth.user.permissions = ['receipt:read'] }
+app.mount('#app')
+</script>
+<style>body{max-width:740px;margin:24px auto;padding:16px}main{display:grid;gap:16px}</style>
+</html>

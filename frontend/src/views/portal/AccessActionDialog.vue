@@ -1,4 +1,6 @@
 <script setup>
+import { newRequestKey } from '../../utils/requestKey.js'
+
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { portalAdminApi } from '@/api/portal'
@@ -50,7 +52,7 @@ function operation() {
     const email = form.email.trim(), contact_name = form.contact_name.trim()
     if (!isEmail(email) || email.length > 254 || !contact_name || contact_name.length > 100) throw new Error('请填写有效邮箱和采购联系人。')
     validatePassword()
-    return { action: 'createAccount', id: props.access.id, key: crypto.randomUUID(), body: { email, contact_name, password: form.password } }
+    return { action: 'createAccount', id: props.access.id, key: newRequestKey(), body: { email, contact_name, password: form.password } }
   }
   const reason = form.reason.trim()
   if (!reason || reason.length > 500) throw new Error('请填写 1–500 字的操作原因。')

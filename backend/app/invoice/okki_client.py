@@ -45,7 +45,7 @@ def _base_url() -> str:
     return get_settings().OKKI_API_BASE.rstrip("/")
 
 
-def fetch_token() -> tuple[str, datetime]:
+def fetch_token(*, scope: str = TOKEN_SCOPE) -> tuple[str, datetime]:
     """Fetch a fresh access token via client_credentials.
 
     Returns (access_token, expires_at_utc).
@@ -60,7 +60,7 @@ def fetch_token() -> tuple[str, datetime]:
                 "grant_type": "client_credentials",
                 "client_id": settings.OKKI_CLIENT_ID,
                 "client_secret": settings.OKKI_CLIENT_SECRET,
-                "scope": TOKEN_SCOPE,
+                "scope": scope,
             },
             timeout=REQUEST_TIMEOUT,
         )
@@ -271,6 +271,7 @@ def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | 
 def _get_json(
     path: str, token: str, *, context: str, params: dict | None = None,
     timeout: float = REQUEST_TIMEOUT, allow_missing: bool = False,
+    client: httpx.Client | None = None,
 ) -> dict | bool | None:
     """GET with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
@@ -278,7 +279,8 @@ def _get_json(
     try:
         # params 仅在显式传入时下发：既有测试桩/调用方按 (url, headers, timeout) 签名 mock
         extra = {"params": params} if params is not None else {}
-        resp = httpx.get(
+        get = client.get if client is not None else httpx.get
+        resp = get(
             f"{_base_url()}{path}",
             headers={"Authorization": f"Bearer {token}"},
             timeout=timeout,

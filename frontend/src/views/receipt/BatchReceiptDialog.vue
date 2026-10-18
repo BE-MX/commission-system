@@ -46,6 +46,8 @@
   </el-dialog>
 </template>
 <script setup>
+import { newRequestKey } from '../../utils/requestKey.js'
+
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import GlassButton from '@/components/GlassButton.vue'
@@ -155,7 +157,7 @@ async function submit(retry = false) {
     try {
       const previous = readSubmission(window.sessionStorage, actor)
       if (previous) { frozen = previous; state.value = 'uncertain'; hidePrivate(); await inspect(); return }
-      frozen = { ...copySubmission(form), amount: String(form.amount), bank_charge: String(form.bank_charge || 0), request_key: crypto.randomUUID(),
+      frozen = { ...copySubmission(form), amount: String(form.amount), bank_charge: String(form.bank_charge || 0), request_key: newRequestKey(),
         allocations: rows.value.map(allocationForRow) }
     } catch (e) { storageBlocked.value = true; hidePrivate(); void showError('原提交记录不能可靠保存，本次尚未发送。请恢复会话存储后重新打开；已有待核对记录不能覆盖。'); return }
   }

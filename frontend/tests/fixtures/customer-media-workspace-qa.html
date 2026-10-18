@@ -5,7 +5,10 @@ import ElementPlus from 'element-plus'
 import '/node_modules/element-plus/dist/index.css'
 import '/src/styles/tokens.css'
 import '/src/styles/liquid-glass.css'
+import '/src/styles/app.css'
 import GlassButton from '/src/components/GlassButton.vue'
+import DetailDrawer from '/src/components/DetailDrawer.vue'
+import StatusBadge from '/src/components/StatusBadge.vue'
 import Workspace from '/src/views/design/CustomerMediaWorkspace.vue'
 const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/design/media/tasks/:taskId', component: Workspace },
@@ -13,6 +16,8 @@ const router = createRouter({ history: createMemoryHistory(), routes: [
 ]})
 const app = createApp({ render: () => h(Workspace) })
 app.component('GlassButton', GlassButton)
+app.component('DetailDrawer', DetailDrawer)
+app.component('StatusBadge', StatusBadge)
 app.use(ElementPlus).use(router)
 router.push('/design/media/tasks/1').then(() => app.mount('#app'))
 </script></body></html>

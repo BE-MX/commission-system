@@ -28,6 +28,10 @@ export function uploadReceiptProof(file, onProgress) {
 export const previewReceiptRemoteChange = id => unwrap(request.get(`/${id}/remote-change`))
 export const acceptReceiptRemoteChange = (id, body) => unwrap(request.post(`/${id}/remote-change`, body))
 
+const deletionOptions = { showLoading: false, suppressToast: true, redirectOnUnauthorized: false }
+export const previewReceiptDeletion = (id, signal) => unwrap(request.get(`/${id}/deletion`, { ...deletionOptions, signal }))
+export const deleteReceipt = (id, body, signal) => unwrap(request.post(`/${id}/deletion`, body, { ...deletionOptions, signal }))
+
 const batchRecoveryOptions = { showLoading: false, suppressToast: true, redirectOnUnauthorized: false }
 export const createReceiptBatch = (body, signal) => unwrap(request.post('/batches', body, { ...batchRecoveryOptions, signal }))
 export const inspectReceiptBatchSubmission = (body, signal) => unwrap(request.post('/batches/submission-status', body, { ...batchRecoveryOptions, signal }))

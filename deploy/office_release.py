@@ -130,7 +130,10 @@ def stage_static(outputs, prepared):
         if all(current.get(k) == v for k, v in files.items()) and marker("office-" + name).get("files") == files:
             continue
         staged = STATE / ("office-next-" + name + "-" + str(time.time_ns()))
-        shutil.copytree(dist, staged)
+        staged.mkdir()
+        from candidate_retention import record_created
+        record_created(STATE, staged, prepared['revision'], 'static')
+        shutil.copytree(dist, staged, dirs_exist_ok=True)
         retain_assets(destination, staged)
         changes.append((name, destination, staged, files))
     prepared["static"] = changes

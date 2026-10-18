@@ -5,6 +5,7 @@ import qrcode from 'qrcode'
 import { authState } from './auth-state.js'
 import { error } from './crypto.js'
 import { Projector, phone } from './projection.js'
+import { diagnostic as defaultDiagnostic } from './diagnostics.js'
 
 const INGEST_EVENTS = ['messages.upsert', 'messages.update', 'messages.delete', 'messaging-history.set',
   'messaging-history.status', 'chats.upsert', 'chats.update', 'chats.delete', 'contacts.upsert', 'contacts.update']
@@ -19,32 +20,43 @@ export function classifyDisconnect(code) {
   return 'protected_pause'
 }
 
-export function backendAuthorizer(baseUrl, apiKey, fetcher = fetch) {
+export function backendAuthorizer(baseUrl, apiKey, fetcher = fetch, diagnostic = defaultDiagnostic) {
   const url = new URL(baseUrl)
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw error('invalid_ark_api_base_url', 500)
   return async uid => {
+    const started = performance.now()
+    let phase = 'request', httpStatus = null, failure = 'transport'
     try {
       const response = await fetcher(`${url.href.replace(/\/$/, '')}/api/whatsapp/internal/accounts/${encodeURIComponent(uid)}/authorization`,
         { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(5000), redirect: 'error' })
-      if (!response.ok) throw error('authorization_unavailable', 503)
+      phase = 'response'; httpStatus = response.status
+      if (!response.ok) { failure = 'http_error'; throw error('authorization_unavailable', 503) }
+      failure = 'invalid_response'
       const result = await response.json()
       const auth = result.code === 200 ? result.data : null
+      phase = 'validation'; failure = 'denied'
       if (!auth?.allowed || auth.provider !== 'baileys' || !Number.isSafeInteger(auth.ark_user_id) || auth.ark_user_id < 1
         || !Number.isSafeInteger(auth.session_generation) || auth.session_generation < 1
         || !String(auth.consent_version || '')) throw error('authorization_denied', 403)
       return { ...auth, consent_version: String(auth.consent_version) }
-    } catch (err) { throw error(err.code === 'authorization_denied' ? err.code : 'authorization_unavailable', err.code === 'authorization_denied' ? 403 : 503) }
+    } catch (err) {
+      diagnostic('authorization_failed', uid, { phase, http_status: httpStatus,
+        failure: ['TimeoutError', 'AbortError'].includes(err.name) ? 'timeout' : failure,
+        transport_code: err.cause?.code || err.code, elapsed_ms: performance.now() - started })
+      throw error(err.code === 'authorization_denied' ? err.code : 'authorization_unavailable', err.code === 'authorization_denied' ? 403 : 503)
+    }
   }
 }
 
 export class Manager {
   constructor(store, { authorize, socketFactory = makeWASocket, encodeQR = qrcode.toDataURL,
     authInterval = 10000, leaseTTL = 30000, maxQueueEvents = 64, maxQueueBytes = 16 * 1024 ** 2,
-    maxEventBytes = 8 * 1024 ** 2, maxRetries = 5, retryBase = 1000, random = Math.random } = {}) {
+    maxEventBytes = 8 * 1024 ** 2, maxRetries = 5, retryBase = 1000, random = Math.random, agent, dispatcher,
+    diagnostic = defaultDiagnostic } = {}) {
     if (!authorize) throw error('authorizer_required', 500)
     if (authInterval > 15000 || authInterval < 20 || leaseTTL <= authInterval * 2) throw error('invalid_lease_interval', 500)
     Object.assign(this, { store, authorize, socketFactory, encodeQR, authInterval, leaseTTL,
-      maxQueueEvents, maxQueueBytes, maxEventBytes, maxRetries, retryBase, random })
+      maxQueueEvents, maxQueueBytes, maxEventBytes, maxRetries, retryBase, random, agent, dispatcher, diagnostic })
     this.projector = new Projector(store)
     this.entries = new Map()
     this.sessions = new Map()
@@ -104,7 +116,8 @@ export class Manager {
     const account = this.store.account(session.account_uid)
     const current = session.session_generation === account?.session_generation && session.consent_version === account?.consent_version
     const qr = current && entry?.session?.bind_session_uid === bindUid && entry.qr && entry.qr.expires > Date.now() ? entry.qr : null
-    return { ...session, status: !current ? 'expired' : account?.status === 'active' ? 'active' : session.status,
+    const status = !current ? 'expired' : ['active', 'paused', 'blocked', 'revoking', 'revoked', 'revoke_pending', 'reconnect_required'].includes(account?.status) ? account.status : session.status
+    return { ...session, status,
       qr_code_url: qr?.url || null, expires_at: qr ? new Date(qr.expires).toISOString() : null, account: this.metadata(account) }
   }
   metadata(account) {
@@ -157,15 +170,37 @@ export class Manager {
     this.store.renew(entry.lease)
     const auth = authState(this.store, entry.lease, err => this.protect(entry, err.code || 'auth_store_failed'))
     entry.auth = auth.state
-    const socket = this.socketFactory({ auth: auth.state, logger, markOnlineOnConnect: false, syncFullHistory: true,
+    const pairing = () => ({ registered: auth.state.creds.registered === true, has_identity: Boolean(auth.state.creds.me) })
+    let lastPairing = pairing()
+    this.diagnostic('socket_start', entry.uid, lastPairing)
+    const socket = this.socketFactory({ auth: auth.state, logger, agent: this.agent, fetchAgent: this.agent,
+      options: { dispatcher: this.dispatcher },
+      markOnlineOnConnect: false, syncFullHistory: true,
       shouldSyncHistoryMessage: () => true, emitOwnEvents: true, fireInitQueries: true,
       getMessage: async () => undefined, connectTimeoutMs: 20000, defaultQueryTimeoutMs: 20000 })
     entry.socket = socket
+    // Observe only the event name. The upstream listener retains sole ownership
+    // of acknowledgments, QR registration material and protocol payloads.
+    const refreshEvent = 'CB:notification,type:companion_reg_refresh'
+    const refresh = () => {
+      if (!entry.stopped && entry.socket === socket) this.diagnostic('companion_reg_refresh', entry.uid, pairing())
+    }
+    if (socket.ws?.on && socket.ws?.off) {
+      socket.ws.on(refreshEvent, refresh)
+      entry.protocolListener = { socket: socket.ws, name: refreshEvent, handler: refresh }
+    }
     const epoch = ++entry.epoch
     const on = (name, handler) => { socket.ev.on(name, handler); entry.listeners.push([name, handler]) }
     on('creds.update', update => {
       if (entry.stopped) return
-      try { auth.saveCreds(update) } catch (err) { this.protect(entry, err.code || 'auth_store_failed') }
+      try {
+        auth.saveCreds(update)
+        const current = pairing()
+        if (current.registered !== lastPairing.registered || current.has_identity !== lastPairing.has_identity) {
+          this.diagnostic('pairing_credentials', entry.uid, current)
+        }
+        lastPairing = current
+      } catch (err) { this.protect(entry, err.code || 'auth_store_failed') }
     })
     on('connection.update', update => { void this.connection(entry, update, epoch).catch(err => this.protect(entry, err.code || 'connection_update_failed')) })
     for (const name of INGEST_EVENTS) on(name, value => this.enqueue(entry, name, value))
@@ -203,6 +238,7 @@ export class Manager {
       clearTimeout(entry.qrTimer)
       entry.qrTimer = setTimeout(() => { entry.qr = null }, 60000)
       this.store.patchAccount(entry.lease, { status: 'binding', connection_state: 'qr_ready', needs_user_action: true })
+      this.diagnostic('qr_ready', entry.uid)
     }
     if (update.connection === 'open') {
       this.clearQR(entry)
@@ -211,10 +247,13 @@ export class Manager {
         needs_user_action: false, last_error_code: null, self_jid: me.id || null,
         phone_number: phone(me.id), display_name: me.name || null })
       if (entry.session) entry.session.status = 'active'
+      this.diagnostic('connection_open', entry.uid, { registered: entry.auth?.creds.registered, has_identity: Boolean(entry.auth?.creds.me) })
     }
     if (update.connection !== 'close') return
     const code = update.lastDisconnect?.error?.output?.statusCode || update.lastDisconnect?.error?.statusCode
     const classification = classifyDisconnect(code)
+    this.diagnostic('connection_closed', entry.uid, { status_code: code, classification,
+      registered: entry.auth?.creds.registered, has_identity: Boolean(entry.auth?.creds.me) })
     this.detachSocket(entry)
     this.clearQR(entry)
     if (['reauth_required', 'blocked', 'protected_pause'].includes(classification)) {
@@ -233,6 +272,11 @@ export class Manager {
   detachSocket(entry, close = true) {
     const socket = entry.socket
     if (!socket) return
+    if (entry.protocolListener) {
+      const listener = entry.protocolListener
+      listener.socket.off(listener.name, listener.handler)
+      entry.protocolListener = null
+    }
     entry.epoch++
     for (const [name, handler] of entry.listeners) socket.ev.off(name, handler)
     entry.listeners = []
@@ -251,6 +295,7 @@ export class Manager {
   }
   protect(entry, code, status = 'paused') {
     if (!entry || entry.stopped) return
+    this.diagnostic('protected_pause', entry.uid, { reason: code })
     try {
       const account = this.store.fence(entry.lease)
       this.store.patchAccount(entry.lease, { status, connection_state: code === 'reauth_required' ? 'reauth_required' : 'protected_pause',

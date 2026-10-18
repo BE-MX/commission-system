@@ -218,6 +218,46 @@ def test_linked_unknown_push_stays_uncertain_and_is_not_automatically_replayed(e
         before=frozen(c);assert request(c).status_code==200 and frozen(c)==before and len(c.posts)==1
 
 
+def test_linked_save_rejects_invalid_item_before_creating_task(editor,monkeypatch,tmp_path):
+    e=editor;c=setup_push(e,monkeypatch,tmp_path,editing=True)
+    route,body,method=e.prepare('linked')
+    with Session(e.ctx.engine) as db:
+        invoice=edit_authority.lock_document(db,e.invoice_id)
+        invoice.xiaoman_order_id=c.target
+        db.commit()
+        body['expected_version']=linked.edit_version(invoice)
+    body['invoice']['items'][0].update(product_id=None,sku_id=None,product_name='')
+    before=frozen(c)
+    response=asyncio.run(e.write(route,body,method))
+    assert response.status_code==409,response.text
+    assert response.json()['detail']==('发票未通过同步前校验：items[1]：产品未匹配到唯一产品；'
+        'items[1].sku_id：缺少 sku_id，无法同步小满订单')
+    assert frozen(c)==before and c.posts==c.tokens==c.followups==[] and audit(e)==[]
+
+
+def test_linked_preflight_failure_finishes_without_sending(editor,monkeypatch,tmp_path):
+    e=editor;c=prepared(e,monkeypatch,tmp_path)
+    with Session(e.ctx.engine) as db:
+        invoice=edit_authority.lock_document(db,e.invoice_id);item=invoice.items[0]
+        item.product_id=None;item.sku_id=None;item.product_name=''
+        row=db.get(InvoiceLinkedSync,c.identity);row.after=linked.snapshot(invoice)
+        db.commit()
+    response=request(c)
+    assert response.status_code==200,response.text
+    result=response.json()['data']
+    assert result['status']=='failed' and result['steps']['order']=={
+        'status':'failed','message':'发票未通过同步前校验'}
+    assert c.posts==c.tokens==c.reads==c.followups==[] and audit(e)==[]
+    with Session(e.ctx.engine) as db:
+        invoice=edit_authority.lock_document(db,e.invoice_id);row=db.get(InvoiceLinkedSync,c.identity)
+        assert invoice.linked_sync_id==c.identity and facts.unresolved(db,invoice)==[]
+        assert row.status=='failed' and row.run_token is None and row.lease_until is None
+    closed=request(c,c.run_route.replace('/run','/close'))
+    assert closed.status_code==200,closed.text
+    with Session(e.ctx.engine) as db:
+        assert edit_authority.lock_document(db,e.invoice_id).linked_sync_id is None
+
+
 def test_current_read_expires_only_linked_lease_without_sending(editor,monkeypatch,tmp_path):
     e=editor;c=prepared(e,monkeypatch,tmp_path)
     with Session(e.ctx.engine) as db:

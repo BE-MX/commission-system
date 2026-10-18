@@ -24,6 +24,8 @@
 </template>
 
 <script setup>
+import { newRequestKey } from '../../../utils/requestKey.js'
+
 import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
@@ -43,7 +45,7 @@ const payment = reactive({ amount: props.receipt ? Number(props.receipt.amount) 
   collection_date: props.receipt?.collection_date || currentBeijingDate(),
   payment_type: props.receipt?.payment_type || '', remark: props.receipt?.remark || '',
   attachment_ids: props.receipt?.attachments?.map(file => file.id) || [] })
-const initial = JSON.stringify(payment), requestKey = crypto.randomUUID()
+const initial = JSON.stringify(payment), requestKey = newRequestKey()
 let disposed = false
 watch(() => saving.value || uploading.value, value => emit('busy', value))
 

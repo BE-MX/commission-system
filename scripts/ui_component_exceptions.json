@@ -1,4 +1,10 @@
 {
+  "frontend/src/views/invoice/components/ShipmentSettlementDialog.vue": {
+    "bad_dialog_width": {
+      "count": 1,
+      "reason": "2026-10-15 用户明确要求预售出库弹框加宽：本组件使用1120px，仍受视口减24px约束，便于多产品数量录入"
+    }
+  },
   "frontend/src/components/task/QuickTaskPopover.vue": {
     "non_md_glass_button": {
       "count": 4,

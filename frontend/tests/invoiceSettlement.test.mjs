@@ -48,9 +48,17 @@ const totalsFooter = readFileSync(
 
 test('settlement and accessory numeric controls fill their bounded containers', () => {
   assert.match(settlementFields, /\.sgrid :deep\(\.el-input-number\)[^}]*width:\s*100%/s)
-  // 预付款/包装数量/包装费用/运费/手续费/折扣（总折扣均分录入框）
+  // 预付款/手续费/折扣；运费与包装统一在左侧物流区录入。
   const numericControls = settlementFields.match(/<el-input-number\b/g) || []
-  assert.equal(numericControls.length, 6)
+  assert.equal(numericControls.length, 3)
+})
+
+test('freight is entered below the express channel and the settlement pane only reads it', () => {
+  const logistics = invoiceView.slice(invoiceView.indexOf('物流与备注（'), invoiceView.indexOf('<aside class="pane pane-side">'))
+  assert.match(logistics, /label="快递渠道"[\s\S]*label="运费"[\s\S]*v-model="form.shipping_fee"[\s\S]*label="指定跟单员"/)
+  assert.match(logistics, /v-model="form.shipping_fee"\s+:disabled="form.order_type === 'presale'"[\s\S]*:min="0" :precision="2"/)
+  assert.match(settlementFields, /label="运费">\s*<el-input :model-value="money\(form.shipping_fee \|\| 0\)" readonly/)
+  assert.doesNotMatch(settlementFields, /v-model="form.shipping_fee"/)
 })
 
 test('settlement options use the approved fixed values', () => {
@@ -192,8 +200,8 @@ test('settlement inputs live in the side pane; derived amounts moved to the summ
 })
 
 test('order subsection only contains the approved fields', () => {
-  const start = orderFields.indexOf('<div class="subdiv">订单信息</div>')
-  const end = orderFields.indexOf('</section>', start)
+  const start = orderFields.indexOf('<div class="fgrid-c3 subdiv">订单信息</div>')
+  const end = orderFields.indexOf('<div class="fgrid-c3 contact-details-heading">', start)
   const orderSection = orderFields.slice(start, end)
   assert.match(orderSection, /label="订单号\/发票号"/)
   assert.match(orderSection, /label="下单日期"/)

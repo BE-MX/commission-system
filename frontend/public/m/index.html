@@ -227,7 +227,15 @@ img{max-width:100%;display:block}
 <div id="app"></div>
 <script src="vue.global.js"></script>
 <script src="vue-router.global.js"></script>
-<script>
+<script type="module">
+import { copyText } from './clipboard.js';
+
+async function copyShareLink(url) {
+  if (!url) throw new Error('未取得分享链接');
+  if (await copyText(url)) return true;
+  window.prompt('自动复制未成功，请长按或选中复制下面的分享链接', url);
+  return false;
+}
 
 const {createApp,ref,computed,reactive,watch,onMounted,onUnmounted,provide,inject}=Vue;
 const {createRouter,createWebHashHistory,useRoute,useRouter}=VueRouter;
@@ -791,10 +799,7 @@ const MSearch = {
       try {
         const r = await API.getShareLink(a.id);
         if (r && r.url) {
-          // 尝试写入剪贴板
-          if (navigator.clipboard) {
-            await navigator.clipboard.writeText(r.url);
-          }
+          if (!await copyShareLink(r.url)) { toast.show('自动复制未成功，请手动复制分享链接', 'error'); return; }
           toast.show('链接已复制', 'success');
           API.recordAction(a.id, 'copy_link').catch(() => { });
         }
@@ -992,7 +997,7 @@ const MFavorites = {
     async function copyLink(a) {
       try {
         const r = await API.getShareLink(a.id);
-        if (r && r.url && navigator.clipboard) await navigator.clipboard.writeText(r.url);
+        if (!await copyShareLink(r?.url)) { toast.show('自动复制未成功，请手动复制分享链接', 'error'); return; }
         toast.show('链接已复制', 'success');
         API.recordAction(a.id, 'copy_link').catch(() => { });
       } catch (e) {
@@ -1085,7 +1090,7 @@ const MRecent = {
     async function copyLink(a) {
       try {
         const r = await API.getShareLink(a.id);
-        if (r && r.url && navigator.clipboard) await navigator.clipboard.writeText(r.url);
+        if (!await copyShareLink(r?.url)) { toast.show('自动复制未成功，请手动复制分享链接', 'error'); return; }
         toast.show('链接已复制', 'success');
         API.recordAction(a.id, 'copy_link').catch(() => { });
       } catch (e) {
@@ -1163,7 +1168,7 @@ const MAssetDetail = {
     async function copyLink() {
       try {
         const r = await API.getShareLink(asset.value.id);
-        if (r && r.url && navigator.clipboard) await navigator.clipboard.writeText(r.url);
+        if (!await copyShareLink(r?.url)) { toast.show('自动复制未成功，请手动复制分享链接', 'error'); return; }
         copied.value = true;
         toast.show('链接已复制', 'success');
         API.recordAction(asset.value.id, 'copy_link').catch(() => { });

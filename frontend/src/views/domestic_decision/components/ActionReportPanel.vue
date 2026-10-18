@@ -11,6 +11,8 @@
   <el-dialog v-model="editOpen" title="记录行动结果" width="640px" append-to-body><el-form label-position="top"><el-form-item label="行动状态"><el-select v-model="edit.status"><el-option v-for="status in ['todo', 'in_progress', 'done', 'dismissed']" :key="status" :value="status" :label="label(status)" /></el-select></el-form-item><el-form-item label="实际结果类型"><el-select v-model="edit.result_type" clearable><el-option v-for="(text, value) in resultTypes" :key="value" :value="value" :label="text" /></el-select></el-form-item><el-form-item label="实际跟进结果"><el-input v-model="edit.result" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="记录实际发生的沟通、订单或核对结果" /></el-form-item></el-form><p class="decision-note">完成行动必须有结果和类型。填入“已充值”不代表到账，金额仍以账本为准。</p><template #footer><GlassButton @click="editOpen = false">取消</GlassButton><GlassButton variant="primary" :loading="editing" @click="submitEdit">保存结果</GlassButton></template></el-dialog>
 </template>
 <script setup>
+import { newRequestKey } from '../../../utils/requestKey.js'
+
 import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DecisionTable from './DecisionTable.vue'
@@ -40,7 +42,7 @@ defineExpose({ prepareAction })
 async function submitAction() {
   if (!dueDate.value || creating.value) return
   creating.value = true
-  try { await props.mutate(() => api.createAction({ run_id: selectedInsight.value.source_run_id || props.data.meta.run_id, customer_id: selectedInsight.value.customer_id, rule_key: selectedInsight.value.rule_key, request_key: crypto.randomUUID(), due_date: dueDate.value }), '内部行动已保存'); createOpen.value = false }
+  try { await props.mutate(() => api.createAction({ run_id: selectedInsight.value.source_run_id || props.data.meta.run_id, customer_id: selectedInsight.value.customer_id, rule_key: selectedInsight.value.rule_key, request_key: newRequestKey(), due_date: dueDate.value }), '内部行动已保存'); createOpen.value = false }
   catch { createOpen.value = false; msgWarning('请先检查行动列表，避免在结果不确定时重复创建') }
   finally { creating.value = false; await loadActions() }
 }
@@ -67,7 +69,7 @@ async function createJob(kind) {
   pendingKind.value = kind; jobError.value = ''
   try { sessionStorage.setItem(`${storageKey()}:uncertain`, kind) } catch { /* optional request recovery lock */ }
   try {
-    const body = { run_id: props.data.meta.run_id, request_key: crypto.randomUUID(), focus: focus.value, format: format.value, ...(kind === 'query-plans' ? { question: question.value.trim() } : {}) }
+    const body = { run_id: props.data.meta.run_id, request_key: newRequestKey(), focus: focus.value, format: format.value, ...(kind === 'query-plans' ? { question: question.value.trim() } : {}) }
     const job = await api.createJob(kind, body)
     mergeJob(job); try { sessionStorage.removeItem(`${storageKey()}:uncertain`) } catch { /* optional recovery */ }
     if (!disposed) refreshJob(job)

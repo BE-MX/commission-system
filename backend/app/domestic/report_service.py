@@ -952,7 +952,7 @@ def submit_manual_skip(
 
 
 def revoke_manual_skip(db: Session, skip_log_id: int, user_id: int) -> dict:
-    """撤销人工放行；路由层仅向 domestic:admin 暴露。"""
+    """撤销人工放行；路由层仅向 domestic_skip:write 暴露。"""
     preview = db.query(DomesticSkipLog.item_id).filter(
         DomesticSkipLog.id == skip_log_id,
     ).first()

@@ -108,7 +108,9 @@
   </div>
 </template>
 
-<script setup>import { msgWarning, msgSuccessText, confirmAction } from '@/utils/feedback'
+<script setup>
+import { newRequestKey } from '../../utils/requestKey.js'
+import { msgWarning, msgSuccessText, confirmAction } from '@/utils/feedback'
 import { computed, reactive, ref } from 'vue'
 import { useListPage } from '@/composables/useListPage'
 import { useAsyncResource } from '@/composables/useAsyncResource'
@@ -164,7 +166,7 @@ async function openCreate() { Object.assign(createForm, { batch_no: '', expected
 async function submitCreate() { if (!createForm.items.length || createForm.items.some(item => !item.material_id || Number(item.quantity_grams) <= 0)) return msgWarning('请完整填写订单明细'); createSubmitting.value = true; try { await createSemifinishedOrder({ ...createForm }); msgSuccessText('订单已创建'); createVisible.value = false; listState.refreshCreate() } finally { createSubmitting.value = false } }
 async function openDetail(row) { detailOrderId.value = row.id; detailVisible.value = true; return detailResource.load(row.id, { clear: true }) }
 async function terminate(row) { await confirmAction(`确认终止订单 ${row.order_no}？已有入库不会撤销。`, '终止订单'); await terminateSemifinishedOrder(row.id); msgSuccessText('订单已终止'); listState.refreshUpdate(); if (detailOrderId.value === row.id) detailResource.load(row.id) }
-function openReceive(row) { receivingItem.value = row; receiveForm.quantity_grams = Number(row.remaining_qty_grams); receiveForm.remark = ''; receiveIdempotencyKey.value = crypto.randomUUID(); receiveVisible.value = true }
+function openReceive(row) { receivingItem.value = row; receiveForm.quantity_grams = Number(row.remaining_qty_grams); receiveForm.remark = ''; receiveIdempotencyKey.value = newRequestKey(); receiveVisible.value = true }
 async function submitReceive() { const orderId = detailOrderId.value; receiveSubmitting.value = true; try { await receiveSemifinishedItem(receivingItem.value.id, { quantity_grams: receiveForm.quantity_grams, idempotency_key: receiveIdempotencyKey.value, remark: receiveForm.remark || null }); msgSuccessText('入库成功'); receiveVisible.value = false; if (detailOrderId.value === orderId) detailResource.load(orderId); listState.refreshUpdate() } finally { receiveSubmitting.value = false } }
 function sortTable0({ prop, order }) { return listState.handleSortChange({ sort_field: order ? prop : undefined, sort_order: order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : undefined }) }
 </script>

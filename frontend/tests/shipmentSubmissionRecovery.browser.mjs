@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {shipmentInventoryFixture} from './shipmentInventoryFixture.mjs'
 import {createRequire} from 'node:module'
 import {mkdir,writeFile} from 'node:fs/promises'
 const require=createRequire(import.meta.url),{chromium}=require(process.argv[2]),base=process.argv[3],output=process.argv[4],red=process.argv[5]==='--red-close'
@@ -15,6 +16,7 @@ try { for(const width of red?[1440]:[1440,390,320]) {
  await page.route(base+'/api/**',async route=>{
   const request=route.request(),path=new URL(request.url()).pathname
   if(/^\/api\/invoice\/invoices\/[12]$/.test(path))return ok(route,invoice)
+  if(/^\/api\/invoices\/[12]\/shipment-inventory$/.test(path))return ok(route,shipmentInventoryFixture(invoice))
   if(/^\/api\/shipments\/order\/[12]$/.test(path))return ok(route,{items:[]})
   if(path==='/api/invoices/1/shipment-quotes')return ok(route,{quote_hash:'a'.repeat(64),goods_amount:'80',packaging_amount:'0',handling_amount:'0',freight_amount:'20',deposit_applied:'0',new_payment_due:'100',is_final:false})
   if(path==='/api/receipts/types')return ok(route,['T/T'])
@@ -42,11 +44,12 @@ try { for(const width of red?[1440]:[1440,390,320]) {
  })
  const open=()=>page.getByRole('button',{name:'打开出库结算',exact:true}).click(),close=()=>page.getByRole('button',{name:'关闭',exact:true}),inspect=()=>page.getByRole('button',{name:'核对原提交（只查询）',exact:true}).click()
  const waitText=text=>page.getByText(text,{exact:false}).first().waitFor(),tick=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
- async function fill(){await page.locator('.el-table').getByRole('spinbutton').fill('4');await page.keyboard.press('Tab');await page.locator('.el-form-item').filter({hasText:'本批运费'}).getByRole('spinbutton').fill('20');await page.keyboard.press('Tab');await page.getByRole('button',{name:'核算本批金额',exact:true}).click();await waitText('部分出库');if(!await page.getByRole('checkbox',{name:'同时登记本次实际回款'}).isChecked())await page.locator('label.el-checkbox').filter({hasText:'同时登记本次实际回款'}).click();await page.locator('.fields-grid .el-form-item').filter({hasText:'本次回款金额'}).getByRole('spinbutton').fill('32');await page.keyboard.press('Tab');await page.locator('.fields-grid .el-select').getByRole('combobox').focus();await page.keyboard.press('ArrowDown');try{await page.getByRole('option',{name:'T/T',exact:true}).click()}catch(e){await page.screenshot({path:output+'/failed-'+width+'.png',fullPage:true});await writeFile(output+'/failed-'+width+'.html',await page.content());throw e};await page.locator('input[type=file]').setInputFiles({name:'payment.png',mimeType:'image/png',buffer:png});await page.locator('textarea').fill('ORIGINAL PRIVATE NOTE')}
+ async function fill(){await page.locator('.el-table').getByRole('spinbutton').fill('4');await page.keyboard.press('Tab');await page.locator('.el-form-item').filter({hasText:'本批运费'}).getByRole('spinbutton').fill('20');await page.keyboard.press('Tab');await page.getByRole('button',{name:'核算本批金额',exact:true}).click();await waitText('本批发货，定金保留');if(!await page.getByRole('checkbox',{name:'同时登记本次实际回款'}).isChecked())await page.locator('label.el-checkbox').filter({hasText:'同时登记本次实际回款'}).click();await page.locator('.fields-grid .el-form-item').filter({hasText:'本次回款金额'}).getByRole('spinbutton').fill('32');await page.keyboard.press('Tab');await page.locator('.fields-grid .el-select').getByRole('combobox').focus();await page.keyboard.press('ArrowDown');try{await page.getByRole('option',{name:'T/T',exact:true}).click()}catch(e){await page.screenshot({path:output+'/failed-'+width+'.png',fullPage:true});await writeFile(output+'/failed-'+width+'.html',await page.content());throw e};await page.locator('input[type=file]').setInputFiles({name:'payment.png',mimeType:'image/png',buffer:png});await page.locator('textarea').fill('ORIGINAL PRIVATE NOTE')}
  async function send(){await page.getByRole('button',{name:'生成本批结算单',exact:true}).click()}
  await page.goto(base+'/tests/shipmentSubmissionHarness.html');await open();await fill();mode='unknown';await send();await waitText('Synthetic original result unknown')
  const original=writes.at(-1),before=writes.length
  assert.equal(await page.locator('textarea').count(),0);assert.equal(await page.getByRole('spinbutton').count(),0)
+ assert.equal(await page.getByRole('button',{name:'一键填充',exact:true}).count(),0)
  mode='status-denied';await inspect();await waitText('Synthetic current recovery denied')
  assert.equal(await close().isDisabled(),false,'Persisted unknown must permit safe exit after current authorization denial')
  await close().click();await page.getByRole('dialog').waitFor({state:'hidden'});assert.equal(writes.length,before)

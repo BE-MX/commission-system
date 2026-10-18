@@ -1,5 +1,46 @@
 # 统一部署入口
 
+## 部署提速与缓存
+
+静态资源保留每轮仅扫描和计算必要文件摘要一次，预览/执行仍各自重新校验，保护清单、路径检查和执行后验证保持生效。办公室静态暂存先验证源树，仍生成独立副本。云端静态准备按主机最多两路并行，同一主机串行；全部成功才进入冻结与切换。上传使用独占临时包并在调用结束后清理；失败会等待已启动准备结束才释放发布锁。
+
+Windows主站/PM的npm依赖使用受管快照缓存：package/lock、实际Node版本/平台/架构/ABI、npm、有效配置及相关环境共同决定键。新候选恢复独立文件，不共享可写node_modules；pnpm、未知安装脚本、链接依赖或特殊Node配置沿用正常安装。归档SHA、路径、链接、数量/大小均验证，完整提取后切换；损坏缓存阻断且不写成功标记。保存可选缓存失败只告警，并清理本次未完成提交。
+
+缓存为`.deploy_state/npm-cache/<component>/<key>.zip`及同名回执，只保留每组件最近3份完整配对缓存；单包512MiB、展开2GiB/10万文件上限。当前仅两个组件，正常完整缓存总上限3GiB。首次冷缓存会增加归档成本，命中才跳过npm ci；配置内容仅参与内存指纹，不写入回执。中断产生的不完整缓存不能自动当作命中，应保留错误证据后核验指定缓存文件。
+
+计时新增`static-prepare-all`及`dependency-cache-restore/store:<component>`。跨主机子阶段互相重叠，不能累加子阶段当作部署总时长。以顶层`elapsed_ms`和对应父阶段为准。方案、基线与本地验收见[部署提速方案](../docs/reports/2026-10-17-deployment-speedup-plan.md)。
+
+## 办公室候选清理与耗时记录
+
+完整发布验收成功、既有静态资源保留成功后，在同一个 `publish.lock` 内自动清理本部署器新建并登记的 `sources/<SHA>` 和 `office-next-(frontend|frontend-pm|pm-lan)-<时间戳>`。准备、失败、云端专项发布不触发办公室候选清理。首次使用须从含此实现的候选部署器启动；已运行的旧部署器不会随源码更新自动替换自身。
+
+- 候选创建满 7 天才进入检查；源码保留当前、最近两级已安装版本、执行中的控制源码，以及部署控制/恢复计划、运行进程、服务、启用计划任务、安装配置中的引用。静态暂存按目录引用保护，当前 SHA 的废弃“仅准备”副本也可在宽限期后清理。
+- 每次最多删除 8 个目录，60 秒为开始下一项前的软预算；已开始的一项完成核验与删除后才停，单个大目录可能超过 60 秒。未处理项留给后续成功发布。无待清理项时跳过 Windows 运行引用枚举。
+- 源码须为注册的分离 HEAD、当前版本祖先、无本地改动和未知忽略数据。部署器复制的 `.env*` 只记录路径和 SHA256，改动后保留；不会记录内容。已知依赖目录里的链接只解除链接本身，不跟随目标；其他位置出现链接则保留。
+- 无创建回执的旧源码、旧静态副本不自动接管；现存恢复候选继续保留。构建缓存、Python 环境、`office-previous-*`（已有主站保留策略仍负责它）、业务上传和数据库不属于本机制。
+
+回执位于 `.deploy_state/candidate-retention/`：`inventory.json` 为归属与最近成功版本，`current.json` 为当前处理状态，按 run id 归档结果包含已删、跳过、剩余数量。先写删除 intent，再删除并读回目录/Git 注册；删除失败或进程中断后拒绝自动重发。控制记录损坏、引用读取失败时停止清理，应用成功状态保留并单独记录 `candidate_retention_error`。
+
+可通过相同部署入口单独预览或执行清理，不重启服务、不重跑应用发布：
+
+```powershell
+deploy\deploy.bat --candidate-retention-only --live-root D:/commission-system --revision <controller-full-SHA> --no-pull --prepare-only
+# 核验后去掉 --prepare-only 执行同一受管范围；仍需实际发布成功和干净的固定控制源码。
+```
+
+中断恢复先检查 `current.json` 的 intent、路径是否存在及 Git worktree 注册；预览不会覆盖中断回执。完成独立读回、明确未完成/已完成对象后，将原回执保留为事故证据，再以专项入口继续；不能直接删锁或清除回执后盲目重试。
+
+普通准备及完整发布都会写 `.deploy_state/timings/<run-id>.json`，含北京时间开始/结束、单调时钟耗时、每阶段状态和异常类型；不记录命令参数或错误原文。依赖安装、各前端编译、PM 内网站、办公室与各云端资源保留均有独立阶段。父阶段包含子阶段，不可把所有行相加当总时长；应使用顶层 `elapsed_ms`。写计时失败仅告警，不改变部署动作结果。桌面进度协议追加 `elapsed_ms`，原消费者仍可读取。
+
+```powershell
+$timing = Get-ChildItem .deploy_state/timings/*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$record = Get-Content -LiteralPath $timing.FullName -Raw | ConvertFrom-Json
+$record | Select-Object revision,prepare_only,status,elapsed_ms
+$record.steps | Sort-Object elapsed_ms -Descending | Select-Object key,status,elapsed_ms
+```
+
+2026-10-17 的日志证据、重复开销及优化顺序见 [部署耗时检查](../docs/reports/2026-10-17-deployment-mechanism-audit.md)。代码实现与本地测试不代表服务器已安装。
+
 ## 2026-10-12 办公室启动等待中断接续
 
 `deploy.bat --recover-office-activation PLAN --prepare-only` 仅核验已审查的 c797c45e 候选、schema186、原 release_id b68389384a5e4e8b8f69bf4223f0ee8e、全部停止 writer 和 installed_paused 出库回执。计划固定包含 revision 与 release_id；去掉 prepare-only 接续同次发布，不重跑 DDL、不回退旧代码、不生成新的发布身份。

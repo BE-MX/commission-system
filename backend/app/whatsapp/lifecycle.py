@@ -10,6 +10,38 @@ from app.whatsapp.models import WhatsAppAccount, WhatsAppBindSession, WhatsAppBo
 logger = logging.getLogger(__name__)
 
 
+def stopped_binding_status(account):
+    if account.status in {'paused', 'blocked', 'revoking', 'revoked', 'revoke_pending', 'expired', 'reconnect_required'}:
+        return account.status
+    if account.consent_state != 'active':
+        return 'paused'
+    return None
+
+
+def close_binding(session, status):
+    session.status = status
+    session.qr_code_url = None
+    session._transient_qr = None
+    session.expires_at = None
+    session.last_payload = {'status': status}
+    session.updated_at = beijing_now()
+
+
+def _pending_binding(db, user_id, account):
+    query = db.query(WhatsAppBindSession).filter_by(ark_user_id=user_id).filter(
+        WhatsAppBindSession.status.in_(('pending', 'binding')))
+    if account is not None:
+        query = query.filter_by(account_uid=account.account_uid)
+    for session in query.order_by(WhatsAppBindSession.id.desc()).all():
+        source = db.query(WhatsAppAccount).filter_by(account_uid=session.account_uid).populate_existing().with_for_update().first()
+        stopped = stopped_binding_status(source) if source else None
+        if stopped:
+            close_binding(session, stopped)
+        else:
+            return session  # Unknown remote outcomes still require exact-operation readback.
+    return None
+
+
 def owned_account(db, uid: str, actor: dict, *, allow_manager=False):
     live = access.live_actor(db, int(actor['sub']), 'whatsapp:write')
     account = db.query(WhatsAppAccount).filter_by(account_uid=uid).populate_existing().with_for_update().first()
@@ -45,14 +77,7 @@ def bind(db, actor: dict, *, account_uid: str | None, company_account: bool, crm
     if not company_account:
         raise ValueError('请先确认这是公司专用业务号，允许同步全部业务会话')
     account = owned_account(db, account_uid, actor) if account_uid else None
-    if account is None:
-        pending = db.query(WhatsAppBindSession).filter_by(ark_user_id=user_id).filter(
-            WhatsAppBindSession.status.in_(('pending', 'binding')),
-        ).order_by(WhatsAppBindSession.id.desc()).first()
-    else:
-        pending = db.query(WhatsAppBindSession).filter_by(account_uid=account.account_uid).filter(
-            WhatsAppBindSession.status.in_(('pending', 'binding')),
-        ).order_by(WhatsAppBindSession.id.desc()).first()
+    pending = _pending_binding(db, user_id, account)
     if pending:
         # A lost bind response is read back using the exact durable operation.
         # owned_account may have locked the account. The connector's readback
@@ -139,6 +164,9 @@ def revoke(db, uid: str, actor: dict):
     account.status = 'revoking'
     account.crm_shared = False
     account.ai_egress_allowed = False
+    for session in db.query(WhatsAppBindSession).filter_by(account_uid=uid).filter(
+            WhatsAppBindSession.status.in_(('pending', 'binding'))).all():
+        close_binding(session, 'revoking')
     db.query(WhatsAppBodyGrant).filter_by(account_uid=uid).delete()
     _audit(db, action='revoke_account', result='pending', ark_user_id=int(actor['sub']), account_uid=uid)
     db.commit()  # Deny reads and new writes before the external logout attempt.

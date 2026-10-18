@@ -88,6 +88,8 @@
 </template>
 
 <script setup>
+import { copyText } from '../../../utils/clipboard.js'
+
 import { ENABLED_STATUS } from '@/utils/status'
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
@@ -170,18 +172,12 @@ async function toggle(row) {
   try { await updateGatewayApp(row.id, { is_enabled: !row.is_enabled }); msgSuccess(row.is_enabled ? '停用' : '启用'); await listPageState.refreshUpdate() } finally { busy.value = false }
 }
 async function copyKey() {
-  if (navigator.clipboard?.writeText) {
-    try { await navigator.clipboard.writeText(keyConfig.value); msgSuccess('复制'); return }
-    catch { /* Permission denial: try selection-based copy inside this dialog. */ }
-  }
+  if (await copyText(keyConfig.value)) { msgSuccess('复制'); return }
   const field = configField.value
   if (!field) return
   field.focus()
   field.select()
   field.setSelectionRange(0, field.value.length)
-  try {
-    if (document.execCommand('copy')) { msgSuccess('复制'); return }
-  } catch { /* Keep the full configuration selected for keyboard copy. */ }
   msgError('浏览器阻止了自动复制，配置已全选，请按 Ctrl+C（Mac：⌘C）保存')
 }
 async function showRequests(row) {

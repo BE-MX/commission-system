@@ -1,5 +1,14 @@
 # 莱莎方舟 API 参考
 
+## 单笔回款删除（2026-10-14，本地实现，未部署）
+
+- `GET /api/receipts/{identity}/deletion`：读取删除预览。返回回款及订单编号、原币含费金额/手续费/净额、远端状态、`expected_version`、`can_delete/can_resume`；已归档返回真实原记录，不执行删除。
+- `POST /api/receipts/{identity}/deletion`：body `{expected_version, reason, confirmed:true}`，原因2～500字；响应统一信封，data含 `status=deleted|uncertain`、下一步提示和完整 `receipt`。有效回款详情/列表新增 `deletion_pending`。
+
+两端点使用既有 `receipt:delete` 独立动作权限；每次从当前数据库复查员工状态、权限及原订单归属，其他人的回款需现有 `receipt:read_all` 数据范围。`receipt:write/admin` 不隐含删除权；本次不自动分配角色权限。未发送/明确失败且无小满结果的本地普通回款作废；已绑定回款需金额、日期、客户/币种、原订单及稳定有效/已删除列表证据。Not Found 必须核验完整全局有效索引无原ID。
+
+删除前持久化 `delete_started` 审计与 `uncertain/blocked` 冻结状态，再最多发送一次小满删除请求。已存在原删除记录的请求只查询和核验，不重复发送；结果未知时保持额度冻结。核验成功后归档原款为 `remote_deleted`，金额/手续费/凭证/小满ID/自动生成意图保留，不退款、不改订单或出库、不自动创建替代回款。批次、预售、发货资金分配及正在发送的款项不允许单笔删除；原回款修改、恢复、整单删除和后台绑定均不得覆盖删除冻结状态。重新登记需资金汇总实时核验通过，旧索引触发系统后台重建时提示等待刷新。
+
 ## 常用导航（本地候选，2026-10-13）
 
 - `GET /api/system/navigation-preferences`：读取当前用户配置，首次返回 `{"items": []}`。
@@ -220,6 +229,7 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | --- | --- |
 | GET `/shipments/capabilities` | invoice:read/write、receipt:write 或 shipment:read；返回登记开关及两项外发能力，后两者目前固定 false |
 | POST `/invoices/{id}/shipment-quotes` | invoice:read/write；items[{invoice_item_id,quantity}]、freight_amount，返回金额分解与 quote_hash |
+| GET `/invoices/{id}/shipment-inventory` | 当前 invoice:read/write 与订单数据范围；实时查询预售出库仓库可用库存，private, no-store；返回 invoice_id/warehouse_id/source=okki_live/queried_at/items[{invoice_item_id,product_id,sku_id,available_stock,reason}]。available_stock 为十进制字符串，查不到或异常为 null，不能当成零 |
 | POST `/invoices/{id}/shipment-settlements` | invoice:write + shipment:write；报价字段加 quote_hash/request_key，可选 payment（另需 receipt:write） |
 | GET `/shipments/order/{id}`、`/shipments/{id}` | shipment:read/write；items 列表或含 quote/balance/outbound/capabilities 的详情 |
 | POST `/shipments/{id}/cancel`、`pause`、`resume` | shipment:write；version/reason，订单归属与状态二次检查 |
@@ -227,7 +237,20 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | GET `/receipts/batches/{id}` | receipt:read/write/admin；batch_no/amount/bank_charge/currency/status/version/items/attachment_ids，须能访问全部子订单 |
 | POST `/receipts/batches/{id}/void-entry` | receipt:admin；version/reason，仅本地且无远端效果的整批录入纠错 |
 
+预售库存按 `OKKI_PRESALE_WAREHOUSE_ID` 与产品/SKU 精确读取小满 `/v1/product/inventory-list` 的启用 `enable_count`，不合计其他仓库、不用 `real_count` 或镜像替代。单次查询独立申请含 `product` scope 的临时 token，不覆盖原发票 token 缓存。查询内复用连接，首个SKU确认鉴权后，后续每波最多4路并发；每个库存GET超时15秒，鉴权/网络等系统错误停止后续波，未知仍不当作零；不缓存库存快照。`queried_at` 为本次查询完成的北京时间，并非供应商更新时间。查询在业务锁外执行，返回前重查当前权限、订单范围和产品/仓库绑定。部分缺记录、停用以外的异常值或查询失败为待核对；明确停用或零数值为零。
+
+报价和首次创建结算各自实时复查所选 SKU，同 SKU 多行按本批合计校验，超库存或库存未知返回409，且不写结算/回款。库存快照不参与资金报价 hash，库存变化但仍足量可继续提交；原已创建请求的幂等读取先于新库存门禁。前端“剩余待出库”与“可用库存”分别显示，整数上限取两者较小值向下取整；刷新清旧报价但保留原填写数量，超限时要求调整。库存读取不预占库存，最终小满创建仍会校验当时可用数量。
+
+弹框同时加载订单/历史和实时库存；产品信息就绪即展示，库存单独显示查询进度。“一键填充”按原订单行顺序重新分配每行 `min(剩余待出库, 可用库存整数剩余额)`，同SKU共享库存，未知/零/不足一件或同SKU事实冲突项填0；覆盖原填写，清旧报价，允许继续手工调整后重新核算。表格排序不改变填充分配顺序；查询中、活动批次、原提交恢复和保存期间不可填充。不触发创建/回款请求。
+
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
+
+## 预售批次取消与暂停操作（2026-10-15，本地实现，未部署）
+
+- 批次列表、详情及状态操作回执增加 `actions.cancel/pause/resume: {allowed, reason}`。前端使用后端规则显示操作及不可用原因，不再用 `balance.registered_amount > 0` 推断不能取消；动作请求仍在当前权限、订单行锁和版本检查下重新校验，读取结果不是写入授权。明确失败的出库创建任务可取消时，`actions.cancel.requires_remote_check=true` 表示提交还须实时核实小满无单。
+- 仅预占定金/预付货款、没有实际非池付款或已绑定运费目标的批次可以取消。尚无出库任务时保持本地操作；`review_required + outbound.failed` 且无远端 ID、租约、远端基线，原编号与 payload hash 完整、无出库确认历史时，也可通过原 `POST /shipments/{id}/cancel` 手工取消。该分支先释放业务锁，仅 GET 精确编号查询小满；只有规范“查无单”才继续。查询后重新验证当前权限、归属、原版本、全资金/订单/任务绑定及确认历史，任何变化均拒绝；小满已有单、查询异常或结果不完整时保留原批次和占用，不发删除/重试等远端写入。
+- 取消失败批次在同一最终事务中将结算及失败任务设为 `cancelled`、释放本批资金应用；原回款、批次明细、失败 payload/error/attempt token 保留，`cancel` 事件保存用户原因，另记 `cancel_verified` 事件保存服务端无单核验依据。取消后旧任务不再调度或重试，新建使用递增批次号。结果待核对、执行中、已出库及有确认历史的任务仍阻断取消重建。
+- 暂停保留数量及资金占用，继续阻止新建；重新安排使用“取消本批次”。取消回执必须匹配批次、订单、新版本和目标状态；成功后清旧报价、刷新数量及当前详情，再按当前资金池重新核算。刷新失败区分“操作已完成”和列表未更新，不自动重发状态命令。
 
 ## 预售按批次先出库后回款（2026-10-13，本地实现，未部署）
 
@@ -1006,11 +1029,11 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - 特单自定义属性：只有 `order_category=special` 时，当前产品类型和条件下**可见**的属性下拉允许直接输入新值；普货下拉不展示特单值，后端对普货属性及订单类型/渠道始终大小写精确校验，因此普货 `SS/ss` 与订单类型 `first_order/FIRST_ORDER` 不可混用。特单输入若仅大小写不同，会先统一为启用标准项的 canonical `code`，否则统一为已有启用 `_special` 项的 canonical `code`，不存在时才创建 `_special` 项；唯一键竞争的启用胜方也按其 canonical 值复用，停用胜方明确拒绝。canonical 值会写回订单属性，再参与工艺路线和产品身份计算。MySQL 对字典 `code`、工艺映射 `craft` 和产品 `attrs_key` 使用二进制精确查询并在取行后再次核对原始字符串，下游大小写碰撞绝不复用错误行。自定义项仅在草稿或订单保存事务内创建，订单失败会一并回滚，不提供脱离订单的即时创建端点。自定义工艺首次出现且尚无映射时，自动映射到该产品类型默认路线（头套“头套网帽（递针）”、发片“发片网底（递针）”）；只有此时才校验默认路线，缺失、停用或无工序则拒绝保存。已存在的自定义工艺映射是管理员配置的真相源，后续特单直接沿用，不因默认路线状态而校验或覆盖；唯一键竞争后也读取并保留胜方映射。特单切回普货只清空非标准值，产品类型或发长变化会清空已不适用的条件属性。下单页客户远程搜索只允许最后发出的请求更新候选列表和 loading，防止旧响应覆盖新关键词结果。
 - 明细：`POST /orders/{id}/items` 必须传稳定的 `request_id`，同订单内幂等重放不会重复加行或重复扣款；`PUT /items/{id}`（改数量不得低于任一工序已完成数，也不得删掉已报工的高序号单件码）、`DELETE /items/{id}`、`POST /items/{id}/attach-route`、`POST /items/{id}/ship`、`GET /items/{id}/progress`、`GET /items/{id}/print-card`。`GET /items/{id}/unit-qrcodes?start_no=&end_no=` 返回每件唯一的 `ARK-DU:{unit_id}:{sign}` 和 `A1-01` 显示码，单次最多 200 个供标签打印。
 - 逐工序进度对象（订单详情 / `items/{id}/progress` / 速查共用同一形状）：`progress_id / step_order / process_name / order_qty / upstream_qty / completed_qty / skipped_qty / passed_qty / required_qty / reportable_qty / rule_type / outcome_options / status / first_reported_at / last_reported_at`，外加 `last_reported_by + last_report_qty`。`completed_qty` 只是真实工作，`skipped_qty` 是无需做，`passed_qty` 才是下游资格；客户端不得把跳过显示成已完成。
-- 报工：`GET /reports`（流水查询）、`POST /reports`（主站代报工，**必须传 `on_behalf_user_id` 指明实际做活的工人**；支持 `request_id` 幂等键）。`decision` 数量模式额外传 `outcomes`，例如 `{"qty":20,"outcomes":{"dandong":12,"lixiaohong":8}}`，键必须恰好覆盖配置结果且合计等于 `qty`；逐件模式只允许一个结果值为 1。非 decision 工序禁止夹带 outcomes。`POST /reports/revoke` 会按具体单件检查全部后续工序；错误返回最早的下游实际工序与单件码，不能被中间跳过记录绕过。`GET /reports/workload` 仍只汇总未撤销真实报工。
-- 主管异常放行（`domestic:admin`）：`POST /reports/skip` 支持 quantity 或 exact unit，必须传稳定 `request_id` 与 5～500 字原因；`POST /reports/skip/{skip_log_id}/revoke` 恢复放行。`GET /reports/skips?item_id=` 查询指定明细的审计列表。manual skip 只改通行资格、不进入工作量；有任何更后面的真实报工就拒绝撤销。
+- 报工（主站代报及撤销需 `domestic_report:write`）：`GET /reports`（流水查询）、`POST /reports`（主站代报工，**必须传 `on_behalf_user_id` 指明实际做活的工人**；支持 `request_id` 幂等键）。`decision` 数量模式额外传 `outcomes`，例如 `{"qty":20,"outcomes":{"dandong":12,"lixiaohong":8}}`，键必须恰好覆盖配置结果且合计等于 `qty`；逐件模式只允许一个结果值为 1。非 decision 工序禁止夹带 outcomes。`POST /reports/revoke` 会按具体单件检查全部后续工序；错误返回最早的下游实际工序与单件码，不能被中间跳过记录绕过。`GET /reports/workload` 仍只汇总未撤销真实报工。
+- 主管异常放行（`domestic_skip:write`，需单独授予）：`POST /reports/skip` 支持 quantity 或 exact unit，必须传稳定 `request_id` 与 5～500 字原因；`POST /reports/skip/{skip_log_id}/revoke` 恢复放行。`GET /reports/skips?item_id=` 查询指定明细的审计列表。manual skip 只改通行资格、不进入工作量；有任何更后面的真实报工就拒绝撤销。
 - 参考图：`POST /images`（只收 jpg/png/webp ≤20MB，落 `DOMESTIC_STORAGE_ROOT` 私有目录）、`GET /images/{path}`（鉴权 FileResponse，前端 axios blob 取图）。
 - 进度小程序码：`GET /items/{id}/wxacode`（2026-07-28；**明细级**，与流转卡同粒度）——生成指向小程序免登录进度页的微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），返回 `{scene, image_base64, domestic_no, order_no, product_name, order_qty, env_version}`（image 的 MIME 按微信实际返回，是 jpeg；env_version 非 release 时前端警示「勿发客户」），可下载/打印 30×20mm 标签发客户。微信侧失败（正式版未发布 41030 / IP 白名单 40164）返回 502 并透传原因；`QR_SIGN_SECRET` 还是仓库默认值时 503 拒绝出码。依赖 `.env` 的 `WX_MINI_APPID/SECRET` + `WX_MINI_ENV_VERSION`（默认 release，体验期设 trial）。
-- 权限：`domestic:read` 查看 / `domestic:write` 下单编辑发货代报工 / `domestic:read_all` 查看全部内贸订单（数据范围） / `domestic:recharge` 进入客户管理并操作充值与余额流水 / `domestic_quantity_report:write` 小程序数量报工 / `domestic_unit_report:write` 小程序一码一件报工 / `domestic:admin` 管理。普通工人角色只配两种报工权限之一；仅有逐件权限时进入逐件模式，两者皆有或皆无时为兼容旧角进入数量模式。
+- 权限：`domestic:read` 查看 / `domestic:write` 下单编辑发货 / `domestic_report:write` 主站代报工及撤销报工 / `domestic_skip:write` 人工异常跳过、审计查询及撤销跳过 / `domestic:read_all` 查看全部内贸订单（数据范围） / `domestic:recharge` 进入客户管理并操作充值与余额流水 / `domestic_quantity_report:write` 小程序数量报工 / `domestic_unit_report:write` 小程序一码一件报工 / `domestic:admin` 管理。普通工人角色只配两种报工权限之一；仅有逐件权限时进入逐件模式，两者皆有或皆无时为兼容旧角进入数量模式。
 
 ### 内贸报工（小程序，`/api/mini/domestic/*`）
 
@@ -2484,3 +2507,9 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | POST | `/customer-requests/{id}/allocate` | 已入账收款补核销，数组shipment_id/amount（累计目标）；只增不减，追加增量证据 |
 
 现有 `/customer-requests` 类型筛选新增 receipt；审核通过在同事务执行货款入账及核销，不改会员。单条 `/items/{id}/ship` 沿用入口并生成逐件批次。数量与资金边界见 [说明](domestic-delivery.md)。
+
+### 2026-10-14 内贸订单详情操作权限拆分
+
+- 主站 `POST /api/domestic/reports`、`POST /api/domestic/reports/revoke` 和代报工选人 `GET /api/domestic/process-workers` 统一要求 `domestic_report:write`。撤销报工仍保留本人记录/管理员例外、已发货和下游真实报工保护。
+- `POST /api/domestic/reports/skip`、`GET /api/domestic/reports/skips` 和 `POST /api/domestic/reports/skip/{skip_log_id}/revoke` 统一要求 `domestic_skip:write`。异常原因、逐件记录、幂等及下游报工保护不变。
+- 两个新码登记为 action，角色权限矩阵分别显示“内贸订单代报工”和“内贸订单异常跳过”。既有 `domestic:write`/`domestic:admin` 不替代新权限，启动 seed 不自动给普通管理员或既有角色补授；super_admin 沿用平台豁免。小程序数量/逐件报工权限不变。上线重启后由角色管理页显式分配，重新登录刷新权限。订单阅读范围仍需已有阅读及数据范围权限。

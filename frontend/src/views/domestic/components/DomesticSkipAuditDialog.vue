@@ -29,7 +29,7 @@
       <el-table-column class-name="table-action-column" label="操作" min-width="90">
         <template #default="{ row: audit }">
           <GlassButton
-            v-if="!audit.revoked" v-permission="'domestic:admin'"
+            v-if="!audit.revoked" v-permission="'domestic_skip:write'"
             variant="link" link-tone="danger" left-icon="RefreshLeft"
             :loading="revokingId === audit.skip_log_id" @click="emit('revoke', audit)"
           >撤销</GlassButton>

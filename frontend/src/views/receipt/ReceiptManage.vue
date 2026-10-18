@@ -72,7 +72,7 @@
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('sync-status')" label="同步状态" min-width="160" max-width="170" prop="sync_status" sortable="custom">
           <template #default="{ row }">
-            <StatusBadge size="small" effect="plain" :type="statusTone(row.sync_status)">{{ row.status === 'remote_deleted' ? '远端删除已核实' : row.status === 'voided' ? '已作废' : statusLabel(row.sync_status) }}</StatusBadge>
+            <StatusBadge size="small" effect="plain" :type="statusTone(row.sync_status)">{{ row.deletion_pending ? '删除待核验' : row.status === 'remote_deleted' ? '远端删除已核实' : row.status === 'voided' ? '已作废' : statusLabel(row.sync_status) }}</StatusBadge>
           </template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('invoice-no')" prop="invoice_no" label="订单发票" min-width="150" max-width="210" show-overflow-tooltip sortable="custom" />
@@ -134,10 +134,10 @@
       </template>
     </DetailDrawer>
     <DetailDrawer v-model="detailVisible" :title="detail?.receipt_no || '回款单详情'" :loading="!detail">
-      <template v-if="detail"><div class="detail-status"><StatusBadge size="small" effect="plain" :type="statusTone(detail.sync_status)">{{ detail.status === 'voided' ? '已作废' : statusLabel(detail.sync_status) }}</StatusBadge><StatusBadge size="small" effect="plain">财务：{{ financeLabel(detail.collect_status) }}</StatusBadge></div>
+      <template v-if="detail"><div class="detail-status"><StatusBadge size="small" effect="plain" :type="statusTone(detail.sync_status)">{{ detail.deletion_pending ? '删除待核验' : detail.status === 'remote_deleted' ? '远端删除已核实' : detail.status === 'voided' ? '已作废' : statusLabel(detail.sync_status) }}</StatusBadge><StatusBadge size="small" effect="plain">财务：{{ financeLabel(detail.collect_status) }}</StatusBadge></div>
         <h1 class="detail-amount">{{ detail.currency }} {{ money(detail.amount) }}</h1>
         <el-alert v-if="detail.last_error" :title="detail.last_error" type="warning" :closable="false" />
-        <ResponsiveDescriptions :column="1" border class="receipt-descriptions"><el-descriptions-item label="订单发票">{{ detail.invoice_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item><el-descriptions-item label="回款日期">{{ detail.collection_date }}</el-descriptions-item><el-descriptions-item label="回款方式">{{ detail.payment_type }}</el-descriptions-item><el-descriptions-item label="银行手续费">{{ money(detail.bank_charge) }}</el-descriptions-item><el-descriptions-item label="小满回款编号">{{ detail.xiaoman_receipt_no || '尚未取得' }}</el-descriptions-item><el-descriptions-item label="截图传输">仅方舟留存</el-descriptions-item><el-descriptions-item label="备注"><DocumentRemarkEditor :key="detail.id" :document="detail" kind="receipt" :disabled="saving" @updated="row => { detail = row; refreshUpdate() }" /></el-descriptions-item></ResponsiveDescriptions>
+        <ResponsiveDescriptions :column="1" border class="receipt-descriptions"><el-descriptions-item label="订单发票">{{ detail.invoice_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item><el-descriptions-item label="回款日期">{{ detail.collection_date }}</el-descriptions-item><el-descriptions-item label="回款方式">{{ detail.payment_type }}</el-descriptions-item><el-descriptions-item label="银行手续费">{{ money(detail.bank_charge) }}</el-descriptions-item><el-descriptions-item label="小满回款编号">{{ detail.xiaoman_receipt_no || '尚未取得' }}</el-descriptions-item><el-descriptions-item label="截图传输">仅方舟留存</el-descriptions-item><el-descriptions-item label="备注"><DocumentRemarkEditor :key="detail.id" :document="detail" kind="receipt" :disabled="saving || deletionBusy || deletionOpen || detail.deletion_pending" @editing="value => remarkEditing = value" @saving="value => remarkSaving = value" @updated="row => { detail = row; refreshUpdate() }" /></el-descriptions-item></ResponsiveDescriptions>
         <p>收款用途：{{ purposeLabel(detail.purpose) }}</p>
         <p v-for="application in detail.shipment_applications" :key="`${application.settlement_id}:${application.component}`">关联发货批次：{{ application.settlement_no }} · 分配 {{ detail.currency }} {{ money(application.amount) }}{{ application.status === 'released' ? '（已释放）' : '' }}</p>
         <ReceiptPurposeCorrection :receipt="detail" :disabled="saving" @updated="row => { detail = row; refreshUpdate() }" />
@@ -145,7 +145,24 @@
         <h3>同步记录</h3><el-timeline><el-timeline-item v-for="(log,i) in detail.logs" :key="i" :timestamp="formatBeijingDateTime(log.created_at)">{{ log.message }}</el-timeline-item></el-timeline>
         <el-alert v-if="candidates.length" title="以下仅为候选，管理员需核对真实凭证后绑定。" type="warning" :closable="false" /><p v-for="c in candidates" :key="c.xiaoman_receipt_id">小满 ID {{ c.xiaoman_receipt_id }} · {{ c.xiaoman_receipt_no }} · {{ money(c.amount) }}</p>
       </template>
-      <template #footer><template v-if="detail"><ReceiptRemoteChange v-if="detail.status === 'active' && detail.xiaoman_receipt_id" :receipt-id="detail.id" @updated="row => { detail = row; refreshUpdate() }" /><GlassButton v-if="editable" v-permission="'receipt:write'" @click="editCurrent">修正资料</GlassButton><GlassButton v-if="editable" v-permission="'receipt:write'" @click="voidCurrent">作废</GlassButton><GlassButton v-if="detail.sync_status === 'failed' && detail.status === 'active'" v-permission="'receipt:write'" variant="primary" :loading="saving" @click="retry(detail)">重试同步</GlassButton><GlassButton v-if="['synced','uncertain'].includes(detail.sync_status)" v-any-permission="['receipt:write','receipt:admin']" :loading="saving" @click="reconcile">刷新小满结果</GlassButton><template v-if="detail.sync_status === 'uncertain' && !detail.xiaoman_receipt_id"><GlassButton v-permission="'receipt:admin'" @click="resolve('bind_receipt')">绑定已生成回款</GlassButton><GlassButton v-permission="'receipt:admin'" @click="resolve('confirm_not_created')">确认未创建</GlassButton></template></template></template>
+      <template #footer>
+        <template v-if="detail">
+          <ReceiptRemoteChange v-if="detail.status === 'active' && detail.xiaoman_receipt_id" :receipt-id="detail.id"
+            :disabled="saving || deletionBusy || deletionOpen || detail.deletion_pending" @busy="value => remoteBusy = value" @open="value => remoteOpen = value" @updated="row => { detail = row; refreshUpdate() }" />
+          <GlassButton v-if="editable" v-permission="'receipt:write'" :disabled="deletionBusy || deletionOpen" @click="editCurrent">修正资料</GlassButton>
+          <GlassButton v-if="editable" v-permission="'receipt:write'" :disabled="deletionBusy || deletionOpen" @click="voidCurrent">作废</GlassButton>
+          <GlassButton v-if="detail.sync_status === 'failed' && detail.status === 'active'" v-permission="'receipt:write'" variant="primary"
+            :disabled="deletionBusy || deletionOpen" :loading="saving" @click="retry(detail)">重试同步</GlassButton>
+          <GlassButton v-if="detail.status === 'active' && ['synced','uncertain'].includes(detail.sync_status)" v-any-permission="['receipt:write','receipt:admin']"
+            :disabled="deletionBusy || deletionOpen || detail.deletion_pending" :loading="saving" @click="reconcile">刷新小满结果</GlassButton>
+          <template v-if="detail.sync_status === 'uncertain' && !detail.xiaoman_receipt_id">
+            <GlassButton v-permission="'receipt:admin'" :disabled="deletionBusy || deletionOpen" @click="resolve('bind_receipt')">绑定已生成回款</GlassButton>
+            <GlassButton v-permission="'receipt:admin'" :disabled="deletionBusy || deletionOpen" @click="resolve('confirm_not_created')">确认未创建</GlassButton>
+          </template>
+          <ReceiptDelete :key="detail.id" :receipt="detail" :disabled="saving || uploading || editorVisible || remoteBusy || remoteOpen || remarkEditing || remarkSaving" @busy="value => deletionBusy = value"
+            @open="value => deletionOpen = value" @updated="row => { detail = row; refreshUpdate() }" />
+        </template>
+      </template>
     </DetailDrawer>
   </div>
 </template>
@@ -162,6 +179,7 @@ import ListPageStatus from '@/components/ListPageStatus.vue'
 import DocumentRemarkEditor from '@/components/DocumentRemarkEditor.vue'
 import ReceiptFields from './ReceiptFields.vue'
 import ReceiptRemoteChange from './ReceiptRemoteChange.vue'
+import ReceiptDelete from './ReceiptDelete.vue'
 import ReceiptPurposeCorrection from './ReceiptPurposeCorrection.vue'
 import { purposeLabel } from '@/views/invoice/components/invoiceDetailLabels'
 import ReceiptProofs from './ReceiptProofs.vue'
@@ -169,6 +187,8 @@ import { formatBeijingDateTime } from '@/utils/datetime'
 import { useTableView } from '@/composables/useTableView'
 import { useReceipts, statusLabel, statusTone, financeLabel, money } from './useReceipts'
 const batchVisible = ref(false), batchDetailVisible = ref(false), batchDetail = ref(null), batchLoading = ref(false), batchError = ref('')
+const deletionBusy = ref(false), deletionOpen = ref(false)
+const remoteBusy = ref(false), remoteOpen = ref(false), remarkEditing = ref(false), remarkSaving = ref(false)
 let batchSequence = 0
 async function showBatch(id) {
   const sequence = ++batchSequence; batchDetailVisible.value = true; batchDetail.value = null; batchLoading.value = true; batchError.value = ''

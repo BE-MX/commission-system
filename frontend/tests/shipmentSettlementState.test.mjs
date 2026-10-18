@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canChangeShipment } from '../src/views/invoice/composables/shipmentSettlementState.js'
+import { canChangeShipment, shipmentActionReason, isShipmentStateReceipt, remainingShipmentQuantity, hasActiveShipment } from '../src/views/invoice/composables/shipmentSettlementState.js'
 
 test('settlement actions disappear after outbound creation or uncertain remote state', () => {
   assert.equal(canChangeShipment({ state: 'outbound_pending', outbound: { status: 'pending' } }, 'pause'), false)
@@ -8,12 +8,40 @@ test('settlement actions disappear after outbound creation or uncertain remote s
   assert.equal(canChangeShipment({ state: 'review_required' }, 'pause'), false)
 })
 
-test('cancel requires no registered payment or bound freight, while pause may remain', () => {
-  const empty = { state: 'awaiting_payment', balance: { registered_amount: '0.00' } }
-  assert.equal(canChangeShipment(empty, 'cancel'), true)
-  assert.equal(canChangeShipment({ ...empty, balance: { registered_amount: '1.00' } }, 'cancel'), false)
-  assert.equal(canChangeShipment({ ...empty, freight_target: { status: 'bound', remote_order_id: '123' } }, 'cancel'), false)
-  assert.equal(canChangeShipment({ ...empty, freight_target: { status: 'bound', remote_order_id: '123' } }, 'pause'), true)
-  assert.equal(canChangeShipment({ ...empty, freight_target: { status: 'uncertain' } }, 'pause'), false)
-  assert.equal(canChangeShipment({ ...empty, state: 'paused' }, 'resume'), true)
+test('server permits cancelling a paused batch with an existing pool allocation', () => {
+  const row = { state: 'paused', balance: { registered_amount: '1000.00' },
+    actions: { cancel: { allowed: true, reason: '' }, resume: { allowed: true, reason: '' } } }
+  assert.equal(canChangeShipment(row, 'cancel'), true)
+  assert.equal(canChangeShipment(row, 'resume'), true)
+  assert.equal(shipmentActionReason(row, 'cancel'), '')
+})
+
+test('server denial and missing action facts cannot be replaced by local amount guesses', () => {
+  const reason = '已有真实付款或运费目标，仅支持原批暂停/恢复'
+  const row = { state: 'paused', balance: { registered_amount: '0.00' },
+    actions: { cancel: { allowed: false, reason } } }
+  assert.equal(canChangeShipment(row, 'cancel'), false)
+  assert.equal(shipmentActionReason(row, 'cancel'), reason)
+  assert.equal(canChangeShipment({ state: 'awaiting_payment' }, 'cancel'), false)
+  assert.match(shipmentActionReason({}, 'cancel'), /刷新原批次/)
+})
+
+test('cancellation releases quantity and active slot, while pause retains both', () => {
+  const row = { state: 'paused', quote: { items: [{ invoice_item_id: 7, quantity: 4 }] } }
+  assert.equal(hasActiveShipment([row]), true)
+  assert.equal(remainingShipmentQuantity({ id: 7, quantity: 10 }, [row]), 6)
+  row.state = 'cancelled'
+  assert.equal(hasActiveShipment([row]), false)
+  assert.equal(remainingShipmentQuantity({ id: 7, quantity: 10 }, [row]), 10)
+})
+
+test('state command accepts only the same batch, a newer version and the requested outcome', () => {
+  const row = { id: 3, invoice_id: 1033, version: 6 }
+  const receipt = { ...row, version: 7, state: 'cancelled' }
+  assert.equal(isShipmentStateReceipt(row, 'cancel', receipt), true)
+  for (const patch of [{ id: 4 }, { invoice_id: 99 }, { version: 6 }, { state: 'paused' }, { version: '7' }]) {
+    assert.equal(isShipmentStateReceipt(row, 'cancel', { ...receipt, ...patch }), false)
+  }
+  assert.equal(isShipmentStateReceipt(row, 'resume', { ...receipt, state: 'awaiting_payment' }), true)
+  assert.equal(isShipmentStateReceipt(row, 'resume', { ...receipt, state: 'awaiting_verification' }), true)
 })

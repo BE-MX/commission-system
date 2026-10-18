@@ -112,6 +112,12 @@ def quote(identity: int, body: ShipmentQuote, db: Session=Depends(get_db),user=D
     return ok(service.quote(db,identity,body,user))
 
 
+@shipment_read_router.get('/invoices/{identity}/shipment-inventory')
+def inventory(identity: int, db: Session=Depends(get_db), user=Depends(get_current_user)):
+    from app.invoice.shipment_inventory_service import read
+    return ok(read(db, identity, user))
+
+
 @shipment_submission_router.post("/invoices/{identity}/shipment-settlements")
 def create(identity: int, body: ShipmentCreate, db: Session = Depends(get_db),
            user=Depends(get_current_user)):

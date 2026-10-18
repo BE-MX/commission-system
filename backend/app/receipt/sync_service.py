@@ -231,17 +231,18 @@ def deliver(db, receipt_id):
 
 def refresh_accepted(db, receipt_id):
     # Once an ID is committed, a failed read must never requeue the POST.
+    from app.receipt.deletion_service import pending
     identity, version = None, None
     try:
         row = db.get(Receipt, receipt_id)
-        if not row or row.status != "active" or not row.xiaoman_receipt_id:
+        if not row or row.status != "active" or not row.xiaoman_receipt_id or pending(db, row):
             db.rollback()
             return
         identity, version = row.xiaoman_receipt_id, row.version
         data = remote.receipt_info(db, identity)
         db.query(Invoice).filter(Invoice.id == row.invoice_id).with_for_update().one()
         db.refresh(row, with_for_update=True)
-        if row.status != "active" or row.xiaoman_receipt_id != identity or row.version != version:
+        if row.status != "active" or row.xiaoman_receipt_id != identity or row.version != version or pending(db, row):
             db.rollback()
             return
         if not matches(row, data):
@@ -260,7 +261,8 @@ def refresh_accepted(db, receipt_id):
         if identity is None:
             return
         current = db.get(Receipt, receipt_id)
-        if current is None:
+        if current is None or pending(db, current):
+            db.rollback()
             return
         conflict = isinstance(exc, service.ReturnedIdentityConflict)
         values = dict(sync_status="uncertain", recovery_kind="blocked", next_attempt_at=None) if conflict else recovery.retry_values(
@@ -298,6 +300,9 @@ def matches(row, data):
 
 
 def bind_remote(db, row, data, actor):
+    from app.receipt.deletion_service import pending
+    if pending(db, row):
+        raise ValueError("原回款删除正在核验，不能恢复绑定或改写原删除状态")
     if not matches(row, data):
         raise ValueError("小满回款的订单、金额、手续费、实到账金额、币种或日期不匹配，禁止绑定")
     identity = str(data["cash_collection_id"])

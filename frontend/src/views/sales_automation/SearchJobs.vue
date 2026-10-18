@@ -100,6 +100,8 @@
 </template>
 
 <script setup>
+import { newRequestKey } from '../../utils/requestKey.js'
+
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -193,7 +195,7 @@ async function createJob() {
   creating.value = true
   try {
     if (!draftRequestKey.value) {
-      draftRequestKey.value = globalThis.crypto?.randomUUID?.() || `job-${Date.now()}`
+      draftRequestKey.value = newRequestKey()
     }
     await createSearchJob({
       ...draft,

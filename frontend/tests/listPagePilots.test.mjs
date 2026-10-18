@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import * as Vue from 'vue'
+import { newRequestKey } from '../src/utils/requestKey.js'
 import { useListPage } from '../src/composables/useListPage.js'
 import * as filters from '../src/views/domestic/composables/useDomesticOrderFilters.js'
 
@@ -27,6 +28,7 @@ function controller(path, name, api) {
   const code = readFileSync(new URL(path, import.meta.url), 'utf8')
     .replace(/import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"];?/g, (_, binding, key) => {
       if (key.endsWith('/money.js')) modules[key] = { formatMoney: String }
+      if (key.endsWith('/requestKey.js')) modules[key] = { newRequestKey }
       const declaration = binding.trim().startsWith('*') ? binding.trim().replace('* as ', '')
         : binding.replace(/\bas\b/g, ':')
       return `const ${declaration} = modules[${JSON.stringify(key)}];`

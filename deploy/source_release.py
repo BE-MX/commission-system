@@ -1,6 +1,7 @@
 """Prepare source without modifying the running office checkout."""
 
 import os
+import hashlib
 from pathlib import Path
 import re
 import shutil
@@ -33,7 +34,10 @@ def prepare(live, state, pull, pinned_revision=None):
     if not source.exists():
         source.parent.mkdir(parents=True, exist_ok=True)
         git("worktree", "add", "--detach", str(source), revision)
+        from candidate_retention import record_created
+        record_created(state, source, revision, 'source')
     # Ignored build/runtime settings stay on this machine, never in release archives.
+    settings = {}
     for name in ("frontend", "frontend-pm", "backend"):
         for original in (live / name).glob(".env*"):
             if original.name.endswith((".example", ".sample")) or not original.is_file():
@@ -46,4 +50,7 @@ def prepare(live, state, pull, pinned_revision=None):
                     os.link(original, destination)
             else:
                 shutil.copy2(original, destination)
+            settings[destination.relative_to(source).as_posix()] = hashlib.sha256(destination.read_bytes()).hexdigest()
+    from candidate_retention import record_settings
+    record_settings(state, source, settings)
     return source, revision, previous

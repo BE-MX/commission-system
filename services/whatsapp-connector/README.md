@@ -76,7 +76,21 @@ account 包含 provider、session_generation、consent_version、status、connec
 
 本应用不调用发送业务消息、readMessages、chatModify 或主动 presence API。配置 `markOnlineOnConnect:false`。**已核对 rc14 源码：上游仍会在连接打开时发送协议级 `unavailable` presence，并进行连接/密钥/历史同步等协议请求；不能宣称网络上完全没有 presence 或写报文。** 应用日志只记录安全错误码，不记录正文、二维码、JID、凭据或原始事件。
 
+### 扫码与授权诊断
+
+结构化日志以 `source=whatsapp_connector` 标记，时间固定北京时间并带 `+08:00`；`account` 为 account UID 的 SHA256 前 16 位，供同一关联过程对照。日志仅使用固定事件和字段白名单：socket 建立、二维码就绪、注册刷新通知、凭据注册/身份存在标志、连接成功、断线数字码/分类、保护暂停，以及授权失败的阶段/类型/HTTP 状态/耗时/允许的传输错误码。不会输出 URL、HTTP 头、异常原文、协议节点、二维码、手机号、JID、凭据或正文；上游 logger 继续 silent。
+
+`authorization_failed` 区分 `timeout`、`transport`、`http_error`、`invalid_response`、`denied`；这些只解释失败，不改变 5 秒超时及现有拒绝/保护暂停规则。`companion_reg_refresh` 仅观察上游通知的事件名称，不发送 ACK、不修改配对材料、不实现上游未合并补丁。`pairing_credentials` 只证明凭据阶段变化，必须见到 `connection_open` 并经实际业务验收后才能确认关联可用。排障结论与本地验证见 [扫码失败调查](../../docs/reports/2026-10-15-whatsapp-pairing-diagnosis.md)。
+
 ## 迁移与发布边界
+
+### 办公室出网与关联恢复
+
+`WHATSAPP_PROXY_URL` 可配置 HTTP(S) CONNECT 代理，例如办公室已验证的 `http://127.0.0.1:1080`。仅 WhatsApp WebSocket 和媒体请求使用该代理，Ark 授权回调仍走原地址；不依赖交互用户的系统代理，也不读取通用 `HTTPS_PROXY` 作为隐式回退。无此配置保持直连，非法协议/路径阻断启动且不输出配置内容。服务环境优先于 `.env`，发布准备与 NSSM 实际启动保持同一优先级。
+
+创建关联时先提交授权，再连接 WhatsApp；返回 `pending` 仅代表操作建立，不表示二维码已经生成。受保护暂停、撤销或要求重连时，绑定查询返回相应终态，停止等待二维码。Ark 解绑先关闭尚未结束的绑定会话；历史残留的已停止会话在用户明确发起关联时退出待处理队列，不恢复原账号授权。连接结果仍未知且授权有效的操作继续按原 UID 查询，不自动重复 POST。
+
+2026-10-15 故障证据和未发布修复见 [二维码与关联恢复报告](../../docs/reports/2026-10-15-whatsapp-qr-recovery.md)。HTTPS/WebSocket 网络验证不能代替持有人扫码验收。
 
 不会读取、转换或导入 `.wwebjs_auth`、旧 session 文件或旧正文库。旧账户只通过 Ark 已批准的稳定 UID/owner metadata 重新登记，再建立 Baileys 连接；旧设备 logout 与新设备 rebind 的顺序由发布流程控制，不能让旧 whatsapp-web.js 与新 Baileys 同时采集同一账号。
 
