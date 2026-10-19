@@ -110,5 +110,21 @@ class BackendReleaseTests(unittest.TestCase):
         self.exercise_colorwork_activation(fail_backend=True)
 
 
+class UnchangedBackendReceiptTests(unittest.TestCase):
+    def test_deploy_tool_only_release_advances_checkout_and_receipt_without_restart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);state=root/'.deploy_state';state.mkdir()
+            revision='a'*40;previous='b'*40
+            info=dict(revision=revision,previous=previous,schema='197',changed=False,schema_changed=False,environment=None)
+            (state/('backend-prepared-'+revision+'.json')).write_text(json.dumps(info))
+            def run(args,**kwargs):return previous if args[:2]==['git','rev-parse'] else ''
+            with patch.object(remote_backend,'ROOT',root),patch.object(remote_backend,'STATE',state),patch.object(remote_backend,'run',side_effect=run) as command,patch.object(remote_backend,'healthy'),patch.object(remote_backend,'schema_check'),patch.object(remote_backend,'activate_colorwork'):
+                result=remote_backend.activate_locked(revision)
+            self.assertEqual(result['revision'],revision)
+            self.assertEqual(json.loads((state/'backend-success.json').read_text())['revision'],revision)
+            self.assertTrue(any(c.args[0]==['git','checkout','--detach',revision] for c in command.call_args_list))
+            self.assertFalse(any('systemctl' in c.args[0] for c in command.call_args_list))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,3 +1,7 @@
+## 2026-10-19 Beijing unchanged-release checkout verification
+
+A deployment-tool-only release must advance the installed Beijing checkout and backend-success receipt even when no backend restart is needed. The unchanged branch now verifies health and colorwork, advances the pinned checkout, and writes its receipt while preserving the running service. An isolated regression checks the Git/receipt update and absence of systemctl actions. Final delivery must verify both installed Git heads, rather than relying on the overall publish summary.
+
 ## 2026-10-19 Windows deployment journal checkpoint recovery
 
 The resumed e4 release verified Office and Beijing without restarting the application, then Windows denied atomic replacement of publish-current.json. Runtime remains healthy and the original outbound/mail baselines remain bound. Journal updates now retry only the same Windows sharing-denied rename with a bounded delay. Recovery accepts only the inspected completed Office/backend prefix at the installed candidate and records each journal checkpoint separately. Complete the original release before the latest-main release; final status must come from live receipts.

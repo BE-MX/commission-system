@@ -226,7 +226,10 @@ def activate_locked(revision):
     if not info["changed"] and not info.get("schema_changed"):
         healthy()
         activate_colorwork(info, source, python)
-        return {"status": "unchanged", "schema": info["schema"]}
+        run(['git', 'checkout', '--detach', revision])
+        info['status'] = 'unchanged'
+        (STATE / 'backend-success.json').write_text(json.dumps(info))
+        return {"status": "unchanged", "revision": revision, "schema": info["schema"]}
     protocol_before=protocol_observation(source,python)
     run(["sudo", "-n", "systemctl", "stop", SERVICE])
     venv = ROOT / "backend/.venv"
