@@ -18,7 +18,6 @@ from app.ai_chat.schemas import RetryStreamRequest, TurnStreamRequest
 
 
 PRESET_NAME = context_service.PRESET_NAME
-REQUIRED_MODEL = context_service.REQUIRED_MODEL
 NOT_CONFIGURED_MESSAGE = context_service.NOT_CONFIGURED_MESSAGE
 
 

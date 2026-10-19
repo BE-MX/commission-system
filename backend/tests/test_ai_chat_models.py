@@ -254,6 +254,7 @@ def test_ai_chat_settings_have_positive_bounded_defaults():
     assert settings.AI_CHAT_MAX_ATTACHMENTS == 5
     assert settings.AI_CHAT_MAX_ATTACHMENT_CHARS == 60_000
     assert settings.AI_CHAT_MAX_TURN_ATTACHMENT_CHARS == 120_000
+    assert settings.AI_CHAT_MODEL == "claude-fable-5"
 
     max_length = next(
         item.max_length

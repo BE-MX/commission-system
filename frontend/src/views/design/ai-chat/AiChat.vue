@@ -42,8 +42,16 @@
           </div>
         </header>
 
-        <div v-if="!chat.config.value.configured" class="notice-banner" role="alert">
+        <div
+          v-if="!chat.config.value.configured"
+          class="notice-banner"
+          :class="{ 'is-diagnostic': chat.config.value.diagnostic }"
+          role="alert"
+        >
           <span>{{ chat.config.value.message || '方案助手尚未配置，请联系管理员。' }}</span>
+          <span v-if="chat.config.value.diagnostic" class="notice-diagnostic">
+            配置诊断：{{ chat.config.value.diagnostic.detail }}
+          </span>
         </div>
         <div v-if="chat.error.value" class="error-banner" role="alert">
           <span>{{ chat.error.value.message }}</span>
@@ -252,6 +260,13 @@ async function startConversation() {
   from { opacity: 0; transform: translateY(-6px); }
 }
 .notice-banner { background: var(--color-warning-bg); color: var(--color-warning-text); }
+.notice-banner.is-diagnostic {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+}
+.notice-diagnostic { font-size: 11px; opacity: 0.82; }
 .error-banner { background: var(--color-danger-bg); color: var(--color-danger-text); }
 .error-banner button {
   flex: 0 0 auto;
