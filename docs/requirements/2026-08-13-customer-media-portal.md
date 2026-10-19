@@ -131,3 +131,13 @@ customers/{customer_id}/batches/{batch_id}/thumbnails/{uuid}.jpg
 - `media.leshine.cloud` 当前存在未备案导致 HTTPS reset 的已知风险；未恢复可用前不得向客户发正式链接。
 - 域名可用后配置独立证书、DNS、Nginx server block、CORS、上传体积限制、登录限速和私有文件内部转发。
 - 上线前必须有第二份文件备份、磁盘空间告警和抽样恢复演练；单机唯一副本不满足发布条件。
+
+## 9. 2026-10-19 视频播放版与首帧海报
+
+客户内容站与方舟内部页面统一使用浏览器可直接解码的 H.264 播放版，原件继续保留在私有存储；首帧 JPEG 作为列表和灯箱海报。
+
+- 上传视频时服务端调用 ffmpeg：已是 H.264 只重封装并加 faststart，其余编码转 H.264（分辨率不变，CRF 20，AAC 128k），同时抽取首帧生成宽 720 的海报；两者写入 `customers/{customer}/batches/{batch}/playback|thumbnails/`，对象键保存到 `playback_key`、`thumbnail_key`，时长写入 `duration_seconds`。
+- 转码失败即拒绝该次上传（400，明确提示），不把浏览器无法播放的文件交付给客户；海报生成失败只降级为无海报，不阻断播放版。ffmpeg/ffprobe 缺失时视频上传失败并提示联系管理员，图片上传不受影响。
+- 素材响应新增 `playback_url`、`poster_url`；没有派生文件时为 `null`，前端回退到原件地址。下载仍返回原件。
+- 已上线的历史视频（HEVC）通过 `python -m scripts.backfill_customer_media_playback --apply` 回填，脚本默认 dry-run、逐素材提交、可重复执行。
+- 部署机需安装 ffmpeg（Ubuntu：`apt-get install -y ffmpeg`）。上传走 `/api/customer-media/batches/{id}/assets` 的实例必须具备该依赖；否则该实例的视频上传会被拒绝。
