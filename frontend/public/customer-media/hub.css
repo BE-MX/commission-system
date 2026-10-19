@@ -349,6 +349,13 @@ footer p, footer > span { font-size: 9px; letter-spacing: .08em; }
 .email-login-form label > span { color: #666; font-size: 9px; font-weight: 800; letter-spacing: .14em; }
 .email-login-form input { width: 100%; border: 1px solid #d7d5ce; border-radius: 12px; background: #f4f3ef; color: #111; padding: 16px; outline: 0; font: 15px var(--sans); box-shadow: inset 3px 3px 8px rgba(20,20,20,.06), inset -3px -3px 8px rgba(255,255,255,.92); }
 .email-login-form input:focus { border-color: #d4b13e; box-shadow: 0 0 0 4px rgba(246,212,93,.22), inset 3px 3px 8px rgba(20,20,20,.05); }
+.password-field { position: relative; margin-top: -8px; }
+.password-field input { padding-right: 56px; }
+.password-field input::-ms-reveal { display: none; }
+.password-toggle { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px; color: var(--muted); }
+.password-toggle svg { width: 20px; height: 20px; }
+.password-toggle:hover, .password-toggle:active { color: var(--ink); background: var(--panel); }
+.password-toggle:focus-visible { outline: 2px solid var(--accent-dark); outline-offset: -2px; }
 .email-login-form .verification-code { text-align: center; font-size: 28px; font-weight: 700; letter-spacing: .28em; }
 .change-email-button { margin: 18px 0 0; border: 0; border-bottom: 1px solid #888; background: transparent; color: #555; padding: 2px 0; font-size: 10px; text-transform: uppercase; cursor: pointer; }
 .access-card .auth-message, .access-card .auth-error { margin: 18px auto 0; border-radius: 9px; padding: 11px 13px; font-size: 11px; }

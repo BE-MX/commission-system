@@ -31,7 +31,17 @@
       <p>Use the email and password your LeShine contact created for you.</p>
       <form class="email-login-form" id="login-form">
         <label><span>APPROVED EMAIL</span><input id="email" type="email" autocomplete="username" required placeholder="name@company.com" /></label>
-        <label><span>PASSWORD</span><input id="password" type="password" autocomplete="current-password" required placeholder="Your portal password" /></label>
+        <label for="password"><span>PASSWORD</span></label>
+        <div class="password-field">
+          <input id="password" type="password" autocomplete="current-password" required placeholder="Your portal password" />
+          <button class="password-toggle" id="password-toggle" type="button" aria-label="Show password" title="Show password" aria-controls="password">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+              <circle cx="12" cy="12" r="3" />
+              <path id="password-visibility-slash" class="hidden" d="m3 3 18 18" />
+            </svg>
+          </button>
+        </div>
         <button class="access-button" type="submit" id="login-submit">Enter library</button>
       </form>
       <p class="auth-error hidden" id="login-error" role="alert"></p>
@@ -371,7 +381,15 @@
     }
 
     // 视图切换
+    function setPasswordVisible(visible) {
+      $('password').type = visible ? 'text' : 'password';
+      const label = visible ? 'Hide password' : 'Show password';
+      $('password-toggle').setAttribute('aria-label', label);
+      $('password-toggle').title = label;
+      $('password-visibility-slash').classList.toggle('hidden', !visible);
+    }
     function showLogin() {
+      setPasswordVisible(false);
       $('splash').classList.add('hidden');
       $('app').classList.add('hidden');
       $('login').classList.remove('hidden');
@@ -406,6 +424,7 @@
     }
 
     // 事件
+    $('password-toggle').onclick = () => setPasswordVisible($('password').type === 'password');
     $('splash-enter').onclick = () => { session ? enterApp() : showLogin(); };
     async function enterApp() {
       try { await loadLibrary(); await loadTags(); showApp(); }
@@ -423,6 +442,7 @@
           body: JSON.stringify({ email: $('email').value, password: $('password').value }),
         });
         $('password').value = '';
+        setPasswordVisible(false);
         await enterApp();
       } catch (error) {
         err.textContent = error.message;

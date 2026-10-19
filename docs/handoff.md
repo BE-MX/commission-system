@@ -1,3 +1,9 @@
+## 2026-10-19 素材门户显示密码按钮（Codex，Git 交付，未部署）
+
+- 分支 `codex/media-password-toggle`。`frontend/public/customer-media/index.html` 与 `hub.css` 为登录密码框增加眼睛图标；默认隐藏，点击或键盘激活可显示/隐藏且保留输入。使用英文可访问名称、44px 点击区域及键盘焦点提示；成功登录或重新显示登录页时恢复隐藏。无 API、数据库或认证契约变更。
+- 验证：前端构建通过（既有大 chunk 警告）；素材门户现有测试 3 项通过；增量约定检查与 diff 检查通过。Edge 无头浏览器在 1440px/390px 验证默认隐藏、鼠标/键盘切换、值保留、不误提交、密码框 Enter 提交、登录后清空与隐藏、无横向溢出及无页面错误。使用本地模拟接口，无真实账号操作；手机端既有退出按钮不可见，退出复位检查切回桌面执行。截图与验证脚本位于本工作树 `tmp/media-password/`。
+- 用户授权本次提交、合并 main 并推送；不部署，线上状态未改变。主目录原有改动的 SHA256 备份及本次验证材料保存在 `.deploy_state/media-password-integration-20261019/`；Git 巡检使用 `--no-fetch` 本地快照。
+
 ## 2026-10-19 订单发票零回款提交（Codex，零回款实现，未部署）
 
 - 分支 `codex/invoice-zero-receipt`，工作树 `C:/Users/windb/.codex/worktrees/invoice-zero-receipt/commission-system`。首次回款金额默认 0、取消预付款自动跟随；零金额/空金额无需日期和凭证即可同步。点击“保存并同步”先提示“当前回款金额为0，是否确认提交？”，取消/关闭不写入，确认后执行原流程；正数回款仍校验真实到账资料。
