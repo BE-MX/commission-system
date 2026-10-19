@@ -1,5 +1,5 @@
 {
-  "source_sha256": "f82121db8ec12b413a36b07afd7fbd04ffd5c94d6019d41c7cb260fda925f836",
+  "source_sha256": "cd0ccf05a66a008482d0bec9f4af846f189e7e764dd065f37735e283f1a0a52a",
   "favorite_access": {
     "PortalCatalog": [
       {
@@ -32,6 +32,21 @@
       }
     ],
     "PortalCustomers": [
+      {
+        "permission": "portal_access:read"
+      },
+      {
+        "permission": "portal_access:read"
+      },
+      {
+        "anyPermission": [
+          "portal_order:read",
+          "portal_access:read",
+          "portal_site:admin"
+        ]
+      }
+    ],
+    "PortalAccessRequests": [
       {
         "permission": "portal_access:read"
       },
