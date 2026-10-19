@@ -1,6 +1,6 @@
 """Read-only invoice panels and whole-scope navigation alerts."""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from app.auth.dependencies import require_any_permission
 from app.core.database import get_db
@@ -10,6 +10,15 @@ from app.invoice import detail_access, detail_receipts, detail_outbounds, docume
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.get("/invoices/{invoice_id}/editor-inventory", summary="Advisory stock and verified shipped quantities for invoice editing")
+def editor_inventory(invoice_id: int, response: Response, db: Session = Depends(get_db),
+                     user=Depends(require_any_permission("invoice:read", "invoice:write", "invoice:sync"))):
+    from app.invoice import editor_inventory as inventory
+    invoice = detail_access.get_order(db, invoice_id, user)
+    response.headers["Cache-Control"] = "private, no-store"
+    return ok(inventory.read(db, invoice, user))
 
 
 @router.get("/document-anomalies", summary="Scoped whole-domain document anomaly overview")

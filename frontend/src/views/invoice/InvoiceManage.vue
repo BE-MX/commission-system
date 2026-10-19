@@ -218,6 +218,8 @@
 
               <InvoiceHairTable
                 class="form-card"
+                :invoice-id="form.id"
+                :active="drawerVisible"
                 :items="hairItems"
                 :quantity-error-row="quantityErrorRow"
                 :is-production="isProduction"

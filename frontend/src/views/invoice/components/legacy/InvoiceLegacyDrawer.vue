@@ -173,6 +173,8 @@
         <InvoiceLegacyReceiptFields :form="form" :total="formTotal" :locked="editor.receiptLocked.value" />
 
         <InvoiceHairTable
+          :invoice-id="form.id"
+          :active="legacyVisible"
           :pin-columns="false"
           :items="hairItems"
           :quantity-error-row="quantityErrorRow"

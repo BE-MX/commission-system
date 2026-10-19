@@ -3,6 +3,10 @@ import { invoiceClient as request } from './clients'
 // 后端统一 {code,message,data} 信封，拦截器返回整个信封，这里取业务数据
 const unwrap = promise => promise.then(res => (res && res.data !== undefined ? res.data : res))
 
+export const getInvoiceEditorInventory = id => unwrap(request.get(`/invoices/${id}/editor-inventory`, {
+  showLoading: false, suppressToast: true,
+}))
+
 export const getInvoiceRelatedDetail = (id, source = '', config = {}) => unwrap(request.get(
   `/invoices/${id}/related-detail${source ? `/${source}` : ''}`,
   { showLoading: false, suppressToast: true, timeout: 300000, ...config },

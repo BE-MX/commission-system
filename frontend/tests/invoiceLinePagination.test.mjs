@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import * as Vue from 'vue'
 import { sortTableRows } from '../src/utils/tableSort.js'
+import { useInvoiceStockShortage } from '../src/views/invoice/composables/useInvoiceStockShortage.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const hairTable = read('../src/views/invoice/components/InvoiceHairTable.vue')
@@ -14,7 +15,9 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
     assert.match(source, /:data="pagedItems"/)
     assert.match(source, /max-height="560"/)
     assert.match(source, /@sort-change="sortLines"/)
-    assert.match(source, /const sortedItems = computed\(\(\) => sortTableRows\(props\.items,/)
+    assert.match(source, name === 'hair'
+      ? /const sortedItems = computed\(\(\) => sortTableRows\(filteredItems\.value,/
+      : /const sortedItems = computed\(\(\) => sortTableRows\(props\.items,/)
     assert.match(source, /const pagedItems = computed\(\(\) => sortedItems\.value\.slice\(\(page\.value - 1\) \* pageSize\.value, page\.value \* pageSize\.value\)\)/)
     // 行号跨页连续（不因翻页从 1 重排）
     assert.match(source, /type="index" :index="indexBase"/)
@@ -23,7 +26,7 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
     assert.match(source, /v-model:current-page="page"/)
     assert.match(source, /v-model:page-size="pageSize"/)
     assert.match(source, /:page-sizes="\[20, 50, 100\]"/)
-    assert.match(source, /:total="items\.length"/)
+    assert.match(source, name === 'hair' ? /:total="filteredItems\.length"/ : /:total="items\.length"/)
     // 页码策略：初次装载回第一页；新增/导入跟到末页；删行后收敛页码
     assert.match(source, /if \(!before\) page\.value = 1/)
     assert.match(source, /else if \(now > before\) page\.value = pages/)
@@ -47,6 +50,7 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
       {
         vue: Vue,
         '@/utils/tableSort': { sortTableRows },
+        '../composables/useInvoiceStockShortage.js': { useInvoiceStockShortage },
         // 勾选逻辑有独立测试；这里只验证分页/排序，给个惰性桩
         '../composables/useLineSelection.js': { useLineSelection: () => ({ selectedCount: Vue.ref(0), onSelect() {}, onSelectAll() {}, clearSelection() {}, takeSelected: () => [] }) },
       }, () => props, () => () => {},

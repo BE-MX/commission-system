@@ -37,8 +37,21 @@
         <el-button @click="$emit('add-blank')"><el-icon><Plus /></el-icon>添加空行</el-button>
       </div>
     </div>
+    <div class="stock-toolbar">
+      <el-checkbox v-model="onlyShortage">仅显示库存不足的产品</el-checkbox>
+      <span class="line-hint">可用库存 &lt; 订单未发货数量；浅红行表示库存不足（小满同步库存）</span>
+      <el-button v-if="invoiceId" link type="primary" :loading="inventoryLoading" @click="refreshInventory">刷新库存与出库进度</el-button>
+      <span v-if="inventoryLoading" class="line-hint" role="status">正在核对库存与出库进度</span>
+      <el-text v-else-if="inventoryError" type="warning" role="status">库存核对失败，请刷新重试</el-text>
+      <el-text v-else-if="unknownCount" type="warning" role="status">{{ unknownCount }} 行待核对，未计入库存不足筛选</el-text>
+    </div>
     <div class="line-table-wrap">
-      <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
+      <el-table ref="lineTable" :data="pagedItems" :row-class-name="({ row }) => stockStatus(row).shortage ? 'stock-shortage-row' : ''" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
+        <template #empty>
+          <ListPageStatus :loading="onlyShortage && inventoryLoading" :error="onlyShortage ? inventoryError : ''" @retry="refreshInventory">
+            <el-empty :image-size="96" :description="onlyShortage ? '暂无已确认库存不足的产品' : '暂无产品明细'" />
+          </ListPageStatus>
+        </template>
         <el-table-column type="selection" min-width="42" fixed />
         <el-table-column label="#" type="index" :index="indexBase" min-width="48" fixed />
         <el-table-column v-if="isProduction" label="Product" min-width="190" prop="product_display" sortable="custom">
@@ -144,10 +157,15 @@
                   <span aria-hidden="true">{{ row.product_name ? '已匹配' : '待匹配' }}</span>
                   <span class="sr-only">{{ row.product_name || '待匹配' }}</span>
                 </template>
-                <span v-if="row.sku_id" class="stock-count">库存 {{ row.available_stock == null ? '—' : Math.round(row.available_stock) }}</span>
               </div>
             </el-tooltip>
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
+          </template>
+        </el-table-column>
+        <el-table-column label="可用库存 / 未发货" min-width="145">
+          <template #default="{ row }">
+            <span class="stock-count">{{ stockStatus(row).available ?? '待核对' }} / {{ stockStatus(row).remaining ?? '待核对' }}</span>
+            <el-text v-if="stockStatus(row).shortage" type="danger" size="small">库存不足</el-text>
           </template>
         </el-table-column>
         <el-table-column v-if="showOptionalCols" label="Curl" min-width="110" prop="curl" sortable="custom">
@@ -197,11 +215,11 @@
       </el-table>
     </div>
     <!-- 明细可能几十上百行：窗内分页，行号跨页连续；新增/导入后跳到末页 -->
-    <div v-if="items.length" class="line-pagination">
+    <div v-if="filteredItems.length" class="line-pagination">
       <el-pagination class="pager"
         v-model:current-page="page"
         v-model:page-size="pageSize"
-        :total="items.length"
+        :total="filteredItems.length"
         :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         small
@@ -217,6 +235,8 @@ import { confirmDanger, isFeedbackCancelled } from '@/utils/feedback'
 import { sortTableRows } from '@/utils/tableSort'
 import { useLineSelection } from '../composables/useLineSelection.js'
 import { hiddenPricePrecision } from '../composables/invoiceSettlement.js'
+import { useInvoiceStockShortage } from '../composables/useInvoiceStockShortage.js'
+import { getInvoiceEditorInventory } from '@/api/invoice'
 
 import { ArrowDown, ArrowUp, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue'
 import { CURL_OPTIONS } from '../composables/useInvoiceEditor'
@@ -224,6 +244,8 @@ import { quoteSemifinished } from '@/api/semifinished'
 
 const props = defineProps({
   items: { type: Array, required: true },
+  invoiceId: { type: Number, default: null },
+  active: { type: Boolean, default: true },
   quantityErrorRow: { type: Object, default: null },
   isProduction: Boolean,
   entryOptions: { type: Object, required: true },
@@ -240,6 +262,8 @@ const props = defineProps({
   pinColumns: { type: Boolean, default: true },
 })
 const emit = defineEmits(['paste', 'copy', 'add-blank', 'remove', 'remove-many'])
+const { onlyShortage, stockStatus, filteredItems, unknownCount,
+  loading: inventoryLoading, error: inventoryError, refreshInventory } = useInvoiceStockShortage(props, getInvoiceEditorInventory)
 const showOptionalCols = ref(false)
 function priceHint(row) {
   const parts = []
@@ -260,7 +284,7 @@ const pageSize = ref(20)
 const sortField = ref('')
 const sortOrder = ref('')
 function sortLines({ prop, order }) { sortField.value = prop; sortOrder.value = order; page.value = 1 }
-const sortedItems = computed(() => sortTableRows(props.items, sortField.value, sortOrder.value, row => sortField.value === 'semifinished_summary'
+const sortedItems = computed(() => sortTableRows(filteredItems.value, sortField.value, sortOrder.value, row => sortField.value === 'semifinished_summary'
   ? (row.semifinished_plan || []).map(item => `${item.size}/${item.color_code} ${item.quantity_grams}`).join(' / ')
   : row[sortField.value]))
 const pagedItems = computed(() => sortedItems.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
@@ -294,6 +318,7 @@ const quantityInput = ref(null)
 watch(() => props.quantityErrorRow, async row => {
   const index = props.items.indexOf(row)
   if (index < 0) return
+  onlyShortage.value = false
   // Return to entry order so typing a quantity cannot move this row to another page.
   lineTable.value?.clearSort()
   sortField.value = ''
@@ -303,10 +328,18 @@ watch(() => props.quantityErrorRow, async row => {
   quantityInput.value?.focus()
 })
 watch(() => props.items.length, (now, before) => {
+  // Adding/importing must reveal new rows even when their stock is not known yet.
+  if (now > before) onlyShortage.value = false
   const pages = Math.max(1, Math.ceil(now / pageSize.value))
   if (!before) page.value = 1 // 编辑单初次装载：从第一页开始审阅
   else if (now > before) page.value = pages // 添加空行/复制/Excel 粘贴：跟到末页
   else if (page.value > pages) page.value = pages // 删除行后收敛页码
+})
+watch(onlyShortage, () => { page.value = 1; clearSelection() }, { flush: 'sync' })
+watch([filteredItems, pageSize], () => {
+  page.value = Math.min(page.value, Math.max(1, Math.ceil(filteredItems.value.length / pageSize.value)))
+  // Hidden rows must not remain selected for a later bulk deletion.
+  if (onlyShortage.value) clearSelection()
 })
 
 async function loadSemifinished(row) {
@@ -366,6 +399,11 @@ function lineOptionGroups(options, key) {
 .step { display: inline-flex; width: 20px; height: 20px; flex: none; align-items: center; justify-content: center; border-radius: 6px; background: var(--color-primary); color: #fff; font-size: 12px; font-weight: 700; }
 .line-header-actions, .price-cell, .product-cell { display: flex; align-items: center; gap: 8px; }
 .line-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+.stock-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; }
+.stock-toolbar .line-hint { color: var(--text-secondary); font-size: 12px; }
+.line-table :deep(.stock-shortage-row) { --el-table-tr-bg-color: var(--tag-danger-bg); --el-table-row-hover-bg-color: var(--tag-danger-bg); }
+.line-table :deep(.stock-shortage-row > td.el-table__cell),
+.line-table :deep(.stock-shortage-row:hover > td.el-table__cell) { background: var(--tag-danger-bg) !important; }
 .selection-hint { color: var(--text-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
 .line-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--card-radius); }
 .line-pagination { display: flex; justify-content: flex-end; margin-top: 10px; }
