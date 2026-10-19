@@ -20,7 +20,7 @@ logger = logging.getLogger("commission.shortlink")
 settings = get_settings()
 
 # 短码未命中时的兜底跳转
-_FALLBACK_URL = "https://leshine.work"
+_FALLBACK_URL = settings.SHORT_LINK_BASE_URL.rstrip("/")
 
 
 class ShortLinkRequest(BaseModel):

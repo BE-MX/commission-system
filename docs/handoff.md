@@ -1,3 +1,9 @@
+## 2026-10-19 Business notification links default to cloud (Codex, deployment pending)
+
+Business notification image URLs and short links now default to `https://leshine.cloud`. Domestic review, announcement, aftersales, training and shipping inspection detail defaults use the same domain. Tracking daily reports and missing-short-code redirects now use `SHORT_LINK_BASE_URL` instead of hard-coded work links. The shared setting also changes newly generated asset, customer-image invitation and WhatsApp pairing links. Environment overrides remain supported; `.env.example` documents the six defaults.
+
+Read-only production inspection found no explicit overrides for these six settings in either backend `.env`; office battle posters already explicitly use cloud. Existing messages and persisted destinations are not rewritten. Infrastructure proxies, health checks, allowed origins and unrelated public API UI addresses remain outside this notification-link change. Validation: 163 notification/API tests passed; mocked link checks verified defaults, image path, short-code fallback, report date and a custom origin; independent review found no blocking issues. One explicitly authorized cloud-image test was sent to the supplied test group and DingTalk returned HTTP 200 / errcode 0; this confirms acceptance, not client loading speed. No deployment performed.
+
 ## 2026-10-19 Beijing unchanged-release checkout verification
 
 A deployment-tool-only release must advance the installed Beijing checkout and backend-success receipt even when no backend restart is needed. The unchanged branch now verifies health and colorwork, advances the pinned checkout, and writes its receipt while preserving the running service. An isolated regression checks the Git/receipt update and absence of systemctl actions. Final delivery must verify both installed Git heads, rather than relying on the overall publish summary.

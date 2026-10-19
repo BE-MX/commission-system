@@ -121,7 +121,7 @@ COOKIE_SAMESITE=lax
 CORS_ALLOW_ORIGINS=https://leshine.work
 
 # 短链
-SHORT_LINK_BASE_URL=https://leshine.work
+SHORT_LINK_BASE_URL=https://leshine.cloud
 
 # AI 加密
 ARK_AI_ENCRYPTION_KEY=<32字节hex>

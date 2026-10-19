@@ -114,8 +114,8 @@ class Settings(BaseSettings):
     # 任务中心：启动时用 frontend/dist/nav-manifest.json 同步模块注册表。仅生产 .env 置 true；
     # 开发机与云端展会实例保持 false，避免不同版本的导航清单互相覆盖共享库
     TASK_MODULE_SYNC_ENABLED: bool = False
-    DOMESTIC_REVIEW_NOTICE_BASE_URL: str = "https://leshine.work"
-    ANNOUNCEMENT_PUBLIC_BASE_URL: str = "https://leshine.work"
+    DOMESTIC_REVIEW_NOTICE_BASE_URL: str = "https://leshine.cloud"
+    ANNOUNCEMENT_PUBLIC_BASE_URL: str = "https://leshine.cloud"
 
     # ── 智能获客公海背调批次 ─────────────────────────────
     # 默认关闭，完成 105 迁移并确认业务库只读账号可查询后再开启。
@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     SALES_PUBLIC_POOL_QUOTA_PER_TIER: _PublicPoolQuota = 20
 
     # ── 短链接 ───────────────────────────────────────────
-    SHORT_LINK_BASE_URL: str = "https://leshine.work"
+    SHORT_LINK_BASE_URL: str = "https://leshine.cloud"
 
     # ── TFT 备货预测微服务 ────────────────────────────────
     TFT_SERVICE_ENABLED: bool = False
@@ -255,11 +255,11 @@ class Settings(BaseSettings):
 
     # ── 客户售后管理 ─────────────────────────────────────────
     AFTERSALES_STORAGE_ROOT: str = "D:\\WORKSOURCE\\aftersales"
-    AFTERSALES_DETAIL_BASE_URL: str = "https://leshine.work/aftersales/cases"
+    AFTERSALES_DETAIL_BASE_URL: str = "https://leshine.cloud/aftersales/cases"
 
     # ── 培训速递 ─────────────────────────────────────────
     TRAINING_STORAGE_ROOT: str = "D:\\WORKSOURCE\\training"
-    TRAINING_DETAIL_BASE_URL: str = "https://leshine.work/training/digests"
+    TRAINING_DETAIL_BASE_URL: str = "https://leshine.cloud/training/digests"
 
     # ── 内贸订单（明细图文要求的参考图）────────────────────
     DOMESTIC_STORAGE_ROOT: str = "D:\\WORKSOURCE\\domestic"
@@ -448,7 +448,7 @@ class Settings(BaseSettings):
     COLORWORK_SYNC_KEY: str = ""
 
     # 发票 PDF 中文字体：部署/启动时强制预检，避免用户导出时才失败。
-    SHIPPING_INSPECTION_NOTICE_BASE_URL: str = "https://leshine.work"
+    SHIPPING_INSPECTION_NOTICE_BASE_URL: str = "https://leshine.cloud"
 
     PDF_CJK_FONT_PATH: str = "C:\\Windows\\Fonts\\msyh.ttc"
 

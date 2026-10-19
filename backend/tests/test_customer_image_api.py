@@ -168,7 +168,7 @@ def test_create_invite_returns_plaintext_url_once_and_never_token_hash(api):
         "/api/customer-image/invites",
         json={"customer_id": "C1", "product_ids": [1], "expires_at": "2099-01-01T00:00:00Z", "quota_total": 5},
     ).json()["data"]
-    assert created["invite_url"] == "https://leshine.work/create/plain-token"
+    assert created["invite_url"] == "https://leshine.cloud/create/plain-token"
     assert "token_hash" not in str(created)
     assert "token_suffix" not in str(created)
 

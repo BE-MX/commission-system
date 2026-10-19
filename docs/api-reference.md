@@ -1713,7 +1713,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 `GET /api/shipping-inspection/records/{inspection_id}/pdf?edit_version=N`：二进制 `application/pdf` 附件，UTF-8 文件名、`Cache-Control: no-store`。沿用验货单 `_READ` 与 `_require_inspection_scope`，不可见或不存在返回404；已撤回或指定版本不匹配409；明细/照片/字体读取失败503，不导出残缺内容。未传版本时下载当前已提交版。内容含单头、出库明细、检验备注和验货照片，排除视频。
 
-完成通知 OA `message_url` 指向 `/shipping/inspections?pdf={id}&version={edit_version}&keyword={单号}`，打开后点击“下载验货单 PDF”；登录/会话过期保留回跳参数。新配置 `SHIPPING_INSPECTION_NOTICE_BASE_URL` 默认 `https://leshine.work`，用于通知的主站地址。
+完成通知 OA `message_url` 指向 `/shipping/inspections?pdf={id}&version={edit_version}&keyword={单号}`，打开后点击“下载验货单 PDF”；登录/会话过期保留回跳参数。新配置 `SHIPPING_INSPECTION_NOTICE_BASE_URL` 默认 `https://leshine.cloud`，用于通知的主站地址。
 
 
 ### 2026-09-17 验货单组合查询
@@ -1820,7 +1820,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 - `GET /api/domestic/customer-requests/pending-count`：返回 `data.count`，统计 pending 申请。权限与审核列表一致：`domestic:review`/`domestic:admin`/super_admin 查看全部，只有 `domestic:recharge` 的用户仅统计本人申请。不受列表分页和临时搜索条件影响。
 - 充值和调整提交成功后，按当前角色权限寻找有效且绑定钉钉的审核账号，发送工作通知并链接 `/domestic/customer-requests`。普通审核者提交自己的申请不会收到自审提醒；管理员可审核本人申请。幂等重放不重复通知，发送失败记录日志，不撤销已保存申请。
-- 通知地址配置 `DOMESTIC_REVIEW_NOTICE_BASE_URL`，默认 `https://leshine.work`。
+- 通知地址配置 `DOMESTIC_REVIEW_NOTICE_BASE_URL`，默认 `https://leshine.cloud`。
 - 导航数字为0时隐藏；提交/审核操作成功后即时刷新，页面可见时每30秒刷新，并在窗口重新激活时刷新。
 
 ## 单据生命周期与异常恢复（2026-09-21）
