@@ -10,6 +10,7 @@ class ShipmentItemInput(BaseModel):
     quantity: int = Field(gt=0, le=2000)
     unit_ids: list[int] | None = Field(None, max_length=2000)
     ship_weight: Decimal | None = Field(None, gt=0, le=100000)
+    unit_price: Decimal | None = Field(None, ge=0, le=Decimal("999999999999.99"), decimal_places=2)
 
     @model_validator(mode="after")
     def check_units(self):

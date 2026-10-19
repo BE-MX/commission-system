@@ -3,7 +3,7 @@ import { getDeliveryCustomers, getShipmentCandidates, getCustomerDelivery, creat
   createDomesticReceipt, allocateDomesticReceipt, newRequestId } from '@/api/domestic'
 import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
 import { msgSuccessText, msgWarning } from '@/utils/feedback'
-import { deliveryTotal, deliveryPayload, filterDeliveryRows } from '../deliverySelection'
+import { deliveryTotal, deliveryPayload, filterDeliveryRows, deliveryUnitPrice } from '../deliverySelection'
 
 export function useDomesticDelivery(emit) {
   const visible = ref(false), loading = ref(false), saving = ref(false), error = ref('')
@@ -90,15 +90,19 @@ export function useDomesticDelivery(emit) {
   function setQuantity(row, value) {
     if (!Number.isInteger(value) || value < 0 || value > row.available_qty) return msgWarning('本次发货数量必须是可发范围内的整数')
     if (!value) delete selected[row.item_id]
-    else selected[row.item_id] = { quantity: value, unit_ids: null }
+    else selected[row.item_id] = { ...selected[row.item_id], quantity: value, unit_ids: null }
   }
+  function setUnitPrice(row, value) {
+    if (selected[row.item_id]) selected[row.item_id].unit_price = value
+  }
+  const batchUnitPrice = row => deliveryUnitPrice(row, selected)
   function toggle(row, checked) { setQuantity(row, checked ? row.available_qty : 0) }
   function openUnits(row) {
     Object.assign(units, { visible: true, row, selected: [...(selected[row.item_id]?.unit_ids || [])], keyword: '' })
   }
   function confirmUnits() {
     if (!units.selected.length) return msgWarning('请选择实际发出的件号')
-    selected[units.row.item_id] = { quantity: units.selected.length, unit_ids: [...units.selected] }
+    selected[units.row.item_id] = { ...selected[units.row.item_id], quantity: units.selected.length, unit_ids: [...units.selected] }
     units.visible = false
   }
   function scanUnit() {
@@ -169,6 +173,6 @@ export function useDomesticDelivery(emit) {
   }
   return { visible, loading, saving, error, customers, customerId, customer, candidates, batches, receipts, summary, tab,
     keyword, selected, onlySelected, page, pageSize, sort, shipment, units, receive, receipt, totals, filtered, pageRows,
-    openBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, toggle, openUnits,
+    openBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
     confirmUnits, scanUnit, submitShipment, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation, confirmReceipt }
 }

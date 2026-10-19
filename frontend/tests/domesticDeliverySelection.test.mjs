@@ -20,3 +20,17 @@ test('stale/duplicated explicit unit selections and excess quantity fail before 
   assert.throws(() => deliveryPayload(rows, { 1: { quantity: 1, unit_ids: [99] } }), /单件/)
   assert.deepEqual(deliveryPayload(rows, { 1: { quantity: 2, unit_ids: [3, 1] } })[0].unit_ids, [3, 1])
 })
+
+test('batch prices override only selected lines and retain exact cents across pages', () => {
+  const selected = { 1: { quantity: 3, unit_price: '80.25' }, 61: { quantity: 2, unit_price: 0 } }
+  assert.deepEqual(deliveryTotal(rows, selected), { lines: 2, quantity: 5, cents: 24075 })
+  assert.deepEqual(deliveryPayload(rows, selected).map(row => row.unit_price), [80.25, 0])
+  assert.equal(rows[0].unit_price, 123.45)
+  assert.equal(deliveryPayload(rows, { 1: { quantity: 1 } })[0].unit_price, undefined)
+})
+
+test('invalid batch prices cannot silently fall back to the order price', () => {
+  for (const unit_price of ['', null, -1, '1.001', NaN, Infinity, '1000000000000']) {
+    assert.throws(() => deliveryPayload(rows, { 1: { quantity: 1, unit_price } }), /单价/)
+  }
+})

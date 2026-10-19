@@ -13,7 +13,12 @@ from app.domestic.shipment_models import DomesticShipment, DomesticShipmentLine,
 
 
 def payload_hash(payload):
-    return hashlib.sha256(json.dumps(payload.model_dump(mode="json"), sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    body = payload.model_dump(mode="json")
+    # An omitted batch override must retain fingerprints of existing requests.
+    for row in body.get("items", []):
+        if row.get("unit_price") is None:
+            row.pop("unit_price", None)
+    return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def shipped_unit_ids(db, item_id, lock=False):
@@ -33,10 +38,14 @@ def assert_units_unshipped(db, unit_ids):
 
 
 def shipped_item_amount(db, item):
-    values = db.query(DomesticShipmentLine.amount).filter(
+    """Value delivered quantities at the order price for order refunds/summary.
+
+    Batch prices belong only to delivery receivables, never order accounting.
+    """
+    values = db.query(DomesticShipmentLine.quantity).filter(
         DomesticShipmentLine.item_id == item.id,
     ).with_for_update().all()
-    amount = sum((value for (value,) in values), Decimal(0)) if values else None
+    amount = balance_service.money(item.unit_price) * sum(value for (value,) in values) if values else None
     # Existing whole-line shipments are known deliveries, without inventing receipt facts.
     if amount is None and item.status == C.ITEM_SHIPPED:
         return balance_service.money(item.unit_price) * item.order_qty
@@ -177,8 +186,10 @@ def _create_shipment_once(db, payload, user_id):
                 raise ValueError("指定单件未完工、已发货或不属于该明细")
             selected = [by_id[value] for value in row.unit_ids]
         order = by_order[item.order_id]
-        price = balance_service.money(item.unit_price)
+        price = balance_service.money(item.unit_price if row.unit_price is None else row.unit_price)
         amount = price * len(selected)
+        if total + amount > balance_service._MAX_MONEY:
+            raise ValueError("批次金额超过系统上限")
         line = DomesticShipmentLine(
             shipment_id=batch.id, item_id=item.id, order_no=order.order_no,
             domestic_no=order.domestic_no, line_code=f"A{item.line_no}",
@@ -197,8 +208,6 @@ def _create_shipment_once(db, payload, user_id):
             item.status = C.ITEM_SHIPPED
         else:
             progress_service.recalc_item_status(db, item)
-    if total > balance_service._MAX_MONEY:
-        raise ValueError("批次金额超过系统上限")
     batch.total_amount = total
     for order in orders:
         progress_service.sync_order_status(db, order.id)

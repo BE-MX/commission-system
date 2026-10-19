@@ -2507,6 +2507,8 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 ## 内贸交付对账（186）
 
+创建批次 `POST /api/domestic/shipments` 的 `items[]` 可传 `unit_price`（非负、最多两位小数、上限 999999999999.99；省略或 null 则使用订单单价）。该值仅写批次明细价格快照，批次合计及收款核销依此计算，不改订单单价、订单总额、原账户扣款与订单终止退款口径。调价参与请求幂等指纹；同一 request_id 改价会拒绝，默认价格请求保持原有指纹。批次详情 `items[].unit_price` 返回保存的本批单价。
+
 统一 `/api/domestic` 前缀，响应 `ok()`。
 
 | 方法 | 路径 | 用途 |

@@ -1,3 +1,9 @@
+## 2026-10-19 内贸发货批次独立单价（Codex，Git交付，未部署）
+
+- 分支 `codex/domestic-batch-pricing`，工作树 `C:/Users/windb/.codex/worktrees/domestic-batch-pricing/commission-system`，基点 `bca7b607`。创建批次可按明细调整本批单价，金额及收款核销使用批次价；订单原价、总额、账户扣款、终止退款与后续批次默认价保持原口径，无迁移。
+- 独立资金风险审查通过。专项隔离 SQLite 28 项、前端状态 5 项通过；构建、增量约定、diff 检查通过。Edge 隔离模拟 API 的 1440px/390px 操作验证通过，无页面异常。扩大回归另有 1 个既有旧迁移 head 断言失败，详见 [验证记录](reports/2026-10-19-domestic-batch-pricing.md)。Git 巡检为 `--no-fetch` 本地快照。
+- 使用/API 文档已同步。用户已授权本次提交、合并 main 并推送；主目录既有改动经备份和校验保留。无部署、共享库迁移或生产业务数据写入。验证截图及集成恢复材料保留在主目录 `tmp/domestic-batch-main-integration-20261019/`。
+
 ## 2026-10-19 Disable new-sign DingTalk notices (Codex, deployment pending)
 
 The event delivery query and database claim now allow only `big_deal` / `super_deal`. Newly detected, queued, retrying and stale-lease `new_sign_order` events cannot be sent. New-sign event detection, history and board rendering remain unchanged, and no rows are deleted or marked as sent. New-sign orders still qualify for one amount notice at the existing USD 5,000 / 30,000 thresholds after surcharge deduction. The daily board report is unchanged.

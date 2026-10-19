@@ -25,6 +25,7 @@
         <el-tab-pane label="收款记录" name="receipts" />
       </el-tabs>
       <template v-if="tab === 'create'">
+        <el-alert title="本批单价默认取订单单价，可在选择产品后修改；仅影响本批货款与收款核销，原订单价格和账户扣款保持不变。" type="info" :closable="false" />
         <div class="delivery-toolbar">
           <el-input v-model="keyword" class="delivery-control" placeholder="搜索顾客、订单号、产品规格" clearable prefix-icon="Search" />
           <el-checkbox v-model="onlySelected">只看已选</el-checkbox>
@@ -49,11 +50,14 @@
           <el-table-column label="本次发" min-width="120" :sortable="false">
             <template #default="{ row }"><input type="number" class="delivery-quantity" :value="selected[row.item_id]?.quantity || 0" min="0" :max="row.available_qty" step="1" :disabled="saving" :aria-label="`${row.guest_name || row.line_code} 本次发货数量`" @change="event => { setQuantity(row, Number(event.target.value)); event.target.value = selected[row.item_id]?.quantity || 0 }" /></template>
           </el-table-column>
-          <el-table-column prop="unit_price" label="单价" min-width="100" align="right" sortable="custom">
+          <el-table-column prop="unit_price" label="订单单价" min-width="110" align="right" sortable="custom">
             <template #default="{ row }">{{ money(row.unit_price) }}</template>
           </el-table-column>
+          <el-table-column label="本批单价" min-width="145" :sortable="false">
+            <template #default="{ row }"><input type="number" class="delivery-money" :value="selected[row.item_id]?.unit_price ?? row.unit_price" min="0" max="999999999999.99" step="0.01" :disabled="saving || !selected[row.item_id]" :aria-label="`${row.guest_name || row.line_code} 本批单价`" :aria-invalid="selected[row.item_id] && !Number.isFinite(batchUnitPrice(row)) ? 'true' : undefined" @input="event => setUnitPrice(row, event.target.value)" /></template>
+          </el-table-column>
           <el-table-column label="本次金额" min-width="110" align="right" :sortable="false">
-            <template #default="{ row }">{{ money(row.unit_price * (selected[row.item_id]?.quantity || 0)) }}</template>
+            <template #default="{ row }">{{ money(batchUnitPrice(row) * (selected[row.item_id]?.quantity || 0)) }}</template>
           </el-table-column>
           <el-table-column label="具体件号" min-width="160" class-name="table-action-column" :sortable="false">
             <template #default="{ row }"><GlassButton variant="link" left-icon="View" :disabled="saving" @click="openUnits(row)">{{ selected[row.item_id]?.unit_ids ? '已指定' : '指定件号' }}</GlassButton></template>
@@ -75,6 +79,7 @@
                 <el-table-column prop="line_code" label="明细" min-width="90" sortable />
                 <el-table-column prop="product_name" label="产品规格" min-width="210" show-overflow-tooltip sortable />
                 <el-table-column prop="quantity" label="发货数量" min-width="95" align="right" sortable />
+                <el-table-column prop="unit_price" label="本批单价" min-width="110" align="right" sortable><template #default="{ row: item }">{{ money(item.unit_price) }}</template></el-table-column>
                 <el-table-column prop="amount" label="金额" min-width="110" align="right" sortable><template #default="{ row: item }">{{ money(item.amount) }}</template></el-table-column>
                 <el-table-column label="具体件号" min-width="200" show-overflow-tooltip :sortable="false"><template #default="{ row: item }">{{ item.unit_codes.join('、') }}</template></el-table-column>
               </el-table>
@@ -163,9 +168,9 @@ const emit = defineEmits(['changed'])
 const auth = useAuthStore()
 const { visible, loading, saving, error, customers, customerId, customer, batches, receipts, summary, tab,
   keyword, selected, onlySelected, page, pageSize, sort, shipment, units, receive, receipt, totals, filtered, pageRows,
-  openBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, toggle, openUnits,
+  openBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
   confirmUnits, scanUnit, submitShipment, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation, confirmReceipt } = useDomesticDelivery(emit)
-const money = value => formatMoney(Number(value || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' })
+const money = value => Number.isFinite(Number(value ?? 0)) ? formatMoney(Number(value ?? 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) : '待填写有效单价'
 const canFunds = computed(() => customer.value?.can_operate_funds ?? (customer.value?.owner_user_id === auth.user?.id || (auth.user?.roles || []).includes('super_admin')))
 const previousAllocation = id => receipt.existing?.allocations.find(row => row.shipment_id === id)?.amount || 0
 const statusLabel = { pending: '待审核', approved: '已通过', rejected: '已驳回', withdrawn: '已撤回' }
@@ -192,11 +197,13 @@ defineExpose({ open })
 .delivery-picker { --table-cell-padding-compact: 4px; }
 .delivery-quantity { width: 85px; height: 24px; box-sizing: border-box; padding: 0 6px; border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-primary); background: var(--page-bg); font: inherit; }
 .delivery-money { width: 115px; height: 28px; box-sizing: border-box; border: 1px solid var(--border-color); border-radius: 4px; padding: 0 6px; color: var(--text-primary); background: var(--page-bg); font: inherit; }
+.delivery-money[aria-invalid="true"] { border-color: var(--color-danger); }
+.delivery-money:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 .delivery-check { width: 16px; height: 16px; vertical-align: middle; accent-color: var(--color-primary); }
 .delivery-unit-options { display: flex; flex-wrap: wrap; gap: 8px 16px; max-height: 50vh; overflow: auto; margin-top: 16px; }
 .delivery-receipt-fields { display: flex; gap: 24px; flex-wrap: wrap; }
 @media (pointer: coarse) {
   .delivery-picker { --table-cell-padding-compact: 10px; }
-  .delivery-quantity, .delivery-check { min-height: 44px; }
+  .delivery-quantity, .delivery-check, .delivery-money { min-height: 44px; }
 }
 </style>

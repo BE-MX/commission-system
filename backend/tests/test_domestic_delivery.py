@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal as D
+from pydantic import ValidationError
 import pytest
 from app.domestic import shipment_service as ships, receipt_service, request_service, order_service, report_service, balance_service, unit_service
 from app.domestic.models import DomesticOrder, DomesticOrderItem, DomesticItemProgress, DomesticItemUnit, DomesticReportLog, DomesticReportUnit, DomesticCustomerLedger, DomesticCustomer
@@ -60,6 +61,98 @@ def receipt(db, ctx, amount, allocations, key):
     return receipt_service.create_receipt_request(db, order.customer_id, ReceiptCreate(
         request_id=key, receipt_date=beijing_today(), amount=amount, allocations=allocations,
     ), "test/voucher.png", ctx.worker.id)
+
+
+@pytest.mark.parametrize("price", [D("80.25"), D("120.50"), D("0")])
+def test_batch_price_isolated_from_order_and_other_batches(db, context, price):
+    ctx = context
+    complete(db, ctx, 6)
+    order = db.get(DomesticOrder, ctx.item.order_id)
+    original = (ctx.item.unit_price, ctx.item.original_price, order.total_amount, order.charged_amount)
+    customer = db.get(DomesticCustomer, order.customer_id)
+    before_balance = customer.balance
+    ledger_count = db.query(DomesticCustomerLedger).count()
+    payload = ShipmentCreate(customer_id=order.customer_id, ship_time=beijing_now(),
+        request_id="custom-batch-price", items=[{"item_id": ctx.item.id, "quantity": 3, "unit_price": price}])
+    batch = ships.create_shipment(db, payload, ctx.worker.id)
+    assert D(str(batch["items"][0]["unit_price"])) == price
+    assert D(str(batch["total_amount"])) == price * 3
+    db.refresh(ctx.item); db.refresh(order); db.refresh(customer)
+    assert (ctx.item.unit_price, ctx.item.original_price, order.total_amount, order.charged_amount) == original
+    assert customer.balance == before_balance
+    assert db.query(DomesticCustomerLedger).count() == ledger_count
+    assert ships.customer_summary(db, customer.id)["unshipped_amount"] == 1700
+    assert ships.customer_summary(db, customer.id)["transit_unpaid_amount"] == float(price * 3)
+    replay = ships.create_shipment(db, payload, ctx.worker.id)
+    assert replay["replayed"] and replay["id"] == batch["id"]
+    payload.items[0].unit_price = price + 1
+    with pytest.raises(ValueError, match="不同发货内容"):
+        ships.create_shipment(db, payload, ctx.worker.id)
+    db.rollback()
+    other, _ = ship(db, ctx, 3, "original-priced-next-batch")
+    assert other["items"][0]["unit_price"] == 100
+    assert ships.shipment_view(db, db.get(ships.DomesticShipment, batch["id"]))["total_amount"] == float(price * 3)
+    order_service.terminate_order(db, order.id, "cancel remaining", ctx.worker.id)
+    db.refresh(order); db.refresh(customer)
+    assert order.charged_amount == 600
+    assert customer.balance == -600
+
+
+@pytest.mark.parametrize("price", [D("80.25"), D("120.50")])
+def test_receipt_uses_batch_price_for_allocation_limit(db, context, price):
+    ctx = context; complete(db, ctx, 3)
+    order = db.get(DomesticOrder, ctx.item.order_id)
+    payload = ShipmentCreate(customer_id=order.customer_id, ship_time=beijing_now(),
+        request_id="priced-receipt-batch", items=[{"item_id": ctx.item.id, "quantity": 3, "unit_price": price}])
+    batch = ships.create_shipment(db, payload, ctx.worker.id)
+    amount = price * 3
+    with pytest.raises(ValueError, match="超过批次未结"):
+        receipt(db, ctx, amount + D("0.01"), [{"shipment_id": batch["id"], "amount": amount + D("0.01")}], "priced-over-limit")
+    db.rollback()
+    reviewer = _user(db, "priced-receipt-reviewer"); db.commit()
+    req = receipt(db, ctx, amount, [{"shipment_id": batch["id"], "amount": amount}], "priced-exact-limit")
+    request_service.approve_request(db, req["id"], reviewer_id=reviewer.id, can_admin=False)
+    view = ships.list_shipments(db, order.customer_id, ctx.worker.id)[0]
+    assert view["paid_amount"] == float(amount)
+    assert view["unpaid_amount"] == 0
+    db.refresh(order)
+    assert order.total_amount == 2000 and order.charged_amount == 2000
+
+
+@pytest.mark.parametrize("price", ["-0.01", "1.001", "NaN", "Infinity", "1000000000000"])
+def test_invalid_batch_prices_rejected(price):
+    with pytest.raises(ValidationError):
+        ShipmentCreate(customer_id=1, ship_time=beijing_now(), request_id="invalid-price-test",
+            items=[{"item_id": 1, "quantity": 1, "unit_price": price}])
+
+
+def test_default_batch_price_keeps_existing_request_hash():
+    import hashlib
+    import json
+    payload = ShipmentCreate(customer_id=1, ship_time=beijing_now(), request_id="old-price-request",
+        items=[{"item_id": 1, "quantity": 1}])
+    old_body = payload.model_dump(mode="json")
+    old_body["items"][0].pop("unit_price", None)
+    old_hash = hashlib.sha256(json.dumps(old_body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    assert ships.payload_hash(payload) == old_hash
+
+
+def test_batch_amount_overflow_rejected_before_line_write(db, context, monkeypatch):
+    from app.domestic.shipment_models import DomesticShipmentLine, DomesticShipment
+    ctx = context; complete(db, ctx, 3)
+    order = db.get(DomesticOrder, ctx.item.order_id)
+    payload = ShipmentCreate(customer_id=order.customer_id, ship_time=beijing_now(), request_id="price-overflow-test",
+        items=[{"item_id": ctx.item.id, "quantity": 2, "unit_price": "999999999999.99"}])
+    original_flush = db.flush
+    def reject_overflow_write(*args, **kwargs):
+        assert not any(isinstance(row, DomesticShipmentLine) and row.amount > balance_service._MAX_MONEY for row in db.new)
+        return original_flush(*args, **kwargs)
+    monkeypatch.setattr(db, "flush", reject_overflow_write)
+    with pytest.raises(ValueError, match="批次金额超过系统上限"):
+        ships.create_shipment(db, payload, ctx.worker.id)
+    db.rollback()
+    assert db.query(DomesticShipment).count() == 0
+    assert db.query(DomesticShipmentLine).count() == 0
 
 
 def test_partial_delivery_uses_actual_units_and_replay(db, context):
@@ -231,11 +324,14 @@ def test_delivery_api_separates_owner_and_order_creator_scopes(db, context):
     assert client.get(f"/api/domestic/shipment-candidates?customer_id={customer.id}").status_code == 200
 
 
-def test_one_batch_from_three_orders_preserves_price_and_guest_snapshots(db, context):
+@pytest.mark.parametrize("override", [None, D("80.25"), D("0")])
+def test_one_batch_from_three_orders_preserves_price_and_guest_snapshots(db, context, override):
     from types import SimpleNamespace
     ctx = context; complete(db, ctx, 6)
     source = db.get(DomesticOrder, ctx.item.order_id)
     selected = [{"item_id": ctx.item.id, "quantity": 1}]
+    if override is not None:
+        selected[0]["unit_price"] = override
     for index, price in enumerate((D("75"), D("125")), start=2):
         order = DomesticOrder(domestic_no=f"DO-CROSS-{index}", order_no=f"cross-{index}", order_date=source.order_date,
                               customer_id=source.customer_id, order_category="normal", created_by=ctx.worker.id)
@@ -252,7 +348,8 @@ def test_one_batch_from_three_orders_preserves_price_and_guest_snapshots(db, con
         selected.append({"item_id": item.id, "quantity": index-1})
     batch = ships.create_shipment(db, ShipmentCreate(customer_id=source.customer_id,
         ship_time=beijing_now(), request_id="cross-three-orders", items=selected), ctx.worker.id)
-    assert batch["total_amount"] == 425
+    assert batch["total_amount"] == float(D("325") + (D("100") if override is None else override))
+    assert ctx.item.unit_price == 100
     assert len({row["domestic_no"] for row in batch["items"]}) == 3
     assert [row["guest_name"] for row in batch["items"]] == ["张女士", "顾客2", "顾客3"]
 
