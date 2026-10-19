@@ -34,7 +34,8 @@ def capture(db, token, request_id):
         .with_for_update().execution_options(populate_existing=True))
     if publication is None or amendment is None or amendment.status != "current" or amendment.accepted_revision_id != publication.revision_id:
         reject("PI_REVISION_PENDING", "Your updated PI is awaiting confirmation.", 409)
-    if publication.render_template_version != "portal-pi-v1":
+    # v2 adds per-line weight and the hair-cost/total-weight summary; v1 snapshots still render.
+    if publication.render_template_version not in {"portal-pi-v1", "portal-pi-v2"}:
         reject("PDF_UNAVAILABLE", "This PI template is not available. Please contact your account manager.", 503)
     snapshot = deepcopy(publication.customer_snapshot_json)
     snapshot_hash = snapshot.pop("snapshot_hash", None)

@@ -6,7 +6,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.core.time import beijing_now
-from app.portal import auth_service as auth, quote_service, revision_evidence
+from app.portal import auth_service as auth, dingtalk_notice, quote_service, revision_evidence
 from app.portal.domain import content_hash
 from app.portal.errors import reject
 from app.portal.models import AuditEvent, OrderRequest, OutboxEvent, Quote, RequestLine, Revision
@@ -64,12 +64,14 @@ def submit(db, token, csrf, key, body):
     items = quote_service.revalidate_for_submission(db, principal, quote)
     now = beijing_now().replace(microsecond=0)
     public_id = str(uuid4())
+    estimate = quote.fee_estimate_json
+    confirmed = estimate is not None and estimate["status"] == "confirmed"
     order = OrderRequest(public_id=public_id, access_id=principal.access.id, account_id=principal.account.id,
         customer_id_snapshot=principal.access.customer_id, okki_company_id_snapshot=principal.access.okki_company_id,
         sales_user_id_snapshot=principal.access.sales_user_id, servicing_user_id=principal.access.sales_user_id,
         public_no="POR-" + now.strftime("%Y%m%d") + "-" + public_id.replace("-", "").upper(),
         idempotency_key=str(key), client_payload_hash=payload_hash, quote_id=quote.id,
-        status="submitted", customer_po=quote.customer_po, submitted_at=now)
+        status="ready_for_review" if confirmed else "submitted", customer_po=quote.customer_po, submitted_at=now)
     db.add(order)
     db.flush()
     revision = Revision(public_id=str(uuid4()), request_id=order.id, revision_no=1, kind="submitted", currency=quote.currency,
@@ -80,18 +82,19 @@ def submit(db, token, csrf, key, body):
         remark=quote.remark, mapping_version=principal.access.mapping_version,
         pricing_fingerprint=content_hash({line["item_id"]: line["price_fingerprint"] for line in quote.lines_json}),
         bound_invoice_document_version=None, created_by=None)
+    if confirmed:
+        confirm_submitted_terms(principal, revision, estimate, now)
     request_lines = []
     for line in quote.lines_json:
         item = items[line["item_id"]]
         standard = line["standard_snapshot"]
-        inventory = line["inventory_snapshot"]
         request_lines.append(RequestLine(line_key=line["line_key"], catalog_item_id=item.id,
             product_kind=standard["product_kind"], product_id=standard["product_id"], sku_id=standard["sku_id"],
             standard_json=deepcopy(standard["standard_json"]), customer_display_json=deepcopy(line["display_snapshot"]),
             mapping_version=principal.access.mapping_version, qty=line["quantity"],
             unit_price=Decimal(line["unit_price"]), discount_amount=Decimal(line["discount_amount"]),
             line_amount=Decimal(line["line_amount"]),
-            unit_weight_grams=Decimal(inventory["conversion_factor"]) if inventory["unit"] == "g" else None,
+            unit_weight_grams=line_weight(line),
             price_source="ark_customer_rule", price_fingerprint=line["price_fingerprint"]))
     revision.content_hash = revision_evidence.digest(revision, request_lines)
     db.add(revision)
@@ -100,15 +103,49 @@ def submit(db, token, csrf, key, body):
         line.revision_id = revision.id
         db.add(line)
     order.active_revision_id = revision.id
+    if confirmed:
+        order.accepted_revision_id = revision.id
     quote.status = "consumed"
     db.add(AuditEvent(actor_type="customer", actor_id=principal.account.id, access_id=principal.access.id,
         object_type="order_request", object_public_id=public_id, action="order.submitted", trace_id=str(uuid4()),
-        safe_diff_json={"line_count": len(quote.lines_json)}, reason=""))
+        safe_diff_json={"line_count": len(quote.lines_json), "fees_confirmed": confirmed}, reason=""))
     # Event is a reference only. Delivery resolves current authority/recipient later.
     db.add(OutboxEvent(event_key="order.submitted:"+public_id, event_type="order_submitted",
         aggregate_public_id=public_id, payload_json={"request_id": public_id}, next_attempt_at=now))
+    dingtalk_notice.enqueue(db, "order_submitted", public_id, now)
     db.flush()
     return receipt(db, order, principal, replayed=False)
+
+
+def line_weight(line):
+    """Prefer the quote's family-aware weight; legacy quotes fall back to gram inventory."""
+    if line.get("unit_weight_grams") is not None:
+        return Decimal(line["unit_weight_grams"])
+    inventory = line["inventory_snapshot"]
+    return Decimal(inventory["conversion_factor"]) if inventory["unit"] == "g" else None
+
+
+def confirm_submitted_terms(principal, revision, estimate, now):
+    """The customer reviewed complete amounts and submitted: that is acceptance of revision #1.
+
+    The revision becomes an accepted system proposal (created_by stays NULL) bound to
+    company authority, so the existing sales approval path creates the formal PI.
+    """
+    from datetime import timedelta
+    from app.portal.proposal_service import company_versions
+    from app.portal.schemas import SitePolicy
+    policy = SitePolicy.model_validate(principal.site.policy_json)
+    revision.kind = "proposal"
+    revision.fees_status = "confirmed"
+    revision.shipping_amount = Decimal(estimate["shipping_amount"])
+    revision.packaging_amount = Decimal(estimate["packaging_amount"])
+    revision.surcharge_amount = Decimal(estimate["surcharge_amount"])
+    revision.surcharge_name = estimate["surcharge_name"]
+    revision.total_amount = Decimal(estimate["total_amount"])
+    revision.authority_versions_json = company_versions(principal.access, principal.site)
+    revision.expires_at = now + timedelta(hours=max(policy.proposal_valid_hours))
+    revision.customer_accepted_by = principal.account.id
+    revision.customer_accepted_at = now
 
 
 def by_key(db, token, key):

@@ -34,7 +34,7 @@ function validQuote(quote, now) {
 export function createCheckout({ api, submission, now = () => Date.now() }) {
   const listeners = new Set()
   let sequence = 0
-  let state = freeze({ lines: [], delivery: blankDelivery(), customer_po: '', remark: '', quote: null,
+  let state = freeze({ lines: [], delivery: blankDelivery(), customer_po: '', remark: '', payment_term_code: null, quote: null,
     quoting: false, acknowledged: false, error: null, receipt: null, submission: submission.state })
   function update(patch) { state = freeze({ ...state, ...patch }); for (const listener of listeners) listener(state) }
   function writable() {
@@ -48,13 +48,13 @@ export function createCheckout({ api, submission, now = () => Date.now() }) {
   const offSubmission = submission.subscribe(value => {
     if (value.status === 'confirmed') {
       sequence++
-      update({ submission: value, receipt: value.receipt, lines: [], delivery: blankDelivery(), customer_po: '', remark: '', quote: null, acknowledged: false, quoting: false, error: null })
+      update({ submission: value, receipt: value.receipt, lines: [], delivery: blankDelivery(), customer_po: '', remark: '', payment_term_code: null, quote: null, acknowledged: false, quoting: false, error: null })
     } else update({ submission: value, ...(value.status === 'failed' ? { error: value.error, quote: null, acknowledged: false } : {}) })
   })
   const offSession = api.subscribe(({ reason }) => {
     if (reason === 'authenticated') return
     sequence++
-    update({ lines: [], delivery: blankDelivery(), customer_po: '', remark: '', quote: null,
+    update({ lines: [], delivery: blankDelivery(), customer_po: '', remark: '', payment_term_code: null, quote: null,
       quoting: false, acknowledged: false, error: null, receipt: null, submission: submission.state })
   })
   return {
@@ -85,6 +85,10 @@ export function createCheckout({ api, submission, now = () => Date.now() }) {
     details(field, value) {
       if (!['customer_po', 'remark'].includes(field) || typeof value !== 'string') fail('INVALID_INPUT', 'Check your request details.')
       edit({ [field]: value })
+    },
+    paymentTerm(code) {
+      if (code !== null && (typeof code !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(code))) fail('INVALID_INPUT', 'Choose an available payment method.')
+      edit({ payment_term_code: code })
     },
     acknowledge(value) { writable(); update({ acknowledged: value === true }) },
     async reorder(requestId, lineKeys, { replace = false, signal } = {}) {
@@ -129,6 +133,7 @@ export function createCheckout({ api, submission, now = () => Date.now() }) {
       if (!delivery.contact_name || !delivery.address_line1 || delivery.phone.length < 3 || !/^[A-Z]{2}$/.test(delivery.country_code)) fail('INVALID_DELIVERY', 'Enter a contact, phone, address and two-letter country code.')
       const started = ++sequence
       const body = { items: state.lines.map(({ item_id, quantity }) => ({ item_id, quantity })), delivery, customer_po: state.customer_po, remark: state.remark }
+      if (state.payment_term_code) body.payment_term_code = state.payment_term_code
       update({ quoting: true, quote: null, acknowledged: false, error: null })
       try {
         const quote = await api.quote(body)

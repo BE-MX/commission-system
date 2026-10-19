@@ -379,3 +379,14 @@ a.product-open { color: inherit; text-decoration: none; }
   .view-switch { display: flex; }
   .view-switch button { flex: 1; padding: 8px 10px; }
 }
+
+/* Payment method and confirmed totals on the review step */
+.payment-methods { border: 0; margin: 0; padding: 0; display: grid; gap: 10px; }
+.payment-methods legend { font-size: 12px; margin-bottom: 4px; }
+.delivery-grid .payment-option { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1px solid var(--portal-border); border-radius: 9px; background: var(--portal-white); cursor: pointer; transition: border-color .15s, box-shadow .15s; font-size: 13px; }
+.delivery-grid .payment-option input { flex: 0 0 auto; width: 18px; height: 18px; min-height: 0; margin: 2px 0 0; padding: 0; accent-color: var(--portal-ink); }
+.payment-option span { display: grid; gap: 3px; min-width: 0; }
+.payment-option strong { font-size: 13px; }
+.payment-option small { color: var(--portal-muted); overflow-wrap: anywhere; }
+.payment-option.selected { border-color: var(--portal-gold); box-shadow: 0 0 0 2px var(--portal-gold-light); }
+.quote-totals .grand-total { border-top: 1px solid var(--portal-ink); margin-top: 6px; padding-top: 12px; font-size: 15px; font-weight: 600; }

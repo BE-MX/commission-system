@@ -1,3 +1,10 @@
+## 2026-10-19 客户下单门户 P3：自动运费、PayPal 手续费、业务一键审核出 PI、钉钉推送（Accio，未部署）
+
+- 同分支（P2 已提交 `e49d524b`）。新增 `fee_policy.py`、`dingtalk_notice.py`、迁移 `200_portal_quote_fee_estimate`；`SitePolicy.auto_fees` 与付款条款 `method_label/surcharge_percent`；客户端点 `/ordering-terms`，`/quotes` 支持 `payment_term_code`。
+- 流程：启用后客户在结算页选付款方式，看到总重、运费、手续费、总额；提交即接受 → `ready_for_review`，业务在订单审核框一键「审核并生成正式 PI」（复用 approve，PI 模板 v2 含重量）。>2kg 或重量未知仍走原提案流程。默认关闭，需在后台「客户门户站点设置」开启并配置 PayPal 5.00 / 银行转账 0.00。
+- 钉钉：设 `PORTAL_DINGTALK_WEBHOOK_URL/SECRET`（需同时配置 PORTAL_EMPLOYEE_ORIGIN）后注册 `portal_dingtalk_notices` 任务；链接为方舟登录后的订单页，不含公开 PI 下载链接。
+- 验证：门户 SQLite 回归 795 通过/1 跳过，1 失败为本机缺 reportlab；P3 新测试 24 项；客户端单测 141、后台单测 13 通过；两端构建通过；`checkoutFees.browser.mjs`、`family.browser.mjs` 在 1440 与 375 宽度通过。既有 `checkout.browser.mjs`/`browser.smoke.mjs` 仍依赖旧 OTP 登录按钮，本就失败，仅补了新接口 mock。PDF 渲染因缺 reportlab 未实测。
+
 ## 2026-10-19 客户下单门户 P2：客户端产品族目录与规格选择（Accio，未部署）
 
 - 同分支，P1 已提交（`5f8b7d5b` 方案、`2f17c343` 产品族/色块库）。

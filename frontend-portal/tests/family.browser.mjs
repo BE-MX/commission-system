@@ -23,6 +23,7 @@ async function run(viewport, name) {
     const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ code: status, message: 'OK', data }) })
     if (url.pathname.endsWith('/session')) return send(identity)
     if (url.pathname.endsWith('/sales-contact')) return send({ assigned: false })
+    if (url.pathname.endsWith('/ordering-terms')) return send({ payment_terms: [], default_payment_term_code: null, auto_fees: { enabled: false, shipping_tiers: [] } })
     if (url.pathname.endsWith('/catalog/families')) return send({ items: [{ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', sale_unit: 'piece', unit_weight_grams: '20', min_order_qty: 1, step_qty: 1, image_url: null, variant_count: 5, grades: ['standard', 'super'], lengths: ['18', '20'] }], ungrouped_count: 2, catalog_version: 1 })
     if (url.pathname.endsWith('/catalog/families/genius_weft_20g/availability')) { polls++; return send({ items: [], catalog_version: 1 }) }
     if (url.pathname.endsWith('/catalog/families/genius_weft_20g')) return send({ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', sale_unit: 'piece', unit_weight_grams: '20', min_order_qty: 1, step_qty: 1, grades: ['standard', 'super'], variants, catalog_version: 1, mapping_version: 1 })

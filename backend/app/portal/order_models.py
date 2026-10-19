@@ -26,6 +26,7 @@ class Quote(Record, Base):
     payment_terms_snapshot = Column(JSON, nullable=False, comment='受控付款条款快照')
     customer_po = Column(String(80), nullable=False, default="", comment='客户采购单号')
     remark = Column(String(1000), nullable=False, default="", comment='对外订单备注')
+    fee_estimate_json = Column(JSON, nullable=True, comment='按重量运费与付款方式手续费的自动计算结果，空表示未启用')
     __table_args__ = (
         UniqueConstraint("id", "access_id", "account_id", name="uq_op_quote_identity"),
         ForeignKeyConstraint(["membership_id", "access_id", "account_id"], [PREFIX + "memberships.id", PREFIX + "memberships.access_id", PREFIX + "memberships.account_id"], ondelete="RESTRICT"),

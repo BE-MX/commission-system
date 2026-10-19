@@ -6,6 +6,7 @@ I/O from load_observations while the authority barrier is held.
 """
 from copy import deepcopy
 from datetime import timedelta
+from decimal import Decimal
 from uuid import uuid4
 from types import SimpleNamespace
 
@@ -14,11 +15,11 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.time import beijing_now
-from app.portal import auth_service as auth, catalog_service, mapping_service, pricing, sku_source
+from app.portal import auth_service as auth, catalog_service, fee_policy, mapping_service, pricing, sku_source
 from app.portal.domain import content_hash, line_amount, total_amount
 from app.portal.errors import PortalError, reject
 from app.portal.inventory import validate_observation
-from app.portal.models import AuditEvent, Quote
+from app.portal.models import AuditEvent, ProductFamily, Quote
 from app.portal.schemas import SitePolicy
 
 
@@ -26,6 +27,22 @@ def require_writes():
     auth.require_enabled()
     if not get_settings().PORTAL_WRITES_ENABLED:
         reject("SERVICE_UNAVAILABLE", "Order requests are not available yet.", 503)
+
+
+def ordering_terms(principal):
+    """Payment methods and shipping tiers the customer chooses from before review."""
+    principal.require("quote")
+    try:
+        policy = SitePolicy.model_validate(principal.site.policy_json)
+    except ValidationError:
+        reject("POLICY_UNAVAILABLE", "Ordering terms need review.", 503)
+    fees = policy.auto_fees
+    return {"payment_terms": [{"code": term.code, "label": term.method_label or term.display_text,
+                               "display_text": term.display_text, "surcharge_percent": term.surcharge_percent}
+                              for term in policy.payment_terms],
+            "default_payment_term_code": policy.default_payment_term_code,
+            "auto_fees": {"enabled": fees.enabled,
+                          "shipping_tiers": [tier.model_dump(mode="json") for tier in fees.shipping_tiers]}}
 
 
 def authority_snapshot(principal):
@@ -36,7 +53,7 @@ def authority_snapshot(principal):
 
 
 def evidence(row):
-    return {"quote_id": row.public_id, "access_id": str(row.access_id),
+    result = {"quote_id": row.public_id, "access_id": str(row.access_id),
             "account_id": str(row.account_id), "membership_id": str(row.membership_id),
             "expires_at": row.expires_at.isoformat(), "authority": row.authority_versions_json,
             "currency": row.currency, "product_amount": format(row.product_amount, ".2f"),
@@ -44,6 +61,10 @@ def evidence(row):
             "items": row.lines_json, "delivery": row.delivery_json,
             "payment_terms": row.payment_terms_snapshot, "customer_po": row.customer_po,
             "remark": row.remark, "input_hash": row.input_hash}
+    # Absent for quotes created before automatic fees, so their stored hashes stay valid.
+    if row.fee_estimate_json is not None:
+        result["fee_estimate"] = row.fee_estimate_json
+    return result
 
 
 def view(row):
@@ -51,16 +72,22 @@ def view(row):
         reject("QUOTE_UNAVAILABLE", "This quote needs review. Please request a new quote.", 409)
     public_fields = ("line_key", "item_id", "display_snapshot", "quantity", "unit_price",
                      "discount_amount", "line_amount", "inventory_observed_at")
+    estimate = row.fee_estimate_json
+    confirmed = estimate is not None and estimate["status"] == "confirmed"
     return {"quote_id": row.public_id, "expires_at": row.expires_at.isoformat(),
             "status": "expired" if row.status == "valid" and row.expires_at <= beijing_now() else row.status,
             "content_hash": row.result_hash, "currency": row.currency,
             "items": [{**{key: deepcopy(line[key]) for key in public_fields},
+                       "unit_weight_grams": line.get("unit_weight_grams"),
                        "min_order_qty": line["inventory_snapshot"]["min_qty"],
                        "step_qty": line["inventory_snapshot"]["step_qty"]} for line in row.lines_json],
             "product_amount": format(row.product_amount, ".2f"),
             "fees": {"status": row.fees_status, "shipping_amount": None,
                      "packaging_amount": None, "surcharge_amount": None},
             "total_amount": None, "payment_terms_snapshot": deepcopy(row.payment_terms_snapshot),
+            # Complete terms the customer confirms by submitting; None keeps the legacy flow.
+            "fee_estimate": deepcopy(estimate) if estimate is not None else None,
+            "fees_confirmed_on_submit": confirmed,
             "delivery": deepcopy(row.delivery_json), "customer_po": row.customer_po,
             "remark": row.remark,
             "inventory_observed_at": min(line["inventory_observed_at"] for line in row.lines_json)}
@@ -81,6 +108,9 @@ def build_lines(db, access, site, requested_items):
         reject("INVALID_INPUT", "A standard SKU may occur only once.", 422)
     aliases = {line["item_id"]: line for line in mapping_service.current_projection(db, access)}
     observations = catalog_service.load_observations(db, rows)
+    family_ids = {item.family_id for item in rows if item.family_id is not None}
+    families = {row.id: row for row in db.scalars(select(ProductFamily).where(
+        ProductFamily.id.in_(family_ids)))} if family_ids else {}
     lines = []
     for item in rows:
         standard = sku_source.revalidate(db, item)
@@ -93,10 +123,12 @@ def build_lines(db, access, site, requested_items):
             conversion_factor=item.conversion_factor, safety_buffer=item.safety_buffer,
             minimum=item.min_qty, step=item.step_qty)
         amount = line_amount(quantity, price.amount)
+        weight = fee_policy.unit_weight(item, families.get(item.family_id))
         lines.append({"line_key": str(uuid4()), "item_id": item.public_id,
             "display_snapshot": deepcopy(aliases[item.public_id]), "quantity": quantity,
             "unit_price": format(price.amount, ".4f"), "discount_amount": "0.00",
             "line_amount": format(amount, ".2f"), "inventory_observed_at": observation.observed_at.isoformat(),
+            "unit_weight_grams": None if weight is None else format(weight, "f"),
             "standard_snapshot": standard, "catalog_item_version": item.row_version,
             "price_fingerprint": price.fingerprint, "inventory_snapshot": {
                 "quantity": format(observation.quantity, "f"), "unit": observation.unit,
@@ -124,12 +156,17 @@ def create(db, token, csrf, body):
         policy = SitePolicy.model_validate(principal.site.policy_json)
     except ValidationError:
         reject("POLICY_UNAVAILABLE", "Ordering terms need review.", 503)
-    term = next((value for value in policy.payment_terms if value.code == policy.default_payment_term_code), None)
+    code = getattr(body, "payment_term_code", None) or policy.default_payment_term_code
+    term = next((value for value in policy.payment_terms if value.code == code), None)
     if term is None:
+        if code != policy.default_payment_term_code:
+            reject("INVALID_INPUT", "Choose one of the available payment methods.", 422)
         reject("POLICY_UNAVAILABLE", "Ordering terms need review.", 503)
     lines = build_lines(db, principal.access, principal.site, body.items)
     now = beijing_now()
     products, _ = total_amount([line["line_amount"] for line in lines])
+    weights = [None if line["unit_weight_grams"] is None else Decimal(line["unit_weight_grams"]) * line["quantity"]
+               for line in lines]
     row = Quote(public_id=str(uuid4()), access_id=principal.access.id,
         account_id=principal.account.id, membership_id=principal.membership.id, status="valid",
         # MySQL's existing DATETIME columns have second precision. Hash the same
@@ -138,7 +175,8 @@ def create(db, token, csrf, body):
         authority_versions_json=authority_snapshot(principal), input_hash=content_hash(body.model_dump(mode="json")),
         currency=principal.site.currency, product_amount=products, fees_status="pending", total_amount=None,
         lines_json=lines, delivery_json=body.delivery.model_dump(mode="json"),
-        payment_terms_snapshot=term.model_dump(mode="json"), customer_po=body.customer_po, remark=body.remark)
+        payment_terms_snapshot=term.model_dump(mode="json"), customer_po=body.customer_po, remark=body.remark,
+        fee_estimate_json=fee_policy.estimate(policy, term, products, weights))
     row.result_hash = content_hash(evidence(row))
     db.add(row)
     db.add(AuditEvent(actor_type="customer", actor_id=principal.account.id, access_id=principal.access.id,

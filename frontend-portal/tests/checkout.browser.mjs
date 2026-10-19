@@ -19,6 +19,8 @@ await context.route('**/api/portal/v1/**', async route => {
   calls.push({ path, method: request.method(), body, headers: request.headers() })
   const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ code: status, message: status >= 400 ? 'Please refresh and try again.' : 'OK', data }) })
   if (path.endsWith('/session')) return send(signedIn ? identity : { error_code: 'AUTH_REQUIRED' }, signedIn ? 200 : 401)
+  if (path.endsWith('/catalog/families')) return send({ items: [], ungrouped_count: 0, catalog_version: 1 })
+  if (path.endsWith('/ordering-terms')) return send({ payment_terms: [{ code: 'prepaid', label: 'Prepaid', display_text: 'Full payment before dispatch', surcharge_percent: '0.00' }], default_payment_term_code: 'prepaid', auto_fees: { enabled: false, shipping_tiers: [] } })
   if (path.endsWith('/catalog')) return send({ items: [product], total: 1, page: 1, page_size: 24 })
   if (path.endsWith('/quotes')) {
     if (quoteFail) return send({ error_code: 'INVENTORY_UNAVAILABLE' }, 503)

@@ -64,6 +64,13 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 - `GET /catalog/swatches/{swatch_id}/image?version=`：仅当客户持有该颜色的已发布授权商品时返回图片。
 - 目录与详情新增 `stock_display`：仅 available 时给出，按销售单位扣除无货阈值后的可售数，≥100 显示 `"100+"`，否则精确整数；不返回原始库存。
 
+自动运费与付款手续费（2026-10-19 开发中，`auto_fees.enabled=false` 时全部保持旧行为）：
+- `GET /api/portal/v1/ordering-terms`：付款方式（code/label/display_text/surcharge_percent）、默认方式、auto_fees 开关与运费阶梯。
+- `POST /quotes` 可选 `payment_term_code`（缺省为站点默认；不存在 422）。响应新增 `fee_estimate`（confirmed：weight_grams/shipping_amount/surcharge_amount/surcharge_name/total_amount；manual：reason=over_limit|unknown_weight）、`fees_confirmed_on_submit`、行 `unit_weight_grams`；原 `fees.status=pending`、`total_amount=null` 不变。运费：总克重 ≤ 阶梯上限取第一档；超过最高档为 manual。手续费 =（货款+运费）× 付款方式比例，半入到分。
+- `POST /orders`：报价为 confirmed 时，修订1直接为客户已接受的系统提案（kind=proposal、created_by=null、费用已确认，有效期为站点最长提案时长），请求状态 `ready_for_review`，回执含 total_amount；业务用既有 `approve` 一键生成正式 PI。manual 或未启用时仍为 `submitted`，走提案流程。
+- 订单详情 `proposal.confirmed_on_submit` 标识上述系统提案；明细新增 `unit_weight_grams`。新发布 PI 模板 `portal-pi-v2`（重量列、Hair cost、Total weight），v1 仍可下载。
+- 钉钉：配置 `PORTAL_DINGTALK_WEBHOOK_URL/SECRET` 后，提交与建票各写一条 outbox（`dingtalk_notice`），每 10 秒发送群 Markdown（客户、请求号、金额、总重、付款方式、方舟订单链接）；送达不确定不重发。
+
 
 ## 订单发票与回款备注编辑（2026-10-10）
 

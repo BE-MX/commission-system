@@ -144,7 +144,8 @@ async function submit(retry = false) {
       <el-alert v-if="commandState === 'uncertain'" title="操作结果待核对。请重试原命令获取持久回执；页面当前状态不能证明本次操作成功。请勿关闭或刷新浏览器。" type="warning" :closable="false" show-icon />
       <template v-if="review">
         <p><strong>{{ review.order.request_no }}</strong> · 客户 PO：{{ review.order.customer_po || '未填写' }}</p>
-        <p v-if="review.order.proposal">客户{{ review.order.proposal.accepted ? '已确认' : '尚未确认' }}当前提案 · 有效至 {{ formatBeijingDateTime(review.order.proposal.expires_at) }}</p>
+        <p v-if="review.order.proposal">客户{{ review.order.proposal.accepted ? '已确认' : '尚未确认' }}{{ review.order.proposal.confirmed_on_submit ? '提交时的自动运费与付款手续费' : '当前提案' }} · 审核有效至 {{ formatBeijingDateTime(review.order.proposal.expires_at) }}</p>
+        <el-alert v-if="review.order.proposal?.confirmed_on_submit && review.order.proposal.accepted" title="运费按总克重自动计算，手续费按客户所选付款方式计算，客户提交即确认。核对无误可直接「审核并生成正式 PI」；如需改价或改运费，请改为「发送确认提案」由客户重新确认。" type="info" :closable="false" />
         <p>当前快照总额：{{ review.order.currency }} {{ review.order.total_amount ?? '费用待确认' }}</p>
         <ReviewSnapshot :order="review.order" :customer="review.customer" :standards="review.standard_lines" />
         <el-empty v-if="!review.available_actions.length" description="当前没有可执行操作。可能仍待客户确认、已建票或功能未启用。" />

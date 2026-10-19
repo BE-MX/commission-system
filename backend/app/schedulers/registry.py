@@ -76,6 +76,7 @@ JOB_OKKI_OUTBOUND_DELETE_RECONCILE = "okki_outbound_delete_reconcile"
 JOB_PORTAL_AUTH_MAIL = "portal_auth_mail"
 JOB_PORTAL_AUTH_CLEANUP = "portal_auth_cleanup"
 JOB_PORTAL_NOTIFICATIONS = "portal_notifications"
+JOB_PORTAL_DINGTALK = "portal_dingtalk_notices"
 JOB_PORTAL_OUTBOUND = "portal_outbound"
 
 
@@ -139,6 +140,11 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
         from app.schedulers.portal_notifications import deliver_portal_notifications
         scheduler.add_job(deliver_portal_notifications, trigger="interval", seconds=5,
             id=JOB_PORTAL_NOTIFICATIONS, replace_existing=True,
+            max_instances=1, coalesce=True, misfire_grace_time=30)
+    if settings.PORTAL_ENABLED and settings.PORTAL_DINGTALK_WEBHOOK_URL:
+        from app.schedulers.portal_notifications import deliver_portal_dingtalk_notices
+        scheduler.add_job(deliver_portal_dingtalk_notices, trigger="interval", seconds=10,
+            id=JOB_PORTAL_DINGTALK, replace_existing=True,
             max_instances=1, coalesce=True, misfire_grace_time=30)
     if worker_enabled:
         from app.schedulers.portal_outbound import process_portal_outbound

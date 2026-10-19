@@ -740,6 +740,10 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 父迁移176_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；MySQL离线DDL和隔离SQLite保留旧行测试通过，尚未在真实MySQL执行。迁移已按项目规则暂存，未commit/push/部署。
 
+## 200_portal_quote_fee_estimate（开发中，未部署）
+
+父迁移199。`ark_order_portal_quotes` 新增 nullable JSON `fee_estimate_json`：自动运费（按总克重阶梯）与所选付款方式手续费的计算结果，status 为 confirmed（含 weight_grams/shipping/surcharge/total）或 manual（over_limit/unknown_weight）。仅在非空时纳入报价证据哈希，旧报价哈希不变；只新增不回填，降级被拒绝。配置位于 `Site.policy_json.auto_fees`（enabled 默认 false、shipping_tiers 默认 300/600/800/1000/1300/1600/1800/2000g→40…96 USD）与 `payment_terms[].method_label/surcharge_percent`，无表结构变化。仅隔离SQLite与MySQL离线DDL验证。
+
 ## 199_portal_catalog_families（开发中，未部署）
 
 父迁移198_customer_media_playback。新增 `ark_order_portal_product_families`（站点内产品族：销售单位、单位克重、起订/步长、无货阈值（销售单位）、展示工艺档、排序、状态）与 `ark_order_portal_color_swatches`（站点内按规范化色号键 color_key 唯一的色块图、展示名、状态）；`ark_order_portal_catalog_items` 新增 nullable `family_id`（FK→product_families，RESTRICT）与 `grade`（standard/super/ultra），MySQL 加检查约束“二者同空或同时有值”。只做新增，不回填，旧商品保持未归类；降级被拒绝。归入产品族的商品由服务层继承起订/步长，safety_buffer = 无货阈值 × conversion_factor（换算为库存单位）。色型不另存，读取 `ark_price_color_types` 与标准价保持一致。仅隔离SQLite与MySQL离线DDL验证，未在真实MySQL执行。

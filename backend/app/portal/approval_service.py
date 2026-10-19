@@ -85,7 +85,7 @@ def approve(db, actor_id, public_id, expected, body):
     snapshot["snapshot_hash"] = content_hash(snapshot)
     db.add(Publication(request_id=order.id, invoice_id=invoice.id,
         invoice_document_version=invoice.portal_document_version, revision_id=revision.id,
-        content_hash=revision.content_hash, customer_snapshot_json=snapshot, render_template_version="portal-pi-v1",
+        content_hash=revision.content_hash, customer_snapshot_json=snapshot, render_template_version="portal-pi-v2",
         status="published", published_by=actor_id, published_at=now))
     db.add(PiAmendment(request_id=order.id, invoice_id=invoice.id, status="current",
         active_revision_id=revision.id, accepted_revision_id=revision.id))
@@ -102,6 +102,8 @@ def approve(db, actor_id, public_id, expected, body):
     db.add(OutboxEvent(event_key="order.invoice_created:"+order.public_id, event_type="order_invoice_created",
         aggregate_public_id=order.public_id, payload_json={"request_id": order.public_id,
         "invoice_id": invoice.id}, next_attempt_at=now))
+    from app.portal import dingtalk_notice
+    dingtalk_notice.enqueue(db, "order_invoice_created", order.public_id, now)
     db.flush()
     return {"replayed": False, "original_receipt": result, "current_state": order.status, "row_version": order.row_version}
 

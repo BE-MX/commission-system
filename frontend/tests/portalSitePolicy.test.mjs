@@ -24,3 +24,22 @@ test('outward contacts are explicit whitelisted employee approvals', () => {
   assert.deepEqual(row,{user_id:'7',display_name:'April',email:'public@example.com',whatsapp:null,approved:true})
   f.sales_contacts.push({...f.sales_contacts[0]}); assert.throws(()=>sitePolicyPayload(f))
 })
+
+test('auto fees carry payment surcharge per term and strictly increasing tiers', async () => {
+  const { parseTiers, formatTiers } = await import('../src/views/portal/sitePolicy.mjs')
+  const f = form()
+  f.payment_terms = [{ code: 'bank', display_text: 'Bank transfer', deposit_percent: '100.00', method_label: ' Bank transfer ', surcharge_percent: '0.00' },
+    { code: 'paypal', display_text: 'PayPal', deposit_percent: '100.00', method_label: 'PayPal', surcharge_percent: '5.00' }]
+  f.default_payment_term_code = 'bank'
+  f.auto_fees_enabled = true
+  f.shipping_tiers = '300=40.00, 600=48.00，2000=96.00'
+  const policy = sitePolicyPayload(f).policy
+  assert.equal(policy.payment_terms[0].method_label, 'Bank transfer')
+  assert.equal(policy.payment_terms[1].surcharge_percent, '5.00')
+  assert.deepEqual(policy.auto_fees, { enabled: true, shipping_tiers: [{ max_grams: 300, fee: '40.00' }, { max_grams: 600, fee: '48.00' }, { max_grams: 2000, fee: '96.00' }] })
+  assert.equal(formatTiers(policy.auto_fees.shipping_tiers), '300=40.00, 600=48.00, 2000=96.00')
+  for (const tiers of ['600=48.00, 300=40.00', '300=40', '0=1.00', '', '300=40.00,300=41.00']) assert.throws(() => parseTiers(tiers))
+  for (const surcharge_percent of ['100.00', '5', '-1.00']) { const g = structuredClone(f); g.payment_terms[1].surcharge_percent = surcharge_percent; assert.throws(() => sitePolicyPayload(g)) }
+  assert.throws(() => sitePolicyPayload({ ...f, shipping_tiers: '' }))
+  assert.deepEqual(sitePolicyPayload({ ...form() }).policy.auto_fees, { enabled: false })
+})

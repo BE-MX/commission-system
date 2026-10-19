@@ -95,6 +95,11 @@ class QuoteInput(PortalInput):
         return self
 
 
+class CustomerQuoteInput(QuoteInput):
+    """The customer picks one of the site's payment terms; omitted means the site default."""
+    payment_term_code: Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z][a-z0-9_]{0,63}$")] | None = None
+
+
 class SubmitInput(PortalInput):
     quote_id: UUID
     quote_content_hash: Hash
@@ -243,6 +248,9 @@ class PaymentTerm(PortalInput):
     code: Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z][a-z0-9_]{0,63}$")]
     display_text: Annotated[str, Field(min_length=1, max_length=256)]
     deposit_percent: Annotated[str, StringConstraints(strict=True, pattern=r"^(0|[1-9][0-9]?|100)\.[0-9]{2}$")]
+    # Customer-facing payment method name and its surcharge on (products + shipping).
+    method_label: Annotated[str, Field(max_length=40)] = ""
+    surcharge_percent: Annotated[str, StringConstraints(strict=True, pattern=r"^(0|[1-9][0-9]?)\.[0-9]{2}$")] = "0.00"
 
     @model_validator(mode="after")
     def validate_term(self):
@@ -250,8 +258,9 @@ class PaymentTerm(PortalInput):
         import unicodedata
         if Decimal(self.deposit_percent) > 100:
             raise ValueError("Deposit percentage cannot exceed 100")
-        if any(unicodedata.category(c).startswith("C") for c in self.display_text) or "<" in self.display_text or ">" in self.display_text:
-            raise ValueError("Payment terms must be plain text")
+        for text in (self.display_text, self.method_label):
+            if any(unicodedata.category(c).startswith("C") for c in text) or "<" in text or ">" in text:
+                raise ValueError("Payment terms must be plain text")
         return self
 
 
@@ -273,12 +282,37 @@ class SalesContact(PortalInput):
         return self
 
 
+class ShippingTier(PortalInput):
+    max_grams: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    fee: Money
+
+
+def _default_tiers():
+    return [ShippingTier(max_grams=grams, fee=fee) for grams, fee in (
+        (300, "40.00"), (600, "48.00"), (800, "56.00"), (1000, "64.00"),
+        (1300, "72.00"), (1600, "80.00"), (1800, "88.00"), (2000, "96.00"))]
+
+
+class AutoFees(PortalInput):
+    """Weight-tiered shipping; orders above the last tier need a manual quote."""
+    enabled: bool = False
+    shipping_tiers: Annotated[list[ShippingTier], Field(min_length=1, max_length=20)] = Field(default_factory=_default_tiers)
+
+    @model_validator(mode="after")
+    def ascending_tiers(self):
+        limits = [tier.max_grams for tier in self.shipping_tiers]
+        if limits != sorted(set(limits)):
+            raise ValueError("Shipping tiers must have strictly increasing weight limits")
+        return self
+
+
 class SitePolicy(PortalInput):
     sales_contacts: Annotated[list[SalesContact], Field(max_length=200)] = Field(default_factory=list)
     quote_valid_minutes: Annotated[StrictInt, Field(ge=1, le=30)] = 15
     proposal_valid_hours: Annotated[list[Annotated[StrictInt, Field(ge=1, le=168)]], Field(min_length=1, max_length=8)] = Field(default_factory=lambda: [24, 48])
     payment_terms: Annotated[list[PaymentTerm], Field(max_length=20)] = Field(default_factory=list)
     default_payment_term_code: str | None = None
+    auto_fees: AutoFees = Field(default_factory=AutoFees)
 
     @model_validator(mode="after")
     def unique_and_default(self):

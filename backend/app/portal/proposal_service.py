@@ -14,6 +14,7 @@ from app.portal.access_policy import validate_binding
 from app.portal.domain import content_hash, request_transition, require_version, total_amount
 from app.portal.errors import reject
 from app.portal.models import AuditEvent, CommandReceipt, CustomerAccess, OrderRequest, OutboxEvent, RequestLine, Revision
+from app.portal.order_service import line_weight
 from app.portal.schemas import SitePolicy
 
 
@@ -71,13 +72,13 @@ def create(db, actor_id, public_id, expected, body):
     records = []
     for line in lines:
         item = items[line["item_id"]]
-        standard, inventory = line["standard_snapshot"], line["inventory_snapshot"]
+        standard = line["standard_snapshot"]
         records.append(RequestLine(line_key=stable_keys.get(item.id, line["line_key"]), catalog_item_id=item.id,
             product_kind=standard["product_kind"], product_id=standard["product_id"], sku_id=standard["sku_id"],
             standard_json=deepcopy(standard["standard_json"]), customer_display_json=deepcopy(line["display_snapshot"]),
             mapping_version=access.mapping_version, qty=line["quantity"], unit_price=Decimal(line["unit_price"]),
             discount_amount=Decimal(line["discount_amount"]), line_amount=Decimal(line["line_amount"]),
-            unit_weight_grams=Decimal(inventory["conversion_factor"]) if inventory["unit"] == "g" else None,
+            unit_weight_grams=line_weight(line),
             price_source="ark_customer_rule", price_fingerprint=line["price_fingerprint"]))
     revision.content_hash = revision_evidence.digest(revision, records)
     db.add(revision)

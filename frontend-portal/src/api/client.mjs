@@ -214,6 +214,7 @@ export function createPortalClient({ fetchImpl = globalThis.fetch.bind(globalThi
     family: (code, signal) => request(`/catalog/families/${familyCode(code)}`, { signal }),
     familyAvailability: (code, signal) => request(`/catalog/families/${familyCode(code)}/availability`, { signal }),
     quote: body => request('/quotes', { method: 'POST', body }),
+    orderingTerms: signal => request('/ordering-terms', { signal }),
     quoteDetail: id => request(`/quotes/${segment(id)}`),
     submit: (key, body) => request('/orders', { method: 'POST', body, headers: { 'Idempotency-Key': segment(key) } }),
     orderByKey: key => request(`/orders/by-key/${segment(key)}`),

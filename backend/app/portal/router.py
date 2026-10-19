@@ -17,7 +17,7 @@ from app.core.response import ok
 from app.portal import auth_service as service
 from app.portal.errors import PortalError, reject
 from app.portal.action_receipt_queries import ActionReceiptQuery
-from app.portal.schemas import PasswordLogin, PortalInput, QuoteInput, SubmitInput, ReasonInput, AcceptInput, ReorderInput
+from app.portal.schemas import PasswordLogin, PortalInput, CustomerQuoteInput, SubmitInput, ReasonInput, AcceptInput, ReorderInput
 from app.portal.security import require_origin
 
 
@@ -218,8 +218,17 @@ def session(request: Request, client_ip=Depends(_require_portal_proxy), db: Sess
     return ok(data)
 
 
+@router.get("/ordering-terms")
+def ordering_terms(request: Request, client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    from app.portal import quote_service
+    principal, _ = service.authenticate(db, request.cookies.get(cookie_name("session")))
+    data = quote_service.ordering_terms(principal)
+    db.commit()
+    return ok(data)
+
+
 @router.post("/quotes", status_code=201)
-def create_quote(body: QuoteInput, request: Request,
+def create_quote(body: CustomerQuoteInput, request: Request,
                  client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
     from app.portal import quote_service
     try:

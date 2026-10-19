@@ -5,10 +5,10 @@ import { useAuthStore } from '@/stores/auth'
 import { portalAdminApi } from '@/api/portal'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import { createAccessMutation } from './customerAccess.mjs'
-import { sitePolicyPayload } from './sitePolicy.mjs'
+import { formatTiers, sitePolicyPayload } from './sitePolicy.mjs'
 
 const auth = useAuthStore(), current = ref(null), loading = ref(false), state = ref('idle'), error = ref(''), notice = ref(''), confirmed = ref(false)
-const form = reactive({ name: '', status: 'disabled', quote_valid_minutes: 15, proposal_hours: '24, 48', payment_terms: [], sales_contacts: [], default_payment_term_code: null, reason: '' })
+const form = reactive({ name: '', status: 'disabled', quote_valid_minutes: 15, proposal_hours: '24, 48', payment_terms: [], sales_contacts: [], default_payment_term_code: null, auto_fees_enabled: false, shipping_tiers: '300=40.00, 600=48.00, 800=56.00, 1000=64.00, 1300=72.00, 1600=80.00, 1800=88.00, 2000=96.00', reason: '' })
 const errorSummary = ref(null), noticeSummary = ref(null)
 let generation = 0, sequence = 0, controller, disposed = false, errorSequence = 0
 const mutation = createAccessMutation(async operation => {
@@ -31,7 +31,7 @@ async function focusNotice(identity, request) {
 watch(form, () => { confirmed.value = false }, { deep: true, flush: 'sync' })
 function clear() {
   generation++; sequence++; errorSequence++; controller?.abort(); mutation.clear(); current.value = null; state.value = 'idle'; loading.value = false
-  Object.assign(form, { name: '', status: 'disabled', quote_valid_minutes: 15, proposal_hours: '', payment_terms: [], sales_contacts: [], default_payment_term_code: null, reason: '' }); confirmed.value = false
+  Object.assign(form, { name: '', status: 'disabled', quote_valid_minutes: 15, proposal_hours: '', payment_terms: [], sales_contacts: [], default_payment_term_code: null, auto_fees_enabled: false, shipping_tiers: '', reason: '' }); confirmed.value = false
 }
 async function load(recovery = false) {
   if (state.value === 'sending' || loading.value) return
@@ -41,7 +41,7 @@ async function load(recovery = false) {
     const result = await portalAdminApi.siteSettings(controller.signal)
     if (identity !== generation || request !== sequence) return
     current.value = result
-    Object.assign(form, { name: result.name || '', status: result.status || 'disabled', quote_valid_minutes: result.policy.quote_valid_minutes, proposal_hours: result.policy.proposal_valid_hours.join(', '), payment_terms: structuredClone(result.policy.payment_terms), sales_contacts: structuredClone(result.policy.sales_contacts || []), default_payment_term_code: result.policy.default_payment_term_code, reason: '' })
+    Object.assign(form, { name: result.name || '', status: result.status || 'disabled', quote_valid_minutes: result.policy.quote_valid_minutes, proposal_hours: result.policy.proposal_valid_hours.join(', '), payment_terms: structuredClone(result.policy.payment_terms), sales_contacts: structuredClone(result.policy.sales_contacts || []), default_payment_term_code: result.policy.default_payment_term_code, auto_fees_enabled: result.policy.auto_fees?.enabled === true, shipping_tiers: formatTiers(result.policy.auto_fees?.shipping_tiers), reason: '' })
     mutation.clear(); state.value = 'idle'; confirmed.value = false
     notice.value = recovery ? '已读取当前配置并放弃本地草稿；不能据此确认先前保存成功。本次未重发写入。' : ''
     if (recovery) void focusNotice(identity, request)
@@ -95,10 +95,16 @@ onMounted(() => load())
         <div class="settings-card"><h2>付款条件</h2><p>填写已确认的英文客户说明和定金比例；这些内容将进入客户确认的交易条件。此处不预设任何商业承诺。</p>
           <article v-for="(term, index) in form.payment_terms" :key="index" class="payment-term">
             <div class="field-grid"><el-form-item :label="`条件 ${index + 1} · 稳定代码`"><el-input v-model="term.code" :aria-label="`付款代码 ${index + 1}`" maxlength="64" /></el-form-item><el-form-item label="定金比例（%）"><el-input v-model="term.deposit_percent" :aria-label="`定金比例 ${index + 1}`" placeholder="0.00–100.00" maxlength="6" /></el-form-item></div>
-            <el-form-item label="客户付款说明（英文）"><el-input v-model="term.display_text" :aria-label="`付款说明 ${index + 1}`" maxlength="256" /></el-form-item><GlassButton :disabled="locked" @click="removeTerm(index)">移除此付款条件</GlassButton>
+            <el-form-item label="客户付款说明（英文）"><el-input v-model="term.display_text" :aria-label="`付款说明 ${index + 1}`" maxlength="256" /></el-form-item>
+            <div class="field-grid"><el-form-item label="客户可见付款方式名称（如 PayPal）"><el-input v-model="term.method_label" :aria-label="`付款方式名称 ${index + 1}`" maxlength="40" /></el-form-item><el-form-item label="付款手续费（%，按货款+运费计）"><el-input v-model="term.surcharge_percent" :aria-label="`付款手续费 ${index + 1}`" placeholder="PayPal 5.00；银行转账 0.00" maxlength="5" /></el-form-item></div>
+            <GlassButton :disabled="locked" @click="removeTerm(index)">移除此付款条件</GlassButton>
           </article>
-          <GlassButton :disabled="locked || form.payment_terms.length >= 20" @click="form.payment_terms.push({ code: '', display_text: '', deposit_percent: '' })">添加付款条件</GlassButton>
+          <GlassButton :disabled="locked || form.payment_terms.length >= 20" @click="form.payment_terms.push({ code: '', display_text: '', deposit_percent: '', method_label: '', surcharge_percent: '0.00' })">添加付款条件</GlassButton>
           <el-form-item label="默认付款条件" class="default-term"><el-select v-model="form.default_payment_term_code" aria-label="默认付款条件" clearable><el-option v-for="(term, index) in form.payment_terms.filter(t => t.code)" :key="index" :label="`${term.code} · ${term.display_text}`" :value="term.code" /></el-select></el-form-item>
+        </div>
+        <div class="settings-card"><h2>自动运费与付款手续费</h2><p>启用后，客户在确认页按总克重看到运费、所选付款方式的手续费和总额；提交即视为客户确认，订单直接进入「待审核」，业务在订单页一键审核即生成正式 PI。超过最高档克重的订单不自动计价，由业务按原提案流程报运费。</p>
+          <el-checkbox v-model="form.auto_fees_enabled">启用自动运费与付款手续费</el-checkbox>
+          <el-form-item label="运费阶梯（克重上限=运费 USD，按总克重≤上限取第一档）" class="tiers"><el-input v-model="form.shipping_tiers" aria-label="运费阶梯" type="textarea" :rows="2" maxlength="600" placeholder="300=40.00, 600=48.00, 800=56.00" /></el-form-item>
         </div>
         <div class="settings-card"><h2>获准对外展示的业务员名片</h2><p>客户只可查看当前负责人的获准名片。这里单独填写对外信息，不读取员工账号的邮箱和手机号；取消批准后，下次客户读取将隐藏名片。</p>
           <article v-for="(contact, index) in form.sales_contacts" :key="index" class="payment-term">
@@ -123,7 +129,7 @@ p, .site-facts { color: var(--text-secondary); line-height: 1.7; overflow-wrap: 
 .settings-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .payment-term { border-bottom: 1px solid var(--border-color); padding: 16px 0; margin-bottom: 16px; }
-.el-select { width: 100%; } .default-term { margin-top: 20px; }
+.el-select { width: 100%; } .default-term, .tiers { margin-top: 20px; }
 .el-alert { margin-bottom: 16px; } .el-alert:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; } .save { display: flex; justify-content: flex-end; margin-top: 20px; }
 .el-checkbox { height: auto; white-space: normal; }
 @media (max-width: 600px) { header { align-items: flex-start; flex-direction: column; } .field-grid { grid-template-columns: 1fr; gap: 0; } .settings-card { padding: 16px; } }

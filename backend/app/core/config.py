@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     PORTAL_SMTP_PORT: Annotated[int, Field(ge=1, le=65535)] = 465
     PORTAL_SMTP_USERNAME: str = ""
     PORTAL_SMTP_PASSWORD: str = Field(default="", repr=False)
+    # Internal DingTalk group robot for new portal requests and issued PIs; empty disables it.
+    PORTAL_DINGTALK_WEBHOOK_URL: str = Field(default="", repr=False)
+    PORTAL_DINGTALK_WEBHOOK_SECRET: str = Field(default="", repr=False)
     PRESALE_SETTLEMENT_ENABLED: bool = False
     PRESALE_DELIVERY_ENABLED: bool = False
     OKKI_PRESALE_WAREHOUSE_ID: int | None = None

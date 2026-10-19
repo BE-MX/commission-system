@@ -17,6 +17,12 @@ def validate_configuration(settings):
         if not settings.PORTAL_ENABLED or not settings.PORTAL_MAIL_ENABLED:
             raise ValueError("Portal notifications require portal and mail delivery")
         employee_origin(settings)
+    dingtalk = getattr(settings, "PORTAL_DINGTALK_WEBHOOK_URL", "")
+    if dingtalk:
+        webhook = urlsplit(dingtalk)
+        if webhook.scheme != "https" or webhook.hostname != "oapi.dingtalk.com" or not webhook.query:
+            raise ValueError("PORTAL_DINGTALK_WEBHOOK_URL must be a DingTalk robot HTTPS webhook")
+        employee_origin(settings)
     if not settings.PORTAL_ENABLED:
         if settings.PORTAL_WRITES_ENABLED or settings.PORTAL_INVOICE_ENABLED:
             raise ValueError("Portal transaction switches require PORTAL_ENABLED")

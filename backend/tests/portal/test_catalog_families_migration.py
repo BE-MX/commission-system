@@ -23,7 +23,8 @@ def test_single_head_and_existing_items_untouched(monkeypatch):
     config = Config()
     config.set_main_option("script_location", str(backend / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == [module.revision]
+    assert module.revision in {script.revision for script in scripts.walk_revisions()}
+    assert len(scripts.get_heads()) == 1
     assert module.down_revision == "198_customer_media_playback" and len(module.revision) <= 32
     engine = create_engine("sqlite://")
     with engine.begin() as connection:

@@ -61,7 +61,8 @@ def detail_view(db, order, *, show_price):
     items = []
     for line in lines:
         item = {"line_key": line.line_key, "quantity": line.qty,
-                "display_snapshot": {key: deepcopy(line.customer_display_json.get(key)) for key in display_keys}}
+                "display_snapshot": {key: deepcopy(line.customer_display_json.get(key)) for key in display_keys},
+                "unit_weight_grams": None if line.unit_weight_grams is None else format(line.unit_weight_grams.normalize(), "f")}
         if show_price:
             item.update(unit_price=revision_evidence.fixed(line.unit_price, 4),
                         discount_amount=revision_evidence.fixed(line.discount_amount),
@@ -82,6 +83,8 @@ def detail_view(db, order, *, show_price):
             result["proposal"] = {"revision_id": revision.public_id, "content_hash": revision.content_hash,
                 "expires_at": revision.expires_at.isoformat(), "expired": revision.expires_at <= beijing_now(),
                 "accepted": order.accepted_revision_id == revision.id,
+                # No employee author: automatic weight/payment fees the customer confirmed on submission.
+                "confirmed_on_submit": revision.created_by is None,
                 "changes": previous_comparison(db, revision, lines)}
         if order.status == "invoice_created":
             from app.portal.pi_amendment_queries import view

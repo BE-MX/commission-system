@@ -1,5 +1,6 @@
 """LeShine customer PI: render approved display fields only; no internal invoice exporter."""
 from functools import lru_cache
+from decimal import Decimal
 from hashlib import sha256
 from html import escape
 from io import BytesIO
@@ -25,6 +26,12 @@ def registered_font(path):
     except Exception:
         reject("PDF_UNAVAILABLE", "The PI document service is not configured. Please contact your account manager.", 503)
     return name
+
+
+def grams_text(grams):
+    if grams is None:
+        return "—"
+    return f"{grams / 1000:.2f} kg" if grams >= 1000 else f"{grams.normalize():f} g"
 
 
 def render(snapshot):
@@ -54,7 +61,12 @@ def render(snapshot):
             ("sales_email","Contact email"),("packaging_quantity","Packaging quantity")):
         if header.get(key):
             story += [paragraph(label+": "+str(header[key]),small),Spacer(1,4)]
-    rows = [[paragraph(value,small) for value in ("PRODUCT / YOUR REFERENCE", "QTY", "UNIT PRICE", "DISCOUNT", "AMOUNT")]]
+    # Weight column only for snapshots that carry per-unit weight (portal-pi-v2 onwards).
+    weighted = any(item.get("unit_weight_grams") for item in snapshot["items"])
+    headings = ("PRODUCT / YOUR REFERENCE", "QTY", "WEIGHT", "UNIT PRICE", "DISCOUNT", "AMOUNT") if weighted \
+        else ("PRODUCT / YOUR REFERENCE", "QTY", "UNIT PRICE", "DISCOUNT", "AMOUNT")
+    rows = [[paragraph(value,small) for value in headings]]
+    total_grams = Decimal("0")
     for item in snapshot["items"]:
         display = item["display_snapshot"]
         description = " · ".join(str(display.get(key) or "") for key in ("model_name", "color_name", "length", "weight") if display.get(key))
@@ -62,18 +74,25 @@ def render(snapshot):
             description += "\nYour SKU: "+str(display["customer_sku"])
         if display.get("unit"):
             description += "\nUnit: "+str(display["unit"])
-        rows.append([paragraph(description), paragraph(item["quantity"],right),
-            paragraph(item["unit_price"],right), paragraph(item["discount_amount"],right), paragraph(item["line_amount"],right)])
-    table = Table(rows, colWidths=[230,35,82,82,82], repeatRows=1, hAlign="LEFT")
+        cells = [paragraph(description), paragraph(item["quantity"],right)]
+        if weighted:
+            grams = Decimal(item["unit_weight_grams"]) * item["quantity"] if item.get("unit_weight_grams") else None
+            total_grams += grams if grams is not None else 0
+            cells.append(paragraph(grams_text(grams), right))
+        rows.append(cells + [paragraph(item["unit_price"],right), paragraph(item["discount_amount"],right), paragraph(item["line_amount"],right)])
+    widths = [190,35,55,70,65,96] if weighted else [230,35,82,82,82]
+    table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#ffdf52")),
         ("VALIGN",(0,0),(-1,-1),"TOP"), ("TOPPADDING",(0,0),(-1,-1),9), ("BOTTOMPADDING",(0,0),(-1,-1),9),
         ("LINEBELOW",(0,0),(-1,0),0.6,colors.HexColor("#25251f")),
         ("LINEBELOW",(0,1),(-1,-1),0.4,colors.HexColor("#e7e5dc"))]))
     story += [table, Spacer(1,18)]
     fees = snapshot["fees"]
-    totals = [("Products",snapshot["product_amount"]),("Shipping",fees["shipping_amount"]),
+    totals = [("Hair cost" if weighted else "Products",snapshot["product_amount"]),("Shipping",fees["shipping_amount"]),
         ("Packaging",fees["packaging_amount"]),(fees.get("surcharge_name") or "Additional charges",fees["surcharge_amount"]),
         ("TOTAL · "+snapshot["currency"],snapshot["total_amount"])]
+    if weighted:
+        totals.insert(0, ("Total weight", grams_text(total_grams)))
     summary = Table([[paragraph(label),paragraph(amount,right)] for label,amount in totals], colWidths=[185,80],hAlign="RIGHT")
     summary.setStyle(TableStyle([("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5),
         ("BACKGROUND",(0,-1),(-1,-1),colors.HexColor("#ffdf52"))]))
