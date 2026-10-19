@@ -57,6 +57,13 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 - `GET /catalog?family=<code|unassigned>`：商品列表新增产品族筛选，行内返回 family_code/grade。
 - `GET /color-swatches?keyword=&missing_image=`：色块列表（含色型及来源 exact/inferred/missing、使用商品数）与 unregistered_colors。`POST /color-swatches/sync`：为目录颜色登记缺失色块。`PATCH /color-swatches/{id}`：If-Match；换图或移除图另需 `asset:admin`，keep_image=true 仅改标签；色号只能改写法不能改成其他色号。
 
+客户端（前缀 `/api/portal/v1`，客户会话，`no-store`，与平铺目录同一授权/别名/定价/库存校验）：
+- `GET /catalog/families`：已启用且客户有已发布授权商品的产品族（展示工艺档过滤后），含 variant_count、grades、lengths、封面图；`ungrouped_count` 为未归族商品数。
+- `GET /catalog/families/{code}`：variants 为工艺档×长度×颜色组合，含客户价、availability、`stock_display`、color_code/color_label/color_type、swatch_url、unit_weight_grams。不存在/停用/无授权 404，编码不合法 422。
+- `GET /catalog/families/{code}/availability`：仅库存字段，供前端每 30 秒轮询，不做价格计算。
+- `GET /catalog/swatches/{swatch_id}/image?version=`：仅当客户持有该颜色的已发布授权商品时返回图片。
+- 目录与详情新增 `stock_display`：仅 available 时给出，按销售单位扣除无货阈值后的可售数，≥100 显示 `"100+"`，否则精确整数；不返回原始库存。
+
 
 ## 订单发票与回款备注编辑（2026-10-10）
 

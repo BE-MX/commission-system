@@ -119,15 +119,47 @@ def ticket(db, token, item_id, version):
         .with_for_update().execution_options(populate_existing=True))
     if item is None or not item.image_asset_id:
         reject('IMAGE_UNAVAILABLE', 'This product image is not available.', 404)
-    asset_id, separator, digest = item.image_asset_id.partition(':')
+    return approved_ticket(db, item.image_asset_id)
+
+
+def approved_ticket(db, reference):
+    """The bound reference must still equal the asset's current approved version."""
+    asset_id, separator, digest = reference.partition(':')
     if not separator or not asset_id.isdecimal() or len(asset_id) > 20 or len(digest) != 43:
         reject('IMAGE_UNAVAILABLE', 'This product image needs approval.', 404)
     asset = asset_row(db, asset_id)
     record = storage_snapshot(db, asset.storage_path)
-    if approved_reference(asset, record) != item.image_asset_id:
+    if approved_reference(asset, record) != reference:
         reject('IMAGE_UNAVAILABLE', 'This product image needs approval.', 404)
     return {'asset_id': asset.id, 'key': asset.storage_path, 'version_id': asset.current_version_id,
             'record': record}
+
+
+def swatch_ticket(db, token, swatch_id, version):
+    from app.portal.catalog_service import authorized_items
+    from app.portal.family_service import color_key
+    from app.portal.models import ColorSwatch
+    principal, _ = auth_service.authenticate(db, token)
+    principal.require('catalog')
+    swatch = db.scalar(select(ColorSwatch).where(ColorSwatch.public_id == str(swatch_id),
+        ColorSwatch.site_id == principal.site.id, ColorSwatch.status == 'enabled',
+        ColorSwatch.row_version == version).execution_options(populate_existing=True))
+    # A swatch is visible only while the customer holds a published item in that color.
+    if swatch is None or not swatch.image_asset_id or not any(
+            color_key((row.standard_json or {}).get('color')) == swatch.color_key
+            for row in authorized_items(db, principal)):
+        reject('IMAGE_UNAVAILABLE', 'This color image is not available.', 404)
+    return approved_ticket(db, swatch.image_asset_id)
+
+
+def customer_swatch(db, token, swatch_id, version):
+    before = swatch_ticket(db, token, swatch_id, version)
+    db.commit()
+    content = render(before)
+    if swatch_ticket(db, token, swatch_id, version) != before:
+        reject('IMAGE_CHANGED', 'The color image changed. Please refresh.', 409)
+    db.commit()
+    return content
 
 
 def render(ticket):

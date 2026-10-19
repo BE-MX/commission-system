@@ -4,7 +4,7 @@ import re
 from uuid import UUID, uuid4
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
@@ -146,6 +146,48 @@ def catalog(request: Request, keyword: str = Query("", max_length=100),
         in_stock_only=in_stock_only, page=page, page_size=page_size, sort=sort)
     db.commit()
     return ok(result)
+
+
+FAMILY_CODE = Path(..., pattern=r"^[a-z0-9_]{1,32}$")
+
+
+@router.get("/catalog/families")
+def catalog_families(request: Request, client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    from app.portal import family_catalog_service
+    principal, _ = service.authenticate(db, request.cookies.get(cookie_name("session")))
+    result = family_catalog_service.list_families(db, principal)
+    db.commit()
+    return ok(result)
+
+
+@router.get("/catalog/families/{code}")
+def catalog_family(request: Request, code: str = FAMILY_CODE,
+                   client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    from app.portal import family_catalog_service
+    principal, _ = service.authenticate(db, request.cookies.get(cookie_name("session")))
+    result = family_catalog_service.family_detail(db, principal, code)
+    db.commit()
+    return ok(result)
+
+
+@router.get("/catalog/families/{code}/availability")
+def catalog_family_availability(request: Request, code: str = FAMILY_CODE,
+                                client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    from app.portal import family_catalog_service
+    principal, _ = service.authenticate(db, request.cookies.get(cookie_name("session")))
+    result = family_catalog_service.family_availability(db, principal, code)
+    db.commit()
+    return ok(result)
+
+
+@router.get("/catalog/swatches/{swatch_id}/image")
+def catalog_swatch_image(swatch_id: UUID, request: Request, version: int = Query(..., ge=1),
+                         client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    from fastapi.responses import Response
+    from app.portal.image_service import customer_swatch
+    content = customer_swatch(db, request.cookies.get(cookie_name("session")), swatch_id, version)
+    return Response(content, media_type='image/jpeg', headers={'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'"})
 
 
 @router.get("/catalog/{item_id}")

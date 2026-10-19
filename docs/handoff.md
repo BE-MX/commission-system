@@ -1,4 +1,12 @@
-## 2026-10-19 客户下单门户 P1：产品族与色块库（Accio，本地未提交，未部署）
+## 2026-10-19 客户下单门户 P2：客户端产品族目录与规格选择（Accio，未部署）
+
+- 同分支，P1 已提交（`5f8b7d5b` 方案、`2f17c343` 产品族/色块库）。
+- 后端：`family_catalog_service.py` + 客户端点 `/catalog/families*`、`/catalog/swatches/{id}/image`；`catalog_service.projected_items(keep=)` 先缩小行再做库存/价格；新增 `stock_display`（扣阈值后 ≥100 显示 100+）；`image_service` 抽出 `approved_ticket` 并新增色块图授权（须持有该色已发布商品）。
+- 客户端：Collection 默认显示产品族卡片（无产品族或接口失败自动回退平铺目录），`/collection/<code>` 详情页按 Ratio→Length→Color（按色型分组的色块）选择，数量步进对齐起订/步长，30 秒库存轮询（页面隐藏不轮询），右侧/底部「Your selection」可加减、显示总克重，Finish selection 进入现有 Checkout。购物车行新增 unit_weight_grams 快照。
+- 验证：门户 SQLite 回归 769 通过/1 跳过，1 失败为本机缺 reportlab；客户端单测 137 通过；构建通过；新增 `tests/family.browser.mjs` 在 1440 与 375 宽度通过（无横向溢出）。既有 `tests/browser.smoke.mjs` 仍等待旧 OTP「Continue with email」按钮，在当前密码登录下本就失败，未改动。
+- 未做（P3）：确认弹窗、运费阶梯、PayPal 5% 手续费、业务审核后出 PI、钉钉推送。
+
+## 2026-10-19 客户下单门户 P1：产品族与色块库（Accio，已提交 2f17c343，未部署）
 
 - 分支 `accio/optimize-order-portal-integration-ce44d944`（已快进到 main `e01194d0`）。方案与亮哥拍板结论见 [整合方案](requirements/2026-10-19-order-portal-material-integration.md)。
 - 新迁移 `199_portal_catalog_families`（父198，只新增）；后端 `app/portal/family_service.py` + 管理端点 `/catalog-families*`、`/color-swatches*`；`catalog_admin_service._invalidate` 抽出批量 `invalidate_items`，`_apply` 对已归族商品强制继承族规则。后台「门户商品目录」拆为 商品SKU / 产品族 / 色块库 三个页签，支持批量归族。

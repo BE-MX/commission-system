@@ -1,10 +1,18 @@
 <script setup>
 import ProductImage from './ProductImage.vue'
+import FamilyGrid from './FamilyGrid.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { unitPrice as price, beijingTime } from '../presentation.mjs'
 import { minimumQuantity } from '../state/checkout.mjs'
 const props = defineProps({ api: { type: Object, required: true }, session: { type: Object, required: true }, checkout: { type: Object, required: true } })
-const emit = defineEmits(['checkout'])
+const emit = defineEmits(['checkout', 'family'])
+const families = ref(null), view = ref('families'), familyController = new AbortController()
+// Families are an enhancement: any failure falls back to the complete flat collection.
+async function loadFamilies() {
+  try { const data = await props.api.families(familyController.signal); families.value = data }
+  catch { families.value = { items: [], ungrouped_count: 0 } }
+  if (!families.value.items?.length) view.value = 'all'
+}
 const quantity = ref(1), quantityInput = ref(null), addErrorSummary = ref(null), addError = ref(null), added = ref(false)
 const quantityInvalid = computed(() => addError.value?.code === 'INVALID_QUANTITY')
 const keyword = ref(''), category = ref(''), inStock = ref(false), sort = ref('curated'), page = ref(1)
@@ -47,14 +55,18 @@ async function add() {
     else addErrorSummary.value?.focus()
   }
 }
-onMounted(load)
-onBeforeUnmount(() => { sequence++; controller?.abort(); clearTimeout(debounce); dialog.value?.close() })
+onMounted(() => { load(); loadFamilies() })
+onBeforeUnmount(() => { sequence++; controller?.abort(); familyController.abort(); clearTimeout(debounce); dialog.value?.close() })
 </script>
 
 <template>
   <section class="collection-page">
     <header class="collection-heading"><div><p class="eyebrow gold">CURATED FOR {{ session.me.company_display_name }}</p><h1>Your next signature.</h1><p class="muted">Explore your collection, in the names and shades you know.</p></div><span class="collection-stamp">LESHINE<br /><small>PARTNER COLLECTION</small></span></header>
     <div class="collection-message"><span class="status-dot" aria-hidden="true"></span><span v-if="session.capabilities.place_order">Requests are reviewed by your representative. Availability is confirmed before your PI is issued.</span><span v-else>Your access is for browsing. Contact your representative to request ordering access.</span></div>
+    <div v-if="families?.items?.length" class="view-switch" role="group" aria-label="Collection view"><button type="button" :aria-pressed="view === 'families'" @click="view = 'families'">Products</button><button type="button" :aria-pressed="view === 'all'" @click="view = 'all'">All items &amp; search</button></div>
+    <div v-if="families === null" class="product-grid" aria-hidden="true"><div v-for="n in 3" :key="n" class="product-skeleton"><div></div><span></span><span></span></div></div>
+    <FamilyGrid v-else-if="view === 'families' && families.items.length" :families="families.items" :ungrouped="families.ungrouped_count" @open="code => emit('family', code)" @all="view = 'all'" />
+    <template v-else>
     <form class="collection-toolbar" role="search" @submit.prevent="changed">
       <label class="search-field"><span class="sr-only">Search your collection</span><span aria-hidden="true">⌕</span><input v-model="keyword" type="search" placeholder="Search model, shade or your SKU" maxlength="100" /></label>
       <label><span class="sr-only">Product category</span><select v-model="category" @change="changed"><option value="">All products</option><option value="hair">Hair collection</option><option value="accessory">Accessories</option></select></label>
@@ -74,6 +86,7 @@ onBeforeUnmount(() => { sequence++; controller?.abort(); clearTimeout(debounce);
       </article>
     </div>
     <nav v-if="result && pageCount > 1" class="pagination" aria-label="Collection pages"><button class="button secondary" :disabled="page <= 1 || busy" @click="page--; load()">← Previous</button><span>Page {{ page }} of {{ pageCount }}</span><button class="button secondary" :disabled="page >= pageCount || busy" @click="page++; load()">Next →</button></nav>
+    </template>
     <dialog ref="dialog" class="product-dialog" aria-labelledby="product-title" @close="closed" @click="event => { if (event.target === dialog) close() }">
       <template v-if="selected"><header><p class="eyebrow gold">YOUR COLLECTION</p><button class="icon-button" aria-label="Close product" @click="close">×</button></header><div class="dialog-body" role="region" aria-label="Product specifications" tabindex="0"><h2 id="product-title">{{ selected.model_name }}</h2><p class="muted">{{ selected.color_name }}</p><dl class="product-specs"><div v-if="selected.customer_sku"><dt>Your SKU</dt><dd>{{ selected.customer_sku }}</dd></div><div v-if="selected.length_display"><dt>Length</dt><dd>{{ selected.length_display }}</dd></div><div v-if="selected.weight_display"><dt>Weight</dt><dd>{{ selected.weight_display }}</dd></div><div><dt>Order unit</dt><dd>{{ selected.sale_unit }}</dd></div><div><dt>Minimum request</dt><dd>{{ selected.min_order_qty }} {{ selected.sale_unit }}</dd></div><div><dt>Quantity increment</dt><dd>{{ selected.step_qty }}</dd></div></dl><p v-if="session.capabilities.view_price" class="detail-price">{{ price(selected.unit_price) }}</p><p :class="['stock-state', selected.availability]">{{ availability(selected.availability) }}</p><p v-if="selected.inventory_observed_at" class="small muted">Stock checked {{ beijingTime(selected.inventory_observed_at) }}</p><p class="small muted">Availability is not a stock reservation. Final quantities and shipping are confirmed by your representative.</p></div><footer class="product-purchase"><template v-if="session.capabilities.place_order && selected.availability === 'available' && selected.unit_price != null && minimumQuantity(selected)"><label v-if="!added">Quantity<input ref="quantityInput" v-model="quantity" :aria-invalid="quantityInvalid ? 'true' : undefined" :aria-describedby="quantityInvalid ? 'product-add-error' : undefined" @input="addError = null" type="number" inputmode="numeric" :min="minimumQuantity(selected)" :step="selected.step_qty" max="10000" /></label><button v-if="!added" class="button primary" @click="add">Add to selection</button><template v-else><p role="status">Added to your selection.</p><button class="button primary" @click="close(); emit('checkout')">Review selection</button></template></template><button v-else class="button secondary" @click="close">Back to collection</button><p v-if="addError" id="product-add-error" ref="addErrorSummary" class="alert error" role="alert" tabindex="-1">{{ addError.message }}</p></footer></template>
     </dialog>

@@ -66,7 +66,7 @@ export function createCheckout({ api, submission, now = () => Date.now() }) {
       const amount = quantityFor(item, raw), previous = state.lines.find(line => line.item_id === item.item_id)
       const quantity = quantityFor(item, amount + (previous?.quantity || 0))
       if (!previous && state.lines.length >= 100) fail('CART_LIMIT', 'A request can contain up to 100 different products.')
-      const snapshot = Object.fromEntries(['item_id', 'model_name', 'color_name', 'customer_sku', 'length_display', 'weight_display', 'sale_unit', 'unit_price', 'min_order_qty', 'step_qty'].map(key => [key, item[key]]))
+      const snapshot = Object.fromEntries(['item_id', 'model_name', 'color_name', 'customer_sku', 'length_display', 'weight_display', 'sale_unit', 'unit_price', 'min_order_qty', 'step_qty', 'unit_weight_grams'].map(key => [key, item[key]]))
       const lines = state.lines.filter(line => line.item_id !== item.item_id)
       lines.push({ ...snapshot, quantity })
       edit({ lines })

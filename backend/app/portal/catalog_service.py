@@ -1,4 +1,6 @@
 """Customer-scoped catalog projection; raw source IDs and quantities never escape."""
+from decimal import ROUND_FLOOR
+
 from sqlalchemy import select
 
 from app.core.config import get_settings
@@ -42,24 +44,45 @@ def availability(item, observation):
     return "available", observation.observed_at.isoformat()
 
 
-def projected_items(db, principal):
+STOCK_BAND = 100
+
+
+def stock_display(item, observation, state):
+    """Banded sellable quantity in sale units: exact below 100, otherwise "100+".
+
+    Only computed for an already validated "available" observation, so the safety
+    buffer (out-of-stock threshold) is excluded and raw stock never escapes.
+    """
+    if state != "available":
+        return None
+    sellable = (observation.quantity - item.safety_buffer) / item.conversion_factor
+    units = int(sellable.to_integral_value(rounding=ROUND_FLOOR))
+    return f"{STOCK_BAND}+" if units >= STOCK_BAND else str(units)
+
+
+def projected_items(db, principal, *, keep=None):
+    """keep(row) narrows rows before inventory/price work; mapping still sees the full scope."""
     principal.require("catalog")
     rows = authorized_items(db, principal)
     try:
         projection = mapping_service.current_projection(db, principal.access)
     except PortalError as error:
         reject(error.code, "The catalog configuration needs review. Please contact your representative.", error.status)
+    if keep is not None:
+        rows = [row for row in rows if keep(row)]
     by_id = {entry["item_id"]: entry for entry in projection}
     observations = load_observations(db, rows)
     result = []
     for row in rows:
         alias = by_id[row.public_id]
-        state, observed_at = availability(row, observations.get(row.public_id))
+        observation = observations.get(row.public_id)
+        state, observed_at = availability(row, observation)
         item = {"item_id": row.public_id, "category": row.product_kind,
             "model_name": alias["model_name"], "color_name": alias["color_name"],
             "customer_sku": alias["customer_sku"], "length_display": str(alias["length"]),
             "weight_display": str(alias["weight"]), "sale_unit": row.sale_unit,
             "image_url": f"/api/portal/v1/catalog/{row.public_id}/image?version={row.row_version}" if row.image_asset_id else None, "availability": state, "inventory_observed_at": observed_at,
+            "stock_display": stock_display(row, observation, state),
             "min_order_qty": row.min_qty, "step_qty": row.step_qty, "currency": principal.site.currency}
         result.append((row, item))
     return result

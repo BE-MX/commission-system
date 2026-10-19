@@ -19,6 +19,13 @@ function segment(value) {
   return value
 }
 
+export function familyCode(value) {
+  if (typeof value !== 'string' || !/^[a-z0-9_]{1,32}$/.test(value)) {
+    throw new PortalError('INVALID_INPUT', 'A valid product family is required.')
+  }
+  return value
+}
+
 function versionHeader(version) {
   // Keep the server's BIGINT version as a string rather than rounding it in JS.
   const value = String(version)
@@ -203,6 +210,9 @@ export function createPortalClient({ fetchImpl = globalThis.fetch.bind(globalThi
     salesContact: signal => request('/sales-contact', { signal }),
     catalog: (filters, signal) => request(`/catalog${query(filters)}`, { signal }),
     product: (id, signal) => request(`/catalog/${segment(id)}`, { signal }),
+    families: signal => request('/catalog/families', { signal }),
+    family: (code, signal) => request(`/catalog/families/${familyCode(code)}`, { signal }),
+    familyAvailability: (code, signal) => request(`/catalog/families/${familyCode(code)}/availability`, { signal }),
     quote: body => request('/quotes', { method: 'POST', body }),
     quoteDetail: id => request(`/quotes/${segment(id)}`),
     submit: (key, body) => request('/orders', { method: 'POST', body, headers: { 'Idempotency-Key': segment(key) } }),
