@@ -1,3 +1,9 @@
+## 2026-10-19 Disable new-sign DingTalk notices (Codex, deployment pending)
+
+The event delivery query and database claim now allow only `big_deal` / `super_deal`. Newly detected, queued, retrying and stale-lease `new_sign_order` events cannot be sent. New-sign event detection, history and board rendering remain unchanged, and no rows are deleted or marked as sent. New-sign orders still qualify for one amount notice at the existing USD 5,000 / 30,000 thresholds after surcharge deduction. The daily board report is unchanged.
+
+Validation: six focused assertions failed against the old implementation, then all 89 invoice-notification, festival-notification and event-transition tests passed (one existing Pillow warning). Tests use isolated SQLite and mocked senders; independent review found no blocking issues. No real test messages or deployment performed for this change.
+
 ## 2026-10-19 部署等待与停服优化（本地完成，未发布）
 
 - 工作树：Codex 已有 managed worktree；分支 `codex/deployment-availability`，基于 `15d86b35`。本轮只修改 deploy 脚本/测试/说明，无业务、数据库、网络拓扑改动；未 commit、merge、push、SSH 或实际部署。

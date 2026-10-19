@@ -61,6 +61,8 @@ _AURORA_BANDS = ((255, 240, 200), (255, 228, 150), (255, 219, 118), (255, 236, 1
 _FIREWORK_GOLD = (242, 165, 32)
 _FIREWORK_WHITE = (255, 252, 244)
 _ORDER_EVENT_TYPES = frozenset({"new_sign_order", "big_deal", "super_deal"})
+# Keep new-sign events for board/history rendering, but never send them to DingTalk.
+_DINGTALK_ORDER_EVENT_TYPES = frozenset({"big_deal", "super_deal"})
 
 
 def _event_brand(event: dict) -> str:
@@ -493,7 +495,7 @@ def _detect_and_load_pending() -> list[dict]:
         if service.ACTIVITY_GMV_WINDOW[0] <= now.date().isoformat() <= service.ACTIVITY_GMV_WINDOW[1]:
             service.get_headline_payload(db, None, None)
         rows = (db.query(FestivalEvent)
-                .filter(FestivalEvent.event_type.in_(_ORDER_EVENT_TYPES))
+                .filter(FestivalEvent.event_type.in_(_DINGTALK_ORDER_EVENT_TYPES))
                 .filter(FestivalEvent.dingtalk_sent_at.is_(None))
                 .filter(or_(FestivalEvent.dingtalk_next_retry_at.is_(None),
                             FestivalEvent.dingtalk_next_retry_at <= now))
@@ -512,7 +514,7 @@ def _claim_event_delivery(event_id: int) -> bool:
     with SessionLocal() as db:
         updated = (db.query(FestivalEvent)
                    .filter(FestivalEvent.id == event_id)
-                   .filter(FestivalEvent.event_type.in_(_ORDER_EVENT_TYPES))
+                   .filter(FestivalEvent.event_type.in_(_DINGTALK_ORDER_EVENT_TYPES))
                    .filter(FestivalEvent.dingtalk_sent_at.is_(None))
                    .filter(or_(FestivalEvent.dingtalk_next_retry_at.is_(None),
                                FestivalEvent.dingtalk_next_retry_at <= now))

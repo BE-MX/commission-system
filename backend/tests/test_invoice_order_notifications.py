@@ -1,6 +1,6 @@
 """Daily Ark order notices use an isolated SQLite database and mocked DingTalk."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -247,20 +247,23 @@ def test_monitor_loads_daily_events_without_festival_board(engine, monkeypatch):
                         lambda *_args: pytest.fail("Daily notices must not depend on the festival board"))
     assert notification_service._detect_and_load_pending() == []
     with factory() as db:
-        invoice(db, "daily", new=1)
+        invoice(db, "daily", new=1, amount=5000)
         db.commit()
     pending = notification_service._detect_and_load_pending()
-    assert [e["event_type"] for e in pending] == ["new_sign_order"]
+    assert [e["event_type"] for e in pending] == ["big_deal"]
+    with factory() as db:
+        assert {e.event_type for e in db.query(FestivalEvent)} == {"new_sign_order", "big_deal"}
 
 
 @pytest.mark.asyncio
-async def test_delivery_uses_daily_branding(engine, monkeypatch):
+@pytest.mark.parametrize("amount,label", [(5000, "大单来袭"), (30000, "超级大单")])
+async def test_new_sign_order_only_sends_amount_notice(engine, monkeypatch, amount, label):
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(notification_service, "SessionLocal", factory)
     monkeypatch.setattr(notification_service, "beijing_now", lambda: datetime(2026, 10, 9, 12))
     notification_service._detect_and_load_pending()
     with factory() as db:
-        invoice(db, "placed", new=1)
+        invoice(db, "placed", new=1, amount=amount)
         db.commit()
     sent = []
 
@@ -272,10 +275,47 @@ async def test_delivery_uses_daily_branding(engine, monkeypatch):
     monkeypatch.setattr(notification_service, "render_event_image", lambda _e: None)
     monkeypatch.setattr(notification_service, "_public_url", lambda _p: "https://files.test/notice.png")
     assert (await notification_service.monitor_festival_events())["sent"] == 1
-    assert sent[0][0] == "方舟订单 · 新签喜报"
+    assert sent[0][0] == f"方舟订单 · {label}"
     assert "Customer" not in sent[0][1]
     assert "恭喜未分队的Salesperson新签国家未知的客户！" in sent[0][1]
     assert (await notification_service.monitor_festival_events())["sent"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retrying", [False, True])
+async def test_new_sign_event_in_stale_delivery_batch_cannot_be_claimed(engine, monkeypatch, retrying):
+    factory = sessionmaker(bind=engine)
+    now = datetime(2026, 10, 19, 15)
+    monkeypatch.setattr(notification_service, "SessionLocal", factory)
+    monkeypatch.setattr(notification_service, "beijing_now", lambda: now)
+    with factory() as db:
+        row = FestivalEvent(
+            event_type="new_sign_order", level="L3", subject_type="person",
+            subject_id="U1", subject_name="Salesperson", dedup_key="new_sign:old-queued",
+            dingtalk_attempts=2 if retrying else 0,
+            dingtalk_claimed_at=now - timedelta(minutes=20) if retrying else None,
+            dingtalk_next_retry_at=now - timedelta(minutes=1) if retrying else None,
+        )
+        db.add(row)
+        db.commit()
+        event = notification_service._event_dict(row)
+        original_claim, original_retry = row.dingtalk_claimed_at, row.dingtalk_next_retry_at
+
+    # A batch loaded before filtering changed must still fail the database claim.
+    monkeypatch.setattr(notification_service, "_detect_and_load_pending", lambda: [event])
+    class Sender:
+        async def send_markdown(self, *_args):
+            pytest.fail("New-sign notices must never be sent")
+    monkeypatch.setattr(notification_service, "_festival_sender", lambda: Sender())
+    monkeypatch.setattr(notification_service, "render_event_image",
+                        lambda _event: pytest.fail("Disabled notices must not be rendered"))
+    assert (await notification_service.monitor_festival_events())["sent"] == 0
+    with factory() as db:
+        saved = db.get(FestivalEvent, event["id"])
+        assert saved.dingtalk_sent_at is None
+        assert saved.dingtalk_attempts == (2 if retrying else 0)
+        assert saved.dingtalk_claimed_at == original_claim
+        assert saved.dingtalk_next_retry_at == original_retry
 
 
 def test_ordinary_orders_are_observed_without_notices(db):
@@ -370,9 +410,9 @@ async def test_pending_notice_uses_changed_department_in_card_and_message_once(e
                        okki_department_name="多财多亿"))
         db.flush()
         detect(db)
-        invoice(db, "change-team", new=1)
-        assert detect(db) == 1
-        assert "多财多亿" in db.query(FestivalEvent).one().detail
+        invoice(db, "change-team", new=1, amount=5000)
+        assert detect(db) == 2
+        assert all("多财多亿" in event.detail for event in db.query(FestivalEvent))
         db.get(ArkUser, 101).okki_department_name = "乘风"
         db.commit()
     images, messages = [], []
@@ -402,6 +442,7 @@ async def test_legacy_pending_copy_is_redacted_and_other_event_types_stay_unsent
                        okki_department_name="多财多亿"))
         invoice(db, "legacy", amount=5000)
         for kind, key in [("big_deal", "deal:remote-legacy"),
+                          ("new_sign_order", "new_sign:remote-legacy"),
                           ("order_placed", "order:remote-legacy"), ("rank_up_sign", "rank:legacy")]:
             db.add(FestivalEvent(event_type=kind, dedup_key=key, level="L3", subject_type="person",
                                  subject_id="ark:101", subject_name="Salesperson",
@@ -418,4 +459,4 @@ async def test_legacy_pending_copy_is_redacted_and_other_event_types_stay_unsent
     assert images[0]["detail"] == "恭喜多财多亿的Salesperson成交国家未知的客户！"
     assert "PRIVATE CUSTOMER" not in sent[0]
     with factory() as db:
-        assert db.query(FestivalEvent).filter(FestivalEvent.dingtalk_sent_at.is_(None)).count() == 2
+        assert db.query(FestivalEvent).filter(FestivalEvent.dingtalk_sent_at.is_(None)).count() == 3
