@@ -30,7 +30,7 @@ def checkpoint(tmp_path, monkeypatch):
     raw = json.dumps(journal).encode()
     (state / 'publish-current.json').write_bytes(raw)
     plan = dict(previous='a'*40, revision='b'*40, release_id='c'*32, schema='197',
-        journal_sha256=hashlib.sha256(raw).hexdigest(), service=service)
+        journal_sha256=hashlib.sha256(raw).hexdigest(), service=service, service_state='SERVICE_STOPPED')
     path = tmp_path / 'plan.json'
     path.write_text(json.dumps(plan))
     running = [False]
@@ -104,3 +104,20 @@ def test_prepare_is_read_only(checkpoint):
     assert recovery.execute(c.path, c.args)['status'] == 'prepared'
     assert not list(c.state.glob('office-readiness-recovery-*.json'))
     c.publish.assert_not_called()
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_running_service_is_never_restarted_or_stopped(checkpoint, monkeypatch, fail):
+    c = checkpoint
+    c.plan['service_state'] = 'SERVICE_RUNNING'
+    c.path.write_text(json.dumps(c.plan))
+    c.running[0] = True
+    if fail:
+        monkeypatch.setattr(office, 'wait_ready', Mock(side_effect=RuntimeError('not ready')))
+        with pytest.raises(RuntimeError, match='not ready'): recovery.execute(c.path, c.args)
+        c.publish.assert_not_called()
+    else:
+        recovery.execute(c.path, c.args)
+        c.publish.assert_called_once()
+    assert c.running[0]
+    assert not any(len(a)>1 and a[1] in {'start','stop'} for a in c.commands)

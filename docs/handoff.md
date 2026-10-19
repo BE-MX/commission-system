@@ -1,3 +1,7 @@
+## 2026-10-19 Office transient health-probe recovery
+
+Annual amount release b59 completed all 11 managed targets and live amount verification (Zhai USD99,190.47, unchanged GMV/targets/counts). A later deploy-tool-only e4 release stopped at its unchanged-code 8-second health probe without stopping the application. Preflight and unchanged-code checks now use the bounded readiness policy too. Recovery binds an explicitly inspected running/stopped service state; running-service failures preserve it without start/stop. Resume the original pending release identity before publishing this fix. Final production status requires the release receipts and independent readback.
+
 ## 2026-10-19 Office cold-start deployment recovery
 
 Annual amount release b59 hit the existing 30-second startup budget, followed by an immediate rollback health check. Both activation and rollback now allow 300 seconds with HTTP/database and NSSM readiness. A fixed-journal no-DDL recovery entry restores the verified old service under the legacy rollback fence, then resumes the original release binding through the full publisher; original outbound/mail baselines are preserved. Production status requires live readback after deployment.

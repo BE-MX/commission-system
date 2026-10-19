@@ -8,10 +8,11 @@ import shutil
 
 
 def validate(plan, journal, success, current):
-    if (set(plan) != {'previous', 'revision', 'release_id', 'schema', 'journal_sha256', 'service'}
+    if (set(plan) != {'previous', 'revision', 'release_id', 'schema', 'journal_sha256', 'service', 'service_state'}
             or any(not re.fullmatch(r'[0-9a-f]{40}', plan[k]) for k in ('previous', 'revision'))
             or not re.fullmatch(r'[0-9a-f]{32}', plan['release_id'])
             or not re.fullmatch(r'[0-9a-f]{64}', plan['journal_sha256'])
+            or plan['service_state'] not in {'SERVICE_STOPPED', 'SERVICE_RUNNING'}
             or set(plan['service']) != {'Application', 'AppDirectory', 'AppParameters'}
             or current != plan['previous'] or success.get('revision') != current
             or success.get('schema') != plan['schema']
@@ -69,21 +70,23 @@ def execute(plan_path, args):
             observation = protocol_observation(source, python)
             if observation != {key: journal['outbound'][key] for key in ('mode', 'database_fingerprint')}:
                 raise RuntimeError('Original database protocol changed')
-            if p.run([nssm, 'status', 'CommissionSystem'], capture=True) != 'SERVICE_STOPPED':
-                raise RuntimeError('Office must be confirmed stopped')
+            if p.run([nssm, 'status', 'CommissionSystem'], capture=True) != plan['service_state']:
+                raise RuntimeError('Office service state drift')
             if args.prepare_only:
                 return {'status': 'prepared', 'revision': plan['revision']}
             p.atomic_json(receipt, {'status': 'starting', 'original': journal, 'plan': plan})
             try:
                 with rollback_guard(source, python, observation) as guard:
-                    p.run([nssm, 'start', 'CommissionSystem'])
+                    if plan['service_state'] == 'SERVICE_STOPPED':
+                        p.run([nssm, 'start', 'CommissionSystem'])
                     office.wait_ready(8001, nssm, ['CommissionSystem'])
                     guard.check()
             except Exception:
-                p.run([nssm, 'stop', 'CommissionSystem'])
-                if p.run([nssm, 'status', 'CommissionSystem'], capture=True) != 'SERVICE_STOPPED':
-                    raise RuntimeError('Office recovery stop unconfirmed') from None
-                p.atomic_json(receipt, {'status': 'failed_stopped', 'original': journal, 'plan': plan})
+                if plan['service_state'] == 'SERVICE_STOPPED':
+                    p.run([nssm, 'stop', 'CommissionSystem'])
+                    if p.run([nssm, 'status', 'CommissionSystem'], capture=True) != 'SERVICE_STOPPED':
+                        raise RuntimeError('Office recovery stop unconfirmed') from None
+                p.atomic_json(receipt, {'status': 'health_failed', 'original_state': plan['service_state'], 'original': journal, 'plan': plan})
                 raise
             p.atomic_json(receipt, {'status': 'old_service_restored', 'original': journal, 'plan': plan})
     # Retain the original SHA and release_id so remote paused-stage journals keep
