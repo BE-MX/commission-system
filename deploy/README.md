@@ -417,3 +417,10 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 受管publish、migration resume及历史159/160 finalizer现共用outbound回执/候选/实际verify核验。managed timer不再按原running记录无条件start；已知v1目标暂停，初始legacy按经核验baseline。缺receipt或仅installed_paused不能finalize，历史凭据不补造，需受审协调发布。fresh mode floor不能由历史legacy降低。共同guard失败只向受信登记目标请求pause，保留active service/字节/mode/业务事实；SSH/IO/审计/状态不明固定报未确认，不宣称已排空。success摘要含最新绑定outbound，静态后再check。当前本地替身/实际函数体证据不代表生产、真实systemd/cgroup或完整协议回退；I78/I79/I80现场门禁保持，具体终态见docs/handoff.md。
 
 销售研究专用 Agent 的停用准备、凭据及验收见 [北京销售 Agent](sales-agent-cloud.md)。
+
+
+### Office cold-start readiness recovery
+
+Office activation and rollback both wait up to 300 seconds for HTTP/database readiness and all affected NSSM services. A slow cold import must not be mistaken for a failed rollback.
+
+For an inspected no-DDL failure that has restored the previous clean checkout/static files/service command but held CommissionSystem stopped, use the pinned candidate controller's `deploy.bat --live-root <installed-root> --revision <controller-SHA> --recover-office-readiness <reviewed-plan.json> [--prepare-only]`. The plan binds `previous`, failed `revision`, `release_id`, `schema`, SHA256 of `publish-current.json`, and exact NSSM `service` Application/AppDirectory/AppParameters. It verifies static manifests, both schema heads, legacy database protocol/fingerprint, and stopped state under managed locks. It starts only the restored Office service inside the rollback fence, records a separate recovery receipt, then resumes the original failed revision and release ID through the full normal publisher. Frozen outbound/mail baselines are retained. A second invocation is rejected; inspect the persisted outcome before further recovery. After the original release completes, deploy the current main revision normally.

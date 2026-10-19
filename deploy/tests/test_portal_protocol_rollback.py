@@ -46,7 +46,9 @@ def activation(request,tmp_path,monkeypatch):
     monkeypatch.setattr(target,'run',run)
     monkeypatch.setattr(target,'ROOT',candidate if request.param=='office' else live)
     monkeypatch.setattr(target,'STATE',state)
-    monkeypatch.setattr(target.time,'sleep',lambda *_:None)
+    clock=[0]
+    monkeypatch.setattr(target.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(target.time,'sleep',lambda seconds:clock.__setitem__(0,clock[0]+seconds))
     if request.param=='office':
         monkeypatch.setattr(office,'health',Mock(side_effect=RuntimeError('Candidate startup failed')))
         prepared={'nssm':'owned-nssm','live':live,'python':Path('owned-python'),

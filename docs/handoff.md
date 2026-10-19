@@ -1,3 +1,7 @@
+## 2026-10-19 Office cold-start deployment recovery
+
+Annual amount release b59 hit the existing 30-second startup budget, followed by an immediate rollback health check. Both activation and rollback now allow 300 seconds with HTTP/database and NSSM readiness. A fixed-journal no-DDL recovery entry restores the verified old service under the legacy rollback fence, then resumes the original release binding through the full publisher; original outbound/mail baselines are preserved. Production status requires live readback after deployment.
+
 ## 2026-10-19 年度新签复购金额包含全部新签订单（Codex，本地验证，未合并部署）
 
 - 用户最新确认：年度金额为所有2026新签客户的新签订单＋首签后2026复购订单合计，未复购客户也计新签金额；复购客户数/订单笔数不增加。工作树 `C:/Users/windb/.codex/worktrees/annual-battle-awards/commission-system`、分支 `codex/annual-battle-awards`，基于当前main `29960250`，保护主目录既有dirty内容。

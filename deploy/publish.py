@@ -193,6 +193,11 @@ def publish(args):
     live = ROOT
     emit("begin", prepare_only=args.prepare_only)
     with deployment_lock(), timing_session(STATE, prepare_only=args.prepare_only, revision=args.revision) as timings:
+        checkpoint = getattr(args, '_readiness_checkpoint', None)
+        if checkpoint:
+            if (hashlib.sha256((STATE / 'publish-current.json').read_bytes()).hexdigest() != checkpoint['journal_sha256']
+                    or run(['git', 'rev-parse', 'HEAD'], cwd=live, capture=True) != checkpoint['previous']):
+                raise RuntimeError('Readiness recovery binding changed before resumed publication')
         ROOT, revision, previous = step("source", "获取并校验候选源码", source_release.prepare, live, STATE, not args.no_pull,
                                                          pinned_revision=args.revision)
         timings.update(revision=revision, previous=previous)
@@ -380,6 +385,7 @@ if __name__ == "__main__":
     parser.add_argument('--storage-maintenance', metavar='PLAN_JSON', help='Freeze/restore API ingress and direct office LAN access')
     parser.add_argument('--recover-colorwork-start-order', metavar='PLAN_JSON', help='Recover the inspected schema-160 dependency-order interruption')
     parser.add_argument('--finalize-release', metavar='PLAN_JSON', help='Complete the inspected post-DDL activated release without repeating migrations')
+    parser.add_argument('--recover-office-readiness', metavar='PLAN_JSON', help='Restore an inspected no-DDL rollback and resume its original release')
     parser.add_argument('--recover-office-activation', metavar='PLAN_JSON', help='Resume the inspected schema-186 office readiness interruption')
     parser.add_argument('--storage-cutover', metavar='PLAN_JSON', help='Execute a journalled COS cutover phase')
     parser.add_argument("--storage-routing-only", metavar="PROBES_JSON", help="Prepare/activate public COS routing with explicit cloud object probes")
@@ -496,6 +502,11 @@ if __name__ == "__main__":
                 raise RuntimeError('Storage cutover only accepts --prepare-only')
             from storage_cutover import execute
             execute(args.storage_cutover, args.prepare_only)
+        elif args.recover_office_readiness:
+            if any(value for key, value in vars(args).items() if key not in {'recover_office_readiness', 'prepare_only', 'live_root', 'revision', 'no_pull'}):
+                raise RuntimeError('Readiness recovery requires only its pinned controller and reviewed plan')
+            from recover_office_readiness import execute
+            print(json.dumps(execute(args.recover_office_readiness, args)), flush=True)
         elif args.recover_office_activation:
             if any(value for key, value in vars(args).items() if key not in {'recover_office_activation', 'prepare_only', 'live_root', 'revision', 'no_pull'}):
                 raise RuntimeError('Office recovery only accepts its pinned controller and reviewed plan')

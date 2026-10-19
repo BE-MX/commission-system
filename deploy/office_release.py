@@ -22,6 +22,22 @@ def health(port):
         raise RuntimeError("Office HTTP/database readiness failed")
 
 
+def wait_ready(port, nssm, services, timeout=300):
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            health(port)
+            if any(run([nssm, 'status', s], capture=True) != 'SERVICE_RUNNING' for s in services):
+                raise RuntimeError('Office service not running')
+            return
+        except Exception as error:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError('Office readiness deadline exceeded') from error
+            print('Office readiness retry:', type(error).__name__, flush=True)
+            time.sleep(min(2, remaining))
+
+
 def connector_environment(inherited, file_values, base, extra):
     environment = dict(inherited) if base is None else dict(value.split("=", 1) for value in base if "=" in value)
     environment.update(dict(value.split("=", 1) for value in extra if "=" in value))
@@ -190,17 +206,7 @@ def activate_locked(prepared):
             run([nssm, "set", "CommissionSystem", "AppParameters", parameters])
         for service in services:
             run([nssm, "start", service])
-        for attempt in range(15):
-            try:
-                health(prepared["port"])
-                if any(run([nssm, "status", s], capture=True) != "SERVICE_RUNNING" for s in services):
-                    raise RuntimeError("Office service not running")
-                break
-            except Exception as error:
-                print("Office readiness retry:", type(error).__name__, flush=True)
-                if attempt == 14:
-                    raise
-                time.sleep(2)
+        wait_ready(prepared['port'], nssm, services)
     except Exception:
         for service in services:
             if run([nssm, "status", service], capture=True) != "SERVICE_STOPPED":
@@ -219,7 +225,8 @@ def activate_locked(prepared):
                 run([nssm, "set", "CommissionSystem", "AppParameters", prepared["parameters"]])
                 for service in services:
                     run([nssm, "start", service])
-                health(prepared['port']);guard.check()
+                wait_ready(prepared['port'], nssm, services)
+                guard.check()
         except Exception:
             for service in services:
                 if run([nssm,'status',service],capture=True)!='SERVICE_STOPPED':run([nssm,'stop',service])
