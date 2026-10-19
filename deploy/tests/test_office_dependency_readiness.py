@@ -32,6 +32,7 @@ def dependencies(tmp_path, monkeypatch):
 
     def run(args, **_kwargs):
         args = [str(a) for a in args]
+        if args[0] == str(nssm) and args[1] == "status": return "SERVICE_RUNNING"
         if args[0] == str(nssm):
             return {"AppDirectory": str(live / ("backend" if args[2] == "CommissionSystem"
                                                 else "services/whatsapp-connector")),

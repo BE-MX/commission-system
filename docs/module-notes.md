@@ -402,9 +402,9 @@ content = result["content"]
 
 **生成规则**：`MD5(url + time.time_ns())[:6]` 作短码,同一 `original_url` 7 天内复用已有短码,唯一约束冲突换 salt 重试 5 次,异常时回退返回原始 URL(不阻断业务)。
 
-**路由行为**：`GET /s/{code}` 走双查找——先查 `ark_short_links` 命中即跳并 `click_count+1`;落空查 `shipment_tracking.short_code`(向后兼容 b9f3d6e 之前已发出的承运商短码);都未命中 302 跳 `SHORT_LINK_BASE_URL`(默认 `https://leshine.work`)。`code` 长度约束 1-8 字符,兼容 6 位新码与 8 位旧码。
+**路由行为**：`GET /s/{code}` 走双查找——先查 `ark_short_links` 命中即跳并 `click_count+1`;落空查 `shipment_tracking.short_code`(向后兼容 b9f3d6e 之前已发出的承运商短码);都未命中 302 跳 `SHORT_LINK_BASE_URL`(默认 `https://leshine.cloud`)。`code` 长度约束 1-8 字符,兼容 6 位新码与 8 位旧码。
 
-**环境变量**：`SHORT_LINK_BASE_URL`(默认 `https://leshine.work`,需指向跑本后端的公网入口才能跳转生效)。
+**环境变量**：`SHORT_LINK_BASE_URL`(默认 `https://leshine.cloud`,需指向跑本后端的公网入口才能跳转生效)。
 
 **已踩过的坑**：
 - 迁移没跑 → `ark_short_links` 表不存在 → `generate_short_link` 异常 fallback 返回长 URL,前端弹窗看到的还是 FedEx/DHL 长链。部署必须 `alembic upgrade head` 到 013。
@@ -1248,7 +1248,7 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 
 调度器单活：announcement dispatch 每 10 秒领取一个可执行分片，weekly 每分钟检查到期任务。默认北京时间周一 09:00，统计上周一零点至本周一零点；宕机恢复后补当期一份。每周唯一约束防重复。AI 从冻结发布版本选择有证据的原句，失败生成公告目录；草稿和撤回的普通发布不进入摘要，撤回事件列出原因。手动生成默认仅预览，定时任务自动入发送队列。重生成保留旧版历史；历史版本对比界面未纳入此版本。
 
-配置 ANNOUNCEMENT_WORKER_ENABLED（默认 true）、ANNOUNCEMENT_PUBLIC_BASE_URL（默认 https://leshine.work）；库内群推送总开关默认关闭。使用企业应用机器人：系统 Settings 中需有同一应用的 DINGTALK_APP_KEY / DINGTALK_APP_SECRET，机器人须已加入目标群并开通发送消息及上传媒体权限，本页再填写 openConversationId/robotCode、真实执行账号、有效 AI 预设。群自定义机器人的 Webhook 属于另一种接入方式，不能填入群会话 ID。管理员在公告设置显式发送测试，核对图片可见后确认，再开启推送/周报。群成员应与公告阅读范围匹配；仍有需推送/历史已披露的发布公告或未结案投递时禁止切群。
+配置 ANNOUNCEMENT_WORKER_ENABLED（默认 true）、ANNOUNCEMENT_PUBLIC_BASE_URL（默认 https://leshine.cloud）；库内群推送总开关默认关闭。使用企业应用机器人：系统 Settings 中需有同一应用的 DINGTALK_APP_KEY / DINGTALK_APP_SECRET，机器人须已加入目标群并开通发送消息及上传媒体权限，本页再填写 openConversationId/robotCode、真实执行账号、有效 AI 预设。群自定义机器人的 Webhook 属于另一种接入方式，不能填入群会话 ID。管理员在公告设置显式发送测试，核对图片可见后确认，再开启推送/周报。群成员应与公告阅读范围匹配；仍有需推送/历史已披露的发布公告或未结案投递时禁止切群。
 
 单条公告的 push_dingtalk 随修订保存并在待审核期间冻结；API 默认 true 保留旧调用语义，UI 新建默认跟随总开关，编辑沿用修订选择。false 的修订仅站内发布，不需要群通道、不入即时投递及钉钉周报；周报发送前重验当前发布修订，避免旧摘要绕过关闭选择。审批仍保留发布事实并取消旧待发分片；历史即时消息或周报已发送/发送中/不确定时，撤回仍安排更正说明（发送仍受总开关控制）。迁移 185 接 184，只新增非空布尔列，历史回填 true；开发验证只用隔离 SQLite，生产升级须走统一部署入口。
 
@@ -1276,3 +1276,9 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。readiness 同时检查开关、有效 Profile/模型预设和 Worker 配置，未满足时记录 blocked；claim、MCP 工具、产物写入和人工采纳重新检查当前授权、归属、来源与 generation。客户来源只读观察不在 MCP 的只读事务中写水位；调度与其他写边界持久化来源变化。`ambiguous` 代表外部副作用状态未知，目前没有原运行回执查询适配器，不自动重复投递。
 
 客户网站等服务资产只登记入口、用途、负责人和已知问题，复用受治理的 `CustomerAnnotation`。它不是客户身份凭据，也不会自动生成使用表现或订单效果。数据和启用门槛见 [实现记录](requirements/customer-workbench-v2-prototype/IMPLEMENTATION.md)。
+
+### 2026-10-19 明细重建后同型号旧照片自动沿用
+
+小满删除并重建同一产品明细时会给出行新的远端和本地明细 ID，旧实现只按远端身份判失效，导致同型号明细也要重拍，且旧照片绑定的本地明细已不存在，扫码页按当前明细分组时根本不渲染。同步计划现在在发送前快照旧本地↔远端明细身份；回读验证成功后按产品 ID＋SKU（缺失时名称、型号、单位）和数量做唯一一对一配对，把旧明细已有未失效照片改绑新明细并写 `media_carry_over` 审计，被沿用明细不再要求补拍；整单照片只在仍有未继承的实物变化或备注变化时失效。
+
+数量变化、同型号重复行、旧照片已失效、费用行或证据关联缺失时保持原补拍保护；预览版本哈希排除本地关联快照，镜像在预览与发送之间追上不会触发无谓重预览。照片优先绑新本地明细 ID，镜像未追上时绑 `okki:<远端ID>`，扫码、详情和验货 PDF 读取时解析为当前本地明细 ID。该规则不追溯修复历史已失效照片：历史单的旧照片只能按原审计保留归档。

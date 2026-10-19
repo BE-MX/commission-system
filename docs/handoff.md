@@ -12,6 +12,24 @@
 - 验证：隔离SQLite/纯函数后端149项通过；前端22项通过；生产构建通过（既有大chunk/混合动态导入提示）；增量约定检查和git diff检查通过；独立审查提出的PK金额歧义已补显式说明与转交回归。浏览器用62笔模拟数据验证三个标签、客户/订单名称筛选、重置、分页合计和失败重试状态，390px iframe确认筛选换行、表格独立滚动布局。未对真实订单进行生产验收。
 - 证据：`tmp/battle-metric-orders/desktop.png`、`mobile.png`、`build.log`；可复用模拟页 `frontend/tests/fixtures/battle-metric-orders/`。Git巡检 `--no-fetch` 是本地快照，其他工作树与旧分支未清理。主目录既有改动未触碰；用户已授权本次提交、合并main并推送；未部署、分配生产权限或写生产数据。
 
+## 2026-10-19 Business notification links default to cloud (Codex, deployment pending)
+
+Business notification image URLs and short links now default to `https://leshine.cloud`. Domestic review, announcement, aftersales, training and shipping inspection detail defaults use the same domain. Tracking daily reports and missing-short-code redirects now use `SHORT_LINK_BASE_URL` instead of hard-coded work links. The shared setting also changes newly generated asset, customer-image invitation and WhatsApp pairing links. Environment overrides remain supported; `.env.example` documents the six defaults.
+
+Read-only production inspection found no explicit overrides for these six settings in either backend `.env`; office battle posters already explicitly use cloud. Existing messages and persisted destinations are not rewritten. Infrastructure proxies, health checks, allowed origins and unrelated public API UI addresses remain outside this notification-link change. Validation: 163 notification/API tests passed; mocked link checks verified defaults, image path, short-code fallback, report date and a custom origin; independent review found no blocking issues. One explicitly authorized cloud-image test was sent to the supplied test group and DingTalk returned HTTP 200 / errcode 0; this confirms acceptance, not client loading speed. No deployment performed.
+
+## 2026-10-19 Beijing unchanged-release checkout verification
+
+A deployment-tool-only release must advance the installed Beijing checkout and backend-success receipt even when no backend restart is needed. The unchanged branch now verifies health and colorwork, advances the pinned checkout, and writes its receipt while preserving the running service. An isolated regression checks the Git/receipt update and absence of systemctl actions. Final delivery must verify both installed Git heads, rather than relying on the overall publish summary.
+
+## 2026-10-19 Windows deployment journal checkpoint recovery
+
+The resumed e4 release verified Office and Beijing without restarting the application, then Windows denied atomic replacement of publish-current.json. Runtime remains healthy and the original outbound/mail baselines remain bound. Journal updates now retry only the same Windows sharing-denied rename with a bounded delay. Recovery accepts only the inspected completed Office/backend prefix at the installed candidate and records each journal checkpoint separately. Complete the original release before the latest-main release; final status must come from live receipts.
+
+## 2026-10-19 Office transient health-probe recovery
+
+Annual amount release b59 completed all 11 managed targets and live amount verification (Zhai USD99,190.47, unchanged GMV/targets/counts). A later deploy-tool-only e4 release stopped at its unchanged-code 8-second health probe without stopping the application. Preflight and unchanged-code checks now use the bounded readiness policy too. Recovery binds an explicitly inspected running/stopped service state; running-service failures preserve it without start/stop. Resume the original pending release identity before publishing this fix. Final production status requires the release receipts and independent readback.
+
 ## 2026-10-19 Office cold-start deployment recovery
 
 Annual amount release b59 hit the existing 30-second startup budget, followed by an immediate rollback health check. Both activation and rollback now allow 300 seconds with HTTP/database and NSSM readiness. A fixed-journal no-DDL recovery entry restores the verified old service under the legacy rollback fence, then resumes the original release binding through the full publisher; original outbound/mail baselines are preserved. Production status requires live readback after deployment.

@@ -1448,3 +1448,65 @@ def test_partial_repair_accepts_canonical_identity_carriers(db, sync_case):
     after['record_list'][0]['order_record_id'] = '100'
     after['record_list'][0]['outbound_record_id'] = '701'
     assert plans.missing_only(fake['outbound'], after, plan) == ['101']
+
+
+@pytest.mark.parametrize('mirror_caught_up', [False, True])
+def test_recreated_same_product_line_inherits_photo_without_recheck(db, sync_case, monkeypatch, mirror_caught_up):
+    """OKKI deleting and recreating an identical line must keep its evidence."""
+    user, inv, item, fake = sync_case
+    inv.remark = fake['outbound']['remark']
+    item.xiaoman_unique_id = '101'
+    item.product_id, item.sku_id, item.product_name, item.length = 18, 180, 'Weft/18/#1006/60g', '18'
+    item.quantity, item.price_per_piece = 1, Decimal('81.84')
+    fake['order']['product_list'] = [dict(unique_id=101, product_id=18, sku_id=180, count=1,
+        unit_price=81.84, product_name='Weft/18/#1006/60g', unit='Piece', product_model='Weft')]
+    db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET outbound_record_id='701' WHERE id='IT001'"))
+    inspection = ShippingInspection(outbound_record_id='OB001', status='draft', created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    photo = ShippingInspectionPhoto(inspection_id=inspection.id, item_id='IT001', file_path='old.jpg')
+    db.add(photo)
+    db.commit()
+
+    def catch_up():
+        new_remote = str(fake['outbound']['record_list'][0]['outbound_record_id'])
+        db.execute(text("DELETE FROM lsordertest.okki_outbound_record_items WHERE id='IT001'"))
+        db.execute(text("""INSERT INTO lsordertest.okki_outbound_record_items
+            (id, outbound_record_id, outbound_invoice_id, product_id, product_name, quantity, unit, spec, sku)
+            VALUES ('IT900', :remote, '77', 18, 'Weft/18/#1006/60g', 1, 'Piece', 'Weft', '18')"""),
+            {'remote': new_remote})
+        db.commit()
+        return new_remote
+
+    if mirror_caught_up:
+        base_post = sync.okki_client._post_json
+
+        def post_then_catch_up(path, token, payload, **kwargs):
+            result = base_post(path, token, payload, **kwargs)
+            catch_up()
+            return result
+
+        monkeypatch.setattr(sync.okki_client, '_post_json', post_then_catch_up)
+
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    preview = sync.preview(db, record, actor)
+    assert preview['changed'] and not preview['requires_recheck']
+    assert sync.synchronize(db, record, actor, preview['version'])['status'] == 'sync_done'
+    stale, required = state.evidence(db, 'OB001')
+    assert stale == [] and required == []
+    new_remote = str(fake['outbound']['record_list'][0]['outbound_record_id'])
+    db.refresh(photo)
+    if mirror_caught_up:
+        assert photo.item_id == 'IT900'
+        payload = service.scan_payload(db, 'OB001')
+        assert payload['photos'][0]['item_id'] == 'IT900'
+    else:
+        assert photo.item_id == f'okki:{new_remote}'
+        catch_up()
+        payload = service.scan_payload(db, 'OB001')
+        assert payload['photos'][0]['item_id'] == 'IT900'
+    sync_audit = db.query(ShippingOperationEvent).filter_by(action='media_carry_over').one()
+    bound = 'IT900' if mirror_caught_up else f'okki:{new_remote}'
+    assert sync_audit.payload['media'] == [{'media_id': photo.id, 'from': 'IT001',
+        'to': bound, 'old_outbound_record_id': '701', 'new_outbound_record_id': new_remote}]

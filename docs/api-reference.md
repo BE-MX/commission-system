@@ -1489,6 +1489,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 2026-09-28 单张先打印例外：管理员可对已同步、待补验且验货单仍为草稿的正式出库单调用 `POST /outbound-records/{record_id}/allow-print-before-recheck`，提交 `{"reason":"至少8个字符的处理依据"}`。接口按当前已核实的小满出库版本落审计，返回 `print_before_recheck=true`、`recheck_required=true`；列表同步返回 `print_before_recheck`，允许该单打印出库单或下载 Word，同时继续显示“待补验”。后续出库资料再次变化时例外失效。旧照片仍标记过期，补拍要求、验货提交校验及验货单打印限制保持有效；`pending_sync` 和不确定状态不能使用例外。
 
+2026-10-19 同型号明细重建后自动沿用旧照片：小满删除并重建同一产品明细会生成新的远端/本地明细 ID。同步计划在发送前快照旧本地↔远端明细身份；回读验证成功后按 `product_id`＋`sku_id`（缺失时名称、型号、单位）和数量唯一一对一匹配，将旧明细已有未失效照片改绑新明细并写 `media_carry_over` 审计，被沿用明细不再进入 `required_recheck_ids`；整单照片仅在仍有未继承的实物变化或备注变化时失效。数量变化、同型号重复、旧照片已失效、费用行或关联证据缺失时保持原补拍规则。照片优先绑新本地明细 ID，镜像未追上时绑 `okki:<远端ID>`，扫码/详情/PDF 读取时解析为当前本地明细 ID。预览版本哈希排除本地关联快照。
+
 ## 库存色块图工作台集成（`/api/colorwork`，2026-09-14）
 
 工作台下载页新增只读接口（完整前缀 `/api/colorwork/workbench`，模块会话鉴权）：
@@ -1718,7 +1720,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 `GET /api/shipping-inspection/records/{inspection_id}/pdf?edit_version=N`：二进制 `application/pdf` 附件，UTF-8 文件名、`Cache-Control: no-store`。沿用验货单 `_READ` 与 `_require_inspection_scope`，不可见或不存在返回404；已撤回或指定版本不匹配409；明细/照片/字体读取失败503，不导出残缺内容。未传版本时下载当前已提交版。内容含单头、出库明细、检验备注和验货照片，排除视频。
 
-完成通知 OA `message_url` 指向 `/shipping/inspections?pdf={id}&version={edit_version}&keyword={单号}`，打开后点击“下载验货单 PDF”；登录/会话过期保留回跳参数。新配置 `SHIPPING_INSPECTION_NOTICE_BASE_URL` 默认 `https://leshine.work`，用于通知的主站地址。
+完成通知 OA `message_url` 指向 `/shipping/inspections?pdf={id}&version={edit_version}&keyword={单号}`，打开后点击“下载验货单 PDF”；登录/会话过期保留回跳参数。新配置 `SHIPPING_INSPECTION_NOTICE_BASE_URL` 默认 `https://leshine.cloud`，用于通知的主站地址。
 
 
 ### 2026-09-17 验货单组合查询
@@ -1825,7 +1827,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 - `GET /api/domestic/customer-requests/pending-count`：返回 `data.count`，统计 pending 申请。权限与审核列表一致：`domestic:review`/`domestic:admin`/super_admin 查看全部，只有 `domestic:recharge` 的用户仅统计本人申请。不受列表分页和临时搜索条件影响。
 - 充值和调整提交成功后，按当前角色权限寻找有效且绑定钉钉的审核账号，发送工作通知并链接 `/domestic/customer-requests`。普通审核者提交自己的申请不会收到自审提醒；管理员可审核本人申请。幂等重放不重复通知，发送失败记录日志，不撤销已保存申请。
-- 通知地址配置 `DOMESTIC_REVIEW_NOTICE_BASE_URL`，默认 `https://leshine.work`。
+- 通知地址配置 `DOMESTIC_REVIEW_NOTICE_BASE_URL`，默认 `https://leshine.cloud`。
 - 导航数字为0时隐藏；提交/审核操作成功后即时刷新，页面可见时每30秒刷新，并在窗口重新激活时刷新。
 
 ## 单据生命周期与异常恢复（2026-09-21）

@@ -74,9 +74,9 @@ def prepare(live, previous, revision, recover_149=False, recover_151=False, reco
         if current_state not in {"SERVICE_RUNNING", "SERVICE_STOPPED"}:
             raise RuntimeError("Office service must be stable before recovery")
         if current_state == "SERVICE_RUNNING":
-            health(int(port.group(1)))
+            wait_ready(int(port.group(1)), nssm, ['CommissionSystem'])
     else:
-        health(int(port.group(1)))
+        wait_ready(int(port.group(1)), nssm, ['CommissionSystem'])
     requirements = ROOT / "backend/requirements.txt"
     stamp = input_digest([requirements], run([current_python, "--version"], capture=True))
     candidate = STATE / "python-envs" / stamp
@@ -169,8 +169,10 @@ def activate_locked(prepared):
     backend_changed = prepared["backend_changed"] or bool(prepared["static"]) or prepared.get("schema_changed", False)
     connector_changed = prepared["connector_changed"]
     if not backend_changed and not connector_changed:
-        health(prepared["port"])
+        wait_ready(prepared['port'], nssm, ['CommissionSystem'])
         run(["git", "merge", "--ff-only", revision], cwd=live)
+        atomic_json(STATE / 'office-success.json', {'revision': revision, 'previous': previous,
+            'schema': prepared['schema'], 'backups': [], 'status': 'unchanged'})
         return {"status": "unchanged", "revision": revision}
     protocol_before=protocol_observation(ROOT,prepared['python'])
     backups = []
