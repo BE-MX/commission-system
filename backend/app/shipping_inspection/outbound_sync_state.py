@@ -138,51 +138,36 @@ def ensure_inspection_idle(db, record_id, actor):
         raise ValueError('出库单已更新，验货资料正在刷新，请稍后重新扫码')
 
 
+def photo_requirements(result):
+    """Mandatory fresh evidence after an outbound change: one whole-order photo.
+
+    Per-detail requirements written by the 2026-10-08 selective rule collapse into
+    the whole-order requirement; detail photos stay optional evidence.
+    """
+    return ['__whole__'] if (result or {}).get('required_recheck_ids') else []
+
+
 def evidence(db, record_id):
     event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=str(record_id)).first()
-    from app.shipping_inspection.outbound_recheck import effective_result, resolve
-    from app.shipping_inspection import outbound_service
+    from app.shipping_inspection.outbound_recheck import effective_result
     result = effective_result(db, event)
-    required = result.get('required_recheck_ids', [])
-    if any(key.startswith('okki:') for key in required):
-        required = resolve(required, outbound_service.list_outbound_items(db, record_id),
-                           outbound_service.inspection_item_links(db, record_id))
-    return result.get('stale_media_ids', []), required
+    return result.get('stale_media_ids', []), photo_requirements(result)
 
 
 def ensure_submission_ready(db, record_id, actor, inspection):
     event = lock(db, record_id, actor)
     if event.action in BLOCKED:
         raise ValueError('出库单资料待同步或重新验货，暂不能提交验货')
-    from app.shipping_inspection.outbound_recheck import effective_result, resolve
+    from app.shipping_inspection.outbound_recheck import effective_result
     result = effective_result(db, event, inspection)
-    required = result.get('required_recheck_ids') or []
+    required = photo_requirements(result)
     if required:
         from app.shipping_inspection.models import ShippingInspectionPhoto
         stale = set(result.get('stale_media_ids') or [])
         photos = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection.id, media_type='image').with_for_update().all()
-        fresh = {str(photo.item_id) if photo.item_id is not None else '__whole__'
-                 for photo in photos if photo.id not in stale}
-        needed = set(required)
-        all_items = '__all_items__' in needed
-        if all_items or needed - {'__whole__'}:
-            from app.shipping_inspection import outbound_service
-            items = outbound_service.list_outbound_items(db, record_id, use_overlay=False)
-            links = outbound_service.inspection_item_links(db, record_id)
-            needed = set(resolve(needed, items, links))
-            aliases = {'okki:' + str(row['remote_item_id']): str(row['local_item_id']) for row in links}
-            fresh.update(aliases[key] for key in list(fresh) if key in aliases)
-            if all_items and not items:
-                raise ValueError('出库明细尚未刷新，请稍后重新验货')
-            if all_items:
-                needed.remove('__all_items__')
-                needed.update(str(item['item_id']) for item in items)
-            needed.difference_update(str(item['item_id']) for item in items if not requires_recheck_photo(item))
-        missing = needed - fresh
-        if missing:
-            raise ValueError('变更后的出库明细尚未补拍验货照片，请重新验货后提交')
-        if not fresh:
-            raise ValueError('每个发货单至少上传一张当前版本的照片')
+        fresh_whole = any(photo.item_id is None and photo.id not in stale for photo in photos)
+        if not fresh_whole:
+            raise ValueError('出库资料变更后请补拍整单照片')
     return event
 
 

@@ -483,7 +483,11 @@ def delete_directory(db: Session, batch_id: int, directory_id: int, payload: dic
             _assert_writer(db, payload, task)
             if batch.status not in EDITABLE_STATUSES:
                 raise CustomerMediaConflict("目录含审核中或已发布批次，请先退回或下架后再删除")
-        files = [(asset.id, asset.storage_provider, asset.object_key) for asset in assets if asset.deleted_at is None]
+        files = [
+            (asset.id, asset.storage_provider, key)
+            for asset in assets if asset.deleted_at is None
+            for key in (asset.object_key, asset.playback_key, asset.thumbnail_key) if key
+        ]
         now = beijing_now()
         for asset in assets:
             if asset.deleted_at is None:
@@ -582,8 +586,12 @@ async def upload_asset(
             sha256=stored.sha256,
             storage_provider=stored.provider,
             object_key=stored.object_key,
+            playback_key=stored.playback_key,
+            playback_size=stored.playback_size,
+            thumbnail_key=stored.thumbnail_key,
             width=stored.width,
             height=stored.height,
+            duration_seconds=stored.duration_seconds,
             sort_order=sort_order,
             uploaded_by=user_id,
         )
@@ -604,12 +612,21 @@ async def upload_asset(
 def _cleanup_unbound_upload(db, stored):
     """A lost commit response is not proof of rollback: preserve uncertain originals."""
     try:
+        keys = [key for key in (
+            stored.object_key, getattr(stored, "playback_key", None),
+            getattr(stored, "thumbnail_key", None),
+        ) if key]
         referenced = db.scalar(select(CustomerMediaAsset.id).where(
             CustomerMediaAsset.storage_provider == stored.provider,
             CustomerMediaAsset.object_key == stored.object_key,
         ).limit(1))
         if referenced is None:
-            storage_for(stored.provider).delete(stored.object_key)
+            storage = storage_for(stored.provider)
+            for key in keys:
+                try:
+                    storage.delete(key)
+                except Exception:
+                    logger.warning('[customer-media] derivative cleanup deferred key=%s', key)
     except Exception:
         db.rollback()
         logger.warning('Customer media upload cleanup deferred; reference or storage unavailable')
@@ -635,12 +652,15 @@ def delete_asset(db: Session, batch_id: int, asset_id: int, payload: dict) -> Cu
     batch.updated_at = beijing_now()
     db.commit()
     # 软删除提交成功后再删物理文件；失败会留下可清理孤儿，不会出现 DB 指向空文件。
-    try:
-        storage_for(asset.storage_provider).delete(asset.object_key)
-    except Exception as exc:
-        logger = __import__("logging").getLogger("commission")
-        logger.warning("[customer-media] orphan after asset delete id=%s: %s", asset.id, exc)
-        print(f"[customer-media] orphan after asset delete id={asset.id}: {exc}", flush=True)
+    for key in (asset.object_key, asset.playback_key, asset.thumbnail_key):
+        if not key:
+            continue
+        try:
+            storage_for(asset.storage_provider).delete(key)
+        except Exception as exc:
+            logger = __import__("logging").getLogger("commission")
+            logger.warning("[customer-media] orphan after asset delete id=%s: %s", asset.id, exc)
+            print(f"[customer-media] orphan after asset delete id={asset.id}: {exc}", flush=True)
     return get_batch(db, batch.id)
 
 
@@ -1441,10 +1461,18 @@ def _preview_signature(asset_id: int, expires: int) -> str:
     return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
 
 
-def internal_preview_url(asset_id: int, ttl_seconds: int = 3600) -> str:
+def _variant_suffix(variant: str | None) -> str:
+    # variant 只决定读取原件/播放版/海报，签名始终绑定 asset_id 与过期时间。
+    return f"&variant={variant}" if variant else ""
+
+
+def internal_preview_url(asset_id: int, ttl_seconds: int = 3600, variant: str | None = None) -> str:
     expires = int(time.time()) + ttl_seconds
     token = _preview_signature(asset_id, expires)
-    return f"/api/customer-media/assets/{asset_id}/content?expires={expires}&token={token}"
+    return (
+        f"/api/customer-media/assets/{asset_id}/content"
+        f"?expires={expires}&token={token}{_variant_suffix(variant)}"
+    )
 
 
 def verify_internal_preview(asset_id: int, expires: int, token: str) -> bool:
@@ -1462,7 +1490,7 @@ def _sales_portal_preview_signature(asset_id: int, expires: int) -> str:
     return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
 
 
-def sales_portal_preview_url(asset_id: int, ttl_seconds: int = 3600) -> str:
+def sales_portal_preview_url(asset_id: int, ttl_seconds: int = 3600, variant: str | None = None) -> str:
     from app.core.config import get_settings
     settings = get_settings()
     expires = int(time.time()) + ttl_seconds
@@ -1470,7 +1498,7 @@ def sales_portal_preview_url(asset_id: int, ttl_seconds: int = 3600) -> str:
     origin = settings.CUSTOMER_MEDIA_PORTAL_ORIGIN.rstrip("/")
     return (
         f"{origin}/api/customer-media/sales-portal/assets/{asset_id}/content"
-        f"?expires={expires}&token={token}"
+        f"?expires={expires}&token={token}{_variant_suffix(variant)}"
     )
 
 

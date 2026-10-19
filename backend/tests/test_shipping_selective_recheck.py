@@ -34,7 +34,7 @@ def test_changed_product_keeps_other_products_and_stales_whole():
     stale, required = recheck.changes(plan, {'record_list': old}, links,
                                     [media(1, 'LOCAL1'), media(2, 'LOCAL2'), media(3, None), media(4, 'okki:702')], {})
     assert stale == [1, 3]
-    assert required == ['__whole__', 'okki:701']
+    assert required == ['__whole__']
 
 
 def test_added_and_removed_products_preserve_other_evidence_and_clear_deleted_requirements():
@@ -45,7 +45,7 @@ def test_added_and_removed_products_preserve_other_evidence_and_clear_deleted_re
         [media(1, 'LOCAL1'), media(2, 'LOCAL2'), media(3, None)],
         {'stale_media_ids': [9], 'required_recheck_ids': ['okki:701', 'LOCAL1', 'okki:702']})
     assert stale == [1, 3, 9]
-    assert required == ['__whole__', 'okki:702', 'okki:703']
+    assert required == ['__whole__']
 
 
 def test_changed_fee_row_needs_only_whole_photo():
@@ -74,7 +74,7 @@ def test_fee_only_changes_preserve_prior_recheck_and_remark_changes_still_need_w
     plan = dict(before={'record_list': old}, material_order_ids=[], removed_order_ids=['101'], remark_changed=False)
     previous = {'stale_media_ids': [1], 'required_recheck_ids': ['okki:701', '__whole__']}
     stale, required = recheck.changes(plan, {'record_list': old[:1]}, [], [media(1, 'UNKNOWN'), media(2, None)], previous)
-    assert stale == [1] and required == ['__whole__', 'okki:701']
+    assert stale == [1] and required == ['__whole__']
     plan['remark_changed'] = True
     stale, required = recheck.changes(plan, {'record_list': old[:1]}, [], [media(2, None)], {})
     assert stale == [2] and required == ['__whole__']
@@ -96,7 +96,7 @@ def test_missing_changed_or_removed_identity_is_not_assumed_to_be_a_fee():
 def test_unknown_legacy_local_photo_cannot_be_guessed_from_product_name():
     plan = dict(before={'record_list': [row(701, 100)]}, material_order_ids=['100'], removed_order_ids=[], remark_changed=False)
     stale, required = recheck.changes(plan, {'record_list': [row(701, 100)]}, [], [media(1, 'UNKNOWN')], {})
-    assert stale == [1] and required == ['__all_items__', '__whole__']
+    assert stale == [1] and required == ['__whole__']
 
 
 def test_previously_stale_deleted_photo_does_not_invalidate_unchanged_products_on_next_edit():
@@ -105,7 +105,7 @@ def test_previously_stale_deleted_photo_does_not_invalidate_unchanged_products_o
     stale, required = recheck.changes(plan, {'record_list': old},
         [dict(local_item_id='LOCAL2', remote_item_id=702), dict(local_item_id='LOCAL3', remote_item_id=703)],
         [media(1, 'DELETED_LOCAL1'), media(2, 'LOCAL2'), media(3, 'LOCAL3')], {'stale_media_ids': [1]})
-    assert stale == [1, 2] and required == ['__whole__', 'okki:702']
+    assert stale == [1, 2] and required == ['__whole__']
 
 
 def test_verified_invoice_sync_invalidates_only_the_changed_product(db, sync_case):
@@ -134,7 +134,7 @@ def test_verified_invoice_sync_invalidates_only_the_changed_product(db, sync_cas
     assert sync.synchronize(db, record, actor, preview['version'], confirm_recheck=True)['status'] == 'sync_done'
     event = db.query(ShippingOperationEvent).filter_by(scope=state.SCOPE).one()
     assert event.result['stale_media_ids'] == [photos[0].id, photos[2].id]
-    assert event.result['required_recheck_ids'] == ['__whole__', 'okki:701']
+    assert event.result['required_recheck_ids'] == ['__whole__']
 
 
 @pytest.fixture
@@ -174,14 +174,14 @@ def test_audited_legacy_recovery_is_read_only_and_keeps_unchanged_photos(db, leg
     _, inspection, event, history, photos = legacy
     original = deepcopy(event.result)
     payload = service.scan_payload(db, 'OB001')
-    assert payload['required_recheck_ids'] == ['__whole__', 'LOCAL2']
+    assert payload['required_recheck_ids'] == ['__whole__']
     assert [photo['stale'] for photo in payload['photos']] == [True, False, False, True, True]
     assert service.get_record_detail(db, inspection.id)['required_recheck_ids'] == payload['required_recheck_ids']
     assert recheck.effective_result(db, event)['selective_recheck_history_id'] == history.id
     assert event.result == original
 
 
-@pytest.mark.parametrize('proof_failure', ['version', 'missing_photo', 'prior_round', 'changed_mirror', 'replaced_id', 'unknown_link', 'missing_history', 'later_version'])
+@pytest.mark.parametrize('proof_failure', ['version', 'missing_photo', 'prior_round', 'changed_mirror', 'replaced_id', 'missing_history', 'later_version'])
 def test_legacy_recovery_fails_closed_without_complete_proof(db, legacy, proof_failure):
     _, inspection, event, history, photos = legacy
     if proof_failure == 'version': inspection.edit_version += 1
@@ -191,7 +191,6 @@ def test_legacy_recovery_fails_closed_without_complete_proof(db, legacy, proof_f
         db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET sku_id='OTHER' WHERE id='LOCAL1'"))
     if proof_failure == 'replaced_id':
         db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET outbound_record_id='999' WHERE id='LOCAL1'"))
-    if proof_failure == 'unknown_link': photos[1].item_id = 'UNKNOWN'
     if proof_failure == 'missing_history': db.delete(history)
     if proof_failure == 'later_version':
         db.execute(text("UPDATE lsordertest.okki_outbound_records SET update_time='2026-10-08 07:10:56' WHERE id='OB001'"))
@@ -199,13 +198,16 @@ def test_legacy_recovery_fails_closed_without_complete_proof(db, legacy, proof_f
     assert recheck.effective_result(db, event) == event.result
 
 
-def test_recovered_round_requires_fresh_changed_and_whole_photos_then_audits_submission(db, legacy):
-    user, inspection, event, history, photos = legacy
-    with pytest.raises(ValueError, match='补拍'):
-        service.submit(db, outbound_record_id='OB001', user_id=user.id)
-    db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id='LOCAL2', file_path='fresh.jpg'))
+def test_legacy_recovery_collapses_unknown_detail_links_to_whole(db, legacy):
+    _, _, event, _, photos = legacy
+    photos[1].item_id = 'UNKNOWN'
     db.commit()
-    with pytest.raises(ValueError, match='补拍'):
+    assert recheck.effective_result(db, event)['required_recheck_ids'] == ['__whole__']
+
+
+def test_recovered_round_requires_only_a_fresh_whole_photo_then_audits_submission(db, legacy):
+    user, inspection, event, history, photos = legacy
+    with pytest.raises(ValueError, match='整单'):
         service.submit(db, outbound_record_id='OB001', user_id=user.id)
     db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id=None, file_path='whole.jpg'))
     db.commit()
@@ -228,16 +230,19 @@ def test_wrong_submission_version_does_not_persist_recovery(db, legacy):
     assert db.query(ShippingOperationEvent).filter_by(action='selective_recheck_recovered').count() == 0
 
 
-@pytest.mark.parametrize('photo_link', ['LOCAL1', 'okki:701'])
-def test_remote_requirement_resolves_to_local_identity_and_accepts_fresh_photo(db, caught_up, photo_link):
+def test_legacy_item_requirement_collapses_to_whole_photo(db, caught_up):
     user, event = caught_up
     inspection = ShippingInspection(outbound_record_id='OB001', status='draft', created_by=user.id)
     db.add(inspection)
     db.flush()
     event.result = {**event.result, 'required_recheck_ids': ['okki:701']}
-    db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id=photo_link, file_path='new.jpg'))
+    db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id='LOCAL1', file_path='new.jpg'))
     db.commit()
-    assert state.evidence(db, 'OB001')[1] == ['LOCAL1']
+    assert state.evidence(db, 'OB001')[1] == ['__whole__']
+    with pytest.raises(ValueError, match='整单'):
+        service.submit(db, outbound_record_id='OB001', user_id=user.id)
+    db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id=None, file_path='whole.jpg'))
+    db.commit()
     assert service.submit(db, outbound_record_id='OB001', user_id=user.id).status == 'submitted'
 
 
@@ -261,7 +266,7 @@ def test_recreated_product_with_changed_quantity_still_needs_fresh_evidence():
     stale, required = recheck.changes(plan, {'record_list': after}, links,
                                      [media(1, 'LOCAL1'), media(2, None)], {})
     assert stale == [1, 2]
-    assert required == ['__whole__', 'okki:702']
+    assert required == ['__whole__']
 
 
 @pytest.mark.parametrize('after_sku', [110, 999])
@@ -276,7 +281,7 @@ def test_recreated_line_requires_same_product_and_sku_identity(after_sku):
     if after_sku == 110:
         assert stale == [] and required == []
     else:
-        assert stale == [1, 2] and required == ['__whole__', 'okki:702']
+        assert stale == [1, 2] and required == ['__whole__']
 
 
 def test_duplicate_same_product_rows_are_not_guessed():
@@ -289,7 +294,7 @@ def test_duplicate_same_product_rows_are_not_guessed():
     stale, required = recheck.changes(plan, {'record_list': after}, links,
                                      [media(1, 'LOCAL1'), media(2, 'LOCAL2'), media(3, None)], {})
     assert stale == [1, 2, 3]
-    assert required == ['__whole__', 'okki:702']
+    assert required == ['__whole__']
 
 
 def test_already_stale_photo_is_not_revived_by_a_recreated_line():
@@ -302,4 +307,4 @@ def test_already_stale_photo_is_not_revived_by_a_recreated_line():
                                      [media(1, 'LOCAL1'), media(2, None)],
                                      {'stale_media_ids': [1]})
     assert stale == [1, 2]
-    assert required == ['__whole__', 'okki:702']
+    assert required == ['__whole__']

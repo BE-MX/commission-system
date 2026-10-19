@@ -116,7 +116,7 @@
                   <img :src="asset.content_url" :alt="asset.file_name" loading="lazy" />
                 </button>
                 <div v-else class="asset-preview video-preview">
-                  <video :src="asset.content_url" controls preload="metadata" />
+                  <video :src="asset.playback_url || asset.content_url" :poster="asset.poster_url || undefined" controls preload="metadata" />
                 </div>
                 <div class="asset-footer">
                   <span><strong :title="asset.file_name">{{ asset.file_name }}</strong><small>{{ formatFileSize(asset.file_size) }}</small></span>

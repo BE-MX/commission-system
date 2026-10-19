@@ -18,6 +18,8 @@ export function createCustomerMediaPreviewPayload(batch, dimensions = []) {
         file_size: asset.file_size,
         media_type: asset.media_type,
         content_url: asset.content_url,
+        playback_url: asset.playback_url,
+        poster_url: asset.poster_url,
         tags: (asset.tags || []).map(tag => ({
           dimension_id: tag.dimension_id,
           dimension_label: tag.dimension_label,

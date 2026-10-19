@@ -158,6 +158,7 @@ def content(
     asset_id: int,
     request: Request,
     download: bool = Query(default=False),
+    variant: str | None = Query(default=None, pattern="^(playback|poster)$"),
     db: Session = Depends(get_db),
 ):
     account = _session_account(request, db)
@@ -165,7 +166,7 @@ def content(
         asset = service.portal_asset(db, account, asset_id)
     except Exception as exc:
         _error(exc)
-    response = storage_for(asset.storage_provider).response(asset, download=download)
+    response = storage_for(asset.storage_provider).response(asset, download=download, variant=variant)
     if download:
         service.log_download(db, asset.id, account.id, client_ip(request))
     return response

@@ -178,17 +178,13 @@ def changes(plan, after, links, photos, previous, *, pairs=None, allow_carry=Tru
     changed_orders, removed_orders = physical_changes(
         plan['before']['record_list'], after['record_list'],
         plan['material_order_ids'], plan['removed_order_ids'])
-    all_removed_orders = set(map(str, plan['removed_order_ids']))
     invalid = {remote_id(row) for row in plan['before']['record_list']
                if str(row['order_record_id']) in changed_orders | removed_orders}
-    removed = {remote_id(row) for row in plan['before']['record_list']
-               if str(row['order_record_id']) in all_removed_orders}
     aliases = _aliases(links, plan)
     stale = set(previous.get('stale_media_ids') or [])
-    required = set(previous.get('required_recheck_ids') or [])
-    required.difference_update(removed | {local for local, key in aliases.items() if key in removed})
-    fees = {remote_id(row) for row in after['record_list'] if not physical(row)}
-    required.difference_update(fees | {local for local, key in aliases.items() if key in fees})
+    # Mandatory evidence is the whole-order photo only. Per-detail requirements
+    # from the older selective rule collapse into it and stay optional.
+    required = {'__whole__'} & set(previous.get('required_recheck_ids') or [])
     if pairs is None:
         pairs = carry_pairs(plan, after, photos, links, changed=changed_orders,
                             removed=removed_orders, stale_ids=stale) if allow_carry else {}
@@ -198,11 +194,6 @@ def changes(plan, after, links, photos, previous, *, pairs=None, allow_carry=Tru
                    for key in pairs if key in old_rows and old_rows[key].get('outbound_record_id') is not None}
     carried_new = {_prefixed(new_rows[key]['outbound_record_id'])
                    for key in pairs.values() if key in new_rows and new_rows[key].get('outbound_record_id') is not None}
-    # A recreated line can only carry a requirement created by this same change.
-    required.difference_update(carried_new)
-    required.difference_update({str(row['local_item_id']) for row in links or []
-                                if row.get('local_item_id') is not None
-                                and _prefixed(row.get('remote_item_id')) in carried_new})
     material = bool(changed_orders or removed_orders)
     # Old mirrors without stable links cannot safely identify unchanged evidence.
     unknown = material and any(photo.id not in stale and photo.item_id is not None
@@ -210,13 +201,11 @@ def changes(plan, after, links, photos, previous, *, pairs=None, allow_carry=Tru
                               and not str(photo.item_id).startswith('okki:') for photo in photos)
     if unknown:
         stale.update(photo.id for photo in photos)
-        required.add('__all_items__')
         required.add('__whole__')
         return sorted(stale), sorted(required)
     effective_invalid = invalid - carried_old
     required_new = {remote_id(row) for row in after['record_list']
                     if str(row['order_record_id']) in changed_orders and physical(row)} - carried_new
-    required.update(required_new)
     whole_needed = plan['remark_changed'] or bool(effective_invalid) or bool(required_new)
     for photo in photos:
         if photo.id in stale:
@@ -229,13 +218,6 @@ def changes(plan, after, links, photos, previous, *, pairs=None, allow_carry=Tru
     if whole_needed:
         required.add('__whole__')
     return sorted(stale), sorted(required)
-
-
-def resolve(required, items, links):
-    """Expose current display IDs, while persisted requirements keep remote IDs."""
-    current = {str(item['item_id']) for item in items}
-    aliases = {'okki:' + str(row['remote_item_id']): str(row['local_item_id']) for row in links}
-    return [aliases[key] if key in aliases and aliases[key] in current else key for key in required]
 
 
 def effective_result(db, event, inspection=None):

@@ -1,4 +1,4 @@
-"""Fee rows do not require physical evidence; actual products still do."""
+"""After a change only a fresh whole-order photo is mandatory; detail photos are optional."""
 import pytest
 from sqlalchemy import text
 
@@ -29,22 +29,27 @@ def photo(db, inspection, item_id, media_type='image'):
     return row
 
 
-def test_real_product_photos_unlock_submission_without_other_items_photo(db, recheck):
+def test_whole_photo_is_required_and_unlocks_submission(db, recheck):
     user, inspection, event = recheck
-    photo(db, inspection, 'IT001')
+    with pytest.raises(ValueError, match='整单'):
+        service.submit(db, outbound_record_id='OB001', user_id=user.id)
+    photo(db, inspection, 'IT001')  # A detail photo no longer replaces the whole photo.
+    with pytest.raises(ValueError, match='整单'):
+        service.submit(db, outbound_record_id='OB001', user_id=user.id)
+    photo(db, inspection, None)
     assert service.submit(db, outbound_record_id='OB001', user_id=user.id).status == 'submitted'
     assert event.result['required_recheck_ids'] == []
 
 
-@pytest.mark.parametrize('coverage', ['fee', 'whole', 'stale', 'video'])
-def test_fee_or_old_evidence_never_replaces_actual_product_photos(db, recheck, coverage):
+@pytest.mark.parametrize('coverage', ['fee', 'item', 'video', 'stale'])
+def test_only_a_fresh_whole_image_unlocks_submission(db, recheck, coverage):
     user, inspection, event = recheck
-    row = photo(db, inspection, 'IT002' if coverage == 'fee' else None if coverage == 'whole' else 'IT001',
-                'video' if coverage == 'video' else 'image')
+    item = 'IT002' if coverage == 'fee' else 'IT001'
+    row = photo(db, inspection, item, 'video' if coverage == 'video' else 'image')
     if coverage == 'stale':
         event.result = {**event.result, 'stale_media_ids': [row.id]}
         db.commit()
-    with pytest.raises(ValueError, match='补拍'):
+    with pytest.raises(ValueError, match='整单'):
         service.submit(db, outbound_record_id='OB001', user_id=user.id)
 
 
@@ -52,19 +57,22 @@ def test_whole_order_requirement_remains_after_fee_exclusion(db, recheck):
     user, inspection, event = recheck
     event.result = {**event.result, 'required_recheck_ids': ['__all_items__', '__whole__']}
     photo(db, inspection, 'IT001')
-    with pytest.raises(ValueError, match='补拍'):
+    with pytest.raises(ValueError, match='整单'):
         service.submit(db, outbound_record_id='OB001', user_id=user.id)
     photo(db, inspection, None)
     assert service.submit(db, outbound_record_id='OB001', user_id=user.id).status == 'submitted'
 
 
-def test_explicit_fee_id_is_excluded_and_actual_product_id_still_checked(db, recheck):
+def test_explicit_item_requirements_collapse_to_whole(db, recheck):
     user, inspection, event = recheck
     event.result = {**event.result, 'required_recheck_ids': ['IT001', 'IT002']}
     db.commit()
-    with pytest.raises(ValueError, match='补拍'):
+    with pytest.raises(ValueError, match='整单'):
         service.submit(db, outbound_record_id='OB001', user_id=user.id)
     photo(db, inspection, 'IT001')
+    with pytest.raises(ValueError, match='整单'):
+        service.submit(db, outbound_record_id='OB001', user_id=user.id)
+    photo(db, inspection, None)
     assert service.submit(db, outbound_record_id='OB001', user_id=user.id).status == 'submitted'
 
 
@@ -77,11 +85,11 @@ def test_scan_and_detail_return_the_same_recheck_exclusion(db, recheck):
         assert rules == {'IT001': True, 'IT002': False}
 
 
-def test_unknown_explicit_item_is_not_silently_excluded(db, recheck):
+def test_unknown_explicit_item_still_requires_whole_photo(db, recheck):
     user, inspection, event = recheck
     event.result = {**event.result, 'required_recheck_ids': ['UNKNOWN', 'IT002']}
     photo(db, inspection, 'IT001')
-    with pytest.raises(ValueError, match='补拍'):
+    with pytest.raises(ValueError, match='整单'):
         service.submit(db, outbound_record_id='OB001', user_id=user.id)
 
 
@@ -89,18 +97,17 @@ def test_fee_only_outbound_keeps_the_minimum_whole_order_photo_rule(db, recheck)
     user, inspection, _ = recheck
     db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET product_name='Other Items' WHERE id='IT001'"))
     db.commit()
-    with pytest.raises(ValueError, match='至少上传'):
+    with pytest.raises(ValueError, match='整单'):
         service.submit(db, outbound_record_id='OB001', user_id=user.id)
     photo(db, inspection, None)
     assert service.submit(db, outbound_record_id='OB001', user_id=user.id).status == 'submitted'
 
 
-def test_missing_mirror_is_still_blocked(db, recheck):
+def test_missing_mirror_does_not_block_whole_photo_submission(db, recheck):
     user, inspection, _ = recheck
     db.execute(text("DELETE FROM lsordertest.okki_outbound_record_items WHERE outbound_record_id='OB001'"))
     photo(db, inspection, None)
-    with pytest.raises(ValueError, match='刷新'):
-        service.submit(db, outbound_record_id='OB001', user_id=user.id)
+    assert service.submit(db, outbound_record_id='OB001', user_id=user.id).status == 'submitted'
 
 
 def test_fee_only_outbound_cannot_complete_recheck_using_only_old_photos(db, recheck):
@@ -109,7 +116,7 @@ def test_fee_only_outbound_cannot_complete_recheck_using_only_old_photos(db, rec
     old = photo(db, inspection, None)
     event.result = {**event.result, 'stale_media_ids': [old.id]}
     db.commit()
-    with pytest.raises(ValueError, match='当前版本'):
+    with pytest.raises(ValueError, match='整单'):
         service.submit(db, outbound_record_id='OB001', user_id=user.id)
 
 
