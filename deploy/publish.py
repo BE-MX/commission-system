@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 
 import cloud_backend
@@ -32,7 +33,16 @@ def run(args, cwd=ROOT, capture=False):
 def atomic_json(path, data):
     temporary = path.with_suffix(".next")
     temporary.write_text(json.dumps(data, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    os.replace(temporary, path)
+    for attempt in range(10):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError as error:
+            # Windows readers/AV may briefly deny delete-sharing on the journal.
+            # Retry only the same atomic rename, never the release operation.
+            if getattr(error, 'winerror', None) not in {5, 32, 33} or attempt == 9:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 @contextmanager

@@ -121,3 +121,23 @@ def test_running_service_is_never_restarted_or_stopped(checkpoint, monkeypatch, 
         c.publish.assert_called_once()
     assert c.running[0]
     assert not any(len(a)>1 and a[1] in {'start','stop'} for a in c.commands)
+
+
+def test_already_activated_office_prefix_requires_candidate_and_running_state(checkpoint):
+    c=checkpoint
+    plan=dict(c.plan, previous='b'*40, service_state='SERVICE_RUNNING')
+    journal=dict(c.journal, completed=['office','beijing-backend'])
+    success={'revision':'b'*40,'schema':'197'}
+    recovery.validate(plan,journal,success,'b'*40)
+    for completed in [['beijing-backend'],['office','unknown'],['office','beijing-backend','unknown']]:
+        with pytest.raises(RuntimeError): recovery.validate(plan,dict(journal,completed=completed),success,'b'*40)
+    with pytest.raises(RuntimeError): recovery.validate(dict(plan,service_state='SERVICE_STOPPED'),journal,success,'b'*40)
+
+
+def test_legacy_receipt_rejects_same_plan_checkpoint(checkpoint):
+    c=checkpoint
+    legacy=c.state/('office-readiness-recovery-'+c.plan['release_id']+'.json')
+    legacy.write_text(json.dumps({'plan':{'journal_sha256':c.plan['journal_sha256']}}))
+    with pytest.raises(RuntimeError,match='already attempted'): recovery.execute(c.path,c.args)
+    c.publish.assert_not_called()
+    assert not c.running[0]

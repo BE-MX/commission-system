@@ -16,7 +16,9 @@ def validate(plan, journal, success, current):
             or set(plan['service']) != {'Application', 'AppDirectory', 'AppParameters'}
             or current != plan['previous'] or success.get('revision') != current
             or success.get('schema') != plan['schema']
-            or journal.get('status') != 'failed' or journal.get('completed') != []
+            or journal.get('status') != 'failed'
+            or journal.get('completed') not in ([], ['office'], ['office', 'beijing-backend'])
+            or (journal.get('completed') and (current != plan['revision'] or plan['service_state'] != 'SERVICE_RUNNING'))
             or journal.get('scope') != 'office-and-cloud'
             or journal.get('revision') != plan['revision'] or journal.get('release_id') != plan['release_id']):
         raise RuntimeError('Recovery does not match the inspected no-DDL rollback')
@@ -33,7 +35,7 @@ def execute(plan_path, args):
     from static_sync import manifest
     plan = json.loads(Path(plan_path).read_text(encoding='utf-8-sig'))
     live, state = p.ROOT, p.STATE
-    receipt = state / ('office-readiness-recovery-' + plan['release_id'] + '.json')
+    receipt = state / ('office-readiness-recovery-' + plan['release_id'] + '-' + plan['journal_sha256'][:12] + '.json')
     source = state / 'sources' / plan['revision']
     with p.deployment_lock():
         raw = (state / 'publish-current.json').read_bytes()
@@ -44,6 +46,11 @@ def execute(plan_path, args):
             p.run(['git', 'rev-parse', 'HEAD'], cwd=live, capture=True))
         if receipt.exists():
             raise RuntimeError('Recovery already attempted; inspect its receipt before retrying')
+        legacy_receipt = state / ('office-readiness-recovery-' + plan['release_id'] + '.json')
+        if legacy_receipt.exists():
+            old_hash = json.loads(legacy_receipt.read_text(encoding='utf-8'))['plan']['journal_sha256']
+            if not re.fullmatch(r'[0-9a-f]{64}', old_hash) or old_hash == plan['journal_sha256']:
+                raise RuntimeError('Recovery already attempted; inspect its legacy receipt before retrying')
         for root, revision in ((live, plan['previous']), (source, plan['revision'])):
             if (p.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture=True) != revision
                     or p.run(['git', 'status', '--porcelain'], cwd=root, capture=True)):

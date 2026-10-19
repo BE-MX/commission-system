@@ -1,3 +1,7 @@
+## 2026-10-19 Windows deployment journal checkpoint recovery
+
+The resumed e4 release verified Office and Beijing without restarting the application, then Windows denied atomic replacement of publish-current.json. Runtime remains healthy and the original outbound/mail baselines remain bound. Journal updates now retry only the same Windows sharing-denied rename with a bounded delay. Recovery accepts only the inspected completed Office/backend prefix at the installed candidate and records each journal checkpoint separately. Complete the original release before the latest-main release; final status must come from live receipts.
+
 ## 2026-10-19 Office transient health-probe recovery
 
 Annual amount release b59 completed all 11 managed targets and live amount verification (Zhai USD99,190.47, unchanged GMV/targets/counts). A later deploy-tool-only e4 release stopped at its unchanged-code 8-second health probe without stopping the application. Preflight and unchanged-code checks now use the bounded readiness policy too. Recovery binds an explicitly inspected running/stopped service state; running-service failures preserve it without start/stop. Resume the original pending release identity before publishing this fix. Final production status requires the release receipts and independent readback.
