@@ -12,7 +12,6 @@ from app.receipt import invoice_link
     ("payment_type", None, "回款方式"),
     ("payment_type", "", "回款方式"),
     ("payment_type", "   ", "回款方式"),
-    ("amount", None, "回款金额"),
     ("collection_date", None, "回款日期"),
 ])
 def test_incomplete_draft_has_actionable_error(monkeypatch, field, value, label):

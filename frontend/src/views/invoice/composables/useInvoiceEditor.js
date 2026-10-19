@@ -1,4 +1,4 @@
-import { msgWarning, msgSuccessText, alertAction } from '@/utils/feedback'
+import { msgWarning, msgSuccessText, alertAction, confirmAction, isFeedbackCancelled } from '@/utils/feedback'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useLinkedInvoiceSync } from './useLinkedInvoiceSync'
 import { invoiceOrderSignature } from './invoiceReceiptState'
@@ -247,7 +247,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     lastOrderDate.value = ''
     Object.assign(form, emptyInvoiceForm(), {
       ...data,
-      receipt_draft: data.receipt_draft ? { ...data.receipt_draft, amount: data.receipt_draft.amount == null ? null : Number(data.receipt_draft.amount) } : null,
+      receipt_draft: data.receipt_draft ? { ...data.receipt_draft, amount: data.receipt_draft.amount == null ? 0 : Number(data.receipt_draft.amount) } : null,
       shipping_fee: Number(data.shipping_fee || 0),
       surcharge_amount: Number(data.surcharge_amount || 0),
       internal_discount: normalizeDiscount(data.internal_discount),
@@ -700,6 +700,16 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
     saveAndSyncSubmitting.value = true
     try {
+      if (['stock', 'presale'].includes(form.order_type) && Number(form.receipt_draft?.amount || 0) === 0) {
+        try {
+          await confirmAction('当前回款金额为0，是否确认提交？', '提交确认', {
+            type: 'warning', confirmButtonText: '确认提交', cancelButtonText: '取消',
+          })
+        } catch (error) {
+          if (isFeedbackCancelled(error)) return
+          throw error
+        }
+      }
       const useLinked = Boolean(form.id && form.xiaoman_order_id)
       const saved = await saveDraft({ linked: useLinked })
       if (!saved) return

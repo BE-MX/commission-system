@@ -1,14 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { nextDraftAmount, projectReceiptBalance, receiptActionState, invoiceOrderSignature, applySubmittedReceipt } from '../src/views/invoice/composables/invoiceReceiptState.js'
+import { projectReceiptBalance, receiptActionState, invoiceOrderSignature, applySubmittedReceipt } from '../src/views/invoice/composables/invoiceReceiptState.js'
 import { readFileSync } from 'node:fs'
-
-test('saved drafts follow equal prepayments across decimal representations; manual amounts stay', () => {
-  assert.equal(nextDraftAmount({ amount: '500.00', status: 'draft' }, 500, 650, 'stock'), 650)
-  assert.equal(nextDraftAmount({ amount: 450, status: 'draft' }, 500, 650, 'stock'), 450)
-  assert.equal(nextDraftAmount({ amount: 500, status: 'converted' }, 500, 650, 'stock'), 500)
-  assert.equal(nextDraftAmount({ amount: 500, status: 'draft' }, 500, 650, 'presale'), 500)
-})
 
 test('increased and decreased totals show unpaid/overpaid without changing money', () => {
   const balance = { effective_amount: '1000', pending_amount: '200', registered_amount: '1200' }

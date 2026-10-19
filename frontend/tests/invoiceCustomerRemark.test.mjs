@@ -12,8 +12,8 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 const customer = id => ({ company_id: id, company_name: `Customer ${id}` })
 const defaults = remark => ({ remark, customer_grade: 'A', contact_name: 'Alice', contact_phone: '123', contact_email: 'a@example.test', delivery_address: 'Address' })
 
-async function harness(request = async () => defaults('上单备注'), createRequest, invoiceData = {}) {
-  const saved = [], warnings = []
+async function harness(request = async () => defaults('上单备注'), createRequest, invoiceData = {}, confirm = async () => {}) {
+  const saved = [], warnings = [], confirmations = [], synced = []
   const api = Object.fromEntries(['checkInvoiceNo', 'createInvoice', 'createInvoiceFromScreenshot',
     'getCustomerContactDefaults', 'getCustomerRule', 'getInvoice', 'getInvoiceAssignees',
     'getInvoiceMerchandisers', 'getPreviousInvoiceNo', 'searchInvoiceCustomerOptions',
@@ -26,12 +26,14 @@ async function harness(request = async () => defaults('上单备注'), createReq
   })
   const imports = {
     vue,
-    '@/utils/feedback': { msgWarning: message => warnings.push(message), msgSuccessText() {}, alertAction() {} },
+    '@/utils/feedback': { msgWarning: message => warnings.push(message), msgSuccessText() {}, alertAction() {},
+      confirmAction: async message => { confirmations.push(message); return confirm() },
+      isFeedbackCancelled: error => ['cancel', 'close'].includes(error) },
     '@/api/invoice': api,
     '@/stores/auth': { useAuthStore: () => ({ user: { id: 1 }, hasPermission: () => true }) },
     './useLinkedInvoiceSync': { useLinkedInvoiceSync: () => ({ load() {}, operation: vue.ref(null), busy: vue.ref(false), loading: vue.ref(false) }) },
     './invoiceReceiptState': { invoiceOrderSignature: payload => JSON.stringify(payload) },
-    './invoiceSyncFlow': { INVOICE_SYNC_OUTCOME: {}, validateThenSync() {} },
+    './invoiceSyncFlow': { INVOICE_SYNC_OUTCOME: { SUCCESS: 'success' }, validateThenSync: async id => { synced.push(id); return 'success' } },
     './invoiceSettlement': settlement,
     './accessoryPricing': pricing,
     './invoiceEditorState': state,
@@ -58,7 +60,7 @@ async function harness(request = async () => defaults('上单备注'), createReq
   await module.evaluate()
   const scope = vue.effectScope()
   const editor = scope.run(() => module.namespace.useInvoiceEditor())
-  return { editor, saved, warnings, stop: () => scope.stop() }
+  return { editor, saved, warnings, confirmations, synced, stop: () => scope.stop() }
 }
 async function run(fn, request) {
   const h = await harness(request)
@@ -359,3 +361,45 @@ test('save and sync locates an incomplete old row hidden by filled imported rows
   assert.equal(h.saved[0].items.length, 22)
   assert.ok(h.saved[0].items.slice(1).every(row => row.quantity === 2))
 }))
+
+
+for (const action of ['cancel', 'close', 'confirm']) {
+  for (const amount of [0, null, '0.00']) {
+    test(`zero receipt ${amount}: ${action} gates every save and sync`, async () => {
+      const pending = deferred()
+      const h = await harness(undefined, undefined, {}, async () => {
+        await pending.promise
+        if (action !== 'confirm') throw action
+      })
+      try {
+        await h.editor.onCustomerChange(customer('C1'))
+        Object.assign(h.editor.form, { express_channel: 'FEDEX', receipt_draft: { amount, status: 'draft' } })
+        const submit = h.editor.saveAndSync()
+        assert.deepEqual(h.confirmations, ['当前回款金额为0，是否确认提交？'])
+        assert.equal(h.saved.length, 0)
+        assert.equal(h.synced.length, 0)
+        await h.editor.saveAndSync()
+        assert.equal(h.confirmations.length, 1)
+        pending.resolve()
+        await submit
+        assert.equal(h.saved.length, action === 'confirm' ? 1 : 0)
+        assert.equal(h.synced.length, action === 'confirm' ? 1 : 0)
+        assert.equal(h.editor.saveAndSyncSubmitting.value, false)
+      } finally { h.stop() }
+    })
+  }
+}
+
+test('positive receipt and draft-only save do not prompt for zero payment', async () => {
+  const h = await harness()
+  try {
+    await h.editor.onCustomerChange(customer('C1'))
+    Object.assign(h.editor.form, { express_channel: 'FEDEX', receipt_draft: { amount: 1, status: 'draft' } })
+    await h.editor.saveAndSync()
+    h.editor.form.receipt_draft.amount = 0
+    await h.editor.saveDraft()
+    assert.equal(h.confirmations.length, 0)
+    assert.equal(h.saved.length, 2)
+    assert.equal(h.synced.length, 1)
+  } finally { h.stop() }
+})

@@ -1,11 +1,5 @@
 import { toMoneyCents } from './invoiceSettlement.js'
 
-export function nextDraftAmount(draft, previous, value, orderType) {
-  if (!draft || draft.status !== 'draft' || orderType === 'presale') return draft?.amount
-  if (draft.amount == null || toMoneyCents(draft.amount) === toMoneyCents(previous)) return Number(value) > 0 ? Number(value) : null
-  return draft.amount
-}
-
 export function projectReceiptBalance(balance, total) {
   const due = toMoneyCents(total), effective = toMoneyCents(balance.effective_amount)
   const registered = toMoneyCents(balance.registered_amount)
@@ -14,7 +8,7 @@ export function projectReceiptBalance(balance, total) {
 }
 
 export function receiptActionState(receipt) {
-  if (!receipt) return { editable: false, label: '尚未生成回款', hint: '首次回款在订单完整同步后生成。' }
+  if (!receipt) return { editable: false, label: '尚未生成回款', hint: '有实际到账款后可登记回款。' }
   if (receipt.status !== 'active') return { editable: false, label: receipt.status === 'voided' ? '已作废' : '远端删除已核实', hint: '原回款记录与凭证保留，新增收款请另行登记。' }
   if (receipt.deletion_pending) return { editable: false, label: '删除待核验', hint: '原删除请求已记录，请继续核验删除；核验通过前不能登记替代回款。' }
   if (receipt.batch_id || ['presale_deposit', 'presale_advance'].includes(receipt.purpose)) return { editable: false, label: '预售 / 批次回款', hint: '原款用于后续发货抵扣，新增收款请单独登记；用途纠错请在回款单中核对。' }

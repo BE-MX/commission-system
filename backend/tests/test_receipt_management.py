@@ -118,7 +118,9 @@ def test_upload_rejects_fake_or_oversize(db):
     with pytest.raises(ValueError): attachments.prepare_upload(b"x" * (attachments.MAX_BYTES + 1), "x.jpg", 1)
 
 
-def test_stock_missing_proof_cannot_sync(db, order):
+def test_positive_payment_missing_proof_cannot_sync(db, order):
+    invoice_link.save_draft(db, order, ReceiptDraft(amount="1"), 1, new=True)
+    db.flush()
     with pytest.raises(ValueError, match="截图"):
         invoice_link.preflight(db, order, 1)
 
@@ -502,6 +504,8 @@ def test_routes_scope_permissions_private_image_and_creation(db, order):
 
 
 def test_stock_router_gates_before_inventory_or_remote_side_effect(db, order, monkeypatch):
+    invoice_link.save_draft(db, order, ReceiptDraft(amount="1"), 1, new=True)
+    db.commit()
     from app.invoice import router
     monkeypatch.setattr(router.semifinished_invoice_service, "prepare_invoice_sync", lambda *a: pytest.fail("inventory touched"))
     monkeypatch.setattr(router.xiaoman_service, "sync_invoice", lambda *a, **k: pytest.fail("remote touched"))
@@ -742,3 +746,78 @@ def test_all_receipts_permission_does_not_grant_write(db, order):
         assert client.get(f"/api/receipts/{row.id}").status_code == 200
         assert client.post(f"/api/receipts/{row.id}/retry").status_code == 403
         assert client.post(f"/api/receipts/{row.id}/void", json={"reason": "test"}).status_code == 403
+
+
+@pytest.mark.parametrize("kind", ["stock", "presale"])
+@pytest.mark.parametrize("amount", [None, "0", "0.00"])
+def test_zero_payment_sync_skips_generation_but_keeps_attempt_fence(db, order, kind, amount):
+    order.order_type = kind
+    invoice_link.save_draft(db, order, ReceiptDraft(amount=amount), 1, new=True)
+    db.commit()
+    token = invoice_link.arm(db, order, 1)
+    db.commit()
+    intent = invoice_link.get_intent(db, order.id)
+    assert token and intent.status == "draft"
+    with pytest.raises(ValueError, match="重复提交"):
+        invoice_link.arm(db, order, 1)
+    invoice_link.ensure_attempt(db, order, token)
+    assert invoice_link.mark_success(db, order, token)["receipt_generation_status"] == "draft"
+    invoice_link.finish_attempt(db, order, token)
+    db.commit()
+    sync_service.generate_ready(db)
+    assert db.query(Receipt).count() == 0
+    assert intent.attempt_token is None
+    assert not intent.eligible
+    with pytest.raises(ValueError, match="补登记回款"):
+        invoice_link.save_draft(db, order, ReceiptDraft(amount="100"), 1)
+
+
+@pytest.mark.parametrize("new_invoice", [False, True])
+def test_no_receipt_draft_can_sync_and_register_payment_later_once(db, order, new_invoice):
+    if new_invoice:
+        invoice_link.save_draft(db, order, ReceiptDraft(amount="0"), 1, new=True)
+        db.commit()
+    token = invoice_link.arm(db, order, 1)
+    invoice_link.mark_success(db, order, token)
+    invoice_link.finish_attempt(db, order, token)
+    db.commit()
+    sync_service.generate_ready(db)
+    assert db.query(Receipt).count() == 0
+    row, body = register(db, order)
+    assert row.amount == Decimal("500") and row.source == "manual"
+    assert create_financial(db, body, USER).id == row.id
+    token = invoice_link.arm(db, order, 1)
+    invoice_link.mark_success(db, order, token)
+    invoice_link.finish_attempt(db, order, token)
+    db.commit()
+    sync_service.generate_ready(db)
+    assert db.query(Receipt).count() == 1
+
+
+@pytest.mark.parametrize("amount", ["-1", "NaN", "Infinity", "0.001"])
+def test_optional_draft_still_rejects_invalid_amount(amount):
+    with pytest.raises(ValidationError):
+        ReceiptDraft(amount=amount)
+
+
+def test_receipt_draft_defaults_to_zero():
+    assert ReceiptDraft().amount == Decimal("0")
+
+
+@pytest.mark.parametrize("outcome", ["rejected", "uncertain", "expired", "stale"])
+def test_zero_payment_only_complete_current_success_closes_enrollment(db, order, outcome):
+    invoice_link.save_draft(db, order, ReceiptDraft(amount="0"), 1, new=True)
+    db.commit()
+    token = invoice_link.arm(db, order, 1)
+    intent = invoice_link.get_intent(db, order.id)
+    if outcome == "expired":
+        intent.lease_until = beijing_now() - timedelta(seconds=1)
+        assert invoice_link.mark_success(db, order, token)["receipt_generation_status"] == "waiting_recovery"
+    elif outcome == "stale":
+        assert invoice_link.mark_success(db, order, "other-token")["receipt_generation_status"] == "waiting_recovery"
+    else:
+        order.sync_status = "sync_uncertain" if outcome == "uncertain" else "sync_failed"
+        invoice_link.release_rejected(db, order, token)
+    assert intent.eligible
+    assert intent.status == "draft"
+    assert db.query(Receipt).count() == 0

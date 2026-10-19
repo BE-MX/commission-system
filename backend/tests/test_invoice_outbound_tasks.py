@@ -729,3 +729,29 @@ def test_current_update_queue_rolls_back_with_order_finalization(db, monkeypatch
     db.rollback(); db.refresh(invoice)
     assert invoice.sync_status == "sync_uncertain" and _tasks(db) == []
 
+
+
+@pytest.mark.parametrize("amount", [None, "0", "0.00"])
+def test_stock_zero_receipt_sync_enqueues_outbound_without_receipt(db, monkeypatch, no_reconcile, amount):
+    from app.receipt import invoice_link, sync_service
+    from app.receipt.models import Receipt
+    from app.receipt.schemas import ReceiptDraft
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db, order_type="stock")
+    invoice.items.append(_stock_item())
+    invoice_link.save_draft(db, invoice, ReceiptDraft(amount=amount), 1, new=True)
+    db.commit()
+    token = invoice_link.arm(db, invoice, 1)
+    monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
+    result = xiaoman_service.sync_invoice(db, invoice, operator_id=1, receipt_sync_token=token)
+    assert result["ok"] is True
+    invoice_link.mark_success(db, invoice, token)
+    invoice_link.finish_attempt(db, invoice, token)
+    db.commit()
+    sync_service.generate_ready(db)
+    assert db.query(Receipt).count() == 0
+    tasks = _tasks(db)
+    assert len(tasks) == 1
+    assert tasks[0].order_id == invoice.xiaoman_order_id == "424242"
+    assert tasks[0].status == outbound_task_service.STATUS_PENDING

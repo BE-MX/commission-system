@@ -22,13 +22,12 @@ test('invoice receipt draft defaults the xiaoman payment type to Other', () => {
   assert.doesNotMatch(invoiceReceipt, /internal_payment_method/)
 })
 
-test('receipt amount auto-follows the prepayment until manually edited', () => {
-  // 回款金额根据预付款金额自动填充（2026-09-23）；手改后不再跟随；预售单定金除外（手填）
-  assert.match(invoiceReceipt, /props\.form\.internal_received > 0 \? props\.form\.internal_received : null/)
-  assert.match(invoiceReceipt, /watch\(\(\) => \[props\.form\.id, props\.form\.internal_received\]/)
-  assert.match(invoiceReceipt, /nextDraftAmount\(draft, previous, value, props\.form\.order_type\)/)
-  assert.doesNotMatch(invoiceReceipt, /!props\.form\.id/)
-  assert.match(invoiceReceipt, /props\.form\.order_type === 'presale' \? null/)
+test('invoice receipt starts at zero independently of prepayment and is optional', () => {
+  assert.match(invoiceReceipt, /amount: 0/)
+  assert.match(invoiceReceipt, /:optional="!frozen \|\| noAutoReceipt"/)
+  assert.doesNotMatch(invoiceReceipt, /internal_received|nextDraftAmount|同步前必填/)
+  assert.match(receiptFields, /:required="!optional"/)
+  assert.match(receiptFields, /:min="optional \? 0 : 0.01"/)
 })
 
 test('receipt management keeps the standalone xiaoman payment-type select', () => {

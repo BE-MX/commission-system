@@ -29,11 +29,13 @@ def save_draft(db, invoice, draft, actor, *, new=False):
     if invoice.order_type not in {"stock", "presale"}:
         return
     row = get_intent(db, invoice.id)
+    existing_intent = row is not None
     if row is None:
         # New application-created invoices enter the flow. Historical invoices
         # may attach evidence, but are never automatically backfilled.
         row = ReceiptIntent(invoice_id=invoice.id, eligible=int(new), created_by=actor,
-                            attachment_ids=[], status="draft")
+                            attachment_ids=[], status="draft", amount=Decimal("0"),
+                            currency=invoice.currency, customer_id=invoice.customer_id)
         db.add(row)
     if draft is None:
         return
@@ -51,6 +53,8 @@ def save_draft(db, invoice, draft, actor, *, new=False):
                 or draft.bank_charge is not None and draft.bank_charge != getattr(current, "bank_charge", None)):
             raise ValueError("本次回款已提交，不能随订单修改，请在回款单中处理")
         return
+    if existing_intent and not row.eligible and not row.amount and draft.amount and draft.amount > 0:
+        raise ValueError("本单不再自动生成首次回款，请使用补登记回款登记实际到账")
     if draft.attachment_ids:
         attachments.bind(db, draft.attachment_ids, actor, invoice.id)
     for key in ("amount", "collection_date", "payment_type", "remark", "attachment_ids"):
@@ -67,7 +71,10 @@ def preflight(db, invoice, actor):
     if invoice.order_type not in {"stock", "presale"}:
         return
     row = get_intent(db, invoice.id)
-    if not row or not row.attachment_ids:
+    # No actual payment: keep the draft editable and do not enroll a receipt.
+    if not row or (row.status == "draft" and not row.amount):
+        return
+    if not row.attachment_ids:
         raise ValueError("请上传回款截图后再同步小满。库存单可以先保存")
     attachments.bind(db, row.attachment_ids, actor, invoice.id, row.receipt_id)
     if row.status == "converted" or not row.eligible:
@@ -103,11 +110,15 @@ def arm(db, invoice, actor):
         return None
     preflight(db, invoice, actor)
     row = get_intent(db, invoice.id)
+    if row is None:
+        save_draft(db, invoice, None, actor)
+        db.flush()
+        row = get_intent(db, invoice.id)
     if row.attempt_token:
         raise ValueError("库存单正在同步或上次任务待恢复，请勿重复提交")
     if invoice.sync_status == "sync_uncertain":
         raise ValueError("上次小满建单结果待核对，请管理员先处理")
-    if row and row.eligible and row.status == "draft":
+    if row and row.eligible and row.status == "draft" and row.amount and row.amount > 0:
         row.status = "armed"
     row.attempt_token, row.lease_until = uuid4().hex, beijing_now() + timedelta(minutes=30)
     row.created_by = row.created_by or actor
@@ -152,6 +163,10 @@ def mark_success(db, invoice, token=None):
         return {"receipt_generation_status": "waiting_recovery", "receipt_id": row.receipt_id if row else None}
     if row and row.eligible and row.status == "armed":
         row.status = "ready"
+    elif row and row.status == "draft" and not row.amount:
+        # A successful no-payment submission ends first-payment enrollment.
+        # Future funds use manual registration, never a second automatic intent.
+        row.eligible = 0
     return {"receipt_generation_status": row.status if row else "not_applicable",
             "receipt_id": row.receipt_id if row else None}
 

@@ -59,7 +59,7 @@ class ReceiptProofUpdate(BaseModel):
 
 
 class ReceiptDraft(BaseModel):
-    amount: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
+    amount: Decimal | None = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
     purpose: Literal["ordinary", "presale_deposit", "presale_advance"] | None = None
     bank_charge: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     collection_date: date | None = None
