@@ -171,6 +171,75 @@ def test_missing_cloud_playback_object_serves_original():
     assert response.status_code == 303
 
 
+def test_portal_library_and_content_serve_playback_variant(db, monkeypatch):
+    """门户 HTTP 契约：library 下发播放版/海报地址，content 端点按 variant 取对象。"""
+    import importlib.util
+    from pathlib import Path
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from starlette.responses import Response
+
+    from app.core.database import get_db
+    from app.customer_media import public_router as portal_module
+    from app.customer_media.public_router import router as public_router
+
+    # tests/ 不是包，按文件路径复用既有客户素材测试的种子数据。
+    spec = importlib.util.spec_from_file_location(
+        "customer_media_test_helpers", Path(__file__).with_name("test_customer_media.py"),
+    )
+    helpers = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helpers)
+
+    helpers._add_customer(db, "CUST-MEDIA-1", "客户甲")
+    applicant, designer, _request, task = helpers._seed_workflow(db)
+    batch = service.get_or_create_batch(
+        db, task.id, helpers._payload(designer, "customer_media:write"),
+    )
+    asset = CustomerMediaAsset(
+        batch_id=batch.id, file_name="clip.mp4", media_type="video", content_type="video/mp4",
+        file_size=10, sha256="c" * 64, storage_provider="local",
+        object_key="customers/C1/batches/2/originals/a.mp4",
+        playback_key="customers/C1/batches/2/playback/a.mp4",
+        thumbnail_key="customers/C1/batches/2/thumbnails/a.jpg",
+        uploaded_by=designer.id,
+    )
+    db.add(asset)
+    batch.status = "published"
+    batch.published_at = service.beijing_now()
+    db.commit()
+    service.create_portal_account(
+        db, helpers._payload(applicant, "customer_media:admin", "customer_media_account:read_all"),
+        "CUST-MEDIA-1", "client@example.com", "ClientPass123",
+    )
+    app = FastAPI()
+    app.include_router(public_router, prefix="/api/customer-media/portal")
+    app.dependency_overrides[get_db] = lambda: db
+
+    calls = {}
+
+    class FakeStorage:
+        def response(self, row, *, download=False, variant=None):
+            calls["variant"] = variant
+            return Response(b"payload", media_type="video/mp4")
+
+    monkeypatch.setattr(portal_module, "storage_for", lambda provider: FakeStorage())
+
+    with TestClient(app) as client:
+        assert client.post("/api/customer-media/portal/login", json={
+            "email": "client@example.com", "password": "ClientPass123",
+        }).status_code == 200
+        library = client.get("/api/customer-media/portal/library").json()["data"]
+        item = library[0]["assets"][0]
+        assert item["playback_url"].endswith("?variant=playback")
+        assert item["poster_url"].endswith("?variant=poster")
+        played = client.get(f"/api/customer-media/portal/assets/{asset.id}/content?variant=playback")
+        assert played.status_code == 200 and calls["variant"] == "playback"
+        assert client.get(
+            f"/api/customer-media/portal/assets/{asset.id}/content?variant=bogus"
+        ).status_code == 422
+
+
 def test_asset_payload_exposes_playback_and_poster_urls():
     row = CustomerMediaAsset(
         id=9, file_name="clip.mp4", media_type="video", content_type="video/mp4",
