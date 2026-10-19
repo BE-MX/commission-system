@@ -844,7 +844,7 @@ def test_material_change_with_photos_waits_for_confirm_then_requires_fresh_evide
     db.refresh(inspection)
     assert inspection.edit_version == 1
     stale, required = state.evidence(db, 'OB001')
-    assert old.id in stale and set(required) == {'__all_items__', '__whole__'}
+    assert old.id in stale and set(required) == {'__whole__'}
     assert service.scan_payload(db, 'OB001')['photos'][0]['stale'] is True
     with _pc_client(db, user, PERMS) as client:
         assert client.get(f'{BASE}/OB001/print-data').status_code == 409
@@ -1184,7 +1184,8 @@ def test_fee_only_sync_preserves_inspection_and_existing_recheck(db, sync_case, 
     db.refresh(inspection)
     assert inspection.status == original_status and inspection.edit_version == 0
     stale, required = state.evidence(db, 'OB001')
-    assert stale == prior.get('stale_media_ids', []) and required == prior.get('required_recheck_ids', [])
+    assert stale == prior.get('stale_media_ids', [])
+    assert required == (['__whole__'] if pending_recheck else [])
     assert db.query(ShippingOperationEvent).filter_by(action='recall').count() == 0
     assert len(fake['posts']) == 1
 

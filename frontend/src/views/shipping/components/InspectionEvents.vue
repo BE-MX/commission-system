@@ -8,7 +8,7 @@
 <script setup>
 import { formatBeijingDateTime as formatDateTime } from '@/utils/datetime'
 defineProps({ events: { type: Array, default: () => [] } })
-const actions = { scan: '扫描出库单', upload: '上传媒体', delete: '删除媒体', submit: '提交验货', end: '结束本次操作', recall: '撤回编辑', media_carry_over: '沿用旧验货照片', media_rebind_whole: '旧照片归入整单照片', delete_pending: '出库单删除处理中', delete_uncertain: '出库单删除待核对', delete_failed: '出库单删除失败', outbound_deleted: '已删除小满出库单' }
+const actions = { scan: '扫描出库单', upload: '上传媒体', delete: '删除媒体', submit: '提交验货', end: '结束本次操作', recall: '撤回编辑', media_carry_over: '沿用旧验货照片', media_rebind_whole: '旧照片归入整单照片', recheck_scope: '补验照片口径调整', delete_pending: '出库单删除处理中', delete_uncertain: '出库单删除待核对', delete_failed: '出库单删除失败', outbound_deleted: '已删除小满出库单' }
 const sources = { mini: '小程序', web_station: '共用手机网页', pc: '方舟后台', invoice_sync: '发票同步', maintenance: '数据维护' }
 </script>
 <style scoped>
