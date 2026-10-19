@@ -227,6 +227,8 @@ class Settings(BaseSettings):
     AI_CHAT_MAX_ATTACHMENTS: _PositiveInt = 5
     AI_CHAT_MAX_ATTACHMENT_CHARS: _PositiveInt = 60_000
     AI_CHAT_MAX_TURN_ATTACHMENT_CHARS: _PositiveInt = 120_000
+    # 方案对话固定使用的模型：换模型只改这里或 .env，不改代码；必须与 Preset 的 model 完全一致，不做回退
+    AI_CHAT_MODEL: str = "claude-fable-5"
 
     # ── 企业知识库图片与 AI 优化 ───────────────────────────
     # 默认锚定 backend/data 私有目录；生产可覆盖为独立绝对路径。
@@ -474,6 +476,17 @@ class Settings(BaseSettings):
         if len(segments) != 3 or any(not segment.isdigit() for segment in segments):
             raise ValueError("WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION 必须是三段数字版本号")
         return value
+
+    @field_validator("AI_CHAT_MODEL")
+    @classmethod
+    def _validate_ai_chat_model(cls, value: str) -> str:
+        model = str(value or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", model):
+            raise ValueError(
+                "AI_CHAT_MODEL 必须是 1-128 位模型名（字母、数字、._:-，且以字母或数字开头）"
+            )
+        return model
+
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, v):

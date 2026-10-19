@@ -34,6 +34,13 @@ def _owner_id(current_user: dict) -> int:
     return int(current_user["sub"])
 
 
+def _may_see_config_diagnostic(current_user: dict) -> bool:
+    """Only AI-chat administrators see which rule failed; business users get the generic text."""
+    roles = current_user.get("roles") or []
+    permissions = current_user.get("permissions") or []
+    return "super_admin" in roles or "ai_chat:admin" in permissions
+
+
 def _resource_call(function, *args, **kwargs):
     try:
         return function(*args, **kwargs)
@@ -300,9 +307,13 @@ def _stream_assistant_events(
 @router.get("/config")
 def get_config(
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(require_permission("ai_chat:read")),
+    current_user: dict = Depends(require_permission("ai_chat:read")),
 ):
-    return ok(service.get_config(db))
+    return ok(
+        service.get_config(
+            db, include_diagnostic=_may_see_config_diagnostic(current_user)
+        )
+    )
 
 
 @router.get("/modes")

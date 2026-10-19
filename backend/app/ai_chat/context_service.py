@@ -1,6 +1,7 @@
 """Strict preset validation and bounded multimodal context reconstruction."""
 
 import base64
+import logging
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -11,10 +12,15 @@ from app.ai_chat.models import AiChatAttachment, AiChatMessage, AiChatSession
 from app.core.config import get_settings
 
 
+logger = logging.getLogger("commission")
 PRESET_NAME = "customer_ai_chat"
-REQUIRED_MODEL = "claude-fable-5"
 NOT_CONFIGURED_MESSAGE = "方案对话服务尚未配置，请联系管理员"
 TRUNCATION_MARKER = "[附件正文已按本次请求总上限截断]"
+
+
+def required_model() -> str:
+    """Pinned model lives in settings so a model rename never needs a code deploy."""
+    return get_settings().AI_CHAT_MODEL
 
 
 def _require_session(
@@ -158,24 +164,71 @@ def build_context(
     return context
 
 
-def get_config(db: Session) -> dict:
-    row = (
-        db.query(AiPreset, AiProvider)
-        .join(AiProvider, AiProvider.id == AiPreset.provider_id)
-        .filter(
-            AiPreset.preset_name == PRESET_NAME,
-            AiPreset.deleted_at.is_(None),
-            AiPreset.is_enabled.is_(True),
-            AiPreset.model == REQUIRED_MODEL,
-            AiProvider.deleted_at.is_(None),
-            AiProvider.is_enabled.is_(True),
-            AiProvider.provider_type == "direct",
-            AiProvider.api_type == "anthropic",
-        )
+def inspect_config(db: Session) -> dict | None:
+    """Return the first unmet requirement, or None when the feature is usable.
+
+    The detail names the Preset/Provider/model state, so only administrators may
+    see it; regular users always receive the generic message.
+    """
+    expected = required_model()
+    preset = (
+        db.query(AiPreset)
+        .filter(AiPreset.preset_name == PRESET_NAME)
+        .order_by(AiPreset.id.desc())
         .first()
     )
-    return {
-        "configured": row is not None,
-        "model": REQUIRED_MODEL if row is not None else None,
-        "message": None if row is not None else NOT_CONFIGURED_MESSAGE,
+    if preset is None:
+        return {"reason": "preset_missing", "detail": f"未找到 Preset {PRESET_NAME}"}
+    if preset.deleted_at is not None:
+        return {"reason": "preset_deleted", "detail": f"Preset {PRESET_NAME} 已被删除"}
+    if not preset.is_enabled:
+        return {"reason": "preset_disabled", "detail": f"Preset {PRESET_NAME} 已禁用"}
+    if preset.model != expected:
+        return {
+            "reason": "model_mismatch",
+            "detail": (
+                f"Preset {PRESET_NAME} 的模型是 {preset.model or '（空）'}，"
+                f"服务固定要求 {expected}"
+            ),
+        }
+    provider = (
+        db.query(AiProvider)
+        .filter(AiProvider.id == preset.provider_id)
+        .first()
+    )
+    if provider is None or provider.deleted_at is not None:
+        return {
+            "reason": "provider_missing",
+            "detail": f"Preset {PRESET_NAME} 绑定的 Provider #{preset.provider_id} 不存在或已删除",
+        }
+    if not provider.is_enabled:
+        return {"reason": "provider_disabled", "detail": f"Provider {provider.name} 已禁用"}
+    if provider.provider_type != "direct":
+        return {
+            "reason": "provider_type_mismatch",
+            "detail": f"Provider {provider.name} 是 {provider.provider_type} 接入，方案对话只接受 direct 直连",
+        }
+    if provider.api_type != "anthropic":
+        return {
+            "reason": "api_type_mismatch",
+            "detail": f"Provider {provider.name} 使用 {provider.api_type} 协议，方案对话只接受 anthropic 协议",
+        }
+    return None
+
+
+def get_config(db: Session, *, include_diagnostic: bool = False) -> dict:
+    issue = inspect_config(db)
+    if issue is None:
+        return {"configured": True, "model": required_model(), "message": None}
+    logger.warning(
+        "AI chat not configured: %s (%s)", issue["reason"], issue["detail"]
+    )
+    print(f"[ai-chat] not configured: {issue['reason']}", flush=True)
+    payload = {
+        "configured": False,
+        "model": None,
+        "message": NOT_CONFIGURED_MESSAGE,
     }
+    if include_diagnostic:
+        payload["diagnostic"] = dict(issue)
+    return payload
