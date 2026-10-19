@@ -126,6 +126,27 @@ class AuthChallenge(Record, Base):
     )
 
 
+class PortalAccessRequest(Record, Versioned, Base):
+    """Unauthenticated customer access application awaiting employee binding review."""
+    __tablename__ = PREFIX + "access_requests"
+    site_id = reference("sites")
+    full_name = Column(String(100), nullable=False, comment='申请人全名')
+    phone = Column(String(40), nullable=False, comment='申请人电话')
+    email_normalized = Column(String(254), nullable=False, comment='规范化申请邮箱')
+    email_display = Column(String(254), nullable=False, comment='申请邮箱展示值')
+    status = Column(String(24), nullable=False, default="pending", comment='申请状态')
+    reviewed_by = employee(nullable=True)
+    reviewed_at = Column(DateTime, comment='审核时间，北京时间')
+    review_reason = Column(String(500), nullable=False, default="", comment='审核备注')
+    account_id = reference("accounts", nullable=True)
+    access_id = reference("customer_access", nullable=True)
+    __table_args__ = (
+        Index("ix_op_access_request_status", "site_id", "status", "created_at"),
+        Index("ix_op_access_request_email", "site_id", "email_normalized", "status"),
+        CheckConstraint("status IN ('pending','approved','rejected','cancelled')", name="ck_op_access_request_status"),
+    )
+
+
 class RateBucket(Base):
     __tablename__ = PREFIX + "rate_buckets"
     scope_key_hash = Column(String(64), primary_key=True, comment='共享限频作用域摘要')

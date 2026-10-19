@@ -1,3 +1,9 @@
+## 2026-10-19 客户下单门户 P4：客户账号申请、业务审核、邮箱激活与设置密码（Accio，未部署）
+
+- 同分支（P3 已提交 `9e15f3da`）。新增迁移 `201_portal_access_requests` 与 `PortalAccessRequest`；公开申请 `POST /access-requests` 只收全名/电话/邮箱，限频、幂等，不创建权限；员工在「客户账号申请」页查看并批准/拒绝，批准必须绑定既有 enabled + can_order 客户授权，复用 invitation outbox 发激活邮件。
+- 客户端新增登录页「Request customer portal access」、`/activate#token=...` 激活页；新增 `/auth/challenge` + `/auth/activate`，邮件 token 经验证码校验后设置密码并直接登录。申请、密码、token 不进入回执/日志；钉钉通知复用 dingtalk outbox，申请通知不包含权限或密码。
+- 验证：P4 后端专测 13 项通过；后端 compileall 通过；客户门户和主站构建通过。浏览器视觉检查未运行：本地 Vite preview 未监听，且没有可用 CDP endpoint；未发送真实钉钉，未执行 MySQL/生产迁移。
+
 ## 2026-10-19 客户下单门户 P3：自动运费、PayPal 手续费、业务一键审核出 PI、钉钉推送（Accio，未部署）
 
 - 同分支（P2 已提交 `e49d524b`）。新增 `fee_policy.py`、`dingtalk_notice.py`、迁移 `200_portal_quote_fee_estimate`；`SitePolicy.auto_fees` 与付款条款 `method_label/surcharge_percent`；客户端点 `/ordering-terms`，`/quotes` 支持 `payment_term_code`。

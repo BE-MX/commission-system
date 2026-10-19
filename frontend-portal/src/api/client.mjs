@@ -187,6 +187,9 @@ export function createPortalClient({ fetchImpl = globalThis.fetch.bind(globalThi
       preauth = data.csrf_token
       return { expires_in: data.expires_in }
     }),
+    accessRequest: body => request('/access-requests', { auth: 'preauth', method: 'POST', body }),
+    activationChallenge: (email, invitationToken) => request('/auth/challenge', { auth: 'preauth', method: 'POST', body: { email, purpose: 'activate', invitation_token: invitationToken } }),
+    activate: body => request('/auth/activate', { auth: 'preauth', method: 'POST', body }),
     login: (email, password) => authentication(async () => {
       const started = epoch
       const data = await request('/auth/login', { auth: 'preauth', method: 'POST', body: { email, password } })

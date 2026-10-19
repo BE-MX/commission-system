@@ -19,11 +19,11 @@ from app.portal.authority import lock_authority
 from app.portal.configuration import employee_origin
 from app.portal.errors import PortalError
 from app.portal.mail_worker import LEASE_SECONDS, MAX_ATTEMPTS, RETRY_MINUTES, close_event, leased_event
-from app.portal.models import CustomerAccess, OrderRequest, OutboxEvent
+from app.portal.models import CustomerAccess, OrderRequest, OutboxEvent, PortalAccessRequest
 
 logger = logging.getLogger(__name__)
 EVENT = "dingtalk_notice"
-SOURCES = {"order_submitted", "order_invoice_created"}
+SOURCES = {"access_request_submitted", "order_submitted", "order_invoice_created"}
 
 
 def enabled(settings=None):
@@ -86,6 +86,12 @@ def render(db, row):
     from app.customer.models import CustomerAccount
     from app.portal import order_queries
     from app.portal.models import Account
+    if row.payload_json["source"] == "access_request_submitted":
+        request = db.scalar(select(PortalAccessRequest).where(PortalAccessRequest.public_id == row.aggregate_public_id))
+        if request is None:
+            return None
+        text = f"### 新客户门户账号申请\n\n**申请人**：{_plain(request.full_name)}\n\n**邮箱**：{_plain(request.email_display)}\n\n**电话**：{_plain(request.phone)}\n\n**下一步**：请在方舟「客户账号申请」中核对并绑定客户授权。\n\n> 申请尚未获得登录权限。"
+        return "新客户门户账号申请", text
     order = db.scalar(select(OrderRequest).where(OrderRequest.public_id == row.aggregate_public_id)
         .execution_options(populate_existing=True))
     if order is None or row.payload_json.get("request_id") != order.public_id:

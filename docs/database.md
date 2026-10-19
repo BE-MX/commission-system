@@ -740,6 +740,10 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 父迁移176_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；MySQL离线DDL和隔离SQLite保留旧行测试通过，尚未在真实MySQL执行。迁移已按项目规则暂存，未commit/push/部署。
 
+## 201_portal_access_requests（开发中，未部署）
+
+父迁移200。新增 `ark_order_portal_access_requests`：客户公开提交全名、电话、邮箱，状态为 pending/approved/rejected/cancelled；批准时记录审核员工、原因，并绑定已存在的客户账号与客户门户授权。客户输入不含密码，申请也不创建权限。批准复用现有 invitation outbox，客户通过一次性激活邮件请求验证码并设置密码。申请数据有站点/状态/邮箱索引，所有时间使用北京时间。申请表不保存密码或明文 token。
+
 ## 200_portal_quote_fee_estimate（开发中，未部署）
 
 父迁移199。`ark_order_portal_quotes` 新增 nullable JSON `fee_estimate_json`：自动运费（按总克重阶梯）与所选付款方式手续费的计算结果，status 为 confirmed（含 weight_grams/shipping/surcharge/total）或 manual（over_limit/unknown_weight）。仅在非空时纳入报价证据哈希，旧报价哈希不变；只新增不回填，降级被拒绝。配置位于 `Site.policy_json.auto_fees`（enabled 默认 false、shipping_tiers 默认 300/600/800/1000/1300/1600/1800/2000g→40…96 USD）与 `payment_terms[].method_label/surcharge_percent`，无表结构变化。仅隔离SQLite与MySQL离线DDL验证。

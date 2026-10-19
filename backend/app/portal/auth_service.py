@@ -6,6 +6,8 @@ No email or external I/O occurs in these transactions.
 
 import hmac
 import secrets
+
+from app.auth.utils import hash_password
 from datetime import timedelta
 from uuid import uuid4
 
@@ -149,6 +151,23 @@ def challenge(db, preauth, body, client_ip):
             secret_key_version=settings.PORTAL_MAIL_KEY_VERSION, secret_expires_at=row.expires_at,
             next_attempt_at=beijing_now()))
     return row
+
+
+def activate_password(db, preauth, body, client_ip):
+    result = _verify(db, preauth, body, client_ip)
+    if result is None or result[0].account.status not in {"invited", "active"}:
+        reject("AUTH_FAILED", "The activation code is invalid or expired.", 401)
+    principal, session, token = result
+    principal.account.password_hash = hash_password(body.password.get_secret_value())
+    principal.account.status = "active"
+    principal.account.verified_at = beijing_now()
+    principal.account.auth_version += 1
+    principal.membership.status = "active"
+    principal.membership.version += 1
+    session.account_version = principal.account.auth_version
+    session.membership_version = principal.membership.version
+    session.access_version = principal.access.auth_version
+    return principal, session, token
 
 
 def verify(db, preauth, body, client_ip):

@@ -71,6 +71,11 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 - 订单详情 `proposal.confirmed_on_submit` 标识上述系统提案；明细新增 `unit_weight_grams`。新发布 PI 模板 `portal-pi-v2`（重量列、Hair cost、Total weight），v1 仍可下载。
 - 钉钉：配置 `PORTAL_DINGTALK_WEBHOOK_URL/SECRET` 后，提交与建票各写一条 outbox（`dingtalk_notice`），每 10 秒发送群 Markdown（客户、请求号、金额、总重、付款方式、方舟订单链接）；送达不确定不重发。
 
+客户账号申请（2026-10-19 开发中）：
+- `POST /api/portal/v1/access-requests`：仅 preauth + CSRF；body `full_name/phone/email`。同站点相同邮箱的 pending 申请幂等返回；写入申请并可选写入 `dingtalk_notice`，不创建账号/授权、不接收密码。
+- `GET /api/portal/admin/v1/access-requests?status=pending&keyword=`：员工 `portal_access:read` 查看申请。
+- `POST /api/portal/admin/v1/access-requests/{id}/review`：员工 `portal_access:admin`；approve 必须传现有 enabled + can_order 的 `access_id`，reject 不需要。批准复用邀请邮件 outbox，客户打开 `/activate#token=...` 后 `POST /auth/challenge` 请求验证码，`POST /auth/activate` 以验证码 + 新密码完成激活并登录。密码只进 SecretStr/bcrypt，不进入申请、日志或回执。
+
 
 ## 订单发票与回款备注编辑（2026-10-10）
 

@@ -21,8 +21,8 @@ def test_single_head_after_catalog_families():
     backend, module = migration()
     config = Config()
     config.set_main_option("script_location", str(backend / "alembic"))
-    assert ScriptDirectory.from_config(config).get_heads() == [module.revision]
-    assert module.down_revision == "199_portal_catalog_families" and len(module.revision) <= 32
+    assert ScriptDirectory.from_config(config).get_heads() == ["201_portal_access_requests"]
+    assert module.revision == "200_portal_quote_fee_estimate" and module.down_revision == "199_portal_catalog_families" and len(module.revision) <= 32
 
 
 def test_mysql_ddl_adds_one_nullable_column(monkeypatch):

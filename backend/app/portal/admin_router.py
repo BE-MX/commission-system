@@ -15,7 +15,7 @@ from app.core.response import ok
 from app.portal import admin_service as service
 from app.portal.auth_service import require_enabled
 from app.portal.errors import PortalError, reject
-from app.portal.schemas import (PortalInput, CatalogImageInput, NotificationRetryInput, AccountUpdate, CustomerCreate, CustomerUpdate, CustomerCatalogUpdate, AccountCreate, AccountPasswordUpdate, ReasonInput, RebindInput, TransferInput, MappingInput, SiteUpdate, CatalogImport, CatalogUpdate, FamilyAssign, FamilyUpdate, SwatchUpdate, ProposalInput, ApproveInput, PiProposalInput, PublishPiInput, VoidPiInput)
+from app.portal.schemas import (PortalInput, CatalogImageInput, NotificationRetryInput, AccountUpdate, CustomerCreate, CustomerUpdate, CustomerCatalogUpdate, AccountCreate, AccountPasswordUpdate, ReasonInput, RebindInput, TransferInput, MappingInput, SiteUpdate, CatalogImport, CatalogUpdate, FamilyAssign, FamilyUpdate, SwatchUpdate, ProposalInput, ApproveInput, PiProposalInput, PublishPiInput, VoidPiInput, AccessRequestReview)
 
 
 class AdminRoute(APIRoute):
@@ -106,6 +106,26 @@ def onboarding_catalog(page: int = Query(1, ge=1), page_size: int = Query(20, ge
                        actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
     from app.portal.onboarding_service import catalog_options
     data = catalog_options(db, actor, page=page, page_size=page_size, keyword=keyword)
+    db.commit()
+    return ok(data)
+
+
+@router.get("/access-requests")
+def access_requests(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+                   status: Literal["pending", "approved", "rejected", "cancelled"] | None = "pending",
+                   keyword: str | None = Query(None, max_length=100),
+                   actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal import access_request_service
+    data = access_request_service.list_requests(db, actor, page=page, page_size=page_size, status=status, keyword=keyword)
+    db.commit()
+    return ok(data)
+
+
+@router.post("/access-requests/{request_id}/review")
+def review_access_request(request_id: UUID, body: AccessRequestReview,
+                          actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal import access_request_service
+    data = access_request_service.review(db, actor, request_id, body)
     db.commit()
     return ok(data)
 

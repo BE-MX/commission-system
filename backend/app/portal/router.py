@@ -17,7 +17,8 @@ from app.core.response import ok
 from app.portal import auth_service as service
 from app.portal.errors import PortalError, reject
 from app.portal.action_receipt_queries import ActionReceiptQuery
-from app.portal.schemas import PasswordLogin, PortalInput, CustomerQuoteInput, SubmitInput, ReasonInput, AcceptInput, ReorderInput
+from app.portal.schemas import (PasswordLogin, PortalInput, CustomerQuoteInput, SubmitInput, ReasonInput,
+    AcceptInput, ReorderInput, AccessRequestInput, ChallengeInput, ActivatePasswordInput)
 from app.portal.security import require_origin
 
 
@@ -110,6 +111,36 @@ def bootstrap(client_ip=Depends(_require_portal_proxy), db: Session = Depends(ge
     return response
 
 
+@router.post("/auth/challenge")
+def auth_challenge(body: ChallengeInput, request: Request, preauth_row=Depends(preauth),
+                   client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    try:
+        from app.portal import auth_service
+        row = auth_service.challenge(db, preauth_row, body, client_ip)
+        db.commit()
+    except PortalError as error:
+        failed_transaction(db, error)
+        raise
+    return ok({"challenge_id": row.public_id, "expires_at": row.expires_at.isoformat()})
+
+
+@router.post("/auth/activate")
+def auth_activate(body: ActivatePasswordInput, request: Request, preauth_row=Depends(preauth),
+                  client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    try:
+        from app.portal import auth_service
+        result = auth_service.activate_password(db, preauth_row, body, client_ip)
+        data = service.session_view(result[0], result[1])
+        db.commit()
+    except PortalError as error:
+        failed_transaction(db, error)
+        raise
+    response = JSONResponse(ok(data))
+    set_cookie(response, "session", result[2], get_settings().PORTAL_SESSION_HOURS * 3600)
+    clear_cookie(response, "preauth")
+    return response
+
+
 @router.post("/auth/login")
 def login(body: PasswordLogin, request: Request,
           client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
@@ -132,6 +163,19 @@ def login(body: PasswordLogin, request: Request,
     set_cookie(response, "session", result[2], get_settings().PORTAL_SESSION_HOURS * 3600)
     clear_cookie(response, "preauth")
     return response
+
+
+@router.post("/access-requests", status_code=201)
+def access_request(body: AccessRequestInput, request: Request,
+                   preauth_row=Depends(preauth), client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    from app.portal import access_request_service
+    try:
+        data = access_request_service.submit(db, body, client_ip)
+        db.commit()
+    except PortalError:
+        db.rollback()
+        raise
+    return ok(data, code=201)
 
 
 @router.get("/catalog")

@@ -149,6 +149,14 @@ export const portalAdminApi = {
     const response = await portalAdminClient.post(`/customers/${encodeURIComponent(id)}/mapping/publish`, body, { headers: { 'If-Match': `"${version}"` }, showLoading: false, suppressToast: true })
     return response.data
   },
+  async accessRequests(params, signal) {
+    const response = await portalAdminClient.get('/access-requests', { params: { ...params, keyword: params.keyword || undefined, status: params.status || 'pending' }, signal, showLoading: false, suppressToast: true })
+    return response.data
+  },
+  async reviewAccessRequest(id, body) {
+    const response = await portalAdminClient.post(`/access-requests/${encodeURIComponent(id)}/review`, body, { showLoading: false, suppressToast: true })
+    return response.data
+  },
   async customers(params, signal) {
     const response = await portalAdminClient.get('/customers', { params: { ...params, keyword: params.keyword || undefined, status: params.status || undefined }, signal, showLoading: false, suppressToast: true })
     return response.data

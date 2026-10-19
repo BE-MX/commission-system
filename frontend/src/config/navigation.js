@@ -226,6 +226,7 @@ export const NAV_ENTRIES = [
   { path: '/portal/catalog', name: 'PortalCatalog', component: () => import('@/views/portal/PortalCatalog.vue'), title: '门户商品目录', permission: 'portal_site:admin', menu: { group: 'customerPortal', title: '商品目录', icon: Document, order: 30, permission: 'portal_site:admin' } },
   { path: '/portal/settings', name: 'PortalSettings', component: () => import('@/views/portal/PortalSettings.vue'), title: '客户门户站点设置', permission: 'portal_site:admin', menu: { group: 'customerPortal', title: '站点设置', icon: Document, order: 40, permission: 'portal_site:admin' } },
   { path: '/portal/customers', name: 'PortalCustomers', component: () => import('@/views/portal/PortalCustomers.vue'), title: '客户访问与账号', permission: 'portal_access:read', menu: { group: 'customerPortal', title: '客户访问', icon: User, order: 20, permission: 'portal_access:read' } },
+  { path: '/portal/access-requests', name: 'PortalAccessRequests', component: () => import('@/views/portal/AccessRequestPanel.vue'), title: '客户账号申请', permission: 'portal_access:read', menu: { group: 'customerPortal', title: '账号申请', icon: User, order: 25, permission: 'portal_access:read' } },
   { path: '/portal/orders', name: 'PortalOrders', component: () => import('@/views/portal/PortalOrders.vue'), title: '客户下单请求', permission: 'portal_order:read', menu: { group: 'customerPortal', title: '下单请求', icon: Document, order: 10, permission: 'portal_order:read' } },
   // ── 工作台 (顶级,不属任何分组) ──────────────────────────
   {

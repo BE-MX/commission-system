@@ -1,0 +1,13 @@
+<script setup>
+import { onMounted, ref } from 'vue'
+import BrandMark from './BrandMark.vue'
+const props = defineProps({ api: { type: Object, required: true }, token: { type: String, default: '' } })
+const email = ref(''), code = ref(''), challengeId = ref(''), password = ref(''), busy = ref(false), sent = ref(false), done = ref(false), error = ref(null)
+async function sendCode() { busy.value = true; error.value = null; try { await props.api.bootstrap(); const result = await props.api.activationChallenge(email.value.trim(), props.token); challengeId.value = result.challenge_id; sent.value = true } catch (problem) { error.value = problem } finally { busy.value = false } }
+async function activate() { busy.value = true; error.value = null; try { await props.api.activate({ challenge_id: challengeId.value, code: code.value.trim(), password: password.value }); done.value = true } catch (problem) { error.value = problem } finally { busy.value = false; password.value = '' } }
+onMounted(() => { if (!props.token) error.value = new Error('This activation link is incomplete. Please request a fresh link.') })
+</script>
+
+<template>
+  <main class="access-request-layout"><section class="access-request-panel" aria-labelledby="activation-title"><BrandMark /><p class="eyebrow gold">PRIVATE PARTNER ACCESS</p><h1 id="activation-title">Set your portal password.</h1><div v-if="done" class="alert success" role="status"><h2>Password saved.</h2><p>Your private collection is ready.</p><a class="button primary full" href="/collection">Open collection</a></div><form v-else @submit.prevent="sent ? activate() : sendCode"><label for="activate-email">Email address</label><input id="activate-email" v-model="email" type="email" required maxlength="254" autocomplete="email" :disabled="busy || sent" /><button v-if="!sent" class="button primary full" :disabled="busy || !token">{{ busy ? 'Sending code…' : 'Send verification code' }}</button><template v-else><label for="activate-code">Verification code</label><input id="activate-code" v-model="code" inputmode="numeric" pattern="[0-9]{6}" required maxlength="6" autocomplete="one-time-code" :disabled="busy" /><label for="activate-password">New password</label><input id="activate-password" v-model="password" type="password" minlength="8" maxlength="64" required autocomplete="new-password" :disabled="busy" /><button class="button primary full" :disabled="busy">{{ busy ? 'Saving password…' : 'Save password and open collection' }}</button></template></form><div v-if="error" class="alert error" role="alert"><p>{{ error.message }}</p></div><a class="text-button access-back" href="/login">Return to sign in</a></section></main>
+</template>

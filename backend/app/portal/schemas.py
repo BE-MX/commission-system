@@ -66,6 +66,10 @@ class VerifyInput(PortalInput):
     code: Annotated[str, StringConstraints(strict=True, pattern=r"^[0-9]{6}$")]
 
 
+class ActivatePasswordInput(VerifyInput, PasswordInput):
+    pass
+
+
 class Delivery(PortalInput):
     contact_name: ShortText
     phone: Annotated[str, Field(min_length=3, max_length=40)]
@@ -326,6 +330,17 @@ class SitePolicy(PortalInput):
         if codes and self.default_payment_term_code is None:
             raise ValueError("Choose a default payment term")
         return self
+
+
+class AccessRequestInput(PortalInput):
+    full_name: ShortText
+    phone: Annotated[str, Field(min_length=3, max_length=40)]
+    email: Annotated[str, StringConstraints(strict=True, min_length=3, max_length=254)]
+
+
+class AccessRequestReview(ReasonInput):
+    decision: Literal["approve", "reject"]
+    access_id: UUID | None = None
 
 
 class SiteUpdate(ReasonInput):

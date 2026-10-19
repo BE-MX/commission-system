@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, ref } from 'vue'
 import BrandMark from './BrandMark.vue'
 const props = defineProps({ api: { type: Object, required: true } })
+const emit = defineEmits(['request-access'])
 const email = ref(''), password = ref(''), busy = ref(false), error = ref(null), passwordInput = ref(null)
 let active = true
 onBeforeUnmount(() => { active = false; password.value = '' })
@@ -46,7 +47,7 @@ async function login() {
         </form>
         <div v-if="error" id="login-error" class="alert error" role="alert"><p>{{ error.message }}</p><small v-if="error.traceId">Reference: {{ error.traceId }}</small></div>
         <div class="login-note"><span aria-hidden="true">◇</span><p>Access is managed by your LeShine representative.<br />Keep your password private.</p></div>
-        <p class="access-help">Need access or a password reset? Contact your LeShine representative.</p>
+        <p class="access-help">Need access or a password reset? <button type="button" class="text-button" @click="emit('request-access')">Request customer portal access</button></p>
       </div>
       <footer class="login-footer"><span>PRIVATE PARTNER ACCESS</span><span>Powered by Ark</span></footer>
     </section>

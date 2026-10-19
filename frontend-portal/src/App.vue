@@ -5,6 +5,8 @@ import { createPortalClient } from './api/client.mjs'
 import { browserChannel } from './state/browserChannel.mjs'
 import BrandMark from './components/BrandMark.vue'
 import LoginView from './components/LoginView.vue'
+import AccessRequestView from './components/AccessRequestView.vue'
+import ActivationView from './components/ActivationView.vue'
 import CollectionView from './components/CollectionView.vue'
 import CheckoutView from './components/CheckoutView.vue'
 import { createSubmission } from './state/submission.mjs'
@@ -13,7 +15,7 @@ import { createOrderDecision } from './state/orderDecision.mjs'
 import OrdersView from './components/OrdersView.vue'
 import FamilyDetailView from './components/FamilyDetailView.vue'
 
-const session = shallowRef(null), stage = ref('restoring'), error = ref(null), signingOut = ref(false)
+const session = shallowRef(null), stage = ref('restoring'), error = ref(null), signingOut = ref(false), accessRequest = ref(false), activationToken = ref('')
 const notice = ref(''), recoveryError = shallowRef(null), decisionRecoveryError = shallowRef(null)
 const channelNotice = ref('')
 const channel = browserChannel(window, () => { channelNotice.value = 'This browser cannot synchronize sessions across tabs. Use one tab and sign out when finished.' })
@@ -32,6 +34,7 @@ function navigate(destination, replace = false) {
 }
 function pathRoute() {
   const path = location.pathname.slice(1)
+  if (path === 'activate') { activationToken.value = new URLSearchParams(location.hash.slice(1)).get('token') || ''; return 'activate' }
   if (path === 'cart') return 'checkout'
   if (['checkout', 'collection', 'orders'].includes(path) || /^collection\/[a-z0-9_]{1,32}$/.test(path) || /^orders\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(\/proposal)?$/i.test(path)) return path
   return 'collection'
@@ -94,7 +97,9 @@ onBeforeUnmount(() => { window.removeEventListener('popstate', back); unsubscrib
   <div v-if="channelNotice" class="session-notice" role="status">{{ channelNotice }}</div>
   <div v-if="stage === 'restoring' || stage === 'signing-out'" id="main-content" class="gate-state" role="status"><BrandMark /><p>{{ stage === 'signing-out' ? 'Signing out…' : 'Opening your private collection…' }}</p></div>
   <div v-else-if="stage === 'unavailable' || stage === 'logout-failed'" id="main-content" class="gate-state"><BrandMark /><p class="eyebrow gold">PARTNER ACCESS</p><h1>{{ stage === 'logout-failed' ? 'Sign-out needs another try.' : 'We’ll be right with you.' }}</h1><p>{{ stage === 'logout-failed' ? 'Your private view is cleared, but we could not confirm sign-out with the server.' : 'Your collection is temporarily unavailable. Please try again shortly.' }}</p><p v-if="error" class="small muted">{{ error.message }}</p><button class="button primary" :disabled="signingOut" @click="stage === 'logout-failed' ? logout() : restore()">{{ signingOut ? 'Signing out…' : 'Try again' }}</button></div>
-  <LoginView v-else-if="!session" id="main-content" :api="api" />
+  <ActivationView v-else-if="route === 'activate'" id="main-content" :api="api" :token="activationToken" />
+  <AccessRequestView v-else-if="!session && accessRequest" id="main-content" :api="api" />
+  <LoginView v-else-if="!session" id="main-content" :api="api" @request-access="accessRequest = true" />
   <div v-else class="portal-shell">
     <header class="portal-header"><a href="/collection" class="brand-link" aria-label="LeShine collection" @click.prevent="navigate('collection')"><BrandMark /></a><nav aria-label="Main navigation"><a href="/collection" :aria-current="route.startsWith('collection') ? 'page' : undefined" @click.prevent="navigate('collection')">Collection</a><a v-if="session.capabilities.place_order" href="/checkout" :aria-current="route === 'checkout' ? 'page' : undefined" @click.prevent="navigate('checkout')">Selection <span class="nav-count">{{ checkoutState.lines.length }}</span></a><a href="/orders" :aria-current="route.startsWith('orders') ? 'page' : undefined" @click.prevent="navigate('orders')">Requests</a></nav><div class="account-menu"><span>{{ session.me.company_display_name }}<small>Private partner access</small></span><button class="text-button" :disabled="signingOut" @click="logout">{{ signingOut ? 'Signing out…' : 'Sign out' }}</button></div></header>
     <div v-if="recoveryError" class="session-notice" role="alert"><p>{{ recoveryError.message }}</p><button class="text-button" @click="checkRecoveryReference">Check recovery reference</button> <button class="text-button" @click="navigate('orders')">View existing requests</button></div>
