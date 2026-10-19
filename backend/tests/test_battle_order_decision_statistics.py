@@ -38,8 +38,8 @@ def test_confirmed_first_repeat_and_exclusion_preserve_gmv_and_cohort_owner():
     one=next(row for row in after['people'] if row['ark_user_id']==1)
     two=next(row for row in after['people'] if row['ark_user_id']==2)
     assert (one['new_count'],one['repeat_count'],one['repeat_orders'])==(3,2,3)
-    assert Decimal(one['repeat_amount'])==Decimal('3784.62')
-    assert Decimal(one['score'])==Decimal('1.4541544')
+    assert Decimal(one['repeat_amount'])==Decimal('4795.22')
+    assert Decimal(one['score'])==Decimal('1.5754264')
     assert two['new_count']==two['repeat_count']==two['repeat_orders']==0
     assert {r['ark_user_id']:r['gmv'] for r in before['people']}=={r['ark_user_id']:r['gmv'] for r in after['people']}
     assert raw==original  # Source facts are neither mutated nor reclassified in the mirror.

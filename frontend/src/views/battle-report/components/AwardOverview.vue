@@ -5,7 +5,8 @@
     <template v-if="data.award_kind === 'annual_repurchase'">
       <p class="award-note">美元目标直接引用Excel“评比需满足最低门槛”列，2026年OKKI美元GMV与该目标直接比较，不换汇、不重新分档或推算目标。</p>
       <p class="award-note">备注：系数前五且满足对应同比增长率的可参与本奖项的评选。</p>
-      <div class="award-summary"><div><span>已达GMV门槛</span><strong>{{ data.qualified.length }}<small> / {{ data.people.length }}人</small></strong></div><div><span>参评席位</span><strong>TOP 5</strong></div><p>新签客户 × 20% + 当年新签复购客户 × 20% + 美元复购金额 ÷ 5000 × 60%</p></div>
+      <p class="award-note">新签复购金额＝2026年新签客户的新签订单金额＋后续复购订单金额，含尚未复购的客户；复购客户数和笔数只统计实际复购。</p>
+      <div class="award-summary"><div><span>已达GMV门槛</span><strong>{{ data.qualified.length }}<small> / {{ data.people.length }}人</small></strong></div><div><span>参评席位</span><strong>TOP 5</strong></div><p>新签客户 × 20% + 当年新签复购客户 × 20% + 美元新签复购金额 ÷ 5000 × 60%</p></div>
       <el-alert v-if="data.cutoff_tie" type="warning" :closable="false" title="获奖候选边界存在同分，待确认决胜规则；同分人员不预判获奖" />
       <section v-for="group in groups" :key="group.key"><h3>{{ group.label }} <span>{{ group.rows.length }}人</span></h3><el-empty v-if="!group.rows.length" description="暂无人员" :image-size="60" />
         <div v-else class="award-people"><article v-for="row in group.rows" :key="row.member_id" :class="['award-person', { 'award-top': row.top_five }]">
@@ -14,7 +15,7 @@
           <p>当前GMV {{ row.gmv_complete ? `$${number(row.gmv)}` : '待核对' }} / 美元门槛 {{ row.target === null ? '待确认' : `$${number(row.target)}` }}</p>
           <el-progress :percentage="row.gmv_complete && row.progress_percent !== null ? Math.min(100, row.progress_percent) : 0" :show-text="false" :status="row.gmv_complete && row.progress_percent !== null ? (row.qualified ? 'success' : 'exception') : undefined" />
           <p><strong>{{ row.gmv_complete && row.progress_percent !== null ? `${number(row.qualified ? row.progress_percent : Math.min(99.9, row.progress_percent), 1)}%` : '进度待核对' }}</strong> · 2025基数 ${{ number(row.baseline) }} · 目标来源：Excel最低门槛列</p>
-          <footer v-if="data.data_complete">新签 {{ row.new_count }} 客户 · 复购 {{ row.repeat_count }} 客户 / {{ row.repeat_orders }} 笔 · 复购 ${{ number(row.repeat_amount) }}</footer><footer v-else>新签、复购客户数、复购笔数及金额待核对</footer>
+          <footer v-if="data.data_complete">新签 {{ row.new_count }} 客户 · 复购 {{ row.repeat_count }} 客户 / {{ row.repeat_orders }} 笔 · 新签复购金额 ${{ number(row.repeat_amount) }}</footer><footer v-else>新签、复购客户数、复购笔数及金额待核对</footer>
         </article></div>
       </section>
     </template>

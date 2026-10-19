@@ -40,3 +40,10 @@ test('incomplete data retains the existing pending ranking protection', t => {
   assert.match(ui.text(), /排名待核对/)
   assert.doesNotMatch(ui.text(), /总榜第1名/)
 })
+
+test('annual amount includes new-only customers while repeat counts stay zero', t => {
+  const ui = render(t, [{ ...person(1, 80, false, '1'), repeat_amount: '125.12' }])
+  assert.match(ui.text(), /新签复购金额＝2026年新签客户的新签订单金额＋后续复购订单金额/)
+  assert.match(ui.text(), /含尚未复购的客户/)
+  assert.match(ui.text(), /复购 0 客户 \/ 0 笔 · 新签复购金额 \$125\.12/)
+})

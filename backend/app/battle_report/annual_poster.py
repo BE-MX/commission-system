@@ -75,4 +75,5 @@ def render_html(snapshot, assets, background):
         podium=podium, table=table, demo=demo, visible=visible,
         calculated_at=snapshot["calculated_at"].replace("T"," ")[:19],
         source_synced_at=(snapshot.get("source_synced_at") or "未知").replace("T"," ")[:19],
+        includes_new_sign_amount=snapshot.get("amount_rule") == "annual_new_customer_orders_v1",
         issue_count=len(snapshot.get("issues",[])), cutoff_tie=snapshot.get("cutoff_tie",False))

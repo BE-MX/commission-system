@@ -55,8 +55,42 @@ def test_repeat_score_uses_dollars_and_ignores_rmb_source_amount():
          {**fact('2',amount='5000',new=False,day='2026-02-01'),'amount_rmb':'35714.5'}]
     data=stats.calculate(campaign(),[member(1)],raw,datetime(2026,10,19))
     row=data['people'][0]
-    assert Decimal(row['gmv'])==5100 and Decimal(row['repeat_amount'])==5000
-    assert Decimal(row['score'])==Decimal('1.0')
+    assert Decimal(row['gmv'])==5100 and Decimal(row['repeat_amount'])==5100
+    assert Decimal(row['score'])==Decimal('1.012')
+
+
+def test_annual_amount_includes_new_only_customers_without_inventing_repeats():
+    data=stats.calculate(campaign(),[member(1)],
+        [fact('1',amount='125.001'),fact('2',cid='ONLY_NEW',amount='74.999')],datetime(2026,10,19))
+    row=data['people'][0]
+    assert data['amount_rule']=='annual_new_customer_orders_v1'
+    assert (row['new_count'],row['repeat_count'],row['repeat_orders'])==(2,0,0)
+    assert Decimal(row['repeat_amount'])==Decimal('200')
+    assert Decimal(row['score'])==Decimal('0.424')
+
+
+def test_annual_cohort_amount_includes_each_new_order_once_after_owner_transfer():
+    raw=[fact('10',amount='100'),fact('11',uid='U2',amount='200',day='2026-02-01'),
+         fact('12',uid='outsider',amount='300',new=False,day='2026-03-01'),
+         fact('9',amount='900',new=False),fact('13',cid='OLD',amount='800',new=False),
+         fact('14',amount='700',goods=False),fact('15',amount='600',day='2027-01-01')]
+    raw.append(dict(raw[0]))  # A duplicate source row must not add a second first-sign amount.
+    data=stats.calculate(campaign(baselines={1:100,2:100}),[member(1),member(2)],raw,datetime(2026,10,19))
+    one=next(row for row in data['people'] if row['member_id']==1)
+    two=next(row for row in data['people'] if row['member_id']==2)
+    assert data['data_complete']
+    assert (one['new_count'],one['repeat_count'],one['repeat_orders'])==(1,1,1)
+    assert Decimal(one['repeat_amount'])==600
+    assert Decimal(two['repeat_amount'])==0 and Decimal(two['gmv'])==200
+
+
+def test_pk_keeps_its_monthly_new_sign_and_repeat_amount_contract():
+    raw=[fact('1',day='2026-11-02',amount='100'),
+         fact('2',day='2026-11-03',amount='200',new=False)]
+    data=stats.calculate(campaign('new_sign_pk'),[member(1)],raw,datetime(2026,11,20))
+    row=data['people'][0]
+    assert Decimal(row['new_amount'])==100 and Decimal(row['repeat_amount'])==200
+    assert Decimal(data['teams'][0]['new_amount'])==100
 
 
 def test_cohort_repeat_dedup_owner_transfer_and_precise_amount():
@@ -67,8 +101,8 @@ def test_cohort_repeat_dedup_owner_transfer_and_precise_amount():
     data = stats.calculate(campaign(baselines={1:100, 2:100}), [member(1), member(2)], raw, datetime(2026, 10, 19))
     one = next(r for r in data["people"] if r["member_id"] == 1)
     two = next(r for r in data["people"] if r["member_id"] == 2)
-    assert (one["new_count"], one["repeat_count"], one["repeat_orders"], Decimal(one["repeat_amount"])) == (1,1,2,Decimal("10000"))
-    assert Decimal(one["score"]) == Decimal("1.60")
+    assert (one["new_count"], one["repeat_count"], one["repeat_orders"], Decimal(one["repeat_amount"])) == (1,1,2,Decimal("10100"))
+    assert Decimal(one["score"]) == Decimal("1.612")
     assert two["repeat_count"] == 0 and two["gmv"] == "4999.999"
 
 
@@ -186,11 +220,21 @@ def test_templates_escape_names_and_contain_business_annotations():
     html=poster_renderer.render_html(data,"personal")
     assert "&lt;img" in html and "<img src='evil'>" not in html
     assert '复购金额：USD' in html and '目标直接引用Excel最低门槛列' in html
+    assert '含尚未复购的客户' in html
     assert '第1名展示位' in html and 'OKKI镜像最近同步：2026-10-19 08:59:00' in html
     assert '统一按积分降序排列，完成进度不影响排名' in html
     data=stats.calculate(campaign("new_sign_pk"),[member(1,"A",True),member(2,"B",True)],[],datetime(2026,10,19))
     data["report"]={"name":"11月份新签PK奖","start_date":"2026-11-01","end_date":"2026-11-30"}
     assert "TEAM PK" in poster_renderer.render_html(data,"team")
+
+
+def test_saved_old_poster_snapshot_is_not_relabelled_with_the_new_amount_rule():
+    data=stats.calculate(campaign(),[member(1)],
+        [fact('1'),fact('2',new=False,day='2026-02-01',amount='5000')],datetime(2026,10,19))
+    del data['amount_rule']
+    data['people'][0]['repeat_amount']='5000'  # A persisted pre-change delivery snapshot.
+    html=poster_renderer.render_html(data,'personal')
+    assert '复购金额：USD' in html and '含尚未复购的客户' not in html
 
 
 def annual_rows(specs):
@@ -315,7 +359,8 @@ def test_source_query_uses_usd_and_cross_owner_repeats(setup):
     assert synced=="2026-09-22 11:59:00" or synced=="2026-09-22T11:59:00"
     assert any(r["user_id"]=="outsider" for r in raw)
     data=stats.calculate(campaign(baselines={1:100,2:100,3:100}),[member(1),member(2),member(3)],raw,datetime(2026,9,22,12),synced)
-    assert data["data_complete"] and Decimal(next(r for r in data["people"] if r["member_id"]==1)["repeat_amount"])==Decimal('5000')
+    # Annual scope also includes the fixture's September 14 new-sign order (999).
+    assert data["data_complete"] and Decimal(next(r for r in data["people"] if r["member_id"]==1)["repeat_amount"])==Decimal('6029.30')
 
 
 def test_single_award_delivery_is_idempotent_and_uncertain_not_resent(posters, monkeypatch):

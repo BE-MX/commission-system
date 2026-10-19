@@ -100,13 +100,18 @@ def calculate(report, members, raw, now, synced_at=None):
         new = {cid: o for cid, o in cohorts.items() if o["uid"] == str(m.okki_user_id)}
         repeats = [o for o in orders if o["cid"] in new and o["new"] is False and o["goods"]
                    and order_key(o) > order_key(new[o["cid"]])]
+        amount_orders = repeats
+        if report.award_kind == "annual_repurchase":
+            # Include every valid new-sign order in the original owner's cohort,
+            # even without a repeat; later transfers do not move these dollars.
+            amount_orders = repeats + [o for o in orders if o["cid"] in new and o["new"] is True]
         row = {"member_id": m.id, "ark_user_id": m.ark_user_id, "user_name": m.user_name,
                "team": m.team, "is_captain": bool(m.is_captain),
                "gmv_complete": str(m.okki_user_id) not in gmv_issues,
                "gmv": format(sum((o["amount"] for o in owned), ZERO), "f"),
                "new_count": len(new), "new_amount": format(sum((o["amount"] for o in owned if o["new"]), ZERO), "f"),
                "repeat_count": len({o["cid"] for o in repeats}), "repeat_orders": len(repeats),
-               "repeat_amount": format(sum((o["amount"] for o in repeats), ZERO), "f")}
+               "repeat_amount": format(sum((o["amount"] for o in amount_orders), ZERO), "f")}
         rows.append(row)
     data = {"award_kind": report.award_kind, "people": rows, "issues": issues,
             "data_complete": not issues, "calculated_at": now.isoformat(), "source_synced_at": synced_at,
@@ -115,6 +120,7 @@ def calculate(report, members, raw, now, synced_at=None):
             "workday_progress": None, "order_decision_count": len(decisions),
             "applied_order_decision_count": len(applied_decisions)}
     if report.award_kind == "annual_repurchase":
+        data["amount_rule"] = "annual_new_customer_orders_v1"
         annual(data, report)
     else:
         pk(data)
