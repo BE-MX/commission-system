@@ -62,8 +62,8 @@ def is_admin(payload: dict) -> bool:
     return "super_admin" in payload.get("roles", []) or "customer_media:admin" in payload.get("permissions", [])
 
 
-def can_read_all_portals(payload: dict) -> bool:
-    return is_admin(payload) or "customer_media_portal:read_all" in payload.get("permissions", [])
+def has_data_scope(payload: dict, code: str) -> bool:
+    return "super_admin" in payload.get("roles", []) or code in payload.get("permissions", [])
 
 
 def _okki_account_id(db: Session, ark_user_id: int) -> str:
@@ -85,17 +85,52 @@ def _okki_account_id(db: Session, ark_user_id: int) -> str:
     raise CustomerMediaConflict("请先在系统管理 -> 外部账号绑定中绑定 OKKI 账号")
 
 
-def _sales_portal_account_statement(db: Session, payload: dict):
-    user_id, _, _ = user_identity(db, payload)
-    statement = select(CustomerPortalAccount)
-    if can_read_all_portals(payload):
-        return statement
+def _assigned_customer_ids(db: Session, user_id: int):
     okki_user_id = _okki_account_id(db, user_id)
-    assigned_customer_ids = select(CustomerCommissionSnapshot.customer_id).where(
+    return select(CustomerCommissionSnapshot.customer_id).where(
         CustomerCommissionSnapshot.is_current.is_(True),
         CustomerCommissionSnapshot.salesperson_id == okki_user_id,
     )
-    return statement.where(CustomerPortalAccount.customer_id.in_(assigned_customer_ids))
+
+
+def _scoped_account_statement(db: Session, payload: dict, scope_code: str):
+    user_id, _, _ = user_identity(db, payload)
+    statement = select(CustomerPortalAccount)
+    if not has_data_scope(payload, scope_code):
+        statement = statement.where(CustomerPortalAccount.customer_id.in_(
+            _assigned_customer_ids(db, user_id),
+        ))
+    return statement
+
+
+def _sales_portal_account_statement(db: Session, payload: dict):
+    return _scoped_account_statement(db, payload, "customer_media_portal:read_all")
+
+
+def list_account_customers(db: Session, payload: dict, search: str) -> list[dict]:
+    user_id, _, _ = user_identity(db, payload)
+    if not search.strip():
+        return []
+    statement = select(CustomerInfo.company_id, CustomerInfo.company_name, CustomerInfo.country_name, CustomerInfo.origin_name)
+    if not has_data_scope(payload, "customer_media_account:read_all"):
+        statement = statement.where(CustomerInfo.company_id.in_(_assigned_customer_ids(db, user_id)))
+    pattern = f"%{search.strip()}%"
+    from app.customer_image.service import _customer_contacts
+    contact_customer_ids = select(_customer_contacts.c.company_id).where(_customer_contacts.c.name.ilike(pattern))
+    rows = db.execute(statement.where(or_(
+        CustomerInfo.company_name.ilike(pattern), CustomerInfo.company_id.ilike(pattern),
+        CustomerInfo.company_id.in_(contact_customer_ids),
+    )).order_by(CustomerInfo.company_name, CustomerInfo.company_id).limit(20)).all()
+    return [{"id": str(row.company_id), "name": row.company_name, "country": row.country_name, "origin": row.origin_name} for row in rows]
+
+
+def _assert_account_customer(db: Session, payload: dict, customer_id: str) -> None:
+    user_id, _, _ = user_identity(db, payload)
+    if not has_data_scope(payload, "customer_media_account:read_all"):
+        if not db.scalar(_assigned_customer_ids(db, user_id).where(
+            CustomerCommissionSnapshot.customer_id == customer_id,
+        ).limit(1)):
+            raise CustomerMediaForbidden("所选客户不在当前用户负责范围内")
 
 
 def _portal_status(account: CustomerPortalAccount, statuses: set[str]) -> str:
@@ -221,6 +256,8 @@ def sales_portal_customer_detail(
 
 
 def list_customers(db: Session, payload: dict, search: str) -> list[dict]:
+    if is_admin(payload):
+        return list_account_customers(db, payload, search)
     from app.customer_image.service import CustomerScopeConflictError, list_available_customers
     user_id, _, _ = user_identity(db, payload)
     try:
@@ -232,6 +269,8 @@ def list_customers(db: Session, payload: dict, search: str) -> list[dict]:
 def validate_customer_access(db: Session, payload: dict, customer_id: str) -> dict:
     from app.customer_image.service import CustomerScopeConflictError, get_available_customer
     user_id, _, _ = user_identity(db, payload)
+    if is_admin(payload):
+        _assert_account_customer(db, payload, customer_id)
     try:
         match = get_available_customer(db, user_id, is_admin(payload), customer_id)
     except CustomerScopeConflictError as exc:
@@ -255,9 +294,13 @@ def _load_task(db: Session, task_id: int) -> tuple[DesignScheduleTask, DesignSch
 
 
 def _assert_writer(db: Session, payload: dict, task: DesignScheduleTask) -> None:
+    user_id, _, user = user_identity(db, payload)
     if is_admin(payload):
-        return
-    _, _, user = user_identity(db, payload)
+        if has_data_scope(payload, "customer_media:read_all"):
+            return
+        _, request = _load_task(db, task.id)
+        if request.salesperson_id == user_id:
+            return
     designer = db.get(DesignDesigner, task.designer_id)
     if not designer or not designer.email or not user.email:
         raise CustomerMediaForbidden("设计师档案需绑定与方舟账号一致的邮箱后才能上传")
@@ -642,10 +685,24 @@ def submit_batch(db: Session, batch_id: int, payload: dict, lock_version: int) -
     return get_batch(db, batch.id)
 
 
+def can_review_batch(payload: dict, batch: CustomerMediaBatch, user_id: int) -> bool:
+    return batch.applicant_user_id == user_id or (
+        is_admin(payload) and has_data_scope(payload, "customer_media:read_all")
+    )
+
+
+def authorize_batch_reader(db: Session, payload: dict, batch_id: int) -> CustomerMediaBatch:
+    user_id, _, _ = user_identity(db, payload)
+    batch = db.get(CustomerMediaBatch, batch_id)
+    if not batch or (batch.applicant_user_id != user_id and not has_data_scope(payload, "customer_media:read_all")):
+        raise CustomerMediaNotFound("素材批次不存在")
+    return batch
+
+
 def _assert_batch_reviewer(db: Session, payload: dict, batch: CustomerMediaBatch, user_id: int) -> None:
-    """审核人与素材标签编辑共用：预约发起人或 customer_media:admin 才能操作。"""
-    if not is_admin(payload) and batch.applicant_user_id != user_id:
-        raise CustomerMediaForbidden("只有预约发起人可以操作该批次")
+    """审核人与素材标签编辑共用：预约发起人或拥有全部审核范围的素材管理员才能操作。"""
+    if not can_review_batch(payload, batch, user_id):
+        raise CustomerMediaForbidden("只有预约发起人或具有全部审核范围的素材管理员可以操作该批次")
 
 
 def review_batch(db: Session, batch_id: int, payload: dict, action: str, comment: str | None, lock_version: int) -> CustomerMediaBatch:
@@ -700,6 +757,7 @@ def unpublish_batch(db: Session, batch_id: int, payload: dict, comment: str | No
     batch = db.scalar(select(CustomerMediaBatch).where(CustomerMediaBatch.id == batch_id).with_for_update())
     if not batch:
         raise CustomerMediaNotFound("素材批次不存在")
+    _assert_batch_reviewer(db, payload, batch, user_id)
     if batch.status != "published":
         raise CustomerMediaConflict("只有已发布批次可以下架")
     batch.status = "unpublished"
@@ -716,7 +774,7 @@ def unpublish_batch(db: Session, batch_id: int, payload: dict, comment: str | No
 def list_reviews(db: Session, payload: dict, status: str | None = None) -> list[CustomerMediaBatch]:
     user_id, _, _ = user_identity(db, payload)
     statement = _batch_query().order_by(CustomerMediaBatch.submitted_at.desc())
-    if not is_admin(payload):
+    if not has_data_scope(payload, "customer_media:read_all"):
         statement = statement.where(CustomerMediaBatch.applicant_user_id == user_id)
     statement = statement.where(CustomerMediaBatch.status == (status or "pending_review"))
     return list(db.scalars(statement).unique())
@@ -964,7 +1022,7 @@ def delete_customer_tag_value(
         raise CustomerMediaNotFound("当前客户标签不存在")
     if batch_id is not None:
         raise CustomerMediaForbidden("审核批次不能删除客户全部素材的标签")
-    if task_id is not None and not is_admin(payload):
+    if task_id is not None:
         affected_batches = db.scalars(select(CustomerMediaBatch).join(
             CustomerMediaAsset, CustomerMediaAsset.batch_id == CustomerMediaBatch.id,
         ).join(CustomerMediaAssetTag, CustomerMediaAssetTag.asset_id == CustomerMediaAsset.id).where(
@@ -1198,6 +1256,7 @@ def portal_used_tags(db: Session, account: CustomerPortalAccount) -> list[dict]:
 
 def create_portal_account(db: Session, payload: dict, customer_id: str, email: str, password: str) -> CustomerPortalAccount:
     user_id, _, _ = user_identity(db, payload)
+    _assert_account_customer(db, payload, customer_id)
     customer_name = db.scalar(select(CustomerInfo.company_name).where(CustomerInfo.company_id == customer_id))
     if not customer_name:
         raise CustomerMediaNotFound("客户不存在")
@@ -1221,7 +1280,9 @@ def create_portal_account(db: Session, payload: dict, customer_id: str, email: s
 
 def update_portal_account(db: Session, payload: dict, account_id: int, *, email=None, password=None, active=None) -> CustomerPortalAccount:
     user_id, _, _ = user_identity(db, payload)
-    account = db.scalar(select(CustomerPortalAccount).where(CustomerPortalAccount.id == account_id).with_for_update())
+    account = db.scalar(_scoped_account_statement(db, payload, "customer_media_account:read_all").where(
+        CustomerPortalAccount.id == account_id,
+    ).with_for_update())
     if not account:
         raise CustomerMediaNotFound("门户账号不存在")
     if email is not None:
@@ -1242,8 +1303,10 @@ def update_portal_account(db: Session, payload: dict, account_id: int, *, email=
     return account
 
 
-def list_portal_accounts(db: Session, search: str = "") -> list[CustomerPortalAccount]:
-    statement = select(CustomerPortalAccount).order_by(CustomerPortalAccount.customer_name_snapshot)
+def list_portal_accounts(db: Session, payload: dict, search: str = "") -> list[CustomerPortalAccount]:
+    statement = _scoped_account_statement(db, payload, "customer_media_account:read_all").order_by(
+        CustomerPortalAccount.customer_name_snapshot,
+    )
     if search.strip():
         pattern = f"%{search.strip()}%"
         statement = statement.where(or_(

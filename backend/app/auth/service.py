@@ -238,7 +238,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"receipt:read_all", "tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "domestic_decision:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
+_DATA_KIND_CODES = {"customer_media:read_all", "customer_media_account:read_all", "receipt:read_all", "tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "domestic_decision:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -330,6 +330,9 @@ def seed_role_permissions(db: Session):
         ("design_stats:read", "design", "read",  "查看设计统计"),
         ("customer_media:read", "customer_media", "read", "查看和审核客户拍摄素材"),
         ("customer_media:write", "customer_media", "write", "上传并提交客户拍摄素材"),
+        ("customer_media:read_all", "customer_media", "read_all", "查看全部拍摄素材审核（数据范围）"),
+        ("customer_media_account:read", "customer_media", "read", "查看本人客户素材门户账号"),
+        ("customer_media_account:read_all", "customer_media", "read_all", "查看全部客户素材门户账号（数据范围）"),
         ("customer_media:admin", "customer_media", "admin", "管理客户素材门户账号和发布"),
         ("customer_media_portal:read", "customer_media", "read", "查看本人客户素材门户预览"),
         ("customer_media_portal:read_all", "customer_media", "read_all", "查看全部客户素材门户预览（数据范围）"),
@@ -663,6 +666,7 @@ def seed_role_permissions(db: Session):
 
     # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
     manual_grant_codes = {
+        "customer_media:read_all", "customer_media_portal:read_all", "customer_media_account:read_all",
         "invoice:delete", "receipt:delete",
         "domestic_decision:read", "domestic_decision:read_all", "domestic_decision:admin",
         "domestic_decision_finance:read", "domestic_decision_action:write", "domestic_decision_report:write",

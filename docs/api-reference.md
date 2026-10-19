@@ -1191,13 +1191,17 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 ## 客户拍摄素材门户（`/api/customer-media`，114 迁移，2026-08-17 业务预览入口）
 
-内部素材交付沿用 `customer_media:*` 权限；业务员预览入口使用页面权限 `customer_media_portal:read`。普通业务员通过本人 active OKKI 绑定映射到当前 `customer_commission_snapshot.salesperson_id`，只能看到当前归属客户；`customer_media_portal:read_all` 或 `customer_media:admin` 可查看全部已配置门户账号。详情越权与不存在统一返回 404。预览数据与客户门户共用 `portal_library()`，只返回仍处于 `published` 状态的批次和未删除素材，草稿、待审核、待修改与已下架批次不会进入响应。
+内部素材交付沿用 `customer_media:*` 权限；业务员预览入口使用页面权限 `customer_media_portal:read`。普通业务员通过本人 active OKKI 绑定映射到当前 `customer_commission_snapshot.salesperson_id`，只能看到当前归属客户；只有 `customer_media_portal:read_all`（或 super_admin）可查看全部门户；`customer_media:admin` 不再隐含全量范围。内部接口每次按数据库当前角色授权校验，不使用旧 JWT 权限作为最终依据。详情越权与不存在统一返回 404。预览数据与客户门户共用 `portal_library()`，只返回仍处于 `published` 状态的批次和未删除素材，草稿、待审核、待修改与已下架批次不会进入响应。
 
 | 方法 | 路径 | 权限 / 会话 | 契约 |
 |---|---|---|---|
+| GET | `/reviews` | `customer_media:read/admin` | 默认只返回预约发起人为本人的批次；`customer_media:read_all` 扩为全部。每行 `can_review` 指明能否审核/改素材标签；全量查看本身不授予这些操作。 |
+| GET | `/portal-accounts` | `customer_media_account:read` 或 `customer_media:admin` | 默认按当前客户业务员归属隔离；仅 `customer_media_account:read_all` 扩为全部。search 不扩大范围。 |
+| GET | `/portal-account-customers` | `customer_media:admin` | 账号创建客户候选，按客户名称/ID/联系人查询，使用与账号列表相同的数据范围，最多20条。 |
+| POST / PATCH | `/portal-accounts`、`/portal-accounts/{account_id}` | `customer_media:admin` + 账号数据范围 | 创建、修改邮箱/密码、启停均检查当前客户范围；按 ID 越权更新统一 404。 |
 | GET / POST | `/customers/{customer_id}/tags` | `design:write/manage` 或 `customer_media:admin` + 当前客户数据权限 | 读取客户级标签；POST 请求体为 `{"tags":[{"dimension_id":1,"tag_value_ids":[2]}]}`，仅接受已归属该客户的标签。 |
 | GET / POST | `/tasks/{task_id}/customer-tags` | `customer_media:write/admin` + 当前任务维护权限 | 设计师读取该任务所属客户的标签；POST 仅接受已归属该客户的标签。 |
-| GET | `/batches/{batch_id}/customer-tags` | `customer_media:read/admin` + 当前批次审核权限 | 审核页读取该批次所属客户可选的标签。 |
+| GET | `/batches/{batch_id}/customer-tags` | `customer_media:read/admin` + 当前批次查看范围 | 审核页读取该批次所属客户可选的标签。 |
 | GET | `/tags/dimensions` | 客户素材读写或设计预约写权限 | 仅返回可见的客户标签维度，不返回跨客户共享的标签值。 |
 | POST | `/customers/{customer_id}/tag-values` | 客户素材读写或设计预约写权限 + 客户/任务/批次上下文授权 | 创建标签时即绑定客户；body 为 `dimension_id/value`，设计任务传 `task_id`、审核批次传 `batch_id`。同客户同维度同名复用。 |
 | PATCH | `/customers/{customer_id}/tag-values/{value_id}` | 同上 | body 为 `{"value":"新名称"}`；只修改当前客户看到的名称，不改其他客户或历史素材 ID。 |

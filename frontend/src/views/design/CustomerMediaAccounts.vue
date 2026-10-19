@@ -7,7 +7,7 @@
         <el-input v-model="search" placeholder="客户名称 / ID / 邮箱" clearable class="filter-w-lg" />
       </FilterBar>
       <div class="action-bar">
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreate">新建账号</GlassButton>
+        <GlassButton v-permission="'customer_media:admin'" variant="primary" left-icon="Plus" @click="openCreate">新建账号</GlassButton>
         <TableTools
           v-model:visible-keys="visibleKeys"
           v-model:density="density"
@@ -29,13 +29,13 @@
         <el-table-column v-if="visibleKeys.includes('login-email')" prop="login_email" label="登录邮箱" min-width="220" show-overflow-tooltip />
         <el-table-column prop="is_active" v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default="{ row }"><StatusBadge :value="row.is_active" :dictionary="ENABLED_STATUS" effect="plain" /></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('last-login')" prop="last_login_at" label="最近登录" min-width="180"><template #default="{ row }">{{ row.last_login_at || '从未登录' }}</template></el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">修改邮箱/密码</GlassButton><GlassButton left-icon="SwitchButton" variant="link" :link-tone="row.is_active ? 'warning' : 'success'" @click="toggle(row)">{{ row.is_active ? '停用' : '启用' }}</GlassButton></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right"><template #default="{ row }"><GlassButton v-permission="'customer_media:admin'" variant="link" left-icon="Edit" @click="openEdit(row)">修改邮箱/密码</GlassButton><GlassButton v-permission="'customer_media:admin'" left-icon="SwitchButton" variant="link" :link-tone="row.is_active ? 'warning' : 'success'" @click="toggle(row)">{{ row.is_active ? '停用' : '启用' }}</GlassButton></template></el-table-column>
       </el-table>
     </div>
     <el-dialog v-model="dialog" :title="editing ? '修改门户账号' : '新建门户账号'" width="640px">
       <el-form label-position="top">
         <ListPageStatus :error="customersResource.errorMessage.value" :loading="customerLoading" :has-data="customers.length > 0" @retry="customersResource.load()" />
-        <el-form-item v-if="!editing" label="客户"><el-select v-model="form.customer_id" filterable remote :remote-method="searchCustomers" :loading="customerLoading" style="width:100%" placeholder="输入客户名称或联系人名称搜索"><el-option v-for="item in customers" :key="item.id" :label="formatCustomerOptionLabel(item)" :value="item.id" /></el-select></el-form-item>
+        <el-form-item v-if="!editing" label="客户"><el-select v-model="form.customer_id" filterable remote :remote-method="searchCustomers" :loading="customerLoading" style="width:100%" placeholder="输入客户名称或 ID 搜索"><el-option v-for="item in customers" :key="item.id" :label="formatCustomerOptionLabel(item)" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="登录邮箱"><el-input v-model="form.login_email" autocomplete="off" /></el-form-item>
         <el-form-item :label="editing ? '重置密码（留空则不修改）' : '初始密码'"><el-input v-model="form.password" type="password" show-password autocomplete="new-password" /><div class="field-hint">至少10位并包含字母和数字；保存后不会再次显示。</div></el-form-item>
       </el-form>
@@ -51,7 +51,7 @@ import { useAsyncResource } from '@/composables/useAsyncResource'
 import { useAuthStore } from '@/stores/auth'
 import { designActorScope } from './designListScope'
 
-import { createPortalAccount, getPortalAccounts, searchMediaCustomers, updatePortalAccount } from '@/api/customerMedia'
+import { createPortalAccount, getPortalAccounts, searchPortalAccountCustomers, updatePortalAccount } from '@/api/customerMedia'
 import { formatCustomerOptionLabel } from './appointmentContract'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
@@ -59,7 +59,7 @@ const search=ref(''),dialog=ref(false),editing=ref(null),saving=ref(false)
 const submittedSearch = ref('')
 const accountsResource = useAsyncResource(async (term, { signal }) => (await getPortalAccounts(term, { signal, suppressToast: true })).data || [])
 const rows = computed(() => accountsResource.data.value || []); const loading = accountsResource.loading
-const customersResource = useAsyncResource(async (term, { signal }) => term ? (await searchMediaCustomers(term, { signal, suppressToast: true })).data || [] : [])
+const customersResource = useAsyncResource(async (term, { signal }) => term ? (await searchPortalAccountCustomers(term, { signal, suppressToast: true })).data || [] : [])
 const customers = computed(() => customersResource.data.value || []); const customerLoading = customersResource.loading
 const authStore = useAuthStore()
 watch(() => designActorScope(authStore), () => { dialog.value = false; accountsResource.load(submittedSearch.value, { clear: true }); customersResource.load('', { clear: true }) }, { flush: 'sync' })

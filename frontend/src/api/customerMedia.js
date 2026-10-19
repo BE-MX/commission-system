@@ -70,3 +70,5 @@ export const getSalesPortalCustomer = (customerId, tagValueIds) => customerMedia
 export const getSalesPortalCustomerTags = customerId => customerMediaClient.get(`/sales-portal/customers/${encodeURIComponent(customerId)}/tags`, {
   showLoading: false, suppressToast: true,
 })
+
+export const searchPortalAccountCustomers = (search, config = {}) => customerMediaClient.get('/portal-account-customers', { showLoading: false, ...config, params: { search } })

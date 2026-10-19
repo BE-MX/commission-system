@@ -1,3 +1,11 @@
+## 2026-10-19 设计中心素材按业务员隔离（Codex，验证通过，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/media-sales-scope/commission-system`，分支 `codex/media-sales-scope`，基于 main `21d2c554`；主目录既有改动未触碰。
+- 拍摄素材审核沿用预约发起人归属，新增 `customer_media:read_all`；门户保留 `customer_media_portal:read_all`，移除素材 admin 隐式全量；账号页新增 `customer_media_account:read` 与 `customer_media_account:read_all`，默认按 active OKKI 绑定和当前客户归属快照隔离。三种全量范围独立，data 权限不能单独进入页面，也不隐含操作权。
+- 内部 API 使用 live RBAC；账号创建、修改、启停和候选查询均检查范围；审核只读全量不会放开他人审核/标签修改，任务详情、标签、跨任务删除亦无素材 admin 隐式旁路。设计师保留分配任务维护权。super_admin 继续按平台约定全量；三个 read_all 从 admin 启动自动补授中排除，发布后须在角色管理显式配置需要的全量范围。现有角色已授的权限保留。
+- 账号页只读按钮权限、审核行 can_review、设计中心分组/页面/菜单和生成导航清单已同步。API 与模块说明已更新，无表结构迁移。既有媒体签名 URL 保留原有效期，未新增即时撤销机制。
+- 验证：隔离 SQLite 后端 68 项通过（素材范围/状态/标签/目录/COS/导航），前端 11 项通过，`npm run build` 成功（保留既有 chunk 提示），定向独立复核无剩余阻断。旧目录测试 fixture 补齐已有门禁要求的客户标签绑定；未弱化生产校验或测试断言。证据 `tmp/media-sales-scope/`。本次按用户授权提交、合并并推送 main；未执行生产读写、生产角色分配、迁移或部署。
+
 ## 2026-10-19 素材门户显示密码按钮（Codex，Git 交付，未部署）
 
 - 分支 `codex/media-password-toggle`。`frontend/public/customer-media/index.html` 与 `hub.css` 为登录密码框增加眼睛图标；默认隐藏，点击或键盘激活可显示/隐藏且保留输入。使用英文可访问名称、44px 点击区域及键盘焦点提示；成功登录或重新显示登录页时恢复隐藏。无 API、数据库或认证契约变更。

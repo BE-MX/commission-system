@@ -1,5 +1,5 @@
 {
-  "source_sha256": "0020fddcb100a8b0d3ff5a1fcc670977b6b13a88f62a7b640c2854eefcaa1a9a",
+  "source_sha256": "f82121db8ec12b413a36b07afd7fbd04ffd5c94d6019d41c7cb260fda925f836",
   "favorite_access": {
     "PortalCatalog": [
       {
@@ -2040,7 +2040,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
@@ -2076,7 +2077,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
@@ -2104,7 +2106,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
@@ -2134,7 +2137,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
@@ -2162,7 +2166,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
@@ -2196,7 +2201,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
@@ -2230,16 +2236,23 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
     "CustomerMediaAccounts": [
       {
-        "permission": "customer_media:admin"
+        "anyPermission": [
+          "customer_media_account:read",
+          "customer_media:admin"
+        ]
       },
       {
-        "permission": "customer_media:admin"
+        "anyPermission": [
+          "customer_media_account:read",
+          "customer_media:admin"
+        ]
       },
       {
         "anyPermission": [
@@ -2258,7 +2271,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
@@ -2286,7 +2300,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
@@ -2314,7 +2329,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],
@@ -2342,7 +2358,8 @@
           "customer_media:read",
           "customer_media:write",
           "customer_media:admin",
-          "customer_media_portal:read"
+          "customer_media_portal:read",
+          "customer_media_account:read"
         ]
       }
     ],

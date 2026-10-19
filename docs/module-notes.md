@@ -1022,7 +1022,10 @@ AI 经营简报为数据库持久化后台任务，页面轮询 `queued/running/
 
 **同源预览**：右侧不建立第二套展示数据，也不允许业务员选择“模拟状态”。后端详情调用客户门户相同的 `portal_library()`，只包含当前 published 批次和未删除素材；任务标题与拍摄类型同时进入客户公开门户和业务预览契约。业务媒体标签使用独立 purpose-bound HMAC URL，不能与设计审核链接互换，读取时再次确认批次仍为 published，因此已下架立即失效；下载只是在签名 URL 上附加 `download=true`。停用账号返回摘要但不签发素材 URL，前端明确展示客户无法登录的禁用态。
 
-**客户范围**：普通账号必须同时具备页面权限 `customer_media_portal:read` 和 active OKKI 绑定，范围取当前 `CustomerCommissionSnapshot.salesperson_id`；权限首次 seed 时，已有 `commission:self_read` 的业务角色自动继承页面权限，避免上线后入口默认不可用，只有 `commission_my:read` 的财务等角色不会被顺带授权。主管角色模板同时包含数据权限 `customer_media_portal:read_all`，这一全量范围不会自动扩大，存量主管角色仍需在权限矩阵中显式授权或重新套用模板。`customer_media:admin` 继续作为素材管理员绕过入口与数据范围。未绑定业务账号返回可行动的 409 配置提示，跨客户详情统一 404，前端客户 ID 查询参数只恢复选择，不能影响后端范围。
+**客户范围**：普通账号必须同时具备页面权限 `customer_media_portal:read` 和 active OKKI 绑定，范围取当前 `CustomerCommissionSnapshot.salesperson_id`；权限首次 seed 时，已有 `commission:self_read` 的业务角色自动继承页面权限，避免上线后入口默认不可用，只有 `commission_my:read` 的财务等角色不会被顺带授权。主管角色模板同时包含数据权限 `customer_media_portal:read_all`，这一全量范围不会自动扩大，存量主管角色仍需在权限矩阵中显式授权或重新套用模板。`customer_media:admin` 只保留页面入口和管理动作，不再隐含全量范围（2026-10-19 本地改动）。未绑定业务账号返回可行动的 409 配置提示，跨客户详情统一 404，前端客户 ID 查询参数只恢复选择，不能影响后端范围。
+
+**三页独立范围（2026-10-19）**：拍摄素材审核以 `applicant_user_id` 匹配预约发起业务员，`customer_media:read_all` 查看全部；客户素材门户沿用当前提成归属快照，`customer_media_portal:read_all` 查看全部；客户素材门户账号新增 `customer_media_account:read` 只读页面权限，当前归属过滤与门户一致，`customer_media_account:read_all` 查看全部。三个 read_all 均为 data，不单独开放页面，也不隐含操作权。全量审核查看者只可查看他人批次，跨业务员审核/改标签须另有素材 admin；账号修改须素材 admin 且在账号范围内。super_admin 按平台约定全量。三个 read_all 必须显式分配，启动 seed 不再给 admin 角色自动补回；原素材管理员需要按职责分配对应全量权限。设计师仍可维护分配给自己的任务；素材管理员只能维护本人预约，或另有审核全量范围的任务。内部接口读取当前数据库角色授权；客户归属变更即时影响后续列表、详情和账号操作。已签发媒体 HMAC 链接仍按原有有效期工作，此改动未引入签名链接即时撤销机制。
+
 
 **门户状态**：左侧状态由该客户现有批次汇总，优先级为审核中 → 待修改 → 已发布 → 草稿 → 暂无素材；停用账号固定显示已停用。计数、客户视图更新时间与右侧展示只统计已发布内容，因此审核状态可以提示内部进度，但不会把未发布文件或其更新时间泄露给预览区。
 

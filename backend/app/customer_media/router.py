@@ -5,7 +5,7 @@ import json
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_any_permission, require_permission
+from app.customer_media.access import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.core.storage.cos import StorageError
@@ -275,7 +275,7 @@ def batch_customer_tags(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission("customer_media:read", "customer_media:admin")),
 ):
-    batch = _call(service.authorize_batch_reviewer, db, payload, batch_id)
+    batch = _call(service.authorize_batch_reader, db, payload, batch_id)
     return ok(_call(service.list_customer_tags, db, batch.customer_id))
 
 
@@ -470,7 +470,10 @@ def review_queue(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission("customer_media:read", "customer_media:admin")),
 ):
-    return ok([_batch_full(db, row) for row in _call(service.list_reviews, db, payload, batch_status)])
+    return ok([
+        {**_batch_full(db, row), "can_review": service.can_review_batch(payload, row, int(payload["sub"]))}
+        for row in _call(service.list_reviews, db, payload, batch_status)
+    ])
 
 
 @router.post("/batches/{batch_id}/review")
@@ -527,13 +530,22 @@ def sales_portal_asset_content(
     return storage_for(asset.storage_provider).response(asset, download=download)
 
 
+@router.get("/portal-account-customers")
+def account_customers(
+    search: str = Query(default="", max_length=200),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("customer_media:admin")),
+):
+    return ok(_call(service.list_account_customers, db, payload, search))
+
+
 @router.get("/portal-accounts")
 def portal_accounts(
     search: str = Query(default="", max_length=200),
     db: Session = Depends(get_db),
-    _payload: dict = Depends(require_permission("customer_media:admin")),
+    payload: dict = Depends(require_any_permission("customer_media_account:read", "customer_media:admin")),
 ):
-    return ok([_account(row) for row in service.list_portal_accounts(db, search)])
+    return ok([_account(row) for row in _call(service.list_portal_accounts, db, payload, search)])
 
 
 @router.post("/portal-accounts")

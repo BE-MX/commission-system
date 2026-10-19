@@ -20,7 +20,7 @@ from app.asset.models import TagDimension, TagValue
 from app.core.database import get_db
 from app.customer_media import service
 from app.customer_media.models import (
-    CustomerMediaAsset, CustomerMediaBatch, CustomerMediaDirectory,
+    CustomerMediaAsset, CustomerMediaBatch, CustomerMediaDirectory, CustomerMediaCustomerTag,
     CustomerPortalAccount,
 )
 from app.customer_media.public_router import PortalSecurityHeadersMiddleware, router as public_router
@@ -131,7 +131,7 @@ def test_submit_approve_publish_and_portal_customer_isolation(db):
     assert published.status == "published"
     assert [row.action for row in published.reviews] == ["submit", "approve"]
 
-    admin = _payload(applicant, "customer_media:admin")
+    admin = _payload(applicant, "customer_media:admin", "customer_media_account:read_all")
     account_a = service.create_portal_account(
         db, admin, "CUST-MEDIA-1", "client-a@example.com", "ClientPass123",
     )
@@ -182,7 +182,7 @@ def test_review_rejection_reopens_task_for_designer_corrections(db):
 def test_password_change_invalidates_existing_portal_session(db):
     _add_customer(db, "CUST-MEDIA-1", "客户甲")
     applicant, _designer, _request, _task = _seed_workflow(db)
-    admin = _payload(applicant, "customer_media:admin")
+    admin = _payload(applicant, "customer_media:admin", "customer_media_account:read_all")
     account = service.create_portal_account(
         db, admin, "CUST-MEDIA-1", "client@example.com", "ClientPass123",
     )
@@ -210,7 +210,7 @@ def test_public_portal_login_headers_and_uniform_failure(db):
     batch.published_at = datetime(2026, 8, 17, 10, 30)
     db.commit()
     service.create_portal_account(
-        db, _payload(applicant, "customer_media:admin"), "CUST-MEDIA-1",
+        db, _payload(applicant, "customer_media:admin", "customer_media_account:read_all"), "CUST-MEDIA-1",
         "client@example.com", "ClientPass123",
     )
     app = FastAPI()
@@ -347,7 +347,7 @@ def test_sales_portal_preview_uses_current_customer_scope_and_published_content(
         storage_provider="local", object_key="customers/internal-only.png",
         uploaded_by=designer.id,
     ))
-    admin = _payload(applicant, "customer_media:admin")
+    admin = _payload(applicant, "customer_media:admin", "customer_media_account:read_all")
     account_a = service.create_portal_account(
         db, admin, "CUST-MEDIA-1", "client-a@example.com", "ClientPass123",
     )
@@ -423,6 +423,9 @@ def _sample_tags(db):
         db.add(TagValue(dimension_id=dim.id, value="产品图", is_active=1))
         db.commit()
     value = db.query(TagValue).filter_by(dimension_id=dim.id).first()
+    if not db.query(CustomerMediaCustomerTag).filter_by(customer_id="CUST-MEDIA-1", tag_value_id=value.id).first():
+        db.add(CustomerMediaCustomerTag(customer_id="CUST-MEDIA-1", dimension_id=dim.id, tag_value_id=value.id))
+        db.commit()
     return [{"dimension_id": dim.id, "tag_value_ids": [value.id]}]
 
 

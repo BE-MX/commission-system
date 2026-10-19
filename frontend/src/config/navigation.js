@@ -168,7 +168,7 @@ export const MENU_GROUPS = {
       'design:read', 'design:write', 'design:audit', 'design:manage',
       'design_gantt:read', 'design_my:read', 'design_stats:read',
       'customer_media:read', 'customer_media:write', 'customer_media:admin',
-      'customer_media_portal:read',
+      'customer_media_portal:read', 'customer_media_account:read',
     ],
   },
   report: {
@@ -1352,10 +1352,10 @@ export const NAV_ENTRIES = [
     name: 'CustomerMediaAccounts',
     component: () => import('@/views/design/CustomerMediaAccounts.vue'),
     title: '客户素材门户账号',
-    permission: 'customer_media:admin',
+    anyPermission: ['customer_media_account:read', 'customer_media:admin'],
     menu: {
       group: 'design', title: '客户素材门户账号', icon: Lock, order: 37,
-      permission: 'customer_media:admin',
+      anyPermission: ['customer_media_account:read', 'customer_media:admin'],
     },
   },
   {

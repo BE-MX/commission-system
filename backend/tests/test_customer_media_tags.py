@@ -210,7 +210,7 @@ def test_customer_tag_rename_and_confirmed_delete_are_customer_scoped(db):
     dim, _ = _make_dim(db, "customer_texture", "Textures type")
     applicant, _designer, _outsider, batch, asset = _seed_batch_with_asset(db, bind_existing=False)
     _add_customer(db, "CUST-TAG-2", "标签客户乙")
-    admin = _payload(applicant, "customer_media:admin")
+    admin = _payload(applicant, "customer_media:admin", "customer_media_account:read_all")
     first = service.create_customer_tag_value(db, admin, "CUST-TAG-1", dim.id, "Straight")
     second = service.create_customer_tag_value(db, admin, "CUST-TAG-2", dim.id, "Straight")
     assert first["id"] == second["id"]
@@ -413,7 +413,7 @@ def test_update_asset_tags_permission_and_dimension_overwrite(db):
     }
 
     # admin 也可编辑
-    admin = _payload(outsider, "customer_media:admin")
+    admin = _payload(outsider, "customer_media:admin", "customer_media:read_all")
     service.update_asset_tags(
         db, batch.id, asset.id, admin,
         [{"dimension_id": customer_dim.id, "tag_value_ids": [values[0].id]}],
@@ -455,6 +455,8 @@ def test_update_asset_tags_rejects_single_select_multi_and_internal_dim(db):
 # ── HTTP 层：内部端点权限与响应 ───────────────────────────
 
 def _internal_app(db, payload):
+    from tests.customer_media_support import set_grants
+    set_grants(db, int(payload["sub"]), payload["permissions"])
     app = FastAPI()
     app.include_router(internal_router, prefix="/api/customer-media")
     app.dependency_overrides[get_db] = lambda: db
@@ -557,7 +559,7 @@ def test_sales_preview_tags_use_current_customer_scope_and_published_media(db):
     batch.status = "published"
     batch.published_at = datetime(2026, 9, 3, 10, 0)
     account = service.create_portal_account(
-        db, _payload(applicant, "customer_media:admin"), "CUST-TAG-1",
+        db, _payload(applicant, "customer_media:admin", "customer_media_account:read_all"), "CUST-TAG-1",
         "client-tags@example.com", "ClientPass123",
     )
     db.add_all([
@@ -641,7 +643,7 @@ def test_portal_library_tag_filter_or_within_and_across_dimensions(db):
     ])
     _publish(db, batch)
     service.create_portal_account(
-        db, _payload(applicant, "customer_media:admin"), "CUST-TAG-1",
+        db, _payload(applicant, "customer_media:admin", "customer_media_account:read_all"), "CUST-TAG-1",
         "client-tag@example.com", "ClientPass123",
     )
 
@@ -717,7 +719,7 @@ def test_portal_tags_only_used_values_and_cross_customer_isolation(db):
     db.commit()
     _bind_existing(db, "CUST-TAG-2", [values[1]])
 
-    admin = _payload(applicant, "customer_media:admin")
+    admin = _payload(applicant, "customer_media:admin", "customer_media_account:read_all")
     service.create_portal_account(db, admin, "CUST-TAG-1", "client-a-tag@example.com", "ClientPass123")
     service.create_portal_account(db, admin, "CUST-TAG-2", "client-b-tag@example.com", "ClientPass123")
 

@@ -27,7 +27,7 @@
         <el-table-column prop="assets.length" v-if="visibleKeys.includes('assets')" label="素材" min-width="110"><template #default="{ row }">{{ row.assets.length }} 个</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="送审时间" min-width="180" />
         <el-table-column :sort-by="() => '待审核'" v-if="visibleKeys.includes('status')" label="状态" min-width="110"><template #default><StatusBadge type="warning" effect="plain">待审核</StatusBadge></template></el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="120" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="open(row)">审核</GlassButton></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="120" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="open(row)">{{ row.can_review ? '审核' : '查看' }}</GlassButton></template></el-table-column>
       </el-table>
     </div>
 
@@ -59,7 +59,7 @@
                   class="tag-chip"
                 >{{ tagLabel(tag) }}</StatusBadge>
                 <span v-if="!(asset.tags || []).length" class="no-tag">未打标签</span>
-                <el-button link type="primary" class="tag-edit" @click="openTagPicker(asset)">编辑标签</el-button>
+                <el-button v-if="current.can_review" v-any-permission="['customer_media:read', 'customer_media:admin']" link type="primary" class="tag-edit" @click="openTagPicker(asset)">编辑标签</el-button>
               </div>
             </div>
           </article>
@@ -68,11 +68,11 @@
           </section>
         </div>
         <el-empty v-if="!reviewGroups.length" description="没有符合筛选条件的素材" />
-        <el-form label-position="top" class="review-form"><el-form-item label="审核意见"><el-input v-model="comment" type="textarea" :rows="4" placeholder="退回时必须填写明确的修改原因；通过时可选填" /></el-form-item></el-form>
+        <el-form v-if="current.can_review" label-position="top" class="review-form"><el-form-item label="审核意见"><el-input v-model="comment" type="textarea" :rows="4" placeholder="退回时必须填写明确的修改原因；通过时可选填" /></el-form-item></el-form>
       </template>
-      <template #footer>
-        <GlassButton variant="danger" :loading="saving" @click="decide('request_changes')">退回修改</GlassButton>
-        <GlassButton variant="success" :loading="saving" @click="decide('approve')">通过并发布</GlassButton>
+      <template v-if="current?.can_review" #footer>
+        <GlassButton v-any-permission="['customer_media:read', 'customer_media:admin']" variant="danger" :loading="saving" @click="decide('request_changes')">退回修改</GlassButton>
+        <GlassButton v-any-permission="['customer_media:read', 'customer_media:admin']" variant="success" :loading="saving" @click="decide('approve')">通过并发布</GlassButton>
       </template>
     </DetailDrawer>
     <el-image-viewer v-if="previewUrl" :url-list="[previewUrl]" @close="previewUrl = ''" />
