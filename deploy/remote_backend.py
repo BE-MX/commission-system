@@ -3,6 +3,8 @@
 import hashlib
 from contextlib import contextmanager
 import json
+from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 import re
 import queue
@@ -18,15 +20,32 @@ STATE = ROOT / ".deploy_state"
 SERVICE = "ark-backend"
 
 
-def run(args, cwd=ROOT, capture=False):
+def run(args, cwd=ROOT, capture=False, timeout=900):
     result = subprocess.run(args, cwd=cwd, check=True, text=True,
                             stdout=subprocess.PIPE if capture else sys.stderr,
-                            stderr=sys.stderr, timeout=900)
+                            stderr=sys.stderr, timeout=timeout)
     return result.stdout.strip() if capture else ""
 
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def service_event(state, component, revision, previous, phase):
+    """Availability timestamps are evidence, never a replacement for health checks."""
+    try:
+        path = Path(state) / (component + '-service-events-' + revision + '.json')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rows = json.loads(path.read_text(encoding='utf-8')) if path.exists() else []
+        if not isinstance(rows, list):
+            raise ValueError('Invalid availability timestamps')
+        rows.append(dict(phase=phase, at=datetime.now(timezone(timedelta(hours=8))).isoformat(),
+                         revision=revision, previous=previous))
+        temporary = path.with_suffix('.next')
+        temporary.write_text(json.dumps(rows[-100:]), encoding='utf-8')
+        os.replace(temporary, path)
+    except (OSError, ValueError, TypeError):
+        print('WARNING: service availability timestamp unavailable', file=sys.stderr, flush=True)
 
 
 @contextmanager
@@ -205,6 +224,24 @@ def healthy():
         result = json.load(response)
         if response.status != 200 or result.get("status") != "ok" or result.get("database") != "connected":
             raise RuntimeError("Beijing health check failed")
+    if run(['sudo', '-n', 'systemctl', 'is-active', SERVICE], capture=True, timeout=5) != 'active':
+        raise RuntimeError('Beijing service is not active')
+
+
+def wait_ready(timeout=300):
+    """The same cold-start budget applies to forward, unchanged and rollback."""
+    deadline = time.monotonic() + timeout
+    # The attempt cap also bounds a broken clock/sleep implementation.
+    for attempt in range(int(timeout / 2) + 1):
+        try:
+            healthy()
+            return
+        except Exception as error:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or attempt == int(timeout / 2):
+                raise RuntimeError('Beijing readiness deadline exceeded') from error
+            print('Beijing readiness retry: ' + type(error).__name__, file=sys.stderr, flush=True)
+            time.sleep(min(2, remaining))
 
 
 def activate(revision):
@@ -224,18 +261,19 @@ def activate_locked(revision):
     python = Path(info["environment"]) / "bin/python" if info["environment"] else ROOT / "backend/.venv/bin/python"
     schema_check(source, python)
     if not info["changed"] and not info.get("schema_changed"):
-        healthy()
+        wait_ready()
         activate_colorwork(info, source, python)
         run(['git', 'checkout', '--detach', revision])
         info['status'] = 'unchanged'
         (STATE / 'backend-success.json').write_text(json.dumps(info))
         return {"status": "unchanged", "revision": revision, "schema": info["schema"]}
     protocol_before=protocol_observation(source,python)
-    run(["sudo", "-n", "systemctl", "stop", SERVICE])
     venv = ROOT / "backend/.venv"
     backup_env = STATE / ("previous-venv-" + info["previous"])
     switched_env = False
     try:
+        service_event(STATE, 'beijing', revision, info['previous'], 'stop-requested')
+        run(["sudo", "-n", "systemctl", "stop", SERVICE])
         if info["environment"]:
             if venv.is_symlink():
                 previous_env = str(venv.resolve())
@@ -249,16 +287,10 @@ def activate_locked(revision):
             info["previous_environment"] = previous_env
             venv.symlink_to(info["environment"], target_is_directory=True)
         run(["git", "checkout", "--detach", revision])
+        service_event(STATE, 'beijing', revision, info['previous'], 'start-requested')
         run(["sudo", "-n", "systemctl", "start", SERVICE])
-        for attempt in range(15):
-            try:
-                healthy()
-                break
-            except Exception as error:
-                print("Beijing readiness retry: " + type(error).__name__, file=sys.stderr, flush=True)
-                if attempt == 14:
-                    raise
-                time.sleep(2)
+        wait_ready()
+        service_event(STATE, 'beijing', revision, info['previous'], 'http-ready')
         info["status"] = "updated"
         (STATE / "backend-success.json").write_text(json.dumps(info))
     except Exception:
@@ -271,8 +303,10 @@ def activate_locked(revision):
                 if switched_env:
                     venv.unlink(missing_ok=True)
                     venv.symlink_to(info["previous_environment"], target_is_directory=True)
+                service_event(STATE, 'beijing', revision, info['previous'], 'rollback-start-requested')
                 run(["sudo", "-n", "systemctl", "start", SERVICE])
-                healthy();guard.check()
+                wait_ready();guard.check()
+                service_event(STATE, 'beijing', revision, info['previous'], 'rollback-http-ready')
         except Exception:
             run(["sudo", "-n", "systemctl", "stop", SERVICE])
             raise RuntimeError('Beijing rollback unverified; service held stopped, inspect protocol compatibility') from None

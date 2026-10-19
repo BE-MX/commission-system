@@ -78,4 +78,9 @@ def execute(args, live, source, deployment_lock):
     with deployment_lock():
         from schema_release import check_recovery
         check_recovery()
-        return run(live, source, args.prepare_only)
+        current = json.loads((Path(live) / '.deploy_state/publish-current.json').read_text(encoding='utf-8'))
+        result = run(live, source, args.prepare_only, include_office=current.get('scope') != 'cloud-only')
+        if not args.prepare_only:
+            from maintenance_status import complete
+            complete(Path(live) / '.deploy_state', 'static_retention', result)
+        return result

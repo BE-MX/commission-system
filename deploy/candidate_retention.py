@@ -290,4 +290,8 @@ def execute(args, live, source, deployment_lock):
         current = git(live, 'rev-parse', 'HEAD')
         older = history[1:] if history and history[0] == current else history
         previous = older[0] if older else current
-        return run(live, source, previous, prepare_only=args.prepare_only)
+        result = run(live, source, previous, prepare_only=args.prepare_only)
+        if not args.prepare_only:
+            from maintenance_status import complete
+            complete(Path(live) / '.deploy_state', 'candidate_retention', result)
+        return result

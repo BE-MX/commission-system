@@ -106,6 +106,19 @@ def test_prepare_is_read_only(checkpoint):
     c.publish.assert_not_called()
 
 
+def test_service_only_recovers_availability_then_resumes_without_second_start(checkpoint):
+    c = checkpoint
+    c.args.restore_service_only = True
+    result = recovery.execute(c.path, c.args)
+    assert c.running[0] and result['status'] == 'old_service_restored'
+    c.publish.assert_not_called()
+    assert json.loads((c.state / 'publish-current.json').read_text()) == c.journal
+    c.args.restore_service_only = False
+    recovery.execute(result['resume_plan'], c.args)
+    c.publish.assert_called_once()
+    assert len([a for a in c.commands if len(a) > 1 and a[1] == 'start']) == 1
+
+
 @pytest.mark.parametrize('fail', [False, True])
 def test_running_service_is_never_restarted_or_stopped(checkpoint, monkeypatch, fail):
     c = checkpoint

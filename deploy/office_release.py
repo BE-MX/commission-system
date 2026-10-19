@@ -10,7 +10,7 @@ import time
 import urllib.request
 
 from publish import ROOT, STATE, atomic_json, input_digest, marker, npm_command, run
-from remote_backend import schema_check, database_lock, protocol_observation, rollback_guard
+from remote_backend import schema_check, database_lock, protocol_observation, rollback_guard, service_event
 from static_sync import manifest
 from remote_static import retain_assets
 
@@ -49,6 +49,8 @@ def connector_environment(inherited, file_values, base, extra):
 
 
 def prepare(live, previous, revision, recover_149=False, recover_151=False, recover_168=False):
+    from office_hot_static import check_pending
+    check_pending(STATE)
     if os.name != "nt":
         raise RuntimeError("Full release runs on the office Windows server")
     nssm = shutil.which("nssm") or str(Path.home() / "AppData/Local/Microsoft/WinGet/Links/nssm.exe")
@@ -137,6 +139,8 @@ def prepare(live, previous, revision, recover_149=False, recover_151=False, reco
 
 
 def stage_static(outputs, prepared):
+    from office_hot_static import tree
+    from static_retention import no_links
     changes = []
     for name, dist in outputs.items():
         folder, leaf = ("frontend-pm", "dist-lan") if name == "pm-lan" else (name, "dist")
@@ -145,12 +149,29 @@ def stage_static(outputs, prepared):
         current = manifest(destination) if (destination / "index.html").exists() else {}
         if all(current.get(k) == v for k, v in files.items()) and marker("office-" + name).get("files") == files:
             continue
+        cache_path = STATE / ('office-stage-' + name + '.json')
+        no_links(cache_path)
+        binding = dict(revision=prepared['revision'], destination=str(destination.resolve()),
+                       files=files, current=tree(destination))
+        if cache_path.exists():
+            cache = json.loads(cache_path.read_text(encoding='utf-8'))
+            staged = Path(cache['staged'])
+            if (staged.parent.resolve() != STATE.resolve()
+                    or not staged.name.startswith('office-next-' + name + '-')):
+                raise RuntimeError('Unexpected staged static cache path')
+            if cache['binding'] == binding and staged.is_dir():
+                if tree(staged) != cache['staged_files']:
+                    raise RuntimeError('Corrupt staged static cache')
+                changes.append((name, destination, staged, files))
+                print('  Office static: verified staged copy reused for ' + name, flush=True)
+                continue
         staged = STATE / ("office-next-" + name + "-" + str(time.time_ns()))
         staged.mkdir()
         from candidate_retention import record_created
         record_created(STATE, staged, prepared['revision'], 'static')
         shutil.copytree(dist, staged, dirs_exist_ok=True)
         retain_assets(destination, staged)
+        atomic_json(cache_path, dict(binding=binding, staged=str(staged), staged_files=tree(staged)))
         changes.append((name, destination, staged, files))
     prepared["static"] = changes
 
@@ -162,10 +183,16 @@ def activate(prepared):
 
 
 def activate_locked(prepared):
+    from office_hot_static import check_pending
+    check_pending(STATE)
     nssm, live = prepared["nssm"], prepared["live"]
     revision, previous = prepared["revision"], prepared["previous"]
     if run(["git", "rev-parse", "HEAD"], cwd=live, capture=True) != previous:
         raise RuntimeError("Office checkout changed after preparation")
+    if not (prepared['backend_changed'] or prepared['connector_changed'] or prepared.get('schema_changed')):
+        from office_hot_static import eligible, publish as publish_static
+        if eligible(prepared['static']):
+            return publish_static(prepared, STATE, run, marker, wait_ready)
     backend_changed = prepared["backend_changed"] or bool(prepared["static"]) or prepared.get("schema_changed", False)
     connector_changed = prepared["connector_changed"]
     if not backend_changed and not connector_changed:
@@ -180,6 +207,7 @@ def activate_locked(prepared):
     services = (["CommissionSystem"] if backend_changed else []) + (["WhatsAppConnector"] if connector_changed or prepared.get("schema_changed") else [])
     # Stopping is inside the recovery block: a partial stop must not strand services.
     try:
+        service_event(STATE, 'office', revision, previous, 'stop-requested')
         for service in services:
             if run([nssm, "status", service], capture=True) != "SERVICE_STOPPED":
                 run([nssm, "stop", service])
@@ -206,9 +234,11 @@ def activate_locked(prepared):
                 parameters = "-m uvicorn " + parameters
             run([nssm, "set", "CommissionSystem", "Application", prepared["python"]])
             run([nssm, "set", "CommissionSystem", "AppParameters", parameters])
+        service_event(STATE, 'office', revision, previous, 'start-requested')
         for service in services:
             run([nssm, "start", service])
         wait_ready(prepared['port'], nssm, services)
+        service_event(STATE, 'office', revision, previous, 'http-ready')
     except Exception:
         for service in services:
             if run([nssm, "status", service], capture=True) != "SERVICE_STOPPED":
@@ -225,10 +255,12 @@ def activate_locked(prepared):
                         backup.rename(destination)
                 run([nssm, "set", "CommissionSystem", "Application", prepared["application"]])
                 run([nssm, "set", "CommissionSystem", "AppParameters", prepared["parameters"]])
+                service_event(STATE, 'office', revision, previous, 'rollback-start-requested')
                 for service in services:
                     run([nssm, "start", service])
                 wait_ready(prepared['port'], nssm, services)
                 guard.check()
+                service_event(STATE, 'office', revision, previous, 'rollback-http-ready')
         except Exception:
             for service in services:
                 if run([nssm,'status',service],capture=True)!='SERVICE_STOPPED':run([nssm,'stop',service])

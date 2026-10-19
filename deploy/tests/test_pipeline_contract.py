@@ -577,6 +577,7 @@ def test_static_prepare_failure_prevents_freeze_and_activation(pipeline, monkeyp
 
 
 def test_retention_failure_preserves_verified_application_success(pipeline, monkeypatch):
+    pipeline.args.inline_maintenance = True
     import static_retention_release
     import candidate_retention
     def fail(*args, **kwargs):
@@ -602,7 +603,34 @@ def test_prepare_only_never_runs_retention(pipeline, monkeypatch):
     candidate_retention.run.assert_not_called()
 
 
+def test_default_release_defers_maintenance_but_records_rollback_history(pipeline):
+    import static_retention_release
+    import candidate_retention
+    publish.publish(pipeline.args)
+    static_retention_release.run.assert_not_called()
+    candidate_retention.run.assert_not_called()
+    candidate_retention.record_success.assert_called_once()
+    receipt = json.loads((pipeline.state / 'publish-success.json').read_text())
+    assert receipt['static_retention']['status'] == 'deferred'
+    assert receipt['candidate_retention']['status'] == 'deferred'
+
+
+def test_inline_maintenance_closes_current_release_pending_receipt(pipeline):
+    import static_retention_release
+    import candidate_retention
+    pipeline.args.inline_maintenance = True
+    static_retention_release.run.return_value = {'status': 'succeeded'}
+    candidate_retention.run.return_value = {'status': 'succeeded'}
+    publish.publish(pipeline.args)
+    pending = json.loads((pipeline.state / 'maintenance-pending.json').read_text())
+    current = json.loads((pipeline.state / 'publish-current.json').read_text())
+    assert pending['status'] == 'succeeded'
+    assert pending['release_id'] == current['release_id']
+    assert pending['revision'] == current['revision']
+
+
 def test_candidate_cleanup_runs_after_static_retention_and_preserves_app_success_on_failure(pipeline, monkeypatch):
+    pipeline.args.inline_maintenance = True
     import candidate_retention
     import static_retention_release
     def fail(*args, **kwargs):

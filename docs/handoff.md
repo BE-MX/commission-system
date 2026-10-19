@@ -1,3 +1,11 @@
+## 2026-10-19 部署等待与停服优化（本地完成，未发布）
+
+- 工作树：Codex 已有 managed worktree；分支 `codex/deployment-availability`，基于 `15d86b35`。本轮只修改 deploy 脚本/测试/说明，无业务、数据库、网络拓扑改动；未 commit、merge、push、SSH 或实际部署。
+- 新增安全静态热更新、完整摘要绑定的暂存复用；北京就绪/回滚使用300秒重试预算并核验systemd；出库新fence回执复核不重复暂停timer；只恢复旧服务的readiness入口；默认清理延后并用独立维护回执闭合；切换阶段北京时间留证。
+- 故障测试发现并修复回滚分阶段manifest校验错误。独立审查问题均已处理：未完成静态切换阻断所有Office路径、fresh模式下限保存、维护按当前release身份闭合。回滚备份损坏仍保留applying并要求核验恢复。
+- 全部署隔离回归931通过/18跳过/3个既有失败，后补pipeline回归59通过；主目录重跑复现同样3个失败（旧迁移head断言2项、路由mock耗尽1项）。约定及差异检查通过。详细说明、证据和部署边界见 [交付记录](reports/2026-10-19-deployment-availability-optimization.md)。
+- 默认不自动执行清理且未创建定时任务，维护窗口须用既有受管专项入口或显式inline选项。后端更新仍短暂停服，未启用双实例切流，不能称为零停机或线上已生效。
+
 ## 2026-10-19 Beijing unchanged-release checkout verification
 
 A deployment-tool-only release must advance the installed Beijing checkout and backend-success receipt even when no backend restart is needed. The unchanged branch now verifies health and colorwork, advances the pinned checkout, and writes its receipt while preserving the running service. An isolated regression checks the Git/receipt update and absence of systemctl actions. Final delivery must verify both installed Git heads, rather than relying on the overall publish summary.

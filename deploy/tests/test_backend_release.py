@@ -21,7 +21,7 @@ class BackendReleaseTests(unittest.TestCase):
     def test_readiness_uses_real_health_contract(self):
         response = io.BytesIO(b'{"status":"ok","database":"connected"}')
         response.status = 200
-        with patch.object(remote_backend.urllib.request, "urlopen", return_value=response):
+        with patch.object(remote_backend.urllib.request, "urlopen", return_value=response), patch.object(remote_backend, 'run', return_value='active'):
             remote_backend.healthy()
 
     def test_database_error_is_not_healthy(self):
@@ -30,6 +30,14 @@ class BackendReleaseTests(unittest.TestCase):
         with patch.object(remote_backend.urllib.request, "urlopen", return_value=response):
             with self.assertRaises(RuntimeError):
                 remote_backend.healthy()
+
+    def test_other_listener_does_not_make_stopped_service_ready(self):
+        response = io.BytesIO(b'{"status":"ok","database":"connected"}')
+        response.status = 200
+        with patch.object(remote_backend.urllib.request, 'urlopen', return_value=response), patch.object(remote_backend, 'run', return_value='inactive') as run:
+            with self.assertRaisesRegex(RuntimeError, 'not active'):
+                remote_backend.healthy()
+            self.assertEqual(run.call_args.kwargs['timeout'], 5)
 
     def test_schema_change_restarts_even_when_code_is_already_at_target(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -354,25 +354,43 @@ def publish(args):
                 journal['candidate_retention_error'] = type(error).__name__
                 atomic_json(STATE / 'publish-current.json', journal)
                 raise
-        from static_retention_release import run as retain_static
-        try:
-            summary['static_retention'] = step('static-retention', '清理过期前端资源与回滚备份',
-                                               retain_static, live, ROOT, include_office=bool(office))
-        except Exception as error:
-            journal['static_retention_error'] = type(error).__name__ + ': ' + str(error)
-            atomic_json(STATE / 'publish-current.json', journal)
-            raise
-        atomic_json(STATE / 'publish-success.json', summary)
-        if office:
-            from candidate_retention import run as retain_candidates
+        atomic_json(STATE / 'maintenance-pending.json', {
+            'revision': revision, 'release_id': release_id, 'scope': scope,
+            'status': 'pending', 'static_retention': {'status': 'deferred'},
+            'candidate_retention': {'status': 'deferred'} if office else None})
+        if getattr(args, 'inline_maintenance', False):
+            from maintenance_status import complete as complete_maintenance
+            from static_retention_release import run as retain_static
             try:
-                summary['candidate_retention'] = step('candidate-retention', '清理过期源码与静态暂存副本',
-                                                       retain_candidates, live, ROOT, previous)
+                summary['static_retention'] = step('static-retention', '清理过期前端资源与回滚备份',
+                                                   retain_static, live, ROOT, include_office=bool(office))
+                complete_maintenance(STATE, 'static_retention', summary['static_retention'])
             except Exception as error:
-                journal['candidate_retention_error'] = type(error).__name__
+                journal['static_retention_error'] = type(error).__name__ + ': ' + str(error)
                 atomic_json(STATE / 'publish-current.json', journal)
                 raise
             atomic_json(STATE / 'publish-success.json', summary)
+            if office:
+                from candidate_retention import run as retain_candidates
+                try:
+                    summary['candidate_retention'] = step('candidate-retention', '清理过期源码与静态暂存副本',
+                                                           retain_candidates, live, ROOT, previous)
+                    complete_maintenance(STATE, 'candidate_retention', summary['candidate_retention'])
+                except Exception as error:
+                    journal['candidate_retention_error'] = type(error).__name__
+                    atomic_json(STATE / 'publish-current.json', journal)
+                    raise
+                atomic_json(STATE / 'publish-success.json', summary)
+        else:
+            summary['static_retention'] = {'status': 'deferred', 'entrypoint': '--static-retention-only'}
+            if office:
+                summary['candidate_retention'] = {'status': 'deferred', 'entrypoint': '--candidate-retention-only'}
+            atomic_json(STATE / 'publish-success.json', summary)
+            atomic_json(STATE / 'maintenance-pending.json', {
+                'revision': revision, 'release_id': release_id, 'scope': scope,
+                'status': 'pending', 'static_retention': summary['static_retention'],
+                'candidate_retention': summary.get('candidate_retention')})
+            print('APPLICATION VERIFIED; retention deferred to managed maintenance entrypoints', flush=True)
         emit("result", status="succeeded", revision=revision, completed=journal["completed"],
              unmanaged_services=summary["unmanaged_services"], deferred=journal["deferred"])
         print("CLOUD RELEASE COMPLETED (office not included)" if args.cloud_only else "MANAGED APPLICATION RELEASE COMPLETED")
@@ -411,6 +429,8 @@ if __name__ == "__main__":
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
     parser.add_argument("--live-root", help="Installed checkout for a pinned deployer under its .deploy_state/sources")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--inline-maintenance", action="store_true", help="Run retention after application verification; default records deferred maintenance")
+    parser.add_argument('--restore-service-only', action='store_true', help='With --recover-office-readiness: restore the verified old service and stop before resuming publication')
     parser.add_argument("--restore-pre151", metavar="PLAN", help="Restore only the reviewed compatible applications after the failed 151 migration")
     parser.add_argument("--office-lan-https", metavar="PLAN", help="Configure only office LAN HTTPS using an existing domain certificate")
     parser.add_argument("--shipping-video-routing-only", action="store_true", help="Enable 100MB private shipping video uploads on existing backends")
@@ -427,6 +447,8 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if getattr(args, 'restore_service_only', False) and not getattr(args, 'recover_office_readiness', None):
+            raise RuntimeError('--restore-service-only requires --recover-office-readiness PLAN')
         if args.whatsapp_routing_only and any(value for key, value in vars(args).items()
                                                if key not in {"whatsapp_routing_only", "prepare_only"}):
             raise RuntimeError("WhatsApp routing only accepts --prepare-only")
@@ -513,7 +535,7 @@ if __name__ == "__main__":
             from storage_cutover import execute
             execute(args.storage_cutover, args.prepare_only)
         elif args.recover_office_readiness:
-            if any(value for key, value in vars(args).items() if key not in {'recover_office_readiness', 'prepare_only', 'live_root', 'revision', 'no_pull'}):
+            if any(value for key, value in vars(args).items() if key not in {'recover_office_readiness', 'restore_service_only', 'prepare_only', 'live_root', 'revision', 'no_pull'}):
                 raise RuntimeError('Readiness recovery requires only its pinned controller and reviewed plan')
             from recover_office_readiness import execute
             print(json.dumps(execute(args.recover_office_readiness, args)), flush=True)

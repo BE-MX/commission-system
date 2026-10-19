@@ -36,6 +36,9 @@ def execute(plan_path, args):
     plan = json.loads(Path(plan_path).read_text(encoding='utf-8-sig'))
     live, state = p.ROOT, p.STATE
     receipt = state / ('office-readiness-recovery-' + plan['release_id'] + '-' + plan['journal_sha256'][:12] + '.json')
+    restore_only = getattr(args, 'restore_service_only', False)
+    if restore_only:
+        receipt = receipt.with_name(receipt.stem + '-service-only.json')
     source = state / 'sources' / plan['revision']
     with p.deployment_lock():
         raw = (state / 'publish-current.json').read_bytes()
@@ -96,6 +99,12 @@ def execute(plan_path, args):
                 p.atomic_json(receipt, {'status': 'health_failed', 'original_state': plan['service_state'], 'original': journal, 'plan': plan})
                 raise
             p.atomic_json(receipt, {'status': 'old_service_restored', 'original': journal, 'plan': plan})
+        if restore_only:
+            resume_plan = dict(plan, service_state='SERVICE_RUNNING')
+            resume_path = state / ('resume-office-' + plan['release_id'] + '-' + plan['journal_sha256'][:12] + '.json')
+            p.atomic_json(resume_path, resume_plan)
+            return {'status': 'old_service_restored', 'revision': plan['previous'],
+                    'release_status': 'pending', 'resume_plan': str(resume_path)}
     # Retain the original SHA and release_id so remote paused-stage journals keep
     # their pre-freeze baselines. The normal publisher performs every release step.
     resumed = copy.copy(args)

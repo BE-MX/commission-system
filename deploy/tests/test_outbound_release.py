@@ -113,6 +113,10 @@ def test_retry_preserves_original_active_baseline(host):
 
 def test_verify_drains_dispatched_batch_before_fence_and_restores_under_fence(host, monkeypatch):
     host.call('freeze'); host.call('install'); host.call('activate')
+    # A receipt from the previous deployer must still use the fenced upgrade path.
+    journal = host.root / '.deploy-state/ark-outbound/release-current.json'
+    legacy = json.loads(journal.read_text()); legacy.pop('verification_protocol', None)
+    journal.write_text(json.dumps(legacy))
     host.state.update(pid='42', service='active')
     events=[]
     def finished(_):
@@ -141,6 +145,9 @@ def test_verify_drains_dispatched_batch_before_fence_and_restores_under_fence(ho
 
 def test_verify_drain_timeout_keeps_paused_and_never_claims_completed(host, monkeypatch):
     host.call('freeze'); host.call('install'); host.call('activate')
+    journal_path = host.root / '.deploy-state/ark-outbound/release-current.json'
+    legacy = json.loads(journal_path.read_text()); legacy.pop('verification_protocol', None)
+    journal_path.write_text(json.dumps(legacy))
     host.state.update(pid='42', service='active')
     monkeypatch.setattr(remote.time, 'monotonic', Mock(side_effect=[0,181]))
     with pytest.raises(RuntimeError, match='still running'):
@@ -149,6 +156,32 @@ def test_verify_drain_timeout_keeps_paused_and_never_claims_completed(host, monk
     assert host.state['pid']=='42'
     journal=json.loads((host.root/'.deploy-state/ark-outbound/release-current.json').read_text())
     assert journal['status']=='failed_paused' and journal['release_confirmed'] is False
+
+
+def test_current_fenced_release_verifies_busy_batch_without_dispatch_churn(host, monkeypatch):
+    host.call('freeze'); host.call('install'); host.call('activate')
+    host.state.update(pid='42', service='active')
+    monkeypatch.setattr(remote.time, 'monotonic', Mock(side_effect=range(0, 2000, 181)))
+    before = len(host.commands)
+    for _ in range(2):
+        assert host.call('verify')['schedule'] == {'active': True, 'enabled': True}
+    assert host.state['pid'] == '42'
+    assert not any(c[:2] in (['systemctl', 'stop'], ['systemctl', 'start'],
+                            ['systemctl', 'disable'], ['systemctl', 'enable'])
+                   for c in host.commands[before:])
+
+
+def test_readback_mode_upgrade_is_remembered_even_when_verification_rejects(host, monkeypatch):
+    host.call('freeze'); host.call('install'); host.call('activate')
+    observations = iter([
+        {'mode': 'legacy', 'database_fingerprint': 'e' * 64},
+        {'mode': remote.MODE, 'database_fingerprint': 'e' * 64},
+    ])
+    monkeypatch.setattr(remote, 'observe_mode', lambda *_: next(observations))
+    with pytest.raises(RuntimeError, match='observation changed'): host.call('verify')
+    floor = json.loads((host.root / '.deploy-state/ark-outbound/mode-floor.json').read_text())
+    assert floor['mode'] == remote.MODE
+    assert not host.state['active'] and not host.state['enabled']
 
 
 def test_busy_service_with_inactive_state_still_blocks_install(host, monkeypatch):

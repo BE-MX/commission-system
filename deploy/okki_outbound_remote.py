@@ -351,6 +351,21 @@ try {await c.query('SELECT id,status FROM ark_okki_outbound_tasks LIMIT 1'); awa
                 or previous.get('target_schedule') != expected_schedule
                 or timer_state() != expected_schedule):
             raise RuntimeError('Outbound schedule differs from the mode target')
+        if type(previous.get('verification_protocol')) is int and previous['verification_protocol'] == 2:
+            # Activation already verified under ModeFence AND confirmed release of
+            # that fence. Do not dispatch then pause a second batch merely to read
+            # back the same state. Always recheck bytes, DB/mode, baseline and timer;
+            # execute() still compensates any mismatch by pausing scheduling.
+            fresh = observe_mode(stage, config)
+            confirm_target(fresh, previous, request)
+            remember_mode(fresh, stage.parent)
+            if fresh != observation or timer_state() != expected_schedule:
+                raise RuntimeError('Outbound verification observation changed')
+            verify_bytes()
+            previous.update(status='completed')
+            save(journal, previous)
+            return receipt('verified', baseline=previous['baseline'], schedule=expected_schedule,
+                           target_schedule=expected_schedule, release_confirmed=True)
         pause_schedule()
         drain()
         with ModeFence(stage, config) as fence:
@@ -371,7 +386,7 @@ try {await c.query('SELECT id,status FROM ark_okki_outbound_tasks LIMIT 1'); awa
             fence.check()
             previous.update(status='target_verified', release_confirmed=False)
             save(journal, previous)
-        previous.update(status='completed', release_confirmed=True)
+        previous.update(status='completed', release_confirmed=True, verification_protocol=2)
         save(journal, previous)
         return receipt('verified', baseline=previous['baseline'], schedule=expected_schedule,
                        target_schedule=expected_schedule, release_confirmed=True)
@@ -448,7 +463,8 @@ try {await c.query('SELECT id,status FROM ark_okki_outbound_tasks LIMIT 1'); awa
         record = {'digest': digest, 'revision': revision, 'release_id': release_id, 'status': 'target_verified',
                   'baseline': baseline, 'target_schedule': schedule, 'release_confirmed': False, **observation}
         save(journal, record)
-    record.update(status='activated' if coordinated else 'completed', release_confirmed=True)
+    record.update(status='activated' if coordinated else 'completed', release_confirmed=True,
+                  verification_protocol=2)
     save(journal, record)
     return receipt('enabled', changed_files=changed_count, baseline=baseline, schedule=schedule,
                    target_schedule=schedule, release_confirmed=True)
