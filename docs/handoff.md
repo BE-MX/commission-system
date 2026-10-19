@@ -1,4 +1,7 @@
-## 2026-10-19 客户下单门户 P4：客户账号申请、业务审核、邮箱激活与设置密码（Accio，未部署）
+## 2026-10-19 订单发票产品明细缺货筛选（Codex，Git交付，未部署）
+
+- 分支 `codex/invoice-stock-shortage`，工作目录 `C:/Users/windb/.codex/worktrees/invoice-stock-shortage/commission-system`；新版创建/编辑及旧版创建复用产品明细组件，增加「仅显示库存不足的产品」、可用库存/未发货数量对照与浅红缺货整行。筛选默认关闭，先筛选再排序分页，不删除源明细，不影响金额及保存；新增/导入或定位数量错误时恢复全部行。
+
 
 - 同分支（P3 已提交 `9e15f3da`）。新增迁移 `201_portal_access_requests` 与 `PortalAccessRequest`；公开申请 `POST /access-requests` 只收全名/电话/邮箱，限频、幂等，不创建权限；员工在「客户账号申请」页查看并批准/拒绝，批准必须绑定既有 enabled + can_order 客户授权，复用 invitation outbox 发激活邮件。
 - 客户端新增登录页「Request customer portal access」、`/activate#token=...` 激活页；新增 `/auth/challenge` + `/auth/activate`，邮件 token 经验证码校验后设置密码并直接登录。申请、密码、token 不进入回执/日志；钉钉通知复用 dingtalk outbox，申请通知不包含权限或密码。
