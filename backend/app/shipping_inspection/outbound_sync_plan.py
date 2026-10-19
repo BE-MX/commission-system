@@ -25,6 +25,15 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
+def version_digest(plan):
+    """Preview identity excludes the local link snapshot.
+
+    The mirror may catch up between preview and send without changing what the
+    operator reviewed; only the product/quantity/header evidence may reject it.
+    """
+    return digest({key: value for key, value in plan.items() if key != 'item_links'})
+
+
 def canonical_identity(value):
     if type(value) is int and value > 0:
         value = str(value)

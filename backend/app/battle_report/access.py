@@ -10,6 +10,10 @@ def is_admin(user: dict) -> bool:
     return "super_admin" in user.get("roles", []) or "battle_report:admin" in user.get("permissions", [])
 
 
+def can_read_all(user: dict) -> bool:
+    return is_admin(user) or "battle_report:read_all" in user.get("permissions", [])
+
+
 def actor_id(user: dict) -> int:
     try:
         return int(user["sub"])
@@ -52,9 +56,11 @@ def load_report(db, report_id, user, *, lock=False):
     members = db.query(BattleReportMember).filter_by(report_id=report_id).order_by(BattleReportMember.id).all()
     own = next((m for m in members if m.ark_user_id == actor_id(user)), None)
     if not is_admin(user):
-        if report.status == "draft" or own is None:
+        if report.status == "draft" or (own is None and not can_read_all(user)):
             raise HTTPException(403, "无权访问该战报")
         # An external account reassignment must never silently expose the new owner's orders.
+        if can_read_all(user):
+            return report, members, own
         current = {item["ark_user_id"]: item["okki_user_id"] for item in bound_accounts(db)}
         if current.get(own.ark_user_id) != own.okki_user_id:
             raise HTTPException(422, "当前账号的 OKKI 绑定已失效，请联系管理员在外部账号绑定中核对")
@@ -62,7 +68,7 @@ def load_report(db, report_id, user, *, lock=False):
 
 
 def visible_members(report, members, own, user, *, details=False):
-    if is_admin(user):
+    if can_read_all(user):
         return members
     if details:
         return [m for m in members if m.team == own.team] if own.is_captain else [own]

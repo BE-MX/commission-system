@@ -34,9 +34,30 @@ def _commit(db: Session) -> None:
         raise
 
 
-def _photo_to_dict(photo: ShippingInspectionPhoto, stale_ids=()) -> dict:
-    return {"id": photo.id, "item_id": photo.item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type,
+def _photo_to_dict(photo: ShippingInspectionPhoto, stale_ids=(), local_items=None) -> dict:
+    item_id = photo.item_id
+    if local_items and item_id is not None:
+        item_id = local_items.get(str(item_id), item_id)
+    return {"id": photo.id, "item_id": item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type,
             "storage_state": getattr(photo, '_storage_state', 'local'), "stale": photo.id in stale_ids}
+
+
+def _display_item_ids(db: Session, outbound_record_id: str) -> dict[str, str]:
+    """Resolve evidence bound to a stable remote id onto the current local detail id.
+
+    Photos inherited across a recreated detail are bound to ``okki:<remote>`` while
+    the mirror still lags; the station groups by local ids, so resolve on read.
+    """
+    if not outbound_record_id:
+        return {}
+    try:
+        return {'okki:' + str(row['remote_item_id']): str(row['local_item_id'])
+                for row in outbound_service.inspection_item_links(db, outbound_record_id)
+                if row.get('remote_item_id') is not None and row.get('local_item_id') is not None}
+    except Exception as exc:  # noqa: BLE001 - display-only fallback keeps raw bindings
+        logger.warning("验货照片明细ID解析失败 outbound=%s: %s", outbound_record_id, exc)
+        print(f"[shipping_inspection] 照片明细ID解析失败 outbound={outbound_record_id}: {exc}", flush=True)
+        return {}
 
 
 def list_photos(db: Session, inspection_id: int, media_type: str = "image") -> list[ShippingInspectionPhoto]:
@@ -327,6 +348,7 @@ def scan_payload(db: Session, outbound_record_id: str) -> dict:
     inspection = _get_by_outbound_id(db, outbound_record_id)
     photos = list_photos(db, inspection.id) if inspection is not None else []
     videos = list_photos(db, inspection.id, "video") if inspection is not None else []
+    local_items = _display_item_ids(db, outbound_record_id) if photos or videos else {}
     from app.shipping_inspection.outbound_sync_state import evidence, BLOCKED, requires_recheck_photo
     stale_ids, required_ids = evidence(db, outbound_record_id)
     sync_event = db.query(ShippingOperationEvent).filter_by(scope='outbound-invoice-sync', request_id=str(outbound_record_id)).first()
@@ -338,8 +360,8 @@ def scan_payload(db: Session, outbound_record_id: str) -> dict:
              "edit_version": inspection.edit_version, "remark": inspection.remark}
             if inspection is not None else None
         ),
-        "photos": [_photo_to_dict(p, stale_ids) for p in photos],
-        "videos": [_photo_to_dict(p, stale_ids) for p in videos],
+        "photos": [_photo_to_dict(p, stale_ids, local_items) for p in photos],
+        "videos": [_photo_to_dict(p, stale_ids, local_items) for p in videos],
         "required_recheck_ids": required_ids,
         "outbound_sync_pending": bool(sync_event and sync_event.action in BLOCKED),
     }
@@ -450,6 +472,8 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
     if inspection is None:
         return None
     photos = list_photos(db, inspection.id)
+    videos = list_photos(db, inspection.id, "video")
+    local_items = _display_item_ids(db, inspection.outbound_record_id) if photos or videos else {}
     from app.shipping_inspection.outbound_sync_state import evidence, BLOCKED, requires_recheck_photo
     stale_ids, required_ids = evidence(db, inspection.outbound_record_id)
     sync_event = db.query(ShippingOperationEvent).filter_by(scope='outbound-invoice-sync', request_id=inspection.outbound_record_id).first()
@@ -472,8 +496,8 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
         "submitted_at": inspection.submitted_at,
         "submitted_by_name": submitter.real_name if submitter else None,
         "items": [{**item, "requires_recheck_photo": requires_recheck_photo(item)} for item in items],
-        "photos": [_photo_to_dict(p, stale_ids) for p in photos],
-        "videos": [_photo_to_dict(p, stale_ids) for p in list_photos(db, inspection.id, "video")],
+        "photos": [_photo_to_dict(p, stale_ids, local_items) for p in photos],
+        "videos": [_photo_to_dict(p, stale_ids, local_items) for p in videos],
         "required_recheck_ids": required_ids,
         "outbound_sync_pending": bool(sync_event and sync_event.action in BLOCKED),
     }

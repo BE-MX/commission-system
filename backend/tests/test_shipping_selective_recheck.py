@@ -21,6 +21,12 @@ def media(identity, item):
     return SimpleNamespace(id=identity, item_id=item)
 
 
+def line(remote, order, *, product_id=11, sku_id=110, name='Hair', count=1):
+    return dict(outbound_record_id=remote, order_record_id=order, product_id=product_id,
+                sku_id=sku_id, product_name=name, product_model='Weft', product_unit='Piece',
+                outbound_count=count)
+
+
 def test_changed_product_keeps_other_products_and_stales_whole():
     old = [row(701, 100), row(702, 101)]
     plan = dict(before={'record_list': old}, material_order_ids=['100'], removed_order_ids=[], remark_changed=False)
@@ -233,3 +239,67 @@ def test_remote_requirement_resolves_to_local_identity_and_accepts_fresh_photo(d
     db.commit()
     assert state.evidence(db, 'OB001')[1] == ['LOCAL1']
     assert service.submit(db, outbound_record_id='OB001', user_id=user.id).status == 'submitted'
+
+
+def test_recreated_same_product_line_inherits_photo_without_new_evidence():
+    old = [line(701, 100)]
+    after = [line(702, 101)]
+    plan = dict(before={'record_list': old}, material_order_ids=['101'],
+                removed_order_ids=['100'], remark_changed=False)
+    links = [dict(local_item_id='LOCAL1', remote_item_id=701)]
+    stale, required = recheck.changes(plan, {'record_list': after}, links,
+                                     [media(1, 'LOCAL1'), media(2, None)], {})
+    assert stale == [] and required == []
+
+
+def test_recreated_product_with_changed_quantity_still_needs_fresh_evidence():
+    old = [line(701, 100, count=2)]
+    after = [line(702, 101, count=1)]
+    plan = dict(before={'record_list': old}, material_order_ids=['101'],
+                removed_order_ids=['100'], remark_changed=False)
+    links = [dict(local_item_id='LOCAL1', remote_item_id=701)]
+    stale, required = recheck.changes(plan, {'record_list': after}, links,
+                                     [media(1, 'LOCAL1'), media(2, None)], {})
+    assert stale == [1, 2]
+    assert required == ['__whole__', 'okki:702']
+
+
+@pytest.mark.parametrize('after_sku', [110, 999])
+def test_recreated_line_requires_same_product_and_sku_identity(after_sku):
+    old = [line(701, 100)]
+    after = [line(702, 101, sku_id=after_sku)]
+    plan = dict(before={'record_list': old}, material_order_ids=['101'],
+                removed_order_ids=['100'], remark_changed=False)
+    links = [dict(local_item_id='LOCAL1', remote_item_id=701)]
+    stale, required = recheck.changes(plan, {'record_list': after}, links,
+                                     [media(1, 'LOCAL1'), media(2, None)], {})
+    if after_sku == 110:
+        assert stale == [] and required == []
+    else:
+        assert stale == [1, 2] and required == ['__whole__', 'okki:702']
+
+
+def test_duplicate_same_product_rows_are_not_guessed():
+    old = [line(701, 100), line(703, 102)]
+    after = [line(702, 101)]
+    plan = dict(before={'record_list': old}, material_order_ids=['101'],
+                removed_order_ids=['100', '102'], remark_changed=False)
+    links = [dict(local_item_id='LOCAL1', remote_item_id=701),
+             dict(local_item_id='LOCAL2', remote_item_id=703)]
+    stale, required = recheck.changes(plan, {'record_list': after}, links,
+                                     [media(1, 'LOCAL1'), media(2, 'LOCAL2'), media(3, None)], {})
+    assert stale == [1, 2, 3]
+    assert required == ['__whole__', 'okki:702']
+
+
+def test_already_stale_photo_is_not_revived_by_a_recreated_line():
+    old = [line(701, 100)]
+    after = [line(702, 101)]
+    plan = dict(before={'record_list': old}, material_order_ids=['101'],
+                removed_order_ids=['100'], remark_changed=False)
+    links = [dict(local_item_id='LOCAL1', remote_item_id=701)]
+    stale, required = recheck.changes(plan, {'record_list': after}, links,
+                                     [media(1, 'LOCAL1'), media(2, None)],
+                                     {'stale_media_ids': [1]})
+    assert stale == [1, 2]
+    assert required == ['__whole__', 'okki:702']

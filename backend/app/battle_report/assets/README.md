@@ -10,4 +10,6 @@ The September calligraphic heading is used only for September campaigns; other m
 
 The offline HTML embeds its own palette tokens from `poster.css`; it does not load the main frontend stylesheet or any network resources. Historical delivered images remain cached; the new theme applies when a poster is rendered again.
 
+Annual ranking overlays (`annual_ranking.html` / `annual_ranking.css`, 2026-10-19): the lower table progress heading reads “年度GMV同比增长完成进度”. All five podium scores and the twelve lower-table score slots use the dedicated gold score token and weight 900. The original background artwork, other numbers and progress calculation remain unchanged. Changes appear in newly rendered previews/images; existing cached deliveries retain their original image.
+
 Image edit prompt: preserve the original tall composition, exact title “9月冲刺战报”, slogan “不破目标 绝不松懈”, and all five runners; replace scarlet areas with warm ivory white and pale champagne gold; use darker antique-gold calligraphy and bronze running silhouettes; keep the middle empty; add no logos, business data, badges or text.

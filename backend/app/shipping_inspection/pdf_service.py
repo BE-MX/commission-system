@@ -131,6 +131,11 @@ def export_inspection_pdf(db, inspection_id, edit_version=None):
             names[str(item['item_id'])] = label
             doc.text(label)
             doc.text(f"规格：{item.get('spec') or '—'}  SKU：{item.get('sku') or '—'}  数量：{item.get('qty')} {item.get('unit') or ''}")
+        # Inherited evidence may be bound to the stable remote id while the mirror lags.
+        for row in outbound_service.inspection_item_links(db, inspection.outbound_record_id):
+            remote, local = 'okki:' + str(row.get('remote_item_id')), str(row.get('local_item_id'))
+            if remote not in names and local in names:
+                names[remote] = names[local]
         doc.text(f"验货照片（{len(photos)} 张；视频不进入 PDF）")
         for index, photo in enumerate(photos, 1):
             doc.space(640)

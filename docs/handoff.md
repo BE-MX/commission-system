@@ -6,6 +6,27 @@
 - 全部署隔离回归931通过/18跳过/3个既有失败，后补pipeline回归59通过；主目录重跑复现同样3个失败（旧迁移head断言2项、路由mock耗尽1项）。约定及差异检查通过。详细说明、证据和部署边界见 [交付记录](reports/2026-10-19-deployment-availability-optimization.md)。
 - 默认不自动执行清理且未创建定时任务，维护窗口须用既有受管专项入口或显式inline选项。后端更新仍短暂停服，未启用双实例切流，不能称为零停机或线上已生效。
 
+
+## 2026-10-19 年度榜表头与金色积分（Codex，Git交付，未部署）
+
+- 在 `codex/battle-order-details` 工作树延续本轮改动：年度榜下方列表表头改为「年度GMV同比增长完成进度」；5个顶部卡片及12行列表积分统一使用金色独立令牌与900字重。只修改海报HTML/CSS和字段样式分类，原底图、数字计算与排序保持不变。
+- 验证：年度奖项既有pytest 54项通过。用17人模拟快照生成HTML，在浏览器复用正式 `ANNUAL_FIT_JS` 字号适配，确认17处积分颜色/字重一致、无截断，新表头完整。证据 `tmp/battle-metric-orders/annual-gold-preview.html`、`annual-gold-table.png`。本地venv缺少playwright，未调用完整PNG渲染链成功；浏览器已实际检查模板渲染，截图是模拟数据。
+- 资产README已同步。无新增前端应用改动，不重复全站构建。用户已授权本次提交、合并main并推送；生产待后续授权发布，新样式适用于重新生成海报，已缓存历史投递不自动更换。
+
+## 2026-10-19 临时战报统计来源订单明细（Codex，Git交付，未部署）
+
+- 工作树 `C:/Users/windb/.codex/worktrees/battle-order-details/commission-system`，分支 `codex/battle-order-details`，基点 `e4ecc7f1`。新增「新签客户 / 复购客户 / 新签+复购金额」标签及 `GET /api/battle-reports/{id}/metric-orders`；客户、订单名称、核算日期范围与可见业务员筛选，默认日期倒序，全结果排序后分页，默认20条、20/50/100档，表格按视口限高。
+- 明细字段为客户名称、订单名称、订单号、下单日期、USD金额和统计归属业务员。下单日期明确沿用战报核算日期；合计展示完整筛选的订单数、去重客户数、金额，不随翻页变化。复用奖项事实清洗/裁定与原新签客户归属；转交后复购仍归原新签人。PK总览新签金额另按订单负责人统计，页面/API明确区别，既有PK规则不变。
+- 权限保留业务员本人、组长本组、管理者全活动。新增 `battle_report:read_all`（kind=data），需配合read，需角色管理显式分配；允许非参与人查看已发布/归档战报，不开放草稿、管理动作、审计、海报或他人目标写入。普通范围继续核对有效OKKI绑定。无表结构迁移。
+- 验证：隔离SQLite/纯函数后端149项通过；前端22项通过；生产构建通过（既有大chunk/混合动态导入提示）；增量约定检查和git diff检查通过；独立审查提出的PK金额歧义已补显式说明与转交回归。浏览器用62笔模拟数据验证三个标签、客户/订单名称筛选、重置、分页合计和失败重试状态，390px iframe确认筛选换行、表格独立滚动布局。未对真实订单进行生产验收。
+- 证据：`tmp/battle-metric-orders/desktop.png`、`mobile.png`、`build.log`；可复用模拟页 `frontend/tests/fixtures/battle-metric-orders/`。Git巡检 `--no-fetch` 是本地快照，其他工作树与旧分支未清理。主目录既有改动未触碰；用户已授权本次提交、合并main并推送；未部署、分配生产权限或写生产数据。
+
+## 2026-10-19 Business notification links default to cloud (Codex, deployment pending)
+
+Business notification image URLs and short links now default to `https://leshine.cloud`. Domestic review, announcement, aftersales, training and shipping inspection detail defaults use the same domain. Tracking daily reports and missing-short-code redirects now use `SHORT_LINK_BASE_URL` instead of hard-coded work links. The shared setting also changes newly generated asset, customer-image invitation and WhatsApp pairing links. Environment overrides remain supported; `.env.example` documents the six defaults.
+
+Read-only production inspection found no explicit overrides for these six settings in either backend `.env`; office battle posters already explicitly use cloud. Existing messages and persisted destinations are not rewritten. Infrastructure proxies, health checks, allowed origins and unrelated public API UI addresses remain outside this notification-link change. Validation: 163 notification/API tests passed; mocked link checks verified defaults, image path, short-code fallback, report date and a custom origin; independent review found no blocking issues. One explicitly authorized cloud-image test was sent to the supplied test group and DingTalk returned HTTP 200 / errcode 0; this confirms acceptance, not client loading speed. No deployment performed.
+
 ## 2026-10-19 Beijing unchanged-release checkout verification
 
 A deployment-tool-only release must advance the installed Beijing checkout and backend-success receipt even when no backend restart is needed. The unchanged branch now verifies health and colorwork, advances the pinned checkout, and writes its receipt while preserving the running service. An isolated regression checks the Git/receipt update and absence of systemctl actions. Final delivery must verify both installed Git heads, rather than relying on the overall publish summary.

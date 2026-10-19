@@ -20,13 +20,15 @@ logger = logging.getLogger(__name__)
 def source_facts(db, report, members, now):
     """Read year/cohort facts including repeat orders now owned by another salesperson."""
     now = to_beijing_naive(now)
-    if now.date() < report.start_date:
+    if not members or now.date() < report.start_date:
         return [], None
     schema = get_settings().BUSINESS_DB_NAME
     query = text(f"""
         SELECT o.order_id, o.order_no, o.user_id, o.company_id, o.account_date, o.amount_usd,
+               o.name AS order_name, COALESCE(c.company_name, '') AS company_name,
                o.custom_fields, o.synced_at, {goods_order_sql('o')} AS is_goods
         FROM `{schema}`.okki_orders o
+        LEFT JOIN `{schema}`.customer_info c ON c.company_id = o.company_id
         WHERE (o.status = '13972831656' OR (o.status = '13972831654' AND o.status_name = '已结清'))
           AND (o.trail IS NULL OR CAST(o.trail AS CHAR) NOT LIKE '%个人%')
           AND (o.account_date BETWEEN :start AND :end OR o.account_date IS NULL)
@@ -42,7 +44,7 @@ def source_facts(db, report, members, now):
     return rows, synced.isoformat() if hasattr(synced, "isoformat") else str(synced) if synced else None
 
 
-def calculate(report, members, raw, now, synced_at=None):
+def normalize_facts(report, raw, now):
     now = to_beijing_naive(now)
     issues, orders, seen = [], [], {}
     try:
@@ -83,28 +85,52 @@ def calculate(report, members, raw, now, synced_at=None):
                 continue
             seen[oid] = fact
             orders.append({"id": oid, "uid": uid, "cid": cid, "day": day,
+                           "order_no": row.get("order_no") or oid, "order_name": row.get("order_name") or "",
+                           "company_name": row.get("company_name") or "",
                            "amount": amount, "new": True if role == "new_sign" else False if role == "repeat" else None, "goods": fact[-1]})
         except (ValueError, TypeError, KeyError, InvalidOperation):
             issues.append(f"订单 {row.get('order_id', '未知')} 缺少有效客户、日期、美元金额或新成交标记")
             gmv_issues.add(str(row.get("user_id") or ""))
-    # Earliest new-sign fact determines ownership; later owner transfers cannot steal the cohort.
-    def order_key(o):
-        return (o["day"], int(o["id"]) if o["id"].isdigit() else 0, o["id"])
+    return orders, issues, gmv_issues, len(decisions), len(applied_decisions)
+
+
+def order_key(order):
+    return (order["day"], int(order["id"]) if order["id"].isdigit() else 0, order["id"])
+
+
+def cohort_orders(orders):
+    """One ownership/selection contract for award totals and source detail tabs."""
     cohorts = {}
-    for o in sorted(orders, key=order_key):
-        if o["new"]:
-            cohorts.setdefault(o["cid"], o)
+    for order in sorted(orders, key=order_key):
+        if order["new"]:
+            cohorts.setdefault(order["cid"], order)
+    groups = {}
+    for order in orders:
+        first = cohorts.get(order["cid"])
+        if first is None:
+            continue
+        group = groups.setdefault(first["uid"], {"customers": set(), "new_sign": [], "repeat": []})
+        group["customers"].add(order["cid"])
+        if order["new"] is True:
+            group["new_sign"].append(order)
+        elif order["new"] is False and order_key(order) > order_key(first):
+            group["repeat"].append(order)
+    return groups
+
+
+def calculate(report, members, raw, now, synced_at=None):
+    now = to_beijing_naive(now)
+    orders, issues, gmv_issues, decision_count, applied_count = normalize_facts(report, raw, now)
+    groups = cohort_orders(orders)
     rows = []
     for m in members:
         owned = [o for o in orders if o["uid"] == str(m.okki_user_id) and o["goods"]]
-        new = {cid: o for cid, o in cohorts.items() if o["uid"] == str(m.okki_user_id)}
-        repeats = [o for o in orders if o["cid"] in new and o["new"] is False and o["goods"]
-                   and order_key(o) > order_key(new[o["cid"]])]
+        group = groups.get(str(m.okki_user_id), {"customers": set(), "new_sign": [], "repeat": []})
+        new = group["customers"]
+        repeats = group["repeat"]
         amount_orders = repeats
         if report.award_kind == "annual_repurchase":
-            # Include every valid new-sign order in the original owner's cohort,
-            # even without a repeat; later transfers do not move these dollars.
-            amount_orders = repeats + [o for o in orders if o["cid"] in new and o["new"] is True]
+            amount_orders = repeats + group["new_sign"]
         row = {"member_id": m.id, "ark_user_id": m.ark_user_id, "user_name": m.user_name,
                "team": m.team, "is_captain": bool(m.is_captain),
                "gmv_complete": str(m.okki_user_id) not in gmv_issues,
@@ -117,8 +143,8 @@ def calculate(report, members, raw, now, synced_at=None):
             "data_complete": not issues, "calculated_at": now.isoformat(), "source_synced_at": synced_at,
             "source_label": "OKKI订单镜像 · 每次刷新重新查询 · 非直连实时接口", "currency": "USD",
             "period_state": "upcoming" if now.date() < report.start_date else "ended" if now.date() > report.end_date else "running",
-            "workday_progress": None, "order_decision_count": len(decisions),
-            "applied_order_decision_count": len(applied_decisions)}
+            "workday_progress": None, "order_decision_count": decision_count,
+            "applied_order_decision_count": applied_count}
     if report.award_kind == "annual_repurchase":
         data["amount_rule"] = "annual_new_customer_orders_v1"
         annual(data, report)

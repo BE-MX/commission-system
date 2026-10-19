@@ -12,6 +12,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
+from app.core.config import get_settings
 from app.tracking.models import ShipmentTracking, ShippingDailyReport
 from app.tracking.status import get_status_label
 from app.utils.shortlink import generate_short_link
@@ -173,7 +174,8 @@ async def push_daily_report(db: Session, report: ShippingDailyReport) -> bool:
         return False
 
     # 生成日报查看短链
-    report_url = f"https://leshine.work/tracking/daily-report?date={report.report_date.strftime('%Y-%m-%d')}"
+    base_url = get_settings().SHORT_LINK_BASE_URL.rstrip("/")
+    report_url = f"{base_url}/tracking/daily-report?date={report.report_date.strftime('%Y-%m-%d')}"
     try:
         short_url = generate_short_link(report_url)
     except Exception as e:
