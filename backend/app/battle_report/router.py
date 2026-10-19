@@ -124,6 +124,21 @@ def orders(report_id: int, team: str | None = Query(None, max_length=100), membe
                                        page=page, page_size=page_size, sort=sort, keyword=keyword, sort_field=sort_field, sort_order=sort_order))
 
 
+@router.get("/{report_id}/metric-orders")
+def metric_orders(report_id: int, metric: Literal["new_sign", "repeat", "combined"],
+                  customer: str | None = Query(None, max_length=100),
+                  order_name: str | None = Query(None, max_length=200),
+                  start_date: date | None = None, end_date: date | None = None,
+                  team: str | None = Query(None, max_length=100), member_id: int | None = None,
+                  page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+                  sort_field: str = Query(""), sort_order: str = Query(""),
+                  db: Session = Depends(get_db), user=Depends(_require_battle_read)):
+    from app.battle_report.order_details import list_metric_orders
+    return ok(list_metric_orders(db, report_id, user, metric=metric, customer=customer, order_name=order_name,
+                                start_date=start_date, end_date=end_date, team=team, member_id=member_id,
+                                page=page, page_size=page_size, sort_field=sort_field, sort_order=sort_order))
+
+
 @router.get("/{report_id}/orders/{order_id}")
 def order(report_id: int, order_id: str, db: Session = Depends(get_db), user=Depends(_require_battle_read)):
     return ok(query_service.order_detail(db, report_id, order_id, user))

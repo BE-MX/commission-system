@@ -1,6 +1,7 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>2026新签复购业绩榜</title><style>{{ css | safe }}</style></head><body>
 <main class="annual-sheet" aria-label="2026新签复购业绩榜">
   <img class="annual-background" src="{{ background }}" alt="莱莎2026新签复购业绩榜底图">
+  <div class="annual-progress-heading">年度GMV同比增长完成进度</div>
   {% if demo %}<div class="annual-mode">版式样张 · 模拟数据</div>{% elif not visible %}<div class="annual-mode">待核对 · 未填正式数据</div>{% elif cutoff_tie %}<div class="annual-mode">获奖候选边界同分 · 待裁定</div>{% endif %}
   {% for card in podium %}
     <section aria-label="第{{ card.rank }}名展示位">

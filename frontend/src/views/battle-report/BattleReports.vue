@@ -20,6 +20,9 @@
         <el-tab-pane label="战报总览" name="overview"><ListPageStatus :paged="false" :error="overviewResource.errorMessage.value" :loading="overviewResource.loading.value" :has-data="overviewResource.hasData.value" @retry="loadOverview"><el-empty v-if="!overview" description="暂无战报汇总" :image-size="96" /></ListPageStatus><AwardOverview v-if="overview && report.award_kind !== 'gmv'" :data="overview" /><ReportOverview v-else-if="overview" :data="overview" @team="chooseTeam" @review="review" /></el-tab-pane>
         <el-tab-pane v-if="report.award_kind === 'gmv'" label="每日复盘" name="daily"><ReportDaily v-if="tab === 'daily'" :key="`${report.id}:${team}:${refreshKey}`" :report="report" :team="team" :selection="selection" /></el-tab-pane>
         <el-tab-pane v-if="report.award_kind === 'gmv'" label="目标填报" name="targets"><ReportTargets v-if="tab === 'targets'" :report="report" :team="team" @saved="refresh" /></el-tab-pane>
+        <el-tab-pane v-for="item in metricTabs" :key="item.name" :label="item.label" :name="item.name">
+          <ReportMetricOrders v-if="tab === item.name" :key="`${report.id}:${team}:${refreshKey}:${item.name}`" :report="report" :metric="item.name" :team="team" />
+        </el-tab-pane>
       </el-tabs>
       <el-empty v-else-if="!loading && !selectorResource.error.value && !detailResource.error.value" :description="error ? '暂时无法读取战报，请重试' : '暂无可查看的战报，管理员可新建战报并邀请业务员参与'" />
     </div>
@@ -47,6 +50,7 @@ import ReportDaily from './components/ReportDaily.vue'
 import ReportTargets from './components/ReportTargets.vue'
 import ReportSettings from './components/ReportSettings.vue'
 import ReportPosters from './components/ReportPosters.vue'
+import ReportMetricOrders from './components/ReportMetricOrders.vue'
 import { errorText, stageLabels } from './helpers'
 
 const selectorResource = useAsyncResource(async (params, { signal }) => (await battleReportApi.list(params, { signal, suppressToast: true })).items || [], { initialData: [] })
@@ -56,6 +60,7 @@ const reports = selectorResource.data, report = detailResource.data, overview = 
 const selectedId = ref(null), archived = ref(false)
 const loading = computed(() => selectorResource.loading.value || detailResource.loading.value || overviewResource.loading.value)
 const postersVisible = ref(false)
+const metricTabs = [{ name: 'new_sign', label: '新签客户' }, { name: 'repeat', label: '复购客户' }, { name: 'combined', label: '新签+复购金额' }]
 const team = ref(''), tab = ref('overview'), selection = ref({}), busy = ref(false), error = ref(''), refreshKey = ref(0)
 const settingsVisible = ref(false), editingReport = ref(null), auditsVisible = ref(false)
 const auditState = useListPage(async ({ reportId, ...params }, { signal }) => reportId ? await battleReportApi.audits(reportId, params, { signal, suppressToast: true }) : { items: [], total: 0 },

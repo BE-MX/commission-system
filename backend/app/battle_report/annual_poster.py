@@ -56,7 +56,8 @@ def render_html(snapshot, assets, background):
         row = people[rank-1] if rank <= len(people) else None
         texts = values(row, visible)
         fields = [{"style": box_style(layout["name"]), "text": texts[0], "kind": "name"}]
-        fields += [{"style": box_style(box), "text": text, "kind": "money" if index == 3 else "number"}
+        fields += [{"style": box_style(box), "text": text,
+                    "kind": "score" if index == 0 else "money" if index == 3 else "number"}
                    for index, (box, text) in enumerate(zip(layout["values"], texts[1:]))]
         podium.append({"rank": rank, "fields": fields, "style": box_style(layout["progress"]),
                        "tone": layout["tone"], **progress(row, visible)})
@@ -65,7 +66,7 @@ def render_html(snapshot, assets, background):
         row = people[index+5] if index+5 < len(people) else None
         texts = values(row, visible)
         fields = [{"style": box_style((x,center-12,width,24)), "text": value,
-                   "kind": "name" if column == 0 else "number"}
+                   "kind": "name" if column == 0 else "score" if column == 1 else "number"}
                   for column, ((x,width),value) in enumerate(zip(TABLE_FIELDS,texts))]
         table.append({"rank": index+6, "fields": fields,
                       "style": box_style((901,center-14,211,28)), **progress(row,visible)})

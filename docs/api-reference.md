@@ -287,10 +287,15 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | GET `/{id}/overview` | 可选 team；summary/teams/people/daily、时间进度、计算时间、异常数 | read/admin |
 | GET `/{id}/daily` | 可选 team/start；默认最近七天，返回 dates/rows/cells/subtotal | read/admin |
 | GET `/{id}/orders` | team/member_id/day/keyword、sort=date或amount、page/page_size≤100；items/total/gmv/issues；完整筛选总计 | read/admin |
+| GET `/{id}/metric-orders` | metric=new_sign/repeat/combined；customer/order_name 模糊筛选、start_date/end_date 闭区间、team/member_id；page/page_size≤100；sort_field/sort_order 白名单全量排序后分页。返回 items/total/customer_count/total_amount/data_complete/warning/amount_scope/amount_note/source_synced_at | read/admin，明细数据范围校验 |
 | GET `/{id}/orders/{order_id}` | 有权查看的单笔摘要、计入额及计入原因；不在范围返回404 | read/admin |
 | GET `/{id}/audits` | page/page_size≤100；动作、前后值、操作者、原因、北京时间 | admin |
 
 成员输入为 ark_user_id/team/is_captain；visibility 为 activity/team/self。周期最长366天、最多200人；目标为正数，NUMERIC(16,2)。普通用户只能在截止前修改本人目标。普通用户明细仅本人，活动组长本组，管理员全活动。403表示越权/填报已截止；404表示不可见对象；409表示版本冲突或非法状态；422表示校验失败或绑定需修复。刷新后重新填写可解决版本冲突，客户端保留失败输入。
+
+2026-10-19 统计来源明细：三个标签复用奖项的有效货物订单、新成交裁定、原新签客户归属及复购顺序规则。先确定完整名单客户归属，再限制明细权限及筛选；默认核算日期倒序。列表中的“下单日期”明确沿用核算日期，金额为 USD；total 为订单笔数、customer_count 为去重客户数，total_amount 是分页前全部筛选结果金额（Decimal 求和后保留两位）；单笔 amount_usd 保留源精度。异常仅给无客户/订单身份的待核对提示，不泄露其他范围的异常详情。PK 总览新签金额按订单负责人统计，明细按原新签客户归属汇总；转交时可能不同，页面和 amount_note 均明确说明，不改变 PK 评奖规则。
+
+新增 `battle_report:read_all`，kind=data，需角色管理显式分配，启动 seed 不自动授予普通 admin 角色；与 read 配合可读取全部已发布/归档战报及订单明细（无需本人参与或 OKKI 绑定），不开放草稿、配置、审计、海报或他人目标写入。已有 battle_report:admin 和 super_admin 保持全量权限。无 read_all 时仍为本人/组长本组，并核对当前 OKKI 绑定。
 
 源订单只读，按核算日和活动小组统计；source_synced_at=null 明确表示源同步时间未知，calculated_at 不能充当同步时间。归档不冻结镜像数据，不提供删除接口。
 

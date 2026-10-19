@@ -7,3 +7,9 @@
 .annual-notes{width:1199px;min-height:104px;padding:12px 28px;background:var(--annual-note);font-family:'Microsoft YaHei','Noto Sans CJK SC',sans-serif;font-size:16px;line-height:1.7;color:var(--annual-muted)}.annual-notes strong{display:block;font-size:18px;color:var(--annual-warning)}
 
 .annual-progress.below-target .annual-track>span{background:var(--annual-danger)}
+
+/* Data overlays replace the baked table heading without modifying the artwork. */
+:root{--annual-score-gold:#b47d12;--annual-header:#3e3328}
+.annual-progress-heading{position:absolute;left:895px;top:738px;width:222px;height:35px;display:flex;align-items:center;justify-content:center;border-radius:0 10px 0 0;background:var(--annual-header);color:var(--annual-paper);font-size:14px;font-weight:700;white-space:nowrap}
+.annual-field.score{color:var(--annual-score-gold);font-weight:900}
+.podium-field.score{font-size:21px}

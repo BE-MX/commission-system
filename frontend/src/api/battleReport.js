@@ -14,6 +14,7 @@ export const battleReportApi = {
   overview: (id, params, config = {}) => unwrap(client.get(`/${id}/overview`, { ...config, ...options(params) })),
   daily: (id, params) => unwrap(client.get(`/${id}/daily`, options(params))),
   orders: (id, params, config = {}) => unwrap(client.get(`/${id}/orders`, { ...config, ...options(params) })),
+  metricOrders: (id, params, config = {}) => unwrap(client.get(`/${id}/metric-orders`, { ...config, ...options(params) })),
   order: (id, orderId) => unwrap(client.get(`/${id}/orders/${encodeURIComponent(orderId)}`, options())),
   audits: (id, params, config = {}) => unwrap(client.get(`/${id}/audits`, { ...config, ...options(params) })),
   posterConfig: id => unwrap(client.get(`/${id}/poster-config`, options())),

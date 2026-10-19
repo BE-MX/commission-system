@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from fastapi import HTTPException
 from sqlalchemy import update
 
-from app.battle_report.access import actor_id, bound_accounts, is_admin, load_report, visible_members
+from app.battle_report.access import actor_id, bound_accounts, can_read_all, is_admin, load_report, visible_members
 from app.battle_report.models import BattleReport, BattleReportAudit, BattleReportMember
 from app.battle_report.statistics import money
 from app.core.time import beijing_now
@@ -80,6 +80,8 @@ def validate_roster(db, inputs, existing=()):
 def list_reports(db, user, archived=False):
     query = db.query(BattleReport)
     if not is_admin(user):
+        query = query.filter(BattleReport.status != "draft")
+    if not can_read_all(user):
         query = query.join(BattleReportMember).filter(BattleReportMember.ark_user_id == actor_id(user),
                                                       BattleReport.status != "draft")
     query = query.filter(BattleReport.status == "archived" if archived else BattleReport.status != "archived")
@@ -207,7 +209,7 @@ def save_targets(db, report_id, user, payload):
         before, after = [], []
         for target in payload.targets:
             member = by_id.get(target.member_id)
-            if member is None or (not admin and member.id != own.id):
+            if member is None or (not admin and (own is None or member.id != own.id)):
                 raise HTTPException(403, "只能修改本人在该战报中的目标")
             before.append({"member_id": member.id, "target_usd": money(member.target_usd) if member.target_usd else None})
             changed = db.execute(update(BattleReportMember).where(
