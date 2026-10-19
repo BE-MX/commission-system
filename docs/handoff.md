@@ -1,3 +1,9 @@
+## 2026-10-19 客户下单门户 P1：产品族与色块库（Accio，本地未提交，未部署）
+
+- 分支 `accio/optimize-order-portal-integration-ce44d944`（已快进到 main `e01194d0`）。方案与亮哥拍板结论见 [整合方案](requirements/2026-10-19-order-portal-material-integration.md)。
+- 新迁移 `199_portal_catalog_families`（父198，只新增）；后端 `app/portal/family_service.py` + 管理端点 `/catalog-families*`、`/color-swatches*`；`catalog_admin_service._invalidate` 抽出批量 `invalidate_items`，`_apply` 对已归族商品强制继承族规则。后台「门户商品目录」拆为 商品SKU / 产品族 / 色块库 三个页签，支持批量归族。
+- 验证：门户隔离 SQLite 回归 759 通过/1 跳过，1 失败为本机 venv 缺 reportlab（另 2 个测试文件同因未收集，与本次无关）；新增前端单测 5 项通过；`npm run build` 通过。未在 MySQL 执行迁移；客户端（P2）尚未改动，客户目录展示暂无变化。
+
 ## 2026-10-19 内贸发货批次独立单价（Codex，Git交付，未部署）
 
 - 分支 `codex/domestic-batch-pricing`，工作树 `C:/Users/windb/.codex/worktrees/domestic-batch-pricing/commission-system`，基点 `bca7b607`。创建批次可按明细调整本批单价，金额及收款核销使用批次价；订单原价、总额、账户扣款、终止退款与后续批次默认价保持原口径，无迁移。

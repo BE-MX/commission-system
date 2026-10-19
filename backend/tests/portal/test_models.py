@@ -11,7 +11,7 @@ from app.portal.models import Account, AuthorityBarrier, CustomerAccess, Site
 
 def test_all_portal_tables_compile_for_mysql(portal_metadata):
     tables = [t for t in portal_metadata.tables.values() if t.name.startswith("ark_order_portal_")]
-    assert len(tables) == 24
+    assert len(tables) == 26
     for table in tables:
         sql = str(CreateTable(table).compile(dialect=mysql.dialect()))
         assert "CREATE TABLE" in sql

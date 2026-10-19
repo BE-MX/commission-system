@@ -3,7 +3,8 @@
 from app.portal.identity_models import (Account, AuthChallenge, AuthorityBarrier,
     CustomerAccess, HistoryGrant, Invitation, Membership, PortalSession,
     PreauthSession, RateBucket, Site)
-from app.portal.catalog_models import CatalogGrant, CatalogItem, MappingRevision
+from app.portal.catalog_models import (CatalogGrant, CatalogItem, ColorSwatch, MappingRevision,
+    ProductFamily)
 from app.portal.order_models import (CommandReceipt, Conversion, OrderRequest,
     PiAmendment, Publication, Quote, RequestLine, Revision)
 from app.portal.event_models import AuditEvent, OutboxEvent
@@ -15,7 +16,8 @@ install_invoice_guard()
 
 __all__ = ["Account", "AuthChallenge", "AuthorityBarrier", "CustomerAccess",
     "HistoryGrant", "Invitation", "Membership", "PortalSession", "PreauthSession",
-    "RateBucket", "Site", "CatalogGrant", "CatalogItem", "MappingRevision",
+    "RateBucket", "Site", "CatalogGrant", "CatalogItem", "ColorSwatch", "MappingRevision",
+    "ProductFamily",
     "CommandReceipt", "Conversion", "OrderRequest", "PiAmendment", "Publication",
     "Quote", "RequestLine", "Revision", "AuditEvent", "OutboxEvent"]
 

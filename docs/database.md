@@ -740,6 +740,10 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 父迁移176_customer_order_portal；为ark_order_portal_revisions新增invoice_presentation_json JSON NULL，持久化后续PI客户确认的商业头部。旧NULL不回填，不改旧交易摘要；新非空快照进入revision hash且受ORM不可变保护。客户视图裁剪内部来源/ID，发布仅使用已接受快照。该迁移只做加列，禁止删除已确认证据的降级；MySQL离线DDL和隔离SQLite保留旧行测试通过，尚未在真实MySQL执行。迁移已按项目规则暂存，未commit/push/部署。
 
+## 199_portal_catalog_families（开发中，未部署）
+
+父迁移198_customer_media_playback。新增 `ark_order_portal_product_families`（站点内产品族：销售单位、单位克重、起订/步长、无货阈值（销售单位）、展示工艺档、排序、状态）与 `ark_order_portal_color_swatches`（站点内按规范化色号键 color_key 唯一的色块图、展示名、状态）；`ark_order_portal_catalog_items` 新增 nullable `family_id`（FK→product_families，RESTRICT）与 `grade`（standard/super/ultra），MySQL 加检查约束“二者同空或同时有值”。只做新增，不回填，旧商品保持未归类；降级被拒绝。归入产品族的商品由服务层继承起订/步长，safety_buffer = 无货阈值 × conversion_factor（换算为库存单位）。色型不另存，读取 `ark_price_color_types` 与标准价保持一致。仅隔离SQLite与MySQL离线DDL验证，未在真实MySQL执行。
+
 ## 180_settlement_funding_amendment（未付款旧批升级审计，2026-10-09 已部署）
 
 父迁移 `179_presale_funding`，新增 `ark_settlement_funding_amendments`，不回填或改写旧报价/收款。保存原结算、发票、回款FK，独立唯一 request_key 和输入摘要；同一 settlement 最多一次升级。before_snapshot/after_snapshot/evidence 为非空JSON，完整保留前后报价、原创建身份、付款事实与验证证据；actor_id、reason 与北京时间 created_at 可追溯操作。原结算/产品/远端运费身份不变；升级只新建余额占用应用，未实际出库不核销。downgrade拒绝删除审计，修复使用前向迁移。

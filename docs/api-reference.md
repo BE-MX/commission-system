@@ -48,6 +48,15 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 
 客户 POST /api/portal/v1/auth/login使用email/password、bootstrap Cookie/CSRF和同源Origin；员工POST /api/portal/admin/v1/customers/{access_id}/accounts使用当前Bearer授权、Idempotency-Key及email/contact_name/password。PATCH /accounts/{id}/password使用If-Match及password/reason并撤销旧会话。旧邀请、challenges、verify路由不挂载。详细契约和实际开放结果见客户下单门户03-api-contract.md和09-production-readiness-2026-10-10.md。
 
+## 客户下单门户产品族与色块库（2026-10-19 开发中）
+
+前缀 `/api/portal/admin/v1`，全部要求 `portal_site:admin`，统一信封与 `Cache-Control: private, no-store`。
+- `GET /catalog-families`：产品族列表及各工艺档商品数（total/published）。`POST /catalog-families/defaults`（body `reason`）：只创建缺失的 7 个默认产品族，不覆盖已有配置。
+- `PATCH /catalog-families/{code}`：If-Match 版本；body display_name/unit_weight_grams/min_qty/step_qty/out_of_stock_below/allowed_grades/sort_order/status/reason。成员商品同步继承规则并使授权客户的目录版本+1、有效报价失效。
+- `POST /catalog-families/assign`：body item_ids(1–200)/family_code/grade/reason；family_code 与 grade 同为 null 表示移出。整批原子，销售单位与产品族不一致整批 422。
+- `GET /catalog?family=<code|unassigned>`：商品列表新增产品族筛选，行内返回 family_code/grade。
+- `GET /color-swatches?keyword=&missing_image=`：色块列表（含色型及来源 exact/inferred/missing、使用商品数）与 unregistered_colors。`POST /color-swatches/sync`：为目录颜色登记缺失色块。`PATCH /color-swatches/{id}`：If-Match；换图或移除图另需 `asset:admin`，keep_image=true 仅改标签；色号只能改写法不能改成其他色号。
+
 
 ## 订单发票与回款备注编辑（2026-10-10）
 

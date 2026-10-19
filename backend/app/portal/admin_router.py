@@ -15,7 +15,7 @@ from app.core.response import ok
 from app.portal import admin_service as service
 from app.portal.auth_service import require_enabled
 from app.portal.errors import PortalError, reject
-from app.portal.schemas import (PortalInput, CatalogImageInput, NotificationRetryInput, AccountUpdate, CustomerCreate, CustomerUpdate, CustomerCatalogUpdate, AccountCreate, AccountPasswordUpdate, ReasonInput, RebindInput, TransferInput, MappingInput, SiteUpdate, CatalogImport, CatalogUpdate, ProposalInput, ApproveInput, PiProposalInput, PublishPiInput, VoidPiInput)
+from app.portal.schemas import (PortalInput, CatalogImageInput, NotificationRetryInput, AccountUpdate, CustomerCreate, CustomerUpdate, CustomerCatalogUpdate, AccountCreate, AccountPasswordUpdate, ReasonInput, RebindInput, TransferInput, MappingInput, SiteUpdate, CatalogImport, CatalogUpdate, FamilyAssign, FamilyUpdate, SwatchUpdate, ProposalInput, ApproveInput, PiProposalInput, PublishPiInput, VoidPiInput)
 
 
 class AdminRoute(APIRoute):
@@ -295,9 +295,71 @@ def update_settings(body: SiteUpdate, expected=Depends(expected_version),
 def catalog_items(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
                   status: Literal["draft", "published", "disabled"] | None = None,
                   keyword: str | None = Query(None, max_length=100),
+                  family: str | None = Query(None, pattern=r"^[a-z0-9_]{1,32}$"),
                   actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
     from app.portal.catalog_admin_service import list_items
-    data = list_items(db, actor, page=page, page_size=page_size, status=status, keyword=keyword)
+    data = list_items(db, actor, page=page, page_size=page_size, status=status, keyword=keyword, family=family)
+    db.commit()
+    return ok(data)
+
+
+@router.get("/catalog-families")
+def catalog_families(actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.family_service import list_families
+    data = list_families(db, actor)
+    db.commit()
+    return ok(data)
+
+
+@router.post("/catalog-families/defaults")
+def seed_catalog_families(body: ReasonInput, actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.family_service import seed_defaults
+    data = seed_defaults(db, actor, body.reason)
+    db.commit()
+    return ok(data)
+
+
+@router.post("/catalog-families/assign")
+def assign_catalog_family(body: FamilyAssign, actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.family_service import assign_items
+    data = assign_items(db, actor, body)
+    db.commit()
+    return ok(data)
+
+
+@router.patch("/catalog-families/{code}")
+def update_catalog_family(code: str, body: FamilyUpdate, expected=Depends(expected_version),
+                          actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.family_service import update_family
+    if not re.fullmatch(r"[a-z0-9_]{1,32}", code):
+        reject("INVALID_INPUT", "无效产品族编码。", 422)
+    data = update_family(db, actor, code, expected, body)
+    db.commit()
+    return ok(data)
+
+
+@router.get("/color-swatches")
+def color_swatches(keyword: str | None = Query(None, max_length=64), missing_image: bool = False,
+                   actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.family_service import list_swatches
+    data = list_swatches(db, actor, keyword=keyword, missing_image=missing_image)
+    db.commit()
+    return ok(data)
+
+
+@router.post("/color-swatches/sync")
+def sync_color_swatches(body: ReasonInput, actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.family_service import sync_swatches
+    data = sync_swatches(db, actor, body.reason)
+    db.commit()
+    return ok(data)
+
+
+@router.patch("/color-swatches/{swatch_id}")
+def update_color_swatch(swatch_id: UUID, body: SwatchUpdate, expected=Depends(expected_version),
+                        actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.family_service import update_swatch
+    data = update_swatch(db, actor, swatch_id, expected, body)
     db.commit()
     return ok(data)
 

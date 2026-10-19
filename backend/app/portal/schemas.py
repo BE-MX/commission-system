@@ -358,3 +358,64 @@ class CatalogImageInput(ReasonInput):
         if self.asset_id is None and self.asset_reference is not None:
             raise ValueError("Removing an image must not specify an asset version")
         return self
+
+
+Grade = Literal["standard", "super", "ultra"]
+PlainLabel = Annotated[str, Field(min_length=1, max_length=128)]
+
+
+def _plain(*values):
+    import unicodedata
+    for value in values:
+        if value is not None and any(unicodedata.category(c).startswith("C") or c in "<>" for c in value):
+            raise ValueError("Labels must be plain text")
+
+
+class FamilyUpdate(ReasonInput):
+    display_name: PlainLabel
+    unit_weight_grams: StockDecimal
+    min_qty: Quantity
+    step_qty: Quantity
+    out_of_stock_below: StockDecimal
+    allowed_grades: Annotated[list[Grade], Field(min_length=1, max_length=3)]
+    sort_order: Annotated[StrictInt, Field(ge=0, le=9999)]
+    status: Literal["enabled", "disabled"]
+
+    @model_validator(mode="after")
+    def validate_family(self):
+        from decimal import Decimal
+        _plain(self.display_name)
+        if Decimal(self.unit_weight_grams) <= 0 or self.min_qty % self.step_qty:
+            raise ValueError("Unit weight must be positive and minimum a multiple of step")
+        if len(set(self.allowed_grades)) != len(self.allowed_grades):
+            raise ValueError("Grades must not repeat")
+        return self
+
+
+class FamilyAssign(ReasonInput):
+    item_ids: Annotated[list[UUID], Field(min_length=1, max_length=200)]
+    family_code: Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9_]{1,32}$")] | None
+    grade: Grade | None
+
+    @model_validator(mode="after")
+    def family_and_grade_together(self):
+        if (self.family_code is None) != (self.grade is None):
+            raise ValueError("Assign family and grade together, or clear both")
+        if len(set(self.item_ids)) != len(self.item_ids):
+            raise ValueError("Items must not repeat")
+        return self
+
+
+class SwatchUpdate(CatalogImageInput):
+    """asset_id=None with keep_image=True edits labels only; keep_image=False removes the image."""
+    color_code: Annotated[str, Field(min_length=1, max_length=64)]
+    display_name: Annotated[str, Field(max_length=128)] | None = None
+    status: Literal["enabled", "disabled"]
+    keep_image: bool = False
+
+    @model_validator(mode="after")
+    def validate_swatch(self):
+        _plain(self.color_code, self.display_name)
+        if self.keep_image and self.asset_id is not None:
+            raise ValueError("Choose either a new image or keep the current one")
+        return self

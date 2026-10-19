@@ -7,9 +7,48 @@ from app.core.database import Base
 from app.portal.model_base import PREFIX, Record, Versioned, employee, reference
 
 
+class ProductFamily(Record, Versioned, Base):
+    """Customer-facing product grouping; quantity rules are expressed in sale units."""
+    __tablename__ = PREFIX + "product_families"
+    site_id = reference("sites")
+    code = Column(String(32), nullable=False, comment='产品族稳定编码')
+    display_name = Column(String(128), nullable=False, comment='客户可见产品族名称')
+    sale_unit = Column(String(32), nullable=False, comment='销售单位，须与成员商品一致')
+    unit_weight_grams = Column(Numeric(14, 6), nullable=False, comment='每销售单位克重，用于总重与运费')
+    min_qty = Column(BigInteger, nullable=False, comment='最小购买数量（销售单位）')
+    step_qty = Column(BigInteger, nullable=False, comment='购买步长（销售单位）')
+    out_of_stock_below = Column(Numeric(14, 6), nullable=False, comment='低于该可用量显示无货（销售单位）')
+    allowed_grades = Column(JSON, nullable=False, comment='向客户展示的工艺档列表')
+    sort_order = Column(BigInteger, nullable=False, default=0, comment='目录展示顺序')
+    status = Column(String(16), nullable=False, default="disabled", comment='受服务层状态机约束的业务状态')
+    __table_args__ = (
+        UniqueConstraint("site_id", "code", name="uq_op_family_code"),
+        CheckConstraint("status IN ('enabled','disabled')", name="ck_op_family_status"),
+        CheckConstraint("unit_weight_grams > 0 AND min_qty > 0 AND step_qty > 0 AND out_of_stock_below >= 0",
+                        name="ck_op_family_quantity"),
+    )
+
+
+class ColorSwatch(Record, Versioned, Base):
+    """Swatch imagery keyed by normalized color code and reused across families."""
+    __tablename__ = PREFIX + "color_swatches"
+    site_id = reference("sites")
+    color_key = Column(String(64), nullable=False, comment='规范化色号键，与标准SKU颜色匹配')
+    color_code = Column(String(64), nullable=False, comment='客户可见标准色号写法')
+    display_name = Column(String(128), comment='可选颜色展示名')
+    image_asset_id = Column(String(64), comment='受管理图片资产引用')
+    status = Column(String(16), nullable=False, default="enabled", comment='受服务层状态机约束的业务状态')
+    __table_args__ = (
+        UniqueConstraint("site_id", "color_key", name="uq_op_swatch_color"),
+        CheckConstraint("status IN ('enabled','disabled')", name="ck_op_swatch_status"),
+    )
+
+
 class CatalogItem(Record, Versioned, Base):
     __tablename__ = PREFIX + "catalog_items"
     site_id = reference("sites")
+    family_id = reference("product_families", nullable=True)
+    grade = Column(String(16), comment='工艺档 standard/super/ultra')
     product_kind = Column(String(16), nullable=False, comment='标准商品类别，发品或配件')
     source_namespace = Column(String(128), nullable=False, comment='标准SKU数据源命名空间')
     product_id = Column(String(64), nullable=False, comment='标准商品ID，按字符串存储')
@@ -31,7 +70,10 @@ class CatalogItem(Record, Versioned, Base):
         CheckConstraint("product_kind IN ('hair','accessory')", name="ck_op_catalog_kind"),
         CheckConstraint("status IN ('draft','published','disabled')", name="ck_op_catalog_status"),
         CheckConstraint("conversion_factor > 0 AND min_qty > 0 AND step_qty > 0 AND safety_buffer >= 0", name="ck_op_catalog_quantity"),
+        CheckConstraint("(family_id IS NULL AND grade IS NULL) OR (family_id IS NOT NULL AND grade IN ('standard','super','ultra'))",
+                        name="ck_op_catalog_family_grade"),
         Index("ix_op_catalog_site_status", "site_id", "status"),
+        Index("ix_op_catalog_family_grade", "family_id", "grade"),
     )
 
 

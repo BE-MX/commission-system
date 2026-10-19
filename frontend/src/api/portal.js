@@ -56,7 +56,37 @@ export const portalAdminApi = {
     return response.data
   },
   async catalogItems(params, signal) {
-    const response = await portalAdminClient.get('/catalog', { params: { ...params, keyword: params.keyword || undefined, status: params.status || undefined }, signal, showLoading: false, suppressToast: true })
+    const response = await portalAdminClient.get('/catalog', { params: { ...params, keyword: params.keyword || undefined, status: params.status || undefined, family: params.family || undefined }, signal, showLoading: false, suppressToast: true })
+    return response.data
+  },
+  async catalogFamilies(signal) {
+    const response = await portalAdminClient.get('/catalog-families', { signal, showLoading: false, suppressToast: true })
+    return response.data
+  },
+  async seedCatalogFamilies(reason) {
+    const response = await portalAdminClient.post('/catalog-families/defaults', { reason }, { showLoading: false, suppressToast: true })
+    return response.data
+  },
+  async updateCatalogFamily(code, body, version) {
+    if (!/^[a-z0-9_]{1,32}$/.test(code) || !Number.isSafeInteger(version) || version < 0) throw new Error('无效产品族或版本，请刷新。')
+    const response = await portalAdminClient.patch(`/catalog-families/${code}`, body, { headers: { 'If-Match': `"${version}"` }, showLoading: false, suppressToast: true })
+    return response.data
+  },
+  async assignCatalogFamily(body) {
+    const response = await portalAdminClient.post('/catalog-families/assign', body, { showLoading: false, suppressToast: true })
+    return response.data
+  },
+  async colorSwatches(params, signal) {
+    const response = await portalAdminClient.get('/color-swatches', { params: { keyword: params.keyword || undefined, missing_image: params.missing_image || undefined }, signal, showLoading: false, suppressToast: true })
+    return response.data
+  },
+  async syncColorSwatches(reason) {
+    const response = await portalAdminClient.post('/color-swatches/sync', { reason }, { showLoading: false, suppressToast: true })
+    return response.data
+  },
+  async updateColorSwatch(id, body, version) {
+    if (!Number.isSafeInteger(version) || version < 0) throw new Error('无效色块版本，请刷新。')
+    const response = await portalAdminClient.patch(`/color-swatches/${encodeURIComponent(id)}`, body, { headers: { 'If-Match': `"${version}"` }, showLoading: false, suppressToast: true })
     return response.data
   },
   async catalogItem(id, signal) {

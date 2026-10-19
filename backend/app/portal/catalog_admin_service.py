@@ -2,13 +2,14 @@
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
+from sqlalchemy.orm import object_session
 
 from app.core.config import get_settings
 from app.portal import admin_service as admin, mapping_service, sku_source
 from app.portal.domain import require_version
 from app.portal.errors import reject
-from app.portal.models import AuditEvent, CatalogGrant, CatalogItem, CustomerAccess, Quote
+from app.portal.models import AuditEvent, CatalogGrant, CatalogItem, CustomerAccess, ProductFamily, Quote
 
 
 CONFIG_FIELDS = ("display_name", "color_name", "inventory_unit", "sale_unit",
@@ -24,19 +25,26 @@ def view(item):
                else getattr(item, key) for key in CONFIG_FIELDS}}
 
 
-def list_items(db, actor_id, *, page=1, page_size=20, status=None, keyword=None):
+def list_items(db, actor_id, *, page=1, page_size=20, status=None, keyword=None, family=None):
     admin.begin(db, actor_id, "portal_site:admin")
     site = admin.site_for_admin(db)
+    families = {row.id: row.code for row in db.scalars(select(ProductFamily).where(ProductFamily.site_id == site.id))}
     query = select(CatalogItem).where(CatalogItem.site_id == site.id)
     if status is not None:
         query = query.where(CatalogItem.status == status)
+    if family == "unassigned":
+        query = query.where(CatalogItem.family_id.is_(None))
+    elif family is not None:
+        family_id = next((key for key, code in families.items() if code == family), None)
+        query = query.where(CatalogItem.family_id == family_id) if family_id else query.where(false())
     if keyword:
         query = query.where(or_(CatalogItem.display_name.contains(keyword, autoescape=True),
             CatalogItem.color_name.contains(keyword, autoescape=True),
             CatalogItem.product_id == keyword, CatalogItem.sku_id == keyword))
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     rows = db.scalars(query.order_by(CatalogItem.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
-    return {"items": [view(row) for row in rows], "total": total, "page": page, "page_size": page_size}
+    return {"items": [{**view(row), "family_code": families.get(row.family_id), "grade": row.grade} for row in rows],
+            "total": total, "page": page, "page_size": page_size}
 
 
 def get_item(db, actor_id, public_id):
@@ -81,12 +89,25 @@ def _apply(item, body):
     for key in CONFIG_FIELDS:
         value = getattr(body, key)
         setattr(item, key, Decimal(value) if key in {"conversion_factor", "safety_buffer"} else value)
+    if item.family_id is not None:
+        from app.portal.family_service import inherit
+        family = object_session(item).get(ProductFamily, item.family_id)
+        if family.sale_unit != item.sale_unit:
+            reject("INVALID_INPUT", f"商品属于产品族，销售单位须为 {family.sale_unit}。", 422)
+        inherit(item, family)
 
 
 def _invalidate(db, item):
-    accesses = db.scalars(select(CustomerAccess).where(CustomerAccess.site_id == item.site_id,
+    return invalidate_items(db, item.site_id, [item.id])
+
+
+def invalidate_items(db, site_id, item_ids):
+    """Bump catalog versions of every customer granted any of the items, once each."""
+    if not item_ids:
+        return {"affected_customers": 0, "expired_quotes": 0}
+    accesses = db.scalars(select(CustomerAccess).where(CustomerAccess.site_id == site_id,
         CustomerAccess.id.in_(select(CatalogGrant.access_id).where(
-            CatalogGrant.catalog_item_id == item.id, CatalogGrant.status == "enabled")))
+            CatalogGrant.catalog_item_id.in_(item_ids), CatalogGrant.status == "enabled")))
         .order_by(CustomerAccess.id).with_for_update()).all()
     for access in accesses:
         access.catalog_version += 1
