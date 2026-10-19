@@ -205,6 +205,32 @@ def test_preview_urls_carry_signed_variant_without_changing_the_signature():
 
 
 @pytest.mark.skipif(not transcode.available(), reason="ffmpeg/ffprobe not installed")
+def test_video_upload_pipeline_outputs_playable_h264_and_poster(tmp_path):
+    """走真实 save_upload：HEVC 输入必须产出 H.264 播放版和可解码海报（临时文件名不能丢扩展名）。"""
+    import subprocess
+
+    source = tmp_path / "source.mp4"
+    subprocess.run([
+        transcode.ffmpeg_binary(), "-y", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=10",
+        "-c:v", "libx265", "-pix_fmt", "yuv420p", "-tag:v", "hvc1", str(source),
+    ], check=True)
+    upload = UploadFile(BytesIO(source.read_bytes()), filename="clip.mp4")
+    stored = asyncio.run(storage.LocalMediaStorage(tmp_path / "media").save_upload(
+        upload, customer_id="C1", batch_id=2, max_bytes=8 * 1024 * 1024,
+    ))
+    local = storage.LocalMediaStorage(tmp_path / "media")
+    playback = local.resolve(stored.playback_key)
+    poster = local.resolve(stored.thumbnail_key)
+    info = transcode.probe(playback)
+    assert info.codec == "h264"
+    assert info.width == 320
+    assert stored.duration_seconds == 2
+    assert poster.read_bytes()[:2] == b"\xff\xd8"
+    assert stored.playback_path is None or stored.playback_path.exists()
+
+
+@pytest.mark.skipif(not transcode.available(), reason="ffmpeg/ffprobe not installed")
 def test_real_transcode_outputs_playable_h264_and_poster(tmp_path):
     import subprocess
 

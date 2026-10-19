@@ -213,8 +213,9 @@ class LocalMediaStorage:
         poster = self.resolve(thumbnail_key)
         target.parent.mkdir(parents=True, exist_ok=True)
         poster.parent.mkdir(parents=True, exist_ok=True)
-        temp_target = target.with_name(f".{target.name}.{uuid.uuid4().hex}.part")
-        temp_poster = poster.with_name(f".{poster.name}.{uuid.uuid4().hex}.part")
+        # 临时名保留真实扩展名：ffmpeg 依据输出扩展名选择封装格式。
+        temp_target = target.with_name(f".{target.stem}.{uuid.uuid4().hex}.part{target.suffix}")
+        temp_poster = poster.with_name(f".{poster.stem}.{uuid.uuid4().hex}.part{poster.suffix}")
         try:
             result = transcode.build_playback(source, temp_target, temp_poster)
             os.replace(temp_target, target)
