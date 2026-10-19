@@ -280,6 +280,13 @@ class Settings(BaseSettings):
     CUSTOMER_MEDIA_COOKIE_NAME: str = "leshine_media_session"
     # 内部预览链接 HMAC 密钥；留空时回退 JWT_SECRET_KEY，生产建议单独配置随机串。
     CUSTOMER_MEDIA_SIGN_SECRET: str = ""
+    # 视频上传时用 ffmpeg 生成浏览器可播放的 H.264 版本与首帧海报，原件保留。
+    # 视频转码失败即拒绝该次上传，避免把无法播放的文件交付给客户。
+    CUSTOMER_MEDIA_FFMPEG_BIN: str = "ffmpeg"
+    CUSTOMER_MEDIA_FFPROBE_BIN: str = "ffprobe"
+    CUSTOMER_MEDIA_TRANSCODE_TIMEOUT_SECONDS: _PositiveInt = 900
+    CUSTOMER_MEDIA_PLAYBACK_CRF: Annotated[int, Field(ge=16, le=32)] = 20
+    CUSTOMER_MEDIA_POSTER_MAX_WIDTH: _PositiveInt = 720
 
     # ── 色彩趋势 ─────────────────────────────────────────
     XPOZ_TARGET_ACCOUNTS: str = ""  # 逗号分隔的目标账号

@@ -55,6 +55,25 @@ async def _call_async(function, *args, **kwargs):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
+def _asset_urls(row, style: str) -> dict:
+    """按访问入口生成原件/播放版/海报地址；没有派生文件时不返回对应地址。"""
+    has_playback = bool(getattr(row, "playback_key", None))
+    has_poster = bool(getattr(row, "thumbnail_key", None))
+    if style == "portal":
+        base = f"/api/customer-media/portal/assets/{row.id}/content"
+        return {
+            "content_url": base,
+            "playback_url": f"{base}?variant=playback" if has_playback else None,
+            "poster_url": f"{base}?variant=poster" if has_poster else None,
+        }
+    builder = service.internal_preview_url if style == "internal" else service.sales_portal_preview_url
+    return {
+        "content_url": builder(row.id),
+        "playback_url": builder(row.id, variant="playback") if has_playback else None,
+        "poster_url": builder(row.id, variant="poster") if has_poster else None,
+    }
+
+
 def _asset(row, *, internal: bool = True, tags: list | None = None) -> dict:
     return {
         "id": row.id,
@@ -69,7 +88,7 @@ def _asset(row, *, internal: bool = True, tags: list | None = None) -> dict:
         "duration_seconds": row.duration_seconds,
         "created_at": row.created_at.isoformat(),
         "tags": tags if tags is not None else [],
-        "content_url": service.internal_preview_url(row.id) if internal else f"/api/customer-media/portal/assets/{row.id}/content",
+        **_asset_urls(row, "internal" if internal else "portal"),
     }
 
 
@@ -138,7 +157,7 @@ def _portal_preview_batch(row, task_meta: dict, *, tags_map: dict | None = None,
     assets = [
         {
             **_asset(asset, tags=tag_lookup.get(asset.id, [])),
-            "content_url": service.sales_portal_preview_url(asset.id),
+            **_asset_urls(asset, "sales"),
         }
         for asset in row.assets
         if asset.deleted_at is None and (matching is None or asset.id in matching)
@@ -504,6 +523,7 @@ def internal_asset_content(
     expires: int = Query(..., gt=0),
     token: str = Query(..., min_length=64, max_length=64),
     download: bool = Query(default=False),
+    variant: str | None = Query(default=None, pattern="^(playback|poster)$"),
     db: Session = Depends(get_db),
 ):
     if not service.verify_internal_preview(asset_id, expires, token):
@@ -511,7 +531,7 @@ def internal_asset_content(
     asset = db.get(service.CustomerMediaAsset, asset_id)
     if not asset or asset.deleted_at:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "素材不存在")
-    return storage_for(asset.storage_provider).response(asset, download=download)
+    return storage_for(asset.storage_provider).response(asset, download=download, variant=variant)
 
 
 @router.get("/sales-portal/assets/{asset_id}/content")
@@ -522,12 +542,13 @@ def sales_portal_asset_content(
     expires: int = Query(..., gt=0),
     token: str = Query(..., min_length=64, max_length=64),
     download: bool = Query(default=False),
+    variant: str | None = Query(default=None, pattern="^(playback|poster)$"),
     db: Session = Depends(get_db),
 ):
     if not service.verify_sales_portal_preview(asset_id, expires, token):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "预览链接无效或已过期")
     asset = _call(service.sales_portal_asset, db, asset_id)
-    return storage_for(asset.storage_provider).response(asset, download=download)
+    return storage_for(asset.storage_provider).response(asset, download=download, variant=variant)
 
 
 @router.get("/portal-account-customers")

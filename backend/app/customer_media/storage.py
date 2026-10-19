@@ -1,6 +1,7 @@
 """客户素材私有存储适配器；本地 object key 为未来 COS 迁移边界。"""
 
 import hashlib
+import logging
 import os
 import re
 import uuid
@@ -12,6 +13,10 @@ from fastapi import UploadFile
 
 from app.core.config import get_settings
 from app.core.storage.cos import CosObjectStore, ObjectMissing, StorageError, enabled
+from app.customer_media import transcode
+
+
+logger = logging.getLogger("commission")
 
 
 CHUNK_BYTES = 4 * 1024 * 1024
@@ -43,6 +48,44 @@ class StoredUpload:
     sha256: str
     width: int | None = None
     height: int | None = None
+    duration_seconds: int | None = None
+    playback_key: str | None = None
+    playback_size: int | None = None
+    thumbnail_key: str | None = None
+    thumbnail_size: int | None = None
+    # 上传过程内的本地文件位置；写入数据库前不落库，云端上传完成后随临时目录销毁。
+    playback_path: Path | None = None
+    thumbnail_path: Path | None = None
+
+
+def derivative_keys(object_key: str) -> tuple[str, str]:
+    """由原件键推导播放版与海报键：.../originals/x.mp4 -> playback/x.mp4 + thumbnails/x.jpg。"""
+    source = Path(object_key)
+    stem = source.stem
+    batch_dir = source.parent.parent
+    return (
+        (batch_dir / "playback" / f"{stem}.mp4").as_posix(),
+        (batch_dir / "thumbnails" / f"{stem}.jpg").as_posix(),
+    )
+
+
+def _variant_object(asset, variant: str | None) -> tuple[str, str]:
+    """返回 (对象键, MIME)。海报缺失视为不存在；播放版缺失时回退到原件。"""
+    if variant == "poster":
+        key = getattr(asset, "thumbnail_key", None)
+        if not key:
+            from fastapi import HTTPException
+            raise HTTPException(404, "素材海报不存在")
+        return key, transcode.POSTER_CONTENT_TYPE
+    if variant == "playback":
+        key = getattr(asset, "playback_key", None)
+        if key:
+            return key, transcode.PLAYBACK_CONTENT_TYPE
+    return asset.object_key, getattr(asset, "content_type", "application/octet-stream")
+
+
+def _original_object(asset) -> tuple[str, str]:
+    return asset.object_key, getattr(asset, "content_type", "application/octet-stream")
 
 
 class LocalMediaStorage:
@@ -122,6 +165,24 @@ class LocalMediaStorage:
                 target.unlink(missing_ok=True)
                 raise MediaStorageError("图片无法解码或已损坏") from exc
 
+        playback_key = playback_size = thumbnail_key = thumbnail_size = duration = None
+        playback_path = thumbnail_path = None
+        if declared[0] == "video":
+            try:
+                # 转码是秒级 CPU 操作，放到线程池，避免阻塞单 worker 的事件循环。
+                from starlette.concurrency import run_in_threadpool
+                derivatives = await run_in_threadpool(self.build_derivatives, object_key)
+            except transcode.TranscodeError as exc:
+                # 转码失败即拒绝上传：不能让客户拿到浏览器无法播放的文件。
+                target.unlink(missing_ok=True)
+                raise MediaStorageError(str(exc)) from exc
+            except Exception:
+                # 无法生成浏览器可播放版本时不保留半成品原件。
+                target.unlink(missing_ok=True)
+                raise
+            (playback_key, playback_size, thumbnail_key, thumbnail_size,
+             playback_path, thumbnail_path, duration) = derivatives
+
         return StoredUpload(
             provider=self.provider,
             object_key=object_key,
@@ -132,19 +193,69 @@ class LocalMediaStorage:
             sha256=digest.hexdigest(),
             width=width,
             height=height,
+            duration_seconds=duration,
+            playback_key=playback_key,
+            playback_size=playback_size,
+            thumbnail_key=thumbnail_key,
+            thumbnail_size=thumbnail_size,
+            playback_path=playback_path,
+            thumbnail_path=thumbnail_path,
+        )
+
+    def build_derivatives(self, object_key: str) -> tuple:
+        """生成 H.264 播放版与首帧海报。
+
+        返回 (播放键, 播放大小, 海报键, 海报大小, 播放路径, 海报路径, 时长秒)。
+        """
+        playback_key, thumbnail_key = derivative_keys(object_key)
+        source = self.resolve(object_key)
+        target = self.resolve(playback_key)
+        poster = self.resolve(thumbnail_key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        poster.parent.mkdir(parents=True, exist_ok=True)
+        temp_target = target.with_name(f".{target.name}.{uuid.uuid4().hex}.part")
+        temp_poster = poster.with_name(f".{poster.name}.{uuid.uuid4().hex}.part")
+        try:
+            result = transcode.build_playback(source, temp_target, temp_poster)
+            os.replace(temp_target, target)
+            if result.poster_path is not None:
+                os.replace(temp_poster, poster)
+            else:
+                poster.unlink(missing_ok=True)
+        except Exception:
+            # 任一派生文件落位失败都不保留半套结果。
+            target.unlink(missing_ok=True)
+            poster.unlink(missing_ok=True)
+            raise
+        finally:
+            temp_target.unlink(missing_ok=True)
+            temp_poster.unlink(missing_ok=True)
+        return (
+            playback_key,
+            result.size,
+            thumbnail_key if result.poster_path is not None else None,
+            result.poster_size or None,
+            self.resolve(playback_key),
+            self.resolve(thumbnail_key) if result.poster_path is not None else None,
+            result.info.duration_seconds,
         )
 
     def delete(self, object_key: str | None) -> None:
         if object_key:
             self.resolve(object_key).unlink(missing_ok=True)
 
-    def response(self, asset, *, download: bool = False):
+    def response(self, asset, *, download: bool = False, variant: str | None = None):
         from fastapi import HTTPException
         from fastapi.responses import FileResponse
-        path = self.resolve(asset.object_key)
+        object_key, content_type = _variant_object(asset, variant)
+        path = self.resolve(object_key)
+        if not path.is_file() and variant == "playback":
+            # 派生对象丢失时退回原件，避免整段视频 404。
+            object_key, content_type = _original_object(asset)
+            path = self.resolve(object_key)
         if not path.is_file():
             raise HTTPException(404, "素材文件不存在")
-        return FileResponse(path, media_type=asset.content_type,
+        return FileResponse(path, media_type=content_type,
                             filename=asset.file_name if download else None,
                             content_disposition_type="attachment" if download else "inline",
                             headers={"Cache-Control": "private, no-store"})
@@ -165,25 +276,65 @@ class CosMediaStorage:
             local = LocalMediaStorage(directory)
             stored = await local.save_upload(upload, customer_id=customer_id,
                                             batch_id=batch_id, max_bytes=max_bytes)
-            result = await run_in_threadpool(self.store.put_file, stored.object_key,
-                                             local.resolve(stored.object_key), stored.content_type)
-            if result.sha256 != stored.sha256 or result.size != stored.file_size:
-                raise MediaStorageError("云端素材校验失败")
-            return replace(stored, provider=self.provider)
+            published: list[str] = []
+            try:
+                # 先登记键再上传：put_file 在写完后才校验，失败时对象可能已存在。
+                published.append(stored.object_key)
+                result = await run_in_threadpool(self.store.put_file, stored.object_key,
+                                                 local.resolve(stored.object_key), stored.content_type)
+                if result.sha256 != stored.sha256 or result.size != stored.file_size:
+                    raise MediaStorageError("云端素材校验失败")
+                if stored.playback_path and stored.playback_key:
+                    published.append(stored.playback_key)
+                    playback = await run_in_threadpool(
+                        self.store.put_file, stored.playback_key,
+                        stored.playback_path, transcode.PLAYBACK_CONTENT_TYPE,
+                    )
+                    if playback.size != stored.playback_size:
+                        raise MediaStorageError("云端播放版校验失败")
+                if stored.thumbnail_path and stored.thumbnail_key:
+                    published.append(stored.thumbnail_key)
+                    poster = await run_in_threadpool(
+                        self.store.put_file, stored.thumbnail_key,
+                        stored.thumbnail_path, transcode.POSTER_CONTENT_TYPE,
+                    )
+                    if poster.size != stored.thumbnail_size:
+                        raise MediaStorageError("云端海报校验失败")
+            except Exception:
+                # 上传失败时尚无数据库行引用这些对象（uuid 键且尚未返回），可安全回收。
+                for key in published:
+                    try:
+                        self.store.delete(key)
+                    except Exception as exc:  # noqa: BLE001 - 清理失败不覆盖原始错误
+                        logger.warning("[customer-media] orphan cleanup deferred type=%s", type(exc).__name__)
+                raise
+            # 临时目录即将销毁，返回的对象不再携带本地路径。
+            return replace(stored, provider=self.provider, playback_path=None, thumbnail_path=None)
 
     def delete(self, object_key):
         if object_key:
             self.store.delete(object_key)
 
-    def response(self, asset, *, download=False):
+    def response(self, asset, *, download=False, variant=None):
         from fastapi import HTTPException
         from fastapi.responses import RedirectResponse
+        object_key, content_type = _variant_object(asset, variant)
         try:
-            self.store.head(asset.object_key)
-            url = self.store.download_url(asset.object_key, filename=asset.file_name,
-                                          content_type=asset.content_type, download=download)
+            self.store.head(object_key)
         except ObjectMissing:
-            raise HTTPException(404, "素材文件不存在") from None
+            if variant != "playback":
+                raise HTTPException(404, "素材文件不存在") from None
+            # 派生对象丢失时退回原件，避免整段视频 404。
+            object_key, content_type = _original_object(asset)
+            try:
+                self.store.head(object_key)
+            except ObjectMissing:
+                raise HTTPException(404, "素材文件不存在") from None
+        except StorageError:
+            raise HTTPException(503, "云存储暂时不可用，请稍后重试", headers={"Retry-After": "10"}) from None
+        try:
+            url = self.store.download_url(object_key, filename=asset.file_name,
+                                          content_type=content_type, download=download)
         except StorageError:
             raise HTTPException(503, "云存储暂时不可用，请稍后重试", headers={"Retry-After": "10"}) from None
         return RedirectResponse(url, status_code=303,

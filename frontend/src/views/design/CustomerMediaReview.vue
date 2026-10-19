@@ -47,7 +47,7 @@
           <section class="review-tag-group">
             <div class="asset-grid">
           <article v-for="asset in visibleGroupAssets(group)" :key="asset.id" class="asset-card">
-            <div class="asset-thumb"><img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="previewUrl = asset.content_url" /><video v-else :src="asset.content_url" controls preload="metadata" /></div>
+            <div class="asset-thumb"><img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="previewUrl = asset.content_url" /><video v-else :src="asset.playback_url || asset.content_url" :poster="asset.poster_url || undefined" controls preload="metadata" /></div>
             <div>
               <strong>{{ asset.file_name }}</strong><span>{{ formatSize(asset.file_size) }}</span>
               <div class="asset-tags">

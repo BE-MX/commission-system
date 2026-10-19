@@ -316,7 +316,7 @@
               <button class="asset-preview" data-preview-batch="${b.id}" data-preview-group="${group.id}" data-preview-asset="${a.id}" aria-label="Open ${escapeAttr(a.file_name)}">
                 ${a.media_type === 'image'
                   ? `<img src="${a.content_url}" alt="${escapeAttr(a.file_name)}" loading="lazy" />`
-                  : `<video src="${a.content_url}" muted preload="metadata"></video><span class="asset-play">▶</span>`}
+                  : `<video src="${escapeAttr(a.playback_url || a.content_url)}"${a.poster_url ? ` poster="${escapeAttr(a.poster_url)}"` : ''} muted preload="metadata"></video><span class="asset-play">▶</span>`}
               </button>
               <div class="asset-footer"><span title="${escapeAttr(a.file_name)}"><strong>${escapeHtml(a.file_name)}</strong><small>${fmtSize(a.file_size)}</small></span><a href="${escapeAttr(downloadUrl(a.content_url))}">Download ↓</a></div>
             </article>`).join('')}</div>
@@ -365,7 +365,7 @@
       $('lb-content').innerHTML =
         (asset.media_type === 'image'
           ? `<img src="${asset.content_url}" alt="${escapeAttr(asset.file_name)}" />`
-          : `<video src="${asset.content_url}" controls autoplay></video>`) +
+          : `<video src="${escapeAttr(asset.playback_url || asset.content_url)}"${asset.poster_url ? ` poster="${escapeAttr(asset.poster_url)}"` : ''} controls autoplay></video>`) +
         `<div class="lightbox-caption"><span><strong>Batch ${pad(b ? b.seq : 0)}</strong> · ${escapeHtml(asset.file_name)} · ${index + 1}/${list.length}</span><a href="${escapeAttr(downloadUrl(asset.content_url))}">Download original ↓</a></div>`;
       lb.classList.remove('hidden');
       $('lb-prev').classList.toggle('hidden', list.length < 2);
