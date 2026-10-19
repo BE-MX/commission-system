@@ -33,16 +33,20 @@ def require_admin(user):
         raise HTTPException(403, "需要战报管理权限")
 
 
-def report_payload(report, now=None):
+def report_payload(report, now=None, *, include_decisions=True):
     now = now or beijing_now()
     stage = report.status
     if stage == "published":
         stage = "upcoming" if now.date() < report.start_date else "ended" if now.date() > report.end_date else "running"
+    rules = report.award_rules
+    if rules and not include_decisions:
+        # Decisions contain customer/order identities, outside a summary reader's scope.
+        rules = {key: value for key, value in rules.items() if key != "order_decisions"}
     return {"id": report.id, "name": report.name, "start_date": report.start_date.isoformat(),
             "end_date": report.end_date.isoformat(), "target_deadline": report.target_deadline.isoformat(),
             "status": report.status, "stage": stage, "visibility": report.visibility,
             "version": report.version, "currency": report.currency, "basis_version": report.basis_version,
-            "award_kind": report.award_kind, "award_rules": report.award_rules}
+            "award_kind": report.award_kind, "award_rules": rules}
 
 
 def audit(db, report, user, action, before=None, after=None, reason=""):
@@ -79,7 +83,7 @@ def list_reports(db, user, archived=False):
         query = query.join(BattleReportMember).filter(BattleReportMember.ark_user_id == actor_id(user),
                                                       BattleReport.status != "draft")
     query = query.filter(BattleReport.status == "archived" if archived else BattleReport.status != "archived")
-    return {"items": [report_payload(r) for r in query.order_by(BattleReport.id.desc()).all()],
+    return {"items": [report_payload(r, include_decisions=is_admin(user)) for r in query.order_by(BattleReport.id.desc()).all()],
             "can_admin": is_admin(user)}
 
 
@@ -112,7 +116,7 @@ def get_report(db, report_id, user):
     report, members, own = load_report(db, report_id, user)
     visible = visible_members(report, members, own, user)
     details = visible_members(report, members, own, user, details=True)
-    return {**report_payload(report), "members": [member_payload(m, report, own, user) for m in visible],
+    return {**report_payload(report, include_decisions=is_admin(user)), "members": [member_payload(m, report, own, user) for m in visible],
             "detail_member_ids": [m.id for m in details], "can_admin": is_admin(user),
             "own_member_id": own.id if own else None}
 
@@ -139,6 +143,9 @@ def update_report(db, report_id, user, payload):
         changes = payload.model_dump(exclude={"members", "reason", "version"})
         changes["award_rules"] = payload.award_rules.model_dump(mode="json") if payload.award_rules else None
         changes["currency"] = "USD"
+        if ((changes["award_rules"] or {}).get("order_decisions", [])
+                != (report.award_rules or {}).get("order_decisions", []) and not payload.reason):
+            raise HTTPException(422, "更正人工订单裁定必须填写原因")
         # A changed campaign period needs an explicitly rechecked calendar before pushing.
         if ((payload.start_date, payload.end_date) != (report.start_date, report.end_date)
                 or payload.award_kind != report.award_kind or changes["award_rules"] != report.award_rules):

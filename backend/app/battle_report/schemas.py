@@ -28,10 +28,28 @@ class AwardBaseline(Command):
     target_gmv_usd: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
 
 
+class OrderDecision(Command):
+    order_id: Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[0-9]+$")]
+    order_no: Name
+    company_id: Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[0-9]+$")]
+    owner_id: Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[0-9]+$")]
+    account_date: date
+    role: Literal["new_sign", "repeat", "exclude_metrics"]
+    reason: Annotated[str, Field(min_length=1, max_length=500)]
+
+
 class AwardRules(Command):
     baselines: list[AwardBaseline] = Field(default_factory=list, max_length=200)
     push_start_date: date
     source_sha256: str = Field(default="", max_length=64)
+    order_decisions: list[OrderDecision] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def unique_order_decisions(self):
+        ids = [decision.order_id for decision in self.order_decisions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("订单裁定不能重复提交同一订单")
+        return self
 
 
 class ReportInput(Command):
@@ -67,6 +85,9 @@ class ReportInput(Command):
         rules = self.award_rules
         if rules is None or not self.start_date <= rules.push_start_date <= self.end_date:
             raise ValueError("请配置奖项规则及周期内的推送开始日")
+        if any(not self.start_date <= decision.account_date <= self.end_date
+               for decision in rules.order_decisions):
+            raise ValueError("订单裁定的核算日期须位于战报周期内")
         if self.visibility != "activity":
             raise ValueError("奖项战报须允许全活动查看，保证排名与PK完整")
         if self.award_kind == "annual_repurchase":

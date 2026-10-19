@@ -1,5 +1,6 @@
 """Award calculations from OKKI facts; never use attachment current-year values."""
 import json
+import logging
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
@@ -10,9 +11,11 @@ from app.core.config import get_settings
 from app.core.time import to_beijing_naive
 from app.invoice.order_role import goods_order_sql
 from app.battle_report.statistics import money
+from app.battle_report.order_decisions import decision_index, resolve_order_role
 
 NEW_DEAL_FIELD = "22595163468"
 ZERO = Decimal(0)
+logger = logging.getLogger(__name__)
 
 
 def source_facts(db, report, members, now):
@@ -42,8 +45,15 @@ def source_facts(db, report, members, now):
 
 def calculate(report, members, raw, now, synced_at=None):
     now = to_beijing_naive(now)
-    by_user = {str(m.okki_user_id): m for m in members}
     issues, orders, seen = [], [], {}
+    try:
+        decisions = decision_index(report.award_rules)
+    except (ValueError, TypeError):
+        logger.warning("Invalid persisted battle-report order decisions", exc_info=True)
+        print("Invalid battle-report order decisions; award ranking suspended", flush=True)
+        decisions = {}
+        issues.append("人工订单裁定配置无效；GMV保留，排名待管理员核对")
+    applied_decisions = set()
     gmv_issues = set()
     for source in raw:
         row = dict(source)
@@ -61,8 +71,11 @@ def calculate(report, members, raw, now, synced_at=None):
             mark = fields.get(NEW_DEAL_FIELD) if isinstance(fields, dict) else None
             if not oid or not uid or not cid or not amount.is_finite() or amount < 0:
                 raise ValueError
-            if mark not in ("是", "否"):
-                issues.append(f"订单 {oid} 新成交标记为空或非法；GMV保留，新签复购指标待核对")
+            role, issue = resolve_order_role({**row, "account_date": day}, mark, decisions)
+            if issue:
+                issues.append(issue)
+            elif oid in decisions:
+                applied_decisions.add(oid)
             fact = (uid, cid, day, amount, mark, bool(row.get("is_goods", True)))
             if oid in seen:
                 if seen[oid] != fact:
@@ -71,7 +84,7 @@ def calculate(report, members, raw, now, synced_at=None):
                 continue
             seen[oid] = fact
             orders.append({"id": oid, "uid": uid, "cid": cid, "day": day,
-                           "amount": amount, "new": True if mark == "是" else False if mark == "否" else None, "goods": fact[-1]})
+                           "amount": amount, "new": True if role == "new_sign" else False if role == "repeat" else None, "goods": fact[-1]})
         except (ValueError, TypeError, KeyError, InvalidOperation):
             issues.append(f"订单 {row.get('order_id', '未知')} 缺少有效客户、日期、美元金额或新成交标记")
             gmv_issues.add(str(row.get("user_id") or ""))
@@ -100,7 +113,8 @@ def calculate(report, members, raw, now, synced_at=None):
             "data_complete": not issues, "calculated_at": now.isoformat(), "source_synced_at": synced_at,
             "source_label": "OKKI订单镜像 · 每次刷新重新查询 · 非直连实时接口", "currency": "USD",
             "period_state": "upcoming" if now.date() < report.start_date else "ended" if now.date() > report.end_date else "running",
-            "workday_progress": None}
+            "workday_progress": None, "order_decision_count": len(decisions),
+            "applied_order_decision_count": len(applied_decisions)}
     if report.award_kind == "annual_repurchase":
         annual(data, report)
     else:

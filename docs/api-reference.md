@@ -2513,3 +2513,6 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 - 主站 `POST /api/domestic/reports`、`POST /api/domestic/reports/revoke` 和代报工选人 `GET /api/domestic/process-workers` 统一要求 `domestic_report:write`。撤销报工仍保留本人记录/管理员例外、已发货和下游真实报工保护。
 - `POST /api/domestic/reports/skip`、`GET /api/domestic/reports/skips` 和 `POST /api/domestic/reports/skip/{skip_log_id}/revoke` 统一要求 `domestic_skip:write`。异常原因、逐件记录、幂等及下游报工保护不变。
 - 两个新码登记为 action，角色权限矩阵分别显示“内贸订单代报工”和“内贸订单异常跳过”。既有 `domestic:write`/`domestic:admin` 不替代新权限，启动 seed 不自动给普通管理员或既有角色补授；super_admin 沿用平台豁免。小程序数量/逐件报工权限不变。上线重启后由角色管理页显式分配，重新登录刷新权限。订单阅读范围仍需已有阅读及数据范围权限。
+# 2026-10-19：战报订单裁定配置
+
+奖项配置的 `award_rules.order_decisions` 为可选列表（默认空、最多200笔），每笔包含 `order_id`、`order_no`、`company_id`、`owner_id`、`account_date`、`role=new_sign|repeat|exclude_metrics` 和非空 `reason`。ID唯一、数字身份、日期在活动周期内；配置更正仍走现有战报PUT、版本校验及审计，更改裁定必须有整体原因并关闭推送。管理员GET/list保留完整列表，非管理员移除列表；统计返回 `order_decision_count`、`applied_order_decision_count` 两个数量。裁定不改写OKKI或镜像，身份漂移或相反合法源标记触发待核对并停止排名。
