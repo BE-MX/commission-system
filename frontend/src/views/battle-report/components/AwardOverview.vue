@@ -4,15 +4,16 @@
     <el-alert v-if="data.period_state === 'upcoming'" type="info" :closable="false" title="活动尚未开始，当前展示参赛配置，未来订单不提前计入" />
     <template v-if="data.award_kind === 'annual_repurchase'">
       <p class="award-note">美元目标直接引用Excel“评比需满足最低门槛”列，2026年OKKI美元GMV与该目标直接比较，不换汇、不重新分档或推算目标。</p>
+      <p class="award-note">备注：系数前五且满足对应同比增长率的可参与本奖项的评选。</p>
       <div class="award-summary"><div><span>已达GMV门槛</span><strong>{{ data.qualified.length }}<small> / {{ data.people.length }}人</small></strong></div><div><span>参评席位</span><strong>TOP 5</strong></div><p>新签客户 × 20% + 当年新签复购客户 × 20% + 美元复购金额 ÷ 5000 × 60%</p></div>
-      <el-alert v-if="data.cutoff_tie" type="warning" :closable="false" title="第五名边界存在同分，待确认决胜规则；同分人员不预判获奖" />
+      <el-alert v-if="data.cutoff_tie" type="warning" :closable="false" title="获奖候选边界存在同分，待确认决胜规则；同分人员不预判获奖" />
       <section v-for="group in groups" :key="group.key"><h3>{{ group.label }} <span>{{ group.rows.length }}人</span></h3><el-empty v-if="!group.rows.length" description="暂无人员" :image-size="60" />
         <div v-else class="award-people"><article v-for="row in group.rows" :key="row.member_id" :class="['award-person', { 'award-top': row.top_five }]">
-          <header><span>{{ row.rank ? `候选第${row.rank}名` : row.overall_rank ? `总榜第${row.overall_rank}名` : '排名待核对' }}</span><StatusBadge v-if="row.top_five" type="warning">前五名候选</StatusBadge></header>
+          <header><span>{{ row.overall_rank ? `总榜第${row.overall_rank}名` : '排名待核对' }}</span><StatusBadge v-if="row.top_five" type="warning">获奖前五候选</StatusBadge></header>
           <h4>{{ row.user_name }} <b>{{ data.data_complete ? number(row.score, 4) : '待核对' }}<small> 系数</small></b></h4>
           <p>当前GMV {{ row.gmv_complete ? `$${number(row.gmv)}` : '待核对' }} / 美元门槛 {{ row.target === null ? '待确认' : `$${number(row.target)}` }}</p>
-          <el-progress :percentage="row.gmv_complete && row.progress_percent !== null ? Math.min(100, row.progress_percent) : 0" :show-text="false" :status="row.qualified ? 'success' : undefined" />
-          <p><strong>{{ row.gmv_complete && row.progress_percent !== null ? `${number(row.progress_percent, 1)}%` : '进度待核对' }}</strong> · 2025基数 ${{ number(row.baseline) }} · 目标来源：Excel最低门槛列</p>
+          <el-progress :percentage="row.gmv_complete && row.progress_percent !== null ? Math.min(100, row.progress_percent) : 0" :show-text="false" :status="row.gmv_complete && row.progress_percent !== null ? (row.qualified ? 'success' : 'exception') : undefined" />
+          <p><strong>{{ row.gmv_complete && row.progress_percent !== null ? `${number(row.qualified ? row.progress_percent : Math.min(99.9, row.progress_percent), 1)}%` : '进度待核对' }}</strong> · 2025基数 ${{ number(row.baseline) }} · 目标来源：Excel最低门槛列</p>
           <footer v-if="data.data_complete">新签 {{ row.new_count }} 客户 · 复购 {{ row.repeat_count }} 客户 / {{ row.repeat_orders }} 笔 · 复购 ${{ number(row.repeat_amount) }}</footer><footer v-else>新签、复购客户数、复购笔数及金额待核对</footer>
         </article></div>
       </section>
@@ -35,7 +36,7 @@
 import { computed } from 'vue'
 import { formatMoney } from '@/utils/money'
 const props = defineProps({ data: { type: Object, required: true } })
-const groups = computed(() => [{ key: 'qualified', label: props.data.data_complete ? '已达门槛 · 按系数排名' : '已达GMV门槛 · 排名待核对', rows: props.data.qualified || [] }, { key: 'unqualified', label: '未达GMV门槛 · 冲刺进度', rows: props.data.unqualified || [] }, ...(props.data.pending?.length ? [{ key: 'pending', label: 'GMV数据待核对', rows: props.data.pending }] : [])])
+const groups = computed(() => [{ key: 'people', label: props.data.data_complete ? '总榜 · 按积分排名' : '总榜 · 排名待核对', rows: props.data.people || [] }])
 const number = (value, digits = 2) => formatMoney(value, digits)
 </script>
 <style scoped>

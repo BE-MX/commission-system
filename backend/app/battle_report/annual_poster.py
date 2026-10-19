@@ -37,11 +37,12 @@ def values(row, visible):
 
 def progress(row, visible):
     if not visible or row is None or not row["gmv_complete"]:
-        return {"fill": "0", "label": "—"}
+        return {"fill": "0", "label": "—", "below_target": False}
     exact = Decimal(row["gmv"]) / Decimal(row["target"]) * 100
     # Truncation cannot turn 99.99% into a false displayed 100%.
     label = format(exact.quantize(Decimal("0.1"), rounding=ROUND_DOWN), "f") + "%"
-    return {"fill": format(min(Decimal(100), max(Decimal(0), exact)), "f"), "label": label}
+    return {"fill": format(min(Decimal(100), max(Decimal(0), exact)), "f"), "label": label,
+            "below_target": Decimal(row["gmv"]) < Decimal(row["target"])}
 
 
 def render_html(snapshot, assets, background):
@@ -69,18 +70,9 @@ def render_html(snapshot, assets, background):
         table.append({"rank": index+6, "fields": fields,
                       "style": box_style((901,center-14,211,28)), **progress(row,visible)})
     env = Environment(loader=FileSystemLoader(assets), autoescape=select_autoescape(["html"]))
-    qualified_count = sum(row["qualified"] for row in people)
-    group_label = ""
-    if visible:
-        groups = []
-        if qualified_count:
-            groups.append(f"已达标：01—{qualified_count:02d}")
-        if qualified_count < len(people):
-            groups.append(f"未达标：{qualified_count+1:02d}—{len(people):02d}")
-        group_label = "；".join(groups)
     return env.get_template("annual_ranking.html").render(
         css=(assets/"annual_ranking.css").read_text(encoding="utf-8"), background=background,
-        podium=podium, table=table, demo=demo, visible=visible, group_label=group_label,
+        podium=podium, table=table, demo=demo, visible=visible,
         calculated_at=snapshot["calculated_at"].replace("T"," ")[:19],
         source_synced_at=(snapshot.get("source_synced_at") or "未知").replace("T"," ")[:19],
         issue_count=len(snapshot.get("issues",[])), cutoff_tie=snapshot.get("cutoff_tie",False))

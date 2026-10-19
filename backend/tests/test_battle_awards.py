@@ -1,5 +1,6 @@
 """Award business boundaries using pure facts and isolated SQLite only."""
 import json
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -186,7 +187,7 @@ def test_templates_escape_names_and_contain_business_annotations():
     assert "&lt;img" in html and "<img src='evil'>" not in html
     assert '复购金额：USD' in html and '目标直接引用Excel最低门槛列' in html
     assert '第1名展示位' in html and 'OKKI镜像最近同步：2026-10-19 08:59:00' in html
-    assert '未达100%者先按完成进度、再按积分降序' in html
+    assert '统一按积分降序排列，完成进度不影响排名' in html
     data=stats.calculate(campaign("new_sign_pk"),[member(1,"A",True),member(2,"B",True)],[],datetime(2026,10,19))
     data["report"]={"name":"11月份新签PK奖","start_date":"2026-11-01","end_date":"2026-11-30"}
     assert "TEAM PK" in poster_renderer.render_html(data,"team")
@@ -203,31 +204,52 @@ def annual_rows(specs):
     return data
 
 
-def test_annual_ranking_groups_qualified_by_score_then_unqualified_by_progress_score():
+def test_annual_ranking_uses_score_regardless_of_qualification_or_progress():
     data=annual_rows([(200,100,1),(100,100,2),(80,100,100),(90,100,10),(180,200,20)])
-    assert [r['ark_user_id'] for r in data['people']]==[2,1,5,4,3]
+    assert [r['ark_user_id'] for r in data['people']]==[3,5,4,2,1]
     assert [r['overall_rank'] for r in data['people']]==[1,2,3,4,5]
     assert [r['ark_user_id'] for r in data['qualified']]==[2,1]
-    assert [r['ark_user_id'] for r in data['unqualified']]==[5,4,3]
+    assert [r['ark_user_id'] for r in data['unqualified']]==[3,5,4]
     assert not any(r['top_five'] for r in data['unqualified'])
 
 
-def test_annual_ranking_uses_exact_fractions_and_stable_ties():
+def test_annual_ranking_keeps_roster_order_for_equal_scores_despite_different_progress():
     data=annual_rows([('0.99999999999999999998',1,100),('0.99999999999999999999',1,1),
                       (1,1,0),(50,100,1),(100,200,1)])
-    assert [r['ark_user_id'] for r in data['people']]==[3,2,1,4,5]
+    assert [r['ark_user_id'] for r in data['people']]==[1,2,4,5,3]
     assert len(data['qualified'])==1
 
 
 def test_annual_poster_percent_does_not_round_into_qualification_and_bar_caps():
     from app.battle_report.annual_poster import progress, values
     row=dict(gmv_complete=True,gmv='99.999',target='100')
-    assert progress(row,True)=={'label':'99.9%','fill':'99.99900'}
+    assert progress(row,True)=={'label':'99.9%','fill':'99.99900','below_target':True}
     assert progress({**row,'gmv':'138.64'},True)['label']=='138.6%'
     assert progress({**row,'gmv':'138.64'},True)['fill']=='100'
+    assert not progress({**row,'gmv':'100'},True)['below_target']
+    assert not progress({**row,'gmv':'138.64'},True)['below_target']
+    assert not progress(row,False)['below_target']
+    assert not progress({**row,'gmv_complete':False},True)['below_target']
     money_row=dict(user_name='Sample',score='1',new_count=1,repeat_count=1,repeat_amount='368000')
     assert values(money_row,True)[-1]=='368,000'
     assert values({**money_row,'repeat_amount':'368000.12'},True)[-1]=='368,000.12'
+
+
+def test_annual_poster_places_high_score_first_and_only_marks_below_target_bars():
+    from app.battle_report import annual_poster
+    data=annual_rows([(100,100,1),(80,100,3),(200,100,2),(99.999,100,4),
+                      (100,100,5),(90,100,6)])
+    # Rendering also reorders stored snapshots created under the old display rule.
+    data['people'].reverse()
+    data.update(calculated_at='2026-10-19T09:00:00',data_mode='demo')
+    html=annual_poster.render_html(data,poster_renderer.ASSETS,'background.png')
+    names=re.findall(r'class="annual-field (?:podium|table)-field name"[^>]*>([^<]+)',html)
+    assert names[:6]==[
+        'Sample6','Sample5','Sample4','Sample2','Sample3','Sample1']
+    bars=re.findall(r'class="annual-progress ([^"]+)"',html)
+    assert ['below-target' in b.split() for b in bars][:6]==[True,False,True,True,False,False]
+    assert '未达标：' not in html and '已达标：01' not in html
+    assert '统一按积分降序排列，完成进度不影响排名' in html
 
 
 def test_annual_incomplete_poster_withholds_all_real_fields_and_labels_seat_numbers():

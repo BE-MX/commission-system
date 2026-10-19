@@ -3,7 +3,6 @@ import json
 import logging
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from fractions import Fraction
 
 from sqlalchemy import bindparam, text
 
@@ -123,14 +122,8 @@ def calculate(report, members, raw, now, synced_at=None):
 
 
 def annual_order_key(row):
-    """Use exact completion fractions; display rounding never decides rank."""
-    if not row["gmv_complete"]:
-        return (2, 0, 0)
-    score = Decimal(row["score"])
-    if row["qualified"]:
-        return (0, -score, 0)
-    progress = Fraction(Decimal(row["gmv"])) / Fraction(Decimal(row["target"]))
-    return (1, -progress, -score)
+    """Display by score only; equal scores retain roster order."""
+    return -Decimal(row["score"])
 
 
 def annual(data, report):
@@ -146,7 +139,7 @@ def annual(data, report):
                                 + Decimal(row["repeat_amount"]) / 5000 * Decimal("0.6"), "f"),
                    rank=None, overall_rank=None, top_five=False)
     data["people"].sort(key=annual_order_key)
-    data["ranking_rule"] = "qualified_score_then_progress_score_v2"
+    data["ranking_rule"] = "score_desc_roster_ties_v3"
     qualified = [r for r in data["people"] if r["qualified"]]
     cutoff_tie = data["data_complete"] and len(qualified) > 5 and Decimal(qualified[4]["score"]) == Decimal(qualified[5]["score"])
     for index, row in enumerate(data["people"], 1):
