@@ -122,6 +122,7 @@ def capture(db, record, actor, *, executing=False):
         'products': [{**deepcopy(row), 'product_name': items[0].product_name} for items, row in bindings],
         'inspection': {'id': inspection.id, 'status': inspection.status, 'edit_version': inspection.edit_version,
                        'media_ids': [photo.id for photo in media]} if inspection else None,
+        'stale_media_ids': list((event.result or {}).get('stale_media_ids') or []) if event else [],
         'inspection_outbound_no': inspection.outbound_no if inspection else None, 'recover': active,
         'dto': SimpleNamespace(xiaoman_order_id=invoice.xiaoman_order_id, customer_id=invoice.customer_id,
                 currency=invoice.currency, total_amount=invoice.total_amount, surcharge_amount=invoice.surcharge_amount)}
@@ -178,13 +179,21 @@ def evidence(db, record, local, business, desired_serial_id, number_only, expect
         if not plan['serial_changed'] and local['inspection_outbound_no'] and local['inspection_outbound_no'] != before.get('serial_id'):
             reject(409, '出库单号与原验货资料不同，请先核对')
         plan['inspection'] = deepcopy(inspection)
-        plan['requires_recheck'] = bool(plan['material_changed'] and inspection and inspection['media_ids'])
+        from app.shipping_inspection import outbound_recheck as recheck
+        plan['item_links'] = outbound_service.item_link_snapshot(db, record['outbound_record_id'])
+        photos = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection['id']).all() if inspection else []
+        pairs = recheck.carry_pairs({**plan, 'before': deepcopy(before)}, {'record_list': plan['expected']},
+                                    photos, plan['item_links'],
+                                    stale_ids=local.get('stale_media_ids') or [])
+        plan['requires_recheck'] = bool(
+            (plan['remark_changed'] or recheck.uncovered(plan, before, pairs))
+            and inspection and inspection['media_ids'])
         if read_outbound(db, record['outbound_invoice_id']) != before or read_order(db, local['dto'], local['products']) != order:
             reject(409, '取证期间原订单或出库单已变化')
         plan.update(before=deepcopy(before), invoice_id=local['invoice_id'], invoice_no=local['invoice_no'],
             invoice_version=local['invoice_version'], order=deepcopy(order), source_items=local['source_items'],
             local_binding_fingerprint=plans.digest(business))
-        plan['version'] = plans.digest(plan)
+        plan['version'] = plans.version_digest(plan)
         return plan
     except HTTPException:
         raise

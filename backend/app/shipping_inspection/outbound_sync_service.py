@@ -135,7 +135,15 @@ def _prepare_legacy(db, record, user, *, desired_serial_id=None, expected_serial
         raise ValueError('小满出库号已更新，但方舟验货单号尚未核对，请由仓库处理')
     plan['inspection'] = {'id': inspection.id, 'status': inspection.status, 'edit_version': inspection.edit_version,
                           'media_ids': [photo.id for photo in media]} if inspection else None
-    plan['requires_recheck'] = bool(plan['material_changed'] and media)
+    # Snapshot the old local↔remote row identities before OKKI replaces them, so
+    # photos of a deleted-but-recreated product can be inherited by the new row.
+    from app.shipping_inspection import outbound_recheck as recheck
+    from app.shipping_inspection.outbound_service import item_link_snapshot
+    plan['item_links'] = item_link_snapshot(db, record['outbound_record_id'])
+    pairs = recheck.carry_pairs({**plan, 'before': before}, {'record_list': plan['expected']},
+                                media, plan['item_links'],
+                                stale_ids=set((event.result or {}).get('stale_media_ids') or []))
+    plan['requires_recheck'] = bool((plan['remark_changed'] or recheck.uncovered(plan, before, pairs)) and media)
     if plan['requires_recheck']:
         event.action = state.RECHECK
         event.payload = {'invoice_id': invoice.id, 'plan': plan}
@@ -148,7 +156,7 @@ def _prepare_legacy(db, record, user, *, desired_serial_id=None, expected_serial
     plan.update(before=before, invoice_id=invoice.id, invoice_no=invoice.invoice_no,
                 invoice_version=edit_version(invoice), order=order,
                 source_items=source_items)
-    plan['version'] = plans.digest(plan)
+    plan['version'] = plans.version_digest(plan)
     return invoice, event, plan
 
 
@@ -247,10 +255,20 @@ def _finish_verified(db, event, plan, after, *, commit_result=True, finisher_id=
         if plan.get('serial_changed'):
             inspection.outbound_no = after['serial_id']
         if media:
-            from app.shipping_inspection.outbound_recheck import changes
+            from app.shipping_inspection.outbound_recheck import carry_media, carry_pairs, changes
             from app.shipping_inspection.outbound_service import inspection_item_links
-            stale, required = changes(plan, after, inspection_item_links(db, inspection.outbound_record_id), media, previous)
+            links = inspection_item_links(db, inspection.outbound_record_id)
+            pairs = carry_pairs(plan, after, media, links, stale_ids=stale_ids)
+            # Decide evidence before rebinding: aliases describe the old rows, so the
+            # inherited photos must still carry their old local ids here.
+            stale, required = changes(plan, after, links, media, previous, pairs=pairs)
             stale_ids, required_ids = set(stale), set(required)
+            moved = carry_media(plan, after, links, media, pairs, stale_ids=stale_ids)
+            if moved:
+                audit_service.record(db, 'media_carry_over', operator_id, inspection.outbound_record_id,
+                                     inspection=inspection,
+                                     context={'scope': 'outbound-sync-history', 'source': 'invoice_sync'},
+                                     payload={'media': moved}, result={'count': len(moved)})
     verified = _snapshot(plan, after)
     event.action = 'sync_done'
     event.result = {'verified': verified, 'checked_at': str(beijing_now()),

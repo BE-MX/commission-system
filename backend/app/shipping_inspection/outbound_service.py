@@ -538,6 +538,18 @@ def inspection_item_links(db: Session, record_id: str) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def item_link_snapshot(db: Session, record_id: str) -> list[dict]:
+    """Current local↔remote detail identities, small and deterministic for plan replay.
+
+    Captured while preparing a sync, i.e. before OKKI replaces the rows, so photos
+    uploaded against the old local ids can still be matched to their product.
+    """
+    rows = [{'local_item_id': str(row['local_item_id']), 'remote_item_id': str(row['remote_item_id'])}
+            for row in inspection_item_links(db, record_id)
+            if row.get('local_item_id') is not None and row.get('remote_item_id') is not None]
+    return sorted(rows, key=lambda row: (row['local_item_id'], row['remote_item_id']))
+
+
 def list_outbound_items(db: Session, record_id: str, *, use_overlay=True, sync_event=None) -> list[dict]:
     """出库明细附产品表 model/size/color；LEFT JOIN 保留产品缺失的原始明细。"""
     from app.shipping_inspection.outbound_sync_state import overlay

@@ -1484,6 +1484,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 2026-09-28 单张先打印例外：管理员可对已同步、待补验且验货单仍为草稿的正式出库单调用 `POST /outbound-records/{record_id}/allow-print-before-recheck`，提交 `{"reason":"至少8个字符的处理依据"}`。接口按当前已核实的小满出库版本落审计，返回 `print_before_recheck=true`、`recheck_required=true`；列表同步返回 `print_before_recheck`，允许该单打印出库单或下载 Word，同时继续显示“待补验”。后续出库资料再次变化时例外失效。旧照片仍标记过期，补拍要求、验货提交校验及验货单打印限制保持有效；`pending_sync` 和不确定状态不能使用例外。
 
+2026-10-19 同型号明细重建后自动沿用旧照片：小满删除并重建同一产品明细会生成新的远端/本地明细 ID。同步计划在发送前快照旧本地↔远端明细身份；回读验证成功后按 `product_id`＋`sku_id`（缺失时名称、型号、单位）和数量唯一一对一匹配，将旧明细已有未失效照片改绑新明细并写 `media_carry_over` 审计，被沿用明细不再进入 `required_recheck_ids`；整单照片仅在仍有未继承的实物变化或备注变化时失效。数量变化、同型号重复、旧照片已失效、费用行或关联证据缺失时保持原补拍规则。照片优先绑新本地明细 ID，镜像未追上时绑 `okki:<远端ID>`，扫码/详情/PDF 读取时解析为当前本地明细 ID。预览版本哈希排除本地关联快照。
+
 ## 库存色块图工作台集成（`/api/colorwork`，2026-09-14）
 
 工作台下载页新增只读接口（完整前缀 `/api/colorwork/workbench`，模块会话鉴权）：
