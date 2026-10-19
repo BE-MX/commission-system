@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import select
 
+import app.auth.models  # noqa: F401 - 注册 ark_users，否则 uploaded_by 外键在首次 flush 时无法解析
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.storage.cos import ObjectMissing
