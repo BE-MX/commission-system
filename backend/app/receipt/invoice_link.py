@@ -30,6 +30,14 @@ def save_draft(db, invoice, draft, actor, *, new=False):
         return
     row = get_intent(db, invoice.id)
     existing_intent = row is not None
+    # Validate against the freshly calculated order total before binding proofs
+    # or changing the intent. An omitted draft retains its saved amount.
+    if invoice.order_type == "stock" and (row is None or row.status == "draft"):
+        amount = draft.amount if draft is not None else getattr(row, "amount", None)
+        if amount is not None and amount > invoice.total_amount:
+            raise ValueError(
+                f"本次回款金额 {amount:.2f} 不能超过订单总额 {invoice.total_amount:.2f} {invoice.currency}，请核对后保存"
+            )
     if row is None:
         # New application-created invoices enter the flow. Historical invoices
         # may attach evidence, but are never automatically backfilled.

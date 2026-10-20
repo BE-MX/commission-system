@@ -6,6 +6,7 @@ import * as vue from 'vue'
 import * as settlement from '../src/views/invoice/composables/invoiceSettlement.js'
 import * as state from '../src/views/invoice/composables/invoiceEditorState.js'
 import * as pricing from '../src/views/invoice/composables/accessoryPricing.js'
+import * as money from '../src/utils/money.js'
 
 const source = readFileSync(new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url), 'utf8')
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
@@ -26,6 +27,7 @@ async function harness(request = async () => defaults('上单备注'), createReq
   })
   const imports = {
     vue,
+    '@/utils/money': money,
     '@/utils/feedback': { msgWarning: message => warnings.push(message), msgSuccessText() {}, alertAction() {},
       confirmAction: async message => { confirmations.push(message); return confirm() },
       isFeedbackCancelled: error => ['cancel', 'close'].includes(error) },
@@ -394,7 +396,7 @@ test('positive receipt and draft-only save do not prompt for zero payment', asyn
   const h = await harness()
   try {
     await h.editor.onCustomerChange(customer('C1'))
-    Object.assign(h.editor.form, { express_channel: 'FEDEX', receipt_draft: { amount: 1, status: 'draft' } })
+    Object.assign(h.editor.form, { express_channel: 'FEDEX', shipping_fee: 1, receipt_draft: { amount: 1, status: 'draft' } })
     await h.editor.saveAndSync()
     h.editor.form.receipt_draft.amount = 0
     await h.editor.saveDraft()
@@ -403,3 +405,46 @@ test('positive receipt and draft-only save do not prompt for zero payment', asyn
     assert.equal(h.synced.length, 1)
   } finally { h.stop() }
 })
+
+for (const action of ['saveDraft', 'saveAndSync']) {
+  for (const id of [null, 1226]) {
+    test(`${action} blocks excess receipt before ${id ? 'update' : 'create'} request`, () => run(async h => {
+      await h.editor.onCustomerChange(customer('C1'))
+      Object.assign(h.editor.form, { id, order_type: 'stock', express_channel: 'FEDEX', shipping_fee: 5082.14,
+        receipt_draft: { amount: 5377.30, status: 'draft' } })
+      await h.editor[action]()
+      assert.equal(h.saved.length, 0)
+      assert.equal(h.synced.length, 0)
+      assert.match(h.warnings.at(-1), /回款金额.*5,377.30.*订单总额.*5,082.14.*USD/)
+      assert.equal(h.editor.form.receipt_draft.amount, 5377.30)
+      h.editor.form.receipt_draft.amount = 5082.14
+      await h.editor[action]()
+      assert.equal(h.saved.length, 1)
+      assert.equal(h.synced.length, action === 'saveAndSync' ? 1 : 0)
+    }))
+  }
+}
+
+for (const receipt of [{ amount: 100.01 }, { amount: 100.01, status: 'draft' }]) {
+  test(`legacy draft status ${receipt.status} still validates lowered total`, () => run(async h => {
+    await h.editor.onCustomerChange(customer('C1'))
+    Object.assign(h.editor.form, { express_channel: 'FEDEX', shipping_fee: 100, receipt_draft: receipt })
+    assert.equal(await h.editor.saveDraft(), null)
+    assert.equal(h.saved.length, 0)
+    assert.match(h.warnings.at(-1), /回款金额/)
+  }))
+}
+
+for (const scenario of [
+  { order_type: 'presale', receipt_draft: { amount: 200, status: 'draft' } },
+  { order_type: 'stock', receipt_draft: { amount: 200, status: 'converted' } },
+  { order_type: 'stock', receipt_draft: { amount: '100.00', status: 'draft' } },
+  { order_type: 'stock', receipt_draft: null },
+]) {
+  test(`save preserves receipt boundary ${JSON.stringify(scenario)}`, () => run(async h => {
+    await h.editor.onCustomerChange(customer('C1'))
+    Object.assign(h.editor.form, { express_channel: 'FEDEX', shipping_fee: 100, ...scenario })
+    assert.ok(await h.editor.saveDraft())
+    assert.equal(h.saved.length, 1)
+  }))
+}

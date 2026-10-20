@@ -1,4 +1,5 @@
 import { msgWarning, msgSuccessText, alertAction, confirmAction, isFeedbackCancelled } from '@/utils/feedback'
+import { formatMoney } from '@/utils/money'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useLinkedInvoiceSync } from './useLinkedInvoiceSync'
 import { invoiceOrderSignature } from './invoiceReceiptState'
@@ -28,6 +29,7 @@ import {
   normalizeDiscount,
   settlementMatchesTotal,
   sumLineNet,
+  toMoneyCents,
 } from './invoiceSettlement'
 import { normalizeAccessoryRow } from './accessoryPricing'
 import { useInvoiceAccessories } from './useInvoiceAccessories'
@@ -647,6 +649,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
     }
     if (settlementError.value) {
       msgWarning(settlementError.value)
+      return null
+    }
+    const receipt = form.receipt_draft
+    if (form.order_type === 'stock' && (!receipt?.status || receipt.status === 'draft') &&
+        toMoneyCents(receipt?.amount) > toMoneyCents(formTotal.value)) {
+      msgWarning(`本次回款金额 ${formatMoney(receipt.amount)} 不能超过订单总额 ${formatMoney(formTotal.value)} ${form.currency}，请核对后保存`)
       return null
     }
     // 客户等级必填（2026-09 下单页改版）：等级决定价格规则，缺等级不允许保存

@@ -77,6 +77,10 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 - `POST /api/portal/admin/v1/access-requests/{id}/review`：员工 `portal_access:admin`；approve 必须传现有 enabled + can_order 的 `access_id`，reject 不需要。批准复用邀请邮件 outbox，客户打开 `/activate#token=...` 后 `POST /auth/challenge` 请求验证码，`POST /auth/activate` 以验证码 + 新密码完成激活并登录。密码只进 SecretStr/bcrypt，不进入申请、日志或回执。
 
 
+## 库存单回款草稿保存校验（2026-10-20）
+
+订单发票新增、普通编辑及关联保存沿用原端点与权限；保存时以服务端重新计价的订单总额校验未提交的 `receipt_draft.amount`，超额返回具体金额与币种的校验错误，整次保存回滚。编辑请求省略 `receipt_draft` 时仍校验已有草稿。零金额、预售首款和已生成回款沿用原语义，不新增端点或权限。详见 [订单关联同步](invoice-linked-sync.md#库存单回款草稿保存前校验2026-10-20)。
+
 ## 订单发票与回款备注编辑（2026-10-10）
 
 - `PATCH /api/invoice/invoices/{invoice_id}/remark`：现有 `invoice:write` 和实时订单数据范围；body `{remark,expected_version}`，版本取详情 `edit_version`，备注最多5000字符，空字符串清空。返回 `{id,remark,edit_version}`。
