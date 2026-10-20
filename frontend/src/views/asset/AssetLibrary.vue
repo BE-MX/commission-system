@@ -95,42 +95,44 @@
 
     <!-- 主内容区 -->
     <div ref="panelRef" class="main-content">
-      <!-- 批量操作栏 -->
-      <div v-if="isBatchMode" class="batch-toolbar">
-        <span class="batch-info">已选择 {{ selectedAssets.length }} 项</span>
-        <GlassButton variant="primary" :left-icon="Download" @click="handleBatchDownload">批量下载</GlassButton>
-        <GlassButton v-if="canWrite" variant="secondary" :left-icon="CollectionTag" @click="openBatchTagEditor">批量加标签</GlassButton>
-        <GlassButton v-if="canDelete" variant="danger" :left-icon="Delete" @click="handleBatchDelete">批量删除</GlassButton>
-        <GlassButton variant="secondary" @click="clearSelection">取消选择</GlassButton>
-      </div>
+      <div class="asset-library-header">
+        <!-- 批量操作栏 -->
+        <div v-if="isBatchMode" class="batch-toolbar">
+          <span class="batch-info">已选择 {{ selectedAssets.length }} 项</span>
+          <GlassButton variant="primary" :left-icon="Download" @click="handleBatchDownload">批量下载</GlassButton>
+          <GlassButton v-if="canWrite" variant="secondary" :left-icon="CollectionTag" @click="openBatchTagEditor">批量加标签</GlassButton>
+          <GlassButton v-if="canDelete" variant="danger" :left-icon="Delete" @click="handleBatchDelete">批量删除</GlassButton>
+          <GlassButton variant="secondary" @click="clearSelection">取消选择</GlassButton>
+        </div>
 
-      <!-- 顶部工具栏 -->
-      <div class="toolbar">
-        <FilterBar class="toolbar-left" :pending="keyword.trim() !== committedKeyword" @search="onKeywordSearch" @reset="resetFilters">
-          <el-input
-            v-model="keyword"
-            placeholder="搜索文件名或备注"
-            clearable
-            class="keyword-input"
-          >
-            <template #prefix><el-icon><Search /></el-icon></template>
-          </el-input>
-        </FilterBar>
-        <div class="toolbar-right">
-          <el-radio-group v-model="viewMode">
-            <el-radio-button label="grid"><el-icon><Grid /></el-icon></el-radio-button>
-            <el-radio-button label="list"><el-icon><List /></el-icon></el-radio-button>
-          </el-radio-group>
-          <!-- 列显隐/密度只作用于列表视图；刷新在有检索意图时才重新拉取 -->
-          <TableTools v-if="viewMode === 'list'"
-            v-model:visible-keys="visibleKeys"
-            v-model:density="density"
-            :columns="columnDefs"
-            :fullscreen="isFullscreen"
-            @refresh="onToolsRefresh"
-            @fullscreen="toggleFullscreen"
-          />
-          <GlassButton v-else variant="ghost" left-icon="Refresh" aria-label="刷新" @click="onToolsRefresh" />
+        <!-- 顶部工具栏 -->
+        <div class="asset-toolbar">
+          <FilterBar class="toolbar-left" :pending="keyword.trim() !== committedKeyword" @search="onKeywordSearch" @reset="resetFilters">
+            <el-input
+              v-model="keyword"
+              placeholder="搜索文件名或备注"
+              clearable
+              class="keyword-input"
+            >
+              <template #prefix><el-icon><Search /></el-icon></template>
+            </el-input>
+          </FilterBar>
+          <div class="toolbar-right">
+            <el-radio-group v-model="viewMode">
+              <el-radio-button label="grid"><el-icon><Grid /></el-icon></el-radio-button>
+              <el-radio-button label="list"><el-icon><List /></el-icon></el-radio-button>
+            </el-radio-group>
+            <!-- 列显隐/密度只作用于列表视图；刷新在有检索意图时才重新拉取 -->
+            <TableTools v-if="viewMode === 'list'"
+              v-model:visible-keys="visibleKeys"
+              v-model:density="density"
+              :columns="columnDefs"
+              :fullscreen="isFullscreen"
+              @refresh="onToolsRefresh"
+              @fullscreen="toggleFullscreen"
+            />
+            <GlassButton v-else variant="ghost" left-icon="Refresh" aria-label="刷新" @click="onToolsRefresh" />
+          </div>
         </div>
       </div>
 

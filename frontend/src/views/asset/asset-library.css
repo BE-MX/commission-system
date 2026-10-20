@@ -32,8 +32,10 @@
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 16px;
   position: sticky;
-  top: var(--navigation-chrome-height, 0px);
+  /* 主布局的滚动容器已预留导航高度，不能在这里重复偏移。 */
+  top: 0;
   align-self: flex-start;
+  box-sizing: border-box;
   max-height: calc(100dvh - var(--navigation-chrome-height, 0px) - 48px);
   overflow-y: auto;
 }
@@ -146,24 +148,41 @@
   background: var(--page-bg);
 }
 
-/* 顶部工具栏：sticky 悬浮条，内容会从底下滚过，
-   用更实的玻璃底（--dash-glass-bg-strong），避免透出下方卡片文字 */
-.toolbar {
+/* 搜索与批量操作共用一个吸顶容器，换行时也不会互相覆盖。 */
+.asset-library-header {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.asset-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   justify-content: space-between;
   align-items: center;
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg-strong);
+  background: var(--card-bg);
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 12px 16px;
-  position: sticky;
-  top: var(--navigation-chrome-height, 0px);
-  z-index: 10;
 }
-.toolbar-left {
-  display: flex;
-  gap: 10px;
+/* FilterBar 自带 .toolbar 卡片和 sticky；在当前工具栏内只保留筛选控件。 */
+.asset-toolbar .toolbar-left {
+  flex: 1 1 392px;
+  min-width: 0;
+  max-width: 100%;
+  position: static;
+  top: auto;
+  z-index: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 .toolbar-right {
   display: flex;
@@ -484,23 +503,21 @@
   border: 1px solid #e4e7ed;
 }
 
-/* 批量操作栏：同为 sticky 悬浮条，用更实的玻璃底 */
+/* 批量操作栏由外层统一吸顶，保留自身实际高度。 */
 .batch-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg-strong);
+  background: var(--card-bg);
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 12px 16px;
-  margin-bottom: 16px;
-  position: sticky;
-  top: var(--navigation-chrome-height, 0px);
-  z-index: 10;
 }
 
 .batch-info {
+  white-space: nowrap;
   font-size: 14px;
   font-weight: 500;
   color: #1a1a2e;
@@ -528,10 +545,10 @@
 
 @media (max-width: 768px) {
   .asset-library-page { flex-direction: column; padding: 0; }
-  .filter-sidebar { position: relative; width: 100%; box-sizing: border-box; max-height: 260px; }
+  .filter-sidebar { position: static; top: auto; width: 100%; max-height: 260px; }
   .filter-sidebar.collapsed { display: none; }
   .main-content { width: 100%; padding: 0; overflow: visible; }
-  .toolbar, .toolbar-left, .toolbar-right, .batch-toolbar { flex-wrap: wrap; gap: 10px; }
+  .asset-toolbar, .toolbar-left, .toolbar-right, .batch-toolbar { flex-wrap: wrap; gap: 10px; }
   .toolbar-left { min-width: 0; max-width: 100%; }
   .toolbar-left :deep(.el-input) { max-width: 100%; }
   .preview-body { flex-direction: column; }
