@@ -151,6 +151,7 @@ BLOCK_ORDER_DRAFT = "ORDER_DRAFT"
 BLOCK_ORDER_REVIEW = "ORDER_REVIEW"
 BLOCK_ALL_DONE = "ALL_DONE"
 BLOCK_NOT_ASSIGNED = "NOT_ASSIGNED"
+BLOCK_OWN_STEPS_DONE = "OWN_STEPS_DONE"
 BLOCK_NOTHING_REPORTABLE = "NOTHING_REPORTABLE"
 
 BLOCK_MESSAGES = {
@@ -161,6 +162,7 @@ BLOCK_MESSAGES = {
     BLOCK_ORDER_REVIEW: "订单待审核或审核未通过，审核通过后再报工",
     BLOCK_ALL_DONE: "这批货所有工序都做完了",
     BLOCK_NOT_ASSIGNED: "你没有被分配到这道工序",
+    BLOCK_OWN_STEPS_DONE: "你负责的工序已完成，无需重复报工",
     BLOCK_NOTHING_REPORTABLE: "上一道工序还没做出可接的数量，请稍后再扫",
 }
 
@@ -390,6 +392,11 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
 
     target = next((s for s in mine if s["reportable_qty"] > 0), None)
     if target is None:
+        if all(s["passed_qty"] >= item.order_qty for s in mine):
+            result = blocked(BLOCK_OWN_STEPS_DONE)
+            if any(s["skipped_qty"] > 0 for s in mine):
+                result["block_message"] = "你负责的工序均已报工或跳过，无需重复报工"
+            return result
         return blocked(BLOCK_NOTHING_REPORTABLE)
 
     return {**base, "can_submit": True, "block_reason": None, "block_message": None,
@@ -431,11 +438,28 @@ def scan_unit(db: Session, unit_id: int, user_id: int) -> dict:
             target = {**step, "reportable_qty": 1}
             break
     if target is None:
+        rows = db.query(DomesticItemProgress).filter(
+            DomesticItemProgress.item_id == item.id,
+        ).order_by(DomesticItemProgress.step_order.asc()).all()
+        _upstream, skipped, passed = routing_service.effective_passage_maps(
+            rows, routing_service.load_passage_state(db, item),
+            {u.id for u in routing_service.active_units(db, item)},
+            routing_service.runtime_rule_map(db, item.route_id),
+        )
+        mine = [row for row in rows if row.process_id in my_processes]
+        own_done = bool(mine) and all(unit.id in passed[row.id] for row in mine)
+        reason = BLOCK_OWN_STEPS_DONE if own_done else BLOCK_NOTHING_REPORTABLE
+        message = (
+            "你负责的工序已完成，无需重复报工" if own_done
+            else "上一道工序还没完成，请稍后再扫"
+        )
+        if own_done and any(unit.id in skipped[row.id] for row in mine):
+            message = "你负责的工序均已报工或跳过，无需重复报工"
         return {
             **base,
             "can_submit": False,
-            "block_reason": BLOCK_NOTHING_REPORTABLE,
-            "block_message": f"单件 {unit_service.unit_display_code(item, unit.unit_no)} 的上一道还没完成，或你负责的工序已报过",
+            "block_reason": reason,
+            "block_message": f"单件 {unit_service.unit_display_code(item, unit.unit_no)}：{message}",
             "next_step": None,
         }
     return {

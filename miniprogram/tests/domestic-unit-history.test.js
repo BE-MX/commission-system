@@ -15,7 +15,7 @@ function page() {
   definition.setData = values => Object.assign(definition.data, values)
   return { p: definition, calls }
 }
-for (const reason of ['ALL_DONE', 'NOT_ASSIGNED', 'NOTHING_REPORTABLE', 'ORDER_REVIEW']) {
+for (const reason of ['ALL_DONE', 'NOT_ASSIGNED', 'NOTHING_REPORTABLE', 'OWN_STEPS_DONE', 'ORDER_REVIEW']) {
   test('blocked unit opens its own history only after closing: ' + reason, () => {
     const { p, calls } = page()
     p._loadUnit(42, 'aabbccdd')
@@ -28,6 +28,19 @@ for (const reason of ['ALL_DONE', 'NOT_ASSIGNED', 'NOTHING_REPORTABLE', 'ORDER_R
     assert.equal(calls.urls.length, 1)
   })
 }
+test('completed own work shows a completed prompt and never submits a report', () => {
+  const { p, calls } = page()
+  p._loadUnit(42, 'aabbccdd')
+  calls.requests[0].success({ statusCode: 200, data: { can_submit: false, unit_id: 42, block_reason: 'OWN_STEPS_DONE' } })
+  assert.equal(p.data.errorTitle, '无需重复报工')
+  assert.equal(p.data.errorMessage, '你负责的工序已完成，无需重复报工')
+  assert.equal(p.data.state, 'idle')
+  assert.equal(p.data.successVisible, false)
+  assert.equal(calls.requests.length, 1)
+  assert.equal(calls.requests[0].method, 'GET')
+  p.onErrorTap()
+  assert.match(calls.urls[0], /unitId=42&sign=aabbccdd/)
+})
 test('quantity worker scanning a unit retains the exact unit identity', () => {
   const { p, calls } = page()
   p._loadUnit(43, 'aabbccdd')

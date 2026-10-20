@@ -18,6 +18,7 @@ var BLOCK_MESSAGES = {
   UNIT_QR_REQUIRED: '当前账号是逐件扫码模式，请扫描 A1-01 这类单件二维码',
   ALL_DONE: '这批货所有工序都做完了',
   NOT_ASSIGNED: '你没有被分配到这道工序',
+  OWN_STEPS_DONE: '你负责的工序已完成，无需重复报工',
   NOTHING_REPORTABLE: '上一道工序还没做出可接的数量，请稍后再扫'
 }
 
@@ -199,7 +200,7 @@ Page({
           ? { id: unitId, sign: unitSign } : null
         self._scanUnit = target
         if (!data.can_submit) {
-          self._error('暂时不能报工',
+          self._error(data.block_reason === 'OWN_STEPS_DONE' ? '无需重复报工' : '暂时不能报工',
             data.block_message || BLOCK_MESSAGES[data.block_reason] || '请联系跟单', target)
           return
         }
