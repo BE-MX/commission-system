@@ -97,6 +97,24 @@ def apply_failure(phase, restore, stop):
     return 'restored'
 
 
+PHASES = {'prepare', 'enable-access', 'enable-orders', 'stop-orders', 'close'}
+ORDER_GATES = ('PORTAL_WRITES_ENABLED', 'PORTAL_INVOICE_ENABLED')
+
+
+def check_order_readiness(live, revision, probe):
+    """Ordering opens only on the pinned release of an already validated access phase."""
+    if live != revision:
+        raise RuntimeError('Ordering requires the pinned activated application revision')
+    if not probe.get('enabled') or not probe.get('auth_secret_present'):
+        raise RuntimeError('Ordering requires validated customer access first')
+    if probe.get('origin') != 'https://shop.leshine.cloud':
+        raise RuntimeError('Ordering requires the approved customer origin')
+    if not probe.get('site_enabled'):
+        raise RuntimeError('Ordering requires an enabled customer site created by an employee')
+    if not probe.get('pdf_ready'):
+        raise RuntimeError('Ordering requires the PI PDF dependency on the backend')
+
+
 def runtime_probe(environment=None, identity=None):
     code = '''import json,sys
 try:
@@ -106,13 +124,16 @@ try:
  with e.connect() as c:
   c.execute(text('START TRANSACTION READ ONLY'))
   revisions=c.execute(text('SELECT version_num FROM alembic_version')).scalars().all()
-  namespaces=c.execute(text("SELECT DISTINCT source_account_key FROM ark_customer_external_identities WHERE source_system='okki'")).scalars().all()
-  c.rollback()
- e.dispose()
- print(json.dumps({'revision':revisions,'namespace_present':'leshine-okki' in namespaces,
+   namespaces=c.execute(text("SELECT DISTINCT source_account_key FROM ark_customer_external_identities WHERE source_system='okki'")).scalars().all()
+   site=c.execute(text("SELECT status,allowed_origin FROM ark_order_portal_sites WHERE code=:code"),{'code':s.PORTAL_SITE_CODE}).first()
+   c.rollback()
+  e.dispose()
+  print(json.dumps({'revision':revisions,'namespace_present':'leshine-okki' in namespaces,
+   'site_enabled':bool(site) and site[0]=='enabled' and site[1]==s.PORTAL_ORIGIN,
   'enabled':s.PORTAL_ENABLED,'writes':s.PORTAL_WRITES_ENABLED,'invoice':s.PORTAL_INVOICE_ENABLED,
   'mail':s.PORTAL_MAIL_ENABLED,'notification':s.PORTAL_NOTIFICATION_ENABLED,'outbound':s.PORTAL_OUTBOUND_WORKER_ENABLED,
-  'origin':s.PORTAL_ORIGIN,'auth_secret_present':bool(getattr(s,'PORTAL_AUTH_SECRET',''))}))
+  'origin':s.PORTAL_ORIGIN,'auth_secret_present':bool(getattr(s,'PORTAL_AUTH_SECRET','')),
+  'pdf_ready':__import__('importlib.util').util.find_spec('reportlab') is not None}))
 except Exception as error:
  print(json.dumps({'error_type':type(error).__name__}));sys.exit(1)
 '''
@@ -125,7 +146,7 @@ except Exception as error:
 
 
 def execute(request):
-    if request['phase'] not in {'prepare', 'enable-access', 'stop-orders', 'close'}:
+    if request['phase'] not in PHASES:
         raise ValueError('Unknown customer configuration phase')
     from contextlib import ExitStack
     import fcntl
@@ -143,6 +164,8 @@ def execute(request):
             raise RuntimeError('Password access requires the pinned activated application and actual revision 183')
         if phase == 'prepare' and probe['enabled']:
             raise RuntimeError('Preparation cannot silently close an already enabled portal')
+        if phase == 'enable-orders':
+            check_order_readiness(live, request['revision'], probe)
         identity = service_identity()
         original = ENV.read_bytes(); metadata = ENV.stat(); before = hashlib.sha256(original).hexdigest()
         content = original.decode('utf-8')
@@ -155,7 +178,10 @@ def execute(request):
             if phase in {'prepare', 'enable-access'} and values.get(name) and values[name] != overlay[name]:
                 raise RuntimeError('Existing customer config conflicts with the approved domain/business source')
         if phase == 'stop-orders':
-            overlay = {name: 'false' for name in ('PORTAL_WRITES_ENABLED', 'PORTAL_INVOICE_ENABLED')}
+            overlay = {name: 'false' for name in ORDER_GATES}
+        elif phase == 'enable-orders':
+            # Only ordering and PI open; mail, notification and outbound keep their current values.
+            overlay = {name: 'true' for name in ORDER_GATES}
         if phase in {'prepare', 'enable-access'}:
             retained = values.get('PORTAL_CSRF_KEYS')
             overlay['PORTAL_CSRF_KEYS'] = retained if retained and json.loads(retained) else json.dumps({'v1': secrets.token_hex(32)}, separators=(',', ':'))

@@ -66,6 +66,8 @@ python -m pytest --confcutdir=tests/portal_mysql tests/portal_mysql/test_mysql_p
 deploy\deploy.bat --customer-portal-config prepare --revision <full-sha>
 # 固定应用与183已实际激活后，开账号管理/登录，交易与通知仍关闭。
 deploy\deploy.bat --customer-portal-config enable-access --revision <full-sha>
+# 员工已建启用站点且后端有reportlab后，只开下单与PI；邮件/通知/出库保持原值，失败自动恢复原配置。
+deploy\deploy.bat --customer-portal-config enable-orders --revision <full-sha>
 # 停止订单写入/建票，保留其他独立能力。
 deploy\deploy.bat --customer-portal-config stop-orders --revision <full-sha>
 # 全面封闭门户。

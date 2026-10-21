@@ -8,7 +8,41 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from customer_portal_backup import BASE, TARGET, RESTORE_CLIENT_SHA256, option, validate_proof, backup_privileges
-from customer_portal_config_remote import merge_text, portal_values, service_environment, apply_failure
+from customer_portal_config_remote import merge_text, portal_values, service_environment, apply_failure, check_order_readiness, PHASES
+
+REVISION = 'a' * 40
+READY = {'enabled': True, 'auth_secret_present': True, 'origin': 'https://shop.leshine.cloud',
+    'site_enabled': True, 'pdf_ready': True}
+
+
+def test_order_readiness_passes_only_for_complete_access():
+    check_order_readiness(REVISION, REVISION, READY)
+
+
+@pytest.mark.parametrize('changes,message', [({'enabled': False}, 'access'), ({'auth_secret_present': False}, 'access'),
+    ({'origin': 'https://shop.leshinehair.cloud'}, 'origin'), ({'site_enabled': False}, 'site'),
+    ({'pdf_ready': False}, 'PDF')])
+def test_order_readiness_rejects_incomplete_runtime(changes, message):
+    with pytest.raises(RuntimeError, match=message):
+        check_order_readiness(REVISION, REVISION, {**READY, **changes})
+
+
+def test_order_readiness_rejects_unpinned_release():
+    with pytest.raises(RuntimeError, match='pinned'):
+        check_order_readiness('b' * 40, REVISION, READY)
+
+
+def test_enable_orders_is_a_registered_phase_and_cli_choice():
+    assert 'enable-orders' in PHASES
+    source = (Path(__file__).resolve().parents[1] / 'publish.py').read_text(encoding='utf-8')
+    assert "'enable-orders'" in source
+
+
+def test_enable_orders_overlay_changes_only_order_gates():
+    before = 'PORTAL_ENABLED=true\nPORTAL_WRITES_ENABLED=false\nPORTAL_INVOICE_ENABLED=false\nPORTAL_MAIL_ENABLED=false\nPORTAL_AUTH_SECRET=kept\n'
+    result = merge_text(before, {'PORTAL_WRITES_ENABLED': 'true', 'PORTAL_INVOICE_ENABLED': 'true', 'PORTAL_ENABLED': 'true'})
+    assert 'PORTAL_WRITES_ENABLED=true\n' in result and 'PORTAL_INVOICE_ENABLED=true\n' in result
+    assert 'PORTAL_MAIL_ENABLED=false\n' in result and 'PORTAL_AUTH_SECRET=kept\n' in result
 
 
 def test_overlay_retains_other_settings_and_secret_without_duplicate_key():

@@ -131,11 +131,16 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     if outbound_mode not in {'legacy', 'outbound-worker-v1'} or (worker_enabled and outbound_mode == 'legacy'):
         raise RuntimeError('Outbound mode must be confirmed before scheduler registration')
 
-    # Managed password login has no invitation/OTP mail job.
     if settings.PORTAL_ENABLED:
         from app.schedulers.portal_auth_cleanup import cleanup_portal_auth_secrets
         scheduler.add_job(cleanup_portal_auth_secrets, trigger="interval", minutes=1,
             id=JOB_PORTAL_AUTH_CLEANUP, replace_existing=True, max_instances=1, coalesce=True)
+    # Invitation and activation-code mail for approved access requests; password login never needs it.
+    if settings.PORTAL_ENABLED and settings.PORTAL_MAIL_ENABLED:
+        from app.schedulers.portal_auth_cleanup import deliver_portal_auth_mail
+        scheduler.add_job(deliver_portal_auth_mail, trigger="interval", seconds=5,
+            id=JOB_PORTAL_AUTH_MAIL, replace_existing=True, max_instances=1, coalesce=True,
+            misfire_grace_time=30)
     if settings.PORTAL_ENABLED and settings.PORTAL_NOTIFICATION_ENABLED:
         from app.schedulers.portal_notifications import deliver_portal_notifications
         scheduler.add_job(deliver_portal_notifications, trigger="interval", seconds=5,

@@ -34,7 +34,13 @@ function navigate(destination, replace = false) {
 }
 function pathRoute() {
   const path = location.pathname.slice(1)
-  if (path === 'activate') { activationToken.value = new URLSearchParams(location.hash.slice(1)).get('token') || ''; return 'activate' }
+  if (path === 'activate') {
+    const token = new URLSearchParams(location.hash.slice(1)).get('token') || new URLSearchParams(location.search).get('token')
+    if (token) activationToken.value = token
+    // Drop the invitation capability from the address bar and history before any request.
+    if (location.hash || location.search) history.replaceState(null, '', '/activate')
+    return 'activate'
+  }
   if (path === 'cart') return 'checkout'
   if (['checkout', 'collection', 'orders'].includes(path) || /^collection\/[a-z0-9_]{1,32}$/.test(path) || /^orders\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(\/proposal)?$/i.test(path)) return path
   return 'collection'

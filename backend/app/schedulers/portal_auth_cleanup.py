@@ -1,6 +1,6 @@
-"""Retired invitation/OTP secret retention; never delivers authentication mail."""
+"""Scheduler-owned invitation/activation mail delivery and expired auth secret cleanup."""
 from app.core.database import SessionLocal
-from app.portal.mail_worker import cleanup_expired
+from app.portal.mail_worker import cleanup_expired, run_once
 
 
 def cleanup_portal_auth_secrets():
@@ -8,3 +8,8 @@ def cleanup_portal_auth_secrets():
         count = cleanup_expired(db)
         db.commit()
         return count
+
+
+def deliver_portal_auth_mail():
+    # run_once owns its sessions and keeps SMTP outside any DB transaction.
+    return run_once(SessionLocal)

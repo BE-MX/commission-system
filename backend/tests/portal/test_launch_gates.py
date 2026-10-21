@@ -38,6 +38,30 @@ def test_customer_access_registers_mail_without_registering_outbound(monkeypatch
     assert registry.JOB_OKKI_OUTBOUND_DELETE_RECONCILE in jobs
 
 
+@pytest.mark.parametrize('portal,mail,expected', [(True, True, True), (True, False, False), (False, True, False)])
+def test_invitation_mail_job_follows_portal_and_mail_gates(monkeypatch, portal, mail, expected):
+    from app.schedulers import registry
+    settings = Settings(_env_file=None).model_copy(update={
+        'PORTAL_ENABLED': portal, 'PORTAL_MAIL_ENABLED': mail, 'PORTAL_OUTBOUND_WORKER_ENABLED': False})
+    monkeypatch.setattr(registry, 'get_settings', lambda: settings)
+    scheduler = Mock()
+    registry._register_jobs(scheduler, outbound_mode='legacy')
+    calls = {call.kwargs['id']: call for call in scheduler.add_job.call_args_list}
+    assert (registry.JOB_PORTAL_AUTH_MAIL in calls) is expected
+    if expected:
+        from app.schedulers.portal_auth_cleanup import deliver_portal_auth_mail
+        assert calls[registry.JOB_PORTAL_AUTH_MAIL].args[0] is deliver_portal_auth_mail
+        assert calls[registry.JOB_PORTAL_AUTH_MAIL].kwargs['max_instances'] == 1
+
+
+def test_scheduled_invitation_mail_uses_scheduler_session(monkeypatch):
+    from app.schedulers import portal_auth_cleanup
+    captured = []
+    monkeypatch.setattr(portal_auth_cleanup, 'run_once', lambda factory: captured.append(factory) or 'idle')
+    assert portal_auth_cleanup.deliver_portal_auth_mail() == 'idle'
+    assert captured == [portal_auth_cleanup.SessionLocal]
+
+
 def test_explicit_worker_requires_confirmed_mode_even_when_scheduler_disabled(monkeypatch):
     from app.schedulers import registry
     settings = Settings(_env_file=None).model_copy(update={'PORTAL_ENABLED': True,
