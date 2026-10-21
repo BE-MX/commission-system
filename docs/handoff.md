@@ -1,3 +1,10 @@
+## 2026-10-21 客户门户受管开放下单与激活邮件调度（Accio，本地提交，未推送未部署）
+
+- 分支 `accio/optimize-order-portal-integration-ce44d944`。部署脚本新增 `--customer-portal-config enable-orders`：仅把 `PORTAL_WRITES_ENABLED`/`PORTAL_INVOICE_ENABLED` 置 true，邮件/通知/出库保持原值；前检要求已固定版本、门户已开放且有 AUTH 密钥、origin 为 `https://shop.leshine.cloud`、员工已建启用站点且 origin 一致、后端可导入 reportlab；重启后检失败恢复原 .env。
+- 调度器在 `PORTAL_ENABLED` 且 `PORTAL_MAIL_ENABLED` 时注册 `portal_auth_mail`，投递 P4 批准后的邀请与激活验证码邮件。激活页读取 token 后立即用 `replaceState` 清除地址栏 hash/query。
+- 北京线上只读核实（10/20）：迁移在 201、PORTAL_ENABLED=true、站点/商品/客户业务数据均为 0 条，故门户返回 503；需员工后台先建站点和数据。
+- 验证：deploy 配置测试 44 通过；调度/申请/邮件 34 通过；门户回归 805 通过 1 失败（本机缺 reportlab，既有）；客户门户单测 141 通过；deploy 全量 941 通过 3 失败（迁移计划 2 项、存储路由 1 项，撤掉本次改动后同样失败，既有）。旧 OTP 浏览器冒烟脚本未改。
+
 ## 2026-10-20 素材库筛选与搜索栏布局修复（Codex，Git 交付，未部署）
 
 - 修复分支 `codex/asset-library-layout`（合并后清理）。素材库的 sticky 重复计入主布局已预留的 101px 导航高度，导致左侧留白及搜索栏盖住首排图片；已取消重复偏移，嵌套 FilterBar 改为普通文档流，搜索与批量操作共用一个吸顶容器。窄屏取消筛选栏相对偏移，按钮按可用宽度换行，侧栏高度含内边距与边框。
