@@ -18,7 +18,7 @@ PAUSED={'active':False,'enabled':False}
 @pytest.fixture
 def legacy_receipt(host):
     hashes = {}
-    for name in remote.NAMES - {'okki_outbound_mode.mjs'}:
+    for name in remote.NAMES - {'okki_outbound_mode.mjs', 'okki_outbound_stock.mjs'}:
         path = (host.units if name.endswith(('.service', '.timer')) else host.root) / name
         path.write_bytes(name.encode())
         hashes[name] = hashlib.sha256(name.encode()).hexdigest()

@@ -73,6 +73,8 @@ def before_send(db,attempt,local_data):
                 prepare.reject(409,'发送前新出库单号已被占用')
         if read_order(db,local_data['dto'],local_data['products'])!=order or prepare.read_outbound(db,expected['outbound_invoice_id'])!=expected:
             prepare.reject(409,'发送前订单回读已变化')
+        from app.invoice.stock_reservations import require_additional
+        require_additional(db,attempt.data['payload'],before=expected,invoice_id=attempt.data['invoice_id'])
     except HTTPException:raise
     except (ValueError,KeyError,TypeError):prepare.reject(503,'发送前原出库证据不完整')
     except okki_client.OkkiApiError:unavailable()
@@ -308,6 +310,10 @@ def review_finished(db,record,user,warehouse,attempt):
     db.commit();clear(db)
     return response(db,record,user,invoice_id,warehouse,result)
 
+from app.invoice.stock_reservations import fenced
+
+
+@fenced
 def synchronize(db,record,user,version,*,check_only=False,confirm_recheck=False,desired_serial_id=None,expected_serial_id=None,
                 number_only=False,repair=False,auto_recall=False,source='pc',warehouse=False):
     try:

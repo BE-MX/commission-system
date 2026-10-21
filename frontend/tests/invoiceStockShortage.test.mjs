@@ -77,6 +77,24 @@ test('late saved-inventory responses cannot overwrite another invoice or closed 
 })
 
 const table = readFileSync(new URL('../src/views/invoice/components/InvoiceHairTable.vue', import.meta.url), 'utf8')
+
+test('free stock is displayed while this order uses only its physically available reservation', () => {
+  const row = { id: 1, product_id: 8, sku_id: 9, quantity: 10 }
+  const entry = { invoice_item_id: 1, product_id: 8, sku_id: 9, available_stock: 0, order_available_stock: 10, shipped_quantity: '0' }
+  assert.deepEqual(invoiceStockStatus(row, { items: [entry] }), { available: 0, remaining: 10, shortage: false })
+  entry.order_available_stock = 6
+  assert.deepEqual(invoiceStockStatus(row, { items: [entry] }), { available: 0, remaining: 10, shortage: true })
+  assert.ok(table.includes('label="自由可用"'))
+  assert.ok(!table.includes('label="可用库存 / 未发货"'))
+})
+
+test('shortage filtering compares total repeated SKU demand instead of each individual line', t => {
+  const props = Vue.reactive({ items: [1, 2].map(() => ({ product_id: 8, sku_id: 9, quantity: 4, available_stock: 6 })) })
+  const scope = Vue.effectScope(); t.after(() => scope.stop())
+  const state = scope.run(() => useInvoiceStockShortage(props, () => {}))
+  state.onlyShortage.value = true
+  assert.equal(state.filteredItems.value.length, 2)
+})
 test('filter spans all pages, clears hidden selection and reveals invalid or newly added rows', async t => {
   const props = Vue.reactive({ items: Array.from({ length: 45 }, (_, index) => ({ id: null, product_id: index + 1,
     quantity: index + 2, available_stock: index % 2 ? 100 : 0 })) })

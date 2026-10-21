@@ -90,9 +90,11 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 
 ## 订单发票编辑库存提示（2026-10-19）
 
-`GET /api/invoice/invoices/{invoice_id}/editor-inventory`：要求 `invoice:read/write/sync` 任一权限与现有订单可见范围，返回 `ok({invoice_id,source:"okki_mirror",checked_at,message,items})`，禁止共享缓存（`private, no-store`）。仅返回当前产品行，排除配件与预售归档行；每行包含 `invoice_item_id/product_id/sku_id/available_stock/shipped_quantity`。可用库存复用产品匹配的启用仓库 `enable_count` 同步汇总；`checked_at` 是查询时间，不是库存同步时间。已发货量复用检验已提交的精确订单行出库投影；无小满订单的草稿为 0，已同步订单仍独立校验出库/检验/预售范围，缺权限、缺映射或进度未核验时为 null，不能默认 0。纯读取，不同步订单、不发送远端请求、不创建出库。
+`GET /api/invoice/invoices/{invoice_id}/editor-inventory`：要求 `invoice:read/write/sync` 任一权限与现有订单可见范围，返回 `ok({invoice_id,source:"ark_free_available",checked_at,message,items})`，禁止共享缓存（`private, no-store`）。仅返回当前产品行，排除配件与预售归档行；每行包含 `invoice_item_id/product_id/sku_id/available_stock/order_available_stock/shipped_quantity`。2026-10-21 起 `available_stock` 为目标仓库的自由可用：小满可用减所有有效待出库任务中尚未被小满承接的整单 SKU 数量，最低 0；产品匹配、粘贴导入同口径。有本地保留或完成任务晚于镜像时，使用独立 product scope 查询实时库存，失败返回未知，不回退旧镜像。`order_available_stock` 只用于本单缺货判断，考虑本单真实可分配保留，不新增展示列；`checked_at` 是查询时间。已发货量沿用精确订单行的已提交检验投影；缺权限、缺映射或进度未核验时为 null。此 GET 不推送订单或出库、不写库存镜像。
 
-创建/编辑的产品明细提供「仅显示库存不足的产品」：严格比较 `available_stock < max(0, quantity - shipped_quantity)`，并要求未发货数量大于 0；相等、全部已发货及未知数据不计入。缺货整行（含固定列）浅红标记，库存或出库量未知显示待核对。筛选先于排序与分页，不改变表单、金额或保存的完整明细；切换筛选清除行选择，新增/导入及数量校验定位时恢复全部行。已保存且确认未发货的行更换规格后使用新匹配库存；旧 SKU 已发货或出库未知时，不向新 SKU 转移旧发货量。
+创建/编辑产品明细只显示「自由可用」一列。缺货筛选按同 SKU 未发货量合计与本单可分配量比较，避免扣掉自己的保留后误报，以及重复 SKU 逐行通过却合计超额。未知数据不计入已确认缺货。筛选先于排序与分页，不改变表单、金额或保存明细；更换 SKU 不转移旧 SKU 的发货量。
+
+`POST /api/shipping-inspection/outbound-records/{record_id}/replenishment-sync`：仅 `task:<id>` 缺货任务，要求 `shipping_inspection:write` 与 `invoice:sync`，服务端重新检查当前数据库权限、出库范围和发票可见性。请求体为空，`private, no-store`；返回 `status/message/shortages/posted`（busy 或已完成回放不保证 posted 字段）。即时核目标仓库与前序整单保留，调用原发送事实/独立回读协议；支持 legacy 与 worker 模式但不切换模式。结果为 done / waiting_stock / processing / uncertain / skipped / busy；不得仅凭客户端超时重发。只明确未发送的库存等待可发起新代次，原补货执行恢复只核原事实。
 
 ## 订单发票关联详情与异常概要（2026-10-08）
 

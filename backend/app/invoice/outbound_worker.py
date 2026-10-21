@@ -1,5 +1,6 @@
 """Enabled automatic outbound worker: current authority, unlocked I/O, original facts."""
 import logging
+import json
 from copy import deepcopy
 from datetime import datetime,timedelta
 from uuid import uuid4
@@ -53,9 +54,12 @@ def enabled():
 
 
 def local(db,invoice_id):
-    if not enabled():reject(403,'当前后台自动出库执行已停用')
-    actor_id=get_settings().PORTAL_OUTBOUND_WORKER_ACTOR_ID
-    actor=current(db,{'sub':str(actor_id)})
+    manual = db.info.get('outbound_manual_actor')
+    if manual is None and not enabled():reject(403,'当前后台自动出库执行已停用')
+    if manual is not None and not get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
+        reject(403,'当前出库执行已停用')
+    actor_id=manual if manual is not None else get_settings().PORTAL_OUTBOUND_WORKER_ACTOR_ID
+    actor=current(db,{'sub':str(actor_id)}, warehouse=manual is not None)
     invoice=edit_authority.lock_document(db,invoice_id,force=True);edit_authority._visible(db,invoice,actor)
     if not invoice.outbound_auto_requested or invoice.order_type=='presale':reject(409,'此发票未明确请求整单自动出库')
     base,dto,rows,info,task=followup.capture(db,invoice,worker_capture=True)
@@ -99,6 +103,7 @@ def local(db,invoice_id):
         tuple(row_state(row) for row in requests),row_state(deletion))
     state=facts.get(db,facts.STATE,str(task.id)) if task else None
     metadata={'invoice_no':invoice.invoice_no,'remark':invoice.remark or '',
+              'manual_actor':manual,
               'lineage':[{'request_id':row.request_id,'conversion_id':row.id} for row in relations],
               'regeneration':deletion is not None,'deleted_outbound_id':deletion.request_id if deletion else None}
     return actor,invoice,task,state,binding,dto,rows,metadata
@@ -230,6 +235,9 @@ def verify(db,invoice_id,attempt,*,sender=False):
             'Original outbound verified' if verified else 'Original outbound result requires review',
             verified=verified,read_key=read_key,finished=verified is not None)
         if verified:audit(db,invoice,'outbound_created',actor['id'],{'task_id':task.id,'original_order_id':attempt.data['order_id']})
+    if verified:
+        from app.invoice.stock_reservations import remember_native
+        remember_native(db,invoice.id,task.order_id,[verified])
     db.commit();clear(db)
     return {'status':'done' if verified else 'uncertain','posted':False}
 
@@ -261,8 +269,16 @@ def send(db,invoice_id,attempt,access_token):
     return {**verify(db,invoice_id,attempt,sender=True),'posted':True}
 
 
-def process(db,invoice_id):
+def process(db,invoice_id,*,immediate=False):
     try:
+        # A scheduler can recover a manual attempt using its durable original
+        # actor, rather than silently taking over with a configured system actor.
+        originals=facts.unresolved(db,invoice_id)
+        clear(db)
+        manual = [row.data.get('manual_actor') for row in originals if row.data.get('manual_actor') is not None]
+        if manual:
+            if len(set(manual)) != 1:reject(409,'原补货执行操作人不一致')
+            db.info['outbound_manual_actor']=manual[0]
         actor,invoice,task,state,binding,dto,rows,metadata=local(db,invoice_id)
         pending=facts.unresolved(db,invoice_id)
         if pending:
@@ -291,7 +307,7 @@ def process(db,invoice_id):
         if task.status not in ('pending','waiting_stock','failed'):
             db.commit();clear(db);return {'status':task.status,'posted':False}
         now=beijing_now()
-        if task.status=='waiting_stock' and task.updated_at+timedelta(minutes=15)>now:
+        if task.status=='waiting_stock' and not immediate and task.updated_at+timedelta(minutes=15)>now:
             db.commit();clear(db);return {'status':'waiting_stock','posted':False}
         if task.status=='failed' and (task.attempts>=5 or task.updated_at+timedelta(minutes=(task.attempts+1)*5)>now):
             db.commit();clear(db);return {'status':'failed','posted':False}
@@ -302,11 +318,15 @@ def process(db,invoice_id):
         if (binding,row_state(task))!=captured or facts.unresolved(db,invoice_id):
             reject(409,'取证期间当前订单、任务或原事实已变化')
         if related or shortages:
+            if related:
+                from app.invoice.stock_reservations import remember_native
+                remember_native(db, invoice.id, task.order_id, related)
             task.status='skipped' if related else 'waiting_stock'
             generation=(task.reason or '').split(' ',1)[0] if (task.reason or '').startswith('regenerate:') else None
             task.reason='Existing outbound requires manual handling' if related else generation
-            task.last_error=None if related else 'Insufficient destination warehouse stock'
-            task.updated_at=beijing_now()
+            task.last_error=None if related else json.dumps({'outcome':'waiting_stock',
+                'order_id':str(task.order_id),'shortages':shortages})
+            task.processed_at=task.updated_at=beijing_now()
             audit(db,invoice,'outbound_queue',actor['id'],{'task_id':task.id,'status':task.status})
             status=task.status;db.commit();clear(db);return {'status':status,'posted':False}
         task.status='running';task.attempts+=1;task.last_error=None;task.updated_at=beijing_now()
@@ -316,6 +336,7 @@ def process(db,invoice_id):
             'binding_fingerprint':common.digest(binding),'task_fingerprint':common.digest(row_state(task)),
             'order':order,'payload':payload,'payload_fingerprint':common.digest(payload),
             'started_at':beijing_now().isoformat()}
+        if metadata.get('manual_actor') is not None:data['manual_actor']=metadata['manual_actor']
         attempt=facts.Attempt(nonce,data);original=facts.append(db,facts.START,nonce,attempt,{})
         if state is None:
             state=audit_service.record(db,'create_pending',actor['id'],'create:'+str(invoice_id),
@@ -337,6 +358,8 @@ def process(db,invoice_id):
         clear(db)
         diagnose(db,'commit_unconfirmed',error)
         reject(503,'后台出库提交暂不可确认，请核对原任务，禁止重发')
+    finally:
+        db.info.pop('outbound_manual_actor',None)
 
 
 def install_mode(db):

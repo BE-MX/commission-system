@@ -62,6 +62,8 @@ def enqueue_outbound_task(db: Session, invoice: Invoice) -> OkkiOutboundTask | N
         .first()
     )
     if existing:
+        from app.invoice.stock_reservations import remember
+        remember(db, invoice)
         return existing
     skipped = has_unbackfilled_custom_lines(db, invoice)
     row = OkkiOutboundTask(
@@ -82,6 +84,8 @@ def enqueue_outbound_task(db: Session, invoice: Invoice) -> OkkiOutboundTask | N
             .filter(OkkiOutboundTask.order_id == order_id)
             .first()
         )
+    from app.invoice.stock_reservations import remember
+    remember(db, invoice)
     return row
 
 

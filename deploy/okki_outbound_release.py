@@ -11,7 +11,7 @@ from timer_writer import registered_writer
 def artifact(root):
     root = Path(root)
     files = {}
-    for name in ['okki_outbound_poller.js', 'okki_outbound_creator.mjs', 'okki_outbound_mode.mjs',
+    for name in ['okki_outbound_poller.js', 'okki_outbound_creator.mjs', 'okki_outbound_mode.mjs', 'okki_outbound_stock.mjs',
                  'ark-okki-outbound-poller.service', 'ark-okki-outbound-poller.timer']:
         path = root / ('systemd' if name.endswith(('.service', '.timer')) else '') / name
         body = path.read_bytes()

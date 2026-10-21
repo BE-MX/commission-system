@@ -303,6 +303,10 @@ def _fence(db, outbound_id, token):
         raise ValueError("分批出库任务租约已失效，请核对原单")
 
 
+from app.invoice.stock_reservations import fenced, require_additional
+
+
+@fenced
 def deliver(db, outbound_id):
     outbound = db.get(ShipmentOutbound, outbound_id)
     if not outbound:
@@ -328,6 +332,7 @@ def deliver(db, outbound_id):
 
     def before_send():
         nonlocal sent
+        require_additional(db, outbound.payload)
         _fence(db, outbound_id, token)
         sent = True
 

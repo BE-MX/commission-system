@@ -90,12 +90,32 @@ export const CLAIMABLE = `(
   OR (status = 'running' AND updated_at <= DATE_SUB(?, INTERVAL ? MINUTE))
 )`;
 
+// A Python manual attempt may have lost its ACK before updating task status.
+// It is owned by the original fact protocol; legacy must never resend it.
+export const NO_ORIGINAL_ATTEMPT = `NOT EXISTS (
+  SELECT 1 FROM ark_shipping_operation_events original
+  WHERE original.scope='outbound-create-attempt'
+    AND original.outbound_record_id=CONCAT('create:',ark_okki_outbound_tasks.invoice_id)
+    AND (NOT EXISTS (SELECT 1 FROM ark_shipping_operation_events finish
+      WHERE finish.scope='outbound-create-finish'
+        AND finish.outbound_record_id=original.outbound_record_id
+        AND JSON_UNQUOTE(JSON_EXTRACT(finish.payload,'$.nonce'))=original.request_id)
+      OR EXISTS (SELECT 1 FROM ark_shipping_operation_events fact
+        WHERE fact.scope='outbound-create-fact'
+          AND fact.outbound_record_id=original.outbound_record_id
+          AND JSON_UNQUOTE(JSON_EXTRACT(fact.payload,'$.nonce'))=original.request_id
+          AND fact.id>(SELECT COALESCE(MAX(finish.id),0) FROM ark_shipping_operation_events finish
+            WHERE finish.scope='outbound-create-finish'
+              AND finish.outbound_record_id=original.outbound_record_id
+              AND JSON_UNQUOTE(JSON_EXTRACT(finish.payload,'$.nonce'))=original.request_id)))
+)`;
+
 export async function claimBatch(conn) {
   const now = beijingNow();
   const [rows] = await conn.query(
     `SELECT id, invoice_id, order_id, attempts, status, reason
        FROM ark_okki_outbound_tasks
-      WHERE ${CLAIMABLE}
+      WHERE ${CLAIMABLE} AND ${NO_ORIGINAL_ATTEMPT}
         AND invoice_id IN (SELECT id FROM ark_invoices WHERE linked_sync_id IS NULL AND sync_status='synced' AND status NOT IN ('cancel_pending','cancelled'))
       ORDER BY updated_at, id
       LIMIT ?`,
@@ -117,7 +137,7 @@ export async function claimBatch(conn) {
     const [result] = await conn.query(
       `UPDATE ark_okki_outbound_tasks
           SET status = 'running', attempts = attempts + 1, updated_at = ?
-        WHERE id = ? AND reason <=> ? AND ${CLAIMABLE}`,
+        WHERE id = ? AND reason <=> ? AND ${CLAIMABLE} AND ${NO_ORIGINAL_ATTEMPT}`,
       [now, row.id, row.reason ?? null, now, config.maxAttempts, now, now, STALE_RUNNING_MINUTES],
     );
     if (result.affectedRows === 1) {
@@ -302,14 +322,20 @@ async function main() {
     + `batch=${config.batch} maxAttempts=${config.maxAttempts} timeoutMs=${config.timeoutMs} loop=${config.loop}`);
   const mysql = await import('mysql2/promise');
   const conn = await mysql.createConnection(config.db);
-  const [[lock]] = await conn.query("SELECT GET_LOCK('ark-okki-outbound-poller', 0) AS acquired");
-  if (Number(lock.acquired) !== 1) { await conn.end(); log('another poller owns the lock'); return; }
   let totalFailed = 0;
   try {
     do {
-      const { ok, failed } = await runOnce(conn);
-      totalFailed = failed;
-      if (!config.loop && ok === 0 && failed === 0) log('no claimable tasks');
+      const [[lock]] = await conn.query("SELECT GET_LOCK('ark-okki-outbound-poller', 0) AS acquired");
+      if (Number(lock.acquired) === 1) {
+        try {
+          const { ok, failed } = await runOnce(conn);
+          totalFailed = failed;
+          if (!config.loop && ok === 0 && failed === 0) log('no claimable tasks');
+        } finally {
+          const [[released]] = await conn.query("SELECT RELEASE_LOCK('ark-okki-outbound-poller') AS released");
+          if (released.released !== 1) throw Error('Outbound executor fence release is unconfirmed');
+        }
+      } else log('another executor owns the lock');
       if (config.loop) await new Promise((r) => setTimeout(r, config.intervalMs));
     } while (config.loop);
   } finally {

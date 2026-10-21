@@ -328,6 +328,10 @@ def response(db,invoice_id,user,result):
     return result
 
 
+from app.invoice.stock_reservations import fenced
+
+
+@fenced
 def run(db,invoice_id,user,*,linked_id=None,linked_token=None,follow_outbound=True):
     try:
         expected,payload=prepare(db,invoice_id,user,linked_id,linked_token)

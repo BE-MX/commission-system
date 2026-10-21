@@ -34,7 +34,23 @@ def _failed_task_result(task):
     return {'status': 'manual', 'message': '出库单自动生成重试已耗尽；请由管理员在订单“取消 / 恢复”中选择“恢复漏建 / 未发送出库”核对处理'}
 
 
+def _stock_reader(db):
+    # Invoice tokens intentionally lack product scope. Use an independent token
+    # for this observation without replacing the shared invoice credential.
+    from app.invoice import okki_client
+    token, _ = okki_client.fetch_token(scope=f'{okki_client.TOKEN_SCOPE} product')
+    def read(sku):
+        result = okki_client._get_json('/v1/product/inventory-list', token,
+            context='出库补货库存核验', params={'sku_id':sku,'count':100,'start_index':1})
+        if result is None:
+            raise ValueError('目标仓库实时库存鉴权失效，请重新核对')
+        return result
+    return read
+
+
 def _stock_shortages(db, order):
+    from app.invoice.stock_reservations import protected
+    task = db.query(OkkiOutboundTask).filter_by(order_id=str(order.get('order_id'))).first()
     needs = defaultdict(Decimal)
     rows = order.get('product_list')
     if not isinstance(rows, list) or not rows:
@@ -48,10 +64,10 @@ def _stock_shortages(db, order):
         if not sku.isdigit() or quantity <= 0 or not quantity.is_finite():
             raise ValueError('小满订单SKU或数量无效，不能确认缺货状态')
         needs[sku] += quantity
-    shortages = []
+    shortages, observed = [], {}
+    read_stock = _stock_reader(db)
     for sku, required in needs.items():
-        data = remote.read(db, '/v1/product/inventory-list',
-                           {'sku_id': sku, 'count': 100, 'start_index': 1})
+        data = read_stock(sku)
         inventory = data.get('list') if isinstance(data, dict) else None
         count = data.get('count') if isinstance(data, dict) else None
         if not isinstance(inventory, list) or not str(count).isdigit() or int(count) != len(inventory):
@@ -72,6 +88,18 @@ def _stock_shortages(db, order):
                 raise ValueError('目标仓库可用库存无效，不能确认缺货状态')
             if disabled:
                 available = Decimal(0)
+        observed[sku] = available
+    arguments = {'invoice_id':task.invoice_id if task else None,'before_task_id':task.id if task else None}
+    if db.get_bind().dialect.name == 'mysql':
+        with db.get_bind().connect() as connection:
+            reserved = protected(connection, **arguments)
+    else:
+        reserved = protected(db, **arguments)
+    for sku, required in needs.items():
+        product_ids = {int(row['product_id']) for row in rows if str(row.get('sku_id')) == sku}
+        protected_quantity = sum((amount for (product, stock_sku), amount in reserved.items()
+                                  if stock_sku == int(sku) and product in product_ids), Decimal(0))
+        available = max(Decimal(0), observed[sku] - protected_quantity)
         if available < required:
             shortages.append({'sku_id': sku, 'required': float(required), 'available': float(available)})
     return shortages

@@ -16,10 +16,11 @@ ROOT = Path('/root/.openclaw/workspace/okki-sync')
 NODE = '/root/.nvm/versions/node/v22.22.1/bin/node'
 UNITS = Path('/etc/systemd/system')
 NAMES = {'okki_outbound_poller.js', 'okki_outbound_creator.mjs', 'okki_outbound_mode.mjs',
+         'okki_outbound_stock.mjs',
          'ark-okki-outbound-poller.service', 'ark-okki-outbound-poller.timer'}
 TIMER = 'ark-okki-outbound-poller.timer'
 SERVICE = 'ark-okki-outbound-poller.service'
-MODULES = ('okki_outbound_poller.js', 'okki_outbound_creator.mjs', 'okki_outbound_mode.mjs')
+MODULES = ('okki_outbound_poller.js', 'okki_outbound_creator.mjs', 'okki_outbound_mode.mjs', 'okki_outbound_stock.mjs')
 IMPORT_PROBE = 'for (const url of process.argv.slice(1)) await import(url);'
 
 MODE_CONTROL_PROBE = """import mysql from 'mysql2/promise';
@@ -63,7 +64,7 @@ def confirm_legacy_receipt(previous, observation):
     if observation['mode'] != 'legacy' or timer_state() != previous['baseline']:
         raise RuntimeError('Legacy outbound receipt requires inspection')
     hashes = {}
-    for name in NAMES - {'okki_outbound_mode.mjs'}:
+    for name in NAMES - {'okki_outbound_mode.mjs', 'okki_outbound_stock.mjs'}:
         path = (UNITS if name.endswith(('.service', '.timer')) else ROOT) / name
         if path.is_symlink() or not path.is_file():
             raise RuntimeError('Legacy outbound artifact requires inspection')

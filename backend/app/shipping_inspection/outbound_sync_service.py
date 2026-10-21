@@ -270,6 +270,9 @@ def _finish_verified(db, event, plan, after, *, commit_result=True, finisher_id=
                                      context={'scope': 'outbound-sync-history', 'source': 'invoice_sync'},
                                      payload={'media': moved}, result={'count': len(moved)})
     verified = _snapshot(plan, after)
+    from app.invoice.stock_reservations import WAREHOUSE_ID, remember_native
+    if str(after.get('invoice_warehouse_info', {}).get('id')) == WAREHOUSE_ID:
+        remember_native(db,plan['invoice_id'],plan['order']['order_id'],[after])
     event.action = 'sync_done'
     event.result = {'verified': verified, 'checked_at': str(beijing_now()),
                     'stale_media_ids': sorted(stale_ids), 'required_recheck_ids': sorted(required_ids),
@@ -349,6 +352,7 @@ def _repair_missing(db, record, user, invoice, event):
                'remark': plan['remark_after'], 'record_list': rows}
     if not payload['handler']:
         return {'status': 'sync_uncertain', 'message': '小满出库单处理人缺失，需人工核对'}
+    require_additional(db, payload, before=current, invoice_id=invoice.id)
     token = okki_client.ensure_access_token(db)
     audit_service.record(db, event.action, event.operator_user_id, event.outbound_record_id,
         context={'scope': 'outbound-sync-history', 'source': 'auto_repair'}, request_id=str(uuid4()),
@@ -417,6 +421,10 @@ def _repair_missing(db, record, user, invoice, event):
     return {'status': 'sync_uncertain', 'message': '补齐结果未生效，需人工核对；不会重复推送'}
 
 
+from app.invoice.stock_reservations import fenced, require_additional
+
+
+@fenced
 def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False,
                 desired_serial_id=None, expected_serial_id=None, number_only=False, repair=False, auto_recall=False,
                 source='pc', force_authority=False, warehouse=False):
@@ -456,6 +464,9 @@ def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=
         event.payload = {'invoice_id': invoice.id, 'plan': plan}
         event.source = source
         return _verify_finish(db, event)
+    # Definite stock rejection precedes the durable sending intent. This shared
+    # executor fence keeps other Ark claims unchanged through the only POST.
+    require_additional(db, plan['payload'], before=plan['before'], invoice_id=invoice.id)
     token = okki_client.ensure_access_token(db)
     if event.payload:
         audit_service.record(db, event.action, event.operator_user_id, event.outbound_record_id,

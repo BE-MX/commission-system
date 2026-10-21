@@ -92,6 +92,11 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="370" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="Box" @click="inventoryRow = row; inventoryVisible = true">库存详情</GlassButton>
+            <span v-if="row.record_source === 'ark_task' && row.outbound_state === 'waiting_stock'" v-permission="'invoice:sync'">
+              <GlassButton v-permission="'shipping_inspection:write'" variant="link" left-icon="Refresh"
+                :loading="replenishingId === row.outbound_record_id" :disabled="replenishingId !== null"
+                @click="replenish(row)">补货同步</GlassButton>
+            </span>
             <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
             <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Printer"
@@ -147,6 +152,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useTableView } from '@/composables/useTableView'
 import { useOutboundRecords } from './composables/useOutboundRecords'
 import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
+import { useOutboundReplenishment } from './composables/useOutboundReplenishment'
 import OutboundSyncDialog from './OutboundSyncDialog.vue'
 import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from './composables/outboundStates'
 import { formatBeijingDateTime } from '@/utils/datetime'
@@ -164,6 +170,7 @@ const {
   allowingPrintId, allowPrintBeforeRecheck,
 } = listPageState
 const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync } = useOutboundInvoiceSync(fetchList)
+const { replenishingId, replenish } = useOutboundReplenishment(fetchList)
 const auth = useAuthStore()
 
 // 列配置数组：TableTools 列显隐的数据源；模板列保持静态 + v-if（推广期约定，不做配置化渲染）

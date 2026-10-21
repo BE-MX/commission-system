@@ -345,25 +345,35 @@ def match_product(
 
 
 def load_available_stocks(db: Session, product_ids: set[int]) -> dict[tuple[int, int], float]:
-    """可用库存（小满 enable_count）按 (product_id, sku_id) 汇总；仅展示，不参与匹配判定。"""
+    """自由可用：目标仓库原生可用减所有未被小满承接的待出库保留。"""
+    if not product_ids:
+        return {}
+    from app.invoice.stock_reservations import read_inventory
+    return read_inventory(db, product_ids)[0]
+
+
+def _load_mirror_stocks(db: Session, product_ids: set[int]) -> dict:
     if not product_ids:
         return {}
     columns = _table_columns(db, "okki_inventory")
-    if not {"product_id", "sku_id", "enable_count"}.issubset(columns):
+    if not {"product_id", "sku_id", "warehouse_id", "enable_count"}.issubset(columns):
         return {}
     schema = _schema()
     statement = text(f"""
-        SELECT s.product_id, s.sku_id, SUM(i.enable_count) AS enable_count
+        SELECT s.product_id, s.sku_id, SUM(i.enable_count) AS enable_count,
+               {"MIN(i.synced_at)" if "synced_at" in columns else "NULL"} AS synced_at
         FROM `{schema}`.okki_product_skus s
         LEFT JOIN `{schema}`.okki_inventory i
           ON i.product_id = s.product_id AND i.sku_id = s.sku_id
+          AND i.warehouse_id = :warehouse
           AND {_disable_filter("okki_inventory", columns, alias="i")}
         WHERE s.product_id IN :product_ids
         GROUP BY s.product_id, s.sku_id
     """).bindparams(bindparam("product_ids", expanding=True))
-    rows = db.execute(statement, {"product_ids": sorted(product_ids)}).mappings().all()
+    rows = db.execute(statement, {"product_ids": sorted(product_ids), "warehouse": '8193514242746'}).mappings().all()
     return {
-        (int(row["product_id"]), int(row["sku_id"])): float(row["enable_count"])
+        (int(row["product_id"]), int(row["sku_id"])): (Decimal(str(row["enable_count"])),
+            datetime.fromisoformat(str(row['synced_at'])) if row['synced_at'] else None)
         for row in rows
         if row["sku_id"] is not None and row["enable_count"] is not None
     }
