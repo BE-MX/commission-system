@@ -1,4 +1,4 @@
-## 2026-10-21 客户门户受管开放下单与激活邮件调度（Accio，本地提交，未推送未部署）
+## 2026-10-21 客户门户受管开放下单与激活邮件调度（Accio，已合并推送 main，未部署）
 
 - 分支 `accio/optimize-order-portal-integration-ce44d944`。部署脚本新增 `--customer-portal-config enable-orders`：仅把 `PORTAL_WRITES_ENABLED`/`PORTAL_INVOICE_ENABLED` 置 true，邮件/通知/出库保持原值；前检要求已固定版本、门户已开放且有 AUTH 密钥、origin 为 `https://shop.leshine.cloud`、员工已建启用站点且 origin 一致、后端可导入 reportlab；重启后检失败恢复原 .env。
 - 调度器在 `PORTAL_ENABLED` 且 `PORTAL_MAIL_ENABLED` 时注册 `portal_auth_mail`，投递 P4 批准后的邀请与激活验证码邮件。激活页读取 token 后立即用 `replaceState` 清除地址栏 hash/query。
