@@ -1,0 +1,64 @@
+/*
+  客户下单门户员工端页面外壳（DESIGN.md：Typography / Liquid Glass / List Page Spec / Action Bar Spec）。
+  五个导航页共用：极光底 + 页头（17px/700 Outfit 标题、14px/500 描述）+ 玻璃表格卡片。
+  结构类（.table-card > .toolbar/.action-bar/.pager）仍由全局 app.css 提供，这里只做页面皮肤。
+*/
+.portal-page { position: relative; }
+.portal-aurora { inset: -24px -28px; }
+
+/* 点名内容块压到极光之上；不用 > :not(.lg-aurora) 通配，避免覆盖就地渲染的 el-overlay */
+.portal-page .page-header,
+.portal-page .portal-panel,
+.portal-page .portal-alert,
+.portal-page .settings-body { position: relative; z-index: 1; }
+
+.portal-page .page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.portal-page .page-header h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.portal-page .page-header p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.portal-page .portal-alert { margin-bottom: 14px; }
+
+/* 表格面板：同款渐变玻璃（覆盖全局 .table-card 白底） */
+.portal-page .portal-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+.portal-page .portal-panel > .toolbar { background: rgba(255, 255, 255, 0.4); }
+.portal-page .portal-panel > .action-bar { background: rgba(255, 255, 255, 0.28); }
+.portal-page .portal-panel:fullscreen { overflow: auto; }
+/* FilterBar 是子组件根节点：scoped 选择器能命中其根，但为稳妥用 :deep 覆盖它在卡片内的皮肤 */
+.portal-page .portal-panel > :deep(.toolbar) { background: rgba(255, 255, 255, 0.4); }
+
+/* 表格融进玻璃；右侧固定操作列保持磨砂不透明，避免滚动重影（与 DictManagement / ExpoLeads 同款） */
+.portal-page .portal-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+.portal-page .portal-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.portal-page .portal-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.portal-page .portal-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+
+.portal-page .cell-hint { display: block; color: var(--text-secondary); font-size: 12px; }

@@ -1,8 +1,10 @@
 <script setup>
-import { nextTick, onBeforeUnmount, ref, toRaw, watch } from 'vue'
-import { Refresh, View } from '@element-plus/icons-vue'
+import { computed, nextTick, onBeforeUnmount, ref, toRaw, watch } from 'vue'
+import { View } from '@element-plus/icons-vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import TableTools from '@/components/TableTools.vue'
 import { useListPage } from '@/composables/useListPage'
+import { useTableView } from '@/composables/useTableView'
 import { useAuthStore } from '@/stores/auth'
 import { portalAdminApi } from '@/api/portal'
 import AccessActionDialog from './AccessActionDialog.vue'
@@ -10,13 +12,20 @@ import MappingDialog from './MappingDialog.vue'
 import OnboardingDialog from './OnboardingDialog.vue'
 import CatalogAccessDialog from './CatalogAccessDialog.vue'
 import BindingReviewDialog from './BindingReviewDialog.vue'
-import { accessStatuses, accountStatuses } from './customerAccess.mjs'
+import { accountStatuses } from './customerAccess.mjs'
+import { ACCESS_STATUS } from './portalStatus'
+
+const columnDefs = [{ key: 'company', label: '客户公司' }, { key: 'status', label: '访问状态' }, { key: 'capabilities', label: '客户能力' }, { key: 'sales-user', label: '负责人 ID' }]
+const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('portal-customers', columnDefs)
+const capabilityText = row => row.capabilities.can_order ? '查价与下单' : row.capabilities.can_view_price ? '仅查价' : '仅查看目录'
+// 原「刷新」按钮已由 TableTools 承担；焦点回退到操作行第一个可用按钮
+const pageRefresh = { get value() { return { $el: panelRef.value?.querySelector('.action-bar button:not([disabled])') } } }
 
 const auth = useAuthStore(), listError = ref(''), detailError = ref(''), notice = ref('')
 const detail = ref(null), detailVisible = ref(false), detailLoading = ref(false), accountPage = ref(1), accountPageSize = ref(20)
 const action = ref(null), mappingAccess = ref(null), onboardingVisible = ref(false), catalogAccess = ref(null), bindingAccess = ref(null)
 let listController, detailController, listSequence = 0, detailSequence = 0, disposed = false, detailId = ''
-const mappingTrigger = ref(null), pageRoot = ref(null), pageRefresh = ref(null), detailContent = ref(null), detailRefresh = ref(null), onboardingTrigger = ref(null)
+const mappingTrigger = ref(null), pageRoot = ref(null), detailContent = ref(null), detailRefresh = ref(null), onboardingTrigger = ref(null)
 let onboardingRefresh = Promise.resolve(), onboardingFocusSequence = 0, onboardingCreatedId = null
 let actionRefresh = Promise.resolve(), actionFocusSequence = 0, actionRefreshed = false, actionDenied = false
 let mappingRefresh = Promise.resolve(), mappingFocusSequence = 0
@@ -57,7 +66,7 @@ async function closeMapping() {
   if (button?.isConnected) button.focus()
 }
 const message = e => e?.response?.data?.message || '读取失败，请重试。'
-const { list, total, page, pageSize, loading, searchForm, fetchList, handleSearch, handlePageChange, handleSizeChange } = useListPage(async params => {
+const { list, total, page, pageSize, loading, searchForm, appliedSearchForm, hasPendingSearch, fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange } = useListPage(async params => {
   const current = ++listSequence
   listController?.abort(); listController = new AbortController()
   list.value = []; total.value = 0; listError.value = ''
@@ -69,6 +78,7 @@ const { list, total, page, pageSize, loading, searchForm, fetchList, handleSearc
     return { items: [], total: 0 }
   }
 }, { searchForm: { keyword: '', status: '' } })
+const hasAppliedFilters = computed(() => Boolean(appliedSearchForm.value.keyword || appliedSearchForm.value.status))
 async function loadDetail(id = detailId, pageNumber = accountPage.value) {
   if (!id) return
   const current = ++detailSequence
@@ -141,45 +151,52 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
 </script>
 
 <template>
-  <section ref="pageRoot" class="portal-customers">
-    <header class="portal-heading"><div><h1>客户访问与采购账号</h1><p>管理客户查价、下单和登录资格，变更按方舟当前客户归属生效。</p></div><div class="actions"><GlassButton v-permission="'portal_access:admin'" ref="onboardingTrigger" variant="primary" @click="openOnboarding">开通客户门户</GlassButton><GlassButton ref="pageRefresh" :left-icon="Refresh" :disabled="loading" @click="fetchList">刷新</GlassButton></div></header>
-    <el-row :gutter="16" class="toolbar">
-      <el-col :xs="24" :sm="12" :md="9"><el-input v-model="searchForm.keyword" maxlength="100" clearable aria-label="搜索客户" placeholder="公司名称或完整 OKKI 公司 ID" @keyup.enter="handleSearch" @clear="handleSearch" /></el-col>
-      <el-col :xs="16" :sm="8" :md="6"><el-select v-model="searchForm.status" aria-label="访问状态" placeholder="全部状态" clearable @change="handleSearch"><el-option v-for="(label, value) in accessStatuses" :key="value" :label="label" :value="value" /></el-select></el-col>
-      <el-col :xs="8" :sm="4" :md="3"><GlassButton @click="handleSearch">搜索</GlassButton></el-col>
-    </el-row>
-    <el-alert v-if="listError" :title="listError" type="error" :closable="false" />
-    <div class="table-card">
-      <el-table v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar><template #empty><el-empty :image-size="72" description="当前范围内没有匹配的客户授权" /></template>
-        <el-table-column prop="company_display_name" label="客户公司" min-width="220" show-overflow-tooltip />
-        <el-table-column label="访问状态" min-width="130"><template #default="{ row }"><el-tag effect="plain">{{ accessStatuses[row.status] || '状态待核实' }}</el-tag></template></el-table-column>
-        <el-table-column label="客户能力" min-width="180"><template #default="{ row }">{{ row.capabilities.can_order ? '查价与下单' : row.capabilities.can_view_price ? '仅查价' : '仅查看目录' }}</template></el-table-column>
-        <el-table-column prop="sales_user_id" label="负责人 ID" min-width="130" />
-        <el-table-column label="操作" fixed="right" min-width="100" class-name="table-action-column"><template #default="{ row }"><GlassButton v-permission="'portal_access:read'" variant="link" :left-icon="View" :data-portal-access="row.id" @click="openDetail(row.id)">管理</GlassButton></template></el-table-column>
+  <section ref="pageRoot" class="portal-page portal-customers">
+    <div class="portal-aurora lg-aurora" aria-hidden="true"><div class="lg-aurora__blob lg-aurora__blob--gold" /><div class="lg-aurora__blob lg-aurora__blob--amber" /><div class="lg-aurora__blob lg-aurora__blob--peach" /></div>
+    <header class="page-header"><div><h2>客户访问与采购账号</h2><p>管理客户查价、下单和登录资格，变更按方舟当前客户归属生效。</p></div></header>
+    <div ref="panelRef" class="table-card portal-panel">
+      <FilterBar label="客户访问筛选" :loading="loading" :pending="hasPendingSearch" @search="handleSearch" @reset="handleReset">
+        <el-input v-model="searchForm.keyword" maxlength="100" clearable aria-label="搜索客户" placeholder="公司名称或完整 OKKI 公司 ID" class="filter-w-lg" />
+        <el-select v-model="searchForm.status" aria-label="访问状态" placeholder="全部状态" clearable class="filter-w-sm"><el-option v-for="(entry, value) in ACCESS_STATUS" :key="value" :label="entry.label" :value="value" /></el-select>
+      </FilterBar>
+      <div class="action-bar">
+        <GlassButton v-permission="'portal_access:admin'" ref="onboardingTrigger" variant="primary" left-icon="Plus" @click="openOnboarding">开通客户门户</GlassButton>
+        <TableTools v-model:visible-keys="visibleKeys" v-model:density="density" :columns="columnDefs" :fullscreen="isFullscreen" :loading="loading" @refresh="fetchList" @fullscreen="toggleFullscreen" />
+      </div>
+      <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon class="panel-alert" />
+      <el-table v-loading="loading" :data="list" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
+        <template #empty><el-empty v-if="!loading && !listError" :image-size="96" :description="hasAppliedFilters ? '没有符合条件的客户授权' : '暂无数据'"><GlassButton v-if="hasAppliedFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton></el-empty></template>
+        <el-table-column v-if="visibleKeys.includes('company')" prop="company_display_name" label="客户公司" min-width="220" max-width="360" show-overflow-tooltip />
+        <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="访问状态" min-width="120" max-width="180"><template #default="{ row }"><StatusBadge :value="row.status" :dictionary="ACCESS_STATUS" effect="plain" /></template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('capabilities')" label="客户能力" min-width="140" max-width="220" :sort-by="capabilityText" show-overflow-tooltip><template #default="{ row }">{{ capabilityText(row) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('sales-user')" prop="sales_user_id" label="负责人 ID" min-width="110" max-width="180" />
+        <el-table-column label="操作" fixed="right" min-width="100" max-width="140" class-name="table-action-column" :sortable="false"><template #default="{ row }"><GlassButton v-permission="'portal_access:read'" variant="link" :left-icon="View" :data-portal-access="row.id" @click="openDetail(row.id)">管理</GlassButton></template></el-table-column>
       </el-table>
-      <el-pagination :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
+      <el-pagination class="pager" :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
     </div>
-    <DetailDrawer v-model="detailVisible" title="客户访问与账号" :width="820" :loading="detailLoading">
+    <DetailDrawer v-model="detailVisible" title="客户访问与账号" :width="760" :loading="detailLoading">
       <div ref="detailContent">
       <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" />
       <el-alert v-if="notice" :title="notice" type="info" :closable="false" />
-      <GlassButton v-if="!detailLoading" ref="detailRefresh" @click="loadDetail()">刷新详情</GlassButton>
       <template v-if="detail">
-        <h2>{{ detail.company_display_name }}</h2>
-        <p>方舟客户 {{ detail.canonical_customer_id }} · 负责人 {{ detail.sales_user_id }} · {{ accessStatuses[detail.status] }}</p>
+        <div class="drawer-title"><h3>{{ detail.company_display_name }}</h3><StatusBadge :value="detail.status" :dictionary="ACCESS_STATUS" effect="plain" /></div>
+        <p>方舟客户 {{ detail.canonical_customer_id }} · 负责人 {{ detail.sales_user_id }}</p>
         <p>查价 {{ detail.capabilities.can_view_price ? '已允许' : '未允许' }} · 下单 {{ detail.capabilities.can_order ? '已允许' : '未允许' }} · 已授权商品 {{ detail.catalog_item_ids.length }} 项</p>
         <el-alert v-if="detail.status === 'review_required'" title="客户身份或归属需要复核，普通启停不能解除此状态。" type="warning" :closable="false" />
-        <div v-permission="'portal_access:admin'" class="actions">
-          <GlassButton ref="bindingTrigger" @click="openReview('binding')">归属与身份复核</GlassButton>
-          <GlassButton ref="catalogTrigger" :disabled="detail.status === 'review_required'" @click="openReview('catalog')">管理商品授权</GlassButton>
-          <GlassButton :disabled="detail.status === 'review_required'" data-portal-action="access" @click="openAction('access')">设置客户访问</GlassButton>
-          <GlassButton variant="primary" :disabled="detail.status !== 'enabled'" data-portal-action="createAccount" @click="openAction('createAccount')">创建采购账号</GlassButton>
+        <div class="actions">
+          <span v-permission="'portal_access:admin'" class="actions">
+            <GlassButton variant="primary" :disabled="detail.status !== 'enabled'" data-portal-action="createAccount" @click="openAction('createAccount')">创建采购账号</GlassButton>
+            <GlassButton :disabled="detail.status === 'review_required'" data-portal-action="access" @click="openAction('access')">设置客户访问</GlassButton>
+            <GlassButton ref="catalogTrigger" :disabled="detail.status === 'review_required'" @click="openReview('catalog')">管理商品授权</GlassButton>
+            <GlassButton ref="bindingTrigger" @click="openReview('binding')">归属与身份复核</GlassButton>
+          </span>
+          <GlassButton v-permission="'portal_mapping:read'" @click="$router.push({ name: 'PortalCustomerPreview', params: { accessId: detail.id } })">预览客户目录</GlassButton>
+          <GlassButton ref="mappingTrigger" v-permission="'portal_mapping:read'" @click="openMapping">型号颜色映射</GlassButton>
+          <GlassButton v-if="!detailLoading" ref="detailRefresh" variant="ghost" left-icon="Refresh" @click="loadDetail()">刷新详情</GlassButton>
         </div>
-        <GlassButton v-permission="'portal_mapping:read'" @click="$router.push({ name: 'PortalCustomerPreview', params: { accessId: detail.id } })">预览客户目录</GlassButton>
-        <GlassButton ref="mappingTrigger" v-permission="'portal_mapping:read'" @click="openMapping">型号颜色映射</GlassButton>
         <h3>采购账号 <small>共 {{ detail.accounts.total }} 个</small></h3>
         <p>公司成员共享该公司的订单。账号密码、账号状态和成员关系均须有效。</p>
-        <el-empty v-if="!detail.accounts.items.length" description="暂无采购账号，可在启用客户后创建账号" />
+        <el-empty v-if="!detail.accounts.items.length" :image-size="72" description="暂无采购账号，可在启用客户后创建账号" />
         <article v-for="account in detail.accounts.items" :key="account.id" class="account-card">
           <strong>{{ account.contact_name || '采购联系人' }}</strong><p>{{ account.email }}</p>
           <p>{{ accountStatuses[account.status] || '状态待核实' }} · {{ account.password_configured ? '已设置密码' : '待设置密码' }} · 成员{{ accountStatuses[account.membership_status] || account.membership_status }}</p>
@@ -188,8 +205,9 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
             <GlassButton data-portal-action="password" :data-portal-account="account.id" @click="openAction('password', account)">设置密码</GlassButton>
           </div>
         </article>
-        <el-pagination :current-page="accountPage" v-model:page-size="accountPageSize" :page-sizes="[20, 50, 100]" :total="detail.accounts.total" layout="total, sizes, prev, pager, next" @current-change="value => loadDetail(detailId, value)" @size-change="loadDetail(detailId, 1)" />
+        <el-pagination class="pager" :current-page="accountPage" v-model:page-size="accountPageSize" :page-sizes="[20, 50, 100]" :total="detail.accounts.total" layout="total, sizes, prev, pager, next" @current-change="value => loadDetail(detailId, value)" @size-change="loadDetail(detailId, 1)" />
       </template>
+      <GlassButton v-else-if="!detailLoading" left-icon="Refresh" @click="loadDetail()">刷新详情</GlassButton>
       </div>
     </DetailDrawer>
     <BindingReviewDialog v-if="bindingAccess" :access="bindingAccess" @close="closeReview('binding')" @changed="reviewChanged" @denied="hideReviewPrivate" />
@@ -200,16 +218,16 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
   </section>
 </template>
 
+<style scoped src="./portal-page.css"></style>
 <style scoped>
-.portal-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
-h1 { margin: 0 0 8px; font-size: 24px; }
+.panel-alert { margin: 12px 14px 0; width: auto; }
 p, small { color: var(--text-secondary); overflow-wrap: anywhere; }
-.toolbar { row-gap: 12px; margin-bottom: 16px; }
-.el-select { width: 100%; }
-.table-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
-.el-pagination { padding: 16px; overflow-x: auto; }
-.el-alert { margin-bottom: 16px; }
-.account-card { border: 1px solid var(--border-color); padding: 16px; border-radius: 12px; margin: 16px 0; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; }
-@media (max-width: 600px) { .portal-heading { align-items: flex-start; flex-direction: column; } h1 { font-size: 20px; } }
+.drawer-title { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+h3 { margin: 20px 0 8px; font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.drawer-title h3 { margin: 0; }
+.el-alert { margin-bottom: 12px; }
+.account-card { border: 1px solid var(--border-color); padding: 14px 16px; border-radius: var(--card-radius); margin: 12px 0; font-size: 13px; background: var(--card-bg); }
+.account-card p { margin: 6px 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.actions .actions { margin: 0; }
 </style>
