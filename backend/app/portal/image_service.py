@@ -152,18 +152,19 @@ def swatch_ticket(db, token, swatch_id, version):
     return approved_ticket(db, swatch.image_asset_id)
 
 
-def customer_swatch(db, token, swatch_id, version):
+def customer_swatch(db, token, swatch_id, version, size='thumb'):
     before = swatch_ticket(db, token, swatch_id, version)
     db.commit()
-    content = render(before)
+    content = render(before, size=size)
     if swatch_ticket(db, token, swatch_id, version) != before:
         reject('IMAGE_CHANGED', 'The color image changed. Please refresh.', 409)
     db.commit()
     return content
 
 
-def render(ticket):
+def render(ticket, *, size='full'):
     # Storage/network and decoding occur after the caller releases DB locks.
+    max_dimension = 96 if size == 'thumb' else 1200
     try:
         with transfers.materialize('asset', ticket['key'], ticket['record']) as path:
             with path.open('rb') as stream:
@@ -174,7 +175,7 @@ def render(ticket):
             if source.format not in ('JPEG', 'PNG', 'WEBP') or source.width * source.height > 16000000:
                 reject('IMAGE_UNAVAILABLE', 'This product image is not available.', 404)
             image = ImageOps.exif_transpose(source)
-            image.thumbnail((1200, 1200))
+            image.thumbnail((max_dimension, max_dimension))
             rgba = image.convert('RGBA')
             clean = Image.new('RGB', rgba.size, 'white')
             clean.paste(rgba, mask=rgba.getchannel('A'))

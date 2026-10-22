@@ -35,7 +35,7 @@ def _swatches(db, principal):
 def _swatch_url(swatch):
     if swatch is None or not swatch.image_asset_id:
         return None
-    return f"/api/portal/v1/catalog/swatches/{swatch.public_id}/image?version={swatch.row_version}"
+    return f"/api/portal/v1/catalog/swatches/{swatch.public_id}/image?version={swatch.row_version}&size=thumb"
 
 
 def _length_key(value):
