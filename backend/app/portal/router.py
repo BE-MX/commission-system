@@ -226,11 +226,11 @@ def catalog_family_availability(request: Request, code: str = FAMILY_CODE,
 
 @router.get("/catalog/swatches/{swatch_id}/image")
 def catalog_swatch_image(swatch_id: UUID, request: Request, version: int = Query(..., ge=1),
+                         size: Literal['thumb', 'full'] = Query('thumb'),
                          client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
-    from fastapi.responses import Response
     from app.portal.image_service import customer_swatch
-    content = customer_swatch(db, request.cookies.get(cookie_name("session")), swatch_id, version)
-    return Response(content, media_type='image/jpeg', headers={'Cache-Control': 'private, no-store',
+    content = customer_swatch(db, request.cookies.get(cookie_name("session")), swatch_id, version, size=size)
+    return Response(content, media_type='image/jpeg', headers={'Cache-Control': 'private, max-age=86400',
         'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'"})
 
 
