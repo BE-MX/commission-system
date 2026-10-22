@@ -57,9 +57,9 @@ def rollback_owned(db):
 
 
 @contextmanager
-def executor_fence(db):
+def executor_fence(db, *, require_fresh=True):
     # A stale RR read transaction must never precede the advisory lock.
-    if db.in_transaction() or db.new or db.dirty or db.deleted:
+    if require_fresh and (db.in_transaction() or db.new or db.dirty or db.deleted):
         raise RuntimeError('Outbound executor requires a fresh owned session')
     with db.get_bind().connect() as fence:
         try:
@@ -88,8 +88,10 @@ def executor_fence(db):
             yield False
             return
         try:
+            db.info['stock_executor_fence'] = True
             yield True
         finally:
+            db.info.pop('stock_executor_fence', None)
             try:
                 released = fence.scalar(text('SELECT RELEASE_LOCK(:name)'), {'name':LOCK_NAME})
                 remaining_owner = fence.scalar(text('SELECT IS_USED_LOCK(:name)'), {'name':LOCK_NAME})

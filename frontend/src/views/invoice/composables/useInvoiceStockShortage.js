@@ -19,7 +19,9 @@ export function invoiceStockStatus(row, snapshot) {
   const remaining = quantity != null && Number.isSafeInteger(quantity) && quantity > 0
     && shipped != null && Number.isSafeInteger(shipped) && shipped >= 0
     ? Math.max(0, quantity - shipped) : null
-  return { available, remaining, shortage: remaining > 0 && available != null && available < remaining }
+  const usable = saved && !changedProduct && entry?.order_available_stock != null
+    ? numeric(entry.order_available_stock) : available
+  return { available, remaining, shortage: remaining > 0 && usable != null && usable < remaining }
 }
 
 export function useInvoiceStockShortage(props, loadInventory) {
@@ -55,7 +57,16 @@ export function useInvoiceStockShortage(props, loadInventory) {
   watch(() => props.invoiceId, () => { onlyShortage.value = false })
   watch(() => props.active, () => { onlyShortage.value = false })
   onScopeDispose(() => { sequence++ })
-  const stockStatus = row => invoiceStockStatus(row, snapshot.value)
+  const stockStatus = row => {
+    const state = invoiceStockStatus(row, snapshot.value)
+    if (!row.product_id || !row.sku_id) return state
+    const same = props.items.filter(item => String(item.product_id) === String(row.product_id) && String(item.sku_id) === String(row.sku_id))
+    const states = same.map(item => invoiceStockStatus(item, snapshot.value))
+    const remaining = states.every(item => item.remaining != null) ? states.reduce((sum, item) => sum + item.remaining, 0) : null
+    const entry = snapshot.value?.items?.find(item => String(item.product_id) === String(row.product_id) && String(item.sku_id) === String(row.sku_id))
+    const usable = numeric(entry?.order_available_stock ?? state.available)
+    return { ...state, shortage: remaining > 0 && usable != null && usable < remaining }
+  }
   const filteredItems = computed(() => onlyShortage.value ? props.items.filter(row => stockStatus(row).shortage) : props.items)
   const unknownCount = computed(() => props.items.filter(row => {
     const state = stockStatus(row)

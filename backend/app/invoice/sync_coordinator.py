@@ -11,6 +11,10 @@ class BeforeSendError(HTTPException):
     before_send = True
 
 
+from app.invoice.stock_reservations import fenced
+
+
+@fenced
 def synchronize(db, invoice, operator_id, *, linked_id=None, linked_token=None):
     from app.invoice.linked_sync_service import ensure_idle, ensure_running, LostExecution
     from app.invoice.lifecycle_guard import ensure_mutable

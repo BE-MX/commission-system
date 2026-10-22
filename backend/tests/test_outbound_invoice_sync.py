@@ -32,6 +32,8 @@ def test_serial_lookup_accepts_only_exact_not_found_response(db, monkeypatch):
 
 @pytest.fixture
 def sync_case(db, case, monkeypatch):
+    monkeypatch.setattr(followup, '_stock_reader', lambda session: lambda sku:
+        followup.remote.read(session, '/v1/product/inventory-list', {'sku_id':sku,'count':100,'start_index':1}))
     user, inv, task, _ = case
     inv.status = inv.sync_status = 'synced'
     inv.remark = 'new note'
@@ -309,6 +311,37 @@ def test_invoice_sync_followup_updates_unique_pending_outbound(db, sync_case):
     assert result['status'] == 'done'
     assert len(fake['posts']) == 1
     assert fake['outbound']['record_list'][0]['product_name'] == 'Weft/22/#1006/60g'
+
+
+def test_verified_native_sync_refreshes_partial_occupation_snapshot(db,sync_case,monkeypatch):
+    from app.invoice import stock_reservations, shipment_inventory_service
+    user,inv,_,fake=sync_case
+    task=db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status='skipped';task.reason='existing:77'
+    fake['outbound']['invoice_warehouse_info']['id']=stock_reservations.WAREHOUSE_ID
+    stock_reservations.remember_native(db,inv.id,inv.xiaoman_order_id,[fake['outbound']])
+    monkeypatch.setattr(shipment_inventory_service,'observe',lambda target:{'items':[
+        {'product_id':p,'sku_id':s,'available_stock':20} for _,p,s in target.lines]})
+    db.commit()
+    result=followup.run(db,inv,{'sub':str(user.id),'permissions':PERMS,'roles':[]})
+    assert result['status']=='done'
+    native=db.query(ShippingOperationEvent).filter_by(scope=stock_reservations.NATIVE_SCOPE).order_by(ShippingOperationEvent.id.desc()).first()
+    assert native.payload['product_list']==[{'product_id':22,'sku_id':220,'count':'2'}]
+
+
+def test_definite_stock_rejection_does_not_leave_a_false_sending_intent(db,sync_case,monkeypatch):
+    from app.invoice import stock_reservations, shipment_inventory_service
+    user,_,_,fake=sync_case
+    fake['outbound']['invoice_warehouse_info']['id']=stock_reservations.WAREHOUSE_ID
+    monkeypatch.setattr(shipment_inventory_service,'observe',lambda target:{'items':[
+        {'product_id':p,'sku_id':s,'available_stock':0} for _,p,s in target.lines]})
+    actor={'sub':str(user.id),'permissions':PERMS,'roles':[]}
+    record=outbound_service.get_outbound_record(db,'OB001')
+    preview=sync.preview(db,record,actor)
+    with pytest.raises(ValueError,match='自由可用'):
+        sync.synchronize(db,record,actor,preview['version'])
+    assert not fake['posts']
+    assert db.query(ShippingOperationEvent).filter_by(scope=state.SCOPE).one().action not in state.ACTIVE
 
 
 def test_invoice_sync_followup_requeues_shortage_without_creating(db, sync_case, monkeypatch):

@@ -39,7 +39,7 @@
     </div>
     <div class="stock-toolbar">
       <el-checkbox v-model="onlyShortage">仅显示库存不足的产品</el-checkbox>
-      <span class="line-hint">可用库存 &lt; 订单未发货数量；浅红行表示库存不足（小满同步库存）</span>
+      <span class="line-hint">自由可用已扣除待出库保留；浅红行表示本单待出库数量仍缺货</span>
       <el-button v-if="invoiceId" link type="primary" :loading="inventoryLoading" @click="refreshInventory">刷新库存与出库进度</el-button>
       <span v-if="inventoryLoading" class="line-hint" role="status">正在核对库存与出库进度</span>
       <el-text v-else-if="inventoryError" type="warning" role="status">库存核对失败，请刷新重试</el-text>
@@ -162,9 +162,9 @@
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
         </el-table-column>
-        <el-table-column label="可用库存 / 未发货" min-width="145">
+        <el-table-column label="自由可用" min-width="110">
           <template #default="{ row }">
-            <span class="stock-count">{{ stockStatus(row).available ?? '待核对' }} / {{ stockStatus(row).remaining ?? '待核对' }}</span>
+            <span class="stock-count">{{ stockStatus(row).available ?? '待核对' }}</span>
             <el-text v-if="stockStatus(row).shortage" type="danger" size="small">库存不足</el-text>
           </template>
         </el-table-column>

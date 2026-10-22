@@ -22,6 +22,13 @@ from test_mysql_invoice_cancellation_refresh import demote_admin
 def prepare(editor,monkeypatch,tmp_path):
     actual_find=worker.followup.legacy.linked_outbound_service.find_related
     c=setup(editor,monkeypatch,tmp_path)
+    invoice_token=worker.okki_client.fetch_token
+    def stock_token(*,scope=worker.okki_client.TOKEN_SCOPE):
+        if scope == worker.okki_client.TOKEN_SCOPE:
+            return invoice_token()
+        assert scope == 'invoices company product'
+        return 'synthetic-stock-token',None
+    monkeypatch.setattr(worker.okki_client,'fetch_token',stock_token)
     settings=worker.get_settings()
     monkeypatch.setattr(settings,'PORTAL_ENABLED',True)
     monkeypatch.setattr(settings,'PORTAL_OUTBOUND_WORKER_ENABLED',True)
@@ -70,6 +77,8 @@ def prepare(editor,monkeypatch,tmp_path):
     monkeypatch.setattr(worker.okki_client,'find_outbound_by_serial',serial)
     from urllib.parse import urlparse
     def get(url,*,headers,params,timeout):
+        if url.endswith('/inventory-list'):
+            assert headers['Authorization']=='Bearer synthetic-stock-token'
         return httpx.Response(200,json={'code':200,'data':read(None,urlparse(url).path,params)})
     monkeypatch.setattr(worker.okki_client.httpx,'get',get)
     monkeypatch.setattr(worker.okki_client.httpx,'post',post)

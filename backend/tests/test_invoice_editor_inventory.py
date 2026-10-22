@@ -2,7 +2,7 @@
 from types import SimpleNamespace as NS
 from fastapi import HTTPException, Response
 import pytest
-from app.invoice import editor_inventory, detail_router, detail_access
+from app.invoice import editor_inventory, detail_router, detail_access, stock_reservations
 
 
 def line(identity, **values):
@@ -15,7 +15,7 @@ def invoice(remote="100"):
 
 @pytest.fixture
 def stocks(monkeypatch):
-    monkeypatch.setattr(editor_inventory.product_service, "load_available_stocks", lambda db, ids: {(8, 9): 4})
+    monkeypatch.setattr(stock_reservations, "read_inventory", lambda *args, **kwargs: ({(8, 9): 4}, {(8, 9): 4}))
 
 
 def test_exact_line_quantities_and_stock_are_advisory(stocks, monkeypatch):
@@ -23,7 +23,7 @@ def test_exact_line_quantities_and_stock_are_advisory(stocks, monkeypatch):
         "state": "ready", "summary": {"by_item": {"1": "6", "2": "0"}}})
     result = editor_inventory.read(None, invoice(), {})
     assert [(i["available_stock"], i["shipped_quantity"]) for i in result["items"]] == [(4, "6"), (4, "0")]
-    assert result["source"] == "okki_mirror"
+    assert result["source"] == "ark_free_available"
 
 
 def test_unsynced_drafts_have_no_shipments_and_skip_outbound_permission(stocks, monkeypatch):
@@ -42,7 +42,7 @@ def test_unknown_shipped_quantity_is_never_zero(stocks, monkeypatch, mode):
 
 
 def test_unknown_stock_and_noncurrent_lines(stocks, monkeypatch):
-    monkeypatch.setattr(editor_inventory.product_service, "load_available_stocks", lambda *a: {})
+    monkeypatch.setattr(stock_reservations, "read_inventory", lambda *a, **kw: ({}, {}))
     saved = invoice(None)
     saved.items[0].presale_archived = 1
     saved.items[1].product_kind = "accessory"

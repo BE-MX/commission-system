@@ -1,7 +1,13 @@
-# OKKI 出库单轮询器（新加坡）
+# OKKI 出库单轮询器（目标以受管部署配置为准）
+
+2026-10-21 本地候选新增整单库存保留模块 `okki_outbound_stock.mjs`，必须与 poller、creator、mode 模块同批发布；不能只更新页面。库存等待任务可由出库列表「补货同步」立即核验并生成，不等待 15 分钟。后台原定时补查保留。
+
+同一个数据库命名锁覆盖订单成功同步、自动/手动出库及增加数量的相关入口；loop 每轮结束释放，等待下一轮时不持锁。legacy 认领和 creator 均检查 Python 原始发送事实，存在未完成事实或完成后迟到事实时不接管、不重发。手动入口不调用 install_mode，也不改变后台开关。
+
+应用账户新增需要 `ark_shipping_operation_events` SELECT/INSERT、成功推单摘要与产品明细 SELECT；既有镜像仍只读。已有出库关联的实时数量写入 `outbound-stock-native`，未占用余量继续保留；非标跳过与确认删除不混入库存保留。开发规则与验证见 [补货同步](../docs/requirements/2026-10-21-outbound-replenishment.md)。
 
 发票首推成功 → `ark_okki_outbound_tasks` → `okki_outbound_poller.js` →
-受管 `okki_outbound_creator.mjs` → OKKI 待出库单（status=1，不扣库存）。出库单号 serial_id 默认取对应方舟发票 invoice_no，缺少发票号则阻止创建。提交前按 serial_id 全局实时查重（不受订单创建日期窗口限制）；其他订单已占用时改用 `invoice_no [order_id]` 并再次查重，两者均被占用则阻止提交。只有该精确查询返回 `HTTP 200 / code 404 / Not Found Resource` 才证明单号空闲，其他错误不得当成不存在。
+受管 `okki_outbound_creator.mjs` → OKKI 待出库单（status=1，保持待出库，不自动确认真实发货）。库存交接以严格核验后的原生明细和可用库存读回计算，真实小满占库仍需发布后业务验收。出库单号 serial_id 默认取对应方舟发票 invoice_no，缺少发票号则阻止创建。提交前按 serial_id 全局实时查重（不受订单创建日期窗口限制）；其他订单已占用时改用 `invoice_no [order_id]` 并再次查重，两者均被占用则阻止提交。只有该精确查询返回 `HTTP 200 / code 404 / Not Found Resource` 才证明单号空闲，其他错误不得当成不存在。
 
 订单编辑后点击「保存并同步」，只有订单成功同步、原出库单在方舟留下已核实删除记录、且实时查无有效关联出库单时，后端才把原任务重新入队；未建品非标行和提交结果不确定的任务仍须人工核对。任务原因中保留本次成功同步日志 ID，执行端再次核查实时关联、任务状态和最新同步日志。新批次的提交意图与成功台账写在 `logs/ark-outbound-regenerations/sync-<日志ID>/logs/`，保留原批次证据；同一同步批次发生不确定提交后不自动重发。新单按当前订单明细和发票号生成，仍通过每分钟轮询器消费，库存不足则等待库存恢复。出库单被删除本身不会触发重建，须在删除后再次成功保存并同步。
 按单号仍能读到已软删除的旧单时，重新生成会将该单号视为占用并尝试带订单 ID 的备用单号；两者都被占用则停止提交。

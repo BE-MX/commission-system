@@ -497,6 +497,8 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     ensure_idle(invoice)
     from app.invoice.lifecycle_guard import ensure_mutable
     ensure_mutable(db, invoice)
+    from app.invoice.stock_reservations import remember
+    remember(db, invoice)
     if body.order_type == "presale":
         from app.invoice.settlement_policy import require_enabled
         require_enabled()

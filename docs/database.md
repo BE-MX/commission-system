@@ -1,5 +1,9 @@
 # 莱莎方舟 数据库表参考
 
+## 待出库库存保留（2026-10-21，本地候选，无新迁移）
+
+复用 `ark_okki_outbound_tasks`、成功 `ark_invoice_sync_logs` 与 `ark_shipping_operation_events`。事件 scope `outbound-stock-reservation` 保存任务ID/完整成功日志ID代次的整单 product_id、sku_id、count 及 order_id、warehouse_id；`outbound-stock-native` 保存严格核验后的原生关联数量，或历史严格完成代次的原占用基线。系统观察的 operator/login 为 0，并保留系统名称。原生快照只在核验后更新；未知外发和未同步草稿不能释放成功代次。无新增表、索引、迁移或镜像写入，不能仅上线前端；应用与受管 legacy 模块需同批发布。业务规则见[补货同步](requirements/2026-10-21-outbound-replenishment.md)。
+
 ## 常用导航（194，本地候选，未迁移生产）
 
 `ark_navigation_preferences`：`user_id` 为 `INT UNSIGNED` 主键，外键指向 `ark_users.id`，删除用户时级联删除配置；`items` JSON 保存按用户排列的导航标识数组；`created_at/updated_at` 为无时区北京时间。每用户一行；清空以空数组保存。配置与工作台布局独立，重置工作台不影响常用导航。

@@ -1,6 +1,7 @@
 /** Managed outbound creation: live association check + durable submission intent. */
 import fs from 'node:fs';
 import {assertLegacyMode,acquireCreatorFence} from './okki_outbound_mode.mjs';
+import {protectedStock,assertNoOriginalAttempt,recordNativeAssociation} from './okki_outbound_stock.mjs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -174,7 +175,7 @@ export function verifyCreated(detail, result, payload) {
 }
 
 // Inventory is checked against the exact destination warehouse, not order enable_count.
-export async function stockShortages(payload, api) {
+export async function stockShortages(payload, api, reserved = new Map()) {
   const needs = new Map();
   for (const row of payload.record_list) needs.set(String(row.sku_id), (needs.get(String(row.sku_id)) || 0) + row.outbound_count);
   const shortages = [];
@@ -190,6 +191,8 @@ export async function stockShortages(payload, api) {
       if (row.enable_count == null || String(row.enable_count).trim() === '' || !Number.isFinite(Number(row.enable_count)) || ![0, 1].includes(Number(row.disable_flag)) || row.disable_flag == null) throw new Error('Invalid warehouse inventory');
       available = Number(row.disable_flag) === 0 ? Number(row.enable_count) : 0;
     }
+    const product = payload.record_list.find(row => String(row.sku_id) === sku).product_id;
+    available = Math.max(0, available - (reserved.get(`${product}:${sku}`) || 0));
     if (available < required) shortages.push({sku_id: sku, required, available});
   }
   return shortages;
@@ -244,7 +247,7 @@ export async function createOne(orderId, options) {
   }
 }
 
-async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRemark, dryRun = false, knownIds = [], beforeSubmit, regeneration = false}) {
+async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRemark, dryRun = false, knownIds = [], beforeSubmit, regeneration = false, reservations}) {
   if (!/^\d+$/.test(orderId)) throw new Error('Invalid order ID');
   const order = await api('/v1/invoices/order/info?order_id=' + orderId);
   if (String(order.order_id) !== orderId) throw new Error('Order ID mismatch');
@@ -262,9 +265,9 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
   const intents = path.join(directory, 'logs', 'ark-outbound-intents');
   const baseIntent = path.join(intents, orderId + '.json');
   const {intent, retry} = nextSubmissionIntent(baseIntent, orderId);
-  if (retry) {
+  if (retry || reservations) {
     let shortages;
-    try { shortages = await stockShortages(payload, api); }
+    try { shortages = await stockShortages(payload, api, reservations ? await reservations() : new Map()); }
     catch (error) {
       console.warn('[outbound] inventory check failed: ' + error.message);
       return {outcome: 'waiting_stock', order_id: orderId, reason: 'Inventory check failed: ' + error.message};
@@ -399,6 +402,7 @@ async function main() {
          FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=?`,
       [process.argv[2]]);
     invoiceId = task?.invoice_id;
+    if (invoiceId) await assertNoOriginalAttempt(conn, invoiceId);
     const argument = process.argv.find(value => value.startsWith('--regeneration-sync-log='));
     if (argument) {
       generation = argument.slice('--regeneration-sync-log='.length);
@@ -442,7 +446,12 @@ async function main() {
     }
   } : undefined;
   const result = await createOne(process.argv[2], {api, directory, ...invoice, knownIds,
-    dryRun: !process.argv.includes('--run'), beforeSubmit, regeneration: Boolean(generation)});
+    dryRun: !process.argv.includes('--run'), beforeSubmit, regeneration: Boolean(generation),
+    reservations: () => protectedStock(conn, process.argv[2])});
+  if (['existing','created'].includes(result.outcome) && invoiceId) {
+    const detail=await api('/v1/invoices/outbound/info?outbound_invoice_id='+result.outbound_invoice_id);
+    await recordNativeAssociation(conn,invoiceId,process.argv[2],detail,now());
+  }
   console.log('ARK_OUTBOUND_RESULT=' + JSON.stringify(result));
   } finally { try { if (releaseExecutor) await releaseExecutor(); } finally { await conn.end(); } }
 }

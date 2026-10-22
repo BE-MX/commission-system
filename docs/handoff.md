@@ -1,9 +1,20 @@
+## 2026-10-22 客户门户选购页 UI 优化（Accio，oil-ui，已合并推送 main，未部署）
+
+- 仅前端 `frontend-portal`：产品族卡片改为色块实拍满版、名称前置；删除首页旋转印章与 HAIR COLLECTION / YOUR COLLECTION 装饰标签；详情页主图下注明当前组合，色块放大，无货色块灰度加删除线，数量与加入按钮同行，加入提示改绿色；修复 skip link 在手机端露出。
+- 验证：客户门户单测 141 通过；vite build 通过；`tests/family.browser.mjs` 桌面与 375px 通过；用素材文件夹真实色块图 + mock API 做前后截图（截图脚本与图片在 worktree 外 `ui-work/`，未入库）。未派独立评审；动效未改；登录、结算、订单页未改。
+
 ## 2026-10-21 客户门户受管开放下单与激活邮件调度（Accio，已合并推送 main，未部署）
 
-- 分支 `accio/optimize-order-portal-integration-ce44d944`。部署脚本新增 `--customer-portal-config enable-orders`：仅把 `PORTAL_WRITES_ENABLED`/`PORTAL_INVOICE_ENABLED` 置 true，邮件/通知/出库保持原值；前检要求已固定版本、门户已开放且有 AUTH 密钥、origin 为 `https://shop.leshine.cloud`、员工已建启用站点且 origin 一致、后端可导入 reportlab；重启后检失败恢复原 .env。
-- 调度器在 `PORTAL_ENABLED` 且 `PORTAL_MAIL_ENABLED` 时注册 `portal_auth_mail`，投递 P4 批准后的邀请与激活验证码邮件。激活页读取 token 后立即用 `replaceState` 清除地址栏 hash/query。
-- 北京线上只读核实（10/20）：迁移在 201、PORTAL_ENABLED=true、站点/商品/客户业务数据均为 0 条，故门户返回 503；需员工后台先建站点和数据。
-- 验证：deploy 配置测试 44 通过；调度/申请/邮件 34 通过；门户回归 805 通过 1 失败（本机缺 reportlab，既有）；客户门户单测 141 通过；deploy 全量 941 通过 3 失败（迁移计划 2 项、存储路由 1 项，撤掉本次改动后同样失败，既有）。旧 OTP 浏览器冒烟脚本未改。
+## 2026-10-21 自由可用与缺货补货同步（Codex，Git 交付，未部署）
+
+- 分支 `codex/outbound-replenishment-reservation`，worktree `C:/Users/windb/.codex/worktrees/outbound-replenishment-reservation/commission-system`，基点 `cb3c7a4a`。用户已授权提交、合并 main 并推送；主目录已有文件以补丁、副本与 SHA256 清单保护，证据在主目录 `tmp/outbound-replenishment-integration-20261021/`。最终远端提交以 Git refs 回读为准。本次无部署、真实小满写入、生产数据库写入、迁移或模式切换。
+- 产品明细仅显示「自由可用」：目标仓库原生可用减所有有效本地待出库尚未原生承接的整单 SKU 数量，包含非缺货行、重复 SKU 与其他订单。保留不等于物理库存，本单缺货判断使用内部实际可分配量。已生成原生出库后新增需求继续保留差额，严格核验改量后更新原生快照，未确定结果不释放。历史证据缺失显示待核对。
+- 缺货出库行新增「补货同步」，重新核实当前人员权限与可见范围，立即查实时库存并复用原发送事实/详情回读；仍缺货更新摘要，重复点击仅一次外发，超时不自动重发。订单确认、两种后台执行、手动补货与相关增量出库共用命名锁，防止前序保留中途改变。库存查询用独立 product scope，不改共享 invoice token。
+- 复用现有事件表保存完整成功代次与原生数量；无结构迁移。Python 应用、`okki_outbound_stock.mjs`、creator/poller/mode 必须经受管入口同批发布。规则见 [requirements](requirements/2026-10-21-outbound-replenishment.md)，API、数据库事件约定、原出库同步及 legacy 部署文档已更新。
+- 验证：最新核心 SQLite 147 passed；受影响广回归先前 314 passed、1 个新增测试的零保留映射期望错误，修正后在这 147 项中完整重跑通过。真实新建、随机端口、loopback MySQL 8.0.46：59 passed（5 个手动 HTTP/并发 + 54 个 worker 原协议）。隔离 fixture 为历史门户表补齐当前 ORM 缺列，仅验证服务行为，不代表生产迁移验收；供应商边界全部合成，不访问真实小满。MySQL 08 的日志确认 Shutdown complete，副本在 `tmp/outbound-replenishment-mysql/`。
+- 验证：JS legacy/库存/前端逻辑 162 passed；受管发布制品 123 passed；前端生产构建通过（既有 chunk 警告）；真实 Vue 组件浏览器在 1440/390px 均通过，覆盖按钮权限、禁用、防重、缺货/失败/成功反馈、列表刷新及单列显示，截图在 `frontend/tmp/outbound-replenishment/`。独立审查修复 product scope、已有出库交接与订单并发问题后复核，无剩余可证实 P1/P2。约定检查与 diff 检查通过，`git_sweep.py --no-fetch` 已运行，仅本地远端快照，main 落后缓存 origin/main 3 提交；不自动合并他人工作。
+- 复跑入口：backend 中 `python -B -m pytest tests/test_outbound_stock_reservations.py tests/test_outbound_invoice_sync.py -q`；MySQL 复跑同名 `tests/portal_mysql/test_mysql_outbound_replenishment.py`、`test_mysql_outbound_worker.py`，按该目录 conftest 提供验证过的 mysqld、全新 workspace 与 `--confcutdir=tests/portal_mysql -p no:cacheprovider`。frontend 中先 `npm run dev -- --host 127.0.0.1 --port 3039 --strictPort`，再用有 Playwright 的 Python 执行 `tests/outboundReplenishment.browser.py --browser <installed Chromium>`。
+- 发布后仍需固定订单/SKU 验收小满真实占库、库存不足与补足、另一业务员同型号下单、取消释放；当前静态/隔离证据不能替代真实占库验收。自动审批拒绝本次 MySQL 临时目录递归清理（只返回策略拦截，未给具体原因），目录 `D:/MyProgram/tmp/stock-replenishment-mysql-01` 至 `-08` 及测试证据暂保留，未绕过拦截。
 
 ## 2026-10-20 素材库筛选与搜索栏布局修复（Codex，Git 交付，未部署）
 

@@ -284,6 +284,7 @@ if(forbidden.length || JSON.stringify(process.env)!==envBefore) throw Error('Imp
 
 EXPECTED_ARTIFACTS = {
     'okki_outbound_poller.js', 'okki_outbound_creator.mjs', 'okki_outbound_mode.mjs',
+    'okki_outbound_stock.mjs',
     'ark-okki-outbound-poller.service', 'ark-okki-outbound-poller.timer',
 }
 
@@ -342,9 +343,9 @@ def test_actual_import_of_candidate_is_read_only_and_does_not_run_creator(real_i
     assert not list(host.units.iterdir())
     assert not (host.root / '.deploy-state/ark-outbound/release-current.json').exists()
     imports = [c for c in real_import_host.effects if '--input-type=module' in c]
-    assert imports and len(imports[-1][-3:]) == 3
-    assert {Path(url.removeprefix('file://')).name for url in imports[-1][-3:]} == {
-        'okki_outbound_poller.js', 'okki_outbound_creator.mjs', 'okki_outbound_mode.mjs'}
+    assert imports and len(imports[-1][-4:]) == 4
+    assert {Path(url.removeprefix('file://')).name for url in imports[-1][-4:]} == {
+        'okki_outbound_poller.js', 'okki_outbound_creator.mjs', 'okki_outbound_mode.mjs', 'okki_outbound_stock.mjs'}
     assert not any(c[:2] in (['systemctl', 'start'], ['systemctl', 'stop']) for c in host.commands)
 
 
@@ -433,7 +434,7 @@ def test_second_file_replace_failure_preserves_pause_backups_and_recovers(host, 
     monkeypatch.setattr(remote.os, 'replace', replace)
     receipt = host.call('install')
     assert receipt['status'] == 'installed_paused'
-    assert receipt['changed_files'] == 4
+    assert receipt['changed_files'] == len(EXPECTED_ARTIFACTS) - 1
     journal = json.loads(journal_path.read_text())
     assert journal['baseline'] == {'active':True,'enabled':True}
     backup = host.root / '.deploy-state/ark-outbound' / receipt['digest'] / 'backup'
