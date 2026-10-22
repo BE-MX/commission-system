@@ -61,7 +61,7 @@ onBeforeUnmount(() => { sequence++; controller?.abort(); familyController.abort(
 
 <template>
   <section class="collection-page">
-    <header class="collection-heading"><div><p class="eyebrow gold">CURATED FOR {{ session.me.company_display_name }}</p><h1>Your next signature.</h1><p class="muted">Explore your collection, in the names and shades you know.</p></div><span class="collection-stamp">LESHINE<br /><small>PARTNER COLLECTION</small></span></header>
+    <header class="collection-heading"><div><p class="eyebrow gold">CURATED FOR {{ session.me.company_display_name }}</p><h1>Your next signature.</h1><p class="muted">Explore your collection, in the names and shades you know.</p></div></header>
     <div class="collection-message"><span class="status-dot" aria-hidden="true"></span><span v-if="session.capabilities.place_order">Requests are reviewed by your representative. Availability is confirmed before your PI is issued.</span><span v-else>Your access is for browsing. Contact your representative to request ordering access.</span></div>
     <div v-if="families?.items?.length" class="view-switch" role="group" aria-label="Collection view"><button type="button" :aria-pressed="view === 'families'" @click="view = 'families'">Products</button><button type="button" :aria-pressed="view === 'all'" @click="view = 'all'">All items &amp; search</button></div>
     <div v-if="families === null" class="product-grid" aria-hidden="true"><div v-for="n in 3" :key="n" class="product-skeleton"><div></div><span></span><span></span></div></div>

@@ -62,9 +62,8 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer); document.removeEv
     <div v-if="error" class="empty-state" role="alert"><h2>We couldn’t load this product.</h2><p>{{ error.message }}</p><button class="button primary" @click="load">Try again</button><small v-if="error.traceId">Reference: {{ error.traceId }}</small></div>
     <div v-else-if="busy" class="family-layout" aria-hidden="true"><div class="family-gallery product-skeleton"><div></div></div><div class="product-skeleton"><span></span><span></span></div></div>
     <div v-else-if="family && variant" class="family-layout">
-      <div class="family-gallery"><div class="family-image"><ProductImage :url="variant.swatch_url || variant.image_url" :alt="`${family.display_name}, ${variant.color_code}`" /></div><p class="small muted">{{ variant.color_code }}<span v-if="variant.color_label !== variant.color_code"> · {{ variant.color_label }}</span></p></div>
+      <div class="family-gallery"><div class="family-image"><ProductImage :url="variant.swatch_url || variant.image_url" :alt="`${family.display_name}, ${variant.color_code}`" /></div><p class="family-caption"><strong>{{ variant.color_code }}</strong><span v-if="variant.color_label !== variant.color_code"> · {{ variant.color_label }}</span><span class="muted"> · {{ variant.grade_label }} · {{ variant.length }}"</span></p></div>
       <div class="family-options">
-        <p class="eyebrow gold">YOUR COLLECTION</p>
         <h1>{{ family.display_name }}</h1>
         <p v-if="session.capabilities.view_price" class="detail-price">{{ price(variant.unit_price) }}<small v-if="variant.unit_price != null"> / {{ variant.sale_unit }}</small></p>
         <fieldset class="option-row"><legend>Ratio</legend><button v-for="option in gradeOptions(variants)" :key="option.value" type="button" :class="['option-chip', { muted: !option.available }]" :aria-pressed="option.value === selection.grade" @click="choose({ grade: option.value })">{{ option.label }}</button></fieldset>
@@ -76,11 +75,11 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer); document.removeEv
         </fieldset>
         <p :class="['stock-state', variant.availability]" role="status"><span aria-hidden="true">●</span> {{ stockLabel(variant) }}<span v-if="variant.inventory_observed_at" class="muted"> · checked {{ beijingTime(variant.inventory_observed_at) }}</span></p>
         <div v-if="canOrder" class="family-purchase">
-          <div class="stepper"><button type="button" class="icon-button" aria-label="Decrease quantity" :disabled="Number(quantity) <= minimumQuantity(variant)" @click="step(-1)">−</button><label><span class="sr-only">Quantity</span><input v-model="quantity" type="number" inputmode="numeric" :min="minimumQuantity(variant)" :step="variant.step_qty" max="10000" @input="addError = null" /></label><button type="button" class="icon-button" aria-label="Increase quantity" @click="step(1)">+</button></div>
+          <div class="purchase-row"><div class="stepper"><button type="button" class="icon-button" aria-label="Decrease quantity" :disabled="Number(quantity) <= minimumQuantity(variant)" @click="step(-1)">−</button><label><span class="sr-only">Quantity</span><input v-model="quantity" type="number" inputmode="numeric" :min="minimumQuantity(variant)" :step="variant.step_qty" max="10000" @input="addError = null" /></label><button type="button" class="icon-button" aria-label="Increase quantity" @click="step(1)">+</button></div>
+          <button type="button" class="button primary" @click="add">Add to selection</button></div>
           <p class="small muted">{{ variant.sale_unit }} · minimum {{ variant.min_order_qty }}, in steps of {{ variant.step_qty }} · {{ formatGrams(lineGrams) }}</p>
-          <button type="button" class="button primary" @click="add">Add to selection</button>
           <p v-if="addError" class="alert error small" role="alert">{{ addError.message }}</p>
-          <p v-if="added" class="small" role="status">{{ added }}</p>
+          <p v-if="added" class="added-note small" role="status"><span aria-hidden="true">✓</span> {{ added }}</p>
         </div>
         <p v-else-if="!session.capabilities.place_order" class="small muted">Your access is for browsing. Contact your representative to request ordering access.</p>
         <p class="small muted">Availability is not a stock reservation. Final quantities and shipping are confirmed by your representative.</p>

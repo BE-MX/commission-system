@@ -22,7 +22,8 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--portal-ink
 .text-button { min-height: 44px; padding: 8px; background: transparent; border: 0; text-decoration: underline; text-underline-offset: 4px; }
 .icon-button { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--portal-border); background: transparent; border-radius: 50%; font-size: 25px; }
 .full { width: 100%; }
-.skip-link { position: fixed; z-index: 20; top: 8px; left: 8px; transform: translateY(-150%); padding: 10px 18px; color: var(--portal-white); background: var(--portal-ink); }
+.skip-link { position: fixed; z-index: 20; top: 8px; left: 8px; transform: translateY(-200%); padding: 10px 18px; color: var(--portal-white); background: var(--portal-ink); }
+.skip-link:not(:focus) { clip-path: inset(50%); }
 .skip-link:focus { transform: none; }
 .brand-mark { display: inline-block; position: relative; width: 144px; height: 56px; background: var(--portal-yellow); overflow: hidden; flex-shrink: 0; }
 .brand-mark img { position: absolute; width: 180px; height: 180px; max-width: none; left: -17px; top: -62px; }
@@ -378,6 +379,35 @@ a.product-open { color: inherit; text-decoration: none; }
   .family-options h1 { font-size: 30px; }
   .view-switch { display: flex; }
   .view-switch button { flex: 1; padding: 8px 10px; }
+}
+
+/* Family browsing: the swatch photo is the hero; text stays quiet underneath. */
+.family-grid .product-art { aspect-ratio: 1; padding: 0; background: var(--portal-white); }
+.family-grid .product-art .product-photo { object-fit: cover; }
+.family-grid .product-art .product-monogram { margin: auto; }
+.family-grid .product-art:not(:has(.product-photo)) { background: var(--portal-soft); }
+.family-grid .product-caption { padding-top: 14px; }
+.family-grid .product-caption h2 { margin: 0; font-size: 20px; }
+.family-grid .product-caption p { margin: 6px 0 0; }
+.family-image { background: var(--portal-white); }
+.family-image .product-photo { object-fit: cover; }
+.family-caption { margin: 12px 0 0; font-size: 13px; }
+.family-options h1 { margin-top: 0; }
+.swatch-chip { padding-right: 14px; }
+.swatch-thumb { width: 40px; height: 40px; }
+.swatch-chip.unavailable .swatch-thumb { filter: grayscale(1); }
+.swatch-chip.unavailable > span:last-child { text-decoration: line-through; text-decoration-color: var(--portal-muted); }
+.purchase-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.purchase-row .button { min-width: 200px; }
+.added-note { margin: 0; color: var(--portal-success); }
+@media (max-width: 700px) {
+  .family-grid .product-art { aspect-ratio: 1; padding: 0; }
+  .family-grid .product-caption h2 { font-size: 16px; }
+  .family-image { aspect-ratio: 1; }
+  .purchase-row .button { flex: 1; min-width: 0; }
+}
+@media (max-width: 360px) {
+  .family-grid .product-art { aspect-ratio: 1; }
 }
 
 /* Payment method and confirmed totals on the review step */
