@@ -1,3 +1,9 @@
+## 2026-10-22 方舟后台客户下单门户 5 个导航页 UI 规范对齐（Accio，已合并推送 main，未部署）
+
+- 仅 `frontend/src/views/portal`：下单请求、客户访问、账号申请、商品目录（含产品族/色块库子页）、站点设置。页头 17px/700 + 14px 描述且不放按钮；筛选统一 FilterBar 进表格卡片；主操作 + TableTools 进 action-bar；极光底 + 玻璃面板（共享 `portal-page.css`）；状态统一 `portalStatus.js` 字典 + StatusBadge；列补 max-width/tooltip/排序；申请时间按北京时间。
+- 验证：管理端 vite build 通过；check_conventions --strict 与 audit_frontend_ui 通过；auditTableSorting 五页无违规；1440 与 390 宽 mock 截图无页面级横向溢出。仓库原有 `tests/portal*.browser.mjs` 在改动前代码上同样失败（环境问题），未作为本次验收依据。
+- 未做：账号申请审核仍需手工粘贴授权 ID，需要后端新增授权查询接口后才能改下拉。
+
 ## 2026-10-22 客户门户选购页 UI 优化（Accio，oil-ui，已合并推送 main，未部署）
 
 - 仅前端 `frontend-portal`：产品族卡片改为色块实拍满版、名称前置；删除首页旋转印章与 HAIR COLLECTION / YOUR COLLECTION 装饰标签；详情页主图下注明当前组合，色块放大，无货色块灰度加删除线，数量与加入按钮同行，加入提示改绿色；修复 skip link 在手机端露出。
