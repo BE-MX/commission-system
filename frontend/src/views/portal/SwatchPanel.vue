@@ -114,6 +114,9 @@ onBeforeUnmount(() => { controller?.abort(); assetController?.abort(); clearPrev
 </template>
 
 <style scoped>
+/* FilterBar sits inside .tab-body, so the global sticky .toolbar rule would float it over the table header. */
+.tab-body > .toolbar { position: static; top: auto; margin-bottom: 0; padding: 14px; background: rgba(255, 255, 255, 0.4); border: none; border-bottom: 1px solid var(--border-color); border-radius: 0; box-shadow: none; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.tab-body > .toolbar .filter-w-md { width: 200px; }
 .action-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.28); }
 .action-hint { flex: 1; min-width: 220px; color: var(--text-secondary); font-size: 13px; }
 .panel-alert { margin: 12px 14px 0; width: auto; }

@@ -15,9 +15,11 @@ import BindingReviewDialog from './BindingReviewDialog.vue'
 import { accountStatuses } from './customerAccess.mjs'
 import { ACCESS_STATUS } from './portalStatus'
 
-const columnDefs = [{ key: 'company', label: '客户公司' }, { key: 'status', label: '访问状态' }, { key: 'capabilities', label: '客户能力' }, { key: 'sales-user', label: '负责人 ID' }]
+const columnDefs = [{ key: 'company', label: '客户公司' }, { key: 'status', label: '访问状态' }, { key: 'capabilities', label: '客户能力' }, { key: 'sales-user', label: '负责业务员' }]
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } = useTableView('portal-customers', columnDefs)
 const capabilityText = row => row.capabilities.can_order ? '查价与下单' : row.capabilities.can_view_price ? '仅查价' : '仅查看目录'
+// A deactivated or deleted salesperson has no name; keep the ID visible so ownership is still traceable.
+const salesName = row => row.sales_user_name || `未知业务员（ID ${row.sales_user_id}）`
 // 原「刷新」按钮已由 TableTools 承担；焦点回退到操作行第一个可用按钮
 const pageRefresh = { get value() { return { $el: panelRef.value?.querySelector('.action-bar button:not([disabled])') } } }
 
@@ -169,7 +171,7 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
         <el-table-column v-if="visibleKeys.includes('company')" prop="company_display_name" label="客户公司" min-width="220" max-width="360" show-overflow-tooltip />
         <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="访问状态" min-width="120" max-width="180"><template #default="{ row }"><StatusBadge :value="row.status" :dictionary="ACCESS_STATUS" effect="plain" /></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('capabilities')" label="客户能力" min-width="140" max-width="220" :sort-by="capabilityText" show-overflow-tooltip><template #default="{ row }">{{ capabilityText(row) }}</template></el-table-column>
-        <el-table-column v-if="visibleKeys.includes('sales-user')" prop="sales_user_id" label="负责人 ID" min-width="110" max-width="180" />
+        <el-table-column v-if="visibleKeys.includes('sales-user')" label="负责业务员" min-width="110" max-width="180" :sort-by="salesName" show-overflow-tooltip><template #default="{ row }">{{ salesName(row) }}</template></el-table-column>
         <el-table-column label="操作" fixed="right" min-width="100" max-width="140" class-name="table-action-column" :sortable="false"><template #default="{ row }"><GlassButton v-permission="'portal_access:read'" variant="link" :left-icon="View" :data-portal-access="row.id" @click="openDetail(row.id)">管理</GlassButton></template></el-table-column>
       </el-table>
       <el-pagination class="pager" :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
@@ -180,7 +182,7 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
       <el-alert v-if="notice" :title="notice" type="info" :closable="false" />
       <template v-if="detail">
         <div class="drawer-title"><h3>{{ detail.company_display_name }}</h3><StatusBadge :value="detail.status" :dictionary="ACCESS_STATUS" effect="plain" /></div>
-        <p>方舟客户 {{ detail.canonical_customer_id }} · 负责人 {{ detail.sales_user_id }}</p>
+        <p>方舟客户 {{ detail.canonical_customer_id }} · 负责业务员 {{ salesName(detail) }}</p>
         <p>查价 {{ detail.capabilities.can_view_price ? '已允许' : '未允许' }} · 下单 {{ detail.capabilities.can_order ? '已允许' : '未允许' }} · 已授权商品 {{ detail.catalog_item_ids.length }} 项</p>
         <el-alert v-if="detail.status === 'review_required'" title="客户身份或归属需要复核，普通启停不能解除此状态。" type="warning" :closable="false" />
         <div class="actions">
