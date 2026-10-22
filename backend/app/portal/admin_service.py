@@ -285,11 +285,13 @@ def update_account(db, actor_id, public_id, expected, body):
 
 def list_customers(db, actor_id, *, page=1, page_size=20, status=None, keyword=None):
     from sqlalchemy import func, or_
+    from app.auth.models import ArkUser
     from app.customer.models import CustomerAccount
     actor = begin(db, actor_id, "portal_access:read")
     site = site_for_admin(db)
-    query = select(CustomerAccess, CustomerAccount.display_name).join(
-        CustomerAccount, CustomerAccount.id == CustomerAccess.customer_id).where(CustomerAccess.site_id == site.id)
+    query = select(CustomerAccess, CustomerAccount.display_name, ArkUser.real_name).join(
+        CustomerAccount, CustomerAccount.id == CustomerAccess.customer_id).outerjoin(
+        ArkUser, ArkUser.id == CustomerAccess.sales_user_id).where(CustomerAccess.site_id == site.id)
     if "super_admin" not in actor["roles"]:
         query = query.where(employee_scope(actor))
     if status:
@@ -301,16 +303,19 @@ def list_customers(db, actor_id, *, page=1, page_size=20, status=None, keyword=N
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     rows = db.execute(query.order_by(CustomerAccess.created_at.desc(), CustomerAccess.id.desc())
                       .offset((page - 1) * page_size).limit(page_size)).all()
-    return {"items": [{**access_view(row), "company_display_name": name} for row, name in rows],
+    return {"items": [{**access_view(row), "company_display_name": name, "sales_user_name": sales_name or ""}
+                      for row, name, sales_name in rows],
             "total": total, "page": page, "page_size": page_size}
 
 
 def customer_detail(db, actor_id, public_id, *, page=1, page_size=20):
     from sqlalchemy import func
+    from app.auth.models import ArkUser
     from app.customer.models import CustomerAccount
     actor = begin(db, actor_id, "portal_access:read")
     access = scoped_access(db, public_id, actor)
     company_name = db.scalar(select(CustomerAccount.display_name).where(CustomerAccount.id == access.customer_id))
+    sales_name = db.scalar(select(ArkUser.real_name).where(ArkUser.id == access.sales_user_id))
     query = select(Account, Membership).join(Membership, Membership.account_id == Account.id).where(
         Membership.access_id == access.id)
     total = db.scalar(select(func.count()).select_from(query.subquery()))
@@ -325,7 +330,7 @@ def customer_detail(db, actor_id, public_id, *, page=1, page_size=20):
     grants = db.scalars(select(CatalogItem.public_id).join(CatalogGrant,
         CatalogGrant.catalog_item_id == CatalogItem.id).where(CatalogGrant.access_id == access.id,
         CatalogGrant.status == "enabled")).all()
-    return {**access_view(access), "company_display_name": company_name,
+    return {**access_view(access), "company_display_name": company_name, "sales_user_name": sales_name or "",
         "catalog_item_ids": list(grants), "accounts": {"items": members, "total": total,
         "page": page, "page_size": page_size}}
 

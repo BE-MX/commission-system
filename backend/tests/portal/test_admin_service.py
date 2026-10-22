@@ -436,3 +436,20 @@ def test_customer_detail_has_scoped_account_controls_without_secrets(managed):
     with pytest.raises(PortalError) as error:
         admin.customer_detail(ctx.db, 2, ctx.access.public_id)
     assert error.value.status == 404
+
+
+def test_customer_list_and_detail_show_salesperson_name(managed, portal_metadata):
+    ctx = managed
+    users = portal_metadata.tables["ark_users"]
+    if ctx.db.execute(select(users.c.id).where(users.c.id == 1)).first():
+        ctx.db.execute(users.update().where(users.c.id == 1).values(real_name="Alice Sales"))
+    else:
+        ctx.db.execute(users.insert(), {"id": 1, "is_active": True, "real_name": "Alice Sales"})
+    ctx.db.commit()
+    assert admin.list_customers(ctx.db, 1)["items"][0]["sales_user_name"] == "Alice Sales"
+    assert admin.customer_detail(ctx.db, 1, ctx.access.public_id)["sales_user_name"] == "Alice Sales"
+    ctx.db.execute(users.update().where(users.c.id == 1).values(real_name=None))
+    ctx.db.commit()
+    # An unnamed employee row returns an empty name instead of dropping the customer.
+    rows = admin.list_customers(ctx.db, 1)["items"]
+    assert len(rows) == 1 and rows[0]["sales_user_name"] == ""
