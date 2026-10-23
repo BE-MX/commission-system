@@ -51,7 +51,7 @@ test('spec columns collapse and expand via the header toggle', () => {
   assert.match(hairTable, /collapseSpecs = ref\(false\)/)
   assert.match(hairTable, /收起规格列/)
   assert.match(hairTable, /展开规格列/)
-  for (const label of ['Model', 'Color', 'Length', 'Net Weight']) {
+  for (const label of ['型号', '色号', '长度', '克重']) {
     assert.match(hairTable, new RegExp(`v-if="[^"]*!collapseSpecs[^"]*" label="${label}"`))
   }
 })

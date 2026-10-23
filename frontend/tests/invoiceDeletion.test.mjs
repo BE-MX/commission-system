@@ -18,15 +18,20 @@ test('all invoice deletion buttons use the independent delete grant', () => {
   ]) {
     const { descriptor } = parse(readFileSync(new URL(file, import.meta.url), 'utf8'))
     const buttons = []
-    function visit(node) {
-      if (node.type === 1 && node.props.some(prop => prop.type === 7 && prop.name === 'on' && prop.exp?.content === handler)) buttons.push(node)
-      for (const child of node.children || []) visit(child)
+    function visit(node, inheritedGrant = null) {
+      const grant = node.type === 1
+        ? node.props.find(prop => prop.type === 7 && prop.name === 'permission')?.exp?.content
+        : null
+      const elementGrant = node.tag === 'div' ? grant || inheritedGrant : inheritedGrant
+      if (node.type === 1 && node.props.some(prop => prop.type === 7 && prop.name === 'on' && prop.exp?.content === handler)) {
+        // DropdownItem has a Fragment root; only an element ancestor can enforce its directive.
+        buttons.push(node.tag === 'el-dropdown-item' ? elementGrant : grant || inheritedGrant)
+      }
+      for (const child of node.children || []) visit(child, elementGrant)
     }
     visit(baseParse(descriptor.template.content))
     assert.equal(buttons.length, count)
-    for (const button of buttons) {
-      assert.equal(button.props.find(prop => prop.type === 7 && prop.name === 'permission')?.exp?.content, "'invoice:delete'")
-    }
+    for (const grant of buttons) assert.equal(grant, "'invoice:delete'")
   }
 })
 function setup(overrides = {}) {

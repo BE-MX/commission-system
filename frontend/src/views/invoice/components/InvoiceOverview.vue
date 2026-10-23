@@ -1,10 +1,11 @@
 <template>
-  <section class="summary-section" aria-label="订单概览">
+  <section class="summary-section" :class="`summary-section--${viewMode}`" aria-label="订单概览">
     <div class="summary-toolbar">
       <div class="summary-heading">
         <strong>订单概览</strong>
         <span>当前账号可见 · 已同步 · 排除取消中及已取消 · 按下单日期</span>
       </div>
+      <div class="summary-controls">
       <el-date-picker
         v-model="dateRange"
         type="daterange"
@@ -16,9 +17,13 @@
         aria-label="订单概览统计日期范围"
         @change="$emit('range-change')"
       />
+      <div class="summary-view-options" role="group" aria-label="订单概览显示方式">
+        <button v-for="option in viewOptions" :key="option.value" type="button" :aria-pressed="viewMode === option.value" @click="viewMode = option.value">{{ option.label }}</button>
+      </div>
+      </div>
     </div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" class="summary-error" />
-    <div v-loading="loading" class="summary-grid">
+    <div v-show="viewMode !== 'collapsed'" v-loading="loading" class="summary-grid">
       <div class="summary-card summary-card--gmv lg-card is-static">
         <el-icon class="summary-card__icon"><TrendCharts /></el-icon>
         <span>GMV（USD）</span>
@@ -54,6 +59,7 @@
 </template>
 
 <script setup>
+import { ref, watch } from 'vue'
 import { Money, Tickets, TrendCharts, UserFilled } from '@element-plus/icons-vue'
 
 defineProps({
@@ -63,6 +69,13 @@ defineProps({
   money: { type: Function, required: true },
 })
 defineEmits(['range-change'])
+const viewOptions = [{ value: 'compact', label: '紧凑' }, { value: 'expanded', label: '展开' }, { value: 'collapsed', label: '收起' }]
+const viewMode = ref('compact')
+try {
+  const saved = localStorage.getItem('invoice-overview-view')
+  if (viewOptions.some(option => option.value === saved)) viewMode.value = saved
+} catch { /* Browser preferences may be unavailable. */ }
+watch(viewMode, value => { try { localStorage.setItem('invoice-overview-view', value) } catch { /* Keep the current view. */ } })
 const dateRange = defineModel('dateRange', { type: Array, required: true })
 </script>
 

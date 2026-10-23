@@ -15,7 +15,7 @@
       <el-table-column label="行折扣" min-width="110" max-width="140" align="right"><template #default="{row}">{{ formatMoney(row.discount_amount) }}</template></el-table-column>
       <el-table-column label="小计" min-width="130" max-width="160" align="right"><template #default="{row}">{{ formatMoney(row.total_price) }}</template></el-table-column>
     </el-table>
-    <div class="detail-totals"><span v-for="field in amounts" :key="field[0]">{{ field[1] }} <strong>{{ formatMoney(order[field[0]]) }}</strong></span><span>总额 {{ order.currency }} <strong>{{ formatMoney(order.total_amount) }}</strong></span></div>
+    <div class="detail-totals"><span v-for="field in amounts" :key="field[0]">{{ field[1] }} <strong>{{ formatMoney(order[field[0]]) }}</strong></span><span>应付合计 {{ order.currency }} <strong>{{ formatMoney(order.total_amount) }}</strong></span></div>
     <template v-if="order.presale_history?.length">
       <h3>历史已发货明细（保留原出库记录）</h3>
       <el-table v-sticky-scrollbar :data="order.presale_history" class="list-table" border>
@@ -35,5 +35,5 @@ const sourceLabel = value => ({manual:'手工录入',okki_screenshot:'小满截�
 defineProps({ order: { type: Object, required: true }, shipped: { type: Object, default: null }, disabled: Boolean })
 defineEmits(['updated'])
 const fields = [['customer_name','客户'],['contact_name','联系人'],['invoice_date','发票日期'],['sales_user_name','业务员'],['merchandiser_name','跟单员'],['xiaoman_order_no','小满订单号'],['contact_phone','联系电话'],['contact_email','联系邮箱'],['delivery_address','收货地址'],['payment_term','付款条款'],['express_channel','发货方式'],['source_type','订单来源']]
-const amounts = [['product_amount','商品净额'],['internal_accessory','包装费'],['shipping_fee','主单运费'],['surcharge_amount','附加费']]
+const amounts = [['product_amount','商品净额'],['internal_accessory','包装费'],['shipping_fee','主单运费'],['surcharge_amount','手续费']]
 </script>

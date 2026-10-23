@@ -23,6 +23,7 @@
         <el-table-column type="expand">
           <template #default="{ row: item }">
             <div class="inventory-expand">
+              <p>目标仓库实存：{{ amount(item.real_count) }} · 不可用数量：{{ amount(item.unavailable_count) }}</p>
               <p>原单行号：{{ item.line_numbers.join('、') }} · SKU：{{ item.sku_id || '未映射' }}</p>
               <p v-if="item.line_numbers.length > 1">同一产品与 SKU 的多行数量已合计，库存只计算一次。</p>
               <el-table v-if="item.warehouses.length" :data="item.warehouses" size="small" border class="list-table" v-sticky-scrollbar>
@@ -35,7 +36,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="产品 / SKU" min-width="250">
+        <el-table-column label="产品 / SKU" min-width="220">
           <template #default="{ row: item }">
             <strong class="inventory-product">{{ item.product_name }}</strong>
             <small class="inventory-note">SKU {{ item.sku_id || '未映射' }} · {{ item.unit || '原单数量单位' }}</small>
@@ -48,8 +49,6 @@
         </el-table-column>
         <el-table-column label="本单数量" min-width="100" align="right"><template #default="{ row: item }">{{ amount(item.required) }}</template></el-table-column>
         <el-table-column label="可用库存" min-width="100" align="right"><template #default="{ row: item }">{{ amount(item.available) }}</template></el-table-column>
-        <el-table-column label="实存" min-width="90" align="right"><template #default="{ row: item }">{{ amount(item.real_count) }}</template></el-table-column>
-        <el-table-column label="不可用数量" min-width="110" align="right"><template #default="{ row: item }">{{ amount(item.unavailable_count) }}</template></el-table-column>
         <el-table-column label="缺口" min-width="90" align="right"><template #default="{ row: item }"><strong :class="{ 'inventory-shortage': item.status === 'shortage' }">{{ amount(item.shortage) }}</strong></template></el-table-column>
         <el-table-column label="状态 / 同步时间" min-width="175">
           <template #default="{ row: item }">

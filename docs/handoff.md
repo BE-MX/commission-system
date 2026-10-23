@@ -6,6 +6,26 @@
 - 本地修复已提交，尚未合并、推送或部署；未对Veronika第二批执行恢复、重发或财务变更。当前进度保留在 `codex/shipment-absent-recovery` 独立worktree。Git巡检 `--no-fetch` 于22:17退出0，仅为本地远端引用快照；任务代码无未提交改动，另有未纳入提交的临时UI夹具。
 - 临时UI测试服务与隔离MySQL均已停止；测试夹具、基线副本及临时MySQL目录的递归清理被自动审批拒绝（blocked by policy），原目录暂留且不纳入提交；验证摘要与浏览器证据保留在 `tmp/shipment-absence-validation.json`、`tmp/recovery-browser/`。
 
+## 2026-10-23 订单发票与出库体验优化（Codex，Git 交付，未部署）
+
+- 分支 `codex/invoice-outbound-ux`，worktree `C:/Users/windb/.codex/worktrees/invoice-outbound-ux/commission-system`，基点 `569b1fe5`；按评估顺序落地金额命名、关联进度、列表动作、概览紧凑、明细工具、出库菜单、库存展开、结算分组和可选打印预览。
+- 保留现有金额计算、资金抵扣、库存及实际出库口径；无后端逻辑、数据库或生产业务写入。独立审查指出的真实状态枚举、历史记录过滤及菜单权限包装已修复。
+- 定向回归 119/119、构建通过；扩大回归 305/326，通过 main 同范围复跑确认其余 21 项均为既有夹具／断言失败，无新增失败。实际浏览器核对桌面及 390px 库存抽屉，另验证只读身份无编辑／删除。
+- 实现范围、证据和边界见 [优化报告](reports/2026-10-23-invoice-outbound-ux.md)。用户已授权本次提交、合入 main 并推送，最终交付以 Git refs 回读为准；未部署。
+
+## 2026-10-23 客户 PI PDF 字体故障（Codex，Git 交付，未部署）
+
+- 北京现有 Noto CJK 字体为 CFF 轮廓：Pillow 可用，ReportLab 拒绝，导致客户下载报 PDF 服务未配置。现场没有 systemd/进程字体覆盖；有效配置来自 `backend/.env`。
+- 共享中文字体预检增加 ReportLab 实际解析，北京受管 prepare 在停服务之前调用；PI 只补异常类型日志，金额、权限和快照选择不变。28 项后端测试、9 项既有部署测试及 1 项新增预检阻断测试通过，独立审查未见 P1/P2。
+- 兼容字体已从 Ubuntu 包解压到私有暂存路径。对截图请求的当前已发布快照做只读渲染成功，2 页 PDF，快照哈希未变、业务库写入 0。证据含真实客户 PDF，仅留 `tmp/pi-font-proof/` 与北京私有 `.deploy_state`，不提交。
+- 详见 [报告](reports/2026-10-23-portal-pi-font-repair.md)。用户已授权本批与结算高度修改一起提交、合入 main 并推送，以 Git refs 回读为准；本次不部署，线上字体配置与服务仍未切换。上线需先配置兼容字体，再走 `deploy/deploy.bat`，单独部署预检代码不会修复现有字体。
+
+## 2026-10-23 客户结算双栏高度（Codex，Git 交付，未部署）
+
+- `codex/portal-checkout-height`，独立 worktree `C:/Users/windb/.codex/worktrees/portal-checkout-height/commission-system`。桌面结算页收紧导航、标题及页脚，将更多视口高度给左右独立滚动区域；手机布局与业务逻辑不变。
+- 1440×900 两栏高度 537→703px，1440×640 为 376→443px；浏览回归含几何、实际滚轮独立性、付款与提交，截图和尺寸在 `tmp/checkout-height/`。说明见 `docs/reports/2026-10-23-portal-checkout-pane-height.md`。
+- 用户已授权与 PI 字体修复一起提交、合入 main 并推送；最终状态以 Git refs 回读为准，本次不部署。
+
 ## 2026-10-23 客户门户全页 UI 检查与优化（Codex，Git 交付，未部署）
 
 - `codex/portal-oil-ui`；独立 worktree `C:/Users/windb/.codex/worktrees/portal-oil-ui/commission-system`。覆盖公开入口、集合/规格、选购、请求/方案/PI、再次下单、联系弹窗和共享导航。

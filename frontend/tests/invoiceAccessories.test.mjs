@@ -227,7 +227,7 @@ test('invoice accessory lookups request active catalog rows without changing pri
 })
 
 test('invoice accessory entry exposes only configured real-identity columns', () => {
-  for (const label of ['#', 'Name', 'Model', 'Color', '标准价', '客户价', 'Quantity', '折扣', 'TotalPrice', '操作']) {
+  for (const label of ['#', '配件名称', '型号', '色号', '标准价', '客户价', '数量', '折扣', '小计', '操作']) {
     assert.match(accessoryTable, new RegExp(`label="${label.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}"`))
   }
   assert.doesNotMatch(accessoryTable, /Length|Net Weight|Curl|展开选填列/)

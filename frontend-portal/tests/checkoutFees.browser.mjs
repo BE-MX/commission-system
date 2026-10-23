@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 
 // Weight-tiered shipping and payment-method surcharge on the review step, desktop and 375px.
 const require = createRequire(import.meta.url)
@@ -70,7 +70,13 @@ async function run(viewport, name) {
         for (const pane of [draft, review]) assert.ok(await pane.evaluate(el => el.scrollHeight > el.clientHeight), 'pane has scrollable content')
         const leftBox = await draft.boundingBox(), rightBox = await review.boundingBox()
         assert.ok(Math.abs(leftBox.height - rightBox.height) < 10)
+        for (const box of [leftBox, rightBox]) {
+          assert.ok(box.height >= height - 200, 'checkout panes leave at most 200px for navigation, title and footer')
+          assert.ok(box.y <= 140, 'checkout content starts near the navigation')
+        }
         assert.ok(leftBox.y + leftBox.height <= height && rightBox.y + rightBox.height <= height)
+        await writeFile(`${output}/checkout-geometry-${height}.json`, JSON.stringify({ viewport: { width: viewport.width, height }, left: leftBox, right: rightBox }, null, 2))
+        await page.screenshot({ animations: 'disabled', path: `${output}/checkout-top-${height}.png` })
         const before = await positions()
         await page.mouse.move(leftBox.x + leftBox.width / 2, leftBox.y + leftBox.height / 2)
         await page.mouse.wheel(0, 400)
