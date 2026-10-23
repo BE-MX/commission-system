@@ -444,3 +444,12 @@ it uses synthetic intercepted API and does not contact customers/providers. The
 current 130 Node tests, 34-module build and browser scenarios are local evidence,
 separate from real isolated MySQL HTTP verification. Closed-tab or cleared-storage
 recovery and full production integration remain open.
+
+
+### Product image sizes and family browsing
+
+Approved images use the existing authenticated image endpoints. Family covers and
+large detail galleries explicitly request full swatches (up to 1200px); color
+buttons retain 96px thumbnails. Detail galleries load eagerly. Invalid URLs and
+failed images keep the brand placeholder. Family browse prices use request-local
+batched reads only; quote/submit still resolve authoritative prices afresh.

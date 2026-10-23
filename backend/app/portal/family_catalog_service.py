@@ -7,7 +7,7 @@ import re
 
 from sqlalchemy import select
 
-from app.invoice import price_service
+from app.portal.browse_pricing import BrowsePrices
 from app.portal import catalog_service
 from app.portal.errors import reject
 from app.portal.family_service import color_key
@@ -94,14 +94,15 @@ def family_detail(db, principal, code):
     if not projected:
         reject("RESOURCE_NOT_FOUND", "This product is not available.", 404)
     swatches, color_types, variants = _swatches(db, principal), {}, []
+    browse = BrowsePrices(db, principal.access, [row for row, _ in projected])
     for row, item in projected:
         standard = row.standard_json or {}
         key = color_key(standard.get("color"))
         swatch = swatches.get(key)
         if key not in color_types:
-            resolved, _ = price_service.resolve_color_type(db, standard.get("color") or "")
+            resolved = browse.color_type(standard.get("color") or "")
             color_types[key] = resolved if resolved in COLOR_TYPES else None
-        catalog_service.with_price(db, principal, row, item)
+        catalog_service.with_price(db, principal, row, item, browse=browse)
         variants.append({**item, "grade": row.grade, "grade_label": GRADE_LABELS[row.grade],
             "length": str(standard.get("length") or item["length_display"]), "color_key": key,
             "color_code": swatch.color_code if swatch else item["color_name"],

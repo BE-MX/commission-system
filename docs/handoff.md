@@ -1,3 +1,9 @@
+## 2026-10-23 客户门户商品大图与详情性能（Codex，Git 交付，未部署）
+
+- 分支 `codex/portal-image-performance`，独立 worktree `D:/MyProgram/commission-system-codex-portal-images`。商品列表封面、详情主图请求 `size=full`（最长边 1200），色号按钮保留 `size=thumb`（96）；详情主图 eager 加载。
+- 详情的颜色/标准价/客户规则使用请求内批量 SQL 读取，保留数据库匹配语义、系列歧义拒绝、命名空间和查看价格权限。下单与提交继续使用原权威解析，不复用浏览快照。2/200 个规格夹具的定价相关查询从逐规格增长降为 3 次，库存取证逻辑保持原路径。
+- 验证细节见 `docs/reports/2026-10-23-portal-image-performance.md`。用户已授权本次提交、合并 main 并推送，最终状态以 Git refs 回读为准；未部署，无生产业务写入，线上登录态详情耗时需发布后实测。
+
 ## 2026-10-23 WhatsApp 绑定与消息同步稳定性加固（Accio，已合并推送 main，未部署）
 
 - 分支 `accio/whatsapp-sync-resilience`。Connector：Ark 授权回调暂时失败（超时/不可达）在租期内容忍一次、持续不可用进入 `authorization_wait` 并按 5s~5min 退避自动重连，status/授权不变；明确拒绝/暂停/撤销仍立即停止并取消自动恢复。重连成功清零重试计数，重连耗尽也走自动恢复。显式重新关联带 `fresh_credentials` 清除旧凭据，强制新二维码。

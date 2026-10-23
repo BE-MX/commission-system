@@ -15,11 +15,11 @@ class ResolvedPrice:
     fingerprint: str
 
 
-def resolve(db, access, item, currency):
+def resolve(db, access, item, currency, *, browse=None):
     namespace = get_settings().PORTAL_OKKI_NAMESPACE
     if not namespace or item.source_namespace != namespace or access.okki_namespace != namespace or currency != "USD":
         reject("PRICE_UNAVAILABLE", "Pricing needs to be reviewed.", 503)
-    rule = price_service.get_customer_rule_row(db, access.okki_company_id)
+    rule = browse.rule if browse is not None else price_service.get_customer_rule_row(db, access.okki_company_id)
     if rule is not None and rule.adjust_type not in {"fixed", "percent"}:
         reject("PRICE_UNAVAILABLE", "The customer price rule needs review.", 503)
     rule_snapshot = {"id": str(rule.id), "adjust_type": rule.adjust_type,
@@ -30,7 +30,7 @@ def resolve(db, access, item, currency):
         fields = ("product_display", "length", "price_unit", "color")
         if not isinstance(standard, dict) or any(not isinstance(standard.get(key), str) or not standard[key] for key in fields):
             reject("PRICE_UNAVAILABLE", "The product price is not configured.", 503)
-        result = price_service.resolve_price(db, customer_id=access.okki_company_id,
+        result = browse.resolve(standard) if browse is not None else price_service.resolve_price(db, customer_id=access.okki_company_id,
             product_display=standard["product_display"], length=standard["length"],
             unit=standard["price_unit"], color=standard["color"])
     elif item.product_kind == "accessory":

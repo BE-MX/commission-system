@@ -179,3 +179,16 @@ def test_customer_image_http_has_no_public_path_and_rechecks_grant(images, monke
             assert denied.status_code == 404 and denied.json()['data']['error_code'] == 'IMAGE_UNAVAILABLE'
             assert 'image.png' not in denied.text
     asyncio.run(scenario())
+
+
+def test_large_source_keeps_full_rendition_and_small_thumbnail(images):
+    ctx, item, asset, permission, token = images
+    # Isolated local asset fixture, never production storage.
+    root = service.transfers.get_settings().ASSET_STORAGE_ROOT
+    from pathlib import Path
+    Image.new('RGB', (1600, 1200), 'red').save(Path(root) / asset.storage_path)
+    ticket = {'key': asset.storage_path, 'record': None}
+    full = Image.open(BytesIO(service.render(ticket, size='full')))
+    thumb = Image.open(BytesIO(service.render(ticket, size='thumb')))
+    assert full.size == (1200, 900)
+    assert thumb.size == (96, 72)

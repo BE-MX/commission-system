@@ -11,7 +11,7 @@ const output = process.env.PORTAL_QA_OUTPUT || 'tmp/browser-qa'
 await mkdir(output, { recursive: true })
 const identity = { me: { account_public_id: '11111111-1111-4111-8111-111111111111', company_display_name: 'Atelier Test Salon', contact_display_name: 'Test buyer' }, capabilities: { view_catalog: true, view_price: true, place_order: true }, csrf_token: 'test-csrf' }
 const id = n => `${String(n).padStart(8, '0')}-1111-4111-8111-111111111111`
-const variant = (n, grade, length, color, type, availability = 'available', stock = '100+') => ({ item_id: id(n), category: 'hair', model_name: 'Genius Weft', color_name: color, customer_sku: null, length_display: length, weight_display: '20', sale_unit: 'piece', image_url: null, availability, inventory_observed_at: availability === 'unknown' ? null : '2026-10-19T10:00:00', stock_display: availability === 'available' ? stock : null, min_order_qty: 1, step_qty: 1, currency: 'USD', unit_price: '27.3500', price_status: 'available', grade, grade_label: grade === 'super' ? 'Super Double Drawn' : 'Standard Double Drawn', length, color_key: color.toLowerCase().replace('#', '').replace('/', '-'), color_code: color, color_label: color === '#9ATP9A/613' ? 'Rose Golden' : color, color_type: type, swatch_url: null, unit_weight_grams: '20' })
+const variant = (n, grade, length, color, type, availability = 'available', stock = '100+') => ({ item_id: id(n), category: 'hair', model_name: 'Genius Weft', color_name: color, customer_sku: null, length_display: length, weight_display: '20', sale_unit: 'piece', image_url: null, availability, inventory_observed_at: availability === 'unknown' ? null : '2026-10-19T10:00:00', stock_display: availability === 'available' ? stock : null, min_order_qty: 1, step_qty: 1, currency: 'USD', unit_price: '27.3500', price_status: 'available', grade, grade_label: grade === 'super' ? 'Super Double Drawn' : 'Standard Double Drawn', length, color_key: color.toLowerCase().replace('#', '').replace('/', '-'), color_code: color, color_label: color === '#9ATP9A/613' ? 'Rose Golden' : color, color_type: type, swatch_url: `/api/portal/v1/catalog/swatches/${id(n)}/image?version=1&size=thumb`, unit_weight_grams: '20' })
 const variants = [variant(1, 'standard', '18', '#2', 'solid'), variant(2, 'super', '18', '#2', 'solid', 'available', '42'), variant(3, 'super', '18', '#P2/8', 'piano', 'unavailable'), variant(4, 'super', '18', '#9ATP9A/613', 'balayage'), variant(5, 'super', '20', '#2', 'solid')]
 let polls = 0
 async function run(viewport, name) {
@@ -21,10 +21,14 @@ async function run(viewport, name) {
   await context.route('**/api/portal/v1/**', async route => {
     const url = new URL(route.request().url())
     const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ code: status, message: 'OK', data }) })
+    if (url.pathname.endsWith('/image')) {
+      const dimension = url.searchParams.get('size') === 'full' ? 1200 : 96
+      return route.fulfill({ contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" width="${dimension}" height="${dimension}"><rect width="100%" height="100%" fill="sienna"/></svg>` })
+    }
     if (url.pathname.endsWith('/session')) return send(identity)
     if (url.pathname.endsWith('/sales-contact')) return send({ assigned: false })
     if (url.pathname.endsWith('/ordering-terms')) return send({ payment_terms: [], default_payment_term_code: null, auto_fees: { enabled: false, shipping_tiers: [] } })
-    if (url.pathname.endsWith('/catalog/families')) return send({ items: [{ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', sale_unit: 'piece', unit_weight_grams: '20', min_order_qty: 1, step_qty: 1, image_url: null, variant_count: 5, grades: ['standard', 'super'], lengths: ['18', '20'] }], ungrouped_count: 2, catalog_version: 1 })
+    if (url.pathname.endsWith('/catalog/families')) return send({ items: [{ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', sale_unit: 'piece', unit_weight_grams: '20', min_order_qty: 1, step_qty: 1, image_url: `/api/portal/v1/catalog/swatches/${id(1)}/image?version=1&size=thumb`, variant_count: 5, grades: ['standard', 'super'], lengths: ['18', '20'] }], ungrouped_count: 2, catalog_version: 1 })
     if (url.pathname.endsWith('/catalog/families/genius_weft_20g/availability')) { polls++; return send({ items: [], catalog_version: 1 }) }
     if (url.pathname.endsWith('/catalog/families/genius_weft_20g')) return send({ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', sale_unit: 'piece', unit_weight_grams: '20', min_order_qty: 1, step_qty: 1, grades: ['standard', 'super'], variants, catalog_version: 1, mapping_version: 1 })
     if (url.pathname.endsWith('/catalog')) return send({ items: [], total: 0, page: 1, page_size: 24, facets: { categories: [], colors: [] }, catalog_version: 1, mapping_version: 1 })
@@ -37,11 +41,16 @@ async function run(viewport, name) {
     await page.goto(origin + '/collection')
     await page.getByRole('heading', { name: 'Genius Weft 20g/piece' }).waitFor()
     assert.ok(await page.getByRole('heading', { name: 'Other products' }).isVisible())
+    await page.waitForFunction(() => document.querySelector('.family-grid img')?.naturalWidth === 1200)
     await noOverflow()
     await page.screenshot({ path: `${output}/families-${name}.png`, fullPage: true })
     await page.getByRole('link', { name: /Genius Weft 20g\/piece/ }).click()
     await page.getByRole('heading', { level: 1, name: 'Genius Weft 20g/piece' }).waitFor()
     assert.equal(new URL(page.url()).pathname, '/collection/genius_weft_20g')
+    await page.waitForFunction(() => document.querySelector('.family-image img')?.naturalWidth === 1200)
+    assert.match(await page.locator('.family-image img').getAttribute('src'), /size=full$/)
+    assert.equal(await page.locator('.family-image img').getAttribute('loading'), 'eager')
+    assert.match(await page.locator('.swatch-thumb img').first().getAttribute('src'), /size=thumb$/)
     // First available grade/length/color is preselected.
     assert.equal(await page.getByRole('button', { name: 'Standard Double Drawn' }).getAttribute('aria-pressed'), 'true')
     await page.getByRole('button', { name: 'Super Double Drawn' }).click()

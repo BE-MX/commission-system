@@ -62,7 +62,7 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer); document.removeEv
     <div v-if="error" class="empty-state" role="alert"><h2>We couldn’t load this product.</h2><p>{{ error.message }}</p><button class="button primary" @click="load">Try again</button><small v-if="error.traceId">Reference: {{ error.traceId }}</small></div>
     <div v-else-if="busy" class="family-layout" aria-hidden="true"><div class="family-gallery product-skeleton"><div></div></div><div class="product-skeleton"><span></span><span></span></div></div>
     <div v-else-if="family && variant" class="family-layout">
-      <div class="family-gallery"><div class="family-image"><ProductImage :url="variant.swatch_url || variant.image_url" :alt="`${family.display_name}, ${variant.color_code}`" /></div><p class="family-caption"><strong>{{ variant.color_code }}</strong><span v-if="variant.color_label !== variant.color_code"> · {{ variant.color_label }}</span><span class="muted"> · {{ variant.grade_label }} · {{ variant.length }}"</span></p></div>
+      <div class="family-gallery"><div class="family-image"><ProductImage :url="variant.swatch_url || variant.image_url" size="full" eager :alt="`${family.display_name}, ${variant.color_code}`" /></div><p class="family-caption"><strong>{{ variant.color_code }}</strong><span v-if="variant.color_label !== variant.color_code"> · {{ variant.color_label }}</span><span class="muted"> · {{ variant.grade_label }} · {{ variant.length }}"</span></p></div>
       <div class="family-options">
         <h1>{{ family.display_name }}</h1>
         <p v-if="session.capabilities.view_price" class="detail-price">{{ price(variant.unit_price) }}<small v-if="variant.unit_price != null"> / {{ variant.sale_unit }}</small></p>
