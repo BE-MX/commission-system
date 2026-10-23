@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>绩效目标管理 · 高仿真 UI 原型</title>
+  <link rel="stylesheet" href="prototype.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@6/dist/echarts.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="crumb"><b>开票中心</b> / 绩效目标</div>
+      <div class="title-row">
+        <h1>绩效目标管理</h1>
+        <span class="sub">常态化绩效战报 · 数据截至 2026-10-23</span>
+        <span class="demo-tag">原型演示 · 复购指标与明细为 mock</span>
+      </div>
+      <nav class="main-tabs" id="main-tabs">
+        <button data-view="dashboard" class="active">绩效看板</button>
+        <button data-view="targets">目标设置</button>
+        <button data-view="reports">战报推送</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page">
+    <!-- ==================== 视图 A：绩效看板 ==================== -->
+    <section class="view active" id="view-dashboard">
+      <!-- 控制条 -->
+      <div class="card control-bar">
+        <div class="ctl-group">
+          <label>视角</label>
+          <div class="seg" id="seg-scope">
+            <button data-scope="company" class="active">全员总览</button>
+            <button data-scope="team">按战队</button>
+            <button data-scope="person">按个人</button>
+          </div>
+        </div>
+        <div class="ctl-group" id="ctl-object" hidden>
+          <label id="ctl-object-label">对象</label>
+          <select class="select" id="sel-object"></select>
+        </div>
+        <div class="ctl-group">
+          <label>周期</label>
+          <div class="seg" id="seg-period">
+            <button data-period="year" class="active">年度</button>
+            <button data-period="q3">Q3</button>
+            <button data-period="m9">9月</button>
+          </div>
+        </div>
+        <div class="ctl-group">
+          <label>统计截止</label>
+          <span class="badge gray">2026-10-23</span>
+        </div>
+        <div class="ctl-group" style="margin-left:auto">
+          <span class="badge amber"><span class="dot"></span>全年时间进度 80.1%</span>
+        </div>
+      </div>
+
+      <!-- 四指标汇总卡 -->
+      <div class="metric-cards" id="metric-cards"></div>
+
+      <!-- 时间进度匹配区 -->
+      <div class="pace-grid">
+        <div class="card" style="margin-bottom:0">
+          <div class="card-title"><h2>时间进度匹配</h2><span class="note">子弹图：深色条=实际完成 · 灰带=目标 · 橙色竖线=时间进度</span></div>
+          <div class="bullet-wrap" id="bullet-wrap"></div>
+        </div>
+        <div class="card hint-card" style="margin-bottom:0">
+          <h3>冲刺提示</h3>
+          <div class="hint-sub">按当前日均速率外推至 12-31（剩余约 69 天）</div>
+          <div class="hint-list" id="hint-list"></div>
+        </div>
+      </div>
+
+      <!-- 累积完成趋势 -->
+      <div class="card">
+        <div class="card-title">
+          <h2>累积完成趋势</h2>
+          <span class="note" id="trend-note">实线=实际累积 · 虚线=10月进行中 · 灰阶梯=目标计划 · 灰虚线=时间进度</span>
+          <div class="right metric-switch" id="trend-metric-switch"></div>
+        </div>
+        <div class="chart" id="chart-trend" style="height:360px"></div>
+      </div>
+
+      <!-- 过去各月单月完成 -->
+      <div class="card">
+        <div class="card-title">
+          <h2>过去各月单月完成</h2>
+          <span class="note">单月值（非累积），10 月为截至 10-23 部分值</span>
+          <div class="right metric-switch" id="monthly-metric-switch"></div>
+        </div>
+        <div class="chart" id="chart-monthly" style="height:260px"></div>
+      </div>
+
+      <!-- 团队目标完成情况 -->
+      <div class="card">
+        <div class="card-title">
+          <h2>团队目标完成情况</h2>
+          <span class="note" id="team-note">战队目标 = 成员目标汇总自动得出（完成含未设目标成员完成值）</span>
+          <div class="right metric-switch" id="team-metric-switch"></div>
+        </div>
+        <div class="chart" id="chart-teams" style="height:320px"></div>
+        <div class="team-grid" id="team-grid" style="margin-top:16px"></div>
+      </div>
+
+      <!-- 个人排名表 -->
+      <div class="card">
+        <div class="card-title">
+          <h2>个人排名</h2>
+          <span class="note">默认按 GMV 完成率排序，点击表头可切换排序</span>
+        </div>
+        <div class="table-wrap" id="ranking-wrap"></div>
+      </div>
+
+      <!-- 指标明细 -->
+      <div class="card">
+        <div class="card-title">
+          <h2>指标明细</h2>
+          <span class="note">明细按人锚定统计总额；筛选后合计 = 当前筛选范围合计</span>
+        </div>
+        <div class="detail-tabs" id="detail-tabs"></div>
+        <div class="filter-bar" id="detail-filters"></div>
+        <div class="table-wrap" id="detail-table"></div>
+        <div class="pager" id="detail-pager"></div>
+      </div>
+    </section>
+
+    <!-- ==================== 视图 B：目标设置 ==================== -->
+    <section class="view" id="view-targets">
+      <div class="card batch-bar">
+        <span class="b-name">2026 年度目标</span>
+        <span class="tag green">已生效</span>
+        <span class="ver">v3 · 2026-01-05 由 admin 发布</span>
+        <div style="margin-left:auto;display:flex;gap:10px">
+          <button class="btn" id="btn-history">从历史版本回看</button>
+          <button class="btn" id="btn-import">Excel 导入</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <h2>人员目标编辑</h2>
+          <span class="note">按战队分组；修改即时生效（本页为演示，不持久化）</span>
+          <div class="right">
+            <div class="seg" id="seg-granularity">
+              <button data-gran="year" class="active">年度</button>
+              <button data-gran="quarter">季度</button>
+              <button data-gran="month">月度</button>
+            </div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="btn primary" id="btn-split">一键拆分 年→季</button>
+          <button class="btn" id="btn-season">按季节系数 20/25/25/30%</button>
+          <button class="btn" id="btn-validate">校验：季度之和 = 年度</button>
+          <span class="v-status" id="validate-status"></span>
+          <span style="margin-left:auto" class="note" id="gran-note"></span>
+        </div>
+        <div class="table-wrap" id="target-editor"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <h2>战队目标</h2>
+          <span class="note">战队目标基于队内人员目标汇总制定：成员目标之和 × 加权系数；成员目标变更后可一键重算</span>
+        </div>
+        <div class="table-wrap" id="team-goal-panel"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><h2>变更留痕</h2><span class="note">最近 5 条</span></div>
+        <div class="table-wrap" id="audit-table"></div>
+      </div>
+    </section>
+
+    <!-- ==================== 视图 C：战报推送 ==================== -->
+    <section class="view" id="view-reports">
+      <div class="push-grid">
+        <div class="card" style="margin-bottom:0">
+          <div class="card-title"><h2>推送规则</h2></div>
+          <div class="rule-line">
+            <span class="big">每月 1 / 10 / 20 日 09:00 自动生成并推送</span>
+            <span class="badge blue"><span class="dot"></span>AI 分析 · perf_report_analyst preset</span>
+          </div>
+          <div class="countdown" id="push-countdown"></div>
+          <div class="role-cards">
+            <div class="role-card">
+              <h4><span class="r-ico" style="background:#2563eb">员</span>业务员</h4>
+              <p>仅接收<b>本人</b>报告：四指标完成、与时间进度差、缺口与日均冲刺量、亮点/风险订单。</p>
+            </div>
+            <div class="role-card">
+              <h4><span class="r-ico" style="background:#7c3aed">组</span>组长（队长）</h4>
+              <p>接收<b>本人 + 本战队</b>报告：战队汇总、队内排名、掉队预警、缺口分解到人。</p>
+            </div>
+            <div class="role-card">
+              <h4><span class="r-ico" style="background:#0f766e">管</span>管理层</h4>
+              <p>接收<b>整体</b>报告：公司四指标、战队对比、TOP/末位、缺口预测、需关注名单。</p>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="card-title"><h2>推送时间线</h2><span class="note">2026 年 10 月</span></div>
+          <div class="timeline" id="push-timeline"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <h2>最新一期报告样例</h2>
+          <span class="note">2026-10-20 期 · 钉钉消息卡片样式 · 数字由后端快照注入，AI 只产出文案</span>
+        </div>
+        <div class="dd-cards" id="dd-cards"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><h2>投递台账</h2><span class="note">每期每接收人一行；支持预览与补发</span></div>
+        <div class="table-wrap" id="ledger-table"></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script src="data.js"></script>
+  <script src="prototype.js"></script>
+</body>
+</html>

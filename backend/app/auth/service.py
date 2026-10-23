@@ -438,6 +438,10 @@ def seed_role_permissions(db: Session):
         ("battle_report:read_all", "battle_report", "read_all", "查看全部战报明细（无需管理权限）"),
         ("battle_report:write", "battle_report", "write", "填报本人战报目标"),
         ("battle_report:admin", "battle_report", "admin", "管理战报、查看全部订单和更正目标"),
+        # 绩效目标管理（2026-10-23）：看板读、目标设置写、指标/推送配置管理
+        ("perf_goal:read", "perf_goal", "read", "查看绩效目标看板（范围按角色限定）"),
+        ("perf_goal:write", "perf_goal", "write", "设置与调整绩效目标（留痕）"),
+        ("perf_goal:admin", "perf_goal", "admin", "绩效指标/推送/AI 配置与报告补发"),
         ("festival_order:read",     "festival_order", "read",     "查看采购节数据明细"),
         ("festival_order:read_all", "festival_order", "read_all", "查看全部采购节订单（数据范围）"),
         # 订单经营智能分析：默认仅本人，read_all 放开全公司/团队/个人筛选。

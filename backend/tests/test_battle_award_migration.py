@@ -36,4 +36,8 @@ def test_mysql_ddl_and_single_head_without_production():
     assert 'ADD COLUMN award_kind VARCHAR(24)' in ddl and 'ADD COLUMN award_rules JSON' in ddl
     assert 'DROP' not in ddl
     script=ScriptDirectory(str(Path(__file__).resolve().parents[1]/'alembic'))
-    assert script.get_heads()==['197_battle_awards'] and migration().down_revision=='196_domestic_commission'
+    # 197 之后的新迁移会顶走 head；只要求全库单 head 且 197 仍在当前 head 的祖先链上
+    heads=script.get_heads()
+    assert len(heads)==1 and migration().down_revision=='196_domestic_commission'
+    ancestors={rev.revision for rev in script.walk_revisions('base', heads[0])}
+    assert '197_battle_awards' in ancestors
