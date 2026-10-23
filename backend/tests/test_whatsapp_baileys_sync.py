@@ -223,8 +223,52 @@ def test_automatic_sync_reads_protected_pause_metadata_after_feed_rejection(db, 
     monkeypatch.setattr(service, 'WhatsAppConnectorClient', Client)
     stats = service.auto_sync_accounts(db, provider='baileys')
     assert stats['error'] == 1
-    assert account.status == 'paused' and account.connector_status == 'protected_pause'
+    # A connector safety stop is not a consent decision: Ark keeps consent active.
+    assert account.status == 'protected' and account.connector_status == 'protected_pause'
+    assert account.consent_state == 'active'
     assert account.raw_payload['gap_reason'] == 'disk_capacity' and account.raw_payload['needs_user_action']
+    snapshot = access.authorization_snapshot(db, account.account_uid)
+    assert snapshot['allowed'] is True and account.consent_version == 3
+
+
+def test_owner_resumes_protected_collection_without_changing_consent(db, account, monkeypatch):
+    account.status = 'protected'
+    db.commit()
+    calls = []
+    class Client:
+        def reauthorize_account(self, uid):
+            calls.append(uid)
+            return {'account_uid': uid, 'ark_user_id': account.ark_user_id,
+                'session_generation': account.session_generation, 'consent_version': str(account.consent_version),
+                'status': 'active', 'connector_status': 'reconnecting', 'coverage': {'gap_reason': 'disk_capacity'}}
+    monkeypatch.setattr(lifecycle, 'WhatsAppConnectorClient', Client)
+    result = lifecycle.resume_collection(db, account.account_uid, {'sub': str(account.ark_user_id)})
+    db.commit()
+    assert calls == [account.account_uid]
+    assert result.status == 'active' and result.consent_state == 'active' and result.consent_version == 3
+    account.status = 'active'
+    db.commit()
+    with pytest.raises(ValueError):
+        lifecycle.resume_collection(db, account.account_uid, {'sub': str(account.ark_user_id)})
+
+
+def test_callback_and_feed_apply_use_shared_locks_on_shared_rows(db, account, monkeypatch):
+    modes = []
+    def record(execution):
+        arg = getattr(execution.statement, '_for_update_arg', None)
+        if arg is not None:
+            tables = {getattr(col, 'name', '') for col in execution.statement.get_final_froms()}
+            modes.append((tuple(sorted(tables)), bool(arg.read)))
+    event.listen(db, 'do_orm_execute', record)
+    try:
+        access.authorization_snapshot(db, account.account_uid)
+        stub(monkeypatch, page(account, [msg()]))
+        event_sync.pull_changes(db, account.account_uid, 100)
+    finally:
+        event.remove(db, 'do_orm_execute', record)
+    exclusive = {tables for tables, read in modes if not read}
+    for shared in ('ark_users', 'ark_user_roles', 'ark_role_permissions', 'ark_whatsapp_accounts'):
+        assert not any(shared in tables for tables in exclusive), (shared, modes)
 
 
 @pytest.mark.parametrize('status,detail', [(404, 'wrong_service'), (503, 'authorization_unavailable')])
@@ -265,6 +309,53 @@ def test_bind_unavailable_readback_retains_reservation_without_reposting(db, acc
                            company_account=True, crm_shared=False)
     assert calls == [('post', calls[0][1]), ('get', calls[0][1]), ('get', calls[0][1])]
     assert db.query(WhatsAppBindSession).one().status == 'pending'
+
+
+def test_crm_projection_failure_keeps_message_and_is_counted(db, account, monkeypatch):
+    from app.whatsapp import crm_sync
+    monkeypatch.setattr(crm_sync, 'project_changed_message',
+                        lambda *args: (_ for _ in ()).throw(RuntimeError('injected crm failure')))
+    stub(monkeypatch, page(account, [msg('a'), msg('b')]))
+    event_sync.pull_changes(db, account.account_uid, 100); db.commit()
+    assert db.query(WhatsAppMessage).count() == 2
+    assert db.query(WhatsAppPullCursor).one().cursor_value == 'event_cursor_2'
+    assert account.raw_payload['crm_projection_failed'] == 2
+
+
+def test_storage_error_quarantines_one_event_and_replay_rewinds_cursor(db, account, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+    original = service._upsert_message
+    def flaky(db_, uid, payload):
+        if payload['source_key']['id'] == 'bad':
+            raise IntegrityError('insert', {}, Exception('synthetic constraint'))
+        return original(db_, uid, payload)
+    monkeypatch.setattr(service, '_upsert_message', flaky)
+    stub(monkeypatch, page(account, [msg('a'), msg('bad'), msg('c')]))
+    event_sync.pull_changes(db, account.account_uid, 100); db.commit()
+    assert db.query(WhatsAppMessage).count() == 2
+    assert account.raw_payload['quarantine_from_sequence'] == 2
+    assert account.raw_payload['gap_reason'] == 'invalid_payload'
+    assert event_sync.replay_quarantined(db, account.account_uid, account.ark_user_id) == 2
+    db.commit()
+    assert db.query(WhatsAppPullCursor).one().cursor_value == '1'
+    monkeypatch.setattr(service, '_upsert_message', original)
+    event_sync.pull_changes(db, account.account_uid, 100); db.commit()
+    assert db.query(WhatsAppMessage).count() == 3
+    assert account.raw_payload['quarantine_from_sequence'] is None
+    assert account.raw_payload['gap_reason'] is None
+    with pytest.raises(ValueError):
+        event_sync.replay_quarantined(db, account.account_uid, account.ark_user_id)
+
+
+def test_database_outage_is_not_quarantined(db, account, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+    monkeypatch.setattr(service, '_upsert_message',
+                        lambda *args: (_ for _ in ()).throw(OperationalError('insert', {}, Exception('gone away'))))
+    stub(monkeypatch, page(account, [msg()]))
+    with pytest.raises(OperationalError):
+        event_sync.pull_changes(db, account.account_uid, 100)
+    db.rollback()
+    assert db.query(WhatsAppPullCursor).count() == 0
 
 
 def test_feed_fetch_does_not_hold_row_locks_needed_by_connector_callback(db, account, monkeypatch):
@@ -323,7 +414,7 @@ def test_paused_binding_returns_terminal_status_instead_of_repeated_query_error(
             return metadata
     monkeypatch.setattr(service, 'WhatsAppConnectorClient', Client)
     result = service.refresh_bind_session(db, session.bind_session_uid)
-    assert result.status == 'paused'
+    assert result.status == 'protected'
     assert result.qr_code_url is None
     assert account.last_error == 'authorization_unavailable'
 

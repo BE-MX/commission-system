@@ -52,15 +52,20 @@ export class Manager {
   constructor(store, { authorize, socketFactory = makeWASocket, encodeQR = qrcode.toDataURL,
     authInterval = 10000, leaseTTL = 30000, maxQueueEvents = 64, maxQueueBytes = 16 * 1024 ** 2,
     maxEventBytes = 8 * 1024 ** 2, maxRetries = 5, retryBase = 1000, random = Math.random, agent, dispatcher,
-    diagnostic = defaultDiagnostic } = {}) {
+    resumeBase = 5000, resumeMax = 300000, diagnostic = defaultDiagnostic } = {}) {
     if (!authorize) throw error('authorizer_required', 500)
     if (authInterval > 15000 || authInterval < 20 || leaseTTL <= authInterval * 2) throw error('invalid_lease_interval', 500)
     Object.assign(this, { store, authorize, socketFactory, encodeQR, authInterval, leaseTTL,
-      maxQueueEvents, maxQueueBytes, maxEventBytes, maxRetries, retryBase, random, agent, dispatcher, diagnostic })
+      maxQueueEvents, maxQueueBytes, maxEventBytes, maxRetries, retryBase, random, agent, dispatcher,
+      resumeBase, resumeMax, diagnostic })
+    // Consecutive unavailable checks tolerated while the lease is still valid; renewal stops meanwhile,
+    // so the fence expires (and collection stops) no later than one lease TTL after the last success.
+    this.authGrace = Math.max(0, Math.floor(leaseTTL / authInterval) - 2)
     this.projector = new Projector(store)
     this.entries = new Map()
     this.sessions = new Map()
     this.pending = new Map()
+    this.resumeTimers = new Map()
     this.holder = randomUUID()
     this.closed = false
     for (const account of store.accounts()) for (const session of store.entities(account.account_uid, 'bind')) {
@@ -98,8 +103,15 @@ export class Manager {
         if (existingSession.session_generation !== auth.session_generation || existingSession.consent_version !== auth.consent_version) throw error('bind_session_expired')
         return this.session(bindUid)
       }
+      this.cancelResume(uid)
       this.stop(uid)
       this.store.configure(uid, auth)
+      if (request.fresh_credentials === true) {
+        // Explicit owner rebind: old still-valid credentials would silently reconnect the previous
+        // number without a QR. Clear them under a fenced lease so the new scan decides the number.
+        const lease = this.store.acquire(uid, this.holder, this.leaseTTL)
+        try { this.store.clearAuth(lease) } finally { this.store.release(lease) }
+      }
       const session = { bind_session_uid: bindUid, account_uid: uid, ark_user_id: request.ark_user_id,
         session_generation: auth.session_generation, consent_version: auth.consent_version,
         status: 'pending', created_at: new Date().toISOString() }
@@ -130,7 +142,11 @@ export class Manager {
     const account = this.store.account(uid)
     if (!account) throw error('account_not_found', 404)
     try { await this.authorized(uid, account) }
-    catch (err) { this.protect(this.entries.get(uid), err.code); throw err }
+    catch (err) {
+      // A slow/unreachable Ark only fails this read; it is not evidence of withdrawn consent.
+      if (err.code !== 'authorization_unavailable') this.protect(this.entries.get(uid), err.code)
+      throw err
+    }
     if (['paused', 'revoking', 'revoked'].includes(account.status)) throw error(account.status === 'revoked' ? 'revoked' : 'account_paused', 403)
     return account
   }
@@ -147,7 +163,7 @@ export class Manager {
     session ||= [...this.sessions.values()].filter(value => value.account_uid === uid && value.session_generation === account.session_generation
       && value.consent_version === account.consent_version).sort((a, b) => a.created_at.localeCompare(b.created_at)).at(-1) || null
     const entry = { uid, lease, session, stopped: false, collecting: true, queue: Promise.resolve(),
-      queueCount: 0, queueBytes: 0, retries: 0, listeners: [], socket: null, qr: null, validating: false, epoch: 0 }
+      queueCount: 0, queueBytes: 0, retries: 0, authFailures: 0, listeners: [], socket: null, qr: null, validating: false, epoch: 0 }
     this.entries.set(uid, entry)
     try {
       this.store.patchAccount(lease, { status: freshBind ? 'binding' : account.status,
@@ -159,7 +175,7 @@ export class Manager {
       entry.heartbeat = setInterval(() => { void this.checkAuthorization(entry) }, this.authInterval)
       await this.openSocket(entry)
       return entry
-    } catch (err) { this.protect(entry, err.code || 'socket_start_failed'); throw err }
+    } catch (err) { this.fail(entry, err.code || 'socket_start_failed'); throw err }
   }
   async openSocket(entry) {
     if (entry.opening || entry.stopped) return
@@ -224,8 +240,14 @@ export class Manager {
     entry.validating = true
     try {
       await this.authorized(entry.uid, this.store.account(entry.uid))
+      entry.authFailures = 0
       if (!entry.stopped) this.store.renew(entry.lease)
-    } catch (err) { this.protect(entry, err.code || 'authorization_unavailable') }
+    } catch (err) {
+      const code = err.code || 'authorization_unavailable'
+      // Transient: skip renewal but keep collecting inside the still-valid lease.
+      if (code === 'authorization_unavailable' && ++entry.authFailures <= this.authGrace) return
+      this.fail(entry, code)
+    }
     finally { entry.validating = false }
   }
   async connection(entry, update, epoch = entry.epoch) {
@@ -242,6 +264,8 @@ export class Manager {
     }
     if (update.connection === 'open') {
       this.clearQR(entry)
+      entry.retries = 0 // Budget bounds consecutive failures, not the lifetime of a healthy session.
+      this.cancelResume(entry.uid)
       const me = entry.socket.user || {}
       this.store.patchAccount(entry.lease, { status: 'active', connection_state: 'connected', sync_state: 'collecting',
         needs_user_action: false, last_error_code: null, self_jid: me.id || null,
@@ -261,11 +285,11 @@ export class Manager {
       this.protect(entry, classification, classification === 'reauth_required' ? 'reconnect_required' : 'paused')
       return
     }
-    if (++entry.retries > this.maxRetries) { this.protect(entry, 'reconnect_exhausted', 'reconnect_required'); return }
+    if (++entry.retries > this.maxRetries) { this.suspend(entry, 'reconnect_exhausted'); return }
     this.store.patchAccount(entry.lease, { connection_state: 'reconnecting', sync_state: 'idle', last_error_code: classification })
     const delay = classification === 'restart' ? 100 : Math.min(30000, this.retryBase * 2 ** (entry.retries - 1)) * (0.75 + this.random() * 0.5)
     entry.retryTimer = setTimeout(() => {
-      if (!entry.stopped) void this.openSocket(entry).catch(err => this.protect(entry, err.code || 'socket_start_failed'))
+      if (!entry.stopped) void this.openSocket(entry).catch(err => this.fail(entry, err.code || 'socket_start_failed'))
     }, delay)
   }
   clearQR(entry) { entry.qr = null; clearTimeout(entry.qrTimer) }
@@ -315,8 +339,69 @@ export class Manager {
     } catch (err) { console.warn(`connector_offline_protection_failed:${err.code || 'store_error'}`) }
     finally { if (lease) this.store.release(lease) }
   }
+  // Transient failures (Ark unreachable, network flapping) keep status/consent untouched so Ark does not
+  // read them back as a withdrawal; collection stops and a bounded backoff restart is scheduled.
+  fail(entry, code) {
+    if (['authorization_unavailable', 'reconnect_exhausted'].includes(code)) this.suspend(entry, code)
+    else this.protect(entry, code)
+  }
+  suspend(entry, code) {
+    if (!entry || entry.stopped) return
+    this.diagnostic('collection_wait', entry.uid, { reason: code })
+    try {
+      const account = this.store.fence(entry.lease)
+      this.store.patchAccount(entry.lease, { connection_state: 'authorization_wait', sync_state: 'idle',
+        last_error_code: code, needs_user_action: false, coverage: { ...account.coverage, gap_reason: code } })
+    } catch (err) { console.warn(`connector_wait_failed:${err.code || 'store_error'}`) }
+    this.stop(entry.uid)
+    this.scheduleResume(entry.uid)
+  }
+  waitOffline(uid, code) {
+    let lease
+    try {
+      lease = this.store.acquire(uid, this.holder, this.leaseTTL)
+      const account = this.store.account(uid)
+      this.store.patchAccount(lease, { connection_state: 'authorization_wait', sync_state: 'idle',
+        last_error_code: code, needs_user_action: false, coverage: { ...account.coverage, gap_reason: code } })
+    } catch (err) { console.warn(`connector_offline_wait_failed:${err.code || 'store_error'}`) }
+    finally { if (lease) this.store.release(lease) }
+    this.scheduleResume(uid)
+  }
+  scheduleResume(uid) {
+    if (this.closed) return
+    const previous = this.resumeTimers.get(uid)
+    clearTimeout(previous?.timer)
+    const attempt = (previous?.attempt || 0) + 1
+    const delay = Math.min(this.resumeMax, this.resumeBase * 2 ** (attempt - 1)) * (0.75 + this.random() * 0.5)
+    const state = { attempt }
+    state.timer = setTimeout(() => { void this.resume(uid, state) }, delay)
+    state.timer.unref?.()
+    this.resumeTimers.set(uid, state)
+  }
+  cancelResume(uid) {
+    clearTimeout(this.resumeTimers.get(uid)?.timer)
+    this.resumeTimers.delete(uid)
+  }
+  async resume(uid, state) {
+    if (this.closed || this.resumeTimers.get(uid) !== state) return
+    const account = this.store.account(uid)
+    // Only accounts still owned by an active consent are resumed; explicit pause/revoke/denial win.
+    if (!account || !['active', 'binding'].includes(account.status) || this.entries.has(uid)) { this.cancelResume(uid); return }
+    try {
+      await this.exclusive(uid, () => this.start(uid))
+    } catch (err) {
+      if (this.resumeTimers.get(uid) !== state) return // start()'s own failure path already rescheduled.
+      if (['authorization_unavailable', 'lease_busy', 'account_operation_busy', 'reconnect_exhausted'].includes(err.code)) {
+        this.scheduleResume(uid)
+        return
+      }
+      this.cancelResume(uid)
+      if (!this.entries.has(uid)) this.protectOffline(uid, err.code || 'start_failed')
+    }
+  }
   async pause(uid) {
     return this.exclusive(uid, async () => {
+      this.cancelResume(uid)
       const entry = this.entries.get(uid)
       if (entry) this.protect(entry, 'collection_paused')
       else {
@@ -329,10 +414,15 @@ export class Manager {
   }
   async reauthorize(uid) {
     return this.exclusive(uid, async () => {
+      this.cancelResume(uid)
       this.stop(uid)
       let auth
       try { auth = await this.authorized(uid) }
-      catch (err) { this.protectOffline(uid, err.code || 'authorization_unavailable'); throw err }
+      catch (err) {
+        if (err.code === 'authorization_unavailable') this.waitOffline(uid, err.code)
+        else this.protectOffline(uid, err.code || 'authorization_unavailable')
+        throw err
+      }
       this.store.configure(uid, auth)
       const lease = this.store.acquire(uid, this.holder, this.leaseTTL)
       try {
@@ -358,6 +448,7 @@ export class Manager {
   }
   async revoke(uid) {
     return this.exclusive(uid, async () => {
+      this.cancelResume(uid)
       const current = this.store.account(uid)
       if (!current) throw error('account_not_found', 404)
       if (current.status === 'revoked') return this.metadata(current)
@@ -397,10 +488,15 @@ export class Manager {
           gap_reason: account.coverage?.gap_reason || 'connector_restart_gap' } })
       }
       catch (err) {
-        if (err.code !== 'lease_busy') this.protectOffline(account.account_uid, err.code || 'start_failed')
+        if (err.code === 'authorization_unavailable') this.waitOffline(account.account_uid, err.code)
+        else if (err.code !== 'lease_busy') this.protectOffline(account.account_uid, err.code || 'start_failed')
         console.warn(`connector_restore_failed:${err.code || 'start_failed'}`)
       }
     }
   }
-  shutdown() { this.closed = true; for (const uid of [...this.entries.keys()]) this.stop(uid) }
+  shutdown() {
+    this.closed = true
+    for (const uid of [...this.resumeTimers.keys()]) this.cancelResume(uid)
+    for (const uid of [...this.entries.keys()]) this.stop(uid)
+  }
 }

@@ -1,3 +1,12 @@
+## 2026-10-23 WhatsApp 绑定与消息同步稳定性加固（Accio，已合并推送 main，未部署）
+
+- 分支 `accio/whatsapp-sync-resilience`。Connector：Ark 授权回调暂时失败（超时/不可达）在租期内容忍一次、持续不可用进入 `authorization_wait` 并按 5s~5min 退避自动重连，status/授权不变；明确拒绝/暂停/撤销仍立即停止并取消自动恢复。重连成功清零重试计数，重连耗尽也走自动恢复。显式重新关联带 `fresh_credentials` 清除旧凭据，强制新二维码。
+- Ark：Connector 保护性 `paused` 记为 Ark `protected`，不再被 `owner_enabled` 当作撤销授权而触发 sticky 失效；持有人新增「恢复采集」（`POST /api/whatsapp/accounts/{uid}/resume`）。授权回调与同步批次对角色/权限/账号行改用共享锁（游标行仍排他、先锁游标）。CRM 投影失败独立 savepoint 不丢消息；存储类异常只隔离单条（断线仍整批重试），记 `quarantine_from_sequence`，`POST /accounts/{uid}/replay-quarantined` 回退游标重放。新号关联只复用 10 分钟内的待处理会话；自动同步遇游标并发不记失败，last_error 取最新原因。
+- 采集：过滤 `status@broadcast`/`@newsletter`、表情回应、系统 stub、协议/密钥分发消息，拆开阅后即焚等外壳；`@lid` 会话用 `remoteJidAlt` 补 `contact_phone`。写入放大：每事件写一次账号，changes 每实体保留最新一行（新增索引 `changes_entity`），inbox 保留最近约 1000 条，容量检查改为上界缓存、近上限才全表计数。
+- 前端：账号状态「保护性暂停」、Connector「等待自动恢复」、恢复采集按钮；重新关联提示会清空正文授权与 AI 外发；扫码状态查询失败自动重试 2 次。
+- 验证：Connector 手写测试 57 项中 56 通过，唯一失败为改动前已存在的跨进程租约竞争用例（Windows 时序）；后端 WhatsApp 专项 66 passed，全部涉及 WhatsApp 的后端测试 648 passed / 1 skipped；前端 vite build 通过；finish_check 门禁、check_conventions --strict、diff --check 通过，git_sweep 因本机 Python 缺 tzdata 未运行。无迁移。
+- 发布：Connector、后端、前端须同批发布。已被永久撤销授权的旧账号（consent_state=paused）不会自动修复，需持有人在「授权范围」重新保存一次。未做：LID/手机号会话合并、首次全量历史同步的根治、重启缺口自动清除、媒体下载，均需真实账号取证或另立功能。
+
 ## 2026-10-23 发票编辑关闭保护与同步完成提示（Codex，Git 交付，未部署）
 
 - 分支 `codex/invoice-close-guard`，用户已授权本次提交、合并 main 并推送；最终交付以 Git refs 回读为准。现代/旧版编辑抽屉的右上角关闭及取消、站内离开、浏览器 beforeunload 共用保存状态；保存/同步/回款处理中阻止误关，未保存内容提供继续编辑或放弃关闭。已保存无改动不重复确认。

@@ -8,8 +8,8 @@ export function createWhatsAppBindSession(payload = {}) {
   return whatsappClient.post('/bind-sessions', payload)
 }
 
-export function getWhatsAppBindSession(bindSessionUid) {
-  return whatsappClient.get(`/bind-sessions/${bindSessionUid}`)
+export function getWhatsAppBindSession(bindSessionUid, config = {}) {
+  return whatsappClient.get(`/bind-sessions/${bindSessionUid}`, config)
 }
 
 export function revokeWhatsAppAccount(accountUid) {
@@ -38,6 +38,10 @@ export function listWhatsAppReaderCandidates(accountUid, q = '', config = {}) {
 
 export function confirmWhatsAppDeviceRemoval(accountUid) {
   return whatsappClient.post(`/accounts/${accountUid}/revoke-confirmation`, { phone_device_removed: true })
+}
+
+export function resumeWhatsAppCollection(accountUid) {
+  return whatsappClient.post(`/accounts/${accountUid}/resume`)
 }
 
 export function getWhatsAppAssistantOptions(accountUid, config = {}) {

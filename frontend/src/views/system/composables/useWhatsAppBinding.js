@@ -7,14 +7,14 @@ export function useWhatsAppBinding(loadAccounts) {
   const bindingAccount = ref(null), companyAccount = ref(false), shareCRM = ref(false)
   const consentDialogVisible = ref(false), consentAccount = ref(null), consentBusy = ref(false)
   const consentForm = ref({}), readerCandidates = ref([])
-  let poll, generation = 0, disposed = false
+  let poll, generation = 0, disposed = false, failures = 0
   function clearTimer() { clearTimeout(poll); poll = null }
   function stop() { generation++; clearTimer(); bindDialogVisible.value = false; consentDialogVisible.value = false; bindSession.value = null }
   onUnmounted(() => { disposed = true; stop() })
   watch(bindDialogVisible, visible => { if (!visible) { generation++; clearTimer(); bindSession.value = null } })
 
   function openBind(account = null) {
-    generation++; clearTimer()
+    generation++; clearTimer(); failures = 0
     bindingAccount.value = account
     bindSession.value = null
     companyAccount.value = false
@@ -24,7 +24,7 @@ export function useWhatsAppBinding(loadAccounts) {
   function schedule(id) {
     if (id !== generation || disposed || !bindDialogVisible.value) return
     clearTimer()
-    if (!['active', 'expired', 'error', 'revoking', 'revoke_pending', 'revoked', 'reconnect_required', 'paused', 'blocked'].includes(bindSession.value?.status)) {
+    if (!['active', 'expired', 'error', 'revoking', 'revoke_pending', 'revoked', 'reconnect_required', 'paused', 'protected', 'blocked'].includes(bindSession.value?.status)) {
       poll = setTimeout(() => refresh(id), 3000)
     }
   }
@@ -45,14 +45,17 @@ export function useWhatsAppBinding(loadAccounts) {
     const uid = bindSession.value?.bind_session_uid
     if (!uid || id !== generation || disposed) return
     try {
-      const result = await getWhatsAppBindSession(uid)
+      const result = await getWhatsAppBindSession(uid, { showLoading: false, suppressToast: true })
       if (id !== generation || disposed || !bindDialogVisible.value) return
+      failures = 0
       bindSession.value = result.data
       if (result.data?.status === 'active') {
         clearTimer(); msgSuccessText('关联成功，已同步范围会在对话中显示'); await loadAccounts()
       } else schedule(id)
     } catch {
-      // Do not loop after an uncertain status request; explicit refresh is available.
+      if (id !== generation || disposed || !bindDialogVisible.value) return
+      // A read-only status query is safe to retry; a short network blip must not freeze the QR.
+      if (++failures < 3) { clearTimer(); poll = setTimeout(() => refresh(id), 3000 * failures); return }
       clearTimer()
       msgWarning('连接状态暂时无法查询，请点击刷新状态重试')
     }

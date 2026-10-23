@@ -1,6 +1,8 @@
 """Commit normalized change batches and their checkpoint in one Ark transaction."""
 import logging
 
+from sqlalchemy.exc import DisconnectionError, OperationalError, SQLAlchemyError
+
 from app.core.time import beijing_now
 from app.whatsapp import access, identity
 from app.whatsapp.connector_client import WhatsAppConnectorClient
@@ -25,18 +27,19 @@ def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -
     ).first()
     fetched_cursor = checkpoint[0] if checkpoint else None
     page = WhatsAppConnectorClient().pull_changes(account_uid, fetched_cursor, limit)
-    # Serialize only the apply phase. Locking reads observe the current MySQL
-    # rows even if the unlocked fetch began in an earlier REPEATABLE READ view.
-    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).populate_existing().with_for_update().first()
-    if account is None or account.ark_user_id != expected_owner or (
-        account.session_generation, account.consent_version
-    ) != expected or not access.owner_enabled(db, account, fresh=True):
-        raise PermissionError('批次应用前账号授权已失效')
+    # Serialize only the apply phase: the cursor row (exclusive) orders concurrent pulls of
+    # this account; the account row is share-locked so the connector's authorization callback
+    # is not queued behind the batch, while consent changes (exclusive) still wait for commit.
     cursor = db.query(WhatsAppPullCursor).filter_by(
         account_uid=account_uid, resource='events', scope_uid='global',
     ).populate_existing().with_for_update().first()
     if (cursor.cursor_value if cursor else None) != fetched_cursor:
         raise ValueError('同步游标已变化，请重新同步')
+    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).populate_existing().with_for_update(read=True).first()
+    if account is None or account.ark_user_id != expected_owner or (
+        account.session_generation, account.consent_version
+    ) != expected or not access.owner_enabled(db, account, fresh=True):
+        raise PermissionError('批次应用前账号授权已失效')
     cursor = cursor or _get_cursor(db, account_uid, 'events', 'global')
     metadata = page.get('account') or {}
     if (str(metadata.get('session_generation')), str(metadata.get('consent_version'))) != tuple(map(str, expected)):
@@ -48,6 +51,8 @@ def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -
         raise ValueError('Connector 变更批次结构不合法')
     count = 0
     rejected = 0
+    crm_failed = 0
+    first_rejected = None
     conversations_count = 0
     last_sequence = 0
     for event in items:
@@ -92,7 +97,16 @@ def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -
                     if previous_revision != msg.source_revision:
                         db.flush()  # Production SessionLocal uses autoflush=False.
                         from app.whatsapp.crm_sync import project_changed_message
-                        project_changed_message(db, account, msg)
+                        # CRM projection is derived data: its failure must not drop the source message.
+                        try:
+                            with db.begin_nested():
+                                project_changed_message(db, account, msg)
+                        except (OperationalError, DisconnectionError):
+                            raise
+                        except Exception as exc:
+                            crm_failed += 1
+                            logger.warning('WhatsApp CRM projection failed: %s', type(exc).__name__)
+                            print(f'[WhatsApp] CRM projection failed: {type(exc).__name__}', flush=True)
                     count += 1
                 elif event.get('kind') == 'account':
                     if str(payload.get('session_generation', expected[0])) != str(expected[0]) or str(payload.get('consent_version', expected[1])) != str(expected[1]):
@@ -100,19 +114,25 @@ def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -
                 else:
                     raise ValueError('不支持的 Connector 变更类型')
                 db.flush()
-        except ValueError:
-            # Invalid protocol payloads are isolated without copying content into
-            # logs; source remains in the encrypted Connector store for reconcile.
+        except PermissionError:
+            raise  # Scope/consent violations reject the whole batch.
+        except (OperationalError, DisconnectionError):
+            raise  # Infrastructure failures retry the batch; never advance past them.
+        except (ValueError, KeyError, TypeError, SQLAlchemyError) as exc:
+            # Invalid or unstorable payloads are isolated without copying content into logs;
+            # the source stays in the encrypted Connector store and can be replayed from
+            # quarantine_from_sequence once the cause is fixed.
             rejected += 1
+            first_rejected = first_rejected or last_sequence
             _audit(db, action='event_quarantined', result='invalid_payload', ark_user_id=account.ark_user_id,
-                   account_uid=account_uid, detail=f'sequence={last_sequence}')
-            logger.warning('WhatsApp event quarantined: invalid normalized payload')
-            print('[WhatsApp] event quarantined: invalid normalized payload', flush=True)
+                   account_uid=account_uid, detail=f'sequence={last_sequence},error={type(exc).__name__}')
+            logger.warning('WhatsApp event quarantined: %s at sequence %s', type(exc).__name__, last_sequence)
+            print(f'[WhatsApp] event quarantined: {type(exc).__name__} at sequence {last_sequence}', flush=True)
     # Recheck the employee at commit boundary, never a JWT snapshot. Locking the
     # account above serializes consent changes; an employee update is checked live.
     if not access.owner_enabled(db, account, fresh=True) or (account.session_generation, account.consent_version) != expected:
         raise PermissionError('批次提交前账号授权已失效')
-    _upsert_account(db, metadata, account.ark_user_id)
+    _upsert_account(db, metadata, account.ark_user_id, lock=False)
     next_cursor = page.get('next_cursor')
     if next_cursor is not None and (not isinstance(next_cursor, str) or len(next_cursor) > 500):
         raise ValueError('Connector 游标不合法')
@@ -120,7 +140,43 @@ def pull_changes(db, account_uid: str, limit: int, resource: str = 'messages') -
     cursor.last_pulled_at = beijing_now()
     cursor.last_error = 'invalid_payload' if rejected else None
     account.last_sync_at = beijing_now()
-    account.raw_payload = {**(account.raw_payload or {}), 'sync_state': 'gap' if rejected else ('catching_up' if page.get('has_more') else 'synced_available'), 'gap_reason': 'invalid_payload' if rejected else (account.raw_payload or {}).get('gap_reason')}
-    _audit(db, action='pull_events', result='partial' if rejected else 'success', ark_user_id=account.ark_user_id,
-           account_uid=account_uid, detail=f'messages={count},events={len(items)},quarantined={rejected}')
+    previous = account.raw_payload or {}
+    quarantine = previous.get('quarantine_from_sequence')
+    if first_rejected and not quarantine:
+        # Keep the earliest unreplayed sequence across batches.
+        quarantine = first_rejected
+    account.raw_payload = {**previous,
+        'sync_state': 'gap' if quarantine else ('catching_up' if page.get('has_more') else 'synced_available'),
+        'gap_reason': 'invalid_payload' if quarantine else (None if previous.get('gap_reason') == 'invalid_payload' else previous.get('gap_reason')),
+        'quarantine_from_sequence': quarantine,
+        'crm_projection_failed': int(previous.get('crm_projection_failed') or 0) + crm_failed}
+    _audit(db, action='pull_events', result='partial' if rejected or crm_failed else 'success', ark_user_id=account.ark_user_id,
+           account_uid=account_uid, detail=f'messages={count},events={len(items)},quarantined={rejected},crm_failed={crm_failed}')
     return (conversations_count if resource == 'conversations' else count), cursor.cursor_value
+
+
+def replay_quarantined(db, account_uid: str, actor_user_id: int) -> int:
+    """Rewind the event cursor to just before the earliest quarantined event.
+
+    Upserts are revision-idempotent, so replaying already-applied events is safe; the next
+    pulls re-read the retained Connector feed and re-attempt the quarantined items.
+    """
+    from app.whatsapp.service import _audit
+    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).populate_existing().with_for_update().first()
+    if account is None:
+        raise LookupError('WhatsApp 账号不存在')
+    sequence = (account.raw_payload or {}).get('quarantine_from_sequence')
+    if not isinstance(sequence, int) or sequence < 1:
+        raise ValueError('该账号没有待重放的隔离事件')
+    cursor = db.query(WhatsAppPullCursor).filter_by(
+        account_uid=account_uid, resource='events', scope_uid='global',
+    ).populate_existing().with_for_update().first()
+    if cursor is None:
+        raise ValueError('该账号尚未开始同步')
+    cursor.cursor_value = str(sequence - 1)
+    cursor.last_error = None
+    account.raw_payload = {**(account.raw_payload or {}), 'quarantine_from_sequence': None,
+                           'sync_state': 'catching_up', 'gap_reason': None}
+    _audit(db, action='replay_quarantined', result='requested', ark_user_id=actor_user_id,
+           account_uid=account_uid, detail=f'from_sequence={sequence}')
+    return sequence

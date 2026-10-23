@@ -98,7 +98,8 @@
               <GlassButton v-permission="'whatsapp:write'" variant="link" left-icon="Refresh" :disabled="!row.can_read_body || row.consent_state !== 'active' || syncBusy" @click="handlePull(row, 'messages')">同步消息</GlassButton>
               <GlassButton variant="link" left-icon="View" :disabled="!row.can_read_body" @click="selectAccount(row)">查看对话</GlassButton>
               <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row)" variant="link" @click="openBind(row)">重新关联</GlassButton>
-              <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row)" variant="link" @click="openConsent(row)">授权范围</GlassButton>
+                <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row)" variant="link" @click="openConsent(row)">授权范围</GlassButton>
+                <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row) && row.status === 'protected' && row.consent_state === 'active'" variant="link" left-icon="VideoPlay" :disabled="resumeBusy" @click="handleResume(row)">恢复采集</GlassButton>
               <GlassButton v-permission="'whatsapp:write'" variant="link" link-tone="danger" left-icon="Close" :disabled="['revoking', 'revoked', 'revoke_pending'].includes(row.status)" @click="handleRevoke(row)">解绑</GlassButton>
               <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row) && row.status === 'revoke_pending'" variant="link" @click="confirmPhoneRemoval(row)">确认手机已移除</GlassButton>
             </template>
@@ -179,7 +180,7 @@
 
     <el-dialog v-model="bindDialogVisible" :title="bindingAccount ? '重新关联公司业务号' : '关联公司业务号'" width="640px" :close-on-click-modal="false">
       <div v-if="!bindSession" class="consent-form">
-        <p v-if="bindingAccount">继续使用原业务账号，保留历史消息与客户绑定。</p>
+        <p v-if="bindingAccount">继续使用原业务账号，保留历史消息与客户绑定。需用手机重新扫码；重新关联后，正文可见员工与 AI 分析外发授权会清空，请在“授权范围”中重新设置。</p>
         <el-checkbox v-model="companyAccount">我确认这是公司专用业务号，允许同步全部会话（包含群聊）</el-checkbox>
         <el-checkbox v-model="shareCRM">允许将明确绑定的业务会话共享到客户工作台</el-checkbox>
         <p>管理员默认查看连接状态。聊天正文和 AI 分析外发需在授权范围中另外设置。</p>
@@ -227,6 +228,7 @@ import {
   pullWhatsAppResource,
   revokeWhatsAppAccount,
   confirmWhatsAppDeviceRemoval,
+  resumeWhatsAppCollection,
 } from '@/api/whatsapp'
 import { useAsyncResource } from '@/composables/useAsyncResource'
 import { useAuthStore } from '@/stores/auth'
@@ -369,6 +371,7 @@ function statusLabel(status) {
     revoked: '已解绑',
     error: '异常',
     reconnecting: '重连中', reconnect_required: '需重新关联', paused: '已暂停', blocked: '已阻断',
+    protected: '保护性暂停',
     revoking: '解绑中', revoke_pending: '远端注销未确认', expired: '关联已过期',
   }[status] || status || '-'
 }
@@ -380,6 +383,7 @@ function statusType(status) {
     active: 'success',
     revoked: 'info',
     error: 'danger',
+    protected: 'warning',
   }[status] || 'info'
 }
 
@@ -391,6 +395,7 @@ function connectorStatusLabel(status) {
     restoring: '恢复中',
     online: '已连接', connecting: '连接中', reconnecting: '自动重连中',
     reauth_required: '需重新关联', protected_pause: '保护性暂停', blocked: '已阻断', paused: '已暂停',
+    authorization_wait: '等待自动恢复',
     remote_unconfirmed: '请核对手机关联设备', revoked_confirmed: '远端注销已确认',
     owner_confirmed: '持有人已核对手机',
     sync_error: '同步失败',
@@ -407,6 +412,7 @@ function connectorStatusType(status) {
     initializing: 'warning',
     qr_ready: 'warning',
     restoring: 'warning',
+    authorization_wait: 'warning',
     sync_error: 'danger',
     qr_required: 'danger',
     error: 'danger',
@@ -432,6 +438,18 @@ function conversationTitle(row) {
 }
 
 function isOwner(row) { return Number(row.ark_user_id) === Number(auth.user?.id) }
+
+const resumeBusy = ref(false)
+async function handleResume(row) {
+  if (resumeBusy.value) return
+  resumeBusy.value = true
+  try {
+    const result = await resumeWhatsAppCollection(row.account_uid)
+    if (result.data?.status === 'reconnect_required') msgWarning('登录凭据已失效，请点击“重新关联”扫码')
+    else msgSuccessText('已恢复采集，暂停期间的缺口会在同步状态中保留')
+    await loadAccounts()
+  } finally { resumeBusy.value = false }
+}
 
 async function confirmPhoneRemoval(row) {
   try {

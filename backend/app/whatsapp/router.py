@@ -10,7 +10,7 @@ from app.auth.dependencies import require_any_permission, require_permission
 from app.core.response import ok as _ok
 from app.auth.models import ArkUser, ArkUserRole, ArkRole, ArkRolePermission, ArkPermission
 from app.core.database import get_db
-from app.whatsapp import service, access, lifecycle
+from app.whatsapp import service, access, lifecycle, event_sync
 from app.core.config import get_settings
 from app.core.time import beijing_now
 from app.whatsapp.connector_client import ConnectorError, ConnectorNotConfigured
@@ -338,6 +338,46 @@ def update_consent(account_uid: str, body: ConsentUpdate, db: Session = Depends(
     except Exception as exc:
         db.rollback()
         _handle_connector_error(exc)
+
+
+@router.post('/accounts/{account_uid}/resume', summary='持有人恢复保护性暂停的采集')
+def resume_collection(account_uid: str, db: Session = Depends(get_db),
+                      current_user=Depends(require_permission('whatsapp:write'))):
+    try:
+        account = lifecycle.resume_collection(db, account_uid, current_user)
+        db.commit()
+        return _ok(_account_data(account), '已恢复采集')
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc))
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        db.rollback()
+        _handle_connector_error(exc)
+
+
+@router.post('/accounts/{account_uid}/replay-quarantined', summary='持有人重放被隔离的同步事件')
+def replay_quarantined(account_uid: str, db: Session = Depends(get_db),
+                       current_user=Depends(require_permission('whatsapp:write'))):
+    try:
+        lifecycle.owned_account(db, account_uid, current_user)
+        sequence = event_sync.replay_quarantined(db, account_uid, int(current_user['sub']))
+        db.commit()
+        return _ok({'account_uid': account_uid, 'from_sequence': sequence}, '已安排重放，下次同步时生效')
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc))
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 def _connector_identity(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):

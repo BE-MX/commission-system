@@ -11,14 +11,16 @@ def live_actor(db: Session, user_id: int, *permissions: str, fresh: bool = False
     query = db.query(ArkUser).filter(
         ArkUser.id == int(user_id), ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None),
     ).populate_existing()
-    user = (query.with_for_update() if fresh else query).first()
+    # Shared locks: current committed rows, blocked only by concurrent writers. Exclusive locks on
+    # role/permission rows shared by every employee serialized unrelated sync batches and callbacks.
+    user = (query.with_for_update(read=True) if fresh else query).first()
     if user is None:
         raise PermissionError("员工已停用或不存在")
     if fresh:
         # MySQL locking reads observe current rows instead of an earlier
         # REPEATABLE READ snapshot. Used only at a commit/execution boundary.
-        roles = [row[0] for row in db.query(ArkRole.name).join(ArkUserRole, ArkUserRole.role_id == ArkRole.id).filter(ArkUserRole.user_id == user.id).with_for_update().all()]
-        codes = [row[0] for row in db.query(ArkPermission.code).join(ArkRolePermission, ArkRolePermission.permission_id == ArkPermission.id).join(ArkUserRole, ArkUserRole.role_id == ArkRolePermission.role_id).filter(ArkUserRole.user_id == user.id).with_for_update().all()]
+        roles = [row[0] for row in db.query(ArkRole.name).join(ArkUserRole, ArkUserRole.role_id == ArkRole.id).filter(ArkUserRole.user_id == user.id).with_for_update(read=True).all()]
+        codes = [row[0] for row in db.query(ArkPermission.code).join(ArkRolePermission, ArkRolePermission.permission_id == ArkPermission.id).join(ArkUserRole, ArkUserRole.role_id == ArkRolePermission.role_id).filter(ArkUserRole.user_id == user.id).with_for_update(read=True).all()]
     else:
         roles, codes = get_live_user_authorization(db, user.id)
     if permissions and 'super_admin' not in roles and not set(permissions).intersection(codes):
@@ -45,7 +47,7 @@ def require_body(db: Session, account: WhatsAppAccount, user_id: int, *, crm: bo
     owner_query = db.query(ArkUser.id).filter(
         ArkUser.id == account.ark_user_id, ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None),
     )
-    owner = (owner_query.with_for_update() if fresh else owner_query).first()
+    owner = (owner_query.with_for_update(read=True) if fresh else owner_query).first()
     if owner is None or account.status in {'revoked', 'revoking', 'revoke_pending', 'paused', 'blocked'}:
         raise PermissionError("账号正文访问已停止")
     # Retained legacy history remains owner-readable; collection still requires
@@ -68,12 +70,17 @@ def require_body(db: Session, account: WhatsAppAccount, user_id: int, *, crm: bo
 
 
 def authorization_snapshot(db: Session, account_uid: str) -> dict:
-    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).populate_existing().with_for_update().first()
+    # Shared lock: concurrent sync batches also hold a shared lock on this row, so the
+    # connector's 5 s callback no longer queues behind a whole batch apply.
+    account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).populate_existing().with_for_update(read=True).first()
     if account is None:
         return {'allowed': False}
     allowed = owner_enabled(db, account, fresh=True)
     # Worker polling makes deactivation sticky: reactivation is an explicit
     # owner action. A read during an ordinary DB outage never changes consent.
+    if not allowed and account.consent_state == 'active':
+        account = db.query(WhatsAppAccount).filter_by(account_uid=account_uid).populate_existing().with_for_update().first()
+        allowed = owner_enabled(db, account, fresh=True)
     if not allowed and account.consent_state == 'active':
         account.consent_state = 'paused'
         account.consent_version += 1

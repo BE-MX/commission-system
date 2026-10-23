@@ -16,10 +16,10 @@ test('authorization is validated before initial socket; denied/unknown fail clos
   assert.equal(store.account('account_a').ark_user_id, 7)
 })
 
-test('periodic owner authorization closes socket and cancels events within configured interval', async t => {
+test('periodic owner denial closes socket and cancels events within configured interval', async t => {
   const { manager, store, sockets, setAuthorization } = fakeManager(t, { authInterval: 30, leaseTTL: 100 })
   const entry = await manager.start('account_a')
-  setAuthorization(error('authorization_unavailable', 503))
+  setAuthorization({ ...authorization, allowed: false })
   await sleep(70)
   assert.equal(entry.stopped, true)
   assert.equal(sockets[0].closed, true)
@@ -27,7 +27,64 @@ test('periodic owner authorization closes socket and cancels events within confi
   assert.equal(store.account('account_a').status, 'paused')
   sockets[0].ev.emit('messages.upsert', { messages: [message('late')] })
   assert.equal(store.entities('account_a', 'message').length, 0)
-  assert.equal(store.account('account_a').coverage.gap_reason, 'authorization_unavailable')
+  assert.equal(store.account('account_a').coverage.gap_reason, 'authorization_denied')
+  assert.equal(manager.resumeTimers.size, 0)
+})
+
+test('one unavailable check inside the lease grace keeps collecting without renewing', async t => {
+  const { manager, store, sockets, setAuthorization } = fakeManager(t, { authInterval: 30, leaseTTL: 100 })
+  const entry = await manager.start('account_a')
+  setAuthorization(error('authorization_unavailable', 503))
+  await sleep(40)
+  assert.equal(entry.stopped, false)
+  assert.equal(entry.authFailures, 1)
+  setAuthorization({ ...authorization })
+  await sleep(35)
+  assert.equal(entry.stopped, false)
+  assert.equal(entry.authFailures, 0)
+  assert.equal(sockets.length, 1)
+  assert.notEqual(store.account('account_a').status, 'paused')
+})
+
+test('sustained Ark outage waits without withdrawing consent and resumes automatically', async t => {
+  const { manager, store, sockets, setAuthorization } = fakeManager(t, { authInterval: 30, leaseTTL: 100,
+    resumeBase: 40, random: () => 0.5 })
+  const entry = await manager.start('account_a')
+  sockets[0].ev.emit('connection.update', { connection: 'open' })
+  await tick()
+  setAuthorization(error('authorization_unavailable', 503))
+  await sleep(90)
+  assert.equal(entry.stopped, true)
+  assert.equal(sockets[0].closed, true)
+  const waiting = store.account('account_a')
+  assert.equal(waiting.status, 'active')
+  assert.equal(waiting.connection_state, 'authorization_wait')
+  assert.equal(waiting.needs_user_action, false)
+  assert.equal(waiting.coverage.gap_reason, 'authorization_unavailable')
+  sockets[0].ev.emit('messages.upsert', { messages: [message('during-outage')] })
+  assert.equal(store.entities('account_a', 'message').length, 0)
+  setAuthorization({ ...authorization })
+  await sleep(120)
+  assert.equal(sockets.length, 2)
+  assert.equal(manager.entries.get('account_a').stopped, false)
+  sockets[1].ev.emit('connection.update', { connection: 'open' })
+  await tick()
+  assert.equal(manager.resumeTimers.size, 0)
+  assert.equal(store.account('account_a').connection_state, 'connected')
+})
+
+test('explicit pause cancels a scheduled automatic resume', async t => {
+  const { manager, store, sockets, setAuthorization } = fakeManager(t, { authInterval: 30, leaseTTL: 100, resumeBase: 40 })
+  await manager.start('account_a')
+  setAuthorization(error('authorization_unavailable', 503))
+  await sleep(90)
+  assert.equal(manager.resumeTimers.size, 1)
+  await manager.pause('account_a')
+  assert.equal(manager.resumeTimers.size, 0)
+  setAuthorization({ ...authorization })
+  await sleep(120)
+  assert.equal(sockets.length, 1)
+  assert.equal(store.account('account_a').status, 'paused')
 })
 
 test('bounded memory queue and disk failure cause visible protected pause, no bodies logged', async t => {
@@ -81,8 +138,27 @@ test('disconnect classification, transient restart and timer cancellation are bo
   await tick()
   assert.equal(entry.stopped, true)
   assert.equal(store.account('account_a').last_error_code, 'reconnect_exhausted')
+  assert.equal(store.account('account_a').connection_state, 'authorization_wait')
+  assert.equal(store.account('account_a').needs_user_action, false)
+  assert.equal(manager.resumeTimers.size, 1)
   await sleep(50)
   assert.equal(sockets.length, 2)
+})
+
+test('a successful open resets the consecutive reconnect budget', async t => {
+  const { manager, store, sockets } = fakeManager(t, { retryBase: 10, maxRetries: 1, random: () => 0 })
+  const entry = await manager.start('account_a')
+  for (let round = 0; round < 3; round++) {
+    const socket = sockets.at(-1)
+    socket.ev.emit('connection.update', { connection: 'open' })
+    await tick()
+    assert.equal(entry.retries, 0)
+    socket.ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: { output: { statusCode: 408 } } } })
+    await sleep(40)
+  }
+  assert.equal(entry.stopped, false)
+  assert.equal(sockets.length, 4)
+  assert.notEqual(store.account('account_a').last_error_code, 'reconnect_exhausted')
 })
 
 test('loggedOut clears unusable auth and requires rebind; replaced remains protected', async t => {
@@ -94,6 +170,20 @@ test('loggedOut clears unusable auth and requires rebind; replaced remains prote
   assert.equal(store.account('account_a').needs_user_action, true)
   assert.equal(store.db.prepare('SELECT COUNT(*) AS count FROM auth').get().count, 0)
   assert.equal(entry.stopped, true)
+})
+
+test('explicit rebind with fresh_credentials discards old credentials so a new QR decides the number', async t => {
+  const { manager, store, sockets } = fakeManager(t)
+  const request = { account_uid: 'account_a', bind_session_uid: 'bind_first', ark_user_id: 7, provider: 'baileys', consent_version: '1' }
+  await manager.bind(request)
+  sockets[0].ev.emit('creds.update', { registered: true, me: { id: '15550001111@s.whatsapp.net' } })
+  await tick()
+  const countAuth = () => store.db.prepare("SELECT COUNT(*) AS count FROM auth WHERE uid='account_a'").get().count
+  assert.ok(countAuth() > 0)
+  await manager.bind({ ...request, bind_session_uid: 'bind_second', fresh_credentials: true })
+  assert.equal(sockets.length, 2)
+  assert.equal(sockets[1].config.auth.creds.registered, false)
+  assert.equal(sockets[1].config.auth.creds.me, undefined)
 })
 
 test('bind is stable, QR is memory-only and restored credentials do not force QR', async t => {
@@ -238,17 +328,34 @@ test('failed republishing leaves consent-changing account protected and cache in
   assert.equal(sockets.length, 1)
 })
 
-test('pre-socket restore authorization failure replaces stale connected metadata with a safe paused gap', async t => {
-  const { manager, store, sockets, setAuthorization } = fakeManager(t)
+test('pre-socket restore with Ark unavailable records a wait gap and resumes once Ark answers', async t => {
+  const { manager, store, sockets, setAuthorization } = fakeManager(t, { resumeBase: 30, random: () => 0.5 })
   const lease = store.acquire('account_a')
   store.patchAccount(lease, { status: 'active', connection_state: 'connected', sync_state: 'collecting' })
   store.release(lease)
   setAuthorization(error('authorization_unavailable', 503))
   await manager.restore()
   assert.equal(sockets.length, 0)
+  assert.equal(store.account('account_a').status, 'active')
+  assert.equal(store.account('account_a').connection_state, 'authorization_wait')
+  assert.equal(store.account('account_a').coverage.gap_reason, 'authorization_unavailable')
+  setAuthorization({ ...authorization })
+  await sleep(80)
+  assert.equal(sockets.length, 1)
+})
+
+test('pre-socket restore denial still replaces stale connected metadata with a safe paused gap', async t => {
+  const { manager, store, sockets, setAuthorization } = fakeManager(t)
+  const lease = store.acquire('account_a')
+  store.patchAccount(lease, { status: 'active', connection_state: 'connected', sync_state: 'collecting' })
+  store.release(lease)
+  setAuthorization({ ...authorization, allowed: false })
+  await manager.restore()
+  assert.equal(sockets.length, 0)
   assert.equal(store.account('account_a').status, 'paused')
   assert.equal(store.account('account_a').connection_state, 'protected_pause')
-  assert.equal(store.account('account_a').coverage.gap_reason, 'authorization_unavailable')
+  assert.equal(store.account('account_a').coverage.gap_reason, 'authorization_denied')
+  assert.equal(manager.resumeTimers.size, 0)
 })
 
 test('a known device identity only proves logout request_sent, never remote device removal', async t => {
