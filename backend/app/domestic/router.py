@@ -57,6 +57,7 @@ from app.domestic.schemas import (
     DraftSubmitRequest,
     FundRequestResubmit,
     ItemShipRequest,
+    ItemTerminateRequest,
     OrderCreate,
     OrderItemAppend,
     OrderItemUpdate,
@@ -1017,6 +1018,20 @@ def review_order(
         data,
         message="审核通过，订单已生效并扣款" if payload.decision == "approve" else "订单已驳回",
     )
+
+
+@router.post("/items/{item_id}/terminate", summary="终止单项产品明细")
+def terminate_item(
+    item_id: int,
+    payload: ItemTerminateRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        order_service.terminate_item(db, item_id, payload.reason, _uid(current_user))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="明细已终止")
 
 
 @router.post("/orders/{order_id}/status", summary="终止订单")

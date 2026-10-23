@@ -58,6 +58,8 @@ def assert_item_unshipped(db, item):
 
 
 def ready_units(db, item, lock=False):
+    if item.status == C.ITEM_TERMINATED:
+        return [], 0, 0
     if item.status == C.ITEM_SHIPPED:
         return [], item.order_qty, item.order_qty
     last = db.query(DomesticItemProgress).filter_by(item_id=item.id).order_by(
@@ -80,6 +82,7 @@ def candidate_rows(db, customer_id, user_id, can_read_all=False):
         DomesticOrder, DomesticOrder.id == DomesticOrderItem.order_id,
     ).filter(
         DomesticOrder.customer_id == customer_id, DomesticOrder.order_kind == "business",
+        DomesticOrderItem.status != C.ITEM_TERMINATED,
         DomesticOrder.deleted_flag == 0,
         DomesticOrder.status.in_((C.ORDER_PRODUCING, C.ORDER_DONE)),
     )
@@ -315,6 +318,7 @@ def customer_summary(db, customer_id, user_id=None):
     ) for r in receipts), Decimal(0))
     rows_query = db.query(DomesticOrderItem).join(DomesticOrder).filter(
         DomesticOrder.customer_id == customer_id, DomesticOrder.deleted_flag == 0,
+        DomesticOrderItem.status != C.ITEM_TERMINATED,
         DomesticOrder.order_kind == "business", DomesticOrder.status.in_((C.ORDER_PRODUCING, C.ORDER_DONE, C.ORDER_SHIPPED)),
     )
     if user_id is not None:

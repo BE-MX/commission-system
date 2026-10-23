@@ -291,17 +291,19 @@ export function exportReceiptRepairUnmatched(data) {
 
 // ── 导出 ─────────────────────────────────────────────
 
-export function downloadInvoiceExcel(id) {
+export function downloadInvoiceExcel(id, config = {}) {
   return request.get(`/invoices/${id}/export/excel`, {
     responseType: 'blob',
     loadingText: '正在导出 Excel...',
+    ...config,
   })
 }
 
-export function downloadInvoicePdf(id) {
+export function downloadInvoicePdf(id, config = {}) {
   return request.get(`/invoices/${id}/export/pdf`, {
     responseType: 'blob',
     loadingText: '正在导出 PDF...',
+    ...config,
   })
 }
 

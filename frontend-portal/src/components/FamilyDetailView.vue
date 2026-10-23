@@ -1,7 +1,7 @@
 <script setup>
 import ProductImage from './ProductImage.vue'
 import SelectionPanel from './SelectionPanel.vue'
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { unitPrice as price, beijingTime } from '../presentation.mjs'
 import { minimumQuantity } from '../state/checkout.mjs'
 import { colorGroups, formatGrams, gradeOptions, lengthOptions, mergeAvailability, resolveSelection, stepQuantity, stockLabel } from '../state/family.mjs'
@@ -11,6 +11,20 @@ const props = defineProps({ api: { type: Object, required: true }, session: { ty
 const emit = defineEmits(['collection', 'checkout'])
 const family = shallowRef(null), variants = shallowRef([]), busy = ref(true), error = ref(null)
 const wanted = ref({}), quantity = ref(1), addError = ref(null), added = ref('')
+const purchaseDock = ref(null)
+watch(purchaseDock, (element, previous, onCleanup) => {
+  if (!element) return
+  const shell = element.closest('.portal-shell')
+  const previousHeight = shell?.style.getPropertyValue('--purchase-dock-height')
+  const measure = () => shell?.style.setProperty('--purchase-dock-height', `${Math.ceil(element.getBoundingClientRect().height)}px`)
+  const observer = new ResizeObserver(measure)
+  observer.observe(element); measure()
+  onCleanup(() => {
+    observer.disconnect()
+    if (previousHeight) shell?.style.setProperty('--purchase-dock-height', previousHeight)
+    else shell?.style.removeProperty('--purchase-dock-height')
+  })
+}, { flush: 'post' })
 let controller, pollController, timer, disposed = false
 const selection = computed(() => resolveSelection(variants.value, wanted.value))
 const variant = computed(() => selection.value.variant)
@@ -62,7 +76,7 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer); document.removeEv
     <div v-if="error" class="empty-state" role="alert"><h2>We couldn’t load this product.</h2><p>{{ error.message }}</p><button class="button primary" @click="load">Try again</button><small v-if="error.traceId">Reference: {{ error.traceId }}</small></div>
     <div v-else-if="busy" class="family-layout" aria-hidden="true"><div class="family-gallery product-skeleton"><div></div></div><div class="product-skeleton"><span></span><span></span></div></div>
     <div v-else-if="family && variant" class="family-layout">
-      <div class="family-gallery"><div class="family-image"><ProductImage :url="variant.swatch_url || variant.image_url" :alt="`${family.display_name}, ${variant.color_code}`" /></div><p class="family-caption"><strong>{{ variant.color_code }}</strong><span v-if="variant.color_label !== variant.color_code"> · {{ variant.color_label }}</span><span class="muted"> · {{ variant.grade_label }} · {{ variant.length }}"</span></p></div>
+      <div class="family-gallery"><div class="family-image"><ProductImage :url="variant.swatch_url || variant.image_url" size="full" eager :alt="`${family.display_name}, ${variant.color_code}`" /></div><p class="family-caption"><strong>{{ variant.color_code }}</strong><span v-if="variant.color_label !== variant.color_code"> · {{ variant.color_label }}</span><span class="muted"> · {{ variant.grade_label }} · {{ variant.length }}"</span></p></div>
       <div class="family-options">
         <h1>{{ family.display_name }}</h1>
         <p v-if="session.capabilities.view_price" class="detail-price">{{ price(variant.unit_price) }}<small v-if="variant.unit_price != null"> / {{ variant.sale_unit }}</small></p>
@@ -73,6 +87,13 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer); document.removeEv
             <button v-for="color in group.colors" :key="color.color_key" type="button" :class="['swatch-chip', { unavailable: color.availability !== 'available' }]" :aria-pressed="color.color_key === selection.colorKey" :aria-label="`${color.color_code}, ${stockLabel(color)}`" :title="color.color_label" @click="choose({ colorKey: color.color_key })"><span class="swatch-thumb"><ProductImage :url="color.swatch_url" alt="" /></span><span>{{ color.color_code }}</span></button>
           </div></div>
         </fieldset>
+
+      </div>
+      <SelectionPanel v-if="session.capabilities.place_order" class="family-selection" :checkout="checkout" :state="state" @checkout="emit('checkout')" />
+    </div>
+    <div v-else class="empty-state"><h2>This product is not available right now.</h2><button class="button secondary" @click="emit('collection')">Back to collection</button></div>
+    <aside v-if="family && variant && !busy && !error" ref="purchaseDock" class="family-purchase-dock" aria-label="Product purchase">
+      <div class="family-purchase-dock-inner">
         <p :class="['stock-state', variant.availability]" role="status"><span aria-hidden="true">●</span> {{ stockLabel(variant) }}<span v-if="variant.inventory_observed_at" class="muted"> · checked {{ beijingTime(variant.inventory_observed_at) }}</span></p>
         <div v-if="canOrder" class="family-purchase">
           <div class="purchase-row"><div class="stepper"><button type="button" class="icon-button" aria-label="Decrease quantity" :disabled="Number(quantity) <= minimumQuantity(variant)" @click="step(-1)">−</button><label><span class="sr-only">Quantity</span><input v-model="quantity" type="number" inputmode="numeric" :min="minimumQuantity(variant)" :step="variant.step_qty" max="10000" @input="addError = null" /></label><button type="button" class="icon-button" aria-label="Increase quantity" @click="step(1)">+</button></div>
@@ -82,10 +103,8 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer); document.removeEv
           <p v-if="added" class="added-note small" role="status"><span aria-hidden="true">✓</span> {{ added }}</p>
         </div>
         <p v-else-if="!session.capabilities.place_order" class="small muted">Your access is for browsing. Contact your representative to request ordering access.</p>
-        <p class="small muted">Availability is not a stock reservation. Final quantities and shipping are confirmed by your representative.</p>
+        <p class="small muted purchase-disclaimer">Availability is not a stock reservation. Final quantities and shipping are confirmed by your representative.</p>
       </div>
-      <SelectionPanel v-if="session.capabilities.place_order" class="family-selection" :checkout="checkout" :state="state" @checkout="emit('checkout')" />
-    </div>
-    <div v-else class="empty-state"><h2>This product is not available right now.</h2><button class="button secondary" @click="emit('collection')">Back to collection</button></div>
+    </aside>
   </section>
 </template>

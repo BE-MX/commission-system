@@ -35,6 +35,14 @@ test('cancellation releases quantity and active slot, while pause retains both',
   assert.equal(remainingShipmentQuantity({ id: 7, quantity: 10 }, [row]), 10)
 })
 
+test('whole-order sources deduct shipped quantities while same-SKU append stays independent', () => {
+  const old = [{ state: 'shipped', quote: { items: [{ invoice_item_id: 10, quantity: 3 }] } }]
+  assert.equal(remainingShipmentQuantity({ id: 20, quantity: 3, presale_source_item_ids: [10] }, old), 0)
+  assert.equal(remainingShipmentQuantity({ id: 21, quantity: 5, presale_source_item_ids: [10] }, old), 2)
+  assert.equal(remainingShipmentQuantity({ id: 22, quantity: 3, sku_id: 99 }, old), 3)
+  assert.equal(remainingShipmentQuantity({ id: 23, quantity: 5, presale_source_item_ids: [10, 10] }, old), 2)
+})
+
 test('state command accepts only the same batch, a newer version and the requested outcome', () => {
   const row = { id: 3, invoice_id: 1033, version: 6 }
   const receipt = { ...row, version: 7, state: 'cancelled' }

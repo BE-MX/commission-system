@@ -79,14 +79,16 @@ try {
           assert.equal(await error.evaluate(el => el === document.activeElement), true)
           await activate(page, dialog.getByRole('button', { name: '刷新 PI', exact: true }))
         }
+        assert.equal(await dialog.locator('.pi-export-section').count(), 0, 'no empty export heading without invoice read permission')
+        const customerName = dialog.locator('.pi-customer-name'); assert.ok(await customerName.evaluate(el => el.clientHeight <= parseFloat(getComputedStyle(el).lineHeight) * 2 + 1), 'customer summary must use at most two lines')
         const current = dialog.getByRole('tabpanel', { name: '当前方舟 PI', exact: true }); await current.locator('.pi-document').waitFor(); await bounds(page, dialog, `${width}/${mode} current`)
-        const cdp = await context.newCDPSession(page); await cdp.send('DOM.enable'); await cdp.send('CSS.enable'); const { root } = await cdp.send('DOM.getDocument'); const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.portal-pi-dialog .pi-document article strong' }); const font = await cdp.send('CSS.getPlatformFontsForNode', { nodeId }); assert.ok(font.fonts.some(f => !f.isCustomFont && f.glyphCount > 0)); await cdp.detach()
+        const cdp = await context.newCDPSession(page); await cdp.send('DOM.enable'); await cdp.send('CSS.enable'); const { root } = await cdp.send('DOM.getDocument'); const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.portal-pi-dialog .pi-document tbody strong' }); const font = await cdp.send('CSS.getPlatformFontsForNode', { nodeId }); assert.ok(font.fonts.some(f => !f.isCustomFont && f.glyphCount > 0)); await cdp.detach()
         await reach(page, current.locator('.pi-document')); await page.keyboard.press('PageDown'); await page.keyboard.press('End')
         await page.waitForFunction(() => {
-          const body = document.querySelector('.portal-pi-dialog .el-dialog__body')
+          const body = document.querySelector(innerWidth > 800 ? '.portal-pi-dialog .pi-review-documents' : '.portal-pi-dialog .el-dialog__body')
           return body && body.scrollTop + body.clientHeight >= body.scrollHeight - 1
         }, undefined, { timeout: 3000 })
-        const scroll = await dialog.locator('.el-dialog__body').evaluate(el => ({ top: el.scrollTop, height: el.clientHeight, total: el.scrollHeight }))
+        const scroll = await dialog.locator(width > 800 ? '.pi-review-documents' : '.el-dialog__body').evaluate(el => ({ top: el.scrollTop, height: el.clientHeight, total: el.scrollHeight }))
         assert.ok(scroll.top + scroll.height >= scroll.total - 1, `${width}/${mode} keyboard must read to the body bottom`)
         await bounds(page, dialog, `${width}/${mode} after keyboard scroll`)
         await reach(page, dialog.getByRole('tab', { name: '当前方舟 PI', exact: true })); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Enter')

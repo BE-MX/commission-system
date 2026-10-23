@@ -134,8 +134,8 @@
           <div class="item-head">
             <span class="item-name">{{ item.line_code }} · {{ item.product_name }}</span>
             <span class="item-head-right">
-              <StatusBadge size="small" :type="item.status === 2 ? 'info' : (item.status === 1 ? 'success' : '')">{{ item.status_label }}</StatusBadge>
-              <span v-if="item.steps.length" class="item-current">当前：{{ item.current_process }}</span>
+              <StatusBadge size="small" :type="item.status === 3 ? 'danger' : item.status === 2 ? 'info' : (item.status === 1 ? 'success' : '')">{{ item.status_label }}</StatusBadge>
+              <span v-if="item.steps.length && item.status !== 3" class="item-current">当前：{{ item.current_process }}</span>
             </span>
           </div>
 
@@ -150,7 +150,7 @@
             <span>默认优惠价：{{ formatMoney(Number(item.default_discount_price), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
             <span :class="{ 'price-review-highlight': detail.status === 5 && item.price_changed }">优惠价：{{ formatMoney((Number(item.unit_price) - Number(item.labor_fee || 0)), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
             <span>手工费：{{ formatMoney(Number(item.labor_fee || 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span>
-            <strong :class="{ 'price-review-highlight': detail.status === 5 && item.price_changed }">明细金额：{{ formatMoney(Number(item.line_amount), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</strong>
+            <strong :class="{ 'price-review-highlight': detail.status === 5 && item.price_changed }">{{ item.status === 3 ? '原明细金额' : '明细金额' }}：{{ formatMoney(Number(item.line_amount), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</strong>
             <span v-if="item.price_changed">默认明细金额：{{ formatMoney(Number(item.default_line_amount), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}（成交价已调整）</span>
           </div>
 
@@ -163,11 +163,16 @@
               v-if="item.route_id" v-permission="'domestic_skip:write'"
               variant="link" left-icon="Warning" @click="openSkipAudits(item)"
             >异常跳过记录</GlassButton>
-            <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
+            <GlassButton v-if="!item.route_id && item.status !== 3" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
             <GlassButton
-              v-if="detail.status <= 2 && item.status !== 2 && canOperateOrder(detail)" v-permission="'domestic:write'"
+              v-if="detail.status <= 2 && ![2, 3].includes(item.status) && canOperateOrder(detail)" v-permission="'domestic:write'"
               variant="link" left-icon="EditPen" @click="openEdit(detail, item.id)"
             >编辑明细</GlassButton>
+            <GlassButton
+              v-if="[1, 2].includes(detail.status) && [0, 1].includes(item.status) && !item.shipped_qty && canOperateOrder(detail)"
+              v-permission="'domestic:write'" variant="link" link-tone="danger" left-icon="CircleClose"
+              :loading="terminatingItemIds.has(item.id)" @click="handleTerminateItem(item)"
+            >终止明细</GlassButton>
             <GlassButton v-if="detail.order_kind !== 'production' && item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
           </div>
 
@@ -410,7 +415,7 @@ const {
   attachDialog, openAttachRoute, confirmAttachRoute,
   printDialog, openPrintCard, openQrLabel, openOrderQrLabels, openWxacodeLabel,
   wxacodeDialog, openWxacode, downloadWxacode,
-  handleExport, handleExportDetails, exportingDetails, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
+  handleExport, handleExportDetails, exportingDetails, handleSubmitDraft, submittingOrderIds, handleTerminate, handleTerminateItem, terminatingItemIds, handleDelete, goCreate,
   canOperateOrder,
   canReviewOrder, reviewingOrderIds, handleReviewApprove, handleReviewReject, handleWithdrawReview,
   editDialog, openEdit,

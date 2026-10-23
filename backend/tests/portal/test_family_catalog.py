@@ -66,7 +66,7 @@ def test_family_detail_projects_variants_with_alias_price_and_swatch(family_cata
     standard, superior = result["variants"]
     assert standard["grade"] == "standard" and standard["color_code"] == "#9ATP9A/613"
     assert standard["color_label"] == "Rose Golden" and standard["color_type"] == "balayage"
-    assert standard["swatch_url"] == f"/api/portal/v1/catalog/swatches/{swatch.public_id}/image?version=1"
+    assert standard["swatch_url"] == f"/api/portal/v1/catalog/swatches/{swatch.public_id}/image?version=1&size=thumb"
     # (1000 - 600) / 20 = 20 packs; (3000 - 600) / 20 = 120 packs -> banded.
     assert standard["stock_display"] == "20" and superior["stock_display"] == "100+"
     assert superior["unit_price"] == "27.0000" and superior["swatch_url"] is None
@@ -158,3 +158,94 @@ def test_family_http_routes_are_customer_scoped(family_catalog, monkeypatch):
             # Flat item route still resolves UUIDs only.
             assert (await client.get("/api/portal/v1/catalog/" + items[0].public_id)).status_code == 200
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("repeat", [1, 100])
+def test_family_price_queries_are_bounded_and_match_single_item(family_catalog, monkeypatch, repeat):
+    from sqlalchemy import event
+    ctx, items, principal, *_ = family_catalog
+    observe(monkeypatch, {})
+    expected = {row.public_id: catalog_service.with_price(ctx.db, principal, row, {}) for row in items}
+    original = catalog_service.projected_items
+    def repeated(*args, **kwargs):
+        return [(row, dict(item)) for row, item in original(*args, **kwargs)] * repeat
+    monkeypatch.setattr(catalog_service, "projected_items", repeated)
+    queries = []
+    def record(conn, cursor, statement, parameters, context, many):
+        if any(table in statement for table in ('ark_std_prices', 'ark_price_color_types', 'ark_customer_price_rules')):
+            queries.append(statement)
+    event.listen(ctx.db.get_bind(), 'before_cursor_execute', record)
+    try:
+        result = service.family_detail(ctx.db, principal, 'genius_weft_20g')
+    finally:
+        event.remove(ctx.db.get_bind(), 'before_cursor_execute', record)
+    assert len(result['variants']) == len(items) * repeat
+    for item in result['variants']:
+        assert item['unit_price'] == expected[item['item_id']]['unit_price']
+        assert item['price_status'] == expected[item['item_id']]['price_status']
+    assert len(queries) <= 3, f'{len(queries)} pricing queries for {len(items)} variants'
+
+
+@pytest.mark.parametrize('case', ['normal', 'fixed', 'missing', 'ambiguous', 'exact_color', 'negative', 'currency', 'namespace', 'bad_rule', 'duplicate_color', 'untyped_color'])
+def test_browse_prices_match_authoritative_resolver_and_refresh(family_catalog, case):
+    from app.invoice.models import StdPrice, CustomerPriceRule, PriceColorType
+    from app.portal.browse_pricing import BrowsePrices
+    ctx, items, principal, *_ = family_catalog
+    if case == 'fixed':
+        ctx.db.get(CustomerPriceRule, 1).adjust_type = 'fixed'
+    elif case == 'missing':
+        ctx.db.delete(ctx.db.get(StdPrice, 1))
+    elif case == 'ambiguous':
+        ctx.db.add(StdPrice(id=2, product_kind='hair', series_grade='Standard', length='20',
+            weight_unit='20g', color_type='solid', price=Decimal('10'), currency='USD'))
+    elif case == 'exact_color':
+        ctx.db.add(PriceColorType(color_code='1', color_type='piano'))
+    elif case == 'negative':
+        ctx.db.get(CustomerPriceRule, 1).adjust_value = Decimal('-200')
+    elif case == 'currency':
+        ctx.db.get(StdPrice, 1).currency = 'EUR'
+    elif case == 'namespace':
+        items[0].source_namespace = 'other'
+    elif case == 'duplicate_color':
+        ctx.db.add_all([PriceColorType(color_code='1', color_type='solid'), PriceColorType(color_code='#1', color_type='piano')])
+    elif case == 'untyped_color':
+        items[0].standard_json = {**items[0].standard_json, 'color': 'unknown'}
+        ctx.db.get(StdPrice, 1).color_type = None
+    elif case == 'bad_rule':
+        ctx.db.get(CustomerPriceRule, 1).adjust_type = 'unknown'
+    ctx.db.commit()
+    browse = BrowsePrices(ctx.db, principal.access, items)
+    for row in items:
+        expected = catalog_service.with_price(ctx.db, principal, row, {})
+        assert catalog_service.with_price(ctx.db, principal, row, {}, browse=browse) == expected
+    # A new request must observe a price change (no process/session cache).
+    if case == 'normal':
+        ctx.db.get(StdPrice, 1).price = Decimal('40')
+        ctx.db.commit()
+        fresh = BrowsePrices(ctx.db, principal.access, items)
+        assert catalog_service.with_price(ctx.db, principal, items[0], {}, browse=fresh)['unit_price'] == '36.0000'
+
+
+def test_browse_colors_chunk_large_inputs(family_catalog):
+    from types import SimpleNamespace
+    from app.portal.browse_pricing import BrowsePrices
+    ctx, _, principal, *_ = family_catalog
+    items = [SimpleNamespace(standard_json={'color': str(value)}) for value in range(450)]
+    snapshot = BrowsePrices(ctx.db, principal.access, items)
+    assert len(snapshot.colors) == 450
+    assert all(snapshot.color_type(str(value)) == 'solid' for value in range(450))
+
+
+def test_family_without_price_permission_does_not_read_prices(family_catalog, monkeypatch):
+    from sqlalchemy import event
+    ctx, _, principal, *_ = family_catalog
+    ctx.access.can_view_price = ctx.access.can_order = False
+    observe(monkeypatch, {})
+    def guard(conn, cursor, statement, parameters, context, many):
+        assert 'ark_std_prices' not in statement and 'ark_customer_price_rules' not in statement
+    event.listen(ctx.db.get_bind(), 'before_cursor_execute', guard)
+    try:
+        result = service.family_detail(ctx.db, principal, 'genius_weft_20g')
+        assert all('unit_price' not in item for item in result['variants'])
+    finally:
+        event.remove(ctx.db.get_bind(), 'before_cursor_execute', guard)

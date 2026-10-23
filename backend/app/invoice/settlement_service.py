@@ -15,6 +15,7 @@ from app.invoice import presale_runtime as pools
 from app.invoice import shipment_payment_policy as payment_policy
 from app.invoice.shipment_action_policy import action_reason, failed_outbound_candidate
 from app.invoice.presale_lines import remote_items
+from app.invoice.presale_order_revision import sources as revision_sources
 from app.invoice.settlement_policy import require_enabled, capabilities
 from app.receipt import access, remote, service as receipts
 from app.receipt.models import Receipt, ReceiptLog
@@ -187,19 +188,21 @@ def build_quote(db, invoice, body, evidence, *, current=False):
     if set(requested) - {x.id for x in current_items}:
         raise ValueError("产品明细不属于本订单")
     lines = [{"invoice_item_id": x.id, "quantity": x.quantity, "total_price": str(x.total_price),
-              "shipped_quantity": int(quantities.get(x.id, 0)), "requested_quantity": requested.get(x.id, 0)}
+              "shipped_quantity": int(sum(quantities.get(k,0) for k in [x.id]+revision_sources(invoice,x.id))), "requested_quantity": requested.get(x.id, 0)}
              for x in current_items]
     packaging = getattr(invoice, "presale_current_accessory", None)
     handling = getattr(invoice, "presale_current_handling", None)
     result = quote_current(lines, invoice.internal_accessory or 0 if packaging is None else packaging,
         invoice.surcharge_amount or 0 if handling is None else handling,
         freight=body.freight_amount, is_final=body.is_final)
+    from app.invoice.presale_order_revision import apply_credit
+    apply_credit(db,invoice,result,current=current)
     pool_receipts, lots = pools.pool_lots(db, invoice, evidence["receipt"], current=current)
     if not lots and body.payment_term != payment_policy.SHIP_FIRST:
         raise ValueError("预售首款尚未生成，请先登记预付款")
     goods = Decimal(result["goods_amount"]) + Decimal(result["packaging_amount"])
     plan = plan_funding(str(goods), result["handling_amount"], result["freight_amount"], lots,
-        is_final=body.is_final)
+        is_final=body.is_final,credit_funded=Decimal(result.get('price_credit_applied','0'))>0)
     deposit = [app for app in plan["applications"] if app["purpose"] == "presale_deposit"]
     advance = [app for app in plan["applications"] if app["purpose"] == "presale_advance"]
     result.update(funding_version=2, pool_applications=plan["applications"], pool_balances=plan["balances"],
@@ -316,6 +319,8 @@ def _create_verified(db, invoice, body, user, evidence, proof_evidence):
 
 
 def funding_balance(db, row, *, current=False):
+    from app.invoice.presale_order_revision import validate_credit
+    validate_credit(db,db.get(Invoice,row.invoice_id),row,current=current)
     query = db.query(SettlementApplication, Receipt).join(Receipt,
         Receipt.id == SettlementApplication.receipt_id).filter(SettlementApplication.settlement_id == row.id,
         SettlementApplication.status != "released")
@@ -430,6 +435,9 @@ def describe(db, row, *, current=False):
             result['actions'][action]['requires_remote_check'] = True
     if invalid_funding:
         result["balance_error"]="本批关联回款已失效，余额暂不可计算，请核对原单"
+    from app.invoice.shipment_absence_recovery import action as recovery_action
+    result['actions']['recover_outbound'] = recovery_action(db, row, outbound,
+        current=current, confirmation_summary=confirmation)
     return result
 
 

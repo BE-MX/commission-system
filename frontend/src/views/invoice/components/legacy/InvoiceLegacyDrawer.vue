@@ -1,7 +1,7 @@
 <template>
   <!-- 旧版下单抽屉（过渡期）：HEAD 版布局原样保留，与新版共享同一编辑器状态。
        新业务请走新版下单页；旧版只提供库存单/生产单新建入口，编辑仍走新版。 -->
-  <el-drawer v-model="legacyVisible" :title="drawerTitle" size="640px" class="legacy-editor-drawer">
+  <el-drawer v-model="legacyVisible" :title="drawerTitle" size="640px" :before-close="editor.beforeEditorClose" class="legacy-editor-drawer">
     <template #default>
       <div class="legacy-toolbar">
         <el-button v-permission="'invoice:write'" @click="$emit('open-paste')">
@@ -224,7 +224,7 @@
         :accessory-discount="formAccessoryDiscount"
         :money="money"
         :syncing="saveAndSyncSubmitting"
-        @cancel="legacyVisible = false"
+        @cancel="editor.closeEditor"
         @save="saveDraft"
         @sync="saveAndSync"
       />

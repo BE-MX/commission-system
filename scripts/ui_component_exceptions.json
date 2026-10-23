@@ -118,5 +118,17 @@
       "count": 3,
       "reason": "上传成果卡片复制和继续上传主操作"
     }
+  },
+  "frontend/src/views/portal/PiReviewDialog.vue": {
+    "bad_dialog_width": {
+      "count": 1,
+      "reason": "PI 详情同时核对完整单据、版本与操作，采用 1180px 双栏工作区；受视口减 24px 限制，小屏退回单列，保留固定页脚操作与独立滚动。"
+    }
+  },
+  "frontend/src/views/shipping/print/ShippingPrintDialog.vue": {
+    "bad_dialog_width": {
+      "count": 1,
+      "reason": "2026-10-23 订单出库体验优化：A4 实宽预览需要960px以完整显示纸张；仅本组件例外，CSS仍限制视口减24px，保留原打印尺寸"
+    }
   }
 }

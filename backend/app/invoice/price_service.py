@@ -166,6 +166,11 @@ def _lookup_std_price(db: Session, product_display: str, length: str, unit: str,
         )
         .all()
     )
+    return match_standard_price(candidates, product_display)
+
+
+def match_standard_price(candidates, product_display):
+    """Shared series matching, including the ambiguous-series rejection."""
     display_norm = normalize_text(product_display)
     matched: list[StdPrice] = []
     for row in candidates:

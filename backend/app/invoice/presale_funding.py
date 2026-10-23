@@ -36,7 +36,7 @@ def _remaining(lot):
     return amount - used, charge - used_charge
 
 
-def plan_funding(goods, handling, freight, lots, *, is_final):
+def plan_funding(goods, handling, freight, lots, *, is_final, credit_funded=False):
     """Use deposits only at manual final; advance principal covers goods + freight.
 
     Goods includes packaging, excludes handling. All amounts are exact cents.
@@ -49,7 +49,7 @@ def plan_funding(goods, handling, freight, lots, *, is_final):
         raise ValueError("The final batch must be explicitly confirmed")
     g, h, f = (_cents(value, name) for value, name in (
         (goods, "goods"), (handling, "handling"), (freight, "freight")))
-    if g + h + f == 0:
+    if g + h + f == 0 and not credit_funded:
         raise ValueError("A shipment must have a positive payable amount")
     lots = tuple(lots)
     if len({lot.receipt_id for lot in lots}) != len(lots):

@@ -55,3 +55,38 @@ def test_revoked_pending_status_is_read_locally_without_connector(db, account, m
     result = service.refresh_bind_session(db, row.bind_session_uid)
     assert result.status == 'revoke_pending'
     assert result.qr_code_url is None and result._transient_qr is None
+
+
+@pytest.mark.parametrize('age_minutes,reused', [(2, True), (30, False)])
+def test_new_number_reuses_only_a_recent_pending_operation(db, account, monkeypatch, age_minutes, reused):
+    from datetime import timedelta
+    from app.core.time import beijing_now
+    row = pending(db, account)
+    account.status = 'binding'
+    row.created_at = row.updated_at = beijing_now() - timedelta(minutes=age_minutes)
+    db.commit()
+    calls = []
+    def create(user_id, **operation):
+        calls.append(operation)
+        return {**operation, 'ark_user_id': user_id, 'status': 'pending'}
+    def read(uid):
+        calls.append(('get', uid))
+        return {'bind_session_uid': uid, 'account_uid': account.account_uid, 'ark_user_id': account.ark_user_id, 'status': 'pending'}
+    monkeypatch.setattr(lifecycle, 'WhatsAppConnectorClient',
+                        lambda: SimpleNamespace(create_bind_session=create, get_bind_session=read))
+    result = lifecycle.bind(db, {'sub': str(account.ark_user_id)}, account_uid=None, company_account=True, crm_shared=False)
+    if reused:
+        assert calls == [('get', 'bind_old')] and result.bind_session_uid == 'bind_old'
+    else:
+        assert len(calls) == 1 and calls[0]['fresh_credentials'] is False
+        assert result.account_uid != account.account_uid and row.status == 'expired'
+
+
+def test_explicit_rebind_asks_connector_for_fresh_credentials(db, account, monkeypatch):
+    calls = []
+    def create(user_id, **operation):
+        calls.append(operation)
+        return {**operation, 'ark_user_id': user_id, 'status': 'pending'}
+    monkeypatch.setattr(lifecycle, 'WhatsAppConnectorClient', lambda: SimpleNamespace(create_bind_session=create))
+    lifecycle.bind(db, {'sub': str(account.ark_user_id)}, account_uid=account.account_uid, company_account=True, crm_shared=False)
+    assert calls[0]['fresh_credentials'] is True

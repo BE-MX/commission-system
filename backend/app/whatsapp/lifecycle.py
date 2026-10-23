@@ -1,6 +1,7 @@
 """Durable bind/rebind operations and explicit owner authorization."""
 import logging
 import uuid
+from datetime import timedelta
 
 from app.core.time import beijing_now
 from app.whatsapp import access
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def stopped_binding_status(account):
-    if account.status in {'paused', 'blocked', 'revoking', 'revoked', 'revoke_pending', 'expired', 'reconnect_required'}:
+    if account.status in {'paused', 'protected', 'blocked', 'revoking', 'revoked', 'revoke_pending', 'expired', 'reconnect_required'}:
         return account.status
     if account.consent_state != 'active':
         return 'paused'
@@ -27,6 +28,9 @@ def close_binding(session, status):
     session.updated_at = beijing_now()
 
 
+PENDING_NEW_ACCOUNT_REUSE = timedelta(minutes=10)
+
+
 def _pending_binding(db, user_id, account):
     query = db.query(WhatsAppBindSession).filter_by(ark_user_id=user_id).filter(
         WhatsAppBindSession.status.in_(('pending', 'binding')))
@@ -35,6 +39,10 @@ def _pending_binding(db, user_id, account):
     for session in query.order_by(WhatsAppBindSession.id.desc()).all():
         source = db.query(WhatsAppAccount).filter_by(account_uid=session.account_uid).populate_existing().with_for_update().first()
         stopped = stopped_binding_status(source) if source else None
+        if not stopped and account is None and (session.updated_at or session.created_at) and \
+                beijing_now() - (session.updated_at or session.created_at) > PENDING_NEW_ACCOUNT_REUSE:
+            # A "new number" click long after an abandoned QR is a new request, not a lost response.
+            stopped = 'expired'
         if stopped:
             close_binding(session, stopped)
         else:
@@ -89,6 +97,9 @@ def bind(db, actor: dict, *, account_uid: str | None, company_account: bool, crm
         account = WhatsAppAccount(account_uid=f'wa_acc_{uuid.uuid4()}', ark_user_id=user_id)
         db.add(account)
         db.flush()
+        rebind = False
+    else:
+        rebind = True
     account.provider = 'baileys'
     account.session_generation = (account.session_generation or 0) + 1
     account.consent_version = (account.consent_version or 0) + 1
@@ -111,13 +122,29 @@ def bind(db, actor: dict, *, account_uid: str | None, company_account: bool, crm
     try:
         payload = client.create_bind_session(user_id, account_uid=account.account_uid,
             bind_session_uid=session.bind_session_uid, provider='baileys', consent_version=account.consent_version,
-            session_generation=account.session_generation)
+            session_generation=account.session_generation, fresh_credentials=rebind)
     except ConnectorError as exc:
         logger.warning('WhatsApp bind result uncertain (HTTP %s); reading reserved operation', exc.status_code)
         print(f'[WhatsApp] bind result uncertain (HTTP {exc.status_code}); reading reserved operation', flush=True)
         # No retry POST. Keep the reservation if readback is also unavailable.
         payload = _read_operation(db, client, session, create_error=exc)
     return _upsert_bind_session(db, payload, user_id)
+
+
+def resume_collection(db, uid: str, actor: dict):
+    """Owner restarts a connector safety stop without changing consent or rebinding."""
+    from app.whatsapp.service import _audit, _upsert_account
+    account = owned_account(db, uid, actor)
+    if account.provider != 'baileys' or account.consent_state != 'active' or account.status != 'protected':
+        raise ValueError('仅授权有效且处于保护性暂停的账号可恢复采集')
+    if not access.owner_enabled(db, account):
+        raise PermissionError('账号持有人已停用或无采集权限')
+    _audit(db, action='resume_collection', result='requested', ark_user_id=int(actor['sub']), account_uid=uid)
+    # The connector calls back for authorization on this row; release the lock first.
+    db.commit()
+    payload = WhatsAppConnectorClient().reauthorize_account(uid)
+    account = db.query(WhatsAppAccount).filter_by(account_uid=uid).populate_existing().with_for_update().first()
+    return _upsert_account(db, payload, account.ark_user_id)
 
 
 def update_consent(db, uid: str, actor: dict, *, crm_shared: bool, reader_user_ids: list[int], enabled: bool, ai_egress_allowed: bool = False):

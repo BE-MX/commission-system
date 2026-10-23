@@ -131,7 +131,7 @@ test('handling hint warns when the fee no longer matches the rate x base', () =>
 })
 
 test('footer marks the handling fee as Ark-only', () => {
-  assert.match(totalsFooter, /订单总金额/)
+  assert.match(totalsFooter, /订单金额（不含手续费）/)
   assert.match(totalsFooter, /应付合计/)
   assert.match(totalsFooter, /仅方舟记录/)
   assert.match(invoiceView, /:base-amount="formBaseAmount"/)
@@ -239,7 +239,7 @@ test('entered total discount updates eligible product rows and their totals', ()
 test('product discount precedes TotalPrice and packaging quantity precedes its fee', () => {
   // 折扣列按需显示（v-if 在 label 前），仍须排在 TotalPrice 之前
   const discountIndex = hairTable.indexOf('label="折扣"')
-  const totalPriceIndex = hairTable.indexOf('<el-table-column label="TotalPrice"')
+  const totalPriceIndex = hairTable.indexOf('<el-table-column label="小计"')
   assert.ok(discountIndex >= 0 && discountIndex < totalPriceIndex)
   assert.match(hairTable, /v-model="row\.discount_amount"/)
   const packagingQuantityIndex = settlementFields.indexOf('label="包装数量"')
@@ -250,8 +250,8 @@ test('product discount precedes TotalPrice and packaging quantity precedes its f
     assert.ok(summaryCard.includes(label), `${label} should appear in the summary card`)
   }
   assert.doesNotMatch(summaryCard, /Hair Price|Line Discount|Packaging|Shipping Fee|Handling Fee/)
-  // 页脚只留合计口径：订单总金额 · 手续费 → 应付合计
-  for (const label of ['订单总金额', '手续费', '应付合计']) {
+  // 页脚只留合计口径：订单金额（不含手续费） · 手续费 → 应付合计
+  for (const label of ['订单金额（不含手续费）', '手续费', '应付合计']) {
     assert.ok(totalsFooter.includes(label), `${label} should stay in the footer`)
   }
 })

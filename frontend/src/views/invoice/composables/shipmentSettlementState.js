@@ -2,8 +2,9 @@ export function hasActiveShipment(settlements) {
   return settlements.some(row => !['cancelled', 'shipped'].includes(row.state))
 }
 export function remainingShipmentQuantity(line, settlements) {
+  const identities = new Set([line.id, ...(line.presale_source_item_ids || [])].map(String))
   const used = settlements.filter(row => row.state !== 'cancelled').reduce((sum, row) => sum +
-    (row.quote?.items || row.items || []).filter(item => String(item.invoice_item_id) === String(line.id))
+    (row.quote?.items || row.items || []).filter(item => identities.has(String(item.invoice_item_id)))
       .reduce((subtotal, item) => subtotal + Number(item.quantity || 0), 0), 0)
   return Math.max(0, Number(line.quantity || 0) - used)
 }

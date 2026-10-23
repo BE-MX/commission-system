@@ -704,16 +704,21 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
         "updated_at": to_beijing_time(invoice.updated_at),
         "edit_version": edit_version(invoice),
         "items": [_serialize_item(item, material_state) for item in invoice.items if not item.presale_archived],
-        **(_presale_editor_fields(invoice) if invoice.order_type == "presale" else {}),
+        **(_presale_editor_fields(invoice,material_state) if invoice.order_type == "presale" else {}),
     }
 
 
-def _presale_editor_fields(invoice):
+def _presale_editor_fields(invoice,material_state=None):
     from app.invoice.presale_lines import editor_amounts
+    from app.invoice.presale_order_revision import config, sources
+    revision=config(invoice)
     return {**editor_amounts(invoice), "presale_history": [
         {"id": item.id, "product_name": item.product_name,
          "quantity": item.presale_shipped_quantity, "amount": item.presale_shipped_amount}
-        for item in invoice.items if item.presale_archived and item.presale_shipped_quantity]}
+        for item in invoice.items if item.presale_archived and item.presale_shipped_quantity],
+        **({'presale_edit_mode':'whole_order','presale_price_credit':revision['approved_credit'],
+            'items':[{**_serialize_item(item,material_state),'presale_source_item_ids':sources(invoice,item.id)}
+                for item in invoice.items if not item.presale_archived]} if revision else {})}
 
 
 def _custom_line_complete(payload) -> bool:
@@ -827,7 +832,10 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
     # 已推 OKKI 的行（有 unique_id）：回传 id 的行传承 unique_id（编辑语义按行更新）；
     # 未回传的即被删除，进待删快照，下次推单发 remove:1（否则 OKKI 侧留幽灵明细）
     from app.invoice import presale_lines
+    from app.invoice import presale_order_revision as revisions
     rolling = body.order_type == "presale"
+    revision_context=revisions.edit_context(db,invoice,body) if rolling else None
+    revision_pairs=[]
     presale_carried = presale_lines.prepare_replace(db, invoice) if rolling else {}
     if rolling:
         presale_lines.set_current_fees(db, invoice, body)
@@ -954,8 +962,12 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
         item.total_price = _money(gross_amount + item.discount_amount)
         if rolling and carried:
             presale_lines.apply_current(carried, item)
+            revision_pairs.append((carried,payload.id))
         else:
             invoice.items.append(item)
+            revision_pairs.append((item,payload.id))
+    if rolling:
+        revisions.finish_edit(db,invoice,revision_context,revision_pairs,user_id)
 
 
 def _append_removed_lines(invoice: Invoice, removed: list[dict]) -> None:

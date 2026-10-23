@@ -56,12 +56,14 @@ def _audit(
     )
 
 
-def _upsert_account(db: Session, payload: dict[str, Any], fallback_user_id: int) -> WhatsAppAccount | None:
+def _upsert_account(db: Session, payload: dict[str, Any], fallback_user_id: int, *, lock: bool = True) -> WhatsAppAccount | None:
     account_uid = payload.get("account_uid") or payload.get("id")
     if not account_uid:
         return None
 
-    account = db.query(WhatsAppAccount).filter(WhatsAppAccount.account_uid == account_uid).populate_existing().with_for_update().first()
+    query = db.query(WhatsAppAccount).filter(WhatsAppAccount.account_uid == account_uid).populate_existing()
+    # lock=False: caller already holds a current locking read on this row (event batch apply).
+    account = (query.with_for_update() if lock else query).first()
     if not account:
         account = WhatsAppAccount(account_uid=account_uid, ark_user_id=fallback_user_id)
         db.add(account)
@@ -77,7 +79,11 @@ def _upsert_account(db: Session, payload: dict[str, Any], fallback_user_id: int)
         raise ValueError("Connector 不得改变账号持有人")
     account.phone_number = payload.get("phone_number") or payload.get("phone") or account.phone_number
     account.display_name = payload.get("display_name") or payload.get("name") or account.display_name
-    account.status = payload.get("status") or account.status or "active"
+    status = payload.get("status") or account.status or "active"
+    # Consent is decided by Ark (consent_state); a connector "paused" is a collection safety stop
+    # (disk, backpressure, auth store...). Mirroring it as Ark "paused" made owner_enabled() false and
+    # the next authorization callback permanently withdrew consent.
+    account.status = 'protected' if status == 'paused' and account.provider == 'baileys' else status
     account.connector_status = payload.get("connector_status") or payload.get("state")
     account.last_sync_at = _parse_dt(payload.get("last_sync_at")) or account.last_sync_at
     account.last_message_at = _parse_dt(payload.get("last_message_at")) or account.last_message_at
@@ -151,7 +157,7 @@ def refresh_bind_session(db: Session, bind_session_uid: str) -> WhatsAppBindSess
             if metadata.get('status') not in ('paused', 'blocked', 'revoking', 'revoked', 'reconnect_required'):
                 raise exc
             account = _upsert_account(db, metadata, existing.ark_user_id)
-            if account.status not in ('paused', 'blocked', 'revoking', 'revoked', 'revoke_pending', 'reconnect_required'):
+            if account.status not in ('paused', 'protected', 'blocked', 'revoking', 'revoked', 'revoke_pending', 'reconnect_required'):
                 raise exc  # Stale metadata cannot change the current account.
             existing.status = account.status
             existing.qr_code_url = None
@@ -447,6 +453,11 @@ def auto_sync_accounts(
             )
             db.commit()
         except Exception as exc:
+            if isinstance(exc, ValueError) and '同步游标已变化' in str(exc):
+                # A concurrent manual pull advanced the cursor: data moved, nothing failed.
+                db.rollback()
+                stats["ok"] += 1
+                continue
             logger.warning("WhatsApp account sync failed (%s)", type(exc).__name__)
             print(f"[WhatsApp] account sync failed ({type(exc).__name__})", flush=True)
             db.rollback()
@@ -457,16 +468,19 @@ def auto_sync_accounts(
                 .first()
             )
             if failed_account:
+                readback = None
                 if failed_account.provider == 'baileys':
                     try:
                         metadata = WhatsAppConnectorClient().get_account(account_uid)
                         _upsert_account(db, metadata, failed_account.ark_user_id)
+                        readback = metadata.get('last_error_code') or metadata.get('last_error')
                     except ConnectorError:
                         logger.warning('WhatsApp metadata readback unavailable after feed failure')
                         print('[WhatsApp] metadata readback unavailable after feed failure', flush=True)
                 if failed_account.status in ('active', 'binding', 'reconnecting'):
                     failed_account.connector_status = "sync_error"
-                failed_account.last_error = failed_account.last_error or type(exc).__name__
+                # Latest cause wins; a stale error from an earlier incident misleads diagnosis.
+                failed_account.last_error = readback or type(exc).__name__
                 _audit(
                     db,
                     action="auto_sync",

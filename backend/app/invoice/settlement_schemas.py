@@ -37,6 +37,20 @@ class SettlementAction(BaseModel):
     reason: str = Field(min_length=2, max_length=500)
 
 
+class OutboundAbsenceRecovery(SettlementAction):
+    model_config = ConfigDict(extra='forbid')
+    recovery_version: str = Field(pattern=r'^[a-f0-9]{64}$')
+    original_request_closed: bool = Field(strict=True)
+    resolution_reference: str = Field(min_length=4, max_length=200)
+
+    @model_validator(mode='after')
+    def require_terminal_fact(self):
+        self.resolution_reference = self.resolution_reference.strip()
+        if not self.original_request_closed or len(self.resolution_reference) < 4:
+            raise ValueError('请确认原请求已结束且未生成，并填写核实依据')
+        return self
+
+
 class SettlementRemoteReview(SettlementAction):
     remote_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]*$", max_length=64)
 

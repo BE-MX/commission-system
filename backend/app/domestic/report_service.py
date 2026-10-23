@@ -145,6 +145,7 @@ def verify_track_scene(scene: str) -> tuple[bool, int]:
 
 
 BLOCK_ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
+BLOCK_ITEM_TERMINATED = "ITEM_TERMINATED"
 BLOCK_NO_ROUTE = "NO_ROUTE"
 BLOCK_ORDER_TERMINATED = "ORDER_TERMINATED"
 BLOCK_ORDER_DRAFT = "ORDER_DRAFT"
@@ -156,6 +157,7 @@ BLOCK_NOTHING_REPORTABLE = "NOTHING_REPORTABLE"
 
 BLOCK_MESSAGES = {
     BLOCK_ITEM_NOT_FOUND: "找不到这张卡对应的订单明细",
+    BLOCK_ITEM_TERMINATED: "该明细已终止，不能报工",
     BLOCK_NO_ROUTE: "这个产品还没配工艺路线，请联系跟单",
     BLOCK_ORDER_TERMINATED: "订单已终止或已删除，不能报工",
     BLOCK_ORDER_DRAFT: "订单还是草稿，请跟单提交后再报工",
@@ -211,6 +213,8 @@ def _lock_order_then_item(
     ).populate_existing().with_for_update().first()
     if item is None:
         raise ValueError("订单明细不存在")
+    if item.status == C.ITEM_TERMINATED:
+        raise ValueError("该明细已终止，不能报工或修改报工记录")
     if item.order_id != order.id:
         raise ValueError("订单明细所属订单已变化，请刷新后重试")
     return order, item
@@ -235,7 +239,7 @@ def _replay_result(db: Session, log: DomesticReportLog, *, lock: bool = False) -
         "step_completed_qty": progress.completed_qty if progress else 0,
         "order_qty": item.order_qty if item else 0,
         "step_finished": bool(progress and progress.status == 1),
-        "item_finished": bool(item and item.status >= C.ITEM_DONE),
+        "item_finished": bool(item and item.status in (C.ITEM_DONE, C.ITEM_SHIPPED)),
         "reported_at": log.reported_at,
         "unit_ids": [unit.id for unit in units],
         "unit_codes": [unit_service.unit_display_code(item, unit.unit_no) for unit in units] if item else [],
@@ -374,6 +378,8 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
         return {**base, "can_submit": False, "block_reason": reason,
                 "block_message": BLOCK_MESSAGES[reason], "next_step": None}
 
+    if item.status == C.ITEM_TERMINATED:
+        return blocked(BLOCK_ITEM_TERMINATED)
     if not order or order.deleted_flag or order.status == C.ORDER_TERMINATED:
         return blocked(BLOCK_ORDER_TERMINATED)
     if order.status == C.ORDER_DRAFT:
@@ -422,7 +428,7 @@ def scan_unit(db: Session, unit_id: int, user_id: int) -> dict:
     })
     if not item or base.get("block_reason") in {
         BLOCK_ITEM_NOT_FOUND, BLOCK_NO_ROUTE, BLOCK_ORDER_TERMINATED,
-        BLOCK_ORDER_DRAFT, BLOCK_ORDER_REVIEW, BLOCK_ALL_DONE, BLOCK_NOT_ASSIGNED,
+        BLOCK_ORDER_DRAFT, BLOCK_ORDER_REVIEW, BLOCK_ALL_DONE, BLOCK_NOT_ASSIGNED, BLOCK_ITEM_TERMINATED,
     }:
         return base
 
@@ -658,7 +664,7 @@ def _submit_report_once(
         "step_completed_qty": progress.completed_qty,
         "order_qty": item.order_qty,
         "step_finished": progress.status == 1,
-        "item_finished": item.status >= C.ITEM_DONE,
+        "item_finished": item.status in (C.ITEM_DONE, C.ITEM_SHIPPED),
         "reported_at": now,
         "unit_ids": [unit.id for unit in selected_units],
         "unit_codes": [unit_service.unit_display_code(item, unit.unit_no) for unit in selected_units],

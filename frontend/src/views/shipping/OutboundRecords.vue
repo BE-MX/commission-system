@@ -9,7 +9,7 @@
     <div ref="panelRef" class="table-card outbound-panel">
       <FilterBar class="toolbar" :loading="listPageState.loading.value" :pending="listPageState.hasPendingSearch.value"
         :advanced-count="advancedFilterCount" @search="handleSearch" @reset="handleReset">
-        <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" class="filter-w-lg" />
+        <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" aria-label="搜索出库单号或客户" clearable prefix-icon="Search" class="filter-w-lg" />
         <el-select v-model="searchForm.outboundState" placeholder="出库单状态" aria-label="出库单状态" clearable class="filter-w-sm">
           <el-option v-for="(label, value) in OUTBOUND_STATE_LABELS" :key="value" :label="label" :value="value" />
         </el-select>
@@ -52,7 +52,7 @@
             <template v-if="row.record_source === 'ark_task'">
               <span class="queue-note">待出库</span><small class="queue-note">{{ row.requested_date }} 创建</small>
             </template>
-            <template v-else>{{ row.outbound_date }}</template>
+            <template v-else>{{ formatBeijingDate(row.outbound_date) }}</template>
           </template>
         </el-table-column>
         <el-table-column sortable="custom" v-if="visibleKeys.includes('item-count')" prop="item_count" label="明细 / 数量" min-width="110">
@@ -89,7 +89,7 @@
         <el-table-column sortable="custom" v-if="visibleKeys.includes('photo-count')" prop="photo_count" label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="370" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="260" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="Box" @click="inventoryRow = row; inventoryVisible = true">库存详情</GlassButton>
             <span v-if="row.record_source === 'ark_task' && row.outbound_state === 'waiting_stock'" v-permission="'invoice:sync'">
@@ -97,8 +97,6 @@
                 :loading="replenishingId === row.outbound_record_id" :disabled="replenishingId !== null"
                 @click="replenish(row)">补货同步</GlassButton>
             </span>
-            <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Download"
-              :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
             <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Printer"
               :loading="printingId === row.outbound_record_id" @click="openPrint(row)">打印出库单</GlassButton>
             <span v-if="!row.can_print || row.recheck_status" class="queue-note">{{ row.recheck_status === 'pending_sync' ? '待同步并重验' : row.recheck_status === 'pending_inspection' ? '待补验' : outboundPendingHint(row.outbound_state) }}</span>
@@ -106,6 +104,9 @@
               <GlassButton left-icon="MoreFilled" variant="link" right-icon="ArrowDown">更多</GlassButton>
               <template #dropdown>
                 <el-dropdown-menu>
+                        <el-dropdown-item v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" icon="View" @click="printPreviewRow = row; printPreviewVisible = true">打印预览</el-dropdown-item>
+                  <el-dropdown-item v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" icon="Download"
+                    :disabled="downloadingId !== null" @click="downloadWord(row)">下载 Word</el-dropdown-item>
                   <div v-if="row.can_allow_print_before_recheck" v-permission="'shipping_inspection:admin'" role="none">
                     <el-dropdown-item :disabled="allowingPrintId !== null" @click="allowPrintBeforeRecheck(row)">允许先打印（仍需补验）</el-dropdown-item>
                   </div>
@@ -134,6 +135,7 @@
         class="pager" @current-change="handlePageChange" @size-change="handleSizeChange"
       />
     </div>
+    <ShippingPrintDialog v-if="printPreviewVisible" v-model:visible="printPreviewVisible" mode="outbound" :record-id="printPreviewRow?.outbound_record_id" />
     <OutboundSyncDialog v-model:visible="syncVisible" :busy="syncingId !== null" :preview="syncPreview" :row="syncRow" @apply="applySync" />
     <OutboundProblemsDrawer v-if="problemsVisible" v-model="problemsVisible" />
     <OutboundInventoryDrawer v-if="inventoryVisible" v-model="inventoryVisible" :row="inventoryRow" />
@@ -155,7 +157,10 @@ import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
 import { useOutboundReplenishment } from './composables/useOutboundReplenishment'
 import OutboundSyncDialog from './OutboundSyncDialog.vue'
 import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from './composables/outboundStates'
-import { formatBeijingDateTime } from '@/utils/datetime'
+import { formatBeijingDate, formatBeijingDateTime } from '@/utils/datetime'
+const ShippingPrintDialog = defineAsyncComponent(() => import('./print/ShippingPrintDialog.vue'))
+const printPreviewVisible = ref(false)
+const printPreviewRow = ref(null)
 const OutboundProblemsDrawer = defineAsyncComponent(() => import('./OutboundProblemsDrawer.vue'))
 const problemsVisible = ref(false)
 const OutboundInventoryDrawer = defineAsyncComponent(() => import('./OutboundInventoryDrawer.vue'))
@@ -189,6 +194,7 @@ const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullsc
 const advancedFilterCount = computed(() => Number(Boolean(listPageState.appliedSearchForm.value.orderId)))
 const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.orderId || searchForm.dateRange?.length || searchForm.outboundState || searchForm.inspectionStatus))
 function canShowMore(row) {
+  if (row.can_print && (!row.recheck_status || row.print_before_recheck)) return true
   if (row.record_source !== 'okki') return false
   if (auth.hasPermission('shipping_inspection:admin')) return true
   if (!row.outbound_invoice_id) return false

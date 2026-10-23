@@ -21,6 +21,7 @@ await context.route('**/api/portal/v1/**', async route => {
   if (path.endsWith('/session')) return send(signedIn ? identity : { error_code: 'AUTH_REQUIRED' }, signedIn ? 200 : 401)
   if (path.endsWith('/catalog/families')) return send({ items: [], ungrouped_count: 0, catalog_version: 1 })
   if (path.endsWith('/ordering-terms')) return send({ payment_terms: [{ code: 'prepaid', label: 'Prepaid', display_text: 'Full payment before dispatch', surcharge_percent: '0.00' }], default_payment_term_code: 'prepaid', auto_fees: { enabled: false, shipping_tiers: [] } })
+  if (path.endsWith('/catalog/families')) return send({ items: [], ungrouped_count: 0 })
   if (path.endsWith('/catalog')) return send({ items: [product], total: 1, page: 1, page_size: 24 })
   if (path.endsWith('/quotes')) {
     if (quoteFail) return send({ error_code: 'INVENTORY_UNAVAILABLE' }, 503)
@@ -118,7 +119,7 @@ try {
   assert.equal(await page.getByLabel('Contact name').inputValue(), 'Test buyer')
   const other = await context.newPage(); await other.goto(origin)
   await other.getByRole('button', { name: 'Sign out', exact: true }).click()
-  await page.getByRole('button', { name: 'Continue with email' }).waitFor()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor()
   assert.equal(await page.getByLabel('Contact name').count(), 0)
   assert.equal(await page.locator('.cart-line').count(), 0)
   assert.deepEqual(errors, [])

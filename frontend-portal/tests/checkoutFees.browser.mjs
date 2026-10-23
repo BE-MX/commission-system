@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 
 // Weight-tiered shipping and payment-method surcharge on the review step, desktop and 375px.
 const require = createRequire(import.meta.url)
@@ -61,7 +61,42 @@ async function run(viewport, name) {
     assert.ok(await review.getByText('Payment surcharge (PayPal 5%)').isVisible())
     assert.equal(quotes.at(-1).payment_term_code, 'paypal')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
-    await page.screenshot({ path: `${output}/checkout-fees-${name}.png`, fullPage: true })
+    if (viewport.width > 1000) {
+      const draft = page.getByRole('region', { name: 'Selection and delivery' })
+      const positions = () => page.evaluate(() => ({ left: document.querySelector('.checkout-draft').scrollTop, right: document.querySelector('.checkout-review').scrollTop, outer: window.scrollY }))
+      for (const height of [900, 640]) {
+        await page.setViewportSize({ width: viewport.width, height })
+        await page.evaluate(() => { document.querySelector('.checkout-draft').scrollTop = 0; document.querySelector('.checkout-review').scrollTop = 0 })
+        for (const pane of [draft, review]) assert.ok(await pane.evaluate(el => el.scrollHeight > el.clientHeight), 'pane has scrollable content')
+        const leftBox = await draft.boundingBox(), rightBox = await review.boundingBox()
+        assert.ok(Math.abs(leftBox.height - rightBox.height) < 10)
+        for (const box of [leftBox, rightBox]) {
+          assert.ok(box.height >= height - 200, 'checkout panes leave at most 200px for navigation, title and footer')
+          assert.ok(box.y <= 140, 'checkout content starts near the navigation')
+        }
+        assert.ok(leftBox.y + leftBox.height <= height && rightBox.y + rightBox.height <= height)
+        await writeFile(`${output}/checkout-geometry-${height}.json`, JSON.stringify({ viewport: { width: viewport.width, height }, left: leftBox, right: rightBox }, null, 2))
+        await page.screenshot({ animations: 'disabled', path: `${output}/checkout-top-${height}.png` })
+        const before = await positions()
+        await page.mouse.move(leftBox.x + leftBox.width / 2, leftBox.y + leftBox.height / 2)
+        await page.mouse.wheel(0, 400)
+        await page.waitForFunction(() => document.querySelector('.checkout-draft').scrollTop > 0)
+        const afterLeft = await positions()
+        assert.equal(afterLeft.right, before.right); assert.equal(afterLeft.outer, 0)
+        await page.mouse.move(rightBox.x + rightBox.width / 2, rightBox.y + rightBox.height / 2)
+        await page.mouse.wheel(0, 400)
+        await page.waitForFunction(() => document.querySelector('.checkout-review').scrollTop > 0)
+        const afterRight = await positions()
+        assert.equal(afterRight.left, afterLeft.left); assert.equal(afterRight.outer, 0)
+        await page.evaluate(() => { const el = document.querySelector('.checkout-review'); el.scrollTop = el.scrollHeight })
+        await page.mouse.wheel(0, 1000)
+        assert.equal((await positions()).outer, 0)
+        await page.screenshot({ animations: 'disabled', path: `${output}/checkout-independent-${height}.png` })
+      }
+    } else {
+      assert.equal(await page.locator('.checkout-draft').evaluate(el => getComputedStyle(el).overflowY), 'visible')
+    }
+    await page.screenshot({ animations: 'disabled', path: `${output}/checkout-fees-${name}.png`, fullPage: true })
     await review.getByRole('checkbox').check()
     await page.getByRole('button', { name: 'Notify my representative to place the order' }).click()
     await page.getByText('issue the formal PI').waitFor()

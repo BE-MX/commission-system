@@ -332,6 +332,15 @@ def deliver(db, outbound_id):
     if outbound.status != "pending" or settlement.state != "outbound_pending":
         db.rollback()
         return
+    from app.invoice import shipment_creation_facts as creation_facts
+    if creation_facts.late_results(db, outbound.id, current=True):
+        outbound.status = 'uncertain'
+        outbound.last_error = '已记录迟到的小满出库结果，请核对并绑定原单，禁止重新创建'
+        outbound.version += 1
+        settlement.state = 'outbound_uncertain'
+        settlement.version += 1
+        db.commit()
+        return
     require_delivery()
     token = uuid4().hex
     outbound.status = "sending"
@@ -373,6 +382,8 @@ def deliver(db, outbound_id):
         if count:
             refresh(db, outbound_id)
         else:
+            creation_facts.remember_late_result(db, outbound, token, identity)
+            db.commit()
             logger.warning("late shipment result id=%s remote=%s", outbound_id, identity)
             print(f"[shipment_delivery] late result id={outbound_id} remote={identity}", flush=True)
     except Exception as exc:

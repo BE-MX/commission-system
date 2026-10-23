@@ -3,6 +3,7 @@
 import logging
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -1066,6 +1067,7 @@ def get_sync_logs(
 @router.get("/invoices/{invoice_id}/export/excel", summary="Export invoice Excel")
 def export_excel(
     invoice_id: int,
+    template: Literal["leshine_pi"] | None = Query(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -1074,7 +1076,11 @@ def export_excel(
     if not invoice:
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
-    stream = export_service.build_invoice_workbook(invoice)
+    if template == "leshine_pi":
+        from app.invoice.pi_template import build_workbook
+        stream = build_workbook(invoice)
+    else:
+        stream = export_service.build_invoice_workbook(invoice)
     filename = quote(f"{invoice.invoice_no}.xlsx")
     return StreamingResponse(
         stream,
@@ -1100,6 +1106,7 @@ def export_print_html(
 @router.get("/invoices/{invoice_id}/export/pdf", summary="Export invoice PDF")
 def export_pdf(
     invoice_id: int,
+    template: Literal["leshine_pi"] | None = Query(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -1108,7 +1115,11 @@ def export_pdf(
     if not invoice:
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
-    stream = export_service.build_invoice_pdf(invoice)
+    if template == "leshine_pi":
+        from app.invoice.pi_template import build_pdf
+        stream = build_pdf(invoice)
+    else:
+        stream = export_service.build_invoice_pdf(invoice)
     filename = quote(f"{invoice.invoice_no}.pdf")
     return StreamingResponse(
         stream,

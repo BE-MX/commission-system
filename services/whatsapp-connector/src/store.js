@@ -30,8 +30,12 @@ export class Store {
       CREATE TABLE IF NOT EXISTS changes(sequence INTEGER PRIMARY KEY AUTOINCREMENT,
         uid TEXT NOT NULL, generation INTEGER NOT NULL, consent TEXT NOT NULL, kind TEXT NOT NULL, entity_id TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS changes_feed ON changes(uid,generation,sequence);
+      CREATE INDEX IF NOT EXISTS changes_entity ON changes(uid,kind,entity_id);
       CREATE TABLE IF NOT EXISTS inbox(event_id TEXT PRIMARY KEY, uid TEXT NOT NULL,
         generation INTEGER NOT NULL, event_kind TEXT NOT NULL, processed INTEGER NOT NULL);`)
+    // Exact row count is an O(rows) scan; keep an upper bound and recount only near the limit.
+    this.rowCount = null
+    this.rowsAdded = 0
   }
   close() { this.db.close() }
   transaction(fn) {
@@ -140,6 +144,7 @@ export class Store {
         const revision = row?.revision || 0
         const key = `${category}:${id}`
         if (expected[key] !== undefined && expected[key] !== revision) throw error('auth_cas_conflict')
+        if (!row) this.rowsAdded++
         this.db.prepare(`INSERT INTO auth VALUES(?,?,?,?,?) ON CONFLICT(uid,category,id)
           DO UPDATE SET revision=excluded.revision,data=excluded.data`).run(lease.uid, category, id, revision + 1,
           this.cipher.seal(value, 'auth', `${lease.uid}:${category}:${id}`))
@@ -183,8 +188,14 @@ export class Store {
     const pageSize = committing ? this.db.prepare('PRAGMA page_size').get().page_size : 0
     const checkpointGrowth = Math.max(0, pages * pageSize - databaseBytes)
     if (bytes + extraBytes * 4 + pages * (pageSize + 24) + checkpointGrowth + (committing ? 32 : 0) > this.maxBytes) throw error('disk_capacity')
-    if (this.db.prepare(`SELECT (SELECT COUNT(*) FROM changes) + (SELECT COUNT(*) FROM inbox)
-      + (SELECT COUNT(*) FROM entities) + (SELECT COUNT(*) FROM auth) AS count`).get().count >= this.maxRows) throw error('retention_capacity')
+    // rowCount + rowsAdded never under-estimates (deletes only lower the true count).
+    const margin = Math.max(1, Math.floor(this.maxRows / 64))
+    if (this.rowCount === null || this.rowCount + this.rowsAdded + margin >= this.maxRows) {
+      this.rowCount = this.db.prepare(`SELECT (SELECT COUNT(*) FROM changes) + (SELECT COUNT(*) FROM inbox)
+        + (SELECT COUNT(*) FROM entities) + (SELECT COUNT(*) FROM auth) AS count`).get().count
+      this.rowsAdded = 0
+    }
+    if (this.rowCount + this.rowsAdded >= this.maxRows) throw error('retention_capacity')
   }
   ingest(lease, eventKind, project, eventId = randomUUID(), bytes = 0) {
     this.capacity(bytes)
@@ -192,10 +203,14 @@ export class Store {
       this.fence(lease, { collection: true })
       const inserted = this.db.prepare('INSERT OR IGNORE INTO inbox VALUES(?,?,?,?,0)').run(eventId, lease.uid, lease.generation, eventKind)
       if (!inserted.changes) return false
+      this.rowsAdded++
       project()
       this.fence(lease, { collection: true })
       this.capacity(0, true)
+      // Event ids are per-event UUIDs; keep a bounded recent window for replay dedup, not history.
       this.db.prepare('UPDATE inbox SET processed=1 WHERE event_id=?').run(eventId)
+      this.db.prepare(`DELETE FROM inbox WHERE uid=? AND processed=1 AND rowid <=
+        (SELECT rowid FROM inbox WHERE uid=? AND processed=1 ORDER BY rowid DESC LIMIT 1 OFFSET 1000)`).run(lease.uid, lease.uid)
       return true
     })
   }
@@ -228,6 +243,7 @@ export class Store {
     if (JSON.stringify(comparePrevious) === JSON.stringify(payload)) return false
     const sequence = internal ? 0 : this.change(lease, kind, id)
     payload.source_revision = sequence
+    if (!previous) this.rowsAdded++
     this.db.prepare(`INSERT INTO entities VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(uid,kind,id) DO UPDATE SET
       tombstone=excluded.tombstone,sequence=excluded.sequence,data=excluded.data`)
       .run(lease.uid, kind, id, indexes.chat || null, indexes.externalId || null,
@@ -243,6 +259,10 @@ export class Store {
   }
   change(lease, kind, id) {
     const account = this.account(lease.uid)
+    // A feed reader only needs the latest state of each entity past its cursor: superseded
+    // change rows (and rows from older generations/consents the feed filters out) are dropped.
+    this.db.prepare('DELETE FROM changes WHERE uid=? AND kind=? AND entity_id=?').run(lease.uid, kind, id)
+    this.rowsAdded++
     return Number(this.db.prepare('INSERT INTO changes(uid,generation,consent,kind,entity_id) VALUES(?,?,?,?,?)')
       .run(lease.uid, lease.generation, account.consent_version, kind, id).lastInsertRowid)
   }

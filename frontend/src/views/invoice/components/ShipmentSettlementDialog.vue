@@ -21,6 +21,7 @@
       <el-alert title="预付货款可扣减本批商品款和运费；定金只在人工确认最后一批时抵扣。提交生成本地结算单，实际出库以同步结果为准。" type="info" :closable="false" />
       <el-alert v-if="activeShipment" :title="activeShipmentMessage" type="warning" :closable="false" />
       <el-form label-position="top" :disabled="saving">
+        <h3 class="shipment-section-title">1 · 本批商品</h3>
         <el-form-item label="本批结算方式">
           <el-radio-group v-model="paymentTerm" :disabled="activeShipment || confirmationPending" aria-label="本批结算方式">
             <el-radio value="pay_first">先付款后出库</el-radio>
@@ -42,12 +43,14 @@
           <el-table-column :sort-by="row => stocks.get(row.id)?.limit ?? -1" label="可用库存" min-width="110"><template #default="{ row }"><span :title="stocks.get(row.id)?.reason || ''">{{ stockLoading ? '查询中…' : stocks.get(row.id)?.available ?? '待核对' }}</span></template></el-table-column>
           <el-table-column prop="requested" label="本批数量" min-width="200"><template #default="{ row }"><el-input-number :key="`${row.id}:${row.remaining}:${activeShipment || confirmationPending || saving}`" v-model="row.requested" v-quantity-bounds="{ max: quantityLimit(row), disabled: activeShipment || confirmationPending || saving || stockLoading || stocks.get(row.id)?.available == null }" :precision="0" :min="0" :max="quantityLimit(row)" :disabled="activeShipment || confirmationPending || stockLoading || stocks.get(row.id)?.available == null" controls-position="right" /></template></el-table-column>
         </el-table>
+        <h3 class="shipment-section-title">2 · 结算确认</h3>
         <el-form-item label="本批运费"><el-input-number v-model="freight" :precision="2" :min="0" controls-position="right" /></el-form-item>
         <el-checkbox v-model="isFinal">人工确认：这是最后一批发货，可抵扣定金</el-checkbox>
         <el-alert v-if="freight > 0" title="运费优先从预付货款余额扣减，不足部分再补款。小满保留独立运费订单，方舟记录原款抵扣，不重复登记实收。" type="info" :closable="false" />
         <ResponsiveDescriptions v-if="quote" :column="2" border class="quote-summary">
           <el-descriptions-item v-for="field in quoteFields" :key="field[0]" :label="field[0] === 'new_payment_due' && paymentTerm === 'ship_first' ? '本批待回款' : field[1]">{{ invoice.currency }} {{ money(quote[field[0]]) }}</el-descriptions-item>
           <el-descriptions-item label="出库批次">{{ quote.is_final ? '人工确认最后一批' : '本批发货，定金保留' }}</el-descriptions-item>
+          <el-descriptions-item v-if="Number(quote.price_credit_applied) > 0" label="已发商品调价抵扣">{{ invoice.currency }} {{ money(quote.price_credit_applied) }}（仅抵商品应收）</el-descriptions-item>
           <el-descriptions-item v-if="quote.pool_balances" label="扣减后可用预付货款">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => row.effective && row.purpose === 'presale_advance').reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
           <el-descriptions-item v-if="quote.pool_balances" label="留存定金（仅末批）">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => row.effective && row.purpose === 'presale_deposit').reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
           <el-descriptions-item v-if="quote.pool_balances?.some(row => !row.effective)" label="待生效款（不可用）">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => !row.effective).reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
@@ -78,7 +81,8 @@
           <el-table-column label="收款状态" min-width="120"><template #default="{ row }">{{ row.status === 'released' ? '已释放' : row.effective ? '已生效' : '待生效' }}</template></el-table-column>
         </el-table>
       </template>
-      <h3>出库结算记录</h3>
+      <details class="shipment-history" :open="!!activeShipment || confirmationPending">
+      <summary>3 · 出库结算记录（{{ settlements.length }}）</summary>
       <el-table class="list-table" :data="settlements" border empty-text="暂无出库结算记录" v-sticky-scrollbar>
         <el-table-column prop="settlement_no" label="结算单号" min-width="180"><template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.settlement_no }}</el-button></template></el-table-column>
         <el-table-column prop="state" label="状态" min-width="160"><template #default="{ row }">{{ stateLabel(row.state) }}</template></el-table-column>
@@ -91,9 +95,11 @@
           <el-button v-permission="'shipment:write'" v-if="row.freight_target?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'freight')"><el-icon><Refresh /></el-icon>重试运费单</el-button>
           <el-button v-permission="'shipment:write'" v-if="canReconcileOutbound(row) && (row.outbound?.remote_id || auth.hasPermission('shipment:admin'))" link :disabled="saving" @click="reconcileTarget(row, 'outbound')"><el-icon><Check /></el-icon>核对出库单</el-button>
           <el-button v-permission="'shipment:write'" v-if="row.outbound?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'outbound')"><el-icon><Refresh /></el-icon>重试出库单</el-button>
+          <span v-permission="'shipment:write'" v-if="canRecoverOutbound(row)"><el-button v-permission="'shipment:admin'" link :disabled="busy" @click="openOutboundRecovery(row)"><el-icon><Refresh /></el-icon>核实未生成并恢复</el-button></span>
           <div v-if="!['cancelled', 'shipped', 'completed'].includes(row.state) && !canChangeShipment(row, 'cancel')" class="shipment-action-reason" role="status">{{ shipmentActionReason(row, 'cancel') }}</div>
         </template></el-table-column>
       </el-table>
+      </details>
       </div>
     </div>
     <template #footer><div class="shipment-actions">
@@ -109,6 +115,8 @@
       </template>
     </div></template>
   </el-dialog>
+  <ShipmentOutboundRecovery v-if="recoveryTarget" :row="recoveryTarget" :busy="saving"
+    @close="recoveryTarget = null" @submit="recoverOutbound" />
 </template>
 <script setup>
 import { newRequestKey } from '../../../utils/requestKey.js'
@@ -116,12 +124,14 @@ import { newRequestKey } from '../../../utils/requestKey.js'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { getInvoice } from '@/api/invoice'
-import { quoteShipment, getShipmentInventory, createShipment, inspectShipmentSubmission, listShipments, getShipment, changeShipment, reconcileShipmentTarget, retryShipmentTarget } from '@/api/shipment'
+import { quoteShipment, getShipmentInventory, createShipment, inspectShipmentSubmission, listShipments, getShipment, changeShipment, reconcileShipmentTarget, retryShipmentTarget, recoverShipmentOutbound } from '@/api/shipment'
 import { stockRows, shipmentQuantityLimit, shipmentStockError, fillShipmentQuantities } from '../composables/shipmentInventory'
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
 import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment, shipmentActionReason, isShipmentStateReceipt, canReconcileOutbound } from '../composables/shipmentSettlementState'
+import { canRecoverOutbound, isOutboundRecoveryReceipt } from '../composables/shipmentOutboundRecovery.js'
+import ShipmentOutboundRecovery from './ShipmentOutboundRecovery.vue'
 import { cents, latestRequest } from '@/views/receipt/batchReceiptState'
 import { money } from '@/views/receipt/useReceipts'
 import { currentBeijingDate } from '@/utils/datetime'
@@ -131,6 +141,7 @@ import { readConfirmation, clearConfirmation, isConfirmationTarget, isConfirmati
 const props = defineProps({ invoice: { type: Object, required: true } })
 const emit = defineEmits(['close', 'saved']), auth = useAuthStore()
 const lines = ref([]), freight = ref(0), quote = ref(null), settlements = ref([]), loading = ref(true), quoting = ref(false), saving = ref(false), uploading = ref(false), error = ref(''), registerPayment = ref(false)
+const recoveryTarget = ref(null)
 const stocks = ref(new Map()), stockLoading = ref(false), stockTime = ref(''), stockWarning = ref('')
 const stockError = computed(() => shipmentStockError(lines.value, stocks.value))
 const quantityLimit = row => shipmentQuantityLimit(row, stocks.value)
@@ -153,7 +164,7 @@ const pending = computed(() => ['sending', 'uncertain'].includes(state.value)), 
 const closingBlocked = computed(() => busy.value || uploading.value || (pending.value && !persisted.value) || (confirmationPending.value && !confirmationPersisted.value))
 let actor = Number(auth.user?.id), generation = 0, disposed = false, controller, errorSequence = 0
 const current = identity => !disposed && identity === generation && Number(auth.user?.id) === actor
-function hidePrivate() { stockRequest.next(); stocks.value = new Map(); stockTime.value = ''; stockWarning.value = ''; stockLoading.value = false; lines.value = []; settlements.value = []; quote.value = null; selectedSettlement.value = null; recoveryInvoice.value = null; Object.assign(payment, { amount: null, bank_charge: 0, collection_date: currentBeijingDate(), payment_type: '', attachment_ids: [], remark: '' }); denied.value = true; quoteRequest.next(); detailRequest.next() }
+function hidePrivate() { recoveryTarget.value = null; stockRequest.next(); stocks.value = new Map(); stockTime.value = ''; stockWarning.value = ''; stockLoading.value = false; lines.value = []; settlements.value = []; quote.value = null; selectedSettlement.value = null; recoveryInvoice.value = null; Object.assign(payment, { amount: null, bank_charge: 0, collection_date: currentBeijingDate(), payment_type: '', attachment_ids: [], remark: '' }); denied.value = true; quoteRequest.next(); detailRequest.next() }
 async function showError(value) { const sequence = ++errorSequence, identity = generation; error.value = typeof value === 'string' ? value : '原提交暂不能确认，请先核对'; await nextTick(); if (current(identity) && sequence === errorSequence) errorSummary.value?.$el?.focus() }
 function failed(error) { if ([401,403,404].includes(error?.response?.status)) hidePrivate(); void showError(error?.response?.data?.detail || error?.message || '原提交暂不能确认，请先核对') }
 const quoteRequest = latestRequest(), detailRequest = latestRequest(), stockRequest = latestRequest()
@@ -356,6 +367,40 @@ async function retryTarget(row, kind) {
   } catch (e) { if (current(identity)) failed(e) }
   finally { if (current(identity)) saving.value = false }
 }
+function openOutboundRecovery(row) {
+  if (!busy.value && !pending.value && !denied.value && !storageBlocked.value && canRecoverOutbound(row)) {
+    recoveryTarget.value = copyShipment(row)
+  }
+}
+async function recoverOutbound(body) {
+  const row = recoveryTarget.value
+  if (!row || busy.value || pending.value || denied.value || storageBlocked.value) return
+  const identity = generation
+  saving.value = true; error.value = ''; quoteRequest.next(); detailRequest.next(); quote.value = null; quoting.value = false
+  let applied = false
+  try {
+    const result = await recoverShipmentOutbound(row.id, body)
+    if (!current(identity)) return
+    if (!isOutboundRecoveryReceipt(row, result)) throw new Error('恢复回执与原出库任务不一致，请刷新原批次核对')
+    applied = true; recoveryTarget.value = null
+    await reload()
+    if (!current(identity)) return
+    selectedSettlement.value = settlements.value.find(item => item.id === row.id) || result; emit('saved')
+    msgSuccessText('原出库任务已恢复，将继续核验并处理原批次')
+  } catch (e) {
+    if (current(identity)) {
+      recoveryTarget.value = null
+      if ([401, 403, 404].includes(e?.response?.status)) { failed(e); return }
+      // An unknown final commit is inspected through the original batch. Do
+      // not replay the declaration or manufacture a new settlement/request.
+      try { await reload() } catch (readError) { failed(readError) }
+      if (current(identity)) {
+        if (applied) void showError('原任务已恢复，但列表刷新失败，请重新打开原批次核对')
+        else failed(e)
+      }
+    }
+  } finally { if (current(identity)) saving.value = false }
+}
 async function restore() {
   if (busy.value) return
   storageBlocked.value = false
@@ -416,6 +461,10 @@ onMounted(restore)
 .shipment-content .el-alert { margin-bottom: 12px; }
 .shipment-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 600px) { .shipment-content { max-height: calc(100dvh - 230px); } .shipment-actions > * { flex: 1 1 auto; } }
+.shipment-section-title { margin:18px 0 12px; }
+.shipment-history { margin-top:20px; }
+.shipment-history > summary { cursor:pointer; color:var(--text-primary); font-size:15px; font-weight:600; padding:12px 0; }
+.shipment-history > summary:focus-visible { outline:2px solid var(--color-primary); outline-offset:2px; }
 .quote-summary { margin: 16px 0; }
 .shipment-action-reason { margin-top: 4px; color: var(--text-secondary); font-size: 12px; white-space: normal; }
 .shipment-inventory-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; color: var(--text-secondary); font-size: 12px; }

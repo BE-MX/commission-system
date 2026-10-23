@@ -195,6 +195,7 @@ def prepare(revision, allow_pending=False, recover_149=False, recover_151=False,
             marker.write_text(digest(requirements))
         python = candidate_env / "bin/python"
     checked = schema_check(source, python, allow_pending=allow_pending)
+    run([str(python), "-m", "app.invoice.pdf_font"], cwd=source / "backend")
     if recover_168 and checked["schema"] != "168_customer_media_customer_tags":
         raise RuntimeError("Recovery 168 requires code head 168")
     if recover_151 and checked["schema"] != "154_okki_outbound_tasks":

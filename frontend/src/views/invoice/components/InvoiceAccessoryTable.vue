@@ -33,7 +33,7 @@
       <el-table ref="lineTable" :data="pagedItems" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table accessory-line-table" max-height="560" v-sticky-scrollbar>
         <el-table-column type="selection" min-width="42" fixed />
         <el-table-column label="#" type="index" :index="indexBase" min-width="48" fixed />
-        <el-table-column label="Name" min-width="190" prop="product_name" sortable="custom">
+        <el-table-column label="配件名称" min-width="190" prop="product_name" sortable="custom">
           <template #default="{ row }">
             <!-- 不要加 @visible-change 预取：EP 2.13 起该事件绑内部 dropdownMenuVisible
                  （随 loading/option 挂载数翻转），配合请求会形成无限刷新环；
@@ -60,10 +60,10 @@
             <div v-if="row.sku_id" class="accessory-identity">SKU {{ row.sku_id }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="Model" min-width="130" prop="model" sortable="custom">
+        <el-table-column label="型号" min-width="130" prop="model" sortable="custom">
           <template #default="{ row }"><el-input :model-value="row.model" readonly /></template>
         </el-table-column>
-        <el-table-column label="Color" min-width="130" prop="color" sortable="custom">
+        <el-table-column label="色号" min-width="130" prop="color" sortable="custom">
           <template #default="{ row }"><el-input :model-value="row.color" readonly /></template>
         </el-table-column>
         <el-table-column label="标准价" min-width="110" align="right" prop="standard_price" sortable="custom">
@@ -99,13 +99,13 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" min-width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="数量" min-width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
             <el-input-number v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="$emit('change', row)" />
             <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
-        <el-table-column label="TotalPrice" min-width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="小计" min-width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="56" fixed="right">

@@ -224,6 +224,19 @@ def retry_outbound(identity: int, body: SettlementAction,
         shipment_state_service.result_unavailable(error)
 
 
+from app.invoice.settlement_schemas import OutboundAbsenceRecovery
+
+
+@shipment_state_router.post('/shipments/{identity}/recover-outbound')
+def recover_outbound(identity: int, body: OutboundAbsenceRecovery,
+                     db: Session = Depends(get_db), user=Depends(get_current_user)):
+    # Like the other financial state commands, current employee permissions
+    # replace stale JWT claims. The service requires shipment:write AND admin
+    # twice, and owns the final commit under the shared outbound executor fence.
+    from app.invoice.shipment_absence_recovery import recover
+    return ok(recover(db, identity, body, user))
+
+
 @router.post("/receipts/batches")
 def create_batch(body: BatchCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
     def apply():

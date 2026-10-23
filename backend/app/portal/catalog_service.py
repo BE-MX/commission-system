@@ -88,10 +88,10 @@ def projected_items(db, principal, *, keep=None):
     return result
 
 
-def with_price(db, principal, row, item):
+def with_price(db, principal, row, item, *, browse=None):
     if principal.access.can_view_price:
         try:
-            price = pricing.resolve(db, principal.access, row, principal.site.currency)
+            price = pricing.resolve(db, principal.access, row, principal.site.currency, **({"browse": browse} if browse is not None else {}))
             item.update(unit_price=format(price.amount, ".4f"), price_status="available")
         except PortalError as error:
             if error.code != "PRICE_UNAVAILABLE":

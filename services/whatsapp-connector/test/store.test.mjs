@@ -109,6 +109,69 @@ test('account owner and active lease authority cannot be rebound by another owne
   assert.throws(() => store.configure('account_a', authorization), /stale_generation/)
 })
 
+test('status, channel, reaction and system stubs are not projected; view-once content is unwrapped', t => {
+  const { store } = fixture(t)
+  const lease = store.acquire('account_a')
+  const projector = new Projector(store)
+  const chat = '15550002222@s.whatsapp.net'
+  projector.ingest(lease, 'messages.upsert', { type: 'notify', messages: [
+    message('real', 'customer body', 2000),
+    message('story', 'status text', 2001, { remoteJid: 'status@broadcast', participant: chat }),
+    message('channel', 'channel post', 2002, { remoteJid: '120363000000@newsletter' }),
+    { key: { remoteJid: chat, id: 'react', fromMe: false }, messageTimestamp: 2003,
+      message: { reactionMessage: { key: { remoteJid: chat, id: 'real' }, text: '+1' }, messageContextInfo: {} } },
+    { key: { remoteJid: chat, id: 'stub', fromMe: false }, messageTimestamp: 2004, messageStubType: 1 },
+    { key: { remoteJid: chat, id: 'skd', fromMe: false }, messageTimestamp: 2005,
+      message: { senderKeyDistributionMessage: { groupId: 'x' } } },
+    { key: { remoteJid: chat, id: 'once', fromMe: false }, messageTimestamp: 2006,
+      message: { viewOnceMessageV2: { message: { imageMessage: { mimetype: 'image/jpeg', caption: 'look' } } } } },
+  ] })
+  projector.ingest(lease, 'messaging-history.set', { chats: [{ id: 'status@broadcast' }],
+    contacts: [{ id: 'status@broadcast' }], messages: [] })
+  const messages = store.entities('account_a', 'message')
+  assert.deepEqual(messages.map(item => item.external_message_id).sort(), ['once', 'real'])
+  assert.equal(messages.find(item => item.external_message_id === 'once').content_type, 'image')
+  const conversations = store.entities('account_a', 'conversation')
+  assert.deepEqual(conversations.map(item => item.chat_id), [chat])
+  assert.equal(conversations[0].last_message_preview, 'look')
+})
+
+test('a @lid chat keeps its stable id but records the phone-form alternate JID for CRM matching', t => {
+  const { store } = fixture(t)
+  const lease = store.acquire('account_a')
+  const projector = new Projector(store)
+  projector.ingest(lease, 'messages.upsert', { type: 'notify', messages: [
+    message('lid-1', 'hello', 3000, { remoteJid: '987654321@lid', remoteJidAlt: '15550003333@s.whatsapp.net' })] })
+  projector.ingest(lease, 'messages.upsert', { type: 'notify', messages: [
+    message('lid-2', 'again', 3001, { remoteJid: '987654321@lid' })] })
+  const [conversation] = store.entities('account_a', 'conversation')
+  assert.equal(conversation.chat_id, '987654321@lid')
+  assert.equal(conversation.contact_phone, '+15550003333')
+  assert.equal(conversation.alt_jid, '15550003333@s.whatsapp.net')
+})
+
+test('a batch writes the account once, keeps one change row per entity and bounds the inbox', t => {
+  const { store } = fixture(t)
+  const lease = store.acquire('account_a')
+  const projector = new Projector(store)
+  const batch = Array.from({ length: 20 }, (_, n) => message(`m${n}`, `body ${n}`, 4000 + n))
+  const cursor = Number(store.feed('account_a').next_cursor)
+  projector.ingest(lease, 'messages.upsert', { type: 'notify', messages: batch })
+  assert.equal(store.db.prepare("SELECT COUNT(*) AS count FROM changes WHERE kind='account'").get().count, 1)
+  const coverage = store.account('account_a').coverage
+  assert.equal(coverage.earliest_message_at, new Date(4000000).toISOString())
+  assert.equal(coverage.latest_message_at, new Date(4019000).toISOString())
+  // Re-editing the same messages replaces their change rows instead of appending more.
+  projector.ingest(lease, 'messages.update', batch.map(raw => ({ key: raw.key, update: { message: { conversation: 'edited' } } })))
+  const perEntity = store.db.prepare('SELECT MAX(n) AS n FROM (SELECT COUNT(*) AS n FROM changes GROUP BY uid,kind,entity_id)').get().n
+  assert.equal(perEntity, 1)
+  const fed = store.feed('account_a', cursor, 500, 'message').items
+  assert.equal(fed.length, 20)
+  assert.ok(fed.every(item => item.payload.content_text === 'edited'))
+  for (let n = 0; n < 1100; n++) projector.ingest(lease, 'contacts.upsert', [{ id: `1555000${String(n).padStart(4, '0')}@s.whatsapp.net` }])
+  assert.ok(store.db.prepare('SELECT COUNT(*) AS count FROM inbox').get().count <= 1001)
+})
+
 test('notify/append/history arrays project all messages, stable IDs, same and old timestamps never lose data', t => {
   const { store } = fixture(t)
   const lease = store.acquire('account_a')

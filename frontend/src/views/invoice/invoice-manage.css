@@ -643,3 +643,6 @@
   .toolbar > :deep(.el-input), .toolbar > :deep(.el-select) { max-width: 100%; }
 
 }
+
+.invoice-danger-action { color:var(--button-danger-link); }
+.invoice-page .page-header { margin-bottom:12px; }

@@ -31,7 +31,7 @@ async function login() {
     <section class="brand-panel" aria-label="LeShine partner collection">
       <BrandMark />
       <div class="brand-story"><p class="eyebrow">THE PARTNER COLLECTION</p><h1>Good things<br />grow together.</h1><p>Your collection. Your shades.<br />A closer connection to LeShine.</p></div>
-      <div class="brand-foot"><span>LESHINE / PARTNER ATELIER</span><span>01 — YOUR NEXT CHAPTER</span></div>
+      <div class="brand-foot"><span>LESHINE / PARTNER ATELIER</span></div>
     </section>
     <section class="login-panel">
       <div class="login-form">

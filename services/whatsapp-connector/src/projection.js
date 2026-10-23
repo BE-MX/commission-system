@@ -20,14 +20,33 @@ function sentAt(timestamp) {
   const seconds = Number(timestamp)
   return Number.isFinite(seconds) && seconds > 0 && seconds < 8640000000000 ? new Date(seconds * 1000).toISOString() : null
 }
-function content(raw) {
+// Status stories, broadcast lists and channels are not customer conversations.
+export const ignoredJid = jid => typeof jid === 'string'
+  && (jid === 'status@broadcast' || jid.endsWith('@broadcast') || jid.endsWith('@newsletter'))
+const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension',
+  'documentWithCaptionMessage', 'editedMessage', 'botInvokeMessage', 'lottieStickerMessage']
+export function unwrap(raw) {
   let message = raw
   for (let depth = 0; depth < 6; depth++) {
-    if (message?.ephemeralMessage?.message) message = message.ephemeralMessage.message
-    else if (message?.documentWithCaptionMessage?.message) message = message.documentWithCaptionMessage.message
-    else if (message?.editedMessage?.message) message = message.editedMessage.message
-    else break
+    const wrapper = wrappers.find(name => message?.[name]?.message)
+    if (!wrapper) break
+    message = message[wrapper].message
   }
+  return message
+}
+// Signalling-only payloads carry no customer content; storing them as "[Unsupported]" rows
+// overwrote conversation previews and polluted AI context.
+const signalling = ['reactionMessage', 'encReactionMessage', 'senderKeyDistributionMessage', 'messageContextInfo',
+  'protocolMessage', 'pollUpdateMessage', 'keepInChatMessage', 'pinInChatMessage', 'encEventResponseMessage', 'callLogMesssage']
+export function contentless(raw) {
+  const message = unwrap(raw.message)
+  // System stubs (joins, encryption notices, call logs) have a stub type and no message body.
+  if (!message) return Boolean(raw.messageStubType)
+  const keys = Object.keys(message).filter(name => message[name] !== null && message[name] !== undefined)
+  return keys.length > 0 && keys.every(name => signalling.includes(name))
+}
+function content(raw) {
+  const message = unwrap(raw)
   if (typeof message?.conversation === 'string') return { content_type: 'text', content_text: message.conversation, attachments: [] }
   if (message?.extendedTextMessage?.text !== undefined) return { content_type: 'text', content_text: message.extendedTextMessage.text, attachments: [] }
   for (const [name, type] of [['imageMessage', 'image'], ['videoMessage', 'video'], ['audioMessage', 'audio'],
@@ -41,7 +60,13 @@ function content(raw) {
 export class Projector {
   constructor(store) { this.store = store }
   ingest(lease, kind, event, eventId, bytes) {
+    try { return this.ingestBatch(lease, kind, event, eventId, bytes) }
+    finally { this.pendingRange = null }
+  }
+  ingestBatch(lease, kind, event, eventId, bytes) {
     return this.store.ingest(lease, kind, () => {
+      // Message timestamps are folded into one account write per event, not one per message.
+      this.pendingRange = { earliest: null, latest: null }
       if (kind === 'messages.upsert') for (const message of event.messages || []) this.message(lease, message,
         { live: event.type === 'notify', history: event.type === 'append' })
       else if (kind === 'messaging-history.set') {
@@ -67,23 +92,31 @@ export class Projector {
           this.chat(lease, { id: event.jid }, { deleted: true })
         } else for (const key of event.keys || []) this.deleteMessage(lease, key)
       }
-      this.coverage(lease, {}, true)
+      const range = this.pendingRange
+      this.pendingRange = null
+      this.coverage(lease, {}, true, range.earliest, range.latest)
     }, eventId, bytes)
   }
-  coverage(lease, patch = {}, ingestion = false, timestamp = null) {
+  coverage(lease, patch = {}, ingestion = false, timestamp = null, latestTimestamp = timestamp) {
     const account = this.store.account(lease.uid)
     const coverage = { ...account.coverage, ...patch.coverage }
     if (ingestion) coverage.last_ingest_at = new Date().toISOString()
-    if (timestamp) {
-      if (!coverage.earliest_message_at || timestamp < coverage.earliest_message_at) coverage.earliest_message_at = timestamp
-      if (!coverage.latest_message_at || timestamp > coverage.latest_message_at) coverage.latest_message_at = timestamp
-    }
+    if (timestamp && (!coverage.earliest_message_at || timestamp < coverage.earliest_message_at)) coverage.earliest_message_at = timestamp
+    if (latestTimestamp && (!coverage.latest_message_at || latestTimestamp > coverage.latest_message_at)) coverage.latest_message_at = latestTimestamp
     Object.assign(account, patch, { coverage, last_sync_at: coverage.last_ingest_at, last_message_at: coverage.latest_message_at })
     this.store.writeAccount(account)
     this.store.change(lease, 'account', lease.uid)
   }
+  track(lease, timestamp) {
+    const range = this.pendingRange
+    if (!range) return this.coverage(lease, {}, false, timestamp)
+    if (!timestamp) return
+    if (!range.earliest || timestamp < range.earliest) range.earliest = timestamp
+    if (!range.latest || timestamp > range.latest) range.latest = timestamp
+  }
   contact(lease, contact) {
     if (!contact.id) throw error('invalid_contact_key')
+    if (ignoredJid(contact.id)) return
     const id = hash(contact.id)
     const previous = this.store.entity(lease.uid, 'contact', id) || {}
     this.store.putEntity(lease, 'contact', id, { ...previous, ...contact }, {}, true)
@@ -92,11 +125,15 @@ export class Projector {
   }
   chat(lease, chat, { deleted = false, live = false } = {}) {
     if (!chat?.id) throw error('invalid_chat_key')
+    if (ignoredJid(chat.id)) return null
     const id = conversationId(lease.uid, chat.id)
     const previous = this.store.entity(lease.uid, 'conversation', id) || {}
     const contact = this.store.entity(lease.uid, 'contact', hash(chat.id))
     const value = { ...previous, conversation_uid: id, chat_id: chat.id, source_jid: chat.id,
-      contact_phone: phone(chat.id) || phone(contact?.phoneNumber), contact_name: chat.name || contact?.name || contact?.notify || previous.contact_name || null,
+      alt_jid: chat.altJid || previous.alt_jid || null,
+      // @lid chats carry no number; the phone-form alternate JID from message keys keeps CRM matching.
+      contact_phone: phone(chat.id) || phone(contact?.phoneNumber) || phone(chat.altJid) || previous.contact_phone || null,
+      contact_name: chat.name || contact?.name || contact?.notify || previous.contact_name || null,
       is_group: chat.id.endsWith('@g.us'), last_message_at: previous.last_message_at || sentAt(chat.conversationTimestamp),
       last_message_preview: previous.last_message_preview || '', is_deleted: deleted || (previous.is_deleted && !live) || false,
       history_blocked: deleted || previous.history_blocked || false,
@@ -111,7 +148,8 @@ export class Projector {
   }
   message(lease, raw, { history = false, edited = false, live = false } = {}) {
     const key = sourceKey(raw.key)
-    const protocol = raw.message?.protocolMessage
+    if (ignoredJid(key.remoteJid)) return
+    const protocol = unwrap(raw.message)?.protocolMessage
     if (protocol?.type === proto.Message.ProtocolMessage.Type.REVOKE && protocol.key) {
       return this.deleteMessage(lease, { ...protocol.key, remoteJid: protocol.key.remoteJid || key.remoteJid })
     }
@@ -120,13 +158,15 @@ export class Projector {
         participant: protocol.key.participant || key.participant },
         update: { message: protocol.editedMessage, messageTimestamp: raw.messageTimestamp } })
     }
+    if (contentless(raw)) return
     const id = messageId(lease.uid, key)
     const previous = this.store.entity(lease.uid, 'message', id)
     const tombstones = this.store.findMessages(lease, { chat: hash(key.remoteJid), externalId: hash(key.id), fromMe: key.fromMe })
     if (previous?.is_deleted || tombstones.some(item => item.is_deleted && !item.source_key.participant)
       || (!edited && previous?.is_edited)) return
     const timestamp = previous?.sent_at || sentAt(raw.messageTimestamp)
-    const conversation = this.chat(lease, { id: key.remoteJid }, { live })
+    const conversation = this.chat(lease, { id: key.remoteJid,
+      altJid: key.remoteJid.endsWith('@lid') && phone(key.remoteJidAlt) ? key.remoteJidAlt : undefined }, { live })
     if (conversation.is_deleted) {
       this.coverage(lease, { coverage: { gap_reason: 'deleted_chat_history_ambiguous' } })
       return
@@ -157,7 +197,7 @@ export class Projector {
         last_message_at: timestamp || conversation.last_message_at, last_message_preview: value.content_preview,
         last_message_uid: id }, { chat: hash(key.remoteJid) })
     }
-    this.coverage(lease, {}, false, timestamp)
+    this.track(lease, timestamp)
   }
   updateMessage(lease, { key, update }) {
     if (update.message === null || update.messageStubType === proto.WebMessageInfo.StubType.REVOKE) return this.deleteMessage(lease, key)
@@ -170,6 +210,7 @@ export class Projector {
   }
   deleteMessage(lease, rawKey) {
     const key = sourceKey(rawKey)
+    if (ignoredJid(key.remoteJid)) return
     this.chat(lease, { id: key.remoteJid })
     const matches = this.store.findMessages(lease, { chat: hash(key.remoteJid), externalId: hash(key.id),
       fromMe: key.fromMe, participant: key.participant })

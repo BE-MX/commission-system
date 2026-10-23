@@ -53,11 +53,13 @@ def snapshot(db, invoice, settlement, outbound):
         if (str(line.get('order_id')) != str(invoice.xiaoman_order_id)
                 or _id(actual.get('product_id'), '产品 ID') != _id(line.get('product_id'), '冻结产品 ID')
                 or _id(actual.get('sku_id'), 'SKU ID') != _id(line.get('sku_id'), '冻结 SKU ID')
-                or _quantity(actual.get('count')) < _quantity(line.get('outbound_count'))
-                or _number(actual.get('unit_price'), '销售单价') != _number(line.get('sale_price'), '冻结销售单价')):
+                or _quantity(actual.get('count')) < _quantity(line.get('outbound_count'))):
             raise ValueError('原批次产品、数量或价格已变化')
-        original = [item for item in local_lines if str(item.xiaoman_unique_id) == str(identity)]
         selected = [item for item in batch_lines if str(item.snapshot.get('order_record_id')) == str(identity)]
+        from app.invoice.presale_order_revision import config, approved_remote_line
+        revision=config(invoice)
+        original = [item for item in local_lines if (item.id==selected[0].invoice_item_id if revision and len(selected)==1
+            else str(item.xiaoman_unique_id)==str(identity))]
         if (len(original) != 1 or len(selected) != 1
                 or selected[0].invoice_item_id != original[0].id
                 or selected[0].quantity != _quantity(line.get('outbound_count'))):
@@ -66,10 +68,18 @@ def snapshot(db, invoice, settlement, outbound):
         # Before the next push the provider can still show the original whole
         # line; after it, the same UID can show only its archived shipped part.
         # Match complete quantity/amount pairs, never a rounded per-batch slice.
-        amounts = {(_quantity(item.quantity), remote.money(item.total_price))}
+        amounts = {(_quantity(item.quantity), remote.money(item.total_price),_number(line.get('sale_price'),'冻结销售单价'))}
         if item.presale_archived and item.presale_shipped_quantity:
-            amounts.add((_quantity(item.presale_shipped_quantity), remote.money(item.presale_shipped_amount)))
-        if (_quantity(actual.get('count')), remote.money(actual.get('cost_amount'))) not in amounts:
+            amounts.add((_quantity(item.presale_shipped_quantity), remote.money(item.presale_shipped_amount),_number(line.get('sale_price'),'冻结销售单价')))
+        if revision:
+            approved=approved_remote_line(invoice,item.id)
+            if approved.xiaoman_unique_id!=str(identity):raise ValueError('整单修订改变原出库明细身份')
+            amounts={(_quantity(approved.quantity),remote.money(approved.total_price),_number(approved.price_per_piece,'批准销售单价'))}
+            if invoice.sync_status!='synced':
+                prior=revision.get('synced_projection',{}).get(str(identity))
+                if prior:
+                    amounts.add((_quantity(prior['quantity']),remote.money(prior['amount']),_number(prior['unit_price'],'上次核验单价')))
+        if (_quantity(actual.get('count')), remote.money(actual.get('cost_amount')),_number(actual.get('unit_price'),'销售单价')) not in amounts:
             raise ValueError('原批次成交金额或历史数量已变化')
     return {'rows':remote.order_receipts(db, invoice.xiaoman_order_id),
         'exchange_rate':main.get('exchange_rate'), 'invoice_binding':remote.invoice_binding(invoice),

@@ -33,7 +33,7 @@
       </div>
       <div class="sum-div" />
       <div class="sum-base">
-        <span>订单总金额</span>
+        <span>订单金额（不含手续费）</span>
         <span class="v">{{ form.currency }} {{ money(baseAmount) }}</span>
       </div>
       <div class="sum-row">

@@ -1,5 +1,11 @@
 # 莱莎方舟 数据库表参考
 
+## 预售整单修订（202，本地候选）
+
+`202_presale_order_revision` 接 `201_portal_access_requests`，仅为 `ark_invoices` 增加 nullable JSON `presale_order_revision`，无历史回填。NULL 保留原追加批次规则。显式修订单保存模式、版本、当前行到历史行的来源链、逐行数量/成交额依据、已发调价抵扣及最后完整核验的远端投影。来源及抵扣参与业务版本；远端核验投影仅是操作证据，不改变关联任务的业务快照。
+
+首次维护和以后编辑均写 `ark_shipping_operation_events`，scope `presale-order-revision`，保留前后值、请求ID和操作者。抵扣占用保存在非取消结算的 quote 中，不生成回款、资金分配或现金余额。升级可中断续跑，降级禁止删除来源/财务证据；生产仅由受管部署入口迁移。详见[整单修订规则](requirements/2026-10-23-presale-whole-order-revision.md)。
+
 ## 待出库库存保留（2026-10-21，本地候选，无新迁移）
 
 复用 `ark_okki_outbound_tasks`、成功 `ark_invoice_sync_logs` 与 `ark_shipping_operation_events`。事件 scope `outbound-stock-reservation` 保存任务ID/完整成功日志ID代次的整单 product_id、sku_id、count 及 order_id、warehouse_id；`outbound-stock-native` 保存严格核验后的原生关联数量，或历史严格完成代次的原占用基线。系统观察的 operator/login 为 0，并保留系统名称。原生快照只在核验后更新；未知外发和未同步草稿不能释放成功代次。无新增表、索引、迁移或镜像写入，不能仅上线前端；应用与受管 legacy 模块需同批发布。业务规则见[补货同步](requirements/2026-10-21-outbound-replenishment.md)。
@@ -764,3 +770,5 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 ## 内贸交付批次与货款核销（186）
 
 迁移 `186_domestic_delivery` 接 185。新增 `ark_domestic_shipments`（同客户跨订单批次、发货/收货事实、幂等指纹）、`ark_domestic_shipment_lines`（订单明细及顾客/规格/价格/数量快照）、`ark_domestic_shipment_units`（具体件唯一交付关联）、`ark_domestic_receipt_allocations`（资金申请到批次的不可删增量核销，`ledger_id` 为已入账证据，`business_key` 唯一）。FK 保持目标类型一致。资金申请增加可空 `receipt_date`、`payload_hash`，类型扩展 `receipt`；历史字段和资金记录不猜配、不回填。所有新审计时间用北京时间，downgrade 拒删。行为及历史对账边界见 [内贸交付说明](domestic-delivery.md)。
+
+内贸 `ark_domestic_order_items.status` 值域补充：`3=已终止`（原 `0=生产中,1=已完工,2=已发货` 保持）。复用现有 SmallInteger 列，不修改 schema；原因保存在现有 remark，资金差额记录在客户余额账本，历史报工和逐件记录保留。

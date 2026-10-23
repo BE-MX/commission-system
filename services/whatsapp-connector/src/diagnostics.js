@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 const time = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit',
   day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
 const events = new Set(['authorization_failed', 'socket_start', 'companion_reg_refresh', 'qr_ready',
-  'pairing_credentials', 'connection_open', 'connection_closed', 'protected_pause'])
+  'pairing_credentials', 'connection_open', 'connection_closed', 'protected_pause', 'collection_wait'])
 const classifications = new Set(['reauth_required', 'blocked', 'restart', 'transient', 'protected_pause'])
 const reasons = new Set(['authorization_unavailable', 'authorization_denied', 'authorization_changed',
   'reauth_required', 'blocked', 'protected_pause', 'reconnect_exhausted', 'auth_store_failed', 'auth_cas_conflict',
@@ -34,7 +34,7 @@ export function createDiagnostics(write = line => console.info(line), now = Date
       if (event === 'connection_closed') Object.assign(value, {
         status_code: status(detail.status_code), classification: choice(detail.classification, classifications),
       })
-      if (event === 'protected_pause') value.reason = choice(detail.reason, reasons)
+      if (['protected_pause', 'collection_wait'].includes(event)) value.reason = choice(detail.reason, reasons)
       write(JSON.stringify(value))
     } catch { console.warn('connector_diagnostic_output_failed') }
   }

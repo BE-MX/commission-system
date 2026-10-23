@@ -1,3 +1,96 @@
+## 2026-10-23 浏览器标签页 LeShine LOGO（Codex，Git 交付，未部署）
+
+- 分支 `codex/leshine-tab-logo`；主站 `frontend/index.html` 的 favicon 从 Vite 默认图标改为现有 `/logo.webp`，与平台侧栏共用 LeShine 品牌资源，登录和主站路由共用。
+- `npm --prefix frontend run build`、约定检查、图标引用与 WebP 解码检查通过；Git 巡检已运行（`--no-fetch`，本地引用快照）。构建仅有既有大 chunk 提示。
+- 用户已授权本次提交、合入 main 并推送，最终状态以 Git refs 回读为准；未部署。
+
+## 2026-10-23 预售出库创建中断的原任务恢复（Codex，本地修复，未部署）
+
+- 新增管理员“核实未生成并恢复”：人工确认原请求已终止且未生成，填写核实依据；服务端双次当前授权/完整图与尝试挑战校验、实时原编号GET，并全程共享出库执行器锁直到最终提交。只恢复原任务，保留全部编号、明细、回款与资金分配，命令不发送小满POST。
+- 迟到创建成功持久化不可变审计并阻断后续发送；已提交但回执中断安全返回待读回；恢复开始使旧详情请求失效。无迁移。
+- 新增算法28项、真实MySQL20项、前端15项与浏览器7场景验证，构建、约定和独立审查收尾结果见[报告](reports/2026-10-23-shipment-absence-recovery.md)。扩展回归1项未隔离小满鉴权的旧测试在干净HEAD同样失败，未改弱断言或使用生产凭据。
+- 本地修复已提交，尚未合并、推送或部署；未对Veronika第二批执行恢复、重发或财务变更。当前进度保留在 `codex/shipment-absent-recovery` 独立worktree。Git巡检 `--no-fetch` 于22:17退出0，仅为本地远端引用快照；任务代码无未提交改动，另有未纳入提交的临时UI夹具。
+- 临时UI测试服务与隔离MySQL均已停止；测试夹具、基线副本及临时MySQL目录的递归清理被自动审批拒绝（blocked by policy），原目录暂留且不纳入提交；验证摘要与浏览器证据保留在 `tmp/shipment-absence-validation.json`、`tmp/recovery-browser/`。
+
+## 2026-10-23 订单发票与出库体验优化（Codex，Git 交付，未部署）
+
+- 分支 `codex/invoice-outbound-ux`，worktree `C:/Users/windb/.codex/worktrees/invoice-outbound-ux/commission-system`，基点 `569b1fe5`；按评估顺序落地金额命名、关联进度、列表动作、概览紧凑、明细工具、出库菜单、库存展开、结算分组和可选打印预览。
+- 保留现有金额计算、资金抵扣、库存及实际出库口径；无后端逻辑、数据库或生产业务写入。独立审查指出的真实状态枚举、历史记录过滤及菜单权限包装已修复。
+- 定向回归 119/119、构建通过；扩大回归 305/326，通过 main 同范围复跑确认其余 21 项均为既有夹具／断言失败，无新增失败。实际浏览器核对桌面及 390px 库存抽屉，另验证只读身份无编辑／删除。
+- 实现范围、证据和边界见 [优化报告](reports/2026-10-23-invoice-outbound-ux.md)。用户已授权本次提交、合入 main 并推送，最终交付以 Git refs 回读为准；未部署。
+
+## 2026-10-23 客户 PI PDF 字体故障（Codex，Git 交付，未部署）
+
+- 北京现有 Noto CJK 字体为 CFF 轮廓：Pillow 可用，ReportLab 拒绝，导致客户下载报 PDF 服务未配置。现场没有 systemd/进程字体覆盖；有效配置来自 `backend/.env`。
+- 共享中文字体预检增加 ReportLab 实际解析，北京受管 prepare 在停服务之前调用；PI 只补异常类型日志，金额、权限和快照选择不变。28 项后端测试、9 项既有部署测试及 1 项新增预检阻断测试通过，独立审查未见 P1/P2。
+- 兼容字体已从 Ubuntu 包解压到私有暂存路径。对截图请求的当前已发布快照做只读渲染成功，2 页 PDF，快照哈希未变、业务库写入 0。证据含真实客户 PDF，仅留 `tmp/pi-font-proof/` 与北京私有 `.deploy_state`，不提交。
+- 详见 [报告](reports/2026-10-23-portal-pi-font-repair.md)。用户已授权本批与结算高度修改一起提交、合入 main 并推送，以 Git refs 回读为准；本次不部署，线上字体配置与服务仍未切换。上线需先配置兼容字体，再走 `deploy/deploy.bat`，单独部署预检代码不会修复现有字体。
+
+## 2026-10-23 客户结算双栏高度（Codex，Git 交付，未部署）
+
+- `codex/portal-checkout-height`，独立 worktree `C:/Users/windb/.codex/worktrees/portal-checkout-height/commission-system`。桌面结算页收紧导航、标题及页脚，将更多视口高度给左右独立滚动区域；手机布局与业务逻辑不变。
+- 1440×900 两栏高度 537→703px，1440×640 为 376→443px；浏览回归含几何、实际滚轮独立性、付款与提交，截图和尺寸在 `tmp/checkout-height/`。说明见 `docs/reports/2026-10-23-portal-checkout-pane-height.md`。
+- 用户已授权与 PI 字体修复一起提交、合入 main 并推送；最终状态以 Git refs 回读为准，本次不部署。
+
+## 2026-10-23 客户门户全页 UI 检查与优化（Codex，Git 交付，未部署）
+
+- `codex/portal-oil-ui`；独立 worktree `C:/Users/windb/.codex/worktrees/portal-oil-ui/commission-system`。覆盖公开入口、集合/规格、选购、请求/方案/PI、再次下单、联系弹窗和共享导航。
+- 补申请/激活样式、可读性、窄屏布局；修初始激活路由及验证码函数未调用；删高频 500ms 入场、误导性已确认标题及重复说明。无后端、数据库或生产业务写入。
+- 与 main 的商品固定操作栏/结算独立滚动整合；横屏复验发现大图吸顶遮挡下一行数量按钮，已按 ≤1180px 布局关闭大图吸顶。
+- 一轮独立视觉评审，受影响浏览器场景三轮通过；报告 `docs/reports/2026-10-23-portal-oil-ui.md`，截图对比 `tmp/portal-oil-ui/index.html`。线上只确认公开登录结构，已登录全站视觉检查受浏览器连接阻塞；不能称生产验收。用户已授权本次提交、合并 main 并推送，最终状态以 Git refs 回读为准；未部署。
+
+## 2026-10-23 门户选购布局与 PI 模板导出（Codex，Git 交付，未部署）
+
+- 用户已授权本批提交、合入 main 并推送：商品详情底部固定操作区、结算左右独立滚动、员工 PI 详情核对区及指定 Excel 模板的 Excel/PDF 直接导出。分支 `codex/portal-purchase-dock`，最终交付以 Git refs 回读为准；本次不部署、迁移或写生产业务数据。
+- 主目录已有 79 个改动/未跟踪路径按文件副本、原始 HEAD/index、二进制补丁和 SHA256 清单保护；备份与 UI 证据在主目录 `tmp/portal-pi-main-integration-20261023-190956/`。集成仅带入本任务文件，主目录原有文档整理保留为未提交改动。
+- 验证与范围见下方实现记录及 [PI 模板报告](reports/2026-10-23-pi-template-export.md)、[PI 详情报告](reports/2026-10-23-portal-pi-detail-ui.md)。既有发票默认导出与客户已发布快照服务保持原路径。
+
+## 2026-10-23 员工 PI 按指定 Excel 模板导出（Codex，本地验证，未部署）
+
+- 用户提供 `发票模板.xlsx` 并要求在处理 PI 详情直接导出 Excel/PDF。两按钮显式传 `template=leshine_pi`；原 Excel 模板随代码纳入 assets，保留原公司抬头、Logo、浮动 Proforma Invoice 标题和八列表格，多商品自动扩展。PDF 使用同一映射与原品牌素材独立分页，续页重复抬头，生产不依赖 Office。
+- 实际成交价、折扣、行净额、费用与总额取已存单据值，不沿用样例 5% 公式；替换全部样例身份与旧邮箱链接。无实时 invoice:read 或不在单据范围内拒绝。原发票默认版式、客户发布快照 PDF 与 PI 状态流转未改；不提供 A/B 选择器。
+- 61 项隔离后端回归、前端构建、连续三轮各 5 场景的按钮/命令浏览回归、约定与 diff 检查通过，独立风险审查通过；Git 巡检为 no-fetch 本地快照。模板来源、下载入口、测试范围及样例证据见 [报告](reports/2026-10-23-pi-template-export.md)。本次无真实业务写入，未提交、合并、推送或部署。
+
+## 2026-10-23 员工下单请求 PI 详情优化（Codex，本地验证，未部署）
+
+- 使用 oil-ui 沿用 Ark 品牌优化「下单请求 → 详情 → 处理原 PI」：客户/编号/版本/状态/总额前置；商品表格与费用、付款、收货条款保持原值；桌面单据和操作独立滚动，移动端上下排列，技术 ID 与运输联系信息按需展开。
+- 顶部新增当前 PI Excel/PDF 导出，复用现有发票导出及 invoice:read；历史/提案页禁用，客户已发布快照下载保持原服务。旧入口在发票管理行「更多」。现有导出是固定版式，preferred_template A/B 尚未接入导出，不能称模板切换已完成。
+- 下载改按钮 loading，403 局部提示；防重、关闭后迟到响应丢弃。提案/发布/作废、金额来源与幂等命令未变。最终浏览回归连续 3 次×5 场景通过，键盘/长文 15 场景、200% 等效重排、Node 10 项、构建及约定检查通过；独立代码审查通过。证据与边界见 [报告](reports/2026-10-23-portal-pi-detail-ui.md)。浏览证据使用模拟 API，不代表真实导出或生产验收。
+- 与商品底部固定区、结算页独立滚动一起保留本地 diff；尚未提交、合并、推送或部署。
+
+## 2026-10-23 客户结算页左右独立滚动（Codex，本地验证，未部署）
+
+- 延续 `codex/portal-purchase-dock` 分支。桌面宽度 >1000px 时，结算页在视口内固定布局，左侧商品/收货资料与右侧服务端报价各自 overflow-y 滚动；两侧均可键盘聚焦，滚动到边界不带动另一侧或页面。较矮窗口收紧标题与页眉页脚空间；≤1000px 延续上下布局与自然页面滚动。
+- 纯前端布局改动，金额、报价、下单、确认和恢复逻辑未改。构建成功；构建产物+内存 API 浏览测试验证 1440×900/640 的实际滚轮独立性、边界滚动及无整页偏移，手机端保持自然滚动，并完成付款切换、复核和提交路径。上一项商品底部固定操作区的四种窗口浏览回归仍通过。截图 `tmp/checkout-scroll-qa/`。
+- 与商品底部固定操作区一起保留待审 diff；尚未提交、合并、推送或部署。
+
+## 2026-10-23 客户商品详情底部固定操作区（Codex，本地验证，未部署）
+
+- 分支 `codex/portal-purchase-dock`，worktree `D:/MyProgram/commission-system-codex-portal-dock`。库存状态、数量、Add to selection、单位步长、加入反馈及库存说明固定在视口底部；在动画列外渲染，避免祖先 transform 改变 fixed 定位参照。缺货隐藏加入控件的原逻辑保留。
+- ResizeObserver 按实际高度预留页面底部空间，反馈/换行/窗口变化时同步更新，离开详情释放 observer 并清除预留。移动端兼顾 safe-area，短屏最多占半屏，超出部分在操作区内滚动；沿用门户 tokens，无新增动效。
+- 门户构建与 142 项 Node 测试通过。构建产物+内存 API 浏览测试覆盖 1440×1000、375×812、320×640、812×375、80 个额外颜色的实际长页滚动、底部定位/页尾不遮挡/数量加选/缺货/离开清理，无页面错误或横向溢出。截图在 `tmp/purchase-dock-qa/`。本次不合并、推送或部署。
+
+## 2026-10-23 客户门户商品大图与详情性能（Codex，Git 交付，未部署）
+
+- 分支 `codex/portal-image-performance`，独立 worktree `D:/MyProgram/commission-system-codex-portal-images`。商品列表封面、详情主图请求 `size=full`（最长边 1200），色号按钮保留 `size=thumb`（96）；详情主图 eager 加载。
+- 详情的颜色/标准价/客户规则使用请求内批量 SQL 读取，保留数据库匹配语义、系列歧义拒绝、命名空间和查看价格权限。下单与提交继续使用原权威解析，不复用浏览快照。2/200 个规格夹具的定价相关查询从逐规格增长降为 3 次，库存取证逻辑保持原路径。
+- 验证细节见 `docs/reports/2026-10-23-portal-image-performance.md`。用户已授权本次提交、合并 main 并推送，最终状态以 Git refs 回读为准；未部署，无生产业务写入，线上登录态详情耗时需发布后实测。
+
+## 2026-10-23 WhatsApp 绑定与消息同步稳定性加固（Accio，已合并推送 main，未部署）
+
+- 分支 `accio/whatsapp-sync-resilience`。Connector：Ark 授权回调暂时失败（超时/不可达）在租期内容忍一次、持续不可用进入 `authorization_wait` 并按 5s~5min 退避自动重连，status/授权不变；明确拒绝/暂停/撤销仍立即停止并取消自动恢复。重连成功清零重试计数，重连耗尽也走自动恢复。显式重新关联带 `fresh_credentials` 清除旧凭据，强制新二维码。
+- Ark：Connector 保护性 `paused` 记为 Ark `protected`，不再被 `owner_enabled` 当作撤销授权而触发 sticky 失效；持有人新增「恢复采集」（`POST /api/whatsapp/accounts/{uid}/resume`）。授权回调与同步批次对角色/权限/账号行改用共享锁（游标行仍排他、先锁游标）。CRM 投影失败独立 savepoint 不丢消息；存储类异常只隔离单条（断线仍整批重试），记 `quarantine_from_sequence`，`POST /accounts/{uid}/replay-quarantined` 回退游标重放。新号关联只复用 10 分钟内的待处理会话；自动同步遇游标并发不记失败，last_error 取最新原因。
+- 采集：过滤 `status@broadcast`/`@newsletter`、表情回应、系统 stub、协议/密钥分发消息，拆开阅后即焚等外壳；`@lid` 会话用 `remoteJidAlt` 补 `contact_phone`。写入放大：每事件写一次账号，changes 每实体保留最新一行（新增索引 `changes_entity`），inbox 保留最近约 1000 条，容量检查改为上界缓存、近上限才全表计数。
+- 前端：账号状态「保护性暂停」、Connector「等待自动恢复」、恢复采集按钮；重新关联提示会清空正文授权与 AI 外发；扫码状态查询失败自动重试 2 次。
+- 验证：Connector 手写测试 57 项中 56 通过，唯一失败为改动前已存在的跨进程租约竞争用例（Windows 时序）；后端 WhatsApp 专项 66 passed，全部涉及 WhatsApp 的后端测试 648 passed / 1 skipped；前端 vite build 通过；finish_check 门禁、check_conventions --strict、diff --check 通过，git_sweep 因本机 Python 缺 tzdata 未运行。无迁移。
+- 发布：Connector、后端、前端须同批发布。已被永久撤销授权的旧账号（consent_state=paused）不会自动修复，需持有人在「授权范围」重新保存一次。未做：LID/手机号会话合并、首次全量历史同步的根治、重启缺口自动清除、媒体下载，均需真实账号取证或另立功能。
+
+## 2026-10-23 发票编辑关闭保护与同步完成提示（Codex，Git 交付，未部署）
+
+- 分支 `codex/invoice-close-guard`，用户已授权本次提交、合并 main 并推送；最终交付以 Git refs 回读为准。现代/旧版编辑抽屉的右上角关闭及取消、站内离开、浏览器 beforeunload 共用保存状态；保存/同步/回款处理中阻止误关，未保存内容提供继续编辑或放弃关闭。已保存无改动不重复确认。
+- 保存并同步确认成功后显示中心常驻提示“XXX订单号已保存并同步完成”，点击框外消失；关联任务仅 `done` 算成功，处理中/失败/人工结束不冒充完成。空回款初始化和独立保存回款不误报未保存，保存期间新增编辑不被响应覆盖。
+- 验证：88 项 Node 相关回归及 14 项布局/旧版入口/同步守卫回归通过；真实 InvoiceManage + 内存 API 的 Edge 无头测试覆盖 1440/390 宽度、顶部关闭、取消/放弃、浏览器原生 beforeunload、同步与常驻提示的框内/框外点击；截图随集成备份保留。前端构建、增量约定检查和 diff 检查通过，保留既有构建 chunk/import 警告。独立审查发现的回款初始化误报已修复。git 巡检仅本地快照。本次无生产写入或部署。
+
 ## 2026-10-23 销量备货一览新增现货自由库存（Codex，Git 交付，未部署）
 
 - 分支 `codex/stock-free-inventory`：按用户确认将“自由库存”放在“可用库存(小满)”后，列默认显示并参与列显隐设置。现货口径，不计生产在途；合计启用仓库小满镜像，默认仓库扣除尚未被原生占库承接的待出库保留。
@@ -5686,3 +5779,14 @@ I38：启用refresh初次当前授权+request/conversion→invoice完整绑定/�
 验证：91项SQLite/OKKI client/原结算/取消回归通过；7项实际JWT+ASGI+全新隔离MySQL库存/原行顺序报价创建通过（tmp/shipment-fast-fill-mysql-20261016-01，fixture正常停服）；25项Node通过。Chrome1440/390新库存2场景验证慢请求时先显示列表且填充禁用、排序后共享SKU优先原首行、29项合计145、unknown0、清原quote、刷新降库存保留草稿；原取消10场景与冻结恢复1440/390/320三个完整流程通过。一项并发异常测试最初错误要求未启动future也必须执行；使用Barrier明确构造同波4个请求全部在途再报错后原断言通过，产品代码未为测试放宽。线程池4路上限/单client关闭/错误停后续波/坏首SKU仍读后续、标准HTTP解析均有断言。构建通过（既有chunk/动态导入提示），独立agent审查无具体问题并独立重跑26库存+25Node通过。strict、6项UI gate、diff及no-fetch巡检在本记录写入后执行。
 
 证据：tmp/shipment-inventory-fast-fill-browser、shipment-fast-fill-cancellation、shipment-fast-fill-recovery、shipment-inventory-fast-fill-build.log及benchmark JSON。没有真实发货/结算/回款POST，没有合并推送或发布；源功能本地可审阅。临时Vite预览收尾停止，验证/恢复材料保留，原旧轮被阻止清理目录未碰。
+
+### 2026-10-23 内贸订单按明细终止（开发验证完成，未部署）
+
+- 订单详情各未发货产品提供「终止明细」，需订单创建人及 domestic:write 权限，填写原因后只终止选中产品；整单终止入口保留。
+- 只允许生产中/已完工订单中的未发货整行；部分发货也阻止终止。草稿与待审核单继续走原编辑/审核流程。
+- 明细 status=3 表示已终止。保留产品数量、价格、逐件身份及报工/跳过历史，原因记录于明细备注；禁止再报工、跳过、撤销历史、编辑、删除或发货。
+- 有效订单总额排除终止行，按原成交金额退回余额并落差额账本；不重复退款，生产订单不发生资金变化。所有明细终止时整单终止，其余情况按未终止明细回算订单状态。
+- 不能删除最后一条有效明细，应使用终止操作完成退款。发货候选与未发金额排除终止行；模板明细导出标识明细已终止。
+- 不涉及数据库 schema 迁移或生产数据写入；代码按授权合并推送，未部署。验证结果见本任务交付说明。
+
+本项验证：隔离 SQLite 后端 139 passed，前端 28 passed，前端构建与增量约定检查通过，独立审查通过；MySQL 并发及浏览器实际操作未验收。详见 [按明细终止交付记录](reports/2026-10-23-domestic-item-termination.md)。

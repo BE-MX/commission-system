@@ -27,6 +27,8 @@ await context.route('**/api/portal/v1/**', async route => {
   calls.push({ path, method: request.method(), body })
   const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ code: status, message: status >= 400 ? 'Some products are no longer available. Review your selection.' : 'OK', data }) })
   if (path.endsWith('/session')) return send(identity)
+  if (path.endsWith('/ordering-terms')) return send({ payment_terms: [], default_payment_term_code: null, auto_fees: { enabled: false, shipping_tiers: [] } })
+  if (path.endsWith('/catalog/families')) return send({ items: [], ungrouped_count: 0 })
   if (path.endsWith('/catalog')) return send({ items: [product], total: 1 })
   if (path.endsWith('/reorder-quote')) {
     assert.ok(body.line_keys.length)

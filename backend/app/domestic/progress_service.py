@@ -135,7 +135,7 @@ def build_progress_view(
             "skipped_qty": len(skipped),
             "passed_qty": len(passed),
             "required_qty": max(0, len(upstream_ids) - len(skipped)),
-            "reportable_qty": len(upstream_ids - reported - skipped),
+            "reportable_qty": 0 if item.status == C.ITEM_TERMINATED else len(upstream_ids - reported - skipped),
             "rule_type": rule["rule_type"] if rule else route_rule_service.RULE_REQUIRED,
             "outcome_options": outcome_options,
             "status": r.status,
@@ -210,7 +210,7 @@ def downstream_completed_qty(db: Session, item_id: int, step_order: int, lock: b
 
 def recalc_item_status(db: Session, item: DomesticOrderItem) -> None:
     """末道工序数量做齐 = 明细完工。已发货的明细不回退。"""
-    if item.status == C.ITEM_SHIPPED:
+    if item.status in (C.ITEM_SHIPPED, C.ITEM_TERMINATED):
         return
     db.flush()
     last = (
@@ -258,8 +258,12 @@ def sync_order_status(db: Session, order_id: int) -> None:
         return
     statuses = [
         s for (s,) in db.query(DomesticOrderItem.status)
-        .filter(DomesticOrderItem.order_id == order_id).all()
+        .filter(DomesticOrderItem.order_id == order_id).with_for_update().all()
     ]
+    if statuses and all(s == C.ITEM_TERMINATED for s in statuses):
+        order.status = C.ORDER_TERMINATED
+        return
+    statuses = [s for s in statuses if s != C.ITEM_TERMINATED]
     if not statuses:
         order.status = C.ORDER_PRODUCING
     elif all(s == C.ITEM_SHIPPED for s in statuses):

@@ -656,6 +656,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /invoices/{id}/export/excel` — 导出 Excel（含 To/From 头块、头发/配件独立明细区、配件成交价与分组费用汇总；外部文本按 Excel 公式注入规则中和）
   - `GET /invoices/{id}/export/print` — 打印用 HTML
   - `GET /invoices/{id}/export/pdf` — 导出 PDF
+  - 上述 Excel/PDF 可选 `?template=leshine_pi`：使用用户提供的 `backend/app/invoice/assets/portal_pi_template.xlsx` 输出 PI，保留 Logo、公司抬头、Proforma Invoice 标题与八列商品布局，按当前单据的已存成交价、折扣、行金额、费用及总额填充，不使用模板样例的 5% 公式。员工「下单请求 → 处理原 PI」的 Excel/PDF 按钮显式使用该参数；不传参数保留原发票版式。仍验证实时 `invoice:read` 与发票可见范围；未知模板值返回 422。仅导出当前员工单据，不替代客户已发布快照 PDF。
   - `GET /xiaoman/settings` — 读取 OKKI 推单设置（invoice:admin；token 只回掩码 + has_token，无行时返回默认值不建行）
   - `PUT /xiaoman/settings` — 保存 OKKI 推单设置（invoice:admin；access_token 语义 null=不改/空串=清除/非空=覆盖；generic_product_no 服务端解析 okki_products 回填 product_id，SKU 唯一自动关联、多 SKU 须显式指定且校验归属）
   - `GET /xiaoman/settings/resolve-product?product_no=` — 按产品编号解析通用产品及 SKU 候选（invoice:admin，前端选 SKU 用）
@@ -2572,3 +2573,16 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 # 2026-10-19：战报订单裁定配置
 
 奖项配置的 `award_rules.order_decisions` 为可选列表（默认空、最多200笔），每笔包含 `order_id`、`order_no`、`company_id`、`owner_id`、`account_date`、`role=new_sign|repeat|exclude_metrics` 和非空 `reason`。ID唯一、数字身份、日期在活动周期内；配置更正仍走现有战报PUT、版本校验及审计，更改裁定必须有整体原因并关闭推送。管理员GET/list保留完整列表，非管理员移除列表；统计返回 `order_decision_count`、`applied_order_decision_count` 两个数量。裁定不改写OKKI或镜像，身份漂移或相反合法源标记触发待核对并停止排名。
+
+内贸产品明细终止：`POST /api/domestic/items/{item_id}/terminate`，权限 `domestic:write` 且仅订单创建人，正文 `{ "reason": "取消原因" }`（非空、最多 500 字）。仅生产中/已完工订单的未发货明细可操作，部分发货也拒绝；保留记录、按原成交明细金额退回余额、更新订单状态，重复请求拒绝且不重复退款。生产订单不涉及资金；整单终止端点继续保留。
+
+
+## 预售原出库任务的人工终态恢复（2026-10-23）
+
+`POST /api/shipments/{identity}/recover-outbound`：需要当前员工同时具备 `shipment:write`、`shipment:admin` 和原实际Invoice范围；权限来自服务端实时数据，不能用旧JWT权限代替。body含原 `version`、`reason`，以及动作事实中的 `recovery_version`（64位小写hex）、严格布尔 `original_request_closed=true`（必填无默认值）、去首尾空白后4~200字符的 `resolution_reference`。后者是员工核实“小满原请求已结束且未生成、不会随后生成”的外部记录引用；不是GET404推导的事实。
+
+列表/详情的 `actions.recover_outbound` 返回 `allowed`、`reason`、`requires_terminal_confirmation`，符合条件时附 `version` 挑战。挑战绑定原结算、任务版本、尝试token、编号及载荷。命令全程持有共享出库执行器fence；解锁业务行后按原编号GET，最终重新当前授权、完整图及确认/创建事实校验，只有canonical缺失且人工终态声明一致时恢复原 `pending/outbound_pending`。保留原编号、明细、报价、回款及资金分配；命令不调用供应商POST。
+
+有远端ID/行快照/租约/确认历史/迟到效果，或存在远端单据、证据不完整、鉴权失败、并发变更时拒绝。成功返回 `ok(data)` 当前Settlement DTO；数据竞争409，证据或提交结果不明503；均私有no-store，422不回显原声明。未知回执先GET原批次，不自动重放或另建。成功追加 `recover_outbound` 事件及完整结构化 `shipment_create_recovered` 审计；迟到创建结果记录 `shipment_create_late_result` 并持续阻断重新创建。没有新增表或迁移。
+
+操作与验证边界见[原任务恢复报告](reports/2026-10-23-shipment-absence-recovery.md)。

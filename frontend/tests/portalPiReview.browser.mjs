@@ -6,18 +6,29 @@ const browser = await chromium.launch({ executablePath: process.env.PORTAL_CHROM
 const id = '12345678-1234-1234-1234-123456789abc', revision = '12345678-1234-1234-1234-123456789def'
 const errors = [], sent = []
 async function run(mode) {
-  const context = await browser.newContext({ viewport: { width: mode === 'propose' ? 390 : 1440, height: 950 } })
+  const context = await browser.newContext({ viewport: { width: mode === 'propose' ? 390 : 1440, height: 950 }, ...(process.env.PORTAL_QA_OUTPUT ? { recordVideo: { dir: process.env.PORTAL_QA_OUTPUT + '/video' } } : {}) })
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message))
   await context.addInitScript(() => { localStorage.setItem('ark_access_token', 'synthetic-pi-test'); sessionStorage.setItem('leshine_welcome_shown_session', '1') })
   const doc = { commercial_header: { invoice_no: 'PI-QA-001', customer_name: 'Current PI Buyer', invoice_date: '2026-10-03', express_channel: 'DHL', contact_email: 'qa@example.test', sales_user_name: 'QA salesperson', sales_phone: '123456', sales_email: 'sales@example.test', packaging_quantity: '2' }, currency: 'USD', product_amount: '100.00', total_amount: '125.00', fees: { shipping_amount: '25.00', packaging_amount: '0.00', surcharge_amount: '0.00' }, payment_terms_snapshot: { display_text: '100% prepaid' }, delivery: { contact_name: 'QA Recipient', phone: '123456', formatted_address: 'QA complete delivery address\nSynthetic City' }, remark: 'PI test note', items: [{ line_key: 'line1', product_id: '101', sku_id: '201', display_snapshot: { model_name: 'Standard Hair', color_name: '1', length: '20', weight: '100g', unit: '' }, quantity: 2, unit_price: '50.0000', discount_amount: '0.00', line_amount: '100.00' }] }
   const historical = { ...structuredClone(doc), invoice_document_version: 1, total_amount: '120.00', commercial_header: { ...doc.commercial_header, customer_name: 'Historical PI Buyer', express_channel: 'FedEx' }, fees: { ...doc.fees, shipping_amount: '20.00' } }
   const proposal = mode === 'publish' ? { ...structuredClone(doc), revision_id: revision, bound_invoice_document_version: 2, expired: false, expires_at: '2026-10-05T10:00:00' } : null
   const order = { ...historical, request_id: id, request_no: 'REQ-PI-QA', status: 'invoice_created', row_version: 8, submitted_at: '2026-10-03T08:00:00', pi_amendment: { status: 'withdrawn' }, customer_safe_timeline: [] }
-  let attempts = 0
+  let attempts = 0, delayedExports = 0, releaseExport, exportFinished
+  const exportDone = new Promise(resolve => { exportFinished = resolve })
   await context.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname
-    if (path === '/api/auth/me') return route.fulfill({ json: { id: 5, name: 'QA', roles: ['sales'], permissions: ['portal_order:read', 'portal_order:write', 'invoice:write'] } })
+    if (/\/invoices\/90\/export\/(excel|pdf)$/.test(path)) assert.equal(new URL(route.request().url()).searchParams.get('template'), 'leshine_pi')
+    if (path === '/api/auth/me') return route.fulfill({ json: { id: 5, name: 'QA', roles: ['sales'], permissions: ['portal_order:read', 'portal_order:write', 'invoice:write', 'invoice:read'] } })
     if (path === '/api/auth/refresh') return route.fulfill({ json: { access_token: 'synthetic-pi-test' } })
+    if (mode === 'blocked' && path.endsWith('/invoices/90/export/pdf')) {
+      delayedExports++
+      await new Promise(resolve => { releaseExport = resolve })
+      await route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.4\nDelayed fixture' })
+      exportFinished()
+      return
+    }
+    if (mode === 'void' && path.endsWith('/invoices/90/export/pdf')) return route.fulfill({ status: 403, json: { code: 403, message: '当前账户无权导出这张发票。' } })
+    if (/\/invoices\/90\/export\/(excel|pdf)$/.test(path)) return route.fulfill({ contentType: path.endsWith('pdf') ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: path.endsWith('pdf') ? '%PDF-1.4\nPI fixture' : 'Excel fixture' })
     let data = {}
     if (path === '/api/portal/admin/v1/orders') data = { items: [order], total: 1 }
     if (path === `/api/portal/admin/v1/orders/${id}`) data = order
@@ -44,13 +55,57 @@ async function run(mode) {
   } else {
     await dialog.getByRole('tabpanel', { name: '当前方舟 PI', exact: true }).getByText('Current PI Buyer', { exact: true }).waitFor()
     await dialog.getByRole('tabpanel', { name: '当前方舟 PI', exact: true }).getByText('QA complete delivery address\nSynthetic City', { exact: true }).waitFor()
+    await dialog.getByRole('button', { name: 'Excel', exact: true }).waitFor()
+    const downloadEvent = page.waitForEvent('download')
+    await dialog.getByRole('button', { name: 'Excel', exact: true }).click()
+    assert.equal((await downloadEvent).suggestedFilename(), 'PI-QA-001.xlsx')
+    if (mode === 'publish') {
+      const pdfEvent = page.waitForEvent('download')
+      await dialog.getByRole('button', { name: 'PDF', exact: true }).click()
+      assert.equal((await pdfEvent).suggestedFilename(), 'PI-QA-001.pdf')
+    }
+    if (mode === 'void') {
+      await dialog.getByRole('button', { name: 'PDF', exact: true }).click()
+      await dialog.getByRole('alert').waitFor()
+      assert.equal(await dialog.locator('.pi-review-hero h2').innerText(), 'PI-QA-001')
+    }
+    const sortHeader = dialog.locator('th').filter({ hasText: '数量' }).first()
+    for (const direction of ['ascending', 'descending', 'none']) {
+      await sortHeader.getByRole('button').click()
+      assert.equal(await sortHeader.getAttribute('aria-sort'), direction)
+    }
     await dialog.getByRole('tab', { name: '最近发布历史快照', exact: true }).click()
+    assert.equal(await dialog.getByRole('button', { name: 'Excel', exact: true }).isDisabled(), true)
     await dialog.getByRole('tabpanel', { name: '最近发布历史快照', exact: true }).getByText('Historical PI Buyer', { exact: true }).waitFor()
+    await dialog.getByRole('tabpanel', { name: '最近发布历史快照', exact: true }).locator('.pi-commercial summary').click()
     await dialog.getByText('FedEx', { exact: true }).waitFor()
     await dialog.getByRole('tab', { name: '当前方舟 PI', exact: true }).click()
+    if (process.env.PORTAL_QA_OUTPUT) {
+      await dialog.evaluate(el => { for (const pane of el.querySelectorAll('.el-dialog__body, .pi-review-documents, .pi-review-sidebar, .pi-lines-scroll')) { pane.scrollTop = 0; pane.scrollLeft = 0 } })
+      await dialog.screenshot({ animations: 'disabled', path: `${process.env.PORTAL_QA_OUTPUT}/pi-${mode}-overview.png` })
+      if (mode === 'publish') {
+        await context.tracing.start({ screenshots: true, snapshots: true })
+        await page.getByRole('tab', { name: '客户修改提案', exact: true }).click()
+        await page.getByRole('tab', { name: '当前方舟 PI', exact: true }).click()
+        await context.tracing.stop({ path: `${process.env.PORTAL_QA_OUTPUT}/pi-tabs-trace.zip` })
+      }
+    }
     if (mode === 'blocked') {
       await dialog.getByText('PI 已有出库记录，须先核对。', { exact: true }).waitFor()
       assert.equal(await dialog.getByRole('radio').count(), 0)
+      let lateDownloads = 0; page.on('download', () => { lateDownloads++ })
+      const requestSent = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/invoices/90/export/pdf'))
+      await dialog.getByRole('button', { name: 'PDF', exact: true }).click()
+      await requestSent
+      assert.equal(await dialog.getByRole('button', { name: 'Excel', exact: true }).isDisabled(), true)
+      await dialog.getByRole('button', { name: 'PDF', exact: true }).click({ force: true })
+      assert.equal(delayedExports, 1)
+      await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
+      const response = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/invoices/90/export/pdf'))
+      releaseExport(); await exportDone; await (await response).finished()
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      assert.equal(lateDownloads, 0, 'closed PI must discard late export')
     } else {
       const label = mode === 'publish' ? '发布已确认 PI' : mode === 'void' ? '作废未流转 PI' : '发送 PI 修改提案'
       await dialog.locator('.el-radio-button').filter({ hasText: label }).click()

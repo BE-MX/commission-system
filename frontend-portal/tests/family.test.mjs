@@ -60,3 +60,13 @@ test('family codes are validated before building URLs', () => {
   assert.equal(familyCode('k_tip'), 'k_tip')
   for (const bad of ['../x', 'K-Tip', '', null, 'a'.repeat(33)]) assert.throws(() => familyCode(bad))
 })
+
+
+test('large product images request full swatches; thumbnails stay small', async () => {
+  const { productImageSource } = await import('../src/state/productImage.mjs')
+  const base = '/api/portal/v1/catalog/swatches/11111111-1111-4111-8111-111111111111/image?version=2'
+  assert.equal(productImageSource(base + '&size=thumb', 'full'), base + '&size=full')
+  assert.equal(productImageSource(base, 'full'), base + '&size=full')
+  assert.equal(productImageSource(base + '&size=thumb'), base + '&size=thumb')
+  assert.equal(productImageSource('https://untrusted.example/image', 'full'), null)
+})
