@@ -12,6 +12,39 @@ from app.invoice.models import Invoice, InvoiceItem, InvoiceSyncLog, OkkiOutboun
 WAREHOUSE = '8193514242746'
 
 
+@pytest.mark.parametrize('native,remaining', [(10,0),(4,6),(0,10)])
+def test_historical_edit_credits_only_live_native_subset(stock, native, remaining):
+    from app.invoice.stock_reservations import protected
+    db,_ = stock
+    invoice,task = reserve(db,[(1,11,10)],status='done')
+    db.add(InvoiceSyncLog(invoice_id=invoice.id,action='update',success=1,
+        created_at=task.processed_at+timedelta(seconds=1),
+        request_digest=json.dumps({'product_list':[{'product_id':1,'sku_id':11,'count':10}]}),
+        response_body=json.dumps({'order_id':task.order_id})))
+    db.flush()
+    assert protected(db)=={(1,11):10}  # Baseline used to double-count the native outbound.
+    calls=[]
+    def observe(identity,order_id):
+        calls.append((identity,order_id));return {(1,11):native}
+    result=protected(db,before_task_id=task.id+1,native_reader=observe,native_keys={(1,11)})
+    assert result.get((1,11),0)==remaining
+    assert calls==[(invoice.id,task.order_id)]
+    for options in [{'invoice_id':invoice.id},{'before_task_id':task.id},{'native_keys':{(2,22)}}]:
+        calls.clear();protected(db,native_reader=observe,**options);assert calls==[]
+
+
+def test_live_native_does_not_override_unresolved_outbound_changes(stock):
+    from app.invoice.stock_reservations import protected
+    from app.shipping_inspection.models import ShippingOperationEvent
+    db,_=stock
+    invoice,task=reserve(db,[(1,11,10)],status='done')
+    db.add(ShippingOperationEvent(scope='outbound-invoice-sync',request_id='inflight-native',
+        source='pc',action='sync_uncertain',outbound_record_id='OB1',operator_user_id=0,login_user_id=0,
+        operator_name='Test',login_name='Test',payload={'invoice_id':invoice.id},result={}))
+    db.flush()
+    assert protected(db,native_reader=lambda *args:pytest.fail('Unresolved change must not be credited'))=={(1,11):10}
+
+
 @pytest.fixture
 def stock(db, monkeypatch):
     db.execute(text('CREATE TABLE lsordertest.okki_product_skus (product_id INTEGER, sku_id INTEGER)'))
@@ -220,10 +253,55 @@ def test_historical_done_with_newer_success_and_no_native_baseline_is_unknown(st
     db,_=stock
     invoice,task=reserve(db,[(1,11,10)],status='done')
     db.add(InvoiceSyncLog(invoice_id=invoice.id,action='update',success=1,
+        created_at=task.processed_at+timedelta(seconds=1),
         request_digest=json.dumps({'product_list':[{'product_id':1,'sku_id':11,'count':15}]}),
         response_body=json.dumps({'order_id':task.order_id})))
     db.flush()
     assert product_service.load_available_stocks(db,{1})=={}
+
+
+def test_shortage_execution_uses_live_historical_credit(stock,monkeypatch):
+    from app.invoice import outbound_followup_service as followup, native_stock_observation
+    db,_=stock
+    old,task=reserve(db,[(1,11,100)],status='done')
+    db.add(InvoiceSyncLog(invoice_id=old.id,action='update',success=1,
+        created_at=task.processed_at+timedelta(seconds=1),
+        request_digest=json.dumps({'product_list':[{'product_id':1,'sku_id':11,'count':100}]}),
+        response_body=json.dumps({'order_id':task.order_id})))
+    current,_=reserve(db,[(1,11,50)])
+    sequence=[]
+    def inventory(sku):
+        sequence.append('inventory');return {'count':1,'list':[
+            {'sku_id':11,'product_id':1,'warehouse_id':WAREHOUSE,'enable_count':85,'disable_flag':0}]}
+    def native(*args):
+        sequence.append('native');return {(1,11):100}
+    monkeypatch.setattr(followup,'_stock_reader',lambda db:inventory)
+    monkeypatch.setattr(native_stock_observation,'reader',lambda db:native)
+    order={'order_id':current.xiaoman_order_id,'product_list':[{'product_id':1,'sku_id':11,'count':50}]}
+    assert followup._stock_shortages(db,order)==[]
+    assert sequence==['native','inventory']
+    monkeypatch.setattr(native_stock_observation,'reader',lambda db:lambda *args:{(1,11):20})
+    assert followup._stock_shortages(db,order)==[{'sku_id':'11','required':50.,'available':5.}]
+
+
+def test_additional_outbound_credits_historical_native_before_live_inventory(stock,monkeypatch):
+    from app.invoice import native_stock_observation
+    from app.invoice.stock_reservations import require_additional
+    db,raw=stock
+    old,task=reserve(db,[(1,11,100)],status='done')
+    db.add(InvoiceSyncLog(invoice_id=old.id,action='update',success=1,
+        created_at=task.processed_at+timedelta(seconds=1),
+        request_digest=json.dumps({'product_list':[{'product_id':1,'sku_id':11,'count':100}]}),
+        response_body=json.dumps({'order_id':task.order_id})))
+    db.flush();raw[(1,11)]=0
+    def native(*args):
+        raw[(1,11)]=50;return {(1,11):100}
+    monkeypatch.setattr(native_stock_observation,'reader',lambda db:native)
+    payload={'invoice_warehouse_id':WAREHOUSE,'record_list':[
+        {'order_id':102,'order_record_id':99,'product_id':1,'sku_id':11,'outbound_count':50}]}
+    require_additional(db,payload)
+    monkeypatch.setattr(native_stock_observation,'reader',lambda db:lambda *args:{(1,11):0})
+    with pytest.raises(ValueError,match='自由可用'):require_additional(db,payload)
 
 
 def test_outbound_increases_can_use_only_unclaimed_stock_and_unchanged_rows_keep_their_native_hold(stock):

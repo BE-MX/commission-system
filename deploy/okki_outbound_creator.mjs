@@ -1,7 +1,7 @@
 /** Managed outbound creation: live association check + durable submission intent. */
 import fs from 'node:fs';
 import {assertLegacyMode,acquireCreatorFence} from './okki_outbound_mode.mjs';
-import {protectedStock,assertNoOriginalAttempt,recordNativeAssociation} from './okki_outbound_stock.mjs';
+import {protectedStock,assertNoOriginalAttempt,recordNativeAssociation,nativeStockReader} from './okki_outbound_stock.mjs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -267,7 +267,7 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
   const {intent, retry} = nextSubmissionIntent(baseIntent, orderId);
   if (retry || reservations) {
     let shortages;
-    try { shortages = await stockShortages(payload, api, reservations ? await reservations() : new Map()); }
+    try { shortages = await stockShortages(payload, api, reservations ? await reservations(payload) : new Map()); }
     catch (error) {
       console.warn('[outbound] inventory check failed: ' + error.message);
       return {outcome: 'waiting_stock', order_id: orderId, reason: 'Inventory check failed: ' + error.message};
@@ -447,7 +447,9 @@ async function main() {
   } : undefined;
   const result = await createOne(process.argv[2], {api, directory, ...invoice, knownIds,
     dryRun: !process.argv.includes('--run'), beforeSubmit, regeneration: Boolean(generation),
-    reservations: () => protectedStock(conn, process.argv[2])});
+    reservations: payload => protectedStock(conn, process.argv[2], {
+      nativeReader:nativeStockReader(conn, api, process.env.ARK_BUSINESS_DB_NAME),
+      keys:new Set(payload.record_list.map(row=>`${row.product_id}:${row.sku_id}`))})});
   if (['existing','created'].includes(result.outcome) && invoiceId) {
     const detail=await api('/v1/invoices/outbound/info?outbound_invoice_id='+result.outbound_invoice_id);
     await recordNativeAssociation(conn,invoiceId,process.argv[2],detail,now());

@@ -50,6 +50,7 @@ def _stock_reader(db):
 
 def _stock_shortages(db, order):
     from app.invoice.stock_reservations import protected
+    from app.invoice.native_stock_observation import reader as native_reader
     task = db.query(OkkiOutboundTask).filter_by(order_id=str(order.get('order_id'))).first()
     needs = defaultdict(Decimal)
     rows = order.get('product_list')
@@ -64,6 +65,15 @@ def _stock_shortages(db, order):
         if not sku.isdigit() or quantity <= 0 or not quantity.is_finite():
             raise ValueError('小满订单SKU或数量无效，不能确认缺货状态')
         needs[sku] += quantity
+    # Prove native handoff BEFORE reading inventory: an external outbound may
+    # consume stock while we inspect history, outside our local executor fence.
+    arguments = {'invoice_id':task.invoice_id if task else None,'before_task_id':task.id if task else None,
+                 'native_keys':{(int(row['product_id']), int(row['sku_id'])) for row in rows}}
+    if db.get_bind().dialect.name == 'mysql':
+        with db.get_bind().connect() as connection:
+            reserved = protected(connection, native_reader=native_reader(connection), **arguments)
+    else:
+        reserved = protected(db, native_reader=native_reader(db), **arguments)
     shortages, observed = [], {}
     read_stock = _stock_reader(db)
     for sku, required in needs.items():
@@ -89,12 +99,6 @@ def _stock_shortages(db, order):
             if disabled:
                 available = Decimal(0)
         observed[sku] = available
-    arguments = {'invoice_id':task.invoice_id if task else None,'before_task_id':task.id if task else None}
-    if db.get_bind().dialect.name == 'mysql':
-        with db.get_bind().connect() as connection:
-            reserved = protected(connection, **arguments)
-    else:
-        reserved = protected(db, **arguments)
     for sku, required in needs.items():
         product_ids = {int(row['product_id']) for row in rows if str(row.get('sku_id')) == sku}
         protected_quantity = sum((amount for (product, stock_sku), amount in reserved.items()

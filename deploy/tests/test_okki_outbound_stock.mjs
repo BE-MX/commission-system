@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reservationAmounts,protectedStock,assertNoOriginalAttempt,recordNativeAssociation} from '../okki_outbound_stock.mjs';
+import {reservationAmounts,protectedStock,assertNoOriginalAttempt,recordNativeAssociation,nativeStockReader} from '../okki_outbound_stock.mjs';
 import {stockShortages} from '../okki_outbound_creator.mjs';
 
 test('all successful lines reserve exact SKU totals and deletion rows are skipped',()=>{
@@ -61,4 +61,45 @@ test('native occupation records require exact warehouse and order identities',as
   assert.equal(JSON.parse(rows[0][1][2]).product_list[0].count,4);
   await assert.rejects(()=>recordNativeAssociation(conn,1,'102',detail,'2026-10-21 12:00:00'));
   assert.equal(rows.length,1);
+});
+
+test('historical done after metadata edit uses live credit, retaining only the uncovered demand',async()=>{
+  let amount=10,changing=false,calls=0;
+  const conn={query:async sql=>{
+    if(sql.startsWith('SELECT id FROM ark_okki'))return [[{id:2}]];
+    if(sql.includes('LEFT JOIN ark_invoice_sync_logs'))return [[{id:1,invoice_id:1,order_id:'101',status:'done',sync_status:'synced',generation_completed:0,
+      request_digest:JSON.stringify({product_list:[{product_id:1,sku_id:11,count:10}]}),response_body:'{"order_id":"101"}'}]];
+    if(sql.includes("scope='outbound-invoice-sync'"))return [changing?[{id:1}]:[]];
+    if(sql.startsWith('SELECT payload'))return [[]];
+    throw Error('Unexpected fixture SQL');
+  }};
+  const nativeReader=async()=>{calls++;return new Map([['1:11',amount]]);};
+  assert.equal((await protectedStock(conn,'102')).get('1:11'),10);
+  assert.equal((await protectedStock(conn,'102',{nativeReader,keys:new Set(['1:11'])})).get('1:11'),0);
+  amount=4;assert.equal((await protectedStock(conn,'102',{nativeReader})).get('1:11'),6);
+  amount=0;assert.equal((await protectedStock(conn,'102',{nativeReader})).get('1:11'),10);
+  const previous=calls;changing=true;
+  assert.equal((await protectedStock(conn,'102',{nativeReader})).get('1:11'),10);assert.equal(calls,previous);
+  changing=false;
+  assert.equal((await protectedStock(conn,'102',{nativeReader,keys:new Set(['2:22'])})).get('1:11'),10);assert.equal(calls,previous);
+});
+
+test('native reader requires active-list membership and exact warehouse/order/rows',async()=>{
+  let ids=[{outbound_invoice_id:'77'}],active=true;
+  const detail={outbound_invoice_id:'77',status:1,create_time:'2026-09-28 08:00:00',
+    invoice_warehouse_info:{id:'8193514242746'},record_list:[{outbound_record_id:78,order_id:'101',product_id:1,sku_id:11,outbound_count:4}]};
+  const conn={query:async sql=>{assert.match(sql,/^SELECT DISTINCT/);return [ids];}};
+  const api=async url=>{
+    if(url.includes('/info?'))return {...structuredClone(detail),outbound_invoice_id:new URLSearchParams(url.split('?')[1]).get('outbound_invoice_id')};
+    assert.match(url,/time_type=2/);return {count:active?ids.length:0,list:active?ids:[]};
+  };
+  const read=nativeStockReader(conn,api,'lsordertest');
+  assert.equal((await read(1,'101')).get('1:11'),4);
+  ids.push({outbound_invoice_id:'88'});assert.equal((await read(1,'101')).get('1:11'),8);
+  active=false;assert.equal((await read(1,'101')).size,0);active=true;
+  detail.invoice_warehouse_info.id='other';await assert.rejects(()=>read(1,'101'));
+  detail.invoice_warehouse_info.id='8193514242746';detail.record_list[0].order_id='102';await assert.rejects(()=>read(1,'101'));
+  detail.record_list[0].order_id='101';detail.record_list.push({...detail.record_list[0]});await assert.rejects(()=>read(1,'101'));
+  detail.record_list.pop();detail.record_list[0].outbound_count=-1;await assert.rejects(()=>read(1,'101'));
+  await assert.rejects(()=>nativeStockReader(conn,async()=>{throw Error('offline');},'lsordertest')(1,'101'));
 });

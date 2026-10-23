@@ -1,3 +1,10 @@
+## 2026-10-23 翟 #261046 生产库存出库恢复及历史占用修复（Codex）
+
+- 已按用户授权完成固定对象生产恢复：invoice 1310 / task 823；重新实时核实历史 invoice 748、786 的有效待出库单后，在共享出库锁下追加 native 占用事实，只唤醒当前库存等待任务。原订单、明细及回款字段回读未变。后台于 08:44:27 完成出库，小满出库 ID `105878558570280`，单号「翟 #261046 生产库存」，待出库、4 行 102 件；独立 GET 已核对订单关联、数量、单价、仓库和备注。未确认实际发货。
+- 生产证据保留在主目录 `tmp/invoice-1310-native-recovery/`：前置快照、修改后回读与 `created-outbound-readback.json`；不含凭据。第一次未取得互斥锁，未写入；后续成功一次，没有重复创建。
+- 任务分支 `codex/outbound-native-reservation`：Python/Node 出库核验对缺 native 基线的历史已完成任务，仅凭实时有效出库证据抵扣保留；保留未覆盖增量及未决修改，核验后再读实时库存。普通库存列表不触发历史扫描。用户已授权合并推送，主目录原改动以文件副本和 SHA256 备份保留，最终交付以 Git refs 回读为准；本次无部署或迁移。
+- 验证：隔离 SQLite 下库存保留/native 核验/任务/关联同步一组 109 passed；新增手工增量回归后，库存保留/native 核验/出库同步一组 161 passed（两组有重叠，不相加）；Node creator/库存/隔离/原单守卫/备注/模式 157 passed。check_conventions 增量无违规、git diff --check 通过，独立审查通过；git_sweep --no-fetch 完成，仅本地远端快照，保留其他 worktree 改动。已有 Python/依赖弃用警告未影响测试。
+
 ## 2026-10-22 方舟后台客户下单门户 5 个导航页 UI 规范对齐（Accio，已合并推送 main，未部署）
 
 - 仅 `frontend/src/views/portal`：下单请求、客户访问、账号申请、商品目录（含产品族/色块库子页）、站点设置。页头 17px/700 + 14px 描述且不放按钮；筛选统一 FilterBar 进表格卡片；主操作 + TableTools 进 action-bar；极光底 + 玻璃面板（共享 `portal-page.css`）；状态统一 `portalStatus.js` 字典 + StatusBadge；列补 max-width/tooltip/排序；申请时间按北京时间。

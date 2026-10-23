@@ -131,7 +131,7 @@ def remember_native(db, invoice_id, order_id, details):
     _native_event(db, invoice_id, order_id, native)
 
 
-def claims(db):
+def claims(db, *, native_reader=None, native_keys=None, before_task_id=None, invoice_id=None):
     tasks = db.execute(select(OkkiOutboundTask.id.label('task_id'), OkkiOutboundTask.invoice_id,
         OkkiOutboundTask.order_id, OkkiOutboundTask.status.label('task_status'), OkkiOutboundTask.reason, OkkiOutboundTask.processed_at,
         Invoice.sync_status, Invoice.status.label('invoice_status')).join(Invoice, Invoice.id == OkkiOutboundTask.invoice_id)
@@ -213,6 +213,15 @@ def claims(db):
                 pass  # Historical strict create succeeded after this complete generation.
             else:
                 status = 'native_unknown'
+                # A legacy task can be done before its last metadata/order edit,
+                # with no native handoff snapshot. Do not reserve its whole
+                # already-native quantity again when execution has live proof.
+                if (native_reader is not None and identity != invoice_id
+                        and (before_task_id is None or task['task_id'] < before_task_id)
+                        and (native_keys is None or native_keys.intersection(amounts))):
+                    transferred = native_reader(identity, str(task['order_id']))
+                    amounts = {key:max(Decimal(0), amount-transferred.get(key, 0)) for key,amount in amounts.items()}
+                    status = 'done' if task['task_status'] == 'done' and not any(amounts.values()) else 'native_partial'
         result.append(Claim(task['task_id'], identity, status, observed_at, amounts))
     return result
 
@@ -266,13 +275,15 @@ def require_additional(db, payload, *, before=None, invoice_id=None):
     if not extra:
         return
     from app.invoice import shipment_inventory_service as live
+    from app.invoice.native_stock_observation import reader as native_reader
     # Independent Core connection observes current committed queue generations,
     # even when the legacy caller already holds a RR invoice transaction.
     if db.get_bind().dialect.name == 'sqlite':
-        held = protected(db, invoice_id=invoice_id)
+        held = protected(db, invoice_id=invoice_id, native_reader=native_reader(db), native_keys=set(extra))
     else:
         with db.get_bind().connect() as connection:
-            held = protected(connection, invoice_id=invoice_id)
+            held = protected(connection, invoice_id=invoice_id,
+                             native_reader=native_reader(connection), native_keys=set(extra))
     target = live.StockTarget(invoice_id or 0, warehouse,
         tuple((index,str(p),str(s)) for index,(p,s) in enumerate(extra)))
     observed = live.observe(target)
@@ -286,9 +297,10 @@ def require_additional(db, payload, *, before=None, invoice_id=None):
             raise ValueError('新增出库数量超过自由可用库存，其他待出库订单已保留')
 
 
-def protected(db, *, invoice_id=None, before_task_id=None):
+def protected(db, *, invoice_id=None, before_task_id=None, native_reader=None, native_keys=None):
     result = defaultdict(Decimal)
-    for claim in claims(db):
+    for claim in claims(db, native_reader=native_reader, native_keys=native_keys,
+                       before_task_id=before_task_id, invoice_id=invoice_id):
         if claim.status == 'done' or claim.invoice_id == invoice_id:
             continue
         if before_task_id is not None and claim.task_id >= before_task_id:

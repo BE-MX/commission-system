@@ -17,7 +17,7 @@ export function reservationAmounts(rows) {
   return amounts;
 }
 
-export async function protectedStock(conn, orderId) {
+export async function protectedStock(conn, orderId, {nativeReader, keys} = {}) {
   const [[current]] = await conn.query('SELECT id FROM ark_okki_outbound_tasks WHERE order_id=?',[orderId]);
   const [tasks] = await conn.query(`SELECT t.id,t.invoice_id,t.order_id,t.status,i.sync_status,
       l.id AS log_id,l.request_digest,l.response_body,(l.created_at<=t.processed_at) AS generation_completed
@@ -66,6 +66,9 @@ export async function protectedStock(conn, orderId) {
         transferred=reservationAmounts(data.product_list);
       } else if (!changing && !data && task.status === 'done' && task.generation_completed) {
         continue; // The strict original create covered this unchanged generation.
+      } else if (!changing && !data && nativeReader &&
+          (!keys || [...reservationAmounts(payload.product_list).keys()].some(key=>keys.has(key)))) {
+        transferred = await nativeReader(task.invoice_id, String(task.order_id));
       }
     }
     for (const [key,quantity] of reservationAmounts(payload.product_list)) {
@@ -75,6 +78,54 @@ export async function protectedStock(conn, orderId) {
     }
   }
   return result;
+}
+
+// Discovery is local; each credited quantity needs live identity and active-list
+// proof. Deleted details may remain readable, so detail GET alone is insufficient.
+export function nativeStockReader(conn, api, schema) {
+  if (!/^[A-Za-z0-9_]+$/.test(schema || '')) throw Error('Invalid business schema');
+  return async (invoiceId, orderId) => {
+    const [ids] = await conn.query(`SELECT DISTINCT outbound_invoice_id FROM \`${schema}\`.okki_outbound_record_items WHERE order_id=?`, [orderId]);
+    const totals = new Map();
+    for (const {outbound_invoice_id: id} of ids) {
+      if (!/^[1-9]\d*$/.test(String(id))) throw Error('Historical outbound identity unavailable');
+      const detail = await api('/v1/invoices/outbound/info?' + new URLSearchParams({outbound_invoice_id:String(id)}));
+      if (String(detail?.outbound_invoice_id) !== String(id)) throw Error('Historical outbound detail unavailable');
+      if (detail.status !== 1) continue;
+      if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(detail.create_time || '')) throw Error('Historical outbound creation date unavailable');
+      const day = detail.create_time.slice(0,10);
+      let active = false, expected, seen = new Set();
+      for (let page=1; page<=500; page++) {
+        const data = await api('/v1/invoices/outbound/list?' + new URLSearchParams({
+          start_time:day+' 00:00:00',end_time:day+' 23:59:59',time_type:2,removed:0,count:100,start_index:page}));
+        if (!Array.isArray(data?.list) || !/^\d+$/.test(String(data.count)) ||
+            (expected !== undefined && expected !== Number(data.count))) throw Error('Historical active list unavailable');
+        expected = Number(data.count);
+        if (data.list.length !== Math.min(100, Math.max(0,expected-seen.size))) throw Error('Historical active list incomplete');
+        for (const row of data.list) {
+          const key = String(row.outbound_invoice_id);
+          if (!/^[1-9]\d*$/.test(key) || seen.has(key)) throw Error('Historical active list ambiguous');
+          seen.add(key);
+        }
+        if (seen.has(String(id))) { active=true; break; }
+        if (seen.size === expected) break;
+        if (page === 500) throw Error('Historical active list limit exceeded');
+      }
+      if (!active) continue; // No credit for absent or undiscovered documents.
+      const rows = detail.record_list;
+      if (String(detail.invoice_warehouse_info?.id) !== '8193514242746' || !Array.isArray(rows) || !rows.length ||
+          rows.some(row=>String(row.order_id)!==orderId)) throw Error('Historical outbound warehouse/order differs');
+      const rowIds = rows.map(row=>String(row.outbound_record_id));
+      if (rowIds.some(key=>! /^[1-9]\d*$/.test(key)) || new Set(rowIds).size !== rowIds.length) throw Error('Historical outbound rows ambiguous');
+      const amounts = reservationAmounts(rows.map(row=>({product_id:row.product_id,sku_id:row.sku_id,count:row.outbound_count})));
+      for (const [key,amount] of amounts) {
+        const total=(totals.get(key)||0)+amount;
+        if (!Number.isSafeInteger(total)) throw Error('Invalid native stock total');
+        totals.set(key,total);
+      }
+    }
+    return totals;
+  };
 }
 
 export async function recordNativeAssociation(conn,invoiceId,orderId,detail,at) {
