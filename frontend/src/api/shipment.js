@@ -11,3 +11,4 @@ export const getShipment = id => unwrap(request.get(`/shipments/${id}`, { showLo
 export const changeShipment = (id, action, body) => unwrap(request.post(`/shipments/${id}/${action}`, body))
 export const reconcileShipmentTarget = (id, kind, body) => unwrap(request.post(`/shipments/${id}/reconcile-${kind}`, body, shipmentRecoveryOptions))
 export const retryShipmentTarget = (id, kind, body) => unwrap(request.post(`/shipments/${id}/retry-${kind}`, body))
+export const recoverShipmentOutbound = (id, body) => unwrap(request.post(`/shipments/${id}/recover-outbound`, body, shipmentRecoveryOptions))

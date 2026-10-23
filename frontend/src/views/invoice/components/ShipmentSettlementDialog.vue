@@ -92,6 +92,7 @@
           <el-button v-permission="'shipment:write'" v-if="row.freight_target?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'freight')"><el-icon><Refresh /></el-icon>重试运费单</el-button>
           <el-button v-permission="'shipment:write'" v-if="canReconcileOutbound(row) && (row.outbound?.remote_id || auth.hasPermission('shipment:admin'))" link :disabled="saving" @click="reconcileTarget(row, 'outbound')"><el-icon><Check /></el-icon>核对出库单</el-button>
           <el-button v-permission="'shipment:write'" v-if="row.outbound?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'outbound')"><el-icon><Refresh /></el-icon>重试出库单</el-button>
+          <span v-permission="'shipment:write'" v-if="canRecoverOutbound(row)"><el-button v-permission="'shipment:admin'" link :disabled="busy" @click="openOutboundRecovery(row)"><el-icon><Refresh /></el-icon>核实未生成并恢复</el-button></span>
           <div v-if="!['cancelled', 'shipped', 'completed'].includes(row.state) && !canChangeShipment(row, 'cancel')" class="shipment-action-reason" role="status">{{ shipmentActionReason(row, 'cancel') }}</div>
         </template></el-table-column>
       </el-table>
@@ -110,6 +111,8 @@
       </template>
     </div></template>
   </el-dialog>
+  <ShipmentOutboundRecovery v-if="recoveryTarget" :row="recoveryTarget" :busy="saving"
+    @close="recoveryTarget = null" @submit="recoverOutbound" />
 </template>
 <script setup>
 import { newRequestKey } from '../../../utils/requestKey.js'
@@ -117,12 +120,14 @@ import { newRequestKey } from '../../../utils/requestKey.js'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { getInvoice } from '@/api/invoice'
-import { quoteShipment, getShipmentInventory, createShipment, inspectShipmentSubmission, listShipments, getShipment, changeShipment, reconcileShipmentTarget, retryShipmentTarget } from '@/api/shipment'
+import { quoteShipment, getShipmentInventory, createShipment, inspectShipmentSubmission, listShipments, getShipment, changeShipment, reconcileShipmentTarget, retryShipmentTarget, recoverShipmentOutbound } from '@/api/shipment'
 import { stockRows, shipmentQuantityLimit, shipmentStockError, fillShipmentQuantities } from '../composables/shipmentInventory'
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
 import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment, shipmentActionReason, isShipmentStateReceipt, canReconcileOutbound } from '../composables/shipmentSettlementState'
+import { canRecoverOutbound, isOutboundRecoveryReceipt } from '../composables/shipmentOutboundRecovery.js'
+import ShipmentOutboundRecovery from './ShipmentOutboundRecovery.vue'
 import { cents, latestRequest } from '@/views/receipt/batchReceiptState'
 import { money } from '@/views/receipt/useReceipts'
 import { currentBeijingDate } from '@/utils/datetime'
@@ -132,6 +137,7 @@ import { readConfirmation, clearConfirmation, isConfirmationTarget, isConfirmati
 const props = defineProps({ invoice: { type: Object, required: true } })
 const emit = defineEmits(['close', 'saved']), auth = useAuthStore()
 const lines = ref([]), freight = ref(0), quote = ref(null), settlements = ref([]), loading = ref(true), quoting = ref(false), saving = ref(false), uploading = ref(false), error = ref(''), registerPayment = ref(false)
+const recoveryTarget = ref(null)
 const stocks = ref(new Map()), stockLoading = ref(false), stockTime = ref(''), stockWarning = ref('')
 const stockError = computed(() => shipmentStockError(lines.value, stocks.value))
 const quantityLimit = row => shipmentQuantityLimit(row, stocks.value)
@@ -154,7 +160,7 @@ const pending = computed(() => ['sending', 'uncertain'].includes(state.value)), 
 const closingBlocked = computed(() => busy.value || uploading.value || (pending.value && !persisted.value) || (confirmationPending.value && !confirmationPersisted.value))
 let actor = Number(auth.user?.id), generation = 0, disposed = false, controller, errorSequence = 0
 const current = identity => !disposed && identity === generation && Number(auth.user?.id) === actor
-function hidePrivate() { stockRequest.next(); stocks.value = new Map(); stockTime.value = ''; stockWarning.value = ''; stockLoading.value = false; lines.value = []; settlements.value = []; quote.value = null; selectedSettlement.value = null; recoveryInvoice.value = null; Object.assign(payment, { amount: null, bank_charge: 0, collection_date: currentBeijingDate(), payment_type: '', attachment_ids: [], remark: '' }); denied.value = true; quoteRequest.next(); detailRequest.next() }
+function hidePrivate() { recoveryTarget.value = null; stockRequest.next(); stocks.value = new Map(); stockTime.value = ''; stockWarning.value = ''; stockLoading.value = false; lines.value = []; settlements.value = []; quote.value = null; selectedSettlement.value = null; recoveryInvoice.value = null; Object.assign(payment, { amount: null, bank_charge: 0, collection_date: currentBeijingDate(), payment_type: '', attachment_ids: [], remark: '' }); denied.value = true; quoteRequest.next(); detailRequest.next() }
 async function showError(value) { const sequence = ++errorSequence, identity = generation; error.value = typeof value === 'string' ? value : '原提交暂不能确认，请先核对'; await nextTick(); if (current(identity) && sequence === errorSequence) errorSummary.value?.$el?.focus() }
 function failed(error) { if ([401,403,404].includes(error?.response?.status)) hidePrivate(); void showError(error?.response?.data?.detail || error?.message || '原提交暂不能确认，请先核对') }
 const quoteRequest = latestRequest(), detailRequest = latestRequest(), stockRequest = latestRequest()
@@ -356,6 +362,40 @@ async function retryTarget(row, kind) {
     if (!current(identity)) return; await reload(); if (!current(identity)) return; selectedSettlement.value = result; emit('saved')
   } catch (e) { if (current(identity)) failed(e) }
   finally { if (current(identity)) saving.value = false }
+}
+function openOutboundRecovery(row) {
+  if (!busy.value && !pending.value && !denied.value && !storageBlocked.value && canRecoverOutbound(row)) {
+    recoveryTarget.value = copyShipment(row)
+  }
+}
+async function recoverOutbound(body) {
+  const row = recoveryTarget.value
+  if (!row || busy.value || pending.value || denied.value || storageBlocked.value) return
+  const identity = generation
+  saving.value = true; error.value = ''; quoteRequest.next(); detailRequest.next(); quote.value = null; quoting.value = false
+  let applied = false
+  try {
+    const result = await recoverShipmentOutbound(row.id, body)
+    if (!current(identity)) return
+    if (!isOutboundRecoveryReceipt(row, result)) throw new Error('恢复回执与原出库任务不一致，请刷新原批次核对')
+    applied = true; recoveryTarget.value = null
+    await reload()
+    if (!current(identity)) return
+    selectedSettlement.value = settlements.value.find(item => item.id === row.id) || result; emit('saved')
+    msgSuccessText('原出库任务已恢复，将继续核验并处理原批次')
+  } catch (e) {
+    if (current(identity)) {
+      recoveryTarget.value = null
+      if ([401, 403, 404].includes(e?.response?.status)) { failed(e); return }
+      // An unknown final commit is inspected through the original batch. Do
+      // not replay the declaration or manufacture a new settlement/request.
+      try { await reload() } catch (readError) { failed(readError) }
+      if (current(identity)) {
+        if (applied) void showError('原任务已恢复，但列表刷新失败，请重新打开原批次核对')
+        else failed(e)
+      }
+    }
+  } finally { if (current(identity)) saving.value = false }
 }
 async function restore() {
   if (busy.value) return

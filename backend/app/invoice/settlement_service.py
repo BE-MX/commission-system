@@ -435,6 +435,9 @@ def describe(db, row, *, current=False):
             result['actions'][action]['requires_remote_check'] = True
     if invalid_funding:
         result["balance_error"]="本批关联回款已失效，余额暂不可计算，请核对原单"
+    from app.invoice.shipment_absence_recovery import action as recovery_action
+    result['actions']['recover_outbound'] = recovery_action(db, row, outbound,
+        current=current, confirmation_summary=confirmation)
     return result
 
 

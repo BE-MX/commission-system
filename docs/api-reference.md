@@ -2575,3 +2575,14 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 奖项配置的 `award_rules.order_decisions` 为可选列表（默认空、最多200笔），每笔包含 `order_id`、`order_no`、`company_id`、`owner_id`、`account_date`、`role=new_sign|repeat|exclude_metrics` 和非空 `reason`。ID唯一、数字身份、日期在活动周期内；配置更正仍走现有战报PUT、版本校验及审计，更改裁定必须有整体原因并关闭推送。管理员GET/list保留完整列表，非管理员移除列表；统计返回 `order_decision_count`、`applied_order_decision_count` 两个数量。裁定不改写OKKI或镜像，身份漂移或相反合法源标记触发待核对并停止排名。
 
 内贸产品明细终止：`POST /api/domestic/items/{item_id}/terminate`，权限 `domestic:write` 且仅订单创建人，正文 `{ "reason": "取消原因" }`（非空、最多 500 字）。仅生产中/已完工订单的未发货明细可操作，部分发货也拒绝；保留记录、按原成交明细金额退回余额、更新订单状态，重复请求拒绝且不重复退款。生产订单不涉及资金；整单终止端点继续保留。
+
+
+## 预售原出库任务的人工终态恢复（2026-10-23）
+
+`POST /api/shipments/{identity}/recover-outbound`：需要当前员工同时具备 `shipment:write`、`shipment:admin` 和原实际Invoice范围；权限来自服务端实时数据，不能用旧JWT权限代替。body含原 `version`、`reason`，以及动作事实中的 `recovery_version`（64位小写hex）、严格布尔 `original_request_closed=true`（必填无默认值）、去首尾空白后4~200字符的 `resolution_reference`。后者是员工核实“小满原请求已结束且未生成、不会随后生成”的外部记录引用；不是GET404推导的事实。
+
+列表/详情的 `actions.recover_outbound` 返回 `allowed`、`reason`、`requires_terminal_confirmation`，符合条件时附 `version` 挑战。挑战绑定原结算、任务版本、尝试token、编号及载荷。命令全程持有共享出库执行器fence；解锁业务行后按原编号GET，最终重新当前授权、完整图及确认/创建事实校验，只有canonical缺失且人工终态声明一致时恢复原 `pending/outbound_pending`。保留原编号、明细、报价、回款及资金分配；命令不调用供应商POST。
+
+有远端ID/行快照/租约/确认历史/迟到效果，或存在远端单据、证据不完整、鉴权失败、并发变更时拒绝。成功返回 `ok(data)` 当前Settlement DTO；数据竞争409，证据或提交结果不明503；均私有no-store，422不回显原声明。未知回执先GET原批次，不自动重放或另建。成功追加 `recover_outbound` 事件及完整结构化 `shipment_create_recovered` 审计；迟到创建结果记录 `shipment_create_late_result` 并持续阻断重新创建。没有新增表或迁移。
+
+操作与验证边界见[原任务恢复报告](reports/2026-10-23-shipment-absence-recovery.md)。

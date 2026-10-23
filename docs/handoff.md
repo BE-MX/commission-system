@@ -1,3 +1,11 @@
+## 2026-10-23 预售出库创建中断的原任务恢复（Codex，本地修复，未部署）
+
+- 新增管理员“核实未生成并恢复”：人工确认原请求已终止且未生成，填写核实依据；服务端双次当前授权/完整图与尝试挑战校验、实时原编号GET，并全程共享出库执行器锁直到最终提交。只恢复原任务，保留全部编号、明细、回款与资金分配，命令不发送小满POST。
+- 迟到创建成功持久化不可变审计并阻断后续发送；已提交但回执中断安全返回待读回；恢复开始使旧详情请求失效。无迁移。
+- 新增算法28项、真实MySQL20项、前端15项与浏览器7场景验证，构建、约定和独立审查收尾结果见[报告](reports/2026-10-23-shipment-absence-recovery.md)。扩展回归1项未隔离小满鉴权的旧测试在干净HEAD同样失败，未改弱断言或使用生产凭据。
+- 本地修复已提交，尚未合并、推送或部署；未对Veronika第二批执行恢复、重发或财务变更。当前进度保留在 `codex/shipment-absent-recovery` 独立worktree。Git巡检 `--no-fetch` 于22:17退出0，仅为本地远端引用快照；任务代码无未提交改动，另有未纳入提交的临时UI夹具。
+- 临时UI测试服务与隔离MySQL均已停止；测试夹具、基线副本及临时MySQL目录的递归清理被自动审批拒绝（blocked by policy），原目录暂留且不纳入提交；验证摘要与浏览器证据保留在 `tmp/shipment-absence-validation.json`、`tmp/recovery-browser/`。
+
 ## 2026-10-23 客户门户全页 UI 检查与优化（Codex，Git 交付，未部署）
 
 - `codex/portal-oil-ui`；独立 worktree `C:/Users/windb/.codex/worktrees/portal-oil-ui/commission-system`。覆盖公开入口、集合/规格、选购、请求/方案/PI、再次下单、联系弹窗和共享导航。
