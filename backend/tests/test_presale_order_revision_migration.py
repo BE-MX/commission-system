@@ -34,5 +34,9 @@ def test_mysql_ddl_is_one_nullable_json_column_and_downgrade_preserves_evidence(
     assert output.getvalue().strip()=='ALTER TABLE ark_invoices ADD COLUMN presale_order_revision JSON;'
     with pytest.raises(RuntimeError,match='不可删除'):migration().downgrade()
     scripts=ScriptDirectory(str(Path(__file__).resolve().parents[1]/'alembic'))
-    assert scripts.get_heads()==['202_presale_order_revision']
+    # 202 之后的新迁移会顶走 head；只要求全库单 head 且 202_presale 仍在当前 head 的祖先链上
+    heads=scripts.get_heads()
+    assert len(heads)==1
+    ancestors={rev.revision for rev in scripts.walk_revisions('base', heads[0])}
+    assert '202_presale_order_revision' in ancestors
     assert migration().down_revision=='201_portal_access_requests'

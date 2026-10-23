@@ -73,6 +73,7 @@ export const customerMediaClient = createApiClient({
 })
 export const mailOutreachClient = createApiClient({ baseURL: '/api/mail-outreach', timeout: 300000 }) // 草稿生成走 AI，放宽超时
 export const colorworkClient = createApiClient({ baseURL: '/api/colorwork', timeout: 30000 })
+export const perfGoalClient = createApiClient({ baseURL: '/api/perf-goals', timeout: 60000 })
 
 export const shipmentClient = createApiClient({ baseURL: '/api', timeout: 300000 })
 

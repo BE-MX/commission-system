@@ -314,6 +314,14 @@ class Settings(BaseSettings):
     BATTLE_REPORT_PUBLIC_BASE_URL: str = ""
     BATTLE_REPORT_BROWSER_PATH: str = ""  # 空值使用 Playwright 安装的 Chromium
 
+    # ── 绩效报告推送（工作通知独立应用 + 降级群机器人）────────
+    PERF_REPORT_WORKNOTICE_ENABLED: bool = False
+    PERF_REPORT_DINGTALK_APP_KEY: str = ""
+    PERF_REPORT_DINGTALK_APP_SECRET: str = Field(default="", repr=False)
+    PERF_REPORT_DINGTALK_AGENT_ID: str = ""
+    PERF_REPORT_WEBHOOK_URL: str = Field(default="", repr=False)
+    PERF_REPORT_WEBHOOK_SECRET: str = Field(default="", repr=False)
+
     # ── 钉钉企业内部应用（工作通知、审批）────────────────
     DINGTALK_APP_KEY: str = ""
     DINGTALK_APP_SECRET: str = ""
