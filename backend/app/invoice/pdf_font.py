@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 from PIL import ImageFont
+from reportlab.pdfbase.ttfonts import TTFont
 
 from app.core.config import Settings, get_settings
 
@@ -45,6 +46,17 @@ def validate_configured_cjk_font(settings: Settings | None = None) -> Path:
     current = settings or get_settings()
     path = Path(current.PDF_CJK_FONT_PATH).expanduser()
     load_configured_cjk_font(str(path), 36)
+    # Pillow also accepts CFF/OpenType outlines that ReportLab cannot embed.
+    try:
+        TTFont('ArkCJKPreflight', str(path))
+    except Exception as exc:
+        message = (
+            f"PDF_CJK_FONT_PATH 字体无法由 ReportLab 嵌入 PDF: {path}；"
+            "请配置含中文字符的 TrueType 轮廓字体（如文泉驿正黑），不要使用 CFF/PostScript 轮廓"
+        )
+        logger.warning("%s: %s", message, type(exc).__name__)
+        print(f"[invoice] {message}: {type(exc).__name__}", flush=True)
+        raise RuntimeError(message) from exc
     return path
 
 
