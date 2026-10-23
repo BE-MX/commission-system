@@ -5,6 +5,7 @@ from hashlib import sha256
 from html import escape
 from io import BytesIO
 from pathlib import Path
+import logging
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_RIGHT
@@ -17,13 +18,17 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from app.core.config import get_settings
 from app.portal.errors import reject
 
+logger = logging.getLogger(__name__)
+
 
 @lru_cache(maxsize=4)
 def registered_font(path):
     name = "PortalPI-"+sha256(path.encode()).hexdigest()[:12]
     try:
         pdfmetrics.registerFont(TTFont(name, path))
-    except Exception:
+    except Exception as exc:
+        logger.warning("PI PDF font registration failed: %s", type(exc).__name__)
+        print(f"[portal] PI PDF font registration failed: {type(exc).__name__}", flush=True)
         reject("PDF_UNAVAILABLE", "The PI document service is not configured. Please contact your account manager.", 503)
     return name
 
