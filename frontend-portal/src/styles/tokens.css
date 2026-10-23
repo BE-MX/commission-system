@@ -16,6 +16,8 @@
   --portal-light-text: #e4dfd4;
   --portal-backdrop: rgba(25, 23, 20, .52);
   --portal-shadow: 0 20px 80px rgba(25, 23, 20, .16);
+  --portal-panel-shadow: 0 4px 20px rgba(25, 23, 20, .05);
+  --portal-success-bg: #edf5ef;
   --portal-focus: #986411;
   --portal-ease-out: cubic-bezier(.23, 1, .32, 1);
   --portal-font: 'DM Sans', 'Segoe UI', Arial, sans-serif;

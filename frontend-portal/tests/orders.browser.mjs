@@ -33,6 +33,7 @@ await context.route('**/api/portal/v1/**', async route => {
   calls.push({ path, method: request.method(), body, headers: request.headers() })
   const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ code: status, message: status >= 400 ? 'This PI has changed. Refresh your request.' : 'OK', data }) })
   if (path.endsWith('/session')) return send(signedIn ? identity : { error_code: 'AUTH_REQUIRED' }, signedIn ? 200 : 401)
+  if (path.endsWith('/catalog/families')) return send({ items: [], ungrouped_count: 0 })
   if (path.endsWith('/catalog')) return send({ items: [], total: 0 })
   if (path.endsWith('/orders')) { const items = orders.filter(order => !url.searchParams.get('status') || order.status === url.searchParams.get('status')); return send({ items, total: items.length, page: 1, page_size: 20 }) }
   const order = orders.find(order => path.includes(order.request_id))
@@ -161,7 +162,7 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Download confirmed PI' }).count(), 0)
   const other = await context.newPage(); await other.goto(origin)
   await other.getByRole('button', { name: 'Sign out', exact: true }).click()
-  await page.getByRole('button', { name: 'Continue with email' }).waitFor()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor()
   assert.equal(await page.locator('.order-document').count(), 0)
   assert.deepEqual(errors, [])
   assert.ok(calls.filter(call => call.method === 'POST').every(call => call.headers['x-portal-csrf'] && !call.headers.authorization))

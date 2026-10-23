@@ -26,7 +26,7 @@ const submission = createSubmission({ api, storage })
 const checkout = createCheckout({ api, submission })
 const decision = createOrderDecision({ api, storage }), decisionState = shallowRef(decision.state)
 const offDecision = decision.subscribe(value => { decisionState.value = value })
-const checkoutState = shallowRef(checkout.state), route = ref('collection')
+const checkoutState = shallowRef(checkout.state), route = ref(pathRoute())
 const offCheckout = checkout.subscribe(value => { checkoutState.value = value })
 function navigate(destination, replace = false) {
   route.value = destination

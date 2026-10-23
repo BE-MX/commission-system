@@ -1,3 +1,9 @@
+## 2026-10-23 客户门户全页 UI 检查与优化（Codex，Git 交付，未部署）
+
+- `codex/portal-oil-ui`；独立 worktree `C:/Users/windb/.codex/worktrees/portal-oil-ui/commission-system`。覆盖公开入口、集合/规格、选购、请求/方案/PI、再次下单、联系弹窗和共享导航。
+- 补申请/激活样式、可读性、窄屏布局；修初始激活路由及验证码函数未调用；删高频 500ms 入场、误导性已确认标题及重复说明。无后端、数据库或生产业务写入。
+- 一轮独立视觉评审，受影响浏览器场景三轮通过；报告 `docs/reports/2026-10-23-portal-oil-ui.md`，截图对比 `tmp/portal-oil-ui/index.html`。线上只确认公开登录结构，已登录全站视觉检查受浏览器连接阻塞；不能称生产验收。用户已授权本次提交、合并 main 并推送，最终状态以 Git refs 回读为准；未部署。
+
 ## 2026-10-23 客户门户商品大图与详情性能（Codex，Git 交付，未部署）
 
 - 分支 `codex/portal-image-performance`，独立 worktree `D:/MyProgram/commission-system-codex-portal-images`。商品列表封面、详情主图请求 `size=full`（最长边 1200），色号按钮保留 `size=thumb`（96）；详情主图 eager 加载。

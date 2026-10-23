@@ -1,5 +1,9 @@
 # Customer portal frontend
 
+## 2026-10-23 UI audit
+
+Public entry styling, readable supporting text and responsive controls now share the portal tokens. Invitation landing initializes the route before session restoration; the activation form calls its challenge handler. See [audit and scope](../docs/reports/2026-10-23-portal-oil-ui.md). Local intercepted-API evidence does not certify production.
+
 ## v1.72 Actual read-only recovery and history
 
 fresh591/session69862 实际terminal exit0：2 passed、22 warnings、31.89s。两种只读价格能力各6组有限浏览器场景，商业API拦截0；这两项规格不能相加称12项测试或64T全部通过。

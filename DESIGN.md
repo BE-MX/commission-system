@@ -716,3 +716,8 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 登录页文案按能力概括，不按模块数量或菜单逐项罗列：定位“AI 驱动的企业协同平台”；价值主张“贯通业务 · 沉淀知识 · 智能协同”；能力分类“客户经营 · 产销履约 · 业绩核算 · 创意设计 · 知识洞察”。依据当前导航与已实现功能归纳，避免绑定易过时的模块数量。
 
 地图来源：[Natural Earth 1:110m land](https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_land.geojson)，[public domain 使用条款](https://www.naturalearthdata.com/about/terms-of-use/)。本地资源 `frontend/src/assets/world-land.json` 保留陆地外环、去掉完全位于南纬 60° 以南的南极多边形，经纬度取两位小数；119 个多边形、4,427 个坐标点，65,219 字节，不依赖页面运行时网络加载。原始下载 SHA-256：`9e0729ee253ca7d7a5c4ae9395fb1902264c5377c52e224d13dd85010e2835d9`。只展示海岸线，不绘制行政区界。
+
+
+## 客户门户独立界面（2026-10-23）
+
+`frontend-portal` 保留暖白/墨色/品牌金、现有产品图片与衬线展示标题，颜色集中在自己的 tokens.css。正文 15px，支持信息通常至少 13px；窄屏输入 16px。申请与激活沿用同一表单语法。缺货以文字、虚线与删除线表达，不靠整块降透明；频繁选品不做延迟入场。普通摘要用轻阴影，弹窗保留浮层阴影。核对页标题不宣称未完成的费用确认，对比只省略双方都空的地址字段，必须保留清空事实。详见 [门户检查记录](docs/reports/2026-10-23-portal-oil-ui.md)。
