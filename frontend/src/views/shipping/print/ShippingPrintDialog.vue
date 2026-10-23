@@ -1,7 +1,7 @@
 <template>
   <el-dialog
-    :model-value="visible" :title="title" width="760px"
-    top="5vh" destroy-on-close @update:model-value="close"
+    :model-value="visible" :title="title" width="960px"
+    class="shipping-print-dialog" append-to-body top="5vh" destroy-on-close @update:model-value="close"
   >
     <div v-if="loadError" class="state-line">{{ loadError }}</div>
     <div v-else-if="loading" class="state-line">
@@ -181,4 +181,11 @@ watch(() => [props.visible, props.recordId, props.mode], ([isOpen]) => {
   display: flex;
   gap: 8px;
 }
+</style>
+
+<style>
+.shipping-print-dialog { max-width:calc(100vw - 24px); }
+</style>
+<style scoped>
+@media(max-width:600px) { .footer-bar { align-items:stretch; flex-direction:column; } .footer-actions { justify-content:flex-end; } }
 </style>

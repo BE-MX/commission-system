@@ -1,3 +1,10 @@
+## 2026-10-23 订单发票与出库体验优化（Codex，Git 交付，未部署）
+
+- 分支 `codex/invoice-outbound-ux`，worktree `C:/Users/windb/.codex/worktrees/invoice-outbound-ux/commission-system`，基点 `569b1fe5`；按评估顺序落地金额命名、关联进度、列表动作、概览紧凑、明细工具、出库菜单、库存展开、结算分组和可选打印预览。
+- 保留现有金额计算、资金抵扣、库存及实际出库口径；无后端逻辑、数据库或生产业务写入。独立审查指出的真实状态枚举、历史记录过滤及菜单权限包装已修复。
+- 定向回归 119/119、构建通过；扩大回归 305/326，通过 main 同范围复跑确认其余 21 项均为既有夹具／断言失败，无新增失败。实际浏览器核对桌面及 390px 库存抽屉，另验证只读身份无编辑／删除。
+- 实现范围、证据和边界见 [优化报告](reports/2026-10-23-invoice-outbound-ux.md)。用户已授权本次提交、合入 main 并推送，最终交付以 Git refs 回读为准；未部署。
+
 ## 2026-10-23 客户门户全页 UI 检查与优化（Codex，Git 交付，未部署）
 
 - `codex/portal-oil-ui`；独立 worktree `C:/Users/windb/.codex/worktrees/portal-oil-ui/commission-system`。覆盖公开入口、集合/规格、选购、请求/方案/PI、再次下单、联系弹窗和共享导航。

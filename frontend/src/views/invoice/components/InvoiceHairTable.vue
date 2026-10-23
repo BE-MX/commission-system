@@ -4,7 +4,7 @@
       <div class="line-title">
         <span class="step">2</span><strong>产品明细</strong>
         <span v-if="isProduction" class="line-hint">生产单：关键词下拉可选可输，已有属性直接选，没有就按输入沉淀新产品。</span>
-        <span v-else class="line-hint">四个关键词选择完整后自动匹配唯一 Product_name。</span>
+        <span v-else class="line-hint">四个关键词选择完整后自动匹配唯一产品。</span>
       </div>
       <div class="line-header-actions">
         <el-tooltip :disabled="canPasteImport" :content="pasteImportDisabledReason">
@@ -15,11 +15,11 @@
             </el-button>
           </span>
         </el-tooltip>
-        <el-button link type="primary" @click="collapseSpecs = !collapseSpecs">
+        <el-button link type="primary" :aria-pressed="!collapseSpecs" @click="collapseSpecs = !collapseSpecs">
           <el-icon><component :is="collapseSpecs ? ArrowDown : ArrowUp" /></el-icon>
           {{ collapseSpecs ? '展开规格列' : '收起规格列' }}
         </el-button>
-        <el-button link type="primary" @click="showOptionalCols = !showOptionalCols">
+        <el-button link type="primary" :aria-pressed="showOptionalCols" @click="showOptionalCols = !showOptionalCols">
           <el-icon><component :is="showOptionalCols ? ArrowUp : ArrowDown" /></el-icon>
           {{ showOptionalCols ? '收起选填列' : '展开选填列' }}
         </el-button>
@@ -32,8 +32,13 @@
           </el-button>
           <el-button link @click="clearSelection">取消选择</el-button>
         </template>
-        <el-button :disabled="!items.length" @click="clearAll"><el-icon><Delete /></el-icon>清空明细</el-button>
-        <el-button :disabled="!items.length" @click="$emit('copy')"><el-icon><DocumentCopy /></el-icon>复制一行</el-button>
+        <el-dropdown trigger="click">
+          <el-button>明细操作</el-button>
+          <template #dropdown><el-dropdown-menu>
+            <el-dropdown-item :disabled="!items.length" @click="$emit('copy')">复制一行</el-dropdown-item>
+            <el-dropdown-item divided :disabled="!items.length" @click="clearAll">清空明细</el-dropdown-item>
+          </el-dropdown-menu></template>
+        </el-dropdown>
         <el-button @click="$emit('add-blank')"><el-icon><Plus /></el-icon>添加空行</el-button>
       </div>
     </div>
@@ -54,7 +59,7 @@
         </template>
         <el-table-column type="selection" min-width="42" fixed />
         <el-table-column label="#" type="index" :index="indexBase" min-width="48" fixed />
-        <el-table-column v-if="isProduction" label="Product" min-width="190" prop="product_display" sortable="custom">
+        <el-table-column v-if="isProduction" label="产品" min-width="190" prop="product_display" sortable="custom">
           <template #default="{ row }">
             <el-select v-model="row.product_display" filterable allow-create default-first-option placeholder="系列描述，可输入" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.displays" :key="value" :label="value" :value="value" />
@@ -62,7 +67,7 @@
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
         </el-table-column>
-        <el-table-column v-if="(showOptionalCols || !isProduction) && !collapseSpecs" label="Model" min-width="120" prop="model" sortable="custom">
+        <el-table-column v-if="(showOptionalCols || !isProduction) && !collapseSpecs" label="型号" min-width="120" prop="model" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.model" filterable allow-create clearable default-first-option placeholder="可选" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.models" :key="value" :label="value" :value="value" />
@@ -79,7 +84,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="!collapseSpecs" label="Color" min-width="120" prop="color" sortable="custom">
+        <el-table-column v-if="!collapseSpecs" label="色号" min-width="120" prop="color" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.color" filterable allow-create default-first-option placeholder="Color" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.colors" :key="value" :label="value" :value="value" />
@@ -96,7 +101,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="!collapseSpecs" label="Length" min-width="95" prop="length" sortable="custom">
+        <el-table-column v-if="!collapseSpecs" label="长度" min-width="95" prop="length" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.length" filterable allow-create default-first-option placeholder="Length" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.sizes" :key="value" :label="value" :value="value" />
@@ -113,7 +118,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="!collapseSpecs" label="Net Weight" min-width="105" prop="net_weight_grams" sortable="custom">
+        <el-table-column v-if="!collapseSpecs" label="克重" min-width="105" prop="net_weight_grams" sortable="custom">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.net_weight_grams" filterable allow-create default-first-option placeholder="Unit" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.units" :key="value" :label="value" :value="value" />
@@ -145,7 +150,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isProduction" :label="collapseSpecs ? 'Product_name' : '匹配'" :width="collapseSpecs ? undefined : 150" :min-width="collapseSpecs ? 230 : undefined" prop="product_name" sortable="custom">
+        <el-table-column v-if="!isProduction" :label="collapseSpecs ? '产品名称' : '匹配'" :width="collapseSpecs ? undefined : 150" :min-width="collapseSpecs ? 230 : undefined" prop="product_name" sortable="custom">
           <template #default="{ row }">
             <!-- 规格列可见时 Product_name 只是重复，单元格给状态、名称悬停看；
                  规格列收起后它是唯一能区分行的信息，必须完整显示 -->
@@ -200,13 +205,13 @@
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="Quantity" min-width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="数量" min-width="96" prop="quantity" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">
             <el-input-number class="line-number-input" v-model="row.quantity" :ref="input => { if (row === quantityErrorRow) quantityInput = input }" :class="{ 'quantity-error': row === quantityErrorRow }" :min="1" :precision="0" :controls="false" @change="onQuantityChange(row)" />
             <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
-        <el-table-column label="TotalPrice" min-width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
+        <el-table-column label="小计" min-width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="56" fixed="right">

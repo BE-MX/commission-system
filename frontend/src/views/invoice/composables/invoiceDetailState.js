@@ -17,6 +17,36 @@ export function progressValue(numerator, denominator, state) {
   return { percentage: Math.min(100, Math.floor(n / d * 1000) / 10), complete: n >= d, over: Math.max(0, n - d) }
 }
 
+/** Describe observed facts, rather than infer an active workflow from 0%. */
+export function detailProgressLabel(panel, kind) {
+  if (panel.state === 'loading') return '正在核验'
+  if (panel.state === 'restricted') return '无查看权限'
+  if (panel.state !== 'ready') return '待核对'
+  const summary = panel.summary || {}
+  const progress = progressValue(kind === 'receipt' ? summary.effective_amount : summary.shipped_quantity,
+    kind === 'receipt' ? summary.total_amount : summary.ordered_quantity, panel.state)
+  const states = [...(panel.tasks || []), ...(panel.batches || []).filter(row => row.state !== 'cancelled')].flatMap(row => [row.state, row.outbound_state])
+  const needsReview = states.some(state => ['uncertain', 'failed', 'blocked', 'outbound_uncertain', 'review_required', 'confirm_uncertain', 'shipped_unfunded'].includes(state))
+    || (panel.items || []).some(row => kind === 'receipt'
+      ? row.status === 'active' && ['uncertain', 'failed'].includes(row.sync_status)
+      : Boolean(row.anomaly))
+  let label
+  if (needsReview) label = '待核对'
+  else if (!progress) label = (kind === 'receipt' ? summary.total_amount : summary.ordered_quantity) != null && Number(kind === 'receipt' ? summary.total_amount : summary.ordered_quantity) === 0 ? '无统计基数' : '待核对'
+  else if (progress.over > 0) label = kind === 'receipt' ? '超额待核对' : '超量待核对'
+  else if (progress.complete) label = '已完成'
+  else if (kind === 'receipt' && Number(summary.pending_amount) > 0) label = '待生效'
+  else if (kind === 'outbound' && states.includes('waiting_stock')) label = '等待补货'
+  else if (kind === 'outbound' && states.some(state => ['pending', 'running', 'retrying'].includes(state))) label = '生成中'
+  else if (kind === 'outbound' && states.includes('awaiting_sync')) label = '待同步'
+  else if (progress.percentage > 0) label = '进行中'
+  else if (kind === 'outbound' && panel.items?.length) label = '待完成检验'
+  else if (kind === 'outbound' && panel.batches?.some(row => row.state !== 'cancelled')) label = '待出库'
+  else if (kind === 'receipt' && panel.items?.some(row => row.status === 'active')) label = '已登记待核验'
+  else label = '未开始'
+  return panel.source === 'background_snapshot' ? `快照 · ${label}` : label
+}
+
 export function createDetailSession() {
   let version = 0, controller
   return {

@@ -2,7 +2,7 @@
   <div class="drawer-footer">
     <!-- 逐项金额（头发/配件/折扣等）在右栏「金额汇总」卡实时展示，这里只保留合计口径 -->
     <div class="total-box">
-      <span class="summary-chip base">订单总金额 <strong>{{ form.currency }} {{ money(baseAmount) }}</strong></span>
+      <span class="summary-chip base">订单金额（不含手续费） <strong>{{ form.currency }} {{ money(baseAmount) }}</strong></span>
       <span class="summary-divider">·</span>
       <span class="summary-chip handling">手续费 <strong>{{ money(form.surcharge_amount) }}</strong><em class="chip-note">仅方舟记录</em></span>
       <span class="summary-operator">→</span>

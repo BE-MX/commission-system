@@ -15,8 +15,8 @@ const legacyDrawer = read('../src/views/invoice/components/legacy/InvoiceLegacyD
 test('price, quantity, total and action columns stay pinned on the right', () => {
   for (const source of [hairTable, accessoryTable]) {
     assert.match(source, /label="客户价" min-width="130" align="right"[^>]*:fixed="pinColumns \? 'right' : false"/)
-    assert.match(source, /label="Quantity" min-width="96"[^>]*:fixed="pinColumns \? 'right' : false"/)
-    assert.match(source, /label="TotalPrice" min-width="110"[^>]*:fixed="pinColumns \? 'right' : false"/)
+    assert.match(source, /label="数量" min-width="96"[^>]*:fixed="pinColumns \? 'right' : false"/)
+    assert.match(source, /label="小计" min-width="110"[^>]*:fixed="pinColumns \? 'right' : false"/)
     assert.match(source, /pinColumns: { type: Boolean, default: true }/)
     assert.match(source, /label="操作" min-width="56" fixed="right"/)
     assert.doesNotMatch(source, /<el-table-column[^>]*(?<![-:])\bwidth="\d+/)
@@ -43,7 +43,7 @@ test('price cell gives the whole width to the number', () => {
 })
 
 test('stock order Product_name collapses to match status with full name on hover', () => {
-  assert.match(hairTable, /:label="collapseSpecs \? 'Product_name' : '匹配'" :width="collapseSpecs \? undefined : 150"/)
+  assert.match(hairTable, /:label="collapseSpecs \? '产品名称' : '匹配'" :width="collapseSpecs \? undefined : 150"/)
   // 规格列收起后名称是唯一能区分行的信息，必须完整显示
   assert.match(hairTable, /<span v-else-if="collapseSpecs" class="product-name">\{\{ row\.product_name \|\| '待匹配' \}\}<\/span>/)
   // 状态模式下读屏也能读到完整名称

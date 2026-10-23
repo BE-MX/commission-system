@@ -21,6 +21,7 @@
       <el-alert title="预付货款可扣减本批商品款和运费；定金只在人工确认最后一批时抵扣。提交生成本地结算单，实际出库以同步结果为准。" type="info" :closable="false" />
       <el-alert v-if="activeShipment" :title="activeShipmentMessage" type="warning" :closable="false" />
       <el-form label-position="top" :disabled="saving">
+        <h3 class="shipment-section-title">1 · 本批商品</h3>
         <el-form-item label="本批结算方式">
           <el-radio-group v-model="paymentTerm" :disabled="activeShipment || confirmationPending" aria-label="本批结算方式">
             <el-radio value="pay_first">先付款后出库</el-radio>
@@ -42,6 +43,7 @@
           <el-table-column :sort-by="row => stocks.get(row.id)?.limit ?? -1" label="可用库存" min-width="110"><template #default="{ row }"><span :title="stocks.get(row.id)?.reason || ''">{{ stockLoading ? '查询中…' : stocks.get(row.id)?.available ?? '待核对' }}</span></template></el-table-column>
           <el-table-column prop="requested" label="本批数量" min-width="200"><template #default="{ row }"><el-input-number :key="`${row.id}:${row.remaining}:${activeShipment || confirmationPending || saving}`" v-model="row.requested" v-quantity-bounds="{ max: quantityLimit(row), disabled: activeShipment || confirmationPending || saving || stockLoading || stocks.get(row.id)?.available == null }" :precision="0" :min="0" :max="quantityLimit(row)" :disabled="activeShipment || confirmationPending || stockLoading || stocks.get(row.id)?.available == null" controls-position="right" /></template></el-table-column>
         </el-table>
+        <h3 class="shipment-section-title">2 · 结算确认</h3>
         <el-form-item label="本批运费"><el-input-number v-model="freight" :precision="2" :min="0" controls-position="right" /></el-form-item>
         <el-checkbox v-model="isFinal">人工确认：这是最后一批发货，可抵扣定金</el-checkbox>
         <el-alert v-if="freight > 0" title="运费优先从预付货款余额扣减，不足部分再补款。小满保留独立运费订单，方舟记录原款抵扣，不重复登记实收。" type="info" :closable="false" />
@@ -79,7 +81,8 @@
           <el-table-column label="收款状态" min-width="120"><template #default="{ row }">{{ row.status === 'released' ? '已释放' : row.effective ? '已生效' : '待生效' }}</template></el-table-column>
         </el-table>
       </template>
-      <h3>出库结算记录</h3>
+      <details class="shipment-history" :open="!!activeShipment || confirmationPending">
+      <summary>3 · 出库结算记录（{{ settlements.length }}）</summary>
       <el-table class="list-table" :data="settlements" border empty-text="暂无出库结算记录" v-sticky-scrollbar>
         <el-table-column prop="settlement_no" label="结算单号" min-width="180"><template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.settlement_no }}</el-button></template></el-table-column>
         <el-table-column prop="state" label="状态" min-width="160"><template #default="{ row }">{{ stateLabel(row.state) }}</template></el-table-column>
@@ -95,6 +98,7 @@
           <div v-if="!['cancelled', 'shipped', 'completed'].includes(row.state) && !canChangeShipment(row, 'cancel')" class="shipment-action-reason" role="status">{{ shipmentActionReason(row, 'cancel') }}</div>
         </template></el-table-column>
       </el-table>
+      </details>
       </div>
     </div>
     <template #footer><div class="shipment-actions">
@@ -417,6 +421,10 @@ onMounted(restore)
 .shipment-content .el-alert { margin-bottom: 12px; }
 .shipment-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 600px) { .shipment-content { max-height: calc(100dvh - 230px); } .shipment-actions > * { flex: 1 1 auto; } }
+.shipment-section-title { margin:18px 0 12px; }
+.shipment-history { margin-top:20px; }
+.shipment-history > summary { cursor:pointer; color:var(--text-primary); font-size:15px; font-weight:600; padding:12px 0; }
+.shipment-history > summary:focus-visible { outline:2px solid var(--color-primary); outline-offset:2px; }
 .quote-summary { margin: 16px 0; }
 .shipment-action-reason { margin-top: 4px; color: var(--text-secondary); font-size: 12px; white-space: normal; }
 .shipment-inventory-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; color: var(--text-secondary); font-size: 12px; }
