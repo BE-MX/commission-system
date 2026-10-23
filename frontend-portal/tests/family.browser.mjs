@@ -13,6 +13,8 @@ const identity = { me: { account_public_id: '11111111-1111-4111-8111-11111111111
 const id = n => `${String(n).padStart(8, '0')}-1111-4111-8111-111111111111`
 const variant = (n, grade, length, color, type, availability = 'available', stock = '100+') => ({ item_id: id(n), category: 'hair', model_name: 'Genius Weft', color_name: color, customer_sku: null, length_display: length, weight_display: '20', sale_unit: 'piece', image_url: null, availability, inventory_observed_at: availability === 'unknown' ? null : '2026-10-19T10:00:00', stock_display: availability === 'available' ? stock : null, min_order_qty: 1, step_qty: 1, currency: 'USD', unit_price: '27.3500', price_status: 'available', grade, grade_label: grade === 'super' ? 'Super Double Drawn' : 'Standard Double Drawn', length, color_key: color.toLowerCase().replace('#', '').replace('/', '-'), color_code: color, color_label: color === '#9ATP9A/613' ? 'Rose Golden' : color, color_type: type, swatch_url: `/api/portal/v1/catalog/swatches/${id(n)}/image?version=1&size=thumb`, unit_weight_grams: '20' })
 const variants = [variant(1, 'standard', '18', '#2', 'solid'), variant(2, 'super', '18', '#2', 'solid', 'available', '42'), variant(3, 'super', '18', '#P2/8', 'piano', 'unavailable'), variant(4, 'super', '18', '#9ATP9A/613', 'balayage'), variant(5, 'super', '20', '#2', 'solid')]
+// A long color list ensures desktop scrolling is exercised too.
+variants.push(...Array.from({ length: 80 }, (_, n) => variant(100 + n, 'standard', '18', `#${600 + n}`, 'solid')))
 let polls = 0
 async function run(viewport, name) {
   const browser = await chromium.launch({ headless: true, ...(process.env.PORTAL_CHROMIUM ? { executablePath: process.env.PORTAL_CHROMIUM } : {}) })
@@ -28,7 +30,7 @@ async function run(viewport, name) {
     if (url.pathname.endsWith('/session')) return send(identity)
     if (url.pathname.endsWith('/sales-contact')) return send({ assigned: false })
     if (url.pathname.endsWith('/ordering-terms')) return send({ payment_terms: [], default_payment_term_code: null, auto_fees: { enabled: false, shipping_tiers: [] } })
-    if (url.pathname.endsWith('/catalog/families')) return send({ items: [{ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', sale_unit: 'piece', unit_weight_grams: '20', min_order_qty: 1, step_qty: 1, image_url: `/api/portal/v1/catalog/swatches/${id(1)}/image?version=1&size=thumb`, variant_count: 5, grades: ['standard', 'super'], lengths: ['18', '20'] }], ungrouped_count: 2, catalog_version: 1 })
+    if (url.pathname.endsWith('/catalog/families')) return send({ items: [{ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', sale_unit: 'piece', unit_weight_grams: '20', min_order_qty: 1, step_qty: 1, image_url: `/api/portal/v1/catalog/swatches/${id(1)}/image?version=1&size=thumb`, variant_count: variants.length, grades: ['standard', 'super'], lengths: ['18', '20'] }], ungrouped_count: 2, catalog_version: 1 })
     if (url.pathname.endsWith('/catalog/families/genius_weft_20g/availability')) { polls++; return send({ items: [], catalog_version: 1 }) }
     if (url.pathname.endsWith('/catalog/families/genius_weft_20g')) return send({ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', sale_unit: 'piece', unit_weight_grams: '20', min_order_qty: 1, step_qty: 1, grades: ['standard', 'super'], variants, catalog_version: 1, mapping_version: 1 })
     if (url.pathname.endsWith('/catalog')) return send({ items: [], total: 0, page: 1, page_size: 24, facets: { categories: [], colors: [] }, catalog_version: 1, mapping_version: 1 })
@@ -51,6 +53,21 @@ async function run(viewport, name) {
     assert.match(await page.locator('.family-image img').getAttribute('src'), /size=full$/)
     assert.equal(await page.locator('.family-image img').getAttribute('loading'), 'eager')
     assert.match(await page.locator('.swatch-thumb img').first().getAttribute('src'), /size=thumb$/)
+    const dock = page.getByRole('complementary', { name: 'Product purchase' })
+    await dock.waitFor()
+    await page.waitForFunction(() => parseFloat(document.querySelector('.portal-shell').style.getPropertyValue('--purchase-dock-height')) > 0)
+    for (const offset of [0, 250, 10000]) {
+      await page.evaluate(y => window.scrollTo(0, y), offset)
+      const rect = await dock.boundingBox()
+      assert.ok(Math.abs(rect.y + rect.height - viewport.height) < 2, 'purchase dock stays at viewport bottom')
+      assert.ok(rect.height <= viewport.height / 2 + 1, 'dock leaves room for product content')
+    }
+    assert.ok(await page.evaluate(() => window.scrollY > 0), 'long product page really scrolls')
+    const footer = await page.locator('.portal-footer').boundingBox()
+    const bottomDock = await dock.boundingBox()
+    assert.ok(footer.y + footer.height <= bottomDock.y + 2, 'footer stays above dock at end of page')
+    await page.screenshot({ animations: 'disabled', path: `${output}/purchase-dock-${name}.png` })
+    await page.evaluate(() => window.scrollTo(0, 0))
     // First available grade/length/color is preselected.
     assert.equal(await page.getByRole('button', { name: 'Standard Double Drawn' }).getAttribute('aria-pressed'), 'true')
     await page.getByRole('button', { name: 'Super Double Drawn' }).click()
@@ -72,12 +89,20 @@ async function run(viewport, name) {
     await panel.getByRole('button', { name: /^Increase Genius Weft/ }).click()
     assert.ok(await panel.getByText('80 g').first().isVisible())
     await noOverflow()
-    await page.screenshot({ path: `${output}/family-detail-${name}.png`, fullPage: true })
+    await page.waitForFunction(() => {
+      const shell = document.querySelector('.portal-shell'), dock = document.querySelector('.family-purchase-dock')
+      return parseFloat(getComputedStyle(shell).paddingBottom) >= dock.getBoundingClientRect().height
+    })
+    await page.screenshot({ animations: 'disabled', path: `${output}/family-detail-${name}.png`, fullPage: true })
     await panel.getByRole('button', { name: 'Finish selection' }).click()
     await page.waitForURL(/\/checkout$/)
+    assert.equal(await dock.count(), 0)
+    assert.equal(await page.locator('.portal-shell').evaluate(el => el.style.getPropertyValue('--purchase-dock-height')), '')
     assert.deepEqual(errors, [])
   } finally { await browser.close() }
 }
 await run({ width: 1440, height: 1000 }, 'desktop')
 await run({ width: 375, height: 812 }, 'mobile')
+await run({ width: 320, height: 640 }, 'small-mobile')
+await run({ width: 812, height: 375 }, 'landscape')
 console.log(`family browser checks passed (availability polls observed: ${polls})`)

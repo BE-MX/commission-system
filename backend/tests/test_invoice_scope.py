@@ -204,3 +204,45 @@ def test_endpoint_scope_wiring(db):
     # super_admin：绕过数据范围
     with _client(db, sub="7", permissions=[], roles=["super_admin"]) as client:
         assert client.get(f"/api/invoice/invoices/{mine.id}").status_code == 200
+
+
+@pytest.mark.parametrize("format", ["excel", "pdf"])
+def test_pi_template_download_keeps_live_authority_and_scope(db, monkeypatch, format):
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from pypdf import PdfReader
+    from app.invoice import pi_template
+    from tests.authority_helpers import seed_authority
+
+    mine = service.create_invoice(db, _create_payload(), user_id=5)
+    db.commit()
+    seed_authority(db, 5, "invoice:read")
+    seed_authority(db, 6, "invoice:read")
+    seed_authority(db, 7, "invoice:write")
+    invoice_id, invoice_no, total = mine.id, mine.invoice_no, mine.total_amount
+    calls = []
+    original = pi_template.document
+
+    def observe(invoice):
+        calls.append(invoice.id)
+        return original(invoice)
+
+    monkeypatch.setattr(pi_template, "document", observe)
+    path = f"/api/invoice/invoices/{invoice_id}/export/{format}?template=leshine_pi"
+    with _client(db, sub="6", permissions=["invoice:read"]) as client:
+        assert client.get(path).status_code == 404
+    with _client(db, sub="7", permissions=["invoice:read"]) as client:
+        assert client.get(path).status_code == 403  # Stale JWT cannot restore read.
+    assert calls == []
+    with _client(db, sub="5", permissions=["invoice:read"]) as client:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "attachment;" in response.headers["content-disposition"]
+        if format == "excel":
+            assert load_workbook(BytesIO(response.content)).active["G10"].value == invoice_no
+        else:
+            assert invoice_no in "\n".join(page.extract_text() for page in PdfReader(BytesIO(response.content)).pages)
+        assert client.get(path.replace("leshine_pi", "unrecognized_template")).status_code == 422
+    assert calls == [invoice_id]
+    db.expire_all()
+    assert db.get(Invoice, invoice_id).total_amount == total
