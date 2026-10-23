@@ -5,6 +5,12 @@
 - 兼容字体已从 Ubuntu 包解压到私有暂存路径。对截图请求的当前已发布快照做只读渲染成功，2 页 PDF，快照哈希未变、业务库写入 0。证据含真实客户 PDF，仅留 `tmp/pi-font-proof/` 与北京私有 `.deploy_state`，不提交。
 - 详见 [报告](reports/2026-10-23-portal-pi-font-repair.md)。用户已授权本批与结算高度修改一起提交、合入 main 并推送，以 Git refs 回读为准；本次不部署，线上字体配置与服务仍未切换。上线需先配置兼容字体，再走 `deploy/deploy.bat`，单独部署预检代码不会修复现有字体。
 
+## 2026-10-23 客户结算双栏高度（Codex，Git 交付，未部署）
+
+- `codex/portal-checkout-height`，独立 worktree `C:/Users/windb/.codex/worktrees/portal-checkout-height/commission-system`。桌面结算页收紧导航、标题及页脚，将更多视口高度给左右独立滚动区域；手机布局与业务逻辑不变。
+- 1440×900 两栏高度 537→703px，1440×640 为 376→443px；浏览回归含几何、实际滚轮独立性、付款与提交，截图和尺寸在 `tmp/checkout-height/`。说明见 `docs/reports/2026-10-23-portal-checkout-pane-height.md`。
+- 用户已授权与 PI 字体修复一起提交、合入 main 并推送；最终状态以 Git refs 回读为准，本次不部署。
+
 ## 2026-10-23 客户门户全页 UI 检查与优化（Codex，Git 交付，未部署）
 
 - `codex/portal-oil-ui`；独立 worktree `C:/Users/windb/.codex/worktrees/portal-oil-ui/commission-system`。覆盖公开入口、集合/规格、选购、请求/方案/PI、再次下单、联系弹窗和共享导航。
