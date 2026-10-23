@@ -63,6 +63,7 @@ export const MENU_GROUPS = {
       'invoice_price:read', 'invoice_okki:read', 'invoice_repair:read',
       FESTIVAL_PERMISSION, FESTIVAL_ORDER_PERMISSION,
       'battle_report:read', 'battle_report:admin',
+      'perf_goal:read', 'perf_goal:write',
       ORDER_INTELLIGENCE_PERMISSION,
       'fx_settlement:read',
     ],
@@ -494,6 +495,39 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'invoice', title: '临时战报', icon: DataBoard, order: 37,
       anyPermission: ['battle_report:read', 'battle_report:admin'],
+    },
+  },
+  {
+    path: '/invoice/perf-goals',
+    name: 'PerfGoalDashboard',
+    component: () => import('@/views/perf-goal/PerfDashboard.vue'),
+    title: '绩效看板',
+    permission: 'perf_goal:read',
+    menu: {
+      group: 'invoice', title: '绩效看板', icon: DataLine, order: 38,
+      permission: 'perf_goal:read',
+    },
+  },
+  {
+    path: '/invoice/perf-goals/targets',
+    name: 'PerfGoalTargets',
+    component: () => import('@/views/perf-goal/TargetEditor.vue'),
+    title: '目标设置',
+    permission: 'perf_goal:write',
+    menu: {
+      group: 'invoice', title: '目标设置', icon: Aim, order: 39,
+      permission: 'perf_goal:write',
+    },
+  },
+  {
+    path: '/invoice/perf-goals/reports',
+    name: 'PerfGoalReports',
+    component: () => import('@/views/perf-goal/ReportCenter.vue'),
+    title: '战报推送',
+    permission: 'perf_goal:read',
+    menu: {
+      group: 'invoice', title: '战报推送', icon: DataBoard, order: 40,
+      permission: 'perf_goal:read',
     },
   },
   {
