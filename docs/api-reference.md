@@ -656,6 +656,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /invoices/{id}/export/excel` — 导出 Excel（含 To/From 头块、头发/配件独立明细区、配件成交价与分组费用汇总；外部文本按 Excel 公式注入规则中和）
   - `GET /invoices/{id}/export/print` — 打印用 HTML
   - `GET /invoices/{id}/export/pdf` — 导出 PDF
+  - 上述 Excel/PDF 可选 `?template=leshine_pi`：使用用户提供的 `backend/app/invoice/assets/portal_pi_template.xlsx` 输出 PI，保留 Logo、公司抬头、Proforma Invoice 标题与八列商品布局，按当前单据的已存成交价、折扣、行金额、费用及总额填充，不使用模板样例的 5% 公式。员工「下单请求 → 处理原 PI」的 Excel/PDF 按钮显式使用该参数；不传参数保留原发票版式。仍验证实时 `invoice:read` 与发票可见范围；未知模板值返回 422。仅导出当前员工单据，不替代客户已发布快照 PDF。
   - `GET /xiaoman/settings` — 读取 OKKI 推单设置（invoice:admin；token 只回掩码 + has_token，无行时返回默认值不建行）
   - `PUT /xiaoman/settings` — 保存 OKKI 推单设置（invoice:admin；access_token 语义 null=不改/空串=清除/非空=覆盖；generic_product_no 服务端解析 okki_products 回填 product_id，SKU 唯一自动关联、多 SKU 须显式指定且校验归属）
   - `GET /xiaoman/settings/resolve-product?product_no=` — 按产品编号解析通用产品及 SKU 候选（invoice:admin，前端选 SKU 用）

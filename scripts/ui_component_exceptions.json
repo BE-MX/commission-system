@@ -118,5 +118,11 @@
       "count": 3,
       "reason": "上传成果卡片复制和继续上传主操作"
     }
+  },
+  "frontend/src/views/portal/PiReviewDialog.vue": {
+    "bad_dialog_width": {
+      "count": 1,
+      "reason": "PI 详情同时核对完整单据、版本与操作，采用 1180px 双栏工作区；受视口减 24px 限制，小屏退回单列，保留固定页脚操作与独立滚动。"
+    }
   }
 }

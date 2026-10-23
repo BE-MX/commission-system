@@ -457,3 +457,15 @@ large detail galleries explicitly request full swatches (up to 1200px); color
 buttons retain 96px thumbnails. Detail galleries load eagerly. Invalid URLs and
 failed images keep the brand placeholder. Family browse prices use request-local
 batched reads only; quote/submit still resolve authoritative prices afresh.
+
+
+The family detail purchase area stays fixed at the viewport bottom. Its measured
+height reserves space after the page footer and updates with content/viewport
+changes. Navigation removes that spacing. On short screens the dock is capped at
+half the viewport with internal overflow; mobile safe-area padding is included.
+
+
+At desktop widths above 1000px, checkout uses two independent, keyboard-focusable
+scroll panes within the viewport: selection/delivery on the left, server review
+and confirmation on the right. Wheel scrolling is contained in its own pane.
+Tablet and phone widths retain a single column with normal page scrolling.
