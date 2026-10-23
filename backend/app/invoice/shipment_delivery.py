@@ -25,6 +25,7 @@ from app.receipt.sync_service import refresh_accepted
 from app.shipping_inspection import outbound_presence
 from app.invoice import shipment_inspection_service as inspection_completion
 from app.invoice import shipment_payment_policy as payment_policy
+from app.invoice import shipment_existing_funding as existing_funding
 
 
 logger = logging.getLogger(__name__)
@@ -109,11 +110,14 @@ def _live_candidate(db, invoice, settlement, *, pending=None):
         handler_id=handler, reserved_quantities=reserved)
 
 
-def _live_funding(db, invoice, settlement):
+def _live_funding(db, invoice, settlement, existing_outbound=None):
     """Reconcile the complete active remote receipt lists, including freight."""
-    goods_snapshot = remote.order_snapshot(db, invoice)
+    if existing_outbound is None:
+        goods_snapshot = remote.order_snapshot(db, invoice)
+        main = remote.read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
+    else:
+        goods_snapshot, main = existing_funding.snapshot(db, invoice, settlement, existing_outbound)
     goods_balance(db, invoice, goods_snapshot)
-    main = remote.read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
     if not remote.order_active(db, main):
         raise ValueError("小满预售主单已删除或活动列表未确认")
     freight = db.query(Receivable).filter_by(settlement_id=settlement.id, kind="freight").first()
@@ -253,20 +257,27 @@ def refresh(db, outbound_id, *, confirmation_token=None):
         raise ValueError("实际出库确认仍在发送中，请稍后核对")
     inspection_before = inspection_completion.snapshot(db, outbound)
     funding_ok = True
-    if inspection_before[1]:
+    funding_before = None
+    remote_matches = active and _verify(outbound, detail)
+    if inspection_before[1] and remote_matches:
         try:
             funding_ok = _refresh_funding(db, outbound.settlement_id)
             settlement_for_funding = db.get(ShipmentSettlement, outbound.settlement_id)
             invoice_for_funding = db.get(Invoice, outbound.invoice_id)
-            _live_funding(db, invoice_for_funding, settlement_for_funding)
+            funding_before = existing_funding.binding(db, invoice_for_funding, settlement_for_funding, outbound)
+            _live_funding(db, invoice_for_funding, settlement_for_funding, outbound)
             funding_ok = funding_ok and _dispatchable(db, settlement_for_funding)
         except Exception:
             db.rollback()
             funding_ok = False
     db.commit()
-    db.query(Invoice.id).filter(Invoice.id == outbound.invoice_id).with_for_update().one()
+    invoice = db.query(Invoice).filter(Invoice.id == outbound.invoice_id).populate_existing().with_for_update().one()
     db.refresh(outbound, with_for_update=True)
     settlement = db.get(ShipmentSettlement, outbound.settlement_id)
+    db.refresh(settlement, with_for_update=True)
+    if funding_before is not None and funding_before != existing_funding.binding(db, invoice, settlement, outbound, current=True):
+        db.rollback()
+        raise ValueError('订单、批次或回款在资金核验期间已变化，请重新核对原批次')
     if (outbound.status == "confirming" and outbound.lease_until
             and outbound.lease_until > beijing_now()
             and outbound.attempt_token != confirmation_token):
