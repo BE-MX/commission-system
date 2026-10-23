@@ -1,3 +1,9 @@
+## 2026-10-23 浏览器标签页 LeShine LOGO（Codex，Git 交付，未部署）
+
+- 分支 `codex/leshine-tab-logo`；主站 `frontend/index.html` 的 favicon 从 Vite 默认图标改为现有 `/logo.webp`，与平台侧栏共用 LeShine 品牌资源，登录和主站路由共用。
+- `npm --prefix frontend run build`、约定检查、图标引用与 WebP 解码检查通过；Git 巡检已运行（`--no-fetch`，本地引用快照）。构建仅有既有大 chunk 提示。
+- 用户已授权本次提交、合入 main 并推送，最终状态以 Git refs 回读为准；未部署。
+
 ## 2026-10-23 预售出库创建中断的原任务恢复（Codex，本地修复，未部署）
 
 - 新增管理员“核实未生成并恢复”：人工确认原请求已终止且未生成，填写核实依据；服务端双次当前授权/完整图与尝试挑战校验、实时原编号GET，并全程共享出库执行器锁直到最终提交。只恢复原任务，保留全部编号、明细、回款与资金分配，命令不发送小满POST。
