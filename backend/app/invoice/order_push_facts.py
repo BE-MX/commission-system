@@ -70,6 +70,7 @@ def start(db,invoice,actor_id,binding,payload,inventory_key,receipt_token):
           "payload_fingerprint":digest(payload),"binding_fingerprint":digest(binding),
           "token_fingerprint":digest(token),"document_version":invoice.portal_document_version,
           "inventory_operation_key":inventory_key,"receipt_token_fingerprint":digest(receipt_token)}
+    if getattr(invoice,'presale_order_revision',None):data['requires_commercial_readback']=True
     append(db,invoice.id,key,START,data,object_id,access_id,actor_id)
     return Attempt(invoice.id,key,token,actor_id,deepcopy(binding),deepcopy(payload),object_id,access_id,
                    deepcopy(data),inventory_key,receipt_token)

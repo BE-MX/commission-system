@@ -244,6 +244,8 @@ def apply(db,invoice,attempt,observation,data):
             invoice_link.finish_attempt(db,invoice,attempt.receipt_token)
             return result
         invoice.sync_status=invoice.status="synced";invoice.synced_at=beijing_now();invoice.sync_error=None
+        from app.invoice.presale_order_revision import record_synced
+        record_synced(invoice)
         invoice.sync_attempt=None
         sent_removals=[row for row in attempt.payload["product_list"] if row.get("remove")]
         if sent_removals:invoice.xiaoman_removed_lines=None
@@ -347,7 +349,8 @@ def run(db,invoice_id,user,*,linked_id=None,linked_token=None,follow_outbound=Tr
                 persist(db,attempt,tuple(observations),None)
                 raise
             observation,data=send(api_token,attempt,2);observations.append(observation)
-        if observation['result_class']=='accepted' and repeated_products(attempt):
+        if observation['result_class']=='accepted' and (repeated_products(attempt)
+                or attempt.data.get('requires_commercial_readback')):
             persist(db,attempt,tuple(observations),None,finish=False)
             data=read_accepted_products(api_token,attempt,observation)
         result=persist(db,attempt,tuple(observations),data)

@@ -48,6 +48,7 @@
         <ResponsiveDescriptions v-if="quote" :column="2" border class="quote-summary">
           <el-descriptions-item v-for="field in quoteFields" :key="field[0]" :label="field[0] === 'new_payment_due' && paymentTerm === 'ship_first' ? '本批待回款' : field[1]">{{ invoice.currency }} {{ money(quote[field[0]]) }}</el-descriptions-item>
           <el-descriptions-item label="出库批次">{{ quote.is_final ? '人工确认最后一批' : '本批发货，定金保留' }}</el-descriptions-item>
+          <el-descriptions-item v-if="Number(quote.price_credit_applied) > 0" label="已发商品调价抵扣">{{ invoice.currency }} {{ money(quote.price_credit_applied) }}（仅抵商品应收）</el-descriptions-item>
           <el-descriptions-item v-if="quote.pool_balances" label="扣减后可用预付货款">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => row.effective && row.purpose === 'presale_advance').reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
           <el-descriptions-item v-if="quote.pool_balances" label="留存定金（仅末批）">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => row.effective && row.purpose === 'presale_deposit').reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>
           <el-descriptions-item v-if="quote.pool_balances?.some(row => !row.effective)" label="待生效款（不可用）">{{ invoice.currency }} {{ money(quote.pool_balances.filter(row => !row.effective).reduce((sum, row) => sum + Number(row.remaining_amount || 0), 0)) }}</el-descriptions-item>

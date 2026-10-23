@@ -12,6 +12,7 @@ from app.invoice import service, linked_outbound_service
 from app.invoice.models import Invoice, InvoiceLinkedSync, OkkiOutboundTask
 from app.receipt import balance, remote
 from app.receipt.models import Receipt
+from app.invoice.presale_order_revision import business_config
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +29,15 @@ def edit_version(invoice):
     values = {k: getattr(invoice, k) for k in sorted(fields)}
     values["items"] = [{c.name: getattr(i, c.name) for c in i.__table__.columns
         if c.name not in {"id", "invoice_id", "xiaoman_unique_id", "created_at", "updated_at"}} for i in invoice.items]
+    if getattr(invoice,'presale_order_revision',None):values['presale_order_revision']=business_config(invoice)
     return hashlib.sha256(json.dumps(values, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def snapshot(invoice):
     from app.invoice.presale_lines import remote_items, remote_quantity, remote_amount
     items = remote_items(invoice) if invoice.order_type == "presale" else invoice.items
-    return {"edit_version": edit_version(invoice), "invoice_no": invoice.invoice_no, "customer_id": invoice.customer_id, "currency": invoice.currency,
+    return {**({'presale_order_revision':business_config(invoice)} if getattr(invoice,'presale_order_revision',None) else {}),
+            "edit_version": edit_version(invoice), "invoice_no": invoice.invoice_no, "customer_id": invoice.customer_id, "currency": invoice.currency,
             "total_amount": str(invoice.total_amount), "surcharge_amount": str(invoice.surcharge_amount or 0),
             "remark": invoice.remark or "", "delivery_address": invoice.delivery_address or "",
             "items": [{"product_id": str(i.product_id), "sku_id": str(i.sku_id), "quantity": remote_quantity(i),

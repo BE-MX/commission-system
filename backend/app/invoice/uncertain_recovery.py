@@ -28,6 +28,8 @@ def confirm_existing(db, invoice, reason, actor, *, evidence=None):
     verified_rows = verify_existing(invoice, rows, data)
     if xiaoman_service._assign_unique_ids(invoice, binding, verified_rows):
         raise ValueError("小满明细ID无法完整回写")
+    from app.invoice.presale_order_revision import record_synced
+    record_synced(invoice)
     pending = db.query(InvoiceAllocation).filter_by(invoice_id=invoice.id, status="pending").all()
     keys = {r.operation_key for r in pending}
     if len(keys) > 1 or (pending and not next(iter(keys))):

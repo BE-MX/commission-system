@@ -19,6 +19,9 @@ def remote_amount(item):
 
 
 def remote_items(invoice):
+    from app.invoice.presale_order_revision import config
+    if config(invoice):
+        return current_items(invoice)
     return [item for item in invoice.items if remote_quantity(item)]
 
 
@@ -61,6 +64,11 @@ def apply_current(original, replacement):
 
 
 def set_current_fees(db, invoice, body):
+    from app.invoice.presale_order_revision import config
+    if config(invoice):
+        invoice.presale_current_accessory=invoice.internal_accessory=Decimal(body.internal_accessory or 0)
+        invoice.presale_current_handling=invoice.surcharge_amount=Decimal(body.surcharge_amount or 0)
+        return
     quotes = db.scalars(select(ShipmentSettlement.quote).where(
         ShipmentSettlement.invoice_id == invoice.id, ShipmentSettlement.state == "shipped")
         .order_by(ShipmentSettlement.id).with_for_update()).all()

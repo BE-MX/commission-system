@@ -60,6 +60,7 @@ class Invoice(Base):
     surcharge_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="附加费金额（发票币种，计入总额）")
     presale_current_accessory = Column(Numeric(14, 2), nullable=True, comment="预售当前明细包装费，历史费用另行累计")
     presale_current_handling = Column(Numeric(14, 2), nullable=True, comment="预售当前明细手续费，历史费用另行累计")
+    presale_order_revision = Column(JSON, nullable=True, comment="整单修订的显式历史来源、批准价格抵扣及计算依据；非现金")
     payment_term = Column(String(256), nullable=True, comment="付款条款")
     product_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="sum of item totals after line discounts, before order fees")
     total_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="发票总额=产品净额+包装费+运费+手续费（发票币种）")

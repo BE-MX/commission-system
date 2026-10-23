@@ -166,7 +166,7 @@ def sync_invoice(
     from app.invoice import order_sync_execution
     attempt = SimpleNamespace(payload=payload)
     evidence = data or {}
-    if order_sync_execution.repeated_products(attempt):
+    if order_sync_execution.repeated_products(attempt) or getattr(invoice,'presale_order_revision',None):
         try:
             evidence = order_sync_execution.read_accepted_products(
                 okki_client.ensure_access_token(db), attempt,
@@ -190,6 +190,8 @@ def sync_invoice(
 
     push_attempt.finish(invoice)
     invoice.sync_status = "synced"
+    from app.invoice.presale_order_revision import record_synced
+    record_synced(invoice)
     invoice.status = "synced"
     invoice.sync_error = None
     invoice.synced_at = beijing_now()

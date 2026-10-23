@@ -152,13 +152,18 @@ def test_duplicate_readback_preserves_anchored_commercial_line_and_order_amount(
 
 @pytest.mark.parametrize('fault', [None, 'extra_row', 'missing_amount', 'unavailable', 'token_unavailable'])
 @pytest.mark.parametrize('identical', [False, True])
-def test_legacy_repeated_push_reads_exact_order_before_completion(db, monkeypatch, fault, identical):
+@pytest.mark.parametrize('whole_order_revision', [False, True])
+def test_legacy_repeated_push_reads_exact_order_before_completion(db, monkeypatch, fault, identical,whole_order_revision):
     _seed_settings(db)
     _seed_binding(db)
     invoice = _make_invoice(db)
     second_price = Decimal('35' if identical else '81.84')
     invoice.items.extend([_stock_item(quantity=1, price_per_piece=Decimal('35'), total_price=Decimal('35')),
         _stock_item(sort_order=2, quantity=1, price_per_piece=second_price, total_price=second_price)])
+    if whole_order_revision:
+        invoice.order_type='presale'
+        invoice.items.pop()
+        invoice.presale_order_revision={'schema_version':1,'mode':'whole_order','sources':{},'revision':1}
     db.flush()
     monkeypatch.setattr(xiaoman_service.product_service, 'reconcile_custom_products', lambda _db: {})
     monkeypatch.setattr(xiaoman_service.get_settings(), 'OKKI_OUTBOUND_AUTO_ENABLED', True)
@@ -179,7 +184,7 @@ def test_legacy_repeated_push_reads_exact_order_before_completion(db, monkeypatc
         if fault == 'extra_row': rows.append(dict(rows[0],unique_id=999))
         if fault == 'missing_amount': rows[0].pop('cost_amount')
         return dict(order_id=401,company_id=payload['company_id'],currency='USD',name=payload['name'],
-                    amount=Decimal('45')+second_price,product_list=rows)
+                    amount=Decimal('45')+(0 if whole_order_revision else second_price),product_list=rows)
     def token(_db):
         if fault=='token_unavailable': raise xiaoman_service.okki_client.OkkiApiError('auth unavailable')
         return 'synthetic'
@@ -190,11 +195,41 @@ def test_legacy_repeated_push_reads_exact_order_before_completion(db, monkeypatc
     assert len(sends)==1 and len(reads)==(0 if fault=='token_unavailable' else 1)
     assert result['ok']==(fault is None)
     if fault is None:
-        assert [item.xiaoman_unique_id for item in invoice.items]==['501','502']
-        assert enqueue==[1]
+        assert [item.xiaoman_unique_id for item in invoice.items]==(['501'] if whole_order_revision else ['501','502'])
+        assert enqueue==([] if whole_order_revision else [1])
+        if whole_order_revision:assert invoice.presale_order_revision['synced_projection']['501']['amount']=='35.00'
     else:
         assert invoice.sync_status=='sync_uncertain' and invoice.xiaoman_order_id=='401'
         assert all(item.xiaoman_unique_id is None for item in invoice.items)
         assert not enqueue
         assert not xiaoman_service.sync_invoice(db,invoice,operator_id=1)['ok']
         assert len(sends)==1
+        if whole_order_revision:assert 'synced_projection' not in invoice.presale_order_revision
+
+
+@pytest.mark.parametrize('complete',[False,True])
+def test_modern_non_repeated_revision_reads_full_amount_before_finalization(db,monkeypatch,complete):
+    from types import SimpleNamespace
+    attempt=SimpleNamespace(payload={'product_list':[{'product_id':1,'sku_id':11}]},
+        data={'requires_commercial_readback':True})
+    post={'order_id':'401','product_list':[{'product_id':1,'sku_id':11,'unique_id':'501','count':1,'unit_price':35}]}
+    observation={'result_class':'accepted','provider_reference':'401'}
+    monkeypatch.setattr(order_sync_execution,'prepare',lambda *a:(None,attempt.payload))
+    monkeypatch.setattr(order_sync_execution,'token',lambda *a:'synthetic')
+    monkeypatch.setattr(order_sync_execution,'claim',lambda *a:attempt)
+    monkeypatch.setattr(order_sync_execution,'send',lambda *a:(observation,post))
+    calls=[]
+    def read(*a):
+        calls.append('GET')
+        return {'order_id':'401','product_list':[dict(post['product_list'][0],cost_amount=35)]} if complete else {'order_id':'401'}
+    monkeypatch.setattr(order_sync_execution,'read_accepted_products',read)
+    def persist(*a,**kw):
+        if kw.get('finish') is False:
+            calls.append('accepted');return
+        calls.append('finalize')
+        assert calls==['accepted','GET','finalize']
+        return {'ok':bool(a[-1].get('product_list'))}
+    monkeypatch.setattr(order_sync_execution,'persist',persist)
+    monkeypatch.setattr(order_sync_execution,'response',lambda *a:a[-1])
+    result=order_sync_execution.run(db,1,None,follow_outbound=False)
+    assert result['ok']==complete
