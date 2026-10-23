@@ -1,6 +1,6 @@
 import { msgWarning, msgSuccessText, alertAction, confirmAction, isFeedbackCancelled } from '@/utils/feedback'
 import { formatMoney } from '@/utils/money'
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useLinkedInvoiceSync } from './useLinkedInvoiceSync'
 import { invoiceOrderSignature } from './invoiceReceiptState'
 
@@ -70,6 +70,66 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const previousInvoiceNo = ref('')
 
   const form = reactive(emptyInvoiceForm())
+  const savedSignature = ref('')
+  const syncCompletionMessage = ref('')
+  let pendingLinkedCompletion = null
+  const editorOpen = computed(() => drawerVisible.value || legacyVisible.value)
+  const editorBusy = computed(() => orderSaving.value || saveAndSyncSubmitting.value || linked.busy.value || linked.loading.value
+    || form.receipt_uploading || form.receipt_action_busy || form.receipt_remark_saving)
+  const currentSignature = () => {
+    const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
+    const receipt = payload.receipt_draft
+    // Generated receipts are persisted separately. The receipt panel also creates
+    // an empty zero-value draft on mount; neither is an unsaved order edit.
+    if (receipt && ((form.receipt_draft.status && form.receipt_draft.status !== 'draft')
+      || (!Number(receipt.amount) && !Number(receipt.bank_charge) && !receipt.attachment_ids.length && !receipt.remark))) {
+      payload.receipt_draft = null
+    }
+    return JSON.stringify(payload)
+  }
+  const hasUnsavedChanges = computed(() => !form.id || savedSignature.value !== currentSignature()
+    || form.receipt_proof_dirty || form.receipt_remark_editing || form.receipt_action_open)
+  let closeConfirmation = null
+  async function confirmEditorClose() {
+    if (!editorOpen.value) return true
+    if (editorBusy.value) {
+      msgWarning('订单正在保存、同步或处理回款，请等待完成后再关闭')
+      return false
+    }
+    if (!hasUnsavedChanges.value) return true
+    if (closeConfirmation) return closeConfirmation
+    closeConfirmation = (async () => {
+      try {
+        await confirmAction(`订单 ${form.invoice_no || '（未编号）'} 有尚未保存的内容，关闭后将丢失。确定关闭？`, '未保存提醒', {
+          type: 'warning', confirmButtonText: '放弃修改并关闭', cancelButtonText: '继续编辑',
+          closeOnClickModal: false,
+        })
+        // The user may have started a save while this confirmation was open.
+        return !editorBusy.value
+      } catch (error) {
+        if (isFeedbackCancelled(error)) return false
+        throw error
+      } finally { closeConfirmation = null }
+    })()
+    return closeConfirmation
+  }
+  async function beforeEditorClose(done) {
+    if (await confirmEditorClose()) done()
+  }
+  async function closeEditor() {
+    if (await confirmEditorClose()) {
+      drawerVisible.value = false
+      legacyVisible.value = false
+    }
+  }
+  function handleBeforeUnload(event) {
+    if (!editorOpen.value || (!editorBusy.value && !hasUnsavedChanges.value)) return
+    event.preventDefault()
+    event.returnValue = ''
+  }
+  function showSyncCompletion(invoiceNo) {
+    syncCompletionMessage.value = `${invoiceNo}订单号已保存并同步完成`
+  }
   const contactDetailsExpanded = ref(true)
   const contactDetailsComplete = computed(() => [
     form.contact_name, form.contact_phone, form.contact_email, form.delivery_address,
@@ -88,7 +148,11 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }, { flush: 'sync' })
   const linked = useLinkedInvoiceSync(async id => {
     const current = await getInvoice(id)
-    if (form.id === id) resetForm(current)
+    if (form.id === id && !hasUnsavedChanges.value) resetForm(current)
+    if (form.id === id && pendingLinkedCompletion?.id === id && linked.operation.value?.status === 'done') {
+      showSyncCompletion(pendingLinkedCompletion.invoiceNo)
+      pendingLinkedCompletion = null
+    }
     onSaved?.()
   })
   const loadedUpdatedAt = ref(null)
@@ -222,6 +286,15 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 用户手输过发票号后，建议号不再覆盖
   let invoiceNoEdited = false
 
+  // Register only while protection is needed; remove on scope disposal as well.
+  if (typeof window !== 'undefined') {
+    watch(() => editorOpen.value && (editorBusy.value || hasUnsavedChanges.value), protect => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      if (protect) window.addEventListener('beforeunload', handleBeforeUnload)
+    }, { flush: 'sync' })
+    onScopeDispose(() => window.removeEventListener('beforeunload', handleBeforeUnload))
+  }
+
   function resetForm(data = emptyInvoiceForm()) {
     quantityErrorRow.value = null
     loadedUpdatedAt.value = data.edit_version || null
@@ -261,6 +334,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       okki_first_return: data.okki_first_return ?? 0,
       items: (data.items || []).map(normalizeLine),
     })
+    savedSignature.value = currentSignature()
     loadedOrderSignature.value = invoiceOrderSignature(buildInvoicePayload(form))
     contactDetailsExpanded.value = !contactDetailsComplete.value
     selectedCustomer.value = form.customer_id
@@ -681,6 +755,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       msgWarning(quantityIssue.message)
       return null
     }
+    const submittedSignature = currentSignature()
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
     // A failed defaults request must not erase an existing customer grade.
     if (!customerGradeReady) delete payload.customer_grade
@@ -693,13 +768,20 @@ export function useInvoiceEditor({ onSaved } = {}) {
         ? await createInvoiceFromScreenshot(payload)
         : await createInvoice(payload)
     if (!saved) return null
-    resetForm(saved)
+    if (currentSignature() === submittedSignature) resetForm(saved)
+    else {
+      // Preserve edits made while the request was in flight and keep them dirty.
+      form.id = saved.id
+      loadedUpdatedAt.value = saved.edit_version || null
+      savedSignature.value = submittedSignature
+      loadedOrderSignature.value = invoiceOrderSignature(payload)
+    }
     msgSuccessText('发票已保存')
     onSaved?.({ created, invoice: saved })
     return saved
   }
 
-  // 保存 → 校验 → 推送小满一步到位；校验/推送失败留在抽屉里让用户就地修，成功才收工关闭
+  // 保存 → 校验 → 推送小满；只在确认成功后显示持续提示，失败保留编辑现场。
   async function saveAndSync() {
     if (saveAndSyncSubmitting.value) {
       msgWarning('发票正在保存并同步，请勿重复提交')
@@ -722,13 +804,24 @@ export function useInvoiceEditor({ onSaved } = {}) {
       const saved = await saveDraft({ linked: useLinked })
       if (!saved) return
       if (useLinked) {
-        await linked.run()
+        pendingLinkedCompletion = { id: saved.id, invoiceNo: saved.invoice_no }
+        const result = await linked.run()
+        if (result?.status === 'done') {
+          showSyncCompletion(saved.invoice_no)
+          pendingLinkedCompletion = null
+        }
         return
       }
       const outcome = await validateThenSync(form.id, showIssues)
       if (outcome === INVOICE_SYNC_OUTCOME.DUPLICATE) return
       onSaved?.() // 同步会改单据状态，列表需按最新状态再刷一次
-      if (outcome === INVOICE_SYNC_OUTCOME.SUCCESS) drawerVisible.value = false
+      if (outcome === INVOICE_SYNC_OUTCOME.SUCCESS) {
+        showSyncCompletion(saved.invoice_no)
+        if (!hasUnsavedChanges.value) {
+          drawerVisible.value = false
+          legacyVisible.value = false
+        }
+      }
     } finally {
       saveAndSyncSubmitting.value = false
     }
@@ -748,6 +841,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   return {
+    hasUnsavedChanges, editorBusy, confirmEditorClose, beforeEditorClose, closeEditor,
+    syncCompletionMessage, handleBeforeUnload,
     quantityErrorRow,
     drawerVisible,
     legacyVisible,

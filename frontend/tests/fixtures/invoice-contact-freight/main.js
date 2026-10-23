@@ -32,6 +32,7 @@ for (const client of Object.values(clients)) {
     else if (url === '/invoices/check-no') data = { exists: false }
     else if (url === '/shipments/capabilities') data = { enabled: true }
     else if (url === '/invoices/summary') data = { gmv: 0, average_order_amount: 0 }
+    else if (url.endsWith('/validate') || url.endsWith('/sync')) data = { ok: true }
     else if (request.method === 'post' || request.method === 'put') {
       const payload = typeof request.data === 'string' ? JSON.parse(request.data) : request.data
       state.saved.push(payload)

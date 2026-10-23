@@ -182,9 +182,9 @@
     </section>
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%"
-               body-class="invoice-modern-drawer-body" footer-class="invoice-modern-drawer-footer">
+               :before-close="beforeEditorClose" body-class="invoice-modern-drawer-body" footer-class="invoice-modern-drawer-footer">
       <template #default>
-        <el-form label-position="top" ref="formRef" :model="form" class="invoice-form">
+        <el-form label-position="top" ref="formRef" :model="form" :disabled="editor.editorBusy.value" class="invoice-form">
           <div :class="['drawer-panes', sideCollapsed ? 'is-side-collapsed' : '']">
             <!-- 左窗格：录入主流（客户/订单 → 产品明细 → 配件明细），独立滚动 -->
             <main class="pane pane-main">
@@ -354,7 +354,7 @@
           :syncing="saveAndSyncSubmitting"
           :sync-blocked="linkedTaskActive"
           sync-blocked-reason="请先在上方处理未结束的关联同步任务"
-          @cancel="drawerVisible = false"
+          @cancel="closeEditor"
           @save="saveDraft"
           @sync="saveAndSync"
         />
@@ -396,6 +396,8 @@
       @open-legacy-paste="pasteImportVisible = true"
     />
 
+    <InvoiceSyncCompletion :message="syncCompletionMessage" @dismiss="syncCompletionMessage = ''" />
+
     <InvoiceLifecycle v-if="lifecycleInvoiceId !== null" :key="lifecycleInvoiceId" ref="lifecycleRef" :invoice-id="lifecycleInvoiceId" @changed="refreshUpdate" />
 
     <InvoiceDetailDialog ref="invoiceDetailRef" @print="row => handleExport('print', row)" />
@@ -411,6 +413,8 @@
 </template>
 
 <script setup>
+import { onBeforeRouteLeave } from 'vue-router'
+import InvoiceSyncCompletion from './components/InvoiceSyncCompletion.vue'
 import ShipmentSettlementDialog from './components/ShipmentSettlementDialog.vue'
 import InvoiceDetailDialog from './components/InvoiceDetailDialog.vue'
 import InvoiceAnomalyBadge from './components/InvoiceAnomalyBadge.vue'
@@ -466,7 +470,7 @@ const {
   drawerVisible, legacyVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
   customerTotal, customerHasMore, loadMoreCustomers, privateOnlyCompany,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
-  saveAndSyncSubmitting, quantityErrorRow,
+  saveAndSyncSubmitting, quantityErrorRow, beforeEditorClose, closeEditor, confirmEditorClose, syncCompletionMessage,
   linkedOperation, linkedBusy, linkedLoading, refreshLinked, retryLinked, recheckLinked, closeLinked, resolveLinked,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
@@ -480,6 +484,7 @@ const {
   merchandiserOptions, previousInvoiceNo, formHairDiscountAbs, applyTotalDiscount,
   matchWholeOrderCustomer, applyWholeOrderPaste, openLegacyCreate,
 } = editor
+onBeforeRouteLeave(confirmEditorClose)
 const linkedTaskActive = computed(() => linkedLoading.value || linkedBusy.value ||
   ['pending', 'running', 'failed', 'uncertain'].includes(linkedOperation.value?.status))
 bindIssueHandler(showIssues)

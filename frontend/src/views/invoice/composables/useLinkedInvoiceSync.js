@@ -75,12 +75,14 @@ export function useLinkedInvoiceSync(onSaved) {
         feedback(`出库：${outbound.message}`)
       }
       await onSaved?.(id)
+      return result
     } catch {
       // A lost response must not trigger another POST. Read the durable result.
       const result = await getInvoiceLinked(id).catch(() => null)
       if (result && activeId === id) operation.value = result
       if (['done', 'manual'].includes(result?.status)) await onSaved?.(id)
       msgWarning('同步结果尚未确认，请刷新结果；不要重复保存')
+      return result
     } finally { busy.value = false }
   }
   async function close() {

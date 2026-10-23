@@ -13,7 +13,7 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 const customer = id => ({ company_id: id, company_name: `Customer ${id}` })
 const defaults = remark => ({ remark, customer_grade: 'A', contact_name: 'Alice', contact_phone: '123', contact_email: 'a@example.test', delivery_address: 'Address' })
 
-async function harness(request = async () => defaults('上单备注'), createRequest, invoiceData = {}, confirm = async () => {}) {
+async function harness(request = async () => defaults('上单备注'), createRequest, invoiceData = {}, confirm = async () => {}, options = {}) {
   const saved = [], warnings = [], confirmations = [], synced = []
   const api = Object.fromEntries(['checkInvoiceNo', 'createInvoice', 'createInvoiceFromScreenshot',
     'getCustomerContactDefaults', 'getCustomerRule', 'getInvoice', 'getInvoiceAssignees',
@@ -33,9 +33,18 @@ async function harness(request = async () => defaults('上单备注'), createReq
       isFeedbackCancelled: error => ['cancel', 'close'].includes(error) },
     '@/api/invoice': api,
     '@/stores/auth': { useAuthStore: () => ({ user: { id: 1 }, hasPermission: () => true }) },
-    './useLinkedInvoiceSync': { useLinkedInvoiceSync: () => ({ load() {}, operation: vue.ref(null), busy: vue.ref(false), loading: vue.ref(false) }) },
+    './useLinkedInvoiceSync': { useLinkedInvoiceSync: onSaved => {
+      const operation = vue.ref(null)
+      let activeId
+      return { load(id) { activeId = id }, operation, busy: vue.ref(false), loading: vue.ref(false),
+        save: async (id, payload) => ({ ...payload, id }), run: async () => {
+          operation.value = { status: options.linkedStatus || 'done' }
+          await onSaved(activeId)
+          return operation.value
+        } }
+    } },
     './invoiceReceiptState': { invoiceOrderSignature: payload => JSON.stringify(payload) },
-    './invoiceSyncFlow': { INVOICE_SYNC_OUTCOME: { SUCCESS: 'success' }, validateThenSync: async id => { synced.push(id); return 'success' } },
+    './invoiceSyncFlow': { INVOICE_SYNC_OUTCOME: { SUCCESS: 'success' }, validateThenSync: async id => { synced.push(id); return options.outcome || 'success' } },
     './invoiceSettlement': settlement,
     './accessoryPricing': pricing,
     './invoiceEditorState': state,
@@ -50,7 +59,7 @@ async function harness(request = async () => defaults('上单备注'), createReq
     }) },
     './useInvoiceHairItems': { useInvoiceHairItems: () => ({ refreshLinePrice: async () => {}, addBlankLine() {} }) },
   }
-  const context = vm.createContext({})
+  const context = vm.createContext(options.window ? { window: options.window } : {})
   const module = new vm.SourceTextModule(source, { context })
   await module.link(name => {
     const exports = imports[name]
@@ -448,3 +457,163 @@ for (const scenario of [
     assert.equal(h.saved.length, 1)
   }))
 }
+
+
+test('saved order closes directly; changes and reverted changes use the persisted baseline', async () => {
+  const h = await harness()
+  try {
+    await h.editor.openEdit(12)
+    await vue.nextTick()
+    assert.equal(h.editor.hasUnsavedChanges.value, false)
+    const original = h.editor.form.remark
+    h.editor.form.remark = 'unsaved'
+    assert.equal(h.editor.hasUnsavedChanges.value, true)
+    h.editor.form.remark = original
+    assert.equal(h.editor.hasUnsavedChanges.value, false)
+    await h.editor.closeEditor()
+    assert.equal(h.confirmations.length, 0)
+    assert.equal(h.editor.drawerVisible.value, false)
+  } finally { h.stop() }
+})
+
+for (const action of ['cancel', 'close', 'confirm']) {
+  test(`dirty close ${action} preserves content unless explicitly discarded`, async () => {
+    const pending = deferred()
+    const h = await harness(undefined, undefined, {}, async () => {
+      await pending.promise
+      if (action !== 'confirm') throw action
+    })
+    try {
+      await h.editor.openEdit(12)
+      h.editor.form.remark = 'changed'
+      let closed = 0
+      const first = h.editor.beforeEditorClose(() => closed++)
+      const second = h.editor.beforeEditorClose(() => closed++)
+      assert.equal(h.confirmations.length, 1)
+      pending.resolve()
+      await Promise.all([first, second])
+      assert.equal(closed, action === 'confirm' ? 2 : 0)
+      assert.equal(h.editor.form.remark, 'changed')
+    } finally { h.stop() }
+  })
+}
+
+test('new legacy order and receipt-only edits are protected; browser handler is cleaned up', async () => {
+  const listeners = new Map()
+  const window = { addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) }
+  const h = await harness(undefined, undefined, {}, undefined, { window })
+  try {
+    assert.equal(listeners.size, 0)
+    await h.editor.openLegacyCreate()
+    assert.ok(listeners.has('beforeunload'))
+    let prevented = false
+    const event = { preventDefault: () => { prevented = true } }
+    listeners.get('beforeunload')(event)
+    assert.equal(prevented, true)
+    assert.equal(event.returnValue, '')
+    h.editor.legacyVisible.value = false
+    assert.equal(listeners.size, 0)
+    await h.editor.openEdit(12)
+    assert.equal(listeners.size, 0)
+    h.editor.form.receipt_draft = { amount: 20, remark: 'new receipt' }
+    assert.ok(listeners.has('beforeunload'))
+    h.editor.form.receipt_draft = null
+    assert.equal(listeners.size, 0)
+    h.editor.form.receipt_proof_dirty = true
+    assert.ok(listeners.has('beforeunload'))
+  } finally { h.stop() }
+  assert.equal(listeners.size, 0)
+})
+
+test('in-flight save blocks closing and keeps edits made during the request dirty', async () => {
+  const pending = deferred()
+  const h = await harness(undefined, async payload => { await pending.promise; return { ...payload, id: 10 } })
+  try {
+    await h.editor.openCreate()
+    await h.editor.onCustomerChange(customer('C1'))
+    h.editor.form.express_channel = 'FEDEX'
+    const saving = h.editor.saveDraft()
+    await vue.nextTick()
+    await h.editor.closeEditor()
+    assert.equal(h.editor.drawerVisible.value, true)
+    assert.equal(h.confirmations.length, 0)
+    assert.match(h.warnings.at(-1), /请等待完成/)
+    h.editor.form.remark = 'edited during save'
+    pending.resolve()
+    await saving
+    assert.equal(h.editor.form.remark, 'edited during save')
+    assert.equal(h.editor.hasUnsavedChanges.value, true)
+  } finally { h.stop() }
+})
+
+for (const outcome of ['success', 'failed', 'duplicate']) {
+  test(`ordinary sync ${outcome} only announces confirmed completion`, async () => {
+    const h = await harness(undefined, undefined, {}, undefined, { outcome })
+    try {
+      await h.editor.openCreate()
+      await h.editor.onCustomerChange(customer('C1'))
+      Object.assign(h.editor.form, { express_channel: 'FEDEX', invoice_no: 'TEST-123' })
+      await h.editor.saveAndSync()
+      assert.equal(h.editor.syncCompletionMessage.value, outcome === 'success' ? 'TEST-123订单号已保存并同步完成' : '')
+      assert.equal(h.editor.drawerVisible.value, outcome !== 'success')
+      assert.equal(h.editor.hasUnsavedChanges.value, false)
+    } finally { h.stop() }
+  })
+}
+
+for (const linkedStatus of ['done', 'manual', 'uncertain', 'running', 'failed']) {
+  test(`linked sync ${linkedStatus} only announces done`, async () => {
+    const h = await harness(undefined, undefined, { xiaoman_order_id: 'remote', invoice_no: 'LINKED-123', express_channel: 'FEDEX' }, undefined, { linkedStatus })
+    try {
+      await h.editor.openEdit(12)
+      h.editor.form.remark = 'changed'
+      await h.editor.saveAndSync()
+      assert.equal(h.editor.syncCompletionMessage.value, linkedStatus === 'done' ? 'LINKED-123订单号已保存并同步完成' : '')
+    } finally { h.stop() }
+  })
+}
+
+
+test('empty auto-initialized receipt and separately saved converted receipt remain clean', async () => {
+  const h = await harness(undefined, undefined, { receipt_draft: null })
+  try {
+    await h.editor.openEdit(12)
+    h.editor.form.receipt_draft = { amount: 0, bank_charge: 0, collection_date: '2026-10-23', payment_type: 'Other', purpose: 'ordinary', attachment_ids: [], remark: '', status: 'draft' }
+    assert.equal(h.editor.hasUnsavedChanges.value, false)
+    Object.assign(h.editor.form.receipt_draft, { status: 'converted', receipt_id: 1, amount: 100, attachment_ids: [2], remark: 'persisted independently' })
+    assert.equal(h.editor.hasUnsavedChanges.value, false)
+    h.editor.form.receipt_remark_editing = true
+    assert.equal(h.editor.hasUnsavedChanges.value, true)
+    h.editor.form.receipt_remark_editing = false
+    h.editor.form.remark = 'unsaved order remark'
+    assert.equal(h.editor.hasUnsavedChanges.value, true)
+  } finally { h.stop() }
+})
+
+test('failed save keeps browser protection and never announces completion', async () => {
+  const h = await harness(undefined, async () => { throw Error('network failure') })
+  try {
+    await h.editor.openCreate()
+    await h.editor.onCustomerChange(customer('C1'))
+    h.editor.form.express_channel = 'FEDEX'
+    await assert.rejects(h.editor.saveAndSync(), /network failure/)
+    assert.equal(h.editor.hasUnsavedChanges.value, true)
+    assert.equal(h.editor.syncCompletionMessage.value, '')
+    assert.equal(h.editor.drawerVisible.value, true)
+    assert.equal(h.editor.editorBusy.value, false)
+  } finally { h.stop() }
+})
+
+
+test('linked retry announces completion when the earlier save-and-sync finally reaches done', async () => {
+  const options = { linkedStatus: 'running' }
+  const h = await harness(undefined, undefined, { xiaoman_order_id: 'remote', invoice_no: 'RETRY-123', express_channel: 'FEDEX' }, undefined, options)
+  try {
+    await h.editor.openEdit(12)
+    await h.editor.saveAndSync()
+    assert.equal(h.editor.syncCompletionMessage.value, '')
+    options.linkedStatus = 'done'
+    await h.editor.retryLinked()
+    assert.equal(h.editor.syncCompletionMessage.value, 'RETRY-123订单号已保存并同步完成')
+  } finally { h.stop() }
+})
