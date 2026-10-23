@@ -1,3 +1,9 @@
+## 2026-10-23 客户结算双栏高度（Codex，Git 交付，未部署）
+
+- `codex/portal-checkout-height`，独立 worktree `C:/Users/windb/.codex/worktrees/portal-checkout-height/commission-system`。桌面结算页收紧导航、标题及页脚，将更多视口高度给左右独立滚动区域；手机布局与业务逻辑不变。
+- 1440×900 两栏高度 537→703px，1440×640 为 376→443px；浏览回归含几何、实际滚轮独立性、付款与提交，截图和尺寸在 `tmp/checkout-height/`。说明见 `docs/reports/2026-10-23-portal-checkout-pane-height.md`。
+- 用户已授权与 PI 字体修复一起提交、合入 main 并推送；最终状态以 Git refs 回读为准，本次不部署。
+
 ## 2026-10-23 客户门户全页 UI 检查与优化（Codex，Git 交付，未部署）
 
 - `codex/portal-oil-ui`；独立 worktree `C:/Users/windb/.codex/worktrees/portal-oil-ui/commission-system`。覆盖公开入口、集合/规格、选购、请求/方案/PI、再次下单、联系弹窗和共享导航。
