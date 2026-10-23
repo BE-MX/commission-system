@@ -3,8 +3,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
-revision = "202_perf_goals"
-down_revision = "201_portal_access_requests"
+revision = "203_perf_goals"
+down_revision = "202_presale_order_revision"
 branch_labels = None
 depends_on = None
 
