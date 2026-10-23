@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.stock._filters import name_filter_clauses
 from app.stock.constants import VALID_ORDER_FILTER, calc_suggested_qty
 from app.stock.production_order_service import get_stock_status_by_product_ids
+from app.stock.free_inventory_service import get_free_inventory
 
 
 def _parse_name(name: str) -> dict:
@@ -227,6 +228,7 @@ def query_stock_overview(
     # ── 4. 当前页备货明细 (生产中订单列表) ───────────────
     page_pids = [int(r["product_id"]) for r in rows]
     stock_status_map = get_stock_status_by_product_ids(db, page_pids) if page_pids else {}
+    free_inventory, free_inventory_times = get_free_inventory(db, set(page_pids))
 
     items: list[dict] = []
     for r in rows:
@@ -253,6 +255,8 @@ def query_stock_overview(
             "sales_90d": sales_90d,
             "avg_daily_sales_30d": avg_daily,
             "enable_count": enable_count,
+            "free_stock": free_inventory.get(pid),
+            "free_stock_synced_at": free_inventory_times.get(pid),
             "production_in_transit": production_in_transit,
             "effective_enable_count": effective_enable_count,
             "real_count": real_count,
