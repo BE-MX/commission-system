@@ -9,9 +9,9 @@
         <tbody>
           <tr v-for="(a, i) in rows" :key="a.id ?? i">
             <td>{{ formatTime(a.created_at) }}</td>
-            <td>{{ a.actor_name || a.actor_id || '—' }}</td>
-            <td>{{ a.target_label || a.object || '—' }}</td>
-            <td>{{ a.action_label || a.action || a.summary || '—' }}</td>
+            <td>{{ a.operator_name || '—' }}</td>
+            <td>{{ a.object_label || a.object_type || '—' }}</td>
+            <td>{{ changeLabel(a) }}</td>
             <td>{{ changeText(a) }}</td>
           </tr>
           <tr v-if="!rows.length && !loading"><td colspan="5" class="pg-empty">暂无变更记录</td></tr>
@@ -32,13 +32,13 @@ const props = defineProps({
 const rows = ref([]), loading = ref(false)
 
 const formatTime = v => (v ? formatBeijingDateTime(v) : '—')
+function changeLabel(a) {
+  return [a.field, a.reason].filter(Boolean).join(' · ') || '—'
+}
 function changeText(a) {
-  if (a.change_text) return a.change_text
-  const before = a.before_text ?? a.before
-  const after = a.after_text ?? a.after
-  if (before == null && after == null) return '—'
+  if (a.old_value == null && a.new_value == null) return '—'
   const fmt = v => (typeof v === 'object' ? JSON.stringify(v) : String(v ?? '—'))
-  return `${fmt(before)} → ${fmt(after)}`
+  return `${fmt(a.old_value)} → ${fmt(a.new_value)}`
 }
 
 async function load() {
@@ -46,7 +46,7 @@ async function load() {
   loading.value = true
   try {
     const res = await perfGoalApi.audits(props.periodId, {}, { suppressToast: true })
-    rows.value = res.rows || res.items || []
+    rows.value = Array.isArray(res) ? res : (res.rows || res.items || [])
   } catch {
     rows.value = []
   } finally {
