@@ -922,11 +922,14 @@ def list_orders(
             DomesticOrderItem.order_qty,
             DomesticOrderItem.unit_price,
             DomesticOrderItem.route_id,
+            DomesticOrderItem.status,
         )
         .filter(DomesticOrderItem.order_id.in_(order_ids))
         .all()
     )
-    passage_aggregates = _passage_progress_aggregates(db, item_rows)
+    passage_aggregates = _passage_progress_aggregates(
+        db, [row for row in item_rows if row.status != C.ITEM_TERMINATED],
+    )
 
     agg: dict[int, dict] = {
         oid: {"item_count": 0, "total_qty": 0, "done": 0, "capacity": 0}
@@ -1631,6 +1634,8 @@ def _update_item(
     """改明细。数量不能改到低于任一工序已完成的数量 —— 那会让守恒关系失真。"""
     db.info["domestic_actor_id"] = user_id
     order, item = _lock_order_then_item(db, item_id)
+    if item.status == C.ITEM_TERMINATED:
+        raise ValueError("该明细已终止，不能修改")
     _ensure_order_creator(order, user_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能修改明细")
@@ -1718,6 +1723,8 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
     """有报工记录的明细不能删 —— 删了车间的工时就凭空消失了。"""
     db.info["domestic_actor_id"] = user_id
     order, item = _lock_order_then_item(db, item_id)
+    if item.status == C.ITEM_TERMINATED:
+        raise ValueError("该明细已终止，不能修改")
     from app.domestic.shipment_service import assert_item_unshipped
     assert_item_unshipped(db, item)
     _ensure_order_creator(order, user_id)
@@ -1725,22 +1732,24 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
         DomesticReportLog.item_id == item_id
     ).scalar()
     if reported:
-        raise ValueError(f"该明细已有 {reported} 条报工记录，不能删除；如需作废请终止订单")
+        raise ValueError(f"该明细已有 {reported} 条报工记录，不能删除；如需作废请终止该明细")
     skipped = db.query(func.count(DomesticSkipLog.id)).filter(
         DomesticSkipLog.item_id == item_id
     ).scalar()
     if skipped:
-        raise ValueError(f"该明细已有 {skipped} 条跳过记录，不能删除；如需作废请终止订单")
+        raise ValueError(f"该明细已有 {skipped} 条跳过记录，不能删除；如需作废请终止该明细")
     order_id = order.id
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能删除明细")
     if order.status in (C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
         raise ValueError("订单待审核/已驳回，审核通过前不能删除明细")
-    remaining = db.query(func.count(DomesticOrderItem.id)).filter(
-        DomesticOrderItem.order_id == order_id
-    ).scalar()
+    # Current read: a sibling may have been terminated while waiting for the order lock.
+    remaining = len(db.query(DomesticOrderItem.id).filter(
+        DomesticOrderItem.order_id == order_id,
+        DomesticOrderItem.status != C.ITEM_TERMINATED,
+    ).with_for_update().all())
     if remaining <= 1:
-        raise ValueError("订单至少保留一行明细；如需作废请终止订单")
+        raise ValueError("订单至少保留一行明细；如需作废请终止该明细")
     order.item_count = max(0, int(order.item_count or 0) - 1)
     order.total_unit_qty = max(0, int(order.total_unit_qty or 0) - item.order_qty)
     # 主动清空幂等记录的 item_id，既不依赖测试库是否启用 FK pragma，也让
@@ -1771,6 +1780,8 @@ def attach_route(
     """给缺路线的在制明细补配工艺路线（漏配映射后的补救路径）。"""
     db.info["domestic_actor_id"] = user_id
     order, item = _lock_order_then_item(db, item_id)
+    if item.status == C.ITEM_TERMINATED:
+        raise ValueError("该明细已终止，不能修改")
     _ensure_order_creator(order, user_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能重配工艺路线")
@@ -2018,7 +2029,11 @@ def ship_item(db: Session, item_id: int, payload: ItemShipRequest, user_id: int 
     from app.domestic.shipment_service import create_shipment
     from app.domestic.shipment_schemas import ShipmentCreate, ShipmentItemInput
     order, item = _lock_order_then_item(db, item_id)
+    if item.status == C.ITEM_TERMINATED:
+        raise ValueError("该明细已终止，不能修改")
     _ensure_order_creator(order, user_id)
+    if order.status == C.ORDER_TERMINATED:
+        raise ValueError("订单已终止，不能登记发货")
     if order_kind_service.is_production(order):
         raise ValueError("生产订单无需登记发货")
     if item.status == C.ITEM_SHIPPED:
@@ -2035,6 +2050,37 @@ def ship_item(db: Session, item_id: int, payload: ItemShipRequest, user_id: int 
         )],
     ), user_id or order.created_by)
     return item
+
+
+def terminate_item(db: Session, item_id: int, reason: str, user_id: int) -> DomesticOrderItem:
+    """Cancel an unshipped line, preserving work history and settling its charge once."""
+    db.info["domestic_actor_id"] = user_id
+    try:
+        order, item = _lock_order_then_item(db, item_id)
+        _ensure_order_creator(order, user_id)
+        if item.status == C.ITEM_TERMINATED:
+            raise ValueError("该明细已终止")
+        if order.status not in (C.ORDER_PRODUCING, C.ORDER_DONE):
+            raise ValueError("只有生产中或已完工订单可以终止明细")
+        reason = reason.strip()
+        if not reason:
+            raise ValueError("请填写终止原因")
+        from app.domestic.shipment_service import assert_item_unshipped
+        assert_item_unshipped(db, item)
+        item.status = C.ITEM_TERMINATED
+        item.remark = f"[终止] {reason}\n{item.remark or ''}".strip()[:2000]
+        db.flush()
+        # Settle before the final active line can move its parent to terminated.
+        balance_service.sync_order_finance(
+            db, order, user_id=user_id,
+            reason=f"订单 {order.domestic_no} 明细 A{item.line_no} 终止退款：{reason}"[:500],
+        )
+        progress_service.sync_order_status(db, order.id)
+        db.commit()
+        return item
+    except Exception:
+        db.rollback()
+        raise
 
 
 def terminate_order(

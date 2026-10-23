@@ -15,6 +15,7 @@ import {
   submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
 import { buildOrderExportParams, buildOrderListParams, emptyAdvancedFilters } from './useDomesticOrderFilters'
+import { useDomesticItemTermination } from './useDomesticItemTermination'
 import { useListPage } from '@/composables/useListPage'
 import { downloadBlob } from '@/utils/download'
 import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
@@ -463,6 +464,8 @@ export function useDomesticOrders() {
     }
   }
 
+  const { handleTerminateItem, terminatingItemIds } = useDomesticItemTermination(refreshAll)
+
   async function handleTerminate(row) {
     let value
     try {
@@ -560,7 +563,7 @@ export function useDomesticOrders() {
     attachDialog, openAttachRoute, confirmAttachRoute,
     printDialog, openPrintCard, openQrLabel, openOrderQrLabels, openWxacodeLabel,
     wxacodeDialog, openWxacode, downloadWxacode,
-    handleExport, handleExportDetails, exportingDetails, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
+    handleExport, handleExportDetails, exportingDetails, handleSubmitDraft, submittingOrderIds, handleTerminate, handleTerminateItem, terminatingItemIds, handleDelete, goCreate,
     canOperateOrder,
     canReview, canReviewOrder, reviewingOrderIds, handleReviewApprove, handleReviewReject, handleWithdrawReview,
     editDialog, openEdit,

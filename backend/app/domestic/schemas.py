@@ -744,6 +744,10 @@ class ItemShipRequest(BaseModel):
     ship_weight: Decimal = Field(..., gt=0, le=100000, description="发货克重 g")
 
 
+class ItemTerminateRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
 class OrderStatusUpdate(BaseModel):
     status: Literal[4] = Field(..., description="目前仅支持置为 4=已终止；完工/发货由业务动作驱动")
     reason: str | None = Field(None, max_length=500)

@@ -38,6 +38,7 @@ def export_order_details(db: Session, **filters) -> BytesIO:
         DomesticOrder.status, DomesticOrder.order_date, DomesticOrder.order_no,
         DomesticCustomer.owner_user_id, ArkUser.real_name.label('owner_name'),
         DomesticCustomer.shop_name, DomesticOrderItem.attrs_snapshot, DomesticOrderItem.order_qty,
+        DomesticOrderItem.status.label("item_status"),
     ).join(DomesticOrderItem, DomesticOrderItem.order_id == DomesticOrder.id).outerjoin(
         DomesticCustomer, DomesticCustomer.id == DomesticOrder.customer_id,
     ).outerjoin(ArkUser, ArkUser.id == DomesticCustomer.owner_user_id).order_by(
@@ -51,7 +52,7 @@ def export_order_details(db: Session, **filters) -> BytesIO:
         attrs = row.attrs_snapshot or {}
         cap = attrs.get('product_type') == 'cap'
         data = (
-            C.ORDER_STATUS_LABELS.get(row.status, str(row.status)), row.order_date, owner_name,
+            ("明细已终止" if row.item_status == C.ITEM_TERMINATED else C.ORDER_STATUS_LABELS.get(row.status, str(row.status))), row.order_date, owner_name,
             row.order_no, row.shop_name, C.PRODUCT_TYPES.get(attrs.get('product_type'), attrs.get('product_type')),
             attrs.get('length'), attrs.get('density') if cap else None, attrs.get('craft'),
             attrs.get('hair_style_series') if cap else None, attrs.get('size') if cap else None,

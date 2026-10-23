@@ -242,6 +242,10 @@ export function attachItemRoute(itemId, routeId) {
   return domesticClient.post(`/items/${itemId}/attach-route`, { route_id: routeId })
 }
 
+export function terminateOrderItem(itemId, reason) {
+  return domesticClient.post(`/items/${itemId}/terminate`, { reason })
+}
+
 export function shipItem(itemId, data) {
   return domesticClient.post(`/items/${itemId}/ship`, data)
 }

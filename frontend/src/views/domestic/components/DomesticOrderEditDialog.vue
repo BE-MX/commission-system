@@ -39,8 +39,8 @@
         <div v-for="item in detail.items" :key="item.id" class="order-edit-item">
           <div><strong>{{ item.line_code }} · {{ item.product_name }}</strong><div class="order-edit-hint">{{ item.order_qty }} 件<span v-if="!production"> · 成交单价 {{ formatMoney(Number(item.unit_price), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) }}</span></div></div>
           <div class="order-edit-item-actions">
-            <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="EditPen" :disabled="busy || !editable || item.status === 2" @click="openItem(item)">编辑明细</GlassButton>
-            <GlassButton v-permission="'domestic:write'" variant="link" link-tone="danger" left-icon="Delete" :loading="deletingItemId === item.id" :disabled="busy || !canDeleteItem" @click="removeItem(item)">删除明细</GlassButton>
+            <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="EditPen" :disabled="busy || !editable || [2, 3].includes(item.status)" @click="openItem(item)">编辑明细</GlassButton>
+            <GlassButton v-permission="'domestic:write'" variant="link" link-tone="danger" left-icon="Delete" :loading="deletingItemId === item.id" :disabled="busy || !canDeleteItem || item.status === 3" @click="removeItem(item)">删除明细</GlassButton>
           </div>
         </div>
       </template>

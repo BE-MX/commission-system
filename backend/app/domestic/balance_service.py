@@ -32,9 +32,11 @@ def money(value) -> Decimal:
 
 
 def order_total(db: Session, order_id: int) -> Decimal:
+    # Current read after the parent lock: RR snapshots may predate sibling cancellation.
     rows = db.query(DomesticOrderItem.order_qty, DomesticOrderItem.unit_price).filter(
-        DomesticOrderItem.order_id == order_id
-    ).all()
+        DomesticOrderItem.order_id == order_id,
+        DomesticOrderItem.status != C.ITEM_TERMINATED,
+    ).with_for_update().all()
     total = money(sum((money(price) * qty for qty, price in rows), Decimal("0.00")))
     if total > _MAX_MONEY:
         raise ValueError("订单总金额超过系统上限")

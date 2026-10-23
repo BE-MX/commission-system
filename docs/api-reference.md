@@ -2572,3 +2572,5 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 # 2026-10-19：战报订单裁定配置
 
 奖项配置的 `award_rules.order_decisions` 为可选列表（默认空、最多200笔），每笔包含 `order_id`、`order_no`、`company_id`、`owner_id`、`account_date`、`role=new_sign|repeat|exclude_metrics` 和非空 `reason`。ID唯一、数字身份、日期在活动周期内；配置更正仍走现有战报PUT、版本校验及审计，更改裁定必须有整体原因并关闭推送。管理员GET/list保留完整列表，非管理员移除列表；统计返回 `order_decision_count`、`applied_order_decision_count` 两个数量。裁定不改写OKKI或镜像，身份漂移或相反合法源标记触发待核对并停止排名。
+
+内贸产品明细终止：`POST /api/domestic/items/{item_id}/terminate`，权限 `domestic:write` 且仅订单创建人，正文 `{ "reason": "取消原因" }`（非空、最多 500 字）。仅生产中/已完工订单的未发货明细可操作，部分发货也拒绝；保留记录、按原成交明细金额退回余额、更新订单状态，重复请求拒绝且不重复退款。生产订单不涉及资金；整单终止端点继续保留。

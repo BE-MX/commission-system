@@ -5707,3 +5707,14 @@ I38：启用refresh初次当前授权+request/conversion→invoice完整绑定/�
 验证：91项SQLite/OKKI client/原结算/取消回归通过；7项实际JWT+ASGI+全新隔离MySQL库存/原行顺序报价创建通过（tmp/shipment-fast-fill-mysql-20261016-01，fixture正常停服）；25项Node通过。Chrome1440/390新库存2场景验证慢请求时先显示列表且填充禁用、排序后共享SKU优先原首行、29项合计145、unknown0、清原quote、刷新降库存保留草稿；原取消10场景与冻结恢复1440/390/320三个完整流程通过。一项并发异常测试最初错误要求未启动future也必须执行；使用Barrier明确构造同波4个请求全部在途再报错后原断言通过，产品代码未为测试放宽。线程池4路上限/单client关闭/错误停后续波/坏首SKU仍读后续、标准HTTP解析均有断言。构建通过（既有chunk/动态导入提示），独立agent审查无具体问题并独立重跑26库存+25Node通过。strict、6项UI gate、diff及no-fetch巡检在本记录写入后执行。
 
 证据：tmp/shipment-inventory-fast-fill-browser、shipment-fast-fill-cancellation、shipment-fast-fill-recovery、shipment-inventory-fast-fill-build.log及benchmark JSON。没有真实发货/结算/回款POST，没有合并推送或发布；源功能本地可审阅。临时Vite预览收尾停止，验证/恢复材料保留，原旧轮被阻止清理目录未碰。
+
+### 2026-10-23 内贸订单按明细终止（开发验证完成，未部署）
+
+- 订单详情各未发货产品提供「终止明细」，需订单创建人及 domestic:write 权限，填写原因后只终止选中产品；整单终止入口保留。
+- 只允许生产中/已完工订单中的未发货整行；部分发货也阻止终止。草稿与待审核单继续走原编辑/审核流程。
+- 明细 status=3 表示已终止。保留产品数量、价格、逐件身份及报工/跳过历史，原因记录于明细备注；禁止再报工、跳过、撤销历史、编辑、删除或发货。
+- 有效订单总额排除终止行，按原成交金额退回余额并落差额账本；不重复退款，生产订单不发生资金变化。所有明细终止时整单终止，其余情况按未终止明细回算订单状态。
+- 不能删除最后一条有效明细，应使用终止操作完成退款。发货候选与未发金额排除终止行；模板明细导出标识明细已终止。
+- 不涉及数据库 schema 迁移或生产数据写入；代码按授权合并推送，未部署。验证结果见本任务交付说明。
+
+本项验证：隔离 SQLite 后端 139 passed，前端 28 passed，前端构建与增量约定检查通过，独立审查通过；MySQL 并发及浏览器实际操作未验收。详见 [按明细终止交付记录](reports/2026-10-23-domestic-item-termination.md)。
