@@ -827,7 +827,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
     - `POST /customer-radar/profiles/{profile_id}/notes` — 添加手动备注
     - `POST /customer-radar/actions/refresh` — 重新生成当日行动推荐
 - `/api/stock` — 备货管理（销量备货一览/安全库存设置/日报）
-  - `GET /overview` — 销量备货一览（分页+状态筛选+排序+搜索，型号/类型/尺寸/颜色/克重支持逗号分隔多选；返回项已包含 `stock_status` / `stock_items` / `production_in_transit`，前端无需再调 `/production/stock-status`）
+  - `GET /overview` — 销量备货一览（分页+状态筛选+排序+搜索，型号/类型/尺寸/颜色/克重支持逗号分隔多选；返回项已包含 `stock_status` / `stock_items` / `production_in_transit`，前端无需再调 `/production/stock-status`；另返回 `free_stock`（现货自由库存，可为 null）与 `free_stock_synced_at`（参与计算的最早小满库存同步时间，北京时间）。自由库存合计启用仓库现货，默认仓库扣除尚未被小满承接的待出库保留，不含生产在途；未知提交、缺少 SKU/默认仓库库存/同步时间、原生占库后镜像未刷新时返回 null。仅补充当前页，无远程请求，不支持按该列排序）
   - `GET /safety` — 安全库存列表（用于设置页，型号/类型/尺寸/颜色/克重支持逗号分隔多选；返回项同样含 `stock_status` / `stock_items`）
   - `POST /safety` — 批量保存安全库存（乐观锁+UPSERT）
   - `POST /safety/auto-generate` — AI 批量生成建议（TFT 微服务预测，服务不可用时公式兜底）

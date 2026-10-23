@@ -113,6 +113,19 @@
             <span>{{ Math.round(row.enable_count || 0) }}</span>
           </template>
         </el-table-column>
+        <el-table-column v-if="visibleKeys.includes('free-stock')" label="自由库存" prop="free_stock" min-width="100">
+          <template #header>
+            <el-tooltip content="小满同步的现货可用库存扣除尚未被小满占库的待出库订单保留，不含生产在途。" placement="top">
+              <span>自由库存</span>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">
+            <el-tooltip :content="row.free_stock_synced_at ? `库存同步时间：${row.free_stock_synced_at.replace('T', ' ')}（北京时间）` : '库存同步或占用证据不足'" placement="top">
+              <span v-if="row.free_stock != null">{{ Math.round(row.free_stock) }}</span>
+              <span v-else class="text-muted">待核对</span>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column v-if="visibleKeys.includes('real-count')" label="实时库存(小满)" prop="real_count" min-width="120" sortable="custom">
           <template #default="{ row }">
             <span>{{ Math.round(row.real_count || 0) }}</span>

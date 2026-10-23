@@ -89,6 +89,82 @@ def test_free_stock_deducts_all_lines_not_just_shortage_and_aggregates_orders(st
     assert product_service.load_available_stocks(db,{1,2}) == {(1,11):5,(2,22):0}
 
 
+def test_overview_free_stock_aggregates_skus_and_enabled_warehouses(stock):
+    from app.stock.free_inventory_service import get_free_inventory
+    db, raw = stock
+    reserve(db, [(1,11,8), (1,11,7)])
+    db.execute(text('INSERT INTO lsordertest.okki_product_skus VALUES (1,12)'))
+    db.execute(text('INSERT INTO lsordertest.okki_inventory VALUES (1,12,:w,9,0,:at)'),
+               {'w':WAREHOUSE, 'at':beijing_now()})
+    db.execute(text('INSERT INTO lsordertest.okki_inventory VALUES (1,11,"other",30,0,:at)'),
+               {'at':beijing_now()})
+    db.execute(text('INSERT INTO lsordertest.okki_inventory VALUES (1,11,"disabled",100,1,:at)'),
+               {'at':beijing_now()})
+    # Default warehouse 20 - 15, second SKU 9, other warehouse 30.
+    assert get_free_inventory(db, {1,2})[0] == {1:44, 2:6}
+
+
+def test_overview_free_stock_does_not_deduct_native_stock_twice(stock):
+    from app.stock.free_inventory_service import get_free_inventory
+    db, raw = stock
+    reserve(db, [(1,11,8)], status='done')
+    db.execute(text('UPDATE lsordertest.okki_inventory SET enable_count=12, synced_at=:at WHERE product_id=1'),
+               {'at':beijing_now()+timedelta(seconds=1)})
+    assert get_free_inventory(db, {1})[0] == {1:12}
+
+
+def test_overview_free_stock_distinguishes_zero_from_unknown(stock, monkeypatch):
+    from app.stock.free_inventory_service import get_free_inventory
+    db, _ = stock
+    reserve(db, [(1,11,25)])
+    assert get_free_inventory(db, {1,999})[0] == {1:0, 999:None}
+    db.execute(text('UPDATE lsordertest.okki_inventory SET enable_count=NULL WHERE product_id=1'))
+    assert get_free_inventory(db, {1,2})[0] == {1:None, 2:6}
+
+
+def test_overview_free_stock_requires_every_sku_even_if_other_warehouse_has_stock(stock):
+    from app.stock.free_inventory_service import get_free_inventory
+    db, _ = stock
+    db.execute(text('INSERT INTO lsordertest.okki_product_skus VALUES (1,12)'))
+    db.execute(text('INSERT INTO lsordertest.okki_inventory VALUES (1,12,"other",50,0,:at)'),
+               {'at':beijing_now()})
+    assert get_free_inventory(db, {1})[0] == {1:None}
+
+
+def test_overview_empty_page_does_not_read_inventory():
+    from app.stock.free_inventory_service import get_free_inventory
+    assert get_free_inventory(None, set()) == ({}, {})
+
+
+def test_overview_native_handoff_waits_for_newer_mirror(stock):
+    from app.stock.free_inventory_service import get_free_inventory
+    db, _ = stock
+    reserve(db, [(1,11,8)], status='done')
+    assert get_free_inventory(db, {1})[0] == {1:None}
+
+
+@pytest.mark.parametrize('status', ['running', 'uncertain'])
+def test_overview_inflight_send_cannot_be_deducted_again(stock, status):
+    from app.stock.free_inventory_service import get_free_inventory
+    db, _ = stock
+    reserve(db, [(1,11,8)], status=status)
+    db.execute(text('UPDATE lsordertest.okki_inventory SET enable_count=12, synced_at=:at WHERE product_id=1'),
+               {'at':beijing_now()+timedelta(seconds=1)})
+    assert get_free_inventory(db, {1})[0] == {1:None}
+
+
+def test_overview_never_calls_provider_and_returns_oldest_sync_time(stock, monkeypatch):
+    from app.stock.free_inventory_service import get_free_inventory
+    db, _ = stock
+    reserve(db, [(1,11,8)])
+    monkeypatch.setattr(shipment_inventory_service, 'observe',
+                        lambda *args: pytest.fail('Overview must not make provider calls'))
+    values, times = get_free_inventory(db, {1,2})
+    assert values == {1:12, 2:6}
+    expected = db.execute(text('SELECT MIN(synced_at) FROM lsordertest.okki_inventory WHERE product_id=1')).scalar()
+    assert times[1] == str(expected).replace(' ', 'T')
+
+
 def test_repeated_skus_reserve_total_and_other_warehouses_are_not_sellable(stock):
     db,_=stock
     reserve(db, [(1,11,3),(1,11,4)])

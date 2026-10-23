@@ -14,6 +14,7 @@ const columnDefs = [
   { key: 'sales-90d', label: '90天销量' },
   { key: 'avg-daily-sales', label: '日均销量' },
   { key: 'enable-count', label: '可用库存(小满)' },
+  { key: 'free-stock', label: '自由库存' },
   { key: 'real-count', label: '实时库存(小满)' },
   { key: 'effective-enable-count', label: '可用库存' },
   { key: 'production-in-transit', label: '生产在途' },
