@@ -14,6 +14,10 @@ function act(operation) {
 function step(line, direction) {
   act(() => props.checkout.quantity(line.item_id, stepQuantity(line.quantity, line.step_qty, minimumQuantity(line), direction)))
 }
+function quantity(line, event) {
+  act(() => props.checkout.quantity(line.item_id, event.target.value))
+  event.target.value = props.state.lines.find(item => item.item_id === line.item_id)?.quantity ?? line.quantity
+}
 </script>
 
 <template>
@@ -23,7 +27,7 @@ function step(line, direction) {
     <ul v-else>
       <li v-for="line in state.lines" :key="line.item_id" :class="{ unavailable: line.unavailable }">
         <div><p class="selection-name">{{ line.model_name }}</p><p class="small muted">{{ line.color_name }} · {{ line.length_display }} · {{ unitPrice(line.unit_price) }} / {{ line.sale_unit }}</p></div>
-        <div class="stepper compact"><button type="button" class="icon-button" :aria-label="`Decrease ${line.model_name}, ${line.color_name}`" :disabled="line.unavailable || line.quantity <= minimumQuantity(line)" @click="step(line, -1)">−</button><span aria-live="polite">{{ line.quantity }}</span><button type="button" class="icon-button" :aria-label="`Increase ${line.model_name}, ${line.color_name}`" :disabled="line.unavailable" @click="step(line, 1)">+</button></div>
+        <div class="stepper compact"><button type="button" class="icon-button" :aria-label="`Decrease ${line.model_name}, ${line.color_name}`" :disabled="line.unavailable || line.quantity <= minimumQuantity(line)" @click="step(line, -1)">−</button><input type="number" inputmode="numeric" :aria-label="`Quantity for ${line.model_name}, ${line.color_name}`" :value="line.quantity" :min="minimumQuantity(line)" :step="line.step_qty" max="10000" :disabled="line.unavailable" @change="quantity(line, $event)" /><button type="button" class="icon-button" :aria-label="`Increase ${line.model_name}, ${line.color_name}`" :disabled="line.unavailable" @click="step(line, 1)">+</button></div>
         <p class="small muted">{{ formatGrams(gramsFor(line)) }}</p>
         <button type="button" class="text-button small" :aria-label="`Remove ${line.model_name}, ${line.color_name}`" @click="act(() => checkout.remove(line.item_id))">Remove</button>
       </li>

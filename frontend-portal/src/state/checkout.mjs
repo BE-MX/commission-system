@@ -78,6 +78,11 @@ export function createCheckout({ api, submission, now = () => Date.now() }) {
       edit({ lines: state.lines.map(line => line.item_id === id ? { ...line, quantity } : line) })
     },
     remove(id) { edit({ lines: state.lines.filter(line => line.item_id !== id) }) },
+    defaultDelivery(delivery, expected) {
+      if (!delivery || state.delivery !== expected || Object.values(state.delivery).some(Boolean) || state.quote || state.quoting || pending(state.submission.status)) return false
+      edit({ delivery: Object.fromEntries(Object.keys(blankDelivery()).map(key => [key, delivery[key] || ''])) })
+      return true
+    },
     delivery(field, value) {
       if (!(field in blankDelivery()) || typeof value !== 'string') fail('INVALID_INPUT', 'Check your delivery details.')
       edit({ delivery: { ...state.delivery, [field]: field === 'country_code' ? value.toUpperCase() : value } })

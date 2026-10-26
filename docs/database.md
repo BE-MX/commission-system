@@ -31,6 +31,12 @@
 账号增加 provider、session_generation、consent_version、consent_state、crm_shared、ai_egress_allowed；旧行默认旧 Provider、待确认授权、客户共享和 AI 外发关闭。会话增加 history_state/gap_reason/earliest_seen_at/latest_seen_at/last_ingested_at；消息增加 source_revision/deleted_at，墓碑不被晚到历史复活。业务审计时间为北京时间。
 
 旧账号、会话、消息、附件、游标及客户绑定不删除；仅清除临时二维码。events checkpoint 与规范消息、来源映射和已有 CRM 投影在同一事务提交。downgrade 禁止删映射，回退保留扩展 schema。认证不在方舟业务库：独立 Connector 单主机加密 SQLite 保存认证域、规范投影域、变更指针与租约；不能复制到多主机充当单活协调器。MySQL 生产迁移未执行，隔离 SQLite 升级及 MySQL 离线 DDL 不等于生产容量与锁验证。
+## 客户默认收货资料（204_portal_delivery_profile，本地候选，未部署）
+
+`ark_order_portal_accounts.delivery_json` 新增 nullable JSON，按采购账号保存联系人、电话、地址、城市/州、邮编和两位大写国家代码。旧账号为NULL；不回填或改写历史订单。保存复用账号 `row_version` 做并发检查，不增加 `auth_version`，不撤销当前登录。公司和客户身份仍从已绑定方舟客户取得。
+
+迁移204接当前主线 `203_perf_goals`，只新增一列，downgrade拒绝删除已保存资料；隔离SQLite升级验证保留已有账号，生产迁移仍须经统一部署入口执行。本次未执行生产DDL。
+
 ## 客户采购账号密码（183_portal_password_login，候选）
 
 ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工设置的bcrypt；父revision182。无默认密码或迁移自动激活。重置增加授权/记录版本并撤销旧会话；明确恢复账号可激活invited成员。downgrade拒绝丢弃哈希，升级及备份/隔离恢复见deploy/customer-orders.md。

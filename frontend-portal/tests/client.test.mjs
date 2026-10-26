@@ -196,3 +196,16 @@ test('failed logout can be manually retried without restoring private session', 
   assert.equal(calls[1][1].headers['X-Portal-CSRF'], calls[2][1].headers['X-Portal-CSRF'])
   assert.equal(client.session, null)
 })
+
+
+test('delivery profile requests preserve account scope, CSRF and optimistic versions', async () => {
+  const { client, calls } = setup(ok(identity()), ok({ delivery: null, row_version: 1 }), ok({ row_version: 2 }))
+  await client.restore()
+  await client.deliveryProfile()
+  await client.saveDeliveryProfile(1, { contact_name: 'Buyer' })
+  assert.equal(calls[1][0], '/api/portal/v1/delivery-profile')
+  assert.equal(calls[2][1].method, 'PUT')
+  assert.equal(calls[2][1].headers['If-Match'], '\"1\"')
+  assert.equal(calls[2][1].headers['X-Portal-CSRF'], `csrf-${ID}`)
+  assert.deepEqual(JSON.parse(calls[2][1].body), { delivery: { contact_name: 'Buyer' } })
+})

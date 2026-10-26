@@ -44,6 +44,15 @@
 - `GET /api/whatsapp/internal/accounts/{uid}/authorization`：机器身份例外，必须非空 Connector Bearer key；只返回实时授权与代次，不返回正文或认证。
 
 Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务衔接。精确契约见 [实现说明](requirements/2026-10-13-whatsapp-baileys.md) 和 [Connector README](../services/whatsapp-connector/README.md)。
+## 客户门户访问复制与收货资料（2026-10-26，本地候选，未部署）
+
+- `POST /api/portal/admin/v1/customers/{access_id}/copy`：当前 `portal_access:admin` 及源、目标客户归属范围；`Idempotency-Key` 必填 UUID。body 为目标 `canonical_customer_id/assignment_id/okki_identity_id/binding_fingerprint`、源 `source_version/source_catalog_version` 和新 `email/password`。只从服务端继承源客户能力及已发布商品授权；一次事务创建并启用目标访问与采购账号。历史订单、收货资料、客户专属价格和型号颜色映射不复制。已下架商品阻断复制；相同 key/body 返回同一结果，改内容返回409；密码不入回执或审计。目标已有授权/邮箱已有账号须使用原管理入口。
+- `GET /api/portal/v1/delivery-profile`：当前客户会话的账号默认收货资料，返回 `{delivery:null|Delivery,row_version}`；不接受客户端账号ID。
+- `PUT /api/portal/v1/delivery-profile`：body `{delivery:Delivery}`，同源 Origin、客户 CSRF 和 `If-Match: "<row_version>"` 必填；冲突409。保存只更新本人默认资料和记录版本，不改会话授权版本、历史订单或报价快照。超时/未知先GET核对，不自动重发。
+- 商品图片 `GET /api/portal/v1/catalog/{item_id}/image?version=...&size=thumb|full`：新增 `size=thumb`（96px），默认full（最长边1200px）。色卡接口尺寸契约不变。所有图片仍 no-store、前后两次当前授权复查；服务器仅缓存已处理图像，完整性与权限不缓存。
+
+客户门户“Delivery details”入口可在选品前维护地址；结算只自动填入未编辑的空白地址，不覆盖现有草稿、已报价或重购快照。实现、线上只读诊断及验证见[本次报告](reports/2026-10-26-portal-customer-experience.md)。
+
 ## 客户下单门户密码认证（2026-10-10 候选）
 
 客户 POST /api/portal/v1/auth/login使用email/password、bootstrap Cookie/CSRF和同源Origin；员工POST /api/portal/admin/v1/customers/{access_id}/accounts使用当前Bearer授权、Idempotency-Key及email/contact_name/password。PATCH /accounts/{id}/password使用If-Match及password/reason并撤销旧会话。旧邀请、challenges、verify路由不挂载。详细契约和实际开放结果见客户下单门户03-api-contract.md和09-production-readiness-2026-10-10.md。

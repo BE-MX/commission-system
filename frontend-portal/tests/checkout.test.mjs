@@ -141,3 +141,20 @@ test('late unavailable error after draft edit cannot mark a newer selection', as
   assert.equal(checkout.state.lines[0].unavailable, undefined)
   assert.equal(checkout.state.error, null)
 })
+
+
+test('saved delivery fills only an untouched empty draft and never overrides edits or review', async () => {
+  const { checkout, fill } = setup()
+  const saved = { contact_name: 'Saved buyer', phone: '123456', address_line1: 'Saved address', country_code: 'US' }
+  const original = checkout.state.delivery
+  assert.equal(checkout.defaultDelivery(saved, original), true)
+  assert.equal(checkout.state.delivery.contact_name, 'Saved buyer')
+  assert.equal(checkout.defaultDelivery({ ...saved, contact_name: 'Late buyer' }, original), false)
+  const another = setup().checkout, expected = another.state.delivery
+  another.delivery('contact_name', 'Typing'); another.delivery('contact_name', '')
+  assert.equal(another.defaultDelivery(saved, expected), false)
+  fill()
+  const delivery = checkout.state.delivery
+  await checkout.quote()
+  assert.equal(checkout.defaultDelivery(saved, delivery), false)
+})

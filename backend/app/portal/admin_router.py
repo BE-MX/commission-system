@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.portal import admin_service as service
 from app.portal.auth_service import require_enabled
+from app.portal.schemas import CustomerCopy
 from app.portal.errors import PortalError, reject
 from app.portal.schemas import (PortalInput, CatalogImageInput, NotificationRetryInput, AccountUpdate, CustomerCreate, CustomerUpdate, CustomerCatalogUpdate, AccountCreate, AccountPasswordUpdate, ReasonInput, RebindInput, TransferInput, MappingInput, SiteUpdate, CatalogImport, CatalogUpdate, FamilyAssign, FamilyUpdate, SwatchUpdate, ProposalInput, ApproveInput, PiProposalInput, PublishPiInput, VoidPiInput, AccessRequestReview)
 
@@ -153,6 +154,26 @@ def update_customer(access_id: UUID, body: CustomerUpdate, expected=Depends(expe
     data = service.update_customer(db, actor, access_id, expected, body)
     db.commit()
     return ok(data)
+
+
+@router.post('/customers/{access_id}/copy')
+def copy_customer(access_id: UUID, body: CustomerCopy, command_key=Depends(idempotency_key),
+                  actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.auth.utils import hash_password
+    from app.portal import access_copy_service
+    # Hashing never holds the shared authorization barrier; final copy rechecks it.
+    principal = service.begin(db, actor)
+    service.scoped_access(db, access_id, principal)
+    db.commit()
+    hashed = hash_password(body.password.get_secret_value())
+    try:
+        data = access_copy_service.copy(db, actor, access_id, command_key, body, hashed)
+        db.commit()
+    except PortalError:
+        db.rollback()
+        raise
+    code = 200 if data['replayed'] else 201
+    return JSONResponse(status_code=code, content=ok(data, code=code))
 
 
 @router.get("/customers/{access_id}/catalog")

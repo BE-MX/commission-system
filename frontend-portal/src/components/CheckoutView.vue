@@ -2,11 +2,23 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { unitPrice, money, beijingTime } from '../presentation.mjs'
 import { minimumQuantity, quoteDeadline } from '../state/checkout.mjs'
+import { deliveryFields as fields } from '../state/delivery.mjs'
 import ProposalDiff from './ProposalDiff.vue'
 import { feeSummary, formatWeight, surchargeLabel } from '../state/fees.mjs'
 import { selectionWeight } from '../state/family.mjs'
 const props = defineProps({ api: { type: Object, default: null }, checkout: { type: Object, required: true }, state: { type: Object, required: true }, submission: { type: Object, required: true }, orderingEnabled: { type: Boolean, required: true } })
-const emit = defineEmits(['collection', 'order'])
+const emit = defineEmits(['collection', 'order', 'profile'])
+const profileError = ref(''), profileController = new AbortController()
+onMounted(async () => {
+  const expected = props.state.delivery
+  try {
+    if (props.api?.deliveryProfile) {
+      const data = await props.api.deliveryProfile(profileController.signal)
+      if (!profileController.signal.aborted) props.checkout.defaultDelivery(data.delivery, expected)
+    }
+  } catch (problem) { if (!profileController.signal.aborted && !['STALE_SCOPE', 'REQUEST_ABORTED'].includes(problem.code)) profileError.value = 'Saved delivery details could not be loaded. Enter them below or open Delivery details.' }
+})
+onBeforeUnmount(() => profileController.abort())
 const error = ref(null), clock = ref(Date.now()), review = ref(null), errorSummary = ref(null)
 watch(() => error.value || props.state.error, async problem => {
   if (problem) { await nextTick(); errorSummary.value?.focus() }
@@ -31,12 +43,7 @@ function changedLine(line) {
     ['model_name', 'color_name', 'customer_sku'].some(key => original[key] !== display[key]) ||
     original.length_display !== String(display.length) || original.weight_display !== String(display.weight) || original.sale_unit !== display.unit
 }
-const fields = [
-  ['contact_name', 'Contact name', 'name', 100, true], ['phone', 'Phone number', 'tel', 40, true],
-  ['address_line1', 'Address line 1', 'address-line1', 200, true], ['address_line2', 'Address line 2 (optional)', 'address-line2', 200, false],
-  ['city', 'City', 'address-level2', 100, false], ['region', 'State / region', 'address-level1', 100, false],
-  ['postal_code', 'Postal code', 'postal-code', 32, false], ['country_code', 'Country code (e.g. US, GB)', 'country', 2, true],
-]
+
 async function act(action) {
   error.value = null
   try { await action() } catch (problem) { if (problem.code !== 'STALE_SCOPE') error.value = problem }
@@ -74,8 +81,8 @@ async function getQuote() {
           <article v-for="line in state.lines" :key="line.item_id" class="cart-line"><div class="cart-monogram" aria-hidden="true">Ls</div><div class="cart-description"><p class="small gold">{{ line.customer_sku }}</p><h3>{{ line.model_name }}</h3><p class="small muted">{{ line.color_name }} · {{ line.length_display }} · {{ line.weight_display }}</p><p class="small">{{ unitPrice(line.unit_price) }} / {{ line.sale_unit }}</p><p v-if="line.unavailable" class="alert error small" role="status">No longer available. Remove this item to continue; your other products and delivery details are kept.</p></div><div class="cart-controls"><label :for="`qty-${line.item_id}`" class="small">Quantity</label><input :id="`qty-${line.item_id}`" type="number" inputmode="numeric" :min="minimumQuantity(line)" :step="line.step_qty" max="10000" :value="line.quantity" :disabled="line.unavailable" @change="quantity(line, $event)" /><button class="text-button small" :aria-label="`Remove ${line.model_name}`" @click="act(() => checkout.remove(line.item_id))">Remove</button></div></article>
         </section>
         <form class="checkout-card delivery-form" @submit.prevent="getQuote">
-          <header><span class="step-mark">02</span><div><h2>The details</h2><p class="small muted">Your delivery details stay in this session until you request a review.</p></div></header>
-          <div class="delivery-grid"><label v-for="[field, label, autocomplete, max, required] in fields" :key="field" :class="{ 'wide-field': field.startsWith('address_') }"><span>{{ label }}</span><input :value="state.delivery[field]" :autocomplete="autocomplete" :maxlength="max" :required="required" :type="field === 'phone' ? 'tel' : 'text'" :pattern="field === 'country_code' ? '[A-Za-z]{2}' : undefined" :minlength="field === 'phone' ? 3 : undefined" @input="act(() => checkout.delivery(field, $event.target.value))" /></label>
+          <header><span class="step-mark">02</span><div><h2>The details</h2><button type="button" class="text-button small" @click="emit('profile')">Manage saved delivery details</button></div></header>
+          <p v-if="profileError" class="small muted" role="status">{{ profileError }}</p><div class="delivery-grid"><label v-for="[field, label, autocomplete, max, required] in fields" :key="field" :class="{ 'wide-field': field.startsWith('address_') }"><span>{{ label }}</span><input :value="state.delivery[field]" :autocomplete="autocomplete" :maxlength="max" :required="required" :type="field === 'phone' ? 'tel' : 'text'" :pattern="field === 'country_code' ? '[A-Za-z]{2}' : undefined" :minlength="field === 'phone' ? 3 : undefined" @input="act(() => checkout.delivery(field, $event.target.value))" /></label>
             <label class="wide-field"><span>Your PO / reference (optional)</span><input :value="state.customer_po" maxlength="80" @input="act(() => checkout.details('customer_po', $event.target.value))" /></label>
             <label class="wide-field"><span>Request notes (optional)</span><textarea :value="state.remark" maxlength="1000" rows="3" @input="act(() => checkout.details('remark', $event.target.value))"></textarea></label>
             <fieldset v-if="terms?.payment_terms?.length > 1" class="wide-field payment-methods"><legend>Payment method</legend><label v-for="term in terms.payment_terms" :key="term.code" :class="['payment-option', { selected: chosenTerm === term.code }]"><input type="radio" name="payment-method" :value="term.code" :checked="chosenTerm === term.code" @change="act(() => checkout.paymentTerm(term.code))" /><span><strong>{{ term.label }}</strong><small>{{ surchargeLabel(term) }} · {{ term.display_text }}</small></span></label></fieldset>

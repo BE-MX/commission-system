@@ -1,3 +1,10 @@
+## 2026-10-26 客户门户访问复制、图片与下单资料（Codex，Git交付，未部署）
+
+- 分支 `codex/portal-customer-experience`，独立worktree；本地基于已取得的 `origin/main` 快照5020c97e。客户访问列表新增“复制”：选另一家方舟客户、填邮箱密码，原子复制查价/下单和商品权限并开通账号；不复制订单、专属价格、客户映射或收货资料。
+- 线上只读证据确认#2B素材14716绑定正常，swatch `2c4de915-a355-4499-b4a7-a1de3ffa7d3b` 多次因授权锁等待5秒超时返回503，而同素材full随后200。图片改为两并发、主图优先、可视区加载，503只重试一次；服务端16MB缩放缓存保留原件完整性及前后授权检查。
+- 侧边购物车可手输数量，沿用最小量/步长/10000上限；“Delivery details”可提前维护账号默认收货资料，空白结算自动填充，保留手改/报价/重购资料。迁移 `204_portal_delivery_profile` 接203，仅新增账号nullable JSON列；未在生产执行。
+- 验证结果与路径见[实施报告](reports/2026-10-26-portal-customer-experience.md)。本次已授权提交、主目录合并和推送origin；主目录原有改动须按SHA256备份逐项保留。未部署，生产改善尚待发布后实测。
+
 ## 2026-10-26 WhatsApp 扫码后无法关联：rc14 未处理 companion_reg_refresh（Accio，已合并推送 main，未部署）
 
 - 现场（办公室 Connector 诊断日志，只读）：10-26 两次扫码均在扫码后出现 `companion_reg_refresh`，此后无配对成功，`registered=false`，二维码用尽后 408 循环；无授权超时。Baileys `7.0.0-rc14` 未处理该通知，二维码继续携带服务器已作废的 adv secret，手机报关联失败（上游 [#2737](https://github.com/WhiskeySockets/Baileys/issues/2737)，修复 PR #2765 未合并，npm 最新仍为 rc14）。

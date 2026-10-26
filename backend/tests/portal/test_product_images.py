@@ -90,9 +90,9 @@ def test_authority_changed_during_io_is_rechecked(images, monkeypatch):
     ctx, item, _, permission, token = images
     bind(images)
     original = service.render
-    def revoke(ticket):
+    def revoke(ticket, **options):
         assert not ctx.db.in_transaction(), 'File IO must not hold authority or catalog locks'
-        result = original(ticket)
+        result = original(ticket, **options)
         permission.allow_preview = 0; ctx.db.commit()
         return result
     monkeypatch.setattr(service, 'render', revoke)
@@ -192,3 +192,33 @@ def test_large_source_keeps_full_rendition_and_small_thumbnail(images):
     thumb = Image.open(BytesIO(service.render(ticket, size='thumb')))
     assert full.size == (1200, 900)
     assert thumb.size == (96, 72)
+
+
+def test_cached_renditions_skip_decode_but_recheck_authority(images, monkeypatch):
+    ctx, item, asset, permission, token = images
+    bind(images)
+    calls = []
+    original = service._encode
+    def record(*args):
+        calls.append(args[1])
+        return original(*args)
+    monkeypatch.setattr(service, '_encode', record)
+    full = service.customer_image(ctx.db, token, item.public_id, item.row_version)
+    assert service.customer_image(ctx.db, token, item.public_id, item.row_version) == full
+    assert calls == [1200]
+    thumb = service.customer_image(ctx.db, token, item.public_id, item.row_version, size='thumb')
+    assert Image.open(BytesIO(thumb)).size == (80, 60)
+    assert calls == [1200, 96]
+    permission.allow_preview = 0; ctx.db.commit()
+    with pytest.raises(PortalError):
+        service.customer_image(ctx.db, token, item.public_id, item.row_version)
+
+
+def test_local_replacement_invalidates_rendition(images):
+    ctx, item, asset, _, token = images
+    bind(images)
+    first = service.customer_image(ctx.db, token, item.public_id, item.row_version)
+    from pathlib import Path
+    Image.new('RGB', (64, 32), 'blue').save(Path(service.transfers.get_settings().ASSET_STORAGE_ROOT) / asset.storage_path)
+    second = service.customer_image(ctx.db, token, item.public_id, item.row_version)
+    assert first != second and Image.open(BytesIO(second)).size == (64, 32)

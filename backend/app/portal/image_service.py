@@ -166,21 +166,10 @@ def render(ticket, *, size='full'):
     # Storage/network and decoding occur after the caller releases DB locks.
     max_dimension = 96 if size == 'thumb' else 1200
     try:
+        from app.portal.image_renditions import rendition
+        verified = transfers.local_read_path('asset', ticket['key'], ticket['record']) is None
         with transfers.materialize('asset', ticket['key'], ticket['record']) as path:
-            with path.open('rb') as stream:
-                content = stream.read(MAX_BYTES + 1)
-        if len(content) > MAX_BYTES:
-            reject('IMAGE_UNAVAILABLE', 'This product image is not available.', 404)
-        with Image.open(BytesIO(content)) as source:
-            if source.format not in ('JPEG', 'PNG', 'WEBP') or source.width * source.height > 16000000:
-                reject('IMAGE_UNAVAILABLE', 'This product image is not available.', 404)
-            image = ImageOps.exif_transpose(source)
-            image.thumbnail((max_dimension, max_dimension))
-            rgba = image.convert('RGBA')
-            clean = Image.new('RGB', rgba.size, 'white')
-            clean.paste(rgba, mask=rgba.getchannel('A'))
-            output = BytesIO(); clean.save(output, format='JPEG', quality=85)
-            return output.getvalue()
+            return rendition(path, ticket, size, lambda: _encode(path, max_dimension), verified=verified)
     except HTTPException as error:
         reject('IMAGE_UNAVAILABLE' if error.status_code == 404 else 'IMAGE_STORAGE_UNAVAILABLE',
                'This product image is temporarily unavailable.', 404 if error.status_code == 404 else 503)
@@ -192,10 +181,27 @@ def render(ticket, *, size='full'):
         reject('IMAGE_UNAVAILABLE', 'This product image is not available.', 404)
 
 
-def customer_image(db, token, item_id, version):
+def _encode(path, max_dimension):
+    with path.open('rb') as stream:
+        content = stream.read(MAX_BYTES + 1)
+    if len(content) > MAX_BYTES:
+        reject('IMAGE_UNAVAILABLE', 'This product image is not available.', 404)
+    with Image.open(BytesIO(content)) as source:
+        if source.format not in ('JPEG', 'PNG', 'WEBP') or source.width * source.height > 16000000:
+            reject('IMAGE_UNAVAILABLE', 'This product image is not available.', 404)
+        image = ImageOps.exif_transpose(source)
+        image.thumbnail((max_dimension, max_dimension))
+        rgba = image.convert('RGBA')
+        clean = Image.new('RGB', rgba.size, 'white')
+        clean.paste(rgba, mask=rgba.getchannel('A'))
+        output = BytesIO(); clean.save(output, format='JPEG', quality=85)
+        return output.getvalue()
+
+
+def customer_image(db, token, item_id, version, size='full'):
     before = ticket(db, token, item_id, version)
     db.commit()
-    content = render(before)
+    content = render(before, size=size)
     after = ticket(db, token, item_id, version)
     if before != after:
         reject('IMAGE_CHANGED', 'The product image changed. Please refresh.', 409)
