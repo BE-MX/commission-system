@@ -144,9 +144,13 @@ def resolve_late(db, invoice, user, resolution, reason, target):
     return current_response(db, invoice_id, user)
 
 
-def resolve(db, invoice_id, user, *, resolution, reason, xiaoman_order_id=None):
+def resolve(db, invoice_id, user, *, resolution, reason, xiaoman_order_id=None, xiaoman_order_no=None):
     try:
         invoice, actor = edit_authority.prepare_recovery(db, invoice_id, user, "invoice:admin")
+        if resolution == "bind_order":
+            target = xiaoman_service.binding_order(db, invoice, order_id=xiaoman_order_id,
+                                                    order_no=xiaoman_order_no)
+            xiaoman_order_id = str(target["order_id"])
         if invoice.sync_status != "sync_uncertain" and order_push_facts.unresolved(db, invoice):
             return resolve_late(db, invoice, user, resolution, reason, xiaoman_order_id)
         if resolution != "confirm_existing":

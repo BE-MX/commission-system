@@ -157,6 +157,10 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
             id=JOB_PORTAL_OUTBOUND, replace_existing=True, max_instances=1, coalesce=True,
             misfire_grace_time=30)
     from app.receipt.scheduler import process_receipts, refresh_receipt_index
+    if settings.INVOICE_ORDER_QUERY_RECOVERY_ENABLED:
+        from app.schedulers.invoice_query import recover_uncertain_orders
+        scheduler.add_job(recover_uncertain_orders, trigger='interval', seconds=60,
+            id='invoice_order_query_recovery', replace_existing=True, max_instances=1, coalesce=True)
     scheduler.add_job(process_receipts, trigger="interval", seconds=30,
                       id="receipt_delivery", replace_existing=True, max_instances=1, coalesce=True)
     scheduler.add_job(refresh_receipt_index, trigger="interval", seconds=30,
