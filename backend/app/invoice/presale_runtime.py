@@ -4,6 +4,7 @@ from app.invoice.presale_funding import FundingLot
 from app.invoice.settlement_models import SettlementApplication, ShipmentSettlement
 from app.receipt.models import Receipt
 from app.receipt import remote
+from app.invoice.shipment_cancellation_policy import CANCELLED_KEEP_FREIGHT, CANCELLED_STATES, validate_retained
 
 POOL_PURPOSES = {"presale_deposit", "presale_advance"}
 
@@ -49,6 +50,13 @@ def pool_lots(db, invoice, snapshot=None, *, current=False):
     if current:
         query = query.order_by(SettlementApplication.id).populate_existing().with_for_update()
     applications = query.all()
+    for settlement in {settlement.id: settlement for _, settlement in applications
+            if settlement.state == CANCELLED_KEEP_FREIGHT}.values():
+        from app.invoice.settlement_models import Receivable
+        linked = [app for app, owner in applications if owner.id == settlement.id]
+        freight = db.query(Receivable).filter_by(settlement_id=settlement.id, kind='freight')
+        freight = (freight.populate_existing().with_for_update() if current else freight).one_or_none()
+        validate_retained(settlement, linked, {r.id: r for r in receipts}, freight)
     rows = {str(row["cash_collection_id"]): row for row in snapshot["rows"]} if snapshot else None
     lots = []
     for receipt in receipts:
@@ -100,9 +108,14 @@ def validate_quote_applications(row, applications, receipts):
     cancelled = row.state == "cancelled" and all(app.status == "released" for app in applications)
     actual = sorted((app.receipt_id, app.component,
         historical.get((app.receipt_id, app.component), receipts[app.receipt_id].purpose)
-            if cancelled else receipts[app.receipt_id].purpose,
+            if cancelled or row.state in CANCELLED_STATES and app.status == 'released'
+            else receipts[app.receipt_id].purpose,
         Decimal(app.amount), Decimal(app.bank_charge)) for app in applications
         if receipts[app.receipt_id].purpose in POOL_PURPOSES)
+    if row.state == CANCELLED_KEEP_FREIGHT:
+        if any(app.status != ('applied' if app.component == 'freight' else 'released')
+                for app in applications):
+            raise ValueError('已撤销商品的资金状态异常，请核对原单')
     if row.state == "cancelled" and not cancelled:
         raise ValueError("已取消发货结算仍有未释放资金，请核对原单")
     if actual != expected:

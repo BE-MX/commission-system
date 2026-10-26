@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
 import { Manager, backendAuthorizer, classifyDisconnect } from '../src/manager.js'
 import { error } from '../src/crypto.js'
 import { encryptionKey, authorization, fakeManager, fixture, message, tick, sleep } from './fixtures.mjs'
@@ -367,4 +368,60 @@ test('a known device identity only proves logout request_sent, never remote devi
   assert.equal(result.revoke_state, 'remote_unconfirmed')
   assert.equal(result.local_credentials_cleared, true)
   assert.equal(store.account('account_a').status, 'paused')
+})
+
+const refreshNode = tag => ({ tag: 'notification', attrs: { type: 'companion_reg_refresh' }, content: [{ tag, attrs: {} }] })
+const qrFor = (ref, adv) => `https://wa.me/settings/linked_devices#${ref},NOISE,IDENTITY,${adv},PLATFORM`
+const advOf = entry => Buffer.from(entry.qr.url.split(',')[1], 'base64').toString().split(',')[3]
+function pairingManager(t) {
+  const fake = fakeManager(t)
+  const original = fake.manager.socketFactory
+  fake.manager.socketFactory = config => { const socket = original(config); socket.ws = new EventEmitter(); return socket }
+  return fake
+}
+
+for (const child of ['companion_reg_refresh', 'pair-device-rotate-qr']) test(`${child} rotates and persists the adv secret and re-renders the same ref (Baileys#2737)`, async t => {
+  {
+    const { manager, store, sockets } = pairingManager(t)
+    const uid = 'account_a'
+    const entry = await manager.start(uid)
+    const socket = sockets.at(-1)
+    const original = socket.config.auth.creds.advSecretKey
+    socket.ev.emit('connection.update', { qr: qrFor('REF1', original) })
+    await tick(); await tick()
+    assert.equal(advOf(entry), original)
+    socket.ws.emit('CB:notification,type:companion_reg_refresh', refreshNode(child))
+    await tick(); await tick()
+    const rotated = socket.config.auth.creds.advSecretKey
+    assert.notEqual(rotated, original)
+    assert.equal(Buffer.from(rotated, 'base64').length, 32)
+    // Persisted under the manager's fenced lease so pair-success HMAC verifies against the advertised secret.
+    assert.equal(store.authGet(entry.lease, 'creds', ['current']).current.value.advSecretKey, rotated)
+    assert.equal(advOf(entry), rotated)
+    assert.ok(entry.qr.url && Buffer.from(entry.qr.url.split(',')[1], 'base64').toString().includes('#REF1,'))
+    // rc14's ref timer captured the old secret; its next QR must still advertise the new one.
+    socket.ev.emit('connection.update', { qr: qrFor('REF2', original) })
+    await tick(); await tick()
+    assert.equal(advOf(entry), rotated)
+    assert.equal(entry.stopped, false)
+  }
+})
+
+test('refresh is ignored without an accepted child or once the session has an identity', async t => {
+  const { manager, sockets } = pairingManager(t)
+  const entry = await manager.start('account_a')
+  const socket = sockets[0]
+  const creds = socket.config.auth.creds
+  const original = creds.advSecretKey
+  socket.ev.emit('connection.update', { qr: qrFor('REF1', original) })
+  await tick(); await tick()
+  socket.ws.emit('CB:notification,type:companion_reg_refresh', refreshNode('something_else'))
+  socket.ws.emit('CB:notification,type:companion_reg_refresh', { tag: 'notification', content: 'PRIVATE_NODE' })
+  await tick()
+  assert.equal(creds.advSecretKey, original)
+  creds.me = { id: '15550001111:1@s.whatsapp.net' }
+  socket.ws.emit('CB:notification,type:companion_reg_refresh', refreshNode('companion_reg_refresh'))
+  await tick()
+  assert.equal(creds.advSecretKey, original)
+  assert.equal(entry.stopped, false)
 })

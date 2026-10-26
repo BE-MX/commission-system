@@ -156,6 +156,14 @@ def cancel(identity: int, body: SettlementAction, db: Session = Depends(get_db),
     return _change(db, identity, body, user, "cancel")
 
 
+@shipment_state_router.post('/shipments/{identity}/cancel-deleted-outbound',
+    summary='Verify supplier deletion, release goods and retain an existing paid freight target')
+def cancel_deleted_outbound(identity: int, body: SettlementAction, db: Session = Depends(get_db),
+                            user=Depends(get_current_user)):
+    from app.invoice import shipment_deleted_cancellation
+    return ok(shipment_deleted_cancellation.cancel(db, identity, body, user))
+
+
 @shipment_state_router.post("/shipments/{identity}/upgrade-funding")
 def upgrade_funding(identity: int, body: FundingUpgrade, db: Session=Depends(get_db), user=Depends(get_current_user)):
     from app.invoice import funding_upgrade_service, shipment_state_service

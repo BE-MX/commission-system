@@ -66,6 +66,10 @@ JOB_DINGTALK_GMV_DAILY = "dingtalk_gmv_daily"
 JOB_BATTLE_POSTERS_NOON = "battle_posters_noon"
 JOB_BATTLE_POSTERS_AFTERNOON = "battle_posters_afternoon"
 JOB_BATTLE_AWARDS = "battle_awards"
+JOB_PERF_SNAPSHOT_DAILY = "perf_snapshot_daily"
+JOB_PERF_REPORT_PUSH = "perf_report_push"
+JOB_PERF_REPORT_PUSH_RETRY_05 = "perf_report_push_retry_05"
+JOB_PERF_REPORT_PUSH_RETRY_15 = "perf_report_push_retry_15"
 JOB_WHATSAPP_TRANSLATION_PAIRING_CLEANUP = "whatsapp_translation_pairing_cleanup"
 JOB_DOMESTIC_PUBLIC_SEA_DAILY = "domestic_public_sea_daily"
 JOB_PCW_DAILY_EVALUATION = "pcw_daily_evaluation"
@@ -355,6 +359,21 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     scheduler.add_job(send_battle_posters_job, trigger="cron", day_of_week="mon,wed,fri", hour="9,16", minute="0,5,15",
                       timezone="Asia/Shanghai", id=JOB_BATTLE_AWARDS, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
+
+    # ── 绩效目标管理：每日快照 + 每月 1/10/20 报告推送（09:00 主发，09:05/09:15 补发重试）──
+    from app.perf_goal.jobs import perf_report_push_job, perf_snapshot_daily_job
+    scheduler.add_job(perf_snapshot_daily_job, trigger="cron", hour=6, minute=30,
+                      timezone="Asia/Shanghai", id=JOB_PERF_SNAPSHOT_DAILY, replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=3600)
+    scheduler.add_job(perf_report_push_job, trigger="cron", day="1,10,20", hour=9, minute=0,
+                      timezone="Asia/Shanghai", id=JOB_PERF_REPORT_PUSH, replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=300)
+    scheduler.add_job(perf_report_push_job, trigger="cron", day="1,10,20", hour=9, minute=5,
+                      timezone="Asia/Shanghai", id=JOB_PERF_REPORT_PUSH_RETRY_05, replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=300)
+    scheduler.add_job(perf_report_push_job, trigger="cron", day="1,10,20", hour=9, minute=15,
+                      timezone="Asia/Shanghai", id=JOB_PERF_REPORT_PUSH_RETRY_15, replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=300)
 
     # ── 色彩趋势 ──────────────────────────────────────────
     # 注意：这两个管线是纯同步（HTTP + OpenCV），注册为同步函数让

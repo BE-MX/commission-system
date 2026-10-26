@@ -453,7 +453,7 @@ def order_ids_for_records(db: Session, record_ids: list[str]) -> dict[str, list[
 
 
 def get_record_by_outbound_invoice_id(db: Session, outbound_invoice_id: str,
-                                      okki_user_id: str | None = None) -> dict | None:
+                                      okki_user_id: str | None = None, *, include_deleted=False) -> dict | None:
     """Resolve a live OKKI document to its mirror row without using a fuzzy number search."""
     rm = _record_columns(db)
     if not rm["invoice_id"]:
@@ -470,7 +470,8 @@ def get_record_by_outbound_invoice_id(db: Session, outbound_invoice_id: str,
     """), params).scalars().all()
     if len(rows) > 1:
         raise OutboundTableError("同一小满出库单存在多条镜像记录，请先核对")
-    return get_outbound_record(db, str(rows[0]), okki_user_id=okki_user_id) if rows else None
+    return get_outbound_record(db, str(rows[0]), okki_user_id=okki_user_id,
+        include_deleted=include_deleted) if rows else None
 
 
 def mirror_matches_snapshot(db: Session, record_id: str, snapshot: dict) -> bool:

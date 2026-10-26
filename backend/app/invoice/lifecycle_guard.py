@@ -1,6 +1,7 @@
 """Common write fences for every invoice entry point."""
 from app.invoice.models import OkkiOutboundTask
 from app.receipt.models import Receipt
+from app.invoice.shipment_cancellation_policy import CANCELLED_STATES
 
 
 def ensure_active(invoice):
@@ -15,7 +16,7 @@ def active_presale_settlement(db, invoice, *, current=False):
     from app.invoice import shipment_inspection_service
     query = db.query(ShipmentSettlement).filter(
         ShipmentSettlement.invoice_id == invoice.id,
-        ShipmentSettlement.state != "cancelled",
+        ShipmentSettlement.state.notin_(CANCELLED_STATES),
     ).order_by(ShipmentSettlement.id)
     if current:
         query = query.populate_existing().with_for_update()

@@ -21,7 +21,7 @@ def apply(db, row, invoice, body, actor):
         raise ValueError("此款已被出库结算占用或扣减，请先核对原批次，不能更改用途")
     active = db.scalar(select(ShipmentSettlement.id).where(
         ShipmentSettlement.invoice_id == invoice.id,
-        ShipmentSettlement.state.notin_(["cancelled", "shipped"]))
+        ShipmentSettlement.state.notin_(["cancelled", "cancelled_keep_freight", "shipped"]))
         .order_by(ShipmentSettlement.id).with_for_update())
     if active:
         raise ValueError("请先取消尚未付款、尚未同步的原发货结算，再更正收款用途")

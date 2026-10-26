@@ -31,6 +31,12 @@
 账号增加 provider、session_generation、consent_version、consent_state、crm_shared、ai_egress_allowed；旧行默认旧 Provider、待确认授权、客户共享和 AI 外发关闭。会话增加 history_state/gap_reason/earliest_seen_at/latest_seen_at/last_ingested_at；消息增加 source_revision/deleted_at，墓碑不被晚到历史复活。业务审计时间为北京时间。
 
 旧账号、会话、消息、附件、游标及客户绑定不删除；仅清除临时二维码。events checkpoint 与规范消息、来源映射和已有 CRM 投影在同一事务提交。downgrade 禁止删映射，回退保留扩展 schema。认证不在方舟业务库：独立 Connector 单主机加密 SQLite 保存认证域、规范投影域、变更指针与租约；不能复制到多主机充当单活协调器。MySQL 生产迁移未执行，隔离 SQLite 升级及 MySQL 离线 DDL 不等于生产容量与锁验证。
+## 客户默认收货资料（204_portal_delivery_profile，本地候选，未部署）
+
+`ark_order_portal_accounts.delivery_json` 新增 nullable JSON，按采购账号保存联系人、电话、地址、城市/州、邮编和两位大写国家代码。旧账号为NULL；不回填或改写历史订单。保存复用账号 `row_version` 做并发检查，不增加 `auth_version`，不撤销当前登录。公司和客户身份仍从已绑定方舟客户取得。
+
+迁移204接当前主线 `203_perf_goals`，只新增一列，downgrade拒绝删除已保存资料；隔离SQLite升级验证保留已有账号，生产迁移仍须经统一部署入口执行。本次未执行生产DDL。
+
 ## 客户采购账号密码（183_portal_password_login，候选）
 
 ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工设置的bcrypt；父revision182。无默认密码或迁移自动激活。重置增加授权/记录版本并撤销旧会话；明确恢复账号可激活invited成员。downgrade拒绝丢弃哈希，升级及备份/隔离恢复见deploy/customer-orders.md。
@@ -85,6 +91,8 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 | ark_settlement_applications | 款项对结算的 reserved/applied/released 分配；settlement_id+receipt_id+component 唯一 |
 | ark_shipment_outbounds | 未来投递器的冻结 payload/hash、租约和远端映射；settlement_id、outbound_no、可空 remote_id 各唯一，目前无投递执行器 |
 | ark_settlement_events | 创建、暂停、恢复、取消的操作者、原因与北京时间审计 |
+
+2026-10-26 本地扩展（未部署，无 schema 迁移）：结算终态 `cancelled_keep_freight` 表示商品已撤销、原运费保留。其商品应用必须 released，原报价冻结的运费应用必须 applied 且足额对应原 bound 运费目标，保留原金额和资金来源；不修改 Receipt。商品数量、商业调价抵扣及活动批次口径将其视为已撤销，运费财务汇总继续包含它。重建批次的 quote JSON 冻结 `retained_freight_settlement_id` / `retained_freight_amount`，不重复建立运费应收。撤销证明复用不可变 `shipment_create_cancelled` 审计及 `outbound-delete/outbound_deleted` 回执，原出库任务保留远端 ID、快照和错误，状态改 cancelled，不能被读回或重试复活。
 
 `ark_receipts` 新增 batch_id、receivable_id 外键和索引，purpose 默认 ordinary（新增用途 presale_deposit/presale_goods/freight）；唯一 batch_id+receivable_id；xiaoman_order_id 改可空以表达运费目标未建立。金额 NUMERIC(14,2)，时间由 beijing_now 写入。单活动批次由原订单锁和服务校验保证。迁移只做新增/放宽可空，不允许 downgrade 删除财务事实。
 
@@ -772,3 +780,11 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 迁移 `186_domestic_delivery` 接 185。新增 `ark_domestic_shipments`（同客户跨订单批次、发货/收货事实、幂等指纹）、`ark_domestic_shipment_lines`（订单明细及顾客/规格/价格/数量快照）、`ark_domestic_shipment_units`（具体件唯一交付关联）、`ark_domestic_receipt_allocations`（资金申请到批次的不可删增量核销，`ledger_id` 为已入账证据，`business_key` 唯一）。FK 保持目标类型一致。资金申请增加可空 `receipt_date`、`payload_hash`，类型扩展 `receipt`；历史字段和资金记录不猜配、不回填。所有新审计时间用北京时间，downgrade 拒删。行为及历史对账边界见 [内贸交付说明](domestic-delivery.md)。
 
 内贸 `ark_domestic_order_items.status` 值域补充：`3=已终止`（原 `0=生产中,1=已完工,2=已发货` 保持）。复用现有 SmallInteger 列，不修改 schema；原因保存在现有 remark，资金差额记录在客户余额账本，历史报工和逐件记录保留。
+
+
+## 内贸数量终止与整单跳过（迁移 205，未部署）
+
+- `ark_domestic_order_items.termination_records`：nullable JSON，记录每次终止的 qty、原请求 qty、单件 ID/码、原因、user_id、request_id 与北京时间 terminated_at。订单/明细锁下追加；用于幂等退款与审计，带记录明细禁止硬删。部分终止从 order_qty 和订单 total_unit_qty 减去取消件数；整行终止保持原数量，status=3，不参与履约金额。
+- `ark_domestic_item_units.status`：新增应用值 `2=已终止`，不复用、不删除；`0=普通改量停用,1=有效` 保持。单件编号允许空洞，后续加量保留历史身份。
+- `ark_domestic_orders.skip_all_records`：nullable JSON，记录整次跳过的 request_id、原因、操作者、北京时间和首次结果，订单锁保证同键重试不扩大到新增工序或明细。逐工序事实继续写现有 skip_logs/skip_units，计件工资仍只读实际报工。
+- 迁移 `205_domestic_item_termination` 衔接主线 `204_portal_delivery_profile`，保持单 head。迁移只由正式部署入口执行，未对共享库执行。

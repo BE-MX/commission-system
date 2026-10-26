@@ -1065,6 +1065,10 @@ def get_order_detail(
         .all()
     )
 
+    maximum_unit_nos = dict(db.query(DomesticItemUnit.item_id, func.max(DomesticItemUnit.unit_no)).filter(
+        DomesticItemUnit.item_id.in_([item.id for item in items]), DomesticItemUnit.status == 1,
+    ).group_by(DomesticItemUnit.item_id).all())
+
     item_views = []
     for item in items:
         unit_service.ensure_item_line_no(db, item)
@@ -1101,6 +1105,7 @@ def get_order_detail(
             )
         else:
             pricing_label = "历史手工价"
+        ready_to_ship, _completed_qty, shipped_qty = shipment_service.ready_units(db, item)
         item_views.append({
             "id": item.id,
             "line_no": item.line_no,
@@ -1112,6 +1117,8 @@ def get_order_detail(
             "attrs": item.attrs_snapshot or {},
             "route_id": item.route_id,
             "order_qty": item.order_qty,
+            "max_unit_no": maximum_unit_nos.get(item.id) or item.order_qty,
+            "termination_records": (item.termination_records or []) if include_finance else [],
             "unit_price": float(item.unit_price or 0),
             "original_price": (
                 float(item.original_price) if item.original_price is not None else None
@@ -1143,7 +1150,8 @@ def get_order_detail(
             "style_images": item.style_images or [],
             "remark": item.remark,
             "remark_images": item.remark_images or [],
-            "shipped_qty": shipment_service.ready_units(db, item)[2],
+            "shipped_qty": shipped_qty,
+            "ready_to_ship_qty": len(ready_to_ship),
             "ship_time": item.ship_time,
             "ship_weight": float(item.ship_weight) if item.ship_weight is not None else None,
         })
@@ -1725,6 +1733,8 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
     order, item = _lock_order_then_item(db, item_id)
     if item.status == C.ITEM_TERMINATED:
         raise ValueError("该明细已终止，不能修改")
+    if item.termination_records:
+        raise ValueError("该明细已有终止记录，不能删除；请保留数量与退款审计")
     from app.domestic.shipment_service import assert_item_unshipped
     assert_item_unshipped(db, item)
     _ensure_order_creator(order, user_id)
@@ -2052,35 +2062,10 @@ def ship_item(db: Session, item_id: int, payload: ItemShipRequest, user_id: int 
     return item
 
 
-def terminate_item(db: Session, item_id: int, reason: str, user_id: int) -> DomesticOrderItem:
-    """Cancel an unshipped line, preserving work history and settling its charge once."""
-    db.info["domestic_actor_id"] = user_id
-    try:
-        order, item = _lock_order_then_item(db, item_id)
-        _ensure_order_creator(order, user_id)
-        if item.status == C.ITEM_TERMINATED:
-            raise ValueError("该明细已终止")
-        if order.status not in (C.ORDER_PRODUCING, C.ORDER_DONE):
-            raise ValueError("只有生产中或已完工订单可以终止明细")
-        reason = reason.strip()
-        if not reason:
-            raise ValueError("请填写终止原因")
-        from app.domestic.shipment_service import assert_item_unshipped
-        assert_item_unshipped(db, item)
-        item.status = C.ITEM_TERMINATED
-        item.remark = f"[终止] {reason}\n{item.remark or ''}".strip()[:2000]
-        db.flush()
-        # Settle before the final active line can move its parent to terminated.
-        balance_service.sync_order_finance(
-            db, order, user_id=user_id,
-            reason=f"订单 {order.domestic_no} 明细 A{item.line_no} 终止退款：{reason}"[:500],
-        )
-        progress_service.sync_order_status(db, order.id)
-        db.commit()
-        return item
-    except Exception:
-        db.rollback()
-        raise
+def terminate_item(db: Session, item_id: int, reason: str, user_id: int,
+                   *, qty: int | None = None, request_id: str | None = None) -> DomesticOrderItem:
+    from app.domestic.termination_service import terminate_item as cancel
+    return cancel(db, item_id, reason, user_id, qty=qty, request_id=request_id)
 
 
 def terminate_order(

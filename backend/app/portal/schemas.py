@@ -86,6 +86,10 @@ class QuoteLine(PortalInput):
     quantity: Quantity
 
 
+class DeliveryProfileInput(PortalInput):
+    delivery: Delivery
+
+
 class QuoteInput(PortalInput):
     items: Annotated[list[QuoteLine], Field(min_length=1, max_length=100)]
     delivery: Delivery
@@ -192,6 +196,15 @@ class CustomerUpdate(PortalInput):
     capabilities: Capabilities
     catalog_item_ids: Annotated[list[UUID] | None, Field(max_length=5000)] = None
     reason: Reason
+
+
+class CustomerCopy(PasswordLogin):
+    binding_fingerprint: Hash
+    canonical_customer_id: StableId
+    assignment_id: StableId
+    okki_identity_id: StableId
+    source_version: Annotated[StrictInt, Field(ge=1)]
+    source_catalog_version: Annotated[StrictInt, Field(ge=1)]
 
 
 class CustomerCatalogUpdate(PortalInput):

@@ -57,6 +57,7 @@ class Account(Record, Versioned, Base):
     email_normalized = Column(String(254), nullable=False, unique=True, comment='统一规范化登录邮箱')
     email_display = Column(String(254), nullable=False, comment='对外显示邮箱')
     contact_name = Column(String(100), nullable=False, comment='客户联系人姓名')
+    delivery_json = Column(JSON, nullable=True, comment='采购账号默认收货资料；历史订单保持独立快照')
     password_hash = Column(String(255), nullable=True, comment='员工设置的采购账号密码哈希；历史无密码账号不可登录')
     status = Column(String(16), nullable=False, default="invited", comment='受服务层状态机约束的业务状态')
     auth_version = Column(BigInteger, nullable=False, default=1, comment='访问授权撤销版本')

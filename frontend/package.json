@@ -24,7 +24,8 @@
     "test:shipping-print": "node --test tests/shippingPrintDocs.test.mjs",
     "test:whatsapp-translation": "node --test tests/whatsappTranslationAuthorize.test.mjs tests/whatsappTranslationAdmin.test.mjs",
     "test:invoice-read": "node --experimental-vm-modules --test tests/invoiceRead.test.mjs",
-    "test:request-auth": "node --experimental-vm-modules --test tests/requestAuthRace.test.mjs tests/requestResponse.test.mjs tests/customerImageInvite.test.mjs tests/authTransport.test.mjs"
+    "test:request-auth": "node --experimental-vm-modules --test tests/requestAuthRace.test.mjs tests/requestResponse.test.mjs tests/customerImageInvite.test.mjs tests/authTransport.test.mjs",
+    "test:perf-goal": "node --test tests/perfGoal.test.mjs tests/perfGoalTargets.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

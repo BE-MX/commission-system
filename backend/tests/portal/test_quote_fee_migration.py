@@ -21,7 +21,10 @@ def test_single_head_after_catalog_families():
     backend, module = migration()
     config = Config()
     config.set_main_option("script_location", str(backend / "alembic"))
-    assert ScriptDirectory.from_config(config).get_heads() == ["201_portal_access_requests"]
+    scripts = ScriptDirectory.from_config(config)
+    assert scripts.get_heads() == ["205_domestic_item_termination"]
+    assert scripts.get_revision('205_domestic_item_termination').down_revision == '204_portal_delivery_profile'
+    assert scripts.get_revision('204_portal_delivery_profile').down_revision == '203_perf_goals'
     assert module.revision == "200_portal_quote_fee_estimate" and module.down_revision == "199_portal_catalog_families" and len(module.revision) <= 32
 
 

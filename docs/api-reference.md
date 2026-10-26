@@ -44,6 +44,15 @@
 - `GET /api/whatsapp/internal/accounts/{uid}/authorization`：机器身份例外，必须非空 Connector Bearer key；只返回实时授权与代次，不返回正文或认证。
 
 Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务衔接。精确契约见 [实现说明](requirements/2026-10-13-whatsapp-baileys.md) 和 [Connector README](../services/whatsapp-connector/README.md)。
+## 客户门户访问复制与收货资料（2026-10-26，本地候选，未部署）
+
+- `POST /api/portal/admin/v1/customers/{access_id}/copy`：当前 `portal_access:admin` 及源、目标客户归属范围；`Idempotency-Key` 必填 UUID。body 为目标 `canonical_customer_id/assignment_id/okki_identity_id/binding_fingerprint`、源 `source_version/source_catalog_version` 和新 `email/password`。只从服务端继承源客户能力及已发布商品授权；一次事务创建并启用目标访问与采购账号。历史订单、收货资料、客户专属价格和型号颜色映射不复制。已下架商品阻断复制；相同 key/body 返回同一结果，改内容返回409；密码不入回执或审计。目标已有授权/邮箱已有账号须使用原管理入口。
+- `GET /api/portal/v1/delivery-profile`：当前客户会话的账号默认收货资料，返回 `{delivery:null|Delivery,row_version}`；不接受客户端账号ID。
+- `PUT /api/portal/v1/delivery-profile`：body `{delivery:Delivery}`，同源 Origin、客户 CSRF 和 `If-Match: "<row_version>"` 必填；冲突409。保存只更新本人默认资料和记录版本，不改会话授权版本、历史订单或报价快照。超时/未知先GET核对，不自动重发。
+- 商品图片 `GET /api/portal/v1/catalog/{item_id}/image?version=...&size=thumb|full`：新增 `size=thumb`（96px），默认full（最长边1200px）。色卡接口尺寸契约不变。所有图片仍 no-store、前后两次当前授权复查；服务器仅缓存已处理图像，完整性与权限不缓存。
+
+客户门户“Delivery details”入口可在选品前维护地址；结算只自动填入未编辑的空白地址，不覆盖现有草稿、已报价或重购快照。实现、线上只读诊断及验证见[本次报告](reports/2026-10-26-portal-customer-experience.md)。
+
 ## 客户下单门户密码认证（2026-10-10 候选）
 
 客户 POST /api/portal/v1/auth/login使用email/password、bootstrap Cookie/CSRF和同源Origin；员工POST /api/portal/admin/v1/customers/{access_id}/accounts使用当前Bearer授权、Idempotency-Key及email/contact_name/password。PATCH /accounts/{id}/password使用If-Match及password/reason并撤销旧会话。旧邀请、challenges、verify路由不挂载。详细契约和实际开放结果见客户下单门户03-api-contract.md和09-production-readiness-2026-10-10.md。
@@ -273,6 +282,7 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | POST `/invoices/{id}/shipment-settlements` | invoice:write + shipment:write；报价字段加 quote_hash/request_key，可选 payment（另需 receipt:write） |
 | GET `/shipments/order/{id}`、`/shipments/{id}` | shipment:read/write；items 列表或含 quote/balance/outbound/capabilities 的详情 |
 | POST `/shipments/{id}/cancel`、`pause`、`resume` | shipment:write；version/reason，订单归属与状态二次检查 |
+| POST `/shipments/{id}/cancel-deleted-outbound` | shipment:write；version/reason。实时核实原小满出库已删除，撤销商品批次并释放占用；已绑定且足额由预付货款抵扣的运费保持原订单及抵扣，不发送远端写入 |
 | POST `/receipts/batches` | receipt:write；amount/date/type/remark/attachment_ids、request_key、allocations[{invoice_id,settlement_id?,amount,balance_version}]。日期字段 collection_date，方式字段 payment_type；bank_charge 只能零，服务端自动分摊 |
 | GET `/receipts/batches/{id}` | receipt:read/write/admin；batch_no/amount/bank_charge/currency/status/version/items/attachment_ids，须能访问全部子订单 |
 | POST `/receipts/batches/{id}/void-entry` | receipt:admin；version/reason，仅本地且无远端效果的整批录入纠错 |
@@ -286,6 +296,12 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
 
 ## 预售批次取消与暂停操作（2026-10-15，本地实现，未部署）
+
+2026-10-26 新增本地流程（未部署）：已生成的预售出库单在小满删除后，原批次提供“核实删除并撤销”。服务保持共享出库执行器锁直至最终提交/回滚，供应商 GET 期间释放业务行锁；前后两次验证当前员工权限、订单归属、版本、完整资金图、检验及不可变创建/出库确认事实。原 ID 与原编号并行身份观察必须一致；可读的删除详情仍须按小满不可变创建日获取两轮完整且一致的 removed=0 活动列表。仍有效、同编号替代单、缺页/变化/超时、检验提交或撤回历史、实际出库确认、迟到结果或未决回款均不释放。
+
+无已绑定运费时，同事务将原批次及出库任务标 cancelled、释放全部应用。原运费订单已绑定且足额由已生效预付货款抵扣时，商品应用 released、原运费应用 applied、批次转 cancelled_keep_freight、出库任务 cancelled。原回款现金事实、冻结报价/明细/远端ID及检验资料保留，并记录不可变撤销证据和出库删除回执；不重新发送小满删除。
+
+cancelled_keep_freight 不占商品数量或活动批次，仅保留原运费应收/抵扣。下一个重建批次报价自动冻结 retained_freight_settlement_id/retained_freight_amount，运费填0；服务端拒绝重复填写运费且不再创建运费目标。该引用被一个未取消的新批次使用后，后续普通批次可正常收取各自运费；若重建批次又取消，原运费恢复为下一次待沿用。新报价/创建持续实时核对保留运费及原资金来源，失效时阻断。旧生产规则不能安全解释这个新终态，必须完整发布支持后再执行此类维护。
 
 - 批次列表、详情及状态操作回执增加 `actions.cancel/pause/resume: {allowed, reason}`。前端使用后端规则显示操作及不可用原因，不再用 `balance.registered_amount > 0` 推断不能取消；动作请求仍在当前权限、订单行锁和版本检查下重新校验，读取结果不是写入授权。明确失败的出库创建任务可取消时，`actions.cancel.requires_remote_check=true` 表示提交还须实时核实小满无单。
 - 仅预占定金/预付货款、没有实际非池付款或已绑定运费目标的批次可以取消。尚无出库任务时保持本地操作；`review_required + outbound.failed` 且无远端 ID、租约、远端基线，原编号与 payload hash 完整、无出库确认历史时，也可通过原 `POST /shipments/{id}/cancel` 手工取消。该分支先释放业务锁，仅 GET 精确编号查询小满；只有规范“查无单”才继续。查询后重新验证当前权限、归属、原版本、全资金/订单/任务绑定及确认历史，任何变化均拒绝；小满已有单、查询异常或结果不完整时保留原批次和占用，不发删除/重试等远端写入。
@@ -2574,7 +2590,11 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 奖项配置的 `award_rules.order_decisions` 为可选列表（默认空、最多200笔），每笔包含 `order_id`、`order_no`、`company_id`、`owner_id`、`account_date`、`role=new_sign|repeat|exclude_metrics` 和非空 `reason`。ID唯一、数字身份、日期在活动周期内；配置更正仍走现有战报PUT、版本校验及审计，更改裁定必须有整体原因并关闭推送。管理员GET/list保留完整列表，非管理员移除列表；统计返回 `order_decision_count`、`applied_order_decision_count` 两个数量。裁定不改写OKKI或镜像，身份漂移或相反合法源标记触发待核对并停止排名。
 
-内贸产品明细终止：`POST /api/domestic/items/{item_id}/terminate`，权限 `domestic:write` 且仅订单创建人，正文 `{ "reason": "取消原因" }`（非空、最多 500 字）。仅生产中/已完工订单的未发货明细可操作，部分发货也拒绝；保留记录、按原成交明细金额退回余额、更新订单状态，重复请求拒绝且不重复退款。生产订单不涉及资金；整单终止端点继续保留。
+内贸产品明细终止：`POST /api/domestic/items/{item_id}/terminate`，权限 `domestic:write` 且仅订单创建人，正文 `{ "reason": "取消原因", "qty": 1, "request_id": "stable-request-key" }`。原因去空白后 1–500 字，qty 为正整数且不能超过未发货数量；传 qty 必须带 8–64 字符请求号。同明细同键同内容重放，不重复退款；改数量、原因或操作者拒绝。仅生产中/已完成订单可操作，部分发货只允许终止未发货件；省略 qty 仍表示整行终止，已有发货则拒绝。部分终止减少当前履约数量，按原成交单价差额退款，保留单件和报工历史；生产订单无资金变化。详情 `items[].termination_records` 返回数量、单件码、原因和北京时间审计，仅内部财务详情返回记录。
+
+一键跳过：`POST /api/domestic/orders/{order_id}/skip-all`，权限 `domestic_skip:write`，正文 `{ "reason": "主管确认无需加工", "request_id": "stable-request-key" }`；原因去空白后 5–500 字，请求号 8–64 字符。整单事务逐道跳过所有未完成、未发货单件，保留人工跳过审计、不产生报工工资或发货事实；有效明细未配路线时整次回滚。同订单同键重放首次结果，不处理后来追加的明细或撤销后重新出现的工序。响应 `{order_id,status,skipped_qty,replayed?}`，skipped_qty 是本次跨工序件次。单道及整单跳过均同步完成状态；状态 2 的标签为“已完成”，全部真实发货仍保持状态 3“已发货”。
+
+逐件码接口仍按 `start_no/end_no` 的实际编号范围取数，返回 `max_unit_no`，每次编号跨度最多 200。终止后编号可能不连续，前端用 `max_unit_no` 分页并核对累计有效码数等于当前 order_qty，不再假设序号连续。
 
 
 ## 预售原出库任务的人工终态恢复（2026-10-23）

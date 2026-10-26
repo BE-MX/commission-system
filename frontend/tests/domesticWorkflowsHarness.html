@@ -28,7 +28,7 @@ import Orders from '../src/views/domestic/DomesticOrders.vue'
 import Decision from '../src/views/domestic_decision/DomesticDecision.vue'
 const pinia = createPinia()
 window.chartOption = element => echarts.getInstanceByDom(element)?.getOption()
-const Host = { setup() { const tab = ref('requests'); return () => h('main', { class: 'fixture-content' }, [
+const Host = { setup() { const tab = ref(new URLSearchParams(location.search).get('tab') || 'requests'); return () => h('main', { class: 'fixture-content' }, [
   h('nav', ['requests', 'orders', 'decision'].map(key => h('button', { onClick: () => tab.value = key }, key))),
   h(tab.value === 'requests' ? Requests : tab.value === 'orders' ? Orders : Decision),
 ]) } }
@@ -40,5 +40,6 @@ app.component('FilterBar', FilterBar); app.component('ListPageStatus', ListPageS
 app.component('DetailDrawer', DetailDrawer); app.component('EmptyState', EmptyState); app.component('GlassButton', GlassButton)
 for (const [key, component] of Object.entries(icons)) app.component(key, component)
 useAuthStore().user = { id: 1, roles: [], permissions: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic_decision:read'] }
+if (new URLSearchParams(location.search).has('testSkip')) useAuthStore().user.permissions.push('domestic_skip:write')
 await router.isReady(); app.mount('#app')
 </script></html>

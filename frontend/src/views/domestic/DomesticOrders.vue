@@ -127,6 +127,12 @@
           <div v-if="detail.remark" class="notes-line">备注：{{ detail.remark }}</div>
         </div>
 
+        <GlassButton
+          v-if="[1, 2].includes(detail.status) && detail.items.some(item => [0, 1].includes(item.status) && (item.status === 0 || item.steps.some(step => step.passed_qty < item.order_qty)))"
+          v-permission="'domestic_skip:write'" variant="ghost" left-icon="Warning"
+          :loading="skippingAll" @click="handleSkipAll(detail)"
+        >一键跳过全部工序</GlassButton>
+
         <div v-for="item in detail.items" :key="item.id" class="item-block">
           <h3 v-if="item.guest_name" class="item-guest">顾客：{{ item.guest_name }}</h3>
           <div v-if="item.guest_order_date" class="notes-line">顾客下单日期：{{ item.guest_order_date }}</div>
@@ -169,11 +175,15 @@
               variant="link" left-icon="EditPen" @click="openEdit(detail, item.id)"
             >编辑明细</GlassButton>
             <GlassButton
-              v-if="[1, 2].includes(detail.status) && [0, 1].includes(item.status) && !item.shipped_qty && canOperateOrder(detail)"
+              v-if="[1, 2].includes(detail.status) && [0, 1].includes(item.status) && item.order_qty > (item.shipped_qty || 0) && canOperateOrder(detail)"
               v-permission="'domestic:write'" variant="link" link-tone="danger" left-icon="CircleClose"
               :loading="terminatingItemIds.has(item.id)" @click="handleTerminateItem(item)"
             >终止明细</GlassButton>
-            <GlassButton v-if="detail.order_kind !== 'production' && item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
+            <GlassButton v-if="detail.order_kind !== 'production' && item.status === 1 && item.ready_to_ship_qty >= item.order_qty - (item.shipped_qty || 0)" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
+          </div>
+
+          <div v-for="(record, index) in item.termination_records || []" :key="index" class="notes-line">
+            已终止 {{ record.qty }} 件 · {{ record.reason }} · {{ record.terminated_at }}
           </div>
 
           <el-table v-if="item.steps.length" :data="item.steps" size="small" border class="step-table list-table" v-sticky-scrollbar>
@@ -274,6 +284,8 @@
         <GlassButton variant="primary" @click="confirmReport">确定</GlassButton>
       </template>
     </el-dialog>
+
+    <DomesticItemTerminationDialog :dialog="terminationDialog" :submitting="terminatingItemIds.size > 0" @confirm="confirmTerminateItem" />
 
     <el-dialog v-model="skipDialog.visible" title="异常跳过工序" width="480px">
       <el-alert type="warning" :closable="false" show-icon title="跳过只放行生产路线，不会记报工数量，也不计工资。" />
@@ -392,6 +404,7 @@ import TableTools from '@/components/TableTools.vue'
 import ListPageStatus from '@/components/ListPageStatus.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
+import DomesticItemTerminationDialog from './components/DomesticItemTerminationDialog.vue'
 import DomesticOrderFilters from './components/DomesticOrderFilters.vue'
 import DomesticOrderEditDialog from './components/DomesticOrderEditDialog.vue'
 import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
@@ -409,7 +422,8 @@ const {
   detailVisible, detailLoading, detail, routes, openDetail, refreshAll,
   shipDialog, openShip, confirmShip,
   reportDialog, openReport, confirmReport,
-  skipDialog, openSkip, confirmSkip,
+  skipDialog, openSkip, confirmSkip, skippingAll, handleSkipAll,
+  terminationDialog, confirmTerminateItem,
   skipAuditDialog, openSkipAudits, loadSkipAudits, handleRevokeSkip,
   logDialog, openLogs, handleRevokeReport,
   attachDialog, openAttachRoute, confirmAttachRoute,

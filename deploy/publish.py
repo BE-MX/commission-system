@@ -415,6 +415,7 @@ if __name__ == "__main__":
     parser.add_argument('--finalize-release', metavar='PLAN_JSON', help='Complete the inspected post-DDL activated release without repeating migrations')
     parser.add_argument('--recover-office-readiness', metavar='PLAN_JSON', help='Restore an inspected no-DDL rollback and resume its original release')
     parser.add_argument('--recover-office-activation', metavar='PLAN_JSON', help='Resume the inspected schema-186 office readiness interruption')
+    parser.add_argument('--recover-outbound-activation', metavar='PLAN_JSON', help='Resume the inspected post-static outbound activation interruption')
     parser.add_argument('--storage-cutover', metavar='PLAN_JSON', help='Execute a journalled COS cutover phase')
     parser.add_argument("--storage-routing-only", metavar="PROBES_JSON", help="Prepare/activate public COS routing with explicit cloud object probes")
     parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Beijing outbound worker")
@@ -539,6 +540,11 @@ if __name__ == "__main__":
                 raise RuntimeError('Readiness recovery requires only its pinned controller and reviewed plan')
             from recover_office_readiness import execute
             print(json.dumps(execute(args.recover_office_readiness, args)), flush=True)
+        elif args.recover_outbound_activation:
+            if any(value for key, value in vars(args).items() if key not in {'recover_outbound_activation', 'prepare_only', 'live_root', 'revision', 'no_pull'}):
+                raise RuntimeError('Outbound recovery only accepts its pinned controller and reviewed plan')
+            from recover_outbound_activation import execute
+            print(json.dumps(execute(args.recover_outbound_activation, args.prepare_only)), flush=True)
         elif args.recover_office_activation:
             if any(value for key, value in vars(args).items() if key not in {'recover_office_activation', 'prepare_only', 'live_root', 'revision', 'no_pull'}):
                 raise RuntimeError('Office recovery only accepts its pinned controller and reviewed plan')

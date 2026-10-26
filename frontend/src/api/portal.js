@@ -128,6 +128,10 @@ export const portalAdminApi = {
     const response = await portalAdminClient.get('/onboarding/catalog', { params: { ...params, keyword: params.keyword || undefined }, signal, showLoading: false, suppressToast: true })
     return response.data
   },
+  async copyCustomer(id, key, body) {
+    const response = await portalAdminClient.post(`/customers/${encodeURIComponent(id)}/copy`, body, { headers: { 'Idempotency-Key': key }, showLoading: false, suppressToast: true })
+    return response.data
+  },
   async createCustomer(body) {
     const response = await portalAdminClient.post('/customers', body, { showLoading: false, suppressToast: true })
     return response.data
