@@ -968,7 +968,7 @@ def test_inactive_units_do_not_complete_order(db, craft_mapping, workers):
     assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
 
 
-def test_skipped_final_step_does_not_count_as_scanned_completion(db, craft_mapping, workers):
+def test_skipped_final_step_completes_order_without_creating_shipment_evidence(db, craft_mapping, workers):
     creator = _user(db, "skipped-final-planner")
     order_id = _create_order(db, creator, qty=2)["id"]
     item = _item_of(db, order_id)
@@ -979,8 +979,14 @@ def test_skipped_final_step_does_not_count_as_scanned_completion(db, craft_mappi
         db, item_id=item.id, progress_id=final["progress_id"], qty=2, unit_id=None,
         reason="测试末道跳过不算扫描", request_id=str(uuid4()), user_id=creator.id,
     )
-    assert item.status == C.ITEM_PRODUCING
-    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
+    assert item.status == C.ITEM_DONE
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_DONE
+
+    from app.domestic.shipment_service import ready_units
+    assert ready_units(db, item)[0] == []
+    assert _steps(db, item)[-1]["completed_qty"] == 0
+
+    assert order_service.get_order_detail(db, order_id)["items"][0]["ready_to_ship_qty"] == 0
 
 
 def test_unit_labels_include_customer_name_and_keep_distinct_codes(db, craft_mapping, workers):

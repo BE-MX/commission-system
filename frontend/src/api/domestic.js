@@ -8,7 +8,7 @@ export const PRODUCT_TYPE_LABELS = { cap: '头套', piece: '发片' }
 export const ORDER_STATUS = [
   { value: 0, label: '草稿', tag: 'warning' },
   { value: 1, label: '生产中', tag: '' },
-  { value: 2, label: '已完工', tag: 'success' },
+  { value: 2, label: '已完成', tag: 'success' },
   { value: 3, label: '已发货', tag: 'info' },
   { value: 4, label: '已终止', tag: 'danger' },
   { value: 5, label: '待审核', tag: 'warning' },
@@ -242,8 +242,12 @@ export function attachItemRoute(itemId, routeId) {
   return domesticClient.post(`/items/${itemId}/attach-route`, { route_id: routeId })
 }
 
-export function terminateOrderItem(itemId, reason) {
-  return domesticClient.post(`/items/${itemId}/terminate`, { reason })
+export function terminateOrderItem(itemId, reason, qty, requestId) {
+  return domesticClient.post(`/items/${itemId}/terminate`, { reason, qty, request_id: requestId })
+}
+
+export function skipAllOrderProcesses(orderId, data) {
+  return domesticClient.post(`/orders/${orderId}/skip-all`, data)
 }
 
 export function shipItem(itemId, data) {

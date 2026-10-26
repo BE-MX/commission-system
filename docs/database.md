@@ -772,3 +772,11 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 迁移 `186_domestic_delivery` 接 185。新增 `ark_domestic_shipments`（同客户跨订单批次、发货/收货事实、幂等指纹）、`ark_domestic_shipment_lines`（订单明细及顾客/规格/价格/数量快照）、`ark_domestic_shipment_units`（具体件唯一交付关联）、`ark_domestic_receipt_allocations`（资金申请到批次的不可删增量核销，`ledger_id` 为已入账证据，`business_key` 唯一）。FK 保持目标类型一致。资金申请增加可空 `receipt_date`、`payload_hash`，类型扩展 `receipt`；历史字段和资金记录不猜配、不回填。所有新审计时间用北京时间，downgrade 拒删。行为及历史对账边界见 [内贸交付说明](domestic-delivery.md)。
 
 内贸 `ark_domestic_order_items.status` 值域补充：`3=已终止`（原 `0=生产中,1=已完工,2=已发货` 保持）。复用现有 SmallInteger 列，不修改 schema；原因保存在现有 remark，资金差额记录在客户余额账本，历史报工和逐件记录保留。
+
+
+## 内贸数量终止与整单跳过（迁移 204，本地实现未部署）
+
+- `ark_domestic_order_items.termination_records`：nullable JSON，记录每次终止的 qty、原请求 qty、单件 ID/码、原因、user_id、request_id 与北京时间 terminated_at。订单/明细锁下追加；用于幂等退款与审计，带记录明细禁止硬删。部分终止从 order_qty 和订单 total_unit_qty 减去取消件数；整行终止保持原数量，status=3，不参与履约金额。
+- `ark_domestic_item_units.status`：新增应用值 `2=已终止`，不复用、不删除；`0=普通改量停用,1=有效` 保持。单件编号允许空洞，后续加量保留历史身份。
+- `ark_domestic_orders.skip_all_records`：nullable JSON，记录整次跳过的 request_id、原因、操作者、北京时间和首次结果，订单锁保证同键重试不扩大到新增工序或明细。逐工序事实继续写现有 skip_logs/skip_units，计件工资仍只读实际报工。
+- 迁移 `204_domestic_item_termination` 当前衔接 `202_presale_order_revision`；203 已由另一分支占用。集成前应核对最新迁移链，保持单 head。迁移只由正式部署入口执行，未对共享库执行。

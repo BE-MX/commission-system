@@ -169,7 +169,7 @@ async function loadUnitLabels(current = ++generation) {
     })
     if (current !== generation) return
     const data = res.data || {}
-    unitTotal.value = data.order_qty || 1
+    unitTotal.value = data.max_unit_no || data.order_qty || 1
     rangeEnd.value = data.end_no || rangeStart.value
     const QRCode = (await import('qrcode')).default
     data.units = await Promise.all((data.units || []).map(async unit => ({

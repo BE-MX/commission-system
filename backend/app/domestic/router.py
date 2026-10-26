@@ -58,6 +58,7 @@ from app.domestic.schemas import (
     FundRequestResubmit,
     ItemShipRequest,
     ItemTerminateRequest,
+    OrderSkipAllRequest,
     OrderCreate,
     OrderItemAppend,
     OrderItemUpdate,
@@ -1028,10 +1029,26 @@ def terminate_item(
     current_user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        order_service.terminate_item(db, item_id, payload.reason, _uid(current_user))
+        order_service.terminate_item(db, item_id, payload.reason, _uid(current_user),
+                                     qty=payload.qty, request_id=payload.request_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="明细已终止")
+
+
+@router.post("/orders/{order_id}/skip-all", summary="一键跳过订单全部剩余工序")
+def skip_all_order_processes(
+    order_id: int,
+    payload: OrderSkipAllRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic_skip:write")),
+):
+    from app.domestic.order_skip_service import skip_all
+    try:
+        data = skip_all(db, order_id, payload.reason, payload.request_id, _uid(current_user))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(data, message="剩余工序已全部跳过")
 
 
 @router.post("/orders/{order_id}/status", summary="终止订单")
@@ -1212,7 +1229,9 @@ def get_item_unit_qrcodes(
         detail = order_service.get_order_detail(db, item.order_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    last = min(end_no or item.order_qty, item.order_qty)
+    active_units = unit_service.ensure_item_units(db, item)
+    maximum = max((unit.unit_no for unit in active_units), default=item.order_qty)
+    last = min(end_no or min(maximum, start_no + 199), maximum)
     if last < start_no:
         raise HTTPException(status_code=400, detail="结束序号不能小于开始序号")
     if last - start_no + 1 > 200:
@@ -1235,6 +1254,7 @@ def get_item_unit_qrcodes(
         "customer_name": detail["customer_name"],
         "order_kind": detail["order_kind"],
         "order_qty": item.order_qty,
+        "max_unit_no": maximum,
         "start_no": start_no,
         "end_no": last,
         "item": item_view,

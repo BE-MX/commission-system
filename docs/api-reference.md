@@ -2574,7 +2574,11 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 奖项配置的 `award_rules.order_decisions` 为可选列表（默认空、最多200笔），每笔包含 `order_id`、`order_no`、`company_id`、`owner_id`、`account_date`、`role=new_sign|repeat|exclude_metrics` 和非空 `reason`。ID唯一、数字身份、日期在活动周期内；配置更正仍走现有战报PUT、版本校验及审计，更改裁定必须有整体原因并关闭推送。管理员GET/list保留完整列表，非管理员移除列表；统计返回 `order_decision_count`、`applied_order_decision_count` 两个数量。裁定不改写OKKI或镜像，身份漂移或相反合法源标记触发待核对并停止排名。
 
-内贸产品明细终止：`POST /api/domestic/items/{item_id}/terminate`，权限 `domestic:write` 且仅订单创建人，正文 `{ "reason": "取消原因" }`（非空、最多 500 字）。仅生产中/已完工订单的未发货明细可操作，部分发货也拒绝；保留记录、按原成交明细金额退回余额、更新订单状态，重复请求拒绝且不重复退款。生产订单不涉及资金；整单终止端点继续保留。
+内贸产品明细终止：`POST /api/domestic/items/{item_id}/terminate`，权限 `domestic:write` 且仅订单创建人，正文 `{ "reason": "取消原因", "qty": 1, "request_id": "stable-request-key" }`。原因去空白后 1–500 字，qty 为正整数且不能超过未发货数量；传 qty 必须带 8–64 字符请求号。同明细同键同内容重放，不重复退款；改数量、原因或操作者拒绝。仅生产中/已完成订单可操作，部分发货只允许终止未发货件；省略 qty 仍表示整行终止，已有发货则拒绝。部分终止减少当前履约数量，按原成交单价差额退款，保留单件和报工历史；生产订单无资金变化。详情 `items[].termination_records` 返回数量、单件码、原因和北京时间审计，仅内部财务详情返回记录。
+
+一键跳过：`POST /api/domestic/orders/{order_id}/skip-all`，权限 `domestic_skip:write`，正文 `{ "reason": "主管确认无需加工", "request_id": "stable-request-key" }`；原因去空白后 5–500 字，请求号 8–64 字符。整单事务逐道跳过所有未完成、未发货单件，保留人工跳过审计、不产生报工工资或发货事实；有效明细未配路线时整次回滚。同订单同键重放首次结果，不处理后来追加的明细或撤销后重新出现的工序。响应 `{order_id,status,skipped_qty,replayed?}`，skipped_qty 是本次跨工序件次。单道及整单跳过均同步完成状态；状态 2 的标签为“已完成”，全部真实发货仍保持状态 3“已发货”。
+
+逐件码接口仍按 `start_no/end_no` 的实际编号范围取数，返回 `max_unit_no`，每次编号跨度最多 200。终止后编号可能不连续，前端用 `max_unit_no` 分页并核对累计有效码数等于当前 order_qty，不再假设序号连续。
 
 
 ## 预售原出库任务的人工终态恢复（2026-10-23）

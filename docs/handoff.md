@@ -1,3 +1,12 @@
+## 2026-10-26 内贸数量终止、整单跳过与完成状态（Codex，Git 交付准备，未部署）
+
+- 分支 `codex/domestic-termination-skip`，独立 worktree `C:/Users/windb/.codex/worktrees/domestic-termination-skip/commission-system`；用户已授权本次提交、合入 main 并推送；当前记录为集成准备，最终 refs 以交付回读为准。未部署，主目录既有改动按备份与逐文件校验保护。
+- 明细终止支持选择未发货数量，按原成交价差额退款；保留真实工时、发货与单件审计。已终止码不可复用，普通加量及整单/单件打印支持非连续编号；有终止记录的明细禁止硬删。网络失败后关闭重开弹窗也保留原请求号。
+- 详情新增“一键跳过全部工序”，沿用 `domestic_skip:write`，逐道写人工跳过审计、不生成工资或发货。整单事务、订单级幂等保证重试不影响后来新增明细；无路线则整次回滚。有效跳过参与完成回算，订单状态 2 显示“已完成”，真实全部发货保留状态 3“已发货”；撤销后重新回算。无真实末道报工时不展示整行登记发货按钮。
+- 新迁移 `204_domestic_item_termination` 为订单和明细各加 nullable JSON 审计列；本分支单 head，当前父 revision 为 `202_presale_order_revision`，203 由另一分支占用。未来集成须重核最新迁移链；未对共享/生产库执行迁移或业务写入。
+- 验证：内存 SQLite 后端相关回归 219 passed；最后的可发货信息及打印断言另 2 passed。前端定向 19 passed，`npm run build` 通过（既有 chunk 大小与 auth 模块混合导入提示）；增量约定与 diff 检查通过。桌面 1440px/手机 390px 实际 Vue → 拦截 HTTP → FastAPI/SQLite 验证数量、退款、跳过、完成状态及不能凭跳过登记发货；无页面异常/未覆盖 API，测试服务已停止。没有在真实 MySQL 上重现并发，当前读锁语义由 SQL 契约与独立静态审查覆盖。
+- 独立审查发现并修复失效码复活、稀疏码漏印、旧快照读、扩大重试范围及审计硬删，最终复核无阻断问题。证据保留 `tmp/domestic-completion-browser/` 和 `tmp/domestic-completion-build.log`；API/数据库/业务说明已同步。Git 巡检使用 `--no-fetch` 本地引用快照，不代表远端实时状态。
+
 ## 2026-10-23 浏览器标签页 LeShine LOGO（Codex，Git 交付，未部署）
 
 - 分支 `codex/leshine-tab-logo`；主站 `frontend/index.html` 的 favicon 从 Vite 默认图标改为现有 `/logo.webp`，与平台侧栏共用 LeShine 品牌资源，登录和主站路由共用。
