@@ -5,6 +5,11 @@
 - `codex/invoice-bind-recovery` 修复门户 ID / 底层订单号参数错配引起的 500，并保留列表入口订单号。新增契约测试通过；相关回归及已核对基线失败见[报告](reports/2026-10-26-invoice-1379-recovery.md)。用户已授权提交、合入 main 并推送，最终以 Git refs 回读为准；本次不部署。
 - 已实现自动 GET 原单核对：60 秒调度、新版本库存单首次推送、原租约过期后最多三轮，次数持久化；完整有效列表、原发送时间窗和全部商业/归属资料一致才恢复。原出库意图与当前开关同时允许才入队；回款意图不变。历史缺证据、生产半成品和资料冲突仍待人工核对。此能力尚未部署。
 
+## 2026-10-26 PI导出隐藏中文内部型号（Codex，Git交付，未部署）
+
+- 员工端 `leshine_pi` Excel/PDF 的 Product 列不再附加含中文的整段内部型号（如 `B3天才发帘（帘宽12″）`），保留英文产品名、纯英文型号、卷度、折扣和金额；不改原发票/订单数据，客户已发布PI快照路径不变。
+- `tests/test_pi_template_export.py` 15项通过，覆盖两种格式、混合/纯中文型号移除、英文型号保留和源数据不变；独立审查通过。样例及可视核对图在 `tmp/pi-english-model-20261026/`。本次已授权提交、合入main并推送origin；未部署。
+
 ## 2026-10-26 内贸数量终止、整单跳过与完成状态（Codex，Git交付，未部署）
 
 - 分支 `codex/domestic-termination-skip`，独立 worktree `C:/Users/windb/.codex/worktrees/domestic-termination-skip/commission-system`；用户已授权本次提交、合入 main 并推送；功能提交 `bce2c594`；集成验证已完成，最终 refs 以交付回读为准。未部署，主目录既有改动按备份与逐文件校验保护。
