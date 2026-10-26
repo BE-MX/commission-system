@@ -117,6 +117,10 @@ class TestSchedulerRegistration:
                 "battle_posters_noon",
                 "battle_posters_afternoon",
                 "battle_awards",
+                "perf_snapshot_daily",
+                "perf_report_push",
+                "perf_report_push_retry_05",
+                "perf_report_push_retry_15",
                 "announcement_dispatch",
                 "announcement_weekly",
                 "task_daily_brief",
@@ -185,6 +189,18 @@ class TestSchedulerRegistration:
                 assert fields['hour'] == hour and fields['minute'] == minutes
                 assert str(poster.trigger.timezone) == 'Asia/Shanghai'
                 assert poster.max_instances == 1
+            snapshot = scheduler.get_job('perf_snapshot_daily')
+            snapshot_fields = {field.name: str(field) for field in snapshot.trigger.fields}
+            assert snapshot_fields['hour'] == '6' and snapshot_fields['minute'] == '30'
+            assert str(snapshot.trigger.timezone) == 'Asia/Shanghai'
+            assert snapshot.max_instances == 1 and snapshot.coalesce is True
+            for job_id, minute in [('perf_report_push', '0'), ('perf_report_push_retry_05', '5'),
+                                   ('perf_report_push_retry_15', '15')]:
+                push = scheduler.get_job(job_id)
+                fields = {field.name: str(field) for field in push.trigger.fields}
+                assert fields['day'] == '1,10,20' and fields['hour'] == '9' and fields['minute'] == minute
+                assert str(push.trigger.timezone) == 'Asia/Shanghai'
+                assert push.max_instances == 1 and push.coalesce is True
         finally:
             shutdown_scheduler(scheduler)
 

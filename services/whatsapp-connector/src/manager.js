@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import makeWASocket, { BufferJSON, DisconnectReason } from 'baileys'
 import pino from 'pino'
 import qrcode from 'qrcode'
@@ -195,17 +195,22 @@ export class Manager {
       shouldSyncHistoryMessage: () => true, emitOwnEvents: true, fireInitQueries: true,
       getMessage: async () => undefined, connectTimeoutMs: 20000, defaultQueryTimeoutMs: 20000 })
     entry.socket = socket
-    // Observe only the event name. The upstream listener retains sole ownership
-    // of acknowledgments, QR registration material and protocol payloads.
+    const epoch = ++entry.epoch
+    // rc14 has no handler for companion_reg_refresh: the server retires the adv secret the QR
+    // advertises, the phone then reports a failed link and pair-success never arrives
+    // (WhiskeySockets/Baileys#2737, unmerged PR #2765). Mirror WA Web: rotate the secret,
+    // persist it, and re-render the current ref. Never touch a session that already has me.
     const refreshEvent = 'CB:notification,type:companion_reg_refresh'
-    const refresh = () => {
-      if (!entry.stopped && entry.socket === socket) this.diagnostic('companion_reg_refresh', entry.uid, pairing())
+    const refresh = node => {
+      if (entry.stopped || entry.socket !== socket) return
+      this.diagnostic('companion_reg_refresh', entry.uid, pairing())
+      try { this.rotatePairingSecret(entry, socket, auth, node, epoch) }
+      catch (err) { this.protect(entry, err.code || 'auth_store_failed') }
     }
     if (socket.ws?.on && socket.ws?.off) {
       socket.ws.on(refreshEvent, refresh)
       entry.protocolListener = { socket: socket.ws, name: refreshEvent, handler: refresh }
     }
-    const epoch = ++entry.epoch
     const on = (name, handler) => { socket.ev.on(name, handler); entry.listeners.push([name, handler]) }
     on('creds.update', update => {
       if (entry.stopped) return
@@ -254,6 +259,12 @@ export class Manager {
     if (entry.stopped || epoch !== entry.epoch) return
     this.store.fence(entry.lease)
     if (update.qr) {
+      // rc14 captures the adv secret once per pair-device; after a rotation its next ref would
+      // re-advertise the retired secret. Always render with the current one.
+      const parts = update.qr.split(',')
+      if (parts.length === 5 && entry.auth?.creds.advSecretKey && !entry.auth.creds.me) parts[3] = entry.auth.creds.advSecretKey
+      update = { ...update, qr: parts.join(',') }
+      entry.qrRaw = update.qr
       const qrUrl = await this.encodeQR(update.qr)
       if (entry.stopped || epoch !== entry.epoch) return
       entry.qr = { url: qrUrl, expires: Date.now() + 60000 }
@@ -292,7 +303,18 @@ export class Manager {
       if (!entry.stopped) void this.openSocket(entry).catch(err => this.fail(entry, err.code || 'socket_start_failed'))
     }, delay)
   }
-  clearQR(entry) { entry.qr = null; clearTimeout(entry.qrTimer) }
+  clearQR(entry) { entry.qr = null; entry.qrRaw = null; clearTimeout(entry.qrTimer) }
+  rotatePairingSecret(entry, socket, auth, node, epoch) {
+    const creds = auth.state.creds
+    if (creds.me || creds.registered) return
+    const children = Array.isArray(node?.content) ? node.content : []
+    if (!children.some(child => ['companion_reg_refresh', 'pair-device-rotate-qr'].includes(child?.tag))) return
+    auth.saveCreds({ advSecretKey: randomBytes(32).toString('base64') })
+    // Re-render the ref already on screen; connection() substitutes the new secret and the
+    // upstream ref timer is left alone so no server-allotted ref is consumed.
+    if (typeof entry.qrRaw !== 'string' || entry.socket !== socket) return
+    void this.connection(entry, { qr: entry.qrRaw }, epoch).catch(err => this.protect(entry, err.code || 'connection_update_failed'))
+  }
   detachSocket(entry, close = true) {
     const socket = entry.socket
     if (!socket) return

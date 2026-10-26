@@ -84,7 +84,7 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer); document.removeEv
         <fieldset class="option-row"><legend>Length</legend><button v-for="option in lengthOptions(variants, selection.grade)" :key="option.value" type="button" :class="['option-chip', { muted: !option.available }]" :aria-pressed="option.value === selection.length" @click="choose({ length: option.value })">{{ option.value }}"</button></fieldset>
         <fieldset class="option-row colors"><legend>Color <span class="muted">· {{ variant.color_code }}</span></legend>
           <div v-for="group in colorGroups(variants, selection.grade, selection.length)" :key="group.type" class="color-group"><span class="small muted">{{ group.label }}</span><div>
-            <button v-for="color in group.colors" :key="color.color_key" type="button" :class="['swatch-chip', { unavailable: color.availability !== 'available' }]" :aria-pressed="color.color_key === selection.colorKey" :aria-label="`${color.color_code}, ${stockLabel(color)}`" :title="color.color_label" @click="choose({ colorKey: color.color_key })"><span class="swatch-thumb"><ProductImage :url="color.swatch_url" alt="" /></span><span>{{ color.color_code }}</span></button>
+            <button v-for="color in group.colors" :key="color.color_key" type="button" :class="['swatch-chip', { unavailable: color.availability !== 'available' }]" :aria-pressed="color.color_key === selection.colorKey" :aria-label="`${color.color_code}, ${stockLabel(color)}`" :title="color.color_label" @click="choose({ colorKey: color.color_key })"><span class="swatch-thumb"><ProductImage :url="color.swatch_url || color.image_url" size="thumb" alt="" /></span><span>{{ color.color_code }}</span></button>
           </div></div>
         </fieldset>
 

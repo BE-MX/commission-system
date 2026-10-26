@@ -1,0 +1,271 @@
+/* 绩效目标管理 · 视觉对齐 docs/requirements/performance-goal-prototype/prototype.css（作用域 .perf-goal-page） */
+.perf-goal-page {
+  --pg-primary: #2563eb;
+  --pg-primary-soft: #eff6ff;
+  --pg-primary-border: #bfdbfe;
+  --pg-dd-blue: #3b7ff6;
+  --pg-purple: #7c3aed;
+  --pg-teal: #0f766e;
+  --pg-ink: #1f2937;
+  --pg-ink-2: #4b5563;
+  --pg-muted: #6b7280;
+  --pg-faint: #9ca3af;
+  --pg-line: #e5e7eb;
+  --pg-line-2: #eef0f3;
+  --pg-target: #94a3b8;
+  --pg-grayline: #cbd5e1;
+  --pg-gridline: #f0f2f5;
+  --pg-axisline: #d1d5db;
+  --pg-green: #16a34a;
+  --pg-green-bg: #f0fdf4;
+  --pg-red: #dc2626;
+  --pg-red-bg: #fef2f2;
+  --pg-darkred: #991b1b;
+  --pg-darkred-bg: #fee2e2;
+  --pg-amber: #f59e0b;
+  --pg-amber-bg: #fffbeb;
+  --pg-orange: #ea580c;
+  --pg-radius: 8px;
+  --pg-shadow: 0 1px 3px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
+  color: var(--pg-ink);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+.perf-goal-page .pg-card {
+  background: #fff; border-radius: var(--pg-radius);
+  box-shadow: var(--pg-shadow); border: 1px solid var(--pg-line-2);
+  padding: 16px 20px; margin-bottom: 16px;
+}
+.perf-goal-page .pg-card-title { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; flex-wrap: wrap; }
+.perf-goal-page .pg-card-title h2 { font-size: 16px; margin: 0; font-weight: 600; }
+.perf-goal-page .pg-card-title .pg-note { color: var(--pg-faint); font-size: 12px; font-weight: 400; }
+.perf-goal-page .pg-card-title .pg-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.perf-goal-page .pg-note { color: var(--pg-faint); font-size: 12px; }
+
+/* 控制条 */
+.perf-goal-page .pg-control-bar { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.perf-goal-page .pg-ctl-group { display: flex; align-items: center; gap: 8px; }
+.perf-goal-page .pg-ctl-group > label { color: var(--pg-muted); font-size: 13px; }
+.perf-goal-page .pg-seg { display: inline-flex; background: #f0f2f5; border-radius: 6px; padding: 2px; }
+.perf-goal-page .pg-seg button {
+  border: none; background: none; padding: 5px 14px; border-radius: 5px;
+  color: var(--pg-ink-2); font-size: 13px; cursor: pointer; font: inherit;
+}
+.perf-goal-page .pg-seg button.pg-active { background: #fff; color: var(--pg-primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
+.perf-goal-page .pg-badge {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+  padding: 3px 10px; border-radius: 20px; line-height: 1.4; white-space: nowrap;
+}
+.perf-goal-page .pg-badge.pg-blue { background: var(--pg-primary-soft); color: var(--pg-primary); border: 1px solid var(--pg-primary-border); }
+.perf-goal-page .pg-badge.pg-amber { background: var(--pg-amber-bg); color: #b45309; border: 1px solid #fde68a; }
+.perf-goal-page .pg-badge.pg-green { background: var(--pg-green-bg); color: var(--pg-green); border: 1px solid #bbf7d0; }
+.perf-goal-page .pg-badge.pg-gray { background: #f3f4f6; color: var(--pg-muted); border: 1px solid var(--pg-line); }
+.perf-goal-page .pg-badge .pg-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+/* 汇总卡 */
+.perf-goal-page .pg-metric-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.perf-goal-page .pg-mcard {
+  background: #fff; border-radius: var(--pg-radius); box-shadow: var(--pg-shadow);
+  border: 1px solid var(--pg-line-2); padding: 18px 20px 16px; position: relative; min-width: 0;
+}
+.perf-goal-page .pg-mcard .pg-m-name { color: var(--pg-muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.perf-goal-page .pg-mcard .pg-m-tag { font-size: 11px; color: var(--pg-faint); }
+.perf-goal-page .pg-mcard .pg-m-rate { font-size: 34px; font-weight: 700; letter-spacing: -1px; margin: 6px 0 2px; line-height: 1.15; }
+.perf-goal-page .pg-mcard .pg-m-rate small { font-size: 16px; font-weight: 500; color: var(--pg-muted); margin-left: 2px; }
+.perf-goal-page .pg-mcard .pg-m-nums { display: flex; gap: 18px; color: var(--pg-muted); font-size: 12px; margin-bottom: 20px; }
+.perf-goal-page .pg-mcard .pg-m-nums b { color: var(--pg-ink); font-weight: 600; font-size: 13px; }
+.perf-goal-page .pg-m-progress { position: relative; height: 8px; background: #eef1f5; border-radius: 6px; }
+.perf-goal-page .pg-m-progress .pg-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: var(--pg-primary); }
+.perf-goal-page .pg-m-progress .pg-fill.pg-over { background: var(--pg-green); }
+.perf-goal-page .pg-m-progress .pg-tp-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--pg-amber); }
+.perf-goal-page .pg-m-progress .pg-tp-mark::after {
+  content: attr(data-tp); position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; color: #b45309; white-space: nowrap;
+}
+.perf-goal-page .pg-m-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 12px; }
+.perf-goal-page .pg-delta { font-weight: 600; }
+.perf-goal-page .pg-delta.pg-up { color: var(--pg-green); }
+.perf-goal-page .pg-delta.pg-down { color: var(--pg-red); }
+.perf-goal-page .pg-mom { color: var(--pg-faint); }
+
+/* 子弹图 + 冲刺提示 */
+.perf-goal-page .pg-pace-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+.perf-goal-page .pg-pace-grid .pg-card { margin-bottom: 0; }
+.perf-goal-page .pg-bullet-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
+.perf-goal-page .pg-bullet-item { padding: 6px 0 2px; min-width: 0; }
+.perf-goal-page .pg-bullet-item .pg-b-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--pg-muted); margin-bottom: 2px; gap: 8px; }
+.perf-goal-page .pg-bullet-item .pg-b-head b { color: var(--pg-ink); font-size: 13px; }
+.perf-goal-page .pg-bullet-chart { height: 46px; }
+.perf-goal-page .pg-hint-card { background: linear-gradient(180deg, #fffdf5, #fff); border: 1px solid #fde68a; }
+.perf-goal-page .pg-hint-card h3 { margin: 0 0 4px; font-size: 15px; color: #92400e; }
+.perf-goal-page .pg-hint-sub { font-size: 12px; color: #b45309; margin-bottom: 10px; }
+.perf-goal-page .pg-hint-list { display: flex; flex-direction: column; gap: 10px; }
+.perf-goal-page .pg-hint-item {
+  background: #fff; border: 1px solid #fde68a; border-radius: 6px;
+  padding: 8px 12px; font-size: 12.5px; color: var(--pg-ink-2); line-height: 1.55;
+}
+.perf-goal-page .pg-hint-item b { color: var(--pg-red); }
+.perf-goal-page .pg-hint-item .pg-h-name { color: var(--pg-ink); font-weight: 600; }
+.perf-goal-page .pg-hint-item.pg-ok { border-color: #bbf7d0; }
+.perf-goal-page .pg-hint-item.pg-ok b { color: var(--pg-green); }
+
+/* 图表卡 */
+.perf-goal-page .pg-chart { width: 100%; }
+.perf-goal-page .pg-metric-switch { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.perf-goal-page .pg-metric-switch button {
+  border: 1px solid var(--pg-line); background: #fff; color: var(--pg-ink-2);
+  padding: 4px 12px; border-radius: 15px; font-size: 12px; cursor: pointer; font: inherit;
+}
+.perf-goal-page .pg-metric-switch button.pg-active { background: var(--pg-primary); border-color: var(--pg-primary); color: #fff; }
+
+/* 战队区 */
+.perf-goal-page .pg-team-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.perf-goal-page .pg-team-card { border: 1px solid var(--pg-line); border-radius: var(--pg-radius); padding: 12px 14px; background: #fff; transition: box-shadow .15s; min-width: 0; }
+.perf-goal-page .pg-team-card.pg-hl { border-color: var(--pg-primary); box-shadow: 0 0 0 2px var(--pg-primary-border); }
+.perf-goal-page .pg-team-card .pg-t-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.perf-goal-page .pg-team-card .pg-t-head b { font-size: 15px; }
+.perf-goal-page .pg-team-card .pg-t-head span { font-size: 12px; color: var(--pg-faint); }
+.perf-goal-page .pg-team-card .pg-t-head .pg-t-rate { margin-left: auto; font-size: 18px; font-weight: 700; }
+.perf-goal-page .pg-t-metrics { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.perf-goal-page .pg-t-metric { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--pg-muted); }
+.perf-goal-page .pg-t-metric .pg-tm-name { width: 52px; flex: none; }
+.perf-goal-page .pg-t-metric .pg-tm-bar, .perf-goal-page .pg-t-member .pg-tm-bar { flex: 1; height: 6px; background: #eef1f5; border-radius: 4px; overflow: hidden; }
+.perf-goal-page .pg-t-member .pg-tm-bar { height: 5px; background: #f1f3f6; }
+.perf-goal-page .pg-tm-bar i { display: block; height: 100%; background: var(--pg-primary); border-radius: 4px; }
+.perf-goal-page .pg-tm-bar i.pg-over { background: var(--pg-green); }
+.perf-goal-page .pg-tm-bar i.pg-lag { background: var(--pg-orange); }
+.perf-goal-page .pg-t-member .pg-tm-bar i.pg-lag { background: var(--pg-red); }
+.perf-goal-page .pg-tm-bar i.pg-none { background: var(--pg-target); }
+.perf-goal-page .pg-t-metric .pg-tm-val { width: 46px; text-align: right; color: var(--pg-ink-2); }
+.perf-goal-page .pg-t-members { border-top: 1px dashed var(--pg-line); padding-top: 7px; display: flex; flex-direction: column; gap: 4px; }
+.perf-goal-page .pg-t-member { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--pg-muted); }
+.perf-goal-page .pg-t-member .pg-tm-name { width: 52px; flex: none; color: var(--pg-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perf-goal-page .pg-t-member .pg-tm-val { width: 52px; text-align: right; }
+
+/* 表格（原型 .tbl 风格，用于排名/编辑等自定义表格） */
+.perf-goal-page .pg-table-wrap { overflow-x: auto; }
+.perf-goal-page table.pg-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.perf-goal-page .pg-tbl th, .perf-goal-page .pg-tbl td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--pg-line-2); white-space: nowrap; }
+.perf-goal-page .pg-tbl thead th { background: #f8fafc; color: var(--pg-ink-2); font-weight: 600; font-size: 12.5px; border-bottom: 1px solid var(--pg-line); }
+.perf-goal-page .pg-tbl tbody tr:nth-child(even) { background: #fafbfd; }
+.perf-goal-page .pg-tbl tbody tr:hover { background: var(--pg-primary-soft); }
+.perf-goal-page .pg-tbl td.pg-r, .perf-goal-page .pg-tbl th.pg-r { text-align: right; }
+.perf-goal-page .pg-tbl td.pg-c, .perf-goal-page .pg-tbl th.pg-c { text-align: center; }
+.perf-goal-page .pg-tbl th.pg-sortable { cursor: pointer; user-select: none; }
+.perf-goal-page .pg-tbl th.pg-sortable:hover { color: var(--pg-primary); }
+.perf-goal-page .pg-tbl th .pg-arrow { font-size: 10px; margin-left: 3px; color: var(--pg-primary); }
+.perf-goal-page .pg-tbl tr.pg-row-hl { background: #dbeafe !important; }
+.perf-goal-page .pg-tbl tr.pg-row-hl td { font-weight: 600; }
+.perf-goal-page .pg-tbl tr.pg-row-dim, .perf-goal-page .pg-tbl tr.pg-row-dim td { color: var(--pg-faint); }
+.perf-goal-page .pg-tbl tr.pg-row-total { background: #f1f5f9 !important; font-weight: 600; }
+.perf-goal-page .pg-tbl tr.pg-group-head td { background: #eef4ff; color: var(--pg-primary); font-weight: 600; font-size: 12.5px; }
+.perf-goal-page .pg-tag { display: inline-block; font-size: 11.5px; padding: 2px 9px; border-radius: 11px; line-height: 1.5; }
+.perf-goal-page .pg-tag.pg-green { background: var(--pg-green-bg); color: var(--pg-green); }
+.perf-goal-page .pg-tag.pg-blue { background: var(--pg-primary-soft); color: var(--pg-primary); }
+.perf-goal-page .pg-tag.pg-red { background: var(--pg-red-bg); color: var(--pg-red); }
+.perf-goal-page .pg-tag.pg-darkred { background: var(--pg-darkred-bg); color: var(--pg-darkred); }
+.perf-goal-page .pg-tag.pg-gray { background: #f3f4f6; color: var(--pg-muted); }
+.perf-goal-page .pg-tag.pg-amber { background: var(--pg-amber-bg); color: #b45309; }
+.perf-goal-page .pg-tag.pg-orange { background: #fff7ed; color: var(--pg-orange); }
+
+/* 明细标签页 */
+.perf-goal-page .pg-detail-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--pg-line); margin-bottom: 14px; }
+.perf-goal-page .pg-detail-tabs button {
+  border: none; background: none; padding: 9px 18px; font-size: 14px; color: var(--pg-ink-2);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; font: inherit;
+}
+.perf-goal-page .pg-detail-tabs button.pg-active { color: var(--pg-primary); border-bottom-color: var(--pg-primary); font-weight: 600; }
+.perf-goal-page .pg-filter-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.perf-goal-page .pg-filter-bar > label { color: var(--pg-muted); font-size: 13px; }
+.perf-goal-page .pg-filter-bar .pg-sum { margin-left: auto; font-size: 12.5px; color: var(--pg-muted); }
+.perf-goal-page .pg-filter-bar .pg-sum b { color: var(--pg-primary); font-size: 14px; }
+.perf-goal-page .pg-pager { display: flex; align-items: center; gap: 6px; justify-content: flex-end; margin-top: 12px; font-size: 12.5px; color: var(--pg-muted); flex-wrap: wrap; }
+.perf-goal-page .pg-pager button {
+  border: 1px solid var(--pg-line); background: #fff; min-width: 28px; height: 28px;
+  border-radius: 5px; color: var(--pg-ink-2); padding: 0 8px; cursor: pointer; font: inherit;
+}
+.perf-goal-page .pg-pager button.pg-active { background: var(--pg-primary); border-color: var(--pg-primary); color: #fff; }
+.perf-goal-page .pg-pager button:disabled { opacity: .4; cursor: not-allowed; }
+
+/* 目标设置 */
+.perf-goal-page .pg-batch-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.perf-goal-page .pg-batch-bar .pg-b-name { font-size: 16px; font-weight: 600; }
+.perf-goal-page .pg-batch-bar .pg-ver { color: var(--pg-muted); font-size: 12.5px; }
+.perf-goal-page .pg-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.perf-goal-page .pg-toolbar .pg-v-status { font-size: 12.5px; }
+.perf-goal-page .pg-toolbar .pg-v-status.pg-ok { color: var(--pg-green); }
+.perf-goal-page .pg-toolbar .pg-v-status.pg-err { color: var(--pg-red); }
+.perf-goal-page .pg-cell-input {
+  width: 100%; border: 1px solid transparent; border-radius: 5px; padding: 4px 8px;
+  background: transparent; text-align: right; font-size: 13px; color: var(--pg-ink); font: inherit;
+}
+.perf-goal-page .pg-cell-input:hover { border-color: var(--pg-line); background: #fff; }
+.perf-goal-page .pg-cell-input:focus { outline: none; border-color: var(--pg-primary); background: #fff; box-shadow: 0 0 0 2px var(--pg-primary-border); }
+.perf-goal-page .pg-tbl td.pg-editable { padding: 3px 6px; }
+.perf-goal-page .pg-tbl td.pg-cell-err .pg-cell-input { border-color: #fca5a5; background: var(--pg-red-bg); }
+.perf-goal-page .pg-cell-err-msg { font-size: 11px; color: var(--pg-red); white-space: normal; line-height: 1.3; padding: 2px 4px 0; }
+.perf-goal-page .pg-factor-input { width: 64px; text-align: right; }
+.perf-goal-page .pg-recalc-flag { color: var(--pg-amber); font-size: 11.5px; margin-left: 6px; }
+
+/* 战报推送 */
+.perf-goal-page .pg-push-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; margin-bottom: 16px; }
+.perf-goal-page .pg-push-grid .pg-card { margin-bottom: 0; }
+.perf-goal-page .pg-rule-line { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.perf-goal-page .pg-rule-line .pg-big { font-size: 15px; font-weight: 600; }
+.perf-goal-page .pg-countdown { font-size: 13px; color: var(--pg-muted); }
+.perf-goal-page .pg-countdown b { color: var(--pg-primary); font-size: 16px; }
+.perf-goal-page .pg-role-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 6px; }
+.perf-goal-page .pg-role-card { border: 1px solid var(--pg-line); border-radius: var(--pg-radius); padding: 12px 14px; }
+.perf-goal-page .pg-role-card h4 { margin: 0 0 6px; font-size: 14px; display: flex; align-items: center; gap: 7px; }
+.perf-goal-page .pg-role-card h4 .pg-r-ico { width: 22px; height: 22px; border-radius: 6px; display: inline-grid; place-items: center; font-size: 12px; color: #fff; }
+.perf-goal-page .pg-role-card p { margin: 0; font-size: 12px; color: var(--pg-muted); line-height: 1.6; }
+.perf-goal-page .pg-timeline { display: flex; flex-direction: column; }
+.perf-goal-page .pg-tl-item { display: flex; gap: 12px; position: relative; padding-bottom: 18px; }
+.perf-goal-page .pg-tl-item::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: -2px; width: 2px; background: var(--pg-line); }
+.perf-goal-page .pg-tl-item:last-child::before { display: none; }
+.perf-goal-page .pg-tl-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--pg-green); flex: none; margin-top: 3px; }
+.perf-goal-page .pg-tl-dot.pg-warn { background: var(--pg-amber); }
+.perf-goal-page .pg-tl-dot.pg-next { background: #fff; border: 3px solid var(--pg-primary); }
+.perf-goal-page .pg-tl-body b { font-size: 13.5px; }
+.perf-goal-page .pg-tl-body .pg-tl-meta { font-size: 12px; color: var(--pg-muted); margin-top: 2px; }
+
+/* 钉钉消息卡片 */
+.perf-goal-page .pg-dd-card { border: 1px solid var(--pg-line); border-radius: 10px; overflow: hidden; background: #f7f8fa; display: flex; flex-direction: column; }
+.perf-goal-page .pg-dd-head { background: #3b7ff6; color: #fff; padding: 9px 14px; display: flex; align-items: center; gap: 9px; }
+.perf-goal-page .pg-dd-robot { width: 26px; height: 26px; border-radius: 50%; background: rgba(255, 255, 255, .25); display: grid; place-items: center; font-size: 13px; flex: none; }
+.perf-goal-page .pg-dd-head .pg-dd-app { font-size: 13px; font-weight: 600; }
+.perf-goal-page .pg-dd-head .pg-dd-app small { display: block; font-weight: 400; font-size: 11px; opacity: .85; }
+.perf-goal-page .pg-dd-head .pg-dd-time { margin-left: auto; font-size: 11px; opacity: .85; }
+.perf-goal-page .pg-dd-body { background: #fff; margin: 10px; border-radius: 8px; padding: 13px 15px; box-shadow: var(--pg-shadow); flex: 1; }
+.perf-goal-page .pg-dd-body h3 { margin: 0 0 8px; font-size: 14.5px; color: var(--pg-ink); }
+.perf-goal-page .pg-dd-md { font-size: 12.5px; color: var(--pg-ink-2); line-height: 1.75; }
+.perf-goal-page .pg-dd-md p { margin: 0 0 7px; }
+.perf-goal-page .pg-dd-md ul, .perf-goal-page .pg-dd-md ol { margin: 0 0 7px; padding-left: 18px; }
+.perf-goal-page .pg-dd-md li { margin-bottom: 3px; }
+.perf-goal-page .pg-dd-md table { width: 100%; border-collapse: collapse; margin: 4px 0 8px; font-size: 12px; }
+.perf-goal-page .pg-dd-md th, .perf-goal-page .pg-dd-md td { border: 1px solid var(--pg-line-2); padding: 4px 7px; text-align: left; }
+.perf-goal-page .pg-dd-md th { background: #f8fafc; }
+.perf-goal-page .pg-dd-foot { padding: 0 12px 10px; font-size: 11.5px; color: var(--pg-faint); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.perf-goal-page .pg-dd-foot .pg-ok { color: var(--pg-green); }
+.perf-goal-page .pg-dd-foot .pg-warn { color: #b45309; }
+
+.perf-goal-page .pg-footnote { color: var(--pg-faint); font-size: 12px; margin-top: 10px; line-height: 1.7; }
+.perf-goal-page .pg-empty { padding: 40px 0; text-align: center; color: var(--pg-faint); font-size: 13px; }
+
+/* 控件宽度工具类（避免内联 style width） */
+.perf-goal-page .pg-w-90 { width: 90px; }
+.perf-goal-page .pg-w-130 { width: 130px; }
+.perf-goal-page .pg-w-140 { width: 140px; }
+.perf-goal-page .pg-w-150 { width: 150px; }
+.perf-goal-page .pg-w-160 { width: 160px; }
+.perf-goal-page .pg-w-170 { width: 170px; }
+.perf-goal-page .pg-w-200 { width: 200px; }
+.perf-goal-page .pg-w-250 { width: 250px; }
+
+@media (max-width: 1200px) {
+  .perf-goal-page .pg-metric-cards, .perf-goal-page .pg-team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .perf-goal-page .pg-pace-grid, .perf-goal-page .pg-push-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .perf-goal-page .pg-metric-cards, .perf-goal-page .pg-team-grid, .perf-goal-page .pg-bullet-wrap, .perf-goal-page .pg-role-cards { grid-template-columns: 1fr; }
+}

@@ -29,6 +29,7 @@ async function run(viewport, name) {
     }
     if (url.pathname.endsWith('/session')) return send(identity)
     if (url.pathname.endsWith('/sales-contact')) return send({ assigned: false })
+    if (url.pathname.endsWith('/delivery-profile')) return send({ delivery: null, row_version: 1 })
     if (url.pathname.endsWith('/ordering-terms')) return send({ payment_terms: [], default_payment_term_code: null, auto_fees: { enabled: false, shipping_tiers: [] } })
     if (url.pathname.endsWith('/catalog/families')) return send({ items: [{ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', sale_unit: 'piece', unit_weight_grams: '20', min_order_qty: 1, step_qty: 1, image_url: `/api/portal/v1/catalog/swatches/${id(1)}/image?version=1&size=thumb`, variant_count: variants.length, grades: ['standard', 'super'], lengths: ['18', '20'] }], ungrouped_count: 2, catalog_version: 1 })
     if (url.pathname.endsWith('/catalog/families/genius_weft_20g/availability')) { polls++; return send({ items: [], catalog_version: 1 }) }
@@ -43,6 +44,7 @@ async function run(viewport, name) {
     await page.goto(origin + '/collection')
     await page.getByRole('heading', { name: 'Genius Weft 20g/piece' }).waitFor()
     assert.ok(await page.getByRole('heading', { name: 'Other products' }).isVisible())
+    await page.locator('.family-grid .product-art').first().scrollIntoViewIfNeeded()
     await page.waitForFunction(() => document.querySelector('.family-grid img')?.naturalWidth === 1200)
     await noOverflow()
     await page.screenshot({ path: `${output}/families-${name}.png`, fullPage: true })
@@ -50,9 +52,10 @@ async function run(viewport, name) {
     await page.getByRole('heading', { level: 1, name: 'Genius Weft 20g/piece' }).waitFor()
     assert.equal(new URL(page.url()).pathname, '/collection/genius_weft_20g')
     await page.waitForFunction(() => document.querySelector('.family-image img')?.naturalWidth === 1200)
-    assert.match(await page.locator('.family-image img').getAttribute('src'), /size=full$/)
+    assert.match(await page.locator('.family-image img').getAttribute('data-source'), /size=full$/)
     assert.equal(await page.locator('.family-image img').getAttribute('loading'), 'eager')
-    assert.match(await page.locator('.swatch-thumb img').first().getAttribute('src'), /size=thumb$/)
+    await page.locator('.swatch-thumb').first().scrollIntoViewIfNeeded()
+    assert.match(await page.locator('.swatch-thumb').first().locator('img').getAttribute('data-source'), /size=thumb$/)
     const dock = page.getByRole('complementary', { name: 'Product purchase' })
     await dock.waitFor()
     await page.waitForFunction(() => parseFloat(document.querySelector('.portal-shell').style.getPropertyValue('--purchase-dock-height')) > 0)

@@ -17,7 +17,7 @@ from app.core.response import ok
 from app.portal import auth_service as service
 from app.portal.errors import PortalError, reject
 from app.portal.action_receipt_queries import ActionReceiptQuery
-from app.portal.schemas import (PasswordLogin, PortalInput, CustomerQuoteInput, SubmitInput, ReasonInput,
+from app.portal.schemas import (PasswordLogin, PortalInput, CustomerQuoteInput, SubmitInput, ReasonInput, DeliveryProfileInput,
     AcceptInput, ReorderInput, AccessRequestInput, ChallengeInput, ActivatePasswordInput)
 from app.portal.security import require_origin
 
@@ -412,6 +412,29 @@ def command_version(value: str | None = Header(default=None, alias="If-Match")):
     return int(value[1:-1])
 
 
+@router.get('/delivery-profile')
+def delivery_profile(request: Request, client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    # Customer session only; account identity always comes from the current principal.
+    from app.portal import delivery_profile_service
+    data = delivery_profile_service.read(db, request.cookies.get(cookie_name('session')))
+    db.commit()
+    return ok(data)
+
+
+@router.put('/delivery-profile')
+def save_delivery_profile(body: DeliveryProfileInput, request: Request, expected=Depends(command_version),
+                          client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
+    from app.portal import delivery_profile_service
+    try:
+        data = delivery_profile_service.save(db, request.cookies.get(cookie_name('session')),
+            request.headers.get('x-portal-csrf'), expected, body)
+        db.commit()
+    except PortalError:
+        db.rollback()
+        raise
+    return ok(data)
+
+
 @router.post("/orders/{request_id}/cancel")
 def cancel_order(request_id: UUID, body: ReasonInput, request: Request, expected=Depends(command_version),
                  client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
@@ -474,9 +497,10 @@ def reorder_quote(request_id: UUID, body: ReorderInput, request: Request,
 
 @router.get("/catalog/{item_id}/image")
 def catalog_image(item_id: UUID, request: Request, version: int = Query(..., ge=1),
+                  size: Literal['thumb', 'full'] = Query('full'),
                   client_ip=Depends(_require_portal_proxy), db: Session = Depends(get_db)):
     from fastapi.responses import Response
     from app.portal.image_service import customer_image
-    content = customer_image(db, request.cookies.get(cookie_name("session")), item_id, version)
+    content = customer_image(db, request.cookies.get(cookie_name("session")), item_id, version, size=size)
     return Response(content, media_type='image/jpeg', headers={'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'"})

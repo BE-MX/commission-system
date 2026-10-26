@@ -5,6 +5,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 import TableTools from '@/components/TableTools.vue'
 import { useListPage } from '@/composables/useListPage'
 import { useTableView } from '@/composables/useTableView'
+import { msgError } from '@/utils/feedback'
 import { useAuthStore } from '@/stores/auth'
 import { portalAdminApi } from '@/api/portal'
 import AccessActionDialog from './AccessActionDialog.vue'
@@ -25,6 +26,9 @@ const pageRefresh = { get value() { return { $el: panelRef.value?.querySelector(
 
 const auth = useAuthStore(), listError = ref(''), detailError = ref(''), notice = ref('')
 const detail = ref(null), detailVisible = ref(false), detailLoading = ref(false), accountPage = ref(1), accountPageSize = ref(20)
+const copySource = ref(null), copyLoading = ref(false)
+let copyGeneration = 0, copyController
+function cancelCopy() { copyGeneration++; copyController?.abort(); copyLoading.value = false }
 const action = ref(null), mappingAccess = ref(null), onboardingVisible = ref(false), catalogAccess = ref(null), bindingAccess = ref(null)
 let listController, detailController, listSequence = 0, detailSequence = 0, disposed = false, detailId = ''
 const mappingTrigger = ref(null), pageRoot = ref(null), detailContent = ref(null), detailRefresh = ref(null), onboardingTrigger = ref(null)
@@ -126,12 +130,26 @@ async function closeAction() {
   }
   if (button?.isConnected && !button.disabled) button.focus()
 }
-function openOnboarding() { ++onboardingFocusSequence; onboardingRefresh = Promise.resolve(); onboardingCreatedId = null; onboardingVisible.value = true }
-function created({ id, recovered }) {
-  notice.value = recovered ? '已找到现有客户授权，请核对当前设置；此查询不证明先前命令执行结果。' : '客户授权草稿已创建。请核对后设置为启用，再创建采购账号。'
+async function openCopy(id) {
+  if (copyLoading.value || onboardingVisible.value) return
+  const current = ++copyGeneration
+  copyController?.abort(); copyController = new AbortController(); copyLoading.value = true
+  notice.value = ''
+  const identity = auth.accessToken
+  try {
+    const source = await portalAdminApi.customer(id, { page: 1, page_size: 1 }, copyController.signal)
+    if (disposed || current !== copyGeneration || identity !== auth.accessToken) return
+    openOnboarding(); copySource.value = source
+  } catch (e) { if (!disposed && current === copyGeneration && identity === auth.accessToken) { notice.value = message(e); msgError(notice.value) } }
+  finally { if (current === copyGeneration) copyLoading.value = false }
+}
+function openOnboarding() { cancelCopy(); copySource.value = null; ++onboardingFocusSequence; onboardingRefresh = Promise.resolve(); onboardingCreatedId = null; onboardingVisible.value = true }
+function created({ id, recovered, copied }) {
+  notice.value = copied ? '客户访问已复制，新采购账号可使用邮箱和密码登录。' : recovered ? '已找到现有客户授权，请核对当前设置；此查询不证明先前命令执行结果。' : '客户授权草稿已创建。请核对后设置为启用，再创建采购账号。'
   onboardingCreatedId = id; onboardingRefresh = Promise.all([fetchList(), loadDetail(id, 1)])
 }
 async function closeOnboarding() {
+  cancelCopy()
   onboardingVisible.value = false
   const current = ++onboardingFocusSequence, id = onboardingCreatedId
   await onboardingRefresh
@@ -141,11 +159,12 @@ async function closeOnboarding() {
   if (button?.isConnected && !button.disabled) button.focus()
 }
 function clearPrivate() {
+  cancelCopy()
   ++reviewFocusSequence; reviewRefresh = Promise.resolve()
   ++onboardingFocusSequence; onboardingRefresh = Promise.resolve(); onboardingCreatedId = null
   ++actionFocusSequence; actionRefresh = Promise.resolve()
   ++mappingFocusSequence; mappingRefresh = Promise.resolve()
-  ++listSequence; listController?.abort(); list.value = []; total.value = 0; listError.value = ''; notice.value = ''; action.value = null; mappingAccess.value = null; onboardingVisible.value = false; catalogAccess.value = null; bindingAccess.value = null
+  ++listSequence; listController?.abort(); list.value = []; total.value = 0; listError.value = ''; notice.value = ''; copySource.value = null; action.value = null; mappingAccess.value = null; onboardingVisible.value = false; catalogAccess.value = null; bindingAccess.value = null
   detailVisible.value = false; clearDetail()
 }
 watch(() => [auth.accessToken, auth.user], clearPrivate)
@@ -172,7 +191,7 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
         <el-table-column v-if="visibleKeys.includes('status')" prop="status" label="访问状态" min-width="120" max-width="180"><template #default="{ row }"><StatusBadge :value="row.status" :dictionary="ACCESS_STATUS" effect="plain" /></template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('capabilities')" label="客户能力" min-width="140" max-width="220" :sort-by="capabilityText" show-overflow-tooltip><template #default="{ row }">{{ capabilityText(row) }}</template></el-table-column>
         <el-table-column v-if="visibleKeys.includes('sales-user')" label="负责业务员" min-width="110" max-width="180" :sort-by="salesName" show-overflow-tooltip><template #default="{ row }">{{ salesName(row) }}</template></el-table-column>
-        <el-table-column label="操作" fixed="right" min-width="100" max-width="140" class-name="table-action-column" :sortable="false"><template #default="{ row }"><GlassButton v-permission="'portal_access:read'" variant="link" :left-icon="View" :data-portal-access="row.id" @click="openDetail(row.id)">管理</GlassButton></template></el-table-column>
+        <el-table-column label="操作" fixed="right" min-width="160" max-width="220" class-name="table-action-column" :sortable="false"><template #default="{ row }"><GlassButton v-permission="'portal_access:read'" variant="link" :left-icon="View" :data-portal-access="row.id" @click="openDetail(row.id)">管理</GlassButton><GlassButton v-permission="'portal_access:admin'" variant="link" :disabled="row.status !== 'enabled' || copyLoading" @click="openCopy(row.id)">复制</GlassButton></template></el-table-column>
       </el-table>
       <el-pagination class="pager" :current-page="page" :page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="handlePageChange" @size-change="handleSizeChange" />
     </div>
@@ -214,7 +233,7 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
     </DetailDrawer>
     <BindingReviewDialog v-if="bindingAccess" :access="bindingAccess" @close="closeReview('binding')" @changed="reviewChanged" @denied="hideReviewPrivate" />
     <CatalogAccessDialog v-if="catalogAccess" :access="catalogAccess" @close="closeReview('catalog')" @changed="reviewChanged" @denied="hideReviewPrivate" />
-    <OnboardingDialog v-if="onboardingVisible" @close="closeOnboarding" @created="created" @denied="hideCustomerPrivate" />
+    <OnboardingDialog v-if="onboardingVisible" :key="copySource?.id || 'new'" :source="copySource" @close="closeOnboarding" @created="created" @denied="hideCustomerPrivate" />
     <MappingDialog v-if="mappingAccess" :access="mappingAccess" @close="closeMapping" @changed="mappingChanged" />
     <AccessActionDialog v-if="action" :access="action.access" :action="action.type" :account="action.account" @close="closeAction" @changed="actionChanged" @denied="hideActionPrivate" />
   </section>

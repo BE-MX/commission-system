@@ -55,3 +55,16 @@ def test_managed_image_fails_closed(cloud_image, change, status):
     assert caught.value.status == status
     assert 'image.png' not in caught.value.message and 'other-instance' not in caught.value.message
     if change != 'corrupt_cache': assert len(calls) == 1
+
+
+def test_registered_local_original_replacement_does_not_reuse_old_rendition(cloud_image, monkeypatch):
+    ctx, item, asset, token, record, path, _ = cloud_image
+    settings = service.transfers.get_settings()
+    settings.COS_INSTANCE_ID = record.source_instance
+    monkeypatch.setattr(service.transfers, 'get_settings', lambda: settings)
+    first = service.customer_image(ctx.db, token, item.public_id, item.row_version)
+    assert first.startswith(b'\xff\xd8')
+    path.write_bytes(b'corrupted registered original')
+    with pytest.raises(PortalError) as caught:
+        service.customer_image(ctx.db, token, item.public_id, item.row_version)
+    assert caught.value.code == 'IMAGE_UNAVAILABLE'
