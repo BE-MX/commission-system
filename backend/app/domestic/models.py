@@ -208,7 +208,8 @@ class DomesticOrder(Base):
     order_category = Column(String(16).evaluates_none(), nullable=True, default="normal", comment="normal=普货,special=特单；生产订单为空")
     order_type = Column(String(32), comment="订单类型（sys_dict: domestic_order_type）")
     order_channel = Column(String(32), comment="订单渠道（sys_dict: domestic_order_channel）")
-    status = Column(SmallInteger, nullable=False, default=1, comment="0=草稿,1=生产中,2=已完工,3=已发货,4=已终止")
+    status = Column(SmallInteger, nullable=False, default=1, comment="0=草稿,1=生产中,2=已完成,3=已发货,4=已终止")
+    skip_all_records = Column(JSON, nullable=True, comment="整单跳过请求幂等结果与操作者审计")
     review_version = Column(Integer, nullable=False, default=0, server_default="0", comment="价格审核提交轮次")
     total_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="订单明细总金额")
     charged_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="已从客户余额扣除金额")
@@ -264,6 +265,7 @@ class DomesticOrderItem(Base):
     route_id = Column(Integer, ForeignKey("process_route.id", ondelete="RESTRICT"),
                       comment="下单时锁定的路线快照，后改映射不影响在制单")
     order_qty = Column(Integer, nullable=False, comment="下单数量")
+    termination_records = Column(JSON, nullable=True, comment="明细终止审计：数量、单件、原因、操作者、北京时间与幂等键")
     unit_price = Column(Numeric(14, 2), nullable=False, comment="产品成交价 = 优惠价 + 手工费")
     original_price = Column(Numeric(14, 2), nullable=False, comment="原价快照")
     default_discount_price = Column(Numeric(14, 2), nullable=True, comment="系统默认优惠价快照，不含手工费")
@@ -533,7 +535,7 @@ class DomesticItemUnit(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     item_id = Column(Integer, ForeignKey("ark_domestic_order_items.id", ondelete="CASCADE"), nullable=False)
     unit_no = Column(Integer, nullable=False, comment="明细内单件序号，从1开始")
-    status = Column(SmallInteger, nullable=False, default=1, comment="0=数量缩减停用,1=有效")
+    status = Column(SmallInteger, nullable=False, default=1, comment="0=数量缩减停用,1=有效,2=终止不可复用")
     created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     __table_args__ = (

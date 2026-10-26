@@ -42,38 +42,45 @@ def ensure_item_line_no(db: Session, item: DomesticOrderItem) -> int:
 
 
 def ensure_item_units(db: Session, item: DomesticOrderItem) -> list[DomesticItemUnit]:
+    # Printing can materialize units too. Refresh quantity under the same parent
+    # locks as writers before using it, so a waiting print cannot undo cancellation.
+    db.flush()
+    db.query(DomesticOrder).filter_by(id=item.order_id).populate_existing().with_for_update().one()
+    db.query(DomesticOrderItem).filter_by(id=item.id).populate_existing().with_for_update().one()
     ensure_item_line_no(db, item)
     sync_item_units(db, item, item.order_qty)
     return db.query(DomesticItemUnit).filter(
         DomesticItemUnit.item_id == item.id,
         DomesticItemUnit.status == 1,
-    ).order_by(DomesticItemUnit.unit_no.asc()).all()
+    ).order_by(DomesticItemUnit.unit_no.asc()).populate_existing().with_for_update().all()
 
 
 def _ensure_units_materialized(db: Session, item: DomesticOrderItem) -> None:
     """Fast-path normal scans without hydrating every unit ORM row."""
-    count, maximum = db.query(
-        func.count(DomesticItemUnit.id), func.max(DomesticItemUnit.unit_no),
+    count = db.query(
+        func.count(DomesticItemUnit.id),
     ).filter(
         DomesticItemUnit.item_id == item.id,
         DomesticItemUnit.status == 1,
-    ).one()
-    if int(count or 0) != item.order_qty or int(maximum or 0) != item.order_qty:
+    ).scalar()
+    if int(count or 0) != item.order_qty:
         sync_item_units(db, item, item.order_qty)
 
 
 def sync_item_units(db: Session, item: DomesticOrderItem, new_qty: int) -> None:
     """Create/reactivate/deactivate unit rows to match quantity.
 
-    Rows with audit history are never deleted. Reducing quantity is rejected when a unit
-    above the new ceiling has an effective report at any process.
+    Rows with audit history are never deleted. Terminated identities are never reused;
+    reducing quantity is rejected when a surplus reusable unit has effective work.
     """
     units = db.query(DomesticItemUnit).filter(
         DomesticItemUnit.item_id == item.id
-    ).order_by(DomesticItemUnit.unit_no.asc()).all()
-    by_no = {unit.unit_no: unit for unit in units}
-
-    surplus_ids = [unit.id for unit in units if unit.unit_no > new_qty]
+    ).order_by(DomesticItemUnit.unit_no.asc()).populate_existing().with_for_update().all()
+    # Cancelled identities can never be reactivated or assigned to later quantities.
+    reusable = [unit for unit in units if unit.status != 2]
+    retained = reusable[:new_qty]
+    surplus = reusable[new_qty:]
+    surplus_ids = [unit.id for unit in surplus]
     if surplus_ids:
         active = db.query(DomesticReportUnit.unit_id).join(
             DomesticReportLog, DomesticReportLog.id == DomesticReportUnit.log_id
@@ -86,16 +93,13 @@ def sync_item_units(db: Session, item: DomesticOrderItem, new_qty: int) -> None:
             raise ValueError(
                 f"单件 {unit_display_code(item, unit.unit_no)} 已有有效报工，数量不能缩到 {new_qty}"
             )
-
-    for unit_no in range(1, new_qty + 1):
-        unit = by_no.get(unit_no)
-        if unit:
-            unit.status = 1
-        else:
-            db.add(DomesticItemUnit(item_id=item.id, unit_no=unit_no, status=1))
-    for unit in units:
-        if unit.unit_no > new_qty:
-            unit.status = 0
+    for unit in retained:
+        unit.status = 1
+    next_no = max((unit.unit_no for unit in units), default=0) + 1
+    for offset in range(max(0, new_qty - len(retained))):
+        db.add(DomesticItemUnit(item_id=item.id, unit_no=next_no + offset, status=1))
+    for unit in surplus:
+        unit.status = 0
     db.flush()
 
 
@@ -282,7 +286,7 @@ def list_item_units(
         DomesticItemUnit.status == 1,
         DomesticItemUnit.unit_no >= start_no,
         DomesticItemUnit.unit_no <= end_no,
-    ).order_by(DomesticItemUnit.unit_no.asc()).all()
+    ).order_by(DomesticItemUnit.unit_no.asc()).populate_existing().with_for_update().all()
     return [{
         "id": unit.id,
         "unit_no": unit.unit_no,

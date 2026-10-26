@@ -46,20 +46,23 @@ def runtime_rule_map(db: Session, route_id: int | None) -> dict[int, dict]:
     }
 
 
-def load_passage_state(db: Session, item: DomesticOrderItem) -> PassageState:
+def load_passage_state(db: Session, item: DomesticOrderItem, *, lock: bool = False) -> PassageState:
     """用两次批量查询加载一个明细的全部实际报工与有效跳过身份。"""
-    reported_rows = (
+    reported_query = (
         db.query(DomesticReportUnit.progress_id, DomesticReportUnit.unit_id)
         .join(DomesticReportLog, DomesticReportLog.id == DomesticReportUnit.log_id)
         .filter(DomesticReportLog.item_id == item.id, DomesticReportLog.revoked == 0)
-        .all()
     )
-    skipped_rows = (
+    skipped_query = (
         db.query(DomesticSkipUnit.progress_id, DomesticSkipUnit.unit_id)
         .join(DomesticSkipLog, DomesticSkipLog.id == DomesticSkipUnit.skip_log_id)
         .filter(DomesticSkipLog.item_id == item.id, DomesticSkipLog.revoked == 0)
-        .all()
     )
+    if lock:
+        reported_query = reported_query.with_for_update()
+        skipped_query = skipped_query.with_for_update()
+    reported_rows = reported_query.all()
+    skipped_rows = skipped_query.all()
     reported: dict[int, set[int]] = {}
     skipped: dict[int, set[int]] = {}
     for progress_id, unit_id in reported_rows:
@@ -69,13 +72,15 @@ def load_passage_state(db: Session, item: DomesticOrderItem) -> PassageState:
     return PassageState(reported_by_progress=reported, skipped_by_progress=skipped)
 
 
-def active_units(db: Session, item: DomesticOrderItem) -> list[DomesticItemUnit]:
-    return (
+def active_units(db: Session, item: DomesticOrderItem, *, lock: bool = False) -> list[DomesticItemUnit]:
+    query = (
         db.query(DomesticItemUnit)
         .filter(DomesticItemUnit.item_id == item.id, DomesticItemUnit.status == 1)
         .order_by(DomesticItemUnit.unit_no.asc())
-        .all()
     )
+    if lock:
+        query = query.populate_existing().with_for_update()
+    return query.all()
 
 
 def _row_index(rows: list[DomesticItemProgress]) -> dict[int, int]:
