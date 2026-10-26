@@ -129,6 +129,7 @@ class TestSchedulerRegistration:
                 "okki_outbound_reconcile",
                 "receipt_delivery",
                 "receipt_index_refresh",
+                "invoice_order_query_recovery",
                 "okki_outbound_delete_reconcile",
             }
             whatsapp_events = scheduler.get_job('whatsapp_event_sync')
