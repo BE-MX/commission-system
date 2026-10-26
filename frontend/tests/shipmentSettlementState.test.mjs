@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canChangeShipment, shipmentActionReason, isShipmentStateReceipt, remainingShipmentQuantity, hasActiveShipment } from '../src/views/invoice/composables/shipmentSettlementState.js'
+import { canChangeShipment, shipmentActionReason, isShipmentStateReceipt, remainingShipmentQuantity, hasActiveShipment, retainedFreightForReplacement } from '../src/views/invoice/composables/shipmentSettlementState.js'
 
 test('settlement actions disappear after outbound creation or uncertain remote state', () => {
   assert.equal(canChangeShipment({ state: 'outbound_pending', outbound: { status: 'pending' } }, 'pause'), false)
@@ -52,4 +52,18 @@ test('state command accepts only the same batch, a newer version and the request
   }
   assert.equal(isShipmentStateReceipt(row, 'resume', { ...receipt, state: 'awaiting_payment' }), true)
   assert.equal(isShipmentStateReceipt(row, 'resume', { ...receipt, state: 'awaiting_verification' }), true)
+})
+
+test('goods cancellation releases quantities while retained freight is claimed only once', () => {
+  const retired = { id: 7, state: 'cancelled_keep_freight',
+    quote: { freight_amount: '121.16', items: [{ invoice_item_id: 8, quantity: 4 }] } }
+  assert.equal(hasActiveShipment([retired]), false)
+  assert.equal(remainingShipmentQuantity({ id: 8, quantity: 10 }, [retired]), 10)
+  assert.equal(retainedFreightForReplacement([retired]), retired)
+  const replacement = { id: 8, state: 'outbound_pending', quote: { retained_freight_settlement_id: 7 } }
+  assert.equal(retainedFreightForReplacement([retired, replacement]), undefined)
+  replacement.state = 'cancelled'
+  assert.equal(retainedFreightForReplacement([retired, replacement]), retired)
+  assert.equal(isShipmentStateReceipt({ id: 7, invoice_id: 1, version: 1 }, 'cancel_deleted',
+    { ...retired, invoice_id: 1, version: 2 }), true)
 })

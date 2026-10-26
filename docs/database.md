@@ -92,6 +92,8 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
 | ark_shipment_outbounds | 未来投递器的冻结 payload/hash、租约和远端映射；settlement_id、outbound_no、可空 remote_id 各唯一，目前无投递执行器 |
 | ark_settlement_events | 创建、暂停、恢复、取消的操作者、原因与北京时间审计 |
 
+2026-10-26 本地扩展（未部署，无 schema 迁移）：结算终态 `cancelled_keep_freight` 表示商品已撤销、原运费保留。其商品应用必须 released，原报价冻结的运费应用必须 applied 且足额对应原 bound 运费目标，保留原金额和资金来源；不修改 Receipt。商品数量、商业调价抵扣及活动批次口径将其视为已撤销，运费财务汇总继续包含它。重建批次的 quote JSON 冻结 `retained_freight_settlement_id` / `retained_freight_amount`，不重复建立运费应收。撤销证明复用不可变 `shipment_create_cancelled` 审计及 `outbound-delete/outbound_deleted` 回执，原出库任务保留远端 ID、快照和错误，状态改 cancelled，不能被读回或重试复活。
+
 `ark_receipts` 新增 batch_id、receivable_id 外键和索引，purpose 默认 ordinary（新增用途 presale_deposit/presale_goods/freight）；唯一 batch_id+receivable_id；xiaoman_order_id 改可空以表达运费目标未建立。金额 NUMERIC(14,2)，时间由 beijing_now 写入。单活动批次由原订单锁和服务校验保证。迁移只做新增/放宽可空，不允许 downgrade 删除财务事实。
 
 ## 临时战报（162_battle_reports，本地实现，未部署）

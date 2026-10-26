@@ -44,7 +44,8 @@
           <el-table-column prop="requested" label="本批数量" min-width="200"><template #default="{ row }"><el-input-number :key="`${row.id}:${row.remaining}:${activeShipment || confirmationPending || saving}`" v-model="row.requested" v-quantity-bounds="{ max: quantityLimit(row), disabled: activeShipment || confirmationPending || saving || stockLoading || stocks.get(row.id)?.available == null }" :precision="0" :min="0" :max="quantityLimit(row)" :disabled="activeShipment || confirmationPending || stockLoading || stocks.get(row.id)?.available == null" controls-position="right" /></template></el-table-column>
         </el-table>
         <h3 class="shipment-section-title">2 · 结算确认</h3>
-        <el-form-item label="本批运费"><el-input-number v-model="freight" :precision="2" :min="0" controls-position="right" /></el-form-item>
+        <el-form-item label="本批运费"><el-input-number v-model="freight" :disabled="!!retainedFreight" :precision="2" :min="0" controls-position="right" /></el-form-item>
+        <el-alert v-if="retainedFreight" :title="`原批次已保留运费 ${invoice.currency} ${money(retainedFreight.quote.freight_amount)}；本次重建沿用该运费，不再重复收取。`" type="info" :closable="false" />
         <el-checkbox v-model="isFinal">人工确认：这是最后一批发货，可抵扣定金</el-checkbox>
         <el-alert v-if="freight > 0" title="运费优先从预付货款余额扣减，不足部分再补款。小满保留独立运费订单，方舟记录原款抵扣，不重复登记实收。" type="info" :closable="false" />
         <ResponsiveDescriptions v-if="quote" :column="2" border class="quote-summary">
@@ -89,14 +90,15 @@
         <el-table-column label="结算方式" min-width="150"><template #default="{ row }">{{ row.payment_term === 'ship_first' ? '先出库后回款' : '先付款后出库' }}</template></el-table-column>
         <el-table-column label="本批欠款" min-width="130"><template #default="{ row }">{{ row.balance ? money(row.balance.outstanding_amount) : '待核对' }}</template></el-table-column>
         <el-table-column label="操作" class-name="table-action-column" min-width="200"><template #default="{ row }">
-          <el-button v-permission="'shipment:write'" v-if="!['cancelled', 'shipped', 'completed'].includes(row.state)" link :disabled="saving || confirmationPending || !canChangeShipment(row, 'cancel')" :title="shipmentActionReason(row, 'cancel')" @click="change(row, 'cancel')"><el-icon><Close /></el-icon>取消本批次</el-button>
+          <el-button v-permission="'shipment:write'" v-if="!['cancelled', 'cancelled_keep_freight', 'shipped', 'completed'].includes(row.state) && !canChangeShipment(row, 'cancel_deleted')" link :disabled="saving || confirmationPending || !canChangeShipment(row, 'cancel')" :title="shipmentActionReason(row, 'cancel')" @click="change(row, 'cancel')"><el-icon><Close /></el-icon>取消本批次</el-button>
+          <el-button v-permission="'shipment:write'" v-if="canChangeShipment(row, 'cancel_deleted')" link type="danger" :disabled="busy || confirmationPending" @click="change(row, 'cancel_deleted')"><el-icon><Close /></el-icon>核实删除并撤销</el-button>
           <el-button :type="row.state === 'paused' ? 'success' : 'warning'" v-permission="'shipment:write'" v-if="canChangeShipment(row, row.state === 'paused' ? 'resume' : 'pause')" link :disabled="saving" @click="change(row, row.state === 'paused' ? 'resume' : 'pause')"><el-icon><SwitchButton /></el-icon>{{ row.state === 'paused' ? '恢复' : '暂停' }}</el-button>
           <el-button v-permission="'shipment:write'" v-if="['uncertain','verifying'].includes(row.freight_target?.status) && (row.freight_target?.remote_order_id || auth.hasPermission('shipment:admin'))" link :disabled="saving" @click="reconcileTarget(row, 'freight')"><el-icon><Check /></el-icon>核对运费单</el-button>
           <el-button v-permission="'shipment:write'" v-if="row.freight_target?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'freight')"><el-icon><Refresh /></el-icon>重试运费单</el-button>
           <el-button v-permission="'shipment:write'" v-if="canReconcileOutbound(row) && (row.outbound?.remote_id || auth.hasPermission('shipment:admin'))" link :disabled="saving" @click="reconcileTarget(row, 'outbound')"><el-icon><Check /></el-icon>核对出库单</el-button>
           <el-button v-permission="'shipment:write'" v-if="row.outbound?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'outbound')"><el-icon><Refresh /></el-icon>重试出库单</el-button>
           <span v-permission="'shipment:write'" v-if="canRecoverOutbound(row)"><el-button v-permission="'shipment:admin'" link :disabled="busy" @click="openOutboundRecovery(row)"><el-icon><Refresh /></el-icon>核实未生成并恢复</el-button></span>
-          <div v-if="!['cancelled', 'shipped', 'completed'].includes(row.state) && !canChangeShipment(row, 'cancel')" class="shipment-action-reason" role="status">{{ shipmentActionReason(row, 'cancel') }}</div>
+          <div v-if="!['cancelled', 'cancelled_keep_freight', 'shipped', 'completed'].includes(row.state) && !canChangeShipment(row, 'cancel') && !canChangeShipment(row, 'cancel_deleted')" class="shipment-action-reason" role="status">{{ shipmentActionReason(row, 'cancel') }}</div>
         </template></el-table-column>
       </el-table>
       </details>
@@ -129,7 +131,7 @@ import { stockRows, shipmentQuantityLimit, shipmentStockError, fillShipmentQuant
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
-import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment, shipmentActionReason, isShipmentStateReceipt, canReconcileOutbound } from '../composables/shipmentSettlementState'
+import { remainingShipmentQuantity, hasActiveShipment, canChangeShipment, shipmentActionReason, isShipmentStateReceipt, canReconcileOutbound, retainedFreightForReplacement } from '../composables/shipmentSettlementState'
 import { canRecoverOutbound, isOutboundRecoveryReceipt } from '../composables/shipmentOutboundRecovery.js'
 import ShipmentOutboundRecovery from './ShipmentOutboundRecovery.vue'
 import { cents, latestRequest } from '@/views/receipt/batchReceiptState'
@@ -170,6 +172,7 @@ function failed(error) { if ([401,403,404].includes(error?.response?.status)) hi
 const quoteRequest = latestRequest(), detailRequest = latestRequest(), stockRequest = latestRequest()
 const selectedSettlement = ref(null)
 const activeShipment = computed(() => hasActiveShipment(settlements.value))
+const retainedFreight = computed(() => retainedFreightForReplacement(settlements.value))
 const fillBlocked = computed(() => loading.value || stockLoading.value || busy.value || pending.value || confirmationPending.value || denied.value || storageBlocked.value || activeShipment.value || !lines.value.some(row => stocks.value.get(row.id)?.available != null))
 function fillQuantities() {
   if (fillBlocked.value) return
@@ -178,14 +181,16 @@ function fillQuantities() {
   lines.value.forEach((row, index) => { row.requested = quantities[index] })
   msgSuccessText(`已填充 ${quantities.filter(quantity => quantity > 0).length} 项；库存待核对项填0。可继续手工调整。`)
 }
-const activeShipmentMessage = computed(() => settlements.value.some(row => row.actions?.cancel?.requires_remote_check)
+const activeShipmentMessage = computed(() => settlements.value.some(row => row.actions?.cancel_deleted?.allowed)
+  ? '原出库单若已在小满删除，请在下方点击“核实删除并撤销”，释放本批商品数量和货款占用。'
+  : settlements.value.some(row => row.actions?.cancel?.requires_remote_check)
   ? '本批出库创建失败。可取消本批次后调整数量重新创建；系统会先核实小满未生成原出库单。'
   : settlements.value.some(row => row.state === 'paused')
   ? '当前批次已暂停，仍保留数量和预付款占用。重新安排请取消本批次；继续原批次请恢复。'
   : '当前已有未完成的出库结算，请先处理下方记录。暂停会保留数量和预付款占用，重新安排请取消本批次。')
 const isFinal = ref(false), paymentTerm = ref('pay_first')
 const quoteFields = [['goods_amount','货款'],['packaging_amount','包装费'],['handling_amount','手续费'],['freight_amount','运费'],['deposit_applied','本批抵扣定金'],['advance_applied','本批抵扣预付货款'],['new_payment_due','本批需补款']]
-const stateLabel = state => ({ pending: '待处理', pending_remote: '待提交检验', confirming: '实际出库确认中', confirm_uncertain: '实际出库待核对', shipped_unfunded: '已出库·回款异常', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', failed: '处理失败', uncertain: '待核对' })[state] || state
+const stateLabel = state => ({ pending: '待处理', pending_remote: '待提交检验', confirming: '实际出库确认中', confirm_uncertain: '实际出库待核对', shipped_unfunded: '已出库·回款异常', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', cancelled_keep_freight: '已撤销·运费保留', failed: '处理失败', uncertain: '待核对' })[state] || state
 const body = () => ({ items: lines.value.filter(row => row.requested > 0).map(row => ({ invoice_item_id: row.id, quantity: row.requested })), freight_amount: String(freight.value || 0), is_final: isFinal.value, payment_term: paymentTerm.value })
 watch(() => JSON.stringify(body()), () => {
   quoteRequest.next(); quote.value = null; quoting.value = false
@@ -205,6 +210,7 @@ async function reload() {
   if (!current(identity) || pending.value || denied.value) return
   if (command && !isConfirmationTarget(data, command)) throw new Error('核对内容与原实际出库单不一致，请保持原记录')
   settlements.value = command ? [protectedRow(data)] : (data.items || data).map(protectedRow)
+  if (retainedFreight.value) freight.value = 0
   lines.value.forEach(row => { row.remaining = remainingShipmentQuantity(row, settlements.value) })
   if (selectedSettlement.value) selectedSettlement.value = settlements.value.find(row => row.id === selectedSettlement.value.id) || null
 }
@@ -303,10 +309,13 @@ async function submit(retry = false) {
 async function change(row, action) {
   if (busy.value || pending.value || confirmationPending.value || denied.value || storageBlocked.value || !canChangeShipment(row, action)) return
   const identity = generation
-  const title = { cancel: '取消本批次', pause: '暂停本批次', resume: '恢复本批次' }[action]
+  const title = { cancel: '取消本批次', cancel_deleted: '核实删除并撤销', pause: '暂停本批次', resume: '恢复本批次' }[action]
   const message = { cancel: row.actions?.cancel?.requires_remote_check
     ? '系统将先核实小满未生成原出库单，再取消结算及失败任务、释放本批数量和预付款占用。保留原回款、缺货失败记录及审计记录，之后可调整数量重新创建。请填写取消原因。'
     : '取消将释放本批数量和预付款占用，保留原回款及审计记录，之后可重新创建。请填写取消原因。',
+    cancel_deleted: row.actions?.cancel_deleted?.keep_freight
+      ? `系统将实时核实小满原出库单已删除，再释放商品数量和货款占用。保留原运费 ${props.invoice.currency} ${money(row.actions.cancel_deleted.retained_freight_amount)} 及其抵扣，重建时不重复收取。原回款、凭证与审计保留。请填写撤销原因。`
+      : '系统将实时核实小满原出库单已删除，再释放本批数量和预付款占用。保留原回款、凭证及审计，之后可重新创建。请填写撤销原因。',
     pause: '暂停仍保留本批数量和预付款占用，期间不能创建新批次。重新安排请取消本批次。请填写暂停原因。',
     resume: '恢复后继续处理原批次，原数量和资金分配保持。请填写恢复原因。' }[action]
   let reason
@@ -315,7 +324,7 @@ async function change(row, action) {
   saving.value = true; error.value = ''; quoteRequest.next(); quote.value = null; quoting.value = false; detailRequest.next()
   let applied = false
   try {
-    const result = await changeShipment(row.id, action, { version: row.version, reason })
+    const result = await changeShipment(row.id, action === 'cancel_deleted' ? 'cancel-deleted-outbound' : action, { version: row.version, reason })
     if (!current(identity)) return
     if (!isShipmentStateReceipt(row, action, result)) throw new Error('操作回执与原批次或目标状态不一致，请刷新原批次核对')
     applied = true
@@ -324,9 +333,12 @@ async function change(row, action) {
     selectedSettlement.value = result
     emit('saved')
     await reload()
-    if (current(identity) && action === 'cancel') await refreshStock()
+    if (current(identity) && ['cancel', 'cancel_deleted'].includes(action)) await refreshStock()
     if (!current(identity)) return
-    msgSuccessText(action === 'cancel' ? '本批次已取消，数量和预付款占用已释放，可重新核算并创建' : `${title}成功`)
+    msgSuccessText(action === 'cancel_deleted' ? (result.state === 'cancelled_keep_freight'
+      ? '本批商品已撤销，数量和货款占用已释放；原运费及其抵扣保留，可重新创建'
+      : '原出库删除已核实，批次占用已释放，可重新创建')
+      : action === 'cancel' ? '本批次已取消，数量和预付款占用已释放，可重新核算并创建' : `${title}成功`)
   }
   catch (e) { if (current(identity)) { if (applied && ![401,403,404].includes(e?.response?.status)) void showError(`${title}已完成，列表刷新失败，请重新打开核对`); else failed(e) } }
   finally { if (current(identity)) saving.value = false }

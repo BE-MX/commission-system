@@ -6,6 +6,11 @@
 - 新迁移 `205_domestic_item_termination` 为订单和明细各加 nullable JSON 审计列；集成后单 head，父 revision 为最新主线的 `204_portal_delivery_profile`；未对共享/生产库执行迁移或业务写入。
 - 验证：内存 SQLite 后端相关回归 219 passed；最后的可发货信息及打印断言另 2 passed，迁移数据保留/DDL及主线迁移链测试 8 passed。前端定向 19 passed，`npm run build` 通过（既有 chunk 大小与 auth 模块混合导入提示）；增量约定与 diff 检查通过。桌面 1440px/手机 390px 实际 Vue → 拦截 HTTP → FastAPI/SQLite 验证数量、退款、跳过、完成状态及不能凭跳过登记发货；无页面异常/未覆盖 API，测试服务已停止。没有在真实 MySQL 上重现并发，当前读锁语义由 SQL 契约与独立静态审查覆盖。
 - 独立审查发现并修复失效码复活、稀疏码漏印、旧快照读、扩大重试范围及审计硬删，最终复核无阻断问题。证据保留 `tmp/domestic-completion-browser/` 和 `tmp/domestic-completion-build.log`；API/数据库/业务说明已同步。Git 巡检使用 `--no-fetch` 本地引用快照，不代表远端实时状态。
+## 2026-10-26 Veronika 第二批撤销与保留运费（Codex，本地已实现，生产维护待发布）
+
+- 用户要求先处理已在小满删除的 2026.Veronika赊销1002-02，并允许删除整张出库；已明确保留原121.16美元运费及抵扣，原回款不删。固定对象 invoice981 / settlement7 / outbound6 / remote105879019644375；拟释放10行40件及1415.54商品款应用9/10/11，保留运费应用12和远端运费105878936774347。
+- 已完成只读删除核实、原始备份及维修预览，未执行生产业务撤销。旧版取消必须释放全部资金，不能安全保留运费；新终态 cancelled_keep_freight 需完整发布后再定点处理。用户现已明确授权合并、推送、受管部署并立即定点处理；当前发布尚待执行。
+- 分支 codex/presale-deleted-cancel 实现新动作、来源/删除证明、事务与执行器锁、运费沿用及前后端终态口径。新增29项SQLite/供应商证明、5项真实MySQL和8场景浏览器验证通过；扩大回归199过、1既有GET隔离失败，构建通过。独立审查未见具体P1/P2。详见 [处理报告](reports/2026-10-26-presale-deleted-outbound-cancellation.md)。
 
 ## 2026-10-26 客户门户访问复制、图片与下单资料（Codex，Git交付，未部署）
 

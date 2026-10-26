@@ -244,10 +244,17 @@ def _line_snapshot(detail):
     return result
 
 
+from app.invoice.stock_reservations import fenced
+
+
+@fenced
 def refresh(db, outbound_id, *, confirmation_token=None):
     outbound = db.get(ShipmentOutbound, outbound_id)
     if not outbound or not outbound.remote_id:
         raise ValueError("出库任务尚无小满出库单 ID")
+    if outbound.status == 'cancelled':
+        db.rollback()
+        return 'cancelled'
     detail = remote.read(db, "/v1/invoices/outbound/info", {"outbound_invoice_id": outbound.remote_id})
     token = okki_client.ensure_access_token(db)
     active = outbound_presence.is_active(token, outbound.remote_id, detail.get("create_time"))
@@ -275,6 +282,9 @@ def refresh(db, outbound_id, *, confirmation_token=None):
     db.refresh(outbound, with_for_update=True)
     settlement = db.get(ShipmentSettlement, outbound.settlement_id)
     db.refresh(settlement, with_for_update=True)
+    if outbound.status == 'cancelled':
+        db.rollback()
+        return 'cancelled'
     if funding_before is not None and funding_before != existing_funding.binding(db, invoice, settlement, outbound, current=True):
         db.rollback()
         raise ValueError('订单、批次或回款在资金核验期间已变化，请重新核对原批次')
