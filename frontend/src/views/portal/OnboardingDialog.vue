@@ -6,10 +6,14 @@ import { useAuthStore } from '@/stores/auth'
 import { portalAdminApi } from '@/api/portal'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import CatalogPicker from './CatalogPicker.vue'
+import { newRequestKey } from '@/utils/requestKey.js'
+import { isEmail } from '@/utils/validators'
+const props = defineProps({ source: { type: Object, default: null } })
+const commandKey = newRequestKey()
 
 const emit = defineEmits(['close', 'created', 'denied'])
 const auth = useAuthStore(), selected = ref(null), products = ref([]), error = ref(''), state = ref('idle'), checking = ref(false), denied = ref(false), errorSummary = ref(null)
-const form = reactive({ can_view_price: true, can_order: true, confirmed: false })
+const form = reactive({ can_view_price: true, can_order: true, confirmed: false, email: '', password: '' })
 const reasons = { CUSTOMER_DISPUTED: '客户身份存在冲突', VERIFIED_IDENTITY_MISSING: '缺少当前来源的已验证公司身份', MULTIPLE_VERIFIED_IDENTITIES: '存在多个已验证外部身份，需先复核', IDENTITY_VALUE_INVALID: '外部公司 ID 不符合要求', ACCESS_ALREADY_EXISTS: '已经配置门户授权' }
 const locked = computed(() => ['sending', 'uncertain'].includes(state.value) || checking.value)
 let generation = 0, sequence = 0, controller, statusController, frozen = null, disposed = false, errorSequence = 0
@@ -23,7 +27,7 @@ async function showError(value) {
 function hideDenied(e) {
   if (![401, 403, 404].includes(typeof e === 'number' ? e : e?.response?.status)) return
   denied.value = true; ++sequence; controller?.abort()
-  selected.value = null; products.value = []; list.value = []; total.value = 0; searchForm.keyword = ''; form.confirmed = false
+  selected.value = null; products.value = []; list.value = []; total.value = 0; searchForm.keyword = ''; form.confirmed = false; form.email = ''; form.password = ''
   // An unknown result must retain its original binding/body for inspection or exact retry.
   if (!['sending', 'uncertain'].includes(state.value)) frozen = null
   emit('denied')
@@ -38,10 +42,15 @@ const { list, total, page, pageSize, loading, searchForm, handleSearch, handlePa
   } catch (e) { if (current === sequence && identity === generation) { hideDenied(e); void showError(message(e)) }; return { items: [], total: 0 } }
 }, { searchForm: { keyword: '' } })
 function choose(row) { if (!locked.value && row.ready) { selected.value = row; products.value = []; form.confirmed = false; error.value = ''; state.value = 'idle'; frozen = null } }
+watch(() => [form.email, form.password], () => { form.confirmed = false })
 watch(() => form.can_view_price, value => { if (!value) form.can_order = false })
 watch(() => [form.can_view_price, form.can_order, products.value], () => { form.confirmed = false }, { deep: true, flush: 'sync' })
 function body() {
   if (!selected.value?.ready || !form.confirmed) throw new Error('请核对客户、商品和能力后确认。')
+  if (props.source) {
+    if (!isEmail(form.email.trim()) || form.password.length < 8 || form.password.length > 64 || new TextEncoder().encode(form.password).length > 72) throw new Error('请输入有效邮箱和8–64位密码（最多72个UTF-8字节）。')
+    return { binding_fingerprint: selected.value.binding_fingerprint, canonical_customer_id: selected.value.canonical_customer_id, assignment_id: selected.value.assignment_id, okki_identity_id: selected.value.okki_identity_id, email: form.email.trim(), password: form.password, source_version: props.source.row_version, source_catalog_version: props.source.catalog_version }
+  }
   return { binding_fingerprint: selected.value.binding_fingerprint, canonical_customer_id: selected.value.canonical_customer_id, assignment_id: selected.value.assignment_id,
     okki_identity_id: selected.value.okki_identity_id, catalog_item_ids: products.value.map(item => item.id),
     capabilities: { can_view_price: form.can_view_price, can_order: form.can_order } }
@@ -52,10 +61,10 @@ async function create(retry = false) {
   const identity = generation, wasUnknown = state.value === 'uncertain'
   state.value = 'sending'; error.value = ''
   try {
-    const result = await portalAdminApi.createCustomer(structuredClone(frozen))
+    const result = props.source ? await portalAdminApi.copyCustomer(props.source.id, commandKey, structuredClone(frozen)) : await portalAdminApi.createCustomer(structuredClone(frozen))
     if (identity !== generation) return
-    if (!result.id || result.canonical_customer_id !== frozen.canonical_customer_id || result.status !== 'draft') throw new Error('创建回执不完整，请查询当前客户授权。')
-    state.value = 'success'; msgSuccess('创建客户授权草稿'); emit('created', { id: result.id, recovered: false }); emit('close')
+    if (!result.id || result.canonical_customer_id !== frozen.canonical_customer_id || result.status !== (props.source ? 'enabled' : 'draft')) throw new Error('创建回执不完整，请查询当前客户授权。')
+    state.value = 'success'; form.password = ''; frozen = null; msgSuccess(props.source ? '复制客户访问并创建账号' : '创建客户授权草稿'); emit('created', { id: result.id, recovered: false, copied: Boolean(props.source) }); emit('close')
   } catch (e) {
     if (identity !== generation) return
     state.value = wasUnknown || !e?.response?.status || e.response.status >= 500 ? 'uncertain' : 'failed'
@@ -78,7 +87,7 @@ async function inspectExisting() {
 }
 function openExisting(row) { if (row.existing_access?.id && !locked.value) { emit('created', { id: row.existing_access.id, recovered: true }); emit('close') } }
 function close() { if (!locked.value) emit('close') }
-function clear() { generation++; sequence++; errorSequence++; controller?.abort(); statusController?.abort(); frozen = null; selected.value = null; products.value = []; list.value = []; state.value = 'idle' }
+function clear() { generation++; sequence++; errorSequence++; controller?.abort(); statusController?.abort(); frozen = null; form.password = ''; selected.value = null; products.value = []; list.value = []; state.value = 'idle' }
 watch(() => [auth.accessToken, auth.user], () => { clear(); emit('close') })
 function beforeUnload(event) { if (locked.value) { event.preventDefault(); event.returnValue = '' } }
 window.addEventListener('beforeunload', beforeUnload)
@@ -87,11 +96,12 @@ onBeforeUnmount(() => { disposed = true; clear(); window.removeEventListener('be
 </script>
 
 <template>
-  <el-dialog :model-value="true" :title="!denied && selected ? `创建授权草稿 · ${selected.company_display_name}` : '开通客户门户 · 选择方舟客户'" width="760px" class="portal-onboarding-dialog" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
+  <el-dialog :model-value="true" :title="props.source ? '复制客户访问 · 选择新客户' : !denied && selected ? `创建授权草稿 · ${selected.company_display_name}` : '开通客户门户 · 选择方舟客户'" width="760px" class="portal-onboarding-dialog" :close-on-click-modal="false" :close-on-press-escape="!locked" :show-close="!locked" @update:model-value="value => { if (!value) close() }">
     <div class="onboarding-content" :aria-busy="loading || state === 'sending' || checking || undefined">
-    <p v-if="loading || state === 'sending' || checking" role="status">{{ checking ? '正在查询已有客户授权…' : state === 'sending' ? '正在创建客户授权草稿，请等待回执…' : '正在读取可开通客户…' }}</p>
+    <p v-if="loading || state === 'sending' || checking" role="status">{{ checking ? '正在查询已有客户授权…' : state === 'sending' ? props.source ? '正在复制客户访问并创建账号，请等待回执…' : '正在创建客户授权草稿，请等待回执…' : '正在读取可开通客户…' }}</p>
     <el-alert v-if="error" ref="errorSummary" id="portal-onboarding-error" tabindex="-1" :title="error" type="error" :closable="false" />
     <el-alert v-if="state === 'uncertain'" title="创建结果未知，原客户、身份和商品内容已冻结。请先查询已有授权；未查到时只重试原内容，不更换客户或商品。" type="warning" :closable="false" />
+    <p v-if="props.source && !denied">复制自 {{ props.source.company_display_name }} · {{ props.source.capabilities.can_order ? '允许查价与下单' : props.source.capabilities.can_view_price ? '仅查价' : '仅查看目录' }} · {{ props.source.catalog_item_ids.length }} 项商品。新客户独立保存订单与资料。</p>
     <template v-if="!selected && !denied">
       <p>只显示当前有效主负责人范围内的客户。开通需要唯一、已验证的方舟外部公司身份；身份缺失或冲突须先在客户档案中复核。</p>
       <div class="candidate-search"><el-input v-model="searchForm.keyword" aria-label="搜索开通客户" placeholder="公司名称或完整方舟客户编码" maxlength="100" @keyup.enter="handleSearch" /><GlassButton :disabled="loading" @click="handleSearch">搜索客户</GlassButton></div>
@@ -105,11 +115,12 @@ onBeforeUnmount(() => { disposed = true; clear(); window.removeEventListener('be
     </template>
     <template v-else-if="!denied">
       <dl class="identity"><div><dt>方舟客户</dt><dd>{{ selected.company_display_name }} · {{ selected.customer_code || selected.canonical_customer_id }}</dd></div><div><dt>主负责人</dt><dd>{{ selected.sales_display_name || selected.sales_user_id }}</dd></div><div><dt>已验证 OKKI 公司</dt><dd>{{ selected.okki_company_id }}</dd></div></dl>
-      <CatalogPicker v-model="products" :disabled="locked" @denied="catalogDenied" />
+      <CatalogPicker v-if="!props.source" v-model="products" :disabled="locked" @denied="catalogDenied" />
       <el-form label-position="top" :disabled="locked" :aria-describedby="error ? 'portal-onboarding-error' : undefined">
-        <h3>客户能力</h3><el-checkbox v-model="form.can_view_price">允许查看价格、订单金额与 PI</el-checkbox><el-checkbox v-model="form.can_order" :disabled="locked || !form.can_view_price">允许下单及确认交易条件</el-checkbox>
+        <template v-if="props.source"><el-form-item label="访问邮箱"><el-input v-model="form.email" type="email" autocomplete="off" maxlength="254" /></el-form-item><el-form-item label="登录密码"><el-input v-model="form.password" type="password" show-password autocomplete="new-password" maxlength="64" /></el-form-item></template>
+        <template v-else><h3>客户能力</h3><el-checkbox v-model="form.can_view_price">允许查看价格、订单金额与 PI</el-checkbox><el-checkbox v-model="form.can_order" :disabled="locked || !form.can_view_price">允许下单及确认交易条件</el-checkbox>
         <el-alert title="此步骤只创建授权草稿，不启用访问、不创建采购账号、不发送邀请。核对草稿后，再启用客户并邀请采购联系人。" type="info" :closable="false" />
-        <el-checkbox v-model="form.confirmed">我已核对公司身份、负责人、已选商品和客户能力</el-checkbox>
+        </template><el-checkbox v-model="form.confirmed">{{ props.source ? '我已核对新客户身份、复制权限和采购邮箱；创建后立即允许登录' : '我已核对公司身份、负责人、已选商品和客户能力' }}</el-checkbox>
       </el-form>
     </template>
     </div>
@@ -118,7 +129,7 @@ onBeforeUnmount(() => { disposed = true; clear(); window.removeEventListener('be
       <GlassButton v-if="selected && !locked" @click="selected = null; form.confirmed = false">返回选择客户</GlassButton>
       <GlassButton v-if="selected || state === 'uncertain'" :disabled="state === 'sending'" :loading="checking" @click="inspectExisting">查询已有授权</GlassButton>
       <GlassButton v-if="state === 'uncertain'" v-permission="'portal_access:admin'" :disabled="checking" variant="primary" @click="create(true)">重试原内容</GlassButton>
-      <GlassButton v-else-if="selected" v-permission="'portal_access:admin'" :loading="state === 'sending'" :disabled="!form.confirmed || checking" variant="primary" @click="create()">创建授权草稿</GlassButton>
+      <GlassButton v-else-if="selected" v-permission="'portal_access:admin'" :loading="state === 'sending'" :disabled="!form.confirmed || checking" variant="primary" @click="create()">{{ props.source ? '复制并创建账号' : '创建授权草稿' }}</GlassButton>
     </template>
   </el-dialog>
 </template>

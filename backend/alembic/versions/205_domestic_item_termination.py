@@ -2,8 +2,8 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = '204_domestic_item_termination'
-down_revision = '202_presale_order_revision'
+revision = '205_domestic_item_termination'
+down_revision = '204_portal_delivery_profile'
 branch_labels = None
 depends_on = None
 

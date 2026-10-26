@@ -1,5 +1,5 @@
 {
-  "source_sha256": "cd0ccf05a66a008482d0bec9f4af846f189e7e764dd065f37735e283f1a0a52a",
+  "source_sha256": "83e6849bc56fcd78151148c66a4777d55f4c168fc87fd208530bdf4442c7faae",
   "favorite_access": {
     "PortalCatalog": [
       {
@@ -394,6 +394,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -429,6 +431,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -456,6 +460,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -483,6 +489,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -510,6 +518,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -537,6 +547,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -570,6 +582,95 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "PerfGoalDashboard": [
+      {
+        "permission": "perf_goal:read"
+      },
+      {
+        "permission": "perf_goal:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "PerfGoalTargets": [
+      {
+        "permission": "perf_goal:write"
+      },
+      {
+        "permission": "perf_goal:write"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read"
+        ]
+      }
+    ],
+    "PerfGoalReports": [
+      {
+        "permission": "perf_goal:read"
+      },
+      {
+        "permission": "perf_goal:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -597,6 +698,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -624,6 +727,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -939,6 +1044,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -1560,6 +1667,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
@@ -1595,6 +1704,8 @@
           "festival_order:read",
           "battle_report:read",
           "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read"
         ]
