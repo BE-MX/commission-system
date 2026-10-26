@@ -1,3 +1,9 @@
+## 2026-10-26 Veronika 第二批撤销与保留运费（Codex，本地已实现，生产维护待发布）
+
+- 用户要求先处理已在小满删除的 2026.Veronika赊销1002-02，并允许删除整张出库；已明确保留原121.16美元运费及抵扣，原回款不删。固定对象 invoice981 / settlement7 / outbound6 / remote105879019644375；拟释放10行40件及1415.54商品款应用9/10/11，保留运费应用12和远端运费105878936774347。
+- 已完成只读删除核实、原始备份及维修预览，未执行生产业务撤销。旧版取消必须释放全部资金，不能安全保留运费；新终态 cancelled_keep_freight 需完整发布后再定点处理。用户现已明确授权合并、推送、受管部署并立即定点处理；当前发布尚待执行。
+- 分支 codex/presale-deleted-cancel 实现新动作、来源/删除证明、事务与执行器锁、运费沿用及前后端终态口径。新增29项SQLite/供应商证明、5项真实MySQL和8场景浏览器验证通过；扩大回归199过、1既有GET隔离失败，构建通过。独立审查未见具体P1/P2。详见 [处理报告](reports/2026-10-26-presale-deleted-outbound-cancellation.md)。
+
 ## 2026-10-23 浏览器标签页 LeShine LOGO（Codex，Git 交付，未部署）
 
 - 分支 `codex/leshine-tab-logo`；主站 `frontend/index.html` 的 favicon 从 Vite 默认图标改为现有 `/logo.webp`，与平台侧栏共用 LeShine 品牌资源，登录和主站路由共用。

@@ -151,7 +151,7 @@ def _with_active_settlement(db, invoice, summary):
     from app.invoice import shipment_payment_policy as payment_policy
     from app.invoice.settlement_models import ShipmentSettlement
     rows = db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id == invoice.id,
-        ShipmentSettlement.state != "cancelled").order_by(ShipmentSettlement.id).all()
+        ShipmentSettlement.state.notin_(("cancelled", "cancelled_keep_freight"))).order_by(ShipmentSettlement.id).all()
     summary["funding_mode"] = "presale_pool"
     summary["payment_settlements"] = []
     for row in rows:

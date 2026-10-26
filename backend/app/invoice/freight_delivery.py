@@ -136,7 +136,7 @@ def _claim(db, target_id):
         db.refresh(settlement, with_for_update=True)
     if (target.kind != "freight" or target.remote_status != "unverified"
             or target.remote_order_id or not settlement
-            or settlement.state in {"cancelled", "paused", "review_required"}):
+            or settlement.state in {"cancelled", "cancelled_keep_freight", "paused", "review_required"}):
         db.rollback()
         return None
     require_delivery()

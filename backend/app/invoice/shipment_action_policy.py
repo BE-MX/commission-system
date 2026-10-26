@@ -1,5 +1,6 @@
 """Shared local action rules for settlement commands and their UI facts."""
 from app.invoice.presale_runtime import POOL_PURPOSES
+from app.invoice.shipment_cancellation_policy import CANCELLED_STATES
 
 
 def failed_outbound_candidate(row, outbound):
@@ -18,7 +19,7 @@ def action_reason(row, action, *, outbound, freight, applications, receipts, lat
     if action not in {'cancel', 'pause', 'resume'}:
         return '无效的结算状态变更'
     failed_cancel = action == 'cancel' and failed_outbound_candidate(row, outbound)
-    if row.state in {'shipped', 'cancelled', 'outbound_uncertain', 'review_required'} and not failed_cancel:
+    if row.state in {'shipped', *CANCELLED_STATES, 'outbound_uncertain', 'review_required'} and not failed_cancel:
         return '当前结算状态不能执行此操作'
     if outbound and not failed_cancel:
         return '已有出库任务，请先核实远端效果'

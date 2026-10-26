@@ -178,7 +178,7 @@ def _check_fresh(db,graph,body):
     row,receipt,invoice=graph.settlement,graph.receipt,graph.invoice
     if row.version!=body.version or receipt.version!=body.receipt_version:raise ValueError('原结算或首款版本已变化')
     if row.state not in {'awaiting_payment','paused'}:raise ValueError('仅未付款或暂停的旧批次支持资金升级')
-    active=[entry for entry in graph.settlements if entry.state not in {'shipped','cancelled'}]
+    active=[entry for entry in graph.settlements if entry.state not in {'shipped','cancelled','cancelled_keep_freight'}]
     if len(active)!=1 or active[0].id!=row.id:raise ValueError('必须是本订单唯一活动结算')
     if (len(graph.receipts)!=1 or receipt.invoice_id!=invoice.id or receipt.customer_id!=invoice.customer_id
             or receipt.currency!=invoice.currency or receipt.xiaoman_order_id!=invoice.xiaoman_order_id
@@ -360,7 +360,10 @@ def _replay(db,graph,body,current):
             !=[{key:part[key] for key in keys} for part in after['applications']]):
         raise ValueError('资金升级后分配冻结事实已变化')
     expected='released' if row.state=='cancelled' else 'applied' if row.state=='shipped' else 'reserved'
-    if any(app.status!=expected for app in apps):raise ValueError('资金升级后分配状态与原批不一致')
+    if row.state == 'cancelled_keep_freight':
+        if any(app.status != ('applied' if app.component == 'freight' else 'released') for app in apps):
+            raise ValueError('资金升级后保留运费的分配状态与原批不一致')
+    elif any(app.status!=expected for app in apps):raise ValueError('资金升级后分配状态与原批不一致')
     pools.pool_lots(db,graph.invoice,current=True)
     pools.validate_quote_applications(row,apps,{receipt.id:receipt})
     return _result(db,graph,amendment)

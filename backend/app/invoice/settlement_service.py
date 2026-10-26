@@ -13,6 +13,7 @@ from app.invoice.settlement_pricing import quote_current
 from app.invoice.presale_funding import plan_funding
 from app.invoice import presale_runtime as pools
 from app.invoice import shipment_payment_policy as payment_policy
+from app.invoice import shipment_cancellation_policy as cancellation
 from app.invoice.shipment_action_policy import action_reason, failed_outbound_candidate
 from app.invoice.presale_lines import remote_items
 from app.invoice.presale_order_revision import sources as revision_sources
@@ -79,7 +80,8 @@ def fetch_evidence(db, invoice):
         raise ValueError("小满预售主单已删除或活动列表未确认，请先核对原单")
     evidence = {"receipt": snapshot, "order": order, "outbounds": find_related(db, order),
                 "freight": {}}
-    shipped = db.query(ShipmentSettlement.id).filter_by(invoice_id=invoice.id, state="shipped").all()
+    shipped = db.query(ShipmentSettlement.id).filter(ShipmentSettlement.invoice_id == invoice.id,
+        ShipmentSettlement.state.in_(('shipped', cancellation.CANCELLED_KEEP_FREIGHT))).all()
     for (settlement_id,) in shipped:
         target = db.query(Receivable).filter_by(settlement_id=settlement_id, kind="freight").first()
         if target:
@@ -131,7 +133,7 @@ def check_shipped_funding(db, invoice, evidence, shipped, *, current=False):
 
 def check_outbounds(db, invoice, evidence, *, pending=None, current=False):
     known = db.query(ShipmentOutbound).filter(ShipmentOutbound.invoice_id == invoice.id,
-        ShipmentOutbound.remote_id.isnot(None))
+        ShipmentOutbound.remote_id.isnot(None), ShipmentOutbound.status != 'cancelled')
     known = _current(known, current, ShipmentOutbound.id).all()
     live = {str(x["outbound_invoice_id"]): x for x in evidence["outbounds"]}
     if set(live) != {x.remote_id for x in known}:
@@ -164,7 +166,7 @@ def build_quote(db, invoice, body, evidence, *, current=False):
             raise ValueError("预售分批出库暂不支持共享 OKKI 明细的通用产品合并行")
         remote_line_ids.add(identity)
     active = db.query(ShipmentSettlement.id).filter(ShipmentSettlement.invoice_id == invoice.id,
-        ShipmentSettlement.state.notin_(["shipped", "cancelled"]))
+        ShipmentSettlement.state.notin_(["shipped", *cancellation.CANCELLED_STATES]))
     active = _current(active, current, ShipmentSettlement.id).first()
     if active:
         raise ValueError("已有未完成的活动发货结算，请先处理原批次")
@@ -173,6 +175,10 @@ def build_quote(db, invoice, body, evidence, *, current=False):
     available = goods_balance(db, invoice, evidence["receipt"], current=current)
     shipped = _current(db.query(ShipmentSettlement).filter_by(invoice_id=invoice.id, state="shipped"), current, ShipmentSettlement.id).all()
     check_shipped_funding(db, invoice, evidence, shipped, current=current)
+    check_retained_freight(db, invoice, evidence, current=current)
+    carried_freight = cancellation.replacement_freight(db, invoice, current=current)
+    if carried_freight and Decimal(body.freight_amount):
+        raise ValueError('原批次已保留运费，本次重建请将运费填0，避免重复收费')
     if current:
         quantities = {}
         prior_items = _current(db.query(SettlementItem).filter(SettlementItem.settlement_id.in_([row.id for row in shipped])), True, SettlementItem.id).all()
@@ -217,6 +223,9 @@ def build_quote(db, invoice, body, evidence, *, current=False):
     result.update(invoice_id=invoice.id, currency=invoice.currency, customer_id=invoice.customer_id,
                   invoice_no=invoice.invoice_no, deposit_receipt_id=None,
                   delivery_address=invoice.delivery_address, remark=invoice.remark)
+    if carried_freight:
+        result.update(retained_freight_settlement_id=carried_freight.id,
+            retained_freight_amount=str(carried_freight.quote['freight_amount']))
     result["quote_hash"] = digest({"quote": result, "lines": lines, "evidence": evidence,
                                    "funds": [(r.id, r.version, str(r.amount), str(r.bank_charge)) for r in pool_receipts]})
     result["capabilities"] = capabilities()
@@ -330,7 +339,7 @@ def funding_balance(db, row, *, current=False):
     if row.quote.get("funding_version") == 2:
         invoice = db.get(Invoice, row.invoice_id)
         pools.pool_lots(db, invoice, current=current)
-        if row.state != "cancelled":
+        if row.state not in cancellation.CANCELLED_STATES:
             pools.validate_quote_applications(row, [app for app, _ in applications],
                 {receipt.id: receipt for _, receipt in applications})
     goods = freight = charge = effective = new_charge = Decimal(0)
@@ -350,10 +359,16 @@ def funding_balance(db, row, *, current=False):
     v2 = row.quote.get("funding_version") == 2
     goods_total = (Decimal(row.quote["goods_amount"]) + Decimal(row.quote["packaging_amount"]) +
         Decimal(row.quote["handling_amount"])) if v2 else Decimal(row.quote["goods_payment_due"])
+    retained = row.state == cancellation.CANCELLED_KEEP_FREIGHT
+    if retained:
+        goods_total = Decimal(0)
     charge_remaining = Decimal(row.quote["goods_payment_charge"]) - (new_charge if v2 else charge)
     if v2:
         charge_remaining = min(charge_remaining, goods_total - goods)
     total = pools.required(row.quote) if v2 else Decimal(row.quote["new_payment_due"])
+    if retained:
+        total = Decimal(row.quote['freight_amount'])
+        charge_remaining = Decimal(0)
     debt_total = total if v2 else total + sum(
         (app.amount for app, _ in applications if app.component == "deposit"), Decimal(0))
     result = {"settlement_id": row.id, "goods_remaining": str(goods_total - goods),
@@ -438,7 +453,38 @@ def describe(db, row, *, current=False):
     from app.invoice.shipment_absence_recovery import action as recovery_action
     result['actions']['recover_outbound'] = recovery_action(db, row, outbound,
         current=current, confirmation_summary=confirmation)
+    from app.invoice.shipment_deleted_cancellation import action as deleted_action
+    result['actions']['cancel_deleted'] = deleted_action(db, row, outbound, freight,
+        [app for app, _ in applications], {receipt.id: receipt for _, receipt in applications},
+        current=current)
     return result
+
+
+def check_retained_freight(db, invoice, evidence, *, current=False):
+    """Retained freight stays a real paid obligation, checked before new batches."""
+    from app.receipt.balance import calculate_target
+    for row in cancellation.retained_rows(db, invoice.id, current=current):
+        target = _current(db.query(Receivable).filter_by(settlement_id=row.id, kind='freight'),
+            current, Receivable.id).one()
+        snapshot = evidence.get('freight', {}).get(row.id)
+        if snapshot is None:
+            raise ValueError('保留运费尚未实时核验，不能继续安排')
+        summary = calculate_target(db, target, snapshot, current=current)
+        if Decimal(summary['remaining_amount']):
+            raise ValueError('保留运费的抵扣已变化，请先核对原单')
+        apps = _current(db.query(SettlementApplication, Receipt).join(Receipt,
+            Receipt.id == SettlementApplication.receipt_id).filter(
+                SettlementApplication.settlement_id == row.id,
+                SettlementApplication.status != 'released'), current,
+            SettlementApplication.id, Receipt.id).all()
+        source = {str(entry['cash_collection_id']): entry for entry in evidence['receipt']['rows']}
+        if any(app.component != 'freight' or not payment_policy.receipt_effective(receipt)
+                or str(receipt.xiaoman_receipt_id) not in source
+                or str(source[str(receipt.xiaoman_receipt_id)].get('collect_status')) != '1'
+                or source[str(receipt.xiaoman_receipt_id)].get('currency') != receipt.currency
+                or remote.money(source[str(receipt.xiaoman_receipt_id)].get('amount')) != remote.net_amount(receipt)
+                for app, receipt in apps):
+            raise ValueError('保留运费的原回款已失效，请核对原单')
 
 
 def _change_state_verified(db, row, user, action, version, reason, graph, *, failed_outbound_absent=False):

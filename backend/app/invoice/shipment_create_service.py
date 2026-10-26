@@ -187,7 +187,8 @@ def _capture(db, invoice, body, current, *, payment=None, request_key=None):
     allocations = _rows(db, InvoiceAllocation, InvoiceAllocation.invoice_id == invoice.id)
     settlements = _rows(db, ShipmentSettlement, ShipmentSettlement.invoice_id == invoice.id)
     by_settlement = {row.id:row for row in settlements}
-    if any(row.state not in {'shipped','cancelled'} for row in settlements):
+    from app.invoice.shipment_cancellation_policy import CANCELLED_STATES, CANCELLED_KEEP_FREIGHT
+    if any(row.state not in {'shipped', *CANCELLED_STATES} for row in settlements):
         raise ValueError('已有未完成的活动发货结算，请先核对原批次')
     pools.pool_lots(db, invoice, current=True)
     items = _rows(db, SettlementItem, or_(SettlementItem.settlement_id.in_(by_settlement),
@@ -233,7 +234,8 @@ def _capture(db, invoice, body, current, *, payment=None, request_key=None):
     target = edit_service.OrderTarget(invoice.id,invoice.xiaoman_order_id,invoice.customer_id,
         invoice.currency,invoice.total_amount,invoice.surcharge_amount)
     freight = tuple((row.settlement_id,FreightTarget(*(getattr(row,col) for col in FreightTarget.__dataclass_fields__)))
-        for row in targets if row.kind == 'freight' and by_settlement[row.settlement_id].state == 'shipped')
+        for row in targets if row.kind == 'freight' and
+        by_settlement[row.settlement_id].state in ('shipped', CANCELLED_KEEP_FREIGHT))
     return fingerprint, target, freight, attachments._bindings(proofs)
 
 

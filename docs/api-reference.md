@@ -273,6 +273,7 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | POST `/invoices/{id}/shipment-settlements` | invoice:write + shipment:write；报价字段加 quote_hash/request_key，可选 payment（另需 receipt:write） |
 | GET `/shipments/order/{id}`、`/shipments/{id}` | shipment:read/write；items 列表或含 quote/balance/outbound/capabilities 的详情 |
 | POST `/shipments/{id}/cancel`、`pause`、`resume` | shipment:write；version/reason，订单归属与状态二次检查 |
+| POST `/shipments/{id}/cancel-deleted-outbound` | shipment:write；version/reason。实时核实原小满出库已删除，撤销商品批次并释放占用；已绑定且足额由预付货款抵扣的运费保持原订单及抵扣，不发送远端写入 |
 | POST `/receipts/batches` | receipt:write；amount/date/type/remark/attachment_ids、request_key、allocations[{invoice_id,settlement_id?,amount,balance_version}]。日期字段 collection_date，方式字段 payment_type；bank_charge 只能零，服务端自动分摊 |
 | GET `/receipts/batches/{id}` | receipt:read/write/admin；batch_no/amount/bank_charge/currency/status/version/items/attachment_ids，须能访问全部子订单 |
 | POST `/receipts/batches/{id}/void-entry` | receipt:admin；version/reason，仅本地且无远端效果的整批录入纠错 |
@@ -286,6 +287,12 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
 
 ## 预售批次取消与暂停操作（2026-10-15，本地实现，未部署）
+
+2026-10-26 新增本地流程（未部署）：已生成的预售出库单在小满删除后，原批次提供“核实删除并撤销”。服务保持共享出库执行器锁直至最终提交/回滚，供应商 GET 期间释放业务行锁；前后两次验证当前员工权限、订单归属、版本、完整资金图、检验及不可变创建/出库确认事实。原 ID 与原编号并行身份观察必须一致；可读的删除详情仍须按小满不可变创建日获取两轮完整且一致的 removed=0 活动列表。仍有效、同编号替代单、缺页/变化/超时、检验提交或撤回历史、实际出库确认、迟到结果或未决回款均不释放。
+
+无已绑定运费时，同事务将原批次及出库任务标 cancelled、释放全部应用。原运费订单已绑定且足额由已生效预付货款抵扣时，商品应用 released、原运费应用 applied、批次转 cancelled_keep_freight、出库任务 cancelled。原回款现金事实、冻结报价/明细/远端ID及检验资料保留，并记录不可变撤销证据和出库删除回执；不重新发送小满删除。
+
+cancelled_keep_freight 不占商品数量或活动批次，仅保留原运费应收/抵扣。下一个重建批次报价自动冻结 retained_freight_settlement_id/retained_freight_amount，运费填0；服务端拒绝重复填写运费且不再创建运费目标。该引用被一个未取消的新批次使用后，后续普通批次可正常收取各自运费；若重建批次又取消，原运费恢复为下一次待沿用。新报价/创建持续实时核对保留运费及原资金来源，失效时阻断。旧生产规则不能安全解释这个新终态，必须完整发布支持后再执行此类维护。
 
 - 批次列表、详情及状态操作回执增加 `actions.cancel/pause/resume: {allowed, reason}`。前端使用后端规则显示操作及不可用原因，不再用 `balance.registered_amount > 0` 推断不能取消；动作请求仍在当前权限、订单行锁和版本检查下重新校验，读取结果不是写入授权。明确失败的出库创建任务可取消时，`actions.cancel.requires_remote_check=true` 表示提交还须实时核实小满无单。
 - 仅预占定金/预付货款、没有实际非池付款或已绑定运费目标的批次可以取消。尚无出库任务时保持本地操作；`review_required + outbound.failed` 且无远端 ID、租约、远端基线，原编号与 payload hash 完整、无出库确认历史时，也可通过原 `POST /shipments/{id}/cancel` 手工取消。该分支先释放业务锁，仅 GET 精确编号查询小满；只有规范“查无单”才继续。查询后重新验证当前权限、归属、原版本、全资金/订单/任务绑定及确认历史，任何变化均拒绝；小满已有单、查询异常或结果不完整时保留原批次和占用，不发删除/重试等远端写入。

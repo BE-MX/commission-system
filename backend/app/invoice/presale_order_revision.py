@@ -42,7 +42,7 @@ def record_synced(invoice):
 
 def used_credit(db, invoice, *, current=False):
     query=db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id==invoice.id,
-        ShipmentSettlement.state!='cancelled').order_by(ShipmentSettlement.id)
+        ShipmentSettlement.state.notin_(('cancelled', 'cancelled_keep_freight'))).order_by(ShipmentSettlement.id)
     if current:query=query.populate_existing().with_for_update()
     return sum((Decimal(row.quote.get('price_credit_applied','0')) for row in query.all()),Decimal(0))
 
@@ -65,7 +65,7 @@ def recompute(db, invoice, *, current=False, persist=True):
     if Decimal(invoice.internal_accessory or 0) or Decimal(invoice.surcharge_amount or 0):
         raise ValueError('本整单修订仅支持无包装费和手续费的订单，费用调整请单独核对')
     quote_query=db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id==invoice.id,
-        ShipmentSettlement.state!='cancelled')
+        ShipmentSettlement.state.notin_(('cancelled', 'cancelled_keep_freight')))
     if current:quote_query=quote_query.order_by(ShipmentSettlement.id).populate_existing().with_for_update()
     if any(Decimal(row.quote.get('packaging_amount','0')) or Decimal(row.quote.get('handling_amount','0'))
             for row in quote_query.all()):
@@ -199,7 +199,7 @@ def activate(db,invoice,mapping,previous_projection,*,actor,request_id,confirmat
     if db.query(ShippingOperationEvent.id).filter_by(scope='presale-order-revision',request_id=request_id).first():
         raise ValueError('本次整单修订已记录，禁止重复执行')
     if db.query(ShipmentSettlement.id).filter(ShipmentSettlement.invoice_id==invoice.id,
-            ShipmentSettlement.state.notin_(['shipped','cancelled'])).first():
+            ShipmentSettlement.state.notin_(['shipped','cancelled','cancelled_keep_freight'])).first():
         raise ValueError('存在尚未完成的原批次，不能修订整单')
     active={item.id:item for item in invoice.items if not item.presale_archived}
     originals={item.id:item for item in invoice.items if item.presale_archived}

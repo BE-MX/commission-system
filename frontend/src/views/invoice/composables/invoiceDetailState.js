@@ -25,7 +25,7 @@ export function detailProgressLabel(panel, kind) {
   const summary = panel.summary || {}
   const progress = progressValue(kind === 'receipt' ? summary.effective_amount : summary.shipped_quantity,
     kind === 'receipt' ? summary.total_amount : summary.ordered_quantity, panel.state)
-  const states = [...(panel.tasks || []), ...(panel.batches || []).filter(row => row.state !== 'cancelled')].flatMap(row => [row.state, row.outbound_state])
+  const states = [...(panel.tasks || []), ...(panel.batches || []).filter(row => !['cancelled', 'cancelled_keep_freight'].includes(row.state))].flatMap(row => [row.state, row.outbound_state])
   const needsReview = states.some(state => ['uncertain', 'failed', 'blocked', 'outbound_uncertain', 'review_required', 'confirm_uncertain', 'shipped_unfunded'].includes(state))
     || (panel.items || []).some(row => kind === 'receipt'
       ? row.status === 'active' && ['uncertain', 'failed'].includes(row.sync_status)
@@ -41,7 +41,7 @@ export function detailProgressLabel(panel, kind) {
   else if (kind === 'outbound' && states.includes('awaiting_sync')) label = '待同步'
   else if (progress.percentage > 0) label = '进行中'
   else if (kind === 'outbound' && panel.items?.length) label = '待完成检验'
-  else if (kind === 'outbound' && panel.batches?.some(row => row.state !== 'cancelled')) label = '待出库'
+  else if (kind === 'outbound' && panel.batches?.some(row => !['cancelled', 'cancelled_keep_freight'].includes(row.state))) label = '待出库'
   else if (kind === 'receipt' && panel.items?.some(row => row.status === 'active')) label = '已登记待核验'
   else label = '未开始'
   return panel.source === 'background_snapshot' ? `快照 · ${label}` : label
