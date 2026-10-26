@@ -1,3 +1,9 @@
+## 2026-10-26 WhatsApp 扫码后无法关联：rc14 未处理 companion_reg_refresh（Accio，已合并推送 main，未部署）
+
+- 现场（办公室 Connector 诊断日志，只读）：10-26 两次扫码均在扫码后出现 `companion_reg_refresh`，此后无配对成功，`registered=false`，二维码用尽后 408 循环；无授权超时。Baileys `7.0.0-rc14` 未处理该通知，二维码继续携带服务器已作废的 adv secret，手机报关联失败（上游 [#2737](https://github.com/WhiskeySockets/Baileys/issues/2737)，修复 PR #2765 未合并，npm 最新仍为 rc14）。
+- 修复（仅 Connector `manager.js`，分支 `accio/whatsapp-qr-refresh`）：按 WA Web/PR #2765 收到含 `companion_reg_refresh` 或 `pair-device-rotate-qr` 子节点的通知时，生成 32 字节新 secret 并在受控租约下持久化，用新 secret 重绘当前 ref，不消耗服务器 ref；之后 rc14 轮换出的二维码也替换为当前 secret。已有 `me`/已注册会话不改。
+- 验证：新增 3 项测试（去掉修复后失败）；Connector 60 项通过（跳过既有不稳定跨进程用例）；真实 rc14 socket 离线冒烟确认凭据对象共享、secret 轮换、ref 不变、二维码带新 secret；finish_check 通过。真实扫码需部署后持有人重新关联验收。
+- 发布：只需发布 Connector（重启 WhatsAppConnector 服务）。Baileys 发布含此修复的正式版后应升级并移除本补丁。
 ## 2026-10-23 浏览器标签页 LeShine LOGO（Codex，Git 交付，未部署）
 
 - 分支 `codex/leshine-tab-logo`；主站 `frontend/index.html` 的 favicon 从 Vite 默认图标改为现有 `/logo.webp`，与平台侧栏共用 LeShine 品牌资源，登录和主站路由共用。
