@@ -43,10 +43,6 @@
           <el-table-column prop="order_no" label="客户订单号" min-width="120" show-overflow-tooltip sortable="custom" />
           <el-table-column prop="line_code" label="明细" min-width="90" sortable="custom" />
           <el-table-column prop="product_name" label="产品规格" min-width="210" show-overflow-tooltip sortable="custom" />
-          <el-table-column prop="order_qty" label="下单" min-width="105" align="right" sortable="custom" />
-          <el-table-column prop="completed_qty" label="完工" min-width="105" align="right" sortable="custom" />
-          <el-table-column prop="shipped_qty" label="已发" min-width="105" align="right" sortable="custom" />
-          <el-table-column prop="available_qty" label="可发" min-width="105" align="right" sortable="custom" />
           <el-table-column label="本次发" min-width="120" :sortable="false">
             <template #default="{ row }"><input type="number" class="delivery-quantity" :value="selected[row.item_id]?.quantity || 0" min="0" :max="row.available_qty" step="1" :disabled="saving" :aria-label="`${row.guest_name || row.line_code} 本次发货数量`" @change="event => { setQuantity(row, Number(event.target.value)); event.target.value = selected[row.item_id]?.quantity || 0 }" /></template>
           </el-table-column>
@@ -59,6 +55,10 @@
           <el-table-column label="本次金额" min-width="110" align="right" :sortable="false">
             <template #default="{ row }">{{ money(batchUnitPrice(row) * (selected[row.item_id]?.quantity || 0)) }}</template>
           </el-table-column>
+          <el-table-column prop="order_qty" label="下单" min-width="105" align="right" sortable="custom" />
+          <el-table-column prop="completed_qty" label="完工" min-width="105" align="right" sortable="custom" />
+          <el-table-column prop="shipped_qty" label="已发" min-width="105" align="right" sortable="custom" />
+          <el-table-column prop="available_qty" label="可发" min-width="105" align="right" sortable="custom" />
           <el-table-column label="具体件号" min-width="160" class-name="table-action-column" :sortable="false">
             <template #default="{ row }"><GlassButton variant="link" left-icon="View" :disabled="saving" @click="openUnits(row)">{{ selected[row.item_id]?.unit_ids ? '已指定' : '指定件号' }}</GlassButton></template>
           </el-table-column>
