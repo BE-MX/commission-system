@@ -113,7 +113,7 @@ def build_progress_view(
             r.process_id, (f"工序{r.process_id}", True)
         )
         upstream_ids = upstream_by_progress[r.id]
-        reported = state.reported_by_progress.get(r.id, set())
+        reported = state.reported_by_progress.get(r.id, set()) & active_unit_ids
         skipped = effective_skipped[r.id]
         passed = effective_passed[r.id]
         rule = rules.get(r.process_id)
@@ -217,14 +217,25 @@ def recalc_item_status(db: Session, item: DomesticOrderItem) -> None:
         db.query(DomesticItemProgress)
         .filter(DomesticItemProgress.item_id == item.id)
         .order_by(DomesticItemProgress.step_order.desc())
+        .populate_existing().with_for_update()
         .first()
     )
-    state = routing_service.load_passage_state(db, item)
-    active_ids = {unit.id for unit in routing_service.active_units(db, item)}
-    # Completion follows actual final-step scans only, independent of upstream
-    # passage or administrative skips. Revoked and inactive units do not count.
+    state = routing_service.load_passage_state(db, item, lock=True)
+    active_ids = {unit.id for unit in routing_service.active_units(db, item, lock=True)}
+    # Final reports retain their existing completion meaning. Effective skips also
+    # complete production, while shipment eligibility still requires actual reports.
     final_reported = state.reported_by_progress.get(last.id, set()) if last else set()
-    done = bool(last) and item.order_qty > 0 and len(final_reported & active_ids) >= item.order_qty
+    rows = db.query(DomesticItemProgress).filter_by(item_id=item.id).order_by(
+        DomesticItemProgress.step_order.asc(),
+    ).populate_existing().with_for_update().all()
+    _upstream, _skipped, passed = routing_service.effective_passage_maps(
+        rows, state, active_ids, routing_service.runtime_rule_map(db, item.route_id),
+    )
+    final_passed = passed.get(last.id, set()) if last else set()
+    done = bool(last) and item.order_qty > 0 and (
+        len(final_reported & active_ids) >= item.order_qty
+        or len(final_passed) >= item.order_qty
+    )
     item.status = C.ITEM_DONE if done else C.ITEM_PRODUCING
 
 
@@ -234,15 +245,15 @@ def sync_progress_statuses(db: Session, item: DomesticOrderItem) -> None:
     db.flush()
     rows = db.query(DomesticItemProgress).filter(
         DomesticItemProgress.item_id == item.id,
-    ).order_by(DomesticItemProgress.step_order.asc()).all()
-    state = routing_service.load_passage_state(db, item)
-    units = routing_service.active_units(db, item)
+    ).order_by(DomesticItemProgress.step_order.asc()).populate_existing().with_for_update().all()
+    state = routing_service.load_passage_state(db, item, lock=True)
+    units = routing_service.active_units(db, item, lock=True)
     rules = routing_service.runtime_rule_map(db, item.route_id)
     _upstream, _skipped, passed = routing_service.effective_passage_maps(
         rows, state, {unit.id for unit in units}, rules,
     )
     for row in rows:
-        row.completed_qty = len(state.reported_by_progress.get(row.id, set()))
+        row.completed_qty = len(state.reported_by_progress.get(row.id, set()) & {unit.id for unit in units})
         row.status = 1 if len(passed.get(row.id, set())) >= item.order_qty else 0
 
 

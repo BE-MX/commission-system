@@ -563,8 +563,8 @@ def _submit_report_once(
         .all()
     )
     unit_service.ensure_item_units(db, item)
-    units = routing_service.active_units(db, item)
-    state = routing_service.load_passage_state(db, item)
+    units = routing_service.active_units(db, item, lock=True)
+    state = routing_service.load_passage_state(db, item, lock=True)
     rules = routing_service.runtime_rule_map(db, item.route_id)
     rule = rules.get(progress.process_id)
     normalized_outcomes = routing_service.normalize_outcomes(
@@ -882,8 +882,8 @@ def _submit_manual_skip_once(
         DomesticItemProgress.item_id == item.id,
     ).order_by(DomesticItemProgress.step_order.asc()).with_for_update().all()
     unit_service.ensure_item_units(db, item)
-    units = routing_service.active_units(db, item)
-    state = routing_service.load_passage_state(db, item)
+    units = routing_service.active_units(db, item, lock=True)
+    state = routing_service.load_passage_state(db, item, lock=True)
     rules = routing_service.runtime_rule_map(db, item.route_id)
     eligible_ids = routing_service.eligible_unit_ids(
         item, progress, rows, state, {unit.id for unit in units}, rules,

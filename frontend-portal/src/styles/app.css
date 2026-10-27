@@ -27,6 +27,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--portal-ink
 .skip-link:focus { transform: none; }
 .brand-mark { display: inline-block; position: relative; width: 144px; height: 56px; background: var(--portal-yellow); overflow: hidden; flex-shrink: 0; }
 .brand-mark img { position: absolute; width: 180px; height: 180px; max-width: none; left: -17px; top: -62px; }
+.login-brand-mark { display: block; width: 144px; height: auto; flex-shrink: 0; }
 .login-layout { display: grid; grid-template-columns: 1fr 1fr; min-height: 100dvh; }
 .brand-panel { min-height: 100dvh; color: var(--portal-white); background: linear-gradient(var(--portal-dark-wash), var(--portal-dark-wash)), url('/assets/brand-texture.jpg'); background-size: cover, auto 180%; background-position: center, center 38%; padding: clamp(40px, 6vw, 88px); display: flex; flex-direction: column; align-items: flex-start; }
 .brand-story { margin: auto 0; padding: 70px 0 100px; }

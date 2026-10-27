@@ -1,6 +1,5 @@
 <script setup>
 import { nextTick, onBeforeUnmount, ref } from 'vue'
-import BrandMark from './BrandMark.vue'
 const props = defineProps({ api: { type: Object, required: true } })
 const emit = defineEmits(['request-access'])
 const email = ref(''), password = ref(''), busy = ref(false), error = ref(null), passwordInput = ref(null)
@@ -29,7 +28,7 @@ async function login() {
 <template>
   <main class="login-layout">
     <section class="brand-panel" aria-label="LeShine partner collection">
-      <BrandMark />
+      <img class="login-brand-mark" src="/assets/logo-white.png" alt="LeShine Hair" width="144" height="58" />
       <div class="brand-story"><p class="eyebrow">THE PARTNER COLLECTION</p><h1>Good things<br />grow together.</h1><p>Your collection. Your shades.<br />A closer connection to LeShine.</p></div>
       <div class="brand-foot"><span>LESHINE / PARTNER ATELIER</span></div>
     </section>

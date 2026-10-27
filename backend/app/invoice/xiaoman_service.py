@@ -289,6 +289,44 @@ def _screenshot_sync_issue(db: Session, invoice: Invoice) -> dict | None:
     return None
 
 
+def binding_order(db, invoice, *, order_id=None, order_no=None):
+    """Resolve explicitly typed identifiers against one exact local projection."""
+    identity = str(order_id or "").strip()
+    number = str(order_no or "").strip()
+    if identity:
+        from app.invoice.uncertain_recovery import _canonical_uid
+        identity = _canonical_uid(identity)
+    elif not number:
+        raise ValueError("请填写小满订单号（order_no）或订单ID")
+    columns = product_service._table_columns(db, "okki_orders")
+    if not {"order_id", "order_no", "name", "company_id"}.issubset(columns):
+        raise ValueError("本系统 OKKI 订单投影字段不完整，暂时无法安全绑定")
+    schema = product_service._schema()
+    field, value = ("order_id", identity) if identity else ("order_no", number)
+    orders = db.execute(text(f"""SELECT order_id, order_no, name, company_id
+        FROM `{schema}`.okki_orders WHERE {field} = :value LIMIT 2"""),
+        {"value": value}).mappings().all()
+    if not orders:
+        raise ValueError("本系统小满订单投影中查不到该订单号或ID，请核对或等待投影更新后再绑定")
+    if len(orders) != 1:
+        raise ValueError("该小满订单号不唯一，不能安全绑定，请先核对小满原单")
+    order = orders[0]
+    from app.invoice.uncertain_recovery import _canonical_uid
+    _canonical_uid(str(order["order_id"]))
+    if identity and number and str(order["order_no"] or "").strip() != number:
+        raise ValueError("小满订单ID与订单号不一致，已拒绝绑定")
+    if identity and number:
+        numbered = db.execute(text(f"SELECT order_id FROM `{schema}`.okki_orders "
+            "WHERE order_no=:number LIMIT 2"), {"number": number}).scalars().all()
+        if len(numbered) != 1 or str(numbered[0]) != identity:
+            raise ValueError("该小满订单号不唯一，不能安全绑定，请先核对小满原单")
+    if str(order["company_id"] or "").strip() != str(invoice.customer_id or "").strip():
+        raise ValueError("该 OKKI 订单不属于当前发票客户，已拒绝绑定")
+    if normalize_order_name(order["name"]) != normalize_order_name(invoice.invoice_no):
+        raise ValueError("该 OKKI 订单名称与当前发票号不一致，已拒绝绑定")
+    return order
+
+
 def resolve_sync_uncertain(
     db: Session,
     invoice: Invoice,
@@ -297,6 +335,7 @@ def resolve_sync_uncertain(
     reason: str,
     operator_id: int | None,
     xiaoman_order_no: str | None = None,
+    xiaoman_order_id: str | None = None,
 ) -> Invoice:
     from app.invoice.push_attempt import allow_recovery, finish
     allow_recovery(invoice)
@@ -310,33 +349,9 @@ def resolve_sync_uncertain(
         raise ValueError("请填写人工核对原因")
 
     if resolution == "bind_order":
-        order_no = str(xiaoman_order_no or "").strip()
-        if not order_no:
-            raise ValueError("请填写小满订单号（order_no）")
-
-        columns = product_service._table_columns(db, "okki_orders")
-        required_columns = {"order_id", "order_no", "name", "company_id"}
-        if not required_columns.issubset(columns):
-            raise ValueError("本系统 OKKI 订单投影字段不完整，暂时无法安全绑定")
-        schema = product_service._schema()
-        projected_orders = db.execute(text(f"""
-            SELECT order_id, order_no, name, company_id
-            FROM `{schema}`.okki_orders
-            WHERE order_no = :order_no
-            LIMIT 2
-        """), {"order_no": order_no}).mappings().all()
-        if not projected_orders:
-            raise ValueError("本系统小满订单投影中查不到该订单号，请核对订单号或等待投影更新后再绑定")
-        if len(projected_orders) != 1:
-            raise ValueError("该小满订单号不唯一，不能安全绑定，请先核对小满原单")
-        projected_order = projected_orders[0]
-        order_id = str(projected_order["order_id"] or "").strip()
-        if not order_id.isdigit():
-            raise ValueError("该小满订单号对应的订单标识无效，已拒绝绑定")
-        if str(projected_order["company_id"] or "").strip() != str(invoice.customer_id or "").strip():
-            raise ValueError("该 OKKI 订单不属于当前发票客户，已拒绝绑定")
-        if normalize_order_name(projected_order["name"]) != normalize_order_name(invoice.invoice_no):
-            raise ValueError("该 OKKI 订单名称与当前发票号不一致，已拒绝绑定")
+        projected_order = binding_order(db, invoice, order_id=xiaoman_order_id,
+                                        order_no=xiaoman_order_no)
+        order_id = str(projected_order["order_id"])
 
         duplicate = db.query(Invoice.id).filter(
             Invoice.xiaoman_order_id == order_id,

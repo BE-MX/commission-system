@@ -16,6 +16,7 @@ import {
 } from '@/api/domestic'
 import { buildOrderExportParams, buildOrderListParams, emptyAdvancedFilters } from './useDomesticOrderFilters'
 import { useDomesticItemTermination } from './useDomesticItemTermination'
+import { useDomesticOrderSkip } from './useDomesticOrderSkip'
 import { useListPage } from '@/composables/useListPage'
 import { downloadBlob } from '@/utils/download'
 import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
@@ -464,7 +465,8 @@ export function useDomesticOrders() {
     }
   }
 
-  const { handleTerminateItem, terminatingItemIds } = useDomesticItemTermination(refreshAll)
+  const { handleTerminateItem, terminatingItemIds, terminationDialog, confirmTerminateItem } = useDomesticItemTermination(refreshAll)
+  const { skippingAll, handleSkipAll } = useDomesticOrderSkip(refreshAll)
 
   async function handleTerminate(row) {
     let value
@@ -557,7 +559,8 @@ export function useDomesticOrders() {
     openDetail, refreshAll,
     shipDialog, openShip, confirmShip,
     reportDialog, openReport, confirmReport,
-    skipDialog, openSkip, confirmSkip,
+    skipDialog, openSkip, confirmSkip, skippingAll, handleSkipAll,
+    terminationDialog, confirmTerminateItem,
     skipAuditDialog, openSkipAudits, loadSkipAudits, handleRevokeSkip,
     logDialog, openLogs, handleRevokeReport,
     attachDialog, openAttachRoute, confirmAttachRoute,

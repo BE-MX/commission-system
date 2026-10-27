@@ -746,6 +746,19 @@ class ItemShipRequest(BaseModel):
 
 class ItemTerminateRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
+    qty: int | None = Field(None, gt=0, strict=True, description="终止的未发货数量；不传则终止整行")
+    request_id: str | None = Field(None, min_length=8, max_length=64)
+
+    @model_validator(mode="after")
+    def _require_quantity_request_id(self):
+        if self.qty is not None and not self.request_id:
+            raise ValueError("按数量终止必须提供请求号")
+        return self
+
+
+class OrderSkipAllRequest(BaseModel):
+    reason: str = Field(..., min_length=5, max_length=500)
+    request_id: str = Field(..., min_length=8, max_length=64)
 
 
 class OrderStatusUpdate(BaseModel):

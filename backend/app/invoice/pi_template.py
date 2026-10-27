@@ -24,7 +24,12 @@ def document(invoice):
     items = []
     for item in source.items:
         description = item.product_display or item.product_name or ""
-        details = [str(v) for v in (item.model, item.curl) if v]
+        model = str(item.model or "")
+        # Chinese internal model labels (including their codes/dimensions) are
+        # not customer-facing product names. Leave the stored invoice untouched.
+        if any(unicodedata.name(char, "").startswith(("CJK UNIFIED IDEOGRAPH", "CJK COMPATIBILITY IDEOGRAPH")) for char in model):
+            model = ""
+        details = [str(v) for v in (model, item.curl) if v]
         if item.discount_amount:
             details.append(f"Discount: {item.discount_amount:.2f} {currency}")
         if details:

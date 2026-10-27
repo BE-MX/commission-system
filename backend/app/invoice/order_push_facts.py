@@ -71,6 +71,14 @@ def start(db,invoice,actor_id,binding,payload,inventory_key,receipt_token):
           "token_fingerprint":digest(token),"document_version":invoice.portal_document_version,
           "inventory_operation_key":inventory_key,"receipt_token_fingerprint":digest(receipt_token)}
     if getattr(invoice,'presale_order_revision',None):data['requires_commercial_readback']=True
+    if data['action'] == 'create' and invoice.order_type == 'stock' and not inventory_key:
+        from app.core.config import get_settings
+        from app.invoice.linked_sync_service import edit_version
+        from app.invoice.order_query_plan import request_snapshot
+        data.update(auto_query_version=1, query_request=request_snapshot(payload),
+            query_content_fingerprint=edit_version(invoice),
+            query_window_end=invoice.sync_attempt['lease_until'],
+            query_outbound_requested=bool(get_settings().OKKI_OUTBOUND_AUTO_ENABLED))
     append(db,invoice.id,key,START,data,object_id,access_id,actor_id)
     return Attempt(invoice.id,key,token,actor_id,deepcopy(binding),deepcopy(payload),object_id,access_id,
                    deepcopy(data),inventory_key,receipt_token)

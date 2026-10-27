@@ -1007,7 +1007,7 @@ class ResolveSyncUncertainPayload(BaseModel):
     resolution: str = Field(..., pattern="^(bind_order|confirm_not_created|confirm_existing)$")
     reason: str = Field(..., min_length=2, max_length=500)
     xiaoman_order_no: str | None = Field(None, max_length=64)
-    # Portal-mode recovery binds by the internal order id; the legacy path uses order_no.
+    # Recovery accepts explicitly typed order IDs and order numbers; neither is guessed.
     xiaoman_order_id: str | None = Field(None, max_length=64)
 
 
@@ -1025,7 +1025,8 @@ def resolve_sync_uncertain(
     if get_settings().PORTAL_ENABLED:
         from app.invoice import sync_recovery
         result = sync_recovery.resolve(db, invoice_id, current_user, resolution=body.resolution,
-            reason=body.reason.strip(), xiaoman_order_id=body.xiaoman_order_id)
+            reason=body.reason.strip(), xiaoman_order_id=body.xiaoman_order_id,
+            xiaoman_order_no=body.xiaoman_order_no)
         from fastapi.responses import JSONResponse
         from fastapi.encoders import jsonable_encoder
         return JSONResponse(jsonable_encoder(ok(result)), headers={"Cache-Control":"private, no-store"})
@@ -1040,6 +1041,7 @@ def resolve_sync_uncertain(
             resolution=body.resolution,
             reason=body.reason,
             xiaoman_order_no=body.xiaoman_order_no,
+            xiaoman_order_id=body.xiaoman_order_id,
             operator_id=_user_id(current_user),
         )
         db.commit()

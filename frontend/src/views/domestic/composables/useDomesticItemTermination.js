@@ -1,27 +1,37 @@
 import { reactive } from 'vue'
-import { promptAction, msgSuccessText } from '@/utils/feedback'
-import { terminateOrderItem } from '@/api/domestic'
+import { msgSuccessText, msgWarning } from '@/utils/feedback'
+import { terminateOrderItem, newRequestId } from '@/api/domestic'
 
 export function useDomesticItemTermination(refreshAll) {
   const terminatingItemIds = reactive(new Set())
-  async function handleTerminateItem(item) {
-    if (terminatingItemIds.has(item.id)) return
+  const pendingAttempts = new Map()
+  const terminationDialog = reactive({ visible: false, item: null, qty: 1, maxQty: 1, reason: '', requestId: '' })
+  function handleTerminateItem(item) {
+    if (terminatingItemIds.size) return
+    const pending = pendingAttempts.get(item.id)
+    if (pending) {
+      Object.assign(terminationDialog, { visible: true, item, ...pending })
+      return
+    }
+    const maxQty = item.order_qty - Number(item.shipped_qty || 0)
+    if (maxQty < 1) return
+    Object.assign(terminationDialog, { visible: true, item, qty: maxQty, maxQty, reason: '', requestId: newRequestId() })
+  }
+  async function confirmTerminateItem() {
+    const { item, qty, maxQty, reason, requestId } = terminationDialog
+    if (!item || terminatingItemIds.has(item.id)) return
+    if (!Number.isInteger(qty) || qty < 1 || qty > maxQty) return msgWarning('请选择有效的终止数量')
+    if (!reason.trim()) return msgWarning('请填写终止原因')
     terminatingItemIds.add(item.id)
+    pendingAttempts.set(item.id, { qty, maxQty, reason, requestId })
     try {
-      let value
-      try {
-        ({ value } = await promptAction(
-          `终止 ${item.line_code} · ${item.product_name} 后，该项不能再报工，其他明细继续履约。业务订单的已扣明细金额退回客户余额。`,
-          '终止明细', { type: 'warning', inputPlaceholder: '填写终止原因',
-            inputValidator: value => Boolean(value?.trim()) || '请填写终止原因',
-            inputPattern: /^.{1,500}$/s, inputErrorMessage: '原因不能超过 500 字' },
-        ))
-      } catch { return }
-      await terminateOrderItem(item.id, value.trim())
-      msgSuccessText('明细已终止')
+      await terminateOrderItem(item.id, reason.trim(), qty, requestId)
+      pendingAttempts.delete(item.id)
+      terminationDialog.visible = false
+      msgSuccessText(`已终止 ${qty} 件`)
       await refreshAll()
     } finally { terminatingItemIds.delete(item.id) }
   }
 
-  return { handleTerminateItem, terminatingItemIds }
+  return { handleTerminateItem, terminatingItemIds, terminationDialog, confirmTerminateItem }
 }

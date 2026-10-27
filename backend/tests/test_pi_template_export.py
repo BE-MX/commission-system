@@ -90,6 +90,32 @@ def test_mixed_accessory_and_high_precision_transaction_price():
     assert any(c.value == "Products Cost" for row in ws for c in row)
 
 
+@pytest.mark.parametrize('model', ['B3天才发帘（帘宽12″）', '中文内部型号', 'B3 genius weft / 天才发帘'])
+def test_customer_pi_omits_chinese_internal_model_without_changing_source(model):
+    source = invoice()
+    source.items[0].model = model
+    source.items[0].curl = 'Straight'
+    original = deepcopy(vars(source.items[0]))
+    expected = 'Standard Double Drawn Genius Weft\nStraight / Discount: -1.23 EUR'
+    assert pi_template.document(source)['items'][0][1] == expected
+    ws = load_workbook(pi_template.build_workbook(source)).active
+    assert ws['B12'].value == expected
+    assert [ws.cell(12, col).value for col in range(3, 9)] == ['16', '#2TP2/6', '20g', 3, 19.53, 57.36]
+    pdf = PdfReader(pi_template.build_pdf(source))
+    text = '\n'.join(page.extract_text() for page in pdf.pages)
+    assert 'Standard Double Drawn Genius Weft' in text and 'Straight' in text
+    assert model not in text and 'B3' not in text and '天才发帘' not in text
+    assert vars(source.items[0]) == original
+
+
+def test_customer_pi_keeps_english_model_details():
+    source = invoice()
+    source.items[0].model = 'Genius Weft 12 inch'
+    source.items[0].curl = 'Straight'
+    assert pi_template.document(source)['items'][0][1] == (
+        'Standard Double Drawn Genius Weft\nGenius Weft 12 inch / Straight / Discount: -1.23 EUR')
+
+
 @pytest.mark.parametrize("count", [1, 65])
 def test_pdf_has_template_header_real_values_and_all_lines(count):
     source = invoice(count)

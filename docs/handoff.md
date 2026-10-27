@@ -4,7 +4,7 @@
 - **选色站已上线**：`https://color-guide.leshine.cloud/`，制品 `977b8678ef72ff13358cabacc9406bca6d95ddea8388e9ffec32b3033c563b67`，86 个文件公网逐一 SHA256 匹配；证书覆盖子域名，有效至北京时间2027-01-25 08:39:29，既有自动续期已启用。原网站内容保持不变。
 - **验证**：专项隔离测试34过、既有导航前端测试18过、构建/约定检查通过；Nginx语法通过（保留既有IP站点protocol options警告）。北京API PID `1076912`、启动时间2026-10-26 11:39:27未变，`/health`为ok/database connected。无数据库迁移、无后端重启，办公室/新加坡未发布。
 - **浏览器边界**：首页已加载并展示38色；后续计算机工具因无法可靠识别当前浏览器URL而硬性中止，未绕过限制，搜索/选择/导航实际点击不宣称已实测。服务器制品及既有组件的新标签页配置已核验。
-- **Git交付**：代码在 `codex/color-guide-site`，仅本地提交并通过受管bundle部署，未合并main或push。后续从main全量发布前，应先合入此导航与部署支持，避免覆盖本次入口。主目录无关改动未触碰。
+- **Git交付**：代码在 `codex/color-guide-site`，已通过受管bundle部署；随后用户授权将本次源码、部署支持与发布记录合并推送。此次Git整合保持上述线上版本，不重复部署；主目录无关改动按SHA256备份保护。
 - 证据：本任务 `.deploy_state/color-guide/{site-current.json,public-verification.json,navigation/result.json,navigation/public-readback.json}`，服务器 `.deploy_state/color-guide-{site,navigation}/` 保留配置/源码恢复记录；操作见 [选色工具部署](../deploy/color-guide.md)。
 
 ## 2026-10-27 38色选色工具与方舟入口（Codex，静态站已上线；导航候选待切换）
@@ -13,8 +13,34 @@
 - 已通过 `deploy.bat --color-guide-site` 发布 86 个静态文件、独立 HTTPS 证书与 Nginx 站点；公网逐文件 SHA256 全部匹配，38 个颜色和 76 张使用中的图片完整。HTTP 转 HTTPS；API/隐藏文件/未知路径 404；既有 certbot.timer active/enabled，沿用续期 reload hook。
 - 导航候选基于当前北京后端和主前端共同基线 `d6e56d82e6eef2d76744069c22b3a76dcdb26f45`；仅增加外链及生成权限清单，沿用 colorwork 分组任一权限。受管专项采用干净 Git bundle 候选与静态切换，避免生产脏文件阻断后续发布；不迁移数据库、不重启 API，不发布办公室/新加坡或其他本地主分支功能。
 - 网站测试 14 项、导航既有前端测试 18 项通过，方舟构建成功；静态发布 Linux 专用单测在 Windows 跳过，不冒充执行通过。部署方法与回执位置见 [选色工具部署](../deploy/color-guide.md)。网站浏览器首页已加载并显示38色；后续点击因计算机工具无法可靠识别浏览器URL而中止，不计为交互验收通过。
-- 代码在 `codex/color-guide-site` 独立工作目录；未合并 main、未 push。主目录无关改动保持原样。最终导航切换结果将在本记录上方追加。
+- 此准备记录保留为历史；最终导航切换结果见上方发布完成记录。代码整合按随后用户的合并推送授权执行。
 
+## 2026-10-27 客户门户登录页透明白字 LOGO（Codex，Git 交付，未部署）
+
+- 分支 `codex/portal-login-white-logo`；登录页左上角改用仓库现有透明白色 LeShine 图片，复制至门户独立资源目录，保持 144px 显示宽度与原始比例。共享 BrandMark、申请/激活及登录后页面不变。
+- `npm --prefix frontend-portal run build`、增量约定检查通过；Git 巡检已运行（`--no-fetch`，本地引用快照）。桌面 1440px / 手机 390px 的构建预览核对白字、透明背景、图片加载、表单和申请入口，无横向溢出或页面异常；仅以拦截的未登录会话响应展示页面，未提交真实登录或申请。
+- 预览截图及检查结果保留在本 worktree 的 `tmp/portal-login-white-logo/`。用户已授权本次提交、合入 main 并推送 origin，最终以 Git refs 回读为准；不部署，线上只读核对仍使用原黄底 `logo.webp`。
+
+## 2026-10-26 田雯261011 原单恢复与绑定参数契约（Codex，生产数据恢复；代码未部署）
+
+- 用户授权将发票 `1379` 绑定既有小满订单 `26917 / 105885072282767` 并生成出库。已按完整实时证据恢复原绑定和两行 UID，保留原超时 unknown 事实及审计，未重新 POST 订单。
+- 正常出库任务 `896` 已完成，尝试次数 1；回款意图 `439.89 USD / Other` 未改写或发送。原始备份和回读证据在主工作区 `tmp/maintenance/recover-1379-20261026-105450/`。
+- `codex/invoice-bind-recovery` 修复门户 ID / 底层订单号参数错配引起的 500，并保留列表入口订单号。新增契约测试通过；相关回归及已核对基线失败见[报告](reports/2026-10-26-invoice-1379-recovery.md)。用户已授权提交、合入 main 并推送，最终以 Git refs 回读为准；本次不部署。
+- 已实现自动 GET 原单核对：60 秒调度、新版本库存单首次推送、原租约过期后最多三轮，次数持久化；完整有效列表、原发送时间窗和全部商业/归属资料一致才恢复。原出库意图与当前开关同时允许才入队；回款意图不变。历史缺证据、生产半成品和资料冲突仍待人工核对。此能力尚未部署。
+
+## 2026-10-26 PI导出隐藏中文内部型号（Codex，Git交付，未部署）
+
+- 员工端 `leshine_pi` Excel/PDF 的 Product 列不再附加含中文的整段内部型号（如 `B3天才发帘（帘宽12″）`），保留英文产品名、纯英文型号、卷度、折扣和金额；不改原发票/订单数据，客户已发布PI快照路径不变。
+- `tests/test_pi_template_export.py` 15项通过，覆盖两种格式、混合/纯中文型号移除、英文型号保留和源数据不变；独立审查通过。样例及可视核对图在 `tmp/pi-english-model-20261026/`。本次已授权提交、合入main并推送origin；未部署。
+
+## 2026-10-26 内贸数量终止、整单跳过与完成状态（Codex，Git交付，未部署）
+
+- 分支 `codex/domestic-termination-skip`，独立 worktree `C:/Users/windb/.codex/worktrees/domestic-termination-skip/commission-system`；用户已授权本次提交、合入 main 并推送；功能提交 `bce2c594`；集成验证已完成，最终 refs 以交付回读为准。未部署，主目录既有改动按备份与逐文件校验保护。
+- 明细终止支持选择未发货数量，按原成交价差额退款；保留真实工时、发货与单件审计。已终止码不可复用，普通加量及整单/单件打印支持非连续编号；有终止记录的明细禁止硬删。网络失败后关闭重开弹窗也保留原请求号。
+- 详情新增“一键跳过全部工序”，沿用 `domestic_skip:write`，逐道写人工跳过审计、不生成工资或发货。整单事务、订单级幂等保证重试不影响后来新增明细；无路线则整次回滚。有效跳过参与完成回算，订单状态 2 显示“已完成”，真实全部发货保留状态 3“已发货”；撤销后重新回算。无真实末道报工时不展示整行登记发货按钮。
+- 新迁移 `205_domestic_item_termination` 为订单和明细各加 nullable JSON 审计列；集成后单 head，父 revision 为最新主线的 `204_portal_delivery_profile`；未对共享/生产库执行迁移或业务写入。
+- 验证：内存 SQLite 后端相关回归 219 passed；最后的可发货信息及打印断言另 2 passed，迁移数据保留/DDL及主线迁移链测试 8 passed。前端定向 19 passed，`npm run build` 通过（既有 chunk 大小与 auth 模块混合导入提示）；增量约定与 diff 检查通过。桌面 1440px/手机 390px 实际 Vue → 拦截 HTTP → FastAPI/SQLite 验证数量、退款、跳过、完成状态及不能凭跳过登记发货；无页面异常/未覆盖 API，测试服务已停止。没有在真实 MySQL 上重现并发，当前读锁语义由 SQL 契约与独立静态审查覆盖。
+- 独立审查发现并修复失效码复活、稀疏码漏印、旧快照读、扩大重试范围及审计硬删，最终复核无阻断问题。证据保留 `tmp/domestic-completion-browser/` 和 `tmp/domestic-completion-build.log`；API/数据库/业务说明已同步。Git 巡检使用 `--no-fetch` 本地引用快照，不代表远端实时状态。
 ## 2026-10-26 Veronika 第二批撤销与保留运费（Codex，本地已实现，生产维护待发布）
 
 - 用户要求先处理已在小满删除的 2026.Veronika赊销1002-02，并允许删除整张出库；已明确保留原121.16美元运费及抵扣，原回款不删。固定对象 invoice981 / settlement7 / outbound6 / remote105879019644375；拟释放10行40件及1415.54商品款应用9/10/11，保留运费应用12和远端运费105878936774347。
