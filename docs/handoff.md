@@ -1,3 +1,12 @@
+## 2026-10-27 38色现货选色工具发布完成（Codex，北京专项）
+
+- **已部署版本**：`55d3bc5f60f50c3d116c23985c1a03a626774d1f`，线上 Git 检出干净；方舟主前端制品 `65998d1f1e742ba192c5540852d0674868fc7b63769c3b3bb6609f10834e428c`。`leshine.cloud` 与 `www.leshine.cloud` 首页 SHA256 均匹配候选；公网 JS 含“38色现货选色工具”和正确 URL，服务端/静态权限清单绑定候选并沿用库存色块图分组权限。侧栏原有外链组件使用 `target="_blank"` 和 `rel="noopener"`。
+- **选色站已上线**：`https://color-guide.leshine.cloud/`，制品 `977b8678ef72ff13358cabacc9406bca6d95ddea8388e9ffec32b3033c563b67`，86 个文件公网逐一 SHA256 匹配；证书覆盖子域名，有效至北京时间2027-01-25 08:39:29，既有自动续期已启用。原网站内容保持不变。
+- **验证**：专项隔离测试34过、既有导航前端测试18过、构建/约定检查通过；Nginx语法通过（保留既有IP站点protocol options警告）。北京API PID `1076912`、启动时间2026-10-26 11:39:27未变，`/health`为ok/database connected。无数据库迁移、无后端重启，办公室/新加坡未发布。
+- **浏览器边界**：首页已加载并展示38色；后续计算机工具因无法可靠识别当前浏览器URL而硬性中止，未绕过限制，搜索/选择/导航实际点击不宣称已实测。服务器制品及既有组件的新标签页配置已核验。
+- **Git交付**：代码在 `codex/color-guide-site`，仅本地提交并通过受管bundle部署，未合并main或push。后续从main全量发布前，应先合入此导航与部署支持，避免覆盖本次入口。主目录无关改动未触碰。
+- 证据：本任务 `.deploy_state/color-guide/{site-current.json,public-verification.json,navigation/result.json,navigation/public-readback.json}`，服务器 `.deploy_state/color-guide-{site,navigation}/` 保留配置/源码恢复记录；操作见 [选色工具部署](../deploy/color-guide.md)。
+
 ## 2026-10-27 38色选色工具与方舟入口（Codex，静态站已上线；导航候选待切换）
 
 - 用户授权将指定 v11 静态站部署到北京 `color-guide.leshine.cloud`，并在方舟“库存色块图”下新增“38色现货选色工具”，新标签页直开。源 ZIP SHA256：`4292d862ff2efd24d477daf30d411f459f4c0c360a7673c4e6c0d9f7b6e21cef`。
