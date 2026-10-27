@@ -1,0 +1,20 @@
+server {
+    listen 80;
+    server_name color-guide.leshine.cloud;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+    location / { return 301 https://color-guide.leshine.cloud$request_uri; }
+}
+server {
+    listen 443 ssl;
+    server_name color-guide.leshine.cloud;
+    ssl_certificate /etc/letsencrypt/live/color-guide.leshine.cloud/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/color-guide.leshine.cloud/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    root /var/www/ark-static/color-guide;
+    index index.html;
+    add_header X-Content-Type-Options nosniff always;
+    location ~ /\. { return 404; }
+    location /api/ { return 404; }
+    location = /index.html { add_header Cache-Control "no-cache" always; }
+    location / { try_files $uri $uri/ =404; }
+}

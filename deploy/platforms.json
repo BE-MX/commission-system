@@ -247,5 +247,16 @@
     "domain": "leshine.cloud",
     "new_agent_services": "Deploy on Beijing; register manager, health endpoint, state and any database writer before activation.",
     "existing_openclaw_user": "root"
-  }
+  },
+  "standalone_static_targets": [
+    {
+      "component": "color-guide",
+      "host": "ubuntu@154.8.205.162",
+      "root": "/var/www/ark-static/color-guide",
+      "domain": "color-guide.leshine.cloud",
+      "deploy": "deploy.bat --color-guide-site PLAN_JSON",
+      "source": "User-supplied v11 ZIP dist; SHA256 recorded in deployment receipt",
+      "database_writer": false
+    }
+  ]
 }

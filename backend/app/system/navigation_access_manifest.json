@@ -1,5 +1,5 @@
 {
-  "source_sha256": "83e6849bc56fcd78151148c66a4777d55f4c168fc87fd208530bdf4442c7faae",
+  "source_sha256": "c2b1aa64a4ad2f5cbb25a7ba3557d251614134ce16657d187a6d3b4cdf7d7724",
   "favorite_access": {
     "PortalCatalog": [
       {
@@ -2969,6 +2969,17 @@
       {
         "permission": "colorwork_master:read"
       },
+      {
+        "anyPermission": [
+          "colorwork_download:read",
+          "colorwork_edit:read",
+          "colorwork_master:read"
+        ]
+      }
+    ],
+    "https://color-guide.leshine.cloud/": [
+      {},
+      {},
       {
         "anyPermission": [
           "colorwork_download:read",

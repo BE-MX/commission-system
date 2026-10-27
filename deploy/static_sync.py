@@ -32,13 +32,18 @@ def remote_python(target, script, request, *, sudo=False, timeout=300):
     # separately from JSON; the executed script continues reading the same stdin.
     command = ("sudo -n " if sudo else "") + "python3 -c 'import base64,sys;exec(base64.b64decode(sys.stdin.readline()))'"
     source = script.read_bytes()
-    if script.name == 'remote_static.py':
+    if script.name in {'remote_static.py', 'color_guide_navigation_remote.py'}:
         # The remote helper runs from stdin; ship its shared retention module too.
         helper = base64.b64encode((HERE / 'static_retention.py').read_bytes()).decode()
         loader = ("import base64,sys,types\n"
                   "_retention=types.ModuleType('static_retention')\n"
                   "sys.modules['static_retention']=_retention\n"
                   f"exec(base64.b64decode({helper!r}),_retention.__dict__)\n")
+        if script.name == 'color_guide_navigation_remote.py':
+            remote_source = base64.b64encode((HERE / 'remote_static.py').read_bytes()).decode()
+            loader += ("_static=types.ModuleType('remote_static')\n"
+                       "sys.modules['remote_static']=_static\n"
+                       f"exec(base64.b64decode({remote_source!r}),_static.__dict__)\n")
         source = loader.encode() + source
     payload = base64.b64encode(source).decode() + "\n" + json.dumps(request)
     return subprocess.run(["ssh", *SSH_OPTIONS, target, command], input=payload,

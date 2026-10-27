@@ -1712,6 +1712,15 @@ export const NAV_ENTRIES = [
     },
   },
 
+  {
+    path: 'https://color-guide.leshine.cloud/',
+    external: true,
+    title: '38色现货选色工具',
+    menu: {
+      group: 'colorwork', title: '38色现货选色工具', icon: Brush, order: 40,
+    },
+  },
+
   // ── 任务中心（个人任务，数据按本人隔离） ─────────────────────
   {
     path: '/task',

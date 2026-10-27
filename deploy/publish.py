@@ -403,6 +403,8 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument('--color-guide-site', metavar='PLAN_JSON', help='Publish only the Beijing static color guide')
+    parser.add_argument('--color-guide-navigation', metavar='PLAN_JSON', help='Publish only the Beijing color-guide navigation overlay')
     parser.add_argument('--customer-portal-site', choices=['https', 'verify'], help='Configure or verify the approved Beijing customer-site HTTPS boundary; no business gates')
     parser.add_argument('--customer-portal-db-backup', action='store_true', help='Protected full revision-182 snapshot on office; no migration or service activation')
     parser.add_argument('--customer-portal-config', choices=['prepare', 'enable-access', 'enable-orders', 'stop-orders', 'close'], help='Merge protected Beijing customer config; enable-orders opens only order/PI gates, mail/outbound stay unchanged')
@@ -447,6 +449,14 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        for option, module in [('color_guide_site', 'color_guide_site'), ('color_guide_navigation', 'color_guide_navigation')]:
+            if getattr(args, option):
+                if any(value for key, value in vars(args).items() if key not in {option, 'prepare_only'}):
+                    raise RuntimeError('Color guide release only accepts its plan and --prepare-only')
+                import importlib
+                with deployment_lock():
+                    importlib.import_module(module).execute(getattr(args, option), args.prepare_only)
+                sys.exit(0)
         if getattr(args, 'restore_service_only', False) and not getattr(args, 'recover_office_readiness', None):
             raise RuntimeError('--restore-service-only requires --recover-office-readiness PLAN')
         if args.whatsapp_routing_only and any(value for key, value in vars(args).items()
