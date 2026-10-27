@@ -673,6 +673,12 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 `182_announcement_reads` 接当前 main 的 `180_settlement_funding_amendment`。user_id 在 MySQL 使用 INT UNSIGNED，与 ark_users.id 一致；document_id/revision_id 使用 BIGINT。重复阅读保留首次时间，重新发布新的修订独立计算未读；全部已读只写当前可见版本，不改其他用户。撤回/失效/删除后保留阅读事实，但不计入提醒。升级重复执行保留数据，降级拒绝删除阅读历史。该公告功能原实现阶段仅验证隔离 SQLite 升级及 MySQL DDL 编译；该阶段未执行生产迁移。客户门户任务随后实查生产已为182；未发布的密码迁移183接在182后，保持单 head。
 
 
+### 发票检验照片要求（208，2026-10-27，本地实现，未部署）
+
+`ark_invoices.inspection_requirement VARCHAR(16) NOT NULL DEFAULT 'single'`，值域 single=单张检验照片、detail=明细检验照片。迁移只新增该列：存量明确 `okki_new_deal=1` 回填 detail，其余（含 NULL）single；不修改原业务字段或明细。新建经服务端解析新成交后赋默认，显式选择优先，编辑未传保留存值。降级保留该列和已保存仓库要求；生产迁移仅由正式部署入口执行。
+
+新关联同步快照显式保存该字段并纳入内容版本。迁移前快照仅在本字段仍是确定性迁移默认、其余原版本内容一致时允许继续核对；旧命令重放只排除当时尚不存在且请求确实未传的新字段，身份与其余命令哈希仍严格一致。
+
 ### 发票客户等级（157）
 
 - `ark_invoice_customer_profiles`：方舟本地客户资料，`customer_id` 主键关联只读镜像 `customer_info.company_id`，`customer_grade` 为可空的 S/A/B/C/D/E，`updated_by` 记录修改人。客户等级与发票共用事务保存，原子 upsert 防止首次建档冲突；不写 `lsordertest.customer_info`。

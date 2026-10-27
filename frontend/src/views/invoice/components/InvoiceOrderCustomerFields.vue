@@ -126,6 +126,7 @@
         </div>
       </el-form-item>
     </div>
+    <InvoiceInspectionRequirementField :form="form" class="fgrid-c3" />
     <div class="fgrid-c3 contact-details-heading">
       <span>联系与收货信息{{ contactDetailsComplete ? '（已填写）' : '（待补全）' }}</span>
       <el-button v-if="contactDetailsComplete" link type="primary"
@@ -157,6 +158,7 @@ import { customerOptionLabel } from '../composables/useInvoiceCustomerSearch'
 import { orderTypeLabel } from '../composables/useInvoiceShipments'
 import { describeCustomerRule } from '../composables/useInvoiceEditor'
 import InvoiceCustomerSyncEntry from './InvoiceCustomerSyncEntry.vue'
+import InvoiceInspectionRequirementField from './InvoiceInspectionRequirementField.vue'
 
 const selectedCustomer = defineModel('selectedCustomer')
 const privateOnlyCompany = defineModel('privateOnlyCompany')

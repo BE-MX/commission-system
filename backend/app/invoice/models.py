@@ -74,6 +74,8 @@ class Invoice(Base):
     okki_new_deal = Column(SmallInteger, nullable=True, comment="OKKI必填-是否新成交:1是/0否/NULL推单时按客户有无okki历史订单兜底")
     okki_free_shipping = Column(SmallInteger, nullable=True, comment="OKKI必填-是否包邮:1是/0否/NULL推单时按运费是否为0兜底")
     okki_first_return = Column(SmallInteger, nullable=True, comment="OKKI必填-是否首返:1是/0否/NULL推单时默认否")
+    inspection_requirement = Column(String(16), nullable=False, default="single", server_default="single",
+                                    comment="检验要求：single单张检验照片/detail明细检验照片")
     remark = Column(Text, nullable=True, comment="备注")
     source_type = Column(String(32), nullable=False, default="manual", server_default="manual", comment="来源：manual/okki_screenshot/external_api")
     source_order_id = Column(String(64), nullable=True, comment="OKKI订单ID、截图幂等键或外部接入请求ID")

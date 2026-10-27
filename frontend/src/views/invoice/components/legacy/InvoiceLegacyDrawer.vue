@@ -148,6 +148,7 @@
                 <span class="okki-flag-tip">推小满必填，已按历史预判</span>
               </div>
             </el-form-item>
+            <InvoiceInspectionRequirementField :form="form" class="span-3" />
             <el-form-item label="备注" class="span-3">
               <el-input v-model="form.remark" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" />
               <div class="field-tip">备注内容将自动带入到出库单中</div>
@@ -239,6 +240,7 @@ import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from '../../composabl
 import { customerOptionLabel } from '../../composables/useInvoiceCustomerSearch'
 import { describeCustomerRule } from '../../composables/useInvoiceEditor'
 import InvoiceCustomerSyncEntry from '../InvoiceCustomerSyncEntry.vue'
+import InvoiceInspectionRequirementField from '../InvoiceInspectionRequirementField.vue'
 import InvoiceHairTable from '../InvoiceHairTable.vue'
 import InvoiceAccessoryTable from '../InvoiceAccessoryTable.vue'
 import InvoiceLegacySettlementFields from './InvoiceLegacySettlementFields.vue'

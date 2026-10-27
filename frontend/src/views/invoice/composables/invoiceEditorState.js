@@ -3,6 +3,10 @@ import { currentBeijingDate } from '../../../utils/datetime.js'
 
 export const INVOICE_NO_MAX_LENGTH = 64
 
+export function inspectionRequirement(form) {
+  return form.inspection_requirement ?? (form.okki_new_deal === 1 ? 'detail' : 'single')
+}
+
 export function screenshotOrderName(preview = {}) {
   const extracted = String(preview?.extraction?.order_name || '').trim()
   const patched = String(preview?.invoice_patch?.source_order_name || '').trim()
@@ -29,7 +33,7 @@ export function emptyInvoiceForm() {
     internal_payment_method: '', internal_discount: 0, packaging_quantity: 0,
     internal_accessory: 0, internal_received: null, internal_balance: null,
     internal_shipping_type: '', okki_new_deal: 1, okki_free_shipping: 1,
-    okki_first_return: 0, remark: '', source_type: 'manual', source_order_id: null,
+    okki_first_return: 0, inspection_requirement: null, remark: '', source_type: 'manual', source_order_id: null,
     source_order_no: null, source_order_name: null, source_image_sha256: null,
     source_preview_token: null, items: [],
   }
@@ -124,6 +128,7 @@ export function buildInvoicePayload(form, hairDiscount) {
     internal_balance: form.order_type === 'presale' ? null : form.internal_balance, internal_shipping_type: form.internal_shipping_type || null,
     okki_new_deal: form.okki_new_deal ?? null, okki_free_shipping: form.okki_free_shipping ?? null,
     okki_first_return: form.okki_first_return ?? null, remark: form.remark,
+    inspection_requirement: inspectionRequirement(form),
     source_type: form.source_type || 'manual', source_order_id: form.source_order_id || null,
     source_order_no: form.source_order_no || null, source_order_name: form.source_order_name || null,
     source_image_sha256: form.source_image_sha256 || null,

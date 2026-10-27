@@ -263,6 +263,15 @@ class _InvoiceHeaderPayload(BaseModel):
     okki_new_deal: Optional[int] = Field(None, ge=0, le=1)
     okki_free_shipping: Optional[int] = Field(None, ge=0, le=1)
     okki_first_return: Optional[int] = Field(None, ge=0, le=1)
+    inspection_requirement: Optional[str] = Field(None, pattern="^(single|detail)$")
+
+    @field_validator("inspection_requirement", mode="before")
+    @classmethod
+    def _require_inspection_selection(cls, value):
+        if value is None:
+            raise ValueError("请选择检验要求")
+        return value
+
     remark: Optional[str] = None
     source_type: str = Field(default="manual", pattern="^(manual|okki_screenshot|external_api|portal)$")
     source_order_id: Optional[str] = Field(None, max_length=64)

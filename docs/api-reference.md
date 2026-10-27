@@ -1,5 +1,11 @@
 # 莱莎方舟 API 参考
 
+## 订单检验照片要求（2026-10-27，本地实现，未部署）
+
+订单发票新建、编辑、关联保存的 invoice payload 增加 `inspection_requirement=single|detail`（单张检验照片／明细检验照片），详情回传已保存值。显式空值或其他枚举拒绝；创建未传时按服务端最终新成交标记决定（新成交为 detail，其余 single），编辑未传保留存值。编辑版本包含此字段，旧持久关联任务与原幂等请求仍可核对恢复，不重复推单。
+
+`GET /api/shipping-inspection/outbound-records/{record_id}/print-data` 的 record 增加 `is_new_deal` 与 `inspection_requirement`。按该出库明细的真实订单 ID 和客户关联读取方舟已保存选择（包括待同步编辑），合并出库任一关联订单命中即显示该标记；不改订单金额原有的已同步取值规则。新签与明细照片标记独立，打印预览、直接打印及 Word 保持同一规则。历史新成交 NULL 只使用明确成功推单日志，不以当前客户历史猜测。检验要求是本地仓库指示，不新增小满字段或照片提交拦截。
+
 ## 单笔回款删除（2026-10-14，本地实现，未部署）
 
 - `GET /api/receipts/{identity}/deletion`：读取删除预览。返回回款及订单编号、原币含费金额/手续费/净额、远端状态、`expected_version`、`can_delete/can_resume`；已归档返回真实原记录，不执行删除。

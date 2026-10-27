@@ -464,6 +464,8 @@ def create_invoice(
     # OKKI 业务标记空值兜底（null=自动判定）
     for field, value in resolve_okki_flags(db, invoice).items():
         setattr(invoice, field, value)
+    invoice.inspection_requirement = body.inspection_requirement or (
+        "detail" if invoice.okki_new_deal == 1 else "single")
     invoice.customer_grade = (body.customer_grade if "customer_grade" in body.model_fields_set
                               else get_customer_grade(db, body.customer_id))
     db.add(invoice)
@@ -540,6 +542,8 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         setattr(invoice, field, getattr(body, field))
     if "merchandiser_id" in body.model_fields_set:
         _apply_merchandiser(db, invoice, body.merchandiser_id)
+    if "inspection_requirement" in body.model_fields_set:
+        invoice.inspection_requirement = body.inspection_requirement
     sales_user = db.get(ArkUser, invoice.sales_user_id) if invoice.sales_user_id else None
     if sales_user:
         invoice.sales_user_name = sales_user.username
@@ -691,6 +695,7 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
         "okki_new_deal": invoice.okki_new_deal,
         "okki_free_shipping": invoice.okki_free_shipping,
         "okki_first_return": invoice.okki_first_return,
+        "inspection_requirement": invoice.inspection_requirement,
         "remark": invoice.remark,
         "source_type": invoice.source_type,
         "source_order_id": invoice.source_order_id,
