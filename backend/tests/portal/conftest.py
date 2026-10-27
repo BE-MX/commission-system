@@ -44,6 +44,8 @@ def portal_metadata():
     for table in ("ark_users", "ark_customer_accounts", "ark_customer_external_identities",
                   "ark_customer_assignments", "ark_invoices"):
         Table(table, metadata, Column("id", BigInteger().with_variant(Integer(), "sqlite"), primary_key=True))
+    invoice_models.InvoiceItem.__table__.to_metadata(metadata)
+    invoice_models.InvoiceItemGroup.__table__.to_metadata(metadata)
     for table in Base.metadata.tables.values():
         if table.name.startswith("ark_order_portal_"):
             table.to_metadata(metadata)

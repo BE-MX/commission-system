@@ -20,8 +20,20 @@ export function receiptActionState(receipt) {
       : '正在发送或结果待核对，请核实原回款，避免重复登记。' }
 }
 
+function withoutInvoiceGroups(payload) {
+  const { item_groups, expected_groups_version, ...rest } = payload
+  return {
+    ...rest,
+    items: (payload.items || []).map(({ group_key, ...item }) => item),
+  }
+}
+
+export function invoiceBusinessSignature(payload) {
+  return JSON.stringify(withoutInvoiceGroups(payload))
+}
+
 export function invoiceOrderSignature(payload) {
-  const { receipt_draft, ...order } = payload
+  const { receipt_draft, ...order } = withoutInvoiceGroups(payload)
   return JSON.stringify(order)
 }
 

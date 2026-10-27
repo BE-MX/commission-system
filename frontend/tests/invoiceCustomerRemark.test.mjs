@@ -7,6 +7,7 @@ import * as settlement from '../src/views/invoice/composables/invoiceSettlement.
 import * as state from '../src/views/invoice/composables/invoiceEditorState.js'
 import * as pricing from '../src/views/invoice/composables/accessoryPricing.js'
 import * as money from '../src/utils/money.js'
+import * as receiptState from '../src/views/invoice/composables/invoiceReceiptState.js'
 
 const source = readFileSync(new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url), 'utf8')
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
@@ -18,13 +19,47 @@ async function harness(request = async () => defaults('上单备注'), createReq
   const api = Object.fromEntries(['checkInvoiceNo', 'createInvoice', 'createInvoiceFromScreenshot',
     'getCustomerContactDefaults', 'getCustomerRule', 'getInvoice', 'getInvoiceAssignees',
     'getInvoiceMerchandisers', 'getPreviousInvoiceNo', 'searchInvoiceCustomerOptions',
-    'suggestInvoiceNo', 'updateInvoice'].map(name => [name, async () => ({})]))
+    'suggestInvoiceNo', 'updateInvoice', 'updateInvoiceItemGroups'].map(name => [name, async () => ({})]))
   Object.assign(api, {
     getCustomerContactDefaults: request, getCustomerRule: async () => null,
     getInvoice: async id => ({ ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id, customer_id: 'C1', ...invoiceData }),
     createInvoice: async payload => { saved.push(payload); return createRequest ? createRequest(payload) : { ...payload, id: 10 } },
-    updateInvoice: async (id, payload) => { saved.push(payload); return { ...payload, id } },
+    updateInvoice: async (id, payload) => options.updateRequest
+      ? options.updateRequest(id, payload) : (saved.push(payload), { ...payload, id }),
+    updateInvoiceItemGroups: async (id, payload) => options.groupRequest
+      ? options.groupRequest(id, payload) : { ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id },
   })
+  const groupMock = form => {
+    const activeGroupKey = vue.ref('')
+    const activeGroup = vue.computed(() => form.item_groups.find(group => group.key === activeGroupKey.value) || null)
+    return {
+      activeGroupKey,
+      activeGroup,
+      activeGroupName: vue.computed(() => activeGroup.value?.name || ''),
+      canAppendToGroup: vue.computed(() => Boolean(activeGroup.value)),
+      groupCounts: vue.computed(() => Object.fromEntries(form.item_groups.map(group => [
+        group.key, form.items.filter(row => row.group_key === group.key).length,
+      ]))),
+      resetItemGroups() {
+        if (!form.item_groups.length) form.item_groups.push({ key: 'a', name: 'A', sort_order: 1 })
+        for (const row of form.items) if (!row.group_key) row.group_key = form.item_groups[0].key
+        activeGroupKey.value = form.item_groups.at(-1).key
+      },
+      getTargetGroupKey: () => activeGroupKey.value || null,
+      getSourceItems: key => form.items.filter(row => row.group_key === key),
+      createItemGroup: async () => null,
+      renameItemGroup: async key => {
+        const group = form.item_groups.find(row => row.key === key)
+        if (group) group.name = 'renamed'
+        return true
+      },
+      deleteItemGroup: async () => false,
+      moveRowsToGroup: (rows, key) => {
+        for (const row of rows) row.group_key = key
+        return true
+      },
+    }
+  }
   const imports = {
     vue,
     '@/utils/money': money,
@@ -43,7 +78,10 @@ async function harness(request = async () => defaults('上单备注'), createReq
           return operation.value
         } }
     } },
-    './invoiceReceiptState': { invoiceOrderSignature: payload => JSON.stringify(payload) },
+    './invoiceReceiptState': {
+      invoiceOrderSignature: receiptState.invoiceOrderSignature,
+      invoiceBusinessSignature: receiptState.invoiceBusinessSignature,
+    },
     './invoiceSyncFlow': { INVOICE_SYNC_OUTCOME: { SUCCESS: 'success' }, validateThenSync: async id => { synced.push(id); return options.outcome || 'success' } },
     './invoiceSettlement': settlement,
     './accessoryPricing': pricing,
@@ -53,9 +91,17 @@ async function harness(request = async () => defaults('上单备注'), createReq
       useInvoiceCustomerSearch: () => ({ options: vue.ref([]), loading: vue.ref(false), total: vue.ref(0), hasMore: vue.ref(false), search() {}, reset() {} }),
     },
     './useInvoiceAccessories': { useInvoiceAccessories: form => ({
-      hairItems: vue.computed(() => form.items), hairAmount: vue.ref(0), hairDiscount: vue.ref(0),
+      hairItems: vue.computed(() => form.items), hairAmount: vue.ref(0),
+      hairDiscount: vue.ref(Number(invoiceData.internal_discount || 0)),
       accessoryAmount: vue.ref(0), accessoryDiscountTotal: vue.ref(0),
       invalidateCustomerContext() {}, refreshAccessoryPrices: async () => {},
+    }) },
+    './useInvoiceItemGroups': { useInvoiceItemGroups: form => options.functionalGroups ? groupMock(form) : ({
+      activeGroupKey: vue.ref('__all_item_groups__'), activeGroup: vue.ref(null), activeGroupName: vue.ref(''),
+      canAppendToGroup: vue.ref(true), groupCounts: vue.ref({}), resetItemGroups() {},
+      getTargetGroupKey: () => '', getSourceItems: () => [],
+      createItemGroup: async () => null, renameItemGroup: async () => false,
+      deleteItemGroup: async () => false, moveRowsToGroup: () => true,
     }) },
     './useInvoiceHairItems': { useInvoiceHairItems: () => ({ refreshLinePrice: async () => {}, addBlankLine() {} }) },
   }
@@ -385,7 +431,9 @@ for (const action of ['cancel', 'close', 'confirm']) {
       try {
         await h.editor.onCustomerChange(customer('C1'))
         Object.assign(h.editor.form, { express_channel: 'FEDEX', receipt_draft: { amount, status: 'draft' } })
+        assert.equal(h.editor.hasOnlyGroupChanges(), false)
         const submit = h.editor.saveAndSync()
+        await Promise.resolve()
         assert.deepEqual(h.confirmations, ['当前回款金额为0，是否确认提交？'])
         assert.equal(h.saved.length, 0)
         assert.equal(h.synced.length, 0)
@@ -615,5 +663,171 @@ test('linked retry announces completion when the earlier save-and-sync finally r
     options.linkedStatus = 'done'
     await h.editor.retryLinked()
     assert.equal(h.editor.syncCompletionMessage.value, 'RETRY-123订单号已保存并同步完成')
+  } finally { h.stop() }
+})
+
+
+function concurrentGroupRows() {
+  return [1, 2].map(id => state.normalizeHairRow({
+    id, group_key: 'a', product_id: 11, sku_id: 9011, product_name: `Product ${id}`,
+    product_display: 'Product', model: 'M1', color: '#1B', length: '18', net_weight_grams: '100g',
+    quantity: id, standard_price: 20, customer_price: 20, price_per_piece: 20, total_price: id * 20,
+    created_at: '2026-10-01T09:00:00',
+  }))
+}
+
+function concurrentInvoice() {
+  return {
+    ...defaults('本单已保存备注'),
+    items: concurrentGroupRows(), item_groups: [{ key: 'a', name: 'A', sort_order: 1 }],
+    internal_discount: 25,
+    receipt_draft: { id: 44, invoice_id: 7, source: 'auto', status: 'converted', amount: 100,
+      bank_charge: 0, collection_date: '2026-10-27', payment_type: 'Other', purpose: 'ordinary',
+      attachment_ids: [], remark: '', receipt_version: 1 },
+    edit_version: 'v1', item_groups_version: 'g1', status: 'ready', sync_status: 'synced',
+    xiaoman_order_id: 'REMOTE', express_channel: 'FEDEX', customer_name: 'Customer C1',
+  }
+}
+
+test('renumbered save responses merge IDs into in-flight edits and later writes', async () => {
+  const pending = deferred(), updates = [], patches = []
+  const h = await harness(undefined, undefined, concurrentInvoice(), undefined, {
+    functionalGroups: true,
+    updateRequest: (id, payload) => {
+      updates.push(payload)
+      if (updates.length === 1) return pending.promise
+      return { ...payload, id, edit_version: 'v2', item_groups_version: 'g2',
+        items: payload.items.map((item, index) => ({ ...item, id: 100 + index })) }
+    },
+    groupRequest: (id, payload) => {
+      patches.push(payload)
+      return { ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id,
+        items: h.editor.form.items, item_groups: payload.item_groups,
+        edit_version: 'v2', item_groups_version: 'g3', status: 'ready', sync_status: 'synced' }
+    },
+  })
+  try {
+    await h.editor.openEdit(7)
+    assert.equal(h.editor.hasOnlyGroupChanges(), false)
+    const saving = h.editor.saveDraft()
+    await Promise.resolve()
+    h.editor.form.items[1].quantity = 9
+    assert.deepEqual(h.warnings, [])
+    pending.resolve({
+      ...updates[0], id: 7, edit_version: 'v2', item_groups_version: 'g2',
+      items: updates[0].items.map((item, index) => ({ ...item, id: 100 + index })),
+    })
+    await saving
+    assert.equal(h.editor.form.items[1].id, 101)
+    assert.equal(h.editor.form.items[1].quantity, 9)
+
+    await h.editor.saveDraft()
+    assert.equal(updates[1].items[1].id, 101)
+    await h.editor.renameItemGroup('a')
+    await h.editor.saveDraft()
+    assert.equal(patches.length, 1)
+    assert.deepEqual(patches[0].items.map(row => row.id), [100, 101])
+  } finally { h.stop() }
+})
+
+test('group-only edits during renumbered saves use refreshed baselines and never sync business', async () => {
+  const pending = deferred(), updates = [], patches = []
+  const h = await harness(undefined, undefined, concurrentInvoice(), undefined, {
+    functionalGroups: true,
+    updateRequest: (id, payload) => {
+      updates.push(payload)
+      return pending.promise
+    },
+    groupRequest: (id, payload) => {
+      patches.push(payload)
+      return { ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id,
+        items: h.editor.form.items, item_groups: payload.item_groups,
+        edit_version: 'v2', item_groups_version: 'g3', status: 'ready', sync_status: 'synced' }
+    },
+  })
+  try {
+    await h.editor.openEdit(7)
+    const saving = h.editor.saveDraft()
+    await Promise.resolve()
+    h.editor.form.item_groups[0].name = 'renamed during save'
+    pending.resolve({
+      ...updates[0], id: 7, edit_version: 'v2', item_groups_version: 'g2',
+      items: updates[0].items.map((item, index) => ({ ...item, id: 100 + index })),
+    })
+    await saving
+    assert.deepEqual(h.editor.form.items.map(row => row.id), [100, 101])
+    assert.equal(h.editor.hasUnsavedChanges.value, true)
+    assert.equal(h.editor.hasOnlyGroupChanges(), true)
+    assert.equal(h.editor.form.receipt_order_dirty, false)
+
+    await h.editor.saveAndSync()
+    assert.equal(h.editor.hasUnsavedChanges.value, false)
+    assert.equal(updates.length, 1)
+    assert.equal(patches.length, 1)
+    assert.equal(h.editor.linkedOperation.value, null)
+    assert.equal(h.synced.length, 0)
+  } finally { h.stop() }
+})
+
+test('group-only edits during a group patch preserve the new edit and its version baseline', async () => {
+  const pending = deferred(), patches = [], updates = []
+  const h = await harness(undefined, undefined, concurrentInvoice(), undefined, {
+    functionalGroups: true,
+    updateRequest: (id, payload) => { updates.push(payload); return { ...payload, id } },
+    groupRequest: async (id, payload) => {
+      patches.push(payload)
+      if (patches.length === 1) await pending.promise
+      return { ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id,
+        items: h.editor.form.items, item_groups: payload.item_groups,
+        edit_version: 'v1', item_groups_version: patches.length === 1 ? 'g2' : 'g3',
+        status: 'ready', sync_status: 'synced' }
+    },
+  })
+  try {
+    await h.editor.openEdit(7)
+    h.editor.form.item_groups[0].name = 'first rename'
+    const saving = h.editor.saveDraft()
+    await Promise.resolve()
+    h.editor.form.item_groups[0].name = 'second rename'
+    pending.resolve()
+    await saving
+    assert.equal(h.editor.form.item_groups[0].name, 'second rename')
+    assert.equal(h.editor.hasUnsavedChanges.value, true)
+    assert.equal(h.editor.hasOnlyGroupChanges(), true)
+    assert.equal(h.editor.form.receipt_order_dirty, false)
+
+    await h.editor.saveDraft()
+    assert.equal(patches.length, 2)
+    assert.equal(patches[1].expected_groups_version, 'g2')
+    assert.equal(patches[1].item_groups[0].name, 'second rename')
+    assert.equal(h.editor.hasUnsavedChanges.value, false)
+    assert.equal(updates.length, 0)
+  } finally { h.stop() }
+})
+
+test('group change while customer defaults are pending stays local and skips external sync', async () => {
+  const pending = deferred(), patches = []
+  const h = await harness(pending.promise, undefined, concurrentInvoice(), undefined, {
+    functionalGroups: true,
+    groupRequest: (id, payload) => {
+      patches.push(payload)
+      return { ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id,
+        items: h.editor.form.items, item_groups: payload.item_groups,
+        edit_version: 'v1', item_groups_version: 'g2', status: 'ready', sync_status: 'synced' }
+    },
+  })
+  try {
+    await h.editor.openEdit(7)
+    const changing = h.editor.onCustomerChange(customer('C1'))
+    Object.assign(h.editor.form, concurrentInvoice())
+    const syncing = h.editor.saveAndSync()
+    h.editor.form.item_groups[0].name = 'renamed during wait'
+    assert.equal(h.editor.hasOnlyGroupChanges(), true)
+    pending.resolve(defaults('本单已保存备注'))
+    await changing
+    await syncing
+    assert.equal(patches.length, 1)
+    assert.equal(h.editor.linkedOperation.value, null)
+    assert.equal(h.editor.synced?.length || 0, 0)
   } finally { h.stop() }
 })

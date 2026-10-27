@@ -198,4 +198,4 @@ def test_migration_preserves_orders_and_backfills_only_explicit_new_deals():
         assert conn.execute(text("SELECT inspection_requirement FROM ark_invoices WHERE id=1")).scalar() == "detail"
     config = Config()
     config.set_main_option("script_location", str(path.parents[1]))
-    assert ScriptDirectory.from_config(config).get_heads() == [migration.revision]
+    assert ScriptDirectory.from_config(config).get_heads() == ["209_invoice_item_groups"]

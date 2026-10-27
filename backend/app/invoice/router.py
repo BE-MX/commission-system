@@ -53,6 +53,8 @@ from app.invoice.detail_router import router as detail_router
 router.include_router(detail_router)
 from app.invoice.remark_router import router as remark_router
 router.include_router(remark_router)
+from app.invoice.item_group_router import router as item_group_router
+router.include_router(item_group_router)
 
 _READ_OR_WRITE = require_any_permission("invoice:read", "invoice:write")
 # 价格与产品配置页读端点（063 拆分）：页面码 + 旧读写码兼容（发票编辑器也调这批端点）
@@ -871,6 +873,8 @@ def _write_invoice_or_400(db: Session, write):
         logger.warning("invoice 写入唯一约束冲突: %s", exc)
         print(f"[invoice] integrity error on write: {exc}", flush=True)
         constraint = str(getattr(exc, "orig", exc))
+        if "item_group" in constraint:
+            raise HTTPException(400, "分组键或名称已被占用，请修改后重试")
         if "uq_invoice_source_order" in constraint or "source_order_id" in constraint:
             raise HTTPException(400, "该 OKKI 订单已导入，请勿重复创建")
         if "uq_invoice_source_image" in constraint or "source_image_sha256" in constraint:

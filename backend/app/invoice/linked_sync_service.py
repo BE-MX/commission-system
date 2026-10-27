@@ -30,7 +30,7 @@ def edit_version(invoice, *, include_inspection=True):
         fields.add("inspection_requirement")
     values = {k: getattr(invoice, k) for k in sorted(fields)}
     values["items"] = [{c.name: getattr(i, c.name) for c in i.__table__.columns
-        if c.name not in {"id", "invoice_id", "xiaoman_unique_id", "created_at", "updated_at"}} for i in invoice.items]
+        if c.name not in {"id", "invoice_id", "group_id", "xiaoman_unique_id", "created_at", "updated_at"}} for i in invoice.items]
     if getattr(invoice,'presale_order_revision',None):values['presale_order_revision']=business_config(invoice)
     return hashlib.sha256(json.dumps(values, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -116,6 +116,8 @@ def create(db, invoice, body, actor, *, receipt_rows=None):
                          or body.invoice.order_type != invoice.order_type):
         raise ValueError("关联同步不支持更换客户、币种或订单类型，请单独处理原单")
     before = snapshot(invoice)
+    from app.receipt import invoice_link
+    before_receipt = invoice_link.describe(db, invoice)
     # Identity and receipt evidence remain frozen; only the amount floor and fee
     # basis restrictions are replaced by a preserved-payment reconciliation.
     service.update_invoice(db, invoice, body.invoice, actor, linked_change=True, receipt_rows=receipt_rows)
@@ -125,6 +127,10 @@ def create(db, invoice, body, actor, *, receipt_rows=None):
     db.flush()
     db.refresh(invoice)
     db.expire(invoice, ["items"])
+    if (getattr(body.invoice, "item_groups", None) is not None
+            and edit_version(invoice) == before["edit_version"]
+            and invoice_link.describe(db, invoice) == before_receipt):
+        raise ValueError("订单业务数据未变化，请使用普通保存，无需关联同步")
     issues = service.validate_invoice(invoice)
     if issues:
         detail = "；".join(f"{issue.get('field', 'items')}：{issue.get('message', '校验失败')}" for issue in issues)

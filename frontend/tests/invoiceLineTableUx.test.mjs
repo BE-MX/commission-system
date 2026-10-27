@@ -64,13 +64,18 @@ test('both tables support multi-select delete and clear-all with confirmation', 
     assert.match(source, /<el-table-column type="selection" min-width="42" fixed/)
     assert.match(source, /@select="onSelect" @select-all="onSelectAll"/)
     assert.match(source, /<template v-if="selectedCount">[\s\S]*?删除所选[\s\S]*?取消选择/)
-    assert.match(source, /:disabled="!items\.length" @click="clearAll"/)
+    assert.match(source, source === hairTable ? /:disabled="!groupItems.length" @click="clearAll"/ : /:disabled="!items.length" @click="clearAll"/)
     assert.ok(source.includes("confirmDanger('删除', `所选 ${"), 'delete-selected confirm')
     assert.ok(source.includes(` 行${noun}\``), 'confirm names the table')
-    assert.ok(source.includes("confirmDanger('清空', `全部 ${props.items.length} 行" + noun + '`'), 'clear-all confirm')
+    if (source === hairTable) {
+      assert.match(source, /const target = group \? `分组「\$\{group\.name\}」的` : '全部'/)
+      assert.match(source, /emit\('remove-many', \[\.\.\.groupItems\.value\]\)/)
+    } else {
+      assert.ok(source.includes("confirmDanger('清空', `全部 ${props.items.length} 行" + noun + '`'), 'clear-all confirm')
+      assert.match(source, /emit\('remove-many', \[\.\.\.props\.items\]\)/)
+    }
     assert.match(source, /if \(isFeedbackCancelled\(error\)\) return/)
     assert.match(source, /emit\('remove-many', takeSelected\(\)\)/)
-    assert.match(source, /emit\('remove-many', \[\.\.\.props\.items\]\)/)
   }
 })
 
@@ -136,5 +141,23 @@ test('selection drops rows replaced by a reload with the same row count', async 
   form.items = form.items.filter(row => row.id !== 1)
   await Vue.nextTick()
   assert.equal(sel.selectedCount.value, 1)
+  scope.stop()
+})
+
+test('visible filter changes prune hidden selections while retaining other visible rows', async () => {
+  const Vue = await import('vue')
+  const { useLineSelection } = await import('../src/views/invoice/composables/useLineSelection.js')
+  const rows = Vue.reactive([{ id: 1, visible: true }, { id: 2, visible: true }, { id: 3, visible: true }])
+  const items = Vue.computed(() => rows)
+  const visibleItems = Vue.computed(() => rows.filter(row => row.visible))
+  const scope = Vue.effectScope()
+  const sel = scope.run(() => useLineSelection(Vue.ref(null), items, visibleItems, visibleItems))
+  sel.onSelect([], rows[0])
+  sel.onSelect([], rows[1])
+  sel.onSelect([], rows[2])
+  rows[0].visible = false
+  await Vue.nextTick()
+  assert.equal(sel.selectedCount.value, 2)
+  assert.deepEqual([...sel.selected.value].map(row => row.id), [2, 3])
   scope.stop()
 })

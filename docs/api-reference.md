@@ -92,6 +92,14 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 - `POST /api/portal/admin/v1/access-requests/{id}/review`：员工 `portal_access:admin`；approve 必须传现有 enabled + can_order 的 `access_id`，reject 不需要。批准复用邀请邮件 outbox，客户打开 `/activate#token=...` 后 `POST /auth/challenge` 请求验证码，`POST /auth/activate` 以验证码 + 新密码完成激活并登录。密码只进 SecretStr/bcrypt，不进入申请、日志或回执。
 
 
+## 订单发票产品明细分组（2026-10-27）
+
+- 发票详情新增 `item_groups`、`item_groups_version`；产品行新增 `group_key` 和 `created_at`。创建/更新可携带同名可选字段。分组 key 创建后稳定，名称可自定义且同一订单内唯一，仅用于编辑器展示，不是发货批次，不参与金额、库存、出库、打印导出、门户或 OKKI 同步。旧调用省略时由服务端保留/创建默认分组。
+- 普通更新及关联同步也可携带可选 `expected_groups_version`；显式提交分组定义时服务端同时校验该版本，避免整单保存覆盖另一会话刚完成的分组调整。旧调用省略分组定义或版本时保持原兼容路径。
+- `PATCH /api/invoice/invoices/{invoice_id}/item-groups`：`invoice:write` 与实时订单数据范围，body 为 `{item_groups,items:[{id,group_key}],expected_version,expected_groups_version}`。`items` 必须恰好覆盖当前全部未归档产品行，不能借分组接口增删业务行。业务版本或分组版本过期返回 409；成功返回完整订单详情。该路径只修改名称与行归属，不重建订单，不改变 `status/sync_status/synced_at` 或业务 `edit_version`，不触发外部同步。只有分组变化时，前端“保存并同步”也只保存并提示无需同步。
+- 当前具体分组是新增、复制和 Excel/整单粘贴的目标；“全部明细”用于整单核对与跨组移动，不作为隐式新增目标。分组切换只过滤可见行，批量校验、整单合计和出库选择仍基于完整订单。
+- `GET /api/invoice/invoices/{invoice_id}/editor-inventory` 的每行另含 `outbound_quantity`（当前有效已生成及已发货出库单关联数量合计）和 `outbounds`（单号、generated/shipped、数量、日期）。`shipped_quantity` 仍仅表示实际已发数量；权限不足、映射缺失或进度未核验时这些数量均为 null，不能据此显示未出库。
+
 ## 库存单回款草稿保存校验（2026-10-20）
 
 订单发票新增、普通编辑及关联保存沿用原端点与权限；保存时以服务端重新计价的订单总额校验未提交的 `receipt_draft.amount`，超额返回具体金额与币种的校验错误，整次保存回滚。编辑请求省略 `receipt_draft` 时仍校验已有草稿。零金额、预售首款和已生成回款沿用原语义，不新增端点或权限。详见 [订单关联同步](invoice-linked-sync.md#库存单回款草稿保存前校验2026-10-20)。

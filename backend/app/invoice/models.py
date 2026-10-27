@@ -103,6 +103,13 @@ class Invoice(Base):
         cascade="all, delete-orphan",
         order_by="InvoiceItem.sort_order",
     )
+    item_groups = relationship(
+        "InvoiceItemGroup",
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        order_by="InvoiceItemGroup.sort_order, InvoiceItemGroup.id",
+        lazy="noload",
+    )
 
     __table_args__ = (
         Index("idx_ark_invoices_customer", "customer_id"),
@@ -132,6 +139,30 @@ class InvoiceDelegateGrant(Base):
     )
 
 
+class InvoiceItemGroup(Base):
+    """Display-only product grouping; never a shipment or settlement batch."""
+
+    __tablename__ = "ark_invoice_item_groups"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id", ondelete="CASCADE"), nullable=False)
+    key = Column(String(64), nullable=False, comment="编辑器稳定分组键")
+    name = Column(String(64), nullable=False, comment="用户可自定义分组名")
+    sort_order = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
+
+    invoice = relationship("Invoice", back_populates="item_groups", lazy="noload")
+    items = relationship("InvoiceItem", back_populates="group", lazy="noload")
+
+    __table_args__ = (
+        UniqueConstraint("invoice_id", "key", name="uq_invoice_item_group_key"),
+        UniqueConstraint("invoice_id", "name", name="uq_invoice_item_group_name"),
+        Index("idx_invoice_item_groups_invoice", "invoice_id"),
+        {"comment": "订单产品明细展示分组，不参与业务计算与外部同步"},
+    )
+
+
 class InvoiceItem(Base):
     """Invoice product line."""
 
@@ -139,6 +170,7 @@ class InvoiceItem(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id", ondelete="CASCADE"), nullable=False, comment="关联发票ID（ark_invoices.id）")
+    group_id = Column(BigInteger, ForeignKey("ark_invoice_item_groups.id", ondelete="SET NULL"), nullable=True, comment="产品明细展示分组ID，仅用于编辑器筛选")
     sort_order = Column(Integer, nullable=False, default=0, comment="明细行排序号")
     product_kind = Column(String(16), nullable=False, default="hair", server_default="hair", comment="hair/accessory")
     item_type = Column(String(16), nullable=False, default="stock", comment="stock/custom")
@@ -169,9 +201,11 @@ class InvoiceItem(Base):
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间（北京时间）")
 
     invoice = relationship("Invoice", back_populates="items")
+    group = relationship("InvoiceItemGroup", back_populates="items", lazy="noload")
 
     __table_args__ = (
         Index("idx_ark_invoice_items_invoice", "invoice_id"),
+        Index("idx_ark_invoice_items_group", "group_id"),
         Index("idx_ark_invoice_items_product", "product_id"),
         Index("idx_ark_invoice_items_custom", "custom_product_id"),
         {"comment": "发票产品明细行（标准价/客户价双价快照）"},

@@ -157,7 +157,7 @@ test('paste import dialog keeps preview validation ahead of append', () => {
   assert.match(component, /完成/)
   assert.match(component, /hasBlockedRows/)
   assert.match(component, /locateStatus/)
-  assert.match(component, /加入当前发票/)
+  assert.match(component, /加入当前分组/)
   assert.match(component, /visible\.value = false/)
 })
 

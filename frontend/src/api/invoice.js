@@ -132,6 +132,10 @@ export function updateInvoice(id, data) {
   return unwrap(request.put(`/invoices/${id}`, data, { loadingText: '正在保存发票...' }))
 }
 
+export function updateInvoiceItemGroups(id, data) {
+  return unwrap(request.patch(`/invoices/${id}/item-groups`, data, { loadingText: '正在保存明细分组...' }))
+}
+
 export function updateInvoiceRemark(id, data) {
   return unwrap(request.patch(`/invoices/${id}/remark`, data, { showLoading: false, suppressToast: true }))
 }

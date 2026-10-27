@@ -178,6 +178,9 @@
           :active="legacyVisible"
           :pin-columns="false"
           :items="hairItems"
+          :item-groups="form.item_groups"
+          :group-counts="groupCounts"
+          v-model:active-group-key="activeGroupKey"
           :quantity-error-row="quantityErrorRow"
           :is-production="isProduction"
           :entry-options="entryOptions"
@@ -195,6 +198,10 @@
           @add-blank="addBlankLine"
           @remove="removeLine"
           @remove-many="removeLines"
+          @create-group="createItemGroup"
+          @rename-group="renameItemGroup"
+          @delete-group="deleteItemGroup"
+          @move-many="moveRowsToGroup($event.rows, $event.targetKey)"
         />
 
         <InvoiceAccessoryTable
@@ -269,6 +276,7 @@ const {
   okkiBound, invoiceNoTaken, entryOptions, hairItems, accessoryItems, accessoryOptions, accessoryLoading,
   formHairPrice, formLineDiscountTotal, formAccessoryAmount, formAccessoryDiscount, formBaseAmount, formTotal,
   lastOrderDate, settlementError, isProduction, saveAndSyncSubmitting, quantityErrorRow,
+  activeGroupKey, activeGroupName, groupCounts, createItemGroup, renameItemGroup, deleteItemGroup, moveRowsToGroup,
   searchCustomers, selectSyncedCustomer, onCustomerChange, onSalesUserChange, onCurrencyChange,
   onInvoiceNoInput, onInvoiceNoBlur, addBlankLine, copyLine, addAccessory, selectAccessory,
   removeAccessory, removeAccessories, searchAccessoryOptions, updateAccessoryTotal, removeLine, removeLines, loadLineOptions,

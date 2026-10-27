@@ -13,7 +13,7 @@ from sqlalchemy import and_, case, exists, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
-from app.invoice import accessory_price_service, delegation_service, price_service, product_service
+from app.invoice import accessory_price_service, delegation_service, item_group_service, price_service, product_service
 from app.invoice.customer_profile_service import get_customer_grade, save_customer_grade
 from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
@@ -366,8 +366,12 @@ def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> In
     OKKI 订单（无沙箱）；持锁期间并发编辑的 header UPDATE 也会阻塞到推单落库。"""
     query = (
         db.query(Invoice)
-        .options(selectinload(Invoice.items))
+        .options(
+            selectinload(Invoice.items).selectinload(InvoiceItem.group),
+            selectinload(Invoice.item_groups),
+        )
         .filter(Invoice.id == invoice_id)
+        .populate_existing()
     )
     if for_update:
         query = query.with_for_update()
@@ -497,6 +501,10 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     from app.receipt import invoice_link
     from app.invoice.linked_sync_service import ensure_idle
     ensure_idle(invoice)
+    if getattr(body, "expected_groups_version", None) is not None and getattr(body, "item_groups", None) is not None:
+        item_group_service.load_groups(db, invoice)
+        if item_group_service.version(invoice) != body.expected_groups_version:
+            raise ValueError("明细分组已被他人修改，请刷新后再编辑")
     from app.invoice.lifecycle_guard import ensure_mutable
     ensure_mutable(db, invoice)
     from app.invoice.stock_reservations import remember
@@ -634,6 +642,8 @@ def mark_ready_if_valid(invoice: Invoice) -> list[dict]:
 
 def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
     from app.invoice.linked_sync_service import edit_version
+    if db is not None:
+        item_group_service.load_groups(db, invoice)
     summary = summarize_items(invoice)
     material_state: dict[int, dict] = {}
     if db is not None:
@@ -708,6 +718,8 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
         "synced_at": to_beijing_time(invoice.synced_at),
         "updated_at": to_beijing_time(invoice.updated_at),
         "edit_version": edit_version(invoice),
+        "item_groups": item_group_service.serialize(invoice),
+        "item_groups_version": item_group_service.version(invoice),
         "items": [_serialize_item(item, material_state) for item in invoice.items if not item.presale_archived],
         **(_presale_editor_fields(invoice,material_state) if invoice.order_type == "presale" else {}),
     }
@@ -814,6 +826,9 @@ def _next_invoice_no(db: Session) -> str:
 def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = None) -> None:
     if body.order_type != "production" and any(item.item_type == "custom" for item in body.items):
         raise ValueError("库存单不能包含定制产品，请改为生产单或选择已有产品")
+    from app.invoice import item_group_service
+    group_for = item_group_service.prepare_replace(db, invoice, body)
+    previous_items = {item.id: item for item in invoice.items if item.id}
     stock_pairs = {
         (int(item.product_id), int(item.sku_id))
         for item in body.items
@@ -865,14 +880,21 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
     else:
         invoice.items.clear()
     carried_ids: set[int] = set()
+    seen_payload_ids: set[int] = set()
     for idx, payload in enumerate(body.items, start=1):
         # 同一 id 只允许第一行传承——复制行带旧 id 时若两行共享 unique_id，
         # OKKI 编辑推单会把两行更新到同一条明细上（金额错且无声）
         carried = (presale_carried if rolling else prior_synced).get(payload.id) if payload.id and payload.id not in carried_ids else None
         if carried:
             carried_ids.add(payload.id)
+        first_echo = bool(payload.id and payload.id not in seen_payload_ids)
+        if first_echo:
+            seen_payload_ids.add(payload.id)
+        previous = previous_items.get(payload.id) if first_echo else None
+        group = group_for(payload)
         item = InvoiceItem(
             xiaoman_unique_id=carried.xiaoman_unique_id if carried else None,
+            group_id=group.id if group else None,
             sort_order=idx,
             product_kind=payload.product_kind,
             item_type=payload.item_type,
@@ -894,6 +916,8 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
                 if payload.semifinished_enabled else None
             ),
         )
+        if previous is not None:
+            item.created_at = previous.created_at
         if payload.item_type == "custom" and _custom_line_complete(payload):
             resolved = product_service.ensure_custom_product(
                 db,
@@ -1205,9 +1229,16 @@ def _serialize_item(item: InvoiceItem, material_state: dict[int, dict] | None = 
     for plan in item.semifinished_plan or []:
         material_id = int(plan["material_id"])
         plans.append({**plan, **((material_state or {}).get(material_id) or {})})
+    group = getattr(item, "group", None)
+    invoice = getattr(item, "invoice", None)
+    group_key = group.key if group else next(
+        (row.key for row in invoice.item_groups if row.id == item.group_id), None,
+    ) if invoice else None
     return {
         "id": item.id,
         "sort_order": item.sort_order,
+        "group_key": group_key,
+        "created_at": to_beijing_time(item.created_at),
         "product_kind": item.product_kind,
         "item_type": item.item_type,
         "product_id": item.product_id,

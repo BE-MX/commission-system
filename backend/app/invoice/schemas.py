@@ -176,9 +176,30 @@ class InvoiceSemifinishedPlanItem(BaseModel):
     quantity_grams: Decimal = Field(..., gt=0, max_digits=14, decimal_places=3)
 
 
+class InvoiceItemGroupPayload(BaseModel):
+    key: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    name: str = Field(..., min_length=1, max_length=64)
+    sort_order: int = Field(default=0, ge=0)
+
+
+class InvoiceItemGroupAssignment(BaseModel):
+    id: int = Field(..., gt=0)
+    group_key: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+
+
+class InvoiceItemGroupsUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    item_groups: list[InvoiceItemGroupPayload] = Field(..., max_length=100)
+    items: list[InvoiceItemGroupAssignment] = Field(default_factory=list)
+    expected_version: str = Field(pattern=r"^[a-f0-9]{64}$")
+    expected_groups_version: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class InvoiceItemPayload(BaseModel):
     # 编辑时回传既有行 id，用于跨保存传承 xiaoman_unique_id（OKKI 编辑推单按行更新）
     id: Optional[int] = None
+    group_key: Optional[str] = Field(None, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     product_kind: str = Field(default="hair", pattern="^(hair|accessory)$")
     item_type: str = Field(default="stock", pattern="^(stock|custom)$")
     product_id: Optional[int] = None
@@ -280,6 +301,8 @@ class _InvoiceHeaderPayload(BaseModel):
     source_image_sha256: Optional[str] = Field(None, min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
     source_preview_token: Optional[str] = Field(None, max_length=2048)
     items: list[InvoiceItemPayload] = Field(default_factory=list)
+    item_groups: Optional[list[InvoiceItemGroupPayload]] = Field(default=None, max_length=100)
+    expected_groups_version: Optional[str] = Field(None, pattern=r"^[a-f0-9]{64}$")
 
     @field_validator("customer_id", mode="before")
     @classmethod
@@ -311,6 +334,7 @@ class InvoiceItemResponse(InvoiceItemPayload):
     id: int
     total_price: Decimal
     sort_order: int
+    created_at: datetime
     standard_price: Optional[Decimal] = None
     customer_price: Optional[Decimal] = None
     custom_product_id: Optional[int] = None
@@ -345,6 +369,8 @@ class InvoiceDetail(InvoiceListItem):
     synced_at: Optional[datetime] = None
     updated_at: datetime
     items: list[InvoiceItemResponse]
+    item_groups: list[InvoiceItemGroupPayload] = Field(default_factory=list)
+    item_groups_version: str
 
 
 class ValidationIssue(BaseModel):

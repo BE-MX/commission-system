@@ -16,6 +16,7 @@
       <span><small>客户</small>{{ customerName || customerId }}</span>
       <span><small>订单类型</small>{{ orderType === 'presale' ? '预售单' : orderType === 'production' ? '生产单' : '库存单' }}</span>
       <span><small>币种</small>{{ currency }}</span>
+      <span><small>导入分组</small>{{ targetGroupName }}</span>
     </div>
 
     <div v-if="step === 1" class="paste-stage">
@@ -164,7 +165,7 @@
           :loading="appending"
           @click="appendToInvoice"
         >
-          加入当前发票
+          加入当前分组
         </el-button>
       </div>
     </template>
@@ -185,6 +186,7 @@ const props = defineProps({
   customerName: { type: String, default: '' },
   orderType: { type: String, required: true },
   currency: { type: String, required: true },
+  targetGroupName: { type: String, default: '' },
   existingItems: { type: Array, default: () => [] },
 })
 

@@ -2,7 +2,8 @@ import { msgWarning, msgSuccessText, alertAction, confirmAction, isFeedbackCance
 import { formatMoney } from '@/utils/money'
 import { computed, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useLinkedInvoiceSync } from './useLinkedInvoiceSync'
-import { invoiceOrderSignature } from './invoiceReceiptState'
+import { invoiceBusinessSignature, invoiceOrderSignature } from './invoiceReceiptState'
+import { useInvoiceItemGroups } from './useInvoiceItemGroups'
 
 import {
   checkInvoiceNo,
@@ -17,6 +18,7 @@ import {
   searchInvoiceCustomerOptions,
   suggestInvoiceNo,
   updateInvoice,
+  updateInvoiceItemGroups,
 } from '@/api/invoice'
 import { INVOICE_SYNC_OUTCOME, validateThenSync } from './invoiceSyncFlow'
 import { useAuthStore } from '@/stores/auth'
@@ -37,6 +39,7 @@ import {
   buildInvoicePayload,
   emptyInvoiceForm,
   invoiceQuantityIssue,
+  isInvoicePlaceholder,
   INVOICE_NO_MAX_LENGTH,
   normalizeHairRow,
   screenshotInvoiceNo,
@@ -71,22 +74,30 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   const form = reactive(emptyInvoiceForm())
   const savedSignature = ref('')
+  const savedBusinessSignature = ref('')
+  const loadedGroupVersion = ref(null)
+  const lastSaveType = ref('business')
   const syncCompletionMessage = ref('')
   let pendingLinkedCompletion = null
   const editorOpen = computed(() => drawerVisible.value || legacyVisible.value)
   const editorBusy = computed(() => orderSaving.value || saveAndSyncSubmitting.value || linked.busy.value || linked.loading.value
     || form.receipt_uploading || form.receipt_action_busy || form.receipt_remark_saving)
-  const currentSignature = () => {
-    const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
+  const currentPayload = (payload = buildInvoicePayload(form, formLineDiscountTotal.value), receiptStatus = form.receipt_draft?.status) => {
     const receipt = payload.receipt_draft
     // Generated receipts are persisted separately. The receipt panel also creates
     // an empty zero-value draft on mount; neither is an unsaved order edit.
-    if (receipt && ((form.receipt_draft.status && form.receipt_draft.status !== 'draft')
+    if (receipt && ((receiptStatus && receiptStatus !== 'draft')
       || (!Number(receipt.amount) && !Number(receipt.bank_charge) && !receipt.attachment_ids.length && !receipt.remark))) {
       payload.receipt_draft = null
     }
-    return JSON.stringify(payload)
+    return payload
   }
+  const currentSignature = (payload, receiptStatus) => JSON.stringify(currentPayload(payload, receiptStatus))
+  const currentBusinessSignature = (payload, receiptStatus) => invoiceBusinessSignature(currentPayload(payload, receiptStatus))
+  const hasOnlyGroupChanges = () => Boolean(
+    form.id && savedSignature.value !== currentSignature()
+    && savedBusinessSignature.value === currentBusinessSignature(),
+  )
   const hasUnsavedChanges = computed(() => !form.id || savedSignature.value !== currentSignature()
     || form.receipt_proof_dirty || form.receipt_remark_editing || form.receipt_action_open)
   let closeConfirmation = null
@@ -142,10 +153,6 @@ export function useInvoiceEditor({ onSaved } = {}) {
   watch(() => quantityErrorRow.value?.quantity, quantity => {
     if (Number.isInteger(quantity) && quantity > 0) quantityErrorRow.value = null
   })
-  const loadedOrderSignature = ref('')
-  watch(() => [loadedOrderSignature.value, invoiceOrderSignature(buildInvoicePayload(form))], ([loaded, current]) => {
-    form.receipt_order_dirty = Boolean(form.id && loaded && loaded !== current)
-  }, { flush: 'sync' })
   const linked = useLinkedInvoiceSync(async id => {
     const current = await getInvoice(id)
     if (form.id === id && !hasUnsavedChanges.value) resetForm(current)
@@ -165,7 +172,11 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const { options: customerOptions, loading: customerLoading, search: searchCustomers } = customerSearch
   const accessories = useInvoiceAccessories(form)
   const isProduction = computed(() => form.order_type === 'production')
-  const hair = useInvoiceHairItems(form, accessories.hairItems, isProduction, entryOptions)
+  const itemGroups = useInvoiceItemGroups(form)
+  const hair = useInvoiceHairItems(form, accessories.hairItems, isProduction, entryOptions, {
+    getTargetGroupKey: itemGroups.getTargetGroupKey,
+    getSourceItems: itemGroups.getSourceItems,
+  })
   const {
     addBlankLine, copyLine, appendImportedLines, loadEntryOptions, loadLineOptions, onCustomFieldChange,
     onLineDiscountChange, onLineFilterChange, onPriceInput, refreshLinePrice, removeLine, removeLines,
@@ -174,6 +185,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   const formHairPrice = accessories.hairAmount
   const formLineDiscountTotal = accessories.hairDiscount
+  const loadedOrderSignature = ref('')
+  watch(() => [loadedOrderSignature.value, invoiceOrderSignature(currentPayload())], ([loaded, current]) => {
+    form.receipt_order_dirty = Boolean(form.id && loaded && loaded !== current)
+  }, { flush: 'sync' })
   // 总折扣录入框（费用与结算卡底部）：默认=产品行折扣合计（正数展示）；手改后均分到产品行
   const formHairDiscountAbs = computed(() => Math.abs(Number(formLineDiscountTotal.value || 0)))
   function applyTotalDiscount(value) {
@@ -298,6 +313,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   function resetForm(data = emptyInvoiceForm()) {
     quantityErrorRow.value = null
     loadedUpdatedAt.value = data.edit_version || null
+    loadedGroupVersion.value = data.item_groups_version || null
     contactFillSeq++
     gradeEditSeq++
     customerGradeReady = true
@@ -333,9 +349,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
       okki_free_shipping: data.okki_free_shipping ?? (Number(data.shipping_fee || 0) > 0 ? 0 : 1),
       okki_first_return: data.okki_first_return ?? 0,
       items: (data.items || []).map(normalizeLine),
+      item_groups_version: data.item_groups_version || null,
     })
+    itemGroups.resetItemGroups(data)
     savedSignature.value = currentSignature()
-    loadedOrderSignature.value = invoiceOrderSignature(buildInvoicePayload(form))
+    savedBusinessSignature.value = currentBusinessSignature()
+    loadedOrderSignature.value = invoiceOrderSignature(currentPayload())
     contactDetailsExpanded.value = !contactDetailsComplete.value
     selectedCustomer.value = form.customer_id
       ? { company_id: form.customer_id, company_name: form.customer_name }
@@ -391,6 +410,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // 整单粘贴应用：付款方式先于手续费（选付款方式会触发费率重算，手填手续费随后覆盖并标记手改）
   async function applyWholeOrderPaste(parsed) {
+    if (parsed.productPreview?.rows?.length && !itemGroups.getTargetGroupKey()) {
+      msgWarning('请先选择或新建一个明细分组，再粘贴产品明细')
+      return
+    }
     const applied = []
     const skipped = []
     if (parsed._customerOption) {
@@ -708,11 +731,30 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const contextSeq = customerContextSeq
     await customerDefaultsPromise
     if (contextSeq !== customerContextSeq) return null
-    if (form.presale_edit_blocked_reason) { msgWarning(form.presale_edit_blocked_reason); return null }
     if (form.receipt_uploading) { msgWarning("请等待回款截图上传完成"); return null }
     if (form.receipt_proof_dirty) { msgWarning("请先保存回款截图变更"); return null }
     if (form.receipt_remark_editing || form.receipt_remark_saving) { msgWarning('请先保存或取消回款备注编辑'); return null }
     if (form.receipt_action_open || form.receipt_action_busy) { msgWarning('请先完成或关闭当前回款操作'); return null }
+
+    const groupOnly = hasOnlyGroupChanges()
+    lastSaveType.value = groupOnly ? 'groups' : 'business'
+    if (groupOnly) {
+      const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
+      const submittedSignature = currentSignature()
+      const submittedReceiptStatus = form.receipt_draft?.status
+      const saved = await updateInvoiceItemGroups(form.id, {
+        item_groups: payload.item_groups,
+        items: payload.items.filter(line => line.product_kind !== 'accessory').map(line => ({
+          id: line.id, group_key: line.group_key,
+        })),
+        expected_version: loadedUpdatedAt.value,
+        expected_groups_version: loadedGroupVersion.value,
+      })
+      if (!saved) return null
+      return finishInvoiceSave(saved, { created: false, groupOnly, payload, submittedSignature, submittedReceiptStatus })
+    }
+
+    if (form.presale_edit_blocked_reason) { msgWarning(form.presale_edit_blocked_reason); return null }
     if (form.items.some(line => Number(line.total_price || 0) < 0)) {
       msgWarning('产品行折扣不能超过该行金额')
       return null
@@ -747,7 +789,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       msgWarning(`请完善必填项：${missingRequired.join('、')}`)
       return null
     }
-    const quantityIssue = invoiceQuantityIssue(form.items)
+    const quantityIssue = invoiceQuantityIssue(form.items, form.item_groups)
     if (quantityIssue) {
       quantityErrorRow.value = null
       await nextTick()
@@ -756,7 +798,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
       return null
     }
     const submittedSignature = currentSignature()
+    const submittedReceiptStatus = form.receipt_draft?.status
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
+    const submittedRows = form.items.filter(line => !isInvoicePlaceholder(line))
     // A failed defaults request must not erase an existing customer grade.
     if (!customerGradeReady) delete payload.customer_grade
     const created = !form.id
@@ -768,15 +812,39 @@ export function useInvoiceEditor({ onSaved } = {}) {
         ? await createInvoiceFromScreenshot(payload)
         : await createInvoice(payload)
     if (!saved) return null
+    return finishInvoiceSave(saved, { created, groupOnly, payload, submittedRows, submittedSignature, submittedReceiptStatus })
+  }
+
+  function finishInvoiceSave(saved, { created, groupOnly, payload, submittedRows, submittedSignature, submittedReceiptStatus }) {
     if (currentSignature() === submittedSignature) resetForm(saved)
     else {
       // Preserve edits made while the request was in flight and keep them dirty.
+      const savedItems = Array.isArray(saved.items) ? saved.items : []
+      const savedPayload = { ...payload, expected_groups_version: saved.item_groups_version || null }
+      if (!groupOnly && savedItems.length === submittedRows.length) {
+        savedItems.forEach((savedItem, index) => {
+          const source = submittedRows[index]
+          const current = form.items.find(row => row === source)
+          if (current && savedItem.product_kind === source.product_kind) {
+            current.id = savedItem.id
+            current.created_at = savedItem.created_at || current.created_at
+          }
+        })
+        savedPayload.items = payload.items.map((item, index) => (
+          savedItems[index]?.product_kind === item.product_kind
+            ? { ...item, id: savedItems[index].id }
+            : item
+        ))
+      }
       form.id = saved.id
+      form.item_groups_version = saved.item_groups_version || null
       loadedUpdatedAt.value = saved.edit_version || null
-      savedSignature.value = submittedSignature
-      loadedOrderSignature.value = invoiceOrderSignature(payload)
+      loadedGroupVersion.value = saved.item_groups_version || null
+      savedSignature.value = currentSignature(savedPayload, submittedReceiptStatus)
+      savedBusinessSignature.value = currentBusinessSignature(savedPayload, submittedReceiptStatus)
+      loadedOrderSignature.value = invoiceOrderSignature(savedPayload)
     }
-    msgSuccessText('发票已保存')
+    msgSuccessText(groupOnly ? '明细分组已保存' : '发票已保存')
     onSaved?.({ created, invoice: saved })
     return saved
   }
@@ -790,7 +858,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
     saveAndSyncSubmitting.value = true
     try {
-      if (['stock', 'presale'].includes(form.order_type) && Number(form.receipt_draft?.amount || 0) === 0) {
+      await customerDefaultsPromise
+      const groupOnly = hasOnlyGroupChanges()
+      if (!groupOnly && ['stock', 'presale'].includes(form.order_type) && Number(form.receipt_draft?.amount || 0) === 0) {
         try {
           await confirmAction('当前回款金额为0，是否确认提交？', '提交确认', {
             type: 'warning', confirmButtonText: '确认提交', cancelButtonText: '取消',
@@ -800,9 +870,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
           throw error
         }
       }
-      const useLinked = Boolean(form.id && form.xiaoman_order_id)
+      const useLinked = !groupOnly && Boolean(form.id && form.xiaoman_order_id)
       const saved = await saveDraft({ linked: useLinked })
       if (!saved) return
+      if (lastSaveType.value === 'groups') {
+        msgSuccessText('订单业务数据未变化，无需同步')
+        return
+      }
       if (useLinked) {
         pendingLinkedCompletion = { id: saved.id, invoiceNo: saved.invoice_no }
         const result = await linked.run()
@@ -841,6 +915,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   return {
+    ...itemGroups,
+    hasOnlyGroupChanges,
     hasUnsavedChanges, editorBusy, confirmEditorClose, beforeEditorClose, closeEditor,
     syncCompletionMessage, handleBeforeUnload,
     quantityErrorRow,

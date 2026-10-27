@@ -16,7 +16,7 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
     assert.match(source, /max-height="560"/)
     assert.match(source, /@sort-change="sortLines"/)
     assert.match(source, name === 'hair'
-      ? /const sortedItems = computed\(\(\) => sortTableRows\(filteredItems\.value,/
+      ? /const sortedItems = computed\(\(\) => sortTableRows\(visibleItems\.value,/
       : /const sortedItems = computed\(\(\) => sortTableRows\(props\.items,/)
     assert.match(source, /const pagedItems = computed\(\(\) => sortedItems\.value\.slice\(\(page\.value - 1\) \* pageSize\.value, page\.value \* pageSize\.value\)\)/)
     // 行号跨页连续（不因翻页从 1 重排）
@@ -26,7 +26,7 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
     assert.match(source, /v-model:current-page="page"/)
     assert.match(source, /v-model:page-size="pageSize"/)
     assert.match(source, /:page-sizes="\[20, 50, 100\]"/)
-    assert.match(source, name === 'hair' ? /:total="filteredItems\.length"/ : /:total="items\.length"/)
+    assert.match(source, name === 'hair' ? /:total="visibleItems\.length"/ : /:total="items\.length"/)
     // 页码策略：初次装载回第一页；新增/导入跟到末页；删行后收敛页码
     assert.match(source, /if \(!before\) page\.value = 1/)
     assert.match(source, /else if \(now > before\) page\.value = pages/)
@@ -46,7 +46,7 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
         const declaration = binding.trim().startsWith('{') ? binding.replace(/\bas\b/g, ':') : `{ default: ${binding} }`
         return `const ${declaration} = modules[${JSON.stringify(key)}] || {};`
       })
-    const state = scope.run(() => new Function('modules', 'defineProps', 'defineEmits', `${script}\nreturn { page, pageSize, pagedItems, indexBase, sortLines };`)(
+    const state = scope.run(() => new Function('modules', 'defineProps', 'defineEmits', `${script}\nreturn { page, pageSize, pagedItems, indexBase, sortLines${name === 'hair' ? ', visibleItems' : ''} };`)(
       {
         vue: Vue,
         '@/utils/tableSort': { sortTableRows },
@@ -87,6 +87,8 @@ for (const [name, source] of [['hair', hairTable], ['accessory', accessoryTable]
     state.sortLines({ prop: 'quantity', order: 'ascending' })
     props.quantityErrorRow = originalRows[44]
     await Vue.nextTick()
+    await Vue.nextTick()
+    if (name === 'hair') assert.equal(state.visibleItems.value.length, 45)
     assert.equal(state.page.value, 3, 'validation reveals the incomplete row in entry order')
     assert.ok(state.pagedItems.value.includes(props.quantityErrorRow))
     for (const quantity of [3, 36, 360, 3600]) {

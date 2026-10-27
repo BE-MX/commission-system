@@ -5,7 +5,7 @@ import { computed, nextTick, shallowRef, triggerRef, watch } from 'vue'
  * 这里按行引用自管一份选中集合，翻页/排序后把当前页的勾选状态重新灌回表格。
  * 行没有稳定 id（新增行 id=null），所以不用 row-key + reserve-selection。
  */
-export function useLineSelection(tableRef, items, pagedItems) {
+export function useLineSelection(tableRef, items, pagedItems, visibleItems = null) {
   const selected = shallowRef(new Set())
   const selectedCount = computed(() => selected.value.size)
 
@@ -49,6 +49,16 @@ export function useLineSelection(tableRef, items, pagedItems) {
     }
     if (changed) triggerRef(selected)
   })
+  if (visibleItems) {
+    watch(visibleItems, rows => {
+      const alive = new Set(rows)
+      let changed = false
+      for (const row of selected.value) {
+        if (!alive.has(row)) { selected.value.delete(row); changed = true }
+      }
+      if (changed) triggerRef(selected)
+    }, { flush: 'sync' })
+  }
 
   return { selected, selectedCount, onSelect, onSelectAll, clearSelection, takeSelected }
 }
