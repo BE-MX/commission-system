@@ -22,6 +22,9 @@ class DomesticShipment(Base):
     received_by = Column(_UINT, ForeignKey("ark_users.id"), comment="收货登记人ID")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间，北京时间")
     received_at = Column(DateTime, comment="收货登记时间，北京时间")
+    cancelled_at = Column(DateTime, comment="批次取消时间，北京时间")
+    cancelled_by = Column(_UINT, ForeignKey("ark_users.id"), comment="批次取消人ID")
+    cancelled_units = Column(JSON, comment="取消时各批次明细的件ID和件号快照")
     __table_args__ = (CheckConstraint("total_amount >= 0", name="ck_dom_shipment_amount"),)
 
 

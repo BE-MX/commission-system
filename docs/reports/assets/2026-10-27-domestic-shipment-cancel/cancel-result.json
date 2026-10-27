@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "checks": [
+    "dismiss without write",
+    "confirm cancellation",
+    "history retained",
+    "summary restored",
+    "CSV export",
+    "same units reshipped",
+    "390px action reachable"
+  ],
+  "writes": 3,
+  "errors": []
+}

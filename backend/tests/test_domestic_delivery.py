@@ -352,6 +352,12 @@ def test_one_batch_from_three_orders_preserves_price_and_guest_snapshots(db, con
     assert ctx.item.unit_price == 100
     assert len({row["domestic_no"] for row in batch["items"]}) == 3
     assert [row["guest_name"] for row in batch["items"]] == ["张女士", "顾客2", "顾客3"]
+    balance_before = db.get(DomesticCustomer, source.customer_id).balance
+    cancelled = ships.cancel_shipment(db, batch['id'], ctx.worker.id)
+    assert cancelled['items'] == batch['items']
+    assert db.query(DomesticShipmentUnit).count() == 0
+    assert len(ships.candidate_rows(db, source.customer_id, ctx.worker.id)) == 3
+    assert db.get(DomesticCustomer, source.customer_id).balance == balance_before
 
 
 def test_shipment_current_read_rechecks_replay_before_finished_order_rejection(db, context, monkeypatch):
@@ -419,6 +425,13 @@ def test_migration_preserves_existing_requests_and_matches_models():
         conn.execute(text("INSERT INTO ark_domestic_customer_requests VALUES (1, 'recharge')"))
         with Operations.context(MigrationContext.configure(conn)):
             migration.upgrade()
+            conn.execute(text("INSERT INTO ark_domestic_shipments (id, shipment_no, customer_id, ship_time, total_amount, request_id, request_hash, created_by, created_at) VALUES (1, 'FH-existing', 1, '2026-10-01 10:00:00', 300, 'existing-key', 'existing-hash', 1, '2026-10-01 10:00:00')"))
+            cancel_path = path.with_name('206_domestic_shipment_cancel.py')
+            cancel_spec = importlib.util.spec_from_file_location('cancel_migration', cancel_path)
+            cancel_migration = importlib.util.module_from_spec(cancel_spec)
+            cancel_spec.loader.exec_module(cancel_migration)
+            cancel_migration.upgrade()
+        assert conn.execute(text("SELECT shipment_no, total_amount, cancelled_at, cancelled_by, cancelled_units FROM ark_domestic_shipments WHERE id=1")).one() == ('FH-existing', 300, None, None, None)
         assert conn.execute(text("SELECT request_type FROM ark_domestic_customer_requests WHERE id=1")).scalar() == "recharge"
         inspector = inspect(conn)
         for model in (shipment_models.DomesticShipment, shipment_models.DomesticShipmentLine,

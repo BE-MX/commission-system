@@ -2577,10 +2577,13 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | POST | `/shipments` | 同客户跨订单发货；request_id幂等，items含item_id/quantity及可选unit_ids/ship_weight |
 | GET | `/customers/{id}/delivery` | 批次、收款及交付金额汇总；owner/admin/read_all全客户，其余仅本人订单 |
 | POST | `/shipments/{id}/receive` | 创建人登记received_date，保留审计且不覆盖历史日期 |
+| POST | `/shipments/{id}/cancel` | domestic:write/admin且批次创建人；无请求体，取消未收货且无核销关联的有效批次，幂等返回批次；恢复可发件，不操作账户余额 |
 | POST | `/customers/{id}/receipts` | multipart data=ReceiptCreate JSON + file凭证；客户资金权限；提交后待审核 |
 | POST | `/customer-requests/{id}/allocate` | 已入账收款补核销，数组shipment_id/amount（累计目标）；只增不减，追加增量证据 |
 
 现有 `/customer-requests` 类型筛选新增 receipt；审核通过在同事务执行货款入账及核销，不改会员。单条 `/items/{id}/ship` 沿用入口并生成逐件批次。数量与资金边界见 [说明](domestic-delivery.md)。
+
+取消结果及交付列表含 `cancelled_at`、`cancelled_by`；已取消批次保留明细及件号，`unpaid_amount=0`，退出未结汇总，不能确认收货或登记核销。已有关联核销记录（含未入账申请）或订单已终止/失效时返回400；权限不足403。原创建请求重放可返回带取消标记的原批次，不自动重建发货。`receive` 仅记收货事实，不扣账户余额；订单生效时扣款。
 
 ### 2026-10-14 内贸订单详情操作权限拆分
 

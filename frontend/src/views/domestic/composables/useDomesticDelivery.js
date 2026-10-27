@@ -1,8 +1,8 @@
 import { computed, reactive, ref } from 'vue'
-import { getDeliveryCustomers, getShipmentCandidates, getCustomerDelivery, createShipment, receiveShipment,
+import { getDeliveryCustomers, getShipmentCandidates, getCustomerDelivery, createShipment, receiveShipment, cancelShipment,
   createDomesticReceipt, allocateDomesticReceipt, newRequestId } from '@/api/domestic'
 import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
-import { msgSuccessText, msgWarning } from '@/utils/feedback'
+import { msgSuccessText, msgWarning, confirmAction } from '@/utils/feedback'
 import { deliveryTotal, deliveryPayload, filterDeliveryRows, deliveryUnitPrice } from '../deliverySelection'
 
 export function useDomesticDelivery(emit) {
@@ -29,7 +29,7 @@ export function useDomesticDelivery(emit) {
     })
   })
   const pageRows = computed(() => filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
-  const openBatches = computed(() => batches.value.filter(row => row.unpaid_amount > 0))
+  const openBatches = computed(() => batches.value.filter(row => !row.cancelled_at && row.unpaid_amount > 0))
   const allocationTotal = computed(() => Object.entries(receipt.allocations).reduce((sum, [id, value]) => sum + Math.round((Number(value || 0) - (receipt.existing?.allocations.find(row => row.shipment_id === Number(id))?.amount || 0)) * 100), 0) / 100)
   const unitOptions = computed(() => (units.row?.units || []).filter(row => row.code.toLowerCase().includes(units.keyword.toLowerCase())))
 
@@ -122,12 +122,29 @@ export function useDomesticDelivery(emit) {
     saving.value = true
     try {
       const result = await createShipment({ customer_id: customerId.value, ...shipment, items })
-      msgSuccessText(`发货批次 ${result.data.shipment_no} 已登记`)
+      if (result.data.cancelled_at) msgWarning(`原发货批次 ${result.data.shipment_no} 已取消，请重新选择后创建新批次`)
+      else msgSuccessText(`发货批次 ${result.data.shipment_no} 已登记`)
       Object.keys(selected).forEach(key => delete selected[key])
       shipment.request_id = newRequestId(); tab.value = 'batches'
       await reload(); emit('changed')
     } catch { /* Keep the same request key for uncertain outcomes. */ }
     finally { saving.value = false }
+  }
+  async function cancelBatch(row) {
+    if (saving.value || loading.value || error.value || row.cancelled_at || row.received_date) return
+    saving.value = true
+    let submitted = false
+    try {
+      await confirmAction(`取消批次 ${row.shipment_no} 后，对应件号将恢复为可发货，保留原批次记录；订单仍有效，客户账户余额不变。`, '取消发货批次',
+        { type: 'warning', confirmButtonText: '确定取消批次', cancelButtonText: '保留批次', confirmButtonClass: 'el-button--danger' })
+      submitted = true
+      await cancelShipment(row.id)
+      msgSuccessText('批次已取消，对应件号已恢复可发货')
+    } catch { /* Confirmation dismissal or API feedback; read back uncertain writes below. */ }
+    finally {
+      if (submitted) { await reload(); emit('changed') }
+      saving.value = false
+    }
   }
   function openReceive(row) { Object.assign(receive, { visible: true, row, date: currentBeijingDate() }) }
   async function confirmReceive() {
@@ -174,5 +191,5 @@ export function useDomesticDelivery(emit) {
   return { visible, loading, saving, error, customers, customerId, customer, candidates, batches, receipts, summary, tab,
     keyword, selected, onlySelected, page, pageSize, sort, shipment, units, receive, receipt, totals, filtered, pageRows,
     openBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
-    confirmUnits, scanUnit, submitShipment, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation, confirmReceipt }
+    confirmUnits, scanUnit, submitShipment, cancelBatch, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation, confirmReceipt }
 }

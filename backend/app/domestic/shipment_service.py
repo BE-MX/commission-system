@@ -42,10 +42,12 @@ def shipped_item_amount(db, item):
 
     Batch prices belong only to delivery receivables, never order accounting.
     """
-    values = db.query(DomesticShipmentLine.quantity).filter(
+    # Cancelled batches retain lines but release unit reservations. Count current
+    # reservations without locking batches before the refund path's customer lock.
+    values = db.query(DomesticShipmentUnit.unit_id).join(DomesticShipmentLine).filter(
         DomesticShipmentLine.item_id == item.id,
     ).with_for_update().all()
-    amount = balance_service.money(item.unit_price) * sum(value for (value,) in values) if values else None
+    amount = balance_service.money(item.unit_price) * len(values) if values else None
     # Existing whole-line shipments are known deliveries, without inventing receipt facts.
     if amount is None and item.status == C.ITEM_SHIPPED:
         return balance_service.money(item.unit_price) * item.order_qty
@@ -263,14 +265,15 @@ def shipment_view(db, batch):
         "id": batch.id, "shipment_no": batch.shipment_no, "customer_id": batch.customer_id,
         "ship_time": batch.ship_time, "received_date": batch.received_date,
         "total_amount": float(batch.total_amount), "paid_amount": float(paid),
-        "unpaid_amount": float(balance_service.money(batch.total_amount) - paid),
+        "unpaid_amount": 0.0 if batch.cancelled_at else float(balance_service.money(batch.total_amount) - paid),
+        "cancelled_at": batch.cancelled_at, "cancelled_by": batch.cancelled_by,
         "remark": batch.remark, "created_by": batch.created_by,
         "items": [{
             "id": line.id, "item_id": line.item_id, "domestic_no": line.domestic_no,
             "order_no": line.order_no, "line_code": line.line_code, "guest_name": line.guest_name,
             "product_name": line.product_name, "attrs": line.attrs_snapshot, "quantity": line.quantity,
             "unit_price": float(line.unit_price), "amount": float(line.amount), "ship_weight": line.ship_weight,
-            "unit_codes": [unit_service.unit_display_code(db.get(DomesticOrderItem, line.item_id), u.unit_no)
+            "unit_codes": [u["code"] for u in (batch.cancelled_units or {}).get(str(line.id), [])] if batch.cancelled_at else [unit_service.unit_display_code(db.get(DomesticOrderItem, line.item_id), u.unit_no)
                            for u in db.query(DomesticItemUnit).join(DomesticShipmentUnit, DomesticShipmentUnit.unit_id == DomesticItemUnit.id)
                            .filter(DomesticShipmentUnit.line_id == line.id).order_by(DomesticItemUnit.unit_no).all()],
         } for line in lines],
@@ -289,6 +292,8 @@ def confirm_received(db, shipment_id, payload, user_id):
     batch = db.query(DomesticShipment).filter_by(id=shipment_id).populate_existing().with_for_update().first()
     if not batch or batch.created_by != user_id:
         raise ValueError("发货批次不存在或不是本人创建")
+    if batch.cancelled_at:
+        raise ValueError("发货批次已取消，不能确认收货")
     if batch.received_date:
         if batch.received_date != payload.received_date:
             raise ValueError("该批次已确认收货，不能覆盖历史日期")
@@ -302,8 +307,13 @@ def confirm_received(db, shipment_id, payload, user_id):
     return shipment_view(db, batch)
 
 
+def cancel_shipment(db, shipment_id, user_id):
+    from app.domestic.shipment_cancel_service import cancel_shipment as cancel
+    return cancel(db, shipment_id, user_id)
+
+
 def customer_summary(db, customer_id, user_id=None):
-    query = db.query(DomesticShipment).filter_by(customer_id=customer_id)
+    query = db.query(DomesticShipment).filter_by(customer_id=customer_id, cancelled_at=None)
     if user_id is not None:
         query = query.filter_by(created_by=user_id)
     batches = query.all()

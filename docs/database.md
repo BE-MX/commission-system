@@ -777,6 +777,8 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 
 ## 内贸交付批次与货款核销（186）
 
+迁移 `206_domestic_shipment_cancel`（接 `205_domestic_item_termination`）为 `ark_domestic_shipments` 增加可空 `cancelled_at DATETIME`（北京时间）、`cancelled_by INT UNSIGNED`（FK → `ark_users.id`）、`cancelled_units JSON`（按批次明细ID保存取消时具体件ID/件号）。旧行不回填。取消保留批次/明细与具体件，只释放 `ark_domestic_shipment_units` 占用关联；核销表不改，已有任意核销关联禁止取消。降级拒删审计字段。
+
 迁移 `186_domestic_delivery` 接 185。新增 `ark_domestic_shipments`（同客户跨订单批次、发货/收货事实、幂等指纹）、`ark_domestic_shipment_lines`（订单明细及顾客/规格/价格/数量快照）、`ark_domestic_shipment_units`（具体件唯一交付关联）、`ark_domestic_receipt_allocations`（资金申请到批次的不可删增量核销，`ledger_id` 为已入账证据，`business_key` 唯一）。FK 保持目标类型一致。资金申请增加可空 `receipt_date`、`payload_hash`，类型扩展 `receipt`；历史字段和资金记录不猜配、不回填。所有新审计时间用北京时间，downgrade 拒删。行为及历史对账边界见 [内贸交付说明](domestic-delivery.md)。
 
 内贸 `ark_domestic_order_items.status` 值域补充：`3=已终止`（原 `0=生产中,1=已完工,2=已发货` 保持）。复用现有 SmallInteger 列，不修改 schema；原因保存在现有 remark，资金差额记录在客户余额账本，历史报工和逐件记录保留。

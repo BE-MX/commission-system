@@ -91,11 +91,13 @@
           <el-table-column prop="total_amount" label="批次金额" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.total_amount) }}</template></el-table-column>
           <el-table-column prop="paid_amount" label="已核销" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.paid_amount) }}</template></el-table-column>
           <el-table-column prop="unpaid_amount" label="未结" min-width="110" align="right" sortable><template #default="{ row }">{{ money(row.unpaid_amount) }}</template></el-table-column>
-          <el-table-column label="操作" min-width="245" class-name="table-action-column">
+          <el-table-column label="操作" min-width="340" class-name="table-action-column">
             <template #default="{ row }">
-              <GlassButton v-if="!row.received_date && row.created_by === auth.user?.id" v-permission="'domestic:write'" variant="link" left-icon="Check" :disabled="saving" @click="openReceive(row)">确认收货</GlassButton>
-              <GlassButton v-if="canFunds && customer?.settle_mode === 'credit' && row.unpaid_amount > 0" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Wallet" :disabled="saving" @click="openReceipt(row)">登记收款</GlassButton>
+              <StatusBadge v-if="row.cancelled_at" label="已取消" size="small" />
+              <GlassButton v-if="!row.cancelled_at && !row.received_date && row.created_by === auth.user?.id" v-permission="'domestic:write'" variant="link" left-icon="Check" :disabled="saving" @click="openReceive(row)">确认收货</GlassButton>
+              <GlassButton v-if="!row.cancelled_at && canFunds && customer?.settle_mode === 'credit' && row.unpaid_amount > 0" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Wallet" :disabled="saving" @click="openReceipt(row)">登记收款</GlassButton>
               <GlassButton variant="link" left-icon="Download" @click="exportBatch(row)">导出清单</GlassButton>
+              <GlassButton v-if="!row.cancelled_at && !row.received_date && row.created_by === auth.user?.id" v-any-permission="['domestic:write', 'domestic:admin']" variant="link" link-tone="danger" left-icon="Close" :disabled="saving || loading || !!error" @click="cancelBatch(row)">取消批次</GlassButton>
             </template>
           </el-table-column>
         </el-table>
@@ -160,6 +162,7 @@
 <script setup>
 import { watch, computed } from 'vue'
 import AppUpload from '@/components/AppUpload.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatMoney } from '@/utils/money'
 import { downloadBlob } from '@/utils/download'
@@ -169,7 +172,7 @@ const auth = useAuthStore()
 const { visible, loading, saving, error, customers, customerId, customer, batches, receipts, summary, tab,
   keyword, selected, onlySelected, page, pageSize, sort, shipment, units, receive, receipt, totals, filtered, pageRows,
   openBatches, allocationTotal, unitOptions, open, searchCustomers, close, changeCustomer, reload, setQuantity, setUnitPrice, batchUnitPrice, toggle, openUnits,
-  confirmUnits, scanUnit, submitShipment, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation, confirmReceipt } = useDomesticDelivery(emit)
+  confirmUnits, scanUnit, submitShipment, cancelBatch, openReceive, confirmReceive, openReceipt, selectVoucher, setAllocation, confirmReceipt } = useDomesticDelivery(emit)
 const money = value => Number.isFinite(Number(value ?? 0)) ? formatMoney(Number(value ?? 0), { currency: 'CNY', currencyDisplay: 'narrowSymbol' }) : '待填写有效单价'
 const canFunds = computed(() => customer.value?.can_operate_funds ?? (customer.value?.owner_user_id === auth.user?.id || (auth.user?.roles || []).includes('super_admin')))
 const previousAllocation = id => receipt.existing?.allocations.find(row => row.shipment_id === id)?.amount || 0

@@ -84,6 +84,12 @@ def receive_shipment(shipment_id: int, payload: ShipmentReceive, db: Session = D
     return _run(db, lambda: shipment_service.confirm_received(db, shipment_id, payload, int(user["sub"])))
 
 
+@router.post("/shipments/{shipment_id}/cancel")
+def cancel_shipment(shipment_id: int, db: Session = Depends(get_db),
+                    user: dict = Depends(require_any_permission("domestic:write", "domestic:admin"))):
+    return _run(db, lambda: shipment_service.cancel_shipment(db, shipment_id, int(user["sub"])))
+
+
 @router.post("/customers/{customer_id}/receipts")
 async def create_receipt(customer_id: int, data: str = Form(..., max_length=20000), file: UploadFile = File(...),
                          db: Session = Depends(get_db),

@@ -2053,9 +2053,17 @@ def ship_item(db: Session, item_id: int, payload: ItemShipRequest, user_id: int 
         raise ValueError("该明细还没做完，不能登记发货")
     from app.domestic.shipment_service import shipped_unit_ids
     remaining = item.order_qty - len(shipped_unit_ids(db, item.id, lock=True))
+    from app.domestic.shipment_models import DomesticShipment, DomesticShipmentLine
+    db.query(DomesticCustomer).filter_by(id=order.customer_id).populate_existing().with_for_update().one()
+    # A cancelled delivery starts a new cycle; retries within that cycle keep one key.
+    # Count cancellations: cancelling an older batch must also advance the cycle.
+    cancelled = db.query(DomesticShipment.id).join(DomesticShipmentLine).filter(
+        DomesticShipmentLine.item_id == item.id, DomesticShipment.cancelled_at.isnot(None),
+    ).order_by(DomesticShipment.id).with_for_update().all()
+    request_id = f"legacy-ship:{item.id}" + (f":cycle:{len(cancelled)}" if cancelled else "")
     create_shipment(db, ShipmentCreate(
         customer_id=order.customer_id, ship_time=payload.ship_time,
-        request_id=f"legacy-ship:{item.id}", items=[ShipmentItemInput(
+        request_id=request_id, items=[ShipmentItemInput(
             item_id=item.id, quantity=remaining, ship_weight=payload.ship_weight,
         )],
     ), user_id or order.created_by)

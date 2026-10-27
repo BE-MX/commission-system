@@ -23,6 +23,8 @@ def _lock_and_validate_batches(db, customer_id, allocations):
     by_id = {batch.id: batch for batch in batches}
     if len(by_id) != len(ids) or any(batch.customer_id != customer_id for batch in batches):
         raise ValueError("只能核销同一客户的发货批次")
+    if any(batch.cancelled_at for batch in batches):
+        raise ValueError("发货批次已取消，不能登记收款核销")
     for row in allocations:
         # Locking allocation reads avoid a stale repeatable-read snapshot at approval.
         paid_rows = db.query(DomesticReceiptAllocation.amount).filter(

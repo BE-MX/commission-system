@@ -326,6 +326,7 @@ export const getShipmentCandidates = customer_id => domesticClient.get('/shipmen
 export const getCustomerDelivery = id => domesticClient.get(`/customers/${id}/delivery`)
 export const createShipment = data => domesticClient.post('/shipments', data)
 export const receiveShipment = (id, data) => domesticClient.post(`/shipments/${id}/receive`, data)
+export const cancelShipment = id => domesticClient.post(`/shipments/${id}/cancel`)
 export function createDomesticReceipt(id, data, file) {
   const form = new FormData()
   form.append('data', JSON.stringify(data)); form.append('file', file)
