@@ -46,9 +46,13 @@ export function getInspectionRecord(id) {
 
 // 图片走鉴权端点，浏览器 <img src> 不带 token —— 一律取 blob 再转 object URL
 // （同 domestic 参考图的做法，见 src/api/domestic.js）
-export async function fetchImageBlobUrl(path) {
-  const res = await shippingClient.get(`/images/${path}`, { responseType: 'blob' })
+export async function fetchImageBlobUrl(path, config = {}) {
+  const res = await shippingClient.get(`/images/${path}`, { ...config, responseType: 'blob' })
   return URL.createObjectURL(res.data)
+}
+
+export function fetchImagePreviewBlobUrl(path, config = {}) {
+  return fetchImageBlobUrl(path, { ...config, params: { preview: true }, suppressToast: true, showLoading: false })
 }
 
 export async function fetchVideoBlobUrl(path) {

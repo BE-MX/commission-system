@@ -1517,7 +1517,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |
 | GET | `/records/{id}` | 验货单详情：单头+实时明细+分开的 photos/videos 数组；视频只供预览，不进入验货打印 |
 | POST | `/records/{id}/recall` | 请求必填 edit_version；submitted → draft，版本加一，保留备注与全部媒体，记录撤回人/时间；过期状态 409 |
-| GET | `/images/{rel_path:path}` | 鉴权读图（FileResponse，私有存储不挂静态目录） |
+| GET | `/images/{rel_path:path}` | 鉴权读取原始照片/视频；`preview=true` 仅照片返回最长边640像素的 JPEG 预览，原件不变；沿用归属权限与 `private, no-store`，预览不可用返回503 |
 | POST | `/api/mini/shipping-inspection/scan` | 验签二维码原文 → 单头+明细+photos/videos+状态/edit_version/已存备注；前缀/签名错 400 |
 | POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id? + edit_version + request_id?）；draft 懒创建；已提交拒绝 |
 | POST | `/api/mini/shipping-inspection/videos` | 同照片表单字段；相册视频 MP4/MOV/M4V，单文件最多 100 MiB；校验扩展名、MIME、文件头及实际读取大小 |

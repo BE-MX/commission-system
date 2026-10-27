@@ -358,6 +358,7 @@ def record_detail(
 @router.get("/images/{rel_path:path}", summary="读取验货照片")
 def get_image(
     rel_path: str,
+    preview: bool = Query(False, description='返回最长边640像素的照片预览，原件不变'),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
@@ -369,8 +370,13 @@ def get_image(
     if photo is None:
         raise HTTPException(status_code=404, detail="图片不存在")
     _require_inspection_scope(db, _user, photo.inspection_id)
+    if preview and photo.media_type != 'image':
+        raise HTTPException(400, '仅照片支持预览')
     record = service.transfers.snapshot(db, 'shipping-inspection', photo.file_path)
     db.rollback()
+    if preview:
+        from app.shipping_inspection.preview_service import image_preview
+        return image_preview(rel_path, record)
     return service.transfers.response('shipping-inspection', rel_path, record)
 
 
