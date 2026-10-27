@@ -1,5 +1,5 @@
 {
-  "source_sha256": "c2b1aa64a4ad2f5cbb25a7ba3557d251614134ce16657d187a6d3b4cdf7d7724",
+  "source_sha256": "be01ba05c3d68f9f7203b794c891ebceec3261e3e64a4e74b544961cb936cc4d",
   "favorite_access": {
     "PortalCatalog": [
       {
@@ -2988,6 +2988,28 @@
         ]
       }
     ],
+    "Inkboard": [
+      {
+        "anyPermission": [
+          "inkboard:read",
+          "inkboard:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "inkboard:read",
+          "inkboard:write"
+        ]
+      },
+      {
+        "anyPermission": [
+          "task:read",
+          "task:write",
+          "inkboard:read",
+          "inkboard:write"
+        ]
+      }
+    ],
     "TaskCenter": [
       {
         "anyPermission": [
@@ -3004,7 +3026,9 @@
       {
         "anyPermission": [
           "task:read",
-          "task:write"
+          "task:write",
+          "inkboard:read",
+          "inkboard:write"
         ]
       }
     ]

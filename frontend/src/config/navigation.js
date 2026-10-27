@@ -203,7 +203,7 @@ export const MENU_GROUPS = {
   task: {
     title: '个人效率',
     icon: Finished,
-    anyPermission: ['task:read', 'task:write'],
+    anyPermission: ['task:read', 'task:write', 'inkboard:read', 'inkboard:write'],
   },
 }
 
@@ -1722,6 +1722,17 @@ export const NAV_ENTRIES = [
   },
 
   // ── 任务中心（个人任务，数据按本人隔离） ─────────────────────
+  {
+    path: '/inkboard',
+    name: 'Inkboard',
+    component: () => import('@/views/inkboard/InkboardPage.vue'),
+    title: 'Kindle 看板',
+    anyPermission: ['inkboard:read', 'inkboard:write'],
+    menu: {
+      group: 'task', title: 'Kindle 看板', icon: Monitor, order: 2,
+      anyPermission: ['inkboard:read', 'inkboard:write'],
+    },
+  },
   {
     path: '/task',
     name: 'TaskCenter',

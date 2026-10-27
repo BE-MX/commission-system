@@ -1,0 +1,6 @@
+{
+  "btn_clear":"清空","btn_edit":"编辑","btn_write":"写笔记","clear_ok":"清空","clear_text":"删除笔记内容？",
+  "clear_title":"清空笔记","cleared":"笔记已删除","count":"%d 个字符","edit_hint":"在此输入","edit_title":"快速笔记",
+  "empty_screen":"尚无笔记。","empty_widget":"点击记录","name":"笔记","saved":"笔记已保存","set_big":"大字号",
+  "set_max":"最大字数","too_long":"笔记过长：%d 个字符，上限 %d"
+}

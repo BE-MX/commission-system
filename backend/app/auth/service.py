@@ -502,6 +502,8 @@ def seed_role_permissions(db: Session):
         ("training:admin",        "training",   "admin",      "管理全部培训速递（编辑/下架/删除）"),
         # 任务中心（2026-09-30，个人任务，数据按本人隔离）
         ("task:read",             "task",       "read",       "查看任务中心"),
+        ("inkboard:read",         "inkboard",   "read",       "查看个人 Kindle 看板及设备同步"),
+        ("inkboard:write",        "inkboard",   "write",      "绑定个人 Kindle、管理备忘与发送消息"),
         ("task:write",            "task",       "write",      "新建/编辑任务、导航悬浮 + 快速建任务、AI 草稿"),
         # 客户机会台
         ("customer:admin", "customer", "admin", "管理本部门范围内的客户、归属和高影响提案"),

@@ -1,0 +1,11 @@
+.deps/
+.venv/
+dist/
+backups/
+__pycache__/
+*.pyc
+*.local.json
+*.local.lua
+*.sqlite3*
+*.log
+.env

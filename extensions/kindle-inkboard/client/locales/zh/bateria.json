@@ -1,0 +1,11 @@
+{
+  "basis_mah":"根据电量计数（毫安时）估算。","basis_pct":"根据电量百分比估算。","basis_saved":"已根据上次放电记录校准。",
+  "calibrating":"正在校准续航估算…","calibrating_short":"校准中…","charged":"⚡ 已充满",
+  "charging_calibrating":"⚡ 充电中 · 校准中…","charging_eta":"⚡ 充电中 · 距充满 %s","charging_eta_short":"⚡ 距充满 %s",
+  "chart_empty":"图表：日志采样数量不足。","chart_note":"图表：%s 至 %s，%d%% 至 %d%%。",
+  "est_awake":"开启无线网络时约 %s","est_mix":"按当前用量约 %s","eta_days":"约 %d 天","imported":"已导入旧日志：%d 行",
+  "left":"剩余 %s","left_ma":"剩余 %s · 平均 %s","ma":"%d 毫安","n_full_body":"可以拔掉充电线了",
+  "n_full_title":"电池已充满","n_low_body":"剩余 %s","n_low_body_noeta":"请连接充电器","n_low_title":"电量剩余 %d%%",
+  "name":"电池","no_reading":"未读取到电量","stat_full":"满电容量（毫安时）","stat_mean":"平均电流",
+  "stat_samples":"采样数","stat_temp":"温度","temp":"%d °C"
+}

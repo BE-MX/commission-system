@@ -1,0 +1,12 @@
+{
+  "ago_many":"%d 天前","ago_one":"1 天前","btn_date":"日期","btn_delete":"删除","btn_name":"名称",
+  "btn_new":"新建","btn_save":"保存","days_many":"%d 天","days_one":"1 天","delete_text":"删除“%s”的倒计时？",
+  "delete_title":"删除倒计时","deleted":"倒计时已删除","edit_new":"新建倒计时","edit_title":"编辑倒计时",
+  "empty_screen":"尚无倒计时。","empty_widget":"点击创建","err_date_format":"请输入年-月-日，例如 2026-12-25",
+  "err_date_range":"日期不存在","err_full":"最多可创建 3 个倒计时","err_missing":"未找到倒计时",
+  "err_name_empty":"请输入名称","err_name_too_long":"名称过长，最多 40 个字符","field_unset":"—",
+  "input_date":"日期（年-月-日）","input_date_hint":"2026-12-25","input_name":"事件名称","input_name_hint":"例如：假期",
+  "long_future_many":"还有 %d 天：%s","long_future_one":"还有 1 天：%s","long_past":"%s：%s","long_today":"今天：%s",
+  "n_today_body":"就是今天","n_today_title":"今天：%s","name":"倒计时","notif_today":"日期到达",
+  "on_date":"日期：%s","saved":"倒计时已保存","set_notify":"当天提醒","since":"自 %s 起","today":"今天"
+}

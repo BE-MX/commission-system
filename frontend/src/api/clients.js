@@ -11,6 +11,7 @@ import { createApiClient } from './request'
 import { getInviteAuthorization } from '@/views/customer-image/inviteSession'
 
 export const v1Client = createApiClient({ baseURL: '/api/v1' })
+export const inkboardClient = createApiClient({ baseURL: '/api/inkboard' })
 export const designClient = createApiClient({ baseURL: '/api/design' })
 export const receiptClient = createApiClient({ baseURL: '/api/receipts', timeout: 300000 })
 export const invoiceClient = createApiClient({ baseURL: '/api/invoice' })

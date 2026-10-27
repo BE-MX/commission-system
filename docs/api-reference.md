@@ -2610,3 +2610,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 有远端ID/行快照/租约/确认历史/迟到效果，或存在远端单据、证据不完整、鉴权失败、并发变更时拒绝。成功返回 `ok(data)` 当前Settlement DTO；数据竞争409，证据或提交结果不明503；均私有no-store，422不回显原声明。未知回执先GET原批次，不自动重放或另建。成功追加 `recover_outbound` 事件及完整结构化 `shipment_create_recovered` 审计；迟到创建结果记录 `shipment_create_late_result` 并持续阻断重新创建。没有新增表或迁移。
 
 操作与验证边界见[原任务恢复报告](reports/2026-10-23-shipment-absence-recovery.md)。
+
+## Kindle 看板（2026-10-25，本地待发布）
+
+新增 /api/inkboard：个人设备签发/撤销、备忘版本更新、消息幂等发布/撤回、受限设备同步与独立接收/已读回执。完整端点、schema 和权限见 [Kindle 看板契约](requirements/2026-10-25-kindle-dashboard.md)。不自动转发所有既有公告。

@@ -790,3 +790,16 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 - `ark_domestic_item_units.status`：新增应用值 `2=已终止`，不复用、不删除；`0=普通改量停用,1=有效` 保持。单件编号允许空洞，后续加量保留历史身份。
 - `ark_domestic_orders.skip_all_records`：nullable JSON，记录整次跳过的 request_id、原因、操作者、北京时间和首次结果，订单锁保证同键重试不扩大到新增工序或明细。逐工序事实继续写现有 skip_logs/skip_units，计件工资仍只读实际报工。
 - 迁移 `205_domestic_item_termination` 衔接主线 `204_portal_delivery_profile`，保持单 head。迁移只由正式部署入口执行，未对共享库执行。
+
+## Kindle 看板（207_inkboard，待发布）
+
+仅新增个人数据表；生产迁移尚未执行。
+
+| 表 | 主键与约束 | 主要字段 |
+| --- | --- | --- |
+| ark_ink_devices | id BIGINT；token_hash 唯一；owner_id 为 ark_users.id 的 unsigned FK | name、SHA256 token_hash、created_at、last_received_at、revoked_at |
+| ark_ink_notes | id BIGINT；owner_id unsigned FK | title、body、version、created_at、updated_at、deleted_at |
+| ark_ink_messages | id BIGINT；owner_id unsigned FK；(owner_id, request_key) 唯一 | title、body、priority、created_at、expires_at、withdrawn_at |
+| ark_ink_receipts | (device_id, message_id) 复合主键与 FK | received_at、read_at |
+
+所有 DATETIME 为北京时间。原始设备 token 只在签发响应出现，不入库。迁移禁止通过 downgrade 删除消息/备忘/回执。接口与边界见 [Kindle 看板](requirements/2026-10-25-kindle-dashboard.md)。

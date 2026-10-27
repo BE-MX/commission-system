@@ -1,0 +1,11 @@
+{
+  "date_day":"%s%s日","date_full":"%s，%s%s日","date_order":"md",
+  "mo1":"1月","mo2":"2月","mo3":"3月","mo4":"4月","mo5":"5月","mo6":"6月",
+  "mo7":"7月","mo8":"8月","mo9":"9月","mo10":"10月","mo11":"11月","mo12":"12月",
+  "name":"时钟","preview":"预览","style_analogico":"指针时钟","style_analogico_sub":"使用指针表盘",
+  "style_data":"数字时钟与日期","style_data_sub":"显示时间、星期和日期","style_digital":"大号数字时钟",
+  "style_digital_sub":"大字号显示时与分","style_hint":"组件中的时间显示方式","style_label":"样式",
+  "style_minimo":"简洁时钟","style_minimo_sub":"时间与下次唤醒","wake_day":"下次唤醒：%s %s",
+  "wake_none":"尚未安排唤醒","wake_today":"下次唤醒：%s","wd1":"星期日","wd2":"星期一","wd3":"星期二",
+  "wd4":"星期三","wd5":"星期四","wd6":"星期五","wd7":"星期六"
+}

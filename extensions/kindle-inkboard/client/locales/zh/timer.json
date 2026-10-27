@@ -1,0 +1,10 @@
+{
+  "btn_custom":"自定义…","btn_pause":"暂停","btn_reset":"重置","btn_resume":"继续","btn_start":"开始",
+  "custom_bad":"请输入 1 至 600 分钟","custom_hint":"1 至 600","custom_title":"时长（分钟）",
+  "idle_pomo":"番茄钟 %d/%d","idle_tap":"就绪","left_h":"%d 小时 %02d 分钟","left_lt1":"不到 1 分钟",
+  "left_min":"%d 分钟","left_zero":"已结束","n_break_body":"休息结束","n_done_title":"计时结束","n_focus_body":"已完成 %d 分钟",
+  "name":"计时器","notif_done":"计时结束","paused_note":"已暂停","pomo_note":"番茄钟：专注与休息交替进行",
+  "preset_min":"%d 分钟","preset_pomo":"%d/%d","set_auto":"专注结束后自动休息","set_break":"番茄钟：休息时长（分钟）",
+  "set_custom":"上次自定义时长（分钟）","set_work":"番茄钟：专注时长（分钟）","st_break":"休息",
+  "st_focus":"专注","st_idle":"就绪","st_paused":"已暂停","until":"结束于 %s"
+}

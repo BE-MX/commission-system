@@ -1,0 +1,9 @@
+{
+  "after_short":"等待","btn_idle_sub":"无操作","btn_mode_sub":"自动","btn_sleep":"休眠","btn_sleep_sub":"立即",
+  "confirm_ok":"休眠","confirm_text":"按电源键可唤醒设备。","confirm_title":"立即休眠？","dash":"–",
+  "idle":"自动休眠","idle_after":"等待时间","idle_after_sub":"无触控操作后","idle_short":"自动",
+  "mode_always":"始终","mode_battery":"仅电池供电时","mode_never":"从不","mode_sub_always":"充电时也会休眠",
+  "mode_sub_battery":"连接电源时不休眠","mode_sub_never":"不自动休眠","n_min":"%d 分钟","name":"休眠",
+  "never":"从不","one_a":"立即","one_b":"休眠","short_always":"始终","short_battery":"电池供电",
+  "short_never":"从不","sleep_now":"立即休眠","sleep_now_sub":"按电源键唤醒"
+}
