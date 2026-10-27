@@ -4,6 +4,7 @@ import json
 from copy import deepcopy
 from datetime import datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -304,7 +305,8 @@ def persist(db,attempt,observations,data,*,finish=True):
             facts.validate(db,attempt)
             completed=facts.get(db,invoice.id,attempt.key,facts.FINISH)
             if completed and completed.safe_diff_json.get("final_fingerprint")==facts.digest(capture(db,invoice,xiaoman_service.build_push_payload(db,invoice)[0])):
-                db.commit();return completed.safe_diff_json["result"]
+                result=deepcopy(completed.safe_diff_json["result"])
+                db.commit();return result
             owned=owns(db,invoice,attempt)
             result=apply(db,invoice,attempt,observations[-1],data) if owned else {
                 "ok":False,"message":"原推单事实已保存，执行权已变化，请核对当前任务","issues":[],
@@ -357,9 +359,13 @@ def run(db,invoice_id,user,*,linked_id=None,linked_token=None,follow_outbound=Tr
         if result.get("ok") and follow_outbound:
             # Preserve the existing continuation; its executor remains separately audited.
             invoice,actor=edit_authority.prepare_recovery(db,invoice_id,user,"invoice:sync")
+            # SessionLocal expires ORM rows on commit. Reading even invoice.id
+            # afterwards would issue SELECT and open a transaction before the
+            # continuation's fresh-authority boundary.
+            reference=SimpleNamespace(id=invoice.id)
             db.commit()
             from app.invoice import outbound_followup_service
-            result["outbound_sync"]=outbound_followup_service.safely_run(db,invoice,actor,force_authority=True)
+            result["outbound_sync"]=outbound_followup_service.safely_run(db,reference,actor,force_authority=True)
             db.rollback();db.expire_all()
         return response(db,invoice_id,user,result)
     except ValueError:

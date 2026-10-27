@@ -4,15 +4,22 @@ import pytest
 from sqlalchemy import update, select, text
 from sqlalchemy.orm import Session
 from app.auth.models import ArkUser
-from app.invoice import edit_authority, outbound_followup_service as followup
+from app.invoice import edit_authority, okki_client, outbound_followup_service as followup
 from app.invoice.models import OkkiOutboundTask, Invoice, InvoiceItem, InvoiceSyncLog
 from app.portal.authority import lock_authority
 from test_mysql_order_push_execution import setup_push, execute, business
 from test_mysql_invoice_cancellation_refresh import demote_admin
 
 
+def assert_partial_success(response):
+    assert response.status_code==200,response.text
+    assert response.json()["data"]["ok"] is True
+    assert response.json()["data"]["outbound_sync"]["status"]=="manual"
+
+
 def setup_followup(e,monkeypatch,tmp_path):
     actual_read=followup.remote.read
+    actual_get_json=okki_client._get_json
     original=followup.safely_run
     c=setup_push(e,monkeypatch,tmp_path)
     monkeypatch.setattr(followup,'safely_run',original)
@@ -38,8 +45,10 @@ def setup_followup(e,monkeypatch,tmp_path):
             return {'count':1,'list':[{'sku_id':params['sku_id'],'warehouse_id':followup.DESTINATION_WAREHOUSE_ID,
                 'enable_count':c.available,'disable_flag':0}]}
         raise AssertionError('Unexpected isolated supplier endpoint')
-    c.supplier_read=read;c.actual_read=actual_read
+    c.supplier_read=read;c.actual_read=actual_read;c.actual_get_json=actual_get_json
     monkeypatch.setattr(followup.remote,'read',read)
+    monkeypatch.setattr(okki_client, '_get_json',
+        lambda path, token, *, context, params=None, **kwargs: read(None, path, params))
     return c
 
 
@@ -100,12 +109,12 @@ def test_followup_rejects_full_binding_change_after_inventory_read(editor,monkey
         c.before=business(editor)
     c.gate=gate
     response=execute(c)
-    assert response.status_code==409,response.text
+    assert_partial_success(response)
     assert c.before is not None and business(editor)==c.before and len(c.posts)==1
 
 
-@pytest.mark.parametrize('mutation,code', [('identity',503),('company',409),('amount',409),('uid',503)])
-def test_followup_bad_supplier_evidence_never_requeues(editor,monkeypatch,tmp_path,mutation,code):
+@pytest.mark.parametrize('mutation', ['identity','company','amount','uid'])
+def test_followup_bad_supplier_evidence_never_requeues(editor,monkeypatch,tmp_path,mutation):
     c=setup_followup(editor,monkeypatch,tmp_path)
     def alter(data):
         if mutation=='identity':data['order_id']='999'
@@ -117,7 +126,7 @@ def test_followup_bad_supplier_evidence_never_requeues(editor,monkeypatch,tmp_pa
         if path.endswith('/order/info') and c.before is None:c.before=business(editor)
     c.gate=gate
     response=execute(c)
-    assert response.status_code==code,response.text
+    assert_partial_success(response)
     assert business(editor)==c.before and len(c.posts)==1
     assert 'private-provider-body' not in response.text
 
@@ -182,7 +191,7 @@ def test_followup_cannot_overwrite_worker_takeover(editor,monkeypatch,tmp_path,s
         c.before=business(editor)
     c.gate=gate
     response=execute(c)
-    assert response.status_code==409,response.text
+    assert_partial_success(response)
     assert business(editor)==c.before and len(c.posts)==1
 
 
@@ -225,7 +234,7 @@ def test_followup_cannot_borrow_other_order_deletion(editor,monkeypatch,tmp_path
         raise AssertionError('Untrusted deletion evidence must be rejected before supplier I/O')
     c.gate=gate
     response=execute(c)
-    assert response.status_code==409,response.text
+    assert_partial_success(response)
     with Session(editor.ctx.engine) as db:
         task=db.scalar(select(OkkiOutboundTask).where(OkkiOutboundTask.invoice_id==editor.invoice_id))
         assert task.status=='skipped' and task.reason=='deleted:801'
@@ -233,7 +242,7 @@ def test_followup_cannot_borrow_other_order_deletion(editor,monkeypatch,tmp_path
 
 
 @pytest.mark.parametrize('field', ['count','unit_price','cost_amount','amount'])
-def test_followup_incomplete_commercial_shape_is_503(editor,monkeypatch,tmp_path,field):
+def test_followup_incomplete_commercial_shape_reports_manual(editor,monkeypatch,tmp_path,field):
     c=setup_followup(editor,monkeypatch,tmp_path)
     def alter(data):
         (data if field=='amount' else data['product_list'][0]).pop(field)
@@ -242,7 +251,7 @@ def test_followup_incomplete_commercial_shape_is_503(editor,monkeypatch,tmp_path
         if c.before is None:c.before=business(editor)
     c.gate=gate
     response=execute(c)
-    assert response.status_code==503,response.text
+    assert_partial_success(response)
     assert business(editor)==c.before and len(c.posts)==1
 
 
@@ -254,7 +263,7 @@ def test_followup_untrusted_generation_cannot_be_rewritten(editor,monkeypatch,tm
         task=db.scalar(select(OkkiOutboundTask).where(OkkiOutboundTask.invoice_id==editor.invoice_id))
         task.status,task.reason='pending',reason;db.commit()
     response=execute(c)
-    assert response.status_code==409,response.text
+    assert_partial_success(response)
     with Session(editor.ctx.engine) as db:
         task=db.scalar(select(OkkiOutboundTask).where(OkkiOutboundTask.invoice_id==editor.invoice_id))
         assert task.status=='pending' and task.reason==reason
@@ -273,7 +282,7 @@ def test_followup_cannot_borrow_same_pi_other_target_generation(editor,monkeypat
         task=db.scalar(select(OkkiOutboundTask).where(OkkiOutboundTask.invoice_id==editor.invoice_id))
         task.status,task.reason='pending',reason;db.commit()
     response=execute(c)
-    assert response.status_code==409,response.text
+    assert_partial_success(response)
     with Session(editor.ctx.engine) as db:
         task=db.scalar(select(OkkiOutboundTask).where(OkkiOutboundTask.invoice_id==editor.invoice_id))
         assert task.status=='pending' and task.reason==reason
@@ -287,6 +296,7 @@ def test_actual_get_token_helper_revocation_window(editor,monkeypatch,tmp_path,p
     from app.invoice import okki_client
     c=setup_followup(editor,monkeypatch,tmp_path)
     monkeypatch.setattr(followup.remote,'read',c.actual_read)
+    monkeypatch.setattr(okki_client,'_get_json',c.actual_get_json)
     fetch_original=okki_client.fetch_token;hit=[]
     def revoke():
         if hit:return
@@ -297,9 +307,9 @@ def test_actual_get_token_helper_revocation_window(editor,monkeypatch,tmp_path,p
             db.scalar(select(OkkiOutboundTask).where(OkkiOutboundTask.invoice_id==editor.invoice_id).with_for_update())
             db.get(ArkUser,editor.ctx.admin).is_active=False;db.commit()
         c.before=business(editor)
-    def fetch():
+    def fetch(*, scope=None):
         if c.tokens and phase=='refresh':revoke()
-        return fetch_original()
+        return fetch_original(scope=scope)
     def get(url,*,headers,timeout,params):
         path=urlsplit(url).path
         if phase=='refresh' and len(c.tokens)==1:return httpx.Response(401)
@@ -310,7 +320,7 @@ def test_actual_get_token_helper_revocation_window(editor,monkeypatch,tmp_path,p
     response=execute(c)
     assert hit==[phase] and response.status_code==403,response.text
     assert c.before is not None and business(editor)==c.before and len(c.posts)==1
-    assert len(c.tokens)==(2 if phase=='refresh' else 1)
+    assert len(c.tokens)==(3 if phase=='refresh' else 2)  # Independent product-scope stock token.
 
 
 @pytest.mark.parametrize('failure', ['before_commit','lost_ack'])
@@ -326,7 +336,8 @@ def test_queue_audit_atomic_and_commit_ack_preserves_original(editor,monkeypatch
         return commit_original(db)
     monkeypatch.setattr(Session,'commit',commit)
     response=execute(c)
-    assert response.status_code==503 and hit==[failure],response.text
+    assert_partial_success(response)
+    assert hit==[failure]
     with Session(editor.ctx.engine) as db:
         invoice=db.get(Invoice,editor.invoice_id)
         task=db.scalar(select(OkkiOutboundTask).where(OkkiOutboundTask.invoice_id==invoice.id))
@@ -379,7 +390,7 @@ def test_final_queue_authority_serializes_revocation_commit_and_rollback(editor,
             assert not revocation.done()
             release.set();revocation.result(timeout=8);response=result.result(timeout=8)
         finally:release.set();revoked.set()
-    assert response.status_code==(403 if commit_first else 503),response.text
+    assert response.status_code==403,response.text
     assert len(c.posts)==1 and hit==[True]
     after=business(editor)
     if not commit_first:assert after==before
@@ -461,7 +472,7 @@ def test_followup_final_binding_covers_proof_and_source_records(editor,monkeypat
                 .order_by(ShippingOperationEvent.id)).all())
     c.gate=gate
     response=execute(c)
-    assert response.status_code==409,response.text
+    assert_partial_success(response)
     assert business(editor)==c.before and len(c.posts)==1
     with Session(editor.ctx.engine) as db:
         assert tuple(db.execute(select(*ShippingOperationEvent.__table__.columns)
@@ -482,5 +493,5 @@ def test_followup_scanning_and_readback_are_evidence_not_absence(editor,monkeypa
         return result
     monkeypatch.setattr(followup.remote,'read',read)
     response=execute(c)
-    assert response.status_code==(503 if fault=='incomplete_scan' else 409),response.text
+    assert_partial_success(response)
     assert c.before is not None and business(editor)==c.before and len(c.posts)==1

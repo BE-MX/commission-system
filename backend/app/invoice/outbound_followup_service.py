@@ -319,14 +319,21 @@ def _follow_existing(db, invoice, user, related, *, force_authority=False):
 
 def safely_run(db, invoice, user, *, force_authority=False):
     """The remote order is already committed; report downstream failure separately."""
-    if force_authority:
-        from app.invoice import outbound_followup_execution
-        return outbound_followup_execution.run(db, invoice.id, user)
+    from fastapi import HTTPException
+    invoice_id = invoice.id
     try:
+        if force_authority:
+            from app.invoice import outbound_followup_execution
+            return outbound_followup_execution.run(db, invoice_id, user)
         return run(db, invoice, user)
     except Exception as exc:  # noqa: BLE001 - order success must remain visible after downstream failure
         db.rollback()
-        logger.warning('Invoice outbound follow-up failed invoice=%s: %s', invoice.id, exc)
-        print(f'[outbound_followup] failed invoice={invoice.id}: {type(exc).__name__}', flush=True)
+        db.expire_all()
+        # Revoked access must still fail closed. The caller also rechecks current
+        # authority before returning the already committed order result.
+        if isinstance(exc, HTTPException) and exc.status_code in {401, 403, 404}:
+            raise
+        logger.warning('Invoice outbound follow-up failed invoice=%s: %s', invoice_id, exc)
+        print(f'[outbound_followup] failed invoice={invoice_id}: {type(exc).__name__}', flush=True)
         message = str(exc.detail) if hasattr(exc, 'detail') else str(exc) if isinstance(exc, ValueError) else '出库核对未完成，请到出库单核对'
         return {'status': 'manual', 'message': message[:500]}

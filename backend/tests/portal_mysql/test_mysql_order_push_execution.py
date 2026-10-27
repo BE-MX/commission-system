@@ -79,7 +79,7 @@ def setup_push(e, monkeypatch, tmp_path, *, editing=False, production=False):
         db.commit()
     ctx = SimpleNamespace(e=e, route=f'/api/invoice/invoices/{e.invoice_id}/sync', posts=[], tokens=[],
                           followups=[], target=str(970000+e.invoice_id), material_id=material_id)
-    def fetch():
+    def fetch(*, scope=None):
         value = 'synthetic-provider-token-'+str(len(ctx.tokens)+1); ctx.tokens.append(value)
         return value, utc_now_naive()+timedelta(hours=8)
     def accepted(payload):

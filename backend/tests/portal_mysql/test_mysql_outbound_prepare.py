@@ -69,6 +69,9 @@ def setup(e, monkeypatch, tmp_path):
         if c.gate: c.gate(name+(':'+'first' if counts[path] == 1 else ':readback'))
         return deepcopy(c.outbound if path.endswith('/outbound/info') else c.order)
     monkeypatch.setattr(outbound_service, 'get_outbound_record', mirror)
+    monkeypatch.setattr(outbound_service, 'inspection_item_links', lambda db, record_id: [
+        {'local_item_id': str(row['outbound_record_id']), 'remote_item_id': str(row['outbound_record_id'])}
+        for row in c.outbound['record_list']])
     monkeypatch.setattr(sync.remote, 'read', read)
     def related(*args):
         if c.gate: c.gate('related')

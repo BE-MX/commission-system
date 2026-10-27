@@ -31,6 +31,9 @@ from test_mysql_services import accepted_request
 
 @pytest.fixture
 def editor(trade, monkeypatch):
+    def forbid_external_http(*args, **kwargs):
+        raise AssertionError('Employee integration tests must substitute supplier HTTP; real network is forbidden')
+    monkeypatch.setattr(httpx.Client, 'send', forbid_external_http)
     ctx=trade; metadata=MetaData()
     for model in (ArkAccountUnlockAudit,Receipt,InvoiceAllocation,ShippingOperationEvent,OkkiOutboundTask,InvoiceLinkedSync,InvoiceSyncLog,ReceiptAttachment,CustomerProfile):
         Table(model.__tablename__,metadata,*(Column(c.name,c.type,primary_key=c.primary_key,
@@ -68,8 +71,8 @@ def editor(trade, monkeypatch):
         def commit(self):
             if pause.enabled:
                 self.flush()
-            edited=any(isinstance(row,Invoice) and (row.remark==body['remark'] or row.status==getattr(pause,'invoice_status','cancel_pending')) and row.portal_document_version>version for row in self.identity_map.values())
-            if pause.enabled and edited and not self.info.get('test_commit_paused'):
+            edited=pause.enabled and any(isinstance(row,Invoice) and (row.remark==body['remark'] or row.status==getattr(pause,'invoice_status','cancel_pending')) and row.portal_document_version>version for row in self.identity_map.values())
+            if edited and not self.info.get('test_commit_paused'):
                 self.info['test_commit_paused']=True
                 pause.ready.set();assert pause.release.wait(8)
             super().commit()
@@ -78,7 +81,9 @@ def editor(trade, monkeypatch):
     def observe_connection(db, transaction, connection):
         started.put(connection.scalar(text('SELECT CONNECTION_ID()')))
     def database():
-        with HttpSession(ctx.engine,expire_on_commit=False) as db:
+        # Match production SessionLocal. Keeping ORM rows alive across commits
+        # hides implicit SELECT/autobegin before the next authority boundary.
+        with HttpSession(ctx.engine,autoflush=False) as db:
             yield db
     app.dependency_overrides[get_db]=database
     async def login(name):
