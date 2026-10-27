@@ -1,3 +1,10 @@
+## 2026-10-27 订单明细分组与最新 main 全局发布（Kimi，已部署）
+
+- 分支 `kimi/invoice-item-groups` 提供持久化明细分组、自定义名称、全部/分组视图、当前组新增/复制/Excel 粘贴、跨组移动及空组删除；已加入出库单的行显示出库与部分/实际发货状态。分组仅用于展示，不改变金额、库存、出库、打印导出、门户或 OKKI 同步。功能提交 `e962b982f5d59180660bf6add4ade290eb95d8dc`，迁移文档修正及最终发布版本 `081b7879cbfc489027ac3bafae86c862cb8e6053`，已合入并推送 main。
+- 最新主线原有 `206`–`208` 已先集成，本期迁移顺延为 `209_invoice_item_groups`，接 `208_invoice_inspection_photos`；历史产品行按订单与创建日生成稳定分组，配件不归组。办公室统一 `deploy/deploy.bat` 固定候选预检及正式发布均成功，回执 `MANAGED APPLICATION RELEASE COMPLETED`，scope `office-and-cloud`、schema `209_invoice_item_groups`、`deferred=[]`，出库 timer 恢复原 active/enabled；静态与候选保留清理仍按受管维护入口 deferred。
+- 验证：本期及迁移链后端 41 项、前端 140 项、生产构建和隔离浏览器全流程通过。合并后较大回归为 867 passed/11 failed，其中 9 个 `inspection_requirement` 失败在干净 `4154ae82` 同样复现，另 1 个为既有 `unique_id="line-1"` 严格回读夹具失败；未将这些主线基线问题夹带为本期修复。
+- 生产独立核验：办公室 HEAD `081b7879`、health ok/database connected、`alembic current=209_invoice_item_groups (head)`；北京 health ok/database connected，`ark-backend` 与出库 timer 均 active。`leshine.cloud` 与 `leshine.work` 首页 SHA256 均为 `f4cf006ac33fa0c5c58ddd8d199324bf04b78c0b6c46616c605b446ddf6f3c47`，与本地候选一致；两站主 JS 摘要一致并引用 `InvoiceManage-9DNhVD5B.js`。PM 与客户门户均 HTTP 200。未纳管独立服务、APK、小程序与浏览器扩展安装不属于本次全局应用发布范围。
+
 ## 2026-10-27 订单检验要求与出库打印标记（Codex，Git交付，未部署）
 
 - 分支 `codex/invoice-inspection-requirement`，独立工作区；新旧发票录入在小满标记下增加必选单张/明细检验照片，默认随新成交属性、手动修改优先、保存重开保留。出库打印右上角独立加粗大字显示“新签”“拍摄明细照片”，Word同步。

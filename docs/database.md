@@ -1,6 +1,6 @@
 # 莱莎方舟 数据库表参考
 
-## 订单产品明细展示分组（209_invoice_item_groups，本地候选）
+## 订单产品明细展示分组（209_invoice_item_groups，2026-10-27 已部署）
 
 `ark_invoice_item_groups` 保存展示专用分组：`id`、`invoice_id`、`key`、`name`、`sort_order`、`created_at/updated_at`（北京时间）。`(invoice_id,key)` 与 `(invoice_id,name)` 分别唯一，`invoice_id` 关联 `ark_invoices.id` 并 CASCADE；稳定 key 供编辑器及行归属使用，自定义名称不参与业务版本。`ark_invoice_items.group_id` 可空，关联分组 id 并 SET NULL，仅产品行使用，配件不分组。历史产品行按“订单＋明细创建日期”生成稳定 legacy 分组并回填归属，不改产品、数量、价格、OKKI 或出库字段。分组不是发货批次，不进入业务 `edit_version`，也不触发外部同步；降级不删除用户分组数据。
 
