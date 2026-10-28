@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>色板数据库 · 莱莎方舟</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gold:#D4941C;--gold-accent:#F5CB5C;--gold-soft:#FDF4DC;--gold-light:rgba(212,148,28,.08);
+  --btn:#E0A50B;--btn-h:#C9930A;--btn-a:#A87C08;--btn-ink:#211903;--link:#8F6508;
+  --ok:#0F8479;--ok-bg:#E6F4F2;--warn:#B75B09;--warn-bg:#FDF0E3;--danger:#D5363C;--danger-bg:#FCEBEC;
+  --t1:#1a1a2e;--t2:#4a5568;--t3:#a0aec0;--bd:#e2e5ef;--bd-h:#c5cce0;
+  --page:#f0f2f7;--card:#fff;--head:#fafbfe;--row-h:#fef9f0;
+  --r-card:12px;--r-in:8px;--r-tag:6px;--r-dlg:16px;
+  --shadow:0 1px 2px rgba(26,26,46,.04),0 4px 16px rgba(26,26,46,.05);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"DM Sans",sans-serif;font-size:14px;color:var(--t1);background:var(--page);min-height:100dvh;display:flex}
+button{font-family:"Outfit",sans-serif;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font-family:inherit;font-size:13px}
+.num{font-variant-numeric:tabular-nums}
+
+/* sidebar */
+.side{width:240px;flex:0 0 240px;min-height:100dvh;background:linear-gradient(180deg,#141210,#1E1B18);color:#9C9590;position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;
+  background-image:linear-gradient(180deg,#141210,#1E1B18),url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.9'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E");background-blend-mode:overlay}
+.brand{display:flex;align-items:center;gap:10px;padding:18px 20px 22px;font-family:Outfit;color:#fff;font-weight:800;font-size:17px;letter-spacing:.02em}
+.brand i{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#F5CB5C,#D4941C);display:grid;place-items:center;color:#211903;font-style:normal;font-size:15px}
+.brand small{display:block;font-size:10px;letter-spacing:.18em;color:#9C9590;font-weight:600}
+.nav-g{padding:6px 12px}
+.nav-t{font:700 10px Outfit;letter-spacing:.14em;color:#6b645e;padding:10px 10px 6px;text-transform:uppercase}
+.nav-i{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;font:500 13.5px Outfit;transition:background .2s}
+.nav-i:hover{background:rgba(255,255,255,.04);color:#D4C4A8}
+.nav-i.on{background:rgba(245,203,92,.1);color:var(--gold-accent)}
+.nav-i svg{width:16px;height:16px;opacity:.85}
+.nav-sub{padding-left:38px;font-size:13px}
+
+/* main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{height:56px;display:flex;align-items:center;gap:14px;padding:0 28px;background:rgba(250,251,254,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:20}
+.crumb{font:600 13px Outfit;color:var(--t3)} .crumb b{color:var(--t1)}
+.top .sp{flex:1}
+.dev-pill{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;border:1px solid var(--bd);background:#fff;font:600 12px Outfit;color:var(--t2)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--t3)}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(15,132,121,.15)}
+.dot.mid{background:var(--btn);box-shadow:0 0 0 3px rgba(224,165,11,.18)}
+.avatar{width:32px;height:32px;border-radius:50%;background:#2a2622;color:var(--gold-accent);display:grid;place-items:center;font:700 13px Outfit}
+.content{padding:24px 28px;max-width:1440px;width:100%}
+
+.ph{display:flex;align-items:flex-end;gap:16px;margin-bottom:18px}
+.ph h1{font:700 17px Outfit}
+.seg{display:inline-flex;background:#e7e9f1;border-radius:10px;padding:3px}
+.seg button{padding:7px 16px;border-radius:8px;font:600 13px Outfit;color:var(--t2)}
+.seg button.on{background:#fff;color:var(--t1);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.seg .cnt{font:600 11px "DM Sans";color:var(--t3);margin-left:4px}
+
+.btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:10px;font:600 13px Outfit;transition:background .15s,box-shadow .15s}
+.btn-p{background:var(--btn);color:var(--btn-ink)} .btn-p:hover{background:var(--btn-h)} .btn-p:active{background:var(--btn-a)}
+.btn-o{border:1px solid var(--bd);background:#fff;color:var(--t1)} .btn-o:hover{border-color:var(--bd-h)}
+.btn-ok{background:var(--ok);color:#fff}
+.btn-s{height:28px;padding:0 10px;font-size:12px;border-radius:8px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn svg{width:15px;height:15px}
+
+.layout{display:grid;grid-template-columns:264px 1fr;gap:18px;align-items:start}
+.card{background:var(--card);border-radius:var(--r-card);box-shadow:var(--shadow);border:1px solid rgba(226,229,239,.7)}
+
+/* customer rail */
+.rail{padding:14px;position:sticky;top:80px}
+.search{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--bd);border-radius:var(--r-in);background:#fff}
+.search input{border:none;outline:none;flex:1;min-width:0}
+.search:focus-within{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-light)}
+.rail-h{display:flex;justify-content:space-between;align-items:center;margin:14px 2px 8px;font:700 10.5px Outfit;letter-spacing:.12em;color:var(--t3);text-transform:uppercase}
+.cust{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;transition:background .15s}
+.cust:hover{background:var(--row-h)}
+.cust.on{background:var(--gold-soft)}
+.cust .fl{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font:700 11px Outfit;color:#fff}
+.cust .nm{flex:1;min-width:0}
+.cust .nm b{display:block;font:600 13px Outfit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cust .nm span{font-size:11.5px;color:var(--t3)}
+.cust .c{font:600 12px Outfit;color:var(--t2);background:#f0f2f7;border-radius:6px;padding:1px 7px}
+.role{font-size:10px;padding:0 5px;border-radius:4px;background:#eef0f6;color:var(--t2);margin-left:4px;font-weight:600}
+
+/* toolbar + grid */
+.panel{padding:16px 18px 20px}
+.ctx{display:flex;align-items:center;gap:14px;padding-bottom:14px;border-bottom:1px solid var(--bd);margin-bottom:14px}
+.ctx h2{font:700 15px Outfit}
+.ctx .meta{font-size:12px;color:var(--t3)}
+.tb{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.sel{height:34px;border:1px solid var(--bd);border-radius:var(--r-in);padding:0 10px;background:#fff;color:var(--t1)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:14px}
+.sw{border:1px solid var(--bd);border-radius:var(--r-card);overflow:hidden;background:#fff;cursor:pointer;transition:transform .25s,box-shadow .25s,border-color .2s}
+.sw:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(26,26,46,.09);border-color:var(--bd-h)}
+.sw .chip{height:96px;position:relative}
+.sw .chip::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(100deg,rgba(255,255,255,.07) 0 2px,transparent 2px 6px),linear-gradient(180deg,rgba(255,255,255,.12),rgba(0,0,0,.12))}
+.sw .size{position:absolute;right:10px;top:10px;z-index:1;font:700 11px Outfit;background:rgba(20,18,16,.72);color:#fff;border-radius:6px;padding:2px 7px}
+.sw .body{padding:11px 13px 13px}
+.sw .code{font:700 15px Outfit;display:flex;align-items:center;gap:6px}
+.sw .sub{font-size:12px;color:var(--t3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw .stats{display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px dashed var(--bd);font-size:12px;color:var(--t2)}
+.sw .stats b{display:block;font:700 13px Outfit;color:var(--t1)}
+.tag{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:var(--r-tag);font:600 11px Outfit}
+.tag-ok{background:var(--ok-bg);color:var(--ok)} .tag-warn{background:var(--warn-bg);color:var(--warn)}
+.tag-mute{background:#eef0f6;color:var(--t2)} .tag-gold{background:var(--gold-soft);color:var(--link)} .tag-danger{background:var(--danger-bg);color:var(--danger)}
+.empty{grid-column:1/-1;text-align:center;padding:48px 0;color:var(--t3)}
+.add-tile{border:1.5px dashed var(--bd-h);border-radius:var(--r-card);display:grid;place-items:center;min-height:202px;color:var(--t2);font:600 13px Outfit;cursor:pointer;transition:border-color .2s,background .2s}
+.add-tile:hover{border-color:var(--gold);background:var(--gold-light);color:var(--link)}
+
+/* drawer */
+.mask{position:fixed;inset:0;background:rgba(20,18,16,.38);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40}
+.mask.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;height:100dvh;width:min(1080px,100vw);background:var(--page);z-index:41;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;border-radius:16px 0 0 16px;overflow:hidden}
+.drawer.on{transform:none;visibility:visible}
+.drawer:not(.on){visibility:hidden;transition:transform .3s cubic-bezier(.4,0,.2,1),visibility 0s .3s}
+html{overflow-x:clip}
+.dh{display:flex;align-items:center;gap:14px;padding:16px 22px;background:#fff;border-bottom:1px solid var(--bd)}
+.dh .bigchip{width:52px;height:52px;border-radius:12px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.dh h3{font:700 18px Outfit;display:flex;align-items:center;gap:8px}
+.dh .d-sub{font-size:12.5px;color:var(--t3);margin-top:2px}
+.dh .x{margin-left:auto;width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--t2)} .dh .x:hover{background:#f0f2f7}
+.db{flex:1;overflow:auto;padding:18px 22px 28px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 300px;align-content:start}
+.db>div{min-width:0}
+.db .card{min-width:0;overflow:hidden}
+.sec{padding:16px 18px}
+.sec h4{font:700 14px Outfit;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.sec h4 .sp{flex:1}
+
+/* device */
+.steps{display:flex;gap:4px;margin:4px 0 14px}
+.step{flex:1;text-align:center;font:600 11px Outfit;color:var(--t3);padding-top:8px;border-top:3px solid #e5e8f0;transition:all .3s}
+.step.done{border-color:var(--ok);color:var(--ok)}
+.step.cur{border-color:var(--btn);color:var(--warn)}
+.devinfo{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12.5px;margin-bottom:14px}
+.devinfo span{color:var(--t3)} .devinfo b{font-weight:600}
+.mode{display:flex;gap:6px;margin-bottom:12px}
+.mode label{flex:1;border:1px solid var(--bd);border-radius:8px;padding:7px 8px;font:600 12px Outfit;text-align:center;cursor:pointer;color:var(--t2)}
+.mode input{display:none}
+.mode input:checked+label{border-color:var(--gold);background:var(--gold-light);color:var(--link)}
+.measure-btn{width:100%;height:52px;border-radius:12px;font:700 15px Outfit;background:var(--btn);color:var(--btn-ink);display:flex;align-items:center;justify-content:center;gap:8px;position:relative;overflow:hidden}
+.measure-btn:hover{background:var(--btn-h)}
+.measure-btn:disabled{background:#ece6d6;color:#a99b78;cursor:not-allowed}
+.measure-btn.busy::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);animation:sweep 1s linear infinite}
+@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.rep{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--t2)}
+.rep input{width:54px;height:28px;border:1px solid var(--bd);border-radius:6px;text-align:center}
+.hint{font-size:12px;color:var(--t3);margin-top:10px;line-height:1.55}
+.alert{border-radius:10px;padding:9px 12px;font-size:12.5px;line-height:1.5;margin-bottom:12px}
+.alert-warn{background:var(--warn-bg);color:#7a3f06}
+.alert-info{background:#eef3fb;color:#2b4a74}
+.log{font:11px/1.6 ui-monospace,Consolas,monospace;color:#6b7280;background:#fafbfe;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;max-height:120px;overflow:auto;margin-top:12px;white-space:pre-wrap;word-break:break-all}
+
+/* stats */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.log:empty{display:none}
+.kpi{border-radius:10px;padding:12px 14px;background:linear-gradient(140deg,#fff,#fafbfe);border:1px solid var(--bd)}
+.kpi span{font:600 11.5px Outfit;color:var(--t3)}
+.kpi b{display:block;font:800 22px Outfit;margin-top:4px;letter-spacing:-.01em}
+.kpi small{font-size:11.5px;color:var(--t2)}
+.kpi.hl{background:linear-gradient(140deg,#fff8e8,#fff);border-color:#f1dfb5}
+.compare{display:flex;align-items:center;gap:14px;margin-top:14px}
+.cmp-chip{flex:1;height:58px;border-radius:10px;position:relative;box-shadow:inset 0 0 0 1px rgba(0,0,0,.07)}
+.cmp-chip em{position:absolute;left:10px;bottom:7px;font:600 11px Outfit;font-style:normal;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.cmp-mid{text-align:center;font:600 11px Outfit;color:var(--t3)} .cmp-mid b{display:block;font:800 18px Outfit;color:var(--t1)}
+
+/* table */
+.tbl-wrap{overflow-x:auto;margin:0 -18px}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:var(--head);font:600 12.5px Outfit;color:var(--t2);text-align:right;padding:9px 10px;border-bottom:1px solid var(--bd);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid #eef0f6;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;padding-left:18px}
+th:last-child,td:last-child{padding-right:18px}
+tbody tr:hover{background:var(--row-h)}
+tr.excl td{color:var(--t3);text-decoration:line-through}
+tr.excl td:first-child,tr.excl td:last-child{text-decoration:none}
+tr.new{animation:flash 1.4s ease}
+@keyframes flash{from{background:#fff3cf}to{background:transparent}}
+.mini{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:6px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.1)}
+.lnk{color:var(--link);font:600 12px Outfit} .lnk:hover{text-decoration:underline}
+.tabs{display:flex;gap:2px;margin-bottom:10px}
+.tabs button{font:600 12px Outfit;padding:4px 10px;border-radius:6px;color:var(--t2)}
+.tabs button.on{background:var(--gold-soft);color:var(--link)}
+
+.props{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:13px}
+.props span{color:var(--t3)}
+.late{border:1px dashed #f0c48a;background:#fffaf2;border-radius:10px;padding:10px 12px;font-size:12.5px;margin-top:10px;display:flex;gap:10px;align-items:center}
+
+/* dialog */
+.dlg{position:fixed;left:50%;top:50%;transform:translate(-50%,-48%) scale(.98);opacity:0;pointer-events:none;width:min(520px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;background:#fff;border-radius:var(--r-dlg);z-index:51;transition:all .2s}
+.dlg.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
+.dlg-mask{z-index:50}
+.dlg header{padding:16px 22px;border-bottom:1px solid var(--bd);font:700 16px Outfit}
+.dlg .f{padding:18px 22px;display:grid;gap:14px}
+.fl-row{display:grid;gap:6px}
+.fl-row label{font:600 12px Outfit;color:var(--t2)} .fl-row label i{color:var(--danger);font-style:normal}
+.fl-row input,.fl-row select{height:36px;border:1px solid var(--bd);border-radius:var(--r-in);padding:0 10px;outline:none;background:#fff}
+.fl-row input:focus,.fl-row select:focus{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-light)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.size-in{display:flex;gap:6px} .size-in input{flex:1;min-width:0} .size-in select{width:86px}
+.quick{display:flex;gap:6px;flex-wrap:wrap}
+.quick button{height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--bd);font:600 12px Outfit;color:var(--t2)}
+.quick button:hover{border-color:var(--gold);color:var(--link)}
+.dlg footer{padding:12px 22px 18px;display:flex;justify-content:flex-end;gap:10px}
+.err{color:var(--danger);font-size:12px}
+
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);opacity:0;background:#1E1B18;color:#fff;padding:10px 18px;border-radius:10px;font:500 13px "DM Sans";z-index:60;transition:all .25s;pointer-events:none}
+.toast.on{opacity:1;transform:translateX(-50%)}
+
+.pub-note{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t2);background:#fafbfe;border:1px solid var(--bd);border-radius:10px;padding:9px 12px;margin-bottom:14px}
+
+@media (max-width:1100px){.db{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:860px){
+  .side{display:none}
+  .content{padding:16px}
+  .top{padding:0 14px}
+  .layout{grid-template-columns:minmax(0,1fr)!important}
+  .layout>*{min-width:0}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .sw .chip{height:72px}
+  .sw .stats{font-size:11px}
+  .tb .search{width:100%!important}
+  .tb .sel{flex:1}
+  .dev-pill span:last-child{max-width:96px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .ctx{flex-wrap:wrap}
+  .rail{position:static}
+  .cust-list{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+  .cust{flex:0 0 auto;border:1px solid var(--bd)}
+  .ph{flex-wrap:wrap}
+  .drawer{border-radius:0}
+  .db{padding:14px}
+  .crumb span{display:none}
+  .menu-btn{display:grid!important}
+}
+.menu-btn{display:none;width:32px;height:32px;place-items:center;border-radius:8px;border:1px solid var(--bd);background:#fff}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<aside class="side">
+  <div class="brand"><i>L</i><div>LeShine Ark<small>莱莎方舟</small></div></div>
+  <div class="nav-g">
+    <div class="nav-t">业务</div>
+    <a class="nav-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></svg>工作台</a>
+    <a class="nav-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7M17 11a3 3 0 100-6M22 21c0-3-2-5-4-6"/></svg>客户中心</a>
+    <a class="nav-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/></svg>订单与提成</a>
+    <div class="nav-t">发色数字化</div>
+    <a class="nav-i on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><circle cx="12" cy="16" r="3"/></svg>色板数据库</a>
+    <a class="nav-i nav-sub">混合色管理</a>
+    <a class="nav-i nav-sub">色彩趋势</a>
+    <a class="nav-i nav-sub">色板图生成</a>
+    <div class="nav-t">运营</div>
+    <a class="nav-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h13l5 5v5h-3M3 7v10h3"/><circle cx="8" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>物流跟踪</a>
+    <a class="nav-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 14l4-4 5 5 3-3 4 4"/></svg>素材库</a>
+  </div>
+</aside>
+
+<div class="main">
+  <header class="top">
+    <button class="menu-btn" aria-label="打开导航"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <div class="crumb"><span>发色数字化 / </span><b>色板数据库</b></div>
+    <div class="sp"></div>
+    <div class="dev-pill" id="topDev"><span class="dot" id="topDot"></span><span id="topDevTxt">色差仪未连接</span></div>
+    <div class="avatar" title="亮哥">亮</div>
+  </header>
+
+  <main class="content">
+    <div class="ph">
+      <h1>色板数据库</h1>
+      <div class="seg" role="tablist">
+        <button id="tabPrivate" class="on" onclick="setScope('private')">我的私库<span class="cnt" id="cntPrivate"></span></button>
+        <button id="tabPublic" onclick="setScope('public')">公库<span class="cnt" id="cntPublic"></span></button>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btn btn-p" onclick="openCreate()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>新建色板</button>
+    </div>
+
+    <div class="layout" id="layout">
+      <aside class="card rail" id="rail">
+        <div class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="custQ" placeholder="搜索客户" oninput="renderCustomers()"></div>
+        <div class="rail-h"><span>我负责的客户</span><span id="custCnt"></span></div>
+        <div class="cust-list" id="custList"></div>
+      </aside>
+
+      <section class="card panel">
+        <div class="ctx" id="ctx"></div>
+        <div id="pubNote"></div>
+        <div class="tb">
+          <div class="search" style="width:220px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a0aec0" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="swQ" placeholder="色号 / 名称" oninput="renderGrid()"></div>
+          <select class="sel" id="fSize" onchange="renderGrid()"><option value="">全部尺寸</option></select>
+          <select class="sel" id="fState" onchange="renderGrid()">
+            <option value="">全部状态</option><option value="ok">符合</option><option value="warn">偏差</option><option value="none">未测量</option>
+          </select>
+        </div>
+        <div class="grid" id="grid"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<!-- detail drawer -->
+<div class="mask" id="dMask" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer" aria-label="色板详情">
+  <div class="dh">
+    <div class="bigchip" id="dChip"></div>
+    <div><h3 id="dTitle"></h3><div class="d-sub" id="dSub"></div></div>
+    <button class="x" onclick="closeDrawer()" aria-label="关闭"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="db">
+    <div style="display:grid;gap:14px;align-content:start;min-width:0">
+      <div class="card sec">
+        <h4>测量统计<span class="sp"></span>
+          <span class="tabs" style="margin:0"><button class="on" id="de00" onclick="setDE('00')">ΔE00</button><button id="de76" onclick="setDE('76')">ΔE76</button></span>
+        </h4>
+        <div class="kpis" id="kpis"></div>
+        <div class="compare" id="compare"></div>
+      </div>
+      <div class="card sec">
+        <h4>测量记录<span class="sp"></span>
+          <span class="tabs" style="margin:0"><button class="on" data-v="lab" onclick="setView('lab',this)">Lab</button><button data-v="cmyk" onclick="setView('cmyk',this)">CMYK / RGB</button><button data-v="all" onclick="setView('all',this)">全部空间</button></span>
+        </h4>
+        <div class="tbl-wrap"><table><thead id="mHead"></thead><tbody id="mBody"></tbody></table></div>
+        <div id="lateBox"></div>
+      </div>
+    </div>
+
+    <div style="display:grid;gap:14px;align-content:start">
+      <div class="card sec">
+        <h4>色差仪</h4>
+        <div class="steps" id="steps">
+          <div class="step">GATT</div><div class="step">通知</div><div class="step">初始化</div><div class="step">可测量</div>
+        </div>
+        <div id="envAlert"></div>
+        <div class="mode">
+          <input type="radio" name="mode" id="mSim" value="sim" checked onchange="devMode=this.value"><label for="mSim">模拟设备</label>
+          <input type="radio" name="mode" id="mBle" value="ble" onchange="devMode=this.value"><label for="mBle">蓝牙真机</label>
+        </div>
+        <div class="devinfo" id="devinfo"></div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="btn btn-o" style="flex:1;justify-content:center" id="btnConn" onclick="toggleConn()">连接色差仪</button>
+        </div>
+        <button class="measure-btn" id="btnMeasure" onclick="measureSeries()" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg><span id="mTxt">测量</span>
+        </button>
+        <div class="rep">连续测量 <input type="number" id="rep" value="3" min="1" max="10"> 组，每组移动测量位置</div>
+        <div class="log" id="log"></div>
+      </div>
+      <div class="card sec">
+        <h4>色板属性<span class="sp"></span><button class="lnk" onclick="toast('原型：编辑色号/尺寸/基准/阈值')">编辑</button></h4>
+        <div class="props" id="props"></div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- create dialog -->
+<div class="mask dlg-mask" id="cMask" onclick="closeCreate()"></div>
+<div class="dlg" id="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgT">
+  <header id="dlgT">新建色板</header>
+  <div class="f">
+    <div class="fl-row"><label>所属库</label>
+      <div class="seg" style="width:max-content"><button id="cPriv" class="on" type="button" onclick="setCScope('private')">私库</button><button id="cPub" type="button" onclick="setCScope('public')">公库</button></div>
+    </div>
+    <div class="fl-row" id="cCustRow"><label>绑定客户 <i>*</i></label><select id="cCust"></select></div>
+    <div class="two">
+      <div class="fl-row"><label>色号 <i>*</i></label><input id="cCode" placeholder="#1C、#8/60"></div>
+      <div class="fl-row"><label>尺寸 <i>*</i></label>
+        <div class="size-in"><input id="cSize" type="number" step="0.5" placeholder="18"><select id="cUnit"><option value="inch">inch</option><option value="cm">cm</option></select></div>
+      </div>
+    </div>
+    <div class="quick" id="quickSize"></div>
+    <div class="fl-row"><label>名称</label><input id="cName" placeholder="Ash Brown"></div>
+    <div class="two">
+      <div class="fl-row"><label>对比基准（公库）</label><select id="cBase"></select></div>
+      <div class="fl-row"><label>允许色差 ΔE</label><input id="cTol" type="number" step="0.1" value="1.5"></div>
+    </div>
+    <div class="err" id="cErr"></div>
+  </div>
+  <footer><button class="btn btn-o" onclick="closeCreate()">取消</button><button class="btn btn-p" onclick="submitCreate(false)">创建</button><button class="btn btn-ok" onclick="submitCreate(true)">创建并测量</button></footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="prototype.js"></script>
+</body>
+</html>
