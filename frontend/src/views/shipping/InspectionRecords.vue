@@ -86,7 +86,7 @@
       />
     </div>
 
-    <DetailDrawer v-model="detailVisible" title="验货单详情" :width="760" :loading="detailLoading">
+    <DetailDrawer v-model="detailVisible" title="验货单详情" :width="1080" :loading="detailLoading">
       <template v-if="detail">
         <ResponsiveDescriptions :column="2" border class="detail-descriptions">
           <el-descriptions-item label="出库单号">{{ detail.outbound_no }}</el-descriptions-item>
@@ -101,7 +101,7 @@
         <div class="section-title">出库明细</div>
         <el-table :data="detail.items || []" size="small" border class="list-table" style="width: 100%" v-sticky-scrollbar>
           <el-table-column type="index" label="#" min-width="46" />
-          <el-table-column prop="product_name" label="产品名称" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="product_name" label="产品名称" min-width="260" show-overflow-tooltip />
           <el-table-column prop="spec" label="规格" min-width="100" show-overflow-tooltip />
           <el-table-column prop="sku" label="SKU" min-width="100" show-overflow-tooltip />
           <el-table-column prop="qty" label="数量" min-width="70" align="right" />
