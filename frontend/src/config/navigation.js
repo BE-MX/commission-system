@@ -141,6 +141,7 @@ export const MENU_GROUPS = {
     anyPermission: [
       'color:read', 'color:write', 'color:admin',
       'color_blend:read', 'color_trend:read',
+      'color_library:read', 'color_library:write', 'color_library:admin',
     ],
   },
   insight: {
@@ -1133,6 +1134,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'color', title: '色板数据库', icon: Picture, order: 10,
       permission: 'color:read',
+    },
+  },
+  {
+    path: '/color-management/swatch-library',
+    name: 'ColorSwatchLibrary',
+    component: () => import('@/views/color/SwatchLibraryView.vue'),
+    title: '色板库（公库 / 私库）',
+    anyPermission: ['color_library:read', 'color_library:write', 'color_library:admin'],
+    menu: {
+      group: 'color', title: '色板库', icon: Picture, order: 15,
+      anyPermission: ['color_library:read', 'color_library:write', 'color_library:admin'],
     },
   },
   {

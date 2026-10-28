@@ -1,5 +1,5 @@
 {
-  "source_sha256": "be01ba05c3d68f9f7203b794c891ebceec3261e3e64a4e74b544961cb936cc4d",
+  "source_sha256": "eb13e903bd3734118ca0234e529771fefd725790d4c752586acb7879cdf65634",
   "favorite_access": {
     "PortalCatalog": [
       {
@@ -1829,7 +1829,38 @@
           "color:write",
           "color:admin",
           "color_blend:read",
-          "color_trend:read"
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
+        ]
+      }
+    ],
+    "ColorSwatchLibrary": [
+      {
+        "anyPermission": [
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "color:read",
+          "color:write",
+          "color:admin",
+          "color_blend:read",
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
         ]
       }
     ],
@@ -1846,7 +1877,10 @@
           "color:write",
           "color:admin",
           "color_blend:read",
-          "color_trend:read"
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
         ]
       }
     ],
@@ -1863,7 +1897,10 @@
           "color:write",
           "color:admin",
           "color_blend:read",
-          "color_trend:read"
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
         ]
       }
     ],
@@ -1880,7 +1917,10 @@
           "color:write",
           "color:admin",
           "color_blend:read",
-          "color_trend:read"
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
         ]
       }
     ],
