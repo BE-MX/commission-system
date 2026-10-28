@@ -142,6 +142,19 @@ def delete_outbound_record(
         raise HTTPException(409, str(exc)) from exc
 
 
+@router.get("/board", summary="仓库发货检验看板（待检队列 / 今日完成 / 近 7 天）")
+def inspection_board(
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*_READ)),
+):
+    from app.shipping_inspection import board_service
+    scope = _outbound_scope(db, user)
+    try:
+        return ok(board_service.build_board(db, okki_user_id=scope))
+    except outbound_service.OutboundTableError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.get("/outbound-records", summary="出库单分页列表（含检验状态）")
 def list_outbound_records(
     keyword: str | None = Query(None, description="匹配出库单号/客户"),

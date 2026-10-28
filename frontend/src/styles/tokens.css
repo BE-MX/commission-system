@@ -311,3 +311,51 @@
   --xk-serif: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
   --xk-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* 仓库发货检验大屏：深色远距离阅读，只在 .qc-board 内生效。 */
+.qc-board {
+  --qc-bg: #060a13;
+  --qc-panel: #0c1322;
+  --qc-panel-2: #101a2e;
+  --qc-line: #1b2740;
+  --qc-line-2: #243354;
+  --qc-track: #18223a;
+  --qc-text: #eaf0fd;
+  --qc-text-2: #c9d4ee;
+  --qc-dim: #7f8db0;
+  --qc-mute: #4c5a7c;
+  --qc-new: #ff6a2b;
+  --qc-new-hi: #ffb347;
+  --qc-new-ink: #2a0c00;
+  --qc-s: #f6c445;
+  --qc-s-ink: #2a1d00;
+  --qc-a: #33d6ec;
+  --qc-a-ink: #032a30;
+  --qc-a-deep: #1a7fd6;
+  --qc-ok: #3ddc8a;
+  --qc-ok-ink: #04210f;
+  --qc-mid: #ffa53a;
+  --qc-late: #ff4d61;
+  --qc-detail: #b48cff;
+  --qc-detail-text: #cdb4ff;
+  --qc-bar: #3c6fe0;
+  --qc-bar-hi: #6fa8ff;
+  --qc-bar-deep: #2b4fb0;
+  --qc-heavy: #ff5a3c;
+  --qc-heavy-hi: #ff9b5e;
+  --qc-today: #5ff0d0;
+  --qc-today-deep: #1c8f73;
+  --qc-plain: #3a4a70;
+  --qc-alert-bg: #1a1210;
+  --qc-alert-bg-2: #0e0b0c;
+  --qc-alert-stripe: #ff7f45;
+  --qc-white: #ffffff;
+  --qc-avatar-1: #ff9fb2;
+  --qc-avatar-2: #8fd3ff;
+  --qc-avatar-3: #c6a8ff;
+  --qc-avatar-4: #ffd27a;
+  --qc-avatar-5: #8ff0c0;
+  --qc-num: 'Bahnschrift', 'DIN Alternate', 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  --qc-cn: 'HarmonyOS Sans SC', 'MiSans', 'Microsoft YaHei UI', 'PingFang SC', sans-serif;
+  --qc-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}

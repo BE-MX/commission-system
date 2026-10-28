@@ -1066,6 +1066,17 @@ export const NAV_ENTRIES = [
     permission: 'shipping_station:write', fullscreen: true,
     menu: { group: 'shipping', title: '手机发货质检', icon: Camera, order: 30, permission: 'shipping_station:write' },
   },
+  {
+    // 仓库大屏全天挂着，不套 MainLayout
+    path: '/shipping/board', name: 'ShippingBoard', title: '发货检验看板',
+    component: () => import('@/views/shipping/InspectionBoard.vue'),
+    anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
+    fullscreen: true,
+    menu: {
+      group: 'shipping', title: '发货检验看板', icon: Monitor, order: 31,
+      anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
+    },
+  },
 
   // ── 素材管理 ───────────────────────────────────────────
   {

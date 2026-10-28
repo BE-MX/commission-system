@@ -23,6 +23,11 @@ export function getOutboundPrintData(id) {
   return shippingClient.get(`/outbound-records/${id}/print-data`)
 }
 
+// 仓库大屏：静默轮询，不弹全局错误提示
+export function getInspectionBoard() {
+  return shippingClient.get('/board', { suppressToast: true })
+}
+
 export function getOutboundInventory(id, config = {}) {
   return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/inventory`, config)
 }

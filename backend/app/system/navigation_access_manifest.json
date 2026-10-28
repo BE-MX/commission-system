@@ -1,5 +1,5 @@
 {
-  "source_sha256": "eb13e903bd3734118ca0234e529771fefd725790d4c752586acb7879cdf65634",
+  "source_sha256": "4421ef0ae878698c1f7161f04e6c07ea75d459cd7cc067d53403b48e638c72a9",
   "favorite_access": {
     "PortalCatalog": [
       {
@@ -1717,6 +1717,29 @@
       },
       {
         "permission": "shipping_station:write"
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      }
+    ],
+    "ShippingBoard": [
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
       },
       {
         "anyPermission": [
