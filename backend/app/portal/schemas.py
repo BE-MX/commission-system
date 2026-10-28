@@ -71,14 +71,14 @@ class ActivatePasswordInput(VerifyInput, PasswordInput):
 
 
 class Delivery(PortalInput):
-    contact_name: ShortText
-    phone: Annotated[str, Field(min_length=3, max_length=40)]
-    address_line1: Annotated[str, Field(min_length=1, max_length=200)]
+    contact_name: Annotated[str, Field(max_length=100)] = ""
+    phone: Annotated[str, StringConstraints(strict=True, pattern=r"^(?:|.{3,40})$")] = ""
+    address_line1: Annotated[str, Field(max_length=200)] = ""
     address_line2: Annotated[str, Field(max_length=200)] = ""
     city: Annotated[str, Field(max_length=100)] = ""
     region: Annotated[str, Field(max_length=100)] = ""
     postal_code: Annotated[str, Field(max_length=32)] = ""
-    country_code: Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Z]{2}$")]
+    country_code: Annotated[str, StringConstraints(strict=True, pattern=r"^(?:[A-Z]{2})?$")] = ""
 
 
 class QuoteLine(PortalInput):
@@ -92,7 +92,7 @@ class DeliveryProfileInput(PortalInput):
 
 class QuoteInput(PortalInput):
     items: Annotated[list[QuoteLine], Field(min_length=1, max_length=100)]
-    delivery: Delivery
+    delivery: Delivery = Field(default_factory=Delivery)
     customer_po: Annotated[str, Field(max_length=80)] = ""
     remark: Annotated[str, Field(max_length=1000)] = ""
 
@@ -481,3 +481,20 @@ class SwatchUpdate(CatalogImageInput):
         if self.keep_image and self.asset_id is not None:
             raise ValueError("Choose either a new image or keep the current one")
         return self
+
+
+class CustomerItemPrice(PortalInput):
+    item_id: UUID
+    unit_price: Annotated[str, StringConstraints(strict=True, pattern=r"^(?:0|[1-9][0-9]{0,7})\.[0-9]{4}$")] | None = None
+
+    @field_validator("unit_price")
+    @classmethod
+    def positive_price(cls, value):
+        from decimal import Decimal
+        if value is not None and Decimal(value) <= 0:
+            raise ValueError("Price must be positive")
+        return value
+
+
+class CustomerPricesInput(PortalInput):
+    items: Annotated[list[CustomerItemPrice], Field(min_length=1, max_length=5000)]

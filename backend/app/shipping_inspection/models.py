@@ -29,6 +29,8 @@ class ShippingInspection(Base):
     recalled_at = Column(DateTime, comment="最近撤回时间")
     recalled_by = Column(BigInteger, comment="最近撤回人")
     photo_count = Column(Integer, nullable=False, default=0, comment="提交时照片总数（列表页免 join）")
+    shipment_version = Column(Integer, nullable=False, default=0, server_default="0", comment="物流关联并发版本；不影响验货版本")
+    shipment_tracking_id = Column(BigInteger, ForeignKey("shipment_tracking.id", ondelete="RESTRICT"), nullable=True, comment="已上传物流单的跟踪记录")
     remark = Column(String(500), comment="备注")
     submitted_at = Column(DateTime, comment="提交时间")
     submitted_by = Column(BigInteger, comment="提交人（ark_users.id）")

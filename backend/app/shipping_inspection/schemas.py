@@ -21,3 +21,10 @@ class ShippingSubmitRequest(BaseModel):
 
 class ShippingRecallRequest(BaseModel):
     edit_version: int = Field(..., ge=0, description="列表中的编辑版本，防止延迟请求撤回新提交")
+
+
+class InspectionShipmentInput(BaseModel):
+    shipment_version: int = Field(..., ge=0)
+    edit_version: int = Field(..., ge=0)
+    waybill_no: str = Field(..., min_length=1, max_length=50, pattern=r'^[A-Za-z0-9-]+$')
+    carrier: str = Field(..., min_length=1, max_length=30, pattern=r'^[a-zA-Z0-9_-]+$')

@@ -5908,3 +5908,8 @@ I38：启用refresh初次当前授权+request/conversion→invoice完整绑定/�
 - 设备源码归档于 `extensions/kindle-inkboard/`，含固定 Tinta 适配、TLS 校验、中文文本和字号修复；不提交下载依赖、设备配置、数据库、书籍、日志或个人备份。PW3 5.15.1.1 已越狱，用户已真机确认 KOReader/Tinta 启动、方舟组件可见及中文排版正常。
 - 隔离 SQLite/HTTP/迁移 13 项通过；客户端 47、传输 15、字号 780、562 条翻译、宿主 33、事务 18、中文竖屏 117/横屏 113 项通过。原有上游 Windows 电池 CSV 同秒去重基线失败单独保留，不计为通过；真实同步、休眠与耗电未验收。
 - 主目录 92 个既有未提交文件已保存原始状态、二进制补丁、文件副本及 SHA256；合并只包含本次功能，文档重叠保留原整理内容。后续生产发布需另行授权，接口与验收见 [需求契约](requirements/2026-10-25-kindle-dashboard.md)。
+
+
+## 2026-10-28 客户门户七项体验调整（Git交付，未部署）
+
+分支 codex/portal-customer-settings。地址已获确认使用方舟客户资料层供门户/后台/发票共用；增加客户商品批价，缺货类型门槛，checkout地址可选折叠，黑字无黄底Logo及黄色favicon，POR每日短流水，英文处理状态与验货关联物流入口。新增212迁移；亮哥已授权提交、合并main并推送origin，本次不部署。实现边界与验证见 docs/reports/2026-10-28-portal-customer-settings.md。

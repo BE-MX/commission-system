@@ -94,7 +94,7 @@ def test_missing_rows_are_unknown_while_explicit_zero_is_known_out_of_stock(stoc
     assert 'item-a' not in found
     monkeypatch.setattr(catalog_service, 'get_settings', lambda: stock.settings)
     monkeypatch.setattr(catalog_service, 'beijing_now', lambda: stock.now)
-    item = SimpleNamespace(min_qty=1, step_qty=1, inventory_unit='set', conversion_factor=Decimal(1), safety_buffer=Decimal(0))
+    item = SimpleNamespace(family_id=None, standard_json={}, min_qty=1, step_qty=1, inventory_unit='set', conversion_factor=Decimal(1), safety_buffer=Decimal(0))
     assert catalog_service.availability(item, None) == ('unknown', None)
     assert catalog_service.availability(item, found['item-b'])[0] == 'unavailable'
 

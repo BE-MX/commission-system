@@ -8,6 +8,7 @@ import { useTableView } from '@/composables/useTableView'
 import { msgError } from '@/utils/feedback'
 import { useAuthStore } from '@/stores/auth'
 import { portalAdminApi } from '@/api/portal'
+import CustomerSettingsDialog from './CustomerSettingsDialog.vue'
 import AccessActionDialog from './AccessActionDialog.vue'
 import MappingDialog from './MappingDialog.vue'
 import OnboardingDialog from './OnboardingDialog.vue'
@@ -26,6 +27,7 @@ const pageRefresh = { get value() { return { $el: panelRef.value?.querySelector(
 
 const auth = useAuthStore(), listError = ref(''), detailError = ref(''), notice = ref('')
 const detail = ref(null), detailVisible = ref(false), detailLoading = ref(false), accountPage = ref(1), accountPageSize = ref(20)
+const settingsSection = ref('')
 const copySource = ref(null), copyLoading = ref(false)
 let copyGeneration = 0, copyController
 function cancelCopy() { copyGeneration++; copyController?.abort(); copyLoading.value = false }
@@ -164,7 +166,7 @@ function clearPrivate() {
   ++onboardingFocusSequence; onboardingRefresh = Promise.resolve(); onboardingCreatedId = null
   ++actionFocusSequence; actionRefresh = Promise.resolve()
   ++mappingFocusSequence; mappingRefresh = Promise.resolve()
-  ++listSequence; listController?.abort(); list.value = []; total.value = 0; listError.value = ''; notice.value = ''; copySource.value = null; action.value = null; mappingAccess.value = null; onboardingVisible.value = false; catalogAccess.value = null; bindingAccess.value = null
+  ++listSequence; listController?.abort(); list.value = []; total.value = 0; listError.value = ''; notice.value = ''; settingsSection.value = ''; copySource.value = null; action.value = null; mappingAccess.value = null; onboardingVisible.value = false; catalogAccess.value = null; bindingAccess.value = null
   detailVisible.value = false; clearDetail()
 }
 watch(() => [auth.accessToken, auth.user], clearPrivate)
@@ -208,6 +210,8 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
           <span v-permission="'portal_access:admin'" class="actions">
             <GlassButton variant="primary" :disabled="detail.status !== 'enabled'" data-portal-action="createAccount" @click="openAction('createAccount')">创建采购账号</GlassButton>
             <GlassButton :disabled="detail.status === 'review_required'" data-portal-action="access" @click="openAction('access')">设置客户访问</GlassButton>
+            <GlassButton @click="settingsSection = 'delivery'">客户地址</GlassButton>
+            <GlassButton @click="settingsSection = 'prices'">商品价格</GlassButton>
             <GlassButton ref="catalogTrigger" :disabled="detail.status === 'review_required'" @click="openReview('catalog')">管理商品授权</GlassButton>
             <GlassButton ref="bindingTrigger" @click="openReview('binding')">归属与身份复核</GlassButton>
           </span>
@@ -232,6 +236,7 @@ onBeforeUnmount(() => { disposed = true; clearPrivate() })
       </div>
     </DetailDrawer>
     <BindingReviewDialog v-if="bindingAccess" :access="bindingAccess" @close="closeReview('binding')" @changed="reviewChanged" @denied="hideReviewPrivate" />
+    <CustomerSettingsDialog v-if="settingsSection && detail" :access="detail" :section="settingsSection" @close="settingsSection = ''" @changed="changed" />
     <CatalogAccessDialog v-if="catalogAccess" :access="catalogAccess" @close="closeReview('catalog')" @changed="reviewChanged" @denied="hideReviewPrivate" />
     <OnboardingDialog v-if="onboardingVisible" :key="copySource?.id || 'new'" :source="copySource" @close="closeOnboarding" @created="created" @denied="hideCustomerPrivate" />
     <MappingDialog v-if="mappingAccess" :access="mappingAccess" @close="closeMapping" @changed="mappingChanged" />

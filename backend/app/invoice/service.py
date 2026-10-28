@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.invoice import accessory_price_service, delegation_service, item_group_service, price_service, product_service
 from app.invoice.customer_profile_service import get_customer_grade, save_customer_grade
-from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceItem
+from app.invoice.models import CustomerProfile, Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 from app.invoice.screenshot_token import verify_preview_token
 from app.invoice.screenshot_source import external_source_key, is_external_source_key
@@ -255,6 +255,12 @@ def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
             "contact_email": row.contact_email,
             "delivery_address": row.delivery_address,
         })
+    profile = db.get(CustomerProfile, customer_id)
+    if profile is not None and profile.delivery_json is not None:
+        delivery = profile.delivery_json
+        defaults.update(contact_name=delivery.get("contact_name", ""), contact_phone=delivery.get("phone", ""),
+            delivery_address="\n".join(str(delivery.get(key) or "") for key in
+                ("address_line1", "address_line2", "city", "region", "postal_code", "country_code") if delivery.get(key)))
     return defaults
 
 

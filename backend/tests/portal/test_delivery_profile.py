@@ -35,7 +35,7 @@ def test_profile_persists_without_revoking_session_and_detects_stale_update(auth
     assert caught.value.code == 'VERSION_CONFLICT'
 
 
-def test_profile_is_account_scoped_even_for_same_company(auth_context):
+def test_profile_is_shared_by_accounts_of_same_company(auth_context):
     ctx = auth_context
     token, csrf = session(ctx)
     service.save(ctx.db, token, csrf, ctx.account.row_version, DeliveryProfileInput(delivery=DELIVERY))
@@ -47,7 +47,7 @@ def test_profile_is_account_scoped_even_for_same_company(auth_context):
     ctx.db.commit()
     challenge, code = send_code(ctx, 'other@example.com')
     _, _, other_token = verify(ctx, challenge, code)
-    assert service.read(ctx.db, other_token)['delivery'] is None
+    assert service.read(ctx.db, other_token)['delivery']['contact_name'] == 'Buyer'
     assert service.read(ctx.db, token)['delivery']['contact_name'] == 'Buyer'
 
 

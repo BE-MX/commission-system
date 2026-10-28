@@ -69,7 +69,7 @@ def submit(db, token, csrf, key, body):
     order = OrderRequest(public_id=public_id, access_id=principal.access.id, account_id=principal.account.id,
         customer_id_snapshot=principal.access.customer_id, okki_company_id_snapshot=principal.access.okki_company_id,
         sales_user_id_snapshot=principal.access.sales_user_id, servicing_user_id=principal.access.sales_user_id,
-        public_no="POR-" + now.strftime("%Y%m%d") + "-" + public_id.replace("-", "").upper(),
+        public_no=next_request_number(db, now),
         idempotency_key=str(key), client_payload_hash=payload_hash, quote_id=quote.id,
         status="ready_for_review" if confirmed else "submitted", customer_po=quote.customer_po, submitted_at=now)
     db.add(order)
@@ -161,3 +161,18 @@ def recover_unique_race(db, token, csrf, key, body):
     """Only return an actually committed winner after the caller rolled back."""
     principal, _ = auth.authenticate(db, token, csrf=csrf, write=True)
     return replay(db, principal, key, content_hash(body.model_dump(mode="json")))
+
+
+def next_request_number(db, now):
+    """The caller holds the authority barrier: serialize across customers/workers."""
+    from app.portal.authority import lock_authority
+    from app.portal.models import AuthorityBarrier
+    lock_authority(db, force=True)
+    key = "order-no-" + now.strftime("%Y%m%d")
+    counter = db.scalar(select(AuthorityBarrier).where(AuthorityBarrier.code == key).with_for_update())
+    if counter is None:
+        counter = AuthorityBarrier(code=key, version=0)
+        db.add(counter)
+    counter.version += 1
+    db.flush()
+    return "POR-" + now.strftime("%Y%m%d") + f"-{counter.version:02d}"

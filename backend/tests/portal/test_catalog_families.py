@@ -61,7 +61,7 @@ def test_seed_creates_seven_defaults_once_and_never_overwrites(families):
     invisible = family(ctx, "invisible_tape_hair")
     assert invisible.allowed_grades == ["super"] and invisible.status == "disabled"
     tape = family(ctx, "tape_hair")
-    assert (tape.min_qty, tape.step_qty, tape.out_of_stock_below) == (10, 10, Decimal("80"))
+    assert (tape.min_qty, tape.step_qty, tape.out_of_stock_below) == (10, 10, Decimal("200"))
     assert all(row.allowed_grades == ["standard", "super"] for row in rows if row.code != "invisible_tape_hair")
     tape.display_name = "Customized Tape"
     ctx.db.commit()

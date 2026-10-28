@@ -819,3 +819,8 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 | ark_ink_receipts | (device_id, message_id) 复合主键与 FK | received_at、read_at |
 
 所有 DATETIME 为北京时间。原始设备 token 只在签发响应出现，不入库。迁移禁止通过 downgrade 删除消息/备忘/回执。接口与边界见 [Kindle 看板](requirements/2026-10-25-kindle-dashboard.md)。
+
+
+### 212_portal_customer_settings（2026-10-28，待部署）
+
+`ark_invoice_customer_profiles` 新增 nullable JSON delivery_json 与 delivery_version（默认1），门户/员工共用地址；`ark_order_portal_catalog_grants.unit_price` nullable NUMERIC(12,4)，仅当前客户授权商品USD专属价；`ark_shipping_inspections.shipment_tracking_id` nullable BIGINT 外键到 shipment_tracking.id，删除RESTRICT；另有 shipment_version（默认0），物流绑定不改变验货版本。迁移更新已有产品族缺货阈值及继承规格换算字段。不改 customer_info，不回写历史订单。

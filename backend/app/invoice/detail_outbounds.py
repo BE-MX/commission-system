@@ -16,6 +16,17 @@ EVENT_BAD = ("sync_failed", "sync_uncertain", "recheck_required", "delete_uncert
 logger = logging.getLogger(__name__)
 
 
+def inspection_integrity(db, document, event):
+    """Shared evidence gate for employee progress and customer shipment visibility."""
+    evidence = (event.result or {}) if event else {}
+    blocked = bool(event and (event.action in outbound_sync_state.BLOCKED or evidence.get('required_recheck_ids')))
+    verified_time = (evidence.get('verified') or {}).get('update_time')
+    unverified = bool(verified_time and (not document.get('mirror_updated_at') or str(document['mirror_updated_at']) < str(verified_time)))
+    if verified_time and str(document.get('mirror_updated_at')) == str(verified_time):
+        unverified = not outbound_service.mirror_matches_snapshot(db, document['record_id'], evidence['verified'])
+    return {'inspection_blocked': blocked, 'quantity_unverified': unverified}
+
+
 def annotate_inspections(db, invoice, documents, user, scope):
     """Batch-load inspections and events after applying their independent scope."""
     from app.shipping_inspection.router import _inspection_scope
@@ -35,12 +46,7 @@ def annotate_inspections(db, invoice, documents, user, scope):
         inspection, event = inspections.get(identity), events.get(identity)
         document["inspection"] = {"state": "ready" if identity in visible else "restricted",
             "status": (inspection.status if inspection else "not_inspected") if identity in visible else None}
-        evidence = event.result or {} if event else {}
-        document["inspection_blocked"] = bool(event and (event.action in outbound_sync_state.BLOCKED or evidence.get("required_recheck_ids")))
-        verified_time = (evidence.get("verified") or {}).get("update_time")
-        document["quantity_unverified"] = bool(verified_time and (not document.get("mirror_updated_at") or str(document["mirror_updated_at"]) < str(verified_time)))
-        if verified_time and str(document.get("mirror_updated_at")) == str(verified_time):
-            document["quantity_unverified"] = not outbound_service.mirror_matches_snapshot(db, identity, evidence["verified"])
+        document.update(inspection_integrity(db, document, event))
         if event and event.action in EVENT_BAD and event.action != "recheck_required":
             document["anomaly"] = event.action
         elif identity in visible and document["inspection_blocked"]:

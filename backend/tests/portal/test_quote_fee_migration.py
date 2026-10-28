@@ -22,7 +22,7 @@ def test_single_head_after_catalog_families():
     config = Config()
     config.set_main_option("script_location", str(backend / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["209_invoice_item_groups"]
+    assert scripts.get_heads() == ["212_portal_customer_settings"]
     assert scripts.get_revision('209_invoice_item_groups').down_revision == '208_invoice_inspection_photos'
     assert scripts.get_revision('204_portal_delivery_profile').down_revision == '203_perf_goals'
     assert module.revision == "200_portal_quote_fee_estimate" and module.down_revision == "199_portal_catalog_families" and len(module.revision) <= 32

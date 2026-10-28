@@ -158,3 +158,15 @@ test('saved delivery fills only an untouched empty draft and never overrides edi
   await checkout.quote()
   assert.equal(checkout.defaultDelivery(saved, delivery), false)
 })
+
+test('blank and partial delivery details do not block quote review', async () => {
+  const { checkout, calls } = setup()
+  checkout.add(item, 4)
+  await checkout.quote()
+  assert.equal(calls[0].delivery.address_line1, '')
+  checkout.delivery('city', 'Paris')
+  await checkout.quote()
+  assert.equal(calls[1].delivery.city, 'Paris')
+  checkout.delivery('country_code', 'USA')
+  await assert.rejects(checkout.quote(), { code: 'INVALID_DELIVERY' })
+})

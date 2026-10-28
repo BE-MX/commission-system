@@ -83,3 +83,5 @@ export function downloadInspectionPdf(id, version) {
 }
 
 export const recoverOutboundDeletion = (id, body) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/delete-recovery`, body)
+
+export const bindInspectionShipment = (id, body) => shippingClient.put(`/records/${encodeURIComponent(id)}/shipment`, body, { suppressToast: true })

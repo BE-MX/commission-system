@@ -97,6 +97,7 @@
           <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
         </ResponsiveDescriptions>
 
+        <InspectionShipment :key="detail.id" :detail="detail" @changed="id => { if (detail?.id === id) openDetail({ id }) }" />
         <InspectionEvents :events="detail.events || []" />
         <div class="section-title">出库明细</div>
         <el-table :data="detail.items || []" size="small" border class="list-table" style="width: 100%" v-sticky-scrollbar>
@@ -135,6 +136,7 @@ import TableTools from '@/components/TableTools.vue'
 import InspectionPhotos from './components/InspectionPhotos.vue'
 import InspectionVideos from './components/InspectionVideos.vue'
 import InspectionEvents from './components/InspectionEvents.vue'
+import InspectionShipment from './components/InspectionShipment.vue'
 import ShippingPrintDialog from './print/ShippingPrintDialog.vue'
 import { useInspectionRecords } from './composables/useInspectionRecords'
 import { useTableView } from '@/composables/useTableView'

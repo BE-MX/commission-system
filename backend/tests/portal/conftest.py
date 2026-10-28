@@ -44,8 +44,16 @@ def portal_metadata():
     for table in ("ark_users", "ark_customer_accounts", "ark_customer_external_identities",
                   "ark_customer_assignments", "ark_invoices"):
         Table(table, metadata, Column("id", BigInteger().with_variant(Integer(), "sqlite"), primary_key=True))
-    invoice_models.InvoiceItem.__table__.to_metadata(metadata)
-    invoice_models.InvoiceItemGroup.__table__.to_metadata(metadata)
+    invoice_stub = metadata.tables["ark_invoices"]
+    from sqlalchemy import String, DateTime
+    for name in ("customer_id", "contact_name", "contact_phone", "delivery_address"):
+        invoice_stub.append_column(Column(name, String(500)))
+    invoice_stub.append_column(Column("created_at", DateTime))
+    invoice_models.CustomerProfile.__table__.to_metadata(metadata)
+    item_table = invoice_models.InvoiceItem.__table__.to_metadata(metadata)
+    item_table.c.id.type = Integer()
+    group_table = invoice_models.InvoiceItemGroup.__table__.to_metadata(metadata)
+    group_table.c.id.type = Integer()
     for table in Base.metadata.tables.values():
         if table.name.startswith("ark_order_portal_"):
             table.to_metadata(metadata)

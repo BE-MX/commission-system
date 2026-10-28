@@ -33,6 +33,8 @@ from app.shipping_inspection.print_service import with_owner_chinese_name
 
 logger = logging.getLogger("commission")
 
+from app.shipping_inspection.schemas import InspectionShipmentInput
+
 router = APIRouter()
 from app.shipping_inspection.station_router import router as station_router
 router.include_router(station_router)
@@ -361,6 +363,7 @@ def record_detail(
     from app.auth.service import get_live_user_authorization
     from app.shipping_inspection.audit_service import list_events
     roles, permissions = get_live_user_authorization(db, int(_user['sub']))
+    detail['can_bind_shipment'] = ('super_admin' in roles or (bool({'shipping_inspection:write', 'shipping_inspection:admin'} & set(permissions)) and bool({'tracking:read', 'tracking:read_all', 'tracking:write'} & set(permissions))))
     detail['events'] = list_events(db, detail['outbound_record_id'], include_login='super_admin' in roles or 'shipping_inspection:admin' in permissions)
     return ok(detail)
 
@@ -417,3 +420,17 @@ def recover_outbound_delete(record_id: str, body: DeleteRecovery, db: Session = 
     except (ValueError, DeleteRemoteError, OkkiApiError) as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
+
+
+@router.put('/records/{inspection_id}/shipment', summary='关联已上传的物流单')
+def bind_inspection_shipment(inspection_id: int, body: 'InspectionShipmentInput',
+        db: Session = Depends(get_db),
+        user: dict = Depends(require_any_permission('shipping_inspection:write', 'shipping_inspection:admin'))):
+    _require_inspection_scope(db, user, inspection_id)
+    try:
+        result = service.bind_shipment(db, inspection_id, body, int(user['sub']))
+        service._commit(db)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ok(result)

@@ -499,6 +499,8 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
     return {
         "id": inspection.id,
         "status": inspection.status,
+        "shipment": shipment_brief(db, inspection),
+        "shipment_version": inspection.shipment_version,
         "edit_version": inspection.edit_version,
         "outbound_record_id": inspection.outbound_record_id,
         "outbound_no": inspection.outbound_no,
@@ -514,3 +516,60 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
         "required_recheck_ids": required_ids,
         "outbound_sync_pending": bool(sync_event and sync_event.action in BLOCKED),
     }
+
+
+
+def shipment_brief(db, inspection):
+    from app.tracking.models import ShipmentTracking
+    row = db.get(ShipmentTracking, inspection.shipment_tracking_id) if inspection.shipment_tracking_id else None
+    if row is None or row.deleted_at is not None:
+        return None
+    return dict(waybill_no=row.waybill_no, carrier=row.carrier, shipment_version=inspection.shipment_version)
+
+
+def require_shipment_binding_scope(db, inspection, user_id, roles, permissions):
+    from app.auth.models import ArkUserExternalBinding
+    if 'super_admin' in roles or 'shipping_inspection:inspection_read_all' in permissions:
+        return
+    binding = db.query(ArkUserExternalBinding).filter(
+        ArkUserExternalBinding.ark_user_id == user_id,
+        ArkUserExternalBinding.provider == 'okki', ArkUserExternalBinding.binding_status == 'active',
+        ArkUserExternalBinding.deleted_at.is_(None)).order_by(
+            ArkUserExternalBinding.is_primary.desc(), ArkUserExternalBinding.id).first()
+    okki_id = str(binding.external_account_id).strip() if binding and binding.external_account_id else ''
+    if not okki_id or outbound_service.get_outbound_record(db, inspection.outbound_record_id, okki_user_id=okki_id) is None:
+        raise ValueError('验货单不存在或不在当前授权范围内')
+
+
+def bind_shipment(db, inspection_id, body, user_id):
+    from app.tracking.models import ShipmentTracking
+    from app.auth.service import get_live_user_authorization
+    from app.tracking.shipment_service import apply_data_scope
+    roles, permissions = get_live_user_authorization(db, user_id)
+    if 'super_admin' not in roles:
+        if not {'shipping_inspection:write', 'shipping_inspection:admin'} & set(permissions):
+            raise ValueError('没有验货单编辑权限')
+        if not {'tracking:read', 'tracking:read_all', 'tracking:write'} & set(permissions):
+            raise ValueError('没有物流跟踪访问权限')
+    inspection = _lock_inspection(db, inspection_id)
+    if inspection is None or inspection.status != 'submitted' or inspection.edit_version != body.edit_version:
+        raise ValueError('验货单已变化，请重新打开后操作')
+    if inspection.shipment_version != body.shipment_version:
+        raise ValueError('物流单关联已变化，请重新打开后核对')
+    require_shipment_binding_scope(db, inspection, user_id, roles, permissions)
+    user = db.get(ArkUser, user_id)
+    query = db.query(ShipmentTracking).filter_by(waybill_no=body.waybill_no, carrier=body.carrier)
+    shipment = apply_data_scope(query, db, {'sub': str(user_id), 'username': user.username if user else '',
+        'roles': roles, 'permissions': permissions}).with_for_update().populate_existing().first()
+    if shipment is None or shipment.deleted_at is not None or not shipment.source_image_url:
+        raise ValueError('请先在物流跟踪上传并确认该物流单')
+    # Explicit employee confirmation establishes the association; never infer it from names.
+    if inspection.shipment_tracking_id == shipment.id:
+        return shipment_brief(db, inspection)
+    inspection.shipment_tracking_id = shipment.id
+    inspection.shipment_version += 1
+    inspection.updated_by = user_id
+    audit_service.record(db, 'shipment_bound', user_id, inspection.outbound_record_id, inspection=inspection,
+        context={'source': 'pc'}, payload={'shipment_tracking_id': shipment.id})
+    db.flush()
+    return shipment_brief(db, inspection)

@@ -96,7 +96,7 @@ def test_invalid_price_is_unavailable_not_free(priced_catalog, change):
 def test_inventory_displays_only_verified_status(priced_catalog, monkeypatch, case, expected):
     ctx, items, principal = priced_catalog
     observed = beijing_now() + timedelta(seconds=60 if case == "future" else -121 if case == "stale" else -1)
-    observation = InventoryObservation(Decimal("-1" if case == "negative" else "0" if case == "empty" else "40"),
+    observation = InventoryObservation(Decimal("-1" if case == "negative" else "0" if case == "empty" else "640"),
         "kg" if case == "unit" else "g", observed, "isolated-fixture")
     monkeypatch.setattr(service, "load_observations", lambda db, rows: {items[0].public_id: observation})
     result = service.list_catalog(ctx.db, principal, in_stock_only=True)

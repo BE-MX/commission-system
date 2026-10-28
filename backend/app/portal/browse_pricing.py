@@ -3,6 +3,7 @@ from functools import cached_property
 
 from sqlalchemy import and_, literal, select, union_all
 
+from app.portal.models import CatalogGrant
 from app.invoice import price_service
 from app.invoice.models import PriceColorType, StdPrice
 
@@ -19,6 +20,11 @@ class BrowsePrices:
     def __init__(self, db, access, items):
         self.db, self.access = db, access
         self.metadata = [item.standard_json for item in items if isinstance(item.standard_json, dict)]
+
+    @cached_property
+    def overrides(self):
+        return dict(self.db.execute(select(CatalogGrant.catalog_item_id, CatalogGrant.unit_price).where(
+            CatalogGrant.access_id == self.access.id, CatalogGrant.status == "enabled")).all())
 
     @cached_property
     def rule(self):

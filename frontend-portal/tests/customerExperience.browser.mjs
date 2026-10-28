@@ -89,6 +89,8 @@ for (const width of [1440, 375]) {
     await panel.getByRole('button', { name: 'Finish selection' }).click()
     await page.waitForFunction(() => document.querySelector('input[autocomplete="address-line1"]')?.value === 'Updated address')
     assert.equal(await page.getByLabel('Contact name', { exact: true }).inputValue(), 'Saved buyer')
+    assert.equal(await page.locator('.delivery-details').getAttribute('open'), null)
+    await page.getByText('Delivery address (optional)', { exact: true }).click()
     await page.getByLabel('Address line 1', { exact: true }).fill('One-off address')
     await page.getByRole('button', { name: 'Manage saved delivery details' }).click()
     await page.getByRole('link', { name: /^Selection/ }).click()

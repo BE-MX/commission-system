@@ -439,6 +439,8 @@ class CustomerProfile(Base):
 
     customer_id = Column(String(64), primary_key=True, comment="customer_info.company_id")
     customer_grade = Column(String(1), nullable=True, comment="客户等级 S/A/B/C/D/E")
+    delivery_json = Column(JSON, nullable=True, comment="客户共享收货地址；订单保持独立快照")
+    delivery_version = Column(Integer, nullable=False, default=1, server_default="1", comment="客户地址并发版本")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
 
 
