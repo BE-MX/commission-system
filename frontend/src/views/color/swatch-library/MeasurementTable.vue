@@ -2,25 +2,35 @@
   <div class="mt-wrap">
     <table class="mt">
       <thead>
-        <tr v-if="view === 'lab'"><th>组</th><th>时间</th><th>L*</th><th>a*</th><th>b*</th><th>ΔE→均值</th><th>来源</th><th v-if="writable">操作</th></tr>
+        <tr v-if="view === 'lab'">
+          <th>组</th><th>位置</th><th>时间</th><th>L*</th><th>a*</th><th>b*</th>
+          <th>{{ batch ? 'ΔE*ab' : 'ΔE→均值' }}</th><th>来源</th><th v-if="writable">操作</th>
+        </tr>
         <tr v-else-if="view === 'cmyk'"><th>组</th><th>C</th><th>M</th><th>Y</th><th>K</th><th>R</th><th>G</th><th>B</th><th v-if="writable">操作</th></tr>
         <tr v-else><th>组</th><th>Lab</th><th>Luv</th><th>LCh</th><th>Yxy</th><th>设备 SN</th><th v-if="writable">操作</th></tr>
       </thead>
       <tbody>
         <tr v-if="!rows.length">
-          <td :colspan="writable ? 9 : 8" class="mt-empty">连接色差仪后点击“测量”，每组读数会自动加入</td>
+          <td :colspan="writable ? 9 : 8" class="mt-empty">{{ emptyText }}</td>
         </tr>
-        <tr v-for="m in rows" :key="m.id" :class="{ excl: !m.is_included, fresh: freshIds.has(m.id) }">
+        <tr v-for="m in rows" :key="m.id" :class="{ fresh: freshIds.has(m.id), fail: batch && m.passed === false }">
           <td class="first">
             <span class="mini" :style="{ background: m.rgb[0] == null ? 'var(--button-quiet-hover)' : rgbCss(m.rgb) }" />
             #{{ m.seq_no }}
-            <span v-if="!m.is_included" class="tag" :title="m.exclude_reason">已剔除</span>
             <span v-if="m.receipt_status === 'late'" class="tag tag-warn">晚到</span>
           </td>
           <template v-if="view === 'lab'">
+            <td class="pos">{{ m.position_label || '—' }}</td>
             <td>{{ formatBeijing(m.received_at || m.created_at) }}</td>
-            <td>{{ fmt(m.lab[0]) }}</td><td>{{ fmt(m.lab[1]) }}</td><td>{{ fmt(m.lab[2]) }}</td>
-            <td>{{ m.is_included && avgLab ? fmt(de00(m.lab, avgLab)) : '—' }}</td>
+            <td v-for="i in 3" :key="`lab${i}`">
+              {{ fmt(m.lab[i - 1]) }}
+              <small v-if="batch && m.shift?.[i - 1]" class="shift">{{ m.shift[i - 1] }}</small>
+            </td>
+            <td v-if="batch">
+              {{ fmt(m.de_ab) }}
+              <small v-if="m.passed === false" class="shift bad">不合格</small>
+            </td>
+            <td v-else>{{ avgLab ? fmt(de00(m.lab, avgLab)) : '—' }}</td>
             <td>{{ SOURCE[m.source] || m.source }}</td>
           </template>
           <template v-else-if="view === 'cmyk'">
@@ -33,17 +43,15 @@
             <td>{{ m.device_sn || '—' }}</td>
           </template>
           <td v-if="writable" class="op">
-            <el-button link :type="m.is_included ? 'danger' : 'primary'" @click="$emit('toggle', m)">
-              {{ m.is_included ? '剔除' : '恢复' }}
-            </el-button>
+            <el-button link type="danger" @click="$emit('exclude', m)">剔除</el-button>
           </td>
         </tr>
       </tbody>
       <tfoot v-if="avgLab">
         <tr v-if="view === 'lab'">
-          <td class="first">平均</td><td />
+          <td class="first">平均</td><td /><td />
           <td>{{ fmt(avgLab[0]) }}</td><td>{{ fmt(avgLab[1]) }}</td><td>{{ fmt(avgLab[2]) }}</td>
-          <td>{{ fmt(meanDE) }}</td><td /><td v-if="writable" />
+          <td>{{ batch ? fmt(footDE) : fmt(meanDE) }}</td><td /><td v-if="writable" />
         </tr>
         <tr v-else-if="view === 'cmyk'">
           <td class="first">平均 <span class="tag">设备换算值</span></td>
@@ -65,15 +73,21 @@ import { fmt, formatBeijing } from './swatchFormat.js'
 const props = defineProps({
   measurements: { type: Array, default: () => [] },
   avgLab: { type: Array, default: null },
+  // Batch tab: ΔE*ab per row against the standard mean; footer shows the batch mean's ΔE*ab.
+  batch: Boolean,
+  footDE: { type: Number, default: null },
   view: { type: String, default: 'lab' },
   writable: Boolean,
   freshIds: { type: Set, default: () => new Set() },
 })
-defineEmits(['toggle'])
+defineEmits(['exclude'])
 
 const SOURCE = { device: '色差仪', simulation: '模拟', manual: '手工' }
+const emptyText = computed(() => (props.batch
+  ? '选择“批次产品测量”后测量，读数会与标准色板平均 Lab 比对'
+  : '连接色差仪后点击“测量”，每组读数会自动加入'))
 const rows = computed(() => [...props.measurements].reverse())
-const included = computed(() => props.measurements.filter((m) => m.is_included))
+const included = computed(() => props.measurements)
 const meanDE = computed(() => {
   if (!props.avgLab || included.value.length < 2) return null
   return included.value.reduce((s, m) => s + de00(m.lab, props.avgLab), 0) / included.value.length
@@ -100,7 +114,10 @@ const triple = (t) => (t?.[0] == null ? '—' : t.map((v) => fmt(v)).join(' / ')
 .mt th:last-child, .mt td:last-child { padding-right: 18px; }
 .mt tbody tr { transition: background-color 160ms ease; }
 @media (hover: hover) and (pointer: fine) { .mt tbody tr:hover { background: var(--color-primary-light); } }
-.mt tr.excl td:not(.first):not(.op) { color: var(--text-muted); text-decoration: line-through; }
+.mt tr.fail td { background: var(--tag-danger-bg); }
+.mt td small.shift { display: block; margin-top: 2px; font: 600 10.5px var(--font-display); color: var(--text-secondary); }
+.mt td small.shift.bad { color: var(--tag-danger-text); }
+.mt td.pos { text-align: left; color: var(--text-secondary); }
 /* New readings fade from a gold wash; occasional event (per measurement), so a short highlight is fine. */
 .mt tr.fresh { animation: mt-fresh 1.2s cubic-bezier(0.23, 1, 0.32, 1); }
 @keyframes mt-fresh { from { background: var(--color-gold-soft); } to { background: transparent; } }

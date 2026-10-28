@@ -100,6 +100,7 @@
 import { useAsyncResource } from '@/composables/useAsyncResource'
 import { msgSuccessText, confirmAction } from '@/utils/feedback'
 import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 import { getDictTypes, getDictItems, createDictItem, updateDictItem, deleteDictItem } from '@/api/system'
 import { useTableView } from '@/composables/useTableView'
@@ -117,6 +118,7 @@ const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullsc
 
 const typesResource = useAsyncResource(async (_, { signal }) => (await getDictTypes({ signal, suppressToast: true })).data || [], { initialData: [] })
 const typeOptions = typesResource.data
+const route = useRoute()
 const currentType = ref('')
 const itemsResource = useAsyncResource(async ({ type }, { signal }) => {
   if (!type) return []
@@ -142,7 +144,9 @@ const formRules = {
 async function fetchTypes() {
   const success = await typesResource.load()
   if (success && typeOptions.value.length && !currentType.value) {
-    currentType.value = typeOptions.value[0].type
+    // Deep link from business pages (e.g. 色板库测量标签) preselects its dictionary type.
+    const wanted = String(route.query.type || '')
+    currentType.value = typeOptions.value.some((t) => t.type === wanted) ? wanted : typeOptions.value[0].type
     await fetchItems()
   }
 }

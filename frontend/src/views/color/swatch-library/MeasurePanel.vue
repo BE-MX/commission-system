@@ -28,12 +28,24 @@
       {{ connected ? '断开' : '连接色差仪' }}
     </el-button>
 
-    <button type="button" class="mp-measure" :class="{ busy: d.measuring }" :disabled="!canMeasure" @click="$emit('measure', repeat)">
+    <div class="mp-tag">
+      <span class="mp-tag-head">
+        <span>测量位置 <em class="mp-req">*</em></span>
+        <router-link v-any-permission="['dict:write']" :to="{ name: 'DictManagement', query: { type: TAG_TYPE } }" class="mp-tag-manage">维护标签</router-link>
+      </span>
+      <el-select v-model="tag" placeholder="请选择测量位置" :disabled="d.measuring" class="mp-tag-sel">
+        <el-option v-for="t in tags" :key="t.code" :label="t.label" :value="t.code" />
+      </el-select>
+      <small v-if="!tag" class="mp-tag-tip">{{ tags.length ? '先选择测量位置才能测量' : '暂无可用标签，请先在字典中维护' }}</small>
+    </div>
+
+    <button type="button" class="mp-measure" :class="{ busy: d.measuring }" :disabled="!canMeasure" @click="$emit('measure', { count: repeat, tag })">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
         <circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" />
       </svg>
-      <span>{{ d.measuring ? (d.progress ? `测量中 ${d.progress}` : '测量中…') : '测量' }}</span>
+      <span>{{ d.measuring ? (d.progress ? `测量中 ${d.progress}` : '测量中…') : measureLabel }}</span>
     </button>
+    <p class="mp-guide">测量说明：统一沿发丝方向、同样的厚度和白色衬底进行测量。</p>
     <div class="mp-rep">
       连续测量
       <el-input-number v-model="repeat" :min="1" :max="10" controls-position="right" :disabled="d.measuring" class="mp-rep-input" />
@@ -49,22 +61,37 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { getDictItems } from '@/api/system'
 
 const props = defineProps({
   meter: { type: Object, required: true },
   writable: Boolean,
+  // Which tab the reading will be filed under; shown on the button so the target is never ambiguous.
+  recordType: { type: String, default: 'standard' },
 })
 defineEmits(['measure'])
 
+const TAG_TYPE = 'color_measure_tag'
 const STEPS = ['GATT', '通知', '初始化', '可测量']
 const MODES = [{ label: '蓝牙真机', value: false }, { label: '模拟设备', value: true }]
 const d = props.meter.device
 const simulate = ref(!props.meter.support.ok)
 const repeat = ref(3)
+const tags = ref([])
+const tag = ref('')
 
 const connected = computed(() => d.state > props.meter.STATE.IDLE)
-const canMeasure = computed(() => props.writable && d.state >= props.meter.STATE.NOTIFY && !d.measuring)
+const canMeasure = computed(() => props.writable && !!tag.value && d.state >= props.meter.STATE.NOTIFY && !d.measuring)
+const measureLabel = computed(() => (props.recordType === 'batch' ? '测量 · 批次产品' : '测量 · 标准色板'))
+
+onMounted(async () => {
+  try {
+    tags.value = (await getDictItems(TAG_TYPE, true, { suppressToast: true })).data || []
+  } catch (err) {
+    console.warn('[swatch-library] load measure tags failed', err)
+  }
+})
 
 // Map device state onto 4 visible steps: READY lights both 初始化 and 可测量.
 function stepClass(step) {
@@ -113,6 +140,12 @@ async function toggle() {
 .mp-info dd { margin: 0; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .mp-sim { margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10px; background: var(--tag-info-bg); color: var(--color-info-text); }
 .mp-conn { width: 100%; margin-bottom: 10px; }
+.mp-tag { display: grid; gap: 6px; margin-bottom: 10px; }
+.mp-tag-head { display: flex; justify-content: space-between; font: 600 12px var(--font-display); color: var(--text-secondary); }
+.mp-tag-manage { font-weight: 500; color: var(--button-primary-text); text-decoration: none; }
+.mp-tag-sel { width: 100%; }
+.mp-req { font-style: normal; color: var(--tag-danger-text); }
+.mp-tag-tip { font-size: 11.5px; color: var(--text-muted); }
 .mp-measure {
   position: relative; overflow: hidden; width: 100%; height: 52px; border: 0; border-radius: var(--card-radius);
   display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
@@ -131,6 +164,10 @@ async function toggle() {
 }
 @keyframes mp-sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
 @media (prefers-reduced-motion: reduce) { .mp-measure.busy::before { animation: none; opacity: 0.35; } }
+.mp-guide {
+  margin: 8px 0 0; padding: 7px 10px; border-radius: var(--radius-md, 8px); font-size: 12px; line-height: 1.6;
+  background: var(--tag-info-bg); color: var(--color-info-text);
+}
 .mp-rep { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); flex-wrap: wrap; }
 .mp-rep-input { width: 100px; }
 .mp-hint { margin: 8px 0 0; font-size: 12px; color: var(--text-muted); }

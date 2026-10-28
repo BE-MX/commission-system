@@ -63,6 +63,13 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 
 客户 POST /api/portal/v1/auth/login使用email/password、bootstrap Cookie/CSRF和同源Origin；员工POST /api/portal/admin/v1/customers/{access_id}/accounts使用当前Bearer授权、Idempotency-Key及email/contact_name/password。PATCH /accounts/{id}/password使用If-Match及password/reason并撤销旧会话。旧邀请、challenges、verify路由不挂载。详细契约和实际开放结果见客户下单门户03-api-contract.md和09-production-readiness-2026-10-10.md。
 
+## 色板库与色差仪测量（`/api/color/library`，2026-10-28 开发中）
+
+权限 `color_library:read/write/admin`；私库额外按客户实时归属判定，无权按 404。
+- `GET /swatches/{id}`：色板详情。`measurements` 只含未剔除组，每组带 `record_type`（standard/batch）、`position_tag/position_label`；batch 组额外带 `shift`（L/a/b 偏向，如 偏黑缺白/偏红缺绿/偏黄缺蓝，偏差 <0.3 为 null）、`de_ab`（对标准平均 Lab 的 ΔE*ab）、`passed`（`de_ab ≤ tolerance_de`）。`stats` 只按 standard 组重算；`batch_stats` 给批次平均 Lab、组内平均/最大 ΔE00、`std_avg_lab`、`std_mean_de`、`mean_de_diff`、`avg_shift`、`avg_de_ab`、`avg_pass`。
+- `POST /swatches/{id}/measurements`：items 新增 `record_type`（默认 standard）与**必填** `position_tag`（须为启用的 `sys_dict: color_measure_tag`，缺失或无效 422）。
+- `PATCH /swatches/{id}/measurements/{measurement_id}`：`reason` 改为选填；剔除后详情不再返回该组，原始读数保留。
+
 ## 客户下单门户产品族与色块库（2026-10-19 开发中）
 
 前缀 `/api/portal/admin/v1`，全部要求 `portal_site:admin`，统一信封与 `Cache-Control: private, no-store`。

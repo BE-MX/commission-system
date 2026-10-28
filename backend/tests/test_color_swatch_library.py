@@ -11,6 +11,7 @@ from app.color.models import ColorPalette
 from app.color.swatch_library_models import ColorLibraryEvent, ColorLibraryMeasurement
 from app.core.time import beijing_now
 from app.customer.models import CustomerAccount, CustomerAssignment
+from app.system.models import SysDict
 
 NOW = beijing_now().replace(microsecond=0)
 
@@ -68,6 +69,8 @@ def world(db):
     c2 = _customer(db, "C-SW-2", "Glamour Ltd")
     _assign(db, c1, alice)
     _assign(db, c2, bob)
+    for i, (code, label) in enumerate([("head", "样本头部"), ("middle", "样本中部"), ("tail", "样本尾部")]):
+        db.add(SysDict(type=svc.TAG_DICT_TYPE, code=code, label=label, sort=i, is_active=True))
     db.commit()
     return {"alice": (alice, alice_t), "bob": (bob, bob_t), "admin": (admin, admin_t), "c1": c1, "c2": c2}
 
@@ -78,7 +81,7 @@ def _private(db, token, customer, code="#1C", size=18, **kw):
 
 
 def _m(request_id, lab, **kw):
-    return {"client_request_id": request_id, "source": "simulation", "lab": lab, **kw}
+    return {"client_request_id": request_id, "source": "simulation", "lab": lab, "position_tag": "middle", **kw}
 
 
 # ── 隔离 ──────────────────────────────────────────────────
@@ -187,14 +190,66 @@ def test_stats_follow_cie2000_and_exclusion_recomputes(db, world):
     assert [m["seq_no"] for m in out["measurements"]] == [1, 2, 3]
 
     worst = out["measurements"][2]["id"]
-    with pytest.raises(HTTPException):
-        svc.set_inclusion(db, alice, sw["id"], worst, False, " ")
     out = svc.set_inclusion(db, alice, sw["id"], worst, False, "位置偏移")
     assert out["stats"]["count"] == 2
     assert out["stats"]["mean_de"] == pytest.approx(svc.compute_stats(labs[:2])["mean_de"], abs=0.006)
+    assert worst not in [m["id"] for m in out["measurements"]]
     stored = db.get(ColorLibraryMeasurement, worst)
     assert float(stored.lab_l) == 20.2 and stored.exclude_reason == "位置偏移"
     assert db.query(ColorLibraryEvent).filter_by(swatch_id=sw["id"], event_type="excluded").count() == 1
+
+
+def test_exclusion_reason_is_optional(db, world):
+    _, alice = world["alice"]
+    sw = _private(db, alice, world["c1"])
+    out = svc.add_measurements(db, alice, sw["id"], [_m("a", [30, 1, 2]), _m("b", [31, 1, 2])])
+    target = out["measurements"][0]["id"]
+    out = svc.set_inclusion(db, alice, sw["id"], target, False, "  ")
+    assert out["stats"]["count"] == 1 and len(out["measurements"]) == 1
+    assert db.get(ColorLibraryMeasurement, target).exclude_reason is None
+
+
+def test_batch_records_do_not_change_standard_stats(db, world):
+    _, alice = world["alice"]
+    sw = _private(db, alice, world["c1"])
+    svc.add_measurements(db, alice, sw["id"], [_m("s1", [40, 2, 10]), _m("s2", [40.4, 2.2, 10.2])])
+    out = svc.add_measurements(db, alice, sw["id"], [
+        _m("b1", [38, 4, 9], record_type="batch", position_tag="head"),
+        _m("b2", [40.3, 2.1, 10.1], record_type="batch"),
+    ])
+    assert out["stats"]["count"] == 2
+    assert out["stats"]["avg_lab"] == pytest.approx([40.2, 2.1, 10.1], abs=0.006)
+    b1, b2 = [m for m in out["measurements"] if m["record_type"] == "batch"]
+    assert b1["position_tag"] == "head" and b1["position_label"] == "样本头部"
+    assert b1["shift"] == ["偏黑缺白", "偏红缺绿", "偏蓝缺黄"]
+    assert b1["de_ab"] == pytest.approx(svc.de76([38, 4, 9], [40.2, 2.1, 10.1]), abs=1e-6)
+    assert b1["passed"] is False and b2["passed"] is True
+    assert b2["shift"] == [None, None, None]
+    bs = out["batch_stats"]
+    assert bs["count"] == 2
+    assert bs["std_avg_lab"] == out["stats"]["avg_lab"]
+    assert bs["avg_de_ab"] == pytest.approx(svc.de76(bs["avg_lab"], bs["std_avg_lab"]), abs=1e-6)
+    assert bs["mean_de_diff"] == pytest.approx(bs["mean_de"] - out["stats"]["mean_de"], abs=1e-6)
+
+
+@pytest.mark.parametrize("tag", ["nowhere", None, "  "])
+def test_position_tag_is_required_and_must_exist(db, world, tag):
+    _, alice = world["alice"]
+    sw = _private(db, alice, world["c1"])
+    with pytest.raises(HTTPException) as caught:
+        svc.add_measurements(db, alice, sw["id"], [_m("x", [30, 1, 2], position_tag=tag)])
+    assert caught.value.status_code == 422
+    assert db.query(ColorLibraryMeasurement).filter_by(swatch_id=sw["id"]).count() == 0
+
+
+def test_promotion_copies_only_standard_records(db, world):
+    _, alice = world["alice"]
+    _, admin = world["admin"]
+    sw = _private(db, alice, world["c1"], code="#9Z")
+    svc.add_measurements(db, alice, sw["id"], [_m("s", [41, 3, 8]), _m("b", [30, 3, 8], record_type="batch")])
+    svc.request_promotion(db, alice, sw["id"])
+    pub_id = svc.review_promotion(db, admin, sw["id"], True)["public_swatch_id"]
+    assert [m["record_type"] for m in svc.get_swatch(db, admin, pub_id)["measurements"]] == ["standard"]
 
 
 def test_single_measurement_has_no_spread(db, world):

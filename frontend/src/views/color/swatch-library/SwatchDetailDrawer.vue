@@ -20,7 +20,12 @@
 
       <div class="dd-body">
         <div class="dd-main">
-          <section class="card">
+          <el-tabs v-model="tab" class="dd-tabs">
+            <el-tab-pane :label="`标准色板测量记录（${standardRows.length}）`" name="standard" />
+            <el-tab-pane :label="`批次产品测量记录（${batchRows.length}）`" name="batch" />
+          </el-tabs>
+
+          <section v-if="tab === 'standard'" class="card">
             <h4>测量统计 <span class="muted">ΔE00 · 后端按参与组重算</span></h4>
             <div class="kpis">
               <div class="kpi">
@@ -51,14 +56,49 @@
             </div>
           </section>
 
+          <section v-else class="card">
+            <h4>批次统计 <span class="muted">对比标准色板测量平均 Lab · ΔE*ab</span></h4>
+            <el-alert v-if="!detail.stats.avg_lab" type="warning" :closable="false" show-icon
+              title="标准色板尚无测量，批次读数暂无比对基准" class="dd-alert" />
+            <div class="kpis">
+              <div class="kpi">
+                <span>平均 Lab</span>
+                <div v-if="bs.avg_lab" class="lab-cmp">
+                  <div v-for="(v, i) in bs.avg_lab" :key="i" class="lab-cell">
+                    <b>{{ fmt(v) }}</b>
+                    <small v-if="bs.std_avg_lab">{{ signed(v - bs.std_avg_lab[i]) }}<template v-if="bs.avg_shift?.[i]"> · {{ bs.avg_shift[i] }}</template></small>
+                  </div>
+                </div>
+                <b v-else class="lab">—</b>
+                <small>{{ bs.std_avg_lab ? `标准 ${bs.std_avg_lab.map((v) => fmt(v)).join(' / ')}` : `${bs.count} 组` }}</small>
+              </div>
+              <div class="kpi hl">
+                <span>组内平均 ΔE</span>
+                <b>{{ fmt(bs.mean_de) }}</b>
+                <small>{{ meanDeHint }}</small>
+              </div>
+              <div class="kpi">
+                <span>组内最大 ΔE</span>
+                <b>{{ fmt(bs.max_de) }}</b>
+                <small>单组偏离批次均值的最大值</small>
+              </div>
+              <div class="kpi" :class="{ bad: bs.avg_pass === false }">
+                <span>批次均值 ΔE*ab</span>
+                <b :class="bs.avg_pass === false ? 't-bad' : bs.avg_pass ? 't-ok' : ''">{{ fmt(bs.avg_de_ab) }}</b>
+                <small>{{ bs.avg_pass == null ? '待测量' : `${bs.avg_pass ? '合格' : '不合格'} · 阈值 ${detail.tolerance_de}` }}</small>
+              </div>
+            </div>
+          </section>
+
           <section class="card">
             <h4>
-              测量记录
+              {{ tab === 'batch' ? '批次产品测量记录' : '标准色板测量记录' }}
               <el-segmented v-model="view" :options="VIEWS" class="dd-views" />
             </h4>
             <MeasurementTable
-              :measurements="detail.measurements" :avg-lab="detail.stats.avg_lab" :view="view"
-              :writable="detail.can_write" :fresh-ids="freshIds" @toggle="toggleInclusion"
+              :measurements="tab === 'batch' ? batchRows : standardRows" :avg-lab="tab === 'batch' ? bs.avg_lab : detail.stats.avg_lab"
+              :batch="tab === 'batch'" :foot-d-e="bs.avg_de_ab" :view="view"
+              :writable="detail.can_write" :fresh-ids="freshIds" @exclude="exclude"
             />
             <div v-for="(r, i) in meter.lateReadings.value" :key="i" class="late">
               <span class="tag tag-warn">待确认</span>
@@ -73,7 +113,7 @@
 
         <aside class="dd-side">
           <section class="card">
-            <MeasurePanel :meter="meter" :writable="detail.can_write && detail.record_status === 'active'" @measure="measure" />
+            <MeasurePanel :meter="meter" :writable="detail.can_write && detail.record_status === 'active'" :record-type="tab" @measure="measure" />
           </section>
           <section class="card">
             <h4>色板属性</h4>
@@ -121,6 +161,7 @@ import { labToRgb, rgbCss } from '@/services/colorimeter/deltaE.js'
 import { confirmDanger, msgError, msgSuccess, msgSuccessText, promptAction, isFeedbackCancelled } from '@/utils/feedback'
 import MeasurePanel from './MeasurePanel.vue'
 import MeasurementTable from './MeasurementTable.vue'
+import { signed } from './batchCompare.js'
 import { fmt, sizeLabel, toMeasurementPayload } from './swatchFormat.js'
 
 const props = defineProps({
@@ -138,9 +179,24 @@ const VIEWS = [
 const detail = ref(null)
 const loading = ref(false)
 const view = ref('lab')
+const tab = ref('standard')
 const freshIds = ref(new Set())
 const editingTol = ref(false)
 const tolDraft = ref(1.5)
+let lastCtx = null
+
+const EMPTY_BATCH = { count: 0, avg_lab: null, mean_de: null, max_de: null, std_avg_lab: null, std_mean_de: null,
+  mean_de_diff: null, avg_shift: null, avg_de_ab: null, avg_pass: null }
+const standardRows = computed(() => (detail.value?.measurements || []).filter((m) => m.record_type !== 'batch'))
+const batchRows = computed(() => (detail.value?.measurements || []).filter((m) => m.record_type === 'batch'))
+const bs = computed(() => detail.value?.batch_stats || EMPTY_BATCH)
+const meanDeHint = computed(() => {
+  const b = bs.value
+  if (b.mean_de == null) return '至少 2 组'
+  if (b.std_mean_de == null) return '标准色板不足 2 组，无法比较'
+  const diff = b.mean_de_diff
+  return `标准 ${fmt(b.std_mean_de)} · ${diff > 0 ? '离散更大' : diff < 0 ? '离散更小' : '持平'} ${signed(diff)}`
+})
 
 const title = computed(() => (detail.value ? `色板 ${detail.value.color_code}` : '色板详情'))
 const chip = (lab) => (lab ? rgbCss(labToRgb(lab)) : 'var(--button-quiet-hover)')
@@ -162,7 +218,7 @@ const promoteLabel = computed(() => ({
 function apply(data, { fresh = [] } = {}) {
   detail.value = data
   freshIds.value = new Set(fresh)
-  const { measurements, base, ...card } = data
+  const { measurements, base, batch_stats: _batch, ...card } = data
   emit('changed', card)
 }
 
@@ -182,33 +238,41 @@ async function load() {
 
 watch(() => [props.modelValue, props.swatchId], ([open]) => { if (open) load() }, { immediate: true })
 
-async function persist(swatchId, readings, receiptStatus = 'matched') {
+async function persist(swatchId, readings, { receiptStatus = 'matched', recordType = 'standard', positionTag = null } = {}) {
   const before = new Set((detail.value?.measurements || []).map((m) => m.id))
-  const res = await addSwatchMeasurements(swatchId, readings.map((r) => toMeasurementPayload(r, { receiptStatus })))
+  const res = await addSwatchMeasurements(swatchId, readings.map((r) => toMeasurementPayload(r, { receiptStatus, recordType, positionTag })))
   if (detail.value?.id === swatchId) {
     apply(res.data, { fresh: res.data.measurements.filter((m) => !before.has(m.id)).map((m) => m.id) })
   }
   return res.data
 }
 
-async function measure(count) {
-  // Snapshot target before the first command so a late swatch switch cannot misfile readings.
+async function measure({ count, tag }) {
+  // Snapshot swatch + tab + tag before the first command so a mid-series switch cannot misfile readings.
   const target = detail.value
   if (!target) return
+  const recordType = tab.value
+  // Late frames belong to the series that requested them, so they inherit its tab and position.
+  lastCtx = { swatchId: target.id, recordType, positionTag: tag }
   const done = await props.meter.measureSeries(count, async (reading) => {
     try {
-      await persist(target.id, [reading])
+      await persist(target.id, [reading], { recordType, positionTag: tag })
     } catch (err) {
       msgError(err?.response?.data?.detail || '测量值保存失败', err)
       throw err
     }
   }, { simTarget: target.stats.avg_lab || target.base?.lab || [45, 6, 14] })
-  if (done) msgSuccessText(`已记录 ${done} 组测量`)
+  if (done) msgSuccessText(`已记录 ${done} 组${recordType === 'batch' ? '批次产品' : '标准色板'}测量`)
 }
 
 async function acceptLate(reading) {
+  const ctx = lastCtx?.swatchId === detail.value.id ? lastCtx : null
+  if (!ctx) {
+    msgError('无法确定这组晚到读数的测量位置，请丢弃后重新测量')
+    return
+  }
   try {
-    await persist(detail.value.id, [reading], 'late')
+    await persist(detail.value.id, [reading], { receiptStatus: 'late', recordType: ctx.recordType, positionTag: ctx.positionTag })
     props.meter.takeLate(reading)
     msgSuccessText('已计入本色板')
   } catch (err) {
@@ -216,24 +280,21 @@ async function acceptLate(reading) {
   }
 }
 
-async function toggleInclusion(m) {
+async function exclude(m) {
   let reason = null
-  if (m.is_included) {
-    try {
-      const { value } = await promptAction('剔除后原始读数保留，仅不参与平均。请填写原因：', `剔除第 ${m.seq_no} 组`, {
-        inputPlaceholder: '如：测量位置偏移、样品褶皱',
-        inputValidator: (v) => (v && v.trim() ? true : '请填写原因'),
-      })
-      reason = value
-    } catch (err) {
-      if (isFeedbackCancelled(err)) return
-      throw err
-    }
+  try {
+    const { value } = await promptAction('剔除后该组不再显示、不参与统计，原始读数在后台保留。原因（选填）：', `剔除第 ${m.seq_no} 组`, {
+      inputPlaceholder: '如：测量位置偏移、样品褶皱',
+    })
+    reason = (value || '').trim() || null
+  } catch (err) {
+    if (isFeedbackCancelled(err)) return
+    throw err
   }
   try {
-    const res = await setMeasurementInclusion(detail.value.id, m.id, { is_included: !m.is_included, reason })
+    const res = await setMeasurementInclusion(detail.value.id, m.id, { is_included: false, reason })
     apply(res.data)
-    msgSuccessText(m.is_included ? '已剔除，统计已重算' : '已恢复，统计已重算')
+    msgSuccessText('已剔除，统计已重算')
   } catch (err) {
     msgError(err?.response?.data?.detail || '操作失败', err)
   }
@@ -284,6 +345,7 @@ async function archive() {
 
 function onClosed() {
   detail.value = null
+  tab.value = 'standard'
   editingTol.value = false
   freshIds.value = new Set()
 }
@@ -314,7 +376,13 @@ function onClosed() {
 .kpi b.lab { font-size: 16px; line-height: 1.7; }
 .kpi b.t-ok { color: var(--button-success-text); }
 .kpi b.t-warn { color: var(--button-warning-text); }
+.kpi.bad { background: var(--tag-danger-bg); border-color: var(--tag-danger-border); }
+.kpi b.t-bad { color: var(--tag-danger-text); }
 .kpi small { font-size: 11.5px; color: var(--text-secondary); }
+.lab-cmp { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 4px; }
+.lab-cell b { margin-top: 0; font-size: 15px; }
+.lab-cell small { display: block; font-size: 10.5px; line-height: 1.4; }
+.dd-alert { margin-bottom: 10px; }
 
 .compare { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
 .cmp { position: relative; flex: 1; height: 56px; border-radius: 10px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.07); }

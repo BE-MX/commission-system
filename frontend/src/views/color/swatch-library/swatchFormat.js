@@ -13,12 +13,14 @@ export function sizeLabel(value, unit) {
 }
 
 /** Map a device/simulator reading to the backend measurement payload. */
-export function toMeasurementPayload(reading, { receiptStatus = 'matched' } = {}) {
+export function toMeasurementPayload(reading, { receiptStatus = 'matched', recordType = 'standard', positionTag = null } = {}) {
   const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
   return {
     client_request_id: id,
     source: reading.source || 'device',
     receipt_status: receiptStatus,
+    record_type: recordType,
+    position_tag: positionTag || null,
     lab: reading.lab,
     luv: reading.luv,
     lch: reading.lch,

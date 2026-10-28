@@ -33,6 +33,7 @@ from app.customer.access_service import (
     require_customer_access,
 )
 from app.customer.models import CustomerAccount, CustomerAssignment
+from app.system.models import SysDict
 
 logger = logging.getLogger("color.swatch_library")
 
@@ -43,6 +44,8 @@ MANAGE_PERMS = ("customer:admin",)
 SIZE_UNITS = {"inch", "cm"}
 SOURCES = {"device", "simulation", "manual"}
 RECEIPTS = {"matched", "late", "manual"}
+RECORD_TYPES = {"standard", "batch"}
+TAG_DICT_TYPE = "color_measure_tag"
 MAX_BATCH = 20
 TWO = Decimal("0.01")
 
@@ -99,6 +102,25 @@ def _event(db: Session, swatch_id: int, event_type: str, actor: int, detail: dic
 
 def de00(lab1, lab2) -> float:
     return float(colour.delta_E(list(lab1), list(lab2), method="CIE 2000"))
+
+
+def de76(lab1, lab2) -> float:
+    """CIE76 ΔE*ab：批次测量对标准平均 Lab 的欧氏距离。"""
+    return sum((float(p) - float(q)) ** 2 for p, q in zip(lab1, lab2)) ** 0.5
+
+
+# 只按显著偏差描述方向；阈值与 ΔE 一个单位量级对齐，避免噪声被描述成偏色
+SHIFT_EPS = 0.3
+
+
+def describe_shift(lab, std_lab) -> list[str | None]:
+    """批次 Lab 相对标准平均 Lab 的逐分量偏向：[L, a, b]，偏差小于阈值为 None。"""
+    pairs = (("偏白缺黑", "偏黑缺白"), ("偏红缺绿", "偏绿缺红"), ("偏黄缺蓝", "偏蓝缺黄"))
+    out = []
+    for v, s, (pos, neg) in zip(lab, std_lab, pairs):
+        d = float(v) - float(s)
+        out.append(None if abs(d) < SHIFT_EPS else (pos if d > 0 else neg))
+    return out
 
 
 # ── 授权 ──────────────────────────────────────────────────
@@ -173,6 +195,7 @@ def recompute(db: Session, row: ColorLibrarySwatch) -> None:
         [float(m.lab_l), float(m.lab_a), float(m.lab_b)]
         for m in db.query(ColorLibraryMeasurement).filter(
             ColorLibraryMeasurement.swatch_id == row.id,
+            ColorLibraryMeasurement.record_type == "standard",
             ColorLibraryMeasurement.is_included == 1,
         ).all()
     ]
@@ -193,6 +216,28 @@ def recompute(db: Session, row: ColorLibrarySwatch) -> None:
                 base = _base_lab(db, dependent)
                 dependent.stat_base_de = _dec(de00(avg, base)) if base else None
         db.flush()
+
+
+def batch_summary(batch_labs: list[list[float]], std_avg, std_mean_de, tolerance) -> dict:
+    """纯函数：批次参与组 → 平均 Lab、组内 ΔE00、对标准平均的 ΔE*ab 与偏向。
+
+    std_avg 为标准色板测量平均 Lab；缺失时只给批次自身统计。
+    """
+    st = compute_stats(batch_labs)
+    avg = st["avg"]
+    de_ab = de76(avg, std_avg) if avg and std_avg else None
+    return {
+        "count": st["count"],
+        "avg_lab": avg,
+        "mean_de": st["mean_de"],
+        "max_de": st["max_de"],
+        "std_avg_lab": std_avg,
+        "std_mean_de": std_mean_de,
+        "mean_de_diff": (st["mean_de"] - std_mean_de) if st["mean_de"] is not None and std_mean_de is not None else None,
+        "avg_shift": describe_shift(avg, std_avg) if avg and std_avg else None,
+        "avg_de_ab": de_ab,
+        "avg_pass": None if de_ab is None else de_ab <= float(tolerance),
+    }
 
 
 def _verdict(row: ColorLibrarySwatch) -> str:
@@ -249,11 +294,15 @@ def serialize_swatch(row: ColorLibrarySwatch, *, customer_name: str | None = Non
     }
 
 
-def serialize_measurement(m: ColorLibraryMeasurement) -> dict:
-    return {
+def serialize_measurement(m: ColorLibraryMeasurement, *, std_avg=None, tolerance=None) -> dict:
+    lab = [_f(m.lab_l), _f(m.lab_a), _f(m.lab_b)]
+    data = {
         "id": m.id,
         "seq_no": m.seq_no,
-        "lab": [_f(m.lab_l), _f(m.lab_a), _f(m.lab_b)],
+        "record_type": m.record_type or "standard",
+        "position_tag": m.position_tag,
+        "position_label": m.position_label,
+        "lab": lab,
         "luv": [_f(m.luv_l), _f(m.luv_u), _f(m.luv_v)],
         "lch": [_f(m.lch_l), _f(m.lch_c), _f(m.lch_h)],
         "yxy": [_f(m.yxy_y), _f(m.yxy_x), _f(m.yxy_yy)],
@@ -273,6 +322,12 @@ def serialize_measurement(m: ColorLibraryMeasurement) -> dict:
         "measured_by": m.measured_by,
         "created_at": m.created_at,
     }
+    if data["record_type"] == "batch" and std_avg:
+        de_ab = de76(lab, std_avg)
+        data["shift"] = describe_shift(lab, std_avg)
+        data["de_ab"] = de_ab
+        data["passed"] = de_ab <= float(tolerance)
+    return data
 
 
 # ── 查询 ──────────────────────────────────────────────────
@@ -347,8 +402,16 @@ def get_swatch(db: Session, user: dict, swatch_id: int) -> dict:
         if row.customer_id else None
     data = serialize_swatch(row, customer_name=name)
     data["base"] = _base_info(db, row)
-    data["measurements"] = [serialize_measurement(m) for m in db.query(ColorLibraryMeasurement).filter(
-        ColorLibraryMeasurement.swatch_id == row.id).order_by(ColorLibraryMeasurement.seq_no).all()]
+    # 剔除的测量组只保留在库内审计，不再返回给列表
+    rows = db.query(ColorLibraryMeasurement).filter(
+        ColorLibraryMeasurement.swatch_id == row.id, ColorLibraryMeasurement.is_included == 1,
+    ).order_by(ColorLibraryMeasurement.seq_no).all()
+    std_avg = data["stats"]["avg_lab"]
+    data["measurements"] = [serialize_measurement(m, std_avg=std_avg, tolerance=row.tolerance_de) for m in rows]
+    data["batch_stats"] = batch_summary(
+        [m["lab"] for m in data["measurements"] if m["record_type"] == "batch"],
+        std_avg, data["stats"]["mean_de"], row.tolerance_de,
+    )
     data["can_write"] = _has(user, PERM_ADMIN) if row.library_scope == "public" else _has(user, PERM_WRITE)
     return data
 
@@ -488,6 +551,8 @@ def add_measurements(db: Session, user: dict, swatch_id: int, items: list[dict])
     }
     next_seq = (db.query(func.max(ColorLibraryMeasurement.seq_no)).filter(
         ColorLibraryMeasurement.swatch_id == row.id).scalar() or 0) + 1
+    tags = dict(db.query(SysDict.code, SysDict.label).filter(
+        SysDict.type == TAG_DICT_TYPE, SysDict.is_active.is_(True)).all())
     created = 0
     for item in items:
         request_id = str(item.get("client_request_id") or "").strip()
@@ -495,6 +560,14 @@ def add_measurements(db: Session, user: dict, swatch_id: int, items: list[dict])
             raise _bad("每组测量必须带 client_request_id（≤64 字符）")
         if request_id in existing:
             continue
+        record_type = item.get("record_type") or "standard"
+        if record_type not in RECORD_TYPES:
+            raise _bad("record_type 只支持 standard / batch")
+        tag = (item.get("position_tag") or "").strip()
+        if not tag:
+            raise _bad("请选择测量位置")
+        if tag not in tags:
+            raise _bad("测量位置标签不存在或已停用")
         source = item.get("source") or "device"
         receipt = item.get("receipt_status") or ("manual" if source == "manual" else "matched")
         if source not in SOURCES or receipt not in RECEIPTS:
@@ -510,7 +583,8 @@ def add_measurements(db: Session, user: dict, swatch_id: int, items: list[dict])
         if len(cmyk) != 4 or len(rgb) != 3:
             raise _bad("cmyk 需 4 个、rgb 需 3 个数值")
         db.add(ColorLibraryMeasurement(
-            swatch_id=row.id, seq_no=next_seq,
+            swatch_id=row.id, seq_no=next_seq, record_type=record_type,
+            position_tag=tag, position_label=tags[tag],
             lab_l=lab[0], lab_a=lab[1], lab_b=lab[2],
             luv_l=luv[0], luv_u=luv[1], luv_v=luv[2],
             lch_l=lch[0], lch_c=lch[1], lch_h=lch[2],
@@ -548,10 +622,8 @@ def set_inclusion(db: Session, user: dict, swatch_id: int, measurement_id: int,
     ).one_or_none()
     if m is None:
         raise _not_found()
-    if not included and not (reason or "").strip():
-        raise _bad("剔除测量组需填写原因")
     m.is_included = 1 if included else 0
-    m.exclude_reason = None if included else reason.strip()[:255]
+    m.exclude_reason = None if included else ((reason or "").strip()[:255] or None)
     recompute(db, row)
     _event(db, row.id, "restored" if included else "excluded", _uid(user),
            {"measurement_id": m.id, "seq_no": m.seq_no, "reason": m.exclude_reason})
@@ -597,7 +669,8 @@ def review_promotion(db: Session, user: dict, swatch_id: int, approve: bool) -> 
     db.add(public)
     _commit_unique(db, public)
     for m in db.query(ColorLibraryMeasurement).filter(
-            ColorLibraryMeasurement.swatch_id == row.id, ColorLibraryMeasurement.is_included == 1).all():
+            ColorLibraryMeasurement.swatch_id == row.id, ColorLibraryMeasurement.is_included == 1,
+            ColorLibraryMeasurement.record_type == "standard").all():
         clone = {c.name: getattr(m, c.name) for c in ColorLibraryMeasurement.__table__.columns
                  if c.name not in {"id", "swatch_id", "created_at", "updated_at"}}
         clone["client_request_id"] = f"promote-{m.id}"

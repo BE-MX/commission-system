@@ -291,6 +291,11 @@ ark_order_portal_accounts.password_hash为nullable VARCHAR(255)，保存员工�
   - `ark_color_trend_data` — 色彩趋势时序（color_family, data_source, period_date, raw_value, normalized_score）
   - `ark_color_swatch_image` — 色板图生成记录（palette_id/blend_id, prompt, model_used, image_path, delta_e, pass_check, status）
   - `ark_pantone_reference` — Pantone 参考色库（AI 生图提示词使用 Solid Coated V5 3219 条；另保留其他 collection；pantone_code, hex_code, rgb, lab, collection）
+- **色板库与色差仪测量（3 张表，210/211 迁移）**：
+  - `ark_color_library_swatches` — 公库/私库色板（私库绑定客户，同库同客户下色号+尺寸唯一）；`stat_*` 为**标准色板测量**参与组重算的平均 Lab、组内平均/最大 ΔE00 与对基准 ΔE00
+  - `ark_color_library_measurements` — 测量组（一行一次 CRC 有效 44 帧，原始值不可改，只能剔除 `is_included=0`，剔除原因可空）。211 新增 `record_type`（`standard`=标准色板，参与色板统计；`batch`=批次产品，只与标准平均 Lab 比对 ΔE*ab，不改色板统计、不随晋升复制）、`position_tag`（`sys_dict: color_measure_tag`，新测量必填；211 之前的历史行为空）与 `position_label`（标签名快照）。详情接口不再返回已剔除组
+  - `ark_color_library_events` — 审计事件（新建、修改、测量、剔除/恢复、晋升）
+  - `sys_dict.color_measure_tag` — 测量位置标签（211 种子：样本头部/中部/尾部/头部1/4处/头部1/2处，已存在同编码不覆盖），在字典管理页维护
 - **WhatsApp 同步（7 张表，035 迁移）**：
   - `ark_whatsapp_accounts` — 已绑定 WhatsApp 账号（account_uid UNIQUE, ark_user_id FK, phone_number, status binding/active/revoked, connector_status）
   - `ark_whatsapp_bind_sessions` — 扫码绑定会话（bind_session_uid UNIQUE, ark_user_id FK, status pending/scanning/bound/expired/failed, qr_code_url）

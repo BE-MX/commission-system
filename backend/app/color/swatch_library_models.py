@@ -91,12 +91,17 @@ class ColorLibraryMeasurement(Base):
         UniqueConstraint("swatch_id", "seq_no", name="uq_color_library_measurement_seq"),
         UniqueConstraint("swatch_id", "client_request_id", name="uq_color_library_measurement_request"),
         Index("ix_color_library_measurement_swatch", "swatch_id", "is_included"),
+        Index("ix_color_library_measurement_type", "swatch_id", "record_type", "is_included"),
         {"comment": "色板测量组：一行对应色差仪一次 CRC 有效的 44 类测量返回；原始值不可修改，只能剔除"},
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     swatch_id = Column(BigInteger, ForeignKey("ark_color_library_swatches.id"), nullable=False, comment="所属色板")
     seq_no = Column(Integer, nullable=False, comment="色板内测量序号，从1递增")
+    record_type = Column(String(16), nullable=False, default="standard",
+                         comment="standard=标准色板测量（参与色板平均），batch=批次产品测量（与标准平均比对）")
+    position_tag = Column(String(64), nullable=True, comment="测量位置标签 code（sys_dict type=color_measure_tag）")
+    position_label = Column(String(128), nullable=True, comment="测量位置标签显示名快照，字典改名不影响历史")
     lab_l = Column(Numeric(6, 2), nullable=False, comment="Lab L*（帧字节8-9 int16LE/100）")
     lab_a = Column(Numeric(6, 2), nullable=False, comment="Lab a*（帧字节10-11 int16LE/100）")
     lab_b = Column(Numeric(6, 2), nullable=False, comment="Lab b*（帧字节12-13 int16LE/100）")
