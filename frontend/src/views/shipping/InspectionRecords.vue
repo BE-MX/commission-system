@@ -29,7 +29,7 @@
       <el-empty v-if="!loading && !list.length" description="没有符合条件的验货单" />
       <article v-for="row in list" :key="row.id" class="inspection-result">
         <h2>{{ row.outbound_no }}</h2><p>{{ row.customer_name }}</p><p>订单 ID：{{ row.order_id || '—' }}</p>
-        <dl><dt>提交人</dt><dd>{{ row.submitted_by_name || '—' }}</dd><dt>提交日期</dt><dd>{{ row.submitted_at || '—' }}</dd><dt>业务员</dt><dd>{{ row.salesperson_name || '未匹配' }}</dd><dt>照片</dt><dd>{{ row.photo_count }} 张</dd></dl>
+        <dl><dt>提交人</dt><dd>{{ row.submitted_by_name || '—' }}</dd><dt>提交日期</dt><dd>{{ formatBeijingDateTime(row.submitted_at, { seconds: false, fallback: '—' }) }}</dd><dt>业务员</dt><dd>{{ row.salesperson_name || '未匹配' }}</dd><dt>照片</dt><dd>{{ row.photo_count }} 张</dd></dl>
         <div class="result-actions"><GlassButton variant="primary" @click="openDetail(row)">查看验货单</GlassButton><GlassButton :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton></div>
       </article>
       <el-pagination class="pager" :page-sizes="[20, 50, 100]" v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, sizes, prev, pager, next" :pager-count="5" @current-change="handlePageChange" />
@@ -64,7 +64,7 @@
         </el-table-column>
         <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="100" show-overflow-tooltip />
         <el-table-column sortable="custom" v-if="visibleKeys.includes('submitted-by-name')" prop="submitted_by_name" label="提交人" min-width="100" show-overflow-tooltip />
-        <el-table-column sortable="custom" v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="提交时间" min-width="150" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="提交时间" min-width="150" show-overflow-tooltip><template #default="{ row }">{{ formatBeijingDateTime(row.submitted_at, { seconds: false }) }}</template></el-table-column>
         <el-table-column sortable="custom" v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
@@ -93,7 +93,7 @@
           <el-descriptions-item label="订单 ID">{{ detail.order_id || '—' }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">{{ detail.customer_name }}</el-descriptions-item>
           <el-descriptions-item label="提交人">{{ detail.submitted_by_name }}</el-descriptions-item>
-          <el-descriptions-item label="提交时间">{{ detail.submitted_at }}</el-descriptions-item>
+          <el-descriptions-item label="提交时间">{{ formatBeijingDateTime(detail.submitted_at, { seconds: false }) }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
         </ResponsiveDescriptions>
 
@@ -138,6 +138,7 @@ import InspectionEvents from './components/InspectionEvents.vue'
 import ShippingPrintDialog from './print/ShippingPrintDialog.vue'
 import { useInspectionRecords } from './composables/useInspectionRecords'
 import { useTableView } from '@/composables/useTableView'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const route = useRoute()
 const listPageState = useInspectionRecords()
