@@ -9,6 +9,7 @@
         <span v-else>照片加载中…</span>
       </div>
       <figcaption class="photo-caption">{{ photo.caption }}{{ photo.stale ? ' · 旧版本证据，不作本次验货依据' : '' }}</figcaption>
+      <p v-if="metaOf(photo)" class="photo-meta" :title="photo.created_at ? formatBeijingDateTime(photo.created_at) : ''">{{ metaOf(photo) }}</p>
       <GlassButton v-if="photo.url || photo.failed" variant="link" :loading="originalLoadingId === photo.id" @click="openOriginal(photo)">
         {{ originalLoadingId === photo.id ? '原图加载中' : photo.originalFailed ? '重试原图' : '查看原图' }}
       </GlassButton>
@@ -25,12 +26,14 @@
  * 所以统一取 blob 再转 object URL（同 domestic 参考图 DomesticImages）。
  *
  * 排序：整单照片（item_id 为空）在前，其余按明细顺序分组，组内按 sort。
- * 每张照片下标注对应产品名称，整单照片标「整单照片」。
+ * 每张照片下标注对应产品名称，整单照片标「整单照片」；
+ * 再标注上传人与上传时间（接口 created_by_name / created_at，历史行可能为空）。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElImageViewer } from 'element-plus'
 import GlassButton from '@/components/GlassButton.vue'
 import { fetchImageBlobUrl, fetchImagePreviewBlobUrl } from '@/api/shipping'
+import { formatBeijingDateTime, formatBeijingShortDateTime } from '@/utils/datetime'
 
 const props = defineProps({
   photos: { type: Array, default: () => [] },
@@ -106,6 +109,12 @@ async function openOriginal(photo) {
   }
 }
 
+function metaOf(photo) {
+  // 上传人 · 上传时间；历史行两者都缺时整行隐藏，不硬造「未知」。
+  const uploadedAt = photo.created_at ? formatBeijingShortDateTime(photo.created_at) : ''
+  return [photo.created_by_name, uploadedAt].filter(Boolean).join(' · ')
+}
+
 function orderedPhotos() {
   const nameOf = id => props.items.find(item => item.item_id === id)?.product_name || ''
   const itemOrder = new Map(props.items.map((item, index) => [item.item_id, index]))
@@ -175,6 +184,15 @@ onBeforeUnmount(() => {
   text-align: center;
   line-height: 1.5;
   white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.photo-meta {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-align: center;
   overflow-wrap: anywhere;
 }
 

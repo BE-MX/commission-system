@@ -39,7 +39,8 @@ def _photo_to_dict(photo: ShippingInspectionPhoto, stale_ids=(), local_items=Non
     if local_items and item_id is not None:
         item_id = local_items.get(str(item_id), item_id)
     return {"id": photo.id, "item_id": item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type,
-            "storage_state": getattr(photo, '_storage_state', 'local'), "stale": photo.id in stale_ids}
+            "storage_state": getattr(photo, '_storage_state', 'local'), "stale": photo.id in stale_ids,
+            "created_at": photo.created_at, "created_by_name": getattr(photo, '_uploader_name', None)}
 
 
 def _display_item_ids(db: Session, outbound_record_id: str) -> dict[str, str]:
@@ -60,6 +61,15 @@ def _display_item_ids(db: Session, outbound_record_id: str) -> dict[str, str]:
         return {}
 
 
+def _uploader_names(db: Session, photos: list[ShippingInspectionPhoto]) -> dict[int, str]:
+    """批量取上传人姓名：照片墙要按张显示「谁·何时」，逐张 db.get 会变成 N+1。"""
+    user_ids = {photo.created_by for photo in photos if photo.created_by}
+    if not user_ids:
+        return {}
+    return {user_id: real_name for user_id, real_name in
+            db.query(ArkUser.id, ArkUser.real_name).filter(ArkUser.id.in_(user_ids)).all()}
+
+
 def list_photos(db: Session, inspection_id: int, media_type: str = "image") -> list[ShippingInspectionPhoto]:
     photos = (
         db.query(ShippingInspectionPhoto)
@@ -72,6 +82,9 @@ def list_photos(db: Session, inspection_id: int, media_type: str = "image") -> l
         states = {r.id: r.status for r in db.query(transfers.StorageTransfer).filter(transfers.StorageTransfer.id.in_(identities)).all()}
         for photo in photos:
             photo._storage_state = states.get(transfers.transfer_id('shipping-inspection', photo.file_path), 'local')
+    uploaders = _uploader_names(db, photos)
+    for photo in photos:
+        photo._uploader_name = uploaders.get(photo.created_by)
     return photos
 
 
