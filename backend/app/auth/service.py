@@ -486,6 +486,10 @@ def seed_role_permissions(db: Session):
         ("color:admin",           "color",   "admin",         "管理竞品监控 / 趋势数据源 / 色板图任务"),
         ("color_blend:read",      "color",   "read",          "查看混合色管理"),
         ("color_trend:read",      "color",   "read",          "查看色彩趋势看板"),
+        # 色板库公库/私库 + 色差仪测量（2026-10-27；私库另受客户实时归属约束）
+        ("color_library:read",    "color",   "read",          "色板库：查看公库与本人归属客户的私库"),
+        ("color_library:write",   "color",   "write",         "色板库：私库新建色板 / 色差仪测量 / 申请纳入公库"),
+        ("color_library:admin",   "color",   "admin",         "色板库：维护公库 / 审核私库晋升"),
         # 报表中心（jimureport 集成）
         ("report:read",           "report",  "read",          "查看报表 / 数据大屏"),
         ("report:design",         "report",  "design",        "进入报表设计器 / 编辑报表"),

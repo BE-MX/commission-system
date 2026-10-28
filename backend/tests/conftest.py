@@ -57,6 +57,9 @@ from app.system import models as _system_models  # noqa: F401
 from app.task import models as _task_models  # noqa: F401
 # 绩效目标表 FK 指向 ark_users，显式导入保证单跑测试文件时 create_all 覆盖到
 from app.perf_goal import models as _perf_goal_models  # noqa: F401
+# 色板库 FK 指向 ark_customer_accounts / ark_color_palette，显式导入保证 create_all 覆盖到
+from app.color import models as _color_models  # noqa: F401
+from app.color import swatch_library_models as _color_library_models  # noqa: F401
 
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER
