@@ -144,7 +144,11 @@ const MIN_LENGTH = { 0x44: 41, 0x40: 10, 0xa0: 5 }
  * vendor length rule is not confirmed (doc §10.2).
  */
 export class FrameStream {
-  constructor({ onFrame, onLog = () => {}, staleMs = 2000, setTimer = setTimeout, clearTimer = clearTimeout }) {
+  // Wrap the globals: browsers throw "Illegal invocation" when setTimeout runs with this = FrameStream.
+  constructor({
+    onFrame, onLog = () => {}, staleMs = 2000,
+    setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (id) => clearTimeout(id),
+  }) {
     this.buf = new Uint8Array(0)
     this.onFrame = onFrame
     this.onLog = onLog

@@ -109,6 +109,26 @@ test('oversized stream is discarded and never emits a measurement', () => {
   assert.ok(logs.length)
 })
 
+test('default timers are not invoked with FrameStream as this (browser Illegal invocation)', () => {
+  const realSet = globalThis.setTimeout
+  const realClear = globalThis.clearTimeout
+  const strict = (real) => function (...args) {
+    if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation')
+    return real(...args)
+  }
+  globalThis.setTimeout = strict(realSet)
+  globalThis.clearTimeout = strict(realClear)
+  try {
+    const s = new FrameStream({ onFrame: () => {} })
+    s.push(fixture().slice(0, 10))
+    assert.ok(s.buf.length > 0)
+    s.reset()
+  } finally {
+    globalThis.setTimeout = realSet
+    globalThis.clearTimeout = realClear
+  }
+})
+
 test('info and voltage frames decode SN / material / version / volts', () => {
   assert.deepEqual(decodeInfo(buildInfoFrame({ sn: 12345678, material: 25622170, fw: 1.23 })),
     { sn: '12345678', material: 25622170, fw: '1.23' })
