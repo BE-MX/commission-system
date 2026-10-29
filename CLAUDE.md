@@ -76,7 +76,7 @@ miniprogram/  pda-reporting/  tablet-kiosk/  services/whatsapp-connector/  deplo
 11. **禁止自建 axios**：API 模块从 `api/clients.js` 取 client 并登记（auth.js 是唯一例外）
 12. **按职责拆分前端文件**：超过 500 行时检查是否存在独立职责，可用 `views/<domain>/composables/use<Page>.js` 提取相关状态与方法；不为凑行数移动全部代码。自动约定检查仍需运行，机械阈值命中应说明原因，不伪报无红项
 13. **颜色用 tokens.css 变量**，不写裸 hex；UI 决策以 `DESIGN.md` 为准
-13.5 **原型设计 / UI 动效任务强制加载 Emil Kowalski skill 组**：动手前加载 `emil-design-eng`；动效完工后由模型读 `~/.claude/skills/review-animations/STANDARDS.md` 逐条自查（该 skill 本身限用户手动触发，自查不等用户触发）；动效术语不明用 `animation-vocabulary`
+13.5 **原型设计 / UI 动效任务强制加载 Emil Kowalski skill 组**：动手前加载 `emil-design-eng`；动效完工后由模型读 `~/.claude/skills/review-animations/STANDARDS.md` 逐条自查（该 skill 本身限用户手动触发，自查不等用户触发）；动效术语不明用 `animation-vocabulary`；Impeccable 的按需补充与去重边界见 [DESIGN.md 的 UI 设计工具规则](DESIGN.md#ui-设计工具的按需使用)
 14. **新列表页两个标杆**：标记/样式复制 `system/DictManagement.vue`；分页/搜索/反馈编排照 `views/expo/ExpoLeads.vue`（useListPage + utils/feedback + DetailDrawer；上传用 components/AppUpload）
 15. 认证初始化判据是 `!auth.user` 而非 `!isLoggedIn`（accessToken 从 localStorage 预恢复，谨防"半登录态"）；**按钮级权限用全局指令 `v-permission` / `v-any-permission`**（directives/permission.js），新页面不再手写 `v-if="hasPermission(...)"`
 
