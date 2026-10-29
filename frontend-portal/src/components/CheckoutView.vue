@@ -52,8 +52,16 @@ function quantity(line, event) {
   act(() => props.checkout.quantity(line.item_id, event.target.value))
   event.target.value = props.state.lines.find(item => item.item_id === line.item_id)?.quantity ?? line.quantity
 }
-async function getQuote() {
-  await act(() => props.checkout.quote())
+async function getQuote(event) {
+  // Browser autofill can change visible values without emitting Vue input events.
+  const form = new FormData(event.currentTarget)
+  await act(() => {
+    for (const [field] of fields) {
+      const value = form.get(field)
+      if (typeof value === 'string' && value !== props.state.delivery[field]) props.checkout.delivery(field, value)
+    }
+    return props.checkout.quote()
+  })
   if (props.state.quote) review.value?.focus()
 }
 </script>
@@ -82,7 +90,7 @@ async function getQuote() {
         </section>
         <form class="checkout-card delivery-form" @submit.prevent="getQuote">
           <header><span class="step-mark">02</span><div><h2>The details</h2><button type="button" class="text-button small" @click="emit('profile')">Manage saved delivery details</button></div></header>
-          <p v-if="profileError" class="small muted" role="status">{{ profileError }}</p><details class="delivery-details"><summary>Delivery address (optional)</summary><div class="delivery-grid"><label v-for="[field, label, autocomplete, max, required] in fields" :key="field" :class="{ 'wide-field': field.startsWith('address_') }"><span>{{ label }}</span><input :value="state.delivery[field]" :autocomplete="autocomplete" :maxlength="max"  :type="field === 'phone' ? 'tel' : 'text'" :pattern="field === 'country_code' ? '[A-Za-z]{2}' : undefined" :minlength="field === 'phone' && state.delivery.phone ? 3 : undefined" @input="act(() => checkout.delivery(field, $event.target.value))" /></label>
+          <p v-if="profileError" class="small muted" role="status">{{ profileError }}</p><details class="delivery-details"><summary>Delivery address (optional)</summary><div class="delivery-grid"><label v-for="[field, label, autocomplete, max, required] in fields" :key="field" :class="{ 'wide-field': field.startsWith('address_') }"><span>{{ label }}</span><input :name="field" :value="state.delivery[field]" :autocomplete="autocomplete" :maxlength="max"  :type="field === 'phone' ? 'tel' : 'text'" :pattern="field === 'country_code' ? '[A-Za-z]{2}' : undefined" :minlength="field === 'phone' && state.delivery.phone ? 3 : undefined" @input="act(() => checkout.delivery(field, $event.target.value))" /></label>
           </div></details><div class="delivery-grid">
             <label class="wide-field"><span>Your PO / reference (optional)</span><input :value="state.customer_po" maxlength="80" @input="act(() => checkout.details('customer_po', $event.target.value))" /></label>
             <label class="wide-field"><span>Request notes (optional)</span><textarea :value="state.remark" maxlength="1000" rows="3" @input="act(() => checkout.details('remark', $event.target.value))"></textarea></label>

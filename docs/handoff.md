@@ -5913,3 +5913,8 @@ I38：启用refresh初次当前授权+request/conversion→invoice完整绑定/�
 ## 2026-10-28 客户门户七项体验调整（Git交付，未部署）
 
 分支 codex/portal-customer-settings。地址已获确认使用方舟客户资料层供门户/后台/发票共用；增加客户商品批价，缺货类型门槛，checkout地址可选折叠，黑字无黄底Logo及黄色favicon，POR每日短流水，英文处理状态与验货关联物流入口。新增212迁移；亮哥已授权提交、合并main并推送origin，本次不部署。实现边界与验证见 docs/reports/2026-10-28-portal-customer-settings.md。
+
+
+## 2026-10-29 客户门户真实浏览器验收（修复Git交付，未部署）
+
+TERRA xhigh按用户指定账号完成真实Chrome后台/门户操作，地址原值保存读回、两项批价保存并恢复（875项独立DB比对一致）、genius恰好30可选、登录Logo与英文状态已验证；用户要求只到报价，未提交订单，新短号及无样本物流入口未验。发现商品规格被长名挤掉、空国家profile被required拦、首次可见地址与报价地址不一致，已本地修复。12后端专项、147门户单元、双端build与浏览器回归通过，独立审查无阻断；亮哥已授权提交、合入main并推送，本次不部署。详见[实际验收报告](reports/2026-10-29-portal-live-acceptance.md)。

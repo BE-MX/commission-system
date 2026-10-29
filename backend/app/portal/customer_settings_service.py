@@ -69,7 +69,7 @@ def price_view(db, access):
                 product_id=int(row.product_id), sku_id=int(row.sku_id), currency="USD").get("standard_price")
         price = grants[row.id].unit_price
         items.append({"id": row.public_id, "model_name": row.display_name, "color_name": row.color_name,
-            "length": row.standard_json.get("length"), "sale_unit": row.sale_unit,
+            "length": row.standard_json.get("length"), "weight": row.standard_json.get("weight"), "sale_unit": row.sale_unit,
             "standard_price": format(standard, ".4f") if standard is not None else None,
             "unit_price": format(price, ".4f") if price is not None else None})
     return {"row_version": access.row_version, "items": items, "currency": "USD"}

@@ -1,10 +1,23 @@
 <script setup>
-import { ref, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, onBeforeUnmount, watch } from 'vue'
 import { portalAdminApi } from '@/api/portal'
 import { useAuthStore } from '@/stores/auth'
 const props = defineProps({ access: Object, section: String })
 const emit = defineEmits(['close', 'changed'])
-const auth = useAuthStore(), data = ref(null), delivery = ref({}), rows = ref([]), selected = ref([]), batch = ref(''), busy = ref(false), uncertain = ref(false), error = ref('')
+const auth = useAuthStore(), data = ref(null), delivery = ref({}), rows = ref([]), selected = ref([]), batch = ref(''), search = ref(''), busy = ref(false), uncertain = ref(false), error = ref('')
+const visibleRows = computed(() => {
+  const terms = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  return rows.value.filter(row => {
+    const text = [row.model_name, row.color_name, row.length, row.weight, row.sale_unit].join(' ').toLowerCase()
+    return terms.every(term => text.includes(term))
+  })
+})
+const visibleSelectedCount = computed(() => visibleRows.value.filter(row => selected.value.includes(row.id)).length)
+function selectVisible(checked) {
+  const ids = new Set(selected.value)
+  for (const row of visibleRows.value) checked ? ids.add(row.id) : ids.delete(row.id)
+  selected.value = [...ids]
+}
 const fields = [['contact_name', '联系人'], ['phone', '联系电话'], ['address_line1', '地址'], ['address_line2', '补充地址'], ['city', '城市'], ['region', '州 / 省'], ['postal_code', '邮编'], ['country_code', '国家代码（US / GB）']]
 let live = true, generation = 0, controller = new AbortController()
 watch(() => auth.accessToken, () => { live = false; controller.abort(); emit('close') })
@@ -12,7 +25,7 @@ onBeforeUnmount(() => { live = false; controller.abort() })
 async function load() {
   const current = ++generation, id = props.access.id, section = props.section
   controller.abort(); controller = new AbortController()
-  busy.value = true; error.value = ''; data.value = null; delivery.value = {}; rows.value = []; selected.value = []; batch.value = ''
+  busy.value = true; error.value = ''; data.value = null; delivery.value = {}; rows.value = []; selected.value = []; batch.value = ''; search.value = ''
   try {
     const result = await portalAdminApi.customerSettings(id, section, controller.signal)
     if (!live || current !== generation) return
@@ -22,7 +35,7 @@ async function load() {
   } catch (e) { if (live && current === generation) { data.value = null; error.value = e?.response?.data?.message || '读取失败，请重试。' } }
   finally { if (live && current === generation) busy.value = false }
 }
-function applyBatch() { for (const row of selected.value) { row.price = batch.value; row.changed = true } }
+function applyBatch() { for (const row of rows.value) { if (selected.value.includes(row.id)) { row.price = batch.value; row.changed = true } } }
 async function save() {
   if (busy.value || uncertain.value || !data.value) return
   error.value = ''
@@ -51,11 +64,13 @@ watch(() => [props.access.id, props.section], () => { uncertain.value = false; l
       <template v-if="data && section === 'prices'">
         <div class="batch-price"><el-input v-model="batch" aria-label="批量单价" placeholder="USD 单价" :disabled="busy || uncertain" /><GlassButton :disabled="!selected.length || busy || uncertain" @click="applyBatch">应用到所选 {{ selected.length }} 项</GlassButton></div>
         <p>未设置专属价时显示标准价供填写；清空单价可恢复现有客户定价规则。</p>
-        <el-table :data="rows" border class="list-table" v-sticky-scrollbar max-height="440" @selection-change="value => selected = value">
-          <el-table-column type="selection" :selectable="() => !busy && !uncertain" />
-          <el-table-column label="商品" min-width="200"><template #default="{ row }">{{ row.model_name }} · {{ row.color_name }} · {{ row.length }}</template></el-table-column>
+        <el-input v-model="search" class="price-search" aria-label="搜索商品" placeholder="搜索型号、颜色或规格" clearable />
+        <p v-if="selected.length && search.trim()">已选 {{ selected.length }} 项，其中当前结果可见 {{ visibleSelectedCount }} 项。</p>
+        <el-table :data="visibleRows" border class="list-table" v-sticky-scrollbar max-height="440">
+          <el-table-column min-width="55"><template #header><el-checkbox class="price-select" :model-value="visibleRows.length > 0 && visibleSelectedCount === visibleRows.length" :indeterminate="visibleSelectedCount > 0 && visibleSelectedCount < visibleRows.length" :disabled="busy || uncertain || !visibleRows.length" aria-label="选择当前搜索结果" @change="selectVisible" /></template><template #default="{ row }"><el-checkbox v-model="selected" class="price-select" :value="row.id" :disabled="busy || uncertain" :aria-label="`选择 ${row.model_name} ${row.color_name} ${row.length} ${row.weight ?? ''} ${row.sale_unit ?? ''}`"><span aria-hidden="true"></span></el-checkbox></template></el-table-column>
+          <el-table-column label="商品" min-width="260"><template #default="{ row }"><div class="product-name">{{ row.model_name }}</div><div class="product-spec">{{ row.color_name }} · 长度 {{ row.length ?? '—' }}<template v-if="row.weight"> · {{ row.weight }}</template><template v-if="row.sale_unit"> · {{ row.sale_unit }}</template></div></template></el-table-column>
           <el-table-column prop="standard_price" label="标准价 USD" min-width="135" />
-          <el-table-column label="客户单价 USD" min-width="170"><template #default="{ row }"><el-input v-model="row.price" :aria-label="`${row.model_name} ${row.color_name} 客户单价`" :disabled="busy || uncertain" @input="row.changed = true" /></template></el-table-column>
+          <el-table-column label="客户单价 USD" min-width="170"><template #default="{ row }"><el-input v-model="row.price" :aria-label="`${row.model_name} ${row.color_name} ${row.length} ${row.weight ?? ''} ${row.sale_unit ?? ''} 客户单价`" :disabled="busy || uncertain" @input="row.changed = true" /></template></el-table-column>
         </el-table>
       </template>
     </div>
@@ -65,6 +80,10 @@ watch(() => [props.access.id, props.section], () => { uncertain.value = false; l
 <style scoped>
 .batch-price { display: flex; gap: 12px; margin: 16px 0; }
 .batch-price .el-input { max-width: 180px; }
+.price-search { margin-bottom: 12px; }
+.product-name, .product-spec { white-space: normal; overflow-wrap: anywhere; }
+.product-spec { color: var(--text-secondary); }
+.price-select { margin-right: 0; }
 p { color: var(--text-secondary); }
 </style>
 

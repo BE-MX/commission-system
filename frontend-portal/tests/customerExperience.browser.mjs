@@ -15,7 +15,7 @@ for (const width of [1440, 375]) {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PORTAL_CHROMIUM })
   const context = await browser.newContext({ viewport: { width, height: 900 } })
   let delivery = null, version = 1, writes = 0, lose = false, active = 0, maximum = 0, thumbAttempts = 0
-  const order = [], errors = []
+  const order = [], errors = [], quotes = []
   await context.route('**/api/portal/v1/**', async route => {
     const request = route.request(), url = new URL(request.url())
     const send = (data, status = 200) => route.fulfill({ status, json: { code: status, message: 'OK', data } })
@@ -40,6 +40,10 @@ for (const width of [1440, 375]) {
       return send({ delivery, row_version: version })
     }
     if (url.pathname.endsWith('/ordering-terms')) return send({ payment_terms: [], auto_fees: { enabled: false } })
+    if (url.pathname.endsWith('/quotes')) {
+      const body = request.postDataJSON(); quotes.push(body)
+      return send({ quote_id: id(80), status: 'valid', content_hash: 'a'.repeat(64), currency: 'USD', expires_at: new Date(Date.now() + 600000).toISOString(), product_amount: '206.64', total_amount: null, fees: { status: 'pending' }, delivery: body.delivery, payment_terms_snapshot: {}, items: [{ item_id: id(1), display_snapshot: { model_name: 'Genius Weft', color_name: '#2B', length: '16', weight: '20g', unit: 'piece' }, quantity: 12, unit_price: '17.22', line_amount: '206.64' }] })
+    }
     if (url.pathname.endsWith('/catalog/families/genius_weft_20g/availability')) return send({ items: [] })
     if (url.pathname.endsWith('/catalog/families/genius_weft_20g')) return send({ code: 'genius_weft_20g', display_name: 'Genius Weft 20g/piece', variants })
     throw new Error(`Unexpected API ${request.method()} ${url.pathname}`)
@@ -52,20 +56,22 @@ for (const width of [1440, 375]) {
     await page.getByLabel('Contact name', { exact: true }).fill('Saved buyer')
     await page.getByLabel('Phone number', { exact: true }).fill('12345678')
     await page.getByLabel('Address line 1', { exact: true }).fill('Saved address 1')
-    await page.getByLabel('Country code (e.g. US, GB)', { exact: true }).fill('us')
+    await page.getByLabel('Country code (e.g. US, GB)', { exact: true }).fill('')
     await page.getByRole('button', { name: 'Save delivery details', exact: true }).click()
     await page.getByText('Your delivery details are saved.', { exact: true }).waitFor()
-    assert.equal(delivery.country_code, 'US'); assert.equal(writes, 1)
+    assert.equal(delivery.country_code, ''); assert.equal(writes, 1, 'partial saved address must not be blocked by missing country')
     await noOverflow()
     await page.screenshot({ path: `${output}/delivery-details-${width}.png`, fullPage: true })
     await page.reload()
     await page.waitForFunction(() => document.querySelector('input[name="contact_name"]')?.value === 'Saved buyer')
     await page.getByLabel('Address line 1', { exact: true }).fill('Updated address')
+    await page.getByLabel('Country code (e.g. US, GB)', { exact: true }).fill('us')
     lose = true
     await page.getByRole('button', { name: 'Save delivery details', exact: true }).click()
     await page.getByRole('button', { name: 'Check saved details' }).click()
     await page.getByText('Your delivery details are saved.', { exact: true }).waitFor()
     assert.equal(writes, 2, 'lost response is resolved by GET, without another write')
+    assert.equal(delivery.country_code, 'US')
     await page.goto(origin + '/collection/genius_weft_20g')
     await page.waitForFunction(() => document.querySelector('.family-image img')?.naturalWidth === 1200)
     const shade = page.getByRole('button', { name: '#2B, In stock', exact: true })
@@ -95,6 +101,11 @@ for (const width of [1440, 375]) {
     await page.getByRole('button', { name: 'Manage saved delivery details' }).click()
     await page.getByRole('link', { name: /^Selection/ }).click()
     assert.equal(await page.getByLabel('Address line 1', { exact: true }).inputValue(), 'One-off address')
+    // Browser autofill may change the visible value without sending an input event.
+    await page.getByLabel('Address line 1', { exact: true }).evaluate(el => { el.value = 'Autofilled visible address' })
+    await page.getByRole('button', { name: 'Review request', exact: true }).click()
+    await page.getByRole('complementary', { name: 'Server review' }).getByText('Autofilled visible address').waitFor()
+    assert.equal(quotes.at(-1).delivery.address_line1, 'Autofilled visible address')
     await noOverflow()
     assert.deepEqual(errors, [])
     console.log(JSON.stringify({ width, status: 'pass', maximumImageConcurrency: maximum, profileWrites: writes, thumbAttempts }))

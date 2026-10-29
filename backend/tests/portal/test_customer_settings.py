@@ -22,6 +22,7 @@ def test_prices_default_to_standard_then_override_checkout_fingerprint(priced_ca
     before = pricing.resolve(ctx.db, ctx.access, items[0], "USD")
     result = service.get_prices(ctx.db, 1, ctx.access.public_id)
     assert result["items"][0]["standard_price"] == "30.0000"
+    assert result["items"][0]["weight"] == items[0].standard_json["weight"]
     assert result["items"][0]["unit_price"] is None
     service.update_prices(ctx.db, 1, ctx.access.public_id, ctx.access.row_version, prices(items[0]))
     ctx.db.commit()
