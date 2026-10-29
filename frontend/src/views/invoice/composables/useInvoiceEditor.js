@@ -224,7 +224,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   })
 
   // 小满标记的智能默认只在用户没碰过开关时生效；编辑既有单一律尊重存值
-  const okkiFlagsTouched = reactive({ newDeal: false, freeShipping: false })
+  const okkiFlagsTouched = reactive({ newDeal: false, freeShipping: false, firstReturn: false })
 
   function markOkkiFlagTouched(key) {
     okkiFlagsTouched[key] = true
@@ -333,6 +333,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     // 编辑既有单（有 id）时开关视为已人工确认，智能默认不再覆盖
     okkiFlagsTouched.newDeal = Boolean(data.id)
     okkiFlagsTouched.freeShipping = Boolean(data.id)
+    okkiFlagsTouched.firstReturn = Boolean(data.id)
     // 编辑既有单：手续费视为已确认，加载明细/基数变化不自动覆盖存值
     handlingFeeTouched = Boolean(data.id)
     lastOrderDate.value = ''
@@ -344,10 +345,11 @@ export function useInvoiceEditor({ onSaved } = {}) {
       internal_discount: normalizeDiscount(data.internal_discount),
       packaging_quantity: Number(data.packaging_quantity || 0),
       internal_accessory: Number(data.internal_accessory || 0),
-      // 存量 NULL 标记（068 前老单）镜像服务端兜底口径，不要硬填 1 锁死错误值
+      // 存量 NULL 标记（068 前老单）保留 null，加载后按 contact-defaults 的服务端
+      // 同口径预判回显；不要写死 0，否则编辑保存会锁死错误值
       okki_new_deal: data.okki_new_deal ?? 1,
       okki_free_shipping: data.okki_free_shipping ?? (Number(data.shipping_fee || 0) > 0 ? 0 : 1),
-      okki_first_return: data.okki_first_return ?? 0,
+      okki_first_return: data.okki_first_return ?? null,
       items: (data.items || []).map(normalizeLine),
       item_groups_version: data.item_groups_version || null,
     })
@@ -511,10 +513,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
     let defaults = {}
     if (form.customer_id) {
       try {
-        defaults = await getCustomerContactDefaults(form.customer_id) || {}
+        // 截图导入的订单已存在于 OKKI：排除本单，避免把自己算成历史单
+        const excludeOrderId = form.source_type === 'okki_screenshot' ? form.source_order_id : undefined
+        defaults = await getCustomerContactDefaults(form.customer_id, excludeOrderId) || {}
         defaultsLoaded = true
       } catch {
         defaults = {} // 拦截器已统一提示，回填静默跳过
+        // 预判失败：新建单保留 null 交服务端同口径兜底，避免静默落成「首返=否」
+        if (!form.id && !okkiFlagsTouched.firstReturn) form.okki_first_return = null
       }
     }
     if (seq !== contactFillSeq) return // 期间又切了客户/换了单据，丢弃过期响应
@@ -531,19 +537,30 @@ export function useInvoiceEditor({ onSaved } = {}) {
     if (!okkiFlagsTouched.newDeal && typeof defaults.has_xiaoman_orders === 'boolean') {
       form.okki_new_deal = defaults.has_xiaoman_orders ? 0 : 1
     }
+    // 「是否首返」预判：该客户恰好一张 OKKI 历史订单 → 本单是其第一次返单
+    if (!okkiFlagsTouched.firstReturn && typeof defaults.first_return_default === 'number') {
+      form.okki_first_return = defaults.first_return_default ? 1 : 0
+    }
     // 首返旁「上次订单成交日期」参考（新成交无历史单 → 空）
     lastOrderDate.value = defaults.last_order_date || ''
   }
 
-  // 编辑回显专用：只取上次订单日期，不触碰联系人/新成交等存值
+  // 编辑回显专用：取上次订单日期，并在存量首返为 NULL 时回显服务端同口径预判
   let lastOrderSeq = 0
   async function refreshLastOrderDate() {
     const seq = ++lastOrderSeq
     let date = ''
     if (form.customer_id) {
       try {
-        const defaults = await getCustomerContactDefaults(form.customer_id) || {}
+        // 已推单排除本单；截图导入排除来源订单，避免把本单显示成「上次订单」
+        const excludeOrderId = form.xiaoman_order_id
+          || (form.source_type === 'okki_screenshot' ? form.source_order_id : undefined)
+        const defaults = await getCustomerContactDefaults(form.customer_id, excludeOrderId) || {}
         date = defaults.last_order_date || ''
+        // 仅在表单仍为 NULL 时回填，用户已手动选择的值不覆盖
+        if (form.okki_first_return == null && typeof defaults.first_return_default === 'number') {
+          form.okki_first_return = defaults.first_return_default ? 1 : 0
+        }
       } catch {
         date = '' // 拦截器已统一提示，参考信息静默跳过
       }

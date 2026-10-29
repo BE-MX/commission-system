@@ -433,6 +433,7 @@ def test_customer_contact_defaults_latest_snapshot(db):
     # 无历史客户：仍返回 last_order_date 键（值 None），首返旁展示用——2026-07-13 加的功能
     assert service.get_customer_contact_defaults(db, "no-such") == {
         "has_xiaoman_orders": False,
+        "first_return_default": 0,
         "last_order_date": None,
         "customer_grade": None,
         "remark": "",

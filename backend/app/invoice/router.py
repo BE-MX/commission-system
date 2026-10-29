@@ -239,11 +239,15 @@ def search_customer_contacts(
 @router.get("/customers/contact-defaults", summary="Latest contact snapshot for a customer")
 def get_customer_contact_defaults(
     customer_id: str = Query(..., min_length=1, max_length=64),
+    exclude_order_id: str | None = Query(
+        None, max_length=64,
+        description="排除本发票已对应的 OKKI 订单，截图导入时避免把自己算作历史单",
+    ),
     db: Session = Depends(get_db),
     # 录入页复用客户联系快照和历史备注；沿用组织级共享，不做发票数据范围过滤
     _user=Depends(require_permission("invoice:write")),
 ):
-    return ok(service.get_customer_contact_defaults(db, customer_id))
+    return ok(service.get_customer_contact_defaults(db, customer_id, exclude_order_id=exclude_order_id))
 
 
 class CustomerSyncPayload(BaseModel):

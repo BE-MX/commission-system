@@ -120,7 +120,8 @@
           </span>
           <span class="okki-flag">
             首返
-            <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0" />
+            <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0"
+                       @change="markOkkiFlagTouched('firstReturn')" />
           </span>
           <span class="okki-flag-tip">推小满必填，已按历史预判</span>
         </div>

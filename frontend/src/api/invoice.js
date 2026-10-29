@@ -68,9 +68,10 @@ export function getInvoiceMerchandisers() {
   return unwrap(request.get('/invoices/merchandiser-options', { showLoading: false }))
 }
 
-export function getCustomerContactDefaults(customerId) {
+export function getCustomerContactDefaults(customerId, excludeOrderId) {
   return unwrap(request.get('/customers/contact-defaults', {
-    params: { customer_id: customerId }, showLoading: false,
+    params: { customer_id: customerId, ...(excludeOrderId ? { exclude_order_id: excludeOrderId } : {}) },
+    showLoading: false,
   }))
 }
 

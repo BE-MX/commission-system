@@ -261,6 +261,7 @@ def test_customer_delivery_defaults_share_profile_without_changing_existing_invo
             address_line1="New street", city="London", country_code="GB")))
     ctx.db.commit()
     monkeypatch.setattr(invoices, "customer_has_xiaoman_orders", lambda *args: True)
+    monkeypatch.setattr(invoices, "customer_first_return_default", lambda *args: 0)
     monkeypatch.setattr(invoices, "customer_last_order_date", lambda *args: None)
     defaults = invoices.get_customer_contact_defaults(ctx.db, ctx.access.okki_company_id)
     assert defaults["contact_name"] == "Updated buyer"

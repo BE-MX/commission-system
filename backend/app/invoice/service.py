@@ -208,19 +208,28 @@ def _resolve_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:
     return {uid: name for uid, name in rows}
 
 
-def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
+def get_customer_contact_defaults(
+    db: Session, customer_id: str, *, exclude_order_id: str | None = None,
+) -> dict:
     """客户联系人快照、最新单备注及 OKKI 历史订单标记，录入页自动填充用。
 
     组织级共享（刻意不受发票数据范围限制）：联系人/地址是客户数据（OKKI CRM
     同源），共享联系字段和复用备注，不额外返回金额字段。
-    has_xiaoman_orders 供前端预判「是否新成交」开关默认值。
+    has_xiaoman_orders 供前端预判「是否新成交」开关默认值，
+    first_return_default 供前端预判「是否首返」：客户恰好一张历史订单 → 1。
+    exclude_order_id 供截图导入排除本发票对应的 OKKI 订单，避免把本单算作历史单。
     """
     defaults: dict = {
         "customer_grade": get_customer_grade(db, customer_id),
-        "has_xiaoman_orders": customer_has_xiaoman_orders(db, customer_id),
+        "has_xiaoman_orders": customer_has_xiaoman_orders(
+            db, customer_id, exclude_order_id=exclude_order_id,
+        ),
+        "first_return_default": customer_first_return_default(
+            db, customer_id, exclude_order_id=exclude_order_id,
+        ),
         # 首返旁展示「上次订单成交日期」参考（仅展示，不落库不推 OKKI）；
         # 新成交（无历史单）时为 None → 前端留空
-        "last_order_date": customer_last_order_date(db, customer_id),
+        "last_order_date": customer_last_order_date(db, customer_id, exclude_order_id=exclude_order_id),
     }
     # 备注取真正最近一单：不受联系信息是否填写影响，也不跳过空备注。
     # 系统更新老单不能改变排序；同刻创建用 id 保证确定性。
@@ -264,22 +273,54 @@ def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
     return defaults
 
 
+def customer_order_count(
+    db: Session,
+    customer_id: str,
+    *,
+    exclude_order_id: str | None = None,
+    valid_only: bool = False,
+) -> int:
+    """该客户在 OKKI 投影的历史订单数（首返判定用）。
+
+    valid_only=False 是「新成交」的存在性口径：只数是否有订单，不筛状态或个人单。
+    valid_only=True 是首返口径：只数有效成交单（已结束/已结清，排除个人单），
+    作废单、未成交单和「个人」单不计入——否则客户唯一一单是废单时会被判成首返，
+    或废单把真正的第一次返单顶成复购。
+    exclude_order_id 排除本发票已推出/截图来源的订单，防止自指翻转。
+    """
+    if not str(customer_id or "").strip():
+        return 0
+    schema = product_service._schema()
+    conditions = ["o.company_id = :cid"]
+    params: dict = {"cid": str(customer_id)}
+    if valid_only:
+        conditions.append(
+            "(o.status = '13972831656' OR (o.status = '13972831654' AND o.status_name = '已结清'))"
+        )
+        conditions.append("(o.trail IS NULL OR CAST(o.trail AS CHAR) NOT LIKE '%个人%')")
+    if exclude_order_id:
+        conditions.append("o.order_id != :own")
+        params["own"] = str(exclude_order_id)
+    sql = f"SELECT COUNT(*) FROM `{schema}`.okki_orders o WHERE " + " AND ".join(conditions)
+    return int(db.execute(text(sql), params).scalar() or 0)
+
+
 def customer_has_xiaoman_orders(db: Session, customer_id: str, *, exclude_order_id: str | None = None) -> bool:
     """该客户在 OKKI 是否已有历史订单（「是否新成交」的兜底判据）。
 
     exclude_order_id：排除本发票已推出的订单——否则首推成功、投影同步回来后
     重推同一单，会被自己的订单判成"老客"翻转新成交。
     """
-    if not str(customer_id or "").strip():
-        return False
-    schema = product_service._schema()
-    sql = f"SELECT 1 FROM `{schema}`.okki_orders WHERE company_id = :cid"
-    params: dict = {"cid": str(customer_id)}
-    if exclude_order_id:
-        sql += " AND order_id != :own"
-        params["own"] = str(exclude_order_id)
-    row = db.execute(text(sql + " LIMIT 1"), params).first()
-    return row is not None
+    return customer_order_count(db, customer_id, exclude_order_id=exclude_order_id) > 0
+
+
+def customer_first_return_default(db: Session, customer_id: str, *, exclude_order_id: str | None = None) -> int:
+    """首返智能默认：客户恰好一张有效历史订单时，本单是其有史以来第一次返单。
+
+    0 张有效单=本单是新成交，1 张=本单首返，≥2 张=复购；作废/未成交/个人单
+    不计入（见 customer_order_count 的 valid_only 口径）。
+    """
+    return 1 if customer_order_count(db, customer_id, exclude_order_id=exclude_order_id, valid_only=True) == 1 else 0
 
 
 def customer_last_order_date(db: Session, customer_id: str, *, exclude_order_id: str | None = None):
@@ -290,7 +331,8 @@ def customer_last_order_date(db: Session, customer_id: str, *, exclude_order_id:
     SQLAlchemy 返回 datetime.date，由端点 ok() 经 jsonable_encoder 序列化为 ISO 串。
     注意 DATE 列不可能等于空串 —— 只需 IS NOT NULL；写 `!= ''` 会在 MySQL 里把
     '' 转成非法日期 → NULL → 整表被排除（SQLite 存 TEXT 会掩盖此差异）。
-    exclude_order_id 备用（当前 contact-defaults 按客户维度取数、不排除本单）。
+    exclude_order_id 由 contact-defaults 在截图导入时传入，排除本发票对应的
+    OKKI 订单，避免把本单当作「上次订单」。
     """
     if not str(customer_id or "").strip():
         return None
@@ -308,13 +350,32 @@ def customer_last_order_date(db: Session, customer_id: str, *, exclude_order_id:
     return row[0] if row else None
 
 
+def _own_okki_order_id(invoice: Invoice) -> str | None:
+    """本发票对应的 OKKI 订单号，用作历史计数排除键。
+
+    已推单取 xiaoman_order_id；截图导入的订单在 OKKI 已存在，取来源订单
+    source_order_id。截图匹配不到既有订单时该值是外部幂等键而非订单号，
+    不能拿来做排除。
+    """
+    if invoice.xiaoman_order_id:
+        return str(invoice.xiaoman_order_id)
+    if invoice.source_type == "okki_screenshot" and not is_external_source_key(invoice.source_order_id):
+        return str(invoice.source_order_id) if invoice.source_order_id else None
+    return None
+
+
 def resolve_okki_flags(db: Session, invoice: Invoice) -> dict:
     """三个 OKKI 必填业务标记；空值兜底：新成交=客户在 OKKI 无历史订单，
-    包邮=运费为 0，首返=否。"""
+    包邮=运费为 0，首返=客户恰好一张历史订单（本单是第一次返单）。
+
+    两个历史口径兜底都排除本发票自己的订单（已推单或截图来源单），
+    否则同一张单会被算成自己的历史，翻转新成交/首返。
+    """
+    own_order_id = _own_okki_order_id(invoice)
     new_deal = invoice.okki_new_deal
     if new_deal is None:
         has_history = customer_has_xiaoman_orders(
-            db, invoice.customer_id, exclude_order_id=invoice.xiaoman_order_id,
+            db, invoice.customer_id, exclude_order_id=own_order_id,
         )
         new_deal = 0 if has_history else 1
     free_shipping = invoice.okki_free_shipping
@@ -322,7 +383,10 @@ def resolve_okki_flags(db: Session, invoice: Invoice) -> dict:
         free_shipping = 1 if Decimal(invoice.shipping_fee or 0) == 0 else 0
     first_return = invoice.okki_first_return
     if first_return is None:
-        first_return = 0
+        # 与「新成交」共用同一份历史订单口径：排除本单防自指
+        first_return = customer_first_return_default(
+            db, invoice.customer_id, exclude_order_id=own_order_id,
+        )
     return {
         "okki_new_deal": int(new_deal),
         "okki_free_shipping": int(free_shipping),
