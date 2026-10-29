@@ -74,7 +74,7 @@ def create_staging(db: Session, req: StagingCreateRequest) -> dict:
 def check_waybill_exists(db: Session, waybill_no: str) -> dict | None:
     """返回已存在的运单摘要;不存在返回 None。"""
     record = (
-        db.query(Waybill.waybill_no, Waybill.created_at, Waybill.created_by, Waybill.status)
+        db.query(Waybill.waybill_no, Waybill.carrier, Waybill.created_at, Waybill.created_by, Waybill.status)
         .filter(Waybill.waybill_no == waybill_no)
         .first()
     )
@@ -82,6 +82,7 @@ def check_waybill_exists(db: Session, waybill_no: str) -> dict | None:
         return None
     return {
         "waybill_no": record.waybill_no,
+        "carrier": record.carrier,
         "created_at": record.created_at.strftime("%Y-%m-%d %H:%M:%S"),
         "created_by": record.created_by,
         "status": record.status,
@@ -225,6 +226,7 @@ async def create_waybill_with_tracking(
     except Exception as exc:
         db.rollback()
         logger.warning("自动创建跟踪记录失败（不影响录入）: %s", exc)
+        print(f"waybill {payload.waybill_no} tracking auto-create failed: {type(exc).__name__}", flush=True)
 
     # 立即轮询一次拿实时物流状态
     poll_ok = False

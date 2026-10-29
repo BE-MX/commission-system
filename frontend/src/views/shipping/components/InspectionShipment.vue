@@ -1,37 +1,24 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
-import { bindInspectionShipment } from '@/api/shipping'
-const props = defineProps({ detail: { type: Object, required: true } })
-const emit = defineEmits(['changed'])
-let generation = 0, active = true
-onBeforeUnmount(() => { active = false; generation++ })
-const waybill = ref(''), carrier = ref(''), busy = ref(false), uncertain = ref(false), error = ref('')
-watch(() => props.detail, value => { generation++; busy.value = false; uncertain.value = false; waybill.value = value.shipment?.waybill_no || ''; carrier.value = value.shipment?.carrier || ''; error.value = '' }, { immediate: true })
-async function save() {
-  if (busy.value || uncertain.value) return
-  const id = props.detail.id, current = generation
-  busy.value = true; error.value = ''
-  try { await bindInspectionShipment(id, { waybill_no: waybill.value.trim(), carrier: carrier.value.trim(), edit_version: props.detail.edit_version, shipment_version: props.detail.shipment_version }); if (active && current === generation && props.detail.id === id) emit('changed', id) }
-  catch (problem) { if (active && current === generation) { uncertain.value = !problem.response || problem.response.status >= 500; error.value = uncertain.value ? '结果未确认，请关闭后重新打开验货单核对关联结果。' : problem.response?.data?.detail || '保存失败，请核对后重试。' } }
-  finally { if (active && current === generation) busy.value = false }
-}
+/** 验货单详情里的物流单区块：展示当前关联，上传/更换走与列表操作列同一个弹框。 */
+defineProps({ detail: { type: Object, required: true } })
+defineEmits(['upload'])
 </script>
 <template>
   <section aria-label="物流单" class="shipment-section">
     <h3>物流单</h3>
-    <p v-if="detail.shipment">{{ detail.shipment.carrier }} · {{ detail.shipment.waybill_no }}</p>
-    <form v-if="detail.status === 'submitted' && detail.can_bind_shipment" v-any-permission="['shipping_inspection:write', 'shipping_inspection:admin']" @submit.prevent="save">
-      <p>先在物流跟踪上传并确认物流单，再将运单号与承运商关联到本验货单。<router-link v-permission="'tracking:write'" to="/tracking/upload">上传物流单</router-link></p>
-      <label>运单号<el-input v-model="waybill" maxlength="50" :disabled="busy || uncertain" /></label>
-      <label>承运商代码<el-input v-model="carrier" maxlength="30" :disabled="busy || uncertain" placeholder="与物流跟踪记录一致" /></label>
-      <GlassButton native-type="submit" :loading="busy" :disabled="busy || uncertain || !waybill.trim() || !carrier.trim()">保存关联</GlassButton>
-    </form>
-    <el-alert v-if="error" :title="error" type="error" :closable="false" />
+    <p v-if="detail.shipment">
+      {{ detail.shipment.carrier }} ·
+      <router-link :to="`/tracking/${encodeURIComponent(detail.shipment.waybill_no)}`">{{ detail.shipment.waybill_no }}</router-link>
+    </p>
+    <p v-else class="shipment-empty">尚未关联物流单</p>
+    <span v-if="detail.status === 'submitted'" v-permission="'tracking:write'">
+      <GlassButton v-any-permission="['shipping_inspection:write', 'shipping_inspection:admin']"
+        left-icon="Upload" @click="$emit('upload')">{{ detail.shipment ? '更换物流单' : '上传物流单' }}</GlassButton>
+    </span>
   </section>
 </template>
 <style scoped>
 .shipment-section { margin-block: 20px; }
-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
-form p { width: 100%; }
-label { display: grid; gap: 6px; }
+.shipment-section a { color: var(--color-primary-text); }
+.shipment-empty { color: var(--text-secondary); }
 </style>

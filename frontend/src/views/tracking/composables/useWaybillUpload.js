@@ -11,6 +11,12 @@ import { msgInfo, msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
  *   - 重置 (resetAll / resetRightPanel)
  *
  * 返回的 ref 直接绑定到 template 即可,主页面只负责布局。
+ *
+ * options（验货单弹框复用时传入，物流跟踪页不传保持原行为）:
+ *   - defaults: 表单预填（对象或返回对象的函数）；OCR 未识别出的字段回落到预填值
+ *   - submit:   入库请求，默认 createWaybill；验货单传「上传并关联」接口
+ *   - onSuccess: 入库成功回调（拿到接口 data）
+ *   - enabled:  粘贴识别是否生效；常驻页面上的弹框传「弹框是否打开」，避免列表页粘贴误触发 OCR
  */
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 
@@ -32,7 +38,16 @@ function detectCarrier(waybillNo) {
   return '未知'
 }
 
-export function useWaybillUpload() {
+const EMPTY_FORM = {
+  waybill_no: '',
+  carrier: '',
+  recipient_name: '',
+  recipient_country: '',
+  ship_date: '',
+}
+
+export function useWaybillUpload({ defaults = {}, submit = createWaybill, onSuccess, enabled = () => true } = {}) {
+  const baseForm = () => ({ ...EMPTY_FORM, ...(typeof defaults === 'function' ? defaults() : defaults) })
   // ── State ──────────────────────────────────────────
   const mode = ref('')          // '' | 'ocr' | 'manual'
   const previewUrl = ref('')
@@ -48,14 +63,7 @@ export function useWaybillUpload() {
   const formRef = ref(null)
   let currentFile = null
 
-  const form = reactive({
-    waybill_no: '',
-    carrier: '',
-    recipient_name: '',
-    recipient_country: '',
-    ship_date: '',
-    entry_source: 'manual',
-  })
+  const form = reactive({ ...baseForm(), entry_source: 'manual' })
 
   const resultData = reactive({
     waybill_no: '',
@@ -100,20 +108,13 @@ export function useWaybillUpload() {
     currentFile = null
     uploadRef.value?.clearFiles()
     formRef.value?.resetFields()
-    Object.assign(form, {
-      waybill_no: '',
-      carrier: '',
-      recipient_name: '',
-      recipient_country: '',
-      ship_date: '',
-      entry_source: 'manual',
-    })
+    Object.assign(form, { ...baseForm(), entry_source: 'manual' })
     resetRightPanel()
   }
 
   // ── Image upload + OCR ─────────────────────────────
   function handlePaste(event) {
-    if (event.defaultPrevented || mode.value === 'manual' || ocrLoading.value || submitting.value || successVisible.value) return
+    if (!enabled() || event.defaultPrevented || mode.value === 'manual' || ocrLoading.value || submitting.value || successVisible.value) return
     // Keep normal paste behavior in form fields and rich-text editors.
     if (event.target?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])')) return
 
@@ -169,11 +170,13 @@ export function useWaybillUpload() {
       const data = res.data
       if (!data) throw new Error('响应数据为空')
 
+      // 运单面单是实际发货事实，识别到就以面单为准；没识别到的回落到预填
+      const base = baseForm()
       form.waybill_no = (data.waybill_no || '').trim().replace(/\s+/g, '')
       form.carrier = data.carrier || detectCarrier(data.waybill_no) || ''
-      form.recipient_name = data.recipient_name || ''
-      form.recipient_country = data.recipient_country || ''
-      form.ship_date = data.ship_date || ''
+      form.recipient_name = data.recipient_name || base.recipient_name
+      form.recipient_country = data.recipient_country || base.recipient_country
+      form.ship_date = data.ship_date || base.ship_date
 
       if (data.ocr_confidence === 'failed') {
         ocrError.value = '未能识别运单信息，请确认图片清晰度或手动录入'
@@ -271,7 +274,7 @@ export function useWaybillUpload() {
     submitting.value = true
 
     try {
-      const res = await createWaybill({
+      const res = await submit({
         waybill_no: form.waybill_no,
         carrier: form.carrier,
         recipient_name: form.recipient_name,
@@ -299,11 +302,16 @@ export function useWaybillUpload() {
 
       successVisible.value = true
       msgSuccessText('运单录入成功')
+      onSuccess?.(data)
     } catch (err) {
       const status = err.response?.status
       const detail = err.response?.data?.detail
 
-      if (status === 409) {
+      if ((status === 409 || status >= 500) && typeof detail === 'string') {
+        // 验货单关联类结果（验货单已变化 / 已入库但关联失败 / 带处理指引的失败），原样展示后端原因；
+        // 物流跟踪原端点的 detail 都是对象，不会进这里
+        msgError(detail, err)
+      } else if (status === 409) {
         duplicateInfo.value = detail?.data || null
         msgWarning('运单号已存在，不允许重复录入')
       } else if (status === 422) {

@@ -463,6 +463,7 @@ def list_records(
     )
     salespeople = record_query_service.salesperson_names(db, [str(insp.outbound_record_id) for insp, _ in rows])
     order_ids = outbound_service.order_ids_for_records(db, [str(insp.outbound_record_id) for insp, _ in rows])
+    shipments = _shipment_briefs(db, [insp for insp, _ in rows])
     items = [{
         "id": insp.id,
         "edit_version": insp.edit_version,
@@ -475,8 +476,23 @@ def list_records(
         "submitted_by_name": real_name,
         "salesperson_name": salespeople.get(str(insp.outbound_record_id)),
         "remark": insp.remark,
+        "shipment": shipments.get(insp.id),
+        "shipment_version": insp.shipment_version,
     } for insp, real_name in rows]
     return items, total
+
+
+def _shipment_briefs(db, inspections) -> dict:
+    """列表批量取关联物流单（一次查询，口径同 shipment_brief：软删的运单视为未关联）。"""
+    from app.tracking.models import ShipmentTracking
+    ids = {insp.shipment_tracking_id for insp in inspections if insp.shipment_tracking_id}
+    if not ids:
+        return {}
+    rows = {row.id: row for row in db.query(ShipmentTracking).filter(
+        ShipmentTracking.id.in_(ids), ShipmentTracking.deleted_at.is_(None)).all()}
+    return {insp.id: dict(waybill_no=rows[insp.shipment_tracking_id].waybill_no,
+                          carrier=rows[insp.shipment_tracking_id].carrier, shipment_version=insp.shipment_version)
+            for insp in inspections if insp.shipment_tracking_id in rows}
 
 
 def get_record_detail(db: Session, inspection_id: int) -> dict | None:
@@ -561,8 +577,9 @@ def bind_shipment(db, inspection_id, body, user_id):
     query = db.query(ShipmentTracking).filter_by(waybill_no=body.waybill_no, carrier=body.carrier)
     shipment = apply_data_scope(query, db, {'sub': str(user_id), 'username': user.username if user else '',
         'roles': roles, 'permissions': permissions}).with_for_update().populate_existing().first()
-    if shipment is None or shipment.deleted_at is not None or not shipment.source_image_url:
-        raise ValueError('请先在物流跟踪上传并确认该物流单')
+    # PC 运单上传不存图片，source_image_url 只有钉钉暂存来源才有，不能作为"已上传"的判据
+    if shipment is None or shipment.deleted_at is not None:
+        raise ValueError('物流跟踪中没有该运单，或不在你的物流跟踪查看范围内')
     # Explicit employee confirmation establishes the association; never infer it from names.
     if inspection.shipment_tracking_id == shipment.id:
         return shipment_brief(db, inspection)
