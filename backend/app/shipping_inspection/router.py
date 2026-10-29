@@ -214,7 +214,10 @@ def list_outbound_records(
                                  else None)
         row['print_before_recheck'] = can_print_before_recheck(event, row.get('mirror_updated_at'))
         row['can_allow_print_before_recheck'] = can_allow_print_before_recheck(event, row, insp)
-        row["status"] = insp.status if insp else "none"
+        # 验货分界前的历史单据没有验货流程：按已提交展示，不补建验货单（见 constants）。
+        legacy = insp is None and outbound_service.is_legacy_outbound(row.get("outbound_date"))
+        row["inspection_legacy"] = legacy
+        row["status"] = insp.status if insp else (C.STATUS_SUBMITTED if legacy else "none")
         if insp is None:
             row["photo_count"] = 0
         elif insp.status == C.STATUS_DRAFT:

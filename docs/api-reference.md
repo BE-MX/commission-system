@@ -1531,7 +1531,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/outbound-records?keyword=&order_id=&outbound_state=&inspection_status=&date_from=&date_to=&page=&page_size=` | 正式出库单与方舟待出库记录的统一分页列表，含出库状态、缺货详情、检验状态与照片数；按业务员归属过滤（见下）。可选 `outbound_state`：`ready/waiting_stock/pending/running/retrying/awaiting_sync/failed/uncertain`；可选 `inspection_status`：`none/draft/submitted`。两者可叠加，在分页和计数前过滤；不传表示全部，非法值返回 422。检验状态只筛正式出库单，排除检验栏为“—”的待生成记录。 |
+| GET | `/outbound-records?keyword=&order_id=&outbound_state=&inspection_status=&date_from=&date_to=&page=&page_size=` | 正式出库单与方舟待出库记录的统一分页列表，含出库状态、缺货详情、检验状态与照片数；按业务员归属过滤（见下）。可选 `outbound_state`：`ready/waiting_stock/pending/running/retrying/awaiting_sync/failed/uncertain`；可选 `inspection_status`：`none/draft/submitted`。两者可叠加，在分页和计数前过滤；不传表示全部，非法值返回 422。检验状态只筛正式出库单，排除检验栏为“—”的待生成记录。历史单据按已提交展示并附 `inspection_legacy=true`（见下）。 |
 | DELETE | `/outbound-records/{record_id}` | 删除小满待出库单；需 `shipping_inspection:delete` 且满足出库单数据范围。使用镜像记录 ID 定位真实 outbound_invoice_id；明确 Not Found 或两轮完整有效列表均不含原 ID 后返回 `{outbound_record_id, deleted:true}`，即使详情仍显示旧“待出库”。锁定、有效已出库、自动任务执行中、关联同步中或结果待核对返回409；无权限403、不可见404。 |
 | GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`）；同样按归属过滤，不可见返回 404 |
 | GET | `/outbound-records/{record_id}/word` | 下载可编辑 DOCX，保持当前 A4 版式、列宽、二维码及灰色斑马纹；数据范围同 print-data；二进制响应 |
@@ -1550,6 +1550,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 2026-09-15（迁移 152）：上传、删除、提交携带扫码返回的 `edit_version`，缺省 0 仅覆盖未撤回的初始轮次；撤回后的旧页面请求返回 400，重新扫码或点击刷新即可继续编辑。PC 重复撤回同一轮次幂等，新一轮已提交时旧撤回请求返回 409。撤回后从已提交列表移除，重新提交后再次显示。媒体写入和提交、撤回共享检验单行锁，照片计数使用 MySQL 当前读；视频不出现在 photos 数组和验货打印中。
 
 字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
+
+2026-10-29 历史出库单：出库日期早于 `2026-10-01`（`app/shipping_inspection/constants.py` 的 `LEGACY_OUTBOUND_BEFORE`）且没有验货单记录的出库单，视为验货流程上线前的历史单据，`GET /outbound-records` 的 `status` 返回 `submitted` 并附 `inspection_legacy=true`。不补建 `ark_shipping_inspections` 记录，因此不出现在已提交验货单列表、没有验货照片和验货单 PDF，照片数仍为 0；出库单打印与 Word 不受影响。`inspection_status` 筛选和“检验状态”排序使用同一口径；已有草稿或已提交验货单的单据仍返回真实状态。发货检验看板待检队列同样排除这些历史出库单，避免同一单据两处口径冲突；发票详情的实际出库进度仍按 `not_inspected` 计算，不因历史展示改成已发货。
 
 2026-10-14 库存详情：`GET /api/shipping-inspection/outbound-records/{record_id}/inventory`，任一 `shipping_inspection:read/write/admin`，沿用出库归属及 `read_all` 范围；支持 `task:<id>` 和正式出库记录，响应 `Cache-Control: private, no-store`。只读 `okki_inventory` 镜像，无远端写入或出库触发。返回 `record`、`warehouse_id/name`、`source=okki_inventory_mirror`、北京时间 `queried_at`、`shortage_count/unknown_count`、`items[]`。每项按 `(product_id,sku_id)` 合计本单需求，保留 `line_numbers`，返回 `required/available/real_count/unavailable_count/shortage/unit/status/disabled/synced_at/warehouses[]`；缺口只比较目标仓库可用量，不合计其他仓库。待出库目标沿用自动生成仓库；正式单读取自身仓库，已核实快照优先于滞后镜像明细。缺失映射、目标库存、同步时间或无效数量显示 `unknown`，不推断为零库存。`unavailable_count` 仅为实存减可用，不声称全部属于占用。正式单及已生成待同步任务可能已占用/扣减库存，库存对照不构成再次补货或出库依据。入口位于出库单列表每行操作区「库存详情」，支持刷新、只看缺货/待核对及展开各仓库详情。
 

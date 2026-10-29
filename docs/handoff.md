@@ -5,6 +5,13 @@
 - 验证：现有看板逻辑 7 项通过；Vue 模板编译与源码对照确认统计 / 金额 / 分页计算、纯逻辑、运行态 composable、七天图表、全局 token 及新签提醒模板保持原样。浏览器用实际组件 + 隔离模拟 API，1366×768 / 1280×720 的常态、长单号 / 姓名、百万件数、三标签、十行、空态、读取失败、新签弹框关闭及轮播置顶通过；1920×1080 只做 DOM / 缩放坐标核对，浏览器截图裁切限制不作为完整截图通过证据。未接入生产数据，不代表仓库远距离业务验收。
 - 读取失败提示遮挡顶部部分标题在改版前同样存在，本轮未扩展处理。临时验收夹具在 `frontend/tmp/inspection-board-ui/`，构建和检测证据在 `tmp/inspection-board-ui/`，不进入业务源码；最终前端生产构建、严格约定检查、差异空白检查与 Git 巡检（`--no-fetch`，本地引用快照）通过；Impeccable 定向检测 0 项。构建保留既有大包体提示；本地预览已按用户要求重新打开（仅模拟数据），完整结果在 `tmp/inspection-board-ui/validation.json`。
 
+## 2026-10-29 出库单打印历史单据按已提交展示（DSH，已合入 main 并推送 origin，未部署）
+
+- 需求：出库单打印页中出库日期早于 2026-10-01、当前「未检验」的出库单统一显示「已提交」。用户确认只改显示，不补建验货单记录。
+- 生产只读核对：符合条件 5838 张（2025-03-28～2026-09-30；2025 年 65 张、2026 年 5773 张）；13 张草稿、431 张已提交保持真实状态。同日用真实队列查询只读复核：分界前 已提交 6212 / 检验中 12 / 未检验 0，口径生效。
+- 实现：`app/shipping_inspection/constants.py` 的 `LEGACY_OUTBOUND_BEFORE` 是唯一分界；列表返回 `status=submitted` 并附 `inspection_legacy=true`；`inspection_status` 筛选和排序同口径（`list_sort_service`）；看板待检队列排除历史单。已有验货单的单据（含草稿）仍返回真实状态。验货单列表/照片/PDF、发票详情实际出库进度不受影响（发票侧仍按 `not_inspected` 计算）。
+- 验证：新增 `tests/test_shipping_legacy_inspection.py` 12 项通过；发货检验/出库/发票详情相关共 527 项通过（`test_outbound_invoice_sync.py::test_invoice_sync_followup_rejects_another_users_invoice` 在基线 `53a98a52` 同样失败，与本改动无关）；前端生产构建通过。
+
 ## 2026-10-28 仓库发货检验看板（Accio，分支待合并，未部署）
 
 - 分支 `accio/inspection-board`，独立worktree。新增全屏页 `/shipping/board`（菜单：发货检验 → 发货检验看板，沿用 `shipping_inspection:read/write/admin`，数据范围同出库单列表，无 read_all 只看本人绑定客户）与只读接口 `GET /api/shipping-inspection/board`；无迁移、无写操作。

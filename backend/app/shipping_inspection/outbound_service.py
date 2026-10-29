@@ -29,6 +29,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.shipping_inspection.constants import LEGACY_OUTBOUND_BEFORE
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -184,6 +185,16 @@ def _str_or_none(value) -> str | None:
         return None
     text_value = str(value)
     return text_value if text_value else None
+
+
+def is_legacy_outbound(outbound_date) -> bool:
+    """出库日期早于验货流程分界的历史单据：无需验货，按已提交展示（不落验货单）。
+
+    日期按 ISO 前缀比较，兼容 MySQL DATE 与 DATETIME 两种镜像列类型；
+    日期缺失时不推断为历史单据。
+    """
+    value = str(outbound_date or "")[:10]
+    return bool(value) and value < LEGACY_OUTBOUND_BEFORE.isoformat()
 
 
 def _num(value):

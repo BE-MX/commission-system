@@ -373,7 +373,7 @@ def test_pc_outbound_records_list_with_inspection_status(db, storage):
         assert kw["total"] == 1 and kw["items"][0]["outbound_record_id"] == "OB002"
         by_date = client.get(
             "/api/shipping-inspection/outbound-records",
-            params={"date_from": "2026-08-21", "date_to": "2026-08-25"},
+            params={"date_from": "2026-10-06", "date_to": "2026-10-06"},
         ).json()["data"]
         assert by_date["total"] == 1 and by_date["items"][0]["outbound_record_id"] == "OB002"
 

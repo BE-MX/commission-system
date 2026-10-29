@@ -58,6 +58,10 @@ def _pending_rows(db, okki_user_id):
         "NOT EXISTS (SELECT 1 FROM ark_shipping_inspections si "
         f"WHERE si.outbound_record_id={rid} AND si.status='{C.STATUS_SUBMITTED}')"
     )
+    # 历史单据（分界前出库）在出库单列表按已提交展示，不能再出现在待检队列。
+    if rm.get("outbound_date"):
+        clauses.append(f"(r.`{rm['outbound_date']}` IS NULL OR r.`{rm['outbound_date']}` >= :legacy_from)")
+        params["legacy_from"] = C.LEGACY_OUTBOUND_BEFORE.isoformat()
     if created:
         clauses.append(f"{created_expr} >= :since")
         params["since"] = (beijing_today() - timedelta(days=PENDING_WINDOW_DAYS)).isoformat()

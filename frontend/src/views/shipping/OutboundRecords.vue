@@ -80,9 +80,12 @@
         <el-table-column sortable="custom" v-if="visibleKeys.includes('inspection-status')" prop="status" label="检验状态" min-width="140">
           <template #default="{ row }">
             <span v-if="row.record_source === 'ark_task'" class="queue-note">—</span>
-            <StatusBadge v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
-              {{ INSPECTION_STATUS_LABELS[row.status] || row.status }}
-            </StatusBadge>
+            <!-- 历史单据（验货流程分界前出库）不落验货单，按已提交展示，悬停说明口径 -->
+            <el-tooltip v-else :disabled="!row.inspection_legacy" content="历史出库单据按已提交显示，无验货记录" placement="top">
+              <StatusBadge size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
+                {{ INSPECTION_STATUS_LABELS[row.status] || row.status }}
+              </StatusBadge>
+            </el-tooltip>
             <StatusBadge v-if="row.recheck_status" size="small" type="warning">{{ row.recheck_status === 'pending_sync' ? '待同步重验' : '待补验' }}</StatusBadge>
           </template>
         </el-table-column>

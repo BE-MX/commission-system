@@ -215,8 +215,8 @@ def engine():
             INSERT OR IGNORE INTO lsordertest.okki_outbound_records
             (id, outbound_no, outbound_date, customer_name, owner_name)
             VALUES
-            ('OB001', 'CK2026001', '2026-08-20', '客户甲', '王小二'),
-            ('OB002', 'CK2026002', '2026-08-25', '客户乙', '李小三')
+            ('OB001', 'CK2026001', '2026-10-05', '客户甲', '王小二'),
+            ('OB002', 'CK2026002', '2026-10-06', '客户乙', '李小三')
         """))
         conn.execute(text("""
             INSERT OR IGNORE INTO lsordertest.okki_outbound_record_items
