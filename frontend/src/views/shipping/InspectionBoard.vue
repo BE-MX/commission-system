@@ -17,24 +17,17 @@
       <main class="qc-main">
         <section class="qc-col">
           <div class="qc-tiles">
-            <div class="qc-panel qc-tile">
-              <svg width="110" height="110" viewBox="0 0 110 110" aria-hidden="true">
-                <circle cx="55" cy="55" r="44" fill="none" stroke="var(--qc-track)" stroke-width="14" />
-                <circle v-for="seg in donut" :key="seg.key" cx="55" cy="55" r="44" fill="none" :stroke="seg.color" stroke-width="14"
-                  :stroke-dasharray="`${seg.len} ${CIRC}`" :stroke-dashoffset="-seg.start" transform="rotate(-90 55 55)" />
-              </svg>
-              <div><div class="qc-lbl">待检出库单</div><div><span class="qc-big qc-num">{{ summary.total }}</span><span class="qc-unit">单</span></div></div>
+            <div class="qc-tile">
+              <div><div class="qc-lbl">待检出库单</div><div><span class="qc-big qc-num" :class="metricSize(summary.total)">{{ summary.total }}</span><span class="qc-unit">单</span></div></div>
             </div>
-            <div class="qc-panel qc-tile col">
+            <div class="qc-tile col">
               <div class="qc-lbl">待检产品</div>
-              <div><span class="qc-big qc-num">{{ fmt(summary.totalQty) }}</span><span class="qc-unit">件</span></div>
-              <div class="qc-stackbar"><span v-for="(q, i) in summary.qty" :key="i" :style="{ width: pct(q, summary.totalQty), background: COLORS[i] }"></span></div>
+              <div><span class="qc-big qc-num" :class="metricSize(summary.totalQty)">{{ fmt(summary.totalQty) }}</span><span class="qc-unit">件</span></div>
             </div>
-            <div class="qc-panel qc-tile hot">
-              <Icon :is="StarFilled" :size="58" color="var(--qc-new)" />
+            <div class="qc-tile hot">
               <div>
                 <div class="qc-lbl">优先检验</div>
-                <div><span class="qc-big qc-num">{{ summary.counts[0] + summary.counts[1] + summary.counts[2] }}</span><span class="qc-unit">单</span></div>
+                <div><span class="qc-big qc-num" :class="metricSize(summary.counts[0] + summary.counts[1] + summary.counts[2])">{{ summary.counts[0] + summary.counts[1] + summary.counts[2] }}</span><span class="qc-unit">单</span></div>
                 <div class="qc-chips">
                   <span class="qc-chip" style="color: var(--qc-new-hi)">新签 <b>{{ summary.counts[0] }}</b></span>
                   <span class="qc-chip" style="color: var(--qc-s)">S <b>{{ summary.counts[1] }}</b></span>
@@ -42,9 +35,8 @@
                 </div>
               </div>
             </div>
-            <div class="qc-panel qc-tile late">
-              <Icon :is="Timer" :size="58" color="var(--qc-late)" />
-              <div><div class="qc-lbl">等待超 24h</div><div><span class="qc-big qc-num">{{ summary.late }}</span><span class="qc-unit">单</span></div></div>
+            <div class="qc-tile late">
+              <div><div class="qc-lbl">等待超 24h</div><div><span class="qc-big qc-num" :class="metricSize(summary.late)">{{ summary.late }}</span><span class="qc-unit">单</span></div></div>
             </div>
           </div>
 
@@ -59,14 +51,13 @@
                 <span><i style="background: var(--qc-heavy)"></i>大单 ≥{{ HEAVY_LINES }} 行</span>
               </div>
             </div>
-            <div class="qc-cols"><span></span><span style="text-align: center">#</span><span>标记</span><span>出库单 / 客户</span><span>业务员</span><span>已等待</span><span>检验工作量</span></div>
+            <div class="qc-cols"><span style="text-align: center">#</span><span>标记</span><span>出库单 / 客户</span><span>业务员</span><span>已等待</span><span>检验工作量</span></div>
             <div v-if="data && !pending.length" class="qc-empty">
               <div><Icon :is="CircleCheck" :size="96" /><b>待检出库单已全部完成</b></div>
             </div>
             <div v-else class="qc-rows">
               <div v-for="(row, i) in visibleRows" :key="row.outbound_record_id"
                 class="qc-row" :class="[`p${row.priority}`, { gap: i === paged.pinned.length - 1 && paged.rest.length }]">
-                <span class="stripe"></span>
                 <span class="rank">{{ row.rank }}</span>
                 <span class="qc-tags">
                   <span v-if="row.is_new_deal" class="qc-tag new">新签</span>
@@ -74,19 +65,16 @@
                   <span v-if="row.inspection_requirement === 'detail'" class="qc-tag detail">详检</span>
                 </span>
                 <div class="qc-ob">
-                  <div class="no">{{ row.outbound_no }}</div>
+                  <div class="no" :title="row.outbound_no">{{ row.outbound_no }}</div>
                   <div class="cu">{{ maskCustomer(row.customer_name) }}<span v-if="row.inspecting" class="doing">● 检验中</span></div>
                 </div>
                 <div class="qc-sales">
-                  <span class="qc-av" :style="{ background: avatarColor(row.salesperson_name) }">{{ initial(row.salesperson_name) }}</span>
-                  <span>{{ row.salesperson_name || '—' }}</span>
+                  <span :title="row.salesperson_name || '—'">{{ row.salesperson_name || '—' }}</span>
                 </div>
                 <div class="qc-age">
-                  <span class="v qc-num" :class="{ late: row.level === 'late' }">{{ row.age.value }}<small>{{ row.age.unit }}</small></span>
-                  <div class="qc-track"><div class="fill" :class="row.level" :style="{ width: `${row.ageWidth}%` }"></div></div>
+                  <span class="v qc-num" :class="row.level">{{ row.age.value }}<small>{{ row.age.unit }}</small></span>
                 </div>
                 <div class="qc-load" :class="{ heavy: row.item_count >= HEAVY_LINES }">
-                  <div class="qc-blocks"><i v-for="k in 10" :key="k" :class="{ on: k <= row.blocks }"></i></div>
                   <div class="meta"><b>{{ row.item_count }}</b><small> 行</small><small class="block">{{ fmt(row.total_qty) }} 件</small></div>
                 </div>
               </div>
@@ -103,25 +91,19 @@
           <div class="qc-panel qc-today">
             <div class="qc-ttl">今日已完成</div>
             <div class="qc-today-body">
-              <div class="qc-ring">
-                <svg width="176" height="176" viewBox="0 0 176 176" aria-hidden="true">
-                  <defs><linearGradient id="qcRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--qc-ok)" /><stop offset="1" stop-color="var(--qc-a)" /></linearGradient></defs>
-                  <circle cx="88" cy="88" r="74" fill="none" stroke="var(--qc-track)" stroke-width="16" />
-                  <circle class="prog" cx="88" cy="88" r="74" fill="none" stroke="url(#qcRing)" stroke-width="16" stroke-linecap="round"
-                    :stroke-dasharray="`${completion * RING} ${RING}`" transform="rotate(-90 88 88)" />
-                </svg>
-                <div class="c"><div><b>{{ Math.round(completion * 100) }}%</b><small>今日完成率</small></div></div>
-              </div>
               <div class="qc-kpis">
-                <div class="qc-kpi"><div class="ic" style="background: color-mix(in srgb, var(--qc-ok) 14%, transparent)"><Icon :is="DocumentChecked" :size="24" color="var(--qc-ok)" /></div>
+                <div class="qc-kpi">
                   <div><div class="v qc-num">{{ todayStats.orders }}<small>单</small></div><div class="l">出库单</div></div></div>
-                <div class="qc-kpi"><div class="ic" style="background: color-mix(in srgb, var(--qc-bar-hi) 14%, transparent)"><Icon :is="Goods" :size="24" color="var(--qc-bar-hi)" /></div>
+                <div class="qc-kpi">
                   <div><div class="v qc-num">{{ fmt(todayStats.qty) }}<small>件</small></div><div class="l">产品数量</div></div></div>
-                <div class="qc-kpi"><div class="ic" style="background: color-mix(in srgb, var(--qc-s) 14%, transparent)"><Icon :is="User" :size="24" color="var(--qc-s)" /></div>
+                <div class="qc-kpi">
                   <div><div class="v qc-num">{{ todayStats.customers }}<small>家</small></div><div class="l">客户</div></div></div>
-                <div class="qc-kpi"><div class="ic" style="background: color-mix(in srgb, var(--qc-a) 14%, transparent)"><Icon :is="Money" :size="24" color="var(--qc-a)" /></div>
+                <div class="qc-kpi">
                   <div><div class="v qc-num">{{ amountText }}</div>
                     <div class="l">订单金额 USD<em v-if="todayStats.amount_missing_orders"> · {{ todayStats.amount_missing_orders }} 单待同步</em></div></div></div>
+              </div>
+              <div class="qc-completion" title="今日完成 ÷（今日完成＋当前待检）">
+                <span>今日完成率</span><b class="qc-num">{{ Math.round(completion * 100) }}%</b>
               </div>
             </div>
           </div>
@@ -140,7 +122,7 @@
             <div class="qc-ttl">已完成检验</div>
             <div class="qc-insp">
               <div v-for="p in (data?.inspectors || []).slice(0, 4)" :key="p.name" class="p">
-                <span class="qc-av" :style="{ background: avatarColor(p.name) }">{{ initial(p.name) }}</span><span>{{ p.name }}</span><b>{{ p.count }}</b>
+                <span>{{ p.name }}</span><b>{{ p.count }}</b>
               </div>
             </div>
             <div class="qc-dcols"><span>出库单号</span><span>客户</span><span>业务员</span><span>提交</span><span>检验员</span></div>
@@ -150,7 +132,7 @@
                 <span class="cu">{{ maskCustomer(row.customer_name) }}</span>
                 <span class="sl">{{ row.salesperson_name || '—' }}</span>
                 <span class="tm">{{ formatBeijingTime(row.submitted_at, { seconds: false }) }}</span>
-                <span class="ins" :style="{ color: avatarColor(row.inspector_name) }">{{ row.inspector_name || '—' }}</span>
+                <span class="ins">{{ row.inspector_name || '—' }}</span>
               </div>
             </div>
           </div>
@@ -181,7 +163,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { BellFilled, Box, Check, CircleCheck, DocumentChecked, Goods, Money, StarFilled, Timer, User } from '@element-plus/icons-vue'
+import { BellFilled, Box, Check, CircleCheck } from '@element-plus/icons-vue'
 import Icon from './components/BoardIcon.vue'
 import { formatBeijingTime } from '@/utils/datetime'
 import { formatMoney } from '@/utils/money'
@@ -191,38 +173,19 @@ import { HEAVY_LINES, ageHours, ageLabel, ageLevel, maskCustomer, pageRows, prio
 import './board.css'
 
 const SLOTS = 10
-const CIRC = 2 * Math.PI * 44
-const RING = 2 * Math.PI * 74
-const COLORS = ['var(--qc-new)', 'var(--qc-s)', 'var(--qc-a)', 'var(--qc-plain)']
-const AVATARS = ['var(--qc-avatar-1)', 'var(--qc-avatar-2)', 'var(--qc-avatar-3)', 'var(--qc-avatar-4)', 'var(--qc-avatar-5)']
-
 const {
   data, now, pending, summary, page, scale, offset, error, stale, lastOk, clock, today,
   currentAlert, alertQueue, dismissAlert, freshIds, alertMs,
 } = useInspectionBoard()
 
 const fmt = n => formatMoney(n, 0)
-const pct = (part, total) => (total ? `${(part / total) * 100}%` : '0%')
-const initial = name => (name ? String(name).trim().slice(0, 1).toUpperCase() : '?')
-const gradeColor = g => (g === 'S' ? 'var(--qc-s)' : g === 'A' ? 'var(--qc-a)' : 'var(--qc-text)')
-function avatarColor(name) {
-  const text = String(name || '')
-  let hash = 0
-  for (const ch of text) hash = (hash * 31 + ch.codePointAt(0)) >>> 0
-  return AVATARS[hash % AVATARS.length]
+// Large totals keep their full value; only the display size changes.
+const metricSize = n => {
+  const length = fmt(n).length
+  return length > 9 ? 'qc-big-small' : length > 6 ? 'qc-big-compact' : ''
 }
-
+const gradeColor = g => (g === 'S' ? 'var(--qc-s)' : g === 'A' ? 'var(--qc-a)' : 'var(--qc-text)')
 const lastSyncText = computed(() => (lastOk.value ? formatBeijingTime(new Date(lastOk.value), { seconds: false }) : ''))
-
-const donut = computed(() => {
-  let start = 0
-  return summary.value.counts.map((count, i) => {
-    const len = summary.value.total ? (count / summary.value.total) * CIRC : 0
-    const seg = { key: i, color: COLORS[i], start, len: Math.max(len - 2, 0) }
-    start += len
-    return seg
-  })
-})
 
 const paged = computed(() => pageRows(pending.value, SLOTS, page.value))
 const visibleRows = computed(() => {
@@ -230,7 +193,6 @@ const visibleRows = computed(() => {
     const hours = ageHours(row, now.value)
     return {
       ...row, rank, priority: priorityOf(row), age: ageLabel(hours), level: ageLevel(hours),
-      ageWidth: Math.min((hours ?? 0) / 48, 1) * 100, blocks: Math.min(10, Math.ceil((row.item_count || 0) / 5)),
     }
   }
   return [

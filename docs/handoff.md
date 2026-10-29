@@ -1,3 +1,10 @@
+## 2026-10-29 发货检验看板第一轮视觉简化（Codex，Git 交付，未部署）
+
+- 独立工作区 `C:/Users/windb/.codex/worktrees/inspection-board-ui/commission-system`，分支 `codex/inspection-board-ui`，基点 `53a98a52`。用户已确认本地预览效果并授权本次提交、合入 main 和推送 origin；交付只含看板模板 / 局部 CSS 与对应设计说明，保留主目录其他未提交改动。Git 完成状态以提交和远端引用回读为准，不部署。
+- 收敛行装饰：取消侧边色条、持续发光、行入场与随机头像色；保留业务标签和超时 / 大单语义色。顶部统计、今日成果改以读数为主，删除重复环图 / 分段条 / 工作量小格，完成率保留原计算。单号列更宽，表头和数字对齐，长数字自适应字号，长单号 / 姓名保留完整提示。
+- 验证：现有看板逻辑 7 项通过；Vue 模板编译与源码对照确认统计 / 金额 / 分页计算、纯逻辑、运行态 composable、七天图表、全局 token 及新签提醒模板保持原样。浏览器用实际组件 + 隔离模拟 API，1366×768 / 1280×720 的常态、长单号 / 姓名、百万件数、三标签、十行、空态、读取失败、新签弹框关闭及轮播置顶通过；1920×1080 只做 DOM / 缩放坐标核对，浏览器截图裁切限制不作为完整截图通过证据。未接入生产数据，不代表仓库远距离业务验收。
+- 读取失败提示遮挡顶部部分标题在改版前同样存在，本轮未扩展处理。临时验收夹具在 `frontend/tmp/inspection-board-ui/`，构建和检测证据在 `tmp/inspection-board-ui/`，不进入业务源码；最终前端生产构建、严格约定检查、差异空白检查与 Git 巡检（`--no-fetch`，本地引用快照）通过；Impeccable 定向检测 0 项。构建保留既有大包体提示；本地预览已按用户要求重新打开（仅模拟数据），完整结果在 `tmp/inspection-board-ui/validation.json`。
+
 ## 2026-10-28 仓库发货检验看板（Accio，分支待合并，未部署）
 
 - 分支 `accio/inspection-board`，独立worktree。新增全屏页 `/shipping/board`（菜单：发货检验 → 发货检验看板，沿用 `shipping_inspection:read/write/admin`，数据范围同出库单列表，无 read_all 只看本人绑定客户）与只读接口 `GET /api/shipping-inspection/board`；无迁移、无写操作。
