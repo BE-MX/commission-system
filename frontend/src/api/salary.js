@@ -173,3 +173,34 @@ export function upsertAttendance(id, employeeId, data) {
 export function listAnomalies(id, config = {}) {
   return salaryClient.get(`/periods/${id}/anomalies`, { ...config, showLoading: false })
 }
+
+// --- 导出（M4）---
+
+// 导出面板一次拿齐：工资表可否导/是否预览稿、银行盘按参保主体的预检、导出历史（含作废）。
+export function getExportOverview(id, config = {}) {
+  return salaryClient.get(`/periods/${id}/exports`, { ...config, showLoading: false })
+}
+
+// 文件下载走 blob。suppressToast：blob 错误体拦截器读不出 detail，只会弹「请求失败」，
+// 由调用方用 blobErrorMessage 解析后自己提示（后端 400 文案是给用户的下一步）。
+export function exportWorkbook(id, { plainCard = false } = {}) {
+  return salaryClient.get(`/periods/${id}/export/workbook`, {
+    params: { plain_card: plainCard }, responseType: 'blob', suppressToast: true,
+  })
+}
+
+// entity 留空 = 合并成一个盘
+export function exportBank(id, entity = '') {
+  return salaryClient.get(`/periods/${id}/export/bank`, {
+    params: { entity }, responseType: 'blob', suppressToast: true,
+  })
+}
+
+export async function blobErrorMessage(error, fallback = '导出失败，请稍后重试') {
+  let body = error?.response?.data
+  if (body instanceof Blob) {
+    try { body = JSON.parse(await body.text()) } catch { body = null }
+  }
+  const detail = body?.detail || body?.message
+  return typeof detail === 'string' && detail ? detail : fallback
+}

@@ -288,6 +288,11 @@
           </el-alert>
         </el-tab-pane>
 
+        <!-- 导出（M4）：可导项、作废判定、导出历史都在面板组件里，按状态版本自刷新 -->
+        <el-tab-pane label="导出" name="exports" lazy>
+          <SalaryExportPanel v-if="period" :period-id="periodId" :status-version="period.status_version" />
+        </el-tab-pane>
+
         <el-tab-pane label="操作记录" name="events">
           <p class="section-hint">显示最近 200 条操作记录。</p>
           <ListPageStatus v-if="eventsResource.error.value || eventsResource.loading.value" v-bind="resourceStatus(eventsResource)" @retry="fetchEvents" />
@@ -390,6 +395,7 @@ import AppUpload from '@/components/AppUpload.vue'
 import { money } from '@/api/salary'
 import AttendanceEntryDialog from './components/AttendanceEntryDialog.vue'
 import SalaryRecordsGrid from './components/SalaryRecordsGrid.vue'
+import SalaryExportPanel from './components/SalaryExportPanel.vue'
 import { RECORD_LEVEL_KINDS, useSalaryWorkbench } from './composables/useSalaryWorkbench'
 import { useSalaryRecords } from './composables/useSalaryRecords'
 

@@ -1344,7 +1344,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 ## 薪资计算（`/api/salary`，092/097 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入 + M3 计算引擎）
 
-权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案与批次数据（影响 1 人或 1 批）/ `salary:admin` 改职级表与规则参数、锁定/解锁批次（改一行动全员发薪口径）。导出端点在 M4。
+权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案与批次数据（影响 1 人或 1 批）/ `salary:admin` 改职级表与规则参数、锁定/解锁批次（改一行动全员发薪口径）、导出完整银行卡号与银行代发盘（M4，见下「导出」节）。
 
 **身份证与银行卡永不出明文**：入参传明文（服务端归一化 → HMAC 哈希 → AES-256-GCM 加密），出参只有 `id_card_masked` / `bank_card_masked`。
 
@@ -1387,7 +1387,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | PUT | `/periods/{id}/workday` | write | 人工覆盖工作日数，上限是当月自然日（2 月不是 31） |
 | POST | `/periods/{id}/transition` | write | 状态跃迁，白名单校验；目标为 `confirmed` 返回 400 让你改走 `/confirm` |
 | POST | `/periods/{id}/confirm` | **admin** | 锁定，之后全表只读。同一事务把工号/姓名/部门/大部门/职务/银行卡密文/开户行冻进每行明细 `snap_*` + `snapshot_at`，此后明细读快照不回查活档案 |
-| POST | `/periods/{id}/unlock` | **admin** | 解锁回复核中，`reason` 必填；`unlocked_at` 有值即前次导出作废（决策 A4，作废水印随导出实现）。同时清空明细 `snapshot_at`，复核期间显示活档案，重新锁定时再冻 |
+| POST | `/periods/{id}/unlock` | **admin** | 解锁回复核中，`reason` 必填；解锁前的锁定导出全部作废（决策 A4，按 `status_version` 判，见下方「导出」）。同时清空明细 `snapshot_at`，复核期间显示活档案，重新锁定时再冻 |
 | POST | `/periods/{id}/imports/{kind}` | write | 上传社保/公积金明细，`kind` = `insurance` \| `fund`，multipart `file`，≤10MB |
 | GET | `/periods/{id}/imports/{kind}` | read | 导入行列表，`match_status`/`keyword`/`limit`(≤2000) 过滤；`match_counts` 走独立 GROUP BY，**不受 limit 影响** |
 
@@ -1494,12 +1494,28 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 自动文案在计算时生成并落库（confirmed 后不再回查活档案）：`remark_summary` = `扣社保553.32元，公积金110元。`（正数、去尾零，消灭 §2.5 三人备注错位）；`leave_remark` = 试用期底薪约定（月初仍在试用期且有 `probation_note`，陈佳乐 3/14 转正 3 月仍显示约定）或 `本月年假X天，本年度剩余年假Y天`。
 
+### 导出（M4，迁移 213，2026-10-29）
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| GET | `/periods/{id}/exports` | read | 导出面板：`{locked, workbook{available,preview,reason,missing_card_names[]}, bank{available,reason,groups[{entity,count,total_amount,issues[{name,problem}],zero_names[]}]}, history[], voided_count, can_plain_card}` |
+| GET | `/periods/{id}/export/workbook?plain_card=` | read；`plain_card=true` 需 admin（否则 403） | xlsx 两张 sheet：汇总表（按 `dept_group` 分组、组内序号重排、部门列纵向合并、合计/总计、制表/审核/复核）+ 明细表（23 列 + 合计行 + 签字栏）。卡号默认脱敏（前 4 后 4），一律写成文本单元格；缺卡号的人写「（无卡号，请核对档案）」并在脚注计数，不留空。calculated/reviewing 批次给**预览稿**（标题、页眉、文件名都带标记）；draft 等未计算状态 400 |
+| GET | `/periods/{id}/export/bank?entity=` | admin | 银行代发 CSV（UTF-8 BOM，`姓名,卡号,金额`），金额 = `net_after_tax`。`entity` 为参保主体，留空 = 合并一个盘。只对 confirmed 批次；有人缺卡/解密失败/金额为负/金额为空 → 400 列名单，不出半个盘；实发为 0 的人不进盘、在预检里列出 |
+
+口径：
+- **锁定批次只读 `snap_*`**（含 213 新增的入职日期、参保主体），不查活档案；有行 `snapshot_at` 为空（锁定早于快照机制）直接 400「请解锁后重新锁定」，不回落活档案。预览稿读活档案。
+- **每次导出先留痕，留痕失败不给文件**：`ark_salary_period_event` 写 `event_type=export`，payload `{kind, export_no, locked, plain_card, entity, record_count, total_amount, filename, sha256}`——**不含卡号与姓名**。导出编号取批次行 `ark_salary_period.export_seq` 自增（UPDATE 拿行锁，并发不撞号），工资表印在底部脚注与打印页脚，代发盘只在文件名里。落留痕时复查批次 `(status, status_version)` 与取数时一致，不一致（取数后有人锁定/解锁）→ 400「请刷新页面后重新导出」，不出文件。
+- **作废（决策 A4）**：confirmed 只能经解锁离开，所以锁定状态下的导出只要批次当前 `status_version` 高于导出时记下的版本即作废——按版本判，不比时间（服务器时钟偏差不影响）。unlock 事件只提供作废时间与原因；事件缺失时仍判作废，原因写「解锁留痕缺失，原因未记录」。旧文件改不了，作废体现在导出历史 `status=voided` + 解锁原因，以及新文件脚注「本表替代第 N 次导出」。
+- 文件响应 `Cache-Control: no-store`，`Content-Disposition: attachment; filename*=UTF-8''…`。
+
+前端：批次工作台「导出」页签 = `components/SalaryExportPanel.vue`，状态版本变化时自刷新；blob 错误由 `blobErrorMessage` 解析后端 `detail` 提示。
+
 ### 前端页面（M2-f / M3）
 
 | 路径 | 页面 | 说明 |
 |---|---|---|
 | `/salary/periods` | 批次列表 | **只做导航**，不放任何动作按钮 |
-| `/salary/periods/:id` | 批次工作台 | 工资明细（23 列 + 行内编辑手动列）/ 考勤 / 导入 / 异常 / 时间线 / 状态推进，`hideInMenu` |
+| `/salary/periods/:id` | 批次工作台 | 工资明细（23 列 + 行内编辑手动列）/ 考勤 / 导入 / 导出 / 异常 / 时间线 / 状态推进，`hideInMenu` |
 
 明细表（M3，`components/SalaryRecordsGrid.vue` + `composables/useSalaryRecords.js`）：序号/工号/姓名左冻结，实发/个税/税后右冻结；5 个手动列行内编辑带行级 `row_version`，409 提示刷新；`manual ≠ auto` 的格子 warning 底色 + tooltip 双值；`negative_net` 行整行标红；计算按钮只在 imported/calculated/reviewing 出现，成功后弹 `override_changed` 与负数名单。
 
