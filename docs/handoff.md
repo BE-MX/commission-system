@@ -1,3 +1,11 @@
+## 2026-10-29 出库筛选恢复与快捷导航（Codex，Git 交付，未部署）
+
+- 工作区 `C:/Users/windb/.codex/worktrees/inspection-board-ui/commission-system`；分支 `codex/list-state-quick-navigation`。用户已确认预览效果，授权本次提交、合入 main 并推送 origin；仅交付本次筛选恢复与快捷导航改动，保护主目录其他未提交内容，不部署。最终状态以 Git 引用回读和保护文件校验为准。
+- 出库列表新增已生效条件文字回显、逐项移除及 URL 筛选/分页/排序恢复。未提交草稿不参与分页、刷新或条件移除请求；移除一项保留其他草稿。URL 为历史恢复依据，现有页签沿用完整地址；问题单跳转保留原业务入口。
+- 顶栏新增 `Ctrl/⌘ + K` 页面快捷导航，复用现有 Element Plus、导航配置及 route/menu/group 权限交集；侧栏共用同一过滤源，支持实时撤权和点击前再检查。
+- 验证：相关 36 项 Node 测试、前端构建、严格增量规范检查、diff 空白检查通过；Impeccable 新增 UI 组件静态检测无发现。独立审查发现的空历史地址被缓存条件覆盖、移除条件丢失其他草稿已修复并加入回归；排序列隐藏后再显示会同步方向，摘要可读且可清除。构建保留既有大分包警告。
+- 真实组件 + 隔离模拟 API 浏览器验证覆盖 URL/刷新/前后退/问题链接、草稿隔离与单次请求、快捷键/焦点/实时撤权、错误空态。390px 弹框宽 366px，左右各留 12px；隐藏/恢复排序列不新增请求，移除排序保留草稿且只读一次。预览入口 `http://127.0.0.1:4318/tmp/list-navigation/shipping/outbound`，辅助文件在忽略目录 `frontend/tmp/list-navigation/`；预览已补正式 app.css，页面及模块 HTTP 200；最终样式复看时浏览器控制超时，应用内打开请求排队，尚未确认自动显示。业务写操作与生产验收不在本次范围。Git 巡检已运行 `--no-fetch`，仅本地引用快照。
+
 ## 2026-10-29 发货检验看板第一轮视觉简化（Codex，Git 交付，未部署）
 
 - 独立工作区 `C:/Users/windb/.codex/worktrees/inspection-board-ui/commission-system`，分支 `codex/inspection-board-ui`，基点 `53a98a52`。用户已确认本地预览效果并授权本次提交、合入 main 和推送 origin；交付只含看板模板 / 局部 CSS 与对应设计说明，保留主目录其他未提交改动。Git 完成状态以提交和远端引用回读为准，不部署。

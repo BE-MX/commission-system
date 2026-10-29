@@ -77,6 +77,17 @@ export function useListPage(fetchFn, options = {}) {
     }
   }
 
+  // URL/back navigation restores one committed view before issuing its single read.
+  function restoreViewState(view = {}, { fetch = true } = {}) {
+    Object.keys(searchForm).forEach(key => { delete searchForm[key] })
+    Object.assign(searchForm, copy(initialSnapshot), copy(view.searchForm || {}))
+    appliedSearchForm.value = copy(searchForm)
+    appliedSort.value = copy(view.sortParams || {})
+    page.value = view.page || 1
+    pageSize.value = view.pageSize || initialPageSize
+    return fetch ? fetchList() : undefined
+  }
+
   function handleSearch() {
     appliedSearchForm.value = copy(searchForm)
     page.value = 1
@@ -130,7 +141,7 @@ export function useListPage(fetchFn, options = {}) {
     appliedSearchForm: readonly(appliedSearchForm),
     appliedSort: readonly(appliedSort),
     error, errorMessage, hasLoaded, hasData, isEmpty, isStale, hasPendingSearch, dataPage,
-    fetchList, handleSearch, handleReset, handlePageChange, handleSizeChange, handleSortChange,
+    fetchList, restoreViewState, handleSearch, handleReset, handlePageChange, handleSizeChange, handleSortChange,
     refreshCreate, refreshUpdate, refreshRemove, cancel,
   }
 }

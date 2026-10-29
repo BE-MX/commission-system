@@ -25,6 +25,7 @@
             </div>
           </div>
           <div class="header-right">
+            <QuickNavigation />
             <GlassButton v-permission="'task:write'" class="header-quick-task" size="sm" left-icon="EditPen" data-quick-task-trigger @click="openHeaderQuickTask">记任务</GlassButton>
             <AnnouncementBell />
             <div class="header-badge">莱莎发制品</div>
@@ -104,6 +105,7 @@ import { useQuickTask } from '@/composables/useQuickTask'
 import { NAV_ENTRIES } from '@/config/navigation'
 import NavigationTabs from './NavigationTabs.vue'
 import SidebarNavigation from './SidebarNavigation.vue'
+import QuickNavigation from './QuickNavigation.vue'
 import { useNavigationTabs } from './navigationTabs'
 import { getRouteTabKey, getTabButtonId, getTabPanelId } from './navigationTabState'
 

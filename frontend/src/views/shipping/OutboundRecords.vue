@@ -20,6 +20,7 @@
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
           start-placeholder="出库起" end-placeholder="出库止" class="filter-w-lg"
         />
+        <template #summary><AppliedFilterSummary :items="querySummary" @remove="removeQueryCondition" /></template>
         <template #advanced>
           <el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable class="filter-w-md" />
         </template>
@@ -39,7 +40,7 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table @sort-change="handleSortChange" :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
+<el-table ref="outboundTable" @sort-change="handleSortChange" :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的出库单' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
@@ -149,7 +150,11 @@
 /**
  * OKKI 出库单列表 + 出库单直接打印（无预览弹框）。逻辑在 composables/useOutboundRecords.js（宪法 12）。
  */
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import AppliedFilterSummary from '@/components/AppliedFilterSummary.vue'
+import { useOutboundListView } from './composables/useOutboundListView'
+import { outboundFilterSummary, outboundSortSummary } from './composables/outboundListState'
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -171,6 +176,12 @@ const inventoryVisible = ref(false)
 const inventoryRow = ref(null)
 
 const listPageState = useOutboundRecords()
+const { removeFilter } = useOutboundListView(listPageState, useRoute(), useRouter())
+const appliedFilters = computed(() => outboundFilterSummary(listPageState.appliedSearchForm.value, OUTBOUND_STATE_LABELS, INSPECTION_STATUS_LABELS))
+const querySummary = computed(() => [...appliedFilters.value, ...outboundSortSummary(listPageState.appliedSort.value)])
+function removeQueryCondition(key) {
+  return key === 'sort' ? listPageState.handleSortChange({}) : removeFilter(key)
+}
 const {
   loading, list, total, page, pageSize, searchForm, fetchList,
   handleSearch, handleReset, handlePageChange, handleSizeChange,
@@ -195,7 +206,7 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('outbound-records', columnDefs)
 const advancedFilterCount = computed(() => Number(Boolean(listPageState.appliedSearchForm.value.orderId)))
-const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.orderId || searchForm.dateRange?.length || searchForm.outboundState || searchForm.inspectionStatus))
+const hasActiveFilters = computed(() => appliedFilters.value.length > 0)
 function canShowMore(row) {
   if (row.can_print && (!row.recheck_status || row.print_before_recheck)) return true
   if (row.record_source !== 'okki') return false
@@ -204,7 +215,21 @@ function canShowMore(row) {
   return auth.hasPermission('shipping_inspection:delete') ||
     (auth.hasPermission('invoice:sync') && auth.hasPermission('shipping_inspection:write'))
 }
-function handleSortChange({ prop, order }) { return listPageState.handleSortChange(order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {}) }
+const outboundTable = ref(null)
+let restoringSort = false
+watch(() => [listPageState.appliedSort.value.sort_field, listPageState.appliedSort.value.sort_order, visibleKeys.value.join(',')], async ([field, order]) => {
+  await nextTick()
+  restoringSort = true
+  if (field) outboundTable.value?.sort(field, order === 'asc' ? 'ascending' : 'descending')
+  else outboundTable.value?.clearSort()
+  restoringSort = false
+}, { immediate: true, flush: 'post' })
+function handleSortChange({ prop, order }) {
+  if (restoringSort) return
+  const next = order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {}
+  if (JSON.stringify(next) === JSON.stringify(listPageState.appliedSort.value)) return
+  return listPageState.handleSortChange(next)
+}
 </script>
 
 <style scoped>

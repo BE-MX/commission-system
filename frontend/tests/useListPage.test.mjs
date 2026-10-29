@@ -185,3 +185,21 @@ test('a failed refresh after a successful mutation does not reject as if the mut
   assert.equal(state.page.value, 4)
   assert.equal(state.errorMessage.value, 'list read failed')
 })
+
+
+test('restoring a list view applies filters, page and sorting atomically without submitting draft fields', async () => {
+  const requests = []
+  const state = useListPage(async params => { requests.push(params); return { items: [], total: 100 } }, { immediate: false, searchForm: { keyword: '', status: '' } })
+  assert.equal(typeof state.restoreViewState, 'function')
+  state.searchForm.keyword = 'unsubmitted'
+  await state.restoreViewState({ searchForm: { keyword: 'restored', status: 'ready' }, page: 3, pageSize: 50, sortParams: { sort_field: 'created_at', sort_order: 'asc' } })
+  assert.deepEqual(requests, [{ keyword: 'restored', status: 'ready', page: 3, page_size: 50, sort_field: 'created_at', sort_order: 'asc' }])
+  assert.equal(state.hasPendingSearch.value, false)
+  state.restoreViewState({ searchForm: { keyword: 'initial' }, page: 2, pageSize: 20 }, { fetch: false })
+  assert.equal(requests.length, 1)
+  assert.equal(state.appliedSearchForm.value.keyword, 'initial')
+  await state.handleReset()
+  assert.equal(state.searchForm.keyword, '')
+  assert.equal(state.searchForm.status, '')
+  assert.equal(state.page.value, 1)
+})

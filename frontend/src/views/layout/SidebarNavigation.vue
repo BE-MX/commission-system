@@ -144,9 +144,8 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { MENU_GROUPS, NAV_ENTRIES } from '@/config/navigation'
 import { useQuickTask } from '@/composables/useQuickTask'
-import { filterNavigationSections, normalizeNavigationQuery } from './navigationSearch'
+import { accessibleNavigationSections, filterNavigationSections, normalizeNavigationQuery } from './navigationSearch'
 import FavoriteNavigation from './FavoriteNavigation.vue'
-import { canConfigureNavigation } from './favoriteNavigationState'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -180,48 +179,19 @@ watch(() => props.collapsed, value => {
   if (value) searchQuery.value = ''
 })
 
-function hasAccess(perms) {
-  if (!perms) return true
-  if (perms.permission) return authStore.hasPermission(perms.permission)
-  if (perms.anyPermission) return authStore.hasAnyPermission(perms.anyPermission)
-  return true
-}
-
-const accessibleTopLevelItems = computed(() => NAV_ENTRIES
-  .filter(entry => !entry.hideInMenu && entry.menu && !entry.menu.group && hasAccess(entry.menu))
-  .slice()
-  .sort((a, b) => (a.menu.order ?? 999) - (b.menu.order ?? 999))
-  .map(entry => ({ path: entry.path, name: entry.name, title: entry.menu.title ?? entry.title, icon: entry.menu.icon })))
-
-const accessibleGroups = computed(() => Object.entries(MENU_GROUPS)
-  .map(([key, group]) => {
-    const items = NAV_ENTRIES
-      .filter(entry => !entry.hideInMenu && entry.menu?.group === key && hasAccess(entry.menu))
-      .slice()
-      .sort((a, b) => (a.menu.order ?? 999) - (b.menu.order ?? 999))
-      .map(entry => ({
-        path: entry.path,
-        name: entry.name,
-        title: entry.menu.title ?? entry.title,
-        icon: entry.menu.icon,
-        external: entry.external === true,
-        badge: entry.menu.badge,
-        anomalyDomain: entry.menu.anomalyDomain,
-      }))
-    return { key, ...group, items }
-  })
-  .filter(group => hasAccess(group) && group.items.length > 0))
+const accessibleNavigation = computed(() => accessibleNavigationSections(NAV_ENTRIES, MENU_GROUPS, authStore))
+const accessibleTopLevelItems = computed(() => accessibleNavigation.value.topLevelItems)
+const accessibleGroups = computed(() => accessibleNavigation.value.groups)
 
 const filteredNavigation = computed(() => filterNavigationSections(
   accessibleTopLevelItems.value,
   accessibleGroups.value,
   normalizedQuery.value,
 ))
-const favoriteEntryByPath = new Map(NAV_ENTRIES.map(entry => [entry.path, entry]))
 const favoriteCandidates = computed(() => [
   ...accessibleTopLevelItems.value.map(item => ({ ...item, name: item.name || item.path, groupTitle: '一级页面' })),
   ...accessibleGroups.value.flatMap(group => group.items.map(item => ({ ...item, name: item.name || item.path, groupTitle: group.title }))),
-].filter(item => canConfigureNavigation(favoriteEntryByPath.get(item.path), MENU_GROUPS, authStore)))
+])
 const topLevelItems = computed(() => filteredNavigation.value.topLevelItems)
 const visibleGroups = computed(() => filteredNavigation.value.groups)
 
