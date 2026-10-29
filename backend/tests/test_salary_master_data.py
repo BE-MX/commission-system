@@ -414,15 +414,22 @@ def test_update_logs_pay_affecting_change_only(db):
     assert db.query(SalaryChangeLog).count() == 0
 
     service.update_profile(
-        db, p, ProfileUpdate(base_salary_override=Decimal("5500.00")), operator_user_id=7
+        db, p, ProfileUpdate(base_salary_override=Decimal("5500.00"),
+                             pay_change_kind="adjust",
+                             pay_effective_date=dt.date(2026, 3, 15)),
+        operator_user_id=7,
     )
     log = db.query(SalaryChangeLog).one()
     assert log.employee_id == p.id
     assert log.change_type == "raise"
     assert log.created_by == 7
-    # Decimal 不能直接进 JSON 列，_jsonable 转成字符串
-    assert log.old_value == {"base_salary_override": "5000.00"}
-    assert log.new_value == {"base_salary_override": "5500.00"}
+    # 生效日是 HR 给的日期，不是编辑当天
+    assert log.effective_date == dt.date(2026, 3, 15)
+    # Decimal 不能直接进 JSON 列，_jsonable 转成字符串；费率三列整组快照
+    assert log.old_value == {"base_salary_override": "5000.00",
+                             "grade_scheme": None, "grade_code": None}
+    assert log.new_value == {"base_salary_override": "5500.00",
+                             "grade_scheme": None, "grade_code": None}
 
 
 def test_update_grade_change_is_typed_as_grade(db):
@@ -430,8 +437,66 @@ def test_update_grade_change_is_typed_as_grade(db):
     from app.salary.schemas import ProfileUpdate
 
     p = _profile(db, emp_no="102", grade_scheme="resource", grade_code="P1")
-    service.update_profile(db, p, ProfileUpdate(grade_code="P2"), operator_user_id=7)
-    assert db.query(SalaryChangeLog).one().change_type == "grade"
+    service.update_profile(db, p, ProfileUpdate(
+        grade_code="P2", pay_change_kind="adjust", pay_effective_date=dt.date(2026, 4, 1),
+    ), operator_user_id=7)
+    log = db.query(SalaryChangeLog).one()
+    assert log.change_type == "grade"
+    # 只改 grade_code 也要带上 scheme，否则引擎还原不出旧职级的费率
+    assert log.old_value["grade_scheme"] == "resource"
+    assert log.old_value["grade_code"] == "P1"
+
+
+def test_rate_change_requires_kind_and_effective_date(db):
+    """改了定薪/职级却不说是哪种改、从哪天起 → 拒绝，且档案不被改脏。
+
+    默认按编辑当天生效就是 P0 的根因：4/3 补录 3/15 的调薪，3 月整月按新薪、
+    4 月反被加权。决定钱落在哪个月的日期不能由系统猜。
+    """
+    from app.salary.schemas import ProfileUpdate
+
+    p = _profile(db, emp_no="103", base_salary_override=Decimal("5000.00"))
+    with pytest.raises(service.ProfileChangeError, match="调薪调级"):
+        service.update_profile(db, p, ProfileUpdate(base_salary_override=Decimal("6000")))
+    with pytest.raises(service.ProfileChangeError, match="生效日期"):
+        service.update_profile(db, p, ProfileUpdate(
+            base_salary_override=Decimal("6000"), pay_change_kind="adjust"))
+    db.refresh(p)
+    assert p.base_salary_override == Decimal("5000.00")
+    assert db.query(SalaryChangeLog).count() == 0
+
+
+def test_correction_is_logged_but_typed_apart(db):
+    """更正录错：留痕但 change_type=correction，引擎不拿它分段。"""
+    from app.salary.schemas import ProfileUpdate
+
+    p = _profile(db, emp_no="104", base_salary_override=Decimal("5000.00"))
+    service.update_profile(db, p, ProfileUpdate(
+        base_salary_override=Decimal("5200"), pay_change_kind="correction"))
+    log = db.query(SalaryChangeLog).one()
+    assert log.change_type == service.CHANGE_TYPE_CORRECTION
+    assert log.change_type not in service.RATE_CHANGE_TYPES
+
+
+def test_blank_grade_round_trip_is_not_a_rate_change(db):
+    """前端整表回传：库里 NULL 的职级回来是 ''。不归一的话每次保存都要求填生效日。"""
+    from app.salary.schemas import ProfileUpdate
+
+    p = _profile(db, emp_no="105", base_salary_override=Decimal("5000.00"))
+    service.update_profile(db, p, ProfileUpdate(
+        grade_scheme="", grade_code="", base_salary_override=Decimal("5000"), mobile="1"))
+    assert db.query(SalaryChangeLog).count() == 0
+
+
+def test_non_rate_pay_fields_logged_as_profile_type(db):
+    """保底/离职日这类自带日期的金额列只留痕，记成 profile，不混进调薪记录。"""
+    from app.salary.schemas import ProfileUpdate
+
+    p = _profile(db, emp_no="106", base_salary_override=Decimal("5000.00"))
+    service.update_profile(db, p, ProfileUpdate(guaranteed_salary=Decimal("6000")))
+    log = db.query(SalaryChangeLog).one()
+    assert log.change_type == service.CHANGE_TYPE_PROFILE
+    assert log.new_value == {"guaranteed_salary": "6000"}
 
 
 def test_emp_no_normalization_kills_3_vs_003():

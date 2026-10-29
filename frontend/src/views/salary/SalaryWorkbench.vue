@@ -24,9 +24,9 @@
         </GlassButton>
         <h2>{{ period.year_month }} 工资批次</h2>
         <StatusBadge :value="period.status" :dictionary="SALARY_STATUS" :label="period.status_label" effect="plain" />
-        <StatusBadge v-if="period.unlocked_at" type="danger" effect="plain">
-          解锁过，前次导出已作废
-        </StatusBadge>
+        <el-tooltip v-if="period.unlocked_at" :content="`解锁原因：${period.unlock_reason || '未记录'}`">
+          <StatusBadge type="danger" effect="plain">解锁过</StatusBadge>
+        </el-tooltip>
       </div>
 
       <div class="head-facts">
@@ -362,8 +362,8 @@
     <!-- 解锁 -->
     <el-dialog v-model="unlockVisible" title="解锁批次" width="480px">
       <el-alert type="warning" :closable="false" class="tab-alert">
-        解锁后<b>前次导出的工资表作废</b>，重新导出会打作废水印。
-        财务手上那份旧表和新表长得一样，所以原因必须写清楚，供事后对账。
+        解锁后批次回到「复核中」，明细改回显示最新档案，改完需要重新锁定。
+        如果这个月的工资表已经发给财务，那份就不能再用——请写清原因，供事后对账。
       </el-alert>
       <el-form label-position="top">
         <el-form-item label="原因" required>

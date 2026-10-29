@@ -37,7 +37,7 @@ from app.core.time import beijing_now
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
 
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
 from app.salary import attendance_service, period_service, service
@@ -49,6 +49,7 @@ from app.salary.models import (
     SalaryGradeTable,
     SalaryInsuranceImport,
     SalaryPeriod,
+    SalaryPeriodEvent,
     SalaryRecord,
 )
 
@@ -150,6 +151,60 @@ def _base_from_snapshot(
     return None
 
 
+def _is_rate_snapshot(value: Any) -> bool:
+    """2026-10-29 起的调薪记录存费率三列整组快照，能串成按生效日排序的链。
+
+    之前写的老记录只存差异列、生效日是编辑日，old_value 不一定还原得出费率，
+    不进链（不参与月末回推），只按老口径在其生效月分段。
+    """
+    return isinstance(value, dict) and all(k in value for k in service.RATE_FIELDS)
+
+
+def _rate_at_month_end(
+    profile: SalaryEmployeeProfile,
+    grade_map: dict[tuple[str, str], SalaryGradeTable],
+    chain: list[SalaryChangeLog],
+    ctx: PeriodContext,
+) -> Optional[Decimal]:
+    """月末时点定薪：月末之后首条调薪的 old_value，没有才取档案当前值。
+
+    只看首条，不往后找：首条还原不出来就是缺数据，跳到更晚一条会拿到更晚
+    时点的费率（调级 P3→P4 后 P3 行缺失，3 月会静默按 P4 发）。
+    """
+    later = next((c for c in chain if c.effective_date > ctx.month_end), None)
+    if later is None:
+        return service.resolve_base_salary(profile, grade_map)
+    rate = _base_from_snapshot(later.old_value, grade_map)
+    if rate is None:
+        raise CalcError(
+            f"{profile.name} 有 {later.effective_date} 生效的调薪调级记录，但还原不出"
+            "此前的底薪（多半是旧职级已不在职级表里）。请补全职级表后重新计算"
+        )
+    return rate
+
+
+def _rate_after_change(
+    c: SalaryChangeLog,
+    profile: SalaryEmployeeProfile,
+    grade_map: dict[tuple[str, str], SalaryGradeTable],
+    chain: list[SalaryChangeLog],
+) -> Optional[Decimal]:
+    """某次调薪生效后的费率：链上下一条的 old_value，没有下一条取档案当前值。
+
+    不直接用这条自己的 new_value：调薪后又「更正录入错误」时，更正只改档案，
+    不改这条记录——用 new_value 会让本月后半段按录错的数发。下一条的
+    old_value / 档案当前值都已含更正。
+    """
+    if c in chain:
+        i = chain.index(c)
+        nxt = chain[i + 1] if i + 1 < len(chain) else None
+        rate = (_base_from_snapshot(nxt.old_value, grade_map) if nxt is not None
+                else service.resolve_base_salary(profile, grade_map))
+        if rate is not None:
+            return rate
+    return _base_from_snapshot(c.new_value, grade_map)
+
+
 def calc_base_salary(
     profile: SalaryEmployeeProfile,
     grade_map: dict[tuple[str, str], SalaryGradeTable],
@@ -163,25 +218,37 @@ def calc_base_salary(
     1. 试用期整月（无转正日或转正日晚于本月）→ 试用期底薪；
     2. 转正日落在本月 → 试用期底薪 × 旧段 + 转正后底薪 × 新段，30 天基数（B2）；
     3. 当月有调薪/调级记录（change_log）→ 同样按 30 天基数分段加权；
-    4. 其余 → 当前定薪（手动定薪 > 职级表）。
+    4. 其余 → 月末时点定薪（手动定薪 > 职级表）。
 
     **生效当日新旧各半**：生效日 d 的旧段天数 = d − 0.5。这是让陈佳乐
     (3500×13.5+4000×16.5)/30 = 3775.00 与 3 月表分位一致的口径，钉死。
 
     转正段的费率取「其后首个调薪记录的 old_value」而不是一味用当前定薪：
     转正 3/14 转正到 4000、3/20 又调到 4500 时，中间段必须是 4000——
-    当前定薪（4500）会把中间段也算高。没有后续调薪时才回落当前定薪。
+    当前定薪（4500）会把中间段也算高。没有后续调薪时才回落月末定薪。
+
+    **档案当前值不等于本月定薪**：档案是原地改的，4/20 预录 5/1 的调薪后
+    档案已是新值。月末定薪先用月末之后首条调薪的 old_value 回推，没有才取
+    档案当前值。只认 raise/grade——更正录错（correction）视为一直是新值，
+    既不分段也不参与回推。
+
+    **试用期内的调薪只改转正后的定薪**：试用期员工的定薪被调了，到手的仍是
+    试用期底薪，转正那天才按新定薪。
     """
     weight_base = service.param_decimal(params, "mid_month_weight_base", Decimal("30"))
     if weight_base <= 0:
         raise CalcError("规则参数 mid_month_weight_base 必须大于 0，请到规则配置页修正")
 
-    regular_base = service.resolve_base_salary(profile, grade_map)
-    in_month = sorted(
+    # 同日多条按录入先后（id）——不定序的话，月末回推取哪条 old_value 看数据库心情
+    rate_changes = sorted(
         (c for c in changes
-         if c.effective_date and ctx.month_start < c.effective_date <= ctx.month_end),
-        key=lambda x: x.effective_date,
+         if c.effective_date and c.change_type in service.RATE_CHANGE_TYPES),
+        key=lambda x: (x.effective_date, x.id or 0),
     )
+    chain = [c for c in rate_changes if _is_rate_snapshot(c.old_value)]
+    regular_base = _rate_at_month_end(profile, grade_map, chain, ctx)
+    in_month = [c for c in rate_changes
+                if ctx.month_start < c.effective_date <= ctx.month_end]
     regular_in_month = (
         profile.regular_date is not None
         and ctx.month_start < profile.regular_date <= ctx.month_end
@@ -189,6 +256,10 @@ def calc_base_salary(
     probation_at_start = profile.probation_salary is not None and (
         profile.regular_date is None or profile.regular_date > ctx.month_start
     )
+
+    def on_probation(d: date) -> bool:
+        return profile.probation_salary is not None and (
+            profile.regular_date is None or d < profile.regular_date)
 
     # 整月无变化：直取（试用期整月 / 正式整月）
     if not regular_in_month and not in_month:
@@ -211,7 +282,9 @@ def calc_base_salary(
             boundaries.append(
                 (Decimal(profile.regular_date.day) - Decimal("0.5"), Decimal(rate_after)))
     for c in in_month:
-        new_rate = _base_from_snapshot(c.new_value, grade_map)
+        if on_probation(c.effective_date):
+            continue  # 试用期内调的是转正后的定薪，转正段的费率已含它
+        new_rate = _rate_after_change(c, profile, grade_map, chain)
         if new_rate is not None:
             boundaries.append(
                 (Decimal(c.effective_date.day) - Decimal("0.5"), Decimal(new_rate)))
@@ -224,15 +297,18 @@ def calc_base_salary(
             return _q2(profile.probation_salary), False
         return (_q2(regular_base) if regular_base is not None else None), False
 
-    # 起点费率：试用期底薪 > 首条变化的 old_value > 当前定薪
+    # 起点费率：试用期底薪 > 首条变化的 old_value。后者还原不出就报错——
+    # 退回当前定薪会让整月按新薪发，却还打着「已加权」的旗
     if probation_at_start:
         start_rate: Optional[Decimal] = profile.probation_salary
-    elif in_month:
-        start_rate = _base_from_snapshot(in_month[0].old_value, grade_map) or regular_base
     else:
-        start_rate = regular_base
-    if start_rate is None:
-        return None, True
+        first = next(c for c in in_month if not on_probation(c.effective_date))
+        start_rate = _base_from_snapshot(first.old_value, grade_map)
+        if start_rate is None:
+            raise CalcError(
+                f"{profile.name} 有 {first.effective_date} 生效的调薪调级记录，但还原不出"
+                "此前的底薪（多半是旧职级已不在职级表里）。请补全职级表后重新计算"
+            )
 
     boundaries.sort(key=lambda b: b[0])
     total = Decimal("0")
@@ -662,10 +738,12 @@ def calculate_period(
         )
     insurance_map = _matched_import_sums(db, period.id, SalaryInsuranceImport, "personal_total")
     fund_map = _matched_import_sums(db, period.id, SalaryFundImport, "personal_amount")
+    # 不设上界：月末之后生效的调薪也要取——档案当前值已经是它的新值，
+    # 引擎靠它的 old_value 回推本月末费率（预录的下月调薪不能提前生效）
     change_rows = (
         db.query(SalaryChangeLog)
         .filter(SalaryChangeLog.effective_date > ctx.month_start)
-        .filter(SalaryChangeLog.effective_date <= ctx.month_end)
+        .filter(SalaryChangeLog.change_type.in_(service.RATE_CHANGE_TYPES))
         .all()
     )
     changes_by_emp: dict[int, list[SalaryChangeLog]] = {}
@@ -769,32 +847,49 @@ def calculate_period(
                              "base_salary": str(draft["base_salary"])})
         total_net += draft["net_salary"]
 
-    # 库里有人已不在发薪名单（离职/改成仅参保）但本批次还有记录行：不删行
-    # （历史留痕），但要在摘要里点名，导出前必须处理。
+    # 上次算过、这次已不在发薪名单（离职/改成仅参保）的人：删掉他的明细行。
+    # 留着它，锁定门的「名单 = 明细」永远过不去，界面又没有删行入口，批次就死锁了。
+    # 被删行的金额与人工值是唯一留底：事件行直接加进本 session，跟删除、明细写入
+    # 同一次 commit——走 log_event 的话它在提交之后另写、失败只记日志，人工值就只剩
+    # 一次 HTTP 响应。
     payroll_ids = {p.id for p in profiles}
-    stale_rows = [r for emp_id, r in existing.items() if emp_id not in payroll_ids]
+    removed = _delete_out_of_scope_records(
+        db, [r for emp_id, r in existing.items() if emp_id not in payroll_ids])
+    if removed:
+        db.add(SalaryPeriodEvent(
+            period_id=period.id, event_type="remove_records",
+            from_status=period.status, to_status=period_service.STATUS_CALCULATED,
+            status_version=period.status_version,
+            payload={"removed_records": removed}, created_by=operator_id,
+        ))
 
     from_status = period.status
-    if from_status == period_service.STATUS_CALCULATED:
-        # 自环重算（calculated→calculated）：不能让 transition 的自环留痕先提交——
-        # log_event 的 commit 会把已写入的明细行一起落库，而此刻还没过锁定门，
-        # 并发 confirm 时已锁批次的记录会被重写（三轮审查 P1-1 实证）。
-        # 顺序钉死：先 guarded_write（status != confirmed + 版本谓词，一条 commit
-        # 收拢全部明细行写），过了门才留痕。
-        period_service.guarded_write(
-            db, period, {"calculated_at": now},
-            expected_version=expected_version if expected_version is not None
-            else period.status_version,
-            conflict_message="批次已被锁定或被他人修改，本次计算未生效，请刷新后重试",
-        )
-    else:
-        # 非自环：transition 的原子 UPDATE 把明细行与状态跃迁一次 commit，安全
-        period_service.transition(
-            db, period, period_service.STATUS_CALCULATED,
-            expected_version=expected_version, operator_id=operator_id,
-            extra={"calculated": len(profiles)},
-            extra_values={"calculated_at": now},
-        )
+    try:
+        if from_status == period_service.STATUS_CALCULATED:
+            # 自环重算（calculated→calculated）：不能让 transition 的自环留痕先提交——
+            # log_event 的 commit 会把已写入的明细行一起落库，而此刻还没过锁定门，
+            # 并发 confirm 时已锁批次的记录会被重写（三轮审查 P1-1 实证）。
+            # 顺序钉死：先 guarded_write（status != confirmed + 版本谓词，一条 commit
+            # 收拢全部明细行写），过了门才留痕。
+            period_service.guarded_write(
+                db, period, {"calculated_at": now},
+                expected_version=expected_version if expected_version is not None
+                else period.status_version,
+                conflict_message="批次已被锁定或被他人修改，本次计算未生效，请刷新后重试",
+            )
+        else:
+            # 非自环：transition 的原子 UPDATE 把明细行与状态跃迁一次 commit，安全
+            period_service.transition(
+                db, period, period_service.STATUS_CALCULATED,
+                expected_version=expected_version, operator_id=operator_id,
+                extra={"calculated": len(profiles)},
+                extra_values={"calculated_at": now},
+            )
+    except Exception:
+        # transition 的前置校验（版本落后）直接抛、不回滚：已删的行和已写的明细
+        # 不能留在 session 里等同一 session 的下一次 commit 带进库
+        db.rollback()
+        raise
 
     summary = {
         "calculated": len(profiles),
@@ -803,8 +898,9 @@ def calculate_period(
         "guaranteed_topup": guaranteed,
         "mid_month_weighted": weighted,
         "override_changed": override_changed,
-        "stale_records": [
-            {"employee_id": r.employee_id, "record_id": r.id} for r in stale_rows
+        "removed_records": [
+            {"employee_id": r["employee_id"], "name": r["name"], "manual": r["manual"]}
+            for r in removed
         ],
         "status": period.status,
         "status_version": period.status_version,
@@ -814,12 +910,55 @@ def calculate_period(
         from_status=from_status, to_status=period_service.STATUS_CALCULATED,
         payload={"calculated": len(profiles), "total_net": str(total_net.quantize(CENT)),
                  "negative_net": len(negative_net),
-                 "override_changed": len(override_changed)},
+                 "override_changed": len(override_changed),
+                 "removed_records": len(removed)},
         operator_id=operator_id,
     )
     logger.info("薪资批次计算 period=%s ym=%s 人数=%s 实发合计=%s 负数=%s",
                 period.id, period.year_month, len(profiles), total_net, len(negative_net))
     return summary
+
+
+def _delete_out_of_scope_records(
+    db: Session, rows: list[SalaryRecord]
+) -> list[dict[str, Any]]:
+    """删掉不在发薪名单里的明细行，返回留痕用的摘要。只改 session，不 commit。
+
+    带 row_version 谓词删：算薪期间有人改了这行的人工值，就当冲突整批拒绝，
+    不能把别人刚填的数连行删掉还报成功。
+    """
+    if not rows:
+        return []
+    names = dict(
+        db.query(SalaryEmployeeProfile.id, SalaryEmployeeProfile.name)
+        .filter(SalaryEmployeeProfile.id.in_({r.employee_id for r in rows}))
+        .all()
+    )
+    removed = []
+    for r in rows:
+        removed.append({
+            "employee_id": r.employee_id,
+            "name": names.get(r.employee_id),
+            "net_salary": str(r.net_salary) if r.net_salary is not None else None,
+            "net_after_tax": str(r.net_after_tax) if r.net_after_tax is not None else None,
+            # 人工值是删行唯一丢的东西：人被误移出名单、改回来重算时要照这里重填
+            "manual": {
+                k: str(v) for k, v in (
+                    ("bonus", r.bonus_manual), ("performance", r.performance_manual),
+                    ("other", r.other_manual), ("subsidy", r.subsidy_manual),
+                    ("income_tax", r.income_tax_amount),
+                ) if v is not None
+            },
+        })
+        stmt = delete(SalaryRecord).where(
+            SalaryRecord.id == r.id, SalaryRecord.row_version == r.row_version)
+        if db.execute(stmt).rowcount == 0:
+            db.rollback()
+            raise period_service.SalaryStaleVersion(
+                f"计算期间「{names.get(r.employee_id) or r.employee_id}」的明细行被他人修改，"
+                "本次计算未生效，请重算"
+            )
+    return removed
 
 
 def assert_confirmable(db: Session, period: SalaryPeriod) -> None:
@@ -880,7 +1019,7 @@ def assert_confirmable(db: Session, period: SalaryPeriod) -> None:
             parts.append("已不在发薪名单但仍有记录行："
                          + "、".join(names_of.get(i, str(i)) for i in sorted(stale)))
         raise CalcError(
-            "；".join(parts) + "。请退回「已计算」重算，或先处理档案状态再锁定。"
+            "；".join(parts) + "。请重新计算（会补上新进名单的人、移出名单外的人）后再锁定。"
         )
 
 

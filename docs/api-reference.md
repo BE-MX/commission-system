@@ -1353,7 +1353,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/profiles` | read | 分页列表；`keyword`（姓名/工号/岗位）、`dept_detail`、`status`(active\|left)、`payroll_included`(0\|1)、`sort_field`/`sort_order` |
 | GET | `/profiles/{id}` | read | 档案详情 |
 | POST | `/profiles` | write | 建档；`emp_no` 去空格去前导零（3 与 003 归一），唯一键冲突返回 409 中文提示 |
-| PUT | `/profiles/{id}` | write | 编辑；PII 字段传 `null`/不传 = 不动，传空串 = 清除；工号不可改 |
+| PUT | `/profiles/{id}` | write | 编辑；PII 字段传 `null`/不传 = 不动，传空串 = 清除；工号不可改。改了定薪/职级（`base_salary_override`/`grade_scheme`/`grade_code`）必须带 `pay_change_kind`：`adjust` 调薪调级（须带 `pay_effective_date`）或 `correction` 更正录入错误，缺了 400。响应 `data.pay_change_warnings[]` 列出不会自动跟上的已算/已锁批次 |
 | GET | `/grades` | read | 职级薪级表，可按 `scheme` 过滤；`include_history=1` 才含历史/未来版本（默认只出当天生效版本，档案页下拉按 `grade_code` 做 key，混进多版本会重键） |
 | POST | `/grades` | **admin** | 按 `(scheme, grade_code, effective_from)` upsert；改口径请新建生效日版本 |
 | GET | `/params` | read | 规则参数，可按 `category` 过滤 |
@@ -1367,7 +1367,10 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 409 的 `detail` 是**固定中文文案**，不是数据库异常原文：`str(IntegrityError)` 会展开 `[parameters: (...)]`，里面就是身份证/银行卡的密文与 HMAC 摘要，回给前端或落进 NSSM 明文日志都等于泄 PII。日志里只记命中的约束名。
 
-档案改到发薪相关列（定薪/职级/保底/试用期薪资等 12 列）会写 `ark_salary_change_log`，`change_type` 区分 `raise`（调薪）与 `grade`（调级）——M3 月中加权对这两类的口径不同；改手机号一类不留痕。
+档案改到发薪相关列（定薪/职级/保底/试用期薪资等 12 列）会写 `ark_salary_change_log`；改手机号一类不留痕。`change_type` 四类（2026-10-29 起）：
+- `raise` / `grade`：调薪 / 调级，`effective_date` 是 HR 填的生效日（不是编辑日），`old_value`/`new_value` 存定薪+赛道+职级三列完整快照。**只有这两类参与计薪**。
+- `correction`：更正录入错误，生效日记编辑日，引擎视为一直是新值（不分段、不回推）。
+- `profile`：保底、试用期薪资等非费率发薪列的改动，只留痕。
 
 前端：`views/salary/SalaryProfiles.vue`（员工档案）、`SalaryRules.vue`（职级表/参数/部门映射三 tab），导航「薪资计算」组。
 
@@ -1383,8 +1386,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | POST | `/periods` | write | 建批次；同月唯一。`workday_count` 不传则自动推算，但**只按周一~五数，不含节假日与调休**，`workday_source=needs_review` 时前端必须显示「待复核」角标 |
 | PUT | `/periods/{id}/workday` | write | 人工覆盖工作日数，上限是当月自然日（2 月不是 31） |
 | POST | `/periods/{id}/transition` | write | 状态跃迁，白名单校验；目标为 `confirmed` 返回 400 让你改走 `/confirm` |
-| POST | `/periods/{id}/confirm` | **admin** | 锁定，之后全表只读 |
-| POST | `/periods/{id}/unlock` | **admin** | 解锁回复核中，`reason` 必填；`unlocked_at` 有值即前次导出作废（决策 A4） |
+| POST | `/periods/{id}/confirm` | **admin** | 锁定，之后全表只读。同一事务把工号/姓名/部门/大部门/职务/银行卡密文/开户行冻进每行明细 `snap_*` + `snapshot_at`，此后明细读快照不回查活档案 |
+| POST | `/periods/{id}/unlock` | **admin** | 解锁回复核中，`reason` 必填；`unlocked_at` 有值即前次导出作废（决策 A4，作废水印随导出实现）。同时清空明细 `snapshot_at`，复核期间显示活档案，重新锁定时再冻 |
 | POST | `/periods/{id}/imports/{kind}` | write | 上传社保/公积金明细，`kind` = `insurance` \| `fund`，multipart `file`，≤10MB |
 | GET | `/periods/{id}/imports/{kind}` | read | 导入行列表，`match_status`/`keyword`/`limit`(≤2000) 过滤；`match_counts` 走独立 GROUP BY，**不受 limit 影响** |
 
@@ -1468,7 +1471,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
-| POST | `/periods/{id}/calculate` | write | 整批计算/重算。前置 blocking 未清 → 400；成功回 `{summary, period}`，`summary` 含 `total_net` / `negative_net[]` / `guaranteed_topup[]` / `mid_month_weighted[]` / `override_changed[]` / `stale_records[]`（不在发薪名单却还有记录行的人） |
+| POST | `/periods/{id}/calculate` | write | 整批计算/重算。前置 blocking 未清 → 400；成功回 `{summary, period}`，`summary` 含 `total_net` / `negative_net[]` / `guaranteed_topup[]` / `mid_month_weighted[]` / `override_changed[]` / `removed_records[]`（本次重算删掉的名单外记录行：`employee_id`/`name`/`manual` 手填值，误移时照此重填；同一事务、带 `row_version` 谓词，冲突 409 整批不生效；删除明细的金额与手填值同事务写进时间线 `remove_records` 事件） |
 | GET | `/periods/{id}/records` | read | 整批明细（66 人不分页），带 `totals` 合计行。`snapshot_frozen=true` 后快照列优先于活档案 |
 | PUT | `/periods/{id}/records/{employee_id}` | write | 行内编辑 5 个手动列（`bonus`/`performance`/`other`/`subsidy`/`income_tax`）+ `modify_reason`，`expected_row_version` 必填，409 = 行被他人改过 |
 
@@ -1476,6 +1479,11 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 - **符号约定**：社保/公积金/缺勤/减项小计**存负数**，其他款带符号。实发 = `round(底薪 + 增项小计 + 减项小计 + 补贴)`，四舍五入到元（HALF_UP，不是 Python 默认的银行家舍入）。保底前实发按**分**舍入——按元会让补贴 auto 差几毛（刘也 1678.91 变 1679.00）。
 - **月中转正/调薪加权（B2）**：30 天固定基数 + **生效当日新旧各半**（生效日 d 的旧段 = d−0.5 天）。陈佳乐 3/14 转正：(3500×13.5+4000×16.5)/30 = 3775.00，与 3 月表分毫不差。只加权底薪；工龄/全勤/绩效目标按月末档案取。转正段的费率取**其后首个调薪记录的 old_value**（转正 4000→又调 4500 时中间段必须是 4000），没有才回落当前定薪。
+- **月末定薪不等于档案当前值**：档案原地改，预录下月调薪后档案已是新值。月末定薪 = 月末之后首条 raise/grade 记录的 `old_value`，没有才取档案当前值；补录上月的调薪落在上月即分段。已算过的批次不自动重算，接口用 `pay_change_warnings` 提示。
+- **调薪链**：只有带三列整组快照的 raise/grade 记录进链（之前的老记录只存差异列，仍按老口径在其生效月分段、不参与回推）。某次调薪后的费率 = 链上下一条的 `old_value`，没有下一条取档案当前值——这样调薪后再「更正」也会作用到本月后半段。同日多条按 id 定序。
+- **倒序补录拒绝**：已有更晚生效的调薪时补录更早的，PUT 返回 400，差额走「其他加减」。old_value 记的是录入时的档案，倒序插入会把前后几个月都推错。
+- **试用期内的调薪**只改转正后的定薪，试用期到手不变。
+- **还原不出旧费率**（旧职级已不在职级表）时整批计算报错，不退回新薪算整月。
 - **应出天数两阶段**：`due_days_manual` 钉值 > 月中入离职（晚于当月首个工作日）→ 工作日数 > 阶段一实出 <15 → 工作日数 > 满月 31（B1）。张甜甜 3/2（首个工作日）入职算满月，王槐竹 3/9 入职 → 22。缺勤天数恒取阶段一口径（`due_days − actual_days`），与终值基准解耦——王槐竹阶段一 31−5=26，终值 22，扣款按 22 算 5 天。缺勤天数 > 应出终值时按应出截断并打 `absence_clamped` 旗。
 - **保底补足**：`补贴 auto = max(0, 保底 − |缺勤| − 保底前实发)`，生效区间（`guaranteed_from/to` 与月份重叠）外返回 NULL 不补。徐瑞萍保底 2026-04 起，3 月不补——负例也锁死。
 - **特殊计薪（097 `special_calc`）**：不发全勤奖、工龄按 `seniority_override` 钉值或 0（姜妮妮 0、刘德明 1000，§9.5 的 HR 确认标记）。

@@ -892,3 +892,269 @@ def test_recalc_with_stale_version_rejected(db):
 
     summary = cs.calculate_period(db, period, expected_version=period.status_version)
     assert summary["calculated"] == 1  # 正确版本的自环重算照常放行
+
+
+# ---------------------------------------------------------------------------
+# P0 修复回归（2026-10-29）：调薪生效日 / 锁定冻结快照 / 名单外残留行
+# ---------------------------------------------------------------------------
+
+def _rate_snap(override):
+    return {"base_salary_override": override, "grade_scheme": None, "grade_code": None}
+
+
+def test_future_dated_raise_does_not_leak_into_current_month():
+    """4/20 预录 5/1 的调薪：档案已是 6000，但 3 月仍按旧薪 5000。
+
+    档案是原地改的，只看当前值会让预录的调薪提前生效；月末费率要从
+    月末之后首条调薪的 old_value 回推。
+    """
+    change = SalaryChangeLog(
+        employee_id=1, change_type="raise", effective_date=dt.date(2026, 5, 1),
+        old_value=_rate_snap("5000"), new_value=_rate_snap("6000"))
+    d = run(mk_profile(base_salary_override=D("6000")), changes=[change])
+    assert d["base_salary"] == D("5000.00")
+    assert "mid_month_weighted" not in d["calc_flags"]
+
+
+def test_backdated_raise_weights_its_own_month():
+    """4/3 补录 3/15 的调薪：3 月按 3/15 分段，(5000×14.5 + 6000×15.5)/30 = 5516.67。"""
+    change = SalaryChangeLog(
+        employee_id=1, change_type="raise", effective_date=dt.date(2026, 3, 15),
+        old_value=_rate_snap("5000"), new_value=_rate_snap("6000"))
+    d = run(mk_profile(base_salary_override=D("6000")), changes=[change])
+    assert d["base_salary"] == D("5516.67")
+    assert "mid_month_weighted" in d["calc_flags"]
+
+
+def test_chained_future_raises_use_first_old_value():
+    """月末之后两次调薪（5/1 到 6000、7/1 到 7000）：3 月取第一次的 old_value 5000。"""
+    changes = [
+        SalaryChangeLog(employee_id=1, change_type="raise", effective_date=dt.date(2026, 7, 1),
+                        old_value=_rate_snap("6000"), new_value=_rate_snap("7000")),
+        SalaryChangeLog(employee_id=1, change_type="raise", effective_date=dt.date(2026, 5, 1),
+                        old_value=_rate_snap("5000"), new_value=_rate_snap("6000")),
+    ]
+    d = run(mk_profile(base_salary_override=D("7000")), changes=changes)
+    assert d["base_salary"] == D("5000.00")
+
+
+def test_correction_neither_weights_nor_rolls_back():
+    """更正录错：当月、月末后都有 correction 记录，一律不分段、不回推，取当前值。"""
+    changes = [
+        SalaryChangeLog(employee_id=1, change_type="correction",
+                        effective_date=dt.date(2026, 3, 10),
+                        old_value=_rate_snap("5000"), new_value=_rate_snap("5200")),
+        SalaryChangeLog(employee_id=1, change_type="correction",
+                        effective_date=dt.date(2026, 4, 10),
+                        old_value=_rate_snap("5200"), new_value=_rate_snap("5300")),
+    ]
+    d = run(mk_profile(base_salary_override=D("5300")), changes=changes)
+    assert d["base_salary"] == D("5300.00")
+    assert "mid_month_weighted" not in d["calc_flags"]
+
+
+def test_calculate_period_loads_raises_after_month_end(db):
+    """编排层也要取月末之后的调薪记录——只取当月的话，引擎无从回推。"""
+    period = _period_at_imported(db)
+    p = _profile(db, "甲", "1", base_salary_override=D("6000"))
+    _attendance(db, period, p)
+    db.add(SalaryChangeLog(
+        employee_id=p.id, change_type="raise", effective_date=dt.date(2026, 5, 1),
+        old_value=_rate_snap("5000"), new_value=_rate_snap("6000")))
+    db.commit()
+    cs.calculate_period(db, period, expected_version=period.status_version)
+    row = db.query(SalaryRecord).filter_by(period_id=period.id, employee_id=p.id).one()
+    assert row.base_salary == D("5000.00")
+
+
+def test_recalc_removes_out_of_scope_rows_and_unblocks_confirm(db):
+    """算完后有人被移出发薪名单：重算删掉他的行、锁定门放行；手填值随摘要回给前端。"""
+    period = _period_at_imported(db)
+    a = _profile(db, "甲", "1")
+    b = _profile(db, "乙", "2")
+    _attendance(db, period, a)
+    _attendance(db, period, b)
+    cs.calculate_period(db, period, expected_version=period.status_version)
+    row_b = db.query(SalaryRecord).filter_by(period_id=period.id, employee_id=b.id).one()
+    cs.edit_record_manual(db, period, b.id, {"bonus": D("500")},
+                          expected_row_version=row_b.row_version)
+
+    b.payroll_included = 0
+    db.commit()
+    with pytest.raises(cs.CalcError, match="重新计算"):
+        cs.assert_confirmable(db, period)
+
+    summary = cs.calculate_period(db, period, expected_version=period.status_version)
+    assert [(r["employee_id"], r["name"], r["manual"]) for r in summary["removed_records"]] == [
+        (b.id, "乙", {"bonus": "500.00"})]
+    assert db.query(SalaryRecord).filter_by(period_id=period.id).count() == 1
+    cs.assert_confirmable(db, period)  # 死锁解除
+
+    # 留底事件跟删除同一次 commit 落库（不走提交后另写、失败只记日志的 log_event）
+    event = [e for e in ps.list_events(db, period.id) if e.event_type == "remove_records"][0]
+    assert event.payload["removed_records"][0]["manual"] == {"bonus": "500.00"}
+
+
+def _confirmed_period(db):
+    period = _period_at_imported(db)
+    p = _profile(db, "甲", "1", dept_detail="跟单1部", position="跟单员",
+                 bank_name="工行", bank_card_cipher="CIPHER-OLD")
+    db.add(SalaryDeptMapping(dept_detail="跟单1部", dept_group="后综部"))
+    db.commit()
+    _attendance(db, period, p)
+    cs.calculate_period(db, period, expected_version=period.status_version)
+    period = ps.transition(db, period, ps.STATUS_REVIEWING,
+                           expected_version=period.status_version)
+    period = ps.confirm(db, period, expected_version=period.status_version, operator_id=7)
+    return period, p
+
+
+def test_confirm_freezes_profile_snapshot(db):
+    """锁定把展示与收款字段抄进明细；之后改档案（换卡、改名），已锁月份不跟着变。"""
+    period, p = _confirmed_period(db)
+    row = db.query(SalaryRecord).filter_by(period_id=period.id).one()
+    assert row.snapshot_at is not None
+    assert (row.snap_emp_no, row.snap_name, row.snap_dept_detail, row.snap_dept_group,
+            row.snap_position, row.snap_bank_card_cipher, row.snap_bank_name) == (
+        "1", "甲", "跟单1部", "后综部", "跟单员", "CIPHER-OLD", "工行")
+
+    p.name = "甲改名"
+    p.bank_card_cipher = "CIPHER-NEW"
+    db.commit()
+    item = cs.list_records(db, period.id)["items"][0]
+    assert item["snapshot_frozen"] is True
+    assert item["name"] == "甲"
+    db.refresh(row)
+    assert row.snap_bank_card_cipher == "CIPHER-OLD"
+
+
+def test_unlock_releases_snapshot_and_reconfirm_refreezes(db):
+    """解锁后显示活档案（解锁多半就是为了改档案），再锁定时按新档案重冻。"""
+    period, p = _confirmed_period(db)
+    period = ps.unlock(db, period, "银行卡录错", expected_version=period.status_version)
+    p.bank_card_cipher = "CIPHER-NEW"
+    db.commit()
+    row = db.query(SalaryRecord).filter_by(period_id=period.id).one()
+    db.refresh(row)
+    assert row.snapshot_at is None
+    assert cs.list_records(db, period.id)["items"][0]["snapshot_frozen"] is False
+
+    ps.confirm(db, period, expected_version=period.status_version)
+    db.refresh(row)
+    assert row.snapshot_at is not None
+    assert row.snap_bank_card_cipher == "CIPHER-NEW"
+
+
+def test_failed_confirm_leaves_no_snapshot_behind(db):
+    """版本落后的锁定被拒：快照列不能留在 session 里，被后续任意 commit 带进库。"""
+    period = _period_at_imported(db)
+    p = _profile(db, "甲", "1")
+    _attendance(db, period, p)
+    cs.calculate_period(db, period, expected_version=period.status_version)
+    period = ps.transition(db, period, ps.STATUS_REVIEWING,
+                           expected_version=period.status_version)
+    with pytest.raises(ps.SalaryStaleVersion):
+        ps.confirm(db, period, expected_version=period.status_version - 1)
+    db.commit()  # 模拟同一 session 的下一次提交
+    row = db.query(SalaryRecord).filter_by(period_id=period.id).one()
+    db.refresh(row)
+    assert row.snapshot_at is None
+    assert row.snap_name is None
+
+
+# --- 对抗性审查补测（2026-10-29）---
+
+def test_correction_after_in_month_raise_fixes_second_segment():
+    """3/15 调薪 4000→5000，事后发现应是 5500、走「更正」：后半段按 5500。
+
+    (4000×14.5 + 5500×15.5)/30 = 4775.00。用调薪记录自己的 new_value 会算成 4516.67。
+    """
+    change = SalaryChangeLog(
+        employee_id=1, change_type="raise", effective_date=dt.date(2026, 3, 15),
+        old_value=_rate_snap("4000"), new_value=_rate_snap("5000"))
+    d = run(mk_profile(base_salary_override=D("5500")), changes=[change])
+    assert d["base_salary"] == D("4775.00")
+
+
+def test_raise_during_probation_keeps_probation_pay():
+    """试用期（5/10 转正）内把定薪从 4000 调到 4500：3 月到手仍是试用期 3000。"""
+    change = SalaryChangeLog(
+        employee_id=1, change_type="raise", effective_date=dt.date(2026, 3, 15),
+        old_value=_rate_snap("4000"), new_value=_rate_snap("4500"))
+    d = run(mk_profile(base_salary_override=D("4500"), probation_salary=D("3000"),
+                       regular_date=dt.date(2026, 5, 10)), changes=[change])
+    assert d["base_salary"] == D("3000.00")
+    assert "mid_month_weighted" not in d["calc_flags"]
+
+
+def test_raise_before_in_month_regularization_applies_from_regular_date():
+    """3/10 试用期内调定薪到 4500，3/20 转正：(3000×19.5 + 4500×10.5)/30 = 3525.00。"""
+    change = SalaryChangeLog(
+        employee_id=1, change_type="raise", effective_date=dt.date(2026, 3, 10),
+        old_value=_rate_snap("4000"), new_value=_rate_snap("4500"))
+    d = run(mk_profile(base_salary_override=D("4500"), probation_salary=D("3000"),
+                       regular_date=dt.date(2026, 3, 20)), changes=[change])
+    assert d["base_salary"] == D("3525.00")
+
+
+def test_legacy_partial_log_after_month_end_is_not_rolled_back():
+    """10-29 之前的老记录只存差异列、生效日是编辑日：不进链，重算老月份数不变。"""
+    change = SalaryChangeLog(
+        employee_id=1, change_type="raise", effective_date=dt.date(2026, 4, 10),
+        old_value={"base_salary_override": "5000"}, new_value={"base_salary_override": "6000"})
+    d = run(mk_profile(base_salary_override=D("6000")), changes=[change])
+    assert d["base_salary"] == D("6000.00")
+
+
+def test_unresolvable_old_rate_stops_calc_instead_of_paying_new_rate():
+    """旧职级不在职级表里：报错，不许退回新薪算整月还打着「已加权」的旗。"""
+    old = {"base_salary_override": None, "grade_scheme": "sales", "grade_code": "P3"}
+    in_month = SalaryChangeLog(
+        employee_id=1, change_type="grade", effective_date=dt.date(2026, 3, 15),
+        old_value=old, new_value=_rate_snap("5000"))
+    with pytest.raises(cs.CalcError, match="还原不出"):
+        run(mk_profile(base_salary_override=D("5000")), changes=[in_month])
+
+    after = SalaryChangeLog(
+        employee_id=1, change_type="grade", effective_date=dt.date(2026, 5, 1),
+        old_value=old, new_value=_rate_snap("5000"))
+    with pytest.raises(cs.CalcError, match="还原不出"):
+        run(mk_profile(base_salary_override=D("5000")), changes=[after])
+
+
+def test_back_dated_adjust_before_later_raise_is_rejected(db):
+    """先预录 5/1 调到 5000，再补录 3/15 调到 4500：拒绝，档案不被盖掉。"""
+    from app.salary import service as svc
+    from app.salary.schemas import ProfileUpdate
+
+    p = _profile(db, "甲", "1", base_salary_override=D("4000"))
+    svc.update_profile(db, p, ProfileUpdate(
+        base_salary_override=D("5000"), pay_change_kind="adjust",
+        pay_effective_date=dt.date(2026, 5, 1)))
+    with pytest.raises(svc.ProfileChangeError, match="倒着补录"):
+        svc.update_profile(db, p, ProfileUpdate(
+            base_salary_override=D("4500"), pay_change_kind="adjust",
+            pay_effective_date=dt.date(2026, 3, 15)))
+    db.rollback()
+    db.refresh(p)
+    assert p.base_salary_override == D("5000")
+    assert db.query(SalaryChangeLog).filter_by(employee_id=p.id).count() == 1
+
+
+def test_delete_conflict_rolls_back_whole_recalc(db):
+    """删名单外行时那行刚被别人改过（row_version 变了）：整批不生效，行还在。"""
+    from sqlalchemy import update
+
+    period = _period_at_imported(db)
+    a = _profile(db, "甲", "1")
+    b = _profile(db, "乙", "2")
+    _attendance(db, period, a)
+    _attendance(db, period, b)
+    cs.calculate_period(db, period, expected_version=period.status_version)
+    row_b = db.query(SalaryRecord).filter_by(period_id=period.id, employee_id=b.id).one()
+    db.execute(update(SalaryRecord).where(SalaryRecord.id == row_b.id)
+               .values(row_version=row_b.row_version + 1)
+               .execution_options(synchronize_session=False))
+    with pytest.raises(ps.SalaryStaleVersion):
+        cs._delete_out_of_scope_records(db, [row_b])
+    assert db.query(SalaryRecord).filter_by(period_id=period.id).count() == 2

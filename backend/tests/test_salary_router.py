@@ -30,6 +30,7 @@ from app.salary.models import (
     SalaryDeptMapping,
     SalaryEmployeeProfile,
     SalaryGradeTable,
+    SalaryPeriod,
     SalaryRuleParam,
 )
 from app.salary.seed import EFFECTIVE_FROM, seed_salary_master_data
@@ -62,6 +63,7 @@ def db():
             SalaryGradeTable.__table__,
             SalaryRuleParam.__table__,
             SalaryChangeLog.__table__,
+            SalaryPeriod.__table__,
         ],
     )
     session = sessionmaker(bind=engine)()
@@ -287,10 +289,41 @@ def test_profile_update_writes_change_log_with_operator(db):
         "emp_no": "11", "name": "丁", "base_salary_override": "5000.00",
     }).json()["data"]
 
-    client.put(f"/api/salary/profiles/{created['id']}", json={"base_salary_override": "5500.00"})
+    # 没说清调整类型 → 400，不落库
+    resp = client.put(f"/api/salary/profiles/{created['id']}",
+                      json={"base_salary_override": "5500.00"})
+    assert resp.status_code == 400
+    assert db.query(SalaryChangeLog).count() == 0
+
+    resp = client.put(f"/api/salary/profiles/{created['id']}", json={
+        "base_salary_override": "5500.00",
+        "pay_change_kind": "adjust", "pay_effective_date": "2026-03-15",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["data"]["pay_change_warnings"] == []  # 没有已算过的批次
     log = db.query(SalaryChangeLog).one()
     assert log.created_by == 7  # 覆盖里的 sub="7"
     assert log.change_type == "raise"
+
+
+def test_profile_rate_change_warns_about_computed_periods(db):
+    """改底薪不会回写已算过的批次：生效月起已算/已锁的批次要点名，生效月之前的不提。"""
+    for ym, status in (("2026-02", "confirmed"), ("2026-03", "confirmed"),
+                       ("2026-04", "calculated"), ("2026-05", "draft")):
+        db.add(SalaryPeriod(year_month=ym, status=status, status_version=1))
+    db.commit()
+    client = _client(db, ["salary:write"])
+    created = client.post("/api/salary/profiles", json={
+        "emp_no": "12", "name": "戊", "base_salary_override": "5000.00",
+    }).json()["data"]
+    resp = client.put(f"/api/salary/profiles/{created['id']}", json={
+        "base_salary_override": "5500.00",
+        "pay_change_kind": "adjust", "pay_effective_date": "2026-03-15",
+    })
+    warnings = resp.json()["data"]["pay_change_warnings"]
+    assert len(warnings) == 2
+    assert warnings[0].startswith("2026-03") and "已锁定" in warnings[0]
+    assert warnings[1].startswith("2026-04") and "重新计算" in warnings[1]
 
 
 def test_profile_404(db):

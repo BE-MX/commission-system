@@ -183,17 +183,22 @@ def update_profile(
         profile = service.update_profile(
             db, profile, payload, operator_user_id=_operator_id(current_user)
         )
+    except service.ProfileChangeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except IntegrityError as exc:
         db.rollback()
         message, token = _integrity_context(exc)
         logger.warning("薪资档案编辑入库失败，命中约束 %s", token)
         print(f"[salary.router] update profile rejected by {token}", flush=True)
         raise HTTPException(status_code=409, detail=message)
-    return ok(
-        service.serialize_profile(
-            profile, service.load_dept_group_map(db), service.load_grade_map(db)
-        )
+    data = service.serialize_profile(
+        profile, service.load_dept_group_map(db), service.load_grade_map(db)
     )
+    # 只有带了 pay_change_kind（前端仅在改定薪/职级时带）才查受影响批次
+    data["pay_change_warnings"] = (
+        service.pay_change_warnings(db, payload) if payload.pay_change_kind else []
+    )
+    return ok(data)
 
 
 # ---------------------------------------------------------------------------

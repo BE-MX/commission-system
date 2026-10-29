@@ -308,7 +308,7 @@ export function useSalaryWorkbench() {
   async function doUnlock() {
     if (!periodReady.value || unlocking.value) return
     if (!unlockReason.value.trim()) {
-      msgError('请填写解锁原因——前次导出会被标记作废，无理由无法审计')
+      msgError('请填写解锁原因，事后对账要靠它')
       return
     }
     const savedPeriodId = periodId.value, savedVersion = version.value, savedReason = unlockReason.value.trim()

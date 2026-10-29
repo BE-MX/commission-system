@@ -104,11 +104,18 @@ export function useSalaryRecords({ periodId, period, activeTab, refreshAll, writ
         + '。重算不会冲掉人工值，请确认这些覆盖还有效。',
       )
     }
-    if (s.stale_records?.length) {
-      // stale 项只有 {employee_id, record_id} 没有姓名，报数 + 指路，不硬编名字
+    if (s.removed_records?.length) {
+      // 后端已删行；删行唯一丢的是人工值，所以连值一起亮出来——误移时照着重填
+      const labels = { bonus: '奖金', performance: '绩效', other: '其他加减', subsidy: '补贴', income_tax: '个税' }
       lines.push(
-        `${s.stale_records.length} 人已不在发薪名单却还有明细行，这批行不计入合计。`
-        + '请到异常面板 / 明细表核对是离职未清还是名单漏人。',
+        `已移出 ${s.removed_records.length} 人（不在本月发薪名单）：`
+        + s.removed_records.slice(0, 10).map((r) => {
+          const manual = Object.entries(r.manual || {})
+            .map(([k, v]) => `${labels[k] || k} ${money(v)}`).join('，')
+          return (r.name || `#${r.employee_id}`) + (manual ? `（曾手填 ${manual}）` : '')
+        }).join('、')
+        + (s.removed_records.length > 10 ? ` 等 ${s.removed_records.length} 人` : '')
+        + '。如果是误移，改回档案后重算，再照这里的手填值重填。',
       )
     }
     // 保底补差与月中折算是规则内调整（info 性质），一行带过让人知道发生过

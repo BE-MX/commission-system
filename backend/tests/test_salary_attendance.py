@@ -28,6 +28,7 @@ from app.salary.models import (
     SalaryEmployeeProfile,
     SalaryPeriod,
     SalaryPeriodEvent,
+    SalaryRecord,
     SalaryRuleParam,
 )
 
@@ -76,7 +77,7 @@ def engine_and_session(tmp_path):
     Base.metadata.create_all(engine, tables=[
         SalaryPeriod.__table__, SalaryPeriodEvent.__table__,
         SalaryEmployeeProfile.__table__, SalaryAttendance.__table__,
-        SalaryRuleParam.__table__,
+        SalaryRuleParam.__table__, SalaryRecord.__table__,
     ])
     try:
         # autoflush=False 对齐生产（app/core/database.py:18）。测试床跟生产的 session

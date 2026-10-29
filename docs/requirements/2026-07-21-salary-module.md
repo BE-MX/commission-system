@@ -359,8 +359,10 @@ M3 计算引擎(3 周,最难段)
 M4 复核工作流 + 导出 + 3 月验收(2 周)
 ├─ 状态机 draft → attendance_synced → imported → calculated → reviewing → confirmed
 │   confirmed 时冻结档案快照到 salary_record(消灭 §2.5 错误 2/3/5/6 的根本机制)
+│   ✅ 2026-10-29 已实现：confirm 同事务冻结 snap_*，unlock 清 snapshot_at、重锁再冻
 │   status_version 乐观锁(避免"重算中"和"锁定"并发碰撞)
 ├─ admin 解锁流程(A4):前次导出打「作废」水印 + 审计留痕 + 重新出具
+├─ ⏳ 导出（下面三项 + 作废水印）尚未实现，另立任务
 ├─ openpyxl 导出双 sheet:
 │   Sheet1 汇总表(按 dept_group 分组,组内重排序号,自动备注/请假文案,合计/总计)
 │   Sheet2 明细表(23 列 + 合计行)

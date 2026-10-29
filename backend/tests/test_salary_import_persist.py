@@ -29,6 +29,7 @@ from app.salary.models import (
     SalaryInsuranceImport,
     SalaryPeriod,
     SalaryPeriodEvent,
+    SalaryRecord,
 )
 from tests.test_salary_import_parser import (
     FUND_HEADER,
@@ -67,6 +68,7 @@ def engine_and_session():
             SalaryEmployeeProfile.__table__,
             SalaryInsuranceImport.__table__,
             SalaryFundImport.__table__,
+            SalaryRecord.__table__,
         ],
     )
     try:

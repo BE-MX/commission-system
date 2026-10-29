@@ -180,6 +180,26 @@
               <el-input-number v-model="form.probation_salary" :min="0" :precision="2" controls-position="right" style="width: 100%" />
             </el-form-item>
           </el-col>
+          <!-- 只在这次动了定薪/职级时出现：算薪按生效日分月、月中分段，编辑日不算数 -->
+          <el-col v-if="rateChanged" :span="24">
+            <el-form-item label="这次改底薪是" required>
+              <div class="pay-change">
+                <el-radio-group v-model="payChange.kind">
+                  <el-radio value="adjust">调薪调级</el-radio>
+                  <el-radio value="correction">更正录入错误</el-radio>
+                </el-radio-group>
+                <el-date-picker v-if="payChange.kind === 'adjust'" v-model="payChange.effectiveDate"
+                                type="date" value-format="YYYY-MM-DD" placeholder="生效日期"
+                                :shortcuts="EFFECTIVE_DATE_SHORTCUTS" class="pay-change-date" />
+              </div>
+              <div class="hint">
+                <template v-if="payChange.kind === 'adjust'">
+                  从生效日起按新底薪；生效日在月中的那个月，新旧底薪按天分段。
+                </template>
+                <template v-else>原来的数填错了：视为一直是新值，不分段。</template>
+              </div>
+            </el-form-item>
+          </el-col>
           <el-col :span="24">
             <el-form-item label="试用期说明"><el-input v-model="form.probation_note" placeholder="如：前 3 个月 80%" /></el-form-item>
           </el-col>
@@ -261,7 +281,7 @@ import { computed } from 'vue'
 import { money } from '@/api/salary'
 import TableTools from '@/components/TableTools.vue'
 import { useTableView } from '@/composables/useTableView'
-import { useSalaryProfiles } from './composables/useSalaryProfiles'
+import { EFFECTIVE_DATE_SHORTCUTS, useSalaryProfiles } from './composables/useSalaryProfiles'
 
 // 列配置数组：TableTools 列显隐的数据源（List Page Spec 第 9 节，操作列不进配置）
 const columnDefs = [
@@ -284,7 +304,7 @@ const {
   handleSearch, handleReset, handlePageChange, handleSizeChange,
   sortField, sortOrder, handleSortChange,
   deptOptions, gradeCodeOptions, schemeOptions, schemeLabels,
-  clearIdCard, clearBankCard,
+  clearIdCard, clearBankCard, rateChanged, payChange,
   dialogVisible, saving, isEdit, formRef, form, formRules,
   openCreate, openEdit, submit,
 } = listPageState
@@ -321,4 +341,6 @@ const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm
 /* 清除开关是破坏性操作，压在输入框下方、字号收小，不跟主输入抢注意力 */
 .pii-clear { margin-top: 4px; font-size: 12px; }
 .hint { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.4; margin-top: 2px; }
+.pay-change { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; width: 100%; }
+.pay-change-date { width: 180px; }
 </style>
