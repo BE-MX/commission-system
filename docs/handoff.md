@@ -1,3 +1,11 @@
+## 2026-10-29 验货单上传物流单改为弹框录入＋自动关联（Claude Code，已提交 main，未推送，未部署）
+
+- 需求：验货单列表操作列直接「上传物流单」，弹框复用运单上传页（OCR/手录/去重），按订单客户预填收件人与国家；保存同时进入物流跟踪并关联验货单。原实现要求先去运单上传页录入，再回抽屉手填运单号+物流商代码，且关联校验依赖 PC 上传从不写入的 `source_image_url`，PC 录入的运单实际关联不上。
+- 后端：新增 `app/shipping_inspection/shipment_link_service.py`（预填口径、入库前置校验、录入后关联）与 `GET /records/{id}/shipment-prefill`、`POST /records/{id}/shipment`；原 `PUT /records/{id}/shipment` 保留作「关联已有运单」。去掉关联与客户门户发货可见性中的运单图片门槛（行为变化：员工关联的手录运单会在客户门户展示）。列表返回 `shipment` 简要信息。无新迁移（沿用已上线 212 的 `shipment_tracking_id/shipment_version`）。
+- 前端：运单上传表单抽成 `tracking/components/WaybillUploadForm.vue`，独立页与验货单弹框共用；列表新增「物流单号」列和操作列按钮（需 `tracking:write` + 验货单 write/admin），详情抽屉改为展示+同一弹框入口。顺带清掉 `WaybillUpload.vue` 的 UI 债务基线条目。
+- 对抗性审查后补：关联已有运单前核对接口 `shipment-candidate`（范围外不给必败按钮、收件信息不一致警告）；关联失败自动刷新版本号；预检/关联放线程池避免行锁等待卡事件循环；补齐路由兜底异常日志与 `upload_service` 吞异常的 print；预填降级不再二次查库；国家不再用档案国家代码。只有 `tracking:read` 的用户失去关联入口，属有意收紧。
+- 验证：前端构建、`check_conventions` 增量通过；`test_shipping_shipment_link.py` 16 项 + 验货/物流跟踪相关共 121 项通过，门户 19 项在无 `.env` 的隔离副本通过。未在浏览器里实际点过弹框（本机未起后端，起后端会连共享库）。
+
 ## 2026-10-29 目标设置与绩效看板优化（Codex，Git 交付，未部署）
 
 - 分支 `codex/perf-goal-ui-clarity`，工作区 `C:/Users/windb/.codex/worktrees/inspection-board-ui/commission-system`。用户已确认预览效果，授权本次优化提交、合入 main 并推送 origin；仅交付本次相关改动，不部署，保留主目录其他未提交改动。最终 Git 状态与保护文件恢复以引用回读和 SHA256 校验为准。

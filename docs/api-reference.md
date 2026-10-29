@@ -1546,6 +1546,10 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |
 | GET | `/records/{id}` | 验货单详情：单头+实时明细+分开的 photos/videos 数组；视频只供预览，不进入验货打印 |
 | POST | `/records/{id}/recall` | 请求必填 edit_version；submitted → draft，版本加一，保留备注与全部媒体，记录撤回人/时间；过期状态 409 |
+| GET | `/records/{id}/shipment-prefill` | 上传物流单弹框预填：需 `shipping_inspection:write/admin` + 验货单归属；返回 `edit_version/shipment_version/shipment`、`order_id`、`recipient_name`（订单发票联系人 → 客户档案收货联系人 → 客户最近发票联系人 → 验货单客户名）、`recipient_country`（客户覆盖层 → 业务库 `customer_info` 国家名；不用档案国家代码，避免与物流跟踪国家名混写）、`ship_date`（北京时间今天）；业务库不可用时降级为客户名，不报错 |
+| POST | `/records/{id}/shipment` | 录入运单并关联：body = 物流跟踪 `WaybillCreate` + `edit_version/shipment_version`；先校验验货单已提交、版本未变、实时 `shipping_inspection:write/admin` + `tracking:write`，再走物流跟踪原入库流程（轮询/短链/钉钉推送），最后关联验货单。运单号已存在 409 `detail={code,message,data:已有运单}`；运单已入库但关联失败 409 文字说明「已录入物流跟踪」，可用下方 PUT 关联已有运单 |
+| GET | `/records/{id}/shipment-candidate?waybill_no=&carrier=` | 关联已有运单前核对：需验货单 write/admin + 归属；运单不在当前用户物流跟踪查看范围（或无任何 tracking 权限）只返回 `{visible:false}`，在范围内返回 `recipient_name/recipient_country/linked_inspections`（已关联的其他验货单数），供弹框与本单客户比对，防止串单后在客户门户外泄轨迹 |
+| PUT | `/records/{id}/shipment` | 关联已有运单：`{waybill_no,carrier,edit_version,shipment_version}`；运单须在当前用户物流跟踪查看范围内且未删除，不再要求运单图片（PC 上传不存图）；成功后 `shipment_version` 加一 |
 | GET | `/images/{rel_path:path}` | 鉴权读取原始照片/视频；`preview=true` 仅照片返回最长边640像素的 JPEG 预览，原件不变；沿用归属权限与 `private, no-store`，预览不可用返回503 |
 | POST | `/api/mini/shipping-inspection/scan` | 验签二维码原文 → 单头+明细+photos/videos+状态/edit_version/已存备注；前缀/签名错 400 |
 | POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id? + edit_version + request_id?）；draft 懒创建；已提交拒绝 |

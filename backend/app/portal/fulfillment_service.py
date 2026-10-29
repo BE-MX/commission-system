@@ -75,9 +75,9 @@ def view(db, order, *, details=False):
                 ShippingInspection.outbound_record_id.in_([str(row['record_id']) for row in verified_outbounds]),
                 ShippingInspection.status == 'submitted', ShippingInspection.shipment_tracking_id.is_not(None))).all()
             shipment_ids = {row.shipment_tracking_id for row in inspections}
+            # 员工在验货单上显式关联即为确认；PC 录入的运单没有图片，不能再以 source_image_url 过滤
             shipments = db.scalars(select(ShipmentTracking).where(ShipmentTracking.id.in_(shipment_ids),
-                ShipmentTracking.deleted_at.is_(None), ShipmentTracking.source_image_url.is_not(None),
-                ShipmentTracking.source_image_url != '').order_by(ShipmentTracking.id)).all() if shipment_ids else []
+                ShipmentTracking.deleted_at.is_(None)).order_by(ShipmentTracking.id)).all() if shipment_ids else []
             if details:
                 result['shipments'] = [shipment_view(db, row) for row in shipments]
     except (ValueError, SQLAlchemyError) as exc:

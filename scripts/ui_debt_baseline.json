@@ -3615,28 +3615,6 @@
     "static_tag_type": 0,
     "transition_all": 0
   },
-  "frontend/src/views/tracking/WaybillUpload.vue": {
-    "bad_dialog_width": 0,
-    "bad_drawer_size": 0,
-    "bad_glass_button_size": 0,
-    "bad_page_default": 0,
-    "bad_pagination_layout": 0,
-    "bad_pagination_sizes": 0,
-    "bad_value_format": 0,
-    "deep_el_override": 4,
-    "empty_text_attr": 0,
-    "footer_alias": 0,
-    "form_label_position": 0,
-    "hex_colors": 5,
-    "inline_public_validator": 0,
-    "inline_width": 2,
-    "message_calls": 0,
-    "money_format": 0,
-    "non_md_glass_button": 0,
-    "small_controls": 0,
-    "static_tag_type": 0,
-    "transition_all": 0
-  },
   "frontend/src/views/tracking/components/WaybillSuccessDialog.vue": {
     "bad_dialog_width": 0,
     "bad_drawer_size": 0,

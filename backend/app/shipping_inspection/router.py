@@ -33,7 +33,7 @@ from app.shipping_inspection.print_service import with_owner_chinese_name
 
 logger = logging.getLogger("commission")
 
-from app.shipping_inspection.schemas import InspectionShipmentInput
+from app.shipping_inspection.schemas import InspectionShipmentCreate, InspectionShipmentInput
 
 router = APIRouter()
 from app.shipping_inspection.station_router import router as station_router
@@ -366,7 +366,6 @@ def record_detail(
     from app.auth.service import get_live_user_authorization
     from app.shipping_inspection.audit_service import list_events
     roles, permissions = get_live_user_authorization(db, int(_user['sub']))
-    detail['can_bind_shipment'] = ('super_admin' in roles or (bool({'shipping_inspection:write', 'shipping_inspection:admin'} & set(permissions)) and bool({'tracking:read', 'tracking:read_all', 'tracking:write'} & set(permissions))))
     detail['events'] = list_events(db, detail['outbound_record_id'], include_login='super_admin' in roles or 'shipping_inspection:admin' in permissions)
     return ok(detail)
 
@@ -423,6 +422,52 @@ def recover_outbound_delete(record_id: str, body: DeleteRecovery, db: Session = 
     except (ValueError, DeleteRemoteError, OkkiApiError) as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
+
+
+@router.get('/records/{inspection_id}/shipment-prefill', summary='物流单弹框预填（按订单客户推断收件人/国家）')
+def inspection_shipment_prefill(inspection_id: int, db: Session = Depends(get_db),
+        user: dict = Depends(require_any_permission('shipping_inspection:write', 'shipping_inspection:admin'))):
+    from app.shipping_inspection import shipment_link_service
+    inspection = _require_inspection_scope(db, user, inspection_id)
+    return ok(shipment_link_service.shipment_prefill(db, inspection))
+
+
+@router.get('/records/{inspection_id}/shipment-candidate', summary='关联已有运单前核对收件信息')
+def inspection_shipment_candidate(inspection_id: int, waybill_no: str = Query(..., min_length=1, max_length=64),
+        carrier: str = Query(..., min_length=1, max_length=32), db: Session = Depends(get_db),
+        user: dict = Depends(require_any_permission('shipping_inspection:write', 'shipping_inspection:admin'))):
+    from app.shipping_inspection import shipment_link_service
+    inspection = _require_inspection_scope(db, user, inspection_id)
+    return ok(shipment_link_service.link_candidate(db, inspection, waybill_no.strip(), carrier.strip(), int(user['sub'])))
+
+
+@router.post('/records/{inspection_id}/shipment', summary='上传物流单（录入物流跟踪）并关联本验货单')
+async def create_inspection_shipment(inspection_id: int, body: InspectionShipmentCreate,
+        db: Session = Depends(get_db),
+        user: dict = Depends(require_any_permission('shipping_inspection:write', 'shipping_inspection:admin'))):
+    from app.shipping_inspection import shipment_link_service
+    from sqlalchemy.exc import IntegrityError
+    from app.tracking.upload_service import WaybillConflict
+    _require_inspection_scope(db, user, inspection_id)
+    try:
+        data = await shipment_link_service.create_and_bind(db, inspection_id, body, user)
+    except WaybillConflict as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail={"code": 409, "message": "运单号已存在", "data": exc.existing}) from exc
+    except IntegrityError as exc:  # 并发录入同一运单号
+        db.rollback()
+        logger.warning("验货单 %s 录入运单并发冲突: %s", inspection_id, exc)
+        print(f"inspection {inspection_id} waybill create integrity conflict", flush=True)
+        raise HTTPException(status_code=409, detail="运单号刚被其他人录入，请重新输入运单号后选择关联已有运单") from exc
+    except ValueError as exc:  # 含 ShipmentLinkError：已入库但未关联
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        logger.warning("验货单 %s 录入运单失败: %s", inspection_id, exc)
+        print(f"inspection {inspection_id} waybill create failed: {type(exc).__name__}", flush=True)
+        raise HTTPException(status_code=500, detail="保存失败，请稍后重试；若物流跟踪里已出现该运单，重新输入运单号后选择关联已有运单") from exc
+    return ok(data, "运单录入并关联成功")
 
 
 @router.put('/records/{inspection_id}/shipment', summary='关联已上传的物流单')

@@ -66,13 +66,13 @@ def test_stale_or_unsubmitted_inspection_cannot_bind(monkeypatch, status, versio
     db.query.assert_not_called()
 
 
-@pytest.mark.parametrize('issue', ['missing', 'deleted', 'no_upload', 'valid'])
-def test_inspection_binding_requires_visible_uploaded_shipment(monkeypatch, issue):
+@pytest.mark.parametrize('issue', ['missing', 'deleted', 'no_image', 'valid'])
+def test_inspection_binding_requires_visible_tracked_shipment(monkeypatch, issue):
     from app.auth import service as auth
     from app.tracking import shipment_service
     inspection = SimpleNamespace(status='submitted', edit_version=3, shipment_version=0, shipment_tracking_id=None, outbound_record_id='out-1', id=1)
     shipment = None if issue == 'missing' else SimpleNamespace(id=10, deleted_at=object() if issue == 'deleted' else None,
-        source_image_url='' if issue == 'no_upload' else 'private.jpg', waybill_no='ABC', carrier='DHL')
+        source_image_url='' if issue == 'no_image' else 'private.jpg', waybill_no='ABC', carrier='DHL')
     monkeypatch.setattr(inspection_service, '_lock_inspection', lambda *args: inspection)
     monkeypatch.setattr(auth, 'get_live_user_authorization', lambda *args: (['super_admin'], []))
     scope = Mock(side_effect=lambda query, *args: query)
@@ -83,12 +83,13 @@ def test_inspection_binding_requires_visible_uploaded_shipment(monkeypatch, issu
     db.query.return_value.filter_by.return_value.with_for_update.return_value.populate_existing.return_value.first.return_value = shipment
     db.get.side_effect = lambda model, identifier: shipment if identifier == 10 else SimpleNamespace(username='staff')
     body = SimpleNamespace(waybill_no='ABC', carrier='DHL', edit_version=3, shipment_version=0)
-    if issue == 'valid':
+    # PC 运单上传不存图片：没有图片地址的跟踪记录同样可以关联
+    if issue in ('valid', 'no_image'):
         assert inspection_service.bind_shipment(db, 1, body, 5) == {'waybill_no': 'ABC', 'carrier': 'DHL', 'shipment_version': 1}
         assert inspection.shipment_tracking_id == 10 and inspection.edit_version == 3 and inspection.shipment_version == 1
         audit.assert_called_once()
     else:
-        with pytest.raises(ValueError, match='上传'):
+        with pytest.raises(ValueError, match='物流跟踪中没有该运单'):
             inspection_service.bind_shipment(db, 1, body, 5)
         assert inspection.shipment_tracking_id is None and inspection.edit_version == 3
         audit.assert_not_called()
