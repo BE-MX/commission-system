@@ -438,7 +438,7 @@ def ranking(db: Session, user: dict, period_type: str, year: int | None, quarter
 
 def metric_orders(db: Session, user: dict, metric: str, user_id: int | None,
                   department_id: int | None, date_from: date | None, date_to: date | None,
-                  page: int, page_size: int) -> dict:
+                  page: int, page_size: int, listed_only: bool = False) -> dict:
     if metric not in METRICS:
         raise HTTPException(422, f"metric 必须是 {'/'.join(METRICS)}")
     period = targets.get_active_period(db)
@@ -460,6 +460,9 @@ def metric_orders(db: Session, user: dict, metric: str, user_id: int | None,
             people = [p for p in people if p["user_id"] == scope_id]
         elif kind == "team":
             people = [p for p in people if p["department_id"] == scope_id]
+    if listed_only:
+        listed = _listed_user_ids(db, period.id) if period else set()
+        people = [person for person in people if person["user_id"] in listed]
     year = period.year if period else _as_of().year
     start = date_from or date(year, 1, 1)
     end = date_to or min(_as_of(), date(year, 12, 31))

@@ -2647,3 +2647,10 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 
 2026-10-29客户商品价格管理GET响应items新增weight（标准商品重量展示值），用于与型号、颜色、长度、sale_unit共同辨别SKU；价格、权限和保存请求契约不变。
+
+
+### 绩效目标明细范围补充（2026-10-29）
+
+`GET /api/perf-goals/metric-orders` 新增可选 `listed_only: bool = false`。开启时在既有用户/战队/权限数据范围过滤后，再限于当前生效周期设有任意年度目标的人员，用于与公司全员目标汇总对应；不改变指标算法或扩大权限。省略或为 false 时保持原明细查询行为。`date_from` / `date_to` 由看板按所选年/季/月及统计截止传入，未来尚未开始周期的默认明细不发请求。
+
+服务端 `rate` / `prev_rate` / `overall_rate` / `gmv_rate` / `projected_rate` / `time_progress` 继续使用比例（如 `0.5`）；`delta_pp` 继续是百分点。主站 API 适配层仅把比例转成现有展示组件使用的百分数（如 `50`），不修改金额、人数、百分点或趋势数据。

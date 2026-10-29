@@ -215,3 +215,19 @@ def test_management_reads_all(perf):
     assert len(s.client.get(f"{s.url}/teams").json()["data"]["rows"]) == 2
     assert len(s.client.get(f"{s.url}/ranking").json()["data"]["rows"]) == 5
     assert s.client.get(f"{s.url}/metric-orders", params={"metric": "gmv"}).json()["data"]["total"] == 6
+
+
+def test_metric_orders_listed_filter_matches_company_overview_without_widening_access(perf):
+    s = perf
+    params = {"metric": "gmv", "listed_only": True, "date_from": "2026-01-01", "date_to": TODAY.isoformat()}
+    result = s.client.get(f"{s.url}/metric-orders", params=params).json()["data"]
+    overview = s.client.get(f"{s.url}/overview", params={"scope": "company", "period_type": "year", "year": 2026}).json()["data"]
+    assert result["summary"]["amount_usd"] == overview["metrics"]["gmv"]["achieved"] == 4600.0
+    assert {row["owner_user_id"] for row in result["items"]} == {u.id for u in s.users[1:4]}
+    original = s.client.get(f"{s.url}/metric-orders", params={"metric": "gmv"}).json()["data"]
+    assert original["summary"]["amount_usd"] == 5000.0
+    become(s, 4)
+    own = s.client.get(f"{s.url}/metric-orders", params={"metric": "gmv", "listed_only": True}).json()["data"]
+    assert own["items"] == []
+    denied = s.client.get(f"{s.url}/metric-orders", params={**params, "user_id": s.users[1].id})
+    assert denied.status_code == 403

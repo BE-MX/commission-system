@@ -1,6 +1,8 @@
 import { perfGoalClient as client } from './clients'
 
-const unwrap = promise => promise.then(res => res?.data ?? res)
+import { unwrapPerfGoalResponse, overviewPercentages, teamPercentages, rankingPercentages } from './perfGoalPayload.js'
+
+const unwrap = promise => promise.then(unwrapPerfGoalResponse)
 const options = params => ({ params, showLoading: false })
 
 /**
@@ -26,10 +28,10 @@ export const perfGoalApi = {
 
   audits: (periodId, params, config = {}) => unwrap(client.get(`/periods/${periodId}/audits`, { ...config, ...options(params) })),
 
-  overview: (params, config = {}) => unwrap(client.get('/overview', { ...config, ...options(params) })),
+  overview: (params, config = {}) => unwrap(client.get('/overview', { ...config, ...options(params) })).then(overviewPercentages),
   trend: (params, config = {}) => unwrap(client.get('/trend', { ...config, ...options(params) })),
-  teams: (params, config = {}) => unwrap(client.get('/teams', { ...config, ...options(params) })),
-  ranking: (params, config = {}) => unwrap(client.get('/ranking', { ...config, ...options(params) })),
+  teams: (params, config = {}) => unwrap(client.get('/teams', { ...config, ...options(params) })).then(teamPercentages),
+  ranking: (params, config = {}) => unwrap(client.get('/ranking', { ...config, ...options(params) })).then(rankingPercentages),
   metricOrders: (params, config = {}) => unwrap(client.get('/metric-orders', { ...config, ...options(params) })),
 
   reports: (params, config = {}) => unwrap(client.get('/reports', { ...config, ...options(params) })),
