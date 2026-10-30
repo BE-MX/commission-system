@@ -100,6 +100,8 @@ def ensure_customer_writable(db: Session, current_user: dict, customer_id: int) 
     customer = db.get(DomesticCustomer, customer_id)
     if customer is None:
         raise LookupError("客户不存在")
+    if customer.status != 1:
+        raise PermissionError("该客户已停用，不能记录跟进")
     if not can_write_customer(db, current_user, customer):
         raise PermissionError(f"该客户归属 {_owner_name(db, customer.owner_user_id)}，不能记录跟进")
     return customer
@@ -163,21 +165,28 @@ def search_customers(db: Session, current_user: dict, q: str) -> list[dict]:
 
 
 def match_alias(db: Session, current_user: dict, chat_title: str | None) -> dict | None:
-    """聊天标题精确命中别名时返回客户行（供 AI 结果后置校正）。"""
+    """聊天标题精确命中别名时返回客户行（供 AI 结果后置校正）。
+
+    可见范围与 status==1 放进查询条件再按 hit_count 取首条，和 search_customers 一致：
+    范围外的高频别名不应遮住范围内的同名别名（第 2 批对抗性审查，2026-10-31）。
+    """
     norm = normalize_alias(chat_title)
     if not norm:
         return None
-    alias = (
-        db.query(DomesticCustomerAlias)
-        .filter(DomesticCustomerAlias.alias_norm == norm)
-        .order_by(DomesticCustomerAlias.hit_count.desc())
-        .first()
+    query = (
+        db.query(DomesticCustomerAlias, DomesticCustomer)
+        .join(DomesticCustomer, DomesticCustomer.id == DomesticCustomerAlias.customer_id)
+        .filter(DomesticCustomerAlias.alias_norm == norm, DomesticCustomer.status == 1)
     )
-    if alias is None:
+    if not can_read_all(current_user):
+        query = query.filter(or_(
+            DomesticCustomer.owner_user_id.is_(None),
+            DomesticCustomer.id.in_(scoped_customer_ids(uid(current_user))),
+        ))
+    row = query.order_by(DomesticCustomerAlias.hit_count.desc()).first()
+    if row is None:
         return None
-    customer = db.get(DomesticCustomer, alias.customer_id)
-    if customer is None or not (customer.owner_user_id is None or in_customer_scope(db, current_user, customer.id)):
-        return None
+    alias, customer = row
     return _customer_row(db, current_user, customer, matched_alias=alias.alias)
 
 

@@ -1131,13 +1131,29 @@ from app.domestic_followup.constants import DICT_CATEGORY, DICT_CHANNEL, DICT_ST
 from tests.domestic_followup_helpers import make_user, seed_dicts
 
 
-def test_followup_permissions_seeded_and_read_all_is_data_kind():
-    from app.auth.service import _DATA_KIND_CODES, seed_role_permissions
+def test_followup_permissions_seeded_with_correct_kind_and_admin_grants(db):
+    from app.auth.models import ArkPermission, ArkRole, ArkRolePermission
+    from app.auth.service import seed_role_permissions
 
-    assert "domestic_followup:read_all" in _DATA_KIND_CODES
-    consts = " ".join(str(v) for v in seed_role_permissions.__code__.co_consts)
-    for code in ("domestic_followup:read", "domestic_followup:write", "domestic_followup:admin"):
-        assert code in consts
+    admin_role = ArkRole(name="admin", label="管理员")
+    db.add(admin_role)
+    db.flush()
+    seed_role_permissions(db)
+    seed_role_permissions(db)  # 幂等：跟 test_domestic_operation_permissions.py 同一惯例，跑两次确认不重复授予
+
+    read_all_perm = db.query(ArkPermission).filter_by(code="domestic_followup:read_all").one()
+    assert read_all_perm.kind == "data"
+
+    def _admin_granted(code: str) -> bool:
+        perm = db.query(ArkPermission).filter_by(code=code).one()
+        return db.query(ArkRolePermission).filter_by(
+            role_id=admin_role.id, permission_id=perm.id,
+        ).count() > 0
+
+    assert _admin_granted("domestic_followup:read")
+    assert _admin_granted("domestic_followup:write")
+    assert not _admin_granted("domestic_followup:read_all")
+    assert not _admin_granted("domestic_followup:admin")
 
 
 def test_config_defaults_and_update(db):
@@ -1289,7 +1305,7 @@ def load_values(db: Session) -> dict[str, list[str]]:
 - [ ] **Step 6: 跑测试确认通过**
 
 Run: `PY -m pytest tests/test_domestic_followup_visibility.py -q`
-Expected: PASS（7 passed）
+Expected: PASS（4 passed）
 
 - [ ] **Step 7: 约定检查**
 
@@ -1382,6 +1398,126 @@ def test_create_prospect_and_conflicts(db):
     with pytest.raises(ValueError, match="已存在（归属：fu_vis5_owner）"):
         visibility.create_prospect(db, _user_ctx(other), "新潜在店")
 ```
+
+**第 2 批对抗性审查（2026-10-31）追加**：`ensure_customer_writable` 补「已停用客户」拒绝；`followup_filter`/`task_filter` 补查询级四象限验证（原来只测过 `can_write_customer` 这个点查询函数，没测过真正拼进 SQL 的过滤表达式）；`search_customers` 补范围外/停用/特殊字符/`super_admin` 四条负向用例；`match_alias` 发现范围外高 hit_count 别名会遮住范围内同名别名的问题，连同用例一起补：
+
+```python
+def test_ensure_writable_rejects_inactive_customer(db):
+    owner = make_user(db, "fu_vis6_owner")
+    customer = make_customer(db, owner, "停用跟进店")
+    customer.status = 0
+    db.flush()
+    with pytest.raises(PermissionError, match="已停用"):
+        visibility.ensure_customer_writable(db, _user_ctx(owner), customer.id)
+
+
+def test_followup_filter_four_quadrants(db):
+    author, scoped_owner, outsider = (make_user(db, f"fu_filt_{n}") for n in ("a", "s", "o"))
+    customer = make_customer(db, scoped_owner, "过滤测试店")
+
+    draft = DomesticFollowup(author_user_id=author.id, customer_id=customer.id,
+                              followup_date=date(2026, 10, 30), status="draft", request_id="r-filt-draft")
+    confirmed = DomesticFollowup(author_user_id=author.id, customer_id=customer.id,
+                                  followup_date=date(2026, 10, 30), status="confirmed", request_id="r-filt-confirmed")
+    discarded = DomesticFollowup(author_user_id=author.id, customer_id=customer.id,
+                                  followup_date=date(2026, 10, 30), status="discarded", request_id="r-filt-discarded")
+    db.add_all([draft, confirmed, discarded])
+    db.flush()
+
+    def visible_ids(user):
+        return {row.id for row in db.query(DomesticFollowup).filter(visibility.followup_filter(_user_ctx(user))).all()}
+
+    author_ids = visible_ids(author)
+    assert draft.id in author_ids  # 作者看自己的草稿：可见
+    assert confirmed.id in author_ids
+    assert discarded.id in author_ids  # 作者对自己的记录（含作废）全部可见
+
+    outsider_ids = visible_ids(outsider)
+    assert draft.id not in outsider_ids  # 他人看草稿：不可见
+    assert confirmed.id not in outsider_ids
+    assert discarded.id not in outsider_ids
+
+    scoped_ids = visible_ids(scoped_owner)
+    assert confirmed.id in scoped_ids  # 同客户范围内的他人看已确认记录：可见
+    assert discarded.id not in scoped_ids  # 同客户范围内的他人看作废记录：不可见
+    assert draft.id not in scoped_ids
+
+
+def test_task_filter_matches_assignee_or_customer_scope(db):
+    assignee, scoped_owner, outsider = (make_user(db, f"fu_taskfilt_{n}") for n in ("a", "o", "x"))
+    other_customer = make_customer(db, None, "任务过滤店A", creator=assignee)
+    scoped_customer = make_customer(db, scoped_owner, "任务过滤店B")
+    task_by_assignee = DomesticFollowupTask(task_type="plan", customer_id=other_customer.id,
+                                             assignee_user_id=assignee.id, source_key="plan:filt-a",
+                                             title="t", due_date=date(2026, 11, 2))
+    task_by_scope = DomesticFollowupTask(task_type="plan", customer_id=scoped_customer.id,
+                                          assignee_user_id=assignee.id, source_key="plan:filt-b",
+                                          title="t2", due_date=date(2026, 11, 2))
+    db.add_all([task_by_assignee, task_by_scope])
+    db.flush()
+
+    def visible_ids(user):
+        return {row.id for row in db.query(DomesticFollowupTask).filter(visibility.task_filter(_user_ctx(user))).all()}
+
+    assignee_ids = visible_ids(assignee)
+    assert task_by_assignee.id in assignee_ids and task_by_scope.id in assignee_ids  # 负责人两条都看得到
+
+    scoped_ids = visible_ids(scoped_owner)
+    assert task_by_scope.id in scoped_ids  # 客户在自己范围内：可见
+    assert task_by_assignee.id not in scoped_ids  # 客户不在范围、自己也不是负责人：不可见
+
+    assert not visible_ids(outsider)  # 既不是负责人也不在客户范围：都看不到
+
+
+def test_search_excludes_out_of_scope_and_inactive_customers(db):
+    owner, other = (make_user(db, f"fu_search_{n}") for n in ("o", "x"))
+    in_scope = make_customer(db, owner, "范围内蜡烫店")
+    out_of_scope = make_customer(db, other, "范围外蜡烫店")
+    inactive = make_customer(db, owner, "停用蜡烫店")
+    inactive.status = 0
+    db.flush()
+
+    results = {row["id"] for row in visibility.search_customers(db, _user_ctx(owner), "蜡烫店")}
+    assert in_scope.id in results
+    assert out_of_scope.id not in results  # 范围外客户搜不到
+    assert inactive.id not in results  # status=0 被排除
+
+
+def test_search_keyword_with_percent_and_underscore_matches_literally(db):
+    owner = make_user(db, "fu_search_lit")
+    literal = make_customer(db, owner, "100%纯手工店")
+    decoy = make_customer(db, owner, "100X纯手工店")
+    db.flush()
+    results = {row["id"] for row in visibility.search_customers(db, _user_ctx(owner), "100%纯")}
+    assert literal.id in results
+    assert decoy.id not in results
+
+
+def test_search_super_admin_role_sees_others_customers(db):
+    boss = make_user(db, "fu_search_boss")
+    other_owner = make_user(db, "fu_search_other")
+    customer = make_customer(db, other_owner, "总管可见店")
+    db.flush()
+    boss_ctx = _user_ctx(boss, ("domestic_followup:read",))
+    boss_ctx["roles"] = ["super_admin"]
+    results = {row["id"] for row in visibility.search_customers(db, boss_ctx, "总管可见店")}
+    assert customer.id in results
+
+
+def test_match_alias_scope_excludes_higher_hit_outside_customer(db):
+    owner, other_owner = (make_user(db, f"fu_alias_{n}") for n in ("o", "x"))
+    in_scope = make_customer(db, owner, "范围内别名店")
+    out_of_scope = make_customer(db, other_owner, "范围外别名店")
+    db.add(DomesticCustomerAlias(customer_id=out_of_scope.id, alias="别名冲突", alias_norm="别名冲突",
+                                 hit_count=50, created_by=other_owner.id))
+    db.add(DomesticCustomerAlias(customer_id=in_scope.id, alias="别名冲突", alias_norm="别名冲突",
+                                 hit_count=1, created_by=owner.id))
+    db.flush()
+    matched = visibility.match_alias(db, _user_ctx(owner), "别名冲突")
+    assert matched is not None and matched["id"] == in_scope.id
+```
+
+（以上用例需要在文件顶部补 `from datetime import date` 和把 `DomesticFollowup` 加进已有的 `from app.domestic_followup.models import ...` 导入。）
 
 - [ ] **Step 2: 跑测试确认失败**
 
@@ -1493,6 +1629,8 @@ def ensure_customer_writable(db: Session, current_user: dict, customer_id: int) 
     customer = db.get(DomesticCustomer, customer_id)
     if customer is None:
         raise LookupError("客户不存在")
+    if customer.status != 1:
+        raise PermissionError("该客户已停用，不能记录跟进")
     if not can_write_customer(db, current_user, customer):
         raise PermissionError(f"该客户归属 {_owner_name(db, customer.owner_user_id)}，不能记录跟进")
     return customer
@@ -1556,21 +1694,28 @@ def search_customers(db: Session, current_user: dict, q: str) -> list[dict]:
 
 
 def match_alias(db: Session, current_user: dict, chat_title: str | None) -> dict | None:
-    """聊天标题精确命中别名时返回客户行（供 AI 结果后置校正）。"""
+    """聊天标题精确命中别名时返回客户行（供 AI 结果后置校正）。
+
+    可见范围与 status==1 放进查询条件再按 hit_count 取首条，和 search_customers 一致：
+    范围外的高频别名不应遮住范围内的同名别名（第 2 批对抗性审查，2026-10-31）。
+    """
     norm = normalize_alias(chat_title)
     if not norm:
         return None
-    alias = (
-        db.query(DomesticCustomerAlias)
-        .filter(DomesticCustomerAlias.alias_norm == norm)
-        .order_by(DomesticCustomerAlias.hit_count.desc())
-        .first()
+    query = (
+        db.query(DomesticCustomerAlias, DomesticCustomer)
+        .join(DomesticCustomer, DomesticCustomer.id == DomesticCustomerAlias.customer_id)
+        .filter(DomesticCustomerAlias.alias_norm == norm, DomesticCustomer.status == 1)
     )
-    if alias is None:
+    if not can_read_all(current_user):
+        query = query.filter(or_(
+            DomesticCustomer.owner_user_id.is_(None),
+            DomesticCustomer.id.in_(scoped_customer_ids(uid(current_user))),
+        ))
+    row = query.order_by(DomesticCustomerAlias.hit_count.desc()).first()
+    if row is None:
         return None
-    customer = db.get(DomesticCustomer, alias.customer_id)
-    if customer is None or not (customer.owner_user_id is None or in_customer_scope(db, current_user, customer.id)):
-        return None
+    alias, customer = row
     return _customer_row(db, current_user, customer, matched_alias=alias.alias)
 
 
@@ -1619,7 +1764,7 @@ def create_prospect(db: Session, current_user: dict, shop_name: str) -> dict:
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `PY -m pytest tests/test_domestic_followup_visibility.py -q`
-Expected: PASS（9 passed）
+Expected: PASS（16 passed，含第 2 批对抗性审查追加的 7 条）
 
 `create_customer` 在 SQLite 下如果因为 `commission_service.initialize_default` 的依赖报错：先读 `backend/app/domestic/commission_service.py` 找出缺的表或数据，在测试里补；不要改 create_customer。
 
@@ -1747,6 +1892,62 @@ def test_ocr_job_fills_text_and_survives_failures(db, storage, monkeypatch):
     assert bad_att.ocr_status == "failed"
 ```
 
+**第 2 批对抗性审查（2026-10-31）追加**：`_png()` 同级补 `_gif()`；`fake_chat` 加 `snapshot_mode` 守卫；补「绑到自己另一条记录」「伪装成 png 的 GIF」「`db.get` 本身抛错不拖垮整批」三条：
+
+```python
+def _gif() -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), "white").save(buf, format="GIF")
+    return buf.getvalue()
+
+
+def test_bind_to_own_other_record_rejected_with_specific_message(db, storage):
+    user = make_user(db, "fu_att_j")
+    att = attachment_service.upload(db, user.id, "a.png", "image/png", _png())
+    first = DomesticFollowup(author_user_id=user.id, followup_date=date(2026, 10, 30), request_id="r-att-j1")
+    second = DomesticFollowup(author_user_id=user.id, followup_date=date(2026, 10, 30), request_id="r-att-j2")
+    db.add_all([first, second])
+    db.flush()
+    attachment_service.bind(db, user.id, first.id, [att.id])
+    with pytest.raises(PermissionError, match="另一条记录"):
+        attachment_service.bind(db, user.id, second.id, [att.id])
+
+
+def test_rejects_disguised_gif_as_png(db, storage):
+    user = make_user(db, "fu_att_i")
+    with pytest.raises(ValueError, match="PNG"):
+        attachment_service.upload(db, user.id, "x.png", "image/png", _gif())
+```
+
+以及 `fake_chat` 补一行 `assert kwargs["snapshot_mode"] == "metadata"`（截图隐私：不落全量快照），和一条 `run_ocr` 韧性用例：
+
+```python
+def test_run_ocr_survives_session_get_crash(db, storage, monkeypatch):
+    user = make_user(db, "fu_att_h")
+    crash_att = attachment_service.upload(db, user.id, "a.png", "image/png", _png())
+    ok_att = attachment_service.upload(db, user.id, "b.png", "image/png", _png())
+    db.commit()
+
+    def fake_chat(**kwargs):
+        kwargs["db"].commit()
+        return {"content": '{"text": "ok"}'}
+    monkeypatch.setattr(attachment_service, "chat", fake_chat)
+
+    original_get = db.get
+
+    def flaky_get(model, ident, *args, **kwargs):
+        if model is DomesticFollowupAttachment and ident == crash_att.id:
+            raise RuntimeError("db hiccup")
+        return original_get(model, ident, *args, **kwargs)
+
+    monkeypatch.setattr(db, "get", flaky_get)
+    attachment_service.run_ocr([crash_att.id, ok_att.id], session_factory=lambda: nullcontext(db))
+    monkeypatch.setattr(db, "get", original_get)
+
+    assert ok_att.ocr_status == "done"  # 第一张彻底取不出来，后面这张仍要被处理
+    assert crash_att.ocr_status == "pending"  # 连取附件都失败，没法标记，保持原状不假装成功
+```
+
 - [ ] **Step 2: 跑测试确认失败**
 
 Run: `PY -m pytest tests/test_domestic_followup_attachments.py -q`
@@ -1790,11 +1991,15 @@ def upload(db: Session, user_id: int, filename: str, mime_type: str, content: by
         file_service.validate_upload(filename, mime_type or "", len(content))
     except file_service.FileValidationError as exc:
         raise ValueError(str(exc)) from exc
-    try:  # 不信客户端 mime：解码一遍图片头
+    try:  # 不信客户端 mime：解码一遍图片头，verify() 之后对象不可再用，重开一次读真实格式
         with Image.open(io.BytesIO(content)) as img:
             img.verify()
+        with Image.open(io.BytesIO(content)) as img:
+            image_format = img.format
     except Exception as exc:  # noqa: BLE001 — 任何解码失败都按「不是图片」拒绝
         raise ValueError("只能上传图片截图") from exc
+    if image_format not in {"PNG", "JPEG", "WEBP"}:
+        raise ValueError("只支持 PNG / JPG / WEBP 截图")
     recent_unbound = db.query(func.count(DomesticFollowupAttachment.id)).filter(
         DomesticFollowupAttachment.uploader_user_id == user_id,
         DomesticFollowupAttachment.followup_id.is_(None),
@@ -1831,8 +2036,10 @@ def bind(db: Session, user_id: int, followup_id: int, attachment_ids: list[int])
         att = by_id.get(att_id)
         if att is None:
             raise LookupError("截图不存在或已失效，请重新上传")
-        if att.uploader_user_id != user_id or att.followup_id not in (None, followup_id):
+        if att.uploader_user_id != user_id:
             raise PermissionError("不能使用他人上传的截图")
+        if att.followup_id not in (None, followup_id):
+            raise PermissionError("该截图已用于另一条记录，请重新上传")
         att.followup_id = followup_id
         att.seq = seq
     db.flush()
@@ -1907,23 +2114,35 @@ def run_ocr(attachment_ids: list[int], session_factory=SessionLocal) -> None:
 
     不用 savepoint：AI facade 写调用日志时会 db.commit()（ai/call_service.py:117），
     savepoint 随之关闭，再 commit/rollback 会抛 ResourceClosedError。所以每张独立提交。
+
+    整圈循环体（含最前面的 db.get）都包进 try：哪怕取附件这一步本身抛错（比如连接抖动），
+    也不能让后面还没处理的截图整批陪葬；兜底的「标记失败」提交再失败一次，也只记日志不再抛出。
     """
     with session_factory() as db:
         for att_id in attachment_ids:
-            att = db.get(DomesticFollowupAttachment, att_id)
-            if att is None or att.ocr_status == "done":
-                continue
             try:
+                att = db.get(DomesticFollowupAttachment, att_id)
+                if att is None or att.ocr_status == "done":
+                    continue
                 _ocr_one(db, att)
                 db.commit()
             except Exception as exc:  # noqa: BLE001 — 单张失败记 failed，继续下一张
-                db.rollback()
                 logger.warning("followup OCR failed att=%s: %s", att_id, type(exc).__name__)
                 print(f"[domestic_followup] OCR failed att={att_id}: {type(exc).__name__}", flush=True)
-                att = db.get(DomesticFollowupAttachment, att_id)
-                if att is not None:
-                    att.ocr_status = "failed"
-                    db.commit()
+                try:
+                    db.rollback()
+                    att = db.get(DomesticFollowupAttachment, att_id)
+                    if att is not None:
+                        att.ocr_status = "failed"
+                        db.commit()
+                except Exception as mark_exc:  # noqa: BLE001 — 连兜底标记都失败，只记录，不让整批中断
+                    logger.warning("followup OCR mark-failed also failed att=%s: %s", att_id, type(mark_exc).__name__)
+                    print(f"[domestic_followup] OCR mark-failed also failed att={att_id}: {type(mark_exc).__name__}",
+                          flush=True)
+                    try:
+                        db.rollback()
+                    except Exception:  # noqa: BLE001 — session 可能已不可用，不再抛出
+                        pass
 ```
 
 测试里的 `fake_chat` 用 `chat(**kwargs)` 关键字调用，所以 `_ocr_one` 必须全部用关键字参数传参，上面的代码已经这样写了。
@@ -1931,7 +2150,7 @@ def run_ocr(attachment_ids: list[int], session_factory=SessionLocal) -> None:
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `PY -m pytest tests/test_domestic_followup_attachments.py -q`
-Expected: PASS（4 passed）
+Expected: PASS（10 passed，含第 2 批对抗性审查追加的 3 条）
 
 - [ ] **Step 5: 提交**
 

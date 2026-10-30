@@ -33,11 +33,15 @@ def upload(db: Session, user_id: int, filename: str, mime_type: str, content: by
         file_service.validate_upload(filename, mime_type or "", len(content))
     except file_service.FileValidationError as exc:
         raise ValueError(str(exc)) from exc
-    try:  # 不信客户端 mime：解码一遍图片头
+    try:  # 不信客户端 mime：解码一遍图片头，verify() 之后对象不可再用，重开一次读真实格式
         with Image.open(io.BytesIO(content)) as img:
             img.verify()
+        with Image.open(io.BytesIO(content)) as img:
+            image_format = img.format
     except Exception as exc:  # noqa: BLE001 — 任何解码失败都按「不是图片」拒绝
         raise ValueError("只能上传图片截图") from exc
+    if image_format not in {"PNG", "JPEG", "WEBP"}:
+        raise ValueError("只支持 PNG / JPG / WEBP 截图")
     recent_unbound = db.query(func.count(DomesticFollowupAttachment.id)).filter(
         DomesticFollowupAttachment.uploader_user_id == user_id,
         DomesticFollowupAttachment.followup_id.is_(None),
@@ -74,8 +78,10 @@ def bind(db: Session, user_id: int, followup_id: int, attachment_ids: list[int])
         att = by_id.get(att_id)
         if att is None:
             raise LookupError("截图不存在或已失效，请重新上传")
-        if att.uploader_user_id != user_id or att.followup_id not in (None, followup_id):
+        if att.uploader_user_id != user_id:
             raise PermissionError("不能使用他人上传的截图")
+        if att.followup_id not in (None, followup_id):
+            raise PermissionError("该截图已用于另一条记录，请重新上传")
         att.followup_id = followup_id
         att.seq = seq
     db.flush()
@@ -150,20 +156,32 @@ def run_ocr(attachment_ids: list[int], session_factory=SessionLocal) -> None:
 
     不用 savepoint：AI facade 写调用日志时会 db.commit()（ai/call_service.py:117），
     savepoint 随之关闭，再 commit/rollback 会抛 ResourceClosedError。所以每张独立提交。
+
+    整圈循环体（含最前面的 db.get）都包进 try：哪怕取附件这一步本身抛错（比如连接抖动），
+    也不能让后面还没处理的截图整批陪葬；兜底的「标记失败」提交再失败一次，也只记日志不再抛出。
     """
     with session_factory() as db:
         for att_id in attachment_ids:
-            att = db.get(DomesticFollowupAttachment, att_id)
-            if att is None or att.ocr_status == "done":
-                continue
             try:
+                att = db.get(DomesticFollowupAttachment, att_id)
+                if att is None or att.ocr_status == "done":
+                    continue
                 _ocr_one(db, att)
                 db.commit()
             except Exception as exc:  # noqa: BLE001 — 单张失败记 failed，继续下一张
-                db.rollback()
                 logger.warning("followup OCR failed att=%s: %s", att_id, type(exc).__name__)
                 print(f"[domestic_followup] OCR failed att={att_id}: {type(exc).__name__}", flush=True)
-                att = db.get(DomesticFollowupAttachment, att_id)
-                if att is not None:
-                    att.ocr_status = "failed"
-                    db.commit()
+                try:
+                    db.rollback()
+                    att = db.get(DomesticFollowupAttachment, att_id)
+                    if att is not None:
+                        att.ocr_status = "failed"
+                        db.commit()
+                except Exception as mark_exc:  # noqa: BLE001 — 连兜底标记都失败，只记录，不让整批中断
+                    logger.warning("followup OCR mark-failed also failed att=%s: %s", att_id, type(mark_exc).__name__)
+                    print(f"[domestic_followup] OCR mark-failed also failed att={att_id}: {type(mark_exc).__name__}",
+                          flush=True)
+                    try:
+                        db.rollback()
+                    except Exception:  # noqa: BLE001 — session 可能已不可用，不再抛出
+                        pass
