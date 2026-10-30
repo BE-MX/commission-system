@@ -241,6 +241,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 _DATA_KIND_CODES = {"battle_report:read_all", "customer_media:read_all", "customer_media_account:read_all", "receipt:read_all", "tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "domestic_decision:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 _DATA_KIND_CODES.add("sales_return:read_all")
+_DATA_KIND_CODES.add("domestic_followup:read_all")
 
 
 def _perm_kind(code: str, action: str) -> str:
@@ -401,6 +402,10 @@ def seed_role_permissions(db: Session):
         ("domestic:review",       "domestic", "review",       "审核内贸充值/调整申请与优惠价订单"),
         ("domestic_decision:read", "domestic_decision", "read", "内贸经营决策台"),
         ("domestic_decision:read_all", "domestic_decision", "read_all", "全部内贸客户经营范围"),
+        ("domestic_followup:read", "domestic_followup", "read", "查看客户跟进"),
+        ("domestic_followup:write", "domestic_followup", "write", "录入客户跟进与处理待办"),
+        ("domestic_followup:read_all", "domestic_followup", "read_all", "全部客户跟进范围"),
+        ("domestic_followup:admin", "domestic_followup", "admin", "客户跟进配置（回访天数/推送接收人/频率）"),
         ("domestic_decision_finance:read", "domestic_decision_finance", "read", "内贸经营资金阅读"),
         ("domestic_decision_action:write", "domestic_decision_action", "write", "内贸经营行动记录"),
         ("domestic_decision_report:write", "domestic_decision_report", "write", "内贸经营简报与导出"),
@@ -697,6 +702,7 @@ def seed_role_permissions(db: Session):
         "customer:confirm_material_risk",
         "customer:read_all",
         "shipping_inspection:inspection_read_all",
+        "domestic_followup:read_all", "domestic_followup:admin",
     }
     # 给 admin 角色补齐一般非 legacy 权限（跳过已下架和显式授权项）。
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()
