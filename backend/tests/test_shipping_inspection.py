@@ -447,9 +447,12 @@ def test_image_read_endpoints(db, storage):
 
 @pytest.fixture
 def outbound_scope_seed(db):
-    """归属过滤种子：出库单补 company_id 列，okki_orders 建立 客户→业务员 映射。"""
+    """归属过滤种子：单头客户、明细实际订单及订单业务员必须对应。"""
     outbound_service._columns_cache.clear()
     db.execute(text("ALTER TABLE lsordertest.okki_outbound_records ADD COLUMN company_id TEXT"))
+    db.execute(text("ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN order_id TEXT"))
+    db.execute(text("""UPDATE lsordertest.okki_outbound_record_items
+        SET order_id = CASE outbound_record_id WHEN 'OB001' THEN 'ORD1' ELSE 'ORD2' END"""))
     db.execute(text("""
         UPDATE lsordertest.okki_outbound_records
         SET company_id = CASE id WHEN 'OB001' THEN 'C1' ELSE 'C2' END
@@ -473,7 +476,7 @@ def _bind_okki(db, user, external_id="9001"):
     return binding
 
 
-def test_outbound_list_scoped_to_own_okki_customers(db, outbound_scope_seed):
+def test_outbound_list_scoped_to_actual_order_salesperson(db, outbound_scope_seed):
     user = _user(db, "sales-own")
     _bind_okki(db, user, "9001")
     with _pc_client(db, user, ["shipping_inspection:read"]) as client:
@@ -487,7 +490,7 @@ def test_outbound_list_scoped_to_own_okki_customers(db, outbound_scope_seed):
             "/api/shipping-inspection/outbound-records", params={"keyword": "客户乙"},
         ).json()["data"]
         assert kw["total"] == 0
-        # 打印数据：本人客户 200，他人客户 404（不泄露单是否存在）
+        # 打印数据：本人关联订单 200，他人关联订单 404（不泄露单是否存在）
         assert client.get("/api/shipping-inspection/outbound-records/OB001/print-data").status_code == 200
         assert client.get("/api/shipping-inspection/outbound-records/OB002/print-data").status_code == 404
 

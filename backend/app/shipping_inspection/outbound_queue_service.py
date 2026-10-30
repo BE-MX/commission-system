@@ -44,10 +44,20 @@ def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id, sor
         "OR (t.status='skipped' AND t.reason LIKE 'existing:%'))",
     ]
     if okki_user_id:
-        local_clauses.append("""EXISTS (SELECT 1 FROM ark_user_external_bindings b
-            WHERE b.ark_user_id=f.sales_user_id AND b.provider='okki'
-              AND b.binding_status='active' AND b.deleted_at IS NULL
-              AND b.external_account_id=:scope_okki_user_id)""")
+        # The same order ownership must govern previews and formal documents;
+        # otherwise a stale invoice owner regains access via the undeduped task.
+        local_clauses.append(f"""(
+            EXISTS (SELECT 1 FROM `{schema}`.okki_orders task_order
+                    WHERE task_order.order_id=t.order_id
+                      AND task_order.company_id=f.customer_id
+                      AND task_order.user_id=:scope_okki_user_id)
+            OR (NOT EXISTS (SELECT 1 FROM `{schema}`.okki_orders task_order
+                            WHERE task_order.order_id=t.order_id)
+                AND EXISTS (SELECT 1 FROM ark_user_external_bindings b
+                    WHERE b.ark_user_id=f.sales_user_id AND b.provider='okki'
+                      AND b.binding_status='active' AND b.deleted_at IS NULL
+                      AND b.external_account_id=:scope_okki_user_id))
+        )""")
     if keyword:
         local_clauses.append("(f.invoice_no LIKE :kw OR f.customer_name LIKE :kw)")
         params["kw"] = f"%{keyword}%"

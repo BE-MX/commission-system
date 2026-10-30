@@ -1,8 +1,8 @@
 """发货检验 — PC 端 API 路由
 
 权限：shipping_inspection:read（查看）/ shipping_inspection:write / shipping_inspection:admin，
-读接口任一即可。出库单（列表 + 打印数据）按本地方舟首推订单业务员或既有
-OKKI 镜像客户归属过滤；shipping_inspection:read_all 或 super_admin 看全部。
+读接口任一即可。出库单按明细实际关联订单的业务员过滤；订单镜像未到达时
+核验同一订单的方舟首推归属。shipping_inspection:read_all 或 super_admin 看全部。
 统一信封 ok()；业务库（lsordertest）只读。
 """
 

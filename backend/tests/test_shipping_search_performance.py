@@ -20,7 +20,7 @@ def test_empty_first_page_does_not_repeat_the_combined_lookup(db, outbound_scope
     assert not any('SELECT COUNT(*) FROM (' in sql for sql in statements)
 
 
-def test_mirror_scope_materializes_customers_once_for_large_lookup(db, outbound_scope_seed):
+def test_mirror_scope_materializes_linked_orders_once_for_large_lookup(db, outbound_scope_seed):
     # All records share a customer with many orders. A correlated ownership
     # lookup repeatedly scans those orders even when none belongs to this user.
     db.execute(text('CREATE INDEX lsordertest.search_perf_company ON okki_orders(company_id)'))
@@ -28,6 +28,9 @@ def test_mirror_scope_materializes_customers_once_for_large_lookup(db, outbound_
                [{'id': f'PERF-ORDER-{i}', 'company': 'PERF-CUSTOMER', 'owner': 'other'} for i in range(500)])
     db.execute(text('INSERT INTO lsordertest.okki_outbound_records(id,company_id) VALUES (:id,:company)'),
                [{'id': f'PERF-RECORD-{i}', 'company': 'PERF-CUSTOMER'} for i in range(500)])
+    db.execute(text('INSERT INTO lsordertest.okki_outbound_record_items(id,outbound_record_id,order_id) '
+                    'VALUES (:id,:record,:order)'),
+               [{'id': f'PERF-ITEM-{i}', 'record': f'PERF-RECORD-{i}', 'order': f'PERF-ORDER-{i}'} for i in range(500)])
     rm = records._record_columns(db)
     clause = records._owner_scope_clause(db, rm)
     steps = 0

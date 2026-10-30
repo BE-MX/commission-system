@@ -1552,7 +1552,9 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 ## 发货检验（`/api/shipping-inspection`，128 迁移，2026-09-01）
 
-2026-09-16 数据范围：PC 验货单列表、详情（含打印数据）、撤回及照片/视频读取均按关联出库单的客户归属过滤（`okki_orders.company_id/user_id` + 当前用户有效 OKKI 绑定），不按质检提交人过滤。列表总数与分页在 SQL 过滤后计算。独立权限 `shipping_inspection:inspection_read_all`（查看全部验货单）或 super_admin 可跨归属查看；它不授予写权限，也不扩大出库单范围。原 `shipping_inspection:read_all` 仅控制出库单。无 OKKI 绑定且无全部权限返回 422；他人记录/媒体返回 404；归属表结构异常不降级为全量。新权限由启动 seed 登记为 data 类型，角色管理需单独勾选，不自动补授 admin 或业务员；角色调整后刷新登录令牌生效。小程序与共用手机的质检作业权限保持原规则。公共 `/uploads` 和 `/uploads/assets` 静态挂载禁止读取配置的验货媒体目录以及历史 `uploads/shipping-inspection`，照片/视频必须经过鉴权 API。
+2026-10-30 出库归属修正：普通业务员按出库明细实际 `order_id → okki_orders.user_id` 与当前有效 OKKI 绑定过滤，并校验订单客户与出库单头客户一致。客户曾有本人的历史订单，不授予该客户其他出库单的访问权。多个实际关联订单的业务员均可查看该出库单，结果按出库单去重。订单镜像尚未到达时，仅同一明细订单的方舟成功首推记录及有效业务员绑定可放行；已有订单镜像时不能用旧本地归属覆盖。未生成正式单的本地任务同样优先按同一订单镜像归属过滤，无镜像才按本地发票归属。缺关联数据不按客户历史放行；缺少关联列时报表结构异常。此范围同时用于出库列表、详情/打印/Word、库存明细、看板与继承出库范围的验货记录/媒体。全量权限与 super_admin 的范围保持不变。
+
+2026-09-16 数据范围：PC 验货单列表、详情（含打印数据）、撤回及照片/视频读取均按关联出库单的实际订单业务员归属过滤（出库明细 `order_id → okki_orders.user_id`、同客户校验 + 当前用户有效 OKKI 绑定），不按质检提交人过滤。列表总数与分页在 SQL 过滤后计算。独立权限 `shipping_inspection:inspection_read_all`（查看全部验货单）或 super_admin 可跨归属查看；它不授予写权限，也不扩大出库单范围。原 `shipping_inspection:read_all` 仅控制出库单。无 OKKI 绑定且无全部权限返回 422；他人记录/媒体返回 404；归属表结构异常不降级为全量。新权限由启动 seed 登记为 data 类型，角色管理需单独勾选，不自动补授 admin 或业务员；角色调整后刷新登录令牌生效。小程序与共用手机的质检作业权限保持原规则。公共 `/uploads` 和 `/uploads/assets` 静态挂载禁止读取配置的验货媒体目录以及历史 `uploads/shipping-inspection`，照片/视频必须经过鉴权 API。
 
 
 基于 `lsordertest.okki_outbound_records / okki_outbound_record_items`（OKKI 只读镜像，跨库只读、运行时列内省自适应字段名）的发货检验闭环：PC 打印带二维码出库单 → 小程序扫码上传照片/视频 → PC 打印验货单。检验数据落 `ark_shipping_inspections / ark_shipping_inspection_photos`。PC 读取要求 `shipping_inspection:read/write/admin`（require_any_permission）；撤回要求 write/admin。小程序端点挂 `/api/mini/shipping-inspection`，登录鉴权并通过 `require_mini_entry("shipping")` 校验入口权限。
