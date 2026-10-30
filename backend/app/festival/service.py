@@ -212,6 +212,12 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str,
             + _common_filter("a2")
         ), {"mark": NEW_SIGN_MARK, "d1": date_from, "d2": date_to}).mappings().all()
     stats = _aggregate_new_sign_rows(rows)
+    from app.sales_return.gmv import adjustments
+    return_facts = adjustments(db, date_from, date_to)
+    for fact in return_facts:
+        if fact["role"] == "new_sign":
+            stat = stats.setdefault(fact["owner"], {"cnt": 0, "amt": 0, "points": 0})
+            stat["amt"] += float(fact["amount"])
 
     items = []
     for m in roster:
@@ -234,7 +240,8 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str,
         })
     # 排序：积分降序 → 新签金额降序（B-10 决胜口径）→ 姓名稳定兜底
     items.sort(key=lambda x: (-x["new_points"], -x["new_amount"], x["name"]))
-    return {"items": items}
+    return {"items": items, "amount_basis": "net_sales_and_returns_by_effective_date",
+            "historical_return_adjustments": [f for f in return_facts if f["owner"] not in {str(r["user_id"]) for r in roster}]}
 
 
 def get_company_new_total(db: Session, date_from: str, date_to: str,
@@ -269,19 +276,21 @@ def get_company_new_total(db: Session, date_from: str, date_to: str,
 def get_gmv_total(db: Session, date_from: str, date_to: str,
                   source: str | None = None) -> float:
     """公司业绩进度：名册内订单总额（A-13 GMV 口径，不限订单类型；主轨扣手续费）。"""
+    from app.sales_return.gmv import total_adjustment
+    adjustment = float(total_adjustment(db, date_from, date_to))
     if _data_source(source) == "ark":
         val = db.execute(text(
             f"SELECT COALESCE(SUM({_ARK_AMOUNT}), 0)"
             + _ARK_JOIN +
             "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
         ), {"d1": date_from, "d2": date_to}).scalar()
-        return round(float(val or 0), 2)
+        return round(float(val or 0) + adjustment, 2)
     roster_ids = [r[0] for r in db.execute(text(
         "SELECT t.user_id FROM lsordertest.user_rel_team t WHERE 1=1"
         + _active_roster_filter("t")
     )).fetchall()]
     if not roster_ids:
-        return 0.0
+        return round(adjustment, 2)
     stmt = text(
         "SELECT COALESCE(SUM(a2.amount_usd), 0) FROM lsordertest.okki_orders a2 "
         "WHERE a2.user_id IN :ids "
@@ -289,7 +298,7 @@ def get_gmv_total(db: Session, date_from: str, date_to: str,
         + _common_filter("a2")
     ).bindparams(bindparam("ids", expanding=True))
     val = db.execute(stmt, {"ids": roster_ids, "d1": date_from, "d2": date_to}).scalar()
-    return round(float(val or 0), 2)
+    return round(float(val or 0) + adjustment, 2)
 
 
 def get_daily_orders(db: Session, target_date: date, source: str | None = None) -> dict:
@@ -355,6 +364,10 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
     """每人复购口径：首返客户数（A-5 有史以来第一次返单，标记源自 OKKI 首返字段；
     拆分 LIKE）+ 复购金额（限 2025-01-01 起有新成交单的客户池，A-6/A-10 口径）。"""
     stats: dict = {}
+    from app.sales_return.gmv import adjustments
+    for fact in adjustments(db, date_from, date_to):
+        if fact["role"] == "repeat":
+            stats.setdefault(fact["owner"], {"first_count": 0, "re_amount": 0.0})["re_amount"] += float(fact["amount"])
     if _data_source(source) == "ark":
         first_rows = db.execute(text(
             "SELECT t.user_id, COUNT(DISTINCT i.customer_id) AS cnt"
@@ -376,7 +389,7 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
         ), {"mn": NEW_ANY_MARK, "d1": date_from, "d2": date_to}).mappings().all()
         for r in re_rows:
             stats.setdefault(r["user_id"], {"first_count": 0, "re_amount": 0.0})
-            stats[r["user_id"]]["re_amount"] = float(r["amt"])
+            stats[r["user_id"]]["re_amount"] += float(r["amt"])
         return stats
     first_rows = db.execute(text(
         "SELECT a2.user_id, COUNT(DISTINCT a2.company_id) AS cnt "
@@ -409,7 +422,7 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
         "d1": date_from, "d2": date_to}).mappings().all()
     for r in re_rows:
         stats.setdefault(r["user_id"], {"first_count": 0, "re_amount": 0.0})
-        stats[r["user_id"]]["re_amount"] = float(r["amt"])
+        stats[r["user_id"]]["re_amount"] += float(r["amt"])
     return stats
 
 

@@ -16,7 +16,7 @@
     </div>
     <el-alert v-if="meta?.warning && !error" :title="meta.warning" type="warning" :closable="false" show-icon />
     <ListPageStatus v-if="state.hasData.value" :error="state.errorMessage.value" :loading="loading" :has-data="true" :data-page="state.dataPage.value" @retry="state.fetchList" />
-    <el-table ref="tableRef" v-loading="loading" :data="list" :max-height="maxHeight" border class="list-table" v-sticky-scrollbar @sort-change="event => state.handleSortChange(tableSortParams(event))">
+    <el-table ref="tableRef" v-loading="loading" :data="list" :row-key="row => row.fact_key || row.order_id" :max-height="maxHeight" border class="list-table" v-sticky-scrollbar @sort-change="event => state.handleSortChange(tableSortParams(event))">
       <template #empty><ListPageStatus :error="state.errorMessage.value" :loading="loading" :has-data="false" @retry="state.fetchList">当前可查看范围及筛选条件下暂无订单</ListPageStatus></template>
       <el-table-column sortable="custom" prop="company_name" label="客户名称" min-width="180" max-width="280" show-overflow-tooltip />
       <el-table-column sortable="custom" prop="order_name" label="订单名称" min-width="200" max-width="320" show-overflow-tooltip />

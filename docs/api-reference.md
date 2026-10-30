@@ -1,5 +1,32 @@
 # 莱莎方舟 API 参考
 
+## 外贸退货单（2026-10-30，本地实现，未部署）
+
+前缀 `/api/sales-returns`，统一 `ok()` 信封。服务端重新读取实时角色权限；数据范围按原订单业务员的有效 OKKI 绑定，`sales_return:read_all` 显式放开。生效、冲销和收货均有版本/幂等保护。仅方舟记账，不调用小满退款接口或银行付款接口。
+
+| 方法与路径 | 权限 | 用途 |
+| --- | --- | --- |
+| `GET /customers`、`GET /orders` | `sales_return:read` | 范围内客户和已实际出库订单候选 |
+| `GET /orders/{order_id}/lines` | `sales_return:read` | 精确出库行、原币、剩余数量和货款额度 |
+| `POST /preview` | `sales_return:write` | 计算货款冲减、实际退款、未收减免及原款分摊，返回 `quote_version` |
+| `GET /`、`GET /{id}` | `sales_return:read` | 列表及含关联财务事实的详情 |
+| `POST /`、`PUT /{id}` | `sales_return:write` | 幂等建草稿及版本化编辑 |
+| `DELETE /{id}?version=...` | `sales_return:delete` | 软删草稿，保留提交键与审计 |
+| `POST /{id}/activate` | `sales_return:write` | `{version, quote_version, request_key}`，同事务生效并生成本地负数回款 |
+| `POST /{id}/reverse` | `sales_return:admin` | `{version, request_key, reason}`，有资金和实物保护的反向更正 |
+| `POST /{id}/cash` | `sales_return:admin` | `{version, status:paid或recovered, evidence}`，记录实际付款/资金收回证据，不自动转账 |
+| `POST /{id}/receivings` | `sales_return_receiving:write` | 分批实收及合格/不合格/待检分类，累计不超计划 |
+| `PATCH /{id}/receivings/{event_id}/inspection` | `sales_return_receiving:write` | 原收货事件 `{version, accepted_quantity, rejected_quantity, pending_quantity, note}`，只继续分类待检，不增加实收 |
+| `POST /{id}/receivings/{event_id}/stock` | `sales_return_receiving:write` | 当前权威入库契约未接通，明确返回 409，不能据输入单号增加可售库存 |
+
+草稿包含 `order_id`、`return_type=return_refund/refund_only`、`reason_code`、`reason`、`lines=[{source_key,quantity,reduction_amount}]`、可选 `refund_amount`；数量严格为整型，金额为十进制字符串。建单加 `request_key`，编辑加 `version`。金额为 0 的纯实物退回不产生零额回款；仅退款必须有正向商品冲减。来源证据、身份或额度变化返回 409 并要求重新预览；历史原款计提依据不全显示 `pending_basis`，不静默套用新人员。
+
+`GET /api/receipts` 现在在同一 SQL 分页、筛选和排序中合并本地退款，来源 `sales_return`，状态 `local_only`，ID 为 `return:<id>`。本地退款只能从退货单反向更正，不能调用普通回款修改、删除、重试或投递；负数金额不会进入小满 outbox。
+
+仓库动作响应只返回收货相关字段；仅持有仓库权限不能借操作响应读取退款、提成或财务快照。预售剩余收款/后续发货使用净资金投影，保留原回款和原批次报价；已被后批使用的信用不得重复退款或冲销来源。
+
+设计与边界见[退货单设计](requirements/2026-10-30-sales-return-order-design.md)。
+
 ## 回款截图选填（2026-10-30，本地实现，未部署）
 
 回款创建、订单自动回款、汇总回款与预售发货附带的 `payment` 均允许 `attachment_ids=[]`，创建时省略按空列表处理。单笔回款修改与 `PUT /api/receipts/{id}/attachments` 仍必须显式传 `attachment_ids`，空数组表示清空关联；省略不会隐式删除已有截图。最多 5 张且不能重复；非空截图继续校验文件、归属与并发绑定。金额、手续费、日期、付款方式、资金占用、幂等与权限合同保持原规则。清空仅变更关联，保留历史文件及操作审计，无需数据库迁移。

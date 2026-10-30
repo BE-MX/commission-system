@@ -13,6 +13,8 @@
 
 ## 文档清单
 
+外贸退货功能：[设计契约](requirements/2026-10-30-sales-return-order-design.md)（客户与实际出库明细、货款冲减/实际退款/未收减免、本地负数回款、GMV、原比例提成扣回及检验入库；本地实现，未部署）。[实施验收记录](reports/2026-10-30-sales-return-implementation.md)。
+
 近期开发：[内贸经营决策台实施与验收](requirements/2026-10-08-domestic-decision-implementation.md)（真实内贸 API、七个专题和客户跟进闭环，本地开发，未部署）；[交互原型](requirements/domestic-decision-prototype/README.md)保留为设计参考，使用演示数据。
 
 完整枚举见[文档目录](document-catalog.md)；本页只保留常用入口。日期型设计、计划和验收报告代表当时范围，不自动代表当前生产状态。当前状态查[交接文档](handoff.md)，历史追溯查[归档交接](archive/handoff-2026-09-17.md)。

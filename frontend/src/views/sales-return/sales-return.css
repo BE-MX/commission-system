@@ -1,0 +1,28 @@
+.sales-return-page { padding: 20px; }
+.sales-return-page .table-card { padding: 20px; }
+.sales-return-page .pager { margin-top: 20px; justify-content: flex-end; }
+.return-form { margin-top: 20px; }
+.return-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+.return-form .el-select { width: 100%; }
+.return-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 20px 0 12px; }
+.return-section-heading h2, .return-section-heading h3 { margin: 0; }
+.return-section-heading > span, .return-hint, .return-subtext { color: var(--text-secondary); font-size: 13px; line-height: 1.65; }
+.return-hint { margin: 12px 0; }
+.return-subtext { display: block; }
+.return-amounts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.return-amounts > div { padding: 18px; border: 1px solid var(--border-color); border-radius: var(--dash-card-radius); background: var(--card-bg); }
+.return-amounts span { display: block; font-size: 13px; color: var(--text-secondary); }
+.return-amounts strong { display: block; margin-top: 8px; font-size: 24px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.return-quote { margin-top: 20px; padding: 0 16px 12px; border: 1px solid var(--button-primary-border); border-radius: var(--dash-card-radius); background: var(--button-primary-soft); }
+.return-section-title { margin-top: 24px; font-size: 15px; }
+.return-notice { margin: 16px 0; color: var(--text-secondary); }
+.return-refund-input { max-width: 440px; margin-top: 20px; }
+.return-table-scroll { overflow-x: auto; }
+@media (max-width: 720px) {
+  .sales-return-page, .sales-return-page .table-card { padding: 12px; }
+  .return-form-grid, .return-amounts { grid-template-columns: 1fr; }
+  .return-section-heading { align-items: flex-start; flex-wrap: wrap; }
+  .return-amounts > div { padding: 12px 16px; }
+  .return-amounts strong { font-size: 22px; }
+  .sales-return-page .pager { overflow-x: auto; justify-content: flex-start; }
+}

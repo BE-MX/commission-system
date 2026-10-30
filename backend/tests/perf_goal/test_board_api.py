@@ -144,7 +144,7 @@ def test_metric_orders_filters_pagination_summary(perf):
     data = s.client.get(f"{s.url}/metric-orders", params={
         "metric": "gmv", "page_size": 2, "page": 1}).json()["data"]
     assert data["total"] == 6 and len(data["items"]) == 2
-    assert data["summary"] == {"order_count": 6, "amount_usd": 5000.0, "customer_count": 5}
+    assert data["summary"] == {"order_count": 6, "adjustment_count": 0, "amount_usd": 5000.0, "customer_count": 5}
     page3 = s.client.get(f"{s.url}/metric-orders", params={
         "metric": "gmv", "page_size": 2, "page": 3}).json()["data"]
     assert page3["total"] == 6 and len(page3["items"]) == 2 and page3["summary"]["order_count"] == 6

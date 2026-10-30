@@ -40,6 +40,8 @@ def _binding(row, invoice):
 
 
 def _check(db, row, invoice, body):
+    from app.sales_return.guards import ensure_commercial_editable
+    ensure_commercial_editable(db, invoice.xiaoman_order_id)
     if row.batch_id or row.purpose in {"presale_deposit", "presale_advance"}:
         raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
     if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:

@@ -331,6 +331,7 @@ def _aggregate(orders: Iterable[dict]) -> dict:
         ),
         "repeat_customer_rate": round(len(repeat_customers) / len(customers) * 100, 1) if customers else 0,
         "amount_usd": round(sum(r["amount_usd"] for r in rows), 2),
+        "amount_basis": "raw_sales_excludes_returns",
         "repeat_amount_usd": round(sum(r["amount_usd"] for r in repeat_rows), 2),
         "avg_order_amount_usd": round(sum(positive) / len(positive), 2) if positive else 0,
         "median_order_amount_usd": round(float(median(positive)), 2) if positive else 0,
@@ -766,6 +767,17 @@ def get_overview(
     previous = _load_orders(db, scope, previous_from, previous_to, analysis_filters)
     current_stats = _aggregate(orders)
     previous_stats = _aggregate(previous)
+    from app.sales_return.gmv import adjustments
+    # These behavioral analytics retain raw orders/counts. Net GMV is a distinct
+    # signed fact total; a prior-period return must not become a new order here.
+    return_facts = adjustments(db, date_from, date_to, [scope.user_id] if scope.user_id else None)
+    if scope.team or not analysis_filters.is_empty():
+        original_ids = {str(r["order_id"]) for r in _load_orders(db, scope, date(1900, 1, 1), date_to, analysis_filters)}
+        return_facts = [f for f in return_facts if f["order_id"] in original_ids]
+    return_amount = sum(float(f["amount"]) for f in return_facts)
+    current_stats.update(raw_sales_gmv_usd=current_stats["amount_usd"],
+                         return_adjustment_gmv_usd=round(return_amount, 2),
+                         net_gmv_usd=round(current_stats["amount_usd"] + return_amount, 2))
     products = _load_product_rows(db, scope, date_from, date_to, analysis_filters)
     previous_products = _load_product_rows(db, scope, previous_from, previous_to, analysis_filters)
     profile_analysis = profile_result or _profile_analysis(
@@ -819,7 +831,7 @@ def get_overview(
             "repeat": f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=否；复购订单数按订单计数，复购金额按 amount_usd 求和",
             "first_return": f"OKKI 订单自定义字段 {FIRST_RETURN_FIELD}=是，按客户去重",
             "repurchase_rate": "统计期首返客户数 ÷ 统计期新签客户数 × 100%；按客户去重，分母为 0 时记 0%",
-            "gmv": "有效订单 amount_usd；产品趋势使用明细 quantity，不与订单 GMV 混算",
+            "gmv": "amount_usd/趋势/分布为原始有效销售额；net_gmv_usd=原始销售+本期退货生效日调整；人数和订单数保留原销售事实",
             "forecast": "最近 3 个自然月加权均值叠加截断趋势（-30%~+50%），少于 3 个月不预测",
             **profile_analysis["definitions"],
         },

@@ -41,7 +41,9 @@ def source_facts(db, report, members, now):
     rows = db.execute(query, {"start": report.start_date, "end": min(report.end_date, now.date()),
                               "users": [m.okki_user_id for m in members]}).mappings().all()
     synced = db.execute(text(f"SELECT MAX(synced_at) FROM `{schema}`.okki_orders")).scalar()
-    return rows, synced.isoformat() if hasattr(synced, "isoformat") else str(synced) if synced else None
+    from app.sales_return.gmv import adjustments
+    effects = adjustments(db, report.start_date, min(report.end_date, now.date()), [m.okki_user_id for m in members])
+    return [dict(r) for r in rows] + effects, synced.isoformat() if hasattr(synced, "isoformat") else str(synced) if synced else None
 
 
 def normalize_facts(report, raw, now):
@@ -58,6 +60,23 @@ def normalize_facts(report, raw, now):
     gmv_issues = set()
     for source in raw:
         row = dict(source)
+        if row.get("source_type") == "sales_return":
+            role = row["role"]
+            if row.get("original_order"):
+                from app.sales_return.sources import source_role
+                role, issue = source_role(row["original_order"], decisions)
+                if issue:
+                    issues.append(issue)
+                elif row["order_id"] in decisions:
+                    applied_decisions.add(row["order_id"])
+            orders.append({"id": row["fact_key"], "original_order_id": row["order_id"],
+                           "source_type": "sales_return", "return_id": row["return_id"],
+                           "uid": row["owner"], "cid": row["company_id"], "day": row["day"],
+                           "order_no": row["order_no"], "order_name": row["order_name"],
+                           "company_name": row["customer_name"], "amount": row["amount"],
+                           "new": True if role == "new_sign" else False if role == "repeat" else None,
+                           "goods": True})
+            continue
         if not row.get("is_goods", True):
             continue  # Independent freight may inherit the goods order's new-deal flag.
         try:
@@ -102,10 +121,17 @@ def cohort_orders(orders):
     """One ownership/selection contract for award totals and source detail tabs."""
     cohorts = {}
     for order in sorted(orders, key=order_key):
+        if order.get("source_type") == "sales_return":
+            continue
         if order["new"]:
             cohorts.setdefault(order["cid"], order)
     groups = {}
     for order in orders:
+        if order.get("source_type") == "sales_return":
+            group = groups.setdefault(order["uid"], {"customers": set(), "new_sign": [], "repeat": []})
+            if order["new"] is not None:
+                group["new_sign" if order["new"] else "repeat"].append(order)
+            continue
         first = cohorts.get(order["cid"])
         if first is None:
             continue
@@ -136,12 +162,13 @@ def calculate(report, members, raw, now, synced_at=None):
                "gmv_complete": str(m.okki_user_id) not in gmv_issues,
                "gmv": format(sum((o["amount"] for o in owned), ZERO), "f"),
                "new_count": len(new), "new_amount": format(sum((o["amount"] for o in owned if o["new"]), ZERO), "f"),
-               "repeat_count": len({o["cid"] for o in repeats}), "repeat_orders": len(repeats),
+               "repeat_count": len({o["cid"] for o in repeats if o.get("source_type") != "sales_return"}),
+               "repeat_orders": sum(o.get("source_type") != "sales_return" for o in repeats),
                "repeat_amount": format(sum((o["amount"] for o in amount_orders), ZERO), "f")}
         rows.append(row)
     data = {"award_kind": report.award_kind, "people": rows, "issues": issues,
             "data_complete": not issues, "calculated_at": now.isoformat(), "source_synced_at": synced_at,
-            "source_label": "OKKI订单镜像 · 每次刷新重新查询 · 非直连实时接口", "currency": "USD",
+            "source_label": "OKKI销售 + 方舟退货生效日调整 · 净GMV · 每次刷新重新查询", "currency": "USD",
             "period_state": "upcoming" if now.date() < report.start_date else "ended" if now.date() > report.end_date else "running",
             "workday_progress": None, "order_decision_count": decision_count,
             "applied_order_decision_count": applied_count}

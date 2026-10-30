@@ -39,6 +39,8 @@ def list_metric_orders(db, report_id, user, *, metric, customer=None, order_name
             if order_name and order_name.strip().casefold() not in order["order_name"].casefold():
                 continue
             rows.append({"order_id": order["id"], "order_no": order["order_no"],
+                         "source_type": order.get("source_type", "okki"), "return_id": order.get("return_id"),
+                         "original_order_id": order.get("original_order_id", order["id"]),
                          "order_name": order["order_name"], "company_id": order["cid"],
                          "company_name": order["company_name"], "account_date": order["day"].isoformat(),
                          "amount_usd": format(order["amount"], "f"),
@@ -51,7 +53,7 @@ def list_metric_orders(db, report_id, user, *, metric, customer=None, order_name
     total_amount = sum((Decimal(row["amount_usd"]) for row in rows), Decimal(0))
     start = (page - 1) * page_size
     return {"items": rows[start:start + page_size], "total": len(rows), "page": page, "page_size": page_size,
-            "customer_count": len({row["company_id"] for row in rows}), "total_amount": money(total_amount),
+            "customer_count": len({row["company_id"] for row in rows if row["source_type"] != "sales_return"}), "total_amount": money(total_amount),
             "currency": "USD", "data_complete": not issues,
             "amount_scope": "original_new_customer_cohort",
             "amount_note": ("按原新签客户归属汇总；PK总览新签金额按订单负责人统计，客户转交后可能不同。"

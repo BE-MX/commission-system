@@ -1,5 +1,24 @@
 # 莱莎方舟 数据库表参考
 
+## 外贸退货与本地负数回款（214_sales_return_ledger，本地实现，未部署）
+
+迁移继承 `213_salary_snap_export_cols`；只在方舟写库建账，不修改小满镜像。正式迁移仍由发布入口执行；本轮仅在隔离本机 MySQL 验证。金额 `Numeric(14,2)`、所有业务日期/审计时间为北京时间。
+
+| 表 | 主要字段和约束 |
+| --- | --- |
+| `ark_sales_returns` | `return_no`、原 `order_id/customer_id`、可空 `invoice_id`、原业务员、币种、`reduction_amount/refund_amount/waived_amount`、原因、`draft/effective/reversed/deleted`、实际 `cash_status`、冻结来源、乐观 `version`；创建、生效、反向请求键唯一 |
+| `ark_sales_return_items` | 原出库、出库行、订单行、产品/SKU 的精确标识，计划/涉及数量、原币/美元冲减及源行快照；`(return_id,source_key)` 唯一 |
+| `ark_sales_return_order_guards` | 外部原订单 ID 唯一，本地事务互斥及版本；历史无 PI 订单也受保护 |
+| `ark_return_receipts` | 正式本地负数回款与冲正，原币/美元有符号金额、生效日、原退款引用；`(return_id,effect_kind)` 与单号唯一；不兼任外发任务 |
+| `ark_sales_return_allocations` | 原回款本金、本次退款原币/美元、冻结原受益人/实际规则 `basis`、预售原批次 `funding` 分摊；`(return_id,original_payment_id)` 唯一 |
+| `ark_sales_return_effects` | 商品冲减/冲销有符号事实、美元值、生效日、原 GMV 资格、新签/复购类别和部门分摊；`(return_id,effect_kind)` 唯一 |
+| `ark_sales_return_receivings` | 每次真实收货的计划行、实收与合格/不合格/待检量、检验版本、权威入库核验状态、证据、唯一幂等键 |
+| `ark_sales_return_events` | 不可变操作审计、操作者、摘要和创建时间 |
+
+`synced_payment.source` 新增 `String(24) NOT NULL DEFAULT 'okki'`。本地负数回款投影为 `source=ark_return`、`payment_id=ark_return:<id>`、手续费 0，独立于外部回款 ID。生效单、负数回款、原款分摊、GMV 事实和计提输入在同一事务落地；失败全部回滚。
+
+ORM 层禁止更新/删除回款、GMV 调整和审计事实，错误用引用原事实的反向记录处理。降级入口拒绝直接删除财务历史。原客户归属改变不改变原提成受益人；计提按冻结的原实际基数和各角色实际金额累计扣回，保留现金本金与计提本金的区别。
+
 ## 订单产品明细展示分组（209_invoice_item_groups，2026-10-27 已部署）
 
 `ark_invoice_item_groups` 保存展示专用分组：`id`、`invoice_id`、`key`、`name`、`sort_order`、`created_at/updated_at`（北京时间）。`(invoice_id,key)` 与 `(invoice_id,name)` 分别唯一，`invoice_id` 关联 `ark_invoices.id` 并 CASCADE；稳定 key 供编辑器及行归属使用，自定义名称不参与业务版本。`ark_invoice_items.group_id` 可空，关联分组 id 并 SET NULL，仅产品行使用，配件不分组。历史产品行按“订单＋明细创建日期”生成稳定 legacy 分组并回填归属，不改产品、数量、价格、OKKI 或出库字段。分组不是发货批次，不进入业务 `edit_version`，也不触发外部同步；降级不删除用户分组数据。

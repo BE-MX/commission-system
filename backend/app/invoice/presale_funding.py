@@ -18,6 +18,7 @@ class FundingLot:
     allocated_amount: str = "0"
     allocated_charge: str = "0"
     effective: bool = False
+    goods_only: bool = False
 
 
 def _remaining(lot):
@@ -84,7 +85,7 @@ def plan_funding(goods, handling, freight, lots, *, is_final, credit_funded=Fals
             applications.append({"receipt_id": lot.receipt_id, "component": "goods",
                 "purpose": lot.purpose, "amount": _format(goods_part),
                 "bank_charge": _format(handling_part)})
-        freight_part = min(principal, f) if lot.purpose == "presale_advance" else 0
+        freight_part = min(principal, f) if lot.purpose == "presale_advance" and not lot.goods_only else 0
         f -= freight_part
         if freight_part:
             applications.append({"receipt_id": lot.receipt_id, "component": "freight",

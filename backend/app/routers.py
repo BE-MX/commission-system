@@ -76,6 +76,7 @@ from app.colorwork.proxy import router as colorwork_proxy_router
 from app.battle_report.router import router as battle_report_router
 from app.fx_settlement.router import router as fx_settlement_router
 from app.perf_goal.router import router as perf_goal_router
+from app.sales_return.router import router as sales_return_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -164,3 +165,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(colorwork_proxy_router, prefix="/api/colorwork")
     app.include_router(battle_report_router, prefix="/api/battle-reports", tags=["临时战报"])
     app.include_router(perf_goal_router, prefix="/api/perf-goals", tags=["绩效目标"])
+    app.include_router(sales_return_router, prefix="/api/sales-returns", tags=["退货单"])

@@ -145,6 +145,8 @@ def _create_verified(db, body, invoices, actor, evidence, fee_evidence, proof_ev
                     raise ValueError("预售资金池付款不能绑定发货结算")
                 if order_summary["version"] != allocation.balance_version:
                     raise ValueError(f"订单 {invoice.invoice_no} 余额已变化，请刷新（凭证保留）")
+                if order_summary.get("return_reduction_amount"):
+                    balance.ensure_available(order_summary, allocation.amount)
                 charges[invoice.id] = allocation.bank_charge
                 continue
             if not allocation.settlement_id:

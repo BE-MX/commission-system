@@ -1,5 +1,5 @@
 {
-  "source_sha256": "4421ef0ae878698c1f7161f04e6c07ea75d459cd7cc067d53403b48e638c72a9",
+  "source_sha256": "b658fb4e9eff79936dcd352855292ae278506c8c4aa00ad5efdcd2d34121c138",
   "favorite_access": {
     "PortalCatalog": [
       {
@@ -397,7 +397,38 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
+        ]
+      }
+    ],
+    "SalesReturns": [
+      {
+        "permission": "sales_return:read"
+      },
+      {
+        "permission": "sales_return:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -434,7 +465,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -463,7 +495,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -492,7 +525,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -521,7 +555,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -550,7 +585,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -585,7 +621,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -614,7 +651,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -643,7 +681,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -672,7 +711,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -701,7 +741,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -730,7 +771,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -1047,7 +1089,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -1670,7 +1713,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -1707,7 +1751,8 @@
           "perf_goal:read",
           "perf_goal:write",
           "order_intelligence:read",
-          "fx_settlement:read"
+          "fx_settlement:read",
+          "sales_return:read"
         ]
       }
     ],

@@ -43,7 +43,15 @@ def _replay(db, row, children, body, current):
     targets = {target.id:target for target in _rows(db, Receivable, Receivable.id.in_([child.receivable_id for child in children]))}
     for child in children:
         target = targets.get(child.receivable_id)
-        linked = [app for app in apps if app.receipt_id == child.id]
+        from app.sales_return.presale_adjustments import credit_application, validate_credit
+        linked = []
+        for app in [part for part in apps if part.receipt_id == child.id]:
+            owner = settlements.get(app.settlement_id) or db.get(ShipmentSettlement, app.settlement_id)
+            if credit_application(owner, app, child):
+                if app.status != "released":
+                    validate_credit(db, owner, app, child, current=True)
+                continue
+            linked.append(app)
         settlement_id = expected[child.invoice_id]
         expected_key = (f"settlement:{settlement_id}:freight" if child.purpose == "freight"
             else f"invoice:{child.invoice_id}:goods")

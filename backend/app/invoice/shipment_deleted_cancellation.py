@@ -45,6 +45,13 @@ def _inspection(db, target, *, current=False):
 
 def action(db, row, target, freight, applications, receipts, *, current=False):
     reason = ''
+    from app.sales_return.presale_adjustments import ensure_releasable
+    try:
+        ensure_releasable(db, row, current=current)
+    except ValueError as error:
+        logger.warning("Returned shipment cancellation blocked settlement_id=%s", row.id)
+        print(f"[shipment] returned shipment cancellation blocked settlement_id={row.id}", flush=True)
+        return {'allowed': False, 'reason': str(error), 'keep_freight': False, 'retained_freight_amount': '0.00'}
     keep = bool(freight and freight.remote_order_id)
     if (row.state not in {'outbound_pending', 'outbound_uncertain'} or target is None
             or target.status not in {'pending_remote', 'uncertain'} or not target.remote_id

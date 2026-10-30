@@ -95,6 +95,7 @@
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="260" fixed="right">
           <template #default="{ row }">
+            <GlassButton v-if="row.record_source !== 'ark_task' && row.order_id" v-permission="'sales_return:write'" variant="link" @click="openSalesReturn(row)">退货退款</GlassButton>
             <GlassButton variant="link" left-icon="Box" @click="inventoryRow = row; inventoryVisible = true">库存详情</GlassButton>
             <span v-if="row.record_source === 'ark_task' && row.outbound_state === 'waiting_stock'" v-permission="'invoice:sync'">
               <GlassButton v-permission="'shipping_inspection:write'" variant="link" left-icon="Refresh"
@@ -176,6 +177,8 @@ const inventoryVisible = ref(false)
 const inventoryRow = ref(null)
 
 const listPageState = useOutboundRecords()
+const salesReturnRouter = useRouter()
+function openSalesReturn(row) { const ids = String(row.order_id).split('、').filter(Boolean); salesReturnRouter.push({ path: '/invoice/sales-returns', query: ids.length === 1 ? { order_id: ids[0] } : { customer_id: row.company_id || row.customer_id } }) }
 const { removeFilter } = useOutboundListView(listPageState, useRoute(), useRouter())
 const appliedFilters = computed(() => outboundFilterSummary(listPageState.appliedSearchForm.value, OUTBOUND_STATE_LABELS, INSPECTION_STATUS_LABELS))
 const querySummary = computed(() => [...appliedFilters.value, ...outboundSortSummary(listPageState.appliedSort.value)])

@@ -66,6 +66,7 @@ export const MENU_GROUPS = {
       'perf_goal:read', 'perf_goal:write',
       ORDER_INTELLIGENCE_PERMISSION,
       'fx_settlement:read',
+      'sales_return:read',
     ],
   },
   aftersales: {
@@ -432,6 +433,14 @@ export const NAV_ENTRIES = [
       anomalyDomain: 'order',
       anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
     },
+  },
+  {
+    path: '/invoice/sales-returns',
+    name: 'SalesReturns',
+    component: () => import('@/views/sales-return/SalesReturns.vue'),
+    title: '退货单管理',
+    permission: 'sales_return:read',
+    menu: { group: 'invoice', title: '退货单管理', icon: Refresh, order: 16, permission: 'sales_return:read' },
   },
   {
     path: '/invoice/receipts',

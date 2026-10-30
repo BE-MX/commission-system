@@ -161,6 +161,8 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
     anomalies: list[str] = []
     fatal_anomalies: list[str] = []
     company_raw = Decimal("0.00")
+    company_sales = Decimal("0.00")
+    company_returns = Decimal("0.00")
     allocated_total = Decimal("0.00")
     for order in orders:
         order_no = str(order.get("order_no") or order.get("order_id") or "未知订单")
@@ -170,6 +172,10 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
             fatal_anomalies.append(amount_error)
             continue
         company_raw += amount
+        if order.get("source_type") == "sales_return":
+            company_returns += amount
+        else:
+            company_sales += amount
         allocations, order_anomalies, order_fatal_anomalies = _parse_allocations(
             amount, order.get("departments"), order_no,
         )
@@ -238,6 +244,9 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
         "teams": teams,
         "unconfigured_teams": unconfigured_teams,
         "company_raw_gmv": company_raw.quantize(CENT),
+        "company_sales_gmv": company_sales.quantize(CENT),
+        "company_return_adjustment_gmv": company_returns.quantize(CENT),
+        "gmv_basis": "net_sales_and_returns_by_effective_date",
         "company_excluded_gmv": company_excluded.quantize(CENT),
         "company_total_gmv": (company_raw - company_excluded).quantize(CENT),
         "allocated_gmv": allocated_total.quantize(CENT),
@@ -257,7 +266,8 @@ def load_valid_orders(db: Session, report_date: date) -> list[dict]:
         WHERE o.account_date = :report_date AND {VALID_ORDER_SQL}
         ORDER BY o.order_id
     """), {"report_date": report_date}).mappings().all()
-    return [dict(row) for row in rows]
+    from app.sales_return.gmv import adjustments
+    return [dict(row) for row in rows] + adjustments(db, report_date, report_date)
 
 
 def build_report(db: Session, report_date: date | None = None) -> tuple[dict, dict]:
@@ -295,10 +305,10 @@ def render_team_markdown(report: dict, team: dict) -> str:
         lines.append(f"- {_escape(member['name'])}：**{_format_money(member['gmv'])}**{suffix}")
     lines.extend([
         "", "---", "",
-        f"- 原始 GMV：**{_format_money(team['raw_gmv'])}**",
+        f"- 净 GMV（排除前）：**{_format_money(team['raw_gmv'])}**",
         f"- 排除金额：**{_format_money(team['excluded_gmv'])}**",
         f"- 队伍汇总：**{_format_money(team['total_gmv'])}**",
-        "", f"> 口径：account_date={day}；有效订单；USD；按订单部门 rate 分摊。",
+        "", f"> 口径：销售核算日及退货生效日={day}；净 GMV；USD；冻结原部门 rate 分摊。",
     ])
     return "\n".join(lines)
 
@@ -307,7 +317,7 @@ def render_admin_markdown(report: dict) -> str:
     day = report["report_date"].isoformat()
     lines = [
         f"## {day} 全业务 GMV 日报", "",
-        f"- 公司原始 GMV：**{_format_money(report['company_raw_gmv'])}**",
+        f"- 公司净 GMV（排除前）：**{_format_money(report['company_raw_gmv'])}**",
         f"- 排除金额：**{_format_money(report['company_excluded_gmv'])}**",
         f"- 公司考核 GMV：**{_format_money(report['company_total_gmv'])}**",
         "", "### 队伍与个人明细",
@@ -328,7 +338,7 @@ def render_admin_markdown(report: dict) -> str:
     if report["anomalies"]:
         lines.extend(["", "### 数据异常"])
         lines.extend(f"- {_escape(item)}" for item in report["anomalies"])
-    lines.extend(["", f"> 口径：account_date={day}；有效订单；USD；按订单部门 rate 分摊。"])
+    lines.extend(["", f"> 口径：销售核算日及退货生效日={day}；净 GMV；USD；冻结原部门 rate 分摊。"])
     return "\n".join(lines)
 
 

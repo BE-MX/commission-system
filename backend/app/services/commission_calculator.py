@@ -6,7 +6,7 @@ from datetime import datetime
 from app.core.time import beijing_now
 from decimal import Decimal
 
-from sqlalchemy import exists
+from sqlalchemy import exists, or_, and_
 from sqlalchemy.orm import Session
 
 from app.models.commission import (
@@ -14,6 +14,7 @@ from app.models.commission import (
 )
 from app.models.customer import CustomerCommissionSnapshot
 from app.invoice.settlement_models import Receivable
+from app.sales_return.models import ReturnAllocation, ReturnReceipt
 
 logger = logging.getLogger("commission.calc")
 
@@ -44,9 +45,11 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
         CalcResult 计算结果摘要
     """
     result = CalcResult()
+    from app.portal.authority import lock_authority
+    lock_authority(db, force=True)
 
     # ---- Step 1: 获取批次 ----
-    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).with_for_update().first()
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status != "draft":
@@ -57,28 +60,33 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
     logger.info(f"开始计算批次 {batch_id}: {period_start} ~ {period_end}")
 
     # ---- Step 2: 获取待计算回款（排除已计算的） ----
-    already_calculated = (
-        db.query(PaymentCommissionStatus.payment_id)
-        .subquery()
-    )
+    catchup_ids = [row[0] for row in db.query(ReturnAllocation.original_payment_id).join(
+        ReturnReceipt, ReturnReceipt.return_id == ReturnAllocation.return_id
+    ).filter(ReturnReceipt.collection_date <= period_end).with_for_update().all()]
     pending_payments = (
         db.query(SyncedPayment)
+        .outerjoin(PaymentCommissionStatus, PaymentCommissionStatus.payment_id == SyncedPayment.payment_id)
         .filter(
-            SyncedPayment.payment_date >= period_start,
+            or_(SyncedPayment.payment_date >= period_start, SyncedPayment.source == "ark_return",
+                SyncedPayment.payment_id.in_(catchup_ids)),
             SyncedPayment.payment_date <= period_end,
-            ~SyncedPayment.payment_id.in_(
-                db.query(already_calculated.c.payment_id)
-            ),
-            ~exists().where(
+            PaymentCommissionStatus.id.is_(None),
+            or_(SyncedPayment.source == "ark_return", ~exists().where(
                 Receivable.kind == "freight",
                 # Both IDs are VARCHAR(64) with the same column collation.
                 # CAST AS CHAR uses the connection collation and can cause MySQL 1267.
                 Receivable.remote_order_id == SyncedPayment.order_id,
-            ),
+            )),
         )
+        .order_by(SyncedPayment.source.desc(), SyncedPayment.payment_date, SyncedPayment.id)
+        .with_for_update()
         .all()
     )
     logger.info(f"待计算回款 {len(pending_payments)} 条")
+
+    from app.sales_return.guards import lock_order
+    for order_id in sorted({p.order_id for p in pending_payments}):
+        lock_order(db, order_id)
 
     # ---- Step 3: 预加载客户归属快照 ----
     customer_ids = list({p.customer_id for p in pending_payments})
@@ -99,6 +107,33 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
     status_rows = []
 
     for payment in pending_payments:
+        from app.sales_return.commission import frozen_positive_rows, return_rows, PendingCommissionBasis
+        try:
+            if payment.source == "ark_return":
+                # Originals calculated in this pass must be visible to basis freezing.
+                if detail_rows:
+                    db.execute(CommissionDetail.__table__.insert(), detail_rows)
+                    detail_rows = []
+                if status_rows:
+                    db.execute(PaymentCommissionStatus.__table__.insert(), status_rows)
+                    status_rows = []
+                db.flush()
+                frozen_rows = return_rows(db, payment)
+            else:
+                frozen_rows = frozen_positive_rows(db, payment)
+            if frozen_rows is not None:
+                for row in frozen_rows:
+                    row["batch_id"] = batch_id
+                    detail_rows.append(row)
+                    result.total_salesperson_commission += Decimal(str(row["salesperson_commission"]))
+                    result.total_supervisor_commission += Decimal(str(row["supervisor_commission"] or 0))
+                    result.total_second_supervisor_commission += Decimal(str(row["second_supervisor_commission"] or 0))
+                status_rows.append({"payment_id": payment.payment_id, "batch_id": batch_id})
+                result.total_payments += 1
+                continue
+        except PendingCommissionBasis as exc:
+            result.errors.append(str(exc))
+            continue
         snapshot = snapshot_map.get(payment.customer_id)
 
         if not snapshot:
@@ -212,7 +247,9 @@ def void_batch(db: Session, batch_id: int) -> None:
 
     status='calculated' 或 'confirming' 的批次可作废。
     """
-    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    from app.portal.authority import lock_authority
+    lock_authority(db, force=True)
+    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).with_for_update().first()
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status not in ("calculated", "confirming"):
@@ -237,11 +274,16 @@ def send_confirm(db: Session, batch_id: int) -> dict:
     """
     发送确认：批次状态 calculated → confirming，返回涉及的业务员钉钉 ID 列表。
     """
-    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    from app.portal.authority import lock_authority
+    lock_authority(db, force=True)
+    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).with_for_update().first()
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status != "calculated":
         raise ValueError(f"批次状态为 '{batch.status}'，只有 'calculated' 可发送确认")
+
+    from app.sales_return.commission import assert_batch_complete
+    assert_batch_complete(db, batch)
 
     from app.models.business import UserBasic
     from app.auth.models import ArkUser
@@ -305,11 +347,16 @@ def confirm_batch(db: Session, batch_id: int, confirmed_by: str) -> None:
 
     status='calculated' 或 'confirming' 的批次可确认。
     """
-    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    from app.portal.authority import lock_authority
+    lock_authority(db, force=True)
+    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).with_for_update().first()
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status not in ("calculated", "confirming"):
         raise ValueError(f"批次状态为 '{batch.status}'，只有 'calculated'/'confirming' 可确认")
+
+    from app.sales_return.commission import assert_batch_complete
+    assert_batch_complete(db, batch)
 
     db.query(CommissionDetail).filter(
         CommissionDetail.batch_id == batch_id,

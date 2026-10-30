@@ -78,9 +78,6 @@ def pool_lots(db, invoice, snapshot=None, *, current=False):
                 raise ValueError("预售资金池结算关联异常，请核对原单")
             if app.status != "released":
                 used += app.amount; charge += app.bank_charge
-        if (used > receipt.amount or charge > receipt.bank_charge or charge > used
-                or used - charge > receipt.amount - receipt.bank_charge):
-            raise ValueError("预售资金池已被其他结算占用或分配超额")
         effective = (receipt.status == "active" and receipt.sync_status == "synced"
             and receipt.collect_status == 1 and not receipt.last_error)
         if rows is not None and effective:
@@ -91,6 +88,12 @@ def pool_lots(db, invoice, snapshot=None, *, current=False):
         if receipt.status == "active":
             lots.append(FundingLot(receipt.id, receipt.purpose, str(receipt.amount),
                 str(receipt.bank_charge), str(used), str(charge), bool(effective)))
+    from app.sales_return.presale_adjustments import project_pool
+    receipts, lots = project_pool(db, invoice, receipts, lots, current=current)
+    for lot in lots:
+        amount, fee, used, charge = map(Decimal, (lot.amount, lot.bank_charge, lot.allocated_amount, lot.allocated_charge))
+        if used > amount or charge > fee or charge > used or used - charge > amount - fee:
+            raise ValueError("预售资金池已被其他结算占用或分配超额")
     return receipts, lots
 
 
@@ -106,12 +109,13 @@ def validate_quote_applications(row, applications, receipts):
     # audited correction of the now-free receipt. IDs/amounts/fees stay exact.
     historical = {(identity, component): purpose for identity, component, purpose, _, _ in expected}
     cancelled = row.state == "cancelled" and all(app.status == "released" for app in applications)
+    from app.sales_return.presale_adjustments import credit_application
     actual = sorted((app.receipt_id, app.component,
         historical.get((app.receipt_id, app.component), receipts[app.receipt_id].purpose)
             if cancelled or row.state in CANCELLED_STATES and app.status == 'released'
-            else receipts[app.receipt_id].purpose,
+            else "presale_advance" if credit_application(row, app, receipts[app.receipt_id]) else receipts[app.receipt_id].purpose,
         Decimal(app.amount), Decimal(app.bank_charge)) for app in applications
-        if receipts[app.receipt_id].purpose in POOL_PURPOSES)
+        if receipts[app.receipt_id].purpose in POOL_PURPOSES or credit_application(row, app, receipts[app.receipt_id]))
     if row.state == CANCELLED_KEEP_FREIGHT:
         if any(app.status != ('applied' if app.component == 'freight' else 'released')
                 for app in applications):

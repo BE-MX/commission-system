@@ -315,6 +315,7 @@ from app.portal import models as _order_portal_models  # noqa: F401
 # System navigation preferences must be visible to Alembic target_metadata.
 from app.system import models as _system_models  # noqa: F401
 from app.inkboard import models as _inkboard_models  # noqa: F401
+from app.sales_return import models as _sales_return_models  # noqa: F401
 # Swatch library FKs reach ark_customer_accounts / ark_color_palette; keep both in metadata.
 from app.color import models as _color_models  # noqa: F401
 from app.color import swatch_library_models as _color_library_models  # noqa: F401

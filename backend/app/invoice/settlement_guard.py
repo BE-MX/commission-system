@@ -15,7 +15,12 @@ def receipt_settlement(db, receipt, *, current=False):
     )
     if current:
         query = query.populate_existing().with_for_update()
-    application = query.one_or_none()
+    from app.sales_return.presale_adjustments import credit_application
+    original_applications = [app for app in query.all()
+        if not credit_application(db.get(ShipmentSettlement, app.settlement_id), app, receipt)]
+    if len(original_applications) > 1:
+        raise ValueError("预售原回款关联多份发送依据，暂停发送")
+    application = original_applications[0] if original_applications else None
     if not application:
         raise ValueError("预售回款未关联有效结算，暂停发送")
     settlement = (db.query(ShipmentSettlement).filter_by(id=application.settlement_id)
@@ -58,7 +63,9 @@ def _validate_current_payment(db, receipt, application, settlement, *, current=F
         query = query.order_by(SettlementApplication.id, Receipt.id).populate_existing().with_for_update()
     linked = query.all()
     from app.invoice import presale_runtime, settlement_service
-    nonpool = [(app, row) for app, row in linked if row.purpose not in presale_runtime.POOL_PURPOSES]
+    from app.sales_return.presale_adjustments import validate_credit
+    nonpool = [(app, row) for app, row in linked if row.purpose not in presale_runtime.POOL_PURPOSES
+               and not validate_credit(db, settlement, app, row, current=current)]
     for app, row in nonpool:
         if (row.invoice_id != invoice.id or row.customer_id != invoice.customer_id or row.currency != invoice.currency
                 or row.status != "active" or app.amount != row.amount or app.bank_charge != row.bank_charge

@@ -1,6 +1,7 @@
 """看板查询：汇总卡、累积趋势、战队榜、排名与指标明细。"""
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+import logging
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from app.perf_goal.models import METRICS, PerfGoal, PerfGoalPeriod, PerfGoalTeam
 from app.perf_goal.teams import all_people, roster
 
 ZERO = Decimal(0)
+logger = logging.getLogger(__name__)
 COUNT_METRICS = {"new_sign", "repeat_customers"}
 SORT_FIELDS = {f"{m}_rate" for m in METRICS} | {f"{m}_achieved" for m in METRICS} | {"delta_pp"}
 
@@ -104,9 +106,53 @@ def _scope_people(user: dict, roster_data: dict, scope: str, scope_id: int | Non
     raise HTTPException(422, "scope 必须是 company/team/person")
 
 
-def _facts(db: Session, people: list[dict], start: date, end: date):
-    okki_ids = [p["okki_user_id"] for p in people if p.get("okki_user_id")]
-    return stats.fetch_order_facts(db, okki_ids, start, end, order_decision_rules(db))
+def _facts(db: Session, people: list[dict], start: date, end: date, department_id=None):
+    from app.battle_report.order_decisions import decision_index
+    from app.sales_return.sources import source_role
+    rules = order_decision_rules(db)
+    okki_ids = [p["okki_user_id"] for p in people if p.get("okki_user_id") and not p.get("historical_return_owner")]
+    facts, issues = stats.fetch_order_facts(db, okki_ids, start, end, rules)
+    try:
+        decisions = decision_index(rules)
+    except (TypeError, ValueError):
+        logger.warning("Invalid performance order rulings for historical return adjustments")
+        print("[perf-goal] Invalid order rulings; return classification pending", flush=True)
+        decisions = {}  # fetch_order_facts already reports the invalid rules.
+
+    def resolved_returns(rows):
+        for row in rows:
+            if row.get("original_order"):
+                row["role"], issue = source_role(row["original_order"], decisions)
+                if issue and issue not in issues:
+                    issues.append(issue)
+        return rows
+
+    historical = [p["okki_user_id"] for p in people if p.get("historical_return_owner")]
+    if department_id is not None:
+        from app.sales_return.gmv import department_adjustments
+        facts = [f for f in facts if f.get("source_type") != "sales_return"]
+        department_facts, department_issues = department_adjustments(db, start, end, department_id)
+        facts.extend(resolved_returns(department_facts))
+        issues.extend(department_issues)
+    elif historical:
+        from app.sales_return.gmv import adjustments
+        facts.extend(resolved_returns(adjustments(db, start, end, historical)))
+        issues.append("历史归属待分配：退货调整已保留在公司净 GMV；请核对原团队与人员映射")
+    return facts, issues
+
+
+def _historical_people(db, people, roster_data, scope, start, end, scope_id=None):
+    if scope not in {"company", "team"}:
+        return people
+    from app.sales_return.gmv import adjustments, department_adjustments
+    known = {p["okki_user_id"] for p in people}
+    if scope == "company":
+        returns = adjustments(db, start, end)
+    else:
+        returns, _ = department_adjustments(db, start, end, scope_id)
+    owners = {f["owner"] for f in returns} - known
+    return people + [{"okki_user_id": uid, "user_id": None, "department_id": None,
+                      "name": f"历史归属待分配 ({uid})", "historical_return_owner": True} for uid in sorted(owners)]
 
 
 def _num(metric: str, value) -> float | int:
@@ -195,8 +241,9 @@ def overview(db: Session, user: dict, scope: str, scope_id: int | None,
     listed = _listed_user_ids(db, period.id) if period else set()
     people = _scope_people(user, roster_data, scope, scope_id, listed)
     start, end = stats.period_bounds(period_type, year, quarter, month)
+    people = _historical_people(db, people, roster_data, scope, start, end, scope_id)
     as_of = min(_as_of(), end)
-    facts, _issues = _facts(db, people, start, as_of)
+    facts, _issues = _facts(db, people, start, as_of, scope_id if scope == "team" else None)
     totals = stats.aggregate(facts)
     time_progress = stats.workday_time_progress(start, end, _as_of())
     granularity, slot_quarter, slot_month = _slot(period_type, quarter, month)
@@ -204,7 +251,8 @@ def overview(db: Session, user: dict, scope: str, scope_id: int | None,
     team_targets = _team_target_index(db, period.id, roster_data) if period and scope == "team" else {}
     prev_year, prev_quarter, prev_month = stats.prev_period(period_type, year, quarter, month)
     prev_start, prev_end = stats.period_bounds(period_type, prev_year, prev_quarter, prev_month)
-    prev_facts, _ = _facts(db, people, prev_start, prev_end)
+    people = _historical_people(db, people, roster_data, scope, prev_start, prev_end, scope_id)
+    prev_facts, _ = _facts(db, people, prev_start, prev_end, scope_id if scope == "team" else None)
     prev_totals = stats.aggregate(prev_facts)
     prev_granularity, pq, pm = _slot(period_type, prev_quarter, prev_month)
     prev_target_map = _prev_targets(db, period, scope, scope_id, period_type,
@@ -223,6 +271,8 @@ def overview(db: Session, user: dict, scope: str, scope_id: int | None,
             "period_label": stats.period_label(period_type, year, quarter, month),
             "time_progress": time_progress,
             "metrics": metrics,
+            "data_issues": _issues,
+            "historical_return_owners": [p["okki_user_id"] for p in people if p.get("historical_return_owner")],
             "warnings": warnings}
 
 
@@ -250,7 +300,7 @@ def _trend_slots(period_type: str, start: date, end: date) -> list[tuple[str, da
 
 def _count_upto(facts: list[dict], okki_id: str, role: str, upto: date) -> int:
     return len({f["company_id"] for f in facts
-                if f["owner"] == okki_id and f["role"] == role and f["day"] <= upto})
+                if f.get("source_type") != "sales_return" and f["owner"] == okki_id and f["role"] == role and f["day"] <= upto})
 
 
 def _amount_between(facts: list[dict], okki_id: str, role: str | None,
@@ -262,7 +312,7 @@ def _amount_between(facts: list[dict], okki_id: str, role: str | None,
 
 def _count_between(facts: list[dict], okki_id: str, role: str, start: date, end: date) -> int:
     return len({f["company_id"] for f in facts
-                if f["owner"] == okki_id and f["role"] == role
+                if f.get("source_type") != "sales_return" and f["owner"] == okki_id and f["role"] == role
                 and f["day"] >= start and f["day"] <= end})
 
 
@@ -276,8 +326,9 @@ def trend(db: Session, user: dict, scope: str, scope_id: int | None, metric: str
     listed = _listed_user_ids(db, period.id) if period else set()
     people = _scope_people(user, roster_data, scope, scope_id, listed)
     start, end = stats.period_bounds(period_type, year, quarter, month)
+    people = _historical_people(db, people, roster_data, scope, start, end, scope_id)
     as_of = min(_as_of(), end)
-    facts, _ = _facts(db, people, start, end)
+    facts, _ = _facts(db, people, start, end, scope_id if scope == "team" else None)
     granularity, slot_quarter, slot_month = _slot(period_type, quarter, month)
     goals = _goals_index(db, period.id) if period else {}
     team_targets = _team_target_index(db, period.id, roster_data) if period and scope == "team" else {}
@@ -351,9 +402,9 @@ def teams_board(db: Session, user: dict, period_type: str, year: int | None,
     for team in roster_data["teams"]:
         if kind == "team" and team["department_id"] != scope_department:
             continue
-        members = team["members"]
+        members = _historical_people(db, team["members"], roster_data, "team", start, as_of, team["department_id"])
         okki_ids = [m["okki_user_id"] for m in members]
-        facts, _ = _facts(db, members, start, as_of)
+        facts, _ = _facts(db, members, start, as_of, team["department_id"])
         totals = stats.aggregate(facts)
         metrics = {}
         for metric in METRICS:
@@ -364,18 +415,19 @@ def teams_board(db: Session, user: dict, period_type: str, year: int | None,
                                "rate": stats.rate_of(achieved, target)}
         unlisted = [m for m in members if m["user_id"] not in listed]
         included_unlisted = any(
-            stats.owner_total(totals, m["okki_user_id"])["gmv"] > 0 for m in unlisted if m["okki_user_id"])
+            stats.owner_total(totals, m["okki_user_id"])["gmv"] != 0 for m in unlisted if m["okki_user_id"])
         member_rows = []
         for member in members:
             achieved_gmv = stats.owner_total(totals, member["okki_user_id"])["gmv"]
             member_target = (goals.get((member["user_id"], "gmv", granularity, slot_quarter, slot_month))
                              if member["user_id"] is not None else None)
             member_rows.append({"user_id": member["user_id"], "name": member["name"],
-                                "is_captain": member["is_captain"],
+                                "is_captain": member.get("is_captain", False),
+                                "historical_return_owner": bool(member.get("historical_return_owner")),
                                 "listed": member["user_id"] in listed if member["user_id"] is not None else False,
                                 "gmv_rate": stats.rate_of(achieved_gmv, member_target)})
         rows.append({"department_id": team["department_id"], "team_name": team["name"],
-                     "captain_name": team["captain_name"], "member_count": len(members),
+                     "captain_name": team["captain_name"], "member_count": len(team["members"]),
                      "metrics": metrics, "overall_rate": metrics["gmv"]["rate"],
                      "included_unlisted": included_unlisted, "members": member_rows})
     return {"rows": rows}
@@ -444,12 +496,14 @@ def metric_orders(db: Session, user: dict, metric: str, user_id: int | None,
     period = targets.get_active_period(db)
     roster_data = roster(db, period.id if period else None)
     people = all_people(roster_data)
+    detail_scope, detail_department = "person", None
     if user_id is not None:
         access.require_person_visible(user, roster_data, user_id)
         people = [p for p in people if p["user_id"] == user_id]
         if not people:
             raise HTTPException(404, "该业务员不在绩效名单（未绑定 OKKI 账号）")
     elif department_id is not None:
+        detail_scope, detail_department = "team", department_id
         access.require_team_visible(user, roster_data, department_id)
         people = [p for p in people if p["department_id"] == department_id]
         if not people:
@@ -460,6 +514,9 @@ def metric_orders(db: Session, user: dict, metric: str, user_id: int | None,
             people = [p for p in people if p["user_id"] == scope_id]
         elif kind == "team":
             people = [p for p in people if p["department_id"] == scope_id]
+            detail_scope, detail_department = "team", scope_id
+        elif kind == "all":
+            detail_scope = "company"
     if listed_only:
         listed = _listed_user_ids(db, period.id) if period else set()
         people = [person for person in people if person["user_id"] in listed]
@@ -468,7 +525,8 @@ def metric_orders(db: Session, user: dict, metric: str, user_id: int | None,
     end = date_to or min(_as_of(), date(year, 12, 31))
     if end < start:
         raise HTTPException(422, "date_to 不得早于 date_from")
-    facts, _ = _facts(db, people, start, end)
+    people = _historical_people(db, people, roster_data, detail_scope, start, end, detail_department)
+    facts, _ = _facts(db, people, start, end, detail_department)
     if metric == "new_sign":
         facts = [f for f in facts if f["role"] == "new_sign"]
     elif metric in ("repeat_customers", "repeat_amount"):
@@ -478,12 +536,15 @@ def metric_orders(db: Session, user: dict, metric: str, user_id: int | None,
     total = len(facts)
     window = facts[(page - 1) * page_size: page * page_size]
     items = [{"order_id": f["order_id"], "order_no": f["order_no"],
+              "fact_key": f.get("fact_key", f["order_id"]), "source_type": f.get("source_type", "okki"),
+              "return_id": f.get("return_id"),
               "customer_name": f["customer_name"], "country": f["country"],
               "amount_usd": float(f["amount"]), "account_date": f["day"].isoformat(),
               "owner_user_id": names.get(f["owner"], {}).get("user_id"),
               "owner_name": names.get(f["owner"], {}).get("name", f["owner"]),
               "flags": f["flags"]} for f in window]
-    summary = {"order_count": total,
+    summary = {"order_count": sum(f.get("source_type") != "sales_return" for f in facts),
+               "adjustment_count": sum(f.get("source_type") == "sales_return" for f in facts),
                "amount_usd": float(sum((f["amount"] for f in facts), ZERO).quantize(Decimal("0.01"))),
-               "customer_count": len({f["company_id"] for f in facts})}
+               "customer_count": len({f["company_id"] for f in facts if f.get("source_type") != "sales_return"})}
     return {"total": total, "page": page, "page_size": page_size, "items": items, "summary": summary}

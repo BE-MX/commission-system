@@ -29,11 +29,12 @@
         </el-tab-pane>
       </el-tabs>
     </template>
-    <template #footer><div class="dialog-footer detail-footer"><small>订单 {{ stamp(header) }} · 回款 {{ stamp(receipts) }} · 出库 {{ stamp(outbounds) }}</small><GlassButton :disabled="loading" @click="refresh">{{ loading && order ? '正在刷新' : '刷新核验' }}</GlassButton><GlassButton v-permission="'invoice:read'" :disabled="!order" @click="$emit('print', order)">打印订单预览</GlassButton><GlassButton @click="visible = false">关闭详情</GlassButton></div></template>
+    <template #footer><div class="dialog-footer detail-footer"><small>订单 {{ stamp(header) }} · 回款 {{ stamp(receipts) }} · 出库 {{ stamp(outbounds) }}</small><GlassButton v-if="order?.xiaoman_order_id" v-permission="'sales_return:write'" :disabled="loading" @click="createReturn">退货退款</GlassButton><GlassButton :disabled="loading" @click="refresh">{{ loading && order ? '正在刷新' : '刷新核验' }}</GlassButton><GlassButton v-permission="'invoice:read'" :disabled="!order" @click="$emit('print', order)">打印订单预览</GlassButton><GlassButton @click="visible = false">关闭详情</GlassButton></div></template>
   </el-dialog>
 </template>
 <script setup>
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { FullScreen } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import InvoiceAnomalyBadge from './InvoiceAnomalyBadge.vue'
@@ -47,6 +48,8 @@ import { formatInvoiceDateTime } from '../composables/invoiceDateTime'
 import { formatMoney } from '@/utils/money'
 defineEmits(['print'])
 const { visible, order, activeTab, fullscreen, header, receipts, outbounds, loading, open, close, refresh } = useInvoiceDetail()
+const router = useRouter()
+function createReturn() { const orderId = order.value?.xiaoman_order_id; if (orderId) { visible.value = false; router.push({ path: '/invoice/sales-returns', query: { order_id: orderId } }) } }
 const dialogWidth = 'min(1200px, calc(100vw - 24px))'
 function navigate(domain) { activeTab.value = {order:'order',outbound:'outbound',receipt:'receipt'}[domain] }
 const progressCards = computed(() => [

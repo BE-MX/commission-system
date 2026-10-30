@@ -68,6 +68,8 @@ def row_state(row):
 
 def capture(db, record, actor, *, executing=False):
     from app.shipping_inspection import outbound_sync_service as legacy
+    from app.sales_return.guards import ensure_outbound_editable
+    ensure_outbound_editable(db, record)
     invoice = invoice_for(db, record, actor)
     source_items = [{'unique_id': plans.canonical_identity(item.xiaoman_unique_id),
                      'model': item.model, 'size': item.length, 'color': item.color} for item in invoice.items]

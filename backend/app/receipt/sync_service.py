@@ -146,6 +146,10 @@ def deliver(db, receipt_id):
                 balance.calculate_target(db, target, snapshot, exclude_receipt=row.id)
             elif target.remote_status != "bound" or row.xiaoman_order_id != target.remote_order_id:
                 raise ValueError("回款目标已变化，停止发送")
+        if invoice.order_type == "presale" and row.purpose != "freight":
+            current_summary = balance.calculate(db, invoice, snapshot, exclude_receipt=row.id, current=True)
+            if "return_reduction_amount" in current_summary:
+                balance.ensure_available(current_summary, row.amount)
         digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         attempt = db.get(ReceiptAttempt, token)
         if attempt.payload_hash and attempt.payload_hash != digest:
@@ -176,7 +180,7 @@ def deliver(db, receipt_id):
                    else balance.calculate(db, invoice, snapshot, exclude_receipt=row.id))
         settlement = ensure_receipt_sendable(db, row, current=True)
         v2_goods = row.purpose == "presale_goods" and settlement and settlement.quote.get("funding_version") == 2
-        if not pool and not v2_goods:
+        if not pool and not v2_goods or invoice.order_type == "presale" and row.purpose != "freight" and "return_reduction_amount" in summary:
             balance.ensure_available(summary, row.amount)
         if row.batch_id:
             from app.receipt.batch_service import validate_bound_proofs

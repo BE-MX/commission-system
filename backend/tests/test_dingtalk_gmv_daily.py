@@ -30,6 +30,7 @@ from app.dingtalk.gmv_daily_service import (
     send_daily_report,
 )
 from app.dingtalk.models import DingTalkMessageLog
+from app.sales_return.models import ReturnEffect
 from app.system.models import SysDict
 from app.system import service as system_dict_service
 from app.system.schemas import DictItemCreate, DictItemUpdate
@@ -51,6 +52,7 @@ def gmv_db():
         ArkUser.__table__, ArkRole.__table__, ArkPermission.__table__,
         ArkUserRole.__table__, ArkRolePermission.__table__,
         ArkUserExternalBinding.__table__, SysDict.__table__, DingTalkMessageLog.__table__,
+        ReturnEffect.__table__,
     ):
         table.create(engine, checkfirst=True)
     with engine.begin() as connection:
@@ -369,7 +371,7 @@ def test_markdown_displays_zero_and_excluded_member_but_uses_effective_total():
     assert "排除人员：**$100.00**" in team_text
     assert "零业绩：**$0.00**" in team_text
     assert "队伍汇总：**$0.00**" in team_text
-    assert "公司原始 GMV：**$100.00**" in admin_text
+    assert "公司净 GMV（排除前）：**$100.00**" in admin_text
     assert "公司考核 GMV：**$0.00**" in admin_text
 
 

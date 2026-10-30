@@ -38,7 +38,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="o in items" :key="o.order_id">
+          <tr v-for="o in items" :key="o.fact_key || o.order_id">
             <td>{{ o.order_no }}</td>
             <td>{{ o.customer_name }}</td>
             <td>{{ o.country }}</td>

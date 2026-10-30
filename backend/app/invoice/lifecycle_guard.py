@@ -40,6 +40,8 @@ def presale_edit_blocked_reason(db, invoice):
 
 
 def ensure_mutable(db, invoice):
+    from app.sales_return.guards import ensure_commercial_editable
+    ensure_commercial_editable(db, invoice.xiaoman_order_id)
     ensure_active(invoice)
     if active_presale_settlement(db, invoice, current=True):
         raise ValueError("预售订单有未完成的发货结算，请先处理本批，暂不能修改或取消主单")

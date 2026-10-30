@@ -132,7 +132,8 @@ def _replay(db, invoice, existing, identity, body, current):
         raise HTTPException(409, '原发货结算付款批次关联已变化，请核对原单')
     proof_ids = {item.attachment_id for item in _rows(db, BatchAttachment, BatchAttachment.batch_id == batch.id)}
     children = _rows(db, Receipt, Receipt.batch_id == batch.id)
-    linked = _rows(db, SettlementApplication, SettlementApplication.receipt_id.in_([child.id for child in children]))
+    linked = _rows(db, SettlementApplication, (SettlementApplication.receipt_id.in_([child.id for child in children]))
+                   & (SettlementApplication.settlement_id == existing.id))
     if proof_ids != set(body.payment.attachment_ids) or not children or len(linked) != len(children):
         raise HTTPException(409, '原发货结算付款关联已变化，请核对原单')
     for child in children:
