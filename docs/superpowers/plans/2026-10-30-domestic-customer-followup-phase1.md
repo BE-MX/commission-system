@@ -522,6 +522,7 @@ class DomesticFollowupItem(Base):
     __table_args__ = (
         Index("ix_dom_followup_item_followup", "followup_id"),
         Index("ix_dom_followup_item_board", "kind", "status", "customer_id"),
+        Index("ix_dom_followup_item_handler", "handler_user_id", "status"),
         {"comment": "跟进条目：要点 / 异常 / 意见建议"},
     )
 
@@ -587,6 +588,8 @@ class DomesticFollowupTask(Base):
     __table_args__ = (
         Index("ix_dom_followup_task_assignee", "assignee_user_id", "status", "due_date"),
         Index("ix_dom_followup_task_customer", "customer_id", "status"),
+        Index("ix_dom_followup_task_source_item", "source_item_id"),
+        Index("ix_dom_followup_task_source_followup", "source_followup_id"),
         {"comment": "跟进任务：约定跟进 / 收货回访 / 异常跟进 / 意见跟进"},
     )
 
@@ -970,6 +973,7 @@ def upgrade():
     )
     _create_index("ix_dom_followup_item_followup", "ark_domestic_followup_items", ["followup_id"])
     _create_index("ix_dom_followup_item_board", "ark_domestic_followup_items", ["kind", "status", "customer_id"])
+    _create_index("ix_dom_followup_item_handler", "ark_domestic_followup_items", ["handler_user_id", "status"])
 
     _create_table(
         "ark_domestic_followup_attachments",
@@ -1028,6 +1032,8 @@ def upgrade():
     )
     _create_index("ix_dom_followup_task_assignee", "ark_domestic_followup_tasks", ["assignee_user_id", "status", "due_date"])
     _create_index("ix_dom_followup_task_customer", "ark_domestic_followup_tasks", ["customer_id", "status"])
+    _create_index("ix_dom_followup_task_source_item", "ark_domestic_followup_tasks", ["source_item_id"])
+    _create_index("ix_dom_followup_task_source_followup", "ark_domestic_followup_tasks", ["source_followup_id"])
 
     _create_table(
         "ark_domestic_followup_task_shipments",

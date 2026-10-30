@@ -56,6 +56,7 @@ class DomesticFollowupItem(Base):
     __table_args__ = (
         Index("ix_dom_followup_item_followup", "followup_id"),
         Index("ix_dom_followup_item_board", "kind", "status", "customer_id"),
+        Index("ix_dom_followup_item_handler", "handler_user_id", "status"),
         {"comment": "跟进条目：要点 / 异常 / 意见建议"},
     )
 
@@ -121,6 +122,8 @@ class DomesticFollowupTask(Base):
     __table_args__ = (
         Index("ix_dom_followup_task_assignee", "assignee_user_id", "status", "due_date"),
         Index("ix_dom_followup_task_customer", "customer_id", "status"),
+        Index("ix_dom_followup_task_source_item", "source_item_id"),
+        Index("ix_dom_followup_task_source_followup", "source_followup_id"),
         {"comment": "跟进任务：约定跟进 / 收货回访 / 异常跟进 / 意见跟进"},
     )
 

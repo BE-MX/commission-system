@@ -33,12 +33,15 @@ FRI = date(2026, 10, 30)  # 周五
     ("2026-11-04", date(2026, 11, 4)),
     ("2026/11/4", date(2026, 11, 4)),
     ("26.10.30", date(2026, 10, 30)),
+    ("上周三说的，周五再问", date(2026, 11, 6)),
 ])
 def test_resolve_relative_date(expr, expected):
     assert resolve_relative_date(expr, FRI) == expected
 
 
-@pytest.mark.parametrize("expr", [None, "", "过几天", "2月30日", "等客户回复", "100天后", "一周一次回访"])
+@pytest.mark.parametrize("expr", [
+    None, "", "过几天", "2月30日", "等客户回复", "100天后", "一周一次回访", "上周三", "上个月底",
+])
 def test_unparseable_returns_none(expr):
     assert resolve_relative_date(expr, FRI) is None
 

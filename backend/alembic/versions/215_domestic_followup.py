@@ -130,6 +130,7 @@ def upgrade():
     )
     _create_index("ix_dom_followup_item_followup", "ark_domestic_followup_items", ["followup_id"])
     _create_index("ix_dom_followup_item_board", "ark_domestic_followup_items", ["kind", "status", "customer_id"])
+    _create_index("ix_dom_followup_item_handler", "ark_domestic_followup_items", ["handler_user_id", "status"])
 
     _create_table(
         "ark_domestic_followup_attachments",
@@ -188,6 +189,8 @@ def upgrade():
     )
     _create_index("ix_dom_followup_task_assignee", "ark_domestic_followup_tasks", ["assignee_user_id", "status", "due_date"])
     _create_index("ix_dom_followup_task_customer", "ark_domestic_followup_tasks", ["customer_id", "status"])
+    _create_index("ix_dom_followup_task_source_item", "ark_domestic_followup_tasks", ["source_item_id"])
+    _create_index("ix_dom_followup_task_source_followup", "ark_domestic_followup_tasks", ["source_followup_id"])
 
     _create_table(
         "ark_domestic_followup_task_shipments",

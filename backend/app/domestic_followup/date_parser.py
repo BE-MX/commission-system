@@ -50,8 +50,18 @@ def _monday(today: date) -> date:
     return today - timedelta(days=today.weekday())
 
 
+_PAST_WEEKDAY = r"上个?(?:周|星期|礼拜)[一二三四五六日天]"
+_PAST_MONTH_END = r"上个?月[底末]?"
+
+
 def resolve_relative_date(expression: str | None, today: date) -> date | None:
     text = re.sub(r"\s+", "", expression or "")
+    if not text:
+        return None
+    # 「上周三」「上个月底」指向过去，不是下次跟进时间；挖掉再走剩余规则，
+    # 否则通用星期/月底正则会把它们当成目标日期（规格 4.2 的既知缺陷）
+    text = re.sub(_PAST_WEEKDAY, "", text)
+    text = re.sub(_PAST_MONTH_END, "", text)
     if not text:
         return None
     if m := re.search(r"(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})", text):
@@ -94,7 +104,9 @@ def resolve_relative_date(expression: str | None, today: date) -> date | None:
     # 前面紧跟数字的不算星期：「一周一次」「3周」
     if m := re.search(r"(?<![\d一二两三四五六七八九十])(?:周|星期|礼拜)([一二三四五六日天])", text):
         candidate = _monday(today) + timedelta(days=_WEEKDAY_INDEX[m[1]])
-        return candidate if candidate >= today else candidate + timedelta(days=7)
+        # 等于今天也顺延一周：裸星期几指的是「再」问的下一次，不是正在记录的今天
+        # （今天本身已经有专门的「今天」规则覆盖）
+        return candidate if candidate > today else candidate + timedelta(days=7)
     if m := re.search(r"(?<![\d月])" + _N + r"[号日]", text):
         day = _to_int(m[1])
         candidate = _safe_date(today.year, today.month, day)
