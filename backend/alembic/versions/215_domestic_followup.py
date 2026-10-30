@@ -119,7 +119,7 @@ def upgrade():
         sa.Column("category", sa.String(32), nullable=True, comment="分类（sys_dict: domestic_followup_category）"),
         sa.Column("severity", sa.String(8), nullable=True, comment="一般/紧急"),
         sa.Column("origin", sa.String(16), nullable=False, server_default="user", comment="user/ai_inferred"),
-        sa.Column("state", sa.String(20), nullable=True, comment="issue/suggestion：open/handling/resolved/closed_no_action"),
+        sa.Column("status", sa.String(20), nullable=True, comment="issue/suggestion：open/handling/resolved/closed_no_action"),
         sa.Column("handler_user_id", user_id, sa.ForeignKey("ark_users.id"), nullable=True, comment="当前处理人"),
         sa.Column("resolution", sa.String(500), nullable=True, comment="处理说明"),
         sa.Column("resolved_at", sa.DateTime(), nullable=True, comment="解决时间（北京时间）"),
@@ -129,7 +129,7 @@ def upgrade():
         comment="跟进条目：要点 / 异常 / 意见建议",
     )
     _create_index("ix_dom_followup_item_followup", "ark_domestic_followup_items", ["followup_id"])
-    _create_index("ix_dom_followup_item_board", "ark_domestic_followup_items", ["kind", "state", "customer_id"])
+    _create_index("ix_dom_followup_item_board", "ark_domestic_followup_items", ["kind", "status", "customer_id"])
 
     _create_table(
         "ark_domestic_followup_attachments",

@@ -521,7 +521,7 @@ class DomesticFollowupItem(Base):
     __tablename__ = "ark_domestic_followup_items"
     __table_args__ = (
         Index("ix_dom_followup_item_followup", "followup_id"),
-        Index("ix_dom_followup_item_board", "kind", "state", "customer_id"),
+        Index("ix_dom_followup_item_board", "kind", "status", "customer_id"),
         {"comment": "跟进条目：要点 / 异常 / 意见建议"},
     )
 
@@ -534,7 +534,7 @@ class DomesticFollowupItem(Base):
     category = Column(String(32), nullable=True, comment="分类（sys_dict: domestic_followup_category）")
     severity = Column(String(8), nullable=True, comment="一般/紧急")
     origin = Column(String(16), nullable=False, default="user", comment="user/ai_inferred")
-    state = Column(String(20), nullable=True, comment="issue/suggestion：open/handling/resolved/closed_no_action")
+    status = Column(String(20), nullable=True, comment="issue/suggestion：open/handling/resolved/closed_no_action")
     handler_user_id = Column(_UINT, ForeignKey("ark_users.id"), nullable=True, comment="当前处理人")
     resolution = Column(String(500), nullable=True, comment="处理说明")
     resolved_at = Column(DateTime, nullable=True, comment="解决时间（北京时间）")
@@ -959,7 +959,7 @@ def upgrade():
         sa.Column("category", sa.String(32), nullable=True, comment="分类（sys_dict: domestic_followup_category）"),
         sa.Column("severity", sa.String(8), nullable=True, comment="一般/紧急"),
         sa.Column("origin", sa.String(16), nullable=False, server_default="user", comment="user/ai_inferred"),
-        sa.Column("state", sa.String(20), nullable=True, comment="issue/suggestion：open/handling/resolved/closed_no_action"),
+        sa.Column("status", sa.String(20), nullable=True, comment="issue/suggestion：open/handling/resolved/closed_no_action"),
         sa.Column("handler_user_id", user_id, sa.ForeignKey("ark_users.id"), nullable=True, comment="当前处理人"),
         sa.Column("resolution", sa.String(500), nullable=True, comment="处理说明"),
         sa.Column("resolved_at", sa.DateTime(), nullable=True, comment="解决时间（北京时间）"),
@@ -969,7 +969,7 @@ def upgrade():
         comment="跟进条目：要点 / 异常 / 意见建议",
     )
     _create_index("ix_dom_followup_item_followup", "ark_domestic_followup_items", ["followup_id"])
-    _create_index("ix_dom_followup_item_board", "ark_domestic_followup_items", ["kind", "state", "customer_id"])
+    _create_index("ix_dom_followup_item_board", "ark_domestic_followup_items", ["kind", "status", "customer_id"])
 
     _create_table(
         "ark_domestic_followup_attachments",
@@ -2025,7 +2025,7 @@ def test_item_task_transfer_and_resolve(db):
     customer = make_customer(db, author, "任务店E")
     followup = _followup(db, author, customer, "t-e")
     item = DomesticFollowupItem(followup_id=followup.id, customer_id=customer.id, seq=1, kind="issue",
-                                text="色差明显", category="色差", severity="一般", state="open",
+                                text="色差明显", category="色差", severity="一般", status="open",
                                 handler_user_id=author.id)
     db.add(item)
     db.flush()
@@ -2033,14 +2033,14 @@ def test_item_task_transfer_and_resolve(db):
     assert task.task_type == "issue" and task.due_date == TODAY
 
     task_service.transfer_item(db, _ctx(author), item.id, qc.id, note="转质检")
-    assert item.state == "handling" and item.handler_user_id == qc.id
+    assert item.status == "handling" and item.handler_user_id == qc.id
     assert task.assignee_user_id == qc.id
 
-    task_service.resolve_item(db, _ctx(qc), item.id, state="resolved", resolution="已补发")
-    assert item.state == "resolved" and item.resolution == "已补发"
+    task_service.resolve_item(db, _ctx(qc), item.id, status="resolved", resolution="已补发")
+    assert item.status == "resolved" and item.resolution == "已补发"
     assert task.status == "done" and task.closed_reason == "条目已解决"
     with pytest.raises(ValueError):
-        task_service.resolve_item(db, _ctx(qc), item.id, state="resolved", resolution="again")
+        task_service.resolve_item(db, _ctx(qc), item.id, status="resolved", resolution="again")
 
 
 def test_close_tasks_for_followup_only_closes_same_customer_open_plan_and_receipt(db):
@@ -2220,7 +2220,7 @@ def _ensure_item_actor(db: Session, current_user: dict, item: DomesticFollowupIt
 def transfer_item(db: Session, current_user: dict, item_id: int, to_user_id: int, *, note: str | None = None):
     item = _locked_item(db, item_id)
     _ensure_item_actor(db, current_user, item)
-    if item.state not in OPEN_ITEM_STATES:
+    if item.status not in OPEN_ITEM_STATES:
         raise ValueError("该条目已处理，不能转交")
     target = db.query(ArkUser).filter(ArkUser.id == to_user_id, ArkUser.is_active.is_(True),
                                       ArkUser.deleted_at.is_(None)).first()
@@ -2228,7 +2228,7 @@ def transfer_item(db: Session, current_user: dict, item_id: int, to_user_id: int
         raise ValueError("接收人不存在或已停用")
     previous = item.handler_user_id
     item.handler_user_id = target.id
-    item.state = "handling"
+    item.status = "handling"
     for task in db.query(Task).filter(Task.source_item_id == item.id, Task.status == "todo").all():
         task.assignee_user_id = target.id
         task.payload = {**(task.payload or {}), "transferred_from": previous, "transfer_note": (note or "")[:200]}
@@ -2236,15 +2236,15 @@ def transfer_item(db: Session, current_user: dict, item_id: int, to_user_id: int
     return item
 
 
-def resolve_item(db: Session, current_user: dict, item_id: int, *, state: str, resolution: str | None,
+def resolve_item(db: Session, current_user: dict, item_id: int, *, status: str, resolution: str | None,
                  followup_id: int | None = None):
-    if state not in ("resolved", "closed_no_action"):
+    if status not in ("resolved", "closed_no_action"):
         raise ValueError("处理状态不合法")
     item = _locked_item(db, item_id)
     _ensure_item_actor(db, current_user, item)
-    if item.state not in OPEN_ITEM_STATES:
+    if item.status not in OPEN_ITEM_STATES:
         raise ValueError("该条目已处理")
-    item.state = state
+    item.status = status
     item.resolution = (resolution or "").strip()[:500] or None
     item.resolved_at = beijing_now()
     item.resolved_by_followup_id = followup_id
@@ -2385,7 +2385,7 @@ class ItemIn(BaseModel):
 
 class ResolveIn(BaseModel):
     item_id: int = Field(..., gt=0)
-    state: Literal["resolved", "closed_no_action"] = "resolved"
+    status: Literal["resolved", "closed_no_action"] = "resolved"
     resolution: str | None = Field(None, max_length=500)
 
 
@@ -2441,7 +2441,7 @@ class TransferIn(BaseModel):
 
 
 class ItemResolveIn(BaseModel):
-    state: Literal["resolved", "closed_no_action"] = "resolved"
+    status: Literal["resolved", "closed_no_action"] = "resolved"
     resolution: str | None = Field(None, max_length=500)
 
 
@@ -2563,7 +2563,7 @@ def test_direct_save_creates_items_tasks_and_is_idempotent(db):
     assert again.id == followup.id and pending_ocr == []
     assert followup.status == "confirmed" and followup.followup_date == TODAY
     items = db.query(DomesticFollowupItem).filter_by(followup_id=followup.id).order_by(DomesticFollowupItem.id).all()
-    assert [i.state for i in items] == [None, "open", "closed_no_action"]
+    assert [i.status for i in items] == [None, "open", "closed_no_action"]
     tasks = db.query(DomesticFollowupTask).filter_by(customer_id=customer.id).all()
     assert sorted(t.task_type for t in tasks) == ["issue", "plan"]
 
@@ -2796,7 +2796,7 @@ def _write_items(db: Session, followup: Followup, customer: DomesticCustomer, it
             text=item_in.text.strip(), origin=item_in.origin,
             category=item_in.category if tracked else None,
             severity=(item_in.severity or "一般") if tracked else None,
-            state=("closed_no_action" if item_in.record_only else "open") if tracked else None,
+            status=("closed_no_action" if item_in.record_only else "open") if tracked else None,
             resolution="仅记录" if tracked and item_in.record_only else None,
             handler_user_id=(item_in.handler_user_id or user_id) if tracked else None,
         )
@@ -2833,7 +2833,7 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
         item = db.get(DomesticFollowupItem, resolved.item_id)
         if item is None or item.customer_id != customer.id:
             raise ValueError("勾选处理的异常/意见不属于该客户")
-        task_service.resolve_item(db, current_user, item.id, state=resolved.state,
+        task_service.resolve_item(db, current_user, item.id, status=resolved.status,
                                   resolution=resolved.resolution, followup_id=followup.id)
 
     close_ids = set(fields.close_task_ids)
@@ -2921,7 +2921,7 @@ def serialize_item(item: DomesticFollowupItem) -> dict:
     return {
         "id": item.id, "followup_id": item.followup_id, "customer_id": item.customer_id, "seq": item.seq,
         "kind": item.kind, "text": item.text, "category": item.category, "severity": item.severity,
-        "origin": item.origin, "state": item.state, "handler_user_id": item.handler_user_id,
+        "origin": item.origin, "status": item.status, "handler_user_id": item.handler_user_id,
         "resolution": item.resolution,
         "resolved_at": item.resolved_at.isoformat() if item.resolved_at else None,
         "created_at": item.created_at.isoformat() if item.created_at else None,
@@ -3087,7 +3087,7 @@ def timeline(db: Session, current_user: dict, customer_id: int) -> dict:
     if readable:
         open_items = (db.query(DomesticFollowupItem)
                       .filter(DomesticFollowupItem.customer_id == customer_id,
-                              DomesticFollowupItem.state.in_(("open", "handling")))
+                              DomesticFollowupItem.status.in_(("open", "handling")))
                       .order_by(DomesticFollowupItem.created_at).all())
     return {
         "customer": {
@@ -3913,7 +3913,7 @@ def test_enqueue_urgent_per_receiver_and_dedup(db):
     db.add(followup)
     db.flush()
     item = DomesticFollowupItem(followup_id=followup.id, customer_id=customer.id, seq=1, kind="issue",
-                                text="整批掉发", category="质量", severity="紧急", state="open")
+                                text="整批掉发", category="质量", severity="紧急", status="open")
     db.add(item)
     db.flush()
     digest_service.enqueue_urgent(db, item, customer, followup, today=TODAY)
@@ -4288,17 +4288,17 @@ git commit -m "feat(domestic-followup): push daily and urgent follow-up notices 
 `task_service.py` 末尾：
 
 ```python
-def list_items(db: Session, current_user: dict, *, state: str = "open", kind: str | None = None,
+def list_items(db: Session, current_user: dict, *, status: str = "open", kind: str | None = None,
                category: str | None = None, customer_id: int | None = None, mine: bool = False,
                page: int = 1, page_size: int = 50) -> dict:
     """异常意见看板：open 含 handling；按创建时间倒序。"""
     from app.domestic_followup.followup_service import serialize_item  # 序列化口径与时间线一致
 
     query = db.query(DomesticFollowupItem).filter(DomesticFollowupItem.kind.in_(TRACKED_KINDS))
-    if state == "open":
-        query = query.filter(DomesticFollowupItem.state.in_(OPEN_ITEM_STATES))
-    elif state:
-        query = query.filter(DomesticFollowupItem.state == state)
+    if status == "open":
+        query = query.filter(DomesticFollowupItem.status.in_(OPEN_ITEM_STATES))
+    elif status:
+        query = query.filter(DomesticFollowupItem.status == status)
     if kind in TRACKED_KINDS:
         query = query.filter(DomesticFollowupItem.kind == kind)
     if category:
@@ -4611,17 +4611,17 @@ def receipt_ok(task_id: int, payload: ReceiptOkIn, db: Session = Depends(get_db)
 
 
 @router.get("/items")
-def list_items(state: str = "open", kind: str | None = None, category: str | None = None,
+def list_items(status: str = "open", kind: str | None = None, category: str | None = None,
                customer_id: int | None = None, mine: bool = False, page: int = Query(1, ge=1),
                page_size: int = Query(50, ge=1, le=200), db: Session = Depends(get_db), user=Depends(READ)):
-    return ok(task_service.list_items(db, user, state=state, kind=kind, category=category,
+    return ok(task_service.list_items(db, user, status=status, kind=kind, category=category,
                                       customer_id=customer_id, mine=mine, page=page, page_size=page_size))
 
 
 @router.post("/items/{item_id}/resolve")
 def resolve_item(item_id: int, payload: ItemResolveIn, db: Session = Depends(get_db), user=Depends(WRITE)):
     with _errors(db):
-        item = task_service.resolve_item(db, user, item_id, state=payload.state, resolution=payload.resolution)
+        item = task_service.resolve_item(db, user, item_id, status=payload.status, resolution=payload.resolution)
         db.commit()
     return ok(followup_service.serialize_item(item), message="已处理")
 
@@ -4978,7 +4978,7 @@ test('formToPayload flattens sections, drops blanks and keeps record_only', () =
     [['content', '要点', false], ['issue', '色差', false], ['suggestion', '想要素材', true]])
   assert.equal(payload.summary, 's')
   assert.deepEqual(payload.close_task_ids, [11])
-  assert.deepEqual(payload.resolved_items, [{ item_id: 4, state: 'resolved', resolution: '已补发' }])
+  assert.deepEqual(payload.resolved_items, [{ item_id: 4, status: 'resolved', resolution: '已补发' }])
   assert.equal(payload.next_date, null)
 })
 
@@ -5091,7 +5091,7 @@ export function formToPayload(form) {
     items,
     close_task_ids: form.closeTaskIds || [],
     resolved_items: (form.resolvedItems || []).map(r => ({
-      item_id: r.item_id, state: r.state || 'resolved', resolution: clean(r.resolution) || null,
+      item_id: r.item_id, status: r.status || 'resolved', resolution: clean(r.resolution) || null,
     })),
   }
 }
@@ -6024,7 +6024,7 @@ async function onReceiptOk() {
             <ul class="tl-items">
               <li v-for="i in e.data.items" :key="i.id" :class="`kind-${i.kind}`">
                 <el-tag v-if="i.kind !== 'content'" size="small" :type="i.kind === 'issue' ? 'danger' : 'warning'" effect="plain">{{ i.category }}</el-tag>
-                {{ i.text }}<span v-if="i.state === 'resolved'" class="resolved">已解决</span>
+                {{ i.text }}<span v-if="i.status === 'resolved'" class="resolved">已解决</span>
               </li>
             </ul>
             <p class="tl-meta">{{ e.data.author_name }} · {{ e.data.channel || '—' }}<span v-if="e.data.next_date"> · 下次 {{ e.data.next_date }}</span></p>
@@ -6107,7 +6107,7 @@ defineExpose({ open })
 <template>
   <div class="issue-board">
     <div class="filter-bar">
-      <el-segmented v-model="query.state" :options="STATE_OPTIONS" @change="load(1)" />
+      <el-segmented v-model="query.status" :options="STATE_OPTIONS" @change="load(1)" />
       <el-select v-model="query.kind" clearable placeholder="类型" class="w-120" @change="load(1)">
         <el-option value="issue" label="异常" /><el-option value="suggestion" label="意见建议" />
       </el-select>
@@ -6126,7 +6126,7 @@ defineExpose({ open })
       <el-table-column label="紧急" width="70"><template #default="{ row }"><el-tag v-if="row.severity === '紧急'" type="danger" size="small">紧急</el-tag></template></el-table-column>
       <el-table-column label="处理人" prop="handler_name" width="100" />
       <el-table-column label="记录日" width="110"><template #default="{ row }">{{ formatBeijingDate(row.created_at) }}</template></el-table-column>
-      <el-table-column v-if="query.state === 'open'" class-name="table-action-column" label="操作" width="150" fixed="right">
+      <el-table-column v-if="query.status === 'open'" class-name="table-action-column" label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <div class="table-actions">
             <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="Check" @click="resolve(row)">处理</GlassButton>
@@ -6160,7 +6160,7 @@ import { isFeedbackCancelled, msgError, msgSuccessText, promptAction } from '@/u
 defineProps({ categories: { type: Array, default: () => [] } })
 const emit = defineEmits(['timeline', 'changed'])
 const STATE_OPTIONS = [{ label: '未处理', value: 'open' }, { label: '已解决', value: 'resolved' }, { label: '不处理', value: 'closed_no_action' }]
-const query = reactive({ state: 'open', kind: '', category: '', mine: false })
+const query = reactive({ status: 'open', kind: '', category: '', mine: false })
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -6181,7 +6181,7 @@ async function load(p = page.value) {
 async function resolve(row) {
   try {
     const { value } = await promptAction(`「${row.text}」怎么解决的？`, '标记已处理', { inputPlaceholder: '如：已补发 2 顶 / 已退款' })
-    await followupApi.resolveItem(row.id, { state: 'resolved', resolution: value })
+    await followupApi.resolveItem(row.id, { status: 'resolved', resolution: value })
     msgSuccessText('已处理')
     await load()
     emit('changed')

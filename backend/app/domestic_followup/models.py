@@ -55,7 +55,7 @@ class DomesticFollowupItem(Base):
     __tablename__ = "ark_domestic_followup_items"
     __table_args__ = (
         Index("ix_dom_followup_item_followup", "followup_id"),
-        Index("ix_dom_followup_item_board", "kind", "state", "customer_id"),
+        Index("ix_dom_followup_item_board", "kind", "status", "customer_id"),
         {"comment": "跟进条目：要点 / 异常 / 意见建议"},
     )
 
@@ -68,7 +68,7 @@ class DomesticFollowupItem(Base):
     category = Column(String(32), nullable=True, comment="分类（sys_dict: domestic_followup_category）")
     severity = Column(String(8), nullable=True, comment="一般/紧急")
     origin = Column(String(16), nullable=False, default="user", comment="user/ai_inferred")
-    state = Column(String(20), nullable=True, comment="issue/suggestion：open/handling/resolved/closed_no_action")
+    status = Column(String(20), nullable=True, comment="issue/suggestion：open/handling/resolved/closed_no_action")
     handler_user_id = Column(_UINT, ForeignKey("ark_users.id"), nullable=True, comment="当前处理人")
     resolution = Column(String(500), nullable=True, comment="处理说明")
     resolved_at = Column(DateTime, nullable=True, comment="解决时间（北京时间）")
