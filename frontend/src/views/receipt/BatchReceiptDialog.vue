@@ -152,7 +152,7 @@ async function inspect() {
 async function submit(retry = false) {
   if (busy.value || denied.value || storageBlocked.value || uploading.value || rows.value.some(r => r.loading) || (pending.value && !retry)) return
   if (!retry) {
-    const validation = validateAllocations(rows.value, form.amount) || (!form.collection_date || !form.payment_type || !form.attachment_ids.length ? '请填写回款日期、方式并上传凭证' : '')
+    const validation = validateAllocations(rows.value, form.amount) || (!form.collection_date || !form.payment_type ? '请填写回款日期、方式' : '')
     if (validation) { void showError(validation); return }
     try {
       const previous = readSubmission(window.sessionStorage, actor)

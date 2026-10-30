@@ -72,6 +72,21 @@ def test_batch_exact_once_shared_proof_and_single_order_children(db, orders):
     assert service.order_balance(db,orders[0])["remaining_amount"] == "650.00"
 
 
+def test_batch_without_proof_preserves_allocations_and_replay(db, orders):
+    body = BatchCreate(amount="700", collection_date="2026-10-30", payment_type="TT",
+        request_key="optional_proof_batch_001", allocations=[dict(invoice_id=x.id,
+            amount="350", balance_version=service.order_balance(db, x)["version"]) for x in orders])
+    batch = financial_create(db, body, USER); db.commit()
+    assert financial_create(db, body, USER).id == batch.id
+    assert db.query(BatchAttachment).count() == 0
+    children = db.query(Receipt).all()
+    assert len(children) == 2 and sum(row.amount for row in children) == Decimal("700")
+    for row in children:
+        assert row.attachment_ids == []
+        batch_service.validate_bound_proofs(db, row)
+    assert service.order_balance(db, orders[0])["remaining_amount"] == "650.00"
+
+
 @pytest.mark.parametrize("field,value", [("customer_id","C2"),("currency","EUR")])
 def test_cross_customer_or_currency_rejected_without_partial_rows(db,orders,field,value):
     setattr(orders[1],field,value); db.commit()

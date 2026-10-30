@@ -3,6 +3,13 @@ import test from 'node:test'
 import { batchSubmissionKey, clearSubmission, copySubmission, isBatchReceipt, readSubmission, saveSubmission, uncertainSubmission } from '../src/views/receipt/batchSubmission.js'
 const body = () => ({ request_key: 'original_request_123', amount: '10.00', bank_charge: '0', collection_date: '2026-10-06', payment_type: 'T/T', remark: 'original', attachment_ids: ['proof'], allocations: [{ invoice_id: 1, amount: '10.00', settlement_id: null, balance_version: 'a'.repeat(64) }] })
 function memory() { const data = new Map(); return { getItem: key => data.get(key) ?? null, setItem: (key,value) => data.set(key,value), removeItem: key => data.delete(key), data } }
+
+test('payment without screenshots preserves the exact pending command for recovery', () => {
+  const store = memory(), original = { ...body(), attachment_ids: [] }
+  saveSubmission(store, 1, original)
+  assert.deepEqual(readSubmission(store, 1), original)
+  assert.throws(() => saveSubmission(store, 1, { ...original, attachment_ids: ['later'] }))
+})
 test('pending body preserves exact financial representation and cannot be edited by an input reference', () => {
   const store = memory(), original = body(); saveSubmission(store,1,original)
   original.amount = '9'; original.allocations[0].balance_version = 'b'.repeat(64); original.attachment_ids.push('other')

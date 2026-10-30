@@ -13,7 +13,7 @@ function valid(record, actor) {
     && new Set(body.items.map(row => row.invoice_item_id)).size === body.items.length
     && (!payment || (money(payment.amount) && Number(payment.amount) > 0 && money(payment.bank_charge)
       && typeof payment.collection_date === 'string' && typeof payment.payment_type === 'string' && payment.payment_type
-      && Array.isArray(payment.attachment_ids) && payment.attachment_ids.length > 0 && payment.attachment_ids.every(id => typeof id === 'string' && id)))
+      && Array.isArray(payment.attachment_ids) && payment.attachment_ids.length <= 5 && payment.attachment_ids.every(id => typeof id === 'string' && id)))
 }
 export function readShipmentSubmission(storage, actor) {
   if (!positiveId(actor)) throw new Error('请先重新确认当前登录账号')

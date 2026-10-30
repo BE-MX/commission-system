@@ -108,8 +108,8 @@ def describe(row):
 
 
 def _checked_rows(db, ids, actor, invoice_id, receipt_id=None, *, current=False):
-    if len(ids) != len(set(ids)) or not 1 <= len(ids) <= 5:
-        raise ValueError("请上传 1 至 5 张不重复的回款截图")
+    if len(ids) != len(set(ids)) or len(ids) > 5:
+        raise ValueError("回款截图最多 5 张，且不可重复")
     from app.invoice.settlement_models import BatchAttachment
     # Current edit phases take Intent before attachments, matching final balance locks.
     if current and receipt_id:

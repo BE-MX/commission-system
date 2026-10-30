@@ -110,8 +110,8 @@ export function useReceipts() {
   async function submit() {
     if (saving.value || uploading.value) return
     error.value = ''
-    if (!form.invoice_id || !form.amount || !form.collection_date || !form.payment_type || !form.attachment_ids.length) {
-      error.value = '请选择订单，填写金额、日期、回款方式，并上传回款截图'; return
+    if (!form.invoice_id || !form.amount || !form.collection_date || !form.payment_type) {
+      error.value = '请选择订单，填写金额、日期、回款方式'; return
     }
     if (!editing.value && (!balance.value || balance.value.funding_mode !== 'presale_pool' && Number(form.amount) > Number(balance.value.remaining_amount))) {
       error.value = '本次金额超过可登记余额，或余额尚未核验'; return

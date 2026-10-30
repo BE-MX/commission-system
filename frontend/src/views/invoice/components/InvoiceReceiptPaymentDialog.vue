@@ -61,8 +61,8 @@ async function submit() {
   if (saving.value || uploading.value || props.blocked) return
   const amount = cents(payment.amount), charge = cents(payment.bank_charge)
   if (amount == null || amount <= 0 || charge == null || charge < 0 ||
-      (props.receipt?.source !== 'auto' && charge >= amount) || !payment.collection_date || !payment.payment_type || !payment.attachment_ids.length) {
-    error.value = '请核对金额、手续费、日期、方式，并至少保留一张凭证'; return
+      (props.receipt?.source !== 'auto' && charge >= amount) || !payment.collection_date || !payment.payment_type) {
+    error.value = '请核对金额、手续费、日期、方式'; return
   }
   if (!props.receipt && props.balance.funding_mode !== 'presale_pool' && amount > cents(props.balance.remaining_amount)) { error.value = '金额超过可登记余额，请关闭窗口并刷新资金汇总'; return }
   saving.value = true; error.value = ''

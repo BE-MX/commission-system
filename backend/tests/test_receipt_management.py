@@ -118,11 +118,30 @@ def test_upload_rejects_fake_or_oversize(db):
     with pytest.raises(ValueError): attachments.prepare_upload(b"x" * (attachments.MAX_BYTES + 1), "x.jpg", 1)
 
 
-def test_positive_payment_missing_proof_cannot_sync(db, order):
-    invoice_link.save_draft(db, order, ReceiptDraft(amount="1"), 1, new=True)
-    db.flush()
-    with pytest.raises(ValueError, match="截图"):
-        invoice_link.preflight(db, order, 1)
+def test_positive_payment_without_proof_generates_and_delivers_once(db, order):
+    invoice_link.save_draft(db, order, ReceiptDraft(amount="500",
+        collection_date="2026-09-17", payment_type="T/T"), 1, new=True)
+    token = invoice_link.arm(db, order, 1)
+    invoice_link.mark_success(db, order, token)
+    invoice_link.finish_attempt(db, order, token)
+    db.commit()
+    sync_service.generate_ready(db); sync_service.generate_ready(db)
+    row = db.query(Receipt).one()
+    assert row.amount == Decimal("500") and row.attachment_ids == []
+    sync_service.deliver(db, row.id); db.refresh(row)
+    assert row.sync_status == "synced" and row.xiaoman_receipt_id == "701"
+    assert db.query(Receipt).count() == 1
+
+
+def test_manual_payment_without_proof_can_register_and_replay(db, order):
+    snapshot = service.order_balance(db, order)
+    body = ReceiptCreate(amount="500", collection_date="2026-10-30", payment_type="T/T",
+        invoice_id=order.id, request_key="optional_proof_request_001", balance_version=snapshot["version"])
+    db.rollback()
+    row = create_financial(db, body, USER); db.commit()
+    assert row.attachment_ids == [] and row.amount == Decimal("500")
+    assert create_financial(db, body, USER).id == row.id
+    assert db.query(Receipt).count() == 1
 
 
 def test_foreign_attachment_cannot_bind(db, order):
@@ -251,10 +270,16 @@ def test_converted_invoice_proofs_can_be_replaced_without_changing_money(db, ord
         assert client.put(f"/api/receipts/{row.id}/attachments", json={
             "version": row.version, "attachment_ids": [original]}).status_code == 409
         assert client.put(f"/api/receipts/{row.id}/attachments", json={
-            "version": row.version, "attachment_ids": []}).status_code == 422
-        assert client.put(f"/api/receipts/{row.id}/attachments", json={
             "version": row.version, "attachment_ids": [replacement, replacement]}).status_code == 422
     assert row.attachment_ids == [replacement]
+    with api_client(db, USER) as client:
+        assert client.put(f"/api/receipts/{row.id}/attachments", json={
+            "version": row.version, "attachment_ids": []}).status_code == 200
+        assert client.get(f"/api/receipts/attachments/{replacement}").status_code == 404
+    db.refresh(row)
+    assert row.attachment_ids == [] and invoice_link.get_intent(db, order.id).attachment_ids == []
+    assert row.amount == Decimal("600") and row.sync_status == "synced"
+    assert db.get(ReceiptAttachment, replacement).receipt_id == row.id
 
 
 def test_converted_invoice_proof_write_requires_receipt_scope(db, order):
@@ -503,7 +528,7 @@ def test_routes_scope_permissions_private_image_and_creation(db, order):
         assert client.post("/api/receipts", json=data.model_dump(mode="json")).status_code == 403
 
 
-def test_stock_router_gates_before_inventory_or_remote_side_effect(db, order, monkeypatch):
+def test_stock_router_gates_incomplete_payment_before_inventory_or_remote_side_effect(db, order, monkeypatch):
     invoice_link.save_draft(db, order, ReceiptDraft(amount="1"), 1, new=True)
     db.commit()
     from app.invoice import router
@@ -511,7 +536,7 @@ def test_stock_router_gates_before_inventory_or_remote_side_effect(db, order, mo
     monkeypatch.setattr(router.xiaoman_service, "sync_invoice", lambda *a, **k: pytest.fail("remote touched"))
     with api_client(db, {**USER, "permissions": ["invoice:sync"]}) as client:
         response = client.post(f"/api/invoice/invoices/{order.id}/sync")
-        assert response.status_code == 409 and "截图" in response.json()["detail"]
+        assert response.status_code == 409 and "回款日期" in response.json()["detail"]
 
 
 @pytest.mark.parametrize("finalize_failure", [False, True])

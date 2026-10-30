@@ -268,7 +268,7 @@ async function submit(retry = false) {
   if (!retry) {
     if (!quote.value || loading.value || stockLoading.value || activeShipment.value) return
     if (stockError.value) { void showError(stockError.value); return }
-    if (registerPayment.value && (!auth.hasPermission('receipt:write') || cents(payment.amount) == null || cents(payment.amount) <= 0 || cents(payment.amount) > cents(quote.value.new_payment_due) || !payment.collection_date || !payment.payment_type || !payment.attachment_ids.length)) { void showError('请核对实际回款金额、日期、方式和凭证；回款不能超过本批应付'); return }
+    if (registerPayment.value && (!auth.hasPermission('receipt:write') || cents(payment.amount) == null || cents(payment.amount) <= 0 || cents(payment.amount) > cents(quote.value.new_payment_due) || !payment.collection_date || !payment.payment_type)) { void showError('请核对实际回款金额、日期、方式；回款不能超过本批应付'); return }
     try {
       if (readConfirmation(window.sessionStorage, actor)) { await restore(); return }
       const previous = readShipmentSubmission(window.sessionStorage, actor)
