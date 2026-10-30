@@ -2,6 +2,7 @@
 
 三条落正式记录的路径共用 _apply_and_confirm，保证校验、任务、别名、紧急推送口径一致。
 """
+import logging
 from datetime import datetime, time, timedelta
 
 from sqlalchemy import func
@@ -18,6 +19,8 @@ from app.domestic_followup.constants import (
 )
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupItem, DomesticFollowupTask
 from app.domestic_followup.schemas import ConfirmIn, DirectSaveIn, DraftCreateIn, FollowupFields
+
+logger = logging.getLogger("commission")
 
 Followup = DomesticFollowup
 TIMELINE_LIMIT = 100
@@ -130,7 +133,8 @@ def _apply_and_confirm(db: Session, current_user: dict, followup: Followup, fiel
     return followup
 
 
-def _new_followup(db: Session, user_id: int, payload, *, ai_status: str) -> Followup:
+def _new_followup(db: Session, user_id: int, payload, *, ai_status: str) -> tuple[Followup, bool]:
+    """返回 (记录, 是否新建)。撞唯一键时重查：双击并发提交返回已落库的那条。"""
     followup = Followup(
         author_user_id=user_id, request_id=payload.request_id,
         followup_date=payload.followup_date or beijing_today(),
@@ -141,10 +145,16 @@ def _new_followup(db: Session, user_id: int, payload, *, ai_status: str) -> Foll
     db.add(followup)
     try:
         db.flush()
-    except IntegrityError as exc:  # 同一 request_id 并发提交，另一请求已落库
+    except IntegrityError as exc:
         db.rollback()
-        raise ValueError("请求重复，请刷新后重试") from exc
-    return followup
+        existing = _by_request(db, payload.request_id, user_id)  # 同一 request_id 并发提交，另一请求已落库
+        if existing:
+            return existing, False
+        # 不是 request_id 撞键（如外键失效），别误报成「重复」
+        logger.warning("followup insert failed request_id=%s: %s", payload.request_id, type(exc.orig).__name__)
+        print(f"[domestic_followup] followup insert failed request_id={payload.request_id}", flush=True)
+        raise ValueError("保存失败，请重试") from exc
+    return followup, True
 
 
 def direct_save(db: Session, current_user: dict, payload: DirectSaveIn) -> tuple[Followup, list[int]]:
@@ -156,7 +166,9 @@ def direct_save(db: Session, current_user: dict, payload: DirectSaveIn) -> tuple
     if not ((payload.raw_text or "").strip() or payload.attachment_ids or payload.items):
         raise ValueError("请填写跟进内容或上传截图")
     try:
-        followup = _new_followup(db, user_id, payload, ai_status="none")
+        followup, created = _new_followup(db, user_id, payload, ai_status="none")
+        if not created:
+            return followup, []
         attachments = attachment_service.bind(db, user_id, followup.id, payload.attachment_ids)
         _apply_and_confirm(db, current_user, followup, payload)
         db.commit()
@@ -177,7 +189,9 @@ def create_draft(db: Session, current_user: dict, payload: DraftCreateIn) -> tup
     try:
         if payload.customer_id:
             visibility.ensure_customer_writable(db, current_user, payload.customer_id)
-        followup = _new_followup(db, user_id, payload, ai_status="running")
+        followup, created = _new_followup(db, user_id, payload, ai_status="running")
+        if not created:
+            return followup, False
         followup.customer_id = payload.customer_id
         attachment_service.bind(db, user_id, followup.id, payload.attachment_ids)
         db.commit()
@@ -346,11 +360,14 @@ def timeline(db: Session, current_user: dict, customer_id: int) -> dict:
         raise PermissionError("无权查看该客户的跟进")
     events = [{"type": "followup", "date": f.followup_date.isoformat(), "data": serialize(db, f)} for f in followups]
 
-    since = datetime.combine(today - timedelta(days=SHIPMENT_LOOKBACK_DAYS), time.min)
-    shipments = (db.query(DomesticShipment)
-                 .filter(DomesticShipment.customer_id == customer_id, DomesticShipment.cancelled_at.is_(None),
-                         DomesticShipment.ship_time >= since)
-                 .order_by(DomesticShipment.ship_time.desc()).limit(TIMELINE_LIMIT).all())
+    # 发货批次也是客户经营数据：不可读的人（公海/只有待办）只看自己相关的跟进，不看发货
+    shipments = []
+    if readable:
+        since = datetime.combine(today - timedelta(days=SHIPMENT_LOOKBACK_DAYS), time.min)
+        shipments = (db.query(DomesticShipment)
+                     .filter(DomesticShipment.customer_id == customer_id, DomesticShipment.cancelled_at.is_(None),
+                             DomesticShipment.ship_time >= since)
+                     .order_by(DomesticShipment.ship_time.desc()).limit(TIMELINE_LIMIT).all())
     quantities = dict(db.query(DomesticShipmentLine.shipment_id, func.sum(DomesticShipmentLine.quantity))
                       .filter(DomesticShipmentLine.shipment_id.in_([s.id for s in shipments] or [0]))
                       .group_by(DomesticShipmentLine.shipment_id).all())

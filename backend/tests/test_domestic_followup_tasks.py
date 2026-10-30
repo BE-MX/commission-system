@@ -114,3 +114,27 @@ def test_summary_counts_due_and_urgent(db):
     db.flush()
     summary = task_service.summary(db, _ctx(user), today=TODAY)
     assert summary == {"receipt": 1, "plan": 1, "issue": 2, "urgent": 1, "upcoming": 1}
+
+
+def test_close_tasks_skips_tasks_the_actor_does_not_own(db):
+    owner = make_user(db, "fu_task_h1")
+    helper = make_user(db, "fu_task_h2")
+    customer = make_customer(db, owner, "任务店H")
+    # helper 只因手上有一张转交来的异常待办而能写这个客户
+    db.add(DomesticFollowupTask(task_type="issue", customer_id=customer.id, assignee_user_id=helper.id,
+                                source_key="item:h", title="异常", due_date=TODAY))
+    receipt = DomesticFollowupTask(task_type="receipt", customer_id=customer.id, assignee_user_id=owner.id,
+                                   source_key="receipt:h", title="回访", due_date=TODAY)
+    db.add(receipt)
+    db.flush()
+    assert task_service.close_tasks_for_followup(db, _ctx(helper), customer.id, [receipt.id], followup_id=1) == []
+    assert receipt.status == "todo"
+
+
+def test_upsert_task_reraises_integrity_error_not_caused_by_duplicate_key(db):
+    from sqlalchemy.exc import IntegrityError
+
+    user = make_user(db, "fu_task_i")
+    with pytest.raises(IntegrityError):
+        task_service.upsert_task(db, source_key="plan:none", task_type="plan", customer_id=None,
+                                 assignee_user_id=user.id, title="t", due_date=TODAY)

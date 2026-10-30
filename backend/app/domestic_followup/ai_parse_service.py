@@ -17,7 +17,8 @@ from app.domestic.models import DomesticCustomer
 from app.domestic.shipment_models import DomesticShipment
 from app.domestic_followup import attachment_service, config_service, dict_service, visibility
 from app.domestic_followup.constants import (
-    DICT_CATEGORY, DICT_CHANNEL, DICT_STATE_CHANGE, HINT_MIN_CONFIDENCE, ORIGINS, OTHER_CATEGORY, SEVERITIES,
+    DICT_CATEGORY, DICT_CHANNEL, DICT_STATE_CHANGE, HINT_MIN_CONFIDENCE, INQUIRY_FOLLOWUP_DAYS, ORIGINS,
+    OTHER_CATEGORY, SEVERITIES,
 )
 from app.domestic_followup.date_parser import reconcile_next_date, weekday_label
 from app.domestic_followup.models import DomesticCustomerAlias, DomesticFollowup, DomesticFollowupAttachment
@@ -47,16 +48,22 @@ def _candidates(db: Session, current_user: dict) -> list[dict]:
     return [{"id": cid, "shop_name": name, "aliases": aliases.get(cid, [])} for cid, name in rows]
 
 
-def _customer_context(db: Session, customer_id: int, today) -> dict:
-    customer = db.get(DomesticCustomer, customer_id)
-    recent = (db.query(DomesticFollowup.followup_date, DomesticFollowup.summary)
-              .filter(DomesticFollowup.customer_id == customer_id, DomesticFollowup.status == "confirmed")
-              .order_by(DomesticFollowup.followup_date.desc()).limit(3).all())
-    since = datetime.combine(today - timedelta(days=30), time.min)
-    shipments = (db.query(DomesticShipment.shipment_no, DomesticShipment.ship_time)
-                 .filter(DomesticShipment.customer_id == customer_id, DomesticShipment.cancelled_at.is_(None),
-                         DomesticShipment.ship_time >= since)
-                 .order_by(DomesticShipment.ship_time.desc()).limit(10).all())
+def _customer_context(db: Session, customer: DomesticCustomer, today, current_user: dict) -> dict:
+    customer_id = customer.id
+    query = db.query(DomesticFollowup.followup_date, DomesticFollowup.summary).filter(
+        DomesticFollowup.customer_id == customer_id, DomesticFollowup.status == "confirmed")
+    readable = visibility.in_customer_scope(db, current_user, customer_id)
+    if not readable:
+        # 公海 / 只有待办的人可写不可读：别人的跟进摘要和发货批次不能经 prompt 泄露给他（与 timeline 同口径）
+        query = query.filter(visibility.followup_filter(current_user))
+    recent = query.order_by(DomesticFollowup.followup_date.desc()).limit(3).all()
+    shipments = []
+    if readable:
+        since = datetime.combine(today - timedelta(days=30), time.min)
+        shipments = (db.query(DomesticShipment.shipment_no, DomesticShipment.ship_time)
+                     .filter(DomesticShipment.customer_id == customer_id, DomesticShipment.cancelled_at.is_(None),
+                             DomesticShipment.ship_time >= since)
+                     .order_by(DomesticShipment.ship_time.desc()).limit(10).all())
     return {
         "shop_name": customer.shop_name, "customer_level": customer.customer_level,
         "store_type": customer.store_type,
@@ -68,6 +75,17 @@ def _customer_context(db: Session, customer_id: int, today) -> dict:
 def build_messages(db: Session, followup: DomesticFollowup, current_user: dict, values: dict, today,
                    attachments: list[DomesticFollowupAttachment]) -> tuple[list, list[dict]]:
     candidates = [] if followup.customer_id else _candidates(db, current_user)
+    customer = db.get(DomesticCustomer, followup.customer_id) if followup.customer_id else None
+    config = config_service.get_config(db)
+    # 业务参数也运行时注入（红线 7）：后台改了回访天数、跟进频率或分类字典，prompt 不用跟着改
+    rules = {
+        "receipt_delay_days": config["receipt_delay_days"],
+        "inquiry_days": INQUIRY_FOLLOWUP_DAYS,
+        "fallback_category": fallback_category(values[DICT_CATEGORY]),
+    }
+    maintenance_days = (config["frequency_days"] or {}).get(customer.customer_level or "") if customer else None
+    if maintenance_days:
+        rules["maintenance_days"] = maintenance_days
     context = {
         "today": f"{today.isoformat()} {weekday_label(today)}",
         "followup_date": followup.followup_date.isoformat(),
@@ -75,13 +93,10 @@ def build_messages(db: Session, followup: DomesticFollowup, current_user: dict, 
             "state_changes": values[DICT_STATE_CHANGE],
             "categories": values[DICT_CATEGORY],
             "channels": values[DICT_CHANNEL],
+            "severities": list(SEVERITIES),
         },
-        # 业务参数也运行时注入（红线 7）：后台改了回访天数或分类字典，prompt 不用跟着改
-        "rules": {
-            "receipt_delay_days": config_service.get_config(db)["receipt_delay_days"],
-            "fallback_category": fallback_category(values[DICT_CATEGORY]),
-        },
-        "customer": _customer_context(db, followup.customer_id, today) if followup.customer_id else None,
+        "rules": rules,
+        "customer": _customer_context(db, customer, today, current_user) if customer else None,
         "customer_candidates": candidates,
         "attachment_count": len(attachments),
     }
@@ -172,15 +187,46 @@ def _write_ocr(attachments: list[DomesticFollowupAttachment], parsed: AiParseOut
         attachments[0].unreadable_note = "；".join(unreadable)[:500]
 
 
-def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal) -> None:
-    with session_factory() as db:
+def _mark_failed(db: Session, followup_id: int, exc: Exception) -> None:
+    """失败分支的标记本身也可能失败（连接抖动）：只记日志，不能挡住后面的降级 OCR。"""
+    try:
         followup = db.get(DomesticFollowup, followup_id)
-        if followup is None or followup.status != "draft":
-            return
-        attachments = (db.query(DomesticFollowupAttachment)
-                       .filter(DomesticFollowupAttachment.followup_id == followup_id)
-                       .order_by(DomesticFollowupAttachment.seq).all())
+        if followup is not None and followup.status == "draft":
+            followup.ai_status = "failed"
+            followup.ai_error = f"AI 整理失败（{type(exc).__name__}），已改为仅识别截图文字"[:255]
+            db.commit()
+    except Exception as mark_exc:  # noqa: BLE001 — 兜底标记失败只记录；草稿会被 _recover_stale_ai 超时收口
+        logger.warning("followup AI mark-failed also failed id=%s: %s", followup_id, type(mark_exc).__name__)
+        print(f"[domestic_followup] AI mark-failed also failed id={followup_id}: {type(mark_exc).__name__}",
+              flush=True)
         try:
+            db.rollback()
+        except Exception:  # noqa: BLE001 — session 可能已不可用，不再抛出
+            pass
+
+
+def _ocr_pending(attachment_ids: list[int], session_factory) -> None:
+    if not attachment_ids:
+        return
+    try:
+        attachment_service.run_ocr(attachment_ids, session_factory=session_factory)
+    except Exception as exc:  # noqa: BLE001 — run_ocr 自己逐张兜底；这里防的是开 session 本身失败
+        logger.warning("followup fallback OCR failed ids=%s: %s", attachment_ids, type(exc).__name__)
+        print(f"[domestic_followup] fallback OCR failed ids={attachment_ids}: {type(exc).__name__}", flush=True)
+
+
+def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal) -> None:
+    """后台线程入口。任何一步失败都标 failed 并降级为单张 OCR；OCR 列表在 rollback 前就算成纯 int。"""
+    ocr_ids: list[int] = []
+    with session_factory() as db:
+        try:
+            followup = db.get(DomesticFollowup, followup_id)
+            if followup is None or followup.status != "draft":
+                return
+            attachments = (db.query(DomesticFollowupAttachment)
+                           .filter(DomesticFollowupAttachment.followup_id == followup_id)
+                           .order_by(DomesticFollowupAttachment.seq).all())
+            ocr_ids = [int(a.id) for a in attachments if a.ocr_status != "done"]
             today = beijing_today()
             values = dict_service.load_values(db)
             messages, candidates = build_messages(db, followup, current_user, values, today, attachments)
@@ -191,23 +237,34 @@ def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal
             draft = normalize(db, current_user, parsed, values, today, followup, candidates)
             locked = (db.query(DomesticFollowup).filter(DomesticFollowup.id == followup_id)
                       .populate_existing().with_for_update().first())
-            if locked is None or locked.status != "draft":
+            if locked is None:
                 db.rollback()
+                ocr_ids = []
+                return
+            if locked.status != "draft":
+                # AI 跑完前业务员已手填确认/作废：不写建议，只收口 ai_status，免得永远停在 running
+                locked.ai_status = "done"
+                confirmed = locked.status == "confirmed"
+                db.commit()
+                if not confirmed:  # 作废的记录不再花钱 OCR
+                    ocr_ids = []
                 return
             _write_ocr(attachments, parsed, draft["unreadable"])
+            still_pending = [int(a.id) for a in attachments if a.ocr_status == "pending"]
             locked.ai_result = draft
             locked.ai_status = "done"
             locked.ai_error = None
             locked.ai_log_id = result.get("log_id")
             db.commit()
+            ocr_ids = still_pending  # 模型漏转写的截图，成功路径也补一次 OCR
         except Exception as exc:  # noqa: BLE001 — 任何失败都降级，草稿与原文不丢
-            db.rollback()
             logger.warning("followup AI parse failed id=%s: %s", followup_id, type(exc).__name__)
             print(f"[domestic_followup] AI parse failed id={followup_id}: {type(exc).__name__}", flush=True)
-            followup = db.get(DomesticFollowup, followup_id)
-            if followup is not None and followup.status == "draft":
-                followup.ai_status = "failed"
-                followup.ai_error = f"AI 整理失败（{type(exc).__name__}），已改为仅识别截图文字"[:255]
-                db.commit()
-            attachment_service.run_ocr([a.id for a in attachments if a.ocr_status != "done"],
-                                       session_factory=session_factory)
+            try:
+                db.rollback()
+            except Exception as rb_exc:  # noqa: BLE001 — 回滚失败也继续走标记与 OCR
+                logger.warning("followup AI rollback failed id=%s: %s", followup_id, type(rb_exc).__name__)
+                print(f"[domestic_followup] AI rollback failed id={followup_id}: {type(rb_exc).__name__}", flush=True)
+            _mark_failed(db, followup_id, exc)
+        finally:
+            _ocr_pending(ocr_ids, session_factory)

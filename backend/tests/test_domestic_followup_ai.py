@@ -1,12 +1,12 @@
 import json
 from contextlib import nullcontext
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
 from app.domestic_followup import ai_parse_service
-from app.domestic_followup.models import DomesticFollowup
-from tests.domestic_followup_helpers import make_customer, make_user, seed_dicts
+from app.domestic_followup.models import DomesticFollowup, DomesticFollowupAttachment
+from tests.domestic_followup_helpers import make_customer, make_shipment, make_user, seed_dicts
 
 FRI = date(2026, 10, 30)
 
@@ -30,6 +30,28 @@ def _draft(db, user, request_id, **kw):
 
 def _run(db, followup, user):
     ai_parse_service.run_parse(followup.id, _ctx(user), session_factory=lambda: nullcontext(db))
+
+
+def _attachment(db, followup, user, monkeypatch):
+    monkeypatch.setattr(ai_parse_service.attachment_service, "data_url", lambda att: "data:image/png;base64,AA")
+    att = DomesticFollowupAttachment(followup_id=followup.id, uploader_user_id=user.id, seq=1,
+                                     file_path="fu/x.png", mime_type="image/png")
+    db.add(att)
+    db.commit()
+    return att.id
+
+
+def _record_ocr(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ai_parse_service.attachment_service, "run_ocr",
+                        lambda ids, session_factory=None: calls.append(list(ids)))
+    return calls
+
+
+def _context(sent):
+    text = sent["messages"][0]["content"][0]["text"]
+    line = next(row for row in text.split("\n") if row.startswith("背景："))
+    return json.loads(line[len("背景："):])
 
 
 def test_injects_enums_and_normalizes_output(db, monkeypatch):
@@ -119,15 +141,107 @@ def test_failure_marks_failed_and_falls_back_to_ocr(db, monkeypatch):
                         lambda ids, session_factory=None: ocr_calls.append(ids))
     _run(db, followup, user)
     assert followup.ai_status == "failed" and "JSONDecodeError" in followup.ai_error
-    assert ocr_calls == [[]]
+    assert ocr_calls == []  # 没有截图就不开降级 OCR
 
 
-def test_does_not_overwrite_confirmed_draft(db, monkeypatch):
+def test_draft_confirmed_while_ai_running_is_not_overwritten(db, monkeypatch):
     seed_dicts(db)
     user = make_user(db, "fu_ai_e")
     followup = _draft(db, user, "ai-e")
-    followup.status = "confirmed"
-    db.flush()
-    monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": json.dumps({"summary": "late"})})
+    att_id = _attachment(db, followup, user, monkeypatch)
+    ocr_calls = _record_ocr(monkeypatch)
+
+    def confirm_meanwhile(**kwargs):  # 模型还在跑，业务员已经手填确认
+        followup.status = "confirmed"
+        kwargs["db"].commit()
+        return {"content": json.dumps({"summary": "late"})}
+    monkeypatch.setattr(ai_parse_service, "chat", confirm_meanwhile)
     _run(db, followup, user)
-    assert followup.ai_result is None
+    db.refresh(followup)
+    assert followup.ai_result is None and followup.ai_status == "done"
+    assert ocr_calls == [[att_id]]
+
+
+def test_fallback_ocr_runs_even_if_marking_failed_cannot_commit(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_g")
+    followup = _draft(db, user, "ai-g")
+    att_id = _attachment(db, followup, user, monkeypatch)
+    ocr_calls = _record_ocr(monkeypatch)
+    monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": "not json"})
+
+    def broken_commit():
+        raise RuntimeError("connection lost")
+    monkeypatch.setattr(db, "commit", broken_commit)
+    _run(db, followup, user)
+    assert ocr_calls == [[att_id]]
+
+
+def test_success_path_ocrs_screenshots_the_model_skipped(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_h")
+    followup = _draft(db, user, "ai-h")
+    att_id = _attachment(db, followup, user, monkeypatch)
+    ocr_calls = _record_ocr(monkeypatch)
+    monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": json.dumps({"summary": "x"})})
+    _run(db, followup, user)
+    assert followup.ai_status == "done" and ocr_calls == [[att_id]]
+
+
+def test_context_hides_followups_outside_scope_and_injects_rules(db, monkeypatch):
+    seed_dicts(db)
+    a = make_user(db, "fu_ai_i1")
+    b = make_user(db, "fu_ai_i2")
+    customer = make_customer(db, None, "公海店I", creator=a)  # 公海：B 可写不可读
+    db.add(DomesticFollowup(author_user_id=a.id, customer_id=customer.id, followup_date=FRI, request_id="ai-i-a",
+                            status="confirmed", summary="A的私下报价"))
+    make_shipment(db, customer, a, datetime(2026, 10, 28, 9, 0))
+    followup = _draft(db, b, "ai-i-b", customer_id=customer.id)
+    sent = {}
+
+    def fake_chat(**kwargs):
+        sent.update(kwargs)
+        return {"content": json.dumps({"summary": "x"})}
+    monkeypatch.setattr(ai_parse_service, "chat", fake_chat)
+    _run(db, followup, b)
+    context = _context(sent)
+    assert "A的私下报价" not in json.dumps(context, ensure_ascii=False)
+    assert context["customer"]["recent_followups"] == [] and context["customer"]["recent_shipments"] == []
+    assert context["rules"]["maintenance_days"] == 30 and context["rules"]["inquiry_days"] == 1
+    assert context["allowed_values"]["severities"] == ["一般", "紧急"]
+
+
+def test_unknown_customer_has_no_maintenance_days(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_j")
+    followup = _draft(db, user, "ai-j")
+    sent = {}
+    monkeypatch.setattr(ai_parse_service, "chat",
+                        lambda **k: sent.update(k) or {"content": json.dumps({"summary": "x"})})
+    _run(db, followup, user)
+    assert "maintenance_days" not in _context(sent)["rules"]
+
+
+@pytest.mark.parametrize("payload", [
+    {"customer_hint": {"chat_title": "店A", "confidence": "高"}},
+    {"receipt_feedback": {"is_receipt_feedback": True, "has_problem": "否"}},
+    {"unreadable": [{"text": "语音 3″"}, {"kind": "video"}]},
+    {"state_changes": "订单减少"},
+    {"customer_hint": {"matched_customer_id": "店A", "confidence": 0.9}},
+    {"issues": ["退货率高"]},
+], ids=["confidence_text", "has_problem_text", "unreadable_objects", "state_changes_string",
+        "customer_id_text", "issue_strings"])
+def test_malformed_model_fields_do_not_void_the_draft(db, monkeypatch, payload):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_k")
+    followup = _draft(db, user, "ai-k")
+    monkeypatch.setattr(ai_parse_service, "chat",
+                        lambda **k: {"content": json.dumps({"summary": "x", **payload}, ensure_ascii=False)})
+    _run(db, followup, user)
+    assert followup.ai_status == "done"
+    if "state_changes" in payload:
+        assert followup.ai_result["state_changes"] == ["订单减少"]
+    if "issues" in payload:
+        assert [i["text"] for i in followup.ai_result["items"] if i["kind"] == "issue"] == ["退货率高"]
+    if "unreadable" in payload:
+        assert followup.ai_result["unreadable"] == ["语音 3″"]

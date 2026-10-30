@@ -1,7 +1,8 @@
 """跟进任务：source_key 幂等创建、关闭、顺延、转交、条目处理、待办查询（规格 3.5 / 4.5）。"""
+import logging
 from datetime import date, timedelta
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -12,6 +13,8 @@ from app.domestic_followup.constants import (
     CLOSE_ITEM_RESOLVED, CLOSE_NEW_FOLLOWUP, CLOSE_RECEIPT_DONE, OPEN_ITEM_STATES, TRACKED_KINDS, URGENT,
 )
 from app.domestic_followup.models import DomesticFollowupItem, DomesticFollowupTask
+
+logger = logging.getLogger("commission")
 
 Task = DomesticFollowupTask
 CLOSABLE_BY_FOLLOWUP = ("plan", "receipt")
@@ -31,11 +34,16 @@ def upsert_task(db: Session, *, source_key: str, task_type: str, customer_id: in
         db.add(task)
         db.flush()
         savepoint.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         savepoint.rollback()  # 并发下另一事务先建了同一来源的任务，取它即可
-        # InnoDB 默认 REPEATABLE READ：普通 SELECT 读旧快照看不到对方刚提交的行，加锁读才读最新版本
-        return (db.query(Task).filter(Task.source_key == source_key)
-                .populate_existing().with_for_update().one()), False
+        logger.warning("followup task insert conflict source_key=%s: %s", source_key, type(exc.orig).__name__)
+        print(f"[domestic_followup] task insert conflict source_key={source_key}", flush=True)
+        try:
+            # InnoDB 默认 REPEATABLE READ：普通 SELECT 读旧快照看不到对方刚提交的行，加锁读才读最新版本
+            return (db.query(Task).filter(Task.source_key == source_key)
+                    .populate_existing().with_for_update().one()), False
+        except NoResultFound:
+            raise exc from None  # 不是同一来源撞键（如 NOT NULL / FK），把原始错误抛出去，不要掩盖
     return task, True
 
 
@@ -76,7 +84,11 @@ def create_item_task(db: Session, item: DomesticFollowupItem, followup, shop_nam
 
 
 def close_tasks_for_followup(db: Session, current_user: dict, customer_id: int, task_ids, followup_id: int) -> list[int]:
-    """确认跟进时关闭勾选的旧待办：只关本客户、未完成的约定跟进与收货回访。"""
+    """确认跟进时关闭勾选的旧待办：只关本客户、未完成的约定跟进与收货回访。
+
+    每张都按 is_task_actor 口径过一遍：只因被转交了一张异常待办而能写客户的人，
+    不能顺手关掉归属人的回访。不满足的静默跳过（不是错误，只是不归他关）。
+    """
     ids = sorted({int(i) for i in (task_ids or []) if i})
     if not ids:
         return []
@@ -89,6 +101,8 @@ def close_tasks_for_followup(db: Session, current_user: dict, customer_id: int, 
     )
     closed = []
     for task in rows:
+        if not is_task_actor(db, current_user, task):
+            continue
         reason = CLOSE_RECEIPT_DONE if task.task_type == "receipt" else CLOSE_NEW_FOLLOWUP
         if close_task(task, "done", reason, followup_id=followup_id, user_id=visibility.uid(current_user)):
             closed.append(task.id)
@@ -96,12 +110,16 @@ def close_tasks_for_followup(db: Session, current_user: dict, customer_id: int, 
     return closed
 
 
-def ensure_task_actor(db: Session, current_user: dict, task: Task) -> None:
+def is_task_actor(db: Session, current_user: dict, task: Task) -> bool:
+    """负责人本人，或在客户范围内（含 read_all）。"""
     if task.assignee_user_id == visibility.uid(current_user):
-        return
-    if visibility.in_customer_scope(db, current_user, task.customer_id):  # 含 read_all
-        return
-    raise PermissionError("这不是你的待办")
+        return True
+    return visibility.in_customer_scope(db, current_user, task.customer_id)
+
+
+def ensure_task_actor(db: Session, current_user: dict, task: Task) -> None:
+    if not is_task_actor(db, current_user, task):
+        raise PermissionError("这不是你的待办")
 
 
 def snooze(db: Session, current_user: dict, task_id: int, *, days: int = 1, today: date | None = None) -> Task:

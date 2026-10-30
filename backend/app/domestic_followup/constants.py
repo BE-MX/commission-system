@@ -47,6 +47,7 @@ URGENT_MAX_ATTEMPTS = 5
 RECEIPT_OK_TEXT = "已回访，客户无问题反馈"
 PROSPECT_LIFECYCLE = "潜在"
 HINT_MIN_CONFIDENCE = 0.7
+INQUIRY_FOLLOWUP_DAYS = 1  # 询单次日跟进；作为 rules.inquiry_days 注入 AI，不写死在 prompt 里
 
 CONFIG_DEFAULTS = {
     "receipt_delay_days": 3,

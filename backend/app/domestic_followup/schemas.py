@@ -4,9 +4,11 @@ AiNext 有字段叫 date，与类型名重名会触发 pydantic v2 的 field nam
 所以本文件统一 import datetime as dt、注解写 dt.date。
 """
 import datetime as dt
+import types
+import typing
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 
 
 class ItemIn(BaseModel):
@@ -87,15 +89,73 @@ class ProspectIn(BaseModel):
 
 # ── AI 输出：宽进，字段缺省给默认值；值域在 ai_parse_service.normalize 里收口 ──
 
+_DROP = object()
+_SCALARS = {tp: TypeAdapter(tp) for tp in (int, float, bool)}
+
+
+def _unwrap_optional(annotation):
+    if typing.get_origin(annotation) in (typing.Union, types.UnionType):
+        args = [a for a in typing.get_args(annotation) if a is not type(None)]
+        if len(args) == 1:
+            return args[0]
+    return annotation
+
+
+def _coerce_one(annotation, value):
+    """单个值按期望类型宽进；实在转不了返回 _DROP，由调用方丢弃（落到字段默认值）。"""
+    if value is None or value == "":
+        return _DROP
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str) and "text" in annotation.model_fields:
+            return {"text": value}  # issues: ["退货率高"] → [{"text": "退货率高"}]
+        return _DROP
+    if annotation is str:
+        if isinstance(value, dict):  # unreadable: [{"text": ...}] 取 text，取不到就丢
+            text = value.get("text")
+            return str(text) if isinstance(text, (str, int, float)) and str(text) else _DROP
+        if isinstance(value, (list, tuple)):
+            return _DROP
+        return str(value)
+    if annotation in _SCALARS:
+        try:
+            return _SCALARS[annotation].validate_python(value)  # "高" / "否" / "店A" 转不了就用默认值
+        except ValidationError:
+            return _DROP
+    return value
+
+
+def _coerce(annotation, value):
+    annotation = _unwrap_optional(annotation)
+    if typing.get_origin(annotation) is list:
+        (element,) = typing.get_args(annotation)
+        values = value if isinstance(value, list) else [value]  # "订单减少" → ["订单减少"]
+        return [v for v in (_coerce_one(element, item) for item in values) if v is not _DROP]
+    return _coerce_one(annotation, value)
+
+
 class _Lenient(BaseModel):
-    """模型常把缺省写成 "" 或 null：直接丢掉这些键，让字段默认值生效，避免整份草稿校验失败。"""
+    """模型输出宽进：空值丢掉让默认值生效；类型不对的按期望类型尽量转，转不了就丢弃该字段/元素。
+
+    目标是任何一个字段写歪都不让整份草稿作废（AI 失败会退化成只 OCR，代价太大）。
+    值域在 ai_parse_service.normalize 里收口，这里只管形状。
+    """
 
     @model_validator(mode="before")
     @classmethod
-    def _drop_blank(cls, data):
-        if isinstance(data, dict):
-            return {k: v for k, v in data.items() if v is not None and v != ""}
-        return data
+    def _coerce_shape(cls, data):
+        if not isinstance(data, dict):
+            return data
+        result = {}
+        for key, value in data.items():
+            field = cls.model_fields.get(key)
+            if field is None:
+                continue
+            coerced = _coerce(field.annotation, value)
+            if coerced is not _DROP:
+                result[key] = coerced
+        return result
 
 
 class AiContent(_Lenient):

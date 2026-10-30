@@ -160,6 +160,7 @@ def test_timeline_on_public_sea_hides_other_authors(db):
     a = make_user(db, "fu_svc_k1")
     b = make_user(db, "fu_svc_k2")
     customer = make_customer(db, None, "公海店K", creator=a)
+    make_shipment(db, customer, a, datetime(2026, 10, 27, 10, 0))  # 发货也是客户经营数据，不可读者不能看
     followup_service.direct_save(db, _ctx(a), DirectSaveIn(
         request_id="req-direct-k", customer_id=customer.id, raw_text="A 的私下沟通",
         items=[{"kind": "issue", "text": "掉色", "category": "质量"}]))
@@ -180,3 +181,56 @@ def test_timeline_merges_followups_and_shipments(db):
     assert timeline["events"][1]["data"]["quantity"] == 2
     assert timeline["customer"]["days_since_followup"] == 1
     assert timeline["customer"]["frequency_days"] == 30  # B级 默认 30 天
+
+
+def test_source_task_of_another_owner_is_not_closed(db):
+    seed_dicts(db)
+    owner = make_user(db, "fu_svc_m1")
+    helper = make_user(db, "fu_svc_m2")
+    customer = make_customer(db, owner, "服务店M")
+    # helper 只因手上有一张转交来的异常待办而能写这个客户
+    db.add(DomesticFollowupTask(task_type="issue", customer_id=customer.id, assignee_user_id=helper.id,
+                                source_key="item:m", title="异常", due_date=TODAY))
+    receipt = DomesticFollowupTask(task_type="receipt", customer_id=customer.id, assignee_user_id=owner.id,
+                                   source_key="receipt:m", title="回访", due_date=TODAY)
+    db.add(receipt)
+    db.commit()
+    followup_service.direct_save(db, _ctx(helper), DirectSaveIn(
+        request_id="req-direct-m", customer_id=customer.id, raw_text="帮忙问了下",
+        source_task_id=receipt.id, close_task_ids=[receipt.id]))
+    db.refresh(receipt)
+    assert receipt.status == "todo"
+
+
+def test_duplicate_request_race_returns_existing_record(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_svc_n")
+    customer = make_customer(db, user, "服务店N")
+    db.commit()
+    payload = DirectSaveIn(request_id="req-direct-n", customer_id=customer.id, raw_text="x")
+    first, _ = followup_service.direct_save(db, _ctx(user), payload)
+    original = followup_service._by_request
+    calls = []
+
+    def racing(*args):  # 第一次预查没看到（并发双击），撞唯一键后的重查才看到
+        calls.append(args)
+        return None if len(calls) == 1 else original(*args)
+
+    monkeypatch.setattr(followup_service, "_by_request", racing)
+    again, pending = followup_service.direct_save(db, _ctx(user), payload)
+    assert again.id == first.id and pending == []
+    calls.clear()
+    draft, created = followup_service.create_draft(db, _ctx(user), DraftCreateIn(request_id="req-direct-n", raw_text="x"))
+    assert draft.id == first.id and created is False
+
+
+def test_integrity_error_without_existing_record_is_not_reported_as_duplicate(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_svc_o")
+    customer = make_customer(db, user, "服务店O")
+    db.commit()
+    payload = DirectSaveIn(request_id="req-direct-o", customer_id=customer.id, raw_text="x")
+    followup_service.direct_save(db, _ctx(user), payload)
+    monkeypatch.setattr(followup_service, "_by_request", lambda *a: None)
+    with pytest.raises(ValueError, match="保存失败，请重试"):
+        followup_service.direct_save(db, _ctx(user), payload)
