@@ -1,0 +1,221 @@
+"""跟进的可见与可写范围、客户搜索、快速建潜在客户（规格 3.6 / 第六节）。
+
+current_user 是 JWT claims dict（sub/roles/permissions），和平台其他域一致。
+"""
+import re
+
+from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import Session
+
+from app.auth.models import ArkUser
+from app.domestic.models import DomesticCustomer, DomesticCustomerCommission
+from app.domestic_followup.constants import PROSPECT_LIFECYCLE
+from app.domestic_followup.models import DomesticCustomerAlias, DomesticFollowup, DomesticFollowupTask
+
+SEARCH_LIMIT = 20
+
+
+def uid(current_user: dict) -> int:
+    return int(current_user["sub"])
+
+
+def can_read_all(current_user: dict) -> bool:
+    if "super_admin" in (current_user.get("roles") or []):
+        return True
+    return "domestic_followup:read_all" in (current_user.get("permissions") or [])
+
+
+def normalize_alias(text: str | None) -> str:
+    return re.sub(r"\s+", "", text or "").lower()[:120]
+
+
+def scoped_customer_ids(user_id: int):
+    """归属人或提成人的客户 ID 子查询。"""
+    owned = select(DomesticCustomer.id).where(DomesticCustomer.owner_user_id == user_id)
+    commission = select(DomesticCustomerCommission.customer_id).where(DomesticCustomerCommission.user_id == user_id)
+    return owned.union(commission)
+
+
+def followup_filter(current_user: dict):
+    """确认记录的可见条件；read_all 返回 None 表示不加过滤。"""
+    if can_read_all(current_user):
+        return None
+    user_id = uid(current_user)
+    task_followups = select(DomesticFollowupTask.source_followup_id).where(
+        DomesticFollowupTask.assignee_user_id == user_id,
+        DomesticFollowupTask.source_followup_id.is_not(None),
+    )
+    # 草稿与作废记录只对作者可见；客户范围和任务来源只放行已确认记录
+    return or_(
+        DomesticFollowup.author_user_id == user_id,
+        and_(
+            DomesticFollowup.status == "confirmed",
+            or_(DomesticFollowup.customer_id.in_(scoped_customer_ids(user_id)),
+                DomesticFollowup.id.in_(task_followups)),
+        ),
+    )
+
+
+def task_filter(current_user: dict):
+    if can_read_all(current_user):
+        return None
+    user_id = uid(current_user)
+    return or_(
+        DomesticFollowupTask.assignee_user_id == user_id,
+        DomesticFollowupTask.customer_id.in_(scoped_customer_ids(user_id)),
+    )
+
+
+def in_customer_scope(db: Session, current_user: dict, customer_id: int) -> bool:
+    if can_read_all(current_user):
+        return True
+    user_id = uid(current_user)
+    if db.query(DomesticCustomer.id).filter(
+        DomesticCustomer.id == customer_id, DomesticCustomer.owner_user_id == user_id
+    ).first():
+        return True
+    return db.query(DomesticCustomerCommission.id).filter(
+        DomesticCustomerCommission.customer_id == customer_id, DomesticCustomerCommission.user_id == user_id
+    ).first() is not None
+
+
+def can_write_customer(db: Session, current_user: dict, customer: DomesticCustomer) -> bool:
+    if customer.owner_user_id is None or in_customer_scope(db, current_user, customer.id):
+        return True
+    return db.query(DomesticFollowupTask.id).filter(
+        DomesticFollowupTask.customer_id == customer.id,
+        DomesticFollowupTask.assignee_user_id == uid(current_user),
+        DomesticFollowupTask.status == "todo",
+    ).first() is not None
+
+
+def _owner_name(db: Session, owner_user_id: int | None) -> str:
+    if owner_user_id is None:
+        return "公海"
+    row = db.query(ArkUser.real_name).filter(ArkUser.id == owner_user_id).first()
+    return row[0] if row else f"用户{owner_user_id}"
+
+
+def ensure_customer_writable(db: Session, current_user: dict, customer_id: int) -> DomesticCustomer:
+    customer = db.get(DomesticCustomer, customer_id)
+    if customer is None:
+        raise LookupError("客户不存在")
+    if not can_write_customer(db, current_user, customer):
+        raise PermissionError(f"该客户归属 {_owner_name(db, customer.owner_user_id)}，不能记录跟进")
+    return customer
+
+
+def _customer_row(db: Session, current_user: dict, customer: DomesticCustomer, matched_alias=None) -> dict:
+    return {
+        "id": customer.id,
+        "shop_name": customer.shop_name,
+        "custom_code": customer.custom_code,
+        "contact": customer.contact,
+        "province": customer.province,
+        "customer_level": customer.customer_level,
+        "lifecycle_status": customer.lifecycle_status,
+        "owner_user_id": customer.owner_user_id,
+        "owner_name": _owner_name(db, customer.owner_user_id),
+        "writable": can_write_customer(db, current_user, customer),
+        "matched_alias": matched_alias,
+    }
+
+
+def _like(keyword: str) -> str:
+    escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def search_customers(db: Session, current_user: dict, q: str) -> list[dict]:
+    keyword = (q or "").strip()
+    if not keyword:
+        return []
+    like = _like(keyword)
+    query = db.query(DomesticCustomer).filter(DomesticCustomer.status == 1)
+    if not can_read_all(current_user):
+        query = query.filter(or_(
+            DomesticCustomer.id.in_(scoped_customer_ids(uid(current_user))),
+            DomesticCustomer.owner_user_id.is_(None),
+        ))
+    direct = query.filter(or_(
+        DomesticCustomer.shop_name.like(like, escape="\\"),
+        DomesticCustomer.contact.like(like, escape="\\"),
+        DomesticCustomer.custom_code.like(like, escape="\\"),
+    )).order_by(DomesticCustomer.shop_name).limit(SEARCH_LIMIT).all()
+    results = [_customer_row(db, current_user, c) for c in direct]
+    seen = {c.id for c in direct}
+
+    # 别名先套可见范围再 limit，避免范围外的高频别名把结果挤掉
+    alias_rows = (
+        query.join(DomesticCustomerAlias, DomesticCustomerAlias.customer_id == DomesticCustomer.id)
+        .filter(DomesticCustomerAlias.alias_norm.like(_like(normalize_alias(keyword)), escape="\\"))
+        .with_entities(DomesticCustomer, DomesticCustomerAlias.alias)
+        .order_by(DomesticCustomerAlias.hit_count.desc())
+        .limit(SEARCH_LIMIT)
+        .all()
+    )
+    for customer, alias in alias_rows:
+        if customer.id in seen:
+            continue
+        results.append(_customer_row(db, current_user, customer, matched_alias=alias))
+        seen.add(customer.id)
+    return results[:SEARCH_LIMIT]
+
+
+def match_alias(db: Session, current_user: dict, chat_title: str | None) -> dict | None:
+    """聊天标题精确命中别名时返回客户行（供 AI 结果后置校正）。"""
+    norm = normalize_alias(chat_title)
+    if not norm:
+        return None
+    alias = (
+        db.query(DomesticCustomerAlias)
+        .filter(DomesticCustomerAlias.alias_norm == norm)
+        .order_by(DomesticCustomerAlias.hit_count.desc())
+        .first()
+    )
+    if alias is None:
+        return None
+    customer = db.get(DomesticCustomer, alias.customer_id)
+    if customer is None or not (customer.owner_user_id is None or in_customer_scope(db, current_user, customer.id)):
+        return None
+    return _customer_row(db, current_user, customer, matched_alias=alias.alias)
+
+
+def learn_alias(db: Session, customer_id: int, chat_title: str | None, user_id: int) -> None:
+    norm = normalize_alias(chat_title)
+    if not norm:
+        return
+    alias = db.query(DomesticCustomerAlias).filter(
+        DomesticCustomerAlias.alias_norm == norm, DomesticCustomerAlias.customer_id == customer_id
+    ).first()
+    if alias:
+        alias.hit_count += 1
+    else:
+        db.add(DomesticCustomerAlias(customer_id=customer_id, alias=chat_title.strip()[:120],
+                                     alias_norm=norm, created_by=user_id))
+
+
+def create_prospect(db: Session, current_user: dict, shop_name: str) -> dict:
+    """在内贸客户主档建「潜在」档，只要店名（决策 2）。撞名给出归属提示。"""
+    from app.domestic import customer_service
+    from app.domestic.schemas import CustomerCreate
+    from app.system.models import SysDict
+
+    name = (shop_name or "").strip()
+    if not name:
+        raise ValueError("请填写客户店名")
+    lifecycle_ok = db.query(SysDict.id).filter(
+        SysDict.type == "domestic_customer_lifecycle", SysDict.is_active.is_(True),
+        or_(SysDict.code == PROSPECT_LIFECYCLE, SysDict.label == PROSPECT_LIFECYCLE),
+    ).first()
+    if lifecycle_ok is None:
+        raise ValueError(f"客户状态字典里没有「{PROSPECT_LIFECYCLE}」，请先在字典管理恢复该项")
+    existing = db.query(DomesticCustomer).filter(DomesticCustomer.shop_name == name).first()
+    if existing:
+        if existing.owner_user_id is None:
+            raise ValueError("该客户已存在，目前在公海，请先在客户管理认领")
+        raise ValueError(f"该客户已存在（归属：{_owner_name(db, existing.owner_user_id)}）")
+    customer = customer_service.create_customer(
+        db, CustomerCreate(shop_name=name, lifecycle_status=PROSPECT_LIFECYCLE), uid(current_user),
+    )
+    return _customer_row(db, current_user, customer)
