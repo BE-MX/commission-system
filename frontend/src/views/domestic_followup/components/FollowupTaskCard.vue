@@ -47,7 +47,7 @@ async function onReceiptOk() {
 </script>
 
 <style scoped>
-.task-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); background: var(--card-bg); }
+.task-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); }
 .task-card.is-overdue { border-left: 3px solid var(--color-warning-text); }
 .task-card.is-urgent { border-left: 3px solid var(--color-danger); }
 .task-head { display: flex; align-items: center; gap: 8px; }
@@ -56,5 +56,5 @@ async function onReceiptOk() {
 .task-title { margin: 0; font-weight: 600; }
 .task-sub { margin: 0; font-size: 12px; color: var(--text-secondary); }
 .task-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-@media (max-width: 768px) { .task-actions :deep(button) { min-height: 40px; } }
+@media (max-width: 768px) { .task-actions :deep(button) { min-height: 44px; } }
 </style>

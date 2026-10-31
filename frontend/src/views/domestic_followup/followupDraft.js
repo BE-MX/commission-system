@@ -40,7 +40,7 @@ export function draftToForm(draft, today) {
     customer_id: draft.customer_id || ai.customer_id || null,
     customerConfidence: draft.customer_id ? null : (ai.customer_confidence ?? null),
     chat_title: ai.chat_title || null, summary: ai.summary || '',
-    channel: ai.channel || draft.channel || null,
+    channel: draft.channel || ai.channel || null,  // 用户在输入步选的沟通方式优先
     contents: items.filter(i => i.kind === 'content').map(i => ({ text: i.text, origin: i.origin || 'user' })),
     issues: items.filter(i => i.kind === 'issue').map(tracked),
     suggestions: items.filter(i => i.kind === 'suggestion').map(tracked),
@@ -75,6 +75,27 @@ export function formToPayload(form) {
       item_id: r.item_id, status: r.status || 'resolved', resolution: clean(r.resolution) || null,
     })),
   }
+}
+
+const filled = value => (typeof value === 'string' ? Boolean(value.trim()) : value != null)
+
+/** AI 结果回填后，把输入步手填的沟通方式与下次跟进字段盖回去：用户亲手写的比 AI 推断可信。 */
+export function mergeManualFields(form, manual) {
+  if (!manual) return form
+  const merged = { ...form }
+  for (const key of ['channel', 'next_date', 'next_plan', 'next_method']) {
+    if (filled(manual[key])) merged[key] = manual[key]
+  }
+  if (filled(manual.next_date)) Object.assign(merged, { nextBasis: 'none', nextExpression: null })
+  return merged
+}
+
+export function clipboardHasText(event) {
+  return Array.from(event?.clipboardData?.types || []).includes('text/plain')
+}
+
+export function imageFilesFromDrop(event) {
+  return Array.from(event?.dataTransfer?.files || []).filter(f => String(f.type).startsWith('image/'))
 }
 
 export function imageFilesFromClipboard(event) {

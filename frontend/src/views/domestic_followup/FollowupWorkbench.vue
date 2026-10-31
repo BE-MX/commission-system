@@ -2,7 +2,7 @@
   <div class="followup-workbench">
     <header class="wb-head">
       <div class="wb-stats">
-        <button v-for="s in STATS" :key="s.key" type="button" class="wb-stat" :class="{ active: w.typeFilter.value === s.key }"
+        <button v-for="s in STATS" :key="s.key" type="button" class="wb-stat" :class="{ active: isStatActive(s.key) }"
                 @click="toggleFilter(s.key)">
           <span class="wb-stat-num">{{ w.summary[s.key] }}</span>
           <span class="wb-stat-label">{{ s.label }}<em v-if="s.key === 'issue' && w.summary.urgent">紧急 {{ w.summary.urgent }}</em></span>
@@ -28,8 +28,8 @@
                             @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
           <el-empty v-if="!w.loading.value && !w.filtered.value.due.length" description="今天的跟进都完成了" />
         </div>
-        <el-collapse v-if="w.filtered.value.upcoming.length" class="wb-upcoming">
-          <el-collapse-item :title="`即将到期（${w.filtered.value.upcoming.length}）`">
+        <el-collapse v-if="w.filtered.value.upcoming.length" v-model="upcomingOpen" class="wb-upcoming">
+          <el-collapse-item name="upcoming" :title="`即将到期（${w.filtered.value.upcoming.length}）`">
             <div class="wb-cards">
               <FollowupTaskCard v-for="t in w.filtered.value.upcoming" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
                                 @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
@@ -88,6 +88,7 @@ const route = useRoute()
 const tab = ref('tasks')
 const timelineRef = ref(null)
 const configRef = ref(null)
+const upcomingOpen = ref([])  // 「即将到期」默认折叠；点计数卡展开/收起
 const w = useFollowupWorkbench()
 const composer = useFollowupComposer({
   onSaved: () => { if (tab.value === 'records') w.loadRecords(1) },
@@ -95,9 +96,14 @@ const composer = useFollowupComposer({
 })
 
 function toggleFilter(key) {
-  if (key === 'upcoming') return
+  if (key === 'upcoming') {
+    upcomingOpen.value = upcomingOpen.value.includes('upcoming') ? [] : ['upcoming']
+    return
+  }
   w.typeFilter.value = w.typeFilter.value === key ? '' : key
 }
+
+const isStatActive = key => (key === 'upcoming' ? upcomingOpen.value.includes('upcoming') : w.typeFilter.value === key)
 
 function recordFromTask(task) {
   composer.open({ customer: { id: task.customer_id, shop_name: task.shop_name, writable: true }, source_task_id: task.id })
@@ -107,14 +113,18 @@ async function resumeDraft(draft) {
   try { await composer.resume(draft.id) } catch (e) { msgError(apiError(e, '草稿加载失败'), e) }
 }
 
-async function openFromQuery() {
+function openFromQuery() {
   const id = Number(route.query.customer)
   if (!id) return
   timelineRef.value?.open(id)
 }
 
-watch(tab, value => { if (value === 'records' && !w.records.items.length) w.loadRecords(1) })
-onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // 看板分类筛选要字典
+// 页面被 KeepAlive 缓存时 onMounted 不再触发：盯住 ?customer=，从客户列表换个客户再点也能打开
+// flush: 'post' 让首次执行排在挂载之后，timelineRef 才有值
+watch(() => route.query.customer, openFromQuery, { immediate: true, flush: 'post' })
+// 每次切到「我的记录」都刷新第一页：刚确认的记录要能马上看到
+watch(tab, value => { if (value === 'records') w.loadRecords(1) })
+onMounted(() => { w.loadTasks(); composer.loadDicts() })  // 看板分类筛选要字典
 </script>
 
 <style scoped>
@@ -123,7 +133,7 @@ onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // �
 .wb-stats { display: flex; gap: 10px; flex-wrap: wrap; }
 .wb-actions { display: flex; align-items: center; gap: 8px; }
 .wb-records { cursor: pointer; }
-.wb-stat { display: flex; flex-direction: column; align-items: flex-start; min-width: 96px; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); background: var(--card-bg); cursor: pointer; transition: transform 160ms var(--ease-out-strong), border-color 160ms ease; }
+.wb-stat { display: flex; flex-direction: column; align-items: flex-start; min-width: 96px; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); cursor: pointer; transition: transform 160ms var(--ease-out-strong), border-color 160ms ease; }
 .wb-stat:active { transform: scale(0.97); }
 .wb-stat.active { border-color: var(--color-primary); }
 .wb-stat-num { font-size: 22px; font-weight: 700; }

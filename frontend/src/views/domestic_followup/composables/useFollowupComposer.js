@@ -2,7 +2,10 @@ import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { apiError, followupApi } from '@/api/domesticFollowup'
 import { currentBeijingDate } from '@/utils/datetime'
 import { msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
-import { draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, newRequestId } from '../followupDraft'
+import {
+  clipboardHasText, draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, imageFilesFromDrop,
+  mergeManualFields, newRequestId,
+} from '../followupDraft'
 
 const MAX_ATTACHMENTS = 9
 const POLL_MS = 1500
@@ -22,25 +25,37 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   const aiFailed = ref(false)
   let requestId = newRequestId()
   let pollTimer = null
+  // 代际令牌：关闭/重开后旧轮询的回调可能还在路上，令牌不一致就作废，不能复活已关掉的抽屉
+  let pollGen = 0
+  // 输入步手填、但建草稿接口不收的字段：AI 结果回来后盖回去（用户亲手写的优先）
+  let manualFields = null
 
   const uploading = computed(() => attachments.value.some(a => a.uploading))
   const canSubmit = computed(() => !saving.value && !uploading.value
     && (form.value.raw_text.trim() || attachments.value.length))
+  const selectedCustomer = computed(() => customerOptions.value.find(o => o.id === form.value.customer_id) || null)
+  // 选项里查不到时不拦（后端仍会校验）；明确不可写才禁用确认
+  const customerWritable = computed(() => selectedCustomer.value?.writable !== false)
 
   async function loadDicts() {
     if (dicts.domestic_followup_channel.length) return
     try { Object.assign(dicts, await followupApi.dicts()) } catch (e) { msgError(apiError(e, '字典加载失败'), e) }
   }
 
+  function revokePreviews() {
+    attachments.value.forEach(a => a.previewUrl && URL.revokeObjectURL(a.previewUrl))
+  }
+
   function reset(preset = {}) {
     stopPolling()
-    attachments.value.forEach(a => a.previewUrl && URL.revokeObjectURL(a.previewUrl))
+    revokePreviews()
     attachments.value = []
     form.value = { ...emptyForm(currentBeijingDate()), ...preset }
     customerOptions.value = preset.customer ? [preset.customer] : []
     if (preset.customer) form.value.customer_id = preset.customer.id
     step.value = 'input'
     aiFailed.value = false
+    manualFields = null
     requestId = newRequestId()
   }
 
@@ -68,12 +83,18 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   }
 
   function onPaste(event) {
+    // 剪贴板同时有文字（如从 Word / 网页复制）时只放行文字，不顺带塞一张截图
+    if (clipboardHasText(event)) return
     const files = imageFilesFromClipboard(event)
     if (files.length) {
-      // 剪贴板同时有文字（如从 Word 复制）时不拦截，文字照常进文本框
-      if (!Array.from(event.clipboardData?.types || []).includes('text/plain')) event.preventDefault()
+      event.preventDefault()
       addFiles(files)
     }
+  }
+
+  function onDrop(event) {
+    const files = imageFilesFromDrop(event)
+    if (files.length) addFiles(files)
   }
 
   function removeAttachment(row) {
@@ -143,11 +164,15 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
   async function startAi() {
     saving.value = true
+    const gen = pollGen
+    const { channel, next_date, next_plan, next_method } = form.value
     try {
       const draft = await followupApi.createDraft({
         ...basePayload(), customer_id: form.value.customer_id || null,
         followup_date: form.value.followup_date, channel: form.value.channel,
       })
+      if (gen !== pollGen) return  // 等接口时抽屉已关
+      manualFields = { channel, next_date, next_plan, next_method }
       form.value.id = draft.id
       step.value = 'parsing'
       poll(draft.id, 0)
@@ -155,30 +180,36 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   }
 
   function poll(id, count) {
+    const gen = pollGen
     pollTimer = setTimeout(async () => {
+      if (gen !== pollGen) return
       try {
         const draft = await followupApi.draft(id)
+        if (gen !== pollGen) return
         if (draft.ai_status === 'running' && count < POLL_LIMIT) return poll(id, count + 1)
         // AI 失败后后端才开始逐张 OCR：等截图文字出来再停，降级时才有字可抄
         const ocrPending = draft.attachments.some(a => a.ocr_status === 'pending')
         if (draft.ai_status === 'failed' && ocrPending && count < POLL_LIMIT) return poll(id, count + 1)
-        applyDraft(draft)
+        await applyDraft(draft, gen)
       } catch (e) {
+        if (gen !== pollGen) return
         if (count < POLL_LIMIT) return poll(id, count + 1)
-        msgError(apiError(e, '读取 AI 结果失败，已切换为手动填写'), e)
-        step.value = 'review'
-        aiFailed.value = true
+        // 一直取不到结果：不进核对步（那里是空表），草稿在后端，回头从「我的草稿」接着核对
+        msgWarning('暂时取不到 AI 结果，草稿已保存在『我的草稿』')
+        close()
       }
     }, POLL_MS)
   }
 
   function stopPolling() {
+    pollGen += 1
     if (pollTimer) clearTimeout(pollTimer)
     pollTimer = null
   }
 
-  async function applyDraft(draft) {
-    form.value = draftToForm(draft, currentBeijingDate())
+  async function applyDraft(draft, gen = pollGen) {
+    if (gen !== pollGen) return
+    form.value = mergeManualFields(draftToForm(draft, currentBeijingDate()), manualFields)
     attachments.value = attachments.value.map(a => ({ ...a, ...(draft.attachments.find(d => d.id === a.id) || {}) }))
     aiFailed.value = draft.ai_status !== 'done'
     if (aiFailed.value) msgWarning(draft.ai_error || 'AI 整理未完成，请参考截图文字手动填写')
@@ -188,6 +219,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
   async function confirm() {
     if (!form.value.customer_id) return msgWarning('请选择客户')
+    if (!customerWritable.value) return msgWarning('该客户不归你负责，不能记录跟进，请换一个客户')
     saving.value = true
     try {
       await followupApi.confirmDraft(form.value.id, { version: form.value.version, ...formToPayload(form.value) })
@@ -199,8 +231,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
           const latest = await followupApi.draft(form.value.id)
           if (latest.status !== 'draft') {
             msgWarning('这份草稿已经确认或作废了')
-            close()
-            onSaved?.()
+            finish(null)
             return
           }
           form.value.version = latest.version
@@ -220,14 +251,20 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   }
 
   function finish(message) {
-    msgSuccessText(message)
+    if (message) msgSuccessText(message)
     close()
     onSaved?.()
   }
 
+  /** 只负责收起抽屉；收尾（刷新待办、释放预览）统一在抽屉 @closed 里做一次，避免重复刷新。 */
   function close() {
     stopPolling()
     visible.value = false
+  }
+
+  function handleClosed() {
+    stopPolling()
+    revokePreviews()
     onClosed?.()  // 「稍后再看」后草稿条要出现
   }
 
@@ -244,25 +281,32 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   async function resume(draftId) {
     reset()
     visible.value = true
-    await loadDicts()
-    const draft = await followupApi.draft(draftId)
-    form.value.id = draft.id
-    // 恢复的草稿只有附件 id，没有本地预览：缩略图区显示文件名
-    attachments.value = draft.attachments.map(a => ({ ...a, previewUrl: '', uploading: false }))
-    if (draft.ai_status === 'running') {
-      step.value = 'parsing'
-      poll(draft.id, 0)
-    } else {
-      await applyDraft(draft)
+    const gen = pollGen
+    try {
+      await loadDicts()
+      const draft = await followupApi.draft(draftId)
+      if (gen !== pollGen) return
+      form.value.id = draft.id
+      // 恢复的草稿只有附件 id，没有本地预览：缩略图区显示文件名
+      attachments.value = draft.attachments.map(a => ({ ...a, previewUrl: '', uploading: false }))
+      if (draft.ai_status === 'running') {
+        step.value = 'parsing'
+        poll(draft.id, 0)
+      } else {
+        await applyDraft(draft, gen)
+      }
+    } catch (e) {
+      close()  // 空抽屉留着没意义；错误交给调用方提示
+      throw e
     }
   }
 
   onBeforeUnmount(stopPolling)
 
   return {
-    visible, step, saving, uploading, canSubmit, dicts, loadDicts, form, attachments, customerOptions, searching,
-    openTasks, openItems, aiFailed,
-    open, resume, close, addFiles, onPaste, removeAttachment, searchCustomers, createProspect, loadCustomerContext,
-    saveDirect, startAi, confirm, discard, addRow, toggleResolved,
+    visible, step, saving, uploading, canSubmit, customerWritable, dicts, loadDicts, form, attachments,
+    customerOptions, searching, openTasks, openItems, aiFailed,
+    open, resume, close, handleClosed, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, createProspect,
+    loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved,
   }
 }

@@ -5815,7 +5815,8 @@ export function apiError(error, fallback = '操作失败') {
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, nextBasisHint, taskDueLabel, weekdayLabel,
+  draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, mergeManualFields, nextBasisHint, taskDueLabel,
+  weekdayLabel, clipboardHasText, imageFilesFromDrop,
 } from '../src/views/domestic_followup/followupDraft.js'
 
 const TODAY = '2026-10-30'
@@ -5842,7 +5843,7 @@ test('draftToForm maps AI result into editable sections', () => {
     },
   }, TODAY)
   assert.equal(form.customer_id, 12)
-  assert.equal(form.channel, '电话')
+  assert.equal(form.channel, '微信')  // 用户在输入步选的沟通方式优先于 AI
   assert.deepEqual(form.contents.map(i => i.text), ['月销 13 万'])
   assert.equal(form.issues[0].severity, '紧急')
   assert.equal(form.suggestions[0].origin, 'ai_inferred')
@@ -5891,6 +5892,51 @@ test('taskDueLabel and nextBasisHint', () => {
   assert.equal(taskDueLabel({ due_date: '2026-11-02', overdue_days: 0 }, TODAY), '11-02 周一')
   assert.match(nextBasisHint({ nextBasis: 'mismatch', nextExpression: '下周一', next_date: '2026-11-02' }), /已按「下周一」改为 11-02/)
   assert.equal(nextBasisHint({ nextBasis: 'parsed' }), '')
+})
+
+test('draftToForm falls back to AI channel only when user left it blank', () => {
+  const form = draftToForm({ id: 3, version: 1, channel: null, followup_date: TODAY, ai_result: { channel: '电话' } }, TODAY)
+  assert.equal(form.channel, '电话')
+})
+
+test('mergeManualFields keeps hand-filled next fields and channel over AI result', () => {
+  const ai = draftToForm({
+    id: 4, version: 1, channel: null, followup_date: TODAY,
+    ai_result: { channel: '电话', next: { date: '2026-11-02', expression: '下周一', basis: 'mismatch', method: '电话', plan: 'AI 计划' } },
+  }, TODAY)
+  const merged = mergeManualFields(ai, { channel: '微信', next_date: '2026-11-05', next_plan: ' 送样 ', next_method: '上门' })
+  assert.equal(merged.channel, '微信')
+  assert.equal(merged.next_date, '2026-11-05')
+  assert.equal(merged.next_plan, ' 送样 ')
+  assert.equal(merged.next_method, '上门')
+  assert.equal(merged.nextBasis, 'none')  // 手填日期不再挂 AI 纠正提示
+  assert.equal(merged.nextExpression, null)
+})
+
+test('mergeManualFields leaves AI values when manual fields are blank', () => {
+  const ai = draftToForm({
+    id: 5, version: 1, followup_date: TODAY,
+    ai_result: { next: { date: '2026-11-02', expression: '下周一', basis: 'parsed', method: '电话', plan: '问进度' } },
+  }, TODAY)
+  const merged = mergeManualFields(ai, { channel: null, next_date: null, next_plan: '  ', next_method: '' })
+  assert.equal(merged.next_date, '2026-11-02')
+  assert.equal(merged.next_plan, '问进度')
+  assert.equal(merged.next_method, '电话')
+  assert.equal(merged.nextExpression, '下周一')
+  assert.equal(mergeManualFields(ai, null), ai)
+})
+
+test('imageFilesFromClipboard callers can detect mixed text clipboard', () => {
+  assert.equal(clipboardHasText({ clipboardData: { types: ['text/plain', 'Files'] } }), true)
+  assert.equal(clipboardHasText({ clipboardData: { types: ['Files'] } }), false)
+  assert.equal(clipboardHasText({}), false)
+})
+
+test('imageFilesFromDrop returns only dropped image files', () => {
+  const png = { type: 'image/png', name: 'a.png' }
+  const txt = { type: 'text/plain', name: 'a.txt' }
+  assert.deepEqual(imageFilesFromDrop({ dataTransfer: { files: [png, txt] } }), [png])
+  assert.deepEqual(imageFilesFromDrop({}), [])
 })
 ```
 
@@ -5952,7 +5998,7 @@ export function draftToForm(draft, today) {
     customer_id: draft.customer_id || ai.customer_id || null,
     customerConfidence: draft.customer_id ? null : (ai.customer_confidence ?? null),
     chat_title: ai.chat_title || null, summary: ai.summary || '',
-    channel: ai.channel || draft.channel || null,
+    channel: draft.channel || ai.channel || null,  // 用户在输入步选的沟通方式优先
     contents: items.filter(i => i.kind === 'content').map(i => ({ text: i.text, origin: i.origin || 'user' })),
     issues: items.filter(i => i.kind === 'issue').map(tracked),
     suggestions: items.filter(i => i.kind === 'suggestion').map(tracked),
@@ -5989,6 +6035,27 @@ export function formToPayload(form) {
   }
 }
 
+const filled = value => (typeof value === 'string' ? Boolean(value.trim()) : value != null)
+
+/** AI 结果回填后，把输入步手填的沟通方式与下次跟进字段盖回去：用户亲手写的比 AI 推断可信。 */
+export function mergeManualFields(form, manual) {
+  if (!manual) return form
+  const merged = { ...form }
+  for (const key of ['channel', 'next_date', 'next_plan', 'next_method']) {
+    if (filled(manual[key])) merged[key] = manual[key]
+  }
+  if (filled(manual.next_date)) Object.assign(merged, { nextBasis: 'none', nextExpression: null })
+  return merged
+}
+
+export function clipboardHasText(event) {
+  return Array.from(event?.clipboardData?.types || []).includes('text/plain')
+}
+
+export function imageFilesFromDrop(event) {
+  return Array.from(event?.dataTransfer?.files || []).filter(f => String(f.type).startsWith('image/'))
+}
+
 export function imageFilesFromClipboard(event) {
   const items = Array.from(event?.clipboardData?.items || [])
   return items.filter(i => i.kind === 'file' && String(i.type).startsWith('image/'))
@@ -6011,7 +6078,7 @@ export function nextBasisHint(form) {
 - [ ] **Step 6: 跑测试确认通过**
 
 Run: `cd frontend && npm run test:domestic-followup`
-Expected: PASS（6 tests）
+Expected: PASS（11 tests）
 
 - [ ] **Step 7: 提交**
 
@@ -6065,7 +6132,10 @@ import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { apiError, followupApi } from '@/api/domesticFollowup'
 import { currentBeijingDate } from '@/utils/datetime'
 import { msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
-import { draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, newRequestId } from '../followupDraft'
+import {
+  clipboardHasText, draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, imageFilesFromDrop,
+  mergeManualFields, newRequestId,
+} from '../followupDraft'
 
 const MAX_ATTACHMENTS = 9
 const POLL_MS = 1500
@@ -6085,25 +6155,37 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   const aiFailed = ref(false)
   let requestId = newRequestId()
   let pollTimer = null
+  // 代际令牌：关闭/重开后旧轮询的回调可能还在路上，令牌不一致就作废，不能复活已关掉的抽屉
+  let pollGen = 0
+  // 输入步手填、但建草稿接口不收的字段：AI 结果回来后盖回去（用户亲手写的优先）
+  let manualFields = null
 
   const uploading = computed(() => attachments.value.some(a => a.uploading))
   const canSubmit = computed(() => !saving.value && !uploading.value
     && (form.value.raw_text.trim() || attachments.value.length))
+  const selectedCustomer = computed(() => customerOptions.value.find(o => o.id === form.value.customer_id) || null)
+  // 选项里查不到时不拦（后端仍会校验）；明确不可写才禁用确认
+  const customerWritable = computed(() => selectedCustomer.value?.writable !== false)
 
   async function loadDicts() {
     if (dicts.domestic_followup_channel.length) return
     try { Object.assign(dicts, await followupApi.dicts()) } catch (e) { msgError(apiError(e, '字典加载失败'), e) }
   }
 
+  function revokePreviews() {
+    attachments.value.forEach(a => a.previewUrl && URL.revokeObjectURL(a.previewUrl))
+  }
+
   function reset(preset = {}) {
     stopPolling()
-    attachments.value.forEach(a => a.previewUrl && URL.revokeObjectURL(a.previewUrl))
+    revokePreviews()
     attachments.value = []
     form.value = { ...emptyForm(currentBeijingDate()), ...preset }
     customerOptions.value = preset.customer ? [preset.customer] : []
     if (preset.customer) form.value.customer_id = preset.customer.id
     step.value = 'input'
     aiFailed.value = false
+    manualFields = null
     requestId = newRequestId()
   }
 
@@ -6131,12 +6213,18 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   }
 
   function onPaste(event) {
+    // 剪贴板同时有文字（如从 Word / 网页复制）时只放行文字，不顺带塞一张截图
+    if (clipboardHasText(event)) return
     const files = imageFilesFromClipboard(event)
     if (files.length) {
-      // 剪贴板同时有文字（如从 Word 复制）时不拦截，文字照常进文本框
-      if (!Array.from(event.clipboardData?.types || []).includes('text/plain')) event.preventDefault()
+      event.preventDefault()
       addFiles(files)
     }
+  }
+
+  function onDrop(event) {
+    const files = imageFilesFromDrop(event)
+    if (files.length) addFiles(files)
   }
 
   function removeAttachment(row) {
@@ -6206,11 +6294,15 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
   async function startAi() {
     saving.value = true
+    const gen = pollGen
+    const { channel, next_date, next_plan, next_method } = form.value
     try {
       const draft = await followupApi.createDraft({
         ...basePayload(), customer_id: form.value.customer_id || null,
         followup_date: form.value.followup_date, channel: form.value.channel,
       })
+      if (gen !== pollGen) return  // 等接口时抽屉已关
+      manualFields = { channel, next_date, next_plan, next_method }
       form.value.id = draft.id
       step.value = 'parsing'
       poll(draft.id, 0)
@@ -6218,30 +6310,36 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   }
 
   function poll(id, count) {
+    const gen = pollGen
     pollTimer = setTimeout(async () => {
+      if (gen !== pollGen) return
       try {
         const draft = await followupApi.draft(id)
+        if (gen !== pollGen) return
         if (draft.ai_status === 'running' && count < POLL_LIMIT) return poll(id, count + 1)
         // AI 失败后后端才开始逐张 OCR：等截图文字出来再停，降级时才有字可抄
         const ocrPending = draft.attachments.some(a => a.ocr_status === 'pending')
         if (draft.ai_status === 'failed' && ocrPending && count < POLL_LIMIT) return poll(id, count + 1)
-        applyDraft(draft)
+        await applyDraft(draft, gen)
       } catch (e) {
+        if (gen !== pollGen) return
         if (count < POLL_LIMIT) return poll(id, count + 1)
-        msgError(apiError(e, '读取 AI 结果失败，已切换为手动填写'), e)
-        step.value = 'review'
-        aiFailed.value = true
+        // 一直取不到结果：不进核对步（那里是空表），草稿在后端，回头从「我的草稿」接着核对
+        msgWarning('暂时取不到 AI 结果，草稿已保存在『我的草稿』')
+        close()
       }
     }, POLL_MS)
   }
 
   function stopPolling() {
+    pollGen += 1
     if (pollTimer) clearTimeout(pollTimer)
     pollTimer = null
   }
 
-  async function applyDraft(draft) {
-    form.value = draftToForm(draft, currentBeijingDate())
+  async function applyDraft(draft, gen = pollGen) {
+    if (gen !== pollGen) return
+    form.value = mergeManualFields(draftToForm(draft, currentBeijingDate()), manualFields)
     attachments.value = attachments.value.map(a => ({ ...a, ...(draft.attachments.find(d => d.id === a.id) || {}) }))
     aiFailed.value = draft.ai_status !== 'done'
     if (aiFailed.value) msgWarning(draft.ai_error || 'AI 整理未完成，请参考截图文字手动填写')
@@ -6251,6 +6349,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
   async function confirm() {
     if (!form.value.customer_id) return msgWarning('请选择客户')
+    if (!customerWritable.value) return msgWarning('该客户不归你负责，不能记录跟进，请换一个客户')
     saving.value = true
     try {
       await followupApi.confirmDraft(form.value.id, { version: form.value.version, ...formToPayload(form.value) })
@@ -6262,8 +6361,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
           const latest = await followupApi.draft(form.value.id)
           if (latest.status !== 'draft') {
             msgWarning('这份草稿已经确认或作废了')
-            close()
-            onSaved?.()
+            finish(null)
             return
           }
           form.value.version = latest.version
@@ -6283,14 +6381,20 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   }
 
   function finish(message) {
-    msgSuccessText(message)
+    if (message) msgSuccessText(message)
     close()
     onSaved?.()
   }
 
+  /** 只负责收起抽屉；收尾（刷新待办、释放预览）统一在抽屉 @closed 里做一次，避免重复刷新。 */
   function close() {
     stopPolling()
     visible.value = false
+  }
+
+  function handleClosed() {
+    stopPolling()
+    revokePreviews()
     onClosed?.()  // 「稍后再看」后草稿条要出现
   }
 
@@ -6307,26 +6411,33 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   async function resume(draftId) {
     reset()
     visible.value = true
-    await loadDicts()
-    const draft = await followupApi.draft(draftId)
-    form.value.id = draft.id
-    // 恢复的草稿只有附件 id，没有本地预览：缩略图区显示文件名
-    attachments.value = draft.attachments.map(a => ({ ...a, previewUrl: '', uploading: false }))
-    if (draft.ai_status === 'running') {
-      step.value = 'parsing'
-      poll(draft.id, 0)
-    } else {
-      await applyDraft(draft)
+    const gen = pollGen
+    try {
+      await loadDicts()
+      const draft = await followupApi.draft(draftId)
+      if (gen !== pollGen) return
+      form.value.id = draft.id
+      // 恢复的草稿只有附件 id，没有本地预览：缩略图区显示文件名
+      attachments.value = draft.attachments.map(a => ({ ...a, previewUrl: '', uploading: false }))
+      if (draft.ai_status === 'running') {
+        step.value = 'parsing'
+        poll(draft.id, 0)
+      } else {
+        await applyDraft(draft, gen)
+      }
+    } catch (e) {
+      close()  // 空抽屉留着没意义；错误交给调用方提示
+      throw e
     }
   }
 
   onBeforeUnmount(stopPolling)
 
   return {
-    visible, step, saving, uploading, canSubmit, dicts, loadDicts, form, attachments, customerOptions, searching,
-    openTasks, openItems, aiFailed,
-    open, resume, close, addFiles, onPaste, removeAttachment, searchCustomers, createProspect, loadCustomerContext,
-    saveDirect, startAi, confirm, discard, addRow, toggleResolved,
+    visible, step, saving, uploading, canSubmit, customerWritable, dicts, loadDicts, form, attachments,
+    customerOptions, searching, openTasks, openItems, aiFailed,
+    open, resume, close, handleClosed, addFiles, onPaste, onDrop, removeAttachment, searchCustomers, createProspect,
+    loadCustomerContext, saveDirect, startAi, confirm, discard, addRow, toggleResolved,
   }
 }
 ```
@@ -6344,7 +6455,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
     append-to-body
     destroy-on-close
     :before-close="beforeClose"
-    @closed="c.close()"
+    @closed="c.handleClosed()"
   >
     <!-- 第一步：输入 -->
     <section v-if="c.step.value === 'input'" class="composer-body" @paste="c.onPaste">
@@ -6358,7 +6469,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
             <el-option v-for="opt in c.customerOptions.value" :key="opt.id" :value="opt.id" :label="opt.shop_name"
                        :disabled="!opt.writable">
               <span>{{ opt.shop_name }}</span>
-              <span class="option-meta">{{ !opt.writable ? `归属 ${opt.owner_name}，不能记录` : (opt.matched_alias ? `别名：${opt.matched_alias}` : opt.owner_name) }}</span>
+              <span class="option-meta">{{ optionMeta(opt) }}</span>
             </el-option>
           </el-select>
           <GlassButton variant="link" left-icon="Plus" class="prospect-btn" @click="promptProspect">新客户，快速建档</GlassButton>
@@ -6374,25 +6485,31 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
             </el-select>
           </el-form-item>
         </div>
-        <el-form-item label="跟进内容">
-          <el-input v-model="c.form.value.raw_text" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }"
-                    placeholder="随手写，或直接 Ctrl+V 粘贴微信截图" />
-        </el-form-item>
-        <div class="shots">
-          <div v-for="a in c.attachments.value" :key="a.id || a.previewUrl" class="shot">
-            <img v-if="a.previewUrl" :src="a.previewUrl" :alt="a.file_name">
-            <span v-else class="shot-name">{{ a.file_name }}</span>
-            <span v-if="a.uploading" class="shot-state">上传中</span>
-            <button type="button" class="shot-remove" aria-label="移除截图" @click="c.removeAttachment(a)">×</button>
+        <div class="drop-zone" :class="{ 'is-dragging': dragDepth > 0 }"
+             @dragenter="onDragEnter" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+          <el-form-item label="跟进内容">
+            <el-input v-model="c.form.value.raw_text" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }"
+                      placeholder="随手写，Ctrl+V 粘贴或直接拖进微信截图" />
+          </el-form-item>
+          <div class="shots">
+            <div v-for="a in c.attachments.value" :key="a.id || a.previewUrl" class="shot">
+              <img v-if="a.previewUrl" :src="a.previewUrl" :alt="a.file_name">
+              <span v-else class="shot-name">{{ a.file_name }}</span>
+              <span v-if="a.uploading" class="shot-state">上传中</span>
+              <button type="button" class="shot-remove" aria-label="移除截图" @click="c.removeAttachment(a)">
+                <span class="shot-remove-dot" aria-hidden="true">×</span>
+              </button>
+            </div>
+            <label v-if="c.attachments.value.length < 9" class="shot shot-add">
+              <input type="file" accept="image/*" multiple hidden @change="onPick">
+              <span>＋ 截图</span>
+            </label>
           </div>
-          <label v-if="c.attachments.value.length < 9" class="shot shot-add">
-            <input type="file" accept="image/*" multiple hidden @change="onPick">
-            <span>＋ 截图</span>
-          </label>
         </div>
         <div class="row-2">
           <el-form-item label="下次跟进（可选，填了就生成待办）">
-            <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable class="full" />
+            <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable
+                            :disabled-date="beforeFollowup" class="full" />
           </el-form-item>
           <el-form-item label="方式">
             <el-select v-model="c.form.value.next_method" clearable class="full">
@@ -6425,8 +6542,12 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
           <el-select v-model="c.form.value.customer_id" filterable remote clearable :remote-method="c.searchCustomers"
                      :loading="c.searching.value" class="full" @change="c.loadCustomerContext">
             <el-option v-for="opt in c.customerOptions.value" :key="opt.id" :value="opt.id" :label="opt.shop_name"
-                       :disabled="!opt.writable" />
+                       :disabled="!opt.writable">
+              <span>{{ opt.shop_name }}</span>
+              <span class="option-meta">{{ optionMeta(opt) }}</span>
+            </el-option>
           </el-select>
+          <p v-if="!c.customerWritable.value" class="hint hint-danger">这个客户不归你负责，不能记录跟进，请换一个客户</p>
           <p v-if="c.form.value.customerConfidence" class="hint">AI 匹配，置信度 {{ Math.round(c.form.value.customerConfidence * 100) }}%，请确认</p>
         </el-form-item>
         <div class="row-2">
@@ -6458,7 +6579,8 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
 
         <div class="row-2">
           <el-form-item label="下次跟进日期">
-            <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable class="full" />
+            <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable
+                            :disabled-date="beforeFollowup" class="full" />
           </el-form-item>
           <el-form-item label="方式">
             <el-select v-model="c.form.value.next_method" clearable class="full">
@@ -6506,7 +6628,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
         </template>
         <template v-else-if="c.step.value === 'review'">
           <GlassButton variant="link" @click="discardWithConfirm">作废草稿</GlassButton>
-          <GlassButton variant="primary" :loading="c.saving.value" @click="c.confirm">确认保存</GlassButton>
+          <GlassButton variant="primary" :loading="c.saving.value" :disabled="!c.customerWritable.value" @click="c.confirm">确认保存</GlassButton>
         </template>
         <GlassButton v-else @click="c.close()">稍后再看</GlassButton>
       </div>
@@ -6533,11 +6655,39 @@ onBeforeUnmount(() => media.removeEventListener('change', syncMedia))
 
 // 日期选择器的 Date 是日历标签，不做时区换算（utils/datetime.js 的约定）；「今天」每次现取，页面开过午夜也对
 const isFuture = d => formatCalendarDate(d) > currentBeijingDate()
+// 下次跟进不能早于本次跟进日期（后端同样校验，这里提前挡住）
+const beforeFollowup = d => Boolean(c.form.value.followup_date) && formatCalendarDate(d) < c.form.value.followup_date
 const basisHint = computed(() => nextBasisHint(c.form.value))
 const ocrTexts = computed(() => c.attachments.value.map(a => a.ocr_text).filter(Boolean))
 const dueLabel = t => taskDueLabel(t, currentBeijingDate())
 const isResolved = item => c.form.value.resolvedItems.some(r => r.item_id === item.id)
 const resolvedRow = item => c.form.value.resolvedItems.find(r => r.item_id === item.id)
+
+function optionMeta(opt) {
+  if (opt.writable === false) return `归属 ${opt.owner_name || '他人'}，不能记录`
+  return opt.matched_alias ? `别名：${opt.matched_alias}` : (opt.owner_name || '')
+}
+
+// 拖拽截图：dragenter/leave 在子元素间来回触发，用深度计数判断是否还在区域内
+const dragDepth = ref(0)
+const hasFiles = event => Array.from(event.dataTransfer?.types || []).includes('Files')
+function onDragEnter(event) {
+  if (!hasFiles(event)) return
+  event.preventDefault()
+  dragDepth.value += 1
+}
+function onDragOver(event) {
+  if (hasFiles(event)) event.preventDefault()  // 不阻止默认就收不到 drop，浏览器会直接打开图片
+}
+function onDragLeave(event) {
+  if (hasFiles(event)) dragDepth.value = Math.max(dragDepth.value - 1, 0)
+}
+function onDrop(event) {
+  if (!hasFiles(event)) return
+  event.preventDefault()
+  dragDepth.value = 0
+  c.onDrop(event)
+}
 
 function onPick(event) {
   c.addFiles(Array.from(event.target.files || []))
@@ -6559,10 +6709,12 @@ async function promptProspect() {
 }
 
 async function beforeClose(done) {
-  const dirty = c.step.value === 'input' && (c.form.value.raw_text.trim() || c.attachments.value.length)
-  if (!dirty) return done()
+  const step = c.step.value
+  const dirty = step === 'input' && (c.form.value.raw_text.trim() || c.attachments.value.length)
+  if (!dirty && step !== 'review') return done()
   try {
-    await confirmAction('写的内容还没保存，关掉就没了。', '放弃这条跟进？')
+    if (step === 'review') await confirmAction('改动还没保存，草稿会保留在『我的草稿』，确定关闭？', '关闭核对')
+    else await confirmAction('写的内容还没保存，关掉就没了。', '放弃这条跟进？')
     done()
   } catch (e) { if (!isFeedbackCancelled(e)) throw e }
 }
@@ -6583,12 +6735,17 @@ async function discardWithConfirm() {
 .prospect-btn { margin-top: 4px; }
 .hint { margin: 4px 0 0; font-size: 12px; color: var(--text-secondary); }
 .hint-warn { color: var(--color-warning-text); }
+.hint-danger { color: var(--color-danger); }
+.drop-zone { display: flex; flex-direction: column; gap: 8px; margin: -6px; padding: 6px; border: 1px dashed transparent; border-radius: var(--radius-sm, 6px); transition: border-color 150ms ease; }
+.drop-zone.is-dragging { border-color: var(--color-primary); }
 .shots { display: flex; flex-wrap: wrap; gap: 8px; }
 .shot { position: relative; width: 72px; height: 96px; border-radius: var(--radius-sm, 6px); overflow: hidden; border: 1px solid var(--border-color); background: var(--tag-neutral-bg); }
 .shot img { width: 100%; height: 100%; object-fit: cover; }
 .shot-state { position: absolute; inset: auto 0 0; padding: 2px; font-size: 11px; text-align: center; color: var(--text-on-dark); background: var(--overlay-scrim); }
-.shot-remove { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border: 0; border-radius: 50%; color: var(--text-on-dark); background: var(--overlay-scrim); cursor: pointer; transition: transform 160ms var(--ease-out-strong); }
-.shot-remove:active { transform: scale(0.95); }
+/* 热区 32×32（手机 44×44），视觉圆点保持 20px，贴右上角 */
+.shot-remove { position: absolute; top: 0; right: 0; display: flex; align-items: flex-start; justify-content: flex-end; width: 32px; height: 32px; padding: 2px; border: 0; background: transparent; cursor: pointer; }
+.shot-remove-dot { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: var(--text-on-dark); background: var(--overlay-scrim); transition: transform 160ms var(--ease-out-strong); }
+.shot-remove:active .shot-remove-dot { transform: scale(0.95); }
 .shot-name { display: block; padding: 6px; font-size: 11px; word-break: break-all; color: var(--text-secondary); }
 .shot-add { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); cursor: pointer; border-style: dashed; }
 .parsing-tip { margin: 0 0 12px; color: var(--text-secondary); }
@@ -6602,6 +6759,7 @@ async function discardWithConfirm() {
   .row-2 { grid-template-columns: 1fr; }
   .composer-footer { position: sticky; bottom: 0; }
   .composer-footer :deep(button) { flex: 1; min-height: 44px; }
+  .shot-remove { width: 44px; height: 44px; }
 }
 </style>
 ```
@@ -6695,6 +6853,7 @@ git commit -m "feat(domestic-followup): add follow-up composer drawer with AI re
 - Modify: `frontend/src/config/navigation.js`：domestic 分组 anyPermission 加跟进权限；`/domestic/customers` 条目之后加一条
 - Modify: `frontend/src/views/domestic/DomesticCustomers.vue`：操作列加「跟进」按钮（放在 canOperateCustomer 条件外，原有按钮包进 template，逻辑不动）
 - Modify: `frontend/src/router/index.js`：手机登录分流加客户跟进例外
+- Modify: `frontend/src/views/auth/LoginPage.vue`：登录成功后的手机分流同样加客户跟进例外（只改这一处条件）
 - Create: `frontend/src/views/domestic_followup/components/FollowupConfigDialog.vue`：admin 配置回访天数、紧急接收人、跟进频率
 - Create: `frontend/src/views/domestic_followup/followupStatus.js`：任务类型 / 条目类型 / 紧急程度的 StatusBadge 字典（UI 门禁禁止 el-tag 静态 type）
 - Modify: `backend/app/system/navigation_access_manifest.json`（由 `npm run build` 自动生成，随导航改动一起提交）
@@ -6708,7 +6867,7 @@ git commit -m "feat(domestic-followup): add follow-up composer drawer with AI re
   - 时间线。
 - **Tab「异常意见」**：IssueBoard 表格，标记和样式复制 `system/DictManagement.vue` 的写法（红线 14），可筛选状态/类型/分类/只看我的，行内可处理、转交。
 - **Tab「我的记录」**：已确认的跟进列表，点击打开客户时间线。
-- **URL** `?customer=<id>`：打开页面时自动打开该客户的时间线，并预选客户打开 Composer。客户列表的「跟进」按钮就是跳这个 URL。
+- **URL** `?customer=<id>`：打开时间线，时间线里点「记一条跟进」再开录入。客户列表的「跟进」按钮就是跳这个 URL。
 - **我的草稿**：顶部有草稿时显示「你有 N 份草稿未确认」，点开可继续核对。
 
 - [ ] **Step 1: 后端补 /users（转交选人）**
@@ -6901,7 +7060,7 @@ async function onReceiptOk() {
 </script>
 
 <style scoped>
-.task-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); background: var(--card-bg); }
+.task-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); }
 .task-card.is-overdue { border-left: 3px solid var(--color-warning-text); }
 .task-card.is-urgent { border-left: 3px solid var(--color-danger); }
 .task-head { display: flex; align-items: center; gap: 8px; }
@@ -6910,7 +7069,7 @@ async function onReceiptOk() {
 .task-title { margin: 0; font-weight: 600; }
 .task-sub { margin: 0; font-size: 12px; color: var(--text-secondary); }
 .task-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-@media (max-width: 768px) { .task-actions :deep(button) { min-height: 40px; } }
+@media (max-width: 768px) { .task-actions :deep(button) { min-height: 44px; } }
 </style>
 ```
 
@@ -7150,7 +7309,7 @@ defineExpose({ load })
   <div class="followup-workbench">
     <header class="wb-head">
       <div class="wb-stats">
-        <button v-for="s in STATS" :key="s.key" type="button" class="wb-stat" :class="{ active: w.typeFilter.value === s.key }"
+        <button v-for="s in STATS" :key="s.key" type="button" class="wb-stat" :class="{ active: isStatActive(s.key) }"
                 @click="toggleFilter(s.key)">
           <span class="wb-stat-num">{{ w.summary[s.key] }}</span>
           <span class="wb-stat-label">{{ s.label }}<em v-if="s.key === 'issue' && w.summary.urgent">紧急 {{ w.summary.urgent }}</em></span>
@@ -7176,8 +7335,8 @@ defineExpose({ load })
                             @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
           <el-empty v-if="!w.loading.value && !w.filtered.value.due.length" description="今天的跟进都完成了" />
         </div>
-        <el-collapse v-if="w.filtered.value.upcoming.length" class="wb-upcoming">
-          <el-collapse-item :title="`即将到期（${w.filtered.value.upcoming.length}）`">
+        <el-collapse v-if="w.filtered.value.upcoming.length" v-model="upcomingOpen" class="wb-upcoming">
+          <el-collapse-item name="upcoming" :title="`即将到期（${w.filtered.value.upcoming.length}）`">
             <div class="wb-cards">
               <FollowupTaskCard v-for="t in w.filtered.value.upcoming" :key="t.id" :task="t" :on-receipt-ok="w.receiptOk"
                                 @record="recordFromTask" @snooze="w.snooze" @timeline="t2 => timelineRef.open(t2.customer_id)" />
@@ -7236,6 +7395,7 @@ const route = useRoute()
 const tab = ref('tasks')
 const timelineRef = ref(null)
 const configRef = ref(null)
+const upcomingOpen = ref([])  // 「即将到期」默认折叠；点计数卡展开/收起
 const w = useFollowupWorkbench()
 const composer = useFollowupComposer({
   onSaved: () => { if (tab.value === 'records') w.loadRecords(1) },
@@ -7243,9 +7403,14 @@ const composer = useFollowupComposer({
 })
 
 function toggleFilter(key) {
-  if (key === 'upcoming') return
+  if (key === 'upcoming') {
+    upcomingOpen.value = upcomingOpen.value.includes('upcoming') ? [] : ['upcoming']
+    return
+  }
   w.typeFilter.value = w.typeFilter.value === key ? '' : key
 }
+
+const isStatActive = key => (key === 'upcoming' ? upcomingOpen.value.includes('upcoming') : w.typeFilter.value === key)
 
 function recordFromTask(task) {
   composer.open({ customer: { id: task.customer_id, shop_name: task.shop_name, writable: true }, source_task_id: task.id })
@@ -7255,14 +7420,18 @@ async function resumeDraft(draft) {
   try { await composer.resume(draft.id) } catch (e) { msgError(apiError(e, '草稿加载失败'), e) }
 }
 
-async function openFromQuery() {
+function openFromQuery() {
   const id = Number(route.query.customer)
   if (!id) return
   timelineRef.value?.open(id)
 }
 
-watch(tab, value => { if (value === 'records' && !w.records.items.length) w.loadRecords(1) })
-onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // 看板分类筛选要字典
+// 页面被 KeepAlive 缓存时 onMounted 不再触发：盯住 ?customer=，从客户列表换个客户再点也能打开
+// flush: 'post' 让首次执行排在挂载之后，timelineRef 才有值
+watch(() => route.query.customer, openFromQuery, { immediate: true, flush: 'post' })
+// 每次切到「我的记录」都刷新第一页：刚确认的记录要能马上看到
+watch(tab, value => { if (value === 'records') w.loadRecords(1) })
+onMounted(() => { w.loadTasks(); composer.loadDicts() })  // 看板分类筛选要字典
 </script>
 
 <style scoped>
@@ -7271,7 +7440,7 @@ onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // �
 .wb-stats { display: flex; gap: 10px; flex-wrap: wrap; }
 .wb-actions { display: flex; align-items: center; gap: 8px; }
 .wb-records { cursor: pointer; }
-.wb-stat { display: flex; flex-direction: column; align-items: flex-start; min-width: 96px; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); background: var(--card-bg); cursor: pointer; transition: transform 160ms var(--ease-out-strong), border-color 160ms ease; }
+.wb-stat { display: flex; flex-direction: column; align-items: flex-start; min-width: 96px; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); cursor: pointer; transition: transform 160ms var(--ease-out-strong), border-color 160ms ease; }
 .wb-stat:active { transform: scale(0.97); }
 .wb-stat.active { border-color: var(--color-primary); }
 .wb-stat-num { font-size: 22px; font-weight: 700; }
@@ -7286,7 +7455,7 @@ onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // �
 </style>
 ```
 
-`?customer=` 的处理：`openFromQuery` 打开时间线，时间线里点「记一条跟进」再开 Composer（客户已预选）。这样能先看历史再记录，和原型第 6 屏一致。
+`?customer=` 的处理：打开时间线，时间线里点「记一条跟进」再开录入（客户已预选）。这样能先看历史再记录，和原型第 6 屏一致。用 `watch(() => route.query.customer, …, { immediate: true, flush: 'post' })` 而不是 onMounted：页面被 KeepAlive 缓存时，从客户列表换个客户再点也能打开。
 
 - [ ] **Step 6.5: 写 FollowupConfigDialog.vue（部署后亮哥要在这里设紧急接收人）**
 
@@ -7417,6 +7586,8 @@ defineExpose({ open })
 
 `frontend/src/router/index.js` 第 105 行（手机 UA 访问 /login 会被送去 `/m/login.html`，登录后落在素材移动端）：在条件末尾加 `&& !redirectTarget.startsWith('/domestic/followups')`。这样从钉钉每日推送点进跟进页的手机用户，走主站登录后能回到跟进页（规格 4.7）。注释里补一句「例外：客户跟进（钉钉推送入口）」。
 
+`frontend/src/views/auth/LoginPage.vue` 登录成功后还有一处同样的手机分流（`window.location.href = '/m/'`），只改它的条件：末尾加 `&& !redirect.startsWith('/domestic/followups')`，和 router/index.js 对齐。只改 router 不改这里，手机用户登录成功后仍会被送去 `/m/`。
+
 在 `<script setup>` 里加（`useRouter` 若未导入就一并导入）：
 
 ```js
@@ -7439,7 +7610,7 @@ Expected: PASS；构建会重写 `backend/app/system/navigation_access_manifest.
 - [ ] **Step 9: 提交**
 
 ```bash
-git add frontend/src/views/domestic_followup frontend/src/config/navigation.js frontend/src/views/domestic/DomesticCustomers.vue frontend/src/router/index.js backend/app/system/navigation_access_manifest.json
+git add frontend/src/views/domestic_followup frontend/src/config/navigation.js frontend/src/views/domestic/DomesticCustomers.vue frontend/src/router/index.js frontend/src/views/auth/LoginPage.vue backend/app/system/navigation_access_manifest.json
 git commit -m "feat(domestic-followup): add follow-up workbench page, timeline and issue board"
 ```
 
@@ -7528,6 +7699,9 @@ Expected: PASS
 | 截图随表单提交 | 先上传、确认时绑定 | 大图上传不卡表单，失败可单张重传 |
 | 客户转移时任务处理（规格未细化） | 约定跟进/回访跟新归属人；释放到公海则取消；异常/意见跟处理人不跟客户 | 异常是已发生的问题，必须有人闭环 |
 | 异常/意见任务到期日（规格未细化） | 等于跟进日，当天进待办 | 对应「及时跟进」 |
+| AI 整理中显示进度文案 | 改为骨架屏 + 一句耗时提示 | 一期简化：后端没有分阶段进度，假进度条不如骨架屏诚实 |
+| 时间线展开截图 OCR 文本 | 时间线只给「截图 N」按钮看原图，不展开 OCR 文本 | 一期简化：OCR 文本只在核对步 AI 失败时供抄写 |
+| 工作台搜索与筛选 | 未做，只有计数卡按类型筛选 + 异常看板筛选 | 一期简化：待办量小，先看使用情况再加 |
 
 - [ ] **Step 3: handoff 待部署条目要点**
 

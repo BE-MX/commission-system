@@ -8,7 +8,7 @@
     append-to-body
     destroy-on-close
     :before-close="beforeClose"
-    @closed="c.close()"
+    @closed="c.handleClosed()"
   >
     <!-- 第一步：输入 -->
     <section v-if="c.step.value === 'input'" class="composer-body" @paste="c.onPaste">
@@ -22,7 +22,7 @@
             <el-option v-for="opt in c.customerOptions.value" :key="opt.id" :value="opt.id" :label="opt.shop_name"
                        :disabled="!opt.writable">
               <span>{{ opt.shop_name }}</span>
-              <span class="option-meta">{{ !opt.writable ? `归属 ${opt.owner_name}，不能记录` : (opt.matched_alias ? `别名：${opt.matched_alias}` : opt.owner_name) }}</span>
+              <span class="option-meta">{{ optionMeta(opt) }}</span>
             </el-option>
           </el-select>
           <GlassButton variant="link" left-icon="Plus" class="prospect-btn" @click="promptProspect">新客户，快速建档</GlassButton>
@@ -38,25 +38,31 @@
             </el-select>
           </el-form-item>
         </div>
-        <el-form-item label="跟进内容">
-          <el-input v-model="c.form.value.raw_text" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }"
-                    placeholder="随手写，或直接 Ctrl+V 粘贴微信截图" />
-        </el-form-item>
-        <div class="shots">
-          <div v-for="a in c.attachments.value" :key="a.id || a.previewUrl" class="shot">
-            <img v-if="a.previewUrl" :src="a.previewUrl" :alt="a.file_name">
-            <span v-else class="shot-name">{{ a.file_name }}</span>
-            <span v-if="a.uploading" class="shot-state">上传中</span>
-            <button type="button" class="shot-remove" aria-label="移除截图" @click="c.removeAttachment(a)">×</button>
+        <div class="drop-zone" :class="{ 'is-dragging': dragDepth > 0 }"
+             @dragenter="onDragEnter" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+          <el-form-item label="跟进内容">
+            <el-input v-model="c.form.value.raw_text" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }"
+                      placeholder="随手写，Ctrl+V 粘贴或直接拖进微信截图" />
+          </el-form-item>
+          <div class="shots">
+            <div v-for="a in c.attachments.value" :key="a.id || a.previewUrl" class="shot">
+              <img v-if="a.previewUrl" :src="a.previewUrl" :alt="a.file_name">
+              <span v-else class="shot-name">{{ a.file_name }}</span>
+              <span v-if="a.uploading" class="shot-state">上传中</span>
+              <button type="button" class="shot-remove" aria-label="移除截图" @click="c.removeAttachment(a)">
+                <span class="shot-remove-dot" aria-hidden="true">×</span>
+              </button>
+            </div>
+            <label v-if="c.attachments.value.length < 9" class="shot shot-add">
+              <input type="file" accept="image/*" multiple hidden @change="onPick">
+              <span>＋ 截图</span>
+            </label>
           </div>
-          <label v-if="c.attachments.value.length < 9" class="shot shot-add">
-            <input type="file" accept="image/*" multiple hidden @change="onPick">
-            <span>＋ 截图</span>
-          </label>
         </div>
         <div class="row-2">
           <el-form-item label="下次跟进（可选，填了就生成待办）">
-            <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable class="full" />
+            <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable
+                            :disabled-date="beforeFollowup" class="full" />
           </el-form-item>
           <el-form-item label="方式">
             <el-select v-model="c.form.value.next_method" clearable class="full">
@@ -89,8 +95,12 @@
           <el-select v-model="c.form.value.customer_id" filterable remote clearable :remote-method="c.searchCustomers"
                      :loading="c.searching.value" class="full" @change="c.loadCustomerContext">
             <el-option v-for="opt in c.customerOptions.value" :key="opt.id" :value="opt.id" :label="opt.shop_name"
-                       :disabled="!opt.writable" />
+                       :disabled="!opt.writable">
+              <span>{{ opt.shop_name }}</span>
+              <span class="option-meta">{{ optionMeta(opt) }}</span>
+            </el-option>
           </el-select>
+          <p v-if="!c.customerWritable.value" class="hint hint-danger">这个客户不归你负责，不能记录跟进，请换一个客户</p>
           <p v-if="c.form.value.customerConfidence" class="hint">AI 匹配，置信度 {{ Math.round(c.form.value.customerConfidence * 100) }}%，请确认</p>
         </el-form-item>
         <div class="row-2">
@@ -122,7 +132,8 @@
 
         <div class="row-2">
           <el-form-item label="下次跟进日期">
-            <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable class="full" />
+            <el-date-picker v-model="c.form.value.next_date" type="date" value-format="YYYY-MM-DD" clearable
+                            :disabled-date="beforeFollowup" class="full" />
           </el-form-item>
           <el-form-item label="方式">
             <el-select v-model="c.form.value.next_method" clearable class="full">
@@ -170,7 +181,7 @@
         </template>
         <template v-else-if="c.step.value === 'review'">
           <GlassButton variant="link" @click="discardWithConfirm">作废草稿</GlassButton>
-          <GlassButton variant="primary" :loading="c.saving.value" @click="c.confirm">确认保存</GlassButton>
+          <GlassButton variant="primary" :loading="c.saving.value" :disabled="!c.customerWritable.value" @click="c.confirm">确认保存</GlassButton>
         </template>
         <GlassButton v-else @click="c.close()">稍后再看</GlassButton>
       </div>
@@ -197,11 +208,39 @@ onBeforeUnmount(() => media.removeEventListener('change', syncMedia))
 
 // 日期选择器的 Date 是日历标签，不做时区换算（utils/datetime.js 的约定）；「今天」每次现取，页面开过午夜也对
 const isFuture = d => formatCalendarDate(d) > currentBeijingDate()
+// 下次跟进不能早于本次跟进日期（后端同样校验，这里提前挡住）
+const beforeFollowup = d => Boolean(c.form.value.followup_date) && formatCalendarDate(d) < c.form.value.followup_date
 const basisHint = computed(() => nextBasisHint(c.form.value))
 const ocrTexts = computed(() => c.attachments.value.map(a => a.ocr_text).filter(Boolean))
 const dueLabel = t => taskDueLabel(t, currentBeijingDate())
 const isResolved = item => c.form.value.resolvedItems.some(r => r.item_id === item.id)
 const resolvedRow = item => c.form.value.resolvedItems.find(r => r.item_id === item.id)
+
+function optionMeta(opt) {
+  if (opt.writable === false) return `归属 ${opt.owner_name || '他人'}，不能记录`
+  return opt.matched_alias ? `别名：${opt.matched_alias}` : (opt.owner_name || '')
+}
+
+// 拖拽截图：dragenter/leave 在子元素间来回触发，用深度计数判断是否还在区域内
+const dragDepth = ref(0)
+const hasFiles = event => Array.from(event.dataTransfer?.types || []).includes('Files')
+function onDragEnter(event) {
+  if (!hasFiles(event)) return
+  event.preventDefault()
+  dragDepth.value += 1
+}
+function onDragOver(event) {
+  if (hasFiles(event)) event.preventDefault()  // 不阻止默认就收不到 drop，浏览器会直接打开图片
+}
+function onDragLeave(event) {
+  if (hasFiles(event)) dragDepth.value = Math.max(dragDepth.value - 1, 0)
+}
+function onDrop(event) {
+  if (!hasFiles(event)) return
+  event.preventDefault()
+  dragDepth.value = 0
+  c.onDrop(event)
+}
 
 function onPick(event) {
   c.addFiles(Array.from(event.target.files || []))
@@ -223,10 +262,12 @@ async function promptProspect() {
 }
 
 async function beforeClose(done) {
-  const dirty = c.step.value === 'input' && (c.form.value.raw_text.trim() || c.attachments.value.length)
-  if (!dirty) return done()
+  const step = c.step.value
+  const dirty = step === 'input' && (c.form.value.raw_text.trim() || c.attachments.value.length)
+  if (!dirty && step !== 'review') return done()
   try {
-    await confirmAction('写的内容还没保存，关掉就没了。', '放弃这条跟进？')
+    if (step === 'review') await confirmAction('改动还没保存，草稿会保留在『我的草稿』，确定关闭？', '关闭核对')
+    else await confirmAction('写的内容还没保存，关掉就没了。', '放弃这条跟进？')
     done()
   } catch (e) { if (!isFeedbackCancelled(e)) throw e }
 }
@@ -247,12 +288,17 @@ async function discardWithConfirm() {
 .prospect-btn { margin-top: 4px; }
 .hint { margin: 4px 0 0; font-size: 12px; color: var(--text-secondary); }
 .hint-warn { color: var(--color-warning-text); }
+.hint-danger { color: var(--color-danger); }
+.drop-zone { display: flex; flex-direction: column; gap: 8px; margin: -6px; padding: 6px; border: 1px dashed transparent; border-radius: var(--radius-sm, 6px); transition: border-color 150ms ease; }
+.drop-zone.is-dragging { border-color: var(--color-primary); }
 .shots { display: flex; flex-wrap: wrap; gap: 8px; }
 .shot { position: relative; width: 72px; height: 96px; border-radius: var(--radius-sm, 6px); overflow: hidden; border: 1px solid var(--border-color); background: var(--tag-neutral-bg); }
 .shot img { width: 100%; height: 100%; object-fit: cover; }
 .shot-state { position: absolute; inset: auto 0 0; padding: 2px; font-size: 11px; text-align: center; color: var(--text-on-dark); background: var(--overlay-scrim); }
-.shot-remove { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border: 0; border-radius: 50%; color: var(--text-on-dark); background: var(--overlay-scrim); cursor: pointer; transition: transform 160ms var(--ease-out-strong); }
-.shot-remove:active { transform: scale(0.95); }
+/* 热区 32×32（手机 44×44），视觉圆点保持 20px，贴右上角 */
+.shot-remove { position: absolute; top: 0; right: 0; display: flex; align-items: flex-start; justify-content: flex-end; width: 32px; height: 32px; padding: 2px; border: 0; background: transparent; cursor: pointer; }
+.shot-remove-dot { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: var(--text-on-dark); background: var(--overlay-scrim); transition: transform 160ms var(--ease-out-strong); }
+.shot-remove:active .shot-remove-dot { transform: scale(0.95); }
 .shot-name { display: block; padding: 6px; font-size: 11px; word-break: break-all; color: var(--text-secondary); }
 .shot-add { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); cursor: pointer; border-style: dashed; }
 .parsing-tip { margin: 0 0 12px; color: var(--text-secondary); }
@@ -266,5 +312,6 @@ async function discardWithConfirm() {
   .row-2 { grid-template-columns: 1fr; }
   .composer-footer { position: sticky; bottom: 0; }
   .composer-footer :deep(button) { flex: 1; min-height: 44px; }
+  .shot-remove { width: 44px; height: 44px; }
 }
 </style>

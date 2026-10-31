@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, nextBasisHint, taskDueLabel, weekdayLabel,
+  draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, mergeManualFields, nextBasisHint, taskDueLabel,
+  weekdayLabel, clipboardHasText, imageFilesFromDrop,
 } from '../src/views/domestic_followup/followupDraft.js'
 
 const TODAY = '2026-10-30'
@@ -28,7 +29,7 @@ test('draftToForm maps AI result into editable sections', () => {
     },
   }, TODAY)
   assert.equal(form.customer_id, 12)
-  assert.equal(form.channel, '电话')
+  assert.equal(form.channel, '微信')  // 用户在输入步选的沟通方式优先于 AI
   assert.deepEqual(form.contents.map(i => i.text), ['月销 13 万'])
   assert.equal(form.issues[0].severity, '紧急')
   assert.equal(form.suggestions[0].origin, 'ai_inferred')
@@ -77,4 +78,49 @@ test('taskDueLabel and nextBasisHint', () => {
   assert.equal(taskDueLabel({ due_date: '2026-11-02', overdue_days: 0 }, TODAY), '11-02 周一')
   assert.match(nextBasisHint({ nextBasis: 'mismatch', nextExpression: '下周一', next_date: '2026-11-02' }), /已按「下周一」改为 11-02/)
   assert.equal(nextBasisHint({ nextBasis: 'parsed' }), '')
+})
+
+test('draftToForm falls back to AI channel only when user left it blank', () => {
+  const form = draftToForm({ id: 3, version: 1, channel: null, followup_date: TODAY, ai_result: { channel: '电话' } }, TODAY)
+  assert.equal(form.channel, '电话')
+})
+
+test('mergeManualFields keeps hand-filled next fields and channel over AI result', () => {
+  const ai = draftToForm({
+    id: 4, version: 1, channel: null, followup_date: TODAY,
+    ai_result: { channel: '电话', next: { date: '2026-11-02', expression: '下周一', basis: 'mismatch', method: '电话', plan: 'AI 计划' } },
+  }, TODAY)
+  const merged = mergeManualFields(ai, { channel: '微信', next_date: '2026-11-05', next_plan: ' 送样 ', next_method: '上门' })
+  assert.equal(merged.channel, '微信')
+  assert.equal(merged.next_date, '2026-11-05')
+  assert.equal(merged.next_plan, ' 送样 ')
+  assert.equal(merged.next_method, '上门')
+  assert.equal(merged.nextBasis, 'none')  // 手填日期不再挂 AI 纠正提示
+  assert.equal(merged.nextExpression, null)
+})
+
+test('mergeManualFields leaves AI values when manual fields are blank', () => {
+  const ai = draftToForm({
+    id: 5, version: 1, followup_date: TODAY,
+    ai_result: { next: { date: '2026-11-02', expression: '下周一', basis: 'parsed', method: '电话', plan: '问进度' } },
+  }, TODAY)
+  const merged = mergeManualFields(ai, { channel: null, next_date: null, next_plan: '  ', next_method: '' })
+  assert.equal(merged.next_date, '2026-11-02')
+  assert.equal(merged.next_plan, '问进度')
+  assert.equal(merged.next_method, '电话')
+  assert.equal(merged.nextExpression, '下周一')
+  assert.equal(mergeManualFields(ai, null), ai)
+})
+
+test('imageFilesFromClipboard callers can detect mixed text clipboard', () => {
+  assert.equal(clipboardHasText({ clipboardData: { types: ['text/plain', 'Files'] } }), true)
+  assert.equal(clipboardHasText({ clipboardData: { types: ['Files'] } }), false)
+  assert.equal(clipboardHasText({}), false)
+})
+
+test('imageFilesFromDrop returns only dropped image files', () => {
+  const png = { type: 'image/png', name: 'a.png' }
+  const txt = { type: 'text/plain', name: 'a.txt' }
+  assert.deepEqual(imageFilesFromDrop({ dataTransfer: { files: [png, txt] } }), [png])
+  assert.deepEqual(imageFilesFromDrop({}), [])
 })
