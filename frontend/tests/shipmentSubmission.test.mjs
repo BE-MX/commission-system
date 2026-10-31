@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+
+test('shipment payment without screenshots keeps its original recovery command', () => {
+  const store = memory(), original = command()
+  original.body.payment.attachment_ids = []
+  saveShipmentSubmission(store, 1, original)
+  assert.deepEqual(readShipmentSubmission(store, 1), original)
+  const changed = structuredClone(original)
+  changed.body.payment.attachment_ids = ['later']
+  assert.throws(() => saveShipmentSubmission(store, 1, changed))
+})
 import {shipmentSubmissionKey,copyShipment,readShipmentSubmission,saveShipmentSubmission,clearShipmentSubmission,isShipmentReceipt,isShipmentObservation,uncertainShipment} from '../src/views/invoice/composables/shipmentSubmission.js'
 const command=()=>({invoice_id:1,body:{items:[{invoice_item_id:7,quantity:4}],freight_amount:'20.00',quote_hash:'a'.repeat(64),request_key:'original_shipment_123',payment:{amount:'32.00',bank_charge:'0',collection_date:'2026-10-06',payment_type:'T/T',attachment_ids:['proof'],remark:'ORIGINAL'}}})
 function memory(){const data=new Map();return{data,getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)}}

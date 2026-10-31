@@ -39,7 +39,8 @@ def _photo_to_dict(photo: ShippingInspectionPhoto, stale_ids=(), local_items=Non
     if local_items and item_id is not None:
         item_id = local_items.get(str(item_id), item_id)
     return {"id": photo.id, "item_id": item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type,
-            "storage_state": getattr(photo, '_storage_state', 'local'), "stale": photo.id in stale_ids}
+            "storage_state": getattr(photo, '_storage_state', 'local'), "stale": photo.id in stale_ids,
+            "created_at": photo.created_at, "created_by_name": getattr(photo, '_uploader_name', None)}
 
 
 def _display_item_ids(db: Session, outbound_record_id: str) -> dict[str, str]:
@@ -60,6 +61,15 @@ def _display_item_ids(db: Session, outbound_record_id: str) -> dict[str, str]:
         return {}
 
 
+def _uploader_names(db: Session, photos: list[ShippingInspectionPhoto]) -> dict[int, str]:
+    """批量取上传人姓名：照片墙要按张显示「谁·何时」，逐张 db.get 会变成 N+1。"""
+    user_ids = {photo.created_by for photo in photos if photo.created_by}
+    if not user_ids:
+        return {}
+    return {user_id: real_name for user_id, real_name in
+            db.query(ArkUser.id, ArkUser.real_name).filter(ArkUser.id.in_(user_ids)).all()}
+
+
 def list_photos(db: Session, inspection_id: int, media_type: str = "image") -> list[ShippingInspectionPhoto]:
     photos = (
         db.query(ShippingInspectionPhoto)
@@ -72,6 +82,9 @@ def list_photos(db: Session, inspection_id: int, media_type: str = "image") -> l
         states = {r.id: r.status for r in db.query(transfers.StorageTransfer).filter(transfers.StorageTransfer.id.in_(identities)).all()}
         for photo in photos:
             photo._storage_state = states.get(transfers.transfer_id('shipping-inspection', photo.file_path), 'local')
+    uploaders = _uploader_names(db, photos)
+    for photo in photos:
+        photo._uploader_name = uploaders.get(photo.created_by)
     return photos
 
 
@@ -463,6 +476,7 @@ def list_records(
     )
     salespeople = record_query_service.salesperson_names(db, [str(insp.outbound_record_id) for insp, _ in rows])
     order_ids = outbound_service.order_ids_for_records(db, [str(insp.outbound_record_id) for insp, _ in rows])
+    shipments = _shipment_briefs(db, [insp for insp, _ in rows])
     items = [{
         "id": insp.id,
         "edit_version": insp.edit_version,
@@ -475,8 +489,23 @@ def list_records(
         "submitted_by_name": real_name,
         "salesperson_name": salespeople.get(str(insp.outbound_record_id)),
         "remark": insp.remark,
+        "shipment": shipments.get(insp.id),
+        "shipment_version": insp.shipment_version,
     } for insp, real_name in rows]
     return items, total
+
+
+def _shipment_briefs(db, inspections) -> dict:
+    """列表批量取关联物流单（一次查询，口径同 shipment_brief：软删的运单视为未关联）。"""
+    from app.tracking.models import ShipmentTracking
+    ids = {insp.shipment_tracking_id for insp in inspections if insp.shipment_tracking_id}
+    if not ids:
+        return {}
+    rows = {row.id: row for row in db.query(ShipmentTracking).filter(
+        ShipmentTracking.id.in_(ids), ShipmentTracking.deleted_at.is_(None)).all()}
+    return {insp.id: dict(waybill_no=rows[insp.shipment_tracking_id].waybill_no,
+                          carrier=rows[insp.shipment_tracking_id].carrier, shipment_version=insp.shipment_version)
+            for insp in inspections if insp.shipment_tracking_id in rows}
 
 
 def get_record_detail(db: Session, inspection_id: int) -> dict | None:
@@ -499,6 +528,8 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
     return {
         "id": inspection.id,
         "status": inspection.status,
+        "shipment": shipment_brief(db, inspection),
+        "shipment_version": inspection.shipment_version,
         "edit_version": inspection.edit_version,
         "outbound_record_id": inspection.outbound_record_id,
         "outbound_no": inspection.outbound_no,
@@ -514,3 +545,61 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
         "required_recheck_ids": required_ids,
         "outbound_sync_pending": bool(sync_event and sync_event.action in BLOCKED),
     }
+
+
+
+def shipment_brief(db, inspection):
+    from app.tracking.models import ShipmentTracking
+    row = db.get(ShipmentTracking, inspection.shipment_tracking_id) if inspection.shipment_tracking_id else None
+    if row is None or row.deleted_at is not None:
+        return None
+    return dict(waybill_no=row.waybill_no, carrier=row.carrier, shipment_version=inspection.shipment_version)
+
+
+def require_shipment_binding_scope(db, inspection, user_id, roles, permissions):
+    from app.auth.models import ArkUserExternalBinding
+    if 'super_admin' in roles or 'shipping_inspection:inspection_read_all' in permissions:
+        return
+    binding = db.query(ArkUserExternalBinding).filter(
+        ArkUserExternalBinding.ark_user_id == user_id,
+        ArkUserExternalBinding.provider == 'okki', ArkUserExternalBinding.binding_status == 'active',
+        ArkUserExternalBinding.deleted_at.is_(None)).order_by(
+            ArkUserExternalBinding.is_primary.desc(), ArkUserExternalBinding.id).first()
+    okki_id = str(binding.external_account_id).strip() if binding and binding.external_account_id else ''
+    if not okki_id or outbound_service.get_outbound_record(db, inspection.outbound_record_id, okki_user_id=okki_id) is None:
+        raise ValueError('验货单不存在或不在当前授权范围内')
+
+
+def bind_shipment(db, inspection_id, body, user_id):
+    from app.tracking.models import ShipmentTracking
+    from app.auth.service import get_live_user_authorization
+    from app.tracking.shipment_service import apply_data_scope
+    roles, permissions = get_live_user_authorization(db, user_id)
+    if 'super_admin' not in roles:
+        if not {'shipping_inspection:write', 'shipping_inspection:admin'} & set(permissions):
+            raise ValueError('没有验货单编辑权限')
+        if not {'tracking:read', 'tracking:read_all', 'tracking:write'} & set(permissions):
+            raise ValueError('没有物流跟踪访问权限')
+    inspection = _lock_inspection(db, inspection_id)
+    if inspection is None or inspection.status != 'submitted' or inspection.edit_version != body.edit_version:
+        raise ValueError('验货单已变化，请重新打开后操作')
+    if inspection.shipment_version != body.shipment_version:
+        raise ValueError('物流单关联已变化，请重新打开后核对')
+    require_shipment_binding_scope(db, inspection, user_id, roles, permissions)
+    user = db.get(ArkUser, user_id)
+    query = db.query(ShipmentTracking).filter_by(waybill_no=body.waybill_no, carrier=body.carrier)
+    shipment = apply_data_scope(query, db, {'sub': str(user_id), 'username': user.username if user else '',
+        'roles': roles, 'permissions': permissions}).with_for_update().populate_existing().first()
+    # PC 运单上传不存图片，source_image_url 只有钉钉暂存来源才有，不能作为"已上传"的判据
+    if shipment is None or shipment.deleted_at is not None:
+        raise ValueError('物流跟踪中没有该运单，或不在你的物流跟踪查看范围内')
+    # Explicit employee confirmation establishes the association; never infer it from names.
+    if inspection.shipment_tracking_id == shipment.id:
+        return shipment_brief(db, inspection)
+    inspection.shipment_tracking_id = shipment.id
+    inspection.shipment_version += 1
+    inspection.updated_by = user_id
+    audit_service.record(db, 'shipment_bound', user_id, inspection.outbound_record_id, inspection=inspection,
+        context={'source': 'pc'}, payload={'shipment_tracking_id': shipment.id})
+    db.flush()
+    return shipment_brief(db, inspection)

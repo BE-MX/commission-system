@@ -134,6 +134,10 @@ def sync_absent_outbound(db, record, active_ids, task_versions, retained_orders)
 
 def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, retained_orders=(),
                      expected_order_id=None, expected_snapshot=None):
+    from app.portal.authority import lock_authority
+    from app.sales_return.guards import ensure_outbound_editable
+    lock_authority(db, force=True)
+    ensure_outbound_editable(db, record)
     invoice_id = str(record.get('outbound_invoice_id') or '')
     if not invoice_id.isdigit() or int(invoice_id) <= 0:
         raise OutboundDeleteError('该记录尚未生成有效的小满出库单，不能删除')

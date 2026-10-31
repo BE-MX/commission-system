@@ -79,6 +79,7 @@ class CatalogItem(Record, Versioned, Base):
 
 class CatalogGrant(Record, Base):
     __tablename__ = PREFIX + "catalog_grants"
+    unit_price = Column(Numeric(12, 4), nullable=True, comment="USD客户专属商品单价；空值沿用定价规则")
     access_id = reference("customer_access")
     catalog_item_id = reference("catalog_items")
     status = Column(String(16), nullable=False, default="enabled", comment='受服务层状态机约束的业务状态')

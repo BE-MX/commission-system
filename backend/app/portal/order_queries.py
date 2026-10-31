@@ -43,10 +43,13 @@ def load_revision(db, order):
     return revision, lines
 
 
-def summary(db, order, *, show_price):
+def summary(db, order, *, show_price, include_processing=True):
     result = {"request_id": order.public_id, "request_no": order.public_no, "status": order.status,
               "row_version": order.row_version, "submitted_at": order.submitted_at.isoformat(),
               "customer_po": order.customer_po}
+    from app.portal.fulfillment_service import view as fulfillment_view
+    if include_processing:
+        result.update(fulfillment_view(db, order))
     if show_price:
         revision, _ = load_revision(db, order)
         result.update(currency=revision.currency, product_amount=format(revision.product_amount, ".2f"),
@@ -56,7 +59,7 @@ def summary(db, order, *, show_price):
 
 def detail_view(db, order, *, show_price):
     revision, lines = load_revision(db, order)
-    result = summary(db, order, show_price=False)
+    result = summary(db, order, show_price=False, include_processing=False)
     display_keys = ("item_id", "model_name", "color_name", "customer_sku", "length", "weight", "unit")
     items = []
     for line in lines:
@@ -89,6 +92,8 @@ def detail_view(db, order, *, show_price):
         if order.status == "invoice_created":
             from app.portal.pi_amendment_queries import view
             result["pi_amendment"] = view(db, order)
+    from app.portal.fulfillment_service import view as fulfillment_view
+    result.update(fulfillment_view(db, order, details=True))
     events = db.scalars(select(AuditEvent).where(AuditEvent.access_id == order.access_id,
         AuditEvent.object_type == "order_request", AuditEvent.object_public_id == order.public_id,
         AuditEvent.action.in_(("order.submitted", "order.cancelled", "order.proposed", "order.accepted",

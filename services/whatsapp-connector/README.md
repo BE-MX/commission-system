@@ -94,6 +94,6 @@ account 包含 provider、session_generation、consent_version、status、connec
 
 不会读取、转换或导入 `.wwebjs_auth`、旧 session 文件或旧正文库。旧账户只通过 Ark 已批准的稳定 UID/owner metadata 重新登记，再建立 Baileys 连接；旧设备 logout 与新设备 rebind 的顺序由发布流程控制，不能让旧 whatsapp-web.js 与新 Baileys 同时采集同一账号。
 
-备份/恢复必须停掉所有本机 writer，用一致的 SQLite 备份保留数据库，并在独立秘密管理系统保存密钥。旧发布回滚需要原有依赖/原有状态；不能把 Baileys 凭据交给旧实现。生产只通过项目 `deploy/deploy.bat` 与登记的北京 Agent 服务入口执行；这份实现是本地候选，未关联任何真实账号、未迁移生产数据、未部署。
+备份/恢复必须停掉所有本机 writer，用一致的 SQLite 备份保留数据库，并在独立秘密管理系统保存密钥。旧发布回滚需要原有依赖/原有状态；不能把 Baileys 凭据交给旧实现。生产只通过项目 `deploy/deploy.bat` 与登记的北京 Agent 服务入口执行；当前发布与真实账号验收见[项目交接](../../docs/handoff.md)，服务运行不等于账号已重新关联或历史已完整同步。
 
 协议参考：[Baileys documentation](https://baileys.wiki/)、[Baileys rc14 release](https://github.com/WhiskeySockets/Baileys/releases/tag/v7.0.0-rc14)、[Node SQLite](https://nodejs.org/api/sqlite.html)。实际实现/验收以 lockfile 安装的 rc14 `lib/Types/Events.d.ts`、`lib/Utils/use-multi-file-auth-state.js` 和 `lib/Socket/chats.js` 为准。

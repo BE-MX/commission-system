@@ -1,4 +1,4 @@
-"""Exercise migration 175 and reservation contention in isolated MySQL schemas."""
+"""Exercise migration 228 and reservation contention in isolated MySQL schemas."""
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
@@ -23,7 +23,7 @@ from tests.test_inventory_mysql import mysql_engine, stock_ids, body
 @pytest.fixture
 def orders(mysql_engine, stock_ids):
     # Structural prerequisite fixture, not a claim to replay the full application
-    # migration history. Migration 175 itself runs unchanged with real MySQL DDL.
+    # migration history. Migration 228 itself runs unchanged with real MySQL DDL.
     previous = MetaData()
     Table("ark_customer_accounts", previous, Column("id", BigInteger, primary_key=True))
     added = {"transaction_mode", "commerce_status", "commerce_version", "local_customer_id", "local_sku_id",
@@ -38,12 +38,14 @@ def orders(mysql_engine, stock_ids):
     with mysql_engine.begin() as conn:
         previous.create_all(conn)
         conn.exec_driver_sql("CREATE INDEX idx_ark_invoice_items_invoice ON ark_invoice_items(invoice_id)")
-        path = Path(__file__).parents[1] / "alembic/versions/209_invoice_stock_reservations.py"
+        path = Path(__file__).parents[1] / "alembic/versions/228_invoice_stock_reservations.py"
         spec = spec_from_file_location("reservation_migration", path)
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)
         with Operations.context(MigrationContext.configure(conn)):
             migration.upgrade()
+        from tests.test_inventory_mysql import physical_scope_prerequisites
+        physical_scope_prerequisites(conn)
     with Session(mysql_engine) as db:
         item_ids = []
         for index in range(2):
@@ -129,22 +131,24 @@ def test_unrelated_empty_reservations_do_not_gap_lock(mysql_engine, stock_ids, o
             first_warehouse_id = stock_ids[2]
             post_document(db, body("receive-other", other, 10), actor_id=None)
         db.commit()
-    # Force both transactions to arrive at the reservation query/insert together.
-    # The old empty range SELECT FOR UPDATE then deadlocked on insertion; the
-    # new projection implementation has no such read and inserts directly.
+    # Force both transactions to attempt the outer policy mutex together.
+    # Once it is held, a barrier at an inner reservation read would deadlock
+    # the harness itself. Keep the final no-gap-deadlock and quantity checks.
     gate = Barrier(2)
     def barrier_after_read(conn, cursor, statement, parameters, context, executemany):
-        table = "ark_stock_balances" if empty_balances else "ark_stock_reservations"
-        if statement.startswith("SELECT") and f"FROM {table}" in statement and "FOR UPDATE" in statement:
+        if statement.startswith("UPDATE ark_commerce_transition_policy") and not conn.info.get("race_gate_seen"):
+            conn.info["race_gate_seen"] = True
             gate.wait(timeout=10)
-    event.listen(mysql_engine, "after_cursor_execute", barrier_after_read)
+    # Both commands contend at the current outer policy mutex; inner reads
+    # deliberately cannot run simultaneously while that mutex is held.
+    event.listen(mysql_engine, "before_cursor_execute", barrier_after_read)
     try:
         results = compete(mysql_engine, [
             lambda db: reserve_line(db, orders[0], first_warehouse_id, 3, "first", None),
             lambda db: reserve_line(db, orders[1], other[2], 3, "second", None),
         ])
     finally:
-        event.remove(mysql_engine, "after_cursor_execute", barrier_after_read)
+        event.remove(mysql_engine, "before_cursor_execute", barrier_after_read)
     assert all(result[0] == ("rejected" if empty_balances else "ok") for result in results)
     with Session(mysql_engine) as db:
         expected = 0 if empty_balances else 6
@@ -152,7 +156,7 @@ def test_unrelated_empty_reservations_do_not_gap_lock(mysql_engine, stock_ids, o
         assert sum(db.scalars(select(InvoiceItem.stock_reserved_quantity))) == expected
 
 
-def test_same_order_cross_warehouse_cap_ignores_stale_snapshot(mysql_engine, stock_ids, orders):
+def test_same_order_cross_warehouse_cap_serializes_at_policy(mysql_engine, stock_ids, orders):
     with Session(mysql_engine) as db:
         warehouse = Warehouse(code="OTHER", name="Other")
         db.add(warehouse)
@@ -161,17 +165,18 @@ def test_same_order_cross_warehouse_cap_ignores_stale_snapshot(mysql_engine, sto
         post_document(db, body("receive-other", other, 10), actor_id=None)
         db.commit()
     gate = Barrier(2)
-    def freeze_initial_snapshot(conn, cursor, statement, parameters, context, executemany):
-        if statement.startswith("SELECT ark_invoice_items.invoice_id") and "FOR UPDATE" not in statement:
+    def synchronize_policy_attempt(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("UPDATE ark_commerce_transition_policy") and not conn.info.get("race_gate_seen"):
+            conn.info["race_gate_seen"] = True
             gate.wait(timeout=10)
-    event.listen(mysql_engine, "after_cursor_execute", freeze_initial_snapshot)
+    event.listen(mysql_engine, "before_cursor_execute", synchronize_policy_attempt)
     try:
         results = compete(mysql_engine, [
             lambda db: reserve_line(db, orders[0], stock_ids[2], 7, "first", None),
             lambda db: reserve_line(db, orders[0], other[2], 7, "second", None),
         ])
     finally:
-        event.remove(mysql_engine, "after_cursor_execute", freeze_initial_snapshot)
+        event.remove(mysql_engine, "before_cursor_execute", synchronize_policy_attempt)
     assert sorted(result[0] for result in results) == ["ok", "rejected"]
     with Session(mysql_engine) as db:
         assert db.get(InvoiceItem, orders[0]).stock_reserved_quantity == 7
@@ -218,17 +223,17 @@ def test_cancel_and_other_order_first_reservation_share_lock_order(mysql_engine,
         reserve_line(db, orders[0], stock_ids[2], 3, "reserve-first", None)
         invoice_id = db.get(InvoiceItem, orders[0]).invoice_id
         db.commit()
-    warehouse_held, allow_reserve = Event(), Event()
+    policy_held, allow_reserve = Event(), Event()
     def before_execute(conn, cursor, statement, parameters, context, many):
-        if conn.info.get("race_command") == "cancel" and "FROM ark_warehouses" in statement and "FOR UPDATE" in statement:
+        if conn.info.get("race_command") == "cancel" and statement.startswith("UPDATE ark_commerce_transition_policy"):
             allow_reserve.set()
     def after_execute(conn, cursor, statement, parameters, context, many):
-        if conn.info.get("race_command") == "reserve" and "FROM ark_warehouses" in statement and "FOR UPDATE" in statement:
-            warehouse_held.set()
+        if conn.info.get("race_command") == "reserve" and statement.startswith("UPDATE ark_commerce_transition_policy"):
+            policy_held.set()
             assert allow_reserve.wait(10)
     def run(kind):
         if kind == "cancel":
-            assert warehouse_held.wait(10)
+            assert policy_held.wait(10)
         with Session(mysql_engine) as db:
             info = db.connection().info
             info["race_command"] = kind

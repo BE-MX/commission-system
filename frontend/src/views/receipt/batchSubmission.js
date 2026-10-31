@@ -6,7 +6,7 @@ function validRecord(record, actor) {
   return record?.actor === actor && typeof body?.request_key === 'string' && /^[a-zA-Z0-9_-]{16,64}$/.test(body.request_key)
     && Array.isArray(body.allocations) && body.allocations.length > 0 && body.allocations.length <= 50
     && body.allocations.every(row => Number.isSafeInteger(row.invoice_id) && row.invoice_id > 0 && /^[a-f0-9]{64}$/.test(row.balance_version))
-    && Array.isArray(body.attachment_ids) && body.attachment_ids.length > 0
+    && Array.isArray(body.attachment_ids) && body.attachment_ids.length <= 5
 }
 export function readSubmission(storage, actor) {
   if (!Number.isSafeInteger(actor) || actor <= 0) throw new Error('请先重新确认当前登录账号')

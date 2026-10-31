@@ -183,6 +183,7 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
 
         new_payments.append({
             "payment_id": pid,
+            "source": "okki",
             "order_id": str(row["order_id"]),
             "customer_id": str(row["company_id"]),
             "payment_date": to_date(row["collection_date"]),

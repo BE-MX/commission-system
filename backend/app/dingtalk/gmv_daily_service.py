@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.trade.service import local_mode
+from app.trade.service import formal_projection_enabled as local_mode
 from app.core.time import BEIJING_TIMEZONE, beijing_now, beijing_now_aware
 from app.dingtalk.gmv_daily_config import admin_users, decorate_config, load_config, okki_user_bindings
 from app.dingtalk.models import DingTalkMessageLog
@@ -174,6 +174,8 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
     anomalies: list[str] = []
     fatal_anomalies: list[str] = []
     company_raw = Decimal("0.00")
+    company_sales = Decimal("0.00")
+    company_returns = Decimal("0.00")
     allocated_total = Decimal("0.00")
     for order in orders:
         order_no = str(order.get("order_no") or order.get("order_id") or "未知订单")
@@ -183,6 +185,10 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
             fatal_anomalies.append(amount_error)
             continue
         company_raw += amount
+        if order.get("source_type") == "sales_return":
+            company_returns += amount
+        else:
+            company_sales += amount
         allocations, order_anomalies, order_fatal_anomalies = _parse_allocations(
             amount, order.get("departments"), order_no,
         )
@@ -251,6 +257,9 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
         "teams": teams,
         "unconfigured_teams": unconfigured_teams,
         "company_raw_gmv": company_raw.quantize(CENT),
+        "company_sales_gmv": company_sales.quantize(CENT),
+        "company_return_adjustment_gmv": company_returns.quantize(CENT),
+        "gmv_basis": "net_sales_and_returns_by_effective_date",
         "company_excluded_gmv": company_excluded.quantize(CENT),
         "company_total_gmv": (company_raw - company_excluded).quantize(CENT),
         "allocated_gmv": allocated_total.quantize(CENT),
@@ -261,9 +270,15 @@ def calculate_report(report_date: date, config: dict, orders: list[dict]) -> dic
 
 
 def load_valid_orders(db: Session, report_date: date) -> list[dict]:
-    if local_mode():
+    if local_mode(db):
         from app.trade.query_service import load_orders
-        return load_orders(db, date_from=report_date, date_to=report_date)
+        from app.trade.return_adjustments import load_return_adjustments
+        orders = load_orders(db, date_from=report_date, date_to=report_date)
+        returns = load_return_adjustments(db, report_date, report_date)
+        # Legacy department IDs are a separate namespace. Without reviewed
+        # department mapping, expose the amount but block final publication.
+        return [{**row, "departments": []} if row.get("source") == "legacy" or
+                row.get("source_type") == "sales_return" else row for row in orders + returns]
     schema = get_settings().BUSINESS_DB_NAME
     rows = db.execute(text(f"""
         SELECT o.order_id, o.order_no, o.amount_usd, o.user_id, o.departments,
@@ -273,7 +288,8 @@ def load_valid_orders(db: Session, report_date: date) -> list[dict]:
         WHERE o.account_date = :report_date AND {VALID_ORDER_SQL}
         ORDER BY o.order_id
     """), {"report_date": report_date}).mappings().all()
-    return [dict(row) for row in rows]
+    from app.sales_return.gmv import adjustments
+    return [dict(row) for row in rows] + adjustments(db, report_date, report_date)
 
 
 def build_report(db: Session, report_date: date | None = None) -> tuple[dict, dict]:
@@ -284,11 +300,11 @@ def build_report(db: Session, report_date: date | None = None) -> tuple[dict, di
 
 def _report_data(db, effective_date, config):
     report = calculate_report(effective_date, config, load_valid_orders(db, effective_date))
-    if local_mode():
+    if local_mode(db):
         from app.trade.refresh_service import projection_status
         # Daily company totals include every owner, including unassigned orders.
         report["projection_status"] = projection_status(db, date_from=effective_date, date_to=effective_date)
-        if report["projection_status"]["pending_count"]:
+        if report["projection_status"]["status"] != "current":
             report["fatal_anomalies"].append("本地订单统计更新中")
     return report
 
@@ -322,10 +338,10 @@ def render_team_markdown(report: dict, team: dict) -> str:
         lines.append(f"- {_escape(member['name'])}：**{_format_money(member['gmv'])}**{suffix}")
     lines.extend([
         "", "---", "",
-        f"- 原始 GMV：**{_format_money(team['raw_gmv'])}**",
+        f"- 净 GMV（排除前）：**{_format_money(team['raw_gmv'])}**",
         f"- 排除金额：**{_format_money(team['excluded_gmv'])}**",
         f"- 队伍汇总：**{_format_money(team['total_gmv'])}**",
-        "", f"> 口径：account_date={day}；有效订单；USD；按订单部门 rate 分摊。",
+        "", f"> 口径：销售核算日及退货生效日={day}；净 GMV；USD；冻结原部门 rate 分摊。",
     ])
     return "\n".join(lines)
 
@@ -334,7 +350,7 @@ def render_admin_markdown(report: dict) -> str:
     day = report["report_date"].isoformat()
     lines = [
         f"## {day} 全业务 GMV 日报", "",
-        f"- 公司原始 GMV：**{_format_money(report['company_raw_gmv'])}**",
+        f"- 公司净 GMV（排除前）：**{_format_money(report['company_raw_gmv'])}**",
         f"- 排除金额：**{_format_money(report['company_excluded_gmv'])}**",
         f"- 公司考核 GMV：**{_format_money(report['company_total_gmv'])}**",
         "", "### 队伍与个人明细",
@@ -355,7 +371,7 @@ def render_admin_markdown(report: dict) -> str:
     if report["anomalies"]:
         lines.extend(["", "### 数据异常"])
         lines.extend(f"- {_escape(item)}" for item in report["anomalies"])
-    lines.extend(["", f"> 口径：account_date={day}；有效订单；USD；按订单部门 rate 分摊。"])
+    lines.extend(["", f"> 口径：销售核算日及退货生效日={day}；净 GMV；USD；冻结原部门 rate 分摊。"])
     return "\n".join(lines)
 
 
@@ -469,8 +485,8 @@ async def send_daily_report(db: Session, report_date: date | None = None, scope:
         if scope in {"all", "admins"} and not raw_config.get("admin_recipient_user_ids"):
             raise ValueError("GMV 日报尚未配置管理员接收人")
         config = decorate_config(db, raw_config)
-        binding_map = {str(uid): row for uid, row in admin_users(db).items()} if local_mode() else okki_user_bindings(db)
-        captain_field = "captain_ark_user_id" if local_mode() else "captain_okki_user_id"
+        binding_map = {str(uid): row for uid, row in admin_users(db).items()} if local_mode(db) else okki_user_bindings(db)
+        captain_field = "captain_ark_user_id" if local_mode(db) else "captain_okki_user_id"
         delivery_plan: list[dict] = []
         jobs: list[dict] = []
         if scope in {"all", "teams"}:
@@ -489,7 +505,7 @@ async def send_daily_report(db: Session, report_date: date | None = None, scope:
                     "recipient": recipient,
                     "title": _message_title(f"{effective_date.isoformat()} GMV 日报｜{configured['name']}"),
                     "related_type": "gmv_daily_team",
-                    "related_id": f"{effective_date:%Y%m%d}:{'ark-department:' if local_mode() else ''}{configured['department_id']}:{recipient['ark_user_id']}",
+                    "related_id": f"{effective_date:%Y%m%d}:{'ark-department:' if local_mode(db) else ''}{configured['department_id']}:{recipient['ark_user_id']}",
                     "department_id": configured["department_id"],
                 }
                 jobs.append(job)

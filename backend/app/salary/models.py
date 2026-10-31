@@ -251,6 +251,12 @@ class SalaryPeriod(Base):
     confirmed_by = Column(USER_ID, nullable=True, comment="锁定人 ark_users.id")
     unlocked_at = Column(DateTime, nullable=True, comment="最近一次 admin 解锁时间（A4 留痕）")
     unlock_reason = Column(String(255), nullable=True, comment="解锁原因")
+    # 导出编号在批次行上自增（UPDATE 拿行锁），并发导出拿不到同一个号；
+    # 不用 count(export 事件)+1：两个请求同时数会撞号，文件底部的编号就对不上留痕
+    export_seq = Column(
+        Integer, nullable=False, default=0, server_default="0",
+        comment="导出计数（每导出一次 +1，即导出编号）",
+    )
     remark = Column(Text, nullable=True, comment="批次备注")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
@@ -449,6 +455,9 @@ class SalaryRecord(Base):
     snap_position = Column(String(64), nullable=True, comment="快照-职务")
     snap_bank_card_cipher = Column(String(255), nullable=True, comment="快照-银行卡密文")
     snap_bank_name = Column(String(64), nullable=True, comment="快照-开户行")
+    # 213：导出两张表要入职日期、银行盘按参保主体拆盘，锁定后同样不能回查活档案
+    snap_hire_date = Column(Date, nullable=True, comment="快照-入职日期")
+    snap_insurance_entity = Column(String(64), nullable=True, comment="快照-参保主体（银行盘拆盘依据）")
     snapshot_at = Column(DateTime, nullable=True, comment="快照冻结时间")
 
     # ── 自动文案与审计 ───────────────────────────────────

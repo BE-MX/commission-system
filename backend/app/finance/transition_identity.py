@@ -18,7 +18,11 @@ Old Receipt rows often have no stable account at all. A complete-domain
 checkbox cannot hide such rows; reconcile their canonical bank identities
 first. A legacy batch maps the shared cash once, rather than once per order.
 """
+    # The management GET also uses this scan. Take the writer policy barrier
+    # before locking money rows so it cannot invert reconciliation's lock order.
+    transition.lock_policy(db)
     from app.receipt.models import Receipt
+    from app.sales_return.models import SalesReturn
     from app.invoice.settlement_models import ReceiptBatch
     rows = db.scalars(select(Receipt).where((Receipt.source.is_(None) | (Receipt.source != 'local')), Receipt.amount > 0,
         (Receipt.collect_status == 1) | Receipt.sync_status.in_(['pending', 'syncing', 'synced', 'uncertain']))
@@ -30,6 +34,15 @@ first. A legacy batch maps the shared cash once, rather than once per order.
     missing = [f'legacy-batch:{row.id}' for row in batches if f'legacy-batch:{row.id}' not in references]
     missing += [f'legacy-receipt:{row.id}' for row in rows if
         (f'legacy-batch:{row.batch_id}' if row.batch_id else f'legacy-receipt:{row.id}') not in references]
+    # ReturnReceipt is an accounting intention, not proof of bank movement.
+    # Recovered (including reversed) returns permanently reserve both cash legs.
+    returns = db.scalars(select(SalesReturn).where(SalesReturn.cash_status.in_(['paid', 'recovered']))
+        .with_for_update().execution_options(populate_existing=True)).all()
+    for row in returns:
+        for movement in (['paid', 'recovered'] if row.cash_status == 'recovered' else ['paid']):
+            reference = f'legacy-return-{movement}:{row.id}'
+            if reference not in references:
+                missing.append(reference)
     return sorted(set(missing))
 
 
@@ -83,18 +96,34 @@ def release_unconfirmed_registration(db, payment, event, actor_id):
 
 
 def reconcile_legacy_identity(db, *, domain_id, transaction_id, receipt_id=None, batch_id=None,
-                              statement_reference, actor_id):
+                              sales_return_id=None, cash_movement=None, statement_reference, actor_id):
     """An explicit finance reconciliation; no money row is created or changed."""
     from app.receipt.models import Receipt
+    from app.sales_return.models import SalesReturn
     from app.invoice.settlement_models import ReceiptBatch
     transition.require_phase(db, 'legacy')
-    if bool(receipt_id) == bool(batch_id) or not statement_reference.strip():
-        raise ValueError('选择一份原银行款或原批次，并提供银行对账依据')
-    model, identity = (ReceiptBatch, batch_id) if batch_id else (Receipt, receipt_id)
+    if sum(value is not None for value in [receipt_id, batch_id, sales_return_id]) != 1 or not statement_reference.strip():
+        raise ValueError('选择一份原银行款、原批次或原退货资金，并提供银行对账依据')
+    if (sales_return_id is not None and cash_movement not in {'paid', 'recovered'}) or (
+            sales_return_id is None and cash_movement is not None):
+        raise ValueError('退货实际资金必须指定支付或收回，其他来源不可指定资金动作')
+    model, identity = ((SalesReturn, sales_return_id) if sales_return_id is not None else
+        ((ReceiptBatch, batch_id) if batch_id else (Receipt, receipt_id)))
     original = db.scalar(select(model).where(model.id == identity).with_for_update().execution_options(populate_existing=True))
     if original is None or (batch_id and original.transaction_mode != 'legacy') or (
             receipt_id and (original.source == 'local' or original.batch_id is not None)):
         raise ValueError('必须选择原旧款；共享批次只能按完整原批次登记银行身份')
+    cash_evidence = None
+    if sales_return_id is not None:
+        movements = ['paid', 'recovered'] if original.cash_status == 'recovered' else (
+            ['paid'] if original.cash_status == 'paid' else [])
+        entries = [item for item in (original.cash_evidence or []) if isinstance(item, dict)
+            and item.get('status') == cash_movement]
+        if (cash_movement not in movements or len(entries) != 1 or original.refund_amount <= 0
+                or not str(entries[0].get('evidence') or '').strip()
+                or not entries[0].get('actor_id') or not entries[0].get('at')):
+            raise ValueError('原退货缺少该笔实际支付或收回证据，不能登记银行身份')
+        cash_evidence = dict(entries[0])
     settings = get_settings()
     domain = db.scalar(select(BankAccountDomain).where(BankAccountDomain.id == domain_id)
         .with_for_update().execution_options(populate_existing=True))
@@ -109,12 +138,20 @@ def reconcile_legacy_identity(db, *, domain_id, transaction_id, receipt_id=None,
         .with_for_update().execution_options(populate_existing=True)).all()
     if len(accounts) != len(set(account_ids)) or original.currency not in {row.currency for row in accounts}:
         raise ValueError('账户域银行账户或原币不匹配')
-    amount = original.gross_amount if batch_id else original.amount
+    amount = original.refund_amount if sales_return_id is not None else (
+        original.gross_amount if batch_id else original.amount)
+    reference = (f'legacy-return-{cash_movement}:{sales_return_id}' if sales_return_id is not None else
+        (f'legacy-batch:{batch_id}' if batch_id else f'legacy-receipt:{receipt_id}'))
+    bound = db.scalar(select(BankIdentity).where(BankIdentity.payment_ref == reference)
+        .with_for_update().execution_options(populate_existing=True))
+    if bound is not None and (bound.domain_id != domain_id or bound.transaction_id != transaction_id):
+        raise ValueError('原资金已核验其他银行流水，不得重复登记')
     result = transition.claim_bank_identity(db, domain_id=domain_id, transaction_id=transaction_id,
         route='legacy', currency=original.currency, amount=amount, historical=True,
         payer_evidence={'bank_identity_verified': True, 'statement_reference': statement_reference,
-                        'reconciled_by': actor_id, 'original_row_id': identity})
-    reference = f'legacy-batch:{batch_id}' if batch_id else f'legacy-receipt:{receipt_id}'
+                        'reconciled_by': actor_id, 'original_row_id': identity,
+                        **({'cash_movement': cash_movement, 'original_cash_evidence': cash_evidence}
+                           if sales_return_id is not None else {})})
     return transition.bind_bank_payment(db, result.identity.id, reference)
 
 

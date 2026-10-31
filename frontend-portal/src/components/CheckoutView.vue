@@ -52,8 +52,16 @@ function quantity(line, event) {
   act(() => props.checkout.quantity(line.item_id, event.target.value))
   event.target.value = props.state.lines.find(item => item.item_id === line.item_id)?.quantity ?? line.quantity
 }
-async function getQuote() {
-  await act(() => props.checkout.quote())
+async function getQuote(event) {
+  // Browser autofill can change visible values without emitting Vue input events.
+  const form = new FormData(event.currentTarget)
+  await act(() => {
+    for (const [field] of fields) {
+      const value = form.get(field)
+      if (typeof value === 'string' && value !== props.state.delivery[field]) props.checkout.delivery(field, value)
+    }
+    return props.checkout.quote()
+  })
   if (props.state.quote) review.value?.focus()
 }
 </script>
@@ -82,7 +90,8 @@ async function getQuote() {
         </section>
         <form class="checkout-card delivery-form" @submit.prevent="getQuote">
           <header><span class="step-mark">02</span><div><h2>The details</h2><button type="button" class="text-button small" @click="emit('profile')">Manage saved delivery details</button></div></header>
-          <p v-if="profileError" class="small muted" role="status">{{ profileError }}</p><div class="delivery-grid"><label v-for="[field, label, autocomplete, max, required] in fields" :key="field" :class="{ 'wide-field': field.startsWith('address_') }"><span>{{ label }}</span><input :value="state.delivery[field]" :autocomplete="autocomplete" :maxlength="max" :required="required" :type="field === 'phone' ? 'tel' : 'text'" :pattern="field === 'country_code' ? '[A-Za-z]{2}' : undefined" :minlength="field === 'phone' ? 3 : undefined" @input="act(() => checkout.delivery(field, $event.target.value))" /></label>
+          <p v-if="profileError" class="small muted" role="status">{{ profileError }}</p><details class="delivery-details"><summary>Delivery address (optional)</summary><div class="delivery-grid"><label v-for="[field, label, autocomplete, max, required] in fields" :key="field" :class="{ 'wide-field': field.startsWith('address_') }"><span>{{ label }}</span><input :name="field" :value="state.delivery[field]" :autocomplete="autocomplete" :maxlength="max"  :type="field === 'phone' ? 'tel' : 'text'" :pattern="field === 'country_code' ? '[A-Za-z]{2}' : undefined" :minlength="field === 'phone' && state.delivery.phone ? 3 : undefined" @input="act(() => checkout.delivery(field, $event.target.value))" /></label>
+          </div></details><div class="delivery-grid">
             <label class="wide-field"><span>Your PO / reference (optional)</span><input :value="state.customer_po" maxlength="80" @input="act(() => checkout.details('customer_po', $event.target.value))" /></label>
             <label class="wide-field"><span>Request notes (optional)</span><textarea :value="state.remark" maxlength="1000" rows="3" @input="act(() => checkout.details('remark', $event.target.value))"></textarea></label>
             <fieldset v-if="terms?.payment_terms?.length > 1" class="wide-field payment-methods"><legend>Payment method</legend><label v-for="term in terms.payment_terms" :key="term.code" :class="['payment-option', { selected: chosenTerm === term.code }]"><input type="radio" name="payment-method" :value="term.code" :checked="chosenTerm === term.code" @change="act(() => checkout.paymentTerm(term.code))" /><span><strong>{{ term.label }}</strong><small>{{ surchargeLabel(term) }} · {{ term.display_text }}</small></span></label></fieldset>
@@ -101,7 +110,7 @@ async function getQuote() {
           <label class="quote-confirmation"><input type="checkbox" :checked="state.acknowledged" @change="act(() => checkout.acknowledge($event.target.checked))" /><span v-if="fees.confirmed">I confirm these products, delivery details, payment method and the total above. I understand this request does not reserve stock and that a formal PI follows my representative’s review.</span><span v-else>I confirm these products and delivery details. I understand this request does not reserve stock and that final charges require my confirmation.</span></label>
           <button class="button primary full" :disabled="expired || !state.acknowledged" @click="act(() => checkout.submit())">{{ fees.confirmed ? 'Notify my representative to place the order' : 'Submit order request' }}</button>
         </template>
-        <template v-else><p class="muted">Complete your delivery details to review current pricing and availability.</p><div class="review-placeholder"><span aria-hidden="true">◇</span><p>Prepared for you.<br />Confirmed by your representative.</p></div><p class="small muted">{{ terms?.auto_fees?.enabled ? 'Shipping is calculated by total weight. Your representative reviews the confirmed request before issuing a formal PI.' : 'Shipping, packaging and additional charges will be confirmed in a proposal. A formal PI follows your confirmation and your representative’s approval.' }}</p></template>
+        <template v-else><p class="muted">Review current pricing and availability. Delivery details can be added later.</p><div class="review-placeholder"><span aria-hidden="true">◇</span><p>Prepared for you.<br />Confirmed by your representative.</p></div><p class="small muted">{{ terms?.auto_fees?.enabled ? 'Shipping is calculated by total weight. Your representative reviews the confirmed request before issuing a formal PI.' : 'Shipping, packaging and additional charges will be confirmed in a proposal. A formal PI follows your confirmation and your representative’s approval.' }}</p></template>
       </aside>
     </div>
   </section>

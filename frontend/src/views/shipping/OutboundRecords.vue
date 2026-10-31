@@ -20,6 +20,7 @@
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
           start-placeholder="出库起" end-placeholder="出库止" class="filter-w-lg"
         />
+        <template #summary><AppliedFilterSummary :items="querySummary" @remove="removeQueryCondition" /></template>
         <template #advanced>
           <el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable class="filter-w-md" />
         </template>
@@ -39,7 +40,7 @@
       </div>
 
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="fetchList" />
-<el-table @sort-change="handleSortChange" :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
+<el-table ref="outboundTable" @sort-change="handleSortChange" :data="list" v-loading="loading" border class="list-table" :class="densityClass" :max-height="isFullscreen ? undefined : 640" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="fetchList">
           <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的出库单' : '暂无数据'">
             <GlassButton v-if="hasActiveFilters" left-icon="RefreshLeft" @click="handleReset">重置筛选</GlassButton>
@@ -80,9 +81,12 @@
         <el-table-column sortable="custom" v-if="visibleKeys.includes('inspection-status')" prop="status" label="检验状态" min-width="140">
           <template #default="{ row }">
             <span v-if="row.record_source === 'ark_task'" class="queue-note">—</span>
-            <StatusBadge v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
-              {{ INSPECTION_STATUS_LABELS[row.status] || row.status }}
-            </StatusBadge>
+            <!-- 历史单据（验货流程分界前出库）不落验货单，按已提交展示，悬停说明口径 -->
+            <el-tooltip v-else :disabled="!row.inspection_legacy" content="历史出库单据按已提交显示，无验货记录" placement="top">
+              <StatusBadge size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
+                {{ INSPECTION_STATUS_LABELS[row.status] || row.status }}
+              </StatusBadge>
+            </el-tooltip>
             <StatusBadge v-if="row.recheck_status" size="small" type="warning">{{ row.recheck_status === 'pending_sync' ? '待同步重验' : '待补验' }}</StatusBadge>
           </template>
         </el-table-column>
@@ -91,6 +95,7 @@
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="260" fixed="right">
           <template #default="{ row }">
+            <GlassButton v-if="row.record_source !== 'ark_task' && row.order_id" v-permission="'sales_return:write'" variant="link" @click="openSalesReturn(row)">退货退款</GlassButton>
             <GlassButton variant="link" left-icon="Box" @click="inventoryRow = row; inventoryVisible = true">库存详情</GlassButton>
             <span v-if="row.record_source === 'ark_task' && row.outbound_state === 'waiting_stock'" v-permission="'invoice:sync'">
               <GlassButton v-permission="'shipping_inspection:write'" variant="link" left-icon="Refresh"
@@ -146,7 +151,11 @@
 /**
  * OKKI 出库单列表 + 出库单直接打印（无预览弹框）。逻辑在 composables/useOutboundRecords.js（宪法 12）。
  */
-import { computed, defineAsyncComponent, onDeactivated, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onDeactivated, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import AppliedFilterSummary from '@/components/AppliedFilterSummary.vue'
+import { useOutboundListView } from './composables/useOutboundListView'
+import { outboundFilterSummary, outboundSortSummary } from './composables/outboundListState'
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
 import TableTools from '@/components/TableTools.vue'
@@ -168,6 +177,14 @@ const inventoryVisible = ref(false)
 const inventoryRow = ref(null)
 
 const listPageState = useOutboundRecords()
+const salesReturnRouter = useRouter()
+function openSalesReturn(row) { const ids = String(row.order_id).split('、').filter(Boolean); salesReturnRouter.push({ path: '/invoice/sales-returns', query: ids.length === 1 ? { order_id: ids[0] } : { customer_id: row.company_id || row.customer_id } }) }
+const { removeFilter } = useOutboundListView(listPageState, useRoute(), useRouter())
+const appliedFilters = computed(() => outboundFilterSummary(listPageState.appliedSearchForm.value, OUTBOUND_STATE_LABELS, INSPECTION_STATUS_LABELS))
+const querySummary = computed(() => [...appliedFilters.value, ...outboundSortSummary(listPageState.appliedSort.value)])
+function removeQueryCondition(key) {
+  return key === 'sort' ? listPageState.handleSortChange({}) : removeFilter(key)
+}
 const {
   loading, list, total, page, pageSize, searchForm, fetchList,
   handleSearch, handleReset, handlePageChange, handleSizeChange,
@@ -192,7 +209,7 @@ const columnDefs = [
 const { density, densityClass, visibleKeys, panelRef, isFullscreen, toggleFullscreen } =
   useTableView('outbound-records', columnDefs)
 const advancedFilterCount = computed(() => Number(Boolean(listPageState.appliedSearchForm.value.orderId)))
-const hasActiveFilters = computed(() => Boolean(searchForm.keyword || searchForm.orderId || searchForm.dateRange?.length || searchForm.outboundState || searchForm.inspectionStatus))
+const hasActiveFilters = computed(() => appliedFilters.value.length > 0)
 onDeactivated(() => { printPreviewVisible.value = false; problemsVisible.value = false; inventoryVisible.value = false; syncVisible.value = false; listPageState.cancel(); listPageState.cancelMediaReads() })
 function canShowMore(row) {
   if (row.can_print && (!row.recheck_status || row.print_before_recheck)) return true
@@ -202,7 +219,21 @@ function canShowMore(row) {
   return auth.hasPermission('shipping_inspection:delete') ||
     (auth.hasPermission('invoice:sync') && auth.hasPermission('shipping_inspection:write'))
 }
-function handleSortChange({ prop, order }) { return listPageState.handleSortChange(order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {}) }
+const outboundTable = ref(null)
+let restoringSort = false
+watch(() => [listPageState.appliedSort.value.sort_field, listPageState.appliedSort.value.sort_order, visibleKeys.value.join(',')], async ([field, order]) => {
+  await nextTick()
+  restoringSort = true
+  if (field) outboundTable.value?.sort(field, order === 'asc' ? 'ascending' : 'descending')
+  else outboundTable.value?.clearSort()
+  restoringSort = false
+}, { immediate: true, flush: 'post' })
+function handleSortChange({ prop, order }) {
+  if (restoringSort) return
+  const next = order ? { sort_field: prop, sort_order: order === 'ascending' ? 'asc' : 'desc' } : {}
+  if (JSON.stringify(next) === JSON.stringify(listPageState.appliedSort.value)) return
+  return listPageState.handleSortChange(next)
+}
 </script>
 
 <style scoped>

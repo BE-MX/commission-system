@@ -26,6 +26,10 @@ def source_orders(db, report, members, now):
             date_from=report.start_date, date_to=min(report.end_date, now.date()))
         raw = [{**row, "order_id": row["order_key"]} for row in rows]
         orders, issues = normalize_orders(raw, report, members, now.date(), native=True)
+        from app.trade.return_adjustments import load_return_adjustments
+        _append_returns(orders, load_return_adjustments(db, report.start_date,
+            min(report.end_date, now.date()), owner_ids=[m.ark_user_id for m in members]),
+            {str(m.ark_user_id): m for m in members})
         if projection_status(db, owner_ids=[m.ark_user_id for m in members],
                 date_from=report.start_date, date_to=min(report.end_date, now.date()))["status"] != "current":
             issues.extend({"member_id": m.id, "order_no": None, "reason": "本地订单统计更新中"} for m in members)
@@ -43,7 +47,22 @@ def source_orders(db, report, members, now):
     """).bindparams(bindparam("user_ids", expanding=True))
     raw = db.execute(statement, {"user_ids": [m.okki_user_id for m in members],
                                 "start": report.start_date, "end": min(report.end_date, now.date())}).mappings().all()
-    return normalize_orders(raw, report, members, now.date())
+    orders, issues = normalize_orders(raw, report, members, now.date())
+    from app.sales_return.gmv import adjustments
+    by_user = {str(m.okki_user_id): m for m in members}
+    _append_returns(orders, adjustments(db, report.start_date, min(report.end_date, now.date()), by_user), by_user)
+    return orders, issues
+
+
+def _append_returns(orders, facts, by_user):
+    for fact in facts:
+        member = by_user[fact["owner"]]
+        orders.append({"order_id": fact["order_id"], "fact_key": fact["fact_key"],
+                       "source_type": "sales_return", "return_id": fact["return_id"],
+                       "order_no": fact["order_no"], "account_date": fact["day"].isoformat(),
+                       "member_id": member.id, "user_name": member.user_name, "team": member.team,
+                       "company_name": fact["customer_name"], "status_name": "退货冲减" if fact["amount"] < 0 else "退货冲销",
+                       "amount_usd": money(fact["amount"]), "included_usd": money(fact["amount"])})
 
 
 def normalize_orders(raw, report, members, today, *, native=False):
@@ -96,12 +115,15 @@ def summarize(members, orders, issues):
     filled = sum(m.target_usd is not None for m in members)
     complete = not any(i["member_id"] in ids for i in issues)
     rate = total / target * 100 if complete and target > 0 and filled == len(members) else None
-    return {"gmv": money(total), "target": money(target), "order_count": len(selected),
+    sales = [o for o in selected if o.get("source_type") != "sales_return"]
+    adjustment = sum((Decimal(o["included_usd"]) for o in selected if o.get("source_type") == "sales_return"), Decimal(0))
+    return {"gmv": money(total), "sales_gmv": money(total - adjustment), "return_adjustment_gmv": money(adjustment),
+            "target": money(target), "order_count": len(sales), "adjustment_count": len(selected) - len(sales),
             "filled": filled, "member_count": len(members), "data_complete": complete,
             "progress_percent": float(rate.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)) if rate is not None else None,
             "gap": money(max(target - total, 0)) if filled == len(members) else None,
             "excess": money(max(total - target, 0)) if filled == len(members) else None,
-            "average_order": money(total / len(selected)) if selected else None}
+            "average_order": money(total / len(sales)) if sales else None}
 
 
 def period_days(report):
@@ -133,4 +155,4 @@ def overview(report, members, orders, issues, now, detail_ids):
             "daily": daily, "time_progress": progress["percent"] if progress else time_progress(report, now),
             "workday_progress": progress,
             "calculated_at": now.isoformat(), "source_synced_at": None,
-            "issue_count": len(issues), "basis": "核算日期 · 订单 GMV · USD · 活动小组"}
+            "issue_count": len(issues), "basis": "销售核算日 / 退货生效日 · 净 GMV · USD · 活动小组"}

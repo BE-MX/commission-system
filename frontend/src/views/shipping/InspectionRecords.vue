@@ -30,8 +30,9 @@
       <el-empty v-if="!loading && !list.length" description="没有符合条件的验货单" />
       <article v-for="row in list" :key="row.id" class="inspection-result">
         <h2>{{ row.outbound_no }}</h2><p>{{ row.customer_name }}</p><p>订单 ID：{{ row.order_id || '—' }}</p>
-        <dl><dt>提交人</dt><dd>{{ row.submitted_by_name || '—' }}</dd><dt>提交日期</dt><dd>{{ row.submitted_at || '—' }}</dd><dt>业务员</dt><dd>{{ row.salesperson_name || '未匹配' }}</dd><dt>照片</dt><dd>{{ row.photo_count }} 张</dd></dl>
-        <div class="result-actions"><GlassButton variant="primary" @click="openDetail(row)">查看验货单</GlassButton><GlassButton :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton></div>
+        <dl><dt>提交人</dt><dd>{{ row.submitted_by_name || '—' }}</dd><dt>提交日期</dt><dd>{{ formatBeijingDateTime(row.submitted_at, { seconds: false, fallback: '—' }) }}</dd><dt>业务员</dt><dd>{{ row.salesperson_name || '未匹配' }}</dd><dt>照片</dt><dd>{{ row.photo_count }} 张</dd><dt>物流单</dt><dd>{{ shipmentText(row) }}</dd></dl>
+        <div class="result-actions"><GlassButton variant="primary" @click="openDetail(row)">查看验货单</GlassButton><GlassButton :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton>
+          <span v-permission="'tracking:write'"><GlassButton v-any-permission="['shipping_inspection:write', 'shipping_inspection:admin']" left-icon="Upload" @click="openShipment(row)">{{ row.shipment ? '更换物流单' : '上传物流单' }}</GlassButton></span></div>
       </article>
       <el-pagination class="pager" :page-sizes="[20, 50, 100]" v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, sizes, prev, pager, next" :pager-count="5" @current-change="handlePageChange" />
     </section>
@@ -65,13 +66,22 @@
         </el-table-column>
         <el-table-column sortable="custom" v-if="visibleKeys.includes('salesperson-name')" prop="salesperson_name" label="业务员" min-width="100" show-overflow-tooltip />
         <el-table-column sortable="custom" v-if="visibleKeys.includes('submitted-by-name')" prop="submitted_by_name" label="提交人" min-width="100" show-overflow-tooltip />
-        <el-table-column sortable="custom" v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="提交时间" min-width="150" show-overflow-tooltip />
+        <el-table-column sortable="custom" v-if="visibleKeys.includes('submitted-at')" prop="submitted_at" label="提交时间" min-width="150" show-overflow-tooltip><template #default="{ row }">{{ formatBeijingDateTime(row.submitted_at, { seconds: false }) }}</template></el-table-column>
+        <el-table-column v-if="visibleKeys.includes('shipment')" label="物流单号" min-width="170" show-overflow-tooltip>
+          <template #default="{ row }">
+            <router-link v-if="row.shipment" class="shipment-link" :to="`/tracking/${encodeURIComponent(row.shipment.waybill_no)}`">{{ shipmentText(row) }}</router-link>
+            <span v-else class="shipment-empty">未关联</span>
+          </template>
+        </el-table-column>
         <el-table-column sortable="custom" v-if="visibleKeys.includes('remark')" prop="remark" label="备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="280" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="370" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">查看</GlassButton>
+            <!-- 上传物流单要同时有验货单编辑权限与物流跟踪上传权限：两个指令分挂在外层 span 与按钮上 -->
+            <span v-permission="'tracking:write'"><GlassButton v-any-permission="['shipping_inspection:write', 'shipping_inspection:admin']"
+              variant="link" left-icon="Upload" @click="openShipment(row)">{{ row.shipment ? '更换物流单' : '上传物流单' }}</GlassButton></span>
             <GlassButton variant="link" left-icon="Download" :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton>
             <GlassButton variant="link" left-icon="Printer" @click="openPrint(row)">打印验货单</GlassButton>
             <GlassButton v-any-permission="['shipping_inspection:write', 'shipping_inspection:admin']"
@@ -87,22 +97,23 @@
       />
     </div>
 
-    <DetailDrawer v-model="detailVisible" title="验货单详情" :width="760" :loading="detailLoading">
+    <DetailDrawer v-model="detailVisible" title="验货单详情" :width="1080" :loading="detailLoading">
       <template v-if="detail">
         <ResponsiveDescriptions :column="2" border class="detail-descriptions">
           <el-descriptions-item label="出库单号">{{ detail.outbound_no }}</el-descriptions-item>
           <el-descriptions-item label="订单 ID">{{ detail.order_id || '—' }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">{{ detail.customer_name }}</el-descriptions-item>
           <el-descriptions-item label="提交人">{{ detail.submitted_by_name }}</el-descriptions-item>
-          <el-descriptions-item label="提交时间">{{ detail.submitted_at }}</el-descriptions-item>
+          <el-descriptions-item label="提交时间">{{ formatBeijingDateTime(detail.submitted_at, { seconds: false }) }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
         </ResponsiveDescriptions>
 
+        <InspectionShipment :key="detail.id" :detail="detail" @upload="openShipment(detail)" />
         <InspectionEvents :events="detail.events || []" />
         <div class="section-title">出库明细</div>
         <el-table :data="detail.items || []" size="small" border class="list-table" style="width: 100%" v-sticky-scrollbar>
           <el-table-column type="index" label="#" min-width="46" />
-          <el-table-column prop="product_name" label="产品名称" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="product_name" label="产品名称" min-width="260" show-overflow-tooltip />
           <el-table-column prop="spec" label="规格" min-width="100" show-overflow-tooltip />
           <el-table-column prop="sku" label="SKU" min-width="100" show-overflow-tooltip />
           <el-table-column prop="qty" label="数量" min-width="70" align="right" />
@@ -120,6 +131,11 @@
       v-model:visible="printDialog.visible"
       mode="inspection" :record-id="printDialog.recordId"
     />
+
+    <InspectionShipmentDialog
+      v-model="shipmentDialog.visible" :inspection-id="shipmentDialog.inspectionId"
+      @linked="handleShipmentLinked"
+    />
   </div>
 </template>
 
@@ -136,9 +152,12 @@ import TableTools from '@/components/TableTools.vue'
 import InspectionPhotos from './components/InspectionPhotos.vue'
 import InspectionVideos from './components/InspectionVideos.vue'
 import InspectionEvents from './components/InspectionEvents.vue'
+import InspectionShipment from './components/InspectionShipment.vue'
+import InspectionShipmentDialog from './components/InspectionShipmentDialog.vue'
 import ShippingPrintDialog from './print/ShippingPrintDialog.vue'
 import { useInspectionRecords } from './composables/useInspectionRecords'
 import { useTableView } from '@/composables/useTableView'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const route = useRoute()
 const listPageState = useInspectionRecords()
@@ -148,7 +167,9 @@ const {
   handleSearch, handleReset, handlePageChange, handleSizeChange,
   detailVisible, detailLoading, detail, openDetail,
   printDialog, openPrint, recallingId, recallForEdit,
+  shipmentDialog, openShipment, handleShipmentLinked,
 } = listPageState
+const shipmentText = row => (row.shipment ? `${row.shipment.carrier} · ${row.shipment.waybill_no}` : '未关联')
 
 // 列配置数组：TableTools 列显隐的数据源；模板列保持静态 + v-if（推广期约定，不做配置化渲染）
 const columnDefs = [
@@ -159,6 +180,7 @@ const columnDefs = [
   { key: 'salesperson-name', label: '业务员' },
   { key: 'submitted-by-name', label: '提交人' },
   { key: 'submitted-at', label: '提交时间' },
+  { key: 'shipment', label: '物流单号' },
   { key: 'remark', label: '备注' },
 ]
 // 表格视图状态（列显隐/密度/全屏）走全局基建 useTableView（Action Bar Spec），作用于桌面表格卡片
@@ -253,6 +275,9 @@ function handleSortChange({ prop, order }) { return listPageState.handleSortChan
 .inspection-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
 .detail-descriptions { margin-bottom: 12px; }
+
+.shipment-link { color: var(--color-primary-text); }
+.shipment-empty { color: var(--text-secondary); }
 
 .section-title {
   font-size: 13px;

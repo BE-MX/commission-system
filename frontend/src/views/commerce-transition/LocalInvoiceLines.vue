@@ -20,7 +20,7 @@
 import SkuPicker from '@/views/inventory/components/SkuPicker.vue'
 import { normalizeHairRow } from '@/views/invoice/composables/invoiceEditorState'
 const props = defineProps({ form: Object })
-function add() { props.form.items.push({ ...normalizeHairRow(), quantity: 1, price_per_piece: 0, commercial_kind: 'bulk', local_sku_id: null }) }
+function add() { props.form.items.push({ ...normalizeHairRow({ group_key: props.form.item_groups?.at(-1)?.key || '' }), quantity: 1, price_per_piece: 0, commercial_kind: 'bulk', local_sku_id: null }) }
 function select(row, sku) { row.local_sku_id = sku?.id || null; row.sku_id = sku?.id || null; row.product_display = sku?.label || ''; update(row) }
 function update(row) { row.total_price = Math.round((Number(row.quantity || 0) * Number(row.price_per_piece || 0) - Number(row.discount_amount || 0)) * 100) / 100 }
 </script>

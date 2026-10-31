@@ -24,9 +24,9 @@
         </GlassButton>
         <h2>{{ period.year_month }} 工资批次</h2>
         <StatusBadge :value="period.status" :dictionary="SALARY_STATUS" :label="period.status_label" effect="plain" />
-        <StatusBadge v-if="period.unlocked_at" type="danger" effect="plain">
-          解锁过，前次导出已作废
-        </StatusBadge>
+        <el-tooltip v-if="period.unlocked_at" :content="`解锁原因：${period.unlock_reason || '未记录'}`">
+          <StatusBadge type="danger" effect="plain">解锁过</StatusBadge>
+        </el-tooltip>
       </div>
 
       <div class="head-facts">
@@ -288,6 +288,11 @@
           </el-alert>
         </el-tab-pane>
 
+        <!-- 导出（M4）：可导项、作废判定、导出历史都在面板组件里，按状态版本自刷新 -->
+        <el-tab-pane label="导出" name="exports" lazy>
+          <SalaryExportPanel v-if="period" :period-id="periodId" :status-version="period.status_version" />
+        </el-tab-pane>
+
         <el-tab-pane label="操作记录" name="events">
           <p class="section-hint">显示最近 200 条操作记录。</p>
           <ListPageStatus v-if="eventsResource.error.value || eventsResource.loading.value" v-bind="resourceStatus(eventsResource)" @retry="fetchEvents" />
@@ -362,8 +367,8 @@
     <!-- 解锁 -->
     <el-dialog v-model="unlockVisible" title="解锁批次" width="480px">
       <el-alert type="warning" :closable="false" class="tab-alert">
-        解锁后<b>前次导出的工资表作废</b>，重新导出会打作废水印。
-        财务手上那份旧表和新表长得一样，所以原因必须写清楚，供事后对账。
+        解锁后批次回到「复核中」，明细改回显示最新档案，改完需要重新锁定。
+        如果这个月的工资表已经发给财务，那份就不能再用——请写清原因，供事后对账。
       </el-alert>
       <el-form label-position="top">
         <el-form-item label="原因" required>
@@ -390,6 +395,7 @@ import AppUpload from '@/components/AppUpload.vue'
 import { money } from '@/api/salary'
 import AttendanceEntryDialog from './components/AttendanceEntryDialog.vue'
 import SalaryRecordsGrid from './components/SalaryRecordsGrid.vue'
+import SalaryExportPanel from './components/SalaryExportPanel.vue'
 import { RECORD_LEVEL_KINDS, useSalaryWorkbench } from './composables/useSalaryWorkbench'
 import { useSalaryRecords } from './composables/useSalaryRecords'
 

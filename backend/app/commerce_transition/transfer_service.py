@@ -1,5 +1,5 @@
 """Freeze and transfer the complete shared economic responsibility closure."""
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from app.commerce_transition.models import (
     InvoiceAuthority, ResponsibilityGroup, ResponsibilityMember, SendingClaim,
@@ -11,11 +11,22 @@ from app.core.time import beijing_now
 VERIFICATION_PARTS = ("contract", "funds", "fulfillment", "inventory", "production", "media", "commission")
 
 
+def _pending_sales_returns(db, invoice_ids):
+    from app.invoice.models import Invoice
+    from app.sales_return.models import SalesReturn
+    remote_ids = db.scalars(select(Invoice.xiaoman_order_id).where(
+        Invoice.id.in_(invoice_ids), Invoice.xiaoman_order_id.isnot(None)).with_for_update()).all()
+    return db.scalar(select(SalesReturn.id).where(
+        or_(SalesReturn.invoice_id.in_(invoice_ids), SalesReturn.order_id.in_(remote_ids)),
+        SalesReturn.status.in_(["draft", "effective"])).with_for_update().limit(1)) is not None
+
+
 def _pending_original_requests(db, invoice_ids):
     from app.invoice.models import Invoice, InvoiceLinkedSync, OkkiOutboundTask
     from app.receipt.models import Receipt
     return bool(
-        db.query(SendingClaim.id).filter(SendingClaim.invoice_id.in_(invoice_ids),
+        _pending_sales_returns(db, invoice_ids)
+        or db.query(SendingClaim.id).filter(SendingClaim.invoice_id.in_(invoice_ids),
                                          SendingClaim.state.notin_(gates.TERMINAL)).with_for_update().first()
         or db.query(OkkiOutboundTask.id).filter(OkkiOutboundTask.invoice_id.in_(invoice_ids),
                                                OkkiOutboundTask.status.in_(["running", "uncertain"])).with_for_update().first()
@@ -126,6 +137,8 @@ def prepare_transfer(db, *, invoice_ids, target_route, request_key, checkpoint, 
     closure, group_ids = responsibility_closure(db, requested)
     if requested != closure:
         raise gates.TransitionError(f"必须整体冻结和移交共享责任闭包，完整订单为{closure}")
+    if _pending_sales_returns(db, closure):
+        raise gates.TransitionError("原单存在退货草稿或生效退货责任，须先核对退货、资金和库存承接，不能按原毛额移交")
     authorities = [gates._lock_authority(db, invoice_id) for invoice_id in closure]
     source_routes = {row.route for row in authorities}
     if len(source_routes) != 1 or target_route in source_routes:

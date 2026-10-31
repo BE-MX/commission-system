@@ -1,6 +1,14 @@
 import { portalAdminClient } from './clients'
 
 export const portalAdminApi = {
+  async customerSettings(id, section, signal) {
+    const response = await portalAdminClient.get(`/customers/${encodeURIComponent(id)}/${section}`, { signal, showLoading: false, suppressToast: true })
+    return response.data
+  },
+  async saveCustomerSettings(id, section, body, version) {
+    const response = await portalAdminClient.put(`/customers/${encodeURIComponent(id)}/${section}`, body, { headers: { 'If-Match': `"${version}"` }, showLoading: false, suppressToast: true })
+    return response.data
+  },
   async customerPreview(id, signal) {
     const response = await portalAdminClient.post(`/customers/${encodeURIComponent(id)}/preview`, {}, { signal, showLoading: false, suppressToast: true })
     return response.data

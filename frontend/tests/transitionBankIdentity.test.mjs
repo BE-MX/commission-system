@@ -92,3 +92,52 @@ test('actual settings controller denies bank reconciliation without receipt admi
   assert.equal(page.editOpen.value,false)
   assert.deepEqual(events.writes,[])
 })
+
+
+for (const [source_kind, cash_movement] of [['return-paid', 'paid'], ['return-recovered', 'recovered']]) {
+  test(`legacy return ${cash_movement} selects one original cash movement without supplying an amount`, () => {
+    const form = { source_kind, sales_return_id: 81, domain_id: 2, transaction_id: ' BANK-81 ',
+      statement_reference: ' Statement page 3 row 9 ', amount: 999, receipt_id: 41, batch_id: 8,
+      source: 'legacy-receipt:41', cash_movement: 'invented' }
+    const sources = [`legacy-return-${cash_movement}:81`]
+    assert.deepEqual(legacyBankReconciliationPayload(form, sources, [{ id: 2 }]), {
+      domain_id: 2, transaction_id: 'BANK-81', sales_return_id: 81, cash_movement,
+      statement_reference: 'Statement page 3 row 9',
+    })
+    for (const patch of [{ sales_return_id: 0 }, { sales_return_id: 9007199254740993 },
+      { transaction_id: '' }, { statement_reference: '' }, { source_kind: 'return-pending' }]) {
+      assert.throws(() => legacyBankReconciliationPayload({ ...form, ...patch }, sources, [{ id: 2 }]))
+    }
+    assert.throws(() => legacyBankReconciliationPayload(form, ['legacy-receipt:81'], [{ id: 2 }]))
+    assert.throws(() => legacyBankReconciliationPayload(form, [], [{ id: 2 }]))
+  })
+}
+
+test('actual settings controller posts separately verified refund and recovery identities to the existing endpoint', async () => {
+  const { page, events } = settingsHarness({ permissions: ['commerce_transition:admin', 'receipt:admin', 'sales_return:admin'] })
+  page.tab.value = 'bank-identities'
+  for (const cash_movement of ['paid', 'recovered']) {
+    page.openEdit(); await page.choices.load()
+    page.choices.data.value = { domains: [{ id: 2 }] }
+    page.unmapped.value = [`legacy-return-${cash_movement}:81`]
+    page.form.value = { source_kind: `return-${cash_movement}`, sales_return_id: 81, domain_id: 2,
+      transaction_id: `TXN-${cash_movement}`, statement_reference: `Statement ${cash_movement}` }
+    await page.save()
+  }
+  assert.deepEqual(events.writes.map(row => [row.resource, row.body.sales_return_id, row.body.cash_movement, row.body.transaction_id]), [
+    ['bank-identities/reconcile-legacy', 81, 'paid', 'TXN-paid'],
+    ['bank-identities/reconcile-legacy', 81, 'recovered', 'TXN-recovered'],
+  ])
+  assert.ok(events.writes.every(row => !('amount' in row.body) && !('receipt_id' in row.body)))
+})
+
+test('actual settings controller rejects return reconciliation without live return authority before posting', async () => {
+  const { page, events } = settingsHarness()
+  page.tab.value = 'bank-identities'; page.openEdit(); await page.choices.load()
+  page.choices.data.value = { domains: [{ id: 2 }] }
+  page.unmapped.value = ['legacy-return-paid:81']
+  page.form.value = { source_kind: 'return-paid', sales_return_id: 81, domain_id: 2,
+    transaction_id: 'PAID', statement_reference: 'Statement original paid row' }
+  await page.save()
+  assert.deepEqual(events.writes, [])
+})

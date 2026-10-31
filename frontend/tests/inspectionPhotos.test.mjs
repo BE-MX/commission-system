@@ -149,3 +149,11 @@ test('preview transport explicitly requests a derivative and keeps abort signal'
   assert.equal(calls[0][1].responseType, 'blob')
   assert.equal(calls[0][1].showLoading, false)
 })
+
+test('photo captions wrap long product names without ellipsis', () => {
+  const component = fs.readFileSync(new URL('../src/views/shipping/components/InspectionPhotos.vue', import.meta.url), 'utf8')
+  const caption = component.match(/\.photo-caption\s*\{([^}]*)\}/)[1]
+  assert.match(caption, /white-space:\s*normal/)
+  assert.match(caption, /overflow-wrap:\s*anywhere/)
+  assert.doesNotMatch(caption, /white-space:\s*nowrap|text-overflow:\s*ellipsis/)
+})

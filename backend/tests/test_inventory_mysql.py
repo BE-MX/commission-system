@@ -49,18 +49,53 @@ def mysql_engine():
     try:
         with engine.begin() as conn:
             conn.exec_driver_sql("CREATE TABLE ark_users (id INT UNSIGNED PRIMARY KEY)")
-            migration_path = Path(__file__).parents[1] / "alembic/versions/208_local_commerce.py"
+            migration_path = Path(__file__).parents[1] / "alembic/versions/227_local_commerce.py"
             spec = spec_from_file_location("stock_migration", migration_path)
             migration = module_from_spec(spec)
             spec.loader.exec_module(migration)
             with Operations.context(MigrationContext.configure(conn)):
                 migration.upgrade()
+        # Narrow primitive fixture: the inventory DDL is exercised above.
+        # Current commands additionally require real persistent coordination;
+        # this empty schema explicitly represents a completed local-only pilot.
+        from app.commerce_transition.models import PlatformPolicy, WriterReceipt, ResourceScope, BankAccountDomain, BankIdentity
+        with engine.begin() as conn:
+            for model in (PlatformPolicy, WriterReceipt, ResourceScope, BankAccountDomain, BankIdentity):
+                model.__table__.create(conn)
+            conn.execute(PlatformPolicy.__table__.insert().values(id=1, phase="local_only",
+                writer_inventory_verified=True, inventory_evidence={"synthetic_empty_schema": schema}))
+            conn.execute(WriterReceipt.__table__.insert().values(writer_key="mysql-isolated-fixture",
+                protocol_version=1, status="compatible", evidence={"synthetic_empty_schema": schema}))
         yield engine
     finally:
         engine.dispose()
         with control.begin() as conn:
             conn.exec_driver_sql(f"DROP DATABASE `{schema}`")
         control.dispose()
+
+
+def physical_scope_prerequisites(connection):
+    """Empty current read-side tables for old focused physical DDL fixtures.
+
+    This is a structural prerequisite, not migration evidence. Full-chain tests
+    separately verify their real DDL, constraints and historical preservation.
+    """
+    from sqlalchemy import Column, MetaData, Table, UniqueConstraint
+    from app.invoice.models import Invoice, InvoiceItemGroup, OkkiOutboundTask
+    from app.commerce_transition.models import InvoiceAuthority, AuthorityEvent, SendingClaim
+    from app.shipping_inspection.models import ShippingOperationEvent
+    from app.semifinished.models import InvoiceAllocation
+    metadata = MetaData()
+    for model in (Invoice, InvoiceItemGroup, InvoiceAuthority, AuthorityEvent, SendingClaim,
+                  OkkiOutboundTask, ShippingOperationEvent, InvoiceAllocation):
+        source = model.__table__
+        table = Table(source.name, metadata, *[
+            Column(col.name, col.type, primary_key=col.primary_key, autoincrement=col.autoincrement,
+                   nullable=col.nullable, server_default=col.server_default) for col in source.columns])
+        for constraint in source.constraints:
+            if isinstance(constraint, UniqueConstraint):
+                table.append_constraint(UniqueConstraint(*[col.name for col in constraint.columns], name=constraint.name))
+    metadata.create_all(connection)
 
 
 @pytest.fixture
@@ -167,13 +202,15 @@ def test_unrelated_first_receipts_cannot_deadlock_on_empty_balance_gap(mysql_eng
         db.commit()
     gate = Barrier(2)
     def synchronize_empty_read(conn, cursor, statement, parameters, context, executemany):
-        if statement.startswith("SELECT") and "FROM ark_stock_balances" in statement:
+        if statement.startswith("UPDATE ark_commerce_transition_policy") and not conn.info.get("race_gate_seen"):
+            conn.info["race_gate_seen"] = True
             gate.wait(timeout=10)
-    event.listen(mysql_engine, "after_cursor_execute", synchronize_empty_read)
+    # All writers now serialize at the policy row before bucket discovery.
+    event.listen(mysql_engine, "before_cursor_execute", synchronize_empty_read)
     try:
         results = race(mysql_engine, [body("first", stock_ids, 5), body("second", other, 7)])
     finally:
-        event.remove(mysql_engine, "after_cursor_execute", synchronize_empty_read)
+        event.remove(mysql_engine, "before_cursor_execute", synchronize_empty_read)
     assert all(result[0] == "ok" for result in results)
     with Session(mysql_engine) as db:
         assert db.scalar(select(func.sum(StockBalance.on_hand))) == 12

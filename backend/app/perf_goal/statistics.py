@@ -161,6 +161,17 @@ def fetch_order_facts(db, okki_user_ids: list[str], start: date, end: date,
                       "order_name": row.get("order_name") or "", "owner": uid, "company_id": cid,
                       "customer_name": row.get("company_name") or "", "country": row.get("country_name") or "",
                       "day": day, "amount": amount, "role": role, "flags": flags})
+    from app.sales_return.gmv import adjustments
+    from app.sales_return.sources import source_role
+    for adjustment in adjustments(db, start, end, okki_user_ids):
+        if adjustment.get("original_order"):
+            role, issue = source_role(adjustment["original_order"], index)
+            adjustment["role"] = role
+            if issue:
+                issues.append(issue)
+            elif adjustment["order_id"] in index:
+                adjustment["flags"].append("manual_decision")
+        facts.append(adjustment)
     return facts, issues
 
 
@@ -171,6 +182,10 @@ def aggregate(facts: list[dict]) -> dict[str, dict]:
         row = result.setdefault(fact["owner"], {"gmv": ZERO, "new_sign": set(),
                                                 "repeat_customers": set(), "repeat_amount": ZERO})
         row["gmv"] += fact["amount"]
+        if fact.get("source_type") == "sales_return":
+            if fact["role"] == "repeat":
+                row["repeat_amount"] += fact["amount"]
+            continue
         if fact["role"] == "new_sign":
             row["new_sign"].add(fact["company_id"])
         elif fact["role"] == "repeat":

@@ -3,6 +3,10 @@ import { currentBeijingDate } from '../../../utils/datetime.js'
 
 export const INVOICE_NO_MAX_LENGTH = 64
 
+export function inspectionRequirement(form) {
+  return form.inspection_requirement ?? (form.okki_new_deal === 1 ? 'detail' : 'single')
+}
+
 export function screenshotOrderName(preview = {}) {
   const extracted = String(preview?.extraction?.order_name || '').trim()
   const patched = String(preview?.invoice_patch?.source_order_name || '').trim()
@@ -31,9 +35,9 @@ export function emptyInvoiceForm() {
     internal_payment_method: '', internal_discount: 0, packaging_quantity: 0,
     internal_accessory: 0, internal_received: null, internal_balance: null,
     internal_shipping_type: '', okki_new_deal: 1, okki_free_shipping: 1,
-    okki_first_return: 0, remark: '', source_type: 'manual', source_order_id: null,
+    okki_first_return: 0, inspection_requirement: null, remark: '', source_type: 'manual', source_order_id: null,
     source_order_no: null, source_order_name: null, source_image_sha256: null,
-    source_preview_token: null, items: [],
+    source_preview_token: null, items: [], item_groups: [], item_groups_version: null,
   }
 }
 
@@ -41,6 +45,8 @@ export function normalizeHairRow(line = {}) {
   return {
     id: line.id || null,
     local_sku_id: line.local_sku_id || null, commercial_kind: line.commercial_kind || 'bulk',
+    group_key: line.group_key || '',
+    created_at: line.created_at || null,
     product_kind: 'hair',
     item_type: line.item_type || 'stock',
     product_id: line.product_id || null,
@@ -91,17 +97,22 @@ export function isInvoicePlaceholder(row) {
     && !row._importBatchFingerprint
 }
 
-export function invoiceQuantityIssue(items) {
+export function invoiceQuantityIssue(items, groups = []) {
   const index = items.findIndex(row => !isInvoicePlaceholder(row)
     && (!Number.isInteger(row.quantity) || row.quantity <= 0))
   if (index < 0) return null
   const row = items[index]
   const product = [row.product_name || row.product_display || row.model, row.color, row.length, row.net_weight_grams]
     .filter(Boolean).join(' / ') || '未填写产品规格'
+  const group = groups.find(item => item.key === row.group_key)
+  if (group) {
+    const groupIndex = items.filter(item => !isInvoicePlaceholder(item) && item.group_key === group.key).indexOf(row) + 1
+    return { row, message: `分组「${group.name}」第 ${groupIndex} 条明细（${product}）的数量必须填写正整数，已定位到该数量栏` }
+  }
   return { row, message: `录入顺序第 ${index + 1} 条明细（${product}）的数量必须填写正整数，已定位到该数量栏` }
 }
 
-export function buildInvoicePayload(form, hairDiscount) {
+export function buildInvoicePayload(form, hairDiscount = 0) {
   const draft = form.receipt_draft
   return {
     receipt_draft: draft ? { amount: draft.amount == null ? null : String(draft.amount),
@@ -135,13 +146,19 @@ export function buildInvoicePayload(form, hairDiscount) {
     internal_balance: form.order_type === 'presale' ? null : form.internal_balance, internal_shipping_type: form.internal_shipping_type || null,
     okki_new_deal: form.okki_new_deal ?? null, okki_free_shipping: form.okki_free_shipping ?? null,
     okki_first_return: form.okki_first_return ?? null, remark: form.remark,
+    inspection_requirement: inspectionRequirement(form),
     source_type: form.source_type || 'manual', source_order_id: form.source_order_id || null,
     source_order_no: form.source_order_no || null, source_order_name: form.source_order_name || null,
     source_image_sha256: form.source_image_sha256 || null,
     source_preview_token: form.source_preview_token || null,
+    expected_groups_version: form.item_groups_version || null,
+    item_groups: (form.item_groups || []).map((group, index) => ({
+      key: String(group.key), name: String(group.name || '').trim(), sort_order: Number(group.sort_order || index + 1),
+    })),
     items: form.items.filter(line => !isInvoicePlaceholder(line)).map(line => ({
       local_sku_id: line.local_sku_id || null, commercial_kind: line.commercial_kind || 'bulk',
-      id: line.id || null, product_kind: line.product_kind || 'hair', item_type: line.item_type,
+      id: line.id || null, group_key: line.product_kind === 'accessory' ? null : line.group_key || null,
+      product_kind: line.product_kind || 'hair', item_type: line.item_type,
       product_id: line.product_id, sku_id: line.sku_id, product_name: line.product_name,
       product_display: line.product_display, net_weight_grams: line.net_weight_grams,
       curl: line.curl || null, model: line.model || null, color: line.color,

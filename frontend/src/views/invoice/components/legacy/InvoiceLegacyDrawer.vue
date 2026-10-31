@@ -142,12 +142,14 @@
                 </span>
                 <span class="okki-flag">
                   首返
-                  <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0" />
+                  <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0"
+                             @change="markOkkiFlagTouched('firstReturn')" />
                 </span>
                 <span v-if="lastOrderDate" class="okki-last-order">上次订单成交日期：{{ lastOrderDate }}</span>
                 <span class="okki-flag-tip">推小满必填，已按历史预判</span>
               </div>
             </el-form-item>
+            <InvoiceInspectionRequirementField :form="form" class="span-3" />
             <el-form-item label="备注" class="span-3">
               <el-input v-model="form.remark" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" />
               <div class="field-tip">备注内容将自动带入到出库单中</div>
@@ -177,6 +179,9 @@
           :active="legacyVisible"
           :pin-columns="false"
           :items="hairItems"
+          :item-groups="form.item_groups"
+          :group-counts="groupCounts"
+          v-model:active-group-key="activeGroupKey"
           :quantity-error-row="quantityErrorRow"
           :is-production="isProduction"
           :entry-options="entryOptions"
@@ -194,6 +199,10 @@
           @add-blank="addBlankLine"
           @remove="removeLine"
           @remove-many="removeLines"
+          @create-group="createItemGroup"
+          @rename-group="renameItemGroup"
+          @delete-group="deleteItemGroup"
+          @move-many="moveRowsToGroup($event.rows, $event.targetKey)"
         />
 
         <InvoiceAccessoryTable
@@ -239,6 +248,7 @@ import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from '../../composabl
 import { customerOptionLabel } from '../../composables/useInvoiceCustomerSearch'
 import { describeCustomerRule } from '../../composables/useInvoiceEditor'
 import InvoiceCustomerSyncEntry from '../InvoiceCustomerSyncEntry.vue'
+import InvoiceInspectionRequirementField from '../InvoiceInspectionRequirementField.vue'
 import InvoiceHairTable from '../InvoiceHairTable.vue'
 import InvoiceAccessoryTable from '../InvoiceAccessoryTable.vue'
 import InvoiceLegacySettlementFields from './InvoiceLegacySettlementFields.vue'
@@ -267,6 +277,7 @@ const {
   okkiBound, invoiceNoTaken, entryOptions, hairItems, accessoryItems, accessoryOptions, accessoryLoading,
   formHairPrice, formLineDiscountTotal, formAccessoryAmount, formAccessoryDiscount, formBaseAmount, formTotal,
   lastOrderDate, settlementError, isProduction, saveAndSyncSubmitting, quantityErrorRow,
+  activeGroupKey, activeGroupName, groupCounts, createItemGroup, renameItemGroup, deleteItemGroup, moveRowsToGroup,
   searchCustomers, selectSyncedCustomer, onCustomerChange, onSalesUserChange, onCurrencyChange,
   onInvoiceNoInput, onInvoiceNoBlur, addBlankLine, copyLine, addAccessory, selectAccessory,
   removeAccessory, removeAccessories, searchAccessoryOptions, updateAccessoryTotal, removeLine, removeLines, loadLineOptions,

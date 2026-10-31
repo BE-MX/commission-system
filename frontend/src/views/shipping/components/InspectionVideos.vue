@@ -1,7 +1,7 @@
 <template>
   <div class="video-list">
     <figure v-for="video in entries" :key="video.id" class="video-entry">
-      <figcaption>{{ caption(video) }}{{ video.stale ? ' · 旧版本证据，不作本次验货依据' : '' }}</figcaption>
+      <figcaption>{{ caption(video) }}{{ video.stale ? ' · 旧版本证据，不作本次验货依据' : '' }}<span v-if="metaOf(video)" class="video-meta" :title="video.created_at ? formatBeijingDateTime(video.created_at) : ''">{{ metaOf(video) }}</span></figcaption>
       <video v-if="video.url" :src="video.url" controls preload="metadata" />
       <GlassButton v-else variant="ghost" left-icon="VideoPlay" :loading="video.loading" @click="load(video)">
         {{ video.failed ? '重新加载视频' : '加载视频' }}
@@ -14,6 +14,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { fetchVideoBlobUrl } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
+import { formatBeijingDateTime, formatBeijingShortDateTime } from '@/utils/datetime'
 const props = defineProps({ videos: { type: Array, default: () => [] }, items: { type: Array, default: () => [] } })
 const entries = ref([])
 let generation = 0
@@ -23,6 +24,10 @@ function clear() {
 }
 function caption(video) {
   return video.item_id == null ? '整单视频' : props.items.find(item => item.item_id === video.item_id)?.product_name || '明细视频'
+}
+function metaOf(video) {
+  const uploadedAt = video.created_at ? formatBeijingShortDateTime(video.created_at) : ''
+  return [video.created_by_name, uploadedAt].filter(Boolean).join(' · ')
 }
 async function load(video) {
   if (video.loading) return
@@ -43,5 +48,6 @@ onBeforeUnmount(clear)
 .video-list { display: flex; flex-wrap: wrap; gap: 16px; }
 .video-entry { margin: 0; width: 280px; }
 figcaption { margin-bottom: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.video-meta { display: block; margin-top: 2px; font-size: 12px; color: var(--text-muted); }
 video { width: 100%; max-height: 220px; border-radius: 8px; background: var(--el-fill-color-light); }
 </style>

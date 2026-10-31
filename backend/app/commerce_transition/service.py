@@ -474,7 +474,9 @@ def claim_bank_identity(db, *, domain_id, transaction_id, route, currency, amoun
     domain = db.query(BankAccountDomain).filter_by(id=domain_id).populate_existing().with_for_update().first()
     if domain is None:
         raise TransitionError("收款账户域未登记核验")
-    if domain.exclusive_route and domain.exclusive_route != route:
+    # Auditing already-existing legacy cash creates no new spending authority.
+    # Its identity must still be reserved even after a domain became local-only.
+    if domain.exclusive_route and domain.exclusive_route != route and not (historical and route == 'legacy'):
         raise TransitionError("账户域不归当前正式路线")
     # Historical registration is only old-money identity reconciliation. It
     # cannot create local principal before the complete-domain attestation.

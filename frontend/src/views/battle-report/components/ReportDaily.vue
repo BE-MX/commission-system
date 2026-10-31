@@ -20,7 +20,7 @@
       <div class="battle-order-summary"><b>所选范围 GMV：${{ money(orderMeta.gmv) }}</b><span>{{ total }} 单 · 完整筛选合计，不受分页影响</span></div>
       <el-alert v-if="orderMeta.issues?.length" type="warning" :closable="false" :title="`${orderMeta.issues.length} 条异常记录未计入`"><template #default><p v-for="(issue, index) in orderMeta.issues" :key="index">{{ issue.order_no || '无订单号' }}：{{ issue.reason }}</p></template></el-alert>
       <ListPageStatus v-if="listPageState.hasData.value" :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="listPageState.hasData.value" :data-page="listPageState.dataPage.value" @retry="listPageState.fetchList" />
-<el-table @sort-change="event => listPageState.handleSortChange(tableSortParams(event))" v-loading="loading" :data="list" border class="list-table" v-sticky-scrollbar>
+<el-table @sort-change="event => listPageState.handleSortChange(tableSortParams(event))" v-loading="loading" :data="list" :row-key="row => row.fact_key || row.order_id" border class="list-table" v-sticky-scrollbar>
         <template #empty><ListPageStatus :error="listPageState.errorMessage.value" :loading="listPageState.loading.value" :has-data="false" @retry="listPageState.fetchList">{{ detailMembers.length ? '当前筛选范围暂无订单' : '当前组没有可查看的订单明细' }}</ListPageStatus></template>
         <el-table-column sortable="custom" prop="order_no" label="订单号" min-width="170" max-width="220"><template #default="{ row }"><el-button link type="primary" @click="openOrder(row)"><el-icon><View /></el-icon>{{ row.order_no }}</el-button></template></el-table-column>
         <el-table-column sortable="custom" prop="account_date" label="核算日" min-width="120" max-width="160" />

@@ -30,9 +30,11 @@ def source_facts(db, report, members, now):
         owners = {str(m.ark_user_id) for m in members}
         customers = {r["company_id"] for r in rows if r["user_id"] in owners}
         state = projection_status(db, date_from=report.start_date, date_to=min(report.end_date, now.date()))
+        from app.trade.return_adjustments import load_return_adjustments
+        effects = load_return_adjustments(db, report.start_date, min(report.end_date, now.date()), owner_ids=owners)
         return [{**r, "order_id": r["event_order_id"], "is_goods": True,
                  "custom_fields": {NEW_DEAL_FIELD: r["new_deal"]}, "order_name": r["order_no"]}
-                for r in rows if r["company_id"] in customers], state["last_projected_at"]
+                for r in rows if r["company_id"] in customers] + effects, state["last_projected_at"]
     schema = get_settings().BUSINESS_DB_NAME
     query = text(f"""
         SELECT o.order_id, o.order_no, o.user_id, o.company_id, o.account_date, o.amount_usd,
@@ -52,7 +54,9 @@ def source_facts(db, report, members, now):
     rows = db.execute(query, {"start": report.start_date, "end": min(report.end_date, now.date()),
                               "users": [m.okki_user_id for m in members]}).mappings().all()
     synced = db.execute(text(f"SELECT MAX(synced_at) FROM `{schema}`.okki_orders")).scalar()
-    return rows, synced.isoformat() if hasattr(synced, "isoformat") else str(synced) if synced else None
+    from app.sales_return.gmv import adjustments
+    effects = adjustments(db, report.start_date, min(report.end_date, now.date()), [m.okki_user_id for m in members])
+    return [dict(r) for r in rows] + effects, synced.isoformat() if hasattr(synced, "isoformat") else str(synced) if synced else None
 
 
 def normalize_facts(report, raw, now):
@@ -69,6 +73,23 @@ def normalize_facts(report, raw, now):
     gmv_issues = set()
     for source in raw:
         row = dict(source)
+        if row.get("source_type") == "sales_return":
+            role = row["role"]
+            if row.get("original_order"):
+                from app.sales_return.sources import source_role
+                role, issue = source_role(row["original_order"], decisions)
+                if issue:
+                    issues.append(issue)
+                elif row["order_id"] in decisions:
+                    applied_decisions.add(row["order_id"])
+            orders.append({"id": row["fact_key"], "original_order_id": row["order_id"],
+                           "source_type": "sales_return", "return_id": row["return_id"],
+                           "uid": row["owner"], "cid": row["company_id"], "day": row["day"],
+                           "order_no": row["order_no"], "order_name": row["order_name"],
+                           "company_name": row["customer_name"], "amount": row["amount"],
+                           "new": True if role == "new_sign" else False if role == "repeat" else None,
+                           "goods": True})
+            continue
         if not row.get("is_goods", True):
             continue  # Independent freight may inherit the goods order's new-deal flag.
         try:
@@ -113,10 +134,17 @@ def cohort_orders(orders):
     """One ownership/selection contract for award totals and source detail tabs."""
     cohorts = {}
     for order in sorted(orders, key=order_key):
+        if order.get("source_type") == "sales_return":
+            continue
         if order["new"]:
             cohorts.setdefault(order["cid"], order)
     groups = {}
     for order in orders:
+        if order.get("source_type") == "sales_return":
+            group = groups.setdefault(order["uid"], {"customers": set(), "new_sign": [], "repeat": []})
+            if order["new"] is not None:
+                group["new_sign" if order["new"] else "repeat"].append(order)
+            continue
         first = cohorts.get(order["cid"])
         if first is None:
             continue
@@ -150,12 +178,13 @@ def calculate(report, members, raw, now, synced_at=None, *, native=False, source
                "gmv_complete": source_complete and uid not in gmv_issues,
                "gmv": format(sum((o["amount"] for o in owned), ZERO), "f"),
                "new_count": len(new), "new_amount": format(sum((o["amount"] for o in owned if o["new"]), ZERO), "f"),
-               "repeat_count": len({o["cid"] for o in repeats}), "repeat_orders": len(repeats),
+               "repeat_count": len({o["cid"] for o in repeats if o.get("source_type") != "sales_return"}),
+               "repeat_orders": sum(o.get("source_type") != "sales_return" for o in repeats),
                "repeat_amount": format(sum((o["amount"] for o in amount_orders), ZERO), "f")}
         rows.append(row)
     data = {"award_kind": report.award_kind, "people": rows, "issues": issues,
             "data_complete": not issues, "calculated_at": now.isoformat(), "source_synced_at": synced_at,
-            "source_label": "正式订单统一投影 · 分来源核验水位" if native else "OKKI订单镜像 · 每次刷新重新查询 · 非直连实时接口", "currency": "USD",
+            "source_label": "正式订单统一投影 · 分来源核验水位" if native else "OKKI销售 + 方舟退货生效日调整 · 净GMV · 每次刷新重新查询", "currency": "USD",
             "period_state": "upcoming" if now.date() < report.start_date else "ended" if now.date() > report.end_date else "running",
             "workday_progress": None, "order_decision_count": decision_count,
             "applied_order_decision_count": applied_count}

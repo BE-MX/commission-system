@@ -246,3 +246,24 @@ def test_invoice_switch_blocks_new_approval_but_not_completed_receipt(approving)
     replay = approve(ctx, order, revision)
     assert replay["replayed"] and replay["original_receipt"] == result["original_receipt"]
     assert ctx.db.scalar(select(func.count()).select_from(Invoice)) == 1
+
+
+def test_customer_delivery_defaults_share_profile_without_changing_existing_invoice(approving, monkeypatch):
+    from app.invoice import service as invoices
+    from app.portal import customer_settings_service
+    from app.portal.schemas import DeliveryProfileInput
+    ctx, order, revision, records = approving
+    approve(ctx, order, revision)
+    invoice = ctx.db.get(Invoice, order.invoice_id)
+    previous_address = invoice.delivery_address
+    customer_settings_service.update_delivery(ctx.db, 1, ctx.access.public_id, 1,
+        DeliveryProfileInput(delivery=dict(contact_name="Updated buyer", phone="12345",
+            address_line1="New street", city="London", country_code="GB")))
+    ctx.db.commit()
+    monkeypatch.setattr(invoices, "customer_has_xiaoman_orders", lambda *args: True)
+    monkeypatch.setattr(invoices, "customer_first_return_default", lambda *args: 0)
+    monkeypatch.setattr(invoices, "customer_last_order_date", lambda *args: None)
+    defaults = invoices.get_customer_contact_defaults(ctx.db, ctx.access.okki_company_id)
+    assert defaults["contact_name"] == "Updated buyer"
+    assert defaults["delivery_address"] == "New street\nLondon\nGB"
+    assert invoice.delivery_address == previous_address

@@ -1,5 +1,5 @@
 """Customer-scoped catalog projection; raw source IDs and quantities never escape."""
-from decimal import ROUND_FLOOR
+from decimal import Decimal, ROUND_FLOOR
 
 from sqlalchemy import select
 
@@ -8,7 +8,7 @@ from app.core.time import beijing_now
 from app.portal import mapping_service, pricing
 from app.portal.domain import normalize_text
 from app.portal.errors import PortalError, reject
-from app.portal.inventory import validate_observation
+from app.portal.inventory import validate_observation, item_stock_threshold
 from app.portal.models import CatalogGrant, CatalogItem
 
 
@@ -33,7 +33,7 @@ def availability(item, observation):
         validate_observation(observation, now=beijing_now(),
             max_age_seconds=get_settings().PORTAL_INVENTORY_MAX_AGE_SECONDS,
             quantity=quantity, inventory_unit=item.inventory_unit,
-            conversion_factor=item.conversion_factor, safety_buffer=item.safety_buffer,
+            conversion_factor=item.conversion_factor, safety_buffer=Decimal("0") if item.family_id is not None else item.safety_buffer, stock_threshold=item_stock_threshold(item),
             minimum=item.min_qty, step=item.step_qty)
     except PortalError as error:
         if error.code == "STOCK_CHANGED":
@@ -50,12 +50,12 @@ STOCK_BAND = 100
 def stock_display(item, observation, state):
     """Banded sellable quantity in sale units: exact below 100, otherwise "100+".
 
-    Only computed for an already validated "available" observation, so the safety
-    buffer (out-of-stock threshold) is excluded and raw stock never escapes.
+    Only computed for an already validated "available" observation. Family low-stock
+    thresholds gate display without reserving units; separate SKU safety margins remain excluded.
     """
     if state != "available":
         return None
-    sellable = (observation.quantity - item.safety_buffer) / item.conversion_factor
+    sellable = (observation.quantity - (Decimal("0") if item.family_id is not None else item.safety_buffer)) / item.conversion_factor
     units = int(sellable.to_integral_value(rounding=ROUND_FLOOR))
     return f"{STOCK_BAND}+" if units >= STOCK_BAND else str(units)
 

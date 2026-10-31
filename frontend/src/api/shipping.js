@@ -23,6 +23,11 @@ export function getOutboundPrintData(id, config = {}) {
   return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/print-data`, config)
 }
 
+// 仓库大屏：静默轮询，不弹全局错误提示
+export function getInspectionBoard() {
+  return shippingClient.get('/board', { suppressToast: true })
+}
+
 export function getOutboundInventory(id, config = {}) {
   return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/inventory`, config)
 }
@@ -78,3 +83,9 @@ export function downloadInspectionPdf(id, version) {
 }
 
 export const recoverOutboundDeletion = (id, body) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/delete-recovery`, body)
+
+export const bindInspectionShipment = (id, body) => shippingClient.put(`/records/${encodeURIComponent(id)}/shipment`, body, { suppressToast: true })
+// 验货单「上传物流单」弹框：按订单客户预填；上传＝录入物流跟踪＋关联本验货单（错误由 useWaybillUpload 统一提示）
+export const getInspectionShipmentPrefill = id => shippingClient.get(`/records/${encodeURIComponent(id)}/shipment-prefill`, { suppressToast: true })
+export const getInspectionShipmentCandidate = (id, params) => shippingClient.get(`/records/${encodeURIComponent(id)}/shipment-candidate`, { params, suppressToast: true })
+export const createInspectionShipment = (id, body) => shippingClient.post(`/records/${encodeURIComponent(id)}/shipment`, body, { suppressToast: true, timeout: 60000 })

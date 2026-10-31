@@ -1,8 +1,8 @@
 """发货检验 — PC 端 API 路由
 
 权限：shipping_inspection:read（查看）/ shipping_inspection:write / shipping_inspection:admin，
-读接口任一即可。出库单（列表 + 打印数据）按本地方舟首推订单业务员或既有
-OKKI 镜像客户归属过滤；shipping_inspection:read_all 或 super_admin 看全部。
+读接口任一即可。出库单按明细实际关联订单的业务员过滤；订单镜像未到达时
+核验同一订单的方舟首推归属。shipping_inspection:read_all 或 super_admin 看全部。
 统一信封 ok()；业务库（lsordertest）只读。
 """
 
@@ -33,6 +33,8 @@ from app.shipping_inspection.print_customer_service import with_customer_order_i
 from app.shipping_inspection.print_service import with_owner_chinese_name
 
 logger = logging.getLogger("commission")
+
+from app.shipping_inspection.schemas import InspectionShipmentCreate, InspectionShipmentInput
 
 router = APIRouter()
 from app.shipping_inspection.station_router import router as station_router
@@ -150,6 +152,19 @@ def delete_outbound_record(
         raise HTTPException(409, str(exc)) from exc
 
 
+@router.get("/board", summary="仓库发货检验看板（待检队列 / 今日完成 / 近 7 天）")
+def inspection_board(
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*_READ)),
+):
+    from app.shipping_inspection import board_service
+    scope = _outbound_scope(db, user)
+    try:
+        return ok(board_service.build_board(db, okki_user_id=scope))
+    except outbound_service.OutboundTableError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.get("/outbound-records", summary="出库单分页列表（含检验状态）")
 def list_outbound_records(
     transaction_mode: Literal["local", "legacy"] = "legacy",
@@ -210,7 +225,10 @@ def list_outbound_records(
                                  else None)
         row['print_before_recheck'] = can_print_before_recheck(event, row.get('mirror_updated_at'))
         row['can_allow_print_before_recheck'] = can_allow_print_before_recheck(event, row, insp)
-        row["status"] = insp.status if insp else "none"
+        # 验货分界前的历史单据没有验货流程：按已提交展示，不补建验货单（见 constants）。
+        legacy = insp is None and outbound_service.is_legacy_outbound(row.get("outbound_date"))
+        row["inspection_legacy"] = legacy
+        row["status"] = insp.status if insp else (C.STATUS_SUBMITTED if legacy else "none")
         if insp is None:
             row["photo_count"] = 0
         elif insp.status == C.STATUS_DRAFT:
@@ -416,3 +434,63 @@ def recover_outbound_delete(record_id: str, body: DeleteRecovery, db: Session = 
     except (ValueError, DeleteRemoteError, OkkiApiError) as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
+
+
+@router.get('/records/{inspection_id}/shipment-prefill', summary='物流单弹框预填（按订单客户推断收件人/国家）')
+def inspection_shipment_prefill(inspection_id: int, db: Session = Depends(get_db),
+        user: dict = Depends(require_any_permission('shipping_inspection:write', 'shipping_inspection:admin'))):
+    from app.shipping_inspection import shipment_link_service
+    inspection = _require_inspection_scope(db, user, inspection_id)
+    return ok(shipment_link_service.shipment_prefill(db, inspection))
+
+
+@router.get('/records/{inspection_id}/shipment-candidate', summary='关联已有运单前核对收件信息')
+def inspection_shipment_candidate(inspection_id: int, waybill_no: str = Query(..., min_length=1, max_length=64),
+        carrier: str = Query(..., min_length=1, max_length=32), db: Session = Depends(get_db),
+        user: dict = Depends(require_any_permission('shipping_inspection:write', 'shipping_inspection:admin'))):
+    from app.shipping_inspection import shipment_link_service
+    inspection = _require_inspection_scope(db, user, inspection_id)
+    return ok(shipment_link_service.link_candidate(db, inspection, waybill_no.strip(), carrier.strip(), int(user['sub'])))
+
+
+@router.post('/records/{inspection_id}/shipment', summary='上传物流单（录入物流跟踪）并关联本验货单')
+async def create_inspection_shipment(inspection_id: int, body: InspectionShipmentCreate,
+        db: Session = Depends(get_db),
+        user: dict = Depends(require_any_permission('shipping_inspection:write', 'shipping_inspection:admin'))):
+    from app.shipping_inspection import shipment_link_service
+    from sqlalchemy.exc import IntegrityError
+    from app.tracking.upload_service import WaybillConflict
+    _require_inspection_scope(db, user, inspection_id)
+    try:
+        data = await shipment_link_service.create_and_bind(db, inspection_id, body, user)
+    except WaybillConflict as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail={"code": 409, "message": "运单号已存在", "data": exc.existing}) from exc
+    except IntegrityError as exc:  # 并发录入同一运单号
+        db.rollback()
+        logger.warning("验货单 %s 录入运单并发冲突: %s", inspection_id, exc)
+        print(f"inspection {inspection_id} waybill create integrity conflict", flush=True)
+        raise HTTPException(status_code=409, detail="运单号刚被其他人录入，请重新输入运单号后选择关联已有运单") from exc
+    except ValueError as exc:  # 含 ShipmentLinkError：已入库但未关联
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        logger.warning("验货单 %s 录入运单失败: %s", inspection_id, exc)
+        print(f"inspection {inspection_id} waybill create failed: {type(exc).__name__}", flush=True)
+        raise HTTPException(status_code=500, detail="保存失败，请稍后重试；若物流跟踪里已出现该运单，重新输入运单号后选择关联已有运单") from exc
+    return ok(data, "运单录入并关联成功")
+
+
+@router.put('/records/{inspection_id}/shipment', summary='关联已上传的物流单')
+def bind_inspection_shipment(inspection_id: int, body: 'InspectionShipmentInput',
+        db: Session = Depends(get_db),
+        user: dict = Depends(require_any_permission('shipping_inspection:write', 'shipping_inspection:admin'))):
+    _require_inspection_scope(db, user, inspection_id)
+    try:
+        result = service.bind_shipment(db, inspection_id, body, int(user['sub']))
+        service._commit(db)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ok(result)

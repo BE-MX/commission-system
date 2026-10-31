@@ -56,7 +56,9 @@ def credit_funding_valid(db, row, *, current=False):
             if receipt.status != "active":
                 return False
             if receipt.purpose not in POOL_PURPOSES:
-                settlement_guard._validate_current_payment(db, receipt, app, row, current=current)
+                from app.sales_return.presale_adjustments import validate_credit
+                if not validate_credit(db, row, app, receipt, current=current):
+                    settlement_guard._validate_current_payment(db, receipt, app, row, current=current)
             if requires_effective(db, app, receipt, current=current):
                 if not receipt_effective(receipt):
                     return False
@@ -76,10 +78,16 @@ def record_effective(db, receipt, actor):
     from app.receipt import service
     if receipt.collect_status != 1 or not receipt.batch_id or receipt.purpose not in {"presale_goods", "freight"}:
         return
-    row = db.query(ShipmentSettlement).join(SettlementApplication,
+    from app.sales_return.presale_adjustments import credit_application
+    linked = db.query(ShipmentSettlement, SettlementApplication).join(SettlementApplication,
         SettlementApplication.settlement_id == ShipmentSettlement.id).filter(
             SettlementApplication.receipt_id == receipt.id,
-            SettlementApplication.status != "released").one_or_none()
+            SettlementApplication.status != "released").all()
+    owners = {settlement.id: settlement for settlement, application in linked
+              if not credit_application(settlement, application, receipt)}
+    if len(owners) > 1:
+        raise ValueError("预售原回款关联多份发送依据，请核对原资金")
+    row = next(iter(owners.values()), None)
     if row is not None and is_credit(row) and not db.query(ReceiptLog.id).filter(
             ReceiptLog.receipt_id == receipt.id, ReceiptLog.action == "credit_effective").first():
         service.log(db, receipt, "credit_effective", "先出库批次回款已生效，保留原资金事实", actor)

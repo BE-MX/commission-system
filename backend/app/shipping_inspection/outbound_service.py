@@ -7,8 +7,9 @@ okki_outbound_records / okki_outbound_record_items 是 OKKI 同步作业维护�
   规格 = product_model，SKU = sku_code。
 - 小程序型号/尺寸/颜色 = okki_products.model/size/color，按 product_id 左连；
   发货备注 = records.remark（2026-09-07 实库列核验）。
-- 归属过滤：方舟首推成功的订单可按明细 order_id → ark_invoices.sales_user_id
-  的有效 OKKI 绑定直接放行，不等待 okki_orders；原同客户订单归属规则继续有效。
+- 归属过滤：按明细实际 order_id → okki_orders.user_id 且同客户过滤。
+  订单镜像尚未到达时，方舟首推成功的同一订单可按 ark_invoices.sales_user_id
+  的有效 OKKI 绑定放行；客户历史订单不授予其他出库单的访问权。
   无 shipping_inspection:read_all 权限时由 router 强制传入当前用户的 OKKI id。
 - 关键：明细关联出库单走 outbound_invoice_id 桥（两表都有此列且 14125/14125 命中）；
   items.outbound_record_id 是 OKKI 侧另一个实体 id，与 records.id 完全不相交，
@@ -29,6 +30,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.shipping_inspection.constants import LEGACY_OUTBOUND_BEFORE
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -133,7 +135,7 @@ def _col(mapping: dict[str, str | None], key: str, alias: str) -> str:
 
 
 def _owner_scope_clause(db: Session, rm: dict[str, str | None]) -> str:
-    """方舟首推订单按本地业务员放行，或沿用镜像中同客户订单的归属。
+    """按出库明细实际关联订单的业务员过滤，镜像未到达时核验本地首推。
 
     company_id 列缺失时抛错（fail-closed），绝不降级为未过滤查询。
     """
@@ -143,17 +145,19 @@ def _owner_scope_clause(db: Session, rm: dict[str, str | None]) -> str:
             f"业务库表 {_schema()}.{RECORDS_TABLE} 缺少 company_id 列，无法按归属过滤；实际列：{columns}"
         )
     schema = _schema()
-    # Materialize this user's customer set once. A correlated EXISTS caused
-    # MySQL to probe customer orders for every outbound header (also on search).
-    mirror_scope = (
-        f"r.`{rm['company_id']}` IN (SELECT o.`company_id` FROM `{schema}`.`okki_orders` o "
-        f"WHERE o.`user_id` = :scope_okki_user_id)"
-    )
     link, _, im = _link(db)
     if link is None or "order_id" not in _table_columns(db, ITEMS_TABLE):
-        return mirror_scope
+        raise OutboundTableError("出库明细缺少订单关联字段，无法按归属过滤")
     item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
     record_key = rm["invoice_id"] if link == "invoice" else rm["id"]
+    # Materialize exact (outbound link, customer) pairs from this user's orders.
+    # A historical order for the same customer must not expose unrelated records.
+    mirror_scope = f"""(r.`{record_key}`, r.`{rm['company_id']}`) IN (
+        SELECT owned_item.`{item_key}`, owned_order.company_id
+        FROM `{schema}`.okki_orders owned_order
+        JOIN `{schema}`.`{ITEMS_TABLE}` owned_item ON owned_item.order_id = owned_order.order_id
+        WHERE owned_order.user_id = :scope_okki_user_id
+    )"""
     # Materialize the small set of exact (outbound link, customer) pairs once.
     # A correlated join scanned ark_invoices for every mirror row on MySQL.
     # The successful create log excludes imports, and the customer check prevents
@@ -174,6 +178,8 @@ def _owner_scope_clause(db: Session, rm: dict[str, str | None]) -> str:
           AND local_owner.binding_status = 'active'
           AND local_owner.deleted_at IS NULL
           AND local_owner.external_account_id = :scope_okki_user_id
+          AND NOT EXISTS (SELECT 1 FROM `{schema}`.okki_orders mirrored_order
+                          WHERE mirrored_order.order_id = local_item.order_id)
     ) owned WHERE owned.link_key = r.`{record_key}`
         AND owned.customer_id = r.`{rm['company_id']}`)"""
     return f"({local_scope} OR {mirror_scope})"
@@ -184,6 +190,16 @@ def _str_or_none(value) -> str | None:
         return None
     text_value = str(value)
     return text_value if text_value else None
+
+
+def is_legacy_outbound(outbound_date) -> bool:
+    """出库日期早于验货流程分界的历史单据：无需验货，按已提交展示（不落验货单）。
+
+    日期按 ISO 前缀比较，兼容 MySQL DATE 与 DATETIME 两种镜像列类型；
+    日期缺失时不推断为历史单据。
+    """
+    value = str(outbound_date or "")[:10]
+    return bool(value) and value < LEGACY_OUTBOUND_BEFORE.isoformat()
 
 
 def _num(value):

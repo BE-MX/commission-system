@@ -136,9 +136,10 @@ def ranking(period_type: Granularity = "year", year: int | None = None,
 def metric_orders(metric: Metric, user_id: int | None = None, department_id: int | None = None,
                   date_from: date | None = None, date_to: date | None = None,
                   page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+                  listed_only: bool = False,
                   db: Session = Depends(get_db), user=Depends(_require_read)):
     return ok(trend.metric_orders(db, user, metric, user_id, department_id,
-                                  date_from, date_to, page, page_size))
+                                  date_from, date_to, page, page_size, listed_only=listed_only))
 
 
 # ── 报告与推送 ─────────────────────────────────────────────

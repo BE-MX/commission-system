@@ -2,19 +2,23 @@ import { newRequestKey } from '../../utils/requestKey.js'
 import { formatMoney } from '../../utils/money.js'
 import { confirmAction, promptAction, msgSuccess, msgError } from '@/utils/feedback'
 import { computed, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 import { useListPage } from '@/composables/useListPage'
 import { currentBeijingDate } from '@/utils/datetime'
 import * as api from '@/api/receipt'
 
-export const statusLabel = value => ({ pending: '待同步', waiting_target: '等待集成验证', syncing: '同步中', synced: '已同步', failed: '同步失败', uncertain: '待核对' })[value] || value
+export const statusLabel = value => ({ pending: '待同步', waiting_target: '等待集成验证', syncing: '同步中', synced: '已同步', failed: '同步失败', uncertain: '待核对', local_only: '仅方舟记账' })[value] || value
 export const statusTone = value => ({ synced: 'success', failed: 'danger', uncertain: 'warning', pending: 'info', syncing: 'warning' })[value] || 'info'
 export const money = value => formatMoney(value)
 export const financeLabel = value => value === 1 ? '已生效' : value === 0 ? '未生效' : '未取得'
+export const isLocalReturnReceipt = row => row?.source === 'sales_return' || String(row?.id || '').startsWith('return:')
+export const sourceLabel = value => ({ auto: '库存单自动', manual: '手工登记', sales_return: '退货退款' })[value] || value || '—'
 
 export function useReceipts() {
   const route = useRoute()
+  const router = useRouter(), auth = useAuthStore()
   const queryOrderId = value => typeof value === 'string' && /^[1-9][0-9]{0,63}$/.test(value) ? value : ''
   const queryKeyword = value => typeof value === 'string' ? value.slice(0, 100) : ''
   const deliveryEnabled = ref(null), presaleDeliveryEnabled = ref(null)
@@ -42,7 +46,7 @@ export function useReceipts() {
   const remainingAfter = computed(() => balance.value?.funding_mode === 'presale_pool'
     ? Number(balance.value.pool_available_amount || 0) + Number(form.amount || 0)
     : Number(balance.value?.remaining_amount || 0) - Number(form.amount || 0))
-  const editable = computed(() => detail.value?.status === 'active' && !detail.value.batch_id && !detail.value.xiaoman_receipt_id && !['presale_deposit','presale_advance'].includes(detail.value.purpose) && ['pending', 'failed'].includes(detail.value.sync_status))
+  const editable = computed(() => !isLocalReturnReceipt(detail.value) && detail.value?.status === 'active' && !detail.value.batch_id && !detail.value.xiaoman_receipt_id && !['presale_deposit','presale_advance'].includes(detail.value.purpose) && ['pending', 'failed'].includes(detail.value.sync_status))
 
   async function searchOrders(keyword = '') {
     const sequence = ++searchSequence
@@ -78,6 +82,13 @@ export function useReceipts() {
   async function showDetail(row) {
     const sequence = ++detailSequence
     detailVisible.value = true; candidates.value = []; detail.value = null
+    if (isLocalReturnReceipt(row)) {
+      if (row.return_id && auth.hasPermission('sales_return:read')) {
+        detailVisible.value = false
+        await router.push({ path: '/invoice/sales-returns', query: { return_id: String(row.return_id) } })
+      } else detail.value = { ...row, source: 'sales_return', sync_status: 'local_only' }
+      return
+    }
     const result = await api.getReceipt(row.id)
     if (sequence === detailSequence) detail.value = result
   }
@@ -91,7 +102,7 @@ export function useReceipts() {
     finally { if (sequence === balanceSequence) balanceLoading.value = false }
   }
   function editCurrent() {
-    if (saving.value || uploading.value) return
+    if (saving.value || uploading.value || isLocalReturnReceipt(detail.value)) return
     editing.value = detail.value.id
     const row = detail.value
     Object.assign(form, { invoice_id: row.invoice_id, amount: Number(row.amount), collection_date: row.collection_date,
@@ -110,8 +121,8 @@ export function useReceipts() {
   async function submit() {
     if (saving.value || uploading.value) return
     error.value = ''
-    if (!form.invoice_id || !form.amount || !form.collection_date || !form.payment_type || !form.attachment_ids.length) {
-      error.value = '请选择订单，填写金额、日期、回款方式，并上传回款截图'; return
+    if (!form.invoice_id || !form.amount || !form.collection_date || !form.payment_type) {
+      error.value = '请选择订单，填写金额、日期、回款方式'; return
     }
     if (!editing.value && (!balance.value || balance.value.funding_mode !== 'presale_pool' && Number(form.amount) > Number(balance.value.remaining_amount))) {
       error.value = '本次金额超过可登记余额，或余额尚未核验'; return
@@ -135,18 +146,19 @@ export function useReceipts() {
       // Keep request key after unknown HTTP outcome. Never turn a retry into a new receipt.
     } finally { saving.value = false }
   }
-  async function retry(row) { if (saving.value) return; saving.value = true; try { detail.value = await api.retryReceipt(row.id); await page.refreshUpdate(); msgSuccess('已加入同步队列') } finally { saving.value = false } }
+  async function retry(row) { if (saving.value || isLocalReturnReceipt(row)) return; saving.value = true; try { detail.value = await api.retryReceipt(row.id); await page.refreshUpdate(); msgSuccess('已加入同步队列') } finally { saving.value = false } }
   async function reason(title) {
     try { return (await promptAction('请填写核对依据或原因（至少 2 个字符）', title, { inputPattern: /\S.{1,}/, inputErrorMessage: '请填写原因' })).value }
     catch { return null }
   }
-  async function voidCurrent() { const why = await reason('作废本地回款'); if (!why) return; detail.value = await api.voidReceipt(detail.value.id, why); await page.refreshUpdate() }
+  async function voidCurrent() { if (isLocalReturnReceipt(detail.value)) return; const why = await reason('作废本地回款'); if (!why) return; detail.value = await api.voidReceipt(detail.value.id, why); await page.refreshUpdate() }
   async function reconcile() {
-    if (saving.value) return; saving.value = true
+    if (saving.value || isLocalReturnReceipt(detail.value)) return; saving.value = true
     try { const res = await api.reconcileReceipt(detail.value.id); detail.value = res.receipt; candidates.value = res.candidates; await page.refreshUpdate(); msgSuccess(res.candidates.length ? '已找到候选，请管理员核对' : '小满查询已完成') }
     finally { saving.value = false }
   }
   async function resolve(resolution) {
+    if (isLocalReturnReceipt(detail.value)) return
     let remoteId = null
     if (resolution === 'bind_receipt') {
       try { remoteId = (await promptAction('填写小满回款 ID（不是订单 ID）', '绑定小满回款', { inputPattern: /^\d+$/, inputErrorMessage: '请输入数字回款 ID' })).value }

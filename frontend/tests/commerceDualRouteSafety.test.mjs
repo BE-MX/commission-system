@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { localShipmentIdentity, localShipmentCan } from '../src/views/shipping/composables/outboundIdentity.js'
-import { buildInvoicePayload, emptyInvoiceForm } from '../src/views/invoice/composables/invoiceEditorState.js'
+import { buildInvoicePayload, emptyInvoiceForm, normalizeHairRow } from '../src/views/invoice/composables/invoiceEditorState.js'
 import { shadowReplayPayload } from '../src/views/commerce-transition/shadowRequest.js'
 import { invoiceIsLocal, routeEditable } from '../src/views/commerce-transition/routeState.js'
 
@@ -71,4 +71,18 @@ test('pure prepayment replay carries payment/customer identity without inventing
  assert.equal(body.through_observation_id, 90)
  assert.throws(() => shadowReplayPayload({ ...body, payment_ids: '', local_customer_ids: '' }))
  assert.throws(() => shadowReplayPayload({ ...body, invoice_ids: '9007199254740993' }))
+})
+
+
+test('adding a local SKU retains the existing invoice group contract', () => {
+ const source = readFileSync(new URL('../src/views/commerce-transition/LocalInvoiceLines.vue', import.meta.url), 'utf8')
+   .match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*\r?\n/gm, '')
+ const form = { ...emptyInvoiceForm(), item_groups: [{ key: 'existing-group', name: 'Current group', sort_order: 1 }] }
+ const { add, select } = new Function('defineProps', 'normalizeHairRow', `${source}; return { add, select }`)(() => ({ form }), normalizeHairRow)
+ add()
+ select(form.items[0], { id: 9, label: 'Native SKU' })
+ const body = buildInvoicePayload(form)
+ assert.equal(body.items[0].group_key, 'existing-group')
+ assert.equal(body.items[0].local_sku_id, 9)
+ assert.equal(body.item_groups[0].key, body.items[0].group_key)
 })

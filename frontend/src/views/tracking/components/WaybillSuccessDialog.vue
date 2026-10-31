@@ -150,7 +150,7 @@
       <!-- 底部按钮 -->
       <div class="dialog-footer">
         <el-button class="btn-secondary" @click="handleClose">关闭</el-button>
-        <GlassButton variant="primary" size="lg" @click="handleContinue">继续上传</GlassButton>
+        <GlassButton v-if="allowContinue" variant="primary" size="lg" @click="handleContinue">继续上传</GlassButton>
       </div>
     </div>
   </el-dialog>
@@ -169,6 +169,8 @@ import {
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   resultData: { type: Object, required: true },
+  // 验货单弹框里一次只关联一张运单，不提供「继续上传」
+  allowContinue: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['update:modelValue', 'continue'])

@@ -5,7 +5,7 @@ import re
 import qrcode
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_ROW_HEIGHT_RULE
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
@@ -124,6 +124,14 @@ def build_outbound_word(record: dict, items: list[dict], qr_data: str) -> bytes:
     normal.font.name, normal.font.size = "Microsoft YaHei", Pt(9.75)
     title = doc.add_paragraph()
     _run(title, "出库单", 16.5, True)
+    marks = []
+    if record.get("is_new_deal") is True:
+        marks.append("新签")
+    if record.get("inspection_requirement") == "detail":
+        marks.append("拍摄明细照片")
+    if marks:
+        title.paragraph_format.tab_stops.add_tab_stop(Mm(198), WD_TAB_ALIGNMENT.RIGHT)
+        _run(title, "\t" + "　".join(marks), 18, True)
     number = doc.add_paragraph()
     _run(number, f"单号：{record.get('outbound_no', '')}")
     _line(number)

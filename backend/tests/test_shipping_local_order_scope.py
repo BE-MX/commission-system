@@ -19,7 +19,6 @@ def local_order(db, outbound_scope_seed, request):
     other = _user(db, "other-sales")
     _bind_okki(db, other, "9003")
     db.execute(text("DELETE FROM lsordertest.okki_orders WHERE company_id='C1'"))
-    db.execute(text("ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN order_id TEXT"))
     db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET order_id='LOCAL-ORDER' WHERE outbound_record_id='OB001'"))
     if request.param:
         db.execute(text("ALTER TABLE lsordertest.okki_outbound_records ADD COLUMN outbound_invoice_id TEXT"))
@@ -98,3 +97,14 @@ def test_same_customer_unrelated_outbound_is_not_granted_by_local_invoice(db, lo
     rows, total = outbound_service.list_outbound_records(db, okki_user_id="9001")
     assert total == 1
     assert [r["outbound_record_id"] for r in rows] == ["OB001"]
+
+
+@pytest.mark.parametrize("company,owner", [("C1", "9003"), ("OTHER", "9001"), ("C1", None)])
+def test_existing_order_mirror_prevents_stale_local_ownership_from_granting_access(db, local_order, company, owner):
+    db.execute(text("INSERT INTO lsordertest.okki_orders (order_id,company_id,user_id) "
+                    "VALUES ('LOCAL-ORDER',:company,:owner)"), {"company": company, "owner": owner})
+    db.commit()
+    assert outbound_service.list_outbound_records(db, okki_user_id="9001") == ([], 0)
+    assert outbound_service.get_outbound_record(db, "OB001", okki_user_id="9001") is None
+    if company == "C1" and owner == "9003":
+        assert outbound_service.get_outbound_record(db, "OB001", okki_user_id="9003") is not None

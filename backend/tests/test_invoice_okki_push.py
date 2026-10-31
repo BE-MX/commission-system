@@ -597,9 +597,11 @@ def test_push_blocked_without_department(db):
 
 def test_resolve_okki_flags_history_fallback(db):
     from sqlalchemy import text as sa_text
-    # 该客户在 OKKI 已有历史订单 → 新成交兜底为否；运费 0 → 包邮兜底为是
+    # 该客户在 OKKI 已有两张有效历史订单（复购）→ 新成交兜底为否、首返兜底为否；
+    # 运费 0 → 包邮兜底为是
     db.execute(sa_text(
-        "INSERT INTO lsordertest.okki_orders (order_id, company_id) VALUES ('H1', '123456')"
+        "INSERT INTO lsordertest.okki_orders (order_id, company_id, status) VALUES "
+        "('H1', '123456', '13972831656'), ('H2', '123456', '13972831656')"
     ))
     invoice = _make_invoice(db, shipping_fee=Decimal("0"))
     db.flush()
@@ -626,19 +628,117 @@ def test_customer_contact_defaults_returns_last_order_date(db):
     # 该客户两张历史单，取 account_date 最新的一张（DESC LIMIT 1）；新成交客户返回 None。
     # account_date 生产是真 DATE 列、只按 IS NOT NULL 过滤（不写 != ''，见 service 注释）
     db.execute(sa_text(
-        "INSERT INTO lsordertest.okki_orders (order_id, company_id, account_date) VALUES "
-        "('O1', '900001', '2026-05-18'),"
-        "('O2', '900001', '2026-06-30')"
+        "INSERT INTO lsordertest.okki_orders (order_id, company_id, account_date, status) VALUES "
+        "('O1', '900001', '2026-05-18', '13972831656'),"
+        "('O2', '900001', '2026-06-30', '13972831656')"
     ))
     db.flush()
     defaults = service.get_customer_contact_defaults(db, "900001")
     assert defaults["has_xiaoman_orders"] is True
     assert defaults["last_order_date"] == "2026-06-30"
+    # 两张历史单=复购，本单不再是首返
+    assert defaults["first_return_default"] == 0
 
     # 无历史订单 → 新成交 → 无上次订单日期
     fresh = service.get_customer_contact_defaults(db, "900999")
     assert fresh["has_xiaoman_orders"] is False
     assert fresh["last_order_date"] is None
+    assert fresh["first_return_default"] == 0
+
+
+def test_first_return_defaults_to_second_order(db):
+    """客户恰好一张有效历史订单：本单是第一次返单 → 首返预判=是。
+
+    2026-10-29 翟 #261060 暴露：新成交有智能默认，首返固定否，导致第二单被推成非首返。
+    """
+    from sqlalchemy import text as sa_text
+    db.execute(sa_text(
+        "INSERT INTO lsordertest.okki_orders (order_id, company_id, account_date, status) VALUES "
+        "('F1', '900101', '2026-10-22', '13972831656')"
+    ))
+    db.flush()
+    assert service.customer_order_count(db, "900101") == 1
+    assert service.customer_first_return_default(db, "900101") == 1
+    defaults = service.get_customer_contact_defaults(db, "900101")
+    assert defaults["has_xiaoman_orders"] is True
+    assert defaults["first_return_default"] == 1
+
+    # 后端空值兜底与前端预判同口径（门户/外部接入口不传该字段）
+    invoice = _make_invoice(db, customer_id="900101")
+    invoice.okki_first_return = None
+    assert service.resolve_okki_flags(db, invoice)["okki_first_return"] == 1
+
+
+def test_first_return_counts_exclude_own_pushed_order(db):
+    """本发票已推出/截图来源的订单不能算作历史单，否则会翻转首返。"""
+    from sqlalchemy import text as sa_text
+    db.execute(sa_text(
+        "INSERT INTO lsordertest.okki_orders (order_id, company_id, status) VALUES "
+        "('OWN1', '900102', '13972831656'),"  # 只有本单：排除后 0 张 → 新成交，不是首返
+        "('OWN2', '900103', '13972831656'), ('HIS1', '900103', '13972831656')"
+        # 本单 + 一张历史 → 排除本单后 1 张 → 首返
+    ))
+    db.flush()
+    assert service.customer_first_return_default(db, "900102", exclude_order_id="OWN1") == 0
+    assert service.customer_first_return_default(db, "900103", exclude_order_id="OWN2") == 1
+
+    # 截图导入路径把本单订单号透传给 contact-defaults
+    defaults = service.get_customer_contact_defaults(db, "900103", exclude_order_id="OWN2")
+    assert defaults["has_xiaoman_orders"] is True
+    assert defaults["first_return_default"] == 1
+
+
+def test_first_return_ignores_invalid_and_personal_orders(db):
+    """首返只数有效成交单：作废单和个人单不应把第一次返单顶成复购。"""
+    from sqlalchemy import text as sa_text
+    db.execute(sa_text(
+        "INSERT INTO lsordertest.okki_orders "
+        "(order_id, company_id, status, status_name, trail) VALUES "
+        "('V1', '900201', '999', NULL, NULL),"  # 唯一一单是作废单 → 不是首返
+        "('OK1', '900202', '13972831654', '已结清', NULL),"
+        "('V2', '900202', '999', NULL, NULL),"  # 唯一有效单是已结清 → 本单首返
+        "('P1', '900203', '13972831656', NULL, '{\"个人\": true}')"  # 个人单不计
+    ))
+    db.flush()
+    assert service.customer_first_return_default(db, "900201") == 0
+    assert service.customer_first_return_default(db, "900202") == 1
+    assert service.customer_first_return_default(db, "900203") == 0
+
+
+def test_resolve_okki_flags_excludes_own_order_in_both_entry_paths(db):
+    """中 6：已推单和截图来源两条路径，兜底都要排除本单，避免自指翻转。"""
+    from sqlalchemy import text as sa_text
+    db.execute(sa_text(
+        "INSERT INTO lsordertest.okki_orders (order_id, company_id, status) VALUES "
+        "('PUSHED', '900301', '13972831656'), ('H3', '900301', '13972831656'),"
+        "('SHOT', '900302', '13972831656'), ('H4', '900302', '13972831656'),"
+        "('SHOT_ONLY', '900303', '13972831656')"
+    ))
+    db.flush()
+
+    # 已推单：本单 PUSHED 已在投影，历史只有 H3 → 首返=是
+    pushed = _make_invoice(db, customer_id="900301", xiaoman_order_id="PUSHED",
+                           invoice_no="INV-FR-PUSHED")
+    pushed.okki_first_return = pushed.okki_new_deal = None
+    flags = service.resolve_okki_flags(db, pushed)
+    assert flags["okki_first_return"] == 1
+    assert flags["okki_new_deal"] == 0
+
+    # 截图导入：本单 SHOT 在 OKKI 已存在，历史 H4 → 首返=是
+    shot = _make_invoice(db, customer_id="900302", source_type="okki_screenshot",
+                         source_order_id="SHOT", invoice_no="INV-FR-SHOT")
+    shot.okki_first_return = shot.okki_new_deal = None
+    flags = service.resolve_okki_flags(db, shot)
+    assert flags["okki_first_return"] == 1
+    assert flags["okki_new_deal"] == 0
+
+    # 截图订单是客户唯一一单 → 排除后无历史 → 新成交，不是首返
+    only = _make_invoice(db, customer_id="900303", source_type="okki_screenshot",
+                         source_order_id="SHOT_ONLY", invoice_no="INV-FR-ONLY")
+    only.okki_first_return = only.okki_new_deal = None
+    flags = service.resolve_okki_flags(db, only)
+    assert flags["okki_first_return"] == 0
+    assert flags["okki_new_deal"] == 1
 
 
 def test_okki_department_options_aggregation(db):

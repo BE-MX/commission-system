@@ -7,7 +7,7 @@
         @saving="value => { remarkSaving = value; $emit('remark-saving', value) }"
         @updated="remarkUpdated" />
     </el-form-item>
-    <p class="proof-note">截图可在这里移除或重新上传；至少保留一张，点击保存后生效。</p>
+    <p class="proof-note">回款截图选填，可在这里移除或重新上传，点击保存后生效。</p>
     <ReceiptProofs v-model="attachmentIds" :readonly="locked || loading || saving || remarkEditing || remarkSaving || version == null" @uploading="onUploading" />
     <p v-if="error" class="proof-error" role="alert">{{ error }}</p>
     <div class="proof-actions">
@@ -73,10 +73,6 @@ async function load() {
 
 async function save() {
   if (props.locked || saving.value || uploading.value || remarkEditing.value || remarkSaving.value || !changed.value) return
-  if (!attachmentIds.value.length) {
-    error.value = '请先重新上传截图；回款单至少保留一张凭证'
-    return
-  }
   saving.value = true
   error.value = ''
   const receiptId = props.receiptId

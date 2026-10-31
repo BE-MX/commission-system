@@ -1,6 +1,7 @@
 """Whitelisted SQL values for merged outbound sorting before pagination."""
 from sqlalchemy import literal_column
 
+from app.shipping_inspection import constants as C
 from app.shipping_inspection import outbound_service as records, record_query_service
 
 QUEUE_SORT_FIELDS = frozenset(("outbound_no", "order_id", "customer_name", "outbound_date",
@@ -18,7 +19,13 @@ def mirror_sort_value(db, field, rm, im, link, schema):
         rid += " COLLATE utf8mb4_unicode_ci"
     inspection = f"FROM ark_shipping_inspections si WHERE si.outbound_record_id={rid}"
     if field == "status":
-        return f"COALESCE((SELECT si.status {inspection}), 'none')"
+        # 与列表展示同口径：历史单据（出库日期早于分界、无验货单）按已提交；真实验货单优先。
+        fallback = "'none'"
+        if rm.get("outbound_date"):
+            date_col = records._col(rm, "outbound_date", "r")
+            fallback = (f"CASE WHEN {date_col} IS NOT NULL AND {date_col} < "
+                        f"'{C.LEGACY_OUTBOUND_BEFORE.isoformat()}' THEN 'submitted' ELSE 'none' END")
+        return f"COALESCE((SELECT si.status {inspection}), {fallback})"
     if field == "photo_count":
         return f"COALESCE((SELECT CASE WHEN si.status='draft' THEN (SELECT COUNT(*) FROM ark_shipping_inspection_photos p WHERE p.inspection_id=si.id AND p.media_type='image') ELSE si.photo_count END {inspection}), 0)"
     if field == "outbound_state":

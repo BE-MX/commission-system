@@ -14,8 +14,7 @@ def records_with_sales(db, scoped_inspections, request):
     records[0].submitted_by, records[1].submitted_by = one.id, two.id
     records[0].submitted_at = datetime(2026, 9, 16, 23, 59, 59)
     records[1].submitted_at = datetime(2026, 9, 17, 0, 0, 0)
-    db.execute(text('ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN order_id TEXT'))
-    for oid, uid, company, name in [('OA','UA','C001','Eva'),('OB','UB','C002','Tessie'),('OTHER','UX','C001','Rainy')]:
+    for oid, uid, company, name in [('OA','UA','C1','Eva'),('OB','UB','C2','Tessie'),('OTHER','UX','C1','Rainy')]:
         db.execute(text('INSERT INTO lsordertest.okki_orders (order_id,user_id,company_id) VALUES (:oid,:uid,:company)'), {'oid':oid,'uid':uid,'company':company})
         db.execute(text('INSERT INTO lsordertest.user_basic (user_id,full_name) VALUES (:uid,:name)'), {'uid':uid,'name':name})
     db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET order_id=CASE WHEN outbound_record_id='OB001' THEN 'OA' ELSE 'OB' END"))
@@ -51,6 +50,8 @@ def test_combined_filters_and_order_salespeople(db, records_with_sales):
 
 def test_salesperson_filter_cannot_expand_read_scope(db, records_with_sales):
     sales, records=records_with_sales
+    db.execute(text("UPDATE ark_user_external_bindings SET external_account_id='UA' WHERE ark_user_id=:uid"), {"uid": sales.id})
+    db.commit()
     with _pc_client(db,sales,[READ]) as client:
         assert client.get('/api/shipping-inspection/records',params={'salesperson_name':'Tessie'}).json()['data']['total']==0
         assert client.get('/api/shipping-inspection/records',params={'salesperson_name':'Eva'}).json()['data']['total']==1

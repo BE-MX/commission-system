@@ -273,7 +273,7 @@ nssm start CommissionSystem    # 正常启动
 - `WHATSAPP_SYNC_MESSAGES_PER_CHAT` — 每会话拉取消息数上限（默认 100）
 - `WHATSAPP_EVENT_SYNC_INTERVAL_SECONDS` / `WHATSAPP_EVENT_SYNC_BATCH_SIZE` — Baileys 事件调度间隔/批次上限（默认 5/500，必须为正数）。
 
-**Baileys 连接与同步（2026-10-13，本地候选，未部署）**：公司专用业务号明确授权全部会话（含群聊）；正文读者、CRM 共享、AI 外发分别授权，管理员默认只看元数据。二维码仅内存保存，事件按变更序号消费，编辑/撤回有 revision 与 tombstone，展示实际覆盖和历史缺口。单机加密 SQLite、账号租约及代际/授权 fence；Node >=22.13。旧数据保留，切换需手机重新关联，不能导入旧浏览器凭据。详见 [实现约定](requirements/2026-10-13-whatsapp-baileys.md)、[验收报告](reports/2026-10-13-whatsapp-baileys.md)；运行配置见 Connector README 与 runbook。
+**Baileys 连接与同步（2026-10-13 契约）**：公司专用业务号明确授权全部会话（含群聊）；正文读者、CRM 共享、AI 外发分别授权，管理员默认只看元数据。二维码仅内存保存，事件按变更序号消费，编辑/撤回有 revision 与 tombstone，展示实际覆盖和历史缺口。单机加密 SQLite、账号租约及代际/授权 fence；Node >=22.13。旧数据保留，切换需手机重新关联，不能导入旧浏览器凭据。详见 [实现约定](requirements/2026-10-13-whatsapp-baileys.md)、[验收报告](reports/2026-10-13-whatsapp-baileys.md)；运行配置见 Connector README 与 runbook。
 
 ## Design System
 
@@ -845,7 +845,7 @@ frontend/src/
 ### 企业必填字段（2026-07-13 首推真单被拒后接线；字段定义来自 GET /v1/invoices/order/fields——**复数**，单数路径 404）
 - **业绩归属部门 departments**：挂业务员用户设置（ark_users.okki_department_id，用户管理页「OKKI部门」下拉），推单传 `[{department_id, rate:100}]`，未设置 fail-fast。选项无官方 API（多候选路径实测 404），从业务库 okki_orders.departments 实时聚合；**department_id=0（我的企业）是合法值，禁止 falsy 判断**（前后端都栽过）
 - **4 个自定义字段**（payload 顶层 key=字段 ID 字符串，值=选项文本）：订单类型 691123983470（规格品/定制品，order_type 自动映射零人工）、是否新成交 22595163468、是否包邮 20528077262544、是否首返 20528142733548（均是/否）
-- 三标记存发票（okki_* 三列），录单页「小满标记」开关智能默认：新成交=客户在 okki_orders 无历史订单（contact-defaults 返回 has_xiaoman_orders 预判；兜底查询排除本单已推订单防自指翻转）、包邮=运费为 0（watch 联动，碰过开关不再自动改）、首返=否；NULL 推单时服务端同口径兜底
+- 三标记存发票（okki_* 三列），录单页「小满标记」开关智能默认：新成交=客户在 okki_orders 无历史订单（contact-defaults 返回 has_xiaoman_orders 预判；兜底查询排除本单已推订单防自指翻转）、包邮=运费为 0（watch 联动，碰过开关不再自动改）、首返=客户恰好一张有效历史订单（已结束/已结清，排除个人单；contact-defaults 返回 first_return_default；截图导入传 exclude_order_id 排除本单，服务端兜底对本单已推单/截图来源单同口径排除；碰过开关不再自动改）；NULL 推单时服务端同口径兜底
 - 新建订单选客户时，`contact-defaults.remark` 复用该客户最近一张方舟订单发票的备注（created_at DESC、id DESC）；独立于“最近一张带联系信息”查询，最新备注为空/NULL 或无历史则留空，不回退旧备注。新旧下单抽屉共用编辑器；切客户立即清空旧备注，过期响应及请求期间手动修改/清空不覆盖当前输入，同公司仅切联系人不重填，编辑既有单不替换本单备注。保存沿用当前表单 remark，无额外库表或推单动作。
 
 ### 推单字段映射（2026-07-13 落地，`xiaoman_service.build_push_payload`）
@@ -1033,7 +1033,7 @@ AI 经营简报为数据库持久化后台任务，页面轮询 `queued/running/
 
 ## 企业知识库（2026-08-09 POC，2026-08-13 图片 + AI 优化）
 
-**发布状态**：本地 main 已提交，**尚未 push origin、尚未部署生产**（2026-08-10 实测线上 `/api/knowledge/libraries` 404）。
+**历史核验**：2026-08-10 曾测得线上 `/api/knowledge/libraries` 404；该记录不代表当前发布状态。当前源码注册与后续发布分别见 `backend/app/routers.py` 和[交接文档](handoff.md)。
 
 代码边界：后端 `app/knowledge/`（`router.py` / `models.py` / `schemas.py` / `service.py` + `access.py` ACL + `content.py` Tiptap JSON 白名单），前端 `views/knowledge/`（`KnowledgeWorkbench.vue` 薄壳 + `knowledgeState.js` + `components/`），MCP 适配器 `app/mcp/knowledge_tools.py`。HTTP 与 MCP 不各自实现权限，而是共同调用 knowledge service。
 
@@ -1070,9 +1070,9 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 编辑器工具栏、文件拖放及剪贴板 `files/items` 都进入同一上传链路。前端先插入带进度的临时 `knowledgeImage`，成功后只持久化 `assetId/alt/caption`；有上传中或失败节点时禁止保存。服务端仅接受 JPEG/PNG/WebP，验证真实格式、像素数与大小后用 Pillow 重新编码（移除 EXIF/文本元数据并缩放最长边），原子写入 `KNOWLEDGE_STORAGE_ROOT`。不得把该目录挂到 Nginx `/uploads`。
 
-公告复用上述上传链路。2026-10-14 本地修复：图片请求单独使用 180 秒超时，普通知识库请求仍为 30 秒；超过 400KiB 的 JPEG/PNG/WebP 在浏览器尝试按服务端 2400px 上限重编码，仅采用更小且同格式的结果，PNG/WebP 保留透明背景；超过 10MiB 或 60MP 的输入交回服务端按其配置验证。传输达到 100% 后显示后端处理阶段；超时、断网、413 和业务错误分别说明原因，不自动重发。启用 `knowledge` COS 时，浏览器先上传业务后端，后端验证并规范化后写 COS；存储位置不能证明网络或处理速度。验证见 [大图上传修复](reports/2026-10-14-announcement-large-image.md)，用户已授权 Git 合并推送，结果以远端回读为准；未部署。
+公告复用上述上传链路。2026-10-14 本地修复：图片请求单独使用 180 秒超时，普通知识库请求仍为 30 秒；超过 400KiB 的 JPEG/PNG/WebP 在浏览器尝试按服务端 2400px 上限重编码，仅采用更小且同格式的结果，PNG/WebP 保留透明背景；超过 10MiB 或 60MP 的输入交回服务端按其配置验证。传输达到 100% 后显示后端处理阶段；超时、断网、413 和业务错误分别说明原因，不自动重发。启用 `knowledge` COS 时，浏览器先上传业务后端，后端验证并规范化后写 COS；存储位置不能证明网络或处理速度。验证见 [大图上传修复](reports/2026-10-14-announcement-large-image.md)，当前交付与运行状态见[交接文档](handoff.md)。
 
-图片展示（2026-10-14，`codex/announcement-image-ratio` Git 交付，用户已授权合并推送，结果以远端回读为准；未部署）：公告编辑器和知识库复用 `KnowledgeImageView`，已加载图片去掉 figure 内边距/边框与灰底，不设 640px 高度上限；图片宽高自动、只在超过正文宽度时等比缩小，小图不放大，长图通过正文滚动完整查看。编辑态选中时仅在图片本身显示不占布局的 outline；加载/上传/失败状态仍有状态占位，说明和删除控件保留。此变更只控制显示，不改变上传规范化、私有资产与保存内容。
+图片展示（2026-10-14 实现约定）：公告编辑器和知识库复用 `KnowledgeImageView`，已加载图片去掉 figure 内边距/边框与灰底，不设 640px 高度上限；图片宽高自动、只在超过正文宽度时等比缩小，小图不放大，长图通过正文滚动完整查看。编辑态选中时仅在图片本身显示不占布局的 outline；加载/上传/失败状态仍有状态占位，说明和删除控件保留。此变更只控制显示，不改变上传规范化、私有资产与保存内容。
 
 图片读取永远走 `/api/knowledge/assets/{id}/content`：临时图仅上传者，已附着草稿图仅编辑者，待审修订图对 reviewer，已发布修订图对库内 reader。无权统一 404。修订保存会冻结图片引用；每日 03:45 清除超过 `KNOWLEDGE_IMAGE_DRAFT_TTL_HOURS` 且从未附着的临时图。MCP 仍不返回文件，只把 caption/alt 写入派生纯文本。
 
@@ -1195,6 +1195,8 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 
 ### 2026-09-23 出库单列表加载
 
+**2026-10-30 归属规则修正**：下述历史优化记录中的“同客户历史订单”不再作为授权依据。`outbound_service._owner_scope_clause` 改为按出库明细桥关联实际 `order_id → okki_orders.user_id`，同时校验单头/订单客户；同一出库单多个实际订单归属人均可见，结果去重。本地首推仅在该订单镜像缺失时使用成功 create 日志和有效业务员绑定，已有镜像的实际归属优先。队列预览使用同一优先级，避免归属变化后旧本地 task 重新出现。缺关联不放行，缺关联列报错，不退回客户级授权。列表、打印/Word、库存、看板、验货记录及媒体继承同一范围；全量权限不变。实单“罗馨瑜浅色库存1046”出库记录 93851 曾因同客户 2023-07-10 的宋化通历史订单 8499 而对其可见；候选只读实库验证宋化通列表 0 条、详情不可见，罗馨瑜仍可访问。
+
 `/shipping/outbound` 首次加载慢的主要耗时在后端归属过滤：旧查询对每张镜像单重复扫描本地发票，并把同一出库队列的计数、分页各算一次。`outbound_service._owner_scope_clause` 现在先按有效 OKKI 绑定、成功创建日志、精确订单和客户关系汇成可见出库关联；MySQL 固定从绑定/发票走索引连接，避免相关子查询放大。`outbound_queue_service` 用窗口计数与分页同查，空页单独补总数；当页同步状态批量读取。权限口径、待出库去重和打印数据未变。只读实库同一 20 条列表口径：普通业务员约 12.2 秒降到 0.73 秒，管理员约 1.8 秒降到 0.75 秒；这是服务层单次测量，不含浏览器网络和渲染。
 
 2026-10-14 继续优化镜像归属分支：`company_id IN (SELECT company_id FROM okki_orders WHERE user_id=:scope_okki_user_id)` 取代逐出库记录相关 `EXISTS`，避免对同一客户的订单重复探测；本地方舟首推订单归属分支保持原规则。首页无结果直接返回总数 0，只有后续越界空页补查总数。北京云端对「翟 #261023」按实际数据执行只读处理函数对比，带归属权限的中位耗时从 540ms 降至 134ms，首次列表从 708ms 降至 151ms；6 组完整响应摘要一致。此为独立诊断进程中的候选代码测量，不含 HTTP 网络/浏览器渲染，也不代表已部署。见[验证记录](reports/2026-10-14-outbound-search-performance.md)。
@@ -1218,6 +1220,12 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 照片墙改用原鉴权媒体端点的 `preview=true` JPEG预览（最长边640像素、质量75），最多3个并发，逐张显示并保留失败重试；请求不占用全局加载遮罩。预览器打开时冻结当时的照片顺序，晚到照片不切换当前画面。“查看原图”才下载原件（单独300秒超时），切单或关闭抽屉取消请求、回收对象URL。打印、PDF和原始证据仍取原件。
 
 预览沿用媒体权限/归属与存储物化校验，快照后释放DB事务才读文件；只在内存生成派生图，不写回原件或业务数据。JPEG先draft降采样；降采样后仍超过2500万像素则拒绝预览，仍可按需读原图。先缩小再处理EXIF方向，避免复制原尺寸大图。预览损坏/不可读返回503，不静默回退下载大原图。此记录说明本地修复，发布状态以handoff为准。
+
+### 2026-10-29 验货单上传物流单（录入＋关联一步完成）
+
+验货单列表操作列与详情抽屉都有「上传物流单 / 更换物流单」，打开同一个弹框 `InspectionShipmentDialog`，复用物流跟踪「运单上传」的表单（`tracking/components/WaybillUploadForm.vue` + `useWaybillUpload`，独立页面行为不变）。收件人与国家按订单客户预填，OCR 识别出的值优先，识别不到才回落到预填值。保存时调用 `POST /api/shipping-inspection/records/{id}/shipment`：先查验货单版本与两项实时权限，再走物流跟踪原入库流程，最后关联验货单。前置校验放在入库之前，避免版本过期时留下孤儿运单。入库已提交而关联失败时，提示“已录入物流跟踪”，弹框自动刷新版本号，用户可直接用重复提示里的「关联这张已有运单」补关联（一张运单可装多张出库单）。关联前先调 `shipment-candidate` 核对：不在查看范围内直接说明原因（找录入人关联或申请查看全部物流），不给必败按钮；在范围内则把运单收件人/国家与本单客户并排确认，不一致时警告。入口要求 `tracking:write`，只有 `tracking:read` 的用户不再有关联入口（有意收紧：录入与关联合成一个动作）。
+
+踩坑：原关联校验要求 `source_image_url`，但 PC 运单上传从不存图（该字段只有钉钉暂存来源才有），导致 PC 录入的运单永远关联不上。现已去掉图片门槛，客户门户的发货可见性同步去掉图片过滤：员工显式关联即视为确认，手录运单关联后也会在门户展示。
 
 ### 2026-09-17 手机验货单查询入口
 

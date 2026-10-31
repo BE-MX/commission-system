@@ -13,7 +13,8 @@
 
 confirmed 是单向门：进去之后除 admin 解锁外任何写操作都该被 `assert_writable` 拦掉。
 解锁不是「回到 reviewing 当无事发生」——按决策 A4，前次导出要作废，所以解锁必须带
-原因并留痕，`unlocked_at` / `unlock_reason` 就是导出时判断要不要打作废水印的依据。
+原因并留痕。作废本身按 `status_version` 判（解锁必然抬版本，见 export_service），
+`unlocked_at` / `unlock_reason` 与 unlock 事件给出作废的时间与原因。
 
 应出天数口径（决策 B1）：满月取 `full_month_days=31`（**不是**当月自然日——2 月也是 31，
 这是 HR 的固定基准，跟日历无关）；月中入离职或实出 < 15 天的人改取当月工作日数。
@@ -36,7 +37,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.salary import service
-from app.salary.models import SalaryPeriod, SalaryPeriodEvent
+from app.salary.models import SalaryEmployeeProfile, SalaryPeriod, SalaryPeriodEvent, SalaryRecord
 
 logger = logging.getLogger("commission")
 
@@ -75,6 +76,8 @@ EVENT_LABELS = {
     "import_fund": "导入公积金",
     "calculate": "计算工资",
     "record_edit": "修改工资明细",
+    "remove_records": "移出名单外明细",
+    "export": "导出工资表",
 }
 
 STATUS_LABELS = {
@@ -398,18 +401,58 @@ def confirm(
     expected_version: Optional[int] = None,
     operator_id: Optional[int] = None,
 ) -> SalaryPeriod:
-    """锁定批次。档案快照冻结在 M4 接进来，这里只管状态与留痕。
+    """锁定批次：冻结档案快照 + 跃迁，同一个事务提交。
+
+    快照（工号/姓名/部门/大部门/职务/银行卡密文/开户行/入职日期/参保主体）写进每行明细，此后
+    明细表、汇总表、银行盘一律读快照而不回查活档案（设计 §4）——否则锁定后
+    有人改了银行卡，已锁定的月份就静默换了收款卡。快照与状态必须同一次 commit：
+    快照写了但跃迁被并发抢先，或跃迁成功但快照没写，都是「锁了却没冻住」。
 
     confirmed_at / confirmed_by 必须**跟状态同一条 UPDATE** 落库。分成两次写会开一个
     窗口：A 的 confirm 提交后、补时间戳前，B 完成一次 unlock，A 的第二条裸 UPDATE
-    就把 confirmed_at 盖到已解锁的行上，造成 confirmed_at > unlocked_at 的假象——
-    而 M4 正是靠这两个时间戳的先后判断前次导出要不要打作废水印（A4）。
+    就把 confirmed_at 盖到已解锁的行上，造成 confirmed_at > unlocked_at 的假象，
+    批次页与审计看到的锁定/解锁先后就是错的。
     """
-    return transition(
-        db, period, STATUS_CONFIRMED,
-        expected_version=expected_version, operator_id=operator_id,
-        extra_values={"confirmed_at": beijing_now(), "confirmed_by": operator_id},
-    )
+    now = beijing_now()
+    try:
+        _freeze_record_snapshots(db, period, now)
+        return transition(
+            db, period, STATUS_CONFIRMED,
+            expected_version=expected_version, operator_id=operator_id,
+            extra_values={"confirmed_at": now, "confirmed_by": operator_id},
+        )
+    except Exception:
+        # transition 的前置校验（跃迁非法 / 版本落后）直接抛、不回滚，
+        # 不在这里丢掉已改脏的快照列，它们会被同一 session 后续任意一次 commit 带进库
+        db.rollback()
+        raise
+
+
+def _freeze_record_snapshots(db: Session, period: SalaryPeriod, now: datetime) -> None:
+    """把活档案的展示与收款字段抄进本批次每行明细。只改 session，不 commit。"""
+    records = db.query(SalaryRecord).filter(SalaryRecord.period_id == period.id).all()
+    if not records:
+        return
+    profiles = {
+        p.id: p for p in db.query(SalaryEmployeeProfile)
+        .filter(SalaryEmployeeProfile.id.in_({r.employee_id for r in records}))
+    }
+    dept_map = service.load_dept_group_map(db)
+    for r in records:
+        p = profiles.get(r.employee_id)
+        if p is None:
+            # 档案被删的行没法冻结；放行锁定会让这行永远没有收款信息，宁可拦
+            raise SalaryPeriodError(f"明细行 {r.id} 对应的员工档案不存在，无法锁定")
+        r.snap_emp_no = p.emp_no
+        r.snap_name = p.name
+        r.snap_dept_detail = p.dept_detail
+        r.snap_dept_group = service.resolve_dept_group(p, dept_map)
+        r.snap_position = p.position
+        r.snap_bank_card_cipher = p.bank_card_cipher
+        r.snap_bank_name = p.bank_name
+        r.snap_hire_date = p.hire_date
+        r.snap_insurance_entity = p.insurance_entity
+        r.snapshot_at = now
 
 
 def unlock(
@@ -423,11 +466,14 @@ def unlock(
     """管理员解锁（决策 A4）：回到复核中，并留下作废依据。
 
     reason 强制非空——解锁是要作废已发出去的表的，没有理由的解锁事后无法审计。
-    `unlocked_at` 一旦有值，导出侧就该给前次文件打「作废」水印（M4 实现）。
+    解锁之前的每次锁定导出都由 export_service 判为作废（按 status_version，见 export_history）。
+
+    解锁同时清掉明细行的 snapshot_at：解锁通常就是为了改档案（如银行卡录错），
+    复核期间应显示活档案；重新锁定时 confirm 会再冻一次。快照列本身留着，下次覆盖。
     """
     text = (reason or "").strip()
     if not text:
-        raise SalaryPeriodError("解锁必须填写原因（前次导出将被标记作废）")
+        raise SalaryPeriodError("解锁必须填写原因")
     if period.status != STATUS_CONFIRMED:
         raise SalaryPeriodError("只有已锁定的批次需要解锁")
 
@@ -450,6 +496,11 @@ def unlock(
     if result.rowcount == 0:
         db.rollback()
         raise SalaryStaleVersion("批次已被他人修改，请刷新后重试")
+    db.execute(
+        update(SalaryRecord)
+        .where(SalaryRecord.period_id == period.id)
+        .values(snapshot_at=None)
+    )
     db.commit()
     db.refresh(period)
 

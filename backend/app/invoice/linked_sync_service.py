@@ -24,11 +24,13 @@ def ensure_idle(invoice, linked_id=None):
         raise ValueError("订单关联同步尚未结束，请先查看处理结果")
 
 
-def edit_version(invoice):
+def edit_version(invoice, *, include_inspection=True):
     fields = {*service._HEADER_FIELDS, *service._SOURCE_FIELDS, "invoice_no", "sales_user_id", "customer_grade"}
+    if include_inspection:
+        fields.add("inspection_requirement")
     values = {k: getattr(invoice, k) for k in sorted(fields)}
     values["items"] = [{c.name: getattr(i, c.name) for c in i.__table__.columns
-        if c.name not in {"id", "invoice_id", "xiaoman_unique_id", "created_at", "updated_at"}} for i in invoice.items]
+        if c.name not in {"id", "invoice_id", "group_id", "xiaoman_unique_id", "created_at", "updated_at"}} for i in invoice.items]
     if getattr(invoice,'presale_order_revision',None):values['presale_order_revision']=business_config(invoice)
     return hashlib.sha256(json.dumps(values, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -37,11 +39,25 @@ def snapshot(invoice):
     from app.invoice.presale_lines import remote_items, remote_quantity, remote_amount
     items = remote_items(invoice) if invoice.order_type == "presale" else invoice.items
     return {**({'presale_order_revision':business_config(invoice)} if getattr(invoice,'presale_order_revision',None) else {}),
-            "edit_version": edit_version(invoice), "invoice_no": invoice.invoice_no, "customer_id": invoice.customer_id, "currency": invoice.currency,
+            "edit_version": edit_version(invoice), "inspection_requirement": invoice.inspection_requirement,
+            "invoice_no": invoice.invoice_no, "customer_id": invoice.customer_id, "currency": invoice.currency,
             "total_amount": str(invoice.total_amount), "surcharge_amount": str(invoice.surcharge_amount or 0),
             "remark": invoice.remark or "", "delivery_address": invoice.delivery_address or "",
             "items": [{"product_id": str(i.product_id), "sku_id": str(i.sku_id), "quantity": remote_quantity(i),
                        "amount": str(remote_amount(i))} for i in items]}
+
+
+def _matches_saved_snapshot(invoice, saved):
+    current = snapshot(invoice)
+    if saved is not None and "inspection_requirement" not in saved:
+        # Pre-208 durable tasks have the old content hash. Accept only the exact
+        # migration default; a later manual photo choice is a real new version.
+        migrated = "detail" if invoice.okki_new_deal == 1 else "single"
+        if invoice.inspection_requirement != migrated:
+            return False
+        current.pop("inspection_requirement")
+        current["edit_version"] = edit_version(invoice, include_inspection=False)
+    return current == saved
 
 
 def describe(row):
@@ -69,7 +85,14 @@ def replay(db, invoice, body, actor):
     digest = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
     existing = db.query(InvoiceLinkedSync).filter_by(request_key=body.request_key).with_for_update().first()
     if existing:
-        if existing.invoice_id != invoice.id or existing.created_by != actor or existing.request_hash != digest:
+        same_command = existing.request_hash == digest
+        if (not same_command and existing.after is not None
+                and "inspection_requirement" not in existing.after
+                and "inspection_requirement" not in body.invoice.model_fields_set):
+            # A pre-208 command did not serialize the new default-null field.
+            old_json = body.model_dump_json(exclude={"invoice": {"inspection_requirement"}})
+            same_command = existing.request_hash == hashlib.sha256(old_json.encode()).hexdigest()
+        if existing.invoice_id != invoice.id or existing.created_by != actor or not same_command:
             raise ValueError("该提交标识已用于其他修改，请刷新后重新提交")
     return existing, digest
 
@@ -93,6 +116,8 @@ def create(db, invoice, body, actor, *, receipt_rows=None):
                          or body.invoice.order_type != invoice.order_type):
         raise ValueError("关联同步不支持更换客户、币种或订单类型，请单独处理原单")
     before = snapshot(invoice)
+    from app.receipt import invoice_link
+    before_receipt = invoice_link.describe(db, invoice)
     # Identity and receipt evidence remain frozen; only the amount floor and fee
     # basis restrictions are replaced by a preserved-payment reconciliation.
     service.update_invoice(db, invoice, body.invoice, actor, linked_change=True, receipt_rows=receipt_rows)
@@ -102,6 +127,10 @@ def create(db, invoice, body, actor, *, receipt_rows=None):
     db.flush()
     db.refresh(invoice)
     db.expire(invoice, ["items"])
+    if (getattr(body.invoice, "item_groups", None) is not None
+            and edit_version(invoice) == before["edit_version"]
+            and invoice_link.describe(db, invoice) == before_receipt):
+        raise ValueError("订单业务数据未变化，请使用普通保存，无需关联同步")
     issues = service.validate_invoice(invoice)
     if issues:
         detail = "；".join(f"{issue.get('field', 'items')}：{issue.get('message', '校验失败')}" for issue in issues)
@@ -164,7 +193,7 @@ def run(db, identity, actor, *, recheck=False):
         ensure_idle(invoice)
         if row.steps["order"]["status"] != "done":
             raise ValueError("订单未确认同步成功，请重新编辑并发起新版本，不能沿用旧任务")
-        if snapshot(invoice) != row.after or latest(db, invoice.id).id != identity:
+        if not _matches_saved_snapshot(invoice, row.after) or latest(db, invoice.id).id != identity:
             raise ValueError("订单已有新修改，请查看最新同步任务")
         row.status = "pending"
         row.steps = {**row.steps, "outbound": {"status": "pending", "message": "等待重新核对"},
@@ -304,7 +333,7 @@ def acknowledge_outbound(db, invoice, actor, reason, expected_version):
     if edit_version(invoice) != expected_version:
         raise ValueError("订单已变化，请重新核对")
     row = latest(db, invoice.id)
-    if not row or row.status != "manual" or row.steps["order"]["status"] != "done" or snapshot(invoice) != row.after:
+    if not row or row.status != "manual" or row.steps["order"]["status"] != "done" or not _matches_saved_snapshot(invoice, row.after):
         raise ValueError("请先执行本版本关联同步")
     order = remote.read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
     result = linked_outbound_service.summarize(db, invoice, order)

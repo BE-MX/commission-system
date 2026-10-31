@@ -67,15 +67,15 @@ def test_family_detail_projects_variants_with_alias_price_and_swatch(family_cata
     assert standard["grade"] == "standard" and standard["color_code"] == "#9ATP9A/613"
     assert standard["color_label"] == "Rose Golden" and standard["color_type"] == "balayage"
     assert standard["swatch_url"] == f"/api/portal/v1/catalog/swatches/{swatch.public_id}/image?version=1&size=thumb"
-    # (1000 - 600) / 20 = 20 packs; (3000 - 600) / 20 = 120 packs -> banded.
-    assert standard["stock_display"] == "20" and superior["stock_display"] == "100+"
+    # Low-stock threshold does not reserve units: 1000/20=50; 3000/20 is banded.
+    assert standard["stock_display"] == "50" and superior["stock_display"] == "100+"
     assert superior["unit_price"] == "27.0000" and superior["swatch_url"] is None
     assert not {"product_id", "sku_id", "standard_json", "safety_buffer"} & superior.keys()
 
 
-@pytest.mark.parametrize("quantity,state,display", [("620", "available", "1"), ("619", "unavailable", None),
-    ("2580", "available", "99"), ("2600", "available", "100+")])
-def test_stock_display_excludes_threshold_and_bands(family_catalog, monkeypatch, quantity, state, display):
+@pytest.mark.parametrize("quantity,state,display", [("600", "available", "30"), ("599", "unavailable", None),
+    ("1980", "available", "99"), ("2000", "available", "100+")])
+def test_stock_display_gates_below_threshold_and_bands(family_catalog, monkeypatch, quantity, state, display):
     ctx, items, principal, *_ = family_catalog
     observe(monkeypatch, {items[0].public_id: quantity})
     row = catalog_service.detail(ctx.db, principal, items[0].public_id)
@@ -90,7 +90,7 @@ def test_availability_polling_never_resolves_price(family_catalog, monkeypatch):
     monkeypatch.setattr(pricing, "resolve", forbidden)
     result = service.family_availability(ctx.db, principal, "genius_weft_20g")
     states = {entry["item_id"]: (entry["availability"], entry["stock_display"]) for entry in result["items"]}
-    assert states == {items[0].public_id: ("available", "10"), items[1].public_id: ("unknown", None)}
+    assert states == {items[0].public_id: ("available", "40"), items[1].public_id: ("unknown", None)}
     assert all("unit_price" not in entry for entry in result["items"])
 
 

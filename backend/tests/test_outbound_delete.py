@@ -28,8 +28,8 @@ def case(db, outbound_scope_seed, monkeypatch):
     db.execute(text('ALTER TABLE lsordertest.okki_outbound_records ADD COLUMN outbound_invoice_id TEXT'))
     db.execute(text("UPDATE lsordertest.okki_outbound_records SET outbound_invoice_id='77' WHERE id='OB001'"))
     db.execute(text('ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN outbound_invoice_id TEXT'))
-    db.execute(text('ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN order_id TEXT'))
     db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET outbound_invoice_id='77',order_id='123' WHERE outbound_record_id='OB001'"))
+    db.execute(text("INSERT INTO lsordertest.okki_orders (order_id,company_id,user_id) VALUES ('123','C1','9001')"))
     inv = Invoice(invoice_no='DELETE-1', customer_id='C1', customer_name='Customer',
                   invoice_date=date(2026, 9, 20), sales_user_id=user.id, xiaoman_order_id='123')
     db.add(inv)

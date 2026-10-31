@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.portal import admin_service as service
 from app.portal.auth_service import require_enabled
-from app.portal.schemas import CustomerCopy
+from app.portal.schemas import CustomerCopy, DeliveryProfileInput, CustomerPricesInput
 from app.portal.errors import PortalError, reject
 from app.portal.schemas import (PortalInput, CatalogImageInput, NotificationRetryInput, AccountUpdate, CustomerCreate, CustomerUpdate, CustomerCatalogUpdate, AccountCreate, AccountPasswordUpdate, ReasonInput, RebindInput, TransferInput, MappingInput, SiteUpdate, CatalogImport, CatalogUpdate, FamilyAssign, FamilyUpdate, SwatchUpdate, ProposalInput, ApproveInput, PiProposalInput, PublishPiInput, VoidPiInput, AccessRequestReview)
 
@@ -618,3 +618,37 @@ def preview_image_asset(asset_id: int, actor=Depends(_require_portal_employee), 
     content, reference = admin_preview(db, actor, asset_id)
     return Response(content, media_type='image/jpeg', headers={'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff', 'X-Portal-Image-Reference': reference})
+
+
+@router.get("/customers/{public_id}/delivery")
+def customer_delivery(public_id: UUID, actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.customer_settings_service import get_delivery
+    data = get_delivery(db, actor, public_id)
+    db.commit()
+    return ok(data)
+
+
+@router.put("/customers/{public_id}/delivery")
+def customer_delivery_save(public_id: UUID, body: DeliveryProfileInput,
+        expected=Depends(expected_version), actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.customer_settings_service import update_delivery
+    data = update_delivery(db, actor, public_id, expected, body)
+    db.commit()
+    return ok(data)
+
+
+@router.get("/customers/{public_id}/prices")
+def customer_prices(public_id: UUID, actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.customer_settings_service import get_prices
+    data = get_prices(db, actor, public_id)
+    db.commit()
+    return ok(data)
+
+
+@router.put("/customers/{public_id}/prices")
+def customer_prices_save(public_id: UUID, body: CustomerPricesInput,
+        expected=Depends(expected_version), actor=Depends(_require_portal_employee), db: Session = Depends(get_db)):
+    from app.portal.customer_settings_service import update_prices
+    data = update_prices(db, actor, public_id, expected, body)
+    db.commit()
+    return ok(data)

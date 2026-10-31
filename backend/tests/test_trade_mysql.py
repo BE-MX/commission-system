@@ -18,7 +18,7 @@ from tests.test_inventory_mysql import mysql_engine
 
 @pytest.fixture
 def trade_tables(mysql_engine):
-    # Minimal prerequisites exercise 183's DDL; the full migration-chain
+    # Minimal prerequisites exercise 236's DDL; the full migration-chain
     # acceptance remains separate from these focused concurrency tests.
     with mysql_engine.begin() as conn:
         for column in ArkUser.__table__.columns:
@@ -28,14 +28,14 @@ def trade_tables(mysql_engine):
         conn.exec_driver_sql("CREATE TABLE ark_invoice_items (id BIGINT PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE ark_customer_orders (id BIGINT PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE ark_customer_order_items (id BIGINT PRIMARY KEY, product_name VARCHAR(255), model VARCHAR(128), length VARCHAR(64))")
-        spec = spec_from_file_location("trade_migration", Path(__file__).parents[1] / "alembic/versions/217_local_trade_projection.py")
+        spec = spec_from_file_location("trade_migration", Path(__file__).parents[1] / "alembic/versions/236_local_trade_projection.py")
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)
         with Operations.context(MigrationContext.configure(conn)):
             migration.upgrade()
     with mysql_engine.begin() as conn:
         conn.exec_driver_sql("CREATE TABLE sys_dict (id INT PRIMARY KEY)")
-        spec = spec_from_file_location("department_migration", Path(__file__).parents[1] / "alembic/versions/219_local_sales_department.py")
+        spec = spec_from_file_location("department_migration", Path(__file__).parents[1] / "alembic/versions/238_local_sales_department.py")
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)
         with Operations.context(MigrationContext.configure(conn)):
@@ -94,7 +94,7 @@ def projection_tables(mysql_engine):
     from app.core.database import Base
     from app.trade import projection_service  # noqa: F401
     metadata = MetaData()
-    prefixes = ("ark_customer_", "ark_invoice", "ark_finance_", "ark_aftersales_", "ark_trade_", "ark_receivables")
+    prefixes = ("ark_customer_", "ark_invoice", "ark_finance_", "ark_aftersales_", "ark_trade_", "ark_receivables", "ark_order_portal_", "ark_commerce_")
     for source in list(Base.metadata.tables.values()):
         if source.name.startswith(prefixes):
             table = Table(source.name, metadata, *[
@@ -105,6 +105,9 @@ def projection_tables(mysql_engine):
                 if isinstance(constraint, UniqueConstraint):
                     table.append_constraint(UniqueConstraint(*[col.name for col in constraint.columns], name=constraint.name))
     metadata.create_all(mysql_engine)
+    from app.portal.models import AuthorityBarrier
+    with mysql_engine.begin() as conn:
+        conn.execute(AuthorityBarrier.__table__.insert().values(code="authority", version=1))
 
 
 def test_projector_rejects_rr_and_rc_preserves_other_committed_order(mysql_engine, projection_tables):
@@ -178,7 +181,7 @@ def test_native_battle_migration_keeps_legacy_and_allows_multiple_unbound_member
     with mysql_engine.begin() as conn:
         conn.exec_driver_sql("CREATE TABLE ark_battle_report_members (id INT PRIMARY KEY, report_id INT NOT NULL, ark_user_id INT NOT NULL, okki_user_id VARCHAR(100) NOT NULL, UNIQUE KEY uq_battle_report_okki(report_id,okki_user_id), UNIQUE KEY uq_battle_report_ark(report_id,ark_user_id))")
         conn.exec_driver_sql("INSERT INTO ark_battle_report_members VALUES (1,1,1,'old-owner')")
-        spec = spec_from_file_location("battle_native_migration", Path(__file__).parents[1] / "alembic/versions/218_native_battle_members.py")
+        spec = spec_from_file_location("battle_native_migration", Path(__file__).parents[1] / "alembic/versions/237_native_battle_members.py")
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)
         with Operations.context(MigrationContext.configure(conn)):

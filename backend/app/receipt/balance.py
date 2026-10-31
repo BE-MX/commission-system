@@ -58,11 +58,13 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
         "local": sorted((r.id, r.version, r.sync_status, r.status, str(r.amount), str(r.bank_charge)) for r in local),
         "intent": [intent.status, str(intent.amount)] if intent else None,
     }
-    return {"invoice_id": invoice.id, "total_amount": str(invoice.total_amount), "currency": invoice.currency,
+    summary = {"invoice_id": invoice.id, "total_amount": str(invoice.total_amount), "currency": invoice.currency,
             "registered_amount": str(registered), "effective_amount": str(effective),
             "pending_amount": str(registered - effective),
             "remaining_amount": str(invoice.total_amount - registered),
             "version": hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()}
+    from app.sales_return.balance import overlay
+    return overlay(db, invoice.xiaoman_order_id, summary)
 
 
 def ensure_available(summary, amount):

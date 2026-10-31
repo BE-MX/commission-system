@@ -395,6 +395,11 @@ def run(db,invoice_id,user,*,linked_id=None,linked_token=None,follow_outbound=Tr
             result["outbound_sync"]=outbound_followup_service.safely_run(db,reference,actor,force_authority=True)
             db.rollback();db.expire_all()
         return response(db,invoice_id,user,result)
+    except invoice_link.ReceiptSyncBlocked as error:
+        db.rollback()
+        logger.warning("Receipt preflight blocks order push")
+        print("[invoice-push] receipt preflight blocks push", flush=True)
+        raise HTTPException(409, str(error), headers={"Cache-Control":"private, no-store"}) from None
     except ValueError:
         db.rollback()
         logger.warning("Current invoice, inventory or receipt state rejects order push")

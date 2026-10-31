@@ -18,7 +18,7 @@ from app.invoice import service as invoices
 from app.portal import catalog_service, invoice_evidence, mapping_service, proposal_service, revision_evidence, sku_source, pi_presentation
 from app.portal.domain import content_hash, line_amount, total_amount
 from app.portal.errors import reject
-from app.portal.inventory import validate_observation
+from app.portal.inventory import validate_observation, item_stock_threshold
 from app.portal.models import RequestLine, Revision
 from app.portal.schemas import SitePolicy
 
@@ -72,7 +72,8 @@ def validated_rows(db, access, site, invoice, items):
         validate_observation(observations.get(item.public_id), now=beijing_now(),
             max_age_seconds=get_settings().PORTAL_INVENTORY_MAX_AGE_SECONDS, quantity=row.quantity,
             inventory_unit=item.inventory_unit, conversion_factor=item.conversion_factor,
-            safety_buffer=item.safety_buffer, minimum=item.min_qty, step=item.step_qty)
+            safety_buffer=Decimal("0") if item.family_id is not None else item.safety_buffer,
+            stock_threshold=item_stock_threshold(item), minimum=item.min_qty, step=item.step_qty)
     return resolved
 
 
@@ -93,8 +94,8 @@ def build(db, access, site, order, invoice, items, *, actor_id, valid_for_hours)
         valid_for_hours = policy.proposal_valid_hours[0]  # Validation-only capture; never persisted.
     if len(terms) != 1 or valid_for_hours not in policy.proposal_valid_hours:
         reject("CUSTOMER_ACCEPTANCE_REQUIRED", "Complete the configured PI payment terms and validity first.", 409)
-    if not invoice.contact_name or not invoice.contact_phone or not invoice.delivery_address or not invoice.customer_name:
-        reject("INVOICE_VALIDATION_FAILED", "Complete the PI customer and delivery details first.", 409)
+    if not invoice.customer_name:
+        reject("INVOICE_VALIDATION_FAILED", "Complete the PI customer identity first.", 409)
     if invoices.validate_invoice(SimpleNamespace(customer_id=invoice.customer_id, items=items)):
         reject("INVOICE_VALIDATION_FAILED", "PI validation failed.", 409)
     resolved = validated_rows(db, access, site, invoice, items)

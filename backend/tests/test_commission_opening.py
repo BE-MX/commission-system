@@ -72,6 +72,11 @@ def historical(db, finance, stock, buyer, *, rate=Decimal('7')):
         finance_status='confirmed', rate_to_cny=rate, rate_to_usd=1, collection_date=DAY,
         confirmed_date=DAY, payment_type='bank_transfer', request_key='opening-cash', request_hash='a'*64, created_by=int(user['sub']))
     db.add(cash); db.flush()
+    from app.finance.transition_identity import reserve
+    from app.commerce_transition.service import bind_bank_payment
+    identity = reserve(db, bank, cash.bank_reference, cash.currency, cash.gross_amount,
+        int(user['sub']), payment_type=cash.payment_type)
+    bind_bank_payment(db, identity.id, f'local:{cash.id}')
     receipt = Receipt(receipt_no='OLD-RECEIPT', invoice_id=invoice.id, batch_id=cash.id, receivable_id=target.id,
         purpose='ordinary', source='local', request_key='opening-receipt', request_hash='b'*64,
         amount=600, bank_charge=0, reversed_amount=200, reversed_bank_charge=0, currency='USD', collection_date=DAY,

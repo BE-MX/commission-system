@@ -36,7 +36,8 @@ def load_roster(db):
         for member, employee in db.execute(query)]
 
 
-def load_orders(db, *, user_id=None, owner_ids=None, team=None, date_from=None, date_to=None, filters=None, active_roster=False):
+def load_orders(db, *, user_id=None, owner_ids=None, team=None, date_from=None, date_to=None, filters=None, active_roster=False,
+                historical_order_ids=None):
     owner = logical_owner_expression(CustomerOrder, "order")
     query = (select(CustomerOrder, CustomerAccount, ArkUser, SalesRoster, CustomerSourceRecord)
         .select_from(CustomerOrder)
@@ -44,8 +45,13 @@ def load_orders(db, *, user_id=None, owner_ids=None, team=None, date_from=None, 
         .join(CustomerAccount, CustomerAccount.id == owner)
         .outerjoin(ArkUser, ArkUser.id == CustomerOrder.owner_user_id)
         .outerjoin(SalesRoster, SalesRoster.ark_user_id == CustomerOrder.owner_user_id)
-        .outerjoin(CustomerSourceRecord, CustomerSourceRecord.id == CustomerOrder.source_record_id)
-        .where(CustomerOrder.is_valid_business_order.is_(True), formal_order_predicate()))
+        .outerjoin(CustomerSourceRecord, CustomerSourceRecord.id == CustomerOrder.source_record_id))
+    if historical_order_ids is None:
+        query = query.where(CustomerOrder.is_valid_business_order.is_(True), formal_order_predicate())
+    else:
+        # Exact identities already scoped by an immutable return fact. Used
+        # only for dimension matching, never as countable sales or new GMV.
+        query = query.where(CustomerOrder.id.in_(historical_order_ids))
     if user_id is not None:
         query = query.where(CustomerOrder.owner_user_id == int(user_id))
     if owner_ids is not None:

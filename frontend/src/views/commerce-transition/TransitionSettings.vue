@@ -7,8 +7,8 @@
     <div class="table-card">
       <div class="action-bar"><GlassButton v-if="canEdit" left-icon="Setting" :disabled="command.pending.value" @click="openEdit">{{ tab === 'bank-identities' ? '核对旧款流水' : '登记核验' }}</GlassButton><GlassButton left-icon="Refresh" @click="refresh">刷新读回</GlassButton></div>
       <el-tabs v-model="tab" @tab-change="changeTab"><el-tab-pane v-for="entry in tabs" :key="entry.key" :label="entry.label" :name="entry.key" :disabled="command.pending.value" /></el-tabs>
-      <el-alert v-if="tab === 'bank-identities'" title="这里只核对旧款与真实银行流水的对应关系，不增加本金。完整批次须整体核对；核对仍受后端权限和金额检查。" type="info" :closable="false" />
-      <el-alert v-if="tab === 'bank-identities' && unmapped.length" :title="`尚有 ${unmapped.length} 笔旧款 / 完整批次待核对`" type="warning" :closable="false" />
+      <el-alert v-if="tab === 'bank-identities'" title="核对原资金记录与真实银行流水的对应关系，不增加本金或执行退款。完整旧批次须整体核对；退货实际退款与退款收回须分别核验。" type="info" :closable="false" />
+      <el-alert v-if="tab === 'bank-identities' && unmapped.length" :title="`尚有 ${unmapped.length} 笔旧款 / 退货现金记录待核对`" type="warning" :closable="false" />
       <ListPageStatus :error="errorMessage" :loading="loading" :has-data="hasData" :paged="false" @retry="fetchList" />
       <el-table :data="list" v-loading="loading" border class="list-table" v-sticky-scrollbar><el-table-column v-for="field in columns" :key="field.key" :prop="field.key" :label="field.label" min-width="145" show-overflow-tooltip /><el-table-column class-name="table-action-column" label="操作" min-width="80"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="selected = row; detailOpen = true">依据</GlassButton></template></el-table-column></el-table>
     </div>
@@ -17,7 +17,12 @@
       <ListPageStatus :error="choices.errorMessage.value" :loading="choices.loading.value" :has-data="choices.hasData.value" :paged="false" @retry="choices.load()" />
       <el-form label-position="top" :disabled="command.pending.value || choices.loading.value">
         <template v-if="editTab === 'bank-identities'">
-          <el-form-item label="原旧款 / 完整批次"><el-select v-model="form.source" filterable><el-option v-for="source in unmapped" :key="source" :value="source" :label="sourceLabel(source)" /></el-select></el-form-item>
+          <el-form-item label="原资金来源"><el-select v-model="form.source_kind"><el-option value="legacy-money" label="旧回款 / 完整批次" /><el-option value="return-paid" label="旧退货实际退款" :disabled="!canReconcileReturns" /><el-option value="return-recovered" label="旧退货退款收回" :disabled="!canReconcileReturns" /></el-select></el-form-item>
+          <el-form-item v-if="form.source_kind === 'legacy-money'" label="原旧款 / 完整批次"><el-select v-model="form.source" filterable><el-option v-for="source in unmapped.filter(item => /^legacy-(receipt|batch):/.test(item))" :key="source" :value="source" :label="sourceLabel(source)" /></el-select></el-form-item>
+          <template v-else>
+            <el-form-item label="原退货单 ID"><el-select v-model="form.sales_return_id" filterable placeholder="输入已知退货单 ID 筛选"><el-option v-for="source in unmapped.filter(item => item.startsWith(`legacy-${form.source_kind}:`))" :key="source" :value="Number(source.split(':')[1])" :label="sourceLabel(source)" /></el-select></el-form-item>
+            <el-alert title="仅核对原退货单中已有实际退款或退款收回凭据的现金记录。负回款意图不算实际付款；退款和收回使用各自真实银行流水，不能重复核对为本金。" type="info" :closable="false" />
+          </template>
           <el-form-item label="已核验账户域"><el-select v-model="form.domain_id" filterable><el-option v-for="domain in choices.data.value?.domains || []" :key="domain.id" :value="domain.id" :label="`${domain.subject_key} / ${domain.account_key} / ${domain.channel}`" /></el-select></el-form-item>
           <el-form-item label="真实银行流水号"><el-input v-model="form.transaction_id" maxlength="128" /></el-form-item>
           <el-form-item label="银行对账依据"><el-input v-model="form.statement_reference" type="textarea" maxlength="500" show-word-limit /></el-form-item>
@@ -51,6 +56,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 const tab = ref('policy'), appliedTab = ref('policy'), editTab = ref('policy'), unmapped = ref([])
 const auth = useAuthStore()
 const canEdit = computed(() => auth.hasPermission('commerce_transition:admin') && (tab.value !== 'bank-identities' || auth.hasPermission('receipt:admin')))
+const canReconcileReturns = computed(() => auth.hasPermission('sales_return:admin'))
 const status = useAsyncResource(async (_, { signal }) => (await getTransitionStatus({ signal, suppressToast: true })).data)
 const state = useListPage(async (_, { signal, isCurrent }) => {
   const resource = appliedTab.value
@@ -76,7 +82,7 @@ const fields = {
 }
 const editFields = computed(()=>fields[editTab.value]), columns = computed(()=>tab.value === 'bank-identities' ? [
  {key:'domain_id',label:'账户域 ID'},{key:'transaction_id',label:'银行流水号'},{key:'payment_ref',label:'原账本身份'},
- {key:'route',label:'办理路线'},{key:'currency',label:'币种'},{key:'amount',label:'原本金'}
+ {key:'route',label:'办理路线'},{key:'currency',label:'币种'},{key:'amount',label:'原资金金额'}
 ] : fields[tab.value].filter(f=>!['checkpoint','old_responsibilities_cleared','writers_enforced'].includes(f.key)))
 async function refresh() { const current=generation; await status.load(); if(current===generation) await fetchList() }
 function changeTab() { appliedTab.value = tab.value; state.list.value = []; unmapped.value=[]; editOpen.value=false; choices.clear(); fetchList() }
@@ -89,15 +95,18 @@ function openEdit() {
  editTab.value=tab.value
  form.value = Object.fromEntries(editFields.value.map(f=>[f.key,f.type==='accounts'?[]:f.type==='boolean'?false:f.type==='number'?1:f.options?.[0]?.value || '']))
  if(tab.value==='policy') Object.assign(form.value,{phase:status.data.value?.phase,expected_version:status.data.value?.version,min_writer_version:status.data.value?.min_writer_version || 1})
- if(editTab.value==='bank-identities') form.value={source:'',domain_id:null,transaction_id:'',statement_reference:''}
+ if(editTab.value==='bank-identities') form.value={source_kind:'legacy-money',source:'',sales_return_id:null,domain_id:null,transaction_id:'',statement_reference:''}
  evidence.value=''; command.reset(); choices.clear(); editOpen.value=true; choices.load()
 }
-const sourceLabel = source => source.replace('legacy-receipt:', '旧回款 #').replace('legacy-batch:', '完整旧批次 #')
+const sourceLabel = source => source.replace('legacy-receipt:', '旧回款 #').replace('legacy-batch:', '完整旧批次 #').replace('legacy-return-paid:', '旧退货实际退款 #').replace('legacy-return-recovered:', '旧退货退款收回 #')
 async function save() {
  const resource=editTab.value, current=generation
  const result=await command.run({payload:()=>{
   if(!canEdit.value) throw new Error('当前账号无此核验权限')
-  if(resource==='bank-identities') return legacyBankReconciliationPayload(form.value,unmapped.value,choices.data.value?.domains || [])
+  if(resource==='bank-identities') {
+   if(form.value.source_kind?.startsWith('return-') && !canReconcileReturns.value) throw new Error('当前账号无退货资金核验权限')
+   return legacyBankReconciliationPayload(form.value,unmapped.value,choices.data.value?.domains || [])
+  }
   if(!evidence.value.trim()) throw new Error('请填写核验记录和事实依据')
   for(const f of editFields.value) if(!f.optional && f.type!=='boolean' && !form.value[f.key]) throw new Error(`请填写${f.label}`)
   const body={...form.value},proof={reference:evidence.value.trim()}
@@ -106,7 +115,7 @@ async function save() {
   else body.evidence=proof
   if(resource==='bank-domains') {body.exclusive_route=body.exclusive_route || null;body.bank_account_ids=bankDomainAccounts(body.bank_account_ids,choices.data.value?.accounts || [])}
   return body
- },confirm:()=>confirmAction(resource==='bank-identities'?'将把所选旧款与真实银行流水关联；不会增加本金。':'将保存当前核验事实，后端继续检查阶段、版本与责任边界。','保存试点配置'),send:body=>{if(current!==generation) throw new Error('页面已切换，请返回后重新核对');const {request_key,...payload}=body;return saveTransitionResource(resource==='bank-identities'?'bank-identities/reconcile-legacy':resource,payload)}})
+ },confirm:()=>confirmAction(resource==='bank-identities'?'将把原资金记录与真实银行流水关联；不会增加本金或执行退款。':'将保存当前核验事实，后端继续检查阶段、版本与责任边界。','保存试点配置'),send:body=>{if(current!==generation) throw new Error('页面已切换，请返回后重新核对');const {request_key,...payload}=body;return saveTransitionResource(resource==='bank-identities'?'bank-identities/reconcile-legacy':resource,payload)}})
  if(result.ok && current===generation){msgSuccess(resource==='bank-identities'?'旧款流水核对已保存':'保存试点核验');editOpen.value=false;await refresh()}
 }
 onDeactivated(()=>{generation++;editOpen.value=false;detailOpen.value=false;state.cancel();status.cancel();choices.cancel()})

@@ -31,7 +31,7 @@ def approved_money(mysql_engine, returned_order):
     with mysql_engine.begin() as conn:
         previous.create_all(conn)
         conn.exec_driver_sql("ALTER TABLE ark_settlement_applications DROP COLUMN released_amount, DROP COLUMN released_bank_charge")
-        path = Path(__file__).parents[1] / "alembic/versions/215_aftersales_money_release.py"
+        path = Path(__file__).parents[1] / "alembic/versions/234_aftersales_money_release.py"
         spec = spec_from_file_location("aftersales_money_migration", path)
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)

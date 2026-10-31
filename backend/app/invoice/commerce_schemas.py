@@ -6,12 +6,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.trade.schemas import DepartmentShares
+from app.invoice.schemas import InvoiceItemGroupPayload
 
 
 class LocalItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int | None = Field(None, gt=0)
+    group_key: str | None = Field(None, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     local_sku_id: int = Field(gt=0)
     quantity: int = Field(strict=True, gt=0, le=2147483647)
     price_per_piece: Decimal = Field(ge=0, max_digits=12, decimal_places=4)
@@ -50,6 +52,9 @@ class LocalInvoiceDraft(DepartmentShares):
     is_new_deal: bool | None = None
     is_first_return: bool | None = None
     is_private_order: bool = False
+    inspection_requirement: Literal["single", "detail"] | None = None
+    item_groups: list[InvoiceItemGroupPayload] | None = Field(None, max_length=100)
+    expected_groups_version: str | None = Field(None, pattern=r"^[a-f0-9]{64}$")
     items: list[LocalItem] = Field(min_length=1, max_length=200)
 
     @model_validator(mode="after")

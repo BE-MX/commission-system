@@ -321,6 +321,8 @@ def concurrent_db(tmp_path):
               if table.name.startswith("ark_commerce_") and table.name not in {
                   "ark_commerce_migration_batches", "ark_commerce_migration_records"}]
     Invoice.__table__.create(engine)
+    from app.sales_return.models import SalesReturn
+    SalesReturn.__table__.create(engine)  # Actual old return responsibility gate.
     Base.metadata.create_all(engine, tables=tables)
     for table in (ReceiptBatch.__table__, Receipt.__table__, ProductionSupply.__table__,
                   _inventory_models.StockDocument.__table__, _catalog_models.CatalogSku.__table__):

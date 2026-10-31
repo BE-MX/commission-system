@@ -288,6 +288,14 @@ def test_empty_chain_guarded_cutover_and_legacy_invoice_preservation(chain_datab
         after_item = dict(conn.execute(text("SELECT * FROM ark_invoice_items WHERE id=9002")).mappings().one())
         assert {key: after_item[key] for key in before_item} == before_item
         assert after_item["local_sku_id"] is None
+        # Main's published display grouping and warehouse instructions remain
+        # intact alongside the new native commerce fields.
+        assert after["inspection_requirement"] == "single"
+        assert after_item["group_id"] is not None
+        group = conn.execute(text("SELECT invoice_id, name FROM ark_invoice_item_groups WHERE id=:id"),
+            {"id": after_item["group_id"]}).mappings().one()
+        assert group["invoice_id"] == 9001
+        assert group["name"] == str(before_item["created_at"])[:10]
         assert after["transaction_mode"] == "legacy"
         assert after["local_customer_id"] is None
         assert conn.scalar(text("SELECT COUNT(*) FROM ark_stock_ledger")) == 0
@@ -300,7 +308,9 @@ def test_empty_chain_guarded_cutover_and_legacy_invoice_preservation(chain_datab
             {"id": existing_customer_id}).mappings().one())
         assert migrated_customer == existing_customer
         after_payment = dict(conn.execute(text('SELECT * FROM synced_payment WHERE id=9001')).mappings().one())
-        assert after_payment == before_payment
+        assert {key: after_payment[key] for key in before_payment} == before_payment
+        assert set(after_payment) - set(before_payment) == {"source"}
+        assert after_payment["source"] == "okki"
         fx_column = next(row for row in inspect(conn).get_columns('synced_payment') if row['name'] == 'exchange_rate')
         assert fx_column['type'].precision == 18 and fx_column['type'].scale == 8
         assert any(row['column_names'] == ['local_invoice_item_id'] for row in inspect(conn).get_unique_constraints('ark_customer_order_items'))

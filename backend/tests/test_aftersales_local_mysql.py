@@ -1,8 +1,8 @@
-"""Actual migration180 and local-return races in disposable loopback MySQL.
+"""Actual migration233 and local-return races in disposable loopback MySQL.
 
 Prerequisite fixtures apply the actual stock, order, finance and fulfillment
 migrations. This fixture supplies only historical aftersales structures before
-applying migration180 unchanged; it never creates execution tables from the ORM.
+applying migration233 unchanged; it never creates execution tables from the ORM.
 """
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -60,7 +60,7 @@ def local_payload(invoice, line, **changes):
 def returned_order(mysql_engine, fulfillment):
     previous = MetaData()
     # Runtime prerequisites now include native confirmation-time department lookup.
-    # 185 DDL is exercised independently in test_trade_mysql.
+    # 238 DDL is exercised independently in test_trade_mysql.
     for model in (AfterSalesCase, AfterSalesEvent, SysDict, SalesRoster):
         table = Table(model.__tablename__, previous, *[
             Column(col.name, String(256) if col.name == "product_name_snapshot" else col.type,
@@ -73,7 +73,7 @@ def returned_order(mysql_engine, fulfillment):
                     *(col.name for col in constraint.columns), name=constraint.name))
     with mysql_engine.begin() as conn:
         previous.create_all(conn)
-        path = Path(__file__).parents[1] / "alembic/versions/214_local_aftersales.py"
+        path = Path(__file__).parents[1] / "alembic/versions/233_local_aftersales.py"
         spec = spec_from_file_location("aftersales_migration", path)
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)
@@ -105,7 +105,7 @@ def row_count(db, model):
     return db.scalar(select(func.count()).select_from(model))
 
 
-def test_migration180_freezes_full_local_snapshot_and_validates_real_purchase_date(mysql_engine, returned_order):
+def test_migration233_freezes_full_local_snapshot_and_validates_real_purchase_date(mysql_engine, returned_order):
     _, _, line_id = returned_order
     with Session(mysql_engine) as db:
         line = db.get(InvoiceItem, line_id)
@@ -302,7 +302,7 @@ def replacement_production(mysql_engine, replacement_case):
     with mysql_engine.begin() as conn:
         previous.create_all(conn)
         conn.exec_driver_sql("ALTER TABLE ark_invoice_items DROP COLUMN production_pending_quantity")
-        path = Path(__file__).parents[1] / "alembic/versions/211_local_production.py"
+        path = Path(__file__).parents[1] / "alembic/versions/230_local_production.py"
         spec = spec_from_file_location("aftersales_production_migration", path)
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)

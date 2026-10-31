@@ -269,3 +269,90 @@
 @media (max-width: 720px) {
   .perf-goal-page .pg-metric-cards, .perf-goal-page .pg-team-grid, .perf-goal-page .pg-bullet-wrap, .perf-goal-page .pg-role-cards { grid-template-columns: 1fr; }
 }
+
+
+/* 目标与看板：范围、编辑状态和窄屏录入（2026-10-29）。沿用 pg 视觉体系。 */
+.perf-goal-page .pg-note, .perf-goal-page .pg-card-title .pg-note { color: var(--pg-muted); }
+.perf-goal-page .pg-batch-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.perf-goal-page .pg-batch-context, .perf-goal-page .pg-batch-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.perf-goal-page .pg-batch-actions { margin-left: auto; }
+.perf-goal-page .pg-context-note { flex-basis: 100%; min-width: 0; margin: 4px 0 12px; color: var(--pg-muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.perf-goal-page .pg-batch-bar .pg-context-note, .perf-goal-page .pg-control-bar .pg-context-note { margin: 0; }
+.perf-goal-page .pg-context-note strong { color: var(--pg-ink); font-weight: 500; }
+.perf-goal-page .pg-block { display: block; margin-top: 3px; }
+.perf-goal-page .pg-full-width { width: 100%; }
+.perf-goal-page .pg-target-table { max-height: min(62vh, 620px); overflow: auto; isolation: isolate; }
+.perf-goal-page .pg-target-table .pg-tbl th { position: sticky; top: 0; z-index: 2; }
+.perf-goal-page .pg-target-table .pg-tbl th:first-child,
+.perf-goal-page .pg-target-table .pg-tbl td:first-child { position: sticky; left: 0; min-width: 132px; max-width: 180px; white-space: normal; background: var(--card-bg); z-index: 1; border-right: 1px solid var(--pg-line); }
+.perf-goal-page .pg-target-table .pg-tbl th:first-child { z-index: 3; background: var(--table-header-bg, var(--card-bg)); }
+.perf-goal-page .pg-target-table .pg-group-head td:first-child { background: var(--pg-primary-soft); }
+.perf-goal-page .pg-target-table .pg-cell-input { min-width: 80px; }
+.perf-goal-page .pg-target-table .pg-factor-input { min-width: 64px; }
+.perf-goal-page .pg-cell-input:disabled { cursor: default; }
+.perf-goal-page .pg-target-table .pg-cell-input[aria-invalid="true"] { border-color: var(--pg-red); background: var(--pg-red-bg); }
+.perf-goal-page .pg-save-bar { position: sticky; bottom: 0; z-index: 4; padding: 12px 0 4px; margin: 0; border-top: 1px solid var(--pg-line); background: var(--card-bg); }
+.perf-goal-page .pg-save-bar .pg-note { flex: 1 1 220px; }
+.perf-goal-page .pg-validation-list { margin: 0 0 12px; padding: 8px 12px 8px 28px; max-height: 140px; overflow: auto; font-size: 13px; background: var(--pg-red-bg); }
+.perf-goal-page .pg-validation-list button { border: 0; background: transparent; color: var(--pg-red); cursor: pointer; font: inherit; padding: 4px; text-align: left; }
+.perf-goal-page .pg-trend-chart { height: 320px; }
+.perf-goal-page .pg-comparison-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 16px; margin: 24px 0 12px; }
+.perf-goal-page .pg-comparison-heading h2 { margin: 0; font-size: 16px; }
+.perf-goal-page .pg-optional-chart summary, .perf-goal-page .pg-team-details summary { cursor: pointer; font-size: 13px; color: var(--pg-ink-2); padding: 8px 0; }
+.perf-goal-page .pg-team-details .pg-team-grid { margin-top: 12px; }
+.perf-goal-page .pg-optional-chart { padding-block: 8px; }
+.perf-goal-page .pg-hint-card { margin-bottom: 16px !important; }
+.perf-goal-page .pg-sort-button { border: none; padding: 0; background: transparent; cursor: pointer; color: inherit; font: inherit; }
+.perf-goal-page button:focus-visible, .perf-goal-page summary:focus-visible, .perf-goal-page .pg-table-wrap:focus-visible { outline: 2px solid var(--pg-primary); outline-offset: 2px; }
+@media (max-width: 720px) {
+  .perf-goal-page .pg-card { padding: 14px 12px; }
+  .perf-goal-page .pg-batch-actions { margin-left: 0; width: 100%; }
+  .perf-goal-page .pg-batch-actions .el-select { width: 100%; }
+  .perf-goal-page .pg-control-bar { gap: 12px; }
+  .perf-goal-page .pg-ctl-group { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  .perf-goal-page .pg-card-title .pg-right { margin-left: 0; width: 100%; }
+  .perf-goal-page .pg-detail-tabs { flex-wrap: wrap; }
+  .perf-goal-page .pg-detail-tabs button { padding: 8px 10px; }
+  .perf-goal-page .pg-toolbar { gap: 8px; }
+  .perf-goal-page .pg-target-table .pg-tbl td, .perf-goal-page .pg-target-table .pg-tbl th { padding: 8px; }
+  .perf-goal-page .pg-target-table .pg-tbl td:first-child { min-width: 116px; max-width: 132px; }
+  .perf-goal-page .pg-seg button, .perf-goal-page .pg-metric-switch button { min-height: 36px; }
+  .perf-goal-page .pg-pager button { min-height: 40px; min-width: 40px; }
+}
+
+.perf-goal-page .pg-target-table .pg-unset-input { border-color: var(--pg-line); background: var(--card-bg); }
+
+
+/* 后续精简：让指标含义、提醒与查找结果明确；不改变统计与编辑范围。 */
+.perf-goal-page .pg-m-rate-label { display: block; font-size: 12px; color: var(--pg-muted); font-weight: 500; letter-spacing: normal; line-height: 1.5; margin-bottom: 4px; }
+.perf-goal-page .pg-mcard .pg-missing-rate { font-size: 20px; color: var(--pg-muted); }
+.perf-goal-page .pg-mcard .pg-m-foot { flex-direction: column; align-items: flex-start; gap: 4px; line-height: 1.6; }
+.perf-goal-page .pg-mcard .pg-m-tag, .perf-goal-page .pg-mcard .pg-mom, .perf-goal-page .pg-mcard .pg-unknown { color: var(--pg-muted); }
+.perf-goal-page .pg-metric-guide { margin: 0 0 12px; }
+.perf-goal-page .pg-metric-guide summary { cursor: pointer; color: var(--pg-ink-2); font-size: 13px; padding: 8px 0; }
+.perf-goal-page .pg-metric-guide dl { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 8px 12px; margin: 4px 0 0; padding: 12px; border: 1px solid var(--pg-line); border-radius: 6px; background: var(--card-bg); font-size: 13px; line-height: 1.6; }
+.perf-goal-page .pg-metric-guide dt { font-weight: 500; color: var(--pg-ink); }
+.perf-goal-page .pg-metric-guide dd { margin: 0; color: var(--pg-muted); }
+.perf-goal-page .pg-sprint-summary .pg-card-title { margin-bottom: 4px; }
+.perf-goal-page .pg-sprint-summary .pg-context-note { margin-bottom: 0; }
+.perf-goal-page .pg-sprint-attention { border-color: var(--pg-amber); }
+.perf-goal-page .pg-sprint-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.perf-goal-page .pg-sprint-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; line-height: 1.6; color: var(--pg-ink-2); }
+.perf-goal-page .pg-sprint-list strong { color: var(--pg-ink); font-weight: 600; }
+.perf-goal-page .pg-find-input { width: 260px; max-width: 100%; }
+.perf-goal-page .pg-person-find { margin-bottom: 12px; }
+.perf-goal-page .pg-toolbar .pg-v-status.pg-warn, .perf-goal-page .pg-cell-difference { color: var(--pg-orange); }
+.perf-goal-page .pg-cell-difference { font-size: 12px; white-space: normal; }
+.perf-goal-page .pg-cell-warning .pg-cell-input { border-color: var(--pg-amber); background: var(--pg-amber-bg); }
+.perf-goal-page .pg-sort-button { min-height: 24px; }
+.perf-goal-page .pg-sort-button:disabled { cursor: wait; }
+.perf-goal-page .pg-row-dim, .perf-goal-page .pg-row-dim td { color: var(--pg-muted); }
+@media (max-width: 720px) {
+  .perf-goal-page .pg-find-input { width: 100%; }
+  .perf-goal-page .pg-metric-guide dl { grid-template-columns: 1fr; gap: 4px; }
+  .perf-goal-page .pg-metric-guide dd { margin-bottom: 8px; }
+  .perf-goal-page .pg-metric-cards { gap: 12px; }
+}
+@media (pointer: coarse) {
+  .perf-goal-page .pg-seg button, .perf-goal-page .pg-metric-switch button, .perf-goal-page .pg-detail-tabs button, .perf-goal-page .pg-sort-button { min-height: 44px; }
+}

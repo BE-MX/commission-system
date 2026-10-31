@@ -26,9 +26,36 @@ def test_exact_line_quantities_and_stock_are_advisory(stocks, monkeypatch):
     assert result["source"] == "ark_free_available"
 
 
+def test_generated_and_shipped_outbounds_are_accumulated_by_current_line(stocks, monkeypatch):
+    monkeypatch.setattr(editor_inventory.detail_outbounds, "read", lambda *a: {
+        "state": "ready",
+        "summary": {"by_item": {"1": "2", "2": "0"}},
+        "items": [
+            {"id": "OB-1", "number": "CK-1", "state": "shipped", "date": "2026-10-01", "items": [
+                {"invoice_item_id": 1, "quantity": "2"},
+            ]},
+            {"id": "OB-2", "number": "CK-2", "state": "generated", "date": "2026-10-02", "items": [
+                {"invoice_item_id": 1, "quantity": "3"}, {"invoice_item_id": 2, "quantity": "4"},
+            ]},
+            {"id": "OB-3", "number": "CK-3", "state": "cancelled", "items": [
+                {"invoice_item_id": 1, "quantity": "9"},
+            ]},
+        ],
+    })
+    result = editor_inventory.read(None, invoice(), {})
+    assert result["items"][0]["outbound_quantity"] == "5"
+    assert result["items"][0]["shipped_quantity"] == "2"
+    assert [ref["number"] for ref in result["items"][0]["outbounds"]] == ["CK-1", "CK-2"]
+    assert result["items"][1]["outbound_quantity"] == "4"
+    assert result["items"][1]["shipped_quantity"] == "0"
+
+
 def test_unsynced_drafts_have_no_shipments_and_skip_outbound_permission(stocks, monkeypatch):
     monkeypatch.setattr(editor_inventory.detail_outbounds, "read", lambda *a: pytest.fail("drafts have no outbound"))
-    assert {i["shipped_quantity"] for i in editor_inventory.read(None, invoice(None), {})["items"]} == {"0"}
+    result = editor_inventory.read(None, invoice(None), {})
+    assert {i["shipped_quantity"] for i in result["items"]} == {"0"}
+    assert {i["outbound_quantity"] for i in result["items"]} == {"0"}
+    assert all(i["outbounds"] == [] for i in result["items"])
 
 
 @pytest.mark.parametrize("mode", ["restricted", "unverified", "missing_line"])

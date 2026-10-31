@@ -240,6 +240,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
 _DATA_KIND_CODES = {"battle_report:read_all", "customer_media:read_all", "customer_media_account:read_all", "receipt:read_all", "tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "domestic_decision:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
+_DATA_KIND_CODES.add("sales_return:read_all")
 
 
 def _perm_kind(code: str, action: str) -> str:
@@ -431,6 +432,12 @@ def seed_role_permissions(db: Session):
         ("receipt:delete", "receipt", "delete", "删除订单关联回款单"),
         ("receipt:admin", "receipt", "admin", "核对回款同步结果"),
         ("receipt:read_all", "receipt", "read_all", "查看全部回款单（数据范围）"),
+        ("sales_return:read", "sales_return", "read", "查看外贸退货单"),
+        ("sales_return:write", "sales_return", "write", "创建和生效外贸退货单"),
+        ("sales_return:delete", "sales_return", "delete", "删除退货草稿"),
+        ("sales_return:admin", "sales_return", "admin", "冲销退货及核实退款执行"),
+        ("sales_return:read_all", "sales_return", "read_all", "查看全部退货单（数据范围）"),
+        ("sales_return_receiving:write", "sales_return", "write", "退货收货检验及入库核验"),
         ("invoice:read",          "invoice", "read",          "查看订单发票"),
         ("invoice:write",         "invoice", "write",         "创建/编辑订单发票"),
         ("invoice:delete",        "invoice", "delete",        "删除订单发票及关联单据"),
@@ -498,6 +505,10 @@ def seed_role_permissions(db: Session):
         ("color:admin",           "color",   "admin",         "管理竞品监控 / 趋势数据源 / 色板图任务"),
         ("color_blend:read",      "color",   "read",          "查看混合色管理"),
         ("color_trend:read",      "color",   "read",          "查看色彩趋势看板"),
+        # 色板库公库/私库 + 色差仪测量（2026-10-27；私库另受客户实时归属约束）
+        ("color_library:read",    "color",   "read",          "色板库：查看公库与本人归属客户的私库"),
+        ("color_library:write",   "color",   "write",         "色板库：私库新建色板 / 色差仪测量 / 申请纳入公库"),
+        ("color_library:admin",   "color",   "admin",         "色板库：维护公库 / 审核私库晋升"),
         # 报表中心（jimureport 集成）
         ("report:read",           "report",  "read",          "查看报表 / 数据大屏"),
         ("report:design",         "report",  "design",        "进入报表设计器 / 编辑报表"),

@@ -5,15 +5,19 @@ from sqlalchemy import bindparam, text
 
 from app.invoice.customer_profile_service import get_customer_grade
 from app.invoice.models import Invoice
+from app.invoice.order_notification_service import _is_new_sign
 from app.shipping_inspection import outbound_service as source
 
 
 def with_customer_order_info(db, record):
-    record = {**record, "customer_grade": None, "order_amount_text": "—", "merchandiser_name": "", "express_channel": ""}
+    record = {**record, "customer_grade": None, "order_amount_text": "—", "merchandiser_name": "", "express_channel": "",
+              "is_new_deal": False, "inspection_requirement": "single"}
     if record.get("transaction_mode") == "local":
         invoice = db.get(Invoice, record["invoice_id"])
         return {**record, "customer_grade": invoice.customer_grade,
                 "order_amount_text": f"{invoice.currency} {invoice.total_amount:,.2f}",
+                "is_new_deal": bool((invoice.local_commercial or {}).get("is_new_deal")),
+                "inspection_requirement": invoice.inspection_requirement or "single",
                 "merchandiser_name": invoice.merchandiser_name or "", "express_channel": invoice.express_channel or ""}
     customer_id = record.get("company_id")
     if not customer_id:
@@ -36,9 +40,14 @@ def with_customer_order_info(db, record):
         return record
     invoices = db.query(Invoice).filter(
         Invoice.xiaoman_order_id.in_(order_ids), Invoice.customer_id == customer_id,
-        Invoice.sync_status == "synced",
     ).all()
-    local = {str(invoice.xiaoman_order_id): invoice for invoice in invoices}
+    # Warehouse instructions follow saved local choices even while an OKKI edit is pending.
+    # A combined outbound carries each mark if any of its linked orders requires it.
+    record["is_new_deal"] = any(_is_new_sign(db, {
+        "id": invoice.id, "okki_new_deal": invoice.okki_new_deal}) for invoice in invoices)
+    record["inspection_requirement"] = (
+        "detail" if any(invoice.inspection_requirement == "detail" for invoice in invoices) else "single")
+    local = {str(invoice.xiaoman_order_id): invoice for invoice in invoices if invoice.sync_status == "synced"}
     # 出库单打印/Word 用：跟单员与快递渠道取自本单关联的发票（多单时去重并列）
     record["merchandiser_name"] = " / ".join(dict.fromkeys(
         str(invoice.merchandiser_name) for invoice in local.values() if invoice.merchandiser_name))

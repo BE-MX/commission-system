@@ -11,6 +11,10 @@ from app.receipt.models import Receipt, ReceiptIntent
 from app.receipt.schemas import ReceiptFields
 
 
+class ReceiptSyncBlocked(ValueError):
+    """An explicit receipt sync guard whose message is safe for the operator."""
+
+
 def get_intent(db, invoice_id):
     return db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice_id).first()
 
@@ -82,13 +86,11 @@ def preflight(db, invoice, actor):
     # No actual payment: keep the draft editable and do not enroll a receipt.
     if not row or (row.status == "draft" and not row.amount):
         return
-    if not row.attachment_ids:
-        raise ValueError("请上传回款截图后再同步小满。库存单可以先保存")
     attachments.bind(db, row.attachment_ids, actor, invoice.id, row.receipt_id)
     if row.status == "converted" or not row.eligible:
         return
     if row.currency != invoice.currency or row.customer_id != invoice.customer_id:
-        raise ValueError("回款资料与订单客户或币种不一致，请重新核对")
+        raise ReceiptSyncBlocked("回款资料与订单客户或币种不一致，请重新核对")
     missing = []
     if row.amount is None:
         missing.append("回款金额")
@@ -97,7 +99,7 @@ def preflight(db, invoice, actor):
     if not row.payment_type or not row.payment_type.strip():
         missing.append("回款方式（付款方式）")
     if missing:
-        raise ValueError(f"请编辑订单，补填{'、'.join(missing)}，保存后重新同步小满")
+        raise ReceiptSyncBlocked(f"请编辑订单，补填{'、'.join(missing)}，保存后重新同步小满")
     ReceiptFields(amount=row.amount, collection_date=row.collection_date, payment_type=row.payment_type,
                   attachment_ids=row.attachment_ids, remark=row.remark or "")
     if invoice.order_type == "presale":
@@ -106,11 +108,11 @@ def preflight(db, invoice, actor):
         if charge is None:
             charge = proportional(invoice.total_amount, invoice.surcharge_amount or 0, row.amount)
         if row.amount - charge <= 0:
-            raise ValueError("预售收款扣除银行手续费后的净额必须大于零")
+            raise ReceiptSyncBlocked("预售收款扣除银行手续费后的净额必须大于零")
         row.bank_charge = charge
         row.purpose = getattr(row, "purpose", None) or "presale_deposit"
     if invoice.order_type != "presale" and row.amount > invoice.total_amount:
-        raise ValueError("本次回款不能超过订单金额")
+        raise ReceiptSyncBlocked("本次回款不能超过订单金额")
 
 
 def arm(db, invoice, actor):
@@ -123,9 +125,9 @@ def arm(db, invoice, actor):
         db.flush()
         row = get_intent(db, invoice.id)
     if row.attempt_token:
-        raise ValueError("库存单正在同步或上次任务待恢复，请勿重复提交")
+        raise ReceiptSyncBlocked("库存单正在同步或上次任务待恢复，请勿重复提交")
     if invoice.sync_status == "sync_uncertain":
-        raise ValueError("上次小满建单结果待核对，请管理员先处理")
+        raise ReceiptSyncBlocked("上次小满建单结果待核对，请管理员先处理")
     if row and row.eligible and row.status == "draft" and row.amount and row.amount > 0:
         row.status = "armed"
     row.attempt_token, row.lease_until = uuid4().hex, beijing_now() + timedelta(minutes=30)

@@ -6,6 +6,39 @@ function numeric(value) {
   return Number.isFinite(number) ? number : null
 }
 
+export function invoiceOutboundStatus(row, snapshot) {
+  const saved = row.id != null
+  const entry = saved ? snapshot?.items?.find(item => String(item.invoice_item_id) === String(row.id)) : null
+  const changedProduct = entry && (String(entry.product_id) !== String(row.product_id) || String(entry.sku_id) !== String(row.sku_id))
+  const previousAllocated = numeric(entry?.outbound_quantity)
+  const previousShipped = numeric(entry?.shipped_quantity)
+  const allocated = !saved ? 0 : changedProduct ? (previousAllocated === 0 ? 0 : null) : previousAllocated
+  const shipped = !saved ? 0 : changedProduct ? (previousShipped === 0 ? 0 : null) : previousShipped
+  const quantity = numeric(row.quantity)
+  const known = allocated != null && shipped != null
+  const quantityLabel = quantity == null ? '—' : quantity
+  let code = 'unknown'
+  let label = '状态待核对'
+  if (known && allocated <= 0 && shipped <= 0) {
+    code = 'none'
+    label = '未加入'
+  } else if (known && quantity > 0 && shipped > 0 && shipped >= quantity) {
+    code = 'shipped'
+    label = `已发货 ${shipped}/${quantityLabel}`
+  } else if (known && shipped > 0) {
+    code = 'partial'
+    label = `已发 ${shipped}/${quantityLabel}`
+  } else if (known && allocated > 0) {
+    code = 'allocated'
+    label = `已加入 ${allocated}/${quantityLabel}`
+  }
+  return {
+    code, label, allocated, shipped, quantity,
+    linked: known && (allocated > 0 || shipped > 0),
+    references: known && saved && !changedProduct ? (entry?.outbounds || []) : [],
+  }
+}
+
 export function invoiceStockStatus(row, snapshot) {
   const saved = row.id != null
   const entry = saved ? snapshot?.items?.find(item => String(item.invoice_item_id) === String(row.id)) : null
@@ -72,5 +105,6 @@ export function useInvoiceStockShortage(props, loadInventory) {
     const state = stockStatus(row)
     return row.quantity > 0 && (state.remaining == null || (state.remaining > 0 && state.available == null))
   }).length)
-  return { onlyShortage, stockStatus, filteredItems, unknownCount, loading, error, refreshInventory }
+  const outboundStatus = row => invoiceOutboundStatus(row, snapshot.value)
+  return { onlyShortage, stockStatus, outboundStatus, filteredItems, unknownCount, loading, error, refreshInventory }
 }

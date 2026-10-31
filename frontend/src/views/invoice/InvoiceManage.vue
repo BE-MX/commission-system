@@ -230,6 +230,9 @@
                 :invoice-id="form.id"
                 :active="drawerVisible"
                 :items="hairItems"
+                :item-groups="form.item_groups"
+                :group-counts="groupCounts"
+                v-model:active-group-key="activeGroupKey"
                 :quantity-error-row="quantityErrorRow"
                 :is-production="isProduction"
                 :entry-options="entryOptions"
@@ -247,6 +250,10 @@
                 @add-blank="addBlankLine"
                 @remove="removeLine"
                 @remove-many="removeLines"
+                @create-group="createItemGroup"
+                @rename-group="renameItemGroup"
+                @delete-group="deleteItemGroup"
+                @move-many="moveRowsToGroup($event.rows, $event.targetKey)"
               />
 
               <InvoiceAccessoryTable v-if="!invoiceIsLocal(form)"
@@ -376,6 +383,7 @@
       :customer-name="form.customer_name"
       :order-type="form.order_type"
       :currency="form.currency"
+      :target-group-name="activeGroupName"
       :existing-items="form.items"
       @append="appendPastedLines"
     />
@@ -485,6 +493,7 @@ const {
   customerTotal, customerHasMore, loadMoreCustomers, privateOnlyCompany,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
   saveAndSyncSubmitting, quantityErrorRow, beforeEditorClose, closeEditor, confirmEditorClose, syncCompletionMessage,
+  activeGroupKey, activeGroupName, groupCounts, createItemGroup, renameItemGroup, deleteItemGroup, moveRowsToGroup,
   linkedOperation, linkedBusy, linkedLoading, refreshLinked, retryLinked, recheckLinked, closeLinked, resolveLinked,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,

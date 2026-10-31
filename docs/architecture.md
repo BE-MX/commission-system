@@ -30,7 +30,7 @@
 
 ## 系统概览
 
-莱莎方舟平台是企业内部综合中台，采用 FastAPI + Vue 3 的模块化单体。业务覆盖提成/薪资、发票/回款、外贸与内贸生产履约、备货、售后、物流、设计/素材/发色、生图/AI 对话、展会/名片、客户经营、知识库、培训、报表与集成运维；PM 协作站、客户门户和小程序具有各自的入口与鉴权边界。模块、API 与页面的当前源码覆盖清单见 [2026-09-06 平台审查](requirements/2026-09-06-platform-audit.md)，不再用历史固定模块数代表现状。
+莱莎方舟平台是企业内部综合中台，采用 FastAPI + Vue 3 的模块化单体。业务覆盖提成/薪资、发票/回款、外贸与内贸生产履约、备货、售后、物流、设计/素材/发色、生图/AI 对话、展会/名片、客户经营、知识库、培训、报表与集成运维；PM 协作站、客户门户和小程序具有各自的入口与鉴权边界。当前模块与页面注册分别以 `backend/app/routers.py`、`frontend/src/config/navigation.js` 为准；[2026-09-06 平台审查](requirements/2026-09-06-platform-audit.md)保留当时覆盖范围，不代表当前完整清单。
 
 > 「内贸」在本仓库有两个不相干的含义，别混：**内贸品牌**指展会试戴用的「莱莎健康假发」品牌线；**内贸订单管理**（`app/domestic/`）指国内订单的下单与按数量拆批报工。
 
@@ -244,7 +244,7 @@ frontend/src/
 
 ## 定时任务
 
-`backend/app/schedulers/registry.py` 注册 20 个稳定任务 ID（其中 WhatsApp 与公海日批次受开关控制，未启用时不注册但会在运行中心显示）：
+定时任务由 `backend/app/schedulers/registry.py` 按配置注册，下表为常用任务摘录；完整任务及启用条件以源码为准，运行状态见交接记录。门户认证邮件、业务通知、出库等任务分别受配置门控，不能由某一个 Worker 的状态推断所有通知状态。
 
 | Job | 类型 | 调度 | 功能 |
 |-----|------|------|------|
@@ -258,7 +258,8 @@ frontend/src/
 | `stock_daily_report` | cron | 每天 08:30 | 安全库存日报 + 低库存钉钉推送 |
 | `color_social_extract` | cron | 每天 08:00 | 社媒发色提取 |
 | `color_sales_aggregate` | cron | 每周一 06:00 | 销售色彩聚合 |
-| `whatsapp_auto_sync` | interval | 每 5 分钟 | WhatsApp 增量同步（受 `WHATSAPP_AUTO_SYNC_ENABLED` 开关控制） |
+| `whatsapp_auto_sync` | interval | 配置项（默认 5 分钟） | WhatsApp 账号同步（受 `WHATSAPP_AUTO_SYNC_ENABLED` 控制） |
+| `whatsapp_event_sync` | interval | 配置项（默认 5 秒） | Baileys 变更事件消费（同受自动同步开关控制） |
 | `aftersales_notification_retry` | interval | 每 1 分钟 | 售后通知重试与卡住分析恢复 |
 | `festival_event_monitor` | interval | 每 1 分钟 | 采购节事件监控与日报 claim 恢复 |
 | `festival_daily_report` | cron | 每天 17:30 | 采购节日报 |
@@ -439,4 +440,4 @@ Linux 北京默认空网关，使用本地 workerd；代理标记阻断误配置
 
 ### 办公室内网 HTTPS（2026-09-16 已验证）
 
-`https://lan.leshine.cloud` 解析到 192.168.100.3（2026-09-20 已同步公共 DNS、办公室网关 DNS、Caddy 监听与防火墙），由独立 NSSM ArkOfficeHttps/Caddy 提供443并代理现有8001。仅放行192.168.100.0/23，未新增公网端口映射；原业务服务不变。证书到期2026-12-15，手动DNS-01续期，尚无自动续期。配置及恢复约束见 deploy/README.md 的办公室内网HTTPS专项入口。证书健康和匿名鉴权已验证，物理手机扫码未验收；办公室尚未部署新station接口，HTTPS启用不代表新出库检验页已上线。
+`https://lan.leshine.cloud` 解析到 192.168.100.3（2026-09-20 已同步公共 DNS、办公室网关 DNS、Caddy 监听与防火墙），由独立 NSSM ArkOfficeHttps/Caddy 提供443并代理现有8001。仅放行192.168.100.0/23，未新增公网端口映射；原业务服务不变。证书到期2026-12-15，手动DNS-01续期，尚无自动续期。配置及恢复约束见 deploy/README.md 的办公室内网HTTPS专项入口。证书健康和匿名鉴权已验证，物理手机扫码未验收；上述 2026-09-20 记录当时未覆盖 station 接口；后续应用发布见交接文档，不能由 HTTPS 启用推断物理手机扫码已验收。

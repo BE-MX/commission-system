@@ -20,7 +20,7 @@ class ReceiptFields(BaseModel):
     bank_charge: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
     purpose: Literal["ordinary", "presale_deposit", "presale_advance", "presale_goods", "freight"] = "ordinary"
     remark: str = Field(default="", max_length=500)
-    attachment_ids: list[str] = Field(min_length=1, max_length=5)
+    attachment_ids: list[str] = Field(default_factory=list, max_length=5)
 
     @field_validator("bank_charge", mode="before")
     @classmethod
@@ -44,11 +44,12 @@ class ReceiptCreate(ReceiptFields):
 
 class ReceiptUpdate(ReceiptFields):
     version: int = Field(gt=0)
+    attachment_ids: list[str] = Field(max_length=5)
 
 
 class ReceiptProofUpdate(BaseModel):
     version: int = Field(gt=0)
-    attachment_ids: list[str] = Field(min_length=1, max_length=5)
+    attachment_ids: list[str] = Field(max_length=5)
 
     @field_validator("attachment_ids")
     @classmethod

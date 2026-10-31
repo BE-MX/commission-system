@@ -1,4 +1,4 @@
-"""Actual migration177 plus production/material races on isolated MySQL."""
+"""Actual migration230 plus production/material races on isolated MySQL."""
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import pytest
@@ -37,9 +37,9 @@ def production_rows(mysql_engine, stock_ids, orders):
         previous.create_all(conn)
         conn.exec_driver_sql("INSERT INTO ark_users(id) VALUES (1)")
         # The shared reservation fixture includes later scalar ORM columns for
-        # test compatibility; restore the exact pre177 boundary for this test.
+        # test compatibility; restore the exact pre230 boundary for this test.
         conn.exec_driver_sql("ALTER TABLE ark_invoice_items DROP COLUMN production_pending_quantity")
-        path = Path(__file__).parents[1] / "alembic/versions/211_local_production.py"
+        path = Path(__file__).parents[1] / "alembic/versions/230_local_production.py"
         spec = spec_from_file_location("production_migration", path)
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)

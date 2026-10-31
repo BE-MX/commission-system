@@ -113,6 +113,11 @@ def _version(invoice, body):
 
 
 def _apply_draft(db, invoice, body, user):
+    from app.invoice import item_group_service
+    if body.expected_groups_version is not None and body.item_groups is not None:
+        item_group_service.load_groups(db, invoice)
+        if item_group_service.version(invoice) != body.expected_groups_version:
+            raise ValueError("明细分组已被他人修改，请刷新后再编辑")
     access = require_customer_access(db, customer_id=body.local_customer_id, user=user,
                                      action_permissions=["invoice:write"], manage_permissions=[])
     customer = db.scalar(select(CustomerAccount).where(CustomerAccount.id == access.customer_id)
@@ -128,6 +133,8 @@ def _apply_draft(db, invoice, body, user):
     invoice.customer_name = customer.display_name
     from app.trade.service import apply_commercial
     apply_commercial(invoice, body, customer)
+    invoice.inspection_requirement = body.inspection_requirement or invoice.inspection_requirement or (
+        "detail" if body.is_new_deal else "single")
     invoice.sales_user_id = salesperson.id
     invoice.sales_user_name = salesperson.real_name or salesperson.username
     invoice.sales_phone, invoice.sales_email = salesperson.phone, salesperson.email
@@ -175,6 +182,16 @@ def _apply_draft(db, invoice, body, user):
     invoice.internal_received = Decimal("0")
     invoice.internal_balance = invoice.total_amount
     invoice.updated_by = actor
+    # Grouping is presentation-only; use validated catalog kinds, not caller labels.
+    from types import SimpleNamespace
+    db.add(invoice)
+    db.flush()
+    grouping_items = [SimpleNamespace(id=payload.id, group_key=payload.group_key,
+        product_kind=item.product_kind) for payload, item in zip(body.items, invoice.items)]
+    grouped = item_group_service.prepare_replace(db, invoice,
+        SimpleNamespace(item_groups=body.item_groups, items=grouping_items))
+    for item, payload in zip(invoice.items, grouping_items):
+        item.group = grouped(payload)
 
 
 @observe_command("contract.create")

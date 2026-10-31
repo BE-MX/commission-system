@@ -13,6 +13,7 @@ class SyncedPayment(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     payment_id = Column(String(64), nullable=False, unique=True, comment="业务库回款ID")
+    source = Column(String(24), nullable=False, server_default="okki", comment="okki/ark_return；本地退款不得进入小满同步")
     order_id = Column(String(64), nullable=False, comment="关联订单ID")
     customer_id = Column(String(64), nullable=False, comment="关联客户ID")
     payment_date = Column(Date, nullable=False, comment="回款日期")

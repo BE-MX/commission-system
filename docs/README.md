@@ -11,11 +11,23 @@
 3. **接入方舟 API** → 阅读 [integration-guide.md](integration-guide.md)
 4. **了解架构** → 阅读 [architecture.md](architecture.md)
 
+## 近期专题入口
+
+| 业务 | 操作与约定入口 |
+| --- | --- |
+| 绩效目标与薪资 | [目标契约](requirements/2026-10-23-performance-goal-management.md) · [API 入口](api-reference.md) · [表结构](database.md) |
+| 色板与选色工具 | [色板库设计](requirements/swatch-library-redesign/2026-10-27-swatch-library-redesign.md) · [38 色工具部署](../deploy/color-guide.md) |
+| Kindle 个人看板 | [设备与接口契约](requirements/2026-10-25-kindle-dashboard.md) · [客户端说明](../extensions/kindle-inkboard/README.md) |
+
+当前状态统一见[交接文档](handoff.md)。
+
 ## 文档清单
+
+外贸退货功能：[设计契约](requirements/2026-10-30-sales-return-order-design.md)（客户与实际出库明细、货款冲减/实际退款/未收减免、本地负数回款、GMV、原比例提成扣回及实收/检验；权威库存入库待接入）。[实施验收记录](reports/2026-10-30-sales-return-implementation.md)。
 
 近期开发：[内贸经营决策台实施与验收](requirements/2026-10-08-domestic-decision-implementation.md)（真实内贸 API、七个专题和客户跟进闭环，本地开发，未部署）；[交互原型](requirements/domestic-decision-prototype/README.md)保留为设计参考，使用演示数据。
 
-完整枚举见[文档目录](document-catalog.md)；本页只保留常用入口。日期型设计、计划和验收报告代表当时范围，不自动代表当前生产状态。当前状态查[交接文档](handoff.md)，历史追溯查[归档交接](archive/handoff-2026-09-17.md)。
+完整枚举见[文档目录](document-catalog.md)；本页只保留常用入口。最近整理见[2026-10-31 报告](reports/2026-10-31-project-knowledge-tidy.md)。日期型设计、计划和验收报告代表当时范围，不自动代表当前生产状态。当前状态查[交接文档](handoff.md)，历史追溯查[2026-10-31 完整快照](archive/handoff-main-2026-10-31.md)及[早期归档](archive/handoff-2026-09-17.md)。
 
 | 文档 | 用途 | 适合谁 |
 |------|------|--------|

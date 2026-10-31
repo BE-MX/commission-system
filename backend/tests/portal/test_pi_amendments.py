@@ -338,3 +338,33 @@ def test_unversioned_commercial_header_evidence_tampering_rejected(edited):
     with pytest.raises(PortalError) as caught:
         accept(ctx,order,proposal)
     assert caught.value.code == "ORDER_UNAVAILABLE"
+
+
+def test_pi_without_optional_delivery_can_be_revised_and_published(edited):
+    ctx, invoice, order = edited
+    invoice.contact_name = ""
+    invoice.contact_phone = ""
+    invoice.delivery_address = ""
+    ctx.db.commit()
+    _, proposal = propose(ctx, invoice, order)
+    accept(ctx, order, proposal)
+    _, result = publish(ctx, invoice, order, proposal)
+    assert result["amendment_state"] == "current"
+    assert invoice.contact_name == "" and invoice.delivery_address == ""
+
+
+@pytest.mark.parametrize("units,allowed", [(29, False), (30, True)])
+def test_pi_revision_uses_same_stock_threshold_as_checkout(edited, units, allowed):
+    from app.portal.inventory import InventoryObservation
+    from app.portal.models import CatalogItem
+    ctx, invoice, order = edited
+    item = ctx.db.scalars(select(CatalogItem).order_by(CatalogItem.id)).first()
+    original = ctx.observations[item.public_id]
+    ctx.observations[item.public_id] = InventoryObservation(Decimal(units) * item.conversion_factor,
+        original.unit, original.observed_at, original.source)
+    if allowed:
+        assert propose(ctx, invoice, order)[1]["original_receipt"]
+    else:
+        with pytest.raises(PortalError) as caught:
+            propose(ctx, invoice, order)
+        assert caught.value.code == "STOCK_CHANGED"

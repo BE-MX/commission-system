@@ -324,3 +324,7 @@ from app.system import models as _system_models  # noqa: F401
 from app.inkboard import models as _inkboard_models  # noqa: F401
 from app.commerce_transition import models as _commerce_transition_models  # noqa: F401
 from app.commerce_shadow import models as _commerce_shadow_models  # noqa: F401
+from app.sales_return import models as _sales_return_models  # noqa: F401
+# Swatch library FKs reach ark_customer_accounts / ark_color_palette; keep both in metadata.
+from app.color import models as _color_models  # noqa: F401
+from app.color import swatch_library_models as _color_library_models  # noqa: F401

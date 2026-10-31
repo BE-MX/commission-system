@@ -12,7 +12,7 @@ from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.service import list_okki_department_options
 from app.core.config import get_settings
 from app.core.time import beijing_now
-from app.trade.service import local_mode
+from app.trade.service import formal_projection_enabled as local_mode
 from app.dingtalk.gmv_daily_schemas import GmvDailyConfigUpdate
 from app.system.models import SysDict
 from app.system.reserved_dict_types import (
@@ -93,7 +93,7 @@ def _parse_member(row: SysDict) -> dict | None:
 
 
 def load_config(db: Session) -> dict:
-    if local_mode():
+    if local_mode(db):
         from app.dingtalk.gmv_native_config import load_native_config
         return load_native_config(db)
     rows = (
@@ -203,7 +203,7 @@ def _public_recipient(source: dict) -> dict:
 
 def decorate_config(db: Session, config: dict | None = None) -> dict:
     config = deepcopy(config or load_config(db))
-    if local_mode():
+    if local_mode(db):
         from app.dingtalk.gmv_native_config import decorate_native_config
         return decorate_native_config(db, config)
     bindings = okki_user_bindings(db)
@@ -226,7 +226,7 @@ def decorate_config(db: Session, config: dict | None = None) -> dict:
 
 
 def config_options(db: Session) -> dict:
-    if local_mode():
+    if local_mode(db):
         from app.dingtalk.gmv_native_config import native_options
         return native_options(db)
     bindings = okki_user_bindings(db)
@@ -258,7 +258,7 @@ def config_options(db: Session) -> dict:
 
 def save_config(db: Session, request: GmvDailyConfigUpdate) -> dict:
     from app.dingtalk.gmv_daily_schemas import GmvNativeConfigUpdate
-    if local_mode():
+    if local_mode(db):
         if not isinstance(request, GmvNativeConfigUpdate):
             raise ValueError("本地模式请使用方舟人员配置，不能提交旧外部账号配置")
         from app.dingtalk.gmv_native_config import save_native_config

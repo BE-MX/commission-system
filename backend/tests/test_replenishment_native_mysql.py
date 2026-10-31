@@ -1,4 +1,4 @@
-"""Actual 187 DDL and native policy first-writer/batch races in MySQL RR."""
+"""Actual 240 DDL and native policy first-writer/batch races in MySQL RR."""
 from concurrent.futures import ThreadPoolExecutor
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -29,7 +29,7 @@ def policies(mysql_engine, stock_ids):
             UNIQUE KEY uk_cart_user_product(user_id,product_id))""")
         conn.exec_driver_sql("INSERT INTO ark_safety_stock(product_id,safety_stock,updated_by,updated_at,created_at) VALUES(123,8,1,NOW(),NOW())")
         conn.exec_driver_sql("INSERT INTO ark_production_cart(user_id,product_id,product_name) VALUES(1,123,'Legacy')")
-        spec = spec_from_file_location("replenishment_migration", Path(__file__).parents[1] / "alembic/versions/221_local_replenishment.py")
+        spec = spec_from_file_location("replenishment_migration", Path(__file__).parents[1] / "alembic/versions/240_local_replenishment.py")
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)
         with Operations.context(MigrationContext.configure(conn)):

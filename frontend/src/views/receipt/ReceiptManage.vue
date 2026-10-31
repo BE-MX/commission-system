@@ -10,11 +10,11 @@
     <div class="page-header">
       <div>
         <h2>回款单</h2>
-        <p>每笔回款关联订单，凭证与同步结果集中查看。</p>
+        <p>按原订单查看收款与退货退款，凭证和记账结果集中核对。</p>
       </div>
     </div>
 
-    <el-alert class="page-alert" title="库存单完整同步后自动生成回款；失败和待核对单仍占用订单登记额度，请在原单上处理。" type="info" :closable="false" show-icon />
+    <el-alert class="page-alert" title="库存单完整同步后自动生成回款；失败和待核对单请在原单处理。退货退款仅在方舟记账，实际付款另按资金凭据核对。" type="info" :closable="false" show-icon />
     <el-alert v-if="deliveryEnabled === false" class="page-alert" :title="presaleDeliveryEnabled ? '普通订单回款同步暂未启用；预售回款按预售开关独立同步。' : '小满回款同步暂未启用。已创建的回款保留在方舟，启用后自动处理。'" type="warning" :closable="false" show-icon />
 
     <section ref="panelRef" class="table-card receipt-panel">
@@ -27,6 +27,7 @@
         <el-select v-model="searchForm.source" clearable placeholder="来源" aria-label="回款来源" class="filter-w-sm">
           <el-option label="库存单自动" value="auto" />
           <el-option label="手工登记" value="manual" />
+          <el-option label="退货退款" value="sales_return" />
         </el-select>
         <template #advanced>
         <el-select v-model="searchForm.status" clearable placeholder="单据状态" aria-label="单据状态" class="filter-w-sm">
@@ -53,7 +54,7 @@
       </div>
 
       <ListPageStatus v-if="hasData && listErrorMessage" :error="listErrorMessage" :has-data="hasData" :data-page="dataPage" @retry="fetchList" />
-      <el-table v-loading="loading" :data="list" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="handleTableSort" v-sticky-scrollbar>
+      <el-table v-loading="loading" :data="list" row-key="id" class="list-table" :class="densityClass" border :max-height="isFullscreen ? undefined : 640" @sort-change="handleTableSort" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :error="listErrorMessage" :loading="loading || (!hasLoaded && !listErrorMessage)" @retry="fetchList">
             <el-empty :image-size="96" :description="hasActiveFilters ? '没有符合条件的记录' : '暂无数据'">
@@ -79,10 +80,10 @@
         <el-table-column v-if="visibleKeys.includes('customer')" prop="customer_name" label="客户" min-width="170" max-width="240" show-overflow-tooltip sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('collection-date')" prop="collection_date" label="回款日期" min-width="130" max-width="180" sortable="custom" />
         <el-table-column v-if="visibleKeys.includes('source')" label="来源" min-width="120" max-width="170" prop="source" sortable="custom">
-          <template #default="{ row }">{{ row.source === 'auto' ? '库存单自动' : '手工登记' }}</template>
+          <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('collect-status')" label="财务状态" min-width="110" max-width="160" prop="collect_status" sortable="custom">
-          <template #default="{ row }">{{ financeLabel(row.collect_status) }}</template>
+          <template #default="{ row }">{{ isLocalReturnReceipt(row) ? '本地记账生效' : financeLabel(row.collect_status) }}</template>
         </el-table-column>
         <el-table-column v-if="visibleKeys.includes('attachments')" prop="attachment_count" sortable="custom" label="凭证" min-width="85" max-width="120">
           <template #default="{ row }">{{ row.attachment_count }} 张</template>
@@ -92,7 +93,7 @@
             <div class="table-actions">
               <el-button link type="primary" @click="showDetail(row)"><el-icon><View /></el-icon>查看</el-button>
               <el-button v-if="row.batch_id" link type="primary" @click="showBatch(row.batch_id)"><el-icon><Wallet /></el-icon>整笔回款</el-button>
-              <el-button v-if="row.sync_status === 'failed' && row.status === 'active'" v-permission="'receipt:write'" link type="primary" :loading="saving" @click="retry(row)"><el-icon><Refresh /></el-icon>重试</el-button>
+              <el-button v-if="!isLocalReturnReceipt(row) && row.sync_status === 'failed' && row.status === 'active'" v-permission="'receipt:write'" link type="primary" :loading="saving" @click="retry(row)"><el-icon><Refresh /></el-icon>重试</el-button>
             </div>
           </template>
         </el-table-column>
@@ -134,9 +135,11 @@
       </template>
     </DetailDrawer>
     <DetailDrawer v-model="detailVisible" :title="detail?.receipt_no || '回款单详情'" :loading="!detail">
-      <template v-if="detail"><div class="detail-status"><StatusBadge size="small" effect="plain" :type="statusTone(detail.sync_status)">{{ detail.deletion_pending ? '删除待核验' : detail.status === 'remote_deleted' ? '远端删除已核实' : detail.status === 'voided' ? '已作废' : statusLabel(detail.sync_status) }}</StatusBadge><StatusBadge size="small" effect="plain">财务：{{ financeLabel(detail.collect_status) }}</StatusBadge></div>
+      <ReturnReceiptSummary v-if="isLocalReturnReceipt(detail)" :receipt="detail" />
+      <template v-else-if="detail"><div class="detail-status"><StatusBadge size="small" effect="plain" :type="statusTone(detail.sync_status)">{{ detail.deletion_pending ? '删除待核验' : detail.status === 'remote_deleted' ? '远端删除已核实' : detail.status === 'voided' ? '已作废' : statusLabel(detail.sync_status) }}</StatusBadge><StatusBadge size="small" effect="plain">财务：{{ financeLabel(detail.collect_status) }}</StatusBadge></div>
         <h1 class="detail-amount">{{ detail.currency }} {{ money(detail.amount) }}</h1>
         <el-alert v-if="detail.last_error" :title="detail.last_error" type="warning" :closable="false" />
+        <el-alert v-if="detail.funding_projection_error" :title="detail.funding_projection_error" type="warning" :closable="false" />
         <ResponsiveDescriptions :column="1" border class="receipt-descriptions"><el-descriptions-item label="订单发票">{{ detail.invoice_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item><el-descriptions-item label="回款日期">{{ detail.collection_date }}</el-descriptions-item><el-descriptions-item label="回款方式">{{ detail.payment_type }}</el-descriptions-item><el-descriptions-item label="银行手续费">{{ money(detail.bank_charge) }}</el-descriptions-item><el-descriptions-item label="小满回款编号">{{ detail.xiaoman_receipt_no || '尚未取得' }}</el-descriptions-item><el-descriptions-item label="截图传输">仅方舟留存</el-descriptions-item><el-descriptions-item label="备注"><DocumentRemarkEditor :key="detail.id" :document="detail" kind="receipt" :disabled="saving || deletionBusy || deletionOpen || detail.deletion_pending" @editing="value => remarkEditing = value" @saving="value => remarkSaving = value" @updated="row => { detail = row; refreshUpdate() }" /></el-descriptions-item></ResponsiveDescriptions>
         <p>收款用途：{{ purposeLabel(detail.purpose) }}</p>
         <p v-for="application in detail.shipment_applications" :key="`${application.settlement_id}:${application.component}`">关联发货批次：{{ application.settlement_no }} · 分配 {{ detail.currency }} {{ money(application.amount) }}{{ application.status === 'released' ? '（已释放）' : '' }}</p>
@@ -146,7 +149,7 @@
         <el-alert v-if="candidates.length" title="以下仅为候选，管理员需核对真实凭证后绑定。" type="warning" :closable="false" /><p v-for="c in candidates" :key="c.xiaoman_receipt_id">小满 ID {{ c.xiaoman_receipt_id }} · {{ c.xiaoman_receipt_no }} · {{ money(c.amount) }}</p>
       </template>
       <template #footer>
-        <template v-if="detail">
+        <template v-if="detail && !isLocalReturnReceipt(detail)">
           <ReceiptRemoteChange v-if="detail.status === 'active' && detail.xiaoman_receipt_id" :receipt-id="detail.id"
             :disabled="saving || deletionBusy || deletionOpen || detail.deletion_pending" @busy="value => remoteBusy = value" @open="value => remoteOpen = value" @updated="row => { detail = row; refreshUpdate() }" />
           <GlassButton v-if="editable" v-permission="'receipt:write'" :disabled="deletionBusy || deletionOpen" @click="editCurrent">修正资料</GlassButton>
@@ -183,9 +186,10 @@ import ReceiptDelete from './ReceiptDelete.vue'
 import ReceiptPurposeCorrection from './ReceiptPurposeCorrection.vue'
 import { purposeLabel } from '@/views/invoice/components/invoiceDetailLabels'
 import ReceiptProofs from './ReceiptProofs.vue'
+import ReturnReceiptSummary from './ReturnReceiptSummary.vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { useTableView } from '@/composables/useTableView'
-import { useReceipts, statusLabel, statusTone, financeLabel, money } from './useReceipts'
+import { useReceipts, statusLabel, statusTone, financeLabel, money, sourceLabel, isLocalReturnReceipt } from './useReceipts'
 const batchVisible = ref(false), batchDetailVisible = ref(false), batchDetail = ref(null), batchLoading = ref(false), batchError = ref('')
 const deletionBusy = ref(false), deletionOpen = ref(false)
 const remoteBusy = ref(false), remoteOpen = ref(false), remarkEditing = ref(false), remarkSaving = ref(false)
@@ -196,7 +200,7 @@ async function showBatch(id) {
   catch (e) { if (sequence === batchSequence) batchError.value = e.message || '整笔回款加载失败' }
   finally { if (sequence === batchSequence) batchLoading.value = false }
 }
-const states = ['pending','syncing','synced','failed','uncertain']
+const states = ['pending','syncing','synced','failed','uncertain','local_only']
 const { loading,list,total,page,pageSize,searchForm,dates,fetchList,handleSearch,handleSortChange,handlePageChange,handleSizeChange,reset,
   listErrorMessage,hasLoaded,hasData,dataPage,hasPendingSearch,appliedSearchForm,refreshCreate,refreshUpdate,
   editorVisible,detailVisible,detail,saving,uploading,orders,ordersLoading,balance,balanceLoading,error,candidates,

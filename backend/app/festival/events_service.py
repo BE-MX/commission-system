@@ -81,10 +81,14 @@ def _deal_candidates(db: Session, date_from: str, date_to: str,
     主轨优先用 xiaoman_order_id（与保底轨同键，切轨不重报），未推单兜底发票号。"""
     if fsvc.local_mode(db):
         from app.festival.local_service import orders
+        from app.sales_return.gmv import order_adjustments
+        rows = orders(db, date_from, date_to)
+        reductions = order_adjustments(db, [row["event_order_id"] for row in rows], date_to)
+        rows = [{**row, "amount_usd": row["amount_usd"] + reductions.get(str(row["event_order_id"]), 0)} for row in rows]
         return [_cand("super_deal" if row["amount_usd"] >= SUPER_DEAL_USD else "big_deal",
             "person", row["user_id"], row["user_name"], f"deal:{row['event_order_id']}",
             amount=row["amount_usd"], detail=f"${row['amount_usd']:,.0f}")
-            for row in orders(db, date_from, date_to) if row["amount_usd"] >= BIG_DEAL_USD]
+            for row in rows if row["amount_usd"] >= BIG_DEAL_USD]
     out = []
     if fsvc._data_source(source, db=db) == "ark":
         rows = db.execute(text(
@@ -94,8 +98,12 @@ def _deal_candidates(db: Session, date_from: str, date_to: str,
             f"   AND {fsvc._ARK_AMOUNT} >= :thr"
             "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
         ), {"thr": BIG_DEAL_USD, "d1": date_from, "d2": date_to}).mappings().all()
+        from app.sales_return.gmv import order_adjustments
+        reductions = order_adjustments(db, [r["xiaoman_order_id"] for r in rows if r["xiaoman_order_id"]], date_to)
         for r in rows:
-            amt = float(r["amt"])
+            amt = float(r["amt"]) + float(reductions.get(str(r["xiaoman_order_id"]), 0))
+            if amt < BIG_DEAL_USD:
+                continue
             key = r["xiaoman_order_id"] or f"ark:{r['invoice_no']}"
             etype = "super_deal" if amt >= SUPER_DEAL_USD else "big_deal"
             out.append(_cand(etype, "person", r["user_id"], r["name"],
@@ -110,8 +118,12 @@ def _deal_candidates(db: Session, date_from: str, date_to: str,
         "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
         + fsvc._common_filter("a2")
     ), {"thr": BIG_DEAL_USD, "d1": date_from, "d2": date_to}).mappings().all()
+    from app.sales_return.gmv import order_adjustments
+    reductions = order_adjustments(db, [r["order_id"] for r in rows], date_to)
     for r in rows:
-        amt = float(r["amount_usd"])
+        amt = float(r["amount_usd"]) + float(reductions.get(str(r["order_id"]), 0))
+        if amt < BIG_DEAL_USD:
+            continue
         etype = "super_deal" if amt >= SUPER_DEAL_USD else "big_deal"
         out.append(_cand(etype, "person", r["user_id"], r["name"],
                          f"deal:{r['order_id']}", amount=amt,

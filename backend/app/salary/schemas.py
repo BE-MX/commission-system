@@ -24,6 +24,9 @@ GRADE_SCHEMES = {
 }
 
 PROFILE_STATUSES = ("active", "left")
+# 改定薪/职级时必须说清是哪种改：adjust=调薪调级（带生效日，月中分段），
+# correction=更正录入错误（视为一直是新值，不分段）
+PAY_CHANGE_KINDS = ("adjust", "correction")
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +154,17 @@ class ProfileUpdate(BaseModel):
     dingtalk_userid: Optional[str] = Field(None, max_length=64)
     mobile: Optional[str] = Field(None, max_length=32)
     remark: Optional[str] = None
+
+    # 不是档案列：只在本次改了定薪/职级时必填，service 据此写 change_log
+    pay_change_kind: Optional[str] = None
+    pay_effective_date: Optional[date] = None
+
+    @field_validator("pay_change_kind")
+    @classmethod
+    def _check_pay_change_kind(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in PAY_CHANGE_KINDS:
+            raise ValueError(f"pay_change_kind 只能是 {PAY_CHANGE_KINDS}")
+        return v
 
     @field_validator("status")
     @classmethod

@@ -95,6 +95,8 @@ function outboundProductCells(productName, spec) {
 // 独立打印文档不加载主站 tokens；纸张使用共用单据的黑白灰配色。
 const OUTBOUND_CSS = `
 .sheet{padding:12mm 6mm}
+.order-marks{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px 16px;font-size:24px;font-weight:800;line-height:1.3;max-width:72%;text-align:right}
+.order-marks span{white-space:nowrap}
 .left{min-width:0}
 .info-table{table-layout:fixed}
 .info-table td{overflow-wrap:anywhere}
@@ -179,6 +181,10 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
   const { products, accessories } = splitOutboundItems(items)
   const productSection = itemsTable(products, { outbound: true, title: '产品明细' })
   const accessorySection = itemsTable(accessories, { outbound: true, title: '配件明细' })
+  const marks = [
+    record.is_new_deal === true ? '<span>新签</span>' : '',
+    record.inspection_requirement === 'detail' ? '<span>拍摄明细照片</span>' : '',
+  ].join('')
 
   const body = `<div class="sheet">
   <div class="header">
@@ -186,6 +192,7 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
       <h1>出库单</h1>
       <div class="doc-no">单号：${esc(record.outbound_no)}</div>
     </div>
+    ${marks ? `<div class="order-marks">${marks}</div>` : ''}
   </div>
 
   <div class="body-row">

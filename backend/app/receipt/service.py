@@ -1,6 +1,7 @@
 """Receipt transactions; callers commit, except explicitly durable delivery work."""
 import hashlib
 import json
+import logging
 from decimal import Decimal
 from uuid import uuid4
 
@@ -14,6 +15,8 @@ from app.invoice.models import Invoice
 from app.invoice.service import get_invoice
 from app.receipt import access, attachments, balance, fees, remote
 from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent, ReceiptLog, ReceiptAttempt
+
+logger = logging.getLogger(__name__)
 
 
 def log(db, receipt, action, message, actor=None):
@@ -92,6 +95,24 @@ def describe(db, row, invoice=None, *, detail=False):
         data.update(allocated_amount=str(allocated), available_amount=str(row.amount - allocated),
             available_charge=str(row.bank_charge - allocated_charge),
             available_principal=str(row.amount - allocated - row.bank_charge + allocated_charge))
+        from app.sales_return.presale_adjustments import projection
+        try:
+            funds = projection(db, invoice)
+        except ValueError as error:
+            logger.warning("Receipt funding projection requires review receipt_id=%s", row.id)
+            print(f"[receipt] funding projection requires review receipt_id={row.id}", flush=True)
+            data.update(original_allocated_amount=str(allocated), original_available_amount=str(row.amount - allocated),
+                        allocated_amount=None, available_amount=None, available_charge=None,
+                        available_principal=None, funding_projection_error=str(error))
+        else:
+            if funds["returned_batches"]:
+                refund = funds["refunds"].get(row.id, Decimal(0))
+                released = sum((funds["releases"].get(app.id, Decimal(0)) for app in applied), Decimal(0))
+                net_amount, net_allocated = row.amount - refund, allocated - released
+                data.update(original_allocated_amount=str(allocated), original_available_amount=str(row.amount - allocated),
+                            net_funding_amount=str(net_amount), returned_amount=str(refund), return_released_amount=str(released),
+                            allocated_amount=str(net_allocated), available_amount=str(net_amount - net_allocated),
+                            available_principal=str(net_amount - net_allocated - row.bank_charge + allocated_charge))
     return data
 
 
@@ -119,7 +140,9 @@ def list_receipts(db, user, page=1, page_size=20, keyword="", sync_status="", so
         query = query.filter(Receipt.collection_date >= date_from)
     if date_to:
         query = query.filter(Receipt.collection_date <= date_to)
-    return {"total": query.count(), "items": [describe(db, r, i) for r, i in apply_list_sort(query, sort_field, sort_order, {**{name: getattr(Receipt, name) for name in ("receipt_no", "amount", "collection_date", "source", "sync_status", "collect_status", "created_at", "remark")}, "attachment_count": func.json_length(Receipt.attachment_ids), "invoice_no": Invoice.invoice_no, "customer_name": Invoice.customer_name, "order_id": func.coalesce(Receipt.xiaoman_order_id, Invoice.xiaoman_order_id)}, default=(Receipt.id.desc(),), tie_breakers=(Receipt.id.asc(),)).offset((page - 1) * page_size).limit(page_size).all()]}
+    from app.sales_return.receipt_projection import combined
+    return combined(db, user, query, page, page_size, keyword, sync_status, source, status,
+                    date_from, date_to, order_id, sort_field, sort_order, describe)
 
 
 def order_options(db, user, keyword="", page=1, customer_id="", currency=""):
@@ -158,8 +181,18 @@ def _with_active_settlement(db, invoice, summary):
         ShipmentSettlement.state.notin_(("cancelled", "cancelled_keep_freight"))).order_by(ShipmentSettlement.id).all()
     summary["funding_mode"] = "presale_pool"
     summary["payment_settlements"] = []
+    summary["payment_settlement_issues"] = []
     for row in rows:
-        data = settlement_service.funding_balance(db, row)
+        try:
+            data = settlement_service.funding_balance(db, row)
+        except ValueError as error:
+            from app.sales_return.presale_adjustments import projection
+            if row.id not in projection(db, invoice)["returned_batches"]:
+                raise
+            logger.warning("Returned presale batch requires funding review settlement_id=%s", row.id)
+            print(f"[receipt] returned presale batch requires funding review settlement_id={row.id}", flush=True)
+            summary["payment_settlement_issues"].append({"settlement_id": row.id, "reason": str(error)})
+            continue
         data["version"] = settlement_service.digest([data["version"], summary["version"]])
         data.update(state=row.state, settlement_no=row.settlement_no)
         if row.state != "shipped" and "active_settlement" not in summary:
@@ -255,7 +288,7 @@ def _create(db, invoice, body, actor, fingerprint, snapshot, payment_types, proo
         summary = goods_balance(db, invoice, snapshot, current=True)
     if summary["version"] != body.balance_version:
         raise HTTPException(409, "订单余额已变化，请刷新后核对金额（凭证已保留）")
-    if invoice.order_type != "presale":
+    if invoice.order_type != "presale" or "return_reduction_amount" in summary:
         balance.ensure_available(summary, body.amount)
     row = _make_row(db, invoice, body, actor, body.request_key, fingerprint)
     attachments.bind_verified(db, row.attachment_ids, actor, invoice.id, row.id, proof_evidence)

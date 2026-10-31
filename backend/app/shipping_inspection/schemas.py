@@ -6,6 +6,8 @@ PC 撤回编辑及小程序扫码、提交的请求体。
 
 from pydantic import BaseModel, Field
 
+from app.tracking.schemas import WaybillCreate
+
 
 class ShippingScanRequest(BaseModel):
     qr_raw: str = Field(..., description="出库单二维码原文")
@@ -21,3 +23,17 @@ class ShippingSubmitRequest(BaseModel):
 
 class ShippingRecallRequest(BaseModel):
     edit_version: int = Field(..., ge=0, description="列表中的编辑版本，防止延迟请求撤回新提交")
+
+
+class InspectionShipmentInput(BaseModel):
+    """关联物流跟踪里已有的运单（运单号+承运商精确匹配；PC 录入的承运商可能是"未知"）。"""
+    shipment_version: int = Field(..., ge=0)
+    edit_version: int = Field(..., ge=0)
+    waybill_no: str = Field(..., min_length=1, max_length=50, pattern=r'^\S+$')
+    carrier: str = Field(..., min_length=1, max_length=30, pattern=r'^\S+$')
+
+
+class InspectionShipmentCreate(WaybillCreate):
+    """验货单弹框上传运单：先按物流跟踪原流程入库，再关联本验货单。"""
+    shipment_version: int = Field(..., ge=0)
+    edit_version: int = Field(..., ge=0)

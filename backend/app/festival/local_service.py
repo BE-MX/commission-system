@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 from sqlalchemy import text
 from app.trade.query_service import load_orders, load_roster
+from app.trade.return_adjustments import load_return_adjustments
 
 
 def orders(db, start=None, end=None, user_id=None):
@@ -19,6 +20,9 @@ def new_sign_board(db, start, end):
     rows = [{**row, "customer_id": row["company_id"], "amt": row["amount_usd"], "source_points": source_points(row)}
             for row in orders(db, start, end) if row["new_deal"] == "是"]
     stats = _aggregate_new_sign_rows(rows)
+    for fact in load_return_adjustments(db, start, end):
+        if fact["role"] == "new_sign":
+            stats.setdefault(fact["owner"], {"cnt": 0, "points": 0, "amt": 0})["amt"] += float(fact["amount"])
     attrs = dict(db.execute(text("SELECT employee_id, attribute_type FROM employee_attribute_history WHERE is_current = 1")).all())
     items = []
     for member in load_roster(db):
@@ -36,7 +40,9 @@ def company_new_total(db, start, end):
 
 
 def gmv_total(db, start, end):
-    return float(sum((row["amount_usd"] for row in orders(db, start, end)), Decimal(0)))
+    sales = sum((row["amount_usd"] for row in orders(db, start, end)), Decimal(0))
+    returns = sum((row["amount"] for row in load_return_adjustments(db, start, end)), Decimal(0))
+    return float(sales + returns)
 
 
 def repurchase_pool(db):
@@ -53,6 +59,9 @@ def repurchase_stats(db, start, end):
             firsts[uid].add(row["company_id"])
         if row["new_deal"] == "否" and row["company_id"] in pool:
             amounts[uid] += row["amount_usd"]
+    for fact in load_return_adjustments(db, start, end):
+        if fact["role"] == "repeat":
+            amounts[fact["owner"]] += fact["amount"]
     for uid in firsts.keys() | amounts.keys():
         stats[uid] = {"first_count": len(firsts[uid]), "re_amount": float(amounts[uid])}
     return stats

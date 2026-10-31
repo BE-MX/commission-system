@@ -7,9 +7,9 @@
         <span v-else class="line-hint">四个关键词选择完整后自动匹配唯一产品。</span>
       </div>
       <div class="line-header-actions">
-        <el-tooltip :disabled="canPasteImport" :content="pasteImportDisabledReason">
+        <el-tooltip :disabled="pasteEnabled" :content="pasteDisabledReason">
           <span>
-            <el-button v-permission="'invoice:write'" :disabled="!canPasteImport" @click="$emit('paste')">
+            <el-button v-permission="'invoice:write'" :disabled="!pasteEnabled" @click="$emit('paste')">
               <el-icon><DocumentCopy /></el-icon>
               从 Excel 粘贴
             </el-button>
@@ -35,23 +35,43 @@
         <el-dropdown trigger="click">
           <el-button>明细操作</el-button>
           <template #dropdown><el-dropdown-menu>
-            <el-dropdown-item :disabled="!items.length" @click="$emit('copy')">复制一行</el-dropdown-item>
-            <el-dropdown-item divided :disabled="!items.length" @click="clearAll">清空明细</el-dropdown-item>
+            <el-dropdown-item :disabled="!groupItems.length || !canAppendToGroup" @click="$emit('copy')">复制一行</el-dropdown-item>
+            <el-dropdown-item divided :disabled="!groupItems.length" @click="clearAll">{{ activeGroupKey === ALL_ITEM_GROUPS ? '清空全部明细' : '清空当前分组' }}</el-dropdown-item>
           </el-dropdown-menu></template>
         </el-dropdown>
-        <el-button @click="$emit('add-blank')"><el-icon><Plus /></el-icon>添加空行</el-button>
+        <el-button :disabled="!canAppendToGroup" @click="$emit('add-blank')"><el-icon><Plus /></el-icon>添加空行</el-button>
       </div>
     </div>
+    <InvoiceItemGroupTabs
+      :groups="itemGroups"
+      :counts="groupCounts"
+      :all-count="items.length"
+      :selected-count="selectedCount"
+      :active-key="activeGroupKey"
+      @update:active-key="$emit('update:activeGroupKey', $event)"
+      @create="$emit('create-group')"
+      @rename="$emit('rename-group', $event)"
+      @delete="$emit('delete-group', $event)"
+      @move="moveSelected"
+    />
     <div class="stock-toolbar">
       <el-checkbox v-model="onlyShortage">仅显示库存不足的产品</el-checkbox>
+      <el-select v-model="outboundFilter" class="outbound-filter" aria-label="出库状态筛选">
+        <el-option label="全部出库状态" value="all" />
+        <el-option label="未加入出库单" value="none" />
+        <el-option label="已加入待发货" value="allocated" />
+        <el-option label="部分发货" value="partial" />
+        <el-option label="已发货" value="shipped" />
+        <el-option label="状态待核对" value="unknown" />
+      </el-select>
       <span class="line-hint">自由可用已扣除待出库保留；浅红行表示本单待出库数量仍缺货</span>
       <el-button v-if="invoiceId" link type="primary" :loading="inventoryLoading" @click="refreshInventory">刷新库存与出库进度</el-button>
       <span v-if="inventoryLoading" class="line-hint" role="status">正在核对库存与出库进度</span>
       <el-text v-else-if="inventoryError" type="warning" role="status">库存核对失败，请刷新重试</el-text>
-      <el-text v-else-if="unknownCount" type="warning" role="status">{{ unknownCount }} 行待核对，未计入库存不足筛选</el-text>
+      <el-text v-else-if="unknownCount" type="warning" role="status">整单 {{ unknownCount }} 行待核对，未计入库存不足筛选</el-text>
     </div>
     <div class="line-table-wrap">
-      <el-table ref="lineTable" :data="pagedItems" :row-class-name="({ row }) => stockStatus(row).shortage ? 'stock-shortage-row' : ''" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
+      <el-table ref="lineTable" :data="pagedItems" :row-class-name="lineRowClass" @sort-change="sortLines" @select="onSelect" @select-all="onSelectAll" border class="list-table line-table" max-height="560" v-sticky-scrollbar>
         <template #empty>
           <ListPageStatus :loading="onlyShortage && inventoryLoading" :error="onlyShortage ? inventoryError : ''" @retry="refreshInventory">
             <el-empty :image-size="96" :description="onlyShortage ? '暂无已确认库存不足的产品' : '暂无产品明细'" />
@@ -169,7 +189,7 @@
         </el-table-column>
         <el-table-column label="自由可用" min-width="110">
           <template #default="{ row }">
-            <span class="stock-count">{{ stockStatus(row).available ?? '待核对' }}</span>
+            <span :class="['stock-count', { 'is-shortage': stockStatus(row).shortage }]">{{ stockStatus(row).available ?? '待核对' }}</span>
             <el-text v-if="stockStatus(row).shortage" type="danger" size="small">库存不足</el-text>
           </template>
         </el-table-column>
@@ -211,6 +231,20 @@
             <el-text v-if="row === quantityErrorRow" type="danger" size="small">请填写正整数数量</el-text>
           </template>
         </el-table-column>
+        <el-table-column label="出库状态" min-width="150">
+          <template #default="{ row }">
+            <el-tooltip :disabled="!outboundStatus(row).references.length" placement="top">
+              <template #content>
+                <div v-for="reference in outboundStatus(row).references" :key="`${reference.id}-${reference.quantity}`">
+                  {{ reference.number || reference.id }} · {{ reference.state === 'shipped' ? '已发货' : '已生成' }} · 数量 {{ reference.quantity }}
+                </div>
+              </template>
+              <StatusBadge size="small" :type="outboundBadgeType(outboundStatus(row).code)" effect="plain">
+                {{ outboundStatus(row).label }}
+              </StatusBadge>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column label="小计" min-width="110" align="right" prop="total_price" sortable="custom" :fixed="pinColumns ? 'right' : false">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
@@ -220,11 +254,11 @@
       </el-table>
     </div>
     <!-- 明细可能几十上百行：窗内分页，行号跨页连续；新增/导入后跳到末页 -->
-    <div v-if="filteredItems.length" class="line-pagination">
+    <div v-if="visibleItems.length" class="line-pagination">
       <el-pagination class="pager"
         v-model:current-page="page"
         v-model:page-size="pageSize"
-        :total="filteredItems.length"
+        :total="visibleItems.length"
         :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         small
@@ -246,9 +280,14 @@ import { getInvoiceEditorInventory } from '@/api/invoice'
 import { ArrowDown, ArrowUp, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue'
 import { CURL_OPTIONS } from '../composables/useInvoiceEditor'
 import { quoteSemifinished } from '@/api/semifinished'
+import InvoiceItemGroupTabs from './InvoiceItemGroupTabs.vue'
+import { ALL_ITEM_GROUPS } from '../composables/useInvoiceItemGroups.js'
 
 const props = defineProps({
   items: { type: Array, required: true },
+  itemGroups: { type: Array, default: () => [] },
+  groupCounts: { type: Object, default: () => ({}) },
+  activeGroupKey: { type: String, default: ALL_ITEM_GROUPS },
   invoiceId: { type: Number, default: null },
   active: { type: Boolean, default: true },
   quantityErrorRow: { type: Object, default: null },
@@ -266,8 +305,9 @@ const props = defineProps({
   // 旧版 640px 抽屉放不下右侧固定列（会挤掉全部可滚动空间），由调用方关掉
   pinColumns: { type: Boolean, default: true },
 })
-const emit = defineEmits(['paste', 'copy', 'add-blank', 'remove', 'remove-many'])
-const { onlyShortage, stockStatus, filteredItems, unknownCount,
+const emit = defineEmits(['paste', 'copy', 'add-blank', 'remove', 'remove-many',
+  'update:activeGroupKey', 'create-group', 'rename-group', 'delete-group', 'move-many'])
+const { onlyShortage, stockStatus, outboundStatus, filteredItems, unknownCount,
   loading: inventoryLoading, error: inventoryError, refreshInventory } = useInvoiceStockShortage(props, getInvoiceEditorInventory)
 const showOptionalCols = ref(false)
 function priceHint(row) {
@@ -282,6 +322,23 @@ const preciseMoney = value => hiddenPricePrecision(value) || props.money(value)
 const showDiscountCol = computed(() => showOptionalCols.value
   || props.items.some(row => Number(row.discount_amount || 0) !== 0))
 const collapseSpecs = ref(false)
+const canAppendToGroup = computed(() => props.itemGroups.some(group => group.key === props.activeGroupKey))
+const pasteEnabled = computed(() => props.canPasteImport && canAppendToGroup.value)
+const pasteDisabledReason = computed(() => canAppendToGroup.value
+  ? props.pasteImportDisabledReason : '请先选择或新建一个明细分组')
+const outboundFilter = ref('all')
+const groupItems = computed(() => props.activeGroupKey === ALL_ITEM_GROUPS
+  ? props.items : props.items.filter(row => row.group_key === props.activeGroupKey))
+const visibleItems = computed(() => filteredItems.value.filter(row =>
+  (props.activeGroupKey === ALL_ITEM_GROUPS || row.group_key === props.activeGroupKey)
+  && (outboundFilter.value === 'all' || outboundStatus(row).code === outboundFilter.value)))
+function outboundBadgeType(code) {
+  return ({ shipped: 'success', partial: 'warning', unknown: 'warning', allocated: 'info', none: 'info' })[code] || 'info'
+}
+function lineRowClass({ row }) {
+  return [stockStatus(row).shortage ? 'stock-shortage-row' : '', outboundStatus(row).linked ? 'outbound-linked-row' : '']
+    .filter(Boolean).join(' ')
+}
 
 // 窗内分页：几十上百行时表格窗口高度固定；行号跨页连续
 const page = ref(1)
@@ -289,7 +346,7 @@ const pageSize = ref(20)
 const sortField = ref('')
 const sortOrder = ref('')
 function sortLines({ prop, order }) { sortField.value = prop; sortOrder.value = order; page.value = 1 }
-const sortedItems = computed(() => sortTableRows(filteredItems.value, sortField.value, sortOrder.value, row => sortField.value === 'semifinished_summary'
+const sortedItems = computed(() => sortTableRows(visibleItems.value, sortField.value, sortOrder.value, row => sortField.value === 'semifinished_summary'
   ? (row.semifinished_plan || []).map(item => `${item.size}/${item.color_code} ${item.quantity_grams}`).join(' / ')
   : row[sortField.value]))
 const pagedItems = computed(() => sortedItems.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
@@ -297,7 +354,7 @@ const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
 const lineTable = ref(null)
 const itemsRef = computed(() => props.items)
 const { selectedCount, onSelect, onSelectAll, clearSelection, takeSelected } =
-  useLineSelection(lineTable, itemsRef, pagedItems)
+  useLineSelection(lineTable, itemsRef, pagedItems, visibleItems)
 
 async function removeSelected() {
   try {
@@ -309,40 +366,60 @@ async function removeSelected() {
   emit('remove-many', takeSelected())
 }
 
+function moveSelected(targetKey) {
+  const rows = takeSelected()
+  if (rows.length) emit('move-many', { rows, targetKey })
+}
+
 async function clearAll() {
+  const group = props.itemGroups.find(row => row.key === props.activeGroupKey)
+  const target = group ? `分组「${group.name}」的` : '全部'
   try {
-    await confirmDanger('清空', `全部 ${props.items.length} 行产品明细`, '清空后可重新添加或从 Excel 粘贴，但已录入内容会丢失。')
+    await confirmDanger('清空', `${target} ${groupItems.value.length} 行产品明细`, '清空后可重新添加或从 Excel 粘贴，但已录入内容会丢失。')
   } catch (error) {
     if (isFeedbackCancelled(error)) return
     throw error
   }
   clearSelection()
-  emit('remove-many', [...props.items])
+  emit('remove-many', [...groupItems.value])
 }
 const quantityInput = ref(null)
 watch(() => props.quantityErrorRow, async row => {
-  const index = props.items.indexOf(row)
-  if (index < 0) return
+  if (!row || row.product_kind === 'accessory') return
+  const targetGroup = row.group_key || ALL_ITEM_GROUPS
+  if (targetGroup !== props.activeGroupKey) {
+    emit('update:activeGroupKey', targetGroup)
+    await nextTick()
+  }
   onlyShortage.value = false
+  outboundFilter.value = 'all'
   // Return to entry order so typing a quantity cannot move this row to another page.
   lineTable.value?.clearSort()
   sortField.value = ''
   sortOrder.value = ''
+  await nextTick()
+  const index = visibleItems.value.indexOf(row)
+  if (index < 0) return
   page.value = Math.floor(index / pageSize.value) + 1
   await nextTick()
   quantityInput.value?.focus()
 })
 watch(() => props.items.length, (now, before) => {
   // Adding/importing must reveal new rows even when their stock is not known yet.
-  if (now > before) onlyShortage.value = false
-  const pages = Math.max(1, Math.ceil(now / pageSize.value))
+  if (now > before) {
+    onlyShortage.value = false
+    outboundFilter.value = 'all'
+  }
+  const pages = Math.max(1, Math.ceil(visibleItems.value.length / pageSize.value))
   if (!before) page.value = 1 // 编辑单初次装载：从第一页开始审阅
   else if (now > before) page.value = pages // 添加空行/复制/Excel 粘贴：跟到末页
   else if (page.value > pages) page.value = pages // 删除行后收敛页码
 })
+watch(() => props.activeGroupKey, () => { page.value = 1; clearSelection() }, { flush: 'sync' })
+watch(outboundFilter, () => { page.value = 1; clearSelection() }, { flush: 'sync' })
 watch(onlyShortage, () => { page.value = 1; clearSelection() }, { flush: 'sync' })
-watch([filteredItems, pageSize], () => {
-  page.value = Math.min(page.value, Math.max(1, Math.ceil(filteredItems.value.length / pageSize.value)))
+watch([visibleItems, pageSize], () => {
+  page.value = Math.min(page.value, Math.max(1, Math.ceil(visibleItems.value.length / pageSize.value)))
   // Hidden rows must not remain selected for a later bulk deletion.
   if (onlyShortage.value) clearSelection()
 })
@@ -406,9 +483,15 @@ function lineOptionGroups(options, key) {
 .line-header-actions { flex-wrap: wrap; justify-content: flex-end; }
 .stock-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; }
 .stock-toolbar .line-hint { color: var(--text-secondary); font-size: 12px; }
+.outbound-filter { width: 140px; }
 .line-table :deep(.stock-shortage-row) { --el-table-tr-bg-color: var(--tag-danger-bg); --el-table-row-hover-bg-color: var(--tag-danger-bg); }
 .line-table :deep(.stock-shortage-row > td.el-table__cell),
 .line-table :deep(.stock-shortage-row:hover > td.el-table__cell) { background: var(--tag-danger-bg) !important; }
+.line-table :deep(.outbound-linked-row) { --el-table-tr-bg-color: var(--page-bg); --el-table-row-hover-bg-color: var(--page-bg); }
+.line-table :deep(.outbound-linked-row > td.el-table__cell),
+.line-table :deep(.outbound-linked-row:hover > td.el-table__cell) { background: var(--page-bg) !important; }
+.line-table :deep(.outbound-linked-row.stock-shortage-row) { box-shadow: inset 3px 0 0 var(--tag-danger-text); }
+.stock-count.is-shortage { color: var(--tag-danger-text); border-color: var(--tag-danger-border); background: var(--tag-danger-bg); }
 .selection-hint { color: var(--text-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
 .line-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--card-radius); }
 .line-pagination { display: flex; justify-content: flex-end; margin-top: 10px; }

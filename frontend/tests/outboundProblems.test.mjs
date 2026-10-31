@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import * as Vue from 'vue'
 import { useListPage } from '../src/composables/useListPage.js'
+import { useOutboundListView } from '../src/views/shipping/composables/useOutboundListView.js'
 import { clearListResource } from '../src/composables/useListResourceScope.js'
 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
@@ -21,7 +22,11 @@ function controller(t, path, name, overrides = {}) {
     .replace(/export /g, '')
   const window = { dispatchEvent: event => events.push(event.type) }
   const api = scope.run(() => new Function('modules', 'window', `${source}\nreturn ${name}();`)(modules, window))
-  t.after(() => { api.state?.cancel(); scope.stop() })
+  if (name === 'useOutboundRecords') scope.run(() => useOutboundListView(api, route, {
+    push: async location => { route.path = location.path; route.query = location.query },
+    replace: async location => { route.path = location.path; route.query = location.query },
+  }))
+  t.after(() => { api.state?.cancel(); api.cancel?.(); scope.stop() })
   return { api, route, events }
 }
 const problemPath = '../src/views/shipping/composables/useOutboundProblems.js'
@@ -87,7 +92,9 @@ test('problem navigation on the mounted outbound page clears conflicting filters
     '@/api/shipping': { listOutboundRecords: async params => { calls.push({...params}); return {data:{items:[],total:0}} } },
   })
   Object.assign(api.searchForm, { outboundState:'ready',inspectionStatus:'submitted',keyword:'old',dateRange:['2026-10-01','2026-10-02'] })
-  api.page.value = 4
+  await api.handleSearch()
+  await api.handlePageChange(4)
+  await Vue.nextTick()
   route.query = { order_id:'105819851896460', problem:'task:350' }
   await Vue.nextTick()
   assert.deepEqual(calls.at(-1), {page:1,page_size:20,transaction_mode:'legacy',order_id:'105819851896460'})

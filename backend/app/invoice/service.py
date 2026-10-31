@@ -13,9 +13,9 @@ from sqlalchemy import and_, case, exists, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
-from app.invoice import accessory_price_service, delegation_service, price_service, product_service
+from app.invoice import accessory_price_service, delegation_service, item_group_service, price_service, product_service
 from app.invoice.customer_profile_service import get_customer_grade, save_customer_grade
-from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceItem
+from app.invoice.models import CustomerProfile, Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 from app.invoice.screenshot_token import verify_preview_token
 from app.invoice.screenshot_source import external_source_key, is_external_source_key
@@ -157,19 +157,28 @@ def _resolve_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:
     return {uid: name for uid, name in rows}
 
 
-def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
+def get_customer_contact_defaults(
+    db: Session, customer_id: str, *, exclude_order_id: str | None = None,
+) -> dict:
     """客户联系人快照、最新单备注及 OKKI 历史订单标记，录入页自动填充用。
 
     组织级共享（刻意不受发票数据范围限制）：联系人/地址是客户数据（OKKI CRM
     同源），共享联系字段和复用备注，不额外返回金额字段。
-    has_xiaoman_orders 供前端预判「是否新成交」开关默认值。
+    has_xiaoman_orders 供前端预判「是否新成交」开关默认值，
+    first_return_default 供前端预判「是否首返」：客户恰好一张历史订单 → 1。
+    exclude_order_id 供截图导入排除本发票对应的 OKKI 订单，避免把本单算作历史单。
     """
     defaults: dict = {
         "customer_grade": get_customer_grade(db, customer_id),
-        "has_xiaoman_orders": customer_has_xiaoman_orders(db, customer_id),
+        "has_xiaoman_orders": customer_has_xiaoman_orders(
+            db, customer_id, exclude_order_id=exclude_order_id,
+        ),
+        "first_return_default": customer_first_return_default(
+            db, customer_id, exclude_order_id=exclude_order_id,
+        ),
         # 首返旁展示「上次订单成交日期」参考（仅展示，不落库不推 OKKI）；
         # 新成交（无历史单）时为 None → 前端留空
-        "last_order_date": customer_last_order_date(db, customer_id),
+        "last_order_date": customer_last_order_date(db, customer_id, exclude_order_id=exclude_order_id),
     }
     # 备注取真正最近一单：不受联系信息是否填写影响，也不跳过空备注。
     # 系统更新老单不能改变排序；同刻创建用 id 保证确定性。
@@ -204,7 +213,45 @@ def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
             "contact_email": row.contact_email,
             "delivery_address": row.delivery_address,
         })
+    profile = db.get(CustomerProfile, customer_id)
+    if profile is not None and profile.delivery_json is not None:
+        delivery = profile.delivery_json
+        defaults.update(contact_name=delivery.get("contact_name", ""), contact_phone=delivery.get("phone", ""),
+            delivery_address="\n".join(str(delivery.get(key) or "") for key in
+                ("address_line1", "address_line2", "city", "region", "postal_code", "country_code") if delivery.get(key)))
     return defaults
+
+
+def customer_order_count(
+    db: Session,
+    customer_id: str,
+    *,
+    exclude_order_id: str | None = None,
+    valid_only: bool = False,
+) -> int:
+    """该客户在 OKKI 投影的历史订单数（首返判定用）。
+
+    valid_only=False 是「新成交」的存在性口径：只数是否有订单，不筛状态或个人单。
+    valid_only=True 是首返口径：只数有效成交单（已结束/已结清，排除个人单），
+    作废单、未成交单和「个人」单不计入——否则客户唯一一单是废单时会被判成首返，
+    或废单把真正的第一次返单顶成复购。
+    exclude_order_id 排除本发票已推出/截图来源的订单，防止自指翻转。
+    """
+    if not str(customer_id or "").strip():
+        return 0
+    schema = product_service._schema()
+    conditions = ["o.company_id = :cid"]
+    params: dict = {"cid": str(customer_id)}
+    if valid_only:
+        conditions.append(
+            "(o.status = '13972831656' OR (o.status = '13972831654' AND o.status_name = '已结清'))"
+        )
+        conditions.append("(o.trail IS NULL OR CAST(o.trail AS CHAR) NOT LIKE '%个人%')")
+    if exclude_order_id:
+        conditions.append("o.order_id != :own")
+        params["own"] = str(exclude_order_id)
+    sql = f"SELECT COUNT(*) FROM `{schema}`.okki_orders o WHERE " + " AND ".join(conditions)
+    return int(db.execute(text(sql), params).scalar() or 0)
 
 
 def customer_has_xiaoman_orders(db: Session, customer_id: str, *, exclude_order_id: str | None = None) -> bool:
@@ -213,16 +260,16 @@ def customer_has_xiaoman_orders(db: Session, customer_id: str, *, exclude_order_
     exclude_order_id：排除本发票已推出的订单——否则首推成功、投影同步回来后
     重推同一单，会被自己的订单判成"老客"翻转新成交。
     """
-    if not str(customer_id or "").strip():
-        return False
-    schema = product_service._schema()
-    sql = f"SELECT 1 FROM `{schema}`.okki_orders WHERE company_id = :cid"
-    params: dict = {"cid": str(customer_id)}
-    if exclude_order_id:
-        sql += " AND order_id != :own"
-        params["own"] = str(exclude_order_id)
-    row = db.execute(text(sql + " LIMIT 1"), params).first()
-    return row is not None
+    return customer_order_count(db, customer_id, exclude_order_id=exclude_order_id) > 0
+
+
+def customer_first_return_default(db: Session, customer_id: str, *, exclude_order_id: str | None = None) -> int:
+    """首返智能默认：客户恰好一张有效历史订单时，本单是其有史以来第一次返单。
+
+    0 张有效单=本单是新成交，1 张=本单首返，≥2 张=复购；作废/未成交/个人单
+    不计入（见 customer_order_count 的 valid_only 口径）。
+    """
+    return 1 if customer_order_count(db, customer_id, exclude_order_id=exclude_order_id, valid_only=True) == 1 else 0
 
 
 def customer_last_order_date(db: Session, customer_id: str, *, exclude_order_id: str | None = None):
@@ -233,7 +280,8 @@ def customer_last_order_date(db: Session, customer_id: str, *, exclude_order_id:
     SQLAlchemy 返回 datetime.date，由端点 ok() 经 jsonable_encoder 序列化为 ISO 串。
     注意 DATE 列不可能等于空串 —— 只需 IS NOT NULL；写 `!= ''` 会在 MySQL 里把
     '' 转成非法日期 → NULL → 整表被排除（SQLite 存 TEXT 会掩盖此差异）。
-    exclude_order_id 备用（当前 contact-defaults 按客户维度取数、不排除本单）。
+    exclude_order_id 由 contact-defaults 在截图导入时传入，排除本发票对应的
+    OKKI 订单，避免把本单当作「上次订单」。
     """
     if not str(customer_id or "").strip():
         return None
@@ -251,13 +299,32 @@ def customer_last_order_date(db: Session, customer_id: str, *, exclude_order_id:
     return row[0] if row else None
 
 
+def _own_okki_order_id(invoice: Invoice) -> str | None:
+    """本发票对应的 OKKI 订单号，用作历史计数排除键。
+
+    已推单取 xiaoman_order_id；截图导入的订单在 OKKI 已存在，取来源订单
+    source_order_id。截图匹配不到既有订单时该值是外部幂等键而非订单号，
+    不能拿来做排除。
+    """
+    if invoice.xiaoman_order_id:
+        return str(invoice.xiaoman_order_id)
+    if invoice.source_type == "okki_screenshot" and not is_external_source_key(invoice.source_order_id):
+        return str(invoice.source_order_id) if invoice.source_order_id else None
+    return None
+
+
 def resolve_okki_flags(db: Session, invoice: Invoice) -> dict:
     """三个 OKKI 必填业务标记；空值兜底：新成交=客户在 OKKI 无历史订单，
-    包邮=运费为 0，首返=否。"""
+    包邮=运费为 0，首返=客户恰好一张历史订单（本单是第一次返单）。
+
+    两个历史口径兜底都排除本发票自己的订单（已推单或截图来源单），
+    否则同一张单会被算成自己的历史，翻转新成交/首返。
+    """
+    own_order_id = _own_okki_order_id(invoice)
     new_deal = invoice.okki_new_deal
     if new_deal is None:
         has_history = customer_has_xiaoman_orders(
-            db, invoice.customer_id, exclude_order_id=invoice.xiaoman_order_id,
+            db, invoice.customer_id, exclude_order_id=own_order_id,
         )
         new_deal = 0 if has_history else 1
     free_shipping = invoice.okki_free_shipping
@@ -265,7 +332,10 @@ def resolve_okki_flags(db: Session, invoice: Invoice) -> dict:
         free_shipping = 1 if Decimal(invoice.shipping_fee or 0) == 0 else 0
     first_return = invoice.okki_first_return
     if first_return is None:
-        first_return = 0
+        # 与「新成交」共用同一份历史订单口径：排除本单防自指
+        first_return = customer_first_return_default(
+            db, invoice.customer_id, exclude_order_id=own_order_id,
+        )
     return {
         "okki_new_deal": int(new_deal),
         "okki_free_shipping": int(free_shipping),
@@ -323,8 +393,12 @@ def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> In
     OKKI 订单（无沙箱）；持锁期间并发编辑的 header UPDATE 也会阻塞到推单落库。"""
     query = (
         db.query(Invoice)
-        .options(selectinload(Invoice.items))
+        .options(
+            selectinload(Invoice.items).selectinload(InvoiceItem.group),
+            selectinload(Invoice.item_groups),
+        )
         .filter(Invoice.id == invoice_id, Invoice.status != 'deleted')
+        .populate_existing()
     )
     if for_update:
         query = query.with_for_update()
@@ -432,6 +506,8 @@ def create_invoice(
     # OKKI 业务标记空值兜底（null=自动判定）
     for field, value in resolve_okki_flags(db, invoice).items():
         setattr(invoice, field, value)
+    invoice.inspection_requirement = body.inspection_requirement or (
+        "detail" if invoice.okki_new_deal == 1 else "single")
     invoice.customer_grade = (body.customer_grade if "customer_grade" in body.model_fields_set
                               else get_customer_grade(db, body.customer_id))
     db.add(invoice)
@@ -473,6 +549,10 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     from app.receipt import invoice_link
     from app.invoice.linked_sync_service import ensure_idle
     ensure_idle(invoice)
+    if getattr(body, "expected_groups_version", None) is not None and getattr(body, "item_groups", None) is not None:
+        item_group_service.load_groups(db, invoice)
+        if item_group_service.version(invoice) != body.expected_groups_version:
+            raise ValueError("明细分组已被他人修改，请刷新后再编辑")
     from app.invoice.lifecycle_guard import ensure_mutable
     ensure_mutable(db, invoice)
     from app.invoice.stock_reservations import remember
@@ -518,6 +598,8 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         setattr(invoice, field, getattr(body, field))
     if "merchandiser_id" in body.model_fields_set:
         _apply_merchandiser(db, invoice, body.merchandiser_id)
+    if "inspection_requirement" in body.model_fields_set:
+        invoice.inspection_requirement = body.inspection_requirement
     sales_user = db.get(ArkUser, invoice.sales_user_id) if invoice.sales_user_id else None
     if sales_user:
         invoice.sales_user_name = sales_user.username
@@ -608,6 +690,8 @@ def mark_ready_if_valid(invoice: Invoice) -> list[dict]:
 
 def serialize_detail(invoice: Invoice, db: Session | None = None, user=None) -> dict:
     from app.invoice.linked_sync_service import edit_version
+    if db is not None:
+        item_group_service.load_groups(db, invoice)
     summary = summarize_items(invoice)
     material_state: dict[int, dict] = {}
     if db is not None:
@@ -671,6 +755,7 @@ def serialize_detail(invoice: Invoice, db: Session | None = None, user=None) -> 
         "okki_new_deal": invoice.okki_new_deal,
         "okki_free_shipping": invoice.okki_free_shipping,
         "okki_first_return": invoice.okki_first_return,
+        "inspection_requirement": invoice.inspection_requirement,
         "remark": invoice.remark,
         "source_type": invoice.source_type,
         "source_order_id": invoice.source_order_id,
@@ -683,6 +768,8 @@ def serialize_detail(invoice: Invoice, db: Session | None = None, user=None) -> 
         "synced_at": to_beijing_time(invoice.synced_at),
         "updated_at": to_beijing_time(invoice.updated_at),
         "edit_version": edit_version(invoice),
+        "item_groups": item_group_service.serialize(invoice),
+        "item_groups_version": item_group_service.version(invoice),
         "items": [_serialize_item(item, material_state) for item in invoice.items if not item.presale_archived],
         **(_presale_editor_fields(invoice,material_state) if invoice.order_type == "presale" and invoice.transaction_mode != 'local' else {}),
     }
@@ -789,6 +876,9 @@ def _next_invoice_no(db: Session) -> str:
 def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = None) -> None:
     if body.order_type != "production" and any(item.item_type == "custom" for item in body.items):
         raise ValueError("库存单不能包含定制产品，请改为生产单或选择已有产品")
+    from app.invoice import item_group_service
+    group_for = item_group_service.prepare_replace(db, invoice, body)
+    previous_items = {item.id: item for item in invoice.items if item.id}
     stock_pairs = {
         (int(item.product_id), int(item.sku_id))
         for item in body.items
@@ -840,14 +930,21 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
     else:
         invoice.items.clear()
     carried_ids: set[int] = set()
+    seen_payload_ids: set[int] = set()
     for idx, payload in enumerate(body.items, start=1):
         # 同一 id 只允许第一行传承——复制行带旧 id 时若两行共享 unique_id，
         # OKKI 编辑推单会把两行更新到同一条明细上（金额错且无声）
         carried = (presale_carried if rolling else prior_synced).get(payload.id) if payload.id and payload.id not in carried_ids else None
         if carried:
             carried_ids.add(payload.id)
+        first_echo = bool(payload.id and payload.id not in seen_payload_ids)
+        if first_echo:
+            seen_payload_ids.add(payload.id)
+        previous = previous_items.get(payload.id) if first_echo else None
+        group = group_for(payload)
         item = InvoiceItem(
             xiaoman_unique_id=carried.xiaoman_unique_id if carried else None,
+            group_id=group.id if group else None,
             sort_order=idx,
             product_kind=payload.product_kind,
             item_type=payload.item_type,
@@ -869,6 +966,8 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
                 if payload.semifinished_enabled else None
             ),
         )
+        if previous is not None:
+            item.created_at = previous.created_at
         if payload.item_type == "custom" and _custom_line_complete(payload):
             resolved = product_service.ensure_custom_product(
                 db,
@@ -1188,9 +1287,16 @@ def _serialize_item(item: InvoiceItem, material_state: dict[int, dict] | None = 
     for plan in item.semifinished_plan or []:
         material_id = int(plan["material_id"])
         plans.append({**plan, **((material_state or {}).get(material_id) or {})})
+    group = getattr(item, "group", None)
+    invoice = getattr(item, "invoice", None)
+    group_key = group.key if group else next(
+        (row.key for row in invoice.item_groups if row.id == item.group_id), None,
+    ) if invoice else None
     return {
         "id": item.id,
         "sort_order": item.sort_order,
+        "group_key": group_key,
+        "created_at": to_beijing_time(item.created_at),
         "product_kind": item.product_kind,
         "item_type": item.item_type,
         "product_id": item.product_id,

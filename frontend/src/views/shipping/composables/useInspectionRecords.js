@@ -1,5 +1,5 @@
 /**
- * 验货单列表 + 详情抽屉 + 打印弹框逻辑（宪法 12/14：useListPage + DetailDrawer）。
+ * 验货单列表 + 详情抽屉 + 打印弹框 + 上传物流单弹框逻辑（宪法 12/14：useListPage + DetailDrawer）。
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -104,9 +104,20 @@ export function useInspectionRecords() {
     Object.assign(printDialog, { visible: true, recordId: row.id })
   }
 
+  // 上传物流单弹框：弹框自己按 id 拉预填与最新版本号，不信任列表行里可能过期的版本
+  const shipmentDialog = reactive({ visible: false, inspectionId: null })
+  function openShipment(row) {
+    Object.assign(shipmentDialog, { visible: true, inspectionId: row.id })
+  }
+  async function handleShipmentLinked(id) {
+    if (detailVisible.value && detail.value?.id === id) openDetail({ id })
+    await listApi.refreshUpdate()
+  }
+
   return {
     ...listApi, noticePdf, downloading, pdfError, downloadPdf,
     detailVisible, detailLoading, detail, openDetail,
     printDialog, openPrint, recallingId, recallForEdit,
+    shipmentDialog, openShipment, handleShipmentLinked,
   }
 }

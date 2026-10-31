@@ -49,7 +49,7 @@ def local_body(body, user_id, *, invoice=None):
             raise ValueError("本地领料通过生产领退料办理，不能沿用小满同步扣料计划")
         items.append(LocalItem(id=row.id, local_sku_id=row.local_sku_id, quantity=row.quantity,
             price_per_piece=row.price_per_piece, discount_amount=row.discount_amount,
-            commercial_kind=row.commercial_kind))
+            commercial_kind=row.commercial_kind, group_key=row.group_key))
     return LocalInvoiceDraft(**{**values, 'items': items})
 
 

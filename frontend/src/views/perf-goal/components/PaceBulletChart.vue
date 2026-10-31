@@ -2,10 +2,10 @@
   <div class="pg-bullet-wrap">
     <div v-for="m in METRICS" :key="m.key" class="pg-bullet-item">
       <div class="pg-b-head">
-        <span><b>{{ m.name }}</b> {{ fmtMetric(m.key, cell(m.key)?.achieved) }} / {{ cell(m.key)?.target ? fmtMetric(m.key, cell(m.key).target) : '—' }}</span>
+        <span><b>{{ m.name }}</b> {{ fmtMetric(m.key, cell(m.key)?.achieved) }} / {{ cell(m.key)?.target != null ? fmtMetric(m.key, cell(m.key).target) : '—' }}</span>
         <span>
           {{ rateOf(m.key) == null ? '—' : `${rateOf(m.key).toFixed(1)}%` }}
-          <span v-if="deltaOf(m.key) != null" class="pg-delta" :class="deltaOf(m.key) >= 0 ? 'pg-up' : 'pg-down'">{{ fmtPp(deltaOf(m.key)) }}</span>
+          <span v-if="deltaOf(m.key) != null" class="pg-delta" :class="deltaOf(m.key) >= 0 ? 'pg-up' : 'pg-down'">{{ paceDescription(deltaOf(m.key), { compact: true }) }}</span>
         </span>
       </div>
       <div :ref="el => setEl(m.key, el)" class="pg-bullet-chart pg-chart"></div>
@@ -16,7 +16,9 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
-import { METRICS, fmtMetric, fmtPp, chartPalette } from '../helpers'
+import { METRICS, fmtMetric, chartPalette } from '../helpers'
+
+import { paceDescription } from '../displayText'
 
 const props = defineProps({
   metrics: { type: Object, default: () => ({}) },

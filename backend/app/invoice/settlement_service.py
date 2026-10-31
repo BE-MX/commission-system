@@ -71,6 +71,15 @@ def goods_balance(db, invoice, snapshot, *, current=False):
             "remaining_principal": str(Decimal(lot.amount) - Decimal(lot.allocated_amount) - Decimal(lot.bank_charge) + Decimal(lot.allocated_charge))} for lot in lots]
         result["funding_mode"] = "presale_pool"
         result["version"] = digest([result["version"], result["pool_balances"]])
+        from app.sales_return.presale_adjustments import projection
+        return_funds = projection(db, invoice, current=current)
+        for lot, summary in zip(lots, result["pool_balances"]):
+            if lot.goods_only:
+                summary.update(source_type="sales_return_credit",
+                               return_ids=return_funds["credit_returns"].get(lot.receipt_id, []))
+        if return_funds["issues"]:
+            result["return_funding_issues"] = [{"settlement_id": identity, "reason": reason}
+                                               for identity, reason in return_funds["issues"].items()]
     return result
 
 
@@ -124,12 +133,15 @@ def check_shipped_funding(db, invoice, evidence, shipped, *, current=False):
                     or receipt.last_error or not remote_row
                     or str(remote_row.get("collect_status")) != "1"):
                 raise ValueError("历史已出库批次的回款已失效，不能继续安排")
+        from app.sales_return.presale_adjustments import projection
+        if settlement.id in projection(db, invoice, current=current)["issues"]:
+            continue  # Old batch stays explicitly blocked; proven new pool cash remains usable.
         balance = funding_balance(db, settlement, current=current)
         if credit:
             if not payment_policy.credit_funding_valid(db, settlement, current=current):
                 raise ValueError("历史先出库批次的回款关联异常，不能继续安排")
         elif (Decimal(balance["remaining_amount"]) != 0
-                or Decimal(balance["effective_amount"]) != expected):
+                or Decimal(balance["effective_amount"]) != Decimal(balance["total_amount"])):
             raise ValueError("历史已出库批次回款不足，不能继续安排")
 
 
@@ -203,6 +215,8 @@ def build_quote(db, invoice, body, evidence, *, current=False):
     result = quote_current(lines, invoice.internal_accessory or 0 if packaging is None else packaging,
         invoice.surcharge_amount or 0 if handling is None else handling,
         freight=body.freight_amount, is_final=body.is_final)
+    if available.get("return_funding_issues"):
+        result["return_funding_issues"] = available["return_funding_issues"]
     from app.invoice.presale_order_revision import apply_credit
     apply_credit(db,invoice,result,current=current)
     pool_receipts, lots = pools.pool_lots(db, invoice, evidence["receipt"], current=current)
@@ -222,6 +236,8 @@ def build_quote(db, invoice, body, evidence, *, current=False):
         goods_payment_due=plan["goods_payment_due"], goods_payment_charge=plan["goods_charge_due"],
         freight_payment_due=plan["freight_payment_due"], new_payment_due=plan["additional_payment_due"],
         additional_payment_due=plan["additional_payment_due"])
+    from app.sales_return.presale_adjustments import credit_sources
+    result["return_credit_sources"] = credit_sources(db, invoice, [p["receipt_id"] for p in plan["applications"]], current=current)
     result.update(invoice_id=invoice.id, currency=invoice.currency, customer_id=invoice.customer_id,
                   invoice_no=invoice.invoice_no, deposit_receipt_id=None,
                   delivery_address=invoice.delivery_address, remark=invoice.remark)
@@ -273,10 +289,20 @@ def application(db, settlement, row, component, amount, charge):
         .order_by(SettlementApplication.id).with_for_update().execution_options(populate_existing=True)).all()
     reserved = (sum((app.amount for app in reserved_rows), Decimal(0)),
                 sum((app.bank_charge for app in reserved_rows), Decimal(0)))
-    if Decimal(reserved[0]) + Decimal(amount) > row.amount or Decimal(reserved[1]) + Decimal(charge) > row.bank_charge:
+    available_amount = row.amount - reserved[0]
+    available_charge = row.bank_charge - reserved[1]
+    if row.purpose in pools.POOL_PURPOSES or str(row.id) in settlement.quote.get("return_credit_sources", {}):
+        invoice = db.get(Invoice, settlement.invoice_id)
+        _, lots = pools.pool_lots(db, invoice, current=True)
+        lot = next((value for value in lots if value.receipt_id == row.id), None)
+        if lot is None or lot.goods_only and component != "goods":
+            raise ValueError("原退货信用仅可支付商品，或可用余额已不足")
+        available_amount = Decimal(lot.amount) - Decimal(lot.allocated_amount)
+        available_charge = Decimal(lot.bank_charge) - Decimal(lot.allocated_charge)
+    if Decimal(amount) > available_amount or Decimal(charge) > available_charge:
         raise ValueError("资金已被其他结算占用")
     if (Decimal(amount) <= 0 or Decimal(charge) < 0 or Decimal(charge) > Decimal(amount)
-            or Decimal(reserved[0]) + Decimal(amount) - Decimal(reserved[1]) - Decimal(charge) > row.amount - row.bank_charge):
+            or Decimal(amount) - Decimal(charge) > available_amount - available_charge):
         raise ValueError("资金本金或手续费分配超额")
     db.add(SettlementApplication(settlement_id=settlement.id, receipt_id=row.id, component=component,
         amount=amount, bank_charge=charge))
@@ -344,10 +370,20 @@ def funding_balance(db, row, *, current=False):
         if row.state not in cancellation.CANCELLED_STATES:
             pools.validate_quote_applications(row, [app for app, _ in applications],
                 {receipt.id: receipt for _, receipt in applications})
+    from app.sales_return.presale_adjustments import projection
+    return_funds = projection(db, db.get(Invoice, row.invoice_id), current=current)
+    if row.id in return_funds["issues"]:
+        raise ValueError(return_funds["issues"][row.id])
+    if row.id in return_funds["uncollected_excess"]:
+        raise ValueError(return_funds["uncollected_excess"][row.id])
+    goods_reduction = return_funds["reductions"].get(row.id, Decimal(0))
+    paid_release = sum((return_funds["releases"].get(app.id, Decimal(0)) for app, _ in applications), Decimal(0))
     goods = freight = charge = effective = new_charge = Decimal(0)
     for app, receipt in applications:
         if receipt.status != "active":
             raise ValueError("本批关联回款已失效，请核对")
+        from app.sales_return.presale_adjustments import validate_credit
+        validate_credit(db, row, app, receipt, current=current)
         if app.component != "deposit":
             if app.component == "goods":
                 goods += app.amount; charge += app.bank_charge
@@ -361,6 +397,9 @@ def funding_balance(db, row, *, current=False):
     v2 = row.quote.get("funding_version") == 2
     goods_total = (Decimal(row.quote["goods_amount"]) + Decimal(row.quote["packaging_amount"]) +
         Decimal(row.quote["handling_amount"])) if v2 else Decimal(row.quote["goods_payment_due"])
+    goods_total -= goods_reduction
+    goods -= paid_release
+    effective -= paid_release
     retained = row.state == cancellation.CANCELLED_KEEP_FREIGHT
     if retained:
         goods_total = Decimal(0)
@@ -368,6 +407,7 @@ def funding_balance(db, row, *, current=False):
     if v2:
         charge_remaining = min(charge_remaining, goods_total - goods)
     total = pools.required(row.quote) if v2 else Decimal(row.quote["new_payment_due"])
+    total -= goods_reduction
     if retained:
         total = Decimal(row.quote['freight_amount'])
         charge_remaining = Decimal(0)
@@ -380,9 +420,11 @@ def funding_balance(db, row, *, current=False):
         "charge_remaining": str(charge_remaining),
         "effective_amount": str(effective), "registered_amount": str(goods + freight),
         "outstanding_amount": str(debt_total - effective),
-        "pending_amount": str(sum((app.amount for app, _ in applications), Decimal(0)) - effective),
+        "pending_amount": str(sum((app.amount for app, _ in applications), Decimal(0)) - paid_release - effective),
         "remaining_amount": str(total - goods - freight),
         "currency": row.quote["currency"], "total_amount": str(total)}
+    if goods_reduction:
+        result.update(return_goods_reduction=str(goods_reduction), return_paid_release=str(paid_release))
     if any(Decimal(result[key]) < 0 for key in ("goods_remaining", "freight_remaining", "charge_remaining", "remaining_amount")):
         raise ValueError("本批资金分配超过应收金额，请核对")
     result["version"] = digest({"balance": result, "state": row.state, "version": row.version,
@@ -500,6 +542,8 @@ def _change_state_verified(db, row, user, action, version, reason, graph, *, fai
     if graph.outbound is not None and not failed_outbound_absent:
         raise ValueError('请先实时核实小满未生成原出库单，再取消失败批次')
     if action == "cancel":
+        from app.sales_return.presale_adjustments import ensure_releasable
+        ensure_releasable(db, row, current=True)
         for app in graph.applications:
             app.status = "released"
         row.state = "cancelled"

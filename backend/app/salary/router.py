@@ -11,6 +11,7 @@ from app.core.time import BEIJING_TIMEZONE, beijing_today
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,7 @@ from app.salary import (
     attendance_service,
     attendance_source,
     calc_service,
+    export_service,
     import_persist,
     period_service,
     service,
@@ -183,17 +185,22 @@ def update_profile(
         profile = service.update_profile(
             db, profile, payload, operator_user_id=_operator_id(current_user)
         )
+    except service.ProfileChangeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except IntegrityError as exc:
         db.rollback()
         message, token = _integrity_context(exc)
         logger.warning("薪资档案编辑入库失败，命中约束 %s", token)
         print(f"[salary.router] update profile rejected by {token}", flush=True)
         raise HTTPException(status_code=409, detail=message)
-    return ok(
-        service.serialize_profile(
-            profile, service.load_dept_group_map(db), service.load_grade_map(db)
-        )
+    data = service.serialize_profile(
+        profile, service.load_dept_group_map(db), service.load_grade_map(db)
     )
+    # 只有带了 pay_change_kind（前端仅在改定薪/职级时带）才查受影响批次
+    data["pay_change_warnings"] = (
+        service.pay_change_warnings(db, payload) if payload.pay_change_kind else []
+    )
+    return ok(data)
 
 
 # ---------------------------------------------------------------------------
@@ -836,3 +843,75 @@ def unlock_period(
     except period_service.SalaryPeriodError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(period_service.serialize_period(row))
+
+
+# ---------------------------------------------------------------------------
+# 导出（M4）：工资表双 sheet / 银行代发盘 / 导出历史与作废
+# ---------------------------------------------------------------------------
+
+def _is_salary_admin(current_user: dict) -> bool:
+    if "super_admin" in (current_user.get("roles") or []):
+        return True
+    return "salary:admin" in (current_user.get("permissions") or [])
+
+
+def _file_response(filename: str, content: bytes, media_type: str) -> Response:
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": export_service.content_disposition(filename),
+            # 文件含工资与卡号：不进浏览器/代理缓存
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/periods/{period_id}/exports", summary="导出面板：可导项、银行盘预检与导出历史")
+def export_overview(
+    period_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
+):
+    row = _get_period_or_404(db, period_id)
+    data = export_service.export_overview(db, row)
+    data["can_plain_card"] = _is_salary_admin(current_user)
+    return ok(data)
+
+
+@router.get("/periods/{period_id}/export/workbook", summary="导出工资表（汇总 + 明细两张 sheet）")
+def export_workbook(
+    period_id: int,
+    plain_card: bool = Query(False, description="银行卡号输出明文（需 salary:admin）"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
+):
+    """默认卡号脱敏；明文需 salary:admin（设计文档 §7.4）。每次导出留痕，留痕失败不给文件。"""
+    if plain_card and not _is_salary_admin(current_user):
+        raise HTTPException(status_code=403, detail="导出完整银行卡号需要薪资管理员权限（salary:admin）")
+    row = _get_period_or_404(db, period_id)
+    try:
+        filename, content = export_service.export_workbook(
+            db, row, plain_card=plain_card, operator_id=_operator_id(current_user))
+    except export_service.SalaryExportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _file_response(
+        filename, content,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@router.get("/periods/{period_id}/export/bank", summary="导出银行代发盘 CSV（按参保主体拆盘）")
+def export_bank(
+    period_id: int,
+    entity: str = Query("", description="参保主体；留空则合并为一个盘"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:admin")),
+):
+    """代发盘必然含明文卡号，只给 salary:admin，且只对已锁定批次。"""
+    row = _get_period_or_404(db, period_id)
+    try:
+        filename, content = export_service.export_bank(
+            db, row, entity=entity or None, operator_id=_operator_id(current_user))
+    except export_service.SalaryExportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _file_response(filename, content, "text/csv; charset=utf-8")

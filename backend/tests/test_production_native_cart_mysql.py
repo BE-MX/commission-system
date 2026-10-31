@@ -1,4 +1,4 @@
-"""Native cart first writers on actual 187 DDL in isolated MySQL RR."""
+"""Native cart first writers on actual 240 DDL in isolated MySQL RR."""
 from concurrent.futures import ThreadPoolExecutor
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -23,7 +23,7 @@ from tests.test_inventory_mysql import mysql_engine, stock_ids
 
 @pytest.fixture
 def native_carts(mysql_engine, stock_ids):
-    # Keep all cart fields and indexes, restoring only the pre-187 boundary.
+    # Keep all cart fields and indexes, restoring only the pre-240 boundary.
     # The actual migration supplies the native key, FK and widened snapshots.
     previous = MetaData()
     Table(ProductionCart.__tablename__, previous, *[
@@ -46,7 +46,7 @@ def native_carts(mysql_engine, stock_ids):
         conn.exec_driver_sql("ALTER TABLE ark_users ADD is_active TINYINT NOT NULL DEFAULT 1, ADD deleted_at DATETIME NULL")
         conn.exec_driver_sql("INSERT INTO ark_users(id) VALUES (1),(2)")
         spec = spec_from_file_location("native_cart_migration",
-            Path(__file__).parents[1] / "alembic/versions/221_local_replenishment.py")
+            Path(__file__).parents[1] / "alembic/versions/240_local_replenishment.py")
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)
         with Operations.context(MigrationContext.configure(conn)):
@@ -138,9 +138,11 @@ def test_stale_snapshot_replaces_current_cart_and_material_plans(mysql_engine, n
 @pytest.fixture
 def checkout(mysql_engine, native_carts):
     # Current production schema is the structural prerequisite here; migration
-    # 177 itself is exercised by test_production_mysql. Keep actual FK/uniques.
+    # 230 itself is exercised by test_production_mysql. Keep actual FK/uniques.
     with mysql_engine.begin() as conn:
         conn.exec_driver_sql("CREATE TABLE ark_invoice_items (id BIGINT PRIMARY KEY)")
+        from tests.test_inventory_mysql import physical_scope_prerequisites
+        physical_scope_prerequisites(conn)
         for model in (ProcessRoute, ProductionOrder, ProductionOrderItem, ProductionSupply,
                       ProductionEvent, SemifinishedOrder, SemifinishedOrderItem):
             model.__table__.create(conn)

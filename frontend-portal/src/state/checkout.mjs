@@ -135,7 +135,7 @@ export function createCheckout({ api, submission, now = () => Date.now() }) {
       if (state.quoting) return
       if (!state.lines.length) fail('EMPTY_CART', 'Add a product to your selection first.')
       const delivery = Object.fromEntries(Object.entries(state.delivery).map(([key, value]) => [key, value.trim()]))
-      if (!delivery.contact_name || !delivery.address_line1 || delivery.phone.length < 3 || !/^[A-Z]{2}$/.test(delivery.country_code)) fail('INVALID_DELIVERY', 'Enter a contact, phone, address and two-letter country code.')
+      if ((delivery.phone && delivery.phone.length < 3) || (delivery.country_code && !/^[A-Z]{2}$/.test(delivery.country_code))) fail('INVALID_DELIVERY', 'Check the phone and two-letter country code, or leave them blank.')
       const started = ++sequence
       const body = { items: state.lines.map(({ item_id, quantity }) => ({ item_id, quantity })), delivery, customer_po: state.customer_po, remark: state.remark }
       if (state.payment_term_code) body.payment_term_code = state.payment_term_code

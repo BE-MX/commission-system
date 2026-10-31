@@ -18,7 +18,7 @@ from app.core.time import beijing_now
 from app.portal import auth_service as auth, catalog_service, fee_policy, mapping_service, pricing, sku_source
 from app.portal.domain import content_hash, line_amount, total_amount
 from app.portal.errors import PortalError, reject
-from app.portal.inventory import validate_observation
+from app.portal.inventory import validate_observation, item_stock_threshold
 from app.portal.models import AuditEvent, ProductFamily, Quote
 from app.portal.schemas import SitePolicy
 
@@ -120,7 +120,7 @@ def build_lines(db, access, site, requested_items):
         validate_observation(observation, now=beijing_now(),
             max_age_seconds=get_settings().PORTAL_INVENTORY_MAX_AGE_SECONDS,
             quantity=quantity, inventory_unit=item.inventory_unit,
-            conversion_factor=item.conversion_factor, safety_buffer=item.safety_buffer,
+            conversion_factor=item.conversion_factor, safety_buffer=Decimal("0") if item.family_id is not None else item.safety_buffer, stock_threshold=item_stock_threshold(item),
             minimum=item.min_qty, step=item.step_qty)
         amount = line_amount(quantity, price.amount)
         weight = fee_policy.unit_weight(item, families.get(item.family_id))
@@ -141,7 +141,7 @@ def build_lines(db, access, site, requested_items):
         validate_observation(observations.get(item.public_id), now=now,
             max_age_seconds=get_settings().PORTAL_INVENTORY_MAX_AGE_SECONDS,
             quantity=requested[item.public_id], inventory_unit=item.inventory_unit,
-            conversion_factor=item.conversion_factor, safety_buffer=item.safety_buffer,
+            conversion_factor=item.conversion_factor, safety_buffer=Decimal("0") if item.family_id is not None else item.safety_buffer, stock_threshold=item_stock_threshold(item),
             minimum=item.min_qty, step=item.step_qty)
     return lines
 
@@ -227,6 +227,6 @@ def revalidate_for_submission(db, principal, row):
         validate_observation(observations.get(item.public_id), now=now,
             max_age_seconds=get_settings().PORTAL_INVENTORY_MAX_AGE_SECONDS,
             quantity=requested[item.public_id]["quantity"], inventory_unit=item.inventory_unit,
-            conversion_factor=item.conversion_factor, safety_buffer=item.safety_buffer,
+            conversion_factor=item.conversion_factor, safety_buffer=Decimal("0") if item.family_id is not None else item.safety_buffer, stock_threshold=item_stock_threshold(item),
             minimum=item.min_qty, step=item.step_qty)
     return {item.public_id: item for item in items}

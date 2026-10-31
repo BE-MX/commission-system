@@ -179,6 +179,9 @@ def bank_identities(db: Session = Depends(get_db), user=Depends(require_permissi
 @router.post('/bank-identities/reconcile-legacy')
 def reconcile_legacy_bank(body: LegacyBankReconciliation, db: Session = Depends(get_db),
                           user=Depends(require_permission('commerce_transition:admin'))):
-    user = _fresh_write(db, user, 'commerce_transition:admin', 'receipt:admin')
+    permissions = ['commerce_transition:admin', 'receipt:admin']
+    if body.sales_return_id is not None:
+        permissions.append('sales_return:admin')
+    user = _fresh_write(db, user, *permissions)
     from app.finance.transition_identity import reconcile_legacy_identity
     return _write(db, reconcile_legacy_identity, **body.model_dump(), actor_id=user['id'])

@@ -139,7 +139,7 @@ def test_migration_backfills_only_preexisting_local_full_reversals():
     from sqlalchemy import create_engine, text
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
-    path = Path(__file__).parents[1] / "alembic/versions/213_partial_receipt_reversal.py"
+    path = Path(__file__).parents[1] / "alembic/versions/232_partial_receipt_reversal.py"
     spec = importlib.util.spec_from_file_location("partial_receipt_migration", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)

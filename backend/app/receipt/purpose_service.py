@@ -8,6 +8,8 @@ from app.receipt.models import ReceiptIntent
 
 
 def apply(db, row, invoice, body, actor):
+    from app.sales_return.guards import ensure_commercial_editable
+    ensure_commercial_editable(db, invoice.xiaoman_order_id)
     if row.version != body.version:
         raise HTTPException(409, "回款已变化，请刷新后重新核对用途")
     if (invoice.order_type != "presale" or row.purpose not in {"presale_deposit", "presale_advance"}

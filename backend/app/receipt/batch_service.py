@@ -31,8 +31,8 @@ def ensure_batch_access(db, batch, user):
 
 
 def _proof_rows(db, ids, actor):
-    if len(set(ids)) != len(ids) or not 1 <= len(ids) <= 5:
-        raise ValueError("请上传1至5张不重复凭证")
+    if len(set(ids)) != len(ids) or len(ids) > 5:
+        raise ValueError("回款凭证最多5张，且不可重复")
     rows = db.query(ReceiptAttachment).filter(ReceiptAttachment.id.in_(ids)).order_by(
         ReceiptAttachment.id).populate_existing().with_for_update().all()
     prior = db.query(BatchAttachment).filter(BatchAttachment.attachment_id.in_(ids)).order_by(
@@ -58,7 +58,7 @@ def bind_proofs(db, batch, ids, actor, evidence=None):
 
 def validate_bound_proofs(db, row):
     ids = [x.attachment_id for x in db.query(BatchAttachment).filter_by(batch_id=row.batch_id)]
-    if set(ids) != set(row.attachment_ids) or not ids:
+    if set(ids) != set(row.attachment_ids):
         raise ValueError("批次凭证关联异常")
     batch = db.get(ReceiptBatch, row.batch_id)
     if not batch or batch.status != "active":
@@ -153,6 +153,8 @@ def _create_verified(db, body, invoices, actor, evidence, fee_evidence, proof_ev
                     raise ValueError("预售资金池付款不能绑定发货结算")
                 if order_summary["version"] != allocation.balance_version:
                     raise ValueError(f"订单 {invoice.invoice_no} 余额已变化，请刷新（凭证保留）")
+                if order_summary.get("return_reduction_amount"):
+                    balance.ensure_available(order_summary, allocation.amount)
                 charges[invoice.id] = allocation.bank_charge
                 continue
             if not allocation.settlement_id:

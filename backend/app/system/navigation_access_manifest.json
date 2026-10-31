@@ -1,5 +1,5 @@
 {
-  "source_sha256": "477d317ed087df5becc54ee9b1724166ed6b3f285e213c3f4f98493eeff69dd4",
+  "source_sha256": "00d3d10b2ddffab497289f742a9395d5ca6108cba5f6afca40744dff3e564b68",
   "favorite_access": {
     "NativeOutbound": [
       {
@@ -29,7 +29,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -61,7 +62,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -193,7 +195,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -225,7 +228,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -257,7 +261,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -289,7 +294,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -702,7 +708,43 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
+        ]
+      }
+    ],
+    "SalesReturns": [
+      {
+        "permission": "sales_return:read"
+      },
+      {
+        "permission": "sales_return:read"
+      },
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -744,7 +786,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -778,7 +821,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -812,7 +856,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -846,7 +891,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -880,7 +926,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -920,7 +967,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -954,7 +1002,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -988,7 +1037,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -1022,7 +1072,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -1056,7 +1107,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -1090,7 +1142,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -1412,7 +1465,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -2092,7 +2146,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -2134,7 +2189,8 @@
           "order_intelligence:read",
           "fx_settlement:read",
           "shipment:read",
-          "commerce_shadow:read"
+          "commerce_shadow:read",
+          "sales_return:read"
         ]
       }
     ],
@@ -2144,6 +2200,29 @@
       },
       {
         "permission": "shipping_station:write"
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      }
+    ],
+    "ShippingBoard": [
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin"
+        ]
       },
       {
         "anyPermission": [
@@ -2256,7 +2335,38 @@
           "color:write",
           "color:admin",
           "color_blend:read",
-          "color_trend:read"
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
+        ]
+      }
+    ],
+    "ColorSwatchLibrary": [
+      {
+        "anyPermission": [
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
+        ]
+      },
+      {
+        "anyPermission": [
+          "color:read",
+          "color:write",
+          "color:admin",
+          "color_blend:read",
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
         ]
       }
     ],
@@ -2273,7 +2383,10 @@
           "color:write",
           "color:admin",
           "color_blend:read",
-          "color_trend:read"
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
         ]
       }
     ],
@@ -2290,7 +2403,10 @@
           "color:write",
           "color:admin",
           "color_blend:read",
-          "color_trend:read"
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
         ]
       }
     ],
@@ -2307,7 +2423,10 @@
           "color:write",
           "color:admin",
           "color_blend:read",
-          "color_trend:read"
+          "color_trend:read",
+          "color_library:read",
+          "color_library:write",
+          "color_library:admin"
         ]
       }
     ],

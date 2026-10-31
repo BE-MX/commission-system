@@ -1,32 +1,23 @@
 <template>
-  <div class="pg-card pg-hint-card" style="margin-bottom:0">
-    <h3>冲刺提示</h3>
-    <div class="pg-hint-sub">{{ subtitle }}</div>
-    <div class="pg-hint-list">
-      <div v-if="!warnings.length" class="pg-hint-item pg-ok"><b>✓</b> 当前范围各指标按现有速率均可如期完成，无需冲刺。</div>
-      <div v-for="(w, i) in warnings" :key="`${w.user_id}-${w.metric}-${i}`" class="pg-hint-item" v-html="formatWarning(w)"></div>
-    </div>
+  <div class="pg-card pg-sprint-summary" :class="{ 'pg-sprint-attention': warnings.length }">
+    <div class="pg-card-title"><h2>{{ warnings.length ? `需关注 ${warnings.length} 项` : '冲刺提醒' }}</h2><span v-if="warnings.length" class="pg-note">按当前工作日日均完成速度估算</span></div>
+    <p v-if="!warnings.length" class="pg-context-note">{{ sprintEmptyDescription(metrics, timeProgress) }}</p>
+    <ul v-else class="pg-sprint-list">
+      <li v-for="(w, i) in shownWarnings" :key="`${w.user_id}-${w.metric}-${i}`">
+        <strong>{{ w.name || '当前范围' }}</strong>
+        <span v-if="w.text">{{ w.text }}</span>
+        <template v-else><span>{{ metricMeta(w.metric).name }}距目标 <b>{{ fmtMetric(w.metric, w.gap, { withUnit: !metricMeta(w.metric).money }) }}</b></span><span>预计期末完成率 <b>{{ fmtRate(w.projected_rate) }}</b></span></template>
+      </li>
+    </ul>
+    <GlassButton v-if="warnings.length > 3" variant="link" :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? '收起其余提醒' : `展开其余 ${warnings.length - 3} 项提醒` }}</GlassButton>
   </div>
 </template>
-
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { metricMeta, fmtMetric, fmtRate } from '../helpers'
-
-const props = defineProps({
-  warnings: { type: Array, default: () => [] },
-  timeProgress: { type: Number, default: null },
-  remainDays: { type: Number, default: null },
-})
-const subtitle = computed(() =>
-  props.remainDays != null ? `按当前日均速率外推至期末（剩余约 ${props.remainDays} 天）` : '按当前日均速率外推至期末')
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-function formatWarning(w) {
-  if (w.text) return `<span class="pg-h-name">${esc(w.name)}</span> · ${esc(w.text)}`
-  const meta = metricMeta(w.metric)
-  const gap = fmtMetric(w.metric, w.gap, { withUnit: !meta.money })
-  const daily = props.remainDays ? fmtMetric(w.metric, w.gap / props.remainDays, { withUnit: !meta.money }) : null
-  return `<span class="pg-h-name">${esc(w.name)}</span> · ${meta.name} 缺口 <b>${gap}</b>，按当前速率预计期末完成 <b>${fmtRate(w.projected_rate)}</b><br>` +
-    `<span style="color:var(--pg-faint)">${props.timeProgress != null ? `时间进度 ${props.timeProgress}%` : ''}${daily ? ` · 剩余 ${props.remainDays} 天需日均 ${daily}` : ''}</span>`
-}
+import { sprintEmptyDescription } from '../displayText'
+const props = defineProps({ warnings: { type: Array, default: () => [] }, metrics: { type: Object, default: () => ({}) }, timeProgress: { type: Number, default: null } })
+const expanded = ref(false)
+const shownWarnings = computed(() => expanded.value ? props.warnings : props.warnings.slice(0, 3))
+watch(() => props.warnings, () => { expanded.value = false })
 </script>

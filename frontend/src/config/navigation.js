@@ -67,6 +67,7 @@ export const MENU_GROUPS = {
       'perf_goal:read', 'perf_goal:write',
       ORDER_INTELLIGENCE_PERMISSION,
       'fx_settlement:read', 'shipment:read', 'commerce_shadow:read',
+      'sales_return:read',
     ],
   },
   aftersales: {
@@ -143,6 +144,7 @@ export const MENU_GROUPS = {
     anyPermission: [
       'color:read', 'color:write', 'color:admin',
       'color_blend:read', 'color_trend:read',
+      'color_library:read', 'color_library:write', 'color_library:admin',
     ],
   },
   insight: {
@@ -444,6 +446,14 @@ export const NAV_ENTRIES = [
       anomalyDomain: 'order',
       anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
     },
+  },
+  {
+    path: '/invoice/sales-returns',
+    name: 'SalesReturns',
+    component: () => import('@/views/sales-return/SalesReturns.vue'),
+    title: '退货单管理',
+    permission: 'sales_return:read',
+    menu: { group: 'invoice', title: '退货单管理', icon: Refresh, order: 16, permission: 'sales_return:read' },
   },
   {
     path: '/invoice/receipts',
@@ -1079,6 +1089,17 @@ export const NAV_ENTRIES = [
     permission: 'shipping_station:write', fullscreen: true,
     menu: { group: 'shipping', title: '手机发货质检', icon: Camera, order: 30, permission: 'shipping_station:write' },
   },
+  {
+    // 仓库大屏全天挂着，不套 MainLayout
+    path: '/shipping/board', name: 'ShippingBoard', title: '发货检验看板',
+    component: () => import('@/views/shipping/InspectionBoard.vue'),
+    anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
+    fullscreen: true,
+    menu: {
+      group: 'shipping', title: '发货检验看板', icon: Monitor, order: 31,
+      anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
+    },
+  },
 
   // ── 素材管理 ───────────────────────────────────────────
   {
@@ -1147,6 +1168,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'color', title: '色板数据库', icon: Picture, order: 10,
       permission: 'color:read',
+    },
+  },
+  {
+    path: '/color-management/swatch-library',
+    name: 'ColorSwatchLibrary',
+    component: () => import('@/views/color/SwatchLibraryView.vue'),
+    title: '色板库（公库 / 私库）',
+    anyPermission: ['color_library:read', 'color_library:write', 'color_library:admin'],
+    menu: {
+      group: 'color', title: '色板库', icon: Picture, order: 15,
+      anyPermission: ['color_library:read', 'color_library:write', 'color_library:admin'],
     },
   },
   {

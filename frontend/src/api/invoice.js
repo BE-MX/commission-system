@@ -68,9 +68,10 @@ export function getInvoiceMerchandisers() {
   return unwrap(request.get('/invoices/merchandiser-options', { showLoading: false }))
 }
 
-export function getCustomerContactDefaults(customerId) {
+export function getCustomerContactDefaults(customerId, excludeOrderId) {
   return unwrap(request.get('/customers/contact-defaults', {
-    params: { customer_id: customerId }, showLoading: false,
+    params: { customer_id: customerId, ...(excludeOrderId ? { exclude_order_id: excludeOrderId } : {}) },
+    showLoading: false,
   }))
 }
 
@@ -130,6 +131,10 @@ export function createInvoice(data) {
 
 export function updateInvoice(id, data) {
   return unwrap(request.put(`/invoices/${id}`, data, { loadingText: '正在保存发票...' }))
+}
+
+export function updateInvoiceItemGroups(id, data) {
+  return unwrap(request.patch(`/invoices/${id}/item-groups`, data, { loadingText: '正在保存明细分组...' }))
 }
 
 export function updateInvoiceRemark(id, data) {

@@ -1,6 +1,6 @@
 """Explicit administrative receipts; no general confirmed-order route switch."""
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 Route = Literal["legacy", "local"]
 
@@ -49,4 +49,14 @@ class LegacyBankReconciliation(BaseModel):
     transaction_id: str = Field(min_length=1, max_length=128)
     receipt_id: int | None = Field(default=None, gt=0)
     batch_id: int | None = Field(default=None, gt=0)
+    sales_return_id: int | None = Field(default=None, gt=0)
+    cash_movement: Literal['paid', 'recovered'] | None = None
     statement_reference: str = Field(min_length=1, max_length=500)
+
+    @model_validator(mode='after')
+    def one_original_cash_source(self):
+        if sum(value is not None for value in [self.receipt_id, self.batch_id, self.sales_return_id]) != 1:
+            raise ValueError('Exactly one original cash source is required')
+        if (self.sales_return_id is not None) != (self.cash_movement is not None):
+            raise ValueError('Cash movement is required only for a sales return')
+        return self

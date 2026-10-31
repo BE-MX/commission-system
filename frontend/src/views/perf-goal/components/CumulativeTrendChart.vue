@@ -1,22 +1,18 @@
 <template>
-  <div>
-    <div class="pg-card">
-      <div class="pg-card-title">
-        <h2>累积完成趋势</h2>
-        <span class="pg-note">实线=实际累积 · 虚线=当前周期进行中 · 灰实线=目标计划 · 灰虚线=时间进度</span>
-        <div class="pg-right pg-metric-switch">
-          <button v-for="m in METRICS" :key="m.key" :class="{ 'pg-active': m.key === metric }" @click="$emit('update:metric', m.key)">{{ m.name }}</button>
-        </div>
+  <div class="pg-card">
+    <div class="pg-card-title">
+      <h2>完成趋势</h2>
+      <div class="pg-seg" role="group" aria-label="趋势显示方式">
+        <button :class="{ 'pg-active': mode === 'cumulative' }" :aria-pressed="mode === 'cumulative'" @click="mode = 'cumulative'">累积</button>
+        <button :class="{ 'pg-active': mode === 'period' }" :aria-pressed="mode === 'period'" @click="mode = 'period'">单期</button>
       </div>
-      <div ref="trendEl" class="pg-chart" style="height:360px" role="img" aria-label="累积完成趋势" v-loading="loading"></div>
-    </div>
-    <div class="pg-card">
-      <div class="pg-card-title">
-        <h2>各期单月完成</h2>
-        <span class="pg-note">单期值（非累积），当前期为截至统计日的部分值</span>
+      <div class="pg-right pg-metric-switch" role="group" aria-label="趋势指标">
+        <button v-for="m in METRICS" :key="m.key" :aria-pressed="m.key === metric" :class="{ 'pg-active': m.key === metric }" @click="$emit('update:metric', m.key)">{{ m.name }}</button>
       </div>
-      <div ref="monthlyEl" class="pg-chart" style="height:260px" role="img" aria-label="各期单月完成" v-loading="loading"></div>
     </div>
+    <p class="pg-context-note">{{ mode === 'cumulative' ? '查看累计完成与目标计划、时间进度的差距' : '查看各时间段的单期完成值；当前期统计截至当天' }}</p>
+    <div v-show="mode === 'cumulative'" ref="trendEl" class="pg-chart pg-trend-chart" role="img" aria-label="累积完成趋势" v-loading="loading"></div>
+    <div v-show="mode === 'period'" ref="monthlyEl" class="pg-chart pg-trend-chart" role="img" aria-label="单期完成趋势" v-loading="loading"></div>
   </div>
 </template>
 
@@ -36,6 +32,7 @@ const props = defineProps({
 })
 defineEmits(['update:metric'])
 
+const mode = ref('cumulative')
 const trendEl = ref(null), monthlyEl = ref(null)
 let trendChart, monthlyChart, observer
 
@@ -62,9 +59,9 @@ function renderTrend() {
   trendChart.setOption({
     animationDuration: 400,
     tooltip: { trigger: 'axis', valueFormatter: fmtVal },
-    legend: { bottom: 0, itemWidth: 14, textStyle: { fontSize: 12, color: C.muted } },
-    grid: { left: 16, right: 24, top: 30, bottom: 34, containLabel: true },
-    xAxis: { type: 'category', data: props.labels, boundaryGap: false, axisLine: { lineStyle: { color: C.axisline } } },
+    legend: { type: 'scroll', left: 8, right: 8, bottom: 0, itemWidth: 14, textStyle: { fontSize: 12, color: C.muted } },
+    grid: { left: 16, right: 24, top: 30, bottom: 50, containLabel: true },
+    xAxis: { type: 'category', axisLabel: { hideOverlap: true }, data: props.labels, boundaryGap: false, axisLine: { lineStyle: { color: C.axisline } } },
     yAxis: { type: 'value', splitLine: { lineStyle: { color: C.gridline } }, axisLabel: { formatter: axisFmt } },
     series: [
       ...actualSeries(C),
@@ -83,7 +80,7 @@ function renderMonthly() {
     animationDuration: 400,
     tooltip: { trigger: 'axis', valueFormatter: fmtVal },
     grid: { left: 16, right: 24, top: 30, bottom: 26, containLabel: true },
-    xAxis: { type: 'category', data: props.labels, axisLine: { lineStyle: { color: C.axisline } } },
+    xAxis: { type: 'category', axisLabel: { hideOverlap: true }, data: props.labels, axisLine: { lineStyle: { color: C.axisline } } },
     yAxis: { type: 'value', splitLine: { lineStyle: { color: C.gridline } }, axisLabel: { formatter: axisFmt } },
     series: [{
       name: `${metricMeta(props.metric).name} 单期完成`, type: 'bar', barMaxWidth: 42,
@@ -92,7 +89,8 @@ function renderMonthly() {
   }, true)
 }
 
-function render() { renderTrend(); renderMonthly() }
+function render() { if (mode.value === 'cumulative') { renderTrend(); trendChart?.resize() } else { renderMonthly(); monthlyChart?.resize() } }
+watch(mode, () => nextTick(render))
 watch(() => [props.labels, props.cumulativeActual, props.plan, props.timeProgressLine, props.periodActual, props.metric], () => nextTick(render), { deep: true })
 onMounted(() => {
   render()

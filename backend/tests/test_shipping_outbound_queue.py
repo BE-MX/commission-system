@@ -101,7 +101,6 @@ def test_list_batches_sync_events_and_counts_nonempty_page_once(db, waiting):
 
 
 def test_queue_dedup_keeps_number_and_order_matches_separate(db, waiting):
-    db.execute(text("ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN order_id TEXT"))
     outbound_service._columns_cache.clear()
     query, _ = queue._queue_query(db, keyword=None, order_id=None, date_from=None,
                                   date_to=None, okki_user_id=None)
@@ -128,7 +127,6 @@ def test_mirror_arrival_replaces_preview_even_before_task_finishes(db, waiting, 
         VALUES ('OB003','WAIT-0917','C3','Waiting Customer','2026-09-18')"""))
     if renamed:
         db.execute(text("UPDATE lsordertest.okki_outbound_records SET outbound_no='Renamed' WHERE id='OB003'"))
-        db.execute(text("ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN order_id TEXT"))
         db.execute(text("""INSERT INTO lsordertest.okki_outbound_record_items (id,outbound_record_id,order_id)
             VALUES ('IT004','OB003','ORDER-WAIT')"""))
         outbound_service._columns_cache.clear()
@@ -233,10 +231,33 @@ def test_header_only_sync_keeps_preview_until_formal_row_is_visible_to_owner(db,
     db.commit()
     rows, total = queue.list_outbound_records(db, keyword="WAIT", okki_user_id="9001")
     assert total == 1 and rows[0]["record_source"] == "ark_task"
-    db.execute(text("ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN order_id TEXT"))
     db.execute(text("""INSERT INTO lsordertest.okki_outbound_record_items (id,outbound_record_id,order_id)
         VALUES ('IT004','OB003','ORDER-WAIT')"""))
     outbound_service._columns_cache.clear()
     db.commit()
     rows, total = queue.list_outbound_records(db, keyword="WAIT", okki_user_id="9001")
     assert total == 1 and rows[0]["outbound_record_id"] == "OB003"
+
+
+@pytest.mark.parametrize("formal", [False, True])
+def test_existing_order_owner_controls_preview_and_mirror_without_reviving_old_preview(db, waiting, formal):
+    db.execute(text("INSERT INTO lsordertest.okki_orders (order_id,company_id,user_id) "
+                    "VALUES ('ORDER-WAIT','C3','9002')"))
+    if formal:
+        db.execute(text("INSERT INTO lsordertest.okki_outbound_records "
+                        "(id,outbound_no,company_id,customer_name,outbound_date) "
+                        "VALUES ('OB003','WAIT-0917','C3','Waiting Customer','2026-09-18')"))
+        db.execute(text("INSERT INTO lsordertest.okki_outbound_record_items (id,outbound_record_id,order_id) "
+                        "VALUES ('IT004','OB003','ORDER-WAIT')"))
+    db.commit()
+    assert queue.list_outbound_records(db, keyword="WAIT", okki_user_id="9001") == ([], 0)
+    rows, total = queue.list_outbound_records(db, keyword="WAIT", okki_user_id="9002")
+    assert total == 1
+    assert rows[0]["outbound_record_id"] == ("OB003" if formal else f"task:{waiting[2].id}")
+
+
+def test_mismatched_order_customer_cannot_authorize_local_preview(db, waiting):
+    db.execute(text("INSERT INTO lsordertest.okki_orders (order_id,company_id,user_id) "
+                    "VALUES ('ORDER-WAIT','OTHER','9001')"))
+    db.commit()
+    assert queue.list_outbound_records(db, keyword="WAIT", okki_user_id="9001") == ([], 0)

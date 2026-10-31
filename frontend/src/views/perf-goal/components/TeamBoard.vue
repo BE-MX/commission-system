@@ -1,14 +1,15 @@
 <template>
   <div class="pg-card">
     <div class="pg-card-title">
-      <h2>团队目标完成情况</h2>
-      <span class="pg-note">战队目标 = 成员目标汇总自动得出（完成含未设目标成员完成值）</span>
+      <h2>战队完成情况</h2>
+      <span class="pg-note">目标采用本周期生效目标，含已保存的系数与覆盖值</span>
       <div class="pg-right pg-metric-switch">
         <button v-for="m in METRICS" :key="m.key" :class="{ 'pg-active': m.key === metric }" @click="metric = m.key">{{ m.name }}</button>
       </div>
     </div>
     <div ref="chartEl" class="pg-chart" style="height:320px" role="img" aria-label="战队完成率横向条形图" v-loading="loading"></div>
-    <div class="pg-team-grid" style="margin-top:16px">
+    <details class="pg-team-details"><summary>查看战队与成员明细（{{ rows.length }} 个战队）</summary>
+    <div class="pg-team-grid">
       <div v-for="t in rows" :key="t.department_id" class="pg-team-card" :class="{ 'pg-hl': t.team_name === highlightTeam }">
         <div class="pg-t-head">
           <b>{{ t.team_name }}</b>
@@ -30,8 +31,9 @@
           </div>
         </div>
       </div>
-      <div class="pg-footnote" style="grid-column:1/-1;margin-top:0">* 未设目标成员：展示完成值、不参与完成率计算；战队目标 = 有目标成员目标汇总自动得出。</div>
+      <div class="pg-footnote" style="grid-column:1/-1;margin-top:0">* 未设目标成员：展示完成值、不参与个人完成率计算；战队目标以生效目标为准。</div>
     </div>
+    </details>
   </div>
 </template>
 
@@ -68,6 +70,7 @@ function render() {
   const meta = metricMeta(k)
   const tp = props.timeProgress ?? 100
   const stats = sorted.value
+  const compact = chartEl.value.clientWidth < 480
   const fmtVal = v => (v == null ? '—' : meta.money ? fmtUsd(v) : fmtInt(v))
   chart.setOption({
     animationDuration: 400,
@@ -80,7 +83,7 @@ function render() {
       },
     },
     grid: { left: 16, right: 130, top: 10, bottom: 10, containLabel: true },
-    xAxis: { type: 'value', splitLine: { lineStyle: { color: C.gridline } }, axisLabel: { formatter: v => (meta.money ? `$${v >= 10000 ? `${v / 10000}万` : v}` : v) } },
+    xAxis: { type: 'value', splitLine: { lineStyle: { color: C.gridline } }, axisLabel: { show: !compact, formatter: v => (meta.money ? `$${v >= 10000 ? `${v / 10000}万` : v}` : v) } },
     yAxis: { type: 'category', inverse: true, data: stats.map(t => t.team_name), axisLine: { lineStyle: { color: C.axisline } } },
     series: [{
       type: 'bar', barWidth: 18,
@@ -102,7 +105,7 @@ function render() {
 watch([sorted, metric], () => nextTick(render))
 onMounted(() => {
   render()
-  observer = new ResizeObserver(() => chart?.resize())
+  observer = new ResizeObserver(() => { chart?.resize(); render() })
   if (chartEl.value) observer.observe(chartEl.value)
 })
 onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose() })

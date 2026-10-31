@@ -1,5 +1,7 @@
 """Portal prices use standard metadata and Ark's existing customer rule engine."""
 from dataclasses import dataclass
+from sqlalchemy import select
+from app.portal.models import CatalogGrant
 from decimal import Decimal
 
 from app.core.config import get_settings
@@ -46,7 +48,9 @@ def resolve(db, access, item, currency, *, browse=None):
         reject("PRICE_UNAVAILABLE", "The product price is not configured.", 503)
     try:
         standard_price = decimal_value(result["standard_price"], places=4, positive=True)
-        amount = decimal_value(result.get("customer_price"), places=4, positive=True)
+        override = browse.overrides.get(item.id) if browse is not None else db.scalar(select(CatalogGrant.unit_price).where(CatalogGrant.access_id == access.id,
+            CatalogGrant.catalog_item_id == item.id, CatalogGrant.status == "enabled"))
+        amount = decimal_value(override if override is not None else result.get("customer_price"), places=4, positive=True)
         if amount > Decimal("99999999.9999"):
             raise ValueError("Price overflow")
     except (PortalError, ValueError):
@@ -55,5 +59,5 @@ def resolve(db, access, item, currency, *, browse=None):
         "product_id": item.product_id, "sku_id": item.sku_id, "standard": standard,
         "customer_id": access.okki_company_id, "namespace": access.okki_namespace,
         "currency": currency, "standard_price": standard_price, "customer_price": amount,
-        "rule": rule_snapshot, "color_type": result.get("color_type")})
+        "override": override, "rule": rule_snapshot, "color_type": result.get("color_type")})
     return ResolvedPrice(amount, currency, fingerprint)

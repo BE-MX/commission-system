@@ -38,7 +38,7 @@ def fulfillment(mysql_engine, finance_rows, stock_ids):
                 ddl = str(CreateColumn(Column(column.name, column.type, nullable=True)).compile(dialect=conn.dialect))
                 conn.exec_driver_sql("ALTER TABLE ark_users ADD COLUMN " + ddl)
         conn.exec_driver_sql("INSERT INTO ark_users(id, username, real_name, password_hash, is_active) VALUES (1, 'worker', 'Worker', 'unused', 1)")
-        path = Path(__file__).parents[1] / "alembic/versions/212_local_fulfillment.py"
+        path = Path(__file__).parents[1] / "alembic/versions/231_local_fulfillment.py"
         spec = spec_from_file_location("fulfillment_migration", path)
         migration = module_from_spec(spec)
         spec.loader.exec_module(migration)

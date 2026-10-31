@@ -2,7 +2,7 @@
 import hashlib
 import json
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from app.core.storage.cos import StorageError
 from app.invoice import okki_client, settlement_service as shipments
@@ -43,7 +43,15 @@ def _replay(db, row, children, body, current):
     targets = {target.id:target for target in _rows(db, Receivable, Receivable.id.in_([child.receivable_id for child in children]))}
     for child in children:
         target = targets.get(child.receivable_id)
-        linked = [app for app in apps if app.receipt_id == child.id]
+        from app.sales_return.presale_adjustments import credit_application, validate_credit
+        linked = []
+        for app in [part for part in apps if part.receipt_id == child.id]:
+            owner = settlements.get(app.settlement_id) or db.get(ShipmentSettlement, app.settlement_id)
+            if credit_application(owner, app, child):
+                if app.status != "released":
+                    validate_credit(db, owner, app, child, current=True)
+                continue
+            linked.append(app)
         settlement_id = expected[child.invoice_id]
         expected_key = (f"settlement:{settlement_id}:freight" if child.purpose == "freight"
             else f"invoice:{child.invoice_id}:goods")
@@ -126,7 +134,7 @@ def _capture(db, invoices, body, current):
         elif item.settlement_id or item.purpose != "ordinary":
             raise ValueError("普通订单不能绑定预售结算")
     receipts = _rows(db, Receipt, Receipt.invoice_id.in_(ids))
-    occupied = or_(*(func.json_contains(ReceiptIntent.attachment_ids, json.dumps([identity])) == 1 for identity in body.attachment_ids))
+    occupied = or_(false(), *(func.json_contains(ReceiptIntent.attachment_ids, json.dumps([identity])) == 1 for identity in body.attachment_ids))
     intents = _rows(db, ReceiptIntent, or_(ReceiptIntent.invoice_id.in_(ids),
         (ReceiptIntent.eligible == 1) & ReceiptIntent.status.in_(['draft','armed','ready']) & occupied))
     if any(intent.eligible and intent.status in {'draft','armed','ready'} and set(body.attachment_ids).intersection(intent.attachment_ids or []) for intent in intents):

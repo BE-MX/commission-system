@@ -11,7 +11,14 @@ import { createLatestRequestGate } from './accessoryPricing.js'
 import { hasImportedBatch, isBlankInvoiceLine, mapPreviewRowToInvoiceLine } from './useInvoicePasteImport.js'
 import { emptyHairRow, normalizeHairRow } from './invoiceEditorState.js'
 
-export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions) {
+export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions, groupOptions = {}) {
+  const getTargetGroupKey = groupOptions.getTargetGroupKey || (() => '')
+  const getSourceItems = groupOptions.getSourceItems || (() => hairItems.value)
+  function targetGroupKey() {
+    const key = getTargetGroupKey()
+    if (key == null) msgWarning('请先选择或新建一个明细分组，再添加产品')
+    return key
+  }
   const linePriceGates = new WeakMap()
   const linePriceContext = row => [
     form.customer_id || '', row.product_display || '', row.color || '',
@@ -23,16 +30,23 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
   }
   async function loadEntryOptions() { Object.assign(entryOptions.value, await getInvoiceEntryOptions()) }
   function addBlankLine() {
-    form.items.push(emptyHairRow(isProduction.value))
+    const groupKey = targetGroupKey()
+    if (groupKey == null) return false
+    form.items.push({ ...emptyHairRow(isProduction.value), group_key: groupKey })
+    return true
   }
   function copyLine() {
-    const last = hairItems.value.at(-1)
-    if (!last) return
-    const { options, matching, id, ...data } = last
-    const copied = { ...normalizeHairRow(data), quantity: last.quantity, discount_amount: last.discount_amount,
+    const groupKey = targetGroupKey()
+    if (groupKey == null) return false
+    const last = getSourceItems(groupKey).at(-1)
+    if (!last) return false
+    const { options, matching, id, created_at, ...data } = last
+    const copied = { ...normalizeHairRow(data), group_key: groupKey, created_at: null,
+      quantity: last.quantity, discount_amount: last.discount_amount,
       price_per_piece: last.price_per_piece, customer_price: last.customer_price }
     updateLineTotal(copied)
     form.items.push(copied)
+    return true
   }
   function removeLine(rowOrIndex) {
     const row = typeof rowOrIndex === 'number' ? hairItems.value[rowOrIndex] : rowOrIndex
@@ -118,11 +132,16 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     updateLineTotal(row)
   }
   function appendImportedLines(rows, fingerprint) {
+    const groupKey = targetGroupKey()
+    if (groupKey == null) return false
     if (hasImportedBatch(form.items, fingerprint)) return false
     for (let i = form.items.length - 1; i >= 0; i--) {
-      if (isBlankInvoiceLine(form.items[i])) form.items.splice(i, 1)
+      if (form.items[i].group_key === groupKey && isBlankInvoiceLine(form.items[i])) form.items.splice(i, 1)
     }
-    form.items.push(...rows.map(row => normalizeHairRow(mapPreviewRowToInvoiceLine(row, fingerprint, form.order_type))))
+    form.items.push(...rows.map(row => ({
+      ...normalizeHairRow(mapPreviewRowToInvoiceLine(row, fingerprint, form.order_type)),
+      group_key: groupKey,
+    })))
     return true
   }
   return {

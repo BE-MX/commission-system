@@ -26,6 +26,8 @@ from app.salary.models import (
     SalaryGradeTable,
     SalaryPeriod,
     SalaryPeriodEvent,
+    SalaryRecord,
+    SalaryEmployeeProfile,
     SalaryRuleParam,
 )
 from app.salary.seed import seed_rule_params
@@ -49,6 +51,8 @@ def engine_and_session():
             SalaryRuleParam.__table__,
             SalaryGradeTable.__table__,
             SalaryDeptMapping.__table__,
+            SalaryRecord.__table__,
+            SalaryEmployeeProfile.__table__,
             # 事件时间线要把 created_by 换成真实姓名，得有用户表可 JOIN
             ArkUser.__table__,
         ],
