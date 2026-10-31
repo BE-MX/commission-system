@@ -174,6 +174,19 @@ def _register_jobs(scheduler: AsyncIOScheduler, *, outbound_mode: str) -> None:
     scheduler.add_job(send_task_briefs_job, trigger="cron", hour=8, minute=53, timezone="Asia/Shanghai",
                       id="task_daily_brief", replace_existing=True, max_instances=1, coalesce=True,
                       misfire_grace_time=1800)
+    from app.domestic_followup.scheduler import maintenance_job, send_daily_digest_job, send_urgent_job
+    scheduler.add_job(send_daily_digest_job, trigger="cron", day_of_week="mon-sat", hour=9, minute=0,
+                      timezone="Asia/Shanghai", id="domestic_followup_daily", replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=1800)
+    for minute in (5, 15):  # 09:00 钉钉抖动时当天汇总不丢；发件箱唯一键保证不重复
+        scheduler.add_job(send_daily_digest_job, trigger="cron", day_of_week="mon-sat", hour=9, minute=minute,
+                          timezone="Asia/Shanghai", id=f"domestic_followup_daily_retry_{minute:02d}",
+                          replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=600)
+    scheduler.add_job(send_urgent_job, trigger="interval", seconds=60, id="domestic_followup_urgent",
+                      replace_existing=True, max_instances=1, coalesce=True)
+    scheduler.add_job(maintenance_job, trigger="cron", hour=2, minute=10, timezone="Asia/Shanghai",
+                      id="domestic_followup_maintenance", replace_existing=True, max_instances=1,
+                      coalesce=True, misfire_grace_time=3600)
     if settings.ANNOUNCEMENT_WORKER_ENABLED:
         from app.announcement.scheduler import dispatch_announcements, generate_announcement_weekly
         scheduler.add_job(dispatch_announcements, 'interval', seconds=10, id='announcement_dispatch',

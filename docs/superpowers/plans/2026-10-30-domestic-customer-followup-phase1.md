@@ -4477,6 +4477,7 @@ git commit -m "feat(domestic-followup): scan shipments into receipt follow-up ta
 - **紧急异常**：确认记录时就写进发件箱（`ref_key=item:<条目ID>`），每位接收人一行；60 秒任务负责发出。
   - 失败最多重试 5 次；未绑定钉钉的接收人直接把次数打满，避免每分钟重试。
 - **三段式执行**，照搬 `app/task/scheduler.py` 的写法：准备（线程池）→ 发送（事件循环，`await notifier.send_to_users`）→ 标记（线程池）。
+- **发件箱去重**：先查唯一键，已有就跳过（09:05/09:15 补发每次都会走到，属正常路径，不打日志）；只有并发撞唯一键才走 IntegrityError 分支，并按红线 6 记 warning + print。
 - **链接**：用 `get_settings().DOMESTIC_REVIEW_NOTICE_BASE_URL + "/domestic/followups"`（config.py 没有模块级 `settings`），内贸模块已有的通知也走这个入口。
 
 - [ ] **Step 1: 写失败的测试**
@@ -4639,14 +4640,23 @@ def workbench_url(customer_id: int | None = None) -> str:
 
 
 def _insert(db: Session, digest: Digest) -> bool:
+    exists = db.query(Digest.id).filter(
+        Digest.user_id == digest.user_id, Digest.digest_date == digest.digest_date,
+        Digest.kind == digest.kind, Digest.ref_key == digest.ref_key,
+    ).first()
+    if exists:  # 同人同日同类已有一条：09:05/09:15 补发每次都会走到这里，属正常路径
+        return False
     savepoint = db.begin_nested()
     try:
         db.add(digest)
         db.flush()
         savepoint.commit()
         return True
-    except IntegrityError:
-        savepoint.rollback()  # 同人同日同类已有一条
+    except IntegrityError as exc:
+        savepoint.rollback()  # 并发下另一实例先写了同一条
+        logger.warning("followup digest insert conflict user=%s kind=%s ref=%s: %s", digest.user_id, digest.kind,
+                       digest.ref_key, type(exc.orig).__name__)
+        print(f"[domestic_followup] digest insert conflict user={digest.user_id} kind={digest.kind}", flush=True)
         return False
 
 
