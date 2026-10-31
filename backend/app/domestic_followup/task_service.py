@@ -253,3 +253,36 @@ def summary(db: Session, current_user: dict, *, today: date | None = None) -> di
         if task_type in TRACKED_KINDS and (payload or {}).get("severity") == URGENT:
             result["urgent"] += 1
     return result
+
+
+def list_items(db: Session, current_user: dict, *, status: str = "open", kind: str | None = None,
+               category: str | None = None, customer_id: int | None = None, mine: bool = False,
+               page: int = 1, page_size: int = 50) -> dict:
+    """异常意见看板：open 含 handling；按创建时间倒序。"""
+    from app.domestic_followup.followup_service import serialize_item  # 序列化口径与时间线一致
+
+    query = db.query(DomesticFollowupItem).filter(DomesticFollowupItem.kind.in_(TRACKED_KINDS))
+    if status == "open":
+        query = query.filter(DomesticFollowupItem.status.in_(OPEN_ITEM_STATES))
+    elif status:
+        query = query.filter(DomesticFollowupItem.status == status)
+    if kind in TRACKED_KINDS:
+        query = query.filter(DomesticFollowupItem.kind == kind)
+    if category:
+        query = query.filter(DomesticFollowupItem.category == category)
+    if customer_id:
+        query = query.filter(DomesticFollowupItem.customer_id == customer_id)
+    user_id = visibility.uid(current_user)
+    if mine:
+        query = query.filter(DomesticFollowupItem.handler_user_id == user_id)
+    elif not visibility.can_read_all(current_user):
+        query = query.filter((DomesticFollowupItem.handler_user_id == user_id)
+                             | DomesticFollowupItem.customer_id.in_(visibility.scoped_customer_ids(user_id)))
+    total = query.count()
+    rows = (query.order_by(DomesticFollowupItem.created_at.desc(), DomesticFollowupItem.id.desc())
+            .offset((page - 1) * page_size).limit(page_size).all())
+    shops = _name_map(db, DomesticCustomer.id, DomesticCustomer.shop_name, [r.customer_id for r in rows])
+    handlers = _name_map(db, ArkUser.id, ArkUser.real_name, [r.handler_user_id for r in rows])
+    items = [{**serialize_item(r), "shop_name": shops.get(r.customer_id),
+              "handler_name": handlers.get(r.handler_user_id)} for r in rows]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}

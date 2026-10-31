@@ -397,3 +397,27 @@ def timeline(db: Session, current_user: dict, customer_id: int) -> dict:
         "open_items": [serialize_item(i) for i in open_items],
         "events": events[:TIMELINE_LIMIT],
     }
+
+
+def attachment_file(db: Session, current_user: dict, attachment_id: int):
+    """截图原图：上传人本人，或能看到所属已确认记录的人。"""
+    from app.domestic.file_service import FileValidationError, resolve_path
+    from app.domestic_followup.models import DomesticFollowupAttachment
+
+    att = db.get(DomesticFollowupAttachment, attachment_id)
+    if att is None:
+        raise LookupError("截图不存在")
+    if att.uploader_user_id != visibility.uid(current_user):
+        query = db.query(Followup.id).filter(Followup.id == att.followup_id, Followup.status == "confirmed")
+        condition = visibility.followup_filter(current_user)
+        if condition is not None:
+            query = query.filter(condition)
+        if att.followup_id is None or query.first() is None:
+            raise PermissionError("无权查看该截图")
+    try:
+        path = resolve_path(att.file_path)
+    except FileValidationError as exc:
+        raise ValueError(str(exc)) from exc
+    if not path.is_file():
+        raise LookupError("截图文件不存在")
+    return path, att.mime_type or "image/png"
