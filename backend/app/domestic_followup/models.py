@@ -185,3 +185,6 @@ class DomesticFollowupConfig(Base):
     value = Column(JSON, nullable=True, comment="配置值")
     updated_by = Column(_UINT, ForeignKey("ark_users.id"), nullable=True, comment="最后维护人")
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间（北京时间）")
+
+
+from app.domestic_followup import event_hooks as _event_hooks  # noqa: E402,F401  — 注册归属变化监听

@@ -5466,8 +5466,8 @@ event_hooks 要 import models，这里形成循环导入。因为 import 写在 
 
 - [ ] **Step 4: 跑测试确认通过，并回归内贸客户测试**
 
-Run: `PY -m pytest tests/test_domestic_followup_owner_hooks.py -q && PY -m pytest tests -q -k "domestic and customer" -x`
-Expected: PASS。第二条用来确认监听没有拖垮现有的客户归属测试。如果出现与本监听无关的既有失败，先跑 `git stash` 前后对比确认，再如实记录。
+Run: `PY -m pytest tests/test_domestic_followup_owner_hooks.py -q && PY -m pytest tests -q -k "domestic and customer" -x --ignore=tests/portal_mysql`
+Expected: PASS（4 passed；回归 187 passed，与改动前基线一致）。不加 `--ignore=tests/portal_mysql` 时，`tests/portal_mysql/conftest.py` 在收集阶段读不到 `portal_full_chain` 选项会直接 INTERNALERROR，与本改动无关。第二条用来确认监听没有拖垮现有的客户归属测试。如果出现与本监听无关的既有失败，先跑 `git stash` 前后对比确认，再如实记录。
 
 - [ ] **Step 5: 提交**
 
