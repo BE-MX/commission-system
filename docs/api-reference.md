@@ -2722,9 +2722,9 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 | 方法 | 相对路径 | 请求与结果 |
 | --- | --- | --- |
-| GET/PUT | `/config` | 回访天数、上线日、紧急接收人、推送频率等配置；PUT 需 `admin`。 |
+| GET/PUT | `/config` | 回访天数、上线日、紧急接收人、兜底负责人、推送频率等配置；PUT 需 `admin`，紧急接收人须持有 `domestic_followup:read_all`（或超管）。 |
 | GET | `/dicts` | 三个 sys_dict type（状态变化/分类/沟通方式）当前值域，供前端下拉和 AI 运行时注入复用。 |
-| GET | `/users` | 按关键字搜索可指派用户（转交用）。 |
+| GET | `/users` | 按关键字搜索可指派用户（转交、兜底负责人用）：只返回持有 `domestic_followup:write` 的在职用户，超管视同持有。 |
 | GET | `/customers/search` | 按当前用户可见范围搜索客户，`q` 关键字。 |
 | POST | `/customers/prospect` | 按店铺名建潜在客户（未成交线索先建档才能录跟进）。 |
 | GET | `/customers/{customer_id}/timeline` | 客户时间线：跟进记录 + 任务 + 发货/AI 背景；可读/可写分开判定，不可读时隐藏发货和 AI 背景（见模块说明）。 |
@@ -2743,6 +2743,6 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 | POST | `/tasks/{task_id}/receipt-ok` | 收货回访任务一键「已联系，一切正常」，直接生成一条确认记录；`request_id` 幂等。 |
 | GET | `/items` | 异常/意见条目看板：`status`、`kind`（issue/suggestion）、`category`、`customer_id`、`mine`，分页。 |
 | POST | `/items/{item_id}/resolve` | 处理条目（关闭时校验操作人是当前处理人）。 |
-| POST | `/items/{item_id}/transfer` | 转交条目处理人。 |
+| POST | `/items/{item_id}/transfer` | 转交条目处理人；目标须持有 `domestic_followup:write`，否则 400。 |
 
-AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（文字归一化）与 `domestic_followup_ocr`（截图 OCR）；两个 preset 须在 AI 管理页绑定视觉模型才能处理截图。输出宽进：坏字段只丢弃该字段，不整条拒绝。
+AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（文字归一化）与 `domestic_followup_ocr`（截图 OCR）；两个 preset 启动时自动绑定与 `invoice_screenshot_extract` 相同的视觉 provider/模型（不退回其他 provider）。后台 AI/OCR 走 `jobs.py` 独立线程池（上限 3）。输出宽进：坏字段只丢弃该字段，不整条拒绝。

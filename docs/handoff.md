@@ -2,10 +2,13 @@
 
 - 工作区 `D:/MyProgram/commission-system-followup`，分支 `claude/domestic-followup`；迁移 `215_domestic_followup`，接在 `214_sales_return_ledger` 之后，仅新建 8 张表（见 database.md）并种三个 `sys_dict` type 初值，不改既有表，非破坏性，不需要冻结写实例。部署只走 `deploy\deploy.bat`，由它统一执行迁移；Scheduler 单活，3 个新任务（每日汇总 + 两次补发、紧急异常推送、每日维护）只在办公室 scheduler 实例上跑。
 - **部署后亮哥要在后台做的事**：
-  - 角色管理页给业务员分配 `domestic_followup:read` / `domestic_followup:write`，给主管分配 `domestic_followup:read_all`，给管理员分配 `domestic_followup:admin`。
-  - 工作台右上「跟进设置」里设置紧急异常接收人（`urgent_receiver_user_ids`）；不设则紧急异常只记日志、不推送。
-  - AI 管理页确认 `domestic_followup_parse`（文字归一化）与 `domestic_followup_ocr`（截图 OCR）两个 preset 绑定的是视觉模型。
-- **已知未做 / 一期简化**（详见 module-notes.md「内贸客户跟进」专题）：列表与时间线有 N+1 查询；后台 AI 解析线程占用 FastAPI 共享线程池；未绑定截图的物理文件不清理；AI 整理中用骨架屏代替分阶段进度文案；时间线不展开 OCR 文本，只给原图按钮；工作台没有搜索与筛选；决策台画像接入、小程序/微信 Agent 录入、历史 Excel 导入三项留到二期。
+  - 角色管理页给业务员分配 `domestic_followup:read` / `domestic_followup:write`，给主管分配 `domestic_followup:read_all`，给管理员分配 `domestic_followup:admin`。**已登录用户要退出重新登录**才拿到新权限（权限在登录令牌里）。转交选人只列持有 `domestic_followup:write` 的在职用户（超管视同持有），没分配的人搜不到、也转不过去。
+  - 工作台右上「跟进设置」里设置紧急异常接收人（`urgent_receiver_user_ids`）；不设则紧急异常只记日志、不推送。**接收人必须持有 `domestic_followup:read_all`**（或超管），否则保存会被拒——没有全部范围的人点开推送看不到客户。
+  - 同一弹窗里配置**兜底负责人**（`fallback_assignee_user_id`）：客户无归属且发货经办人已停用时，收货回访交给他；不设则这类回访只记日志、不生成。
+  - 确认生产 `DOMESTIC_REVIEW_NOTICE_BASE_URL` 指向业务员实际使用的站点（推送里的「打开跟进工作台」链接用它拼）。
+  - 两个 preset 启动时自动绑定与发票截图导入相同的视觉模型（`TeamRouter-Chat` / `claude-fable-5`，不退回其他 provider）；若该 provider 未启用则不会自动建 preset，需在 AI 管理页手工建并绑定视觉模型。
+  - 后台 AI 整理/截图 OCR 走独立线程池，**并发上限 3**；超出的排队，前端最多等约 150 秒，没整理完会提示稍后从「我的草稿」继续。
+- **已知未做 / 一期简化**（详见 module-notes.md「内贸客户跟进」专题）：列表与时间线有 N+1 查询；未绑定截图的物理文件不清理；AI 整理中用骨架屏代替分阶段进度文案；时间线不展开 OCR 文本，只给原图按钮；工作台没有搜索与筛选；决策台画像接入、小程序/微信 Agent 录入、历史 Excel 导入三项留到二期。
 - **已知测试环境问题（与本分支无关）**：`tests/portal_mysql/conftest.py` 在收集阶段报 `INTERNALERROR`，跑后端全量测试要加 `--ignore=tests/portal_mysql` 绕开，否则整个收集会被拖垮。
 
 ## 2026-10-30 外贸退货单（Codex，Git交付，未部署）
