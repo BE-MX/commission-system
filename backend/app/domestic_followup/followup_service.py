@@ -310,6 +310,12 @@ def quick_receipt_ok(db: Session, current_user: dict, task_id: int, request_id: 
         if task is None or task.task_type != "receipt":
             raise LookupError("回访待办不存在")
         if task.status != "todo":
+            # 双击：第二次在行锁上等到第一次提交，任务已关。用加锁读看最新版本，是同一请求就把那条还回去
+            done = (db.query(Followup).filter(Followup.request_id == request_id)
+                    .populate_existing().with_for_update().first())
+            if done is not None and done.author_user_id == user_id:
+                db.commit()
+                return done
             raise ConflictError("该回访待办已结束")
         task_service.ensure_task_actor(db, current_user, task)
         followup = Followup(author_user_id=user_id, request_id=request_id, followup_date=beijing_today(),
@@ -320,6 +326,14 @@ def quick_receipt_ok(db: Session, current_user: dict, task_id: int, request_id: 
         _apply_and_confirm(db, current_user, followup,
                            FollowupFields(customer_id=task.customer_id, summary=RECEIPT_OK_TEXT))
         db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        existing = _by_request(db, request_id, user_id)  # 同一 request_id 并发提交，另一请求已落库
+        if existing:
+            return existing
+        logger.warning("receipt-ok insert failed request_id=%s: %s", request_id, type(exc.orig).__name__)
+        print(f"[domestic_followup] receipt-ok insert failed request_id={request_id}", flush=True)
+        raise ValueError("保存失败，请重试") from exc
     except Exception:
         db.rollback()
         raise

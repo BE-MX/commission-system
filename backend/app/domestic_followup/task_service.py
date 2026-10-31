@@ -18,6 +18,7 @@ logger = logging.getLogger("commission")
 
 Task = DomesticFollowupTask
 CLOSABLE_BY_FOLLOWUP = ("plan", "receipt")
+WRITE_PERMISSION = "domestic_followup:write"
 
 
 def upsert_task(db: Session, *, source_key: str, task_type: str, customer_id: int, assignee_user_id: int,
@@ -161,6 +162,9 @@ def transfer_item(db: Session, current_user: dict, item_id: int, to_user_id: int
                                       ArkUser.deleted_at.is_(None)).first()
     if target is None:
         raise ValueError("接收人不存在或已停用")
+    if not visibility.holds(db, target.id, WRITE_PERMISSION):
+        # 没有写权限的人接过去也处理不了，条目会卡在他名下
+        raise ValueError("对方没有客户跟进权限，请先在角色管理中分配")
     previous = item.handler_user_id
     item.handler_user_id = target.id
     item.status = "handling"
@@ -289,8 +293,8 @@ def list_items(db: Session, current_user: dict, *, status: str = "open", kind: s
 
 
 def search_users(db: Session, q: str, limit: int = 20) -> list[dict]:
-    """转交选人：在职用户按姓名/用户名模糊搜，只返回 id 与姓名。"""
-    query = db.query(ArkUser.id, ArkUser.real_name).filter(ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None))
+    """转交选人：持有跟进写权限的在职用户按姓名/用户名模糊搜，只返回 id 与姓名。"""
+    query = db.query(ArkUser.id, ArkUser.real_name).filter(ArkUser.id.in_(visibility.holder_ids(WRITE_PERMISSION)))
     keyword = (q or "").strip()
     if keyword:
         query = query.filter((ArkUser.real_name.contains(keyword)) | (ArkUser.username.contains(keyword)))

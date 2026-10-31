@@ -1,6 +1,6 @@
 from app.domestic_followup import config_service, dict_service
 from app.domestic_followup.constants import DICT_CATEGORY, DICT_CHANNEL, DICT_STATE_CHANGE
-from tests.domestic_followup_helpers import make_user, seed_dicts
+from tests.domestic_followup_helpers import grant, make_user, seed_dicts
 
 
 def test_followup_permissions_seeded_with_correct_kind_and_admin_grants(db):
@@ -30,6 +30,7 @@ def test_followup_permissions_seeded_with_correct_kind_and_admin_grants(db):
 
 def test_config_defaults_and_update(db):
     admin = make_user(db, "fu_cfg_admin")
+    grant(db, admin, "domestic_followup:read_all")
     config = config_service.get_config(db)
     assert config["receipt_delay_days"] == 3
     assert config["frequency_days"] == {"S级": 7, "A级": 14, "B级": 30, "C级": 60}
@@ -38,6 +39,23 @@ def test_config_defaults_and_update(db):
     config = config_service.get_config(db)
     assert config["receipt_delay_days"] == 4
     assert config["urgent_receiver_user_ids"] == [admin.id]
+
+
+def test_urgent_receivers_must_hold_read_all(db):
+    import pytest
+
+    boss = make_user(db, "fu_cfg_boss")
+    grant(db, boss, "domestic_followup:read_all")
+    root = make_user(db, "fu_cfg_root")
+    grant(db, root, role_name="super_admin")
+    clerk = make_user(db, "fu_cfg_clerk")
+    clerk.real_name = "小王"
+    grant(db, clerk, "domestic_followup:read", "domestic_followup:write")
+    with pytest.raises(ValueError, match="小王 没有『全部客户跟进范围』权限，点开推送会看不到客户"):
+        config_service.update_config(db, {"urgent_receiver_user_ids": [boss.id, clerk.id]}, None, commit=False)
+    assert config_service.get_config(db)["urgent_receiver_user_ids"] == []
+    config_service.update_config(db, {"urgent_receiver_user_ids": [boss.id, root.id]}, None, commit=False)
+    assert config_service.get_config(db)["urgent_receiver_user_ids"] == [boss.id, root.id]
 
 
 def test_update_config_rejects_unknown_key(db):
@@ -236,3 +254,17 @@ def test_match_alias_scope_excludes_higher_hit_outside_customer(db):
     db.flush()
     matched = visibility.match_alias(db, _user_ctx(owner), "别名冲突")
     assert matched is not None and matched["id"] == in_scope.id
+
+
+def test_learn_alias_concurrent_insert_bumps_hit_count_instead_of_failing(db, monkeypatch):
+    owner = make_user(db, "fu_vis_alias")
+    customer = make_customer(db, owner, "别名并发店")
+    db.add(DomesticCustomerAlias(customer_id=customer.id, alias="均哥", alias_norm="均哥", created_by=owner.id))
+    db.flush()
+    # 预查没看到（另一事务刚插入），插入撞 uq_dom_customer_alias
+    monkeypatch.setattr(visibility, "_find_alias", lambda *a: None)
+    visibility.learn_alias(db, customer.id, " 均哥 ", owner.id)
+    db.flush()
+    row = db.query(DomesticCustomerAlias).filter_by(customer_id=customer.id).one()
+    db.refresh(row)
+    assert row.hit_count == 2

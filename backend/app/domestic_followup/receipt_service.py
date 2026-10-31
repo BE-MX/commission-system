@@ -29,8 +29,10 @@ def _launch_date(db: Session, today: date) -> date:
     value = config_service.get_config(db)["receipt_launch_date"]
     if value:
         return date.fromisoformat(value)
-    config_service.update_config(db, {"receipt_launch_date": today.isoformat()}, None, commit=False)
-    return today
+    # 首次扫描在部署次日 02:10 跑：记成「今天 − 1」，部署当天白天的发货也能生成回访，更早的历史不补
+    launch = today - timedelta(days=1)
+    config_service.update_config(db, {"receipt_launch_date": launch.isoformat()}, None, commit=False)
+    return launch
 
 
 def scan(db: Session, *, today: date | None = None) -> int:

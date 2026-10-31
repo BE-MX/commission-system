@@ -6,6 +6,7 @@ import logging
 from collections import defaultdict
 from datetime import date
 
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -79,12 +80,25 @@ def _active_user_filter():
     return ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)
 
 
+def _warn_skipped_inactive(db: Session, today: date) -> None:
+    """停用/删除员工名下的到期待办不推送：记下条数，提醒管理员在客户档案里改归属。"""
+    active_ids = select(ArkUser.id).where(*_active_user_filter())
+    skipped = (db.query(func.count(DomesticFollowupTask.id))
+               .filter(DomesticFollowupTask.status == "todo", DomesticFollowupTask.due_date <= today,
+                       DomesticFollowupTask.assignee_user_id.not_in(active_ids))
+               .scalar()) or 0
+    if skipped:
+        logger.warning("followup daily digest skipped %s due task(s) of inactive assignees", skipped)
+        print(f"[domestic_followup] daily digest skipped {skipped} due task(s) of inactive assignees", flush=True)
+
+
 def build_daily(db: Session, today: date) -> int:
     rows = (db.query(DomesticFollowupTask)
             .join(ArkUser, ArkUser.id == DomesticFollowupTask.assignee_user_id)
             .filter(DomesticFollowupTask.status == "todo", DomesticFollowupTask.due_date <= today,
                     *_active_user_filter())
             .order_by(DomesticFollowupTask.due_date, DomesticFollowupTask.id).all())
+    _warn_skipped_inactive(db, today)
     by_user: dict[int, list] = defaultdict(list)
     for task in rows:
         by_user[task.assignee_user_id].append(task)

@@ -2,9 +2,9 @@ from datetime import date
 
 import pytest
 
-from app.domestic_followup import followup_service, router as followup_router
+from app.domestic_followup import ai_parse_service, attachment_service, followup_service, jobs
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupAttachment, DomesticFollowupItem
-from tests.domestic_followup_helpers import followup_client, make_customer, make_user, seed_dicts
+from tests.domestic_followup_helpers import followup_client, grant, make_customer, make_user, seed_dicts
 
 TODAY = date(2026, 10, 30)
 
@@ -13,6 +13,31 @@ TODAY = date(2026, 10, 30)
 def _patch(monkeypatch):
     monkeypatch.setattr(followup_service, "beijing_today", lambda: TODAY)
     monkeypatch.setattr(followup_service, "_enqueue_urgent", lambda *a, **k: None)
+
+
+def _record_jobs(monkeypatch):
+    calls = []
+    monkeypatch.setattr(jobs, "submit", lambda fn, *args: calls.append((fn, args)))
+    return calls
+
+
+def test_direct_save_submits_ocr_only_when_screenshots_pending(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_rt_ocr")
+    customer = make_customer(db, user, "路由店OCR")
+    att = DomesticFollowupAttachment(uploader_user_id=user.id, seq=1, file_path="fu/o.png", mime_type="image/png")
+    db.add(att)
+    db.flush()
+    calls = _record_jobs(monkeypatch)
+    with followup_client(db, user) as client:
+        plain = client.post("/api/domestic-followup/followups", json={
+            "request_id": "rt-ocr-plain", "customer_id": customer.id, "raw_text": "无截图"})
+        assert plain.status_code == 200 and calls == []
+        shot = client.post("/api/domestic-followup/followups", json={
+            "request_id": "rt-ocr-shot", "customer_id": customer.id, "raw_text": "带截图",
+            "attachment_ids": [att.id]})
+        assert shot.status_code == 200
+    assert calls == [(attachment_service.run_ocr, ([att.id],))]
 
 
 def test_requires_permission(db):
@@ -40,12 +65,14 @@ def test_draft_starts_background_parse_and_conflict_maps_409(db, monkeypatch):
     seed_dicts(db)
     user = make_user(db, "fu_rt_c")
     customer = make_customer(db, user, "路由店C")
-    calls = []
-    monkeypatch.setattr(followup_router.ai_parse_service, "run_parse", lambda fid, cu: calls.append(fid))
+    calls = _record_jobs(monkeypatch)
     with followup_client(db, user) as client:
         draft = client.post("/api/domestic-followup/drafts",
                             json={"request_id": "rt-draft-c", "raw_text": "聊天"}).json()["data"]
-        assert calls == [draft["id"]] and draft["ai_status"] == "running"
+        assert [(fn, args[0]) for fn, args in calls] == [(ai_parse_service.run_parse, draft["id"])]
+        assert draft["ai_status"] == "running"
+        replay = client.post("/api/domestic-followup/drafts", json={"request_id": "rt-draft-c", "raw_text": "聊天"})
+        assert replay.json()["data"]["id"] == draft["id"] and len(calls) == 1  # 重放不重复调模型
         bad = client.post(f"/api/domestic-followup/drafts/{draft['id']}/confirm",
                           json={"version": 9, "customer_id": customer.id})
         assert bad.status_code == 409
@@ -119,7 +146,8 @@ def test_cannot_resolve_item_outside_scope(db):
 
 def test_user_search_for_transfer(db):
     user = make_user(db, "fu_rt_f")
-    make_user(db, "fu_rt_qc")
+    grant(db, make_user(db, "fu_rt_qc"), "domestic_followup:write")
+    make_user(db, "fu_rt_qc_reader")  # 没有跟进权限：转过去也处理不了，不该出现在候选里
     with followup_client(db, user) as client:
         rows = client.get("/api/domestic-followup/users", params={"q": "qc"}).json()["data"]
         assert [r["real_name"] for r in rows] == ["fu_rt_qc"]

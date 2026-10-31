@@ -73,3 +73,26 @@ def followup_client(db, user, permissions=ALL_PERMS, roles=()):
     })
     with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as client:
         yield client
+
+
+def grant(db, user, *codes, role_name=None):
+    """给用户挂一个角色并授予权限 code；role_name="super_admin" 时只挂超管角色。"""
+    from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUserRole
+
+    name = role_name or f"fu_role_{user.id}_{uuid4().hex[:6]}"
+    role = db.query(ArkRole).filter_by(name=name).first()
+    if role is None:
+        role = ArkRole(name=name, label=name)
+        db.add(role)
+        db.flush()
+    for code in codes:
+        perm = db.query(ArkPermission).filter_by(code=code).first()
+        if perm is None:
+            module, _, action = code.partition(":")
+            perm = ArkPermission(code=code, module=module, action=action, label=code)
+            db.add(perm)
+            db.flush()
+        db.add(ArkRolePermission(role_id=role.id, permission_id=perm.id))
+    db.add(ArkUserRole(user_id=user.id, role_id=role.id))
+    db.flush()
+    return role

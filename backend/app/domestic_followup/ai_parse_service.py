@@ -152,7 +152,9 @@ def normalize(db: Session, current_user: dict, parsed: AiParseOut, values: dict,
     items += [i for i in (_item(r, "suggestion", categories) for r in parsed.suggestions) if i]
 
     nxt = parsed.next
-    next_date, basis = reconcile_next_date(nxt.date_expression if nxt else None, nxt.date if nxt else None, today)
+    # 相对日期以跟进日为基准：补录几天前的聊天时，「明天」指聊天次日，不是今天的次日
+    next_date, basis = reconcile_next_date(nxt.date_expression if nxt else None, nxt.date if nxt else None,
+                                           followup.followup_date)
     if next_date and next_date < followup.followup_date:
         next_date, basis = None, "none"
 

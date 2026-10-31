@@ -9,7 +9,8 @@ from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.domestic_followup import (
-    ai_parse_service, attachment_service, config_service, dict_service, followup_service, task_service, visibility,
+    ai_parse_service, attachment_service, config_service, dict_service, followup_service, jobs, task_service,
+    visibility,
 )
 from app.domestic_followup.schemas import (
     ConfirmIn, DirectSaveIn, DraftCreateIn, ItemResolveIn, ProspectIn, ReceiptOkIn, SnoozeIn, TransferIn,
@@ -38,6 +39,10 @@ def _errors(db: Session | None = None):
         if db is not None:
             db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _submit_job(fn, *args) -> None:
+    jobs.submit(fn, *args)  # 运行时取 jobs.submit，测试可替换为同步记录
 
 
 @router.get("/config")
@@ -102,7 +107,8 @@ def direct_save(payload: DirectSaveIn, background: BackgroundTasks, db: Session 
     with _errors(db):
         followup, pending_ocr = followup_service.direct_save(db, user, payload)
     if pending_ocr:
-        background.add_task(attachment_service.run_ocr, pending_ocr)
+        # 响应发出后才排进有界线程池（jobs，上限 3），不占 Starlette 共享线程池等 AI
+        background.add_task(_submit_job, attachment_service.run_ocr, pending_ocr)
     return ok(followup_service.serialize(db, followup), message="跟进已保存")
 
 
@@ -119,7 +125,7 @@ def create_draft(payload: DraftCreateIn, background: BackgroundTasks, db: Sessio
     with _errors(db):
         followup, created = followup_service.create_draft(db, user, payload)
     if created:
-        background.add_task(ai_parse_service.run_parse, followup.id, user)
+        background.add_task(_submit_job, ai_parse_service.run_parse, followup.id, user)
     return ok(followup_service.serialize(db, followup))
 
 

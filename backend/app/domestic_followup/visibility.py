@@ -2,17 +2,20 @@
 
 current_user 是 JWT claims dict（sub/roles/permissions），和平台其他域一致。
 """
+import logging
 import re
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth.models import ArkUser
+from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUser, ArkUserRole
 from app.domestic.models import DomesticCustomer, DomesticCustomerCommission
 from app.domestic_followup.constants import PROSPECT_LIFECYCLE
 from app.domestic_followup.models import DomesticCustomerAlias, DomesticFollowup, DomesticFollowupTask
 
 SEARCH_LIMIT = 20
+logger = logging.getLogger("commission")
 
 
 def uid(current_user: dict) -> int:
@@ -23,6 +26,27 @@ def can_read_all(current_user: dict) -> bool:
     if "super_admin" in (current_user.get("roles") or []):
         return True
     return "domestic_followup:read_all" in (current_user.get("permissions") or [])
+
+
+def holder_ids(code: str):
+    """持有权限 code 的在职用户 ID 子查询；super_admin 角色视同持有（与 require_permission 同口径）。
+
+    查的是库里的当前授权，不是 JWT：选人、配置接收人时要看对方此刻有没有权限。
+    """
+    granted = (select(ArkUserRole.user_id)
+               .join(ArkRolePermission, ArkRolePermission.role_id == ArkUserRole.role_id)
+               .join(ArkPermission, ArkPermission.id == ArkRolePermission.permission_id)
+               .where(ArkPermission.code == code))
+    admins = (select(ArkUserRole.user_id)
+              .join(ArkRole, ArkRole.id == ArkUserRole.role_id)
+              .where(ArkRole.name == "super_admin"))
+    return (select(ArkUser.id)
+            .where(ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None),
+                   ArkUser.id.in_(granted.union(admins))))
+
+
+def holds(db: Session, user_id: int, code: str) -> bool:
+    return db.execute(holder_ids(code).where(ArkUser.id == user_id)).first() is not None
 
 
 def normalize_alias(text: str | None) -> str:
@@ -190,18 +214,39 @@ def match_alias(db: Session, current_user: dict, chat_title: str | None) -> dict
     return _customer_row(db, current_user, customer, matched_alias=alias.alias)
 
 
+def _find_alias(db: Session, norm: str, customer_id: int) -> DomesticCustomerAlias | None:
+    return db.query(DomesticCustomerAlias).filter(
+        DomesticCustomerAlias.alias_norm == norm, DomesticCustomerAlias.customer_id == customer_id
+    ).first()
+
+
+def _bump_alias(db: Session, norm: str, customer_id: int) -> None:
+    db.execute(update(DomesticCustomerAlias)
+               .where(DomesticCustomerAlias.alias_norm == norm, DomesticCustomerAlias.customer_id == customer_id)
+               .values(hit_count=DomesticCustomerAlias.hit_count + 1)
+               .execution_options(synchronize_session=False))
+
+
 def learn_alias(db: Session, customer_id: int, chat_title: str | None, user_id: int) -> None:
     norm = normalize_alias(chat_title)
     if not norm:
         return
-    alias = db.query(DomesticCustomerAlias).filter(
-        DomesticCustomerAlias.alias_norm == norm, DomesticCustomerAlias.customer_id == customer_id
-    ).first()
+    alias = _find_alias(db, norm, customer_id)
     if alias:
         alias.hit_count += 1
-    else:
+        return
+    savepoint = db.begin_nested()
+    try:
         db.add(DomesticCustomerAlias(customer_id=customer_id, alias=chat_title.strip()[:120],
                                      alias_norm=norm, created_by=user_id))
+        db.flush()
+        savepoint.commit()
+    except IntegrityError as exc:
+        # 两个人同时确认同一聊天标题：另一事务先插了这条别名，改成命中 +1，不能让整条跟进确认失败
+        savepoint.rollback()
+        logger.warning("followup alias insert conflict customer=%s: %s", customer_id, type(exc.orig).__name__)
+        print(f"[domestic_followup] alias insert conflict customer={customer_id}", flush=True)
+        _bump_alias(db, norm, customer_id)
 
 
 def create_prospect(db: Session, current_user: dict, shop_name: str) -> dict:

@@ -14,12 +14,18 @@ def _launch(db, value="2026-10-01"):
     config_service.update_config(db, {"receipt_launch_date": value}, None, commit=False)
 
 
-def test_first_scan_sets_launch_date_and_skips_history(db):
+def test_first_scan_sets_launch_date_to_yesterday_and_skips_history(db):
     user = make_user(db, "fu_rc_a")
     customer = make_customer(db, user, "回访店A")
     make_shipment(db, customer, user, datetime(2026, 10, 20, 9, 0))
+    make_shipment(db, customer, user, datetime(2026, 10, 28, 23, 59))  # 上线前一天之前，不补
+    deploy_day = make_shipment(db, customer, user, datetime(2026, 10, 29, 15, 0))  # 部署当天白天发的货
+    # 首次扫描在部署次日 02:10：上线日记为「今天 − 1」，部署当天的发货也要回访
     assert receipt_service.scan(db, today=TODAY) == 0
-    assert config_service.get_config(db)["receipt_launch_date"] == "2026-10-30"
+    assert config_service.get_config(db)["receipt_launch_date"] == "2026-10-29"
+    assert receipt_service.scan(db, today=date(2026, 11, 1)) == 1
+    task = db.query(DomesticFollowupTask).one()
+    assert [s["id"] for s in task.payload["shipments"]] == [deploy_day.id]
 
 
 def test_groups_same_customer_same_day_and_respects_beijing_day_boundary(db):

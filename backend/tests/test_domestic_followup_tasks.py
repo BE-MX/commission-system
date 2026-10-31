@@ -4,7 +4,7 @@ import pytest
 
 from app.domestic_followup import task_service
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupItem, DomesticFollowupTask
-from tests.domestic_followup_helpers import make_customer, make_user
+from tests.domestic_followup_helpers import grant, make_customer, make_user
 
 TODAY = date(2026, 10, 30)
 
@@ -74,6 +74,7 @@ def test_item_task_transfer_and_resolve(db):
     db.flush()
     task = task_service.create_item_task(db, item, followup, customer.shop_name)
     assert task.task_type == "issue" and task.due_date == TODAY
+    grant(db, qc, "domestic_followup:write")
 
     task_service.transfer_item(db, _ctx(author), item.id, qc.id, note="转质检")
     assert item.status == "handling" and item.handler_user_id == qc.id
@@ -138,3 +139,48 @@ def test_upsert_task_reraises_integrity_error_not_caused_by_duplicate_key(db):
     with pytest.raises(IntegrityError):
         task_service.upsert_task(db, source_key="plan:none", task_type="plan", customer_id=None,
                                  assignee_user_id=user.id, title="t", due_date=TODAY)
+
+
+def _open_item(db, author, name, request_id):
+    customer = make_customer(db, author, name)
+    followup = _followup(db, author, customer, request_id)
+    item = DomesticFollowupItem(followup_id=followup.id, customer_id=customer.id, seq=1, kind="issue",
+                                text="掉色", category="色差", severity="一般", status="open",
+                                handler_user_id=author.id)
+    db.add(item)
+    db.flush()
+    return item
+
+
+def test_transfer_rejects_receiver_without_followup_write(db):
+    author = make_user(db, "fu_task_p1")
+    reader = make_user(db, "fu_task_p2")
+    grant(db, reader, "domestic_followup:read")
+    item = _open_item(db, author, "任务店P", "t-p")
+    with pytest.raises(ValueError, match="对方没有客户跟进权限，请先在角色管理中分配"):
+        task_service.transfer_item(db, _ctx(author), item.id, reader.id)
+    assert item.handler_user_id == author.id and item.status == "open"
+
+
+def test_transfer_accepts_super_admin_receiver(db):
+    author = make_user(db, "fu_task_q1")
+    boss = make_user(db, "fu_task_q2")
+    grant(db, boss, role_name="super_admin")
+    item = _open_item(db, author, "任务店Q", "t-q")
+    task_service.transfer_item(db, _ctx(author), item.id, boss.id)
+    assert item.handler_user_id == boss.id
+
+
+def test_search_users_only_returns_active_users_with_followup_write(db):
+    writer = make_user(db, "fu_su_writer")
+    reader = make_user(db, "fu_su_reader")
+    boss = make_user(db, "fu_su_boss")
+    gone = make_user(db, "fu_su_gone")
+    grant(db, writer, "domestic_followup:write", "domestic_followup:read")
+    grant(db, reader, "domestic_followup:read")
+    grant(db, boss, role_name="super_admin")
+    grant(db, gone, "domestic_followup:write")
+    gone.is_active = False
+    db.flush()
+    names = [r["real_name"] for r in task_service.search_users(db, "fu_su")]
+    assert names == ["fu_su_boss", "fu_su_writer"]

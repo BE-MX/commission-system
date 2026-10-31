@@ -234,3 +234,47 @@ def test_integrity_error_without_existing_record_is_not_reported_as_duplicate(db
     monkeypatch.setattr(followup_service, "_by_request", lambda *a: None)
     with pytest.raises(ValueError, match="保存失败，请重试"):
         followup_service.direct_save(db, _ctx(user), payload)
+
+
+def _receipt_task(db, user, customer, key):
+    task = DomesticFollowupTask(task_type="receipt", customer_id=customer.id, assignee_user_id=user.id,
+                                source_key=key, title="收货回访", due_date=TODAY)
+    db.add(task)
+    db.commit()
+    return task
+
+
+def _racing_by_request(monkeypatch):
+    original = followup_service._by_request
+    calls = []
+
+    def racing(*args):  # 第一次预查没看到（并发双击），之后的重查才看到
+        calls.append(args)
+        return None if len(calls) == 1 else original(*args)
+
+    monkeypatch.setattr(followup_service, "_by_request", racing)
+
+
+def test_quick_receipt_ok_request_id_collision_returns_existing(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_svc_r1")
+    customer = make_customer(db, user, "服务店R1")
+    task = _receipt_task(db, user, customer, "receipt:r1")
+    first = followup_service.direct_save(db, _ctx(user), DirectSaveIn(
+        request_id="req-receipt-r1", customer_id=customer.id, raw_text="x"))[0]
+    _racing_by_request(monkeypatch)
+    again = followup_service.quick_receipt_ok(db, _ctx(user), task.id, "req-receipt-r1")
+    assert again.id == first.id
+    db.refresh(task)
+    assert task.status == "todo"  # 撞键那次整体回滚，不留半截
+
+
+def test_quick_receipt_ok_double_click_after_task_closed_returns_existing(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_svc_r2")
+    customer = make_customer(db, user, "服务店R2")
+    task = _receipt_task(db, user, customer, "receipt:r2")
+    first = followup_service.quick_receipt_ok(db, _ctx(user), task.id, "req-receipt-r2")
+    _racing_by_request(monkeypatch)
+    # 第二次点击等锁时第一次已提交：任务已结束，但同一 request_id 的记录在，应返回它而不是报冲突
+    assert followup_service.quick_receipt_ok(db, _ctx(user), task.id, "req-receipt-r2").id == first.id

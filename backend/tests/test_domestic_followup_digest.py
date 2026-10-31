@@ -4,9 +4,9 @@ from unittest.mock import Mock
 
 from app.domestic_followup import config_service, digest_service
 from app.domestic_followup.models import (
-    DomesticFollowup, DomesticFollowupDigest, DomesticFollowupItem, DomesticFollowupTask,
+    DomesticFollowupConfig, DomesticFollowup, DomesticFollowupDigest, DomesticFollowupItem, DomesticFollowupTask,
 )
-from tests.domestic_followup_helpers import make_customer, make_user
+from tests.domestic_followup_helpers import grant, make_customer, make_user
 
 TODAY = date(2026, 10, 30)
 
@@ -51,6 +51,7 @@ def test_pending_skips_users_without_dingtalk(db):
 def test_enqueue_urgent_per_receiver_and_dedup(db):
     author = make_user(db, "fu_dg_d1")
     boss = make_user(db, "fu_dg_d2", dingtalk_id="dt-boss")
+    grant(db, boss, "domestic_followup:read_all")
     customer = make_customer(db, author, "推送店D")
     config_service.update_config(db, {"urgent_receiver_user_ids": [boss.id]}, None, commit=False)
     followup = DomesticFollowup(author_user_id=author.id, customer_id=customer.id, followup_date=TODAY,
@@ -134,7 +135,9 @@ def test_enqueue_urgent_skips_missing_and_inactive_receivers(db):
     left = make_user(db, "fu_dg_g3", dingtalk_id="dt-g3")
     left.is_active = False
     customer = make_customer(db, author, "推送店G")
-    config_service.update_config(db, {"urgent_receiver_user_ids": [999999, left.id, boss.id]}, None, commit=False)
+    # 配置时都合规，事后有人离职或账号被删：直接写配置行模拟这种存量脏数据
+    db.add(DomesticFollowupConfig(key="urgent_receiver_user_ids", value=[999999, left.id, boss.id]))
+    db.flush()
     followup = DomesticFollowup(author_user_id=author.id, customer_id=customer.id, followup_date=TODAY,
                                 request_id="dg-g", status="confirmed", version=2)
     db.add(followup)
@@ -158,3 +161,17 @@ def test_failed_0900_push_is_picked_up_by_0905_retry(db):
     assert digest_service.build_daily(db, TODAY) == 0  # 09:05 不重复建
     retry = digest_service.pending(db, "daily", TODAY)
     assert [p["digest_id"] for p in retry] == [first[0]["digest_id"]]
+
+
+def test_build_daily_logs_count_of_tasks_skipped_for_inactive_assignees(db, capsys):
+    gone = make_user(db, "fu_dg_i1", dingtalk_id="dt-i1")
+    here = make_user(db, "fu_dg_i2", dingtalk_id="dt-i2")
+    customer = make_customer(db, here, "推送店I")
+    _task(db, gone, customer, "i1", "plan", TODAY)
+    _task(db, gone, customer, "i2", "receipt", TODAY)
+    _task(db, gone, customer, "i3", "plan", date(2026, 11, 3))  # 未到期，不计入
+    _task(db, here, customer, "i4", "plan", TODAY)
+    gone.is_active = False
+    db.flush()
+    assert digest_service.build_daily(db, TODAY) == 1
+    assert "skipped 2 due task(s) of inactive assignees" in capsys.readouterr().out

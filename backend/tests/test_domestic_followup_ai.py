@@ -286,3 +286,25 @@ def test_success_path_retries_previously_failed_ocr(db, monkeypatch):
     monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": json.dumps({"summary": "x"})})
     _run(db, followup, user)
     assert followup.ai_status == "done" and ocr_calls == [[att_id]]
+
+
+def test_relative_dates_are_based_on_followup_date_for_backfilled_chats(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_rel")
+    followup = DomesticFollowup(author_user_id=user.id, followup_date=date(2026, 10, 20), request_id="ai-rel",
+                                status="draft", ai_status="running", raw_text="补录 10-20 的聊天", version=1)
+    db.add(followup)
+    db.commit()
+    sent = {}
+
+    def fake_chat(**kwargs):
+        sent.update(kwargs)
+        return {"content": json.dumps({"summary": "x", "next": {"date_expression": "明天", "date": "2026-10-31"}})}
+    monkeypatch.setattr(ai_parse_service, "chat", fake_chat)
+
+    _run(db, followup, user)
+
+    context = _context(sent)
+    assert context["today"] == "2026-10-30 周五" and context["followup_date"] == "2026-10-20"
+    assert followup.ai_result["next"]["date"] == "2026-10-21"
+    assert followup.ai_result["next"]["basis"] == "mismatch"
