@@ -115,3 +115,11 @@ def test_cannot_resolve_item_outside_scope(db):
         assert resp.status_code == 403
     db.refresh(item)
     assert item.status == "open"
+
+
+def test_user_search_for_transfer(db):
+    user = make_user(db, "fu_rt_f")
+    make_user(db, "fu_rt_qc")
+    with followup_client(db, user) as client:
+        rows = client.get("/api/domestic-followup/users", params={"q": "qc"}).json()["data"]
+        assert [r["real_name"] for r in rows] == ["fu_rt_qc"]

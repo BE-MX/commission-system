@@ -286,3 +286,12 @@ def list_items(db: Session, current_user: dict, *, status: str = "open", kind: s
     items = [{**serialize_item(r), "shop_name": shops.get(r.customer_id),
               "handler_name": handlers.get(r.handler_user_id)} for r in rows]
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+def search_users(db: Session, q: str, limit: int = 20) -> list[dict]:
+    """转交选人：在职用户按姓名/用户名模糊搜，只返回 id 与姓名。"""
+    query = db.query(ArkUser.id, ArkUser.real_name).filter(ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None))
+    keyword = (q or "").strip()
+    if keyword:
+        query = query.filter((ArkUser.real_name.contains(keyword)) | (ArkUser.username.contains(keyword)))
+    return [{"id": uid, "real_name": name} for uid, name in query.order_by(ArkUser.real_name).limit(limit).all()]

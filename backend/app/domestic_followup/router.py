@@ -56,6 +56,11 @@ def dicts(db: Session = Depends(get_db), _user=Depends(_require_read)):
     return ok(dict_service.load_values(db))
 
 
+@router.get("/users")
+def search_users(q: str = Query("", max_length=30), db: Session = Depends(get_db), _user=Depends(_require_write)):
+    return ok(task_service.search_users(db, q))
+
+
 @router.get("/customers/search")
 def search_customers(q: str = Query("", max_length=60), db: Session = Depends(get_db), user=Depends(_require_read)):
     return ok(visibility.search_customers(db, user, q))
