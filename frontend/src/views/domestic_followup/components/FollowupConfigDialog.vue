@@ -9,6 +9,12 @@
           <el-option v-for="u in userOptions" :key="u.id" :value="u.id" :label="u.real_name" />
         </el-select>
       </el-form-item>
+      <el-form-item label="兜底负责人（客户无归属、发货人也已停用时，收货回访交给他）">
+        <el-select v-model="form.fallback_assignee_user_id" filterable remote clearable :remote-method="searchUsers"
+                   placeholder="不设置则这类回访不生成" class="cfg-full">
+          <el-option v-for="u in userOptions" :key="u.id" :value="u.id" :label="u.real_name" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="客户跟进频率（天，超期在时间线标黄）">
         <div class="cfg-freq">
           <label v-for="level in Object.keys(form.frequency_days)" :key="level">
@@ -52,7 +58,8 @@ async function open() {
     await searchUsers('')
     // 已配置但不在首屏搜索结果里的接收人，先用编号占位，避免下拉显示成裸数字
     const ids = new Set(userOptions.value.map(u => u.id))
-    form.value.urgent_receiver_user_ids.filter(id => !ids.has(id))
+    const configured = [...form.value.urgent_receiver_user_ids, form.value.fallback_assignee_user_id]
+    new Set(configured.filter(id => id && !ids.has(id)))
       .forEach(id => userOptions.value.push({ id, real_name: `用户 ${id}` }))
   } catch (e) {
     visible.value = false
@@ -63,8 +70,11 @@ async function open() {
 async function save() {
   saving.value = true
   try {
-    const { receipt_delay_days, urgent_receiver_user_ids, frequency_days } = form.value
-    await followupApi.saveConfig({ receipt_delay_days, urgent_receiver_user_ids, frequency_days })
+    const { receipt_delay_days, urgent_receiver_user_ids, frequency_days, fallback_assignee_user_id } = form.value
+    await followupApi.saveConfig({
+      receipt_delay_days, urgent_receiver_user_ids, frequency_days,
+      fallback_assignee_user_id: fallback_assignee_user_id || null,  // 清空时 el-select 给的是空串
+    })
     msgSuccessText('跟进设置已保存')
     visible.value = false
   } catch (e) { msgError(apiError(e, '保存失败'), e) } finally { saving.value = false }

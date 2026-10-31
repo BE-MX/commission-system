@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, mergeManualFields, nextBasisHint, taskDueLabel,
-  weekdayLabel, clipboardHasText, imageFilesFromDrop,
+  weekdayLabel, clipboardHasText, imageFilesFromDrop, pollDecision, POLL_LIMIT, POLL_MS,
 } from '../src/views/domestic_followup/followupDraft.js'
 
 const TODAY = '2026-10-30'
@@ -138,4 +138,25 @@ test('mergeManualFields takes the whole next block from user when user set next_
   assert.equal(planOnly.next_date, '2026-11-02')
   assert.equal(planOnly.next_plan, '带样品')
   assert.equal(planOnly.next_method, '电话')
+})
+
+test('poll window covers the 120s backend AI timeout', () => {
+  assert.equal(POLL_MS, 1500)
+  assert.equal(POLL_LIMIT, 100)
+  assert.ok(POLL_LIMIT * POLL_MS >= 120_000)
+})
+
+test('pollDecision keeps polling while AI runs and gives up to drafts at the limit', () => {
+  const running = { ai_status: 'running', attachments: [] }
+  assert.equal(pollDecision(running, 0), 'continue')
+  assert.equal(pollDecision(running, POLL_LIMIT - 1), 'continue')
+  assert.equal(pollDecision(running, POLL_LIMIT), 'timeout')  // 不进核对步（那里会是空表）
+})
+
+test('pollDecision waits for fallback OCR after AI failure, then applies', () => {
+  const ocring = { ai_status: 'failed', attachments: [{ ocr_status: 'pending' }] }
+  assert.equal(pollDecision(ocring, 3), 'continue')
+  assert.equal(pollDecision(ocring, POLL_LIMIT), 'apply')  // 截图文字没出来也让人手填
+  assert.equal(pollDecision({ ai_status: 'failed', attachments: [{ ocr_status: 'done' }] }, 3), 'apply')
+  assert.equal(pollDecision({ ai_status: 'done', attachments: [] }, 0), 'apply')
 })

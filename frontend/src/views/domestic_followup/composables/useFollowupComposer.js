@@ -4,12 +4,10 @@ import { currentBeijingDate } from '@/utils/datetime'
 import { msgError, msgSuccessText, msgWarning } from '@/utils/feedback'
 import {
   clipboardHasText, draftToForm, emptyForm, formToPayload, imageFilesFromClipboard, imageFilesFromDrop,
-  mergeManualFields, newRequestId,
+  mergeManualFields, newRequestId, pollDecision, POLL_LIMIT, POLL_MS,
 } from '../followupDraft'
 
 const MAX_ATTACHMENTS = 9
-const POLL_MS = 1500
-const POLL_LIMIT = 60 // 90 秒
 
 export function useFollowupComposer({ onSaved, onClosed } = {}) {
   const visible = ref(false)
@@ -198,10 +196,14 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
       try {
         const draft = await followupApi.draft(id)
         if (gen !== pollGen) return
-        if (draft.ai_status === 'running' && count < POLL_LIMIT) return poll(id, count + 1)
-        // AI 失败后后端才开始逐张 OCR：等截图文字出来再停，降级时才有字可抄
-        const ocrPending = draft.attachments.some(a => a.ocr_status === 'pending')
-        if (draft.ai_status === 'failed' && ocrPending && count < POLL_LIMIT) return poll(id, count + 1)
+        const next = pollDecision(draft, count)
+        if (next === 'continue') return poll(id, count + 1)
+        if (next === 'timeout') {
+          // 后端还在跑（排队或模型慢）：核对步此时是空表，不进；草稿整理完会出现在「我的草稿」
+          msgWarning('AI 还在整理，可以稍后从『我的草稿』继续')
+          close()
+          return
+        }
         await applyDraft(draft, gen)
       } catch (e) {
         if (gen !== pollGen) return

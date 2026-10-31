@@ -122,3 +122,17 @@ export function nextBasisHint(form) {
   if (form.nextBasis === 'unverified') return 'AI 推算的日期，原话里没有明确时间，请核对'
   return ''
 }
+
+export const POLL_MS = 1500
+// 约 150 秒：后端 AI 整理超时 120 秒，再留出降级 OCR 的余量；短于后端会把还在跑的草稿当成失败
+export const POLL_LIMIT = 100
+
+/** 轮询一次草稿后的下一步：continue 继续等 / apply 进核对步 / timeout 放弃等待（草稿留在后端）。 */
+export function pollDecision(draft, count, limit = POLL_LIMIT) {
+  const more = count < limit
+  if (draft.ai_status === 'running') return more ? 'continue' : 'timeout'
+  // AI 失败后后端才开始逐张 OCR：等截图文字出来再停，降级时才有字可抄
+  const ocrPending = (draft.attachments || []).some(a => a.ocr_status === 'pending')
+  if (draft.ai_status === 'failed' && ocrPending && more) return 'continue'
+  return 'apply'
+}
