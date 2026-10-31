@@ -1,6 +1,8 @@
 # 莱莎方舟 API 参考
 
-## 外贸退货单（2026-10-30，本地实现，未部署）
+本文维护接口查找与使用摘要；详细请求字段按对应领域契约和路由源码核对。部署、开关和真实业务验收统一见[交接文档](handoff.md)。 本轮于 2026-10-31 按本地源码核对门户认证与绩效目标入口；并非全部端点的实时验收。源码默认关闭不表示生产实际关闭。
+
+## 外贸退货单（2026-10-30）
 
 前缀 `/api/sales-returns`，统一 `ok()` 信封。服务端重新读取实时角色权限；数据范围按原订单业务员的有效 OKKI 绑定，`sales_return:read_all` 显式放开。生效、冲销和收货均有版本/幂等保护。仅方舟记账，不调用小满退款接口或银行付款接口。
 
@@ -27,17 +29,18 @@
 
 设计与边界见[退货单设计](requirements/2026-10-30-sales-return-order-design.md)。
 
-## 回款截图选填（2026-10-30，本地实现，未部署）
+## 回款截图选填（2026-10-30）
 
 回款创建、订单自动回款、汇总回款与预售发货附带的 `payment` 均允许 `attachment_ids=[]`，创建时省略按空列表处理。单笔回款修改与 `PUT /api/receipts/{id}/attachments` 仍必须显式传 `attachment_ids`，空数组表示清空关联；省略不会隐式删除已有截图。最多 5 张且不能重复；非空截图继续校验文件、归属与并发绑定。金额、手续费、日期、付款方式、资金占用、幂等与权限合同保持原规则。清空仅变更关联，保留历史文件及操作审计，无需数据库迁移。
 
-## 订单检验照片要求（2026-10-27，本地实现，未部署）
+## 订单检验照片要求（2026-10-27）
 
 订单发票新建、编辑、关联保存的 invoice payload 增加 `inspection_requirement=single|detail`（单张检验照片／明细检验照片），详情回传已保存值。显式空值或其他枚举拒绝；创建未传时按服务端最终新成交标记决定（新成交为 detail，其余 single），编辑未传保留存值。编辑版本包含此字段，旧持久关联任务与原幂等请求仍可核对恢复，不重复推单。
 
 `GET /api/shipping-inspection/outbound-records/{record_id}/print-data` 的 record 增加 `is_new_deal` 与 `inspection_requirement`。按该出库明细的真实订单 ID 和客户关联读取方舟已保存选择（包括待同步编辑），合并出库任一关联订单命中即显示该标记；不改订单金额原有的已同步取值规则。新签与明细照片标记独立，打印预览、直接打印及 Word 保持同一规则。历史新成交 NULL 只使用明确成功推单日志，不以当前客户历史猜测。检验要求是本地仓库指示，不新增小满字段或照片提交拦截。
 
-## 单笔回款删除（2026-10-14，本地实现，未部署）
+
+## 单笔回款删除（2026-10-14）
 
 - `GET /api/receipts/{identity}/deletion`：读取删除预览。返回回款及订单编号、原币含费金额/手续费/净额、远端状态、`expected_version`、`can_delete/can_resume`；已归档返回真实原记录，不执行删除。
 - `POST /api/receipts/{identity}/deletion`：body `{expected_version, reason, confirmed:true}`，原因2～500字；响应统一信封，data含 `status=deleted|uncertain`、下一步提示和完整 `receipt`。有效回款详情/列表新增 `deletion_pending`。
@@ -81,7 +84,7 @@
 - `GET /api/whatsapp/internal/accounts/{uid}/authorization`：机器身份例外，必须非空 Connector Bearer key；只返回实时授权与代次，不返回正文或认证。
 
 Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务衔接。精确契约见 [实现说明](requirements/2026-10-13-whatsapp-baileys.md) 和 [Connector README](../services/whatsapp-connector/README.md)。
-## 客户门户访问复制与收货资料（2026-10-26，本地候选，未部署）
+## 客户门户访问复制与收货资料（2026-10-26）
 
 - `POST /api/portal/admin/v1/customers/{access_id}/copy`：当前 `portal_access:admin` 及源、目标客户归属范围；`Idempotency-Key` 必填 UUID。body 为目标 `canonical_customer_id/assignment_id/okki_identity_id/binding_fingerprint`、源 `source_version/source_catalog_version` 和新 `email/password`。只从服务端继承源客户能力及已发布商品授权；一次事务创建并启用目标访问与采购账号。历史订单、收货资料、客户专属价格和型号颜色映射不复制。已下架商品阻断复制；相同 key/body 返回同一结果，改内容返回409；密码不入回执或审计。目标已有授权/邮箱已有账号须使用原管理入口。
 - `GET /api/portal/v1/delivery-profile`：当前客户会话的账号默认收货资料，返回 `{delivery:null|Delivery,row_version}`；不接受客户端账号ID。
@@ -92,16 +95,16 @@ Connector `/internal/v2/changes` 持久序列 feed 与本地 checkpoint 事务�
 
 ## 客户下单门户密码认证（2026-10-10 候选）
 
-客户 POST /api/portal/v1/auth/login使用email/password、bootstrap Cookie/CSRF和同源Origin；员工POST /api/portal/admin/v1/customers/{access_id}/accounts使用当前Bearer授权、Idempotency-Key及email/contact_name/password。PATCH /accounts/{id}/password使用If-Match及password/reason并撤销旧会话。旧邀请、challenges、verify路由不挂载。详细契约和实际开放结果见客户下单门户03-api-contract.md和09-production-readiness-2026-10-10.md。
+客户以 `POST /api/portal/v1/auth/login` 使用邮箱/密码登录；员工可创建采购账号、重置密码。申请获批的客户另走邀请邮件与验证码激活：`POST /auth/challenge`、`POST /auth/activate`。旧复数 `/auth/challenges` 和 `/auth/verify` 不挂载；完整认证接口见本文“客户下单门户认证”。
 
-## 色板库与色差仪测量（`/api/color/library`，2026-10-28 开发中）
+## 色板库与色差仪测量（`/api/color/library`，2026-10-28）
 
 权限 `color_library:read/write/admin`；私库额外按客户实时归属判定，无权按 404。
 - `GET /swatches/{id}`：色板详情。`measurements` 只含未剔除组，每组带 `record_type`（standard/batch）、`position_tag/position_label`；batch 组额外带 `shift`（L/a/b 偏向，如 偏黑缺白/偏红缺绿/偏黄缺蓝，偏差 <0.3 为 null）、`de_ab`（对标准平均 Lab 的 ΔE*ab）、`passed`（`de_ab ≤ tolerance_de`）。`stats` 只按 standard 组重算；`batch_stats` 给批次平均 Lab、组内平均/最大 ΔE00、`std_avg_lab`、`std_mean_de`、`mean_de_diff`、`avg_shift`、`avg_de_ab`、`avg_pass`。
 - `POST /swatches/{id}/measurements`：items 新增 `record_type`（默认 standard）与**必填** `position_tag`（须为启用的 `sys_dict: color_measure_tag`，缺失或无效 422）。
 - `PATCH /swatches/{id}/measurements/{measurement_id}`：`reason` 改为选填；剔除后详情不再返回该组，原始读数保留。
 
-## 客户下单门户产品族与色块库（2026-10-19 开发中）
+## 客户下单门户产品族与色块库（2026-10-19）
 
 前缀 `/api/portal/admin/v1`，全部要求 `portal_site:admin`，统一信封与 `Cache-Control: private, no-store`。
 - `GET /catalog-families`：产品族列表及各工艺档商品数（total/published）。`POST /catalog-families/defaults`（body `reason`）：只创建缺失的 7 个默认产品族，不覆盖已有配置。
@@ -290,7 +293,7 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 | POST `/shipment-order-links` | 物流-订单显式多对多关联（数量 Decimal 校验，unknown 不猜） |
 | POST/GET `/campaigns`、GET/PATCH `/campaigns/{id}`、POST `.../publications|state-transitions|preview|actions` | 活动管理；preview 给合格/排除原因，actions 名单⊆本次预览，逐客户 created/existing/suppressed/failed 诚实分列 |
 
-## 客户工作台 v2（2026-10-01，本地分支，未部署）
+## 客户工作台 v2（2026-10-01）
 
 前缀仍为 `/api/customer-hub`，响应为 `ok(data)`。读取基于实时客户归属、授权和证据可见性；失权返回 404。新写入必须带 16–128 字符 `Idempotency-Key` 和各对象当前版本。同键同请求重放首次结果；同键换内容返回 409。下面是已实现的服务端入口；启用和限制见 [实施记录](requirements/customer-workbench-v2-prototype/IMPLEMENTATION.md)。
 
@@ -347,7 +350,7 @@ reconcile-outbound uses current shipment:write and actual Invoice financial scop
 
 `/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
 
-## 预售批次取消与暂停操作（2026-10-15，本地实现，未部署）
+## 预售批次取消与暂停操作（2026-10-15）
 
 2026-10-26 新增本地流程（未部署）：已生成的预售出库单在小满删除后，原批次提供“核实删除并撤销”。服务保持共享出库执行器锁直至最终提交/回滚，供应商 GET 期间释放业务行锁；前后两次验证当前员工权限、订单归属、版本、完整资金图、检验及不可变创建/出库确认事实。原 ID 与原编号并行身份观察必须一致；可读的删除详情仍须按小满不可变创建日获取两轮完整且一致的 removed=0 活动列表。仍有效、同编号替代单、缺页/变化/超时、检验提交或撤回历史、实际出库确认、迟到结果或未决回款均不释放。
 
@@ -368,7 +371,7 @@ cancelled_keep_freight 不占商品数量或活动批次，仅保留原运费应
 - POST /api/receipts/batches 沿用 allocations[].settlement_id 与所选批次的复合 balance_version，信用批在 outbound_pending/shipped 可补款且保留物理状态。回款详情返回 shipment_applications。未发送补款整批纠错沿用 void-entry 和 receipt:admin，不释放已用于出库的资金。
 - 继续使用当前 shipment:write、receipt:write 和订单财务范围；无新增权限、端点或生产迁移。详见 [业务约定](requirements/2026-10-13-presale-credit-batches.md)。
 
-## 预售资金池规则更新（2026-10-09，已部署）
+## 预售资金池规则更新（2026-10-09）
 
 - `POST /api/invoices/{id}/shipment-quotes` 与 `shipment-settlements` 增加 `is_final`（默认false，人工确认）；新报价 `funding_version=2`，返回 `advance_applied`、`deposit_applied`、`new_payment_due`、`pool_applications` 与 `pool_balances`。定金仅末批，预付货款可抵商品、包装、手续费与运费；不足才新登记现金。
 - 预售 `receipt_draft` 支持 `purpose=presale_advance|presale_deposit` 与实际 `bank_charge`。新预售可无产品先登记实际付款，首款净额必须正，金额不限于当前产品；已转换的原收款不随编辑重算。回款单及整笔回款可补充资金池款；有活动结算时需选择原批补款。
@@ -427,7 +430,7 @@ poster-config增加 `send_weekdays/push_start_date/poster_kinds`，奖项周一�
 
 色块工作台保留原用户API和D1引用。内部 `/api/colorwork/storage/object`（GET/PUT/DELETE）与 `/metadata`（GET）仅允许回环来源及专用机器密钥；公网Nginx显式404，不接受用户JWT代替机器认证。PUT按声明和实际字节双重限制256MiB，条件创建冲突412，别名竞争409；Range读取返回原对象元数据。分片仍在R2暂存，完成后进入COS并保存持久回执，失败可重试；COS密钥不会进入workerd或浏览器。
 
-## 回款管理（2026-09-17，应用及迁移156已发布，小满发送未启用）
+## 回款管理（2026-09-17，迁移 156）
 
 2026-10-06自有分支1.34授权增量（尚未发布）：已安装authority时，共同上游权限/本地编辑helper在ON/OFF均当前鉴权并持屏障，OFF身份辅助仍撤会话/邀请/有效报价。只有OFF/nonforce、屏障SELECT真实1146及同mapper物理连接FOR UPDATE唯一精确171才允许旧员工路径；其他连接/timeout/权限或未知schema安全503/no-store。与回款的OFF竞争已有专项对照，真实终态见docs/handoff.md；不背书未接入writer、完整旧制品/历史启动或其他财务入口。以下1.33为此前范围记录。
 
@@ -1093,8 +1096,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - `POST /greeting` — 工作台每日 AI 问候（2026-08-13）。body `{refresh?, context:{date,weekday,period,user_name,holidays_today[],upcoming_holidays[],pending{}}}`，上下文由前端聚合（节假日是前端纯计算引擎 `views/dashboard/holidays.js`，口径唯一）。返回 `{text, source: ai|fallback, date}`；preset 解析优先专用 `dashboard_greeting`，缺省退任一直连可用预设，模型未配置/调用失败走规则模板兜底，进程内按 (user, date) 缓存（`refresh=true` 绕过）。同 `get_current_user` 个人域口径。
 
 ## 内贸订单（`/api/domestic`，081～140 相关迁移，2026-07-27 至 2026-09-07）
-
-### 客户提成分配与订单快照（2026-10-14，本地实现，迁移 196）
+### 客户提成分配与订单快照（2026-10-14，迁移 196）
 
 - `POST /customers`：默认自动为保存时的归属销售创建 4% 配置；未指定归属的内部创建链路使用当前销售。下单就地建档及导入新客户同样初始化；导入更新已有客户不覆盖配置。
 - `GET /customers`：每行新增 `commission_allocations: [{user_id, user_name, rate}]`，rate 为四位小数字符串（如 `"0.0300"`），名称为当前用户名。
@@ -2068,29 +2070,42 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 `rows(kind=reports)` 支持客户/订单过滤及报工时间、数量、金额等白名单排序，不支持dimension过滤（422）；款式使用已绑定的报工事实引用下钻。`evidence/reports/{id}` 返回工序、报工数量、北京时间、撤销状态及报工数量乘成交单价；严格核对关联客户或无客户生产权限。item证据补充original_price与每件discount_amount。产品导出包含items和reports，客户/经营导出也包含reports；旧口径快照返回409要求重新分析。
 
-## 客户下单门户认证（开发中，默认关闭）
+## 客户下单门户认证（密码登录，默认关闭）
 
-客户前缀 `/api/portal/v1`，不接受员工 JWT 作为客户身份。实现 `GET /auth/bootstrap`、`POST /auth/challenges`、`POST /auth/verify`、`POST /auth/logout`、`GET /session`。请求和错误信封详见[门户API契约](requirements/2026-09-30-customer-order-portal/03-api-contract.md)。OTP有效期由PORTAL_OTP_MINUTES决定，返回实际秒数，默认600；登录成功消费预登录Cookie，签发HttpOnly、SameSite=Lax正式Cookie；HTTPS使用Secure和__Host-前缀。全部认证响应no-store，输入校验失败不回显原始令牌或邮箱。
+客户前缀 `/api/portal/v1`，不接受员工 JWT 作为客户身份。当前认证入口为：
 
-POST须精确Origin、application/json及对应会话X-Portal-CSRF；无效会话退出仍检查Origin。错误OTP在返回401前提交尝试计数。HMAC绑定账号/成员/客户访问ID和三类权限版本，发码后改绑或撤权拒绝旧码。外部响应不含内部客户、小满或员工权限ID；sales_contact未配置批准渠道时为null。
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/auth/bootstrap` | 预登录 Cookie、`csrf_token` 和 `expires_in=600` |
+| POST | `/auth/challenge` | 预登录 Cookie/CSRF 下请求验证码；激活用途传 `email/purpose=activate/invitation_token`，返回 challenge ID 与有效期；schema 另接受 `purpose=login`，不能据此推断旧 verify 路由可用 |
+| POST | `/auth/activate` | `{challenge_id,code,password}`；核验邀请与验证码后设置密码、激活账号/成员关系并签发正式会话 |
+| POST | `/auth/login` | `{email,password}`；预登录 Cookie、`X-Portal-CSRF` 与精确 Origin 校验；成功消费预登录并签发正式会话 |
+| POST | `/auth/logout` | 正式 Cookie 与 CSRF；撤销会话并清 Cookie |
+| GET | `/session` | 当前客户会话 |
 
-PORTAL_ENABLED默认false，关闭时路由在读取数据库前返回503。PORTAL_TRUSTED_PROXY_IPS默认空（拒绝所有来源），只能填实际反代TCP peer IP；反代必须覆盖X-Real-IP，Uvicorn必须保留TCP peer（--no-proxy-headers），不能依赖用户伪造的转发头。真实代理部署链、MySQL并发、登录审计、邀请配置和邮件发送仍待联调，不可据此启用真实客户入口。
+旧 `/auth/challenges`、`/auth/verify` 不再挂载。密码登录失败统一返回 `AUTH_FAILED` 并保存失败尝试计数。正式会话为 HttpOnly、SameSite=Lax Cookie，HTTPS 使用 Secure 与 `__Host-` 前缀；认证响应 `no-store`，输入校验不回显密码、令牌或邮箱。POST 要求精确 Origin、application/json 与对应会话 CSRF；具体请求及错误契约见[门户 API](requirements/2026-09-30-customer-order-portal/03-api-contract.md)。
 
+`PORTAL_ENABLED`、`PORTAL_WRITES_ENABLED`、`PORTAL_INVOICE_ENABLED`、`PORTAL_NOTIFICATION_ENABLED`、`PORTAL_MAIL_ENABLED`、`PORTAL_OUTBOUND_WORKER_ENABLED` 默认均为 false。总开关关闭时客户和管理入口在业务数据库读取前返回 503。可信代理列表默认空，只接受显式登记的 TCP peer；反代覆盖 X-Real-IP，Uvicorn 保留 TCP peer（`--no-proxy-headers`）。密码认证不依赖邀请发信，实际开关与经营验收以[交接文档](handoff.md)为准。
 
-## 客户下单门户管理（开发中，默认关闭）
+## 客户下单门户管理（默认关闭）
 
-管理前缀 `/api/portal/admin/v1`，已注册 GET/POST `/customers`、PATCH `/customers/{access_id}`、POST `/customers/{access_id}/invitations`、POST `/invitations/{invitation_id}/revoke`、PATCH `/accounts/{account_id}`。员工Bearer仅提供身份sub；屏障内查询当前数据库角色和权限，不能用JWT中的super_admin声明绕过。普通员工须有对应功能权限且当前有效primary assignment与access负责人一致；review_required对普通员工失败关闭，super_admin可读待复核对象，但普通PATCH也不能清除其复核状态。
+管理前缀 `/api/portal/admin/v1`。GET/POST `/customers`、PATCH `/customers/{access_id}` 维护公司授权；创建 access 保持 draft，启用、能力与目录修改需带引号整数 `If-Match`，目录仅接受本站已发布 SKU。
 
-创建access保持draft；启用、能力与目录修改需带引号整数If-Match，目录仅接纳本站已发布SKU。邀请需UUID Idempotency-Key，同键同规范化内容回原ID（200），首次创建201；不同内容409。当前鉴权与范围先于回放，原始邀请令牌仅保存摘要及AES-GCM邮件信封。所有管理成功写入含审计，调用方统一commit；未连接邮件供应商。
+| 方法 | 路径 | 请求与结果 |
+| --- | --- | --- |
+| POST | `/customers/{access_id}/accounts` | `{email,contact_name,password}` + UUID `Idempotency-Key`；首次 201，合法同键回放 200，同键不同内容 409 |
+| PATCH | `/accounts/{account_id}/password` | `{password,reason}` + 带引号整数 `If-Match`；提升版本、撤销旧会话 |
+| PATCH | `/accounts/{account_id}` | `{status:active\|disabled,reason}` + `If-Match`；启停及撤销旧会话 |
 
-账号状态active要求verified_at存在；disabled撤销会话并提升版本；只有disabled且未验证邮箱的账号允许恢复invited，返回requires_invitation=true，须重新邀请及OTP验证。不能用邀请改绑邮箱所属公司。普通客户更新不能通过review_required→suspended→enabled绕过显式复核。
+员工直接创建/撤销邀请的旧路由未挂载；公开申请经 `/access-requests/{id}/review` 审批后，仍由内部邀请服务建立待激活账号、邀请和邮件 outbox。审批要求现有 enabled 且 can_order 的客户授权，公开输入不直接授予权限。员工 Bearer 只提供身份，屏障内查询当前角色、功能权限和客户范围；账号管理要求 `portal_access:admin`，普通员工还须满足有效客户归属。当前鉴权先于命令回放，所有成功写入包含审计。
 
-新增8项权限通过既有seed_role_permissions upsert：portal_order:read/write/read_all、portal_access:read/admin、portal_mapping:read/write、portal_site:admin；仅read_all为data，其余action。seed写入口参与屏障。实际生产seed和部署未执行；转交/重绑、站点设置、管理UI、邮件发送及全上游屏障仍在开发。
+建账号要求客户授权 enabled 且身份绑定有效，新账号和成员关系直接 active，不要求 `verified_at` 或邮箱 OTP。重置密码不会自动恢复停用账号；恢复 active 必须已配置密码，只将历史 invited 成员关系恢复为 active，不恢复 disabled/revoked 关系。不能通过普通状态切换绕过客户身份复核。
 
+权限由 `seed_role_permissions` upsert：`portal_order:read/write/read_all`、`portal_access:read/admin`、`portal_mapping:read/write`、`portal_site:admin`；仅 read_all 为数据范围权限。生产开放及验收状态单独见[交接文档](handoff.md)。
 
 ### 客户详情、身份复核与交接
 
-已实现 GET `/api/portal/admin/v1/customers/{access_id}`：按当前员工范围返回公司授权、目录ID和分页账号（page/page_size），包括邮箱、联系人、账号版本、是否验证、成员状态、最近邀请状态及版本；不返回令牌摘要或密文。用于邀请、撤邀和账号启停操作的可审阅详情。
+已实现 GET `/api/portal/admin/v1/customers/{access_id}`：按当前员工范围返回公司授权、目录 ID 和分页账号；账号字段为 `id/email/contact_name/status/row_version/password_configured/membership_status`，不返回密码或令牌。用于配置密码和账号启停。
 
 POST `/customers/{access_id}/rebind` 接收 identity_id、reason、If-Match；新外部身份必须仍归属于同一canonical客户且当前primary归属有效。成功提升访问和记录版本，撤销会话/有效报价/未消费邀请，状态为suspended并返回requires_enable=true。旧订单及其公司/业务员快照不改写；启用仍需显式检查目录和能力配置。
 
@@ -2105,7 +2120,7 @@ POST `/customers/{access_id}/transfer` 接收 assignment_id、pending_request_id
 
 来源只包括本站、该客户enabled grant、published catalog item。CatalogItem.standard_json须提供model_key/color_key/length/weight；标准型号、颜色键必须为非空字符串。sku映射source_key须等于item_id；model/color不能携带item_id或customer_sku。禁止以别名作为标准SKU或价格解析依据。发布快照snapshot_schema=1，保存entries和完整projection及内容摘要。
 
-目录撤销/商品下架导致旧entries引用无效来源时，当前投影失败关闭；GET mapping仍返回旧entries与当前sources供后台修复，清除失效来源并重新发布后恢复，不静默回退到标准名。管理界面需明确提示“目录已变化，请修复映射后发布”。当前服务已接入后台路由，客户目录UI、库存/价格适配仍待实现。
+目录撤销/商品下架导致旧entries引用无效来源时，当前投影失败关闭；GET mapping仍返回旧entries与当前sources供后台修复，清除失效来源并重新发布后恢复，不静默回退到标准名。管理界面需明确提示“目录已变化，请修复映射后发布”。客户目录、库存与价格适配见下文“客户目录读取”“报价快照”及门户专题；此处只维护映射契约。
 
 
 ### 站点设置与经营策略
@@ -2114,12 +2129,12 @@ GET/PATCH `/api/portal/admin/v1/settings` 要求实时portal_site:admin。尚无
 
 PATCH白名单：name、status（enabled/disabled）、reason、policy。域名来自PORTAL_ORIGIN，不能从界面提交任意URL；币种固定USD、客户语言固定en；密钥、SMTP等不在接口内。policy字段：quote_valid_minutes（1..30，默认15）；proposal_valid_hours（1..168小时、1..8个无重复选项，默认[24,48]）；payment_terms（最多20条唯一code，display_text纯文本1..256字，deposit_percent为0..100两位小数字符串）；default_payment_term_code必须为已配置项。无付款条款允许保存disabled草稿，不能enabled；不自动播种付款承诺。
 
-站点启停会撤销当前会话、预登录与未消费OTP，重新启用仍需新验证码。策略变化提升policy_version并使有效报价expired；不改写已确认的订单/付款快照。每次更新记录审计。上述行为由隔离测试验证，报价API仍需后续接入策略和版本校验；未执行生产设置。
+站点启停会撤销当前会话、预登录与未消费OTP，重新启用后须重新取得 bootstrap 并使用密码登录。策略变化提升policy_version并使有效报价expired；不改写已确认的订单/付款快照。每次更新记录审计。报价使用策略及版本快照，详见下文“报价快照”；生产设置与经营验收见交接文档。
 
 
 ### 门户认证邮件任务
 
-内部调度 `portal_auth_mail` 无公开调用接口。仅 `PORTAL_ENABLED=true` 注册，每5秒处理一个邀请或OTP事件，单进程max_instances=1；多进程使用持久租约及授权屏障。`PORTAL_MAIL_ENABLED=false` 停止投递但继续清理已过期密文；总开关关闭则不读门户表，避免未迁移环境访问。
+`PORTAL_ENABLED=true` 时每分钟注册 `portal_auth_cleanup`，清理到期认证密文；总开关与 `PORTAL_MAIL_ENABLED` 同时开启时，每 5 秒注册 `portal_auth_mail`，投递邀请及验证码 outbox。密码登录本身不依赖邮件。注册依据为 `backend/app/schedulers/registry.py`；任务注册、outbox 入队与邮件实际送达是不同状态。
 
 SMTP使用TLS直连（默认465），配置PORTAL_SMTP_HOST/PORT/USERNAME/PASSWORD与PORTAL_MAIL_SENDER；密码不进入日志。数据库事务先提交，网络调用期间不持锁；发送前复查当前授权和有效期，最长120秒租约，最多8次尝试，退避1/5/15/60/120/240/360分钟。成功、取消、过期或耗尽重试清除secret_envelope。邀请链接令牌使用URL fragment；客户前端仍须通过OTP完成激活。
 
@@ -2130,7 +2145,7 @@ SMTP使用TLS直连（默认465），配置PORTAL_SMTP_HOST/PORT/USERNAME/PASSWO
 
 当PORTAL_ENABLED=true，以下既有写入口保持请求/成功响应合同，但在首次数据库读取前取得门户authority屏障，随后按当前数据库权限再次鉴权：POST/PUT/DELETE用户、用户启停、管理员重置用户密码、POST/PUT/DELETE角色，以及PUT发票代办授权。失效或已撤权的旧JWT不能凭原super_admin角色继续执行；无权限返回403，屏障未就绪返回503，不能绕过后继续写。新状态与屏障版本同原业务事务提交/回滚，无额外提交。
 
-门户关闭时，这组扩展不查询门户表，既有鉴权行为不变；这不是对全部方舟API实时撤权能力的声明。内部replace_grants调用也参加屏障，但仍由受信任调用方负责操作人授权及事务边界。客户归属、身份合并等其他入口的屏障接入仍在实施，启用真实客户前必须完成完整覆盖及MySQL并发验收。
+当前权限入口仍尝试门户屏障；只有核实为旧 schema 时才走 legacy 路径，不能由总开关关闭推断无需屏障。现役访问与身份协议见[门户架构契约](requirements/2026-09-30-customer-order-portal/01-architecture-and-access.md)。
 
 
 ### 客户归属变更与门户复核
@@ -2149,7 +2164,7 @@ Agent候选入库入口专用鉴权依赖在token首次查询前获取屏障；r
 
 ### 外部绑定与登录审计补充
 
-PORTAL_ENABLED=true时，员工外部账号新增、软删除及候选确认绑定入口先取得authority屏障，再重查external_binding:write当前权限；底层绑定写入与屏障版本在原事务共同提交。门户关闭时不查询门户表，不改变既有接口合同。
+当前权限入口仍尝试门户屏障；只有核实为旧 schema 时才走 legacy 路径，不能由总开关关闭推断无需屏障。现役访问与身份协议见[门户架构契约](requirements/2026-09-30-customer-order-portal/01-architecture-and-access.md)。
 
 验证码验证持久记录auth.verified或auth.verify_failed，退出记录auth.logout。成功验证关联真实客户账号/access/session，失败关联预登录会话且不冒认客户；审计不保存验证码、会话令牌、CSRF、邮箱、原始IP或正文。失败结果与尝试次数同事务提交后才返回401；成功审计与会话同事务，回滚不会留下孤立成功记录。此前的预登录、CSRF和限流拒绝不属于该业务事件覆盖范围。退出已失效会话保持幂等，不补造成功会话操作。
 
@@ -2165,7 +2180,7 @@ PORTAL_OKKI_NAMESPACE必须是部署中Ark OKKI镜像的实际source_account_key
 当前库存读取适配未接通：现有聚合没有可信观测时间，因此load_observations返回空，目录显示unknown，in_stock_only为空；image_url暂为null。库存状态算法已有隔离回归，但不能据此声称真实库存或下单可用。标准SKU导入/有效性复核、库存来源、图片解析及POST quotes仍是后续实现项。
 
 
-### 客户下单门户：标准商品管理（开发分支，未启用）
+### 客户下单门户：标准商品管理
 
 前缀 `/api/portal/admin/v1`，员工实时权限 `portal_site:admin`；独立于客户Cookie端点。
 
@@ -2178,7 +2193,7 @@ PORTAL_OKKI_NAMESPACE必须是部署中Ark OKKI镜像的实际source_account_key
 配置含展示名、颜色名、库存/销售单位、精确换算、安全余量、最小量/步长和原因；标准属性/价格不可由请求覆盖。源namespace固定为PORTAL_OKKI_NAMESPACE。所有变更同事务更新有效授权客户目录版本、失效valid报价和写审计，历史快照保留。源变更需要重新导入，重复首次导入409且不新建第二条。管理端HTTP已验证，UI、图片、真实库存来源和报价写入仍待实现。
 
 
-### 客户下单门户：报价快照（开发分支，未启用）
+### 客户下单门户：报价快照
 
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
@@ -2190,7 +2205,7 @@ PORTAL_OKKI_NAMESPACE必须是部署中Ark OKKI镜像的实际source_account_key
 当前生产load_observations仍为空，库存不可核实会返回INVENTORY_UNAVAILABLE/503，不写报价。测试注入可信观测仅用于隔离验证，不能当作真实库存已接通。现适配只允许本地数据库镜像读取；未来远程库存必须在授权锁外预取再核验，不在锁内执行外部I/O。
 
 
-### 客户下单门户：幂等提交与结果回查（开发分支，未启用）
+### 客户下单门户：幂等提交与结果回查
 
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
@@ -2204,7 +2219,7 @@ PORTAL_OKKI_NAMESPACE必须是部署中Ark OKKI镜像的实际source_account_key
 当前只实现提交和按键回查，列表/详情/取消/提案/建票另行接入；订单通知尚只有持久化事件，没有发送worker。真实库存仍未接通，SQLite回归不代表MySQL并发验证。
 
 
-### 客户下单门户：订单列表与详情（开发分支，未启用）
+### 客户下单门户：订单列表与详情
 
 | 方法 | 路径 | 授权 |
 | --- | --- | --- |
@@ -2220,7 +2235,7 @@ PORTAL_OKKI_NAMESPACE必须是部署中Ark OKKI镜像的实际source_account_key
 员工本人范围同时要求servicing_user_id、access当前负责人及有效主assignment一致；不能凭历史财务归属继续访问。额外历史授权须同access、未撤销且未过期；逐订单scope精确绑定。兼容的数据模型request_history读取仅涵盖created_at严格早于授权时刻的订单，同秒边界不自动放行；当前转交流程只生成逐订单授权。read_all和super_admin在当前站点可全量读取，但不授予审批动作。当前available_actions为空，取消/提案/PI写流程后续接入。
 
 
-### 客户下单门户：取消请求（开发分支，未启用）
+### 客户下单门户：取消请求
 
 `POST /api/portal/v1/orders/{request_id}/cancel`，JSON `{reason}`、当前客户Cookie/CSRF/Origin及必需If-Match（带引号正整数）。同access有效成员均可操作，但每次包括回放都要求can_order+can_view_price；无权对象统一404。
 
@@ -2229,7 +2244,7 @@ PORTAL_OKKI_NAMESPACE必须是部署中Ark OKKI镜像的实际source_account_key
 首次取消把请求置cancelled并清accepted_revision指针，原quote仍consumed，revision/明细不改写。同事务写CommandReceipt、审计和order_cancelled引用事件，未发送外部通知。返回不含金额/地址。客户详情在当前写开关和能力满足、状态允许时提供cancel动作；员工只读接口仍不提供写动作。本接口的MySQL取消/审批并发验证待建票实现后执行。
 
 
-### 客户下单门户：业务员提案（开发分支，未启用）
+### 客户下单门户：业务员提案
 
 `POST /api/portal/admin/v1/orders/{request_id}/proposals`，If-Match及ProposalInput；实时portal_order:write，当前servicing/access归属一致，复用invoice.delegation_service.can_act_for本人/明确代办规则，read_all不授予写。当前主assignment和身份binding还须有效；新提案要求客户及站点启用、下单/查价能力、写开关开启、未有建票关联。
 
@@ -2240,7 +2255,7 @@ PORTAL_OKKI_NAMESPACE必须是部署中Ark OKKI镜像的实际source_account_key
 submitted/ready_for_review可新提案；awaiting_customer仅在当前提案到期时允许新提案，校验旧证据后保留旧revision并递增版本。未过期待确认提案须等待客户确认/拒绝；原命令始终优先回放。客户接受/拒绝已接入下述端点；差异对照界面和真实库存仍未完成。
 
 
-### 客户下单门户：接受与拒绝提案（开发分支，未启用）
+### 客户下单门户：接受与拒绝提案
 
 `POST /api/portal/v1/orders/{request_id}/proposals/{revision_id}/accept` 接收 `{proposal_hash}`；同路径 `/reject` 接收 `{reason}`。两者要求当前客户 Cookie、Origin、CSRF 和带引号正整数 If-Match。每次包括回放均重新检查公司访问范围、can_order 和 can_view_price；非本请求提案返回404。
 
@@ -2256,7 +2271,7 @@ InvoiceCreate 的 source_type 增加 portal，但通用员工创建入口没有 
 portal.invoice_adapter 从当前已接受的proposal修订构建标准InvoiceCreate，调用既有金额算法并验证客户身份、销售归属、标准属性和所有费用/合计。调用方仍必须编排实时授权、版本/库存/价格重查、永久conversion、发布快照、成功回执以及事务提交回滚；审批HTTP编排见下节；未启用生产建票。
 
 
-### 门户审核建票（开发分支，默认关闭）
+### 门户审核建票（源码默认关闭）
 
 `POST /api/portal/admin/v1/orders/{request_id}/approve`，请求体仅`{accepted_revision_id}`，必需带引号正整数If-Match。先获取authority屏障并重新检查portal_order:write、invoice:write以及当前公司归属/明确代办/有效外部身份；金额、客户与SKU不可由调用者指定。
 
@@ -2267,7 +2282,7 @@ execute拥有commit/rollback；只有明确的invoice_no唯一约束冲突可重
 本端点已接入代码，但不代表PI全生命周期完成。publication保存数据库快照，客户PDF下载与ORM修改撤回见后续章节；后续修改重新确认见下文 PI 后续修订章节；上线门禁仍包含真实库存、MySQL并发与所有Invoice写入口版本联动。尚未连接生产数据库或发送通知。
 
 
-### 门户 PI 修改撤回保护（ORM 事务层，开发分支）
+### 门户 PI 修改撤回保护（ORM 事务层）
 
 已绑定永久conversion的portal来源发票，其客户可见抬头、费用、规格/数量/价格、增删明细或进入cancel_pending/cancelled时，在同次ORM flush中以数据库当前整数版本校验并递增portal_document_version，撤回所有published Publication、设置PiAmendment.withdrawn并清接受指针、写安全审计。事务回滚同时恢复内容、版本和发布状态。初建领域服务中的多次自动flush不触发撤回，首次发布仍为version=1；同步ID、同步状态等内部字段变化不触发撤回。
 
@@ -2276,7 +2291,7 @@ ORM来源改写、硬删除、手工修改门户版本和将既有门户明细�
 此保护不覆盖直接Core/bulk SQL。全部上游写入口的权限、锁序及bulk写入审计仍为上线门禁；客户下载见下一节；后续重新提案/确认/发布见下文；不能仅凭本ORM保护启用生产。
 
 
-### 客户 PI PDF 下载（开发分支，默认关闭）
+### 客户 PI PDF 下载（源码默认关闭）
 
 `GET /api/portal/v1/orders/{request_id}/pi` 使用与其他客户接口一致的session cookie命名（生产__Host-portal_session；获准本地开发dev-portal_session），经可信反代校验。当前账号须有查价权限与同公司订单范围；越权404、无查价403、无有效发布/已撤回/发票内容漂移409。成功为application/pdf附件，安全UUID文件名，no-store与nosniff。
 
@@ -2287,7 +2302,7 @@ ORM来源改写、硬删除、手工修改门户版本和将既有门户明细�
 PDF模板portal-pi-v1采用LeShine原Logo及黄黑视觉，分页重复表头，所有业务文本XML转义，不解析客户提供链接。依赖reportlab>=4.5.1,<5；沿用PDF_CJK_FONT_PATH配置可嵌入字体，缺失返回安全PDF_UNAVAILABLE，不回显文件路径。生产字体/部署链、MySQL并发仍为待验收项；后续PI重新确认实现见下文。
 
 
-### 客户提案差异与再次下单（开发分支）
+### 客户提案差异与再次下单
 
 GET客户/员工订单详情在有查价权限且当前修订为proposal时返回proposal.changes。结构为before_revision_id/kind、after_revision_id/kind、items、fields。基线是同请求的紧邻上一修订（不保证是最后接受版本，kind明确标识）；双方使用不可变快照，校验基线实际内容hash，历史损坏则拒绝详情。items按稳定line_key对照，含change=added/removed/changed、before/after及changed_fields；fields给费用、合计、地址、付款条件、备注的前后值，未知费用保持null。只返回客户展示字段，无内部SKU、价格来源或员工ID；无查价能力时不返回proposal或任何差异金额。
 
@@ -2298,7 +2313,7 @@ GET客户/员工订单详情在有查价权限且当前修订为proposal时返�
 首次建票归属同步收紧：新proposal.authority_versions_json持久sales_user_id并进入内容hash；接受/审批按当前公司版本完整比对，adapter同时验证其等于servicing_user_id及access.sales_user_id，再用该快照归属创建PI。原提交sales_user_id_snapshot只作历史证据。旧开发提案缺此字段须重新提案，不能自动补签已接受内容。
 
 
-### PI 后续修订确认与发布（开发分支，默认关闭）
+### PI 后续修订确认与发布（源码默认关闭）
 
 POST员工`/api/portal/admin/v1/orders/{request_id}/pi-proposals`，体为`{invoice_document_version,valid_for_hours,reason}`；POST员工`.../publish-pi`，体为`{invoice_document_version,accepted_revision_id}`。必需If-Match=request.row_version。当前portal_order:write、invoice:write、客户当前归属/有效代办及原PI归属/有效代办须同时成立；跨来源时客户access、catalog item与配置namespace必须一致，且在SKU/库存读取前校验。两端都不接收任意invoice_id。
 
@@ -2311,7 +2326,7 @@ POST员工`/api/portal/admin/v1/orders/{request_id}/pi-proposals`，体为`{invo
 实现验证使用隔离SQLite，不证明MySQL锁序/并发。现有ORM修改撤回清active/accepted指针，但所有上游Invoice/Core写入口的统一授权屏障、锁序及请求版本联动仍须继续收口；本地作废见后续章节；真实库存和生产字体/邮件/部署链亦未验收，不能据此启用生产。
 
 
-### 员工拒绝请求与未同步 PI 本地作废（开发分支）
+### 员工拒绝请求与未同步 PI 本地作废
 
 POST `/api/portal/admin/v1/orders/{request_id}/reject`：ReasonInput与必需If-Match。实时portal_order:write及当前归属/代办/绑定授权；仅submitted/awaiting_customer/ready_for_review、且无永久Conversion或invoice关联时允许。保留原修订及接受证据、清当前接受指针，主状态rejected。命令键request+原If-Match，reason入hash；相同命令回原回执，不同内容409；旧成功回放仍查当前权限。拒绝状态、审计、引用outbox与回执同事务。
 
@@ -2469,13 +2484,13 @@ PORTAL_LOCK_WAIT_SECONDS（默认5，1..30秒）仅限制参与authority协议�
 
 既有invoice模块GET lifecycle按当前员工/角色及对象范围检查。POST lifecycle的begin/retain/abort需当前invoice:admin，短事务仍保留理由/确认/状态/租约守卫；refresh使用锁外取证及最终重鉴权/完整绑定和当前本地财务检查。权限403、范围404、绑定冲突409、受控证据不可用503，不回显上游正文。validate保留invoice:write OR invoice:sync，DELETE需invoice:delete且禁止门户PI硬删除；lifecycle的remove另需invoice:delete。门户启用后的remote remove已接入分阶段当前授权、原执行日志与终态核对；outbound_retry/ack已接入当前授权与锁外证据的本地恢复；其他同步执行器及实际worker仍需逐阶段接入验证，不能将本段视为全入口已修复。
 
-### 生命周期原执行事实与安全响应（开发分支）
+### 生命周期原执行事实与安全响应
 
 GET/POST `/api/invoice/invoices/{id}/lifecycle` 返回 `Cache-Control: private, no-store`，含401/403/404/409/503。取消投影不返回执行token；GET含recovery_summary的review_required、pending_attempt_count、last_observed_at（+08:00或null）、remote_observation（absent/present/unknown/not_checked）。retained或remote_deleted有原attempt待核对时，action=refresh仅观察原远端目标并追加核对，不重发DELETE、不改本地终态或恢复发布；无待核对记录继续零外部I/O。
 
 启用门户的remove在外发前提交原claim；提交不确定503不重发。实际结果先按原attempt独立保存脱敏事实，再当前授权返回；403/503不能说明DELETE没发生。原attempt/事实集合或绑定变化409且风险不清。客户端用有权员工读取同一原任务，不能更换身份/attempt重复删除。其他执行器及初始OFF仍需对应验收。
 
-### 出库恢复/确认接入（开发分支）
+### 出库恢复/确认接入
 
 启用门户的POST lifecycle `outbound_retry/ack_outbound`：当前invoice:admin及对象范围→短事务捕获→锁外订单/出库GET（retry另读完整回款，ack不新查回款）→最终重新当前授权和完整绑定。绑定额外包含币种/金额/order_type、产品行/UID及原任务和最新关联操作，不能仅用legacy内容hash。取证不可信503，最终变化409，旧身份403/越权404；沿用confirmed/reason/expected_version，不外发出库创建/删除。
 
@@ -2674,7 +2689,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 - 主站 `POST /api/domestic/reports`、`POST /api/domestic/reports/revoke` 和代报工选人 `GET /api/domestic/process-workers` 统一要求 `domestic_report:write`。撤销报工仍保留本人记录/管理员例外、已发货和下游真实报工保护。
 - `POST /api/domestic/reports/skip`、`GET /api/domestic/reports/skips` 和 `POST /api/domestic/reports/skip/{skip_log_id}/revoke` 统一要求 `domestic_skip:write`。异常原因、逐件记录、幂等及下游报工保护不变。
 - 两个新码登记为 action，角色权限矩阵分别显示“内贸订单代报工”和“内贸订单异常跳过”。既有 `domestic:write`/`domestic:admin` 不替代新权限，启动 seed 不自动给普通管理员或既有角色补授；super_admin 沿用平台豁免。小程序数量/逐件报工权限不变。上线重启后由角色管理页显式分配，重新登录刷新权限。订单阅读范围仍需已有阅读及数据范围权限。
-# 2026-10-19：战报订单裁定配置
+## 2026-10-19：战报订单裁定配置
 
 奖项配置的 `award_rules.order_decisions` 为可选列表（默认空、最多200笔），每笔包含 `order_id`、`order_no`、`company_id`、`owner_id`、`account_date`、`role=new_sign|repeat|exclude_metrics` 和非空 `reason`。ID唯一、数字身份、日期在活动周期内；配置更正仍走现有战报PUT、版本校验及审计，更改裁定必须有整体原因并关闭推送。管理员GET/list保留完整列表，非管理员移除列表；统计返回 `order_decision_count`、`applied_order_decision_count` 两个数量。裁定不改写OKKI或镜像，身份漂移或相反合法源标记触发待核对并停止排名。
 
@@ -2695,7 +2710,7 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 操作与验证边界见[原任务恢复报告](reports/2026-10-23-shipment-absence-recovery.md)。
 
-## Kindle 看板（2026-10-25，本地待发布）
+## Kindle 看板（2026-10-25）
 
 新增 /api/inkboard：个人设备签发/撤销、备忘版本更新、消息幂等发布/撤回、受限设备同步与独立接收/已读回执。完整端点、schema 和权限见 [Kindle 看板契约](requirements/2026-10-25-kindle-dashboard.md)。不自动转发所有既有公告。
 
@@ -2709,6 +2724,23 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 
 2026-10-29客户商品价格管理GET响应items新增weight（标准商品重量展示值），用于与型号、颜色、长度、sale_unit共同辨别SKU；价格、权限和保存请求契约不变。
 
+
+## 绩效目标与看板（`/api/perf-goals`）
+
+路由来源为 `backend/app/perf_goal/router.py`。下表为操作入口摘要；请求版本、数据范围和计算口径见[绩效目标契约](requirements/2026-10-23-performance-goal-management.md)，不能仅凭菜单可见推断有权读取任意人员数据。
+
+| 操作 | 方法与路径 | 权限 |
+| --- | --- | --- |
+| 人员与周期 | `GET /roster`；`GET /periods`、`GET /periods/active` | roster 接受 read/write/admin；周期读取为 read/admin |
+| 周期创建与启用 | `POST /periods`、`POST /periods/{period_id}/activate` | write/admin |
+| 个人/战队目标 | `GET/PUT /periods/{period_id}/goals`、`GET/PUT /periods/{period_id}/team-goals` | GET 为 read/admin；PUT 为 write/admin |
+| 目标分解与重算 | `POST /periods/{period_id}/split`、`POST /periods/{period_id}/team-goals/recalc` | write/admin |
+| 目标审计与调度元数据 | `GET /periods/{period_id}/audits`、`/reports-schedule` | read/admin；分别按周期读取审计、返回调度与汇总计数，不套用个人报告范围 |
+| 经营看板 | `GET /overview`、`/trend`、`/teams`、`/ranking`、`/metric-orders` | read/admin，并执行各接口的数据范围规则 |
+| 分析报告 | `GET /reports`、`/reports/{report_id}` | read/admin，并校验各自报告可见范围 |
+| 重发与配置 | `POST /reports/{report_id}/resend`；`GET/PUT /config` | admin；重发属于实际通知动作 |
+
+上述权限统一使用 `perf_goal:` 前缀，响应为 `ok()` 信封；报告调度配置与历史投递结果不等于当前已发送。
 
 ### 绩效目标明细范围补充（2026-10-29）
 

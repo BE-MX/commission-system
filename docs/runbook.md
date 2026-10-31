@@ -23,7 +23,7 @@
 
 回退保留新消息、来源映射和 checkpoint，不倒退水位、不删除重复候选、不 downgrade/drop 新结构。恢复旧发布需用旧代码、旧锁文件与原独立认证；若旧设备已注销或认证失效，需重扫码。尚未执行真实切换、备份恢复、生产迁移或部署演练。
 
-## 回款自动恢复与索引（175，待部署）
+## 回款自动恢复与索引（175）
 
 发送前临时故障最多连续恢复 5 次；已知 ID 详情读取失败最多连续 8 次。`exhausted` 须检查网络、权限、字段或索引任务后由原回款操作重试/刷新。`unknown` 没有确切远端 ID 时不能直接重发；`blocked` 金额/费用/身份冲突须核对原单，程序不会自动改金额或手续费。
 
@@ -1584,16 +1584,18 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
 
 ## 客户拍摄素材门户上线与恢复
 
+当前部署、存储与路由以[统一发布入口](../deploy/README.md)、[架构说明](architecture.md)及[交接记录](handoff.md)为准。下文 2026-08 的 IP 自签证书、关闭上游证书校验、仅本地存储和备案阻断段落是故障历史，不是现役配置建议；现有素材域 HTTPS 与 COS 已有后续发布/附件核验记录。
+
 目标入口固定为 `https://media.leshine.cloud`。方舟仍是业务主系统，媒体域上的后端连接同一业务数据库，只由 Nginx 暴露 `/api/customer-media/`；静态门户发布到 `/var/www/ark-dist/customer-media/`（IP 兜底入口，ark-ip-ssl.conf default_server root 拼接）与 `/var/www/ark-static/customer-media/`（域名入口，两套目录内容保持一致），原件位于私有目录 `/data/customer-media`，不得通过 Nginx `root/alias` 直接暴露。首期仅支持上传、审核、发布、查看和下载，不提供图片编辑。
 
-**IP 兜底入口（备案完成前可用，2026-08-14 实测）**：`.cloud` 域名 HTTPS 被机房未备案拦截（见上线门禁第 1 条），正式客户访问前可通过 `https://154.8.205.162/customer-media/` 使用门户——IP 入口走 `ark-ip-ssl.conf` 的 `default_server`（IP 自签证书），其通用 `location /api/ { proxy_pass http://127.0.0.1:8001 }` 已覆盖 `customer-media` 的 API 前缀，静态页 + 登录 + 素材接口全链可用（测试 `POST /api/customer-media/portal/login` 返回 401「邮箱或密码错误」、`GET /api/customer-media/portal/me` 返回 401「请先登录」即为后端正常响应）。两点限制：①IP 自签证书，浏览器会提示「不安全」，点继续访问即可，正式客户见不到此提示；②通用 `location /api/` 在 IP 入口是 5m body 限制，但 `/api/customer-media/` 已单独开 501m（见下条），素材上传/下载不受限。备案完成后回归 `.work` 正式域名 + 正式证书。
+**历史 IP 兜底调查（2026-08-14，保留排障依据）**：`.cloud` 域名 HTTPS 被机房未备案拦截（见上线门禁第 1 条），正式客户访问前可通过 `https://154.8.205.162/customer-media/` 使用门户——IP 入口走 `ark-ip-ssl.conf` 的 `default_server`（IP 自签证书），其通用 `location /api/ { proxy_pass http://127.0.0.1:8001 }` 已覆盖 `customer-media` 的 API 前缀，静态页 + 登录 + 素材接口全链可用（测试 `POST /api/customer-media/portal/login` 返回 401「邮箱或密码错误」、`GET /api/customer-media/portal/me` 返回 401「请先登录」即为后端正常响应）。两点限制：①IP 自签证书，浏览器会提示「不安全」，点继续访问即可，正式客户见不到此提示；②通用 `location /api/` 在 IP 入口是 5m body 限制，但 `/api/customer-media/` 已单独开 501m（见下条），素材上传/下载不受限。备案完成后回归 `.work` 正式域名 + 正式证书。
 
-**上传链路 relay 与存储根（2026-08-14 修复「门户图片无法显示」）**：素材原件的唯一存放点是北京云 `/data/customer-media`（云端 `backend/.env` 已配 `CUSTOMER_MEDIA_STORAGE_ROOT=/data/customer-media`——修复前缺省值是 Windows 路径 `D:\WORKSOURCE\customer-media`，在 Linux 上被解析成后端工作目录下的相对目录，文件根本读不到）。为保证「上传落云、门户同机读取」，办公室入口（119.28.107.92 `leshine.conf`）把 `location ^~ /api/customer-media/` 整体反代到 `https://154.8.205.162`（自签证书故 `proxy_ssl_verify off`；501m body、`proxy_request_buffering off`、3600s 超时），北京侧 `ark-ip-ssl.conf` 为同前缀单独开 501m；内部上传/审核/预览与门户读取由此全部落到北京云 8001 一个后端。两台机的 nginx 备份在各自 home 目录 `*.bak-20260814`。排障口诀：门户图裂先看北京云 `storage_for('local').root` 是否为 `/data/customer-media`，再看 `location` 是否命中 relay（北京 access.log 里来源 IP 应是 119.28.107.92）。
+**历史上传 relay 与存储根（2026-08-14 修复「门户图片无法显示」；后续已演进为 COS）**：素材原件的唯一存放点是北京云 `/data/customer-media`（云端 `backend/.env` 已配 `CUSTOMER_MEDIA_STORAGE_ROOT=/data/customer-media`——修复前缺省值是 Windows 路径 `D:\WORKSOURCE\customer-media`，在 Linux 上被解析成后端工作目录下的相对目录，文件根本读不到）。为保证「上传落云、门户同机读取」，办公室入口（119.28.107.92 `leshine.conf`）把 `location ^~ /api/customer-media/` 整体反代到 `https://154.8.205.162`（自签证书故 `proxy_ssl_verify off`；501m body、`proxy_request_buffering off`、3600s 超时），北京侧 `ark-ip-ssl.conf` 为同前缀单独开 501m；内部上传/审核/预览与门户读取由此全部落到北京云 8001 一个后端。两台机的 nginx 备份在各自 home 目录 `*.bak-20260814`。排障口诀：门户图裂先看北京云 `storage_for('local').root` 是否为 `/data/customer-media`，再看 `location` 是否命中 relay（北京 access.log 里来源 IP 应是 119.28.107.92）。
 
 ### 上线门禁
 
-1. DNS `media.leshine.cloud` 指向目标服务器，80/443 可达且 ICP/HTTPS 阻断已解除；证书签发后先用 `curl -I https://media.leshine.cloud/` 验证。当前已知现状（2026-08-13）：`leshine.cloud` 解析到 `154.8.205.162`，HTTP 会跳 HTTPS，但 HTTPS 连接被重置——**`.cloud` 后缀统一未备案，机房在出口按域名特征重置 TLS（连 `media.leshine.cloud` 同命，2026-08-13 独立验证：本机 `curl -skI https://media.leshine.cloud` 200、外部网络 TLS 握手 RST）**，因此在备案完成前不得宣称门户已上线；备案与 `.work` 正式域名落地前用上节 IP 兜底入口。
-2. 备份数据库。确认 `alembic heads` 只有一个 head，审阅 `114_customer_media_portal` 的 MySQL 离线 SQL，再执行 `alembic upgrade head`。迁移只允许在一个实例执行。
+1. 核对 `media.leshine.cloud` 的 DNS、80/443、有效证书及当前应用路由。2026-10-30 发布报告已记录素材域 HTTPS 200；这不是本轮实时检查，也不能替代登录态素材权限验收。2026-08 的 TLS 阻断只作历史故障依据。
+2. 生产迁移由 `deploy/deploy.bat` 对固定候选统一预检、协调 writer 并执行一次；核对实际 schema 与候选迁移链、备份和恢复条件。114 是该模块的初始迁移，不是当前升级目标；禁止在开发机或云节点单独执行 `alembic upgrade head`。
 3. 云端 `.env` 至少配置：
 
    ```env
