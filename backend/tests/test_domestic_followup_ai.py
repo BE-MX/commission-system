@@ -245,3 +245,44 @@ def test_malformed_model_fields_do_not_void_the_draft(db, monkeypatch, payload):
         assert [i["text"] for i in followup.ai_result["items"] if i["kind"] == "issue"] == ["退货率高"]
     if "unreadable" in payload:
         assert followup.ai_result["unreadable"] == ["语音 3″"]
+
+
+@pytest.mark.parametrize("confidence", [86, -0.5, 1.5])
+def test_out_of_range_confidence_is_treated_as_zero(db, monkeypatch, confidence):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_l")
+    customer = make_customer(db, user, "越界置信店")
+    followup = _draft(db, user, "ai-l")
+    monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": json.dumps({
+        "customer_hint": {"matched_customer_id": customer.id, "confidence": confidence}, "summary": "x"})})
+    _run(db, followup, user)
+    assert followup.ai_result["customer_id"] is None and followup.ai_result["customer_confidence"] is None
+
+
+def test_confirmed_meanwhile_still_keeps_ai_log_id(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_m")
+    followup = _draft(db, user, "ai-m")
+
+    def confirm_meanwhile(**kwargs):
+        followup.status = "confirmed"
+        kwargs["db"].commit()
+        return {"log_id": 42, "content": json.dumps({"summary": "late"})}
+    monkeypatch.setattr(ai_parse_service, "chat", confirm_meanwhile)
+    _run(db, followup, user)
+    db.refresh(followup)
+    assert followup.ai_status == "done" and followup.ai_log_id == 42
+
+
+def test_success_path_retries_previously_failed_ocr(db, monkeypatch):
+    seed_dicts(db)
+    user = make_user(db, "fu_ai_n")
+    followup = _draft(db, user, "ai-n")
+    att_id = _attachment(db, followup, user, monkeypatch)
+    att = db.get(DomesticFollowupAttachment, att_id)
+    att.ocr_status = "failed"
+    db.commit()
+    ocr_calls = _record_ocr(monkeypatch)
+    monkeypatch.setattr(ai_parse_service, "chat", lambda **k: {"content": json.dumps({"summary": "x"})})
+    _run(db, followup, user)
+    assert followup.ai_status == "done" and ocr_calls == [[att_id]]

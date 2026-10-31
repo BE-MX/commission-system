@@ -118,6 +118,15 @@ def fallback_category(categories: list[str]) -> str | None:
     return categories[-1] if categories else None
 
 
+def bounded_confidence(value) -> float:
+    """置信度只认 [0, 1]：模型写成 86（百分制）或负数都按无效处理，免得越过门槛。"""
+    try:
+        value = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return value if 0.0 <= value <= 1.0 else 0.0
+
+
 def _item(raw: AiItem, kind: str, categories: list[str]) -> dict | None:
     text = (raw.text or "").strip()[:1000]
     if not text:
@@ -149,8 +158,9 @@ def normalize(db: Session, current_user: dict, parsed: AiParseOut, values: dict,
     customer_id, confidence = followup.customer_id, None
     if customer_id is None and hint:
         candidate_ids = {c["id"] for c in candidates}
-        if hint.matched_customer_id in candidate_ids and (hint.confidence or 0) >= HINT_MIN_CONFIDENCE:
-            customer_id, confidence = hint.matched_customer_id, hint.confidence
+        hint_confidence = bounded_confidence(hint.confidence)
+        if hint.matched_customer_id in candidate_ids and hint_confidence >= HINT_MIN_CONFIDENCE:
+            customer_id, confidence = hint.matched_customer_id, hint_confidence
         else:
             matched = visibility.match_alias(db, current_user, hint.chat_title)
             if matched:
@@ -244,19 +254,20 @@ def run_parse(followup_id: int, current_user: dict, session_factory=SessionLocal
             if locked.status != "draft":
                 # AI 跑完前业务员已手填确认/作废：不写建议，只收口 ai_status，免得永远停在 running
                 locked.ai_status = "done"
+                locked.ai_log_id = result.get("log_id")
                 confirmed = locked.status == "confirmed"
                 db.commit()
                 if not confirmed:  # 作废的记录不再花钱 OCR
                     ocr_ids = []
                 return
             _write_ocr(attachments, parsed, draft["unreadable"])
-            still_pending = [int(a.id) for a in attachments if a.ocr_status == "pending"]
+            still_pending = [int(a.id) for a in attachments if a.ocr_status != "done"]
             locked.ai_result = draft
             locked.ai_status = "done"
             locked.ai_error = None
             locked.ai_log_id = result.get("log_id")
             db.commit()
-            ocr_ids = still_pending  # 模型漏转写的截图，成功路径也补一次 OCR
+            ocr_ids = still_pending  # 模型漏转写或之前 OCR 失败的截图，成功路径也补一次（与失败路径同口径）
         except Exception as exc:  # noqa: BLE001 — 任何失败都降级，草稿与原文不丢
             logger.warning("followup AI parse failed id=%s: %s", followup_id, type(exc).__name__)
             print(f"[domestic_followup] AI parse failed id={followup_id}: {type(exc).__name__}", flush=True)
