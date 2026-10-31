@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 
 from app.domestic_followup import followup_service, router as followup_router
+from app.domestic_followup.models import DomesticFollowup, DomesticFollowupAttachment, DomesticFollowupItem
 from tests.domestic_followup_helpers import followup_client, make_customer, make_user, seed_dicts
 
 TODAY = date(2026, 10, 30)
@@ -71,3 +72,46 @@ def test_config_write_requires_admin(db):
     with followup_client(db, user, permissions=("domestic_followup:read", "domestic_followup:admin")) as client:
         resp = client.put("/api/domestic-followup/config", json={"receipt_delay_days": 4})
         assert resp.status_code == 200 and resp.json()["data"]["receipt_delay_days"] == 4
+
+
+def test_cannot_read_other_users_draft(db):
+    seed_dicts(db)
+    author = make_user(db, "fu_rt_f1")
+    other = make_user(db, "fu_rt_f2")
+    draft = DomesticFollowup(author_user_id=author.id, followup_date=TODAY, request_id="rt-draft-f",
+                             status="draft", ai_status="none", version=1)
+    db.add(draft)
+    db.flush()
+    with followup_client(db, other) as client:
+        assert client.get(f"/api/domestic-followup/drafts/{draft.id}").status_code == 404
+
+
+def test_cannot_read_other_users_screenshot(db):
+    author = make_user(db, "fu_rt_g1")
+    other = make_user(db, "fu_rt_g2")
+    att = DomesticFollowupAttachment(uploader_user_id=author.id, seq=1, file_path="fu/g.png", mime_type="image/png")
+    db.add(att)
+    db.flush()
+    with followup_client(db, other) as client:
+        assert client.get(f"/api/domestic-followup/attachments/{att.id}/file").status_code == 403
+
+
+def test_cannot_resolve_item_outside_scope(db):
+    owner = make_user(db, "fu_rt_h1")
+    other = make_user(db, "fu_rt_h2")
+    customer = make_customer(db, owner, "路由店H")
+    followup = DomesticFollowup(author_user_id=owner.id, customer_id=customer.id, followup_date=TODAY,
+                                request_id="rt-item-h", status="confirmed", version=2)
+    db.add(followup)
+    db.flush()
+    item = DomesticFollowupItem(followup_id=followup.id, customer_id=customer.id, seq=1, kind="issue",
+                                text="掉色", category="质量", severity="一般", status="open",
+                                handler_user_id=owner.id)
+    db.add(item)
+    db.flush()
+    with followup_client(db, other) as client:
+        resp = client.post(f"/api/domestic-followup/items/{item.id}/resolve",
+                           json={"status": "resolved", "resolution": "x"})
+        assert resp.status_code == 403
+    db.refresh(item)
+    assert item.status == "open"

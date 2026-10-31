@@ -61,3 +61,39 @@ def test_rollback_discards_changes(db):
     db.rollback()
     plan = db.query(DomesticFollowupTask).filter_by(task_type="plan").one()
     assert plan.assignee_user_id == old.id
+
+
+def test_public_sea_claim_moves_all_plan_and_receipt_tasks(db):
+    clerk = make_user(db, "fu_hk_e1")
+    claimer = make_user(db, "fu_hk_e2")
+    customer = make_customer(db, None, "钩子店E", creator=clerk)
+    _tasks(db, clerk, customer)  # 公海期间由录入人临时承接
+    customer.owner_user_id = claimer.id
+    db.flush()
+    db.expire_all()
+    rows = {t.task_type: t.assignee_user_id for t in db.query(DomesticFollowupTask).all()}
+    assert rows == {"plan": claimer.id, "receipt": claimer.id, "issue": clerk.id}
+
+
+def test_release_cancels_tasks_held_by_others_too(db):
+    old = make_user(db, "fu_hk_f1")
+    helper = make_user(db, "fu_hk_f2")
+    customer = make_customer(db, old, "钩子店F")
+    _tasks(db, helper, customer)  # 不在旧归属人名下的约定跟进/回访
+    customer.owner_user_id = None
+    db.flush()
+    db.expire_all()
+    rows = {t.task_type: (t.status, t.closed_reason) for t in db.query(DomesticFollowupTask).all()}
+    assert rows == {"plan": ("cancelled", "客户释放"), "receipt": ("cancelled", "客户释放"), "issue": ("todo", None)}
+
+
+def test_owner_to_owner_keeps_tasks_of_other_people(db):
+    old = make_user(db, "fu_hk_g1")
+    new = make_user(db, "fu_hk_g2")
+    helper = make_user(db, "fu_hk_g3")
+    customer = make_customer(db, old, "钩子店G")
+    _tasks(db, helper, customer)
+    customer.owner_user_id = new.id
+    db.flush()
+    db.expire_all()
+    assert {t.assignee_user_id for t in db.query(DomesticFollowupTask).all()} == {helper.id}

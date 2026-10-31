@@ -1,4 +1,7 @@
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+
+from sqlalchemy import event
 
 from app.domestic_followup import config_service, receipt_service
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupTask, DomesticFollowupTaskShipment
@@ -89,3 +92,88 @@ def test_cleanup_stale_drafts(db):
     db.flush()
     assert receipt_service.cleanup_drafts(db, now=datetime(2026, 10, 30, 2, 10)) == 1
     assert old.status == "discarded" and old.version == 2 and fresh.status == "draft"
+
+
+def test_inactive_owner_falls_back_to_creator_then_fallback(db):
+    owner = make_user(db, "fu_rc_h1")
+    clerk = make_user(db, "fu_rc_h2")
+    backup = make_user(db, "fu_rc_h3")
+    _launch(db)
+    config_service.update_config(db, {"fallback_assignee_user_id": backup.id}, None, commit=False)
+    c1 = make_customer(db, owner, "回访店H1")
+    c2 = make_customer(db, owner, "回访店H2")
+    make_shipment(db, c1, clerk, datetime(2026, 10, 26, 9, 0))
+    make_shipment(db, c2, owner, datetime(2026, 10, 26, 9, 0))
+    owner.is_active = False
+    db.flush()
+    assert receipt_service.scan(db, today=TODAY) == 2
+    assignees = {t.customer_id: t.assignee_user_id for t in db.query(DomesticFollowupTask).all()}
+    assert assignees == {c1.id: clerk.id, c2.id: backup.id}
+
+
+def test_no_active_assignee_skips_group(db):
+    owner = make_user(db, "fu_rc_i")
+    customer = make_customer(db, owner, "回访店I")
+    _launch(db)
+    make_shipment(db, customer, owner, datetime(2026, 10, 26, 9, 0))
+    owner.is_active = False
+    db.flush()
+    assert receipt_service.scan(db, today=TODAY) == 0
+    assert db.query(DomesticFollowupTask).count() == 0 and db.query(DomesticFollowupTaskShipment).count() == 0
+
+
+def test_batches_beyond_expire_window_are_not_backfilled(db):
+    user = make_user(db, "fu_rc_j")
+    customer = make_customer(db, user, "回访店J")
+    _launch(db, "2026-09-01")
+    make_shipment(db, customer, user, datetime(2026, 10, 19, 23, 59))  # 10-19 + 3 = 10-22，已过 7 天过期窗口
+    kept = make_shipment(db, customer, user, datetime(2026, 10, 20, 0, 0))  # 10-23 到期，正好在窗口内
+    assert receipt_service.scan(db, today=TODAY) == 1
+    assert [link.shipment_id for link in db.query(DomesticFollowupTaskShipment).all()] == [kept.id]
+
+
+@contextmanager
+def _concurrent_write_before_update(db, table, sql):
+    """在本模块发出第一条 UPDATE <table> 之前，模拟另一事务已提交的写入。"""
+    engine = db.get_bind()
+    fired = []
+
+    def hook(conn, cursor, statement, parameters, context, executemany):
+        if not fired and statement.lstrip().upper().startswith(f"UPDATE {table.upper()}"):
+            fired.append(True)
+            cursor.execute(sql)
+
+    event.listen(engine, "before_cursor_execute", hook)
+    try:
+        yield fired
+    finally:
+        event.remove(engine, "before_cursor_execute", hook)
+
+
+def test_expire_does_not_overwrite_task_finished_concurrently(db):
+    user = make_user(db, "fu_rc_k")
+    customer = make_customer(db, user, "回访店K")
+    task = DomesticFollowupTask(task_type="receipt", customer_id=customer.id, assignee_user_id=user.id,
+                                source_key="race", title="race", due_date=TODAY - timedelta(days=10))
+    db.add(task)
+    db.flush()
+    with _concurrent_write_before_update(
+            db, "ark_domestic_followup_tasks",
+            f"UPDATE ark_domestic_followup_tasks SET status='done', closed_reason='回访完成' WHERE id={task.id}") as fired:
+        receipt_service.expire_tasks(db, today=TODAY)
+    db.expire_all()
+    assert fired and db.get(DomesticFollowupTask, task.id).status == "done"
+
+
+def test_cleanup_does_not_discard_draft_confirmed_concurrently(db):
+    user = make_user(db, "fu_rc_l")
+    draft = DomesticFollowup(author_user_id=user.id, followup_date=TODAY, request_id="rc-race", status="draft",
+                             created_at=datetime(2026, 10, 20, 9, 0), version=1)
+    db.add(draft)
+    db.flush()
+    with _concurrent_write_before_update(
+            db, "ark_domestic_followups",
+            f"UPDATE ark_domestic_followups SET status='confirmed', version=2 WHERE id={draft.id}") as fired:
+        receipt_service.cleanup_drafts(db, now=datetime(2026, 10, 30, 2, 10))
+    db.expire_all()
+    assert fired and db.get(DomesticFollowup, draft.id).status == "confirmed"

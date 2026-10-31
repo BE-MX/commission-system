@@ -3977,7 +3977,9 @@ def bounded_confidence(value) -> float:
     """置信度只认 [0, 1]：模型写成 86（百分制）或负数都按无效处理，免得越过门槛。"""
     try:
         value = float(value or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        logger.warning("followup AI confidence not numeric: %s", type(exc).__name__)
+        print(f"[domestic_followup] AI confidence not numeric: {type(exc).__name__}", flush=True)
         return 0.0
     return value if 0.0 <= value <= 1.0 else 0.0
 
@@ -4218,20 +4220,25 @@ git commit -m "feat(domestic-followup): add AI draft parsing with runtime enum i
 **规则**（规格 4.4，决策 1，偏差表里的「按客户+发货日合并」「上线日首扫自动写入」）：
 - **上线日**：第一次扫描时，若 `receipt_launch_date` 为空，就写入当天，只提醒上线日及之后的发货，避免上线当天翻出几百条历史回访。
 - **纳入条件**：发货日（北京日期）+ `receipt_delay_days` ≤ 今天，未取消，且未出现在 `ark_domestic_followup_task_shipments` 中。
+  - 起点取 `max(上线日, 今天 − (N + 7))`：超过回访过期窗口的批次不再补建（比如刚配好兜底人时），免得一次冒出一批已过期的待办。
   - 实现成时间区间：`ship_time ∈ [上线日 00:00, 今天 − N + 1 天 00:00)`，避免逐行取 `.date()` 和数据库时区函数。
 - **合并**：同一客户、同一发货日的多批合成一张任务。`source_key` 为 `receipt:<客户ID>:<发货日>:<最小批次ID>`。
   - 同日后补的批次 ID 更大，而且之前的批次已被关联排除，所以会生成一张新任务，不会改写已推送的旧任务。
 - **负责人**按顺序取：客户归属人 → 批次经办人 → 配置兜底人；都不是在职用户时跳过并告警。
-- **一组一个 savepoint**：单组失败（含并发撞唯一键）不影响其他组（红线 6）。
+- **一组一个 savepoint**：单组失败（含并发撞唯一键）不影响其他组（红线 6），日志记异常类型和 `str(exc)[:200]`。
 - **回访过期**：收货回访待办超过到期日 7 天仍未处理，置为 expired，原因「超时过期」。约定跟进和异常任务不过期，按「不续期」决策一直显示为逾期。
 - **草稿清理**：超过 7 天仍未确认的草稿置为 discarded。原文和截图保留，不物理删除。
+- **并发**：过期和草稿清理都用带条件的 UPDATE（`WHERE status='todo'` / `WHERE status='draft'`），条件在写入时才判断，不会把用户刚完成的回访或刚确认的草稿覆盖掉。测试用 `before_cursor_execute` 在 UPDATE 前插入「另一事务已提交」的写入来复现。
 
 - [ ] **Step 1: 写失败的测试**
 
 `backend/tests/test_domestic_followup_receipt.py`：
 
 ```python
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+
+from sqlalchemy import event
 
 from app.domestic_followup import config_service, receipt_service
 from app.domestic_followup.models import DomesticFollowup, DomesticFollowupTask, DomesticFollowupTaskShipment
@@ -4322,6 +4329,91 @@ def test_cleanup_stale_drafts(db):
     db.flush()
     assert receipt_service.cleanup_drafts(db, now=datetime(2026, 10, 30, 2, 10)) == 1
     assert old.status == "discarded" and old.version == 2 and fresh.status == "draft"
+
+
+def test_inactive_owner_falls_back_to_creator_then_fallback(db):
+    owner = make_user(db, "fu_rc_h1")
+    clerk = make_user(db, "fu_rc_h2")
+    backup = make_user(db, "fu_rc_h3")
+    _launch(db)
+    config_service.update_config(db, {"fallback_assignee_user_id": backup.id}, None, commit=False)
+    c1 = make_customer(db, owner, "回访店H1")
+    c2 = make_customer(db, owner, "回访店H2")
+    make_shipment(db, c1, clerk, datetime(2026, 10, 26, 9, 0))
+    make_shipment(db, c2, owner, datetime(2026, 10, 26, 9, 0))
+    owner.is_active = False
+    db.flush()
+    assert receipt_service.scan(db, today=TODAY) == 2
+    assignees = {t.customer_id: t.assignee_user_id for t in db.query(DomesticFollowupTask).all()}
+    assert assignees == {c1.id: clerk.id, c2.id: backup.id}
+
+
+def test_no_active_assignee_skips_group(db):
+    owner = make_user(db, "fu_rc_i")
+    customer = make_customer(db, owner, "回访店I")
+    _launch(db)
+    make_shipment(db, customer, owner, datetime(2026, 10, 26, 9, 0))
+    owner.is_active = False
+    db.flush()
+    assert receipt_service.scan(db, today=TODAY) == 0
+    assert db.query(DomesticFollowupTask).count() == 0 and db.query(DomesticFollowupTaskShipment).count() == 0
+
+
+def test_batches_beyond_expire_window_are_not_backfilled(db):
+    user = make_user(db, "fu_rc_j")
+    customer = make_customer(db, user, "回访店J")
+    _launch(db, "2026-09-01")
+    make_shipment(db, customer, user, datetime(2026, 10, 19, 23, 59))  # 10-19 + 3 = 10-22，已过 7 天过期窗口
+    kept = make_shipment(db, customer, user, datetime(2026, 10, 20, 0, 0))  # 10-23 到期，正好在窗口内
+    assert receipt_service.scan(db, today=TODAY) == 1
+    assert [link.shipment_id for link in db.query(DomesticFollowupTaskShipment).all()] == [kept.id]
+
+
+@contextmanager
+def _concurrent_write_before_update(db, table, sql):
+    """在本模块发出第一条 UPDATE <table> 之前，模拟另一事务已提交的写入。"""
+    engine = db.get_bind()
+    fired = []
+
+    def hook(conn, cursor, statement, parameters, context, executemany):
+        if not fired and statement.lstrip().upper().startswith(f"UPDATE {table.upper()}"):
+            fired.append(True)
+            cursor.execute(sql)
+
+    event.listen(engine, "before_cursor_execute", hook)
+    try:
+        yield fired
+    finally:
+        event.remove(engine, "before_cursor_execute", hook)
+
+
+def test_expire_does_not_overwrite_task_finished_concurrently(db):
+    user = make_user(db, "fu_rc_k")
+    customer = make_customer(db, user, "回访店K")
+    task = DomesticFollowupTask(task_type="receipt", customer_id=customer.id, assignee_user_id=user.id,
+                                source_key="race", title="race", due_date=TODAY - timedelta(days=10))
+    db.add(task)
+    db.flush()
+    with _concurrent_write_before_update(
+            db, "ark_domestic_followup_tasks",
+            f"UPDATE ark_domestic_followup_tasks SET status='done', closed_reason='回访完成' WHERE id={task.id}") as fired:
+        receipt_service.expire_tasks(db, today=TODAY)
+    db.expire_all()
+    assert fired and db.get(DomesticFollowupTask, task.id).status == "done"
+
+
+def test_cleanup_does_not_discard_draft_confirmed_concurrently(db):
+    user = make_user(db, "fu_rc_l")
+    draft = DomesticFollowup(author_user_id=user.id, followup_date=TODAY, request_id="rc-race", status="draft",
+                             created_at=datetime(2026, 10, 20, 9, 0), version=1)
+    db.add(draft)
+    db.flush()
+    with _concurrent_write_before_update(
+            db, "ark_domestic_followups",
+            f"UPDATE ark_domestic_followups SET status='confirmed', version=2 WHERE id={draft.id}") as fired:
+        receipt_service.cleanup_drafts(db, now=datetime(2026, 10, 30, 2, 10))
+    db.expire_all()
+    assert fired and db.get(DomesticFollowup, draft.id).status == "confirmed"
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -4337,7 +4429,7 @@ import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -4372,7 +4464,9 @@ def scan(db: Session, *, today: date | None = None) -> int:
     today = today or beijing_today()
     delay = config_service.get_config(db)["receipt_delay_days"]
     fallback = config_service.get_config(db)["fallback_assignee_user_id"]
-    start = datetime.combine(_launch_date(db, today), time.min)
+    # 超过回访过期窗口的批次不再补建（例如刚配好兜底人时），免得一次冒出一批已过期的待办
+    window_start = today - timedelta(days=delay + RECEIPT_EXPIRE_AFTER_DAYS)
+    start = datetime.combine(max(_launch_date(db, today), window_start), time.min)
     end = datetime.combine(today - timedelta(days=delay - 1), time.min)
     if end <= start:
         return 0
@@ -4418,31 +4512,37 @@ def scan(db: Session, *, today: date | None = None) -> int:
             created += int(is_new)
         except Exception as exc:  # noqa: BLE001 — 单组失败（含并发撞唯一键）不影响其他组
             savepoint.rollback()
-            logger.warning("receipt task failed customer=%s date=%s: %s", customer_id, ship_date, type(exc).__name__)
-            print(f"[domestic_followup] receipt task failed customer={customer_id}: {type(exc).__name__}", flush=True)
+            logger.warning("receipt task failed customer=%s date=%s: %s: %s", customer_id, ship_date,
+                           type(exc).__name__, str(exc)[:200])
+            print(f"[domestic_followup] receipt task failed customer={customer_id} date={ship_date}: "
+                  f"{type(exc).__name__}: {str(exc)[:200]}", flush=True)
     return created
 
 
 def expire_tasks(db: Session, *, today: date | None = None) -> int:
+    """带条件的 UPDATE：WHERE status='todo' 在写入时才判断，用户刚完成的回访不会被覆盖成过期。"""
     cutoff = (today or beijing_today()) - timedelta(days=RECEIPT_EXPIRE_AFTER_DAYS)
-    rows = (db.query(DomesticFollowupTask)
-            .filter(DomesticFollowupTask.task_type == "receipt", DomesticFollowupTask.status == "todo",
-                    DomesticFollowupTask.due_date < cutoff).all())
-    for task in rows:
-        task_service.close_task(task, "expired", CLOSE_EXPIRED)
-    db.flush()
-    return len(rows)
+    Task = DomesticFollowupTask
+    now = beijing_now()
+    result = db.execute(
+        update(Task)
+        .where(Task.task_type == "receipt", Task.status == "todo", Task.due_date < cutoff)
+        .values(status="expired", closed_reason=CLOSE_EXPIRED, closed_at=now, updated_at=now)
+        .execution_options(synchronize_session="fetch")
+    )
+    return result.rowcount
 
 
 def cleanup_drafts(db: Session, *, now: datetime | None = None) -> int:
+    """带条件的 UPDATE：WHERE status='draft' 在写入时才判断，业务员刚确认的草稿不会被作废。"""
     cutoff = (now or beijing_now()) - timedelta(days=DRAFT_TTL_DAYS)
-    rows = (db.query(DomesticFollowup)
-            .filter(DomesticFollowup.status == "draft", DomesticFollowup.created_at < cutoff).all())
-    for followup in rows:
-        followup.status = "discarded"
-        followup.version += 1
-    db.flush()
-    return len(rows)
+    result = db.execute(
+        update(DomesticFollowup)
+        .where(DomesticFollowup.status == "draft", DomesticFollowup.created_at < cutoff)
+        .values(status="discarded", version=DomesticFollowup.version + 1, updated_at=beijing_now())
+        .execution_options(synchronize_session="fetch")
+    )
+    return result.rowcount
 ```
 
 `end = 今天 − (N − 1) 天 00:00` 等价于「发货日 + N ≤ 今天」。N=3、今天 10-30 时，`end` 为 10-28 00:00：10-27 23:59 纳入，10-28 00:00 不纳入。测试 `test_groups_same_customer_same_day_and_respects_beijing_day_boundary` 覆盖了这个北京 00:00 跨日边界。
@@ -4450,7 +4550,7 @@ def cleanup_drafts(db: Session, *, now: datetime | None = None) -> int:
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `PY -m pytest tests/test_domestic_followup_receipt.py -q`
-Expected: PASS（7 passed）
+Expected: PASS（12 passed）
 
 - [ ] **Step 5: 提交**
 
@@ -4476,6 +4576,8 @@ git commit -m "feat(domestic-followup): scan shipments into receipt follow-up ta
   - 只推当天生成的那条；错过的旧日汇总不补发，因为待办本身仍在工作台里。
 - **紧急异常**：确认记录时就写进发件箱（`ref_key=item:<条目ID>`），每位接收人一行；60 秒任务负责发出。
   - 失败最多重试 5 次；未绑定钉钉的接收人直接把次数打满，避免每分钟重试。
+  - 只给在职接收人建推送：配置里的用户不存在、已停用或已删除时记 warning 并跳过。
+- **停用用户**：`build_daily` 与 `pending` 都只取 `is_active` 且未软删除的用户。
 - **三段式执行**，照搬 `app/task/scheduler.py` 的写法：准备（线程池）→ 发送（事件循环，`await notifier.send_to_users`）→ 标记（线程池）。
 - **发件箱去重**：先查唯一键，已有就跳过（09:05/09:15 补发每次都会走到，属正常路径，不打日志）；只有并发撞唯一键才走 IntegrityError 分支，并按红线 6 记 warning + print。
 - **链接**：用 `get_settings().DOMESTIC_REVIEW_NOTICE_BASE_URL + "/domestic/followups"`（config.py 没有模块级 `settings`），内贸模块已有的通知也走这个入口。
@@ -4486,7 +4588,7 @@ git commit -m "feat(domestic-followup): scan shipments into receipt follow-up ta
 
 ```python
 import asyncio
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import Mock
 
 from app.domestic_followup import config_service, digest_service
@@ -4598,6 +4700,53 @@ def test_jobs_registered(monkeypatch):
     assert calls["domestic_followup_daily_retry_15"].kwargs["minute"] == 15
     assert calls["domestic_followup_urgent"].kwargs["seconds"] == 60
     assert calls["domestic_followup_maintenance"].kwargs["hour"] == 2
+
+
+def test_inactive_or_deleted_users_get_no_digest(db):
+    gone = make_user(db, "fu_dg_f1", dingtalk_id="dt-f1")
+    removed = make_user(db, "fu_dg_f2", dingtalk_id="dt-f2")
+    customer = make_customer(db, gone, "推送店F")
+    _task(db, gone, customer, "f1", "plan", TODAY)
+    _task(db, removed, customer, "f2", "plan", TODAY)
+    db.add(DomesticFollowupDigest(user_id=removed.id, digest_date=TODAY, kind="urgent", ref_key="item:1",
+                                  title="t", markdown="m"))
+    gone.is_active = False
+    removed.deleted_at = datetime(2026, 10, 29, 9, 0)
+    db.flush()
+    assert digest_service.build_daily(db, TODAY) == 0
+    assert digest_service.pending(db, "urgent", TODAY) == []
+
+
+def test_enqueue_urgent_skips_missing_and_inactive_receivers(db):
+    author = make_user(db, "fu_dg_g1")
+    boss = make_user(db, "fu_dg_g2", dingtalk_id="dt-g2")
+    left = make_user(db, "fu_dg_g3", dingtalk_id="dt-g3")
+    left.is_active = False
+    customer = make_customer(db, author, "推送店G")
+    config_service.update_config(db, {"urgent_receiver_user_ids": [999999, left.id, boss.id]}, None, commit=False)
+    followup = DomesticFollowup(author_user_id=author.id, customer_id=customer.id, followup_date=TODAY,
+                                request_id="dg-g", status="confirmed", version=2)
+    db.add(followup)
+    db.flush()
+    item = DomesticFollowupItem(followup_id=followup.id, customer_id=customer.id, seq=1, kind="issue",
+                                text="错发", category="发货物流", severity="紧急", status="open")
+    db.add(item)
+    db.flush()
+    assert digest_service.enqueue_urgent(db, item, customer, followup, today=TODAY) == 1
+    assert [r.user_id for r in db.query(DomesticFollowupDigest).all()] == [boss.id]
+
+
+def test_failed_0900_push_is_picked_up_by_0905_retry(db):
+    user = make_user(db, "fu_dg_h", dingtalk_id="dt-h")
+    customer = make_customer(db, user, "推送店H")
+    _task(db, user, customer, "h1", "plan", TODAY)
+    db.flush()
+    digest_service.build_daily(db, TODAY)
+    first = digest_service.pending(db, "daily", TODAY)
+    digest_service.mark(db, ok_ids=[], failed_ids=[first[0]["digest_id"]])
+    assert digest_service.build_daily(db, TODAY) == 0  # 09:05 不重复建
+    retry = digest_service.pending(db, "daily", TODAY)
+    assert [p["digest_id"] for p in retry] == [first[0]["digest_id"]]
 ```
 
 `make_user` 来自 `tests/task_helpers.py`，签名是 `make_user(db, username, dingtalk_id=None)`，所以可以直接传 `dingtalk_id`。
@@ -4687,9 +4836,15 @@ def render_daily(tasks: list[DomesticFollowupTask], today: date) -> tuple[str, s
     return f"今日客户跟进 {len(tasks)} 项", "\n".join(lines)
 
 
+def _active_user_filter():
+    return ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)
+
+
 def build_daily(db: Session, today: date) -> int:
     rows = (db.query(DomesticFollowupTask)
-            .filter(DomesticFollowupTask.status == "todo", DomesticFollowupTask.due_date <= today)
+            .join(ArkUser, ArkUser.id == DomesticFollowupTask.assignee_user_id)
+            .filter(DomesticFollowupTask.status == "todo", DomesticFollowupTask.due_date <= today,
+                    *_active_user_filter())
             .order_by(DomesticFollowupTask.due_date, DomesticFollowupTask.id).all())
     by_user: dict[int, list] = defaultdict(list)
     for task in rows:
@@ -4708,6 +4863,12 @@ def enqueue_urgent(db: Session, item, customer, followup, *, today: date | None 
         logger.warning("urgent followup item=%s has no receiver configured", item.id)
         print(f"[domestic_followup] urgent item={item.id}: no receiver configured", flush=True)
         return 0
+    configured = list(dict.fromkeys(receivers))
+    active = {row[0] for row in db.query(ArkUser.id).filter(ArkUser.id.in_(configured), *_active_user_filter())}
+    skipped = [user_id for user_id in configured if user_id not in active]
+    if skipped:
+        logger.warning("urgent followup item=%s skips missing/inactive receivers %s", item.id, skipped)
+        print(f"[domestic_followup] urgent item={item.id}: skip missing/inactive receivers {skipped}", flush=True)
     author = db.get(ArkUser, followup.author_user_id)
     markdown = "\n".join([
         f"### 紧急异常：{customer.shop_name}",
@@ -4716,7 +4877,7 @@ def enqueue_urgent(db: Session, item, customer, followup, *, today: date | None 
         f"\n[查看客户跟进]({workbench_url(customer.id)})",
     ])
     created = 0
-    for user_id in dict.fromkeys(receivers):
+    for user_id in (u for u in configured if u in active):
         created += _insert(db, Digest(user_id=user_id, digest_date=today or beijing_today(), kind="urgent",
                                       ref_key=f"item:{item.id}", title=f"紧急异常·{customer.shop_name}"[:100],
                                       markdown=markdown))
@@ -4725,7 +4886,8 @@ def enqueue_urgent(db: Session, item, customer, followup, *, today: date | None 
 
 def pending(db: Session, kind: str, today: date) -> list[dict]:
     query = (db.query(Digest, ArkUser.dingtalk_id).join(ArkUser, ArkUser.id == Digest.user_id)
-             .filter(Digest.kind == kind, Digest.pushed_at.is_(None), Digest.attempts < URGENT_MAX_ATTEMPTS))
+             .filter(Digest.kind == kind, Digest.pushed_at.is_(None), Digest.attempts < URGENT_MAX_ATTEMPTS,
+                     *_active_user_filter()))
     if kind == "daily":
         query = query.filter(Digest.digest_date == today)  # 错过的旧汇总不补发
     pushes = []
@@ -4878,7 +5040,7 @@ async def maintenance_job():
 - [ ] **Step 6: 跑测试确认通过**
 
 Run: `PY -m pytest tests/test_domestic_followup_digest.py tests/test_scheduler_jobs.py -q`
-Expected: PASS
+Expected: PASS（digest 9 passed）
 
 - [ ] **Step 7: 提交**
 
@@ -5001,6 +5163,7 @@ from datetime import date
 import pytest
 
 from app.domestic_followup import followup_service, router as followup_router
+from app.domestic_followup.models import DomesticFollowup, DomesticFollowupAttachment, DomesticFollowupItem
 from tests.domestic_followup_helpers import followup_client, make_customer, make_user, seed_dicts
 
 TODAY = date(2026, 10, 30)
@@ -5069,6 +5232,49 @@ def test_config_write_requires_admin(db):
     with followup_client(db, user, permissions=("domestic_followup:read", "domestic_followup:admin")) as client:
         resp = client.put("/api/domestic-followup/config", json={"receipt_delay_days": 4})
         assert resp.status_code == 200 and resp.json()["data"]["receipt_delay_days"] == 4
+
+
+def test_cannot_read_other_users_draft(db):
+    seed_dicts(db)
+    author = make_user(db, "fu_rt_f1")
+    other = make_user(db, "fu_rt_f2")
+    draft = DomesticFollowup(author_user_id=author.id, followup_date=TODAY, request_id="rt-draft-f",
+                             status="draft", ai_status="none", version=1)
+    db.add(draft)
+    db.flush()
+    with followup_client(db, other) as client:
+        assert client.get(f"/api/domestic-followup/drafts/{draft.id}").status_code == 404
+
+
+def test_cannot_read_other_users_screenshot(db):
+    author = make_user(db, "fu_rt_g1")
+    other = make_user(db, "fu_rt_g2")
+    att = DomesticFollowupAttachment(uploader_user_id=author.id, seq=1, file_path="fu/g.png", mime_type="image/png")
+    db.add(att)
+    db.flush()
+    with followup_client(db, other) as client:
+        assert client.get(f"/api/domestic-followup/attachments/{att.id}/file").status_code == 403
+
+
+def test_cannot_resolve_item_outside_scope(db):
+    owner = make_user(db, "fu_rt_h1")
+    other = make_user(db, "fu_rt_h2")
+    customer = make_customer(db, owner, "路由店H")
+    followup = DomesticFollowup(author_user_id=owner.id, customer_id=customer.id, followup_date=TODAY,
+                                request_id="rt-item-h", status="confirmed", version=2)
+    db.add(followup)
+    db.flush()
+    item = DomesticFollowupItem(followup_id=followup.id, customer_id=customer.id, seq=1, kind="issue",
+                                text="掉色", category="质量", severity="一般", status="open",
+                                handler_user_id=owner.id)
+    db.add(item)
+    db.flush()
+    with followup_client(db, other) as client:
+        resp = client.post(f"/api/domestic-followup/items/{item.id}/resolve",
+                           json={"status": "resolved", "resolution": "x"})
+        assert resp.status_code == 403
+    db.refresh(item)
+    assert item.status == "open"
 ```
 
 - [ ] **Step 3: 跑测试确认失败**
@@ -5294,7 +5500,7 @@ routers.py 第 42 行是顶层 import，第 85 行 include，照此并排写。
 - [ ] **Step 6: 跑测试确认通过**
 
 Run: `PY -m pytest tests/test_domestic_followup_router.py -q`
-Expected: PASS（5 passed）
+Expected: PASS（8 passed）
 
 - [ ] **Step 7: 提交**
 
@@ -5315,8 +5521,10 @@ git commit -m "feat(domestic-followup): expose follow-up API under /api/domestic
 **为什么用监听而不改 `app/domestic/*`**：客户归属变化有三条路径，分别是手动改归属、公海释放、领取/分配，三处都是 ORM 赋值 `owner_user_id`。挂一个 `before_flush` 就能一次覆盖现在的三条路径，以及以后新增的路径，内贸主模块一行不动。`domestic_decision/event_hooks.py` 已经在用同样的写法。
 
 **口径**（对规格 4.5「客户转移」的落地解释，写进 Task 18 的偏差表）：
-- **旧 → 新**：旧负责人名下未完成的**约定跟进、收货回访**改派给新负责人。异常/意见任务跟着条目处理人走，不跟客户走，所以不动。
-- **旧 → 公海（None）**：旧负责人名下未完成的约定跟进、收货回访置为 cancelled，原因「客户释放」。异常/意见任务保留：问题已经发生，仍需有人闭环。
+- **公海（None）→ 新**：该客户**所有**未完成的约定跟进、收货回访转给新归属人，不限原负责人：公海期间（比如回访派给了发货经办人）只是临时承接。
+- **旧 → 新**：只把旧负责人名下未完成的**约定跟进、收货回访**改派给新负责人，不抢提成人等其他人自己承诺的约定跟进。
+- **旧 → 公海（None）**：按规格第六节「客户释放时，未完成的任务以『客户释放』关闭」，该客户**所有**未完成的约定跟进、收货回访置为 cancelled，原因「客户释放」。
+- 异常/意见任务跟着条目处理人走，不跟客户走，三种情况都不动：问题已经发生，仍需有人闭环。
 - **旧值来源**：优先取 `inspect(row).attrs.owner_user_id.history.deleted`。属性被 expire 后再赋值时 history 里没有旧值，这时用 `session.connection()` 直接读库里当前值。
 - **改法**：在 `before_flush` 里直接改 ORM 对象，改动自动并入本次 flush，同一事务提交或回滚，不会出现 identity map 里的过期对象。
 - **注册前提**：监听随 `app.domestic_followup.models` 被导入时注册。主应用和 scheduler 进程都经过 `routers.py` 导入，所以覆盖了线上所有路径。只导入 `app.domestic` 的独立脚本改归属时，不会迁移待办；这一点写进 module-notes（Task 18）。
@@ -5390,6 +5598,42 @@ def test_rollback_discards_changes(db):
     db.rollback()
     plan = db.query(DomesticFollowupTask).filter_by(task_type="plan").one()
     assert plan.assignee_user_id == old.id
+
+
+def test_public_sea_claim_moves_all_plan_and_receipt_tasks(db):
+    clerk = make_user(db, "fu_hk_e1")
+    claimer = make_user(db, "fu_hk_e2")
+    customer = make_customer(db, None, "钩子店E", creator=clerk)
+    _tasks(db, clerk, customer)  # 公海期间由录入人临时承接
+    customer.owner_user_id = claimer.id
+    db.flush()
+    db.expire_all()
+    rows = {t.task_type: t.assignee_user_id for t in db.query(DomesticFollowupTask).all()}
+    assert rows == {"plan": claimer.id, "receipt": claimer.id, "issue": clerk.id}
+
+
+def test_release_cancels_tasks_held_by_others_too(db):
+    old = make_user(db, "fu_hk_f1")
+    helper = make_user(db, "fu_hk_f2")
+    customer = make_customer(db, old, "钩子店F")
+    _tasks(db, helper, customer)  # 不在旧归属人名下的约定跟进/回访
+    customer.owner_user_id = None
+    db.flush()
+    db.expire_all()
+    rows = {t.task_type: (t.status, t.closed_reason) for t in db.query(DomesticFollowupTask).all()}
+    assert rows == {"plan": ("cancelled", "客户释放"), "receipt": ("cancelled", "客户释放"), "issue": ("todo", None)}
+
+
+def test_owner_to_owner_keeps_tasks_of_other_people(db):
+    old = make_user(db, "fu_hk_g1")
+    new = make_user(db, "fu_hk_g2")
+    helper = make_user(db, "fu_hk_g3")
+    customer = make_customer(db, old, "钩子店G")
+    _tasks(db, helper, customer)
+    customer.owner_user_id = new.id
+    db.flush()
+    db.expire_all()
+    assert {t.assignee_user_id for t in db.query(DomesticFollowupTask).all()} == {helper.id}
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -5400,10 +5644,15 @@ Expected: FAIL（assignee 没变）
 - [ ] **Step 3: 写 event_hooks.py**
 
 ```python
-"""客户归属变化 → 迁移或取消跟进待办（规格 4.5 客户转移）。
+"""客户归属变化 → 迁移或取消跟进待办（规格 4.5 客户转移、第六节客户释放）。
 
 挂在 Session before_flush 上，覆盖内贸主模块所有改 owner_user_id 的路径，
 不改 app/domestic/*。改动直接写 ORM 对象，并入同一次 flush 与同一事务。
+
+只动约定跟进 / 收货回访；异常意见跟着条目处理人走，三种情况都不动：
+- 公海 → 新归属人：公海期间是临时承接，该客户所有未完成的约定跟进 / 回访转给新归属人；
+- 旧 → 新：只转旧归属人名下的，不抢提成人等其他人自己承诺的约定跟进；
+- 旧 → 公海：该客户所有未完成的约定跟进 / 回访以「客户释放」取消。
 """
 from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session
@@ -5434,18 +5683,19 @@ def move_followup_tasks(session, _context, _instances):
         if not isinstance(row, DomesticCustomer) or not inspect(row).attrs.owner_user_id.history.has_changes():
             continue
         old, new = _old_owner(session, row), row.owner_user_id
-        if old is not None and old != new:
+        if old != new:
             changes.append((row.id, old, new))
     if not changes:
         return
     with session.no_autoflush:
         for customer_id, old, new in changes:
-            tasks = session.query(DomesticFollowupTask).filter(
+            query = session.query(DomesticFollowupTask).filter(
                 DomesticFollowupTask.customer_id == customer_id, DomesticFollowupTask.status == "todo",
                 DomesticFollowupTask.task_type.in_(OWNER_BOUND_TYPES),
-                DomesticFollowupTask.assignee_user_id == old,
-            ).all()
-            for task in tasks:
+            )
+            if old is not None and new is not None:
+                query = query.filter(DomesticFollowupTask.assignee_user_id == old)
+            for task in query.all():
                 if new is None:
                     task.status = "cancelled"
                     task.closed_reason = CLOSE_RELEASED
@@ -5467,7 +5717,7 @@ event_hooks 要 import models，这里形成循环导入。因为 import 写在 
 - [ ] **Step 4: 跑测试确认通过，并回归内贸客户测试**
 
 Run: `PY -m pytest tests/test_domestic_followup_owner_hooks.py -q && PY -m pytest tests -q -k "domestic and customer" -x --ignore=tests/portal_mysql`
-Expected: PASS（4 passed；回归 187 passed，与改动前基线一致）。不加 `--ignore=tests/portal_mysql` 时，`tests/portal_mysql/conftest.py` 在收集阶段读不到 `portal_full_chain` 选项会直接 INTERNALERROR，与本改动无关。第二条用来确认监听没有拖垮现有的客户归属测试。如果出现与本监听无关的既有失败，先跑 `git stash` 前后对比确认，再如实记录。
+Expected: PASS（7 passed；回归 187 passed，与改动前基线一致）。不加 `--ignore=tests/portal_mysql` 时，`tests/portal_mysql/conftest.py` 在收集阶段读不到 `portal_full_chain` 选项会直接 INTERNALERROR，与本改动无关。第二条用来确认监听没有拖垮现有的客户归属测试。如果出现与本监听无关的既有失败，先跑 `git stash` 前后对比确认，再如实记录。
 
 - [ ] **Step 5: 提交**
 

@@ -3,7 +3,7 @@ import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -38,7 +38,9 @@ def scan(db: Session, *, today: date | None = None) -> int:
     today = today or beijing_today()
     delay = config_service.get_config(db)["receipt_delay_days"]
     fallback = config_service.get_config(db)["fallback_assignee_user_id"]
-    start = datetime.combine(_launch_date(db, today), time.min)
+    # 超过回访过期窗口的批次不再补建（例如刚配好兜底人时），免得一次冒出一批已过期的待办
+    window_start = today - timedelta(days=delay + RECEIPT_EXPIRE_AFTER_DAYS)
+    start = datetime.combine(max(_launch_date(db, today), window_start), time.min)
     end = datetime.combine(today - timedelta(days=delay - 1), time.min)
     if end <= start:
         return 0
@@ -84,28 +86,34 @@ def scan(db: Session, *, today: date | None = None) -> int:
             created += int(is_new)
         except Exception as exc:  # noqa: BLE001 — 单组失败（含并发撞唯一键）不影响其他组
             savepoint.rollback()
-            logger.warning("receipt task failed customer=%s date=%s: %s", customer_id, ship_date, type(exc).__name__)
-            print(f"[domestic_followup] receipt task failed customer={customer_id}: {type(exc).__name__}", flush=True)
+            logger.warning("receipt task failed customer=%s date=%s: %s: %s", customer_id, ship_date,
+                           type(exc).__name__, str(exc)[:200])
+            print(f"[domestic_followup] receipt task failed customer={customer_id} date={ship_date}: "
+                  f"{type(exc).__name__}: {str(exc)[:200]}", flush=True)
     return created
 
 
 def expire_tasks(db: Session, *, today: date | None = None) -> int:
+    """带条件的 UPDATE：WHERE status='todo' 在写入时才判断，用户刚完成的回访不会被覆盖成过期。"""
     cutoff = (today or beijing_today()) - timedelta(days=RECEIPT_EXPIRE_AFTER_DAYS)
-    rows = (db.query(DomesticFollowupTask)
-            .filter(DomesticFollowupTask.task_type == "receipt", DomesticFollowupTask.status == "todo",
-                    DomesticFollowupTask.due_date < cutoff).all())
-    for task in rows:
-        task_service.close_task(task, "expired", CLOSE_EXPIRED)
-    db.flush()
-    return len(rows)
+    Task = DomesticFollowupTask
+    now = beijing_now()
+    result = db.execute(
+        update(Task)
+        .where(Task.task_type == "receipt", Task.status == "todo", Task.due_date < cutoff)
+        .values(status="expired", closed_reason=CLOSE_EXPIRED, closed_at=now, updated_at=now)
+        .execution_options(synchronize_session="fetch")
+    )
+    return result.rowcount
 
 
 def cleanup_drafts(db: Session, *, now: datetime | None = None) -> int:
+    """带条件的 UPDATE：WHERE status='draft' 在写入时才判断，业务员刚确认的草稿不会被作废。"""
     cutoff = (now or beijing_now()) - timedelta(days=DRAFT_TTL_DAYS)
-    rows = (db.query(DomesticFollowup)
-            .filter(DomesticFollowup.status == "draft", DomesticFollowup.created_at < cutoff).all())
-    for followup in rows:
-        followup.status = "discarded"
-        followup.version += 1
-    db.flush()
-    return len(rows)
+    result = db.execute(
+        update(DomesticFollowup)
+        .where(DomesticFollowup.status == "draft", DomesticFollowup.created_at < cutoff)
+        .values(status="discarded", version=DomesticFollowup.version + 1, updated_at=beijing_now())
+        .execution_options(synchronize_session="fetch")
+    )
+    return result.rowcount

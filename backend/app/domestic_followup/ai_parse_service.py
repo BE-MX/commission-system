@@ -122,7 +122,9 @@ def bounded_confidence(value) -> float:
     """置信度只认 [0, 1]：模型写成 86（百分制）或负数都按无效处理，免得越过门槛。"""
     try:
         value = float(value or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        logger.warning("followup AI confidence not numeric: %s", type(exc).__name__)
+        print(f"[domestic_followup] AI confidence not numeric: {type(exc).__name__}", flush=True)
         return 0.0
     return value if 0.0 <= value <= 1.0 else 0.0
 

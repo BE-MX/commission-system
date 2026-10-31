@@ -75,9 +75,15 @@ def render_daily(tasks: list[DomesticFollowupTask], today: date) -> tuple[str, s
     return f"今日客户跟进 {len(tasks)} 项", "\n".join(lines)
 
 
+def _active_user_filter():
+    return ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)
+
+
 def build_daily(db: Session, today: date) -> int:
     rows = (db.query(DomesticFollowupTask)
-            .filter(DomesticFollowupTask.status == "todo", DomesticFollowupTask.due_date <= today)
+            .join(ArkUser, ArkUser.id == DomesticFollowupTask.assignee_user_id)
+            .filter(DomesticFollowupTask.status == "todo", DomesticFollowupTask.due_date <= today,
+                    *_active_user_filter())
             .order_by(DomesticFollowupTask.due_date, DomesticFollowupTask.id).all())
     by_user: dict[int, list] = defaultdict(list)
     for task in rows:
@@ -96,6 +102,12 @@ def enqueue_urgent(db: Session, item, customer, followup, *, today: date | None 
         logger.warning("urgent followup item=%s has no receiver configured", item.id)
         print(f"[domestic_followup] urgent item={item.id}: no receiver configured", flush=True)
         return 0
+    configured = list(dict.fromkeys(receivers))
+    active = {row[0] for row in db.query(ArkUser.id).filter(ArkUser.id.in_(configured), *_active_user_filter())}
+    skipped = [user_id for user_id in configured if user_id not in active]
+    if skipped:
+        logger.warning("urgent followup item=%s skips missing/inactive receivers %s", item.id, skipped)
+        print(f"[domestic_followup] urgent item={item.id}: skip missing/inactive receivers {skipped}", flush=True)
     author = db.get(ArkUser, followup.author_user_id)
     markdown = "\n".join([
         f"### 紧急异常：{customer.shop_name}",
@@ -104,7 +116,7 @@ def enqueue_urgent(db: Session, item, customer, followup, *, today: date | None 
         f"\n[查看客户跟进]({workbench_url(customer.id)})",
     ])
     created = 0
-    for user_id in dict.fromkeys(receivers):
+    for user_id in (u for u in configured if u in active):
         created += _insert(db, Digest(user_id=user_id, digest_date=today or beijing_today(), kind="urgent",
                                       ref_key=f"item:{item.id}", title=f"紧急异常·{customer.shop_name}"[:100],
                                       markdown=markdown))
@@ -113,7 +125,8 @@ def enqueue_urgent(db: Session, item, customer, followup, *, today: date | None 
 
 def pending(db: Session, kind: str, today: date) -> list[dict]:
     query = (db.query(Digest, ArkUser.dingtalk_id).join(ArkUser, ArkUser.id == Digest.user_id)
-             .filter(Digest.kind == kind, Digest.pushed_at.is_(None), Digest.attempts < URGENT_MAX_ATTEMPTS))
+             .filter(Digest.kind == kind, Digest.pushed_at.is_(None), Digest.attempts < URGENT_MAX_ATTEMPTS,
+                     *_active_user_filter()))
     if kind == "daily":
         query = query.filter(Digest.digest_date == today)  # 错过的旧汇总不补发
     pushes = []

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import Mock
 
 from app.domestic_followup import config_service, digest_service
@@ -111,3 +111,50 @@ def test_jobs_registered(monkeypatch):
     assert calls["domestic_followup_daily_retry_15"].kwargs["minute"] == 15
     assert calls["domestic_followup_urgent"].kwargs["seconds"] == 60
     assert calls["domestic_followup_maintenance"].kwargs["hour"] == 2
+
+
+def test_inactive_or_deleted_users_get_no_digest(db):
+    gone = make_user(db, "fu_dg_f1", dingtalk_id="dt-f1")
+    removed = make_user(db, "fu_dg_f2", dingtalk_id="dt-f2")
+    customer = make_customer(db, gone, "推送店F")
+    _task(db, gone, customer, "f1", "plan", TODAY)
+    _task(db, removed, customer, "f2", "plan", TODAY)
+    db.add(DomesticFollowupDigest(user_id=removed.id, digest_date=TODAY, kind="urgent", ref_key="item:1",
+                                  title="t", markdown="m"))
+    gone.is_active = False
+    removed.deleted_at = datetime(2026, 10, 29, 9, 0)
+    db.flush()
+    assert digest_service.build_daily(db, TODAY) == 0
+    assert digest_service.pending(db, "urgent", TODAY) == []
+
+
+def test_enqueue_urgent_skips_missing_and_inactive_receivers(db):
+    author = make_user(db, "fu_dg_g1")
+    boss = make_user(db, "fu_dg_g2", dingtalk_id="dt-g2")
+    left = make_user(db, "fu_dg_g3", dingtalk_id="dt-g3")
+    left.is_active = False
+    customer = make_customer(db, author, "推送店G")
+    config_service.update_config(db, {"urgent_receiver_user_ids": [999999, left.id, boss.id]}, None, commit=False)
+    followup = DomesticFollowup(author_user_id=author.id, customer_id=customer.id, followup_date=TODAY,
+                                request_id="dg-g", status="confirmed", version=2)
+    db.add(followup)
+    db.flush()
+    item = DomesticFollowupItem(followup_id=followup.id, customer_id=customer.id, seq=1, kind="issue",
+                                text="错发", category="发货物流", severity="紧急", status="open")
+    db.add(item)
+    db.flush()
+    assert digest_service.enqueue_urgent(db, item, customer, followup, today=TODAY) == 1
+    assert [r.user_id for r in db.query(DomesticFollowupDigest).all()] == [boss.id]
+
+
+def test_failed_0900_push_is_picked_up_by_0905_retry(db):
+    user = make_user(db, "fu_dg_h", dingtalk_id="dt-h")
+    customer = make_customer(db, user, "推送店H")
+    _task(db, user, customer, "h1", "plan", TODAY)
+    db.flush()
+    digest_service.build_daily(db, TODAY)
+    first = digest_service.pending(db, "daily", TODAY)
+    digest_service.mark(db, ok_ids=[], failed_ids=[first[0]["digest_id"]])
+    assert digest_service.build_daily(db, TODAY) == 0  # 09:05 不重复建
+    retry = digest_service.pending(db, "daily", TODAY)
+    assert [p["digest_id"] for p in retry] == [first[0]["digest_id"]]
