@@ -30,9 +30,18 @@ def execute(db, fn):
         return ok(result)
     except (ValueError, IntegrityError) as exc:
         db.rollback()
+        from app.commerce_shadow.hooks import record_after_rollback
+        record_after_rollback(db, exc)
         logger.warning("receipt request rejected (%s)", type(exc).__name__)
         print(f"[receipt] request rejected ({type(exc).__name__})", flush=True)
         raise HTTPException(409, "数据已被更新或提交，请刷新确认原单" if isinstance(exc, IntegrityError) else str(exc)) from exc
+    except Exception as exc:
+        db.rollback()
+        from app.commerce_shadow.hooks import record_after_rollback
+        record_after_rollback(db, exc)
+        logger.warning("receipt request failed (%s)", type(exc).__name__)
+        print(f"[receipt] request failed ({type(exc).__name__})", flush=True)
+        raise
 
 
 @router.get("", summary="List receipts within invoice ownership scope")
@@ -164,8 +173,14 @@ def proof(identity: str, request: Request, db: Session = Depends(get_db), user=D
 @router.post("", summary="Create receipt and queue delivery with idempotency")
 def create(body: ReceiptCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
     def apply():
-        row, invoice = create_service.create(db, body, user)
-        return service.describe(db, row, invoice, detail=True)
+        from app.commerce_shadow import hooks
+        try:
+            row, invoice = create_service.create(db, body, user)
+            hooks.accepted(db, action="legacy.receipt.create", body=body, user=user, result=row, invoice_id=invoice.id)
+            return service.describe(db, row, invoice, detail=True)
+        except Exception as exc:
+            hooks.stage_failure(db, action="legacy.receipt.create", body=body, user=user, error=exc, invoice_id=body.invoice_id)
+            raise
     try:
         return execute(db, apply)
     except SQLAlchemyError as error:
@@ -182,8 +197,14 @@ def detail(identity: int, db: Session = Depends(get_db), user=Depends(get_curren
 @router.patch("/{identity}", summary="Correct a receipt before remote acceptance")
 def edit(identity: int, body: ReceiptUpdate, db: Session = Depends(get_db), user=Depends(get_current_user)):
     def apply():
-        row, invoice = edit_service.edit(db, identity, body, user)
-        return service.describe(db, row, invoice, detail=True)
+        from app.commerce_shadow import hooks
+        try:
+            row, invoice = edit_service.edit(db, identity, body, user)
+            hooks.accepted(db, action="legacy.receipt.edit", body=body, user=user, result=row, target_id=identity, invoice_id=invoice.id)
+            return service.describe(db, row, invoice, detail=True)
+        except Exception as exc:
+            hooks.stage_failure(db, action="legacy.receipt.edit", body=body, user=user, error=exc, target_id=identity)
+            raise
     try:
         return execute(db, apply)
     except SQLAlchemyError as error:

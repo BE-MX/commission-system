@@ -7,7 +7,6 @@ from app.core.time import beijing_now
 
 class Receipt(Base):
     __tablename__ = "ark_receipts"
-    __table_args__ = (UniqueConstraint("batch_id", "receivable_id", name="uq_receipt_batch_target"),)
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     receipt_no = Column(String(64), nullable=False, unique=True, comment='方舟回款编号')
     invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id"), nullable=False, index=True, comment='关联方舟订单发票 ID')
@@ -23,6 +22,8 @@ class Receipt(Base):
     collection_date = Column(Date, nullable=False, comment='回款业务日期，北京时间')
     payment_type = Column(String(64), nullable=False, comment='小满回款方式枚举值')
     bank_charge = Column(Numeric(14, 2), nullable=False, default=0, comment='原币银行手续费')
+    reversed_amount = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment='本地核销累计冲回金额，原核销事实不覆盖')
+    reversed_bank_charge = Column(Numeric(14, 2), nullable=False, default=0, server_default="0", comment='本地核销累计冲回客户附加费')
     remark = Column(String(500), comment='回款备注')
     attachment_ids = Column(JSON, nullable=False, default=list, comment='私有回款凭证资源 ID 列表')
     customer_id = Column(String(64), nullable=False, comment='小满客户 ID 快照')
@@ -46,6 +47,14 @@ class Receipt(Base):
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment='创建时间，北京时间')
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment='最近更新时间，北京时间')
     synced_at = Column(DateTime, comment='最近确认小满结果时间，北京时间')
+
+    @property
+    def effective_amount(self):
+        return self.amount - (self.reversed_amount or 0)
+
+    @property
+    def effective_bank_charge(self):
+        return self.bank_charge - (self.reversed_bank_charge or 0)
 
 
 class ReceiptAttempt(Base):
@@ -119,3 +128,4 @@ class ReceiptLog(Base):
 
 # Register linked ledger tables for isolated tests and migration metadata.
 from app.invoice import settlement_models as _settlement_models  # noqa: E402,F401
+from app.finance import models as _finance_models  # noqa: E402,F401

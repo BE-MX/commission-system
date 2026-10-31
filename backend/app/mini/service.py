@@ -26,6 +26,8 @@ def _bj_now():
 
 def _build_product_display(db: Session, product_id: int) -> str:
     """从 okki_products 组装产品显示字符串，优先 color;size寸;unit;description，逐级 fallback"""
+    if product_id is None:
+        return ""
     settings = get_settings()
     biz = settings.BUSINESS_DB_NAME
     sql = text(f"""
@@ -60,6 +62,7 @@ def _build_product_display(db: Session, product_id: int) -> str:
 
 def _batch_product_displays(db: Session, product_ids: list[int]) -> dict[int, str]:
     """批量查询 okki_products 组装显示字符串，返回 {product_id: display_str}"""
+    product_ids = [identity for identity in product_ids if identity is not None]
     if not product_ids:
         return {}
     settings = get_settings()
@@ -247,6 +250,10 @@ def scan_product(db: Session, order_product_id: int, sign: str, current_user: Ar
 
 def submit_report(db: Session, progress_id: int, order_product_id: int, current_user: ArkUser) -> dict:
     """提交报工"""
+    item = db.get(ProductionOrderItem, order_product_id)
+    if item is not None and item.local_sku_id is not None:
+        from app.production.local_report_service import submit
+        return submit(db, progress_id, order_product_id, current_user)
     # Step 1: 幂等检查
     progress = db.query(OrderProductProcessProgress).get(progress_id)
     if not progress:
@@ -377,7 +384,7 @@ def get_today_history(db: Session, user_id: int) -> dict:
             "order_product_id": r.order_product_id,
             "product_name": r.product_name,
             "model": r.model,
-            "product_display": displays.get(r.product_id, ""),
+            "product_display": displays.get(r.product_id) or r.product_name or "",
             "order_qty": r.order_qty,
             "process_name": r.process_name,
             "step_order": r.step_order,
@@ -445,7 +452,7 @@ def get_history(db: Session, user_id: int, page: int = 1, page_size: int = 20,
             "order_product_id": r.order_product_id,
             "product_name": r.product_name,
             "model": r.model,
-            "product_display": displays.get(r.product_id, ""),
+            "product_display": displays.get(r.product_id) or r.product_name or "",
             "order_qty": r.order_qty,
             "process_name": r.process_name,
             "step_order": r.step_order,
@@ -531,7 +538,7 @@ def get_overview(db: Session, date_start: str = None, date_end: str = None) -> d
             "order_product_id": r.order_product_id,
             "product_name": r.product_name,
             "model": r.model,
-            "product_display": displays.get(r.product_id, ""),
+            "product_display": displays.get(r.product_id) or r.product_name or "",
             "order_qty": r.order_qty,
             "process_name": r.process_name,
             "step_order": r.step_order,
@@ -608,7 +615,7 @@ def get_overview_detail(db: Session, date: str, process_id: int) -> dict:
             "order_product_id": r.order_product_id,
             "product_name": r.product_name,
             "model": r.model,
-            "product_display": displays.get(r.product_id, ""),
+            "product_display": displays.get(r.product_id) or r.product_name or "",
             "order_qty": r.order_qty,
             "process_name": r.process_name,
             "step_order": r.step_order,
@@ -626,6 +633,10 @@ def revoke_report(db: Session, progress_id: int, current_user: ArkUser) -> dict:
     progress = db.query(OrderProductProcessProgress).get(progress_id)
     if not progress:
         return {"success": False, "message": "工序进度记录不存在"}
+    item = db.get(ProductionOrderItem, progress.order_product_id)
+    if item is not None and item.local_sku_id is not None:
+        from app.production.local_report_service import revoke
+        return revoke(db, progress_id, current_user)
 
     if progress.status != 1:
         return {"success": False, "message": "该工序未完成，无需撤销"}

@@ -5,7 +5,7 @@ from copy import deepcopy
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.invoice import okki_client
+from app.invoice import okki_client, legacy_sending
 from app.portal.access_policy import employee_principal
 from app.portal.errors import PortalError
 from app.shipping_inspection import outbound_prepare as prepare, outbound_facts as facts
@@ -29,6 +29,9 @@ def local(db,record,user,warehouse,*,attempt=None,actions=None,sender=False):
     original=prepare.mirror(db,record,actor,warehouse)
     invoice,event,business,binding,local_data=prepare.capture(db,original,actor,executing=True)
     if attempt:
+        if sender:
+            if attempt.data.get('authority_epoch') is None: prepare.reject(409, '历史发送任务缺少办理权版本，只能核对原结果')
+            legacy_sending.authorize(db, invoice, attempt.data['authority_epoch'])
         facts.validate(db,attempt)
         if (invoice.id!=attempt.data['invoice_id'] or original!=attempt.data['record']
                 or plans.digest(business)!=attempt.data['binding_fingerprint']
@@ -74,7 +77,10 @@ def before_send(db,attempt,local_data):
         if read_order(db,local_data['dto'],local_data['products'])!=order or prepare.read_outbound(db,expected['outbound_invoice_id'])!=expected:
             prepare.reject(409,'发送前订单回读已变化')
         from app.invoice.stock_reservations import require_additional
-        require_additional(db,attempt.data['payload'],before=expected,invoice_id=attempt.data['invoice_id'])
+        try:
+            require_additional(db,attempt.data['payload'],before=expected,invoice_id=attempt.data['invoice_id'])
+        except ValueError as exc:
+            prepare.reject(409,str(exc))
     except HTTPException:raise
     except (ValueError,KeyError,TypeError):prepare.reject(503,'发送前原出库证据不完整')
     except okki_client.OkkiApiError:unavailable()
@@ -101,12 +107,20 @@ def claim(db,record,user,warehouse,plan,binding,auto_recall,source,payload=None,
     return attempt
 
 
-def post(db,attempt,access_token):
+def post(db,attempt,access_token,ticket):
     if db.in_transaction() or db.new or db.dirty or db.deleted:
         prepare.reject(409,'出库外发必须在本地事务结束后执行')
+    # The claim commit can yield to another request. Re-read the original
+    # mutable task as well as its immutable START before consuming this ticket;
+    # a displaced nonce must never send the old worker's plan.
+    try:
+        local(db,attempt.data['record'],{'sub':str(attempt.data['actor_id'])},attempt.data['warehouse'],
+            attempt=attempt,actions=('sync_sending',),sender=True)
+    finally:
+        clear(db)
     outcome='unknown';result=None
     try:
-        result=okki_client._post_json('/v1/invoices/outbound/push',access_token,
+        result=legacy_sending.invoke(db,ticket,'/v1/invoices/outbound/push',access_token,
                                      attempt.data['payload'],context='同步原出库单')
         if result is None:
             outcome='auth_rejected'
@@ -124,14 +138,59 @@ def post(db,attempt,access_token):
 
 
 def send_attempt(db,record,user,warehouse,attempt,access_token,local_data):
-    before_send(db,attempt,local_data)
-    _,_,_,event,_,_,_=local(db,record,user,warehouse,attempt=attempt,actions=('sync_pending',),sender=True)
+    try:
+        before_send(db,attempt,local_data)
+    except HTTPException:
+        finish_unsent(db,attempt)
+        raise
+    _,_,invoice,event,_,_,_=local(db,record,user,warehouse,attempt=attempt,actions=('sync_pending',),sender=True)
     if facts.get(db,facts.SEND,attempt.nonce) is not None:prepare.reject(409,'原发送授权已使用，禁止重复外发')
     facts.mark_sending(db,attempt)
     event.action='sync_sending'
+    from app.commerce_shadow.hooks import capture_legacy_outbound
+    command_input=capture_legacy_outbound(db,invoice,attempt.data['payload'],attempt.data['actor_id'],
+        request_key=f'legacy:outbound-sync:{attempt.nonce}',operation='update',before=attempt.data['plan']['before'])
+    ticket = legacy_sending.start(db, invoice, f'legacy:outbound-sync:{attempt.nonce}', 'outbound_update', attempt.data['payload'],
+        {'actor_id': attempt.data['actor_id'], 'nonce': attempt.nonce, 'outbound_record_id': attempt.data['record']['outbound_record_id'], 'binding_hash': attempt.data['binding_fingerprint'], 'inspection': attempt.data['plan'].get('inspection'), 'command_input':command_input}, attempt.data['authority_epoch'])
     db.commit();clear(db)  # Unknown ACK stops POST; recovery will use the original nonce/GET only.
-    post(db,attempt,access_token)
+    outcome=post(db,attempt,access_token,ticket)
+    if outcome=='auth_rejected':
+        finish_rejected(db,record,user,warehouse,attempt)
+        prepare.reject(409,'小满凭证已失效，本次未生效，请更新凭证后重新预览')
     return verify(db,record,user,warehouse,attempt,sender=True)
+
+
+def finish_unsent(db,attempt):
+    """Close only a preparation proven to have no durable send authorization."""
+    facts.original_lock(db,attempt)
+    facts.validate(db,attempt)
+    event=facts.get(db,state.SCOPE,attempt.data['record']['outbound_record_id'],lock=True)
+    if (event is None or event.action!='sync_pending' or event.payload!=facts.event_payload(attempt)
+            or facts.get(db,facts.SEND,attempt.nonce) is not None
+            or legacy_sending.find(db,f'legacy:outbound-sync:{attempt.nonce}') is not None):
+        clear(db)
+        prepare.reject(409,'原准备已获得发送责任，只能核对原结果')
+    event.action='sync_failed'
+    event.result={**(event.result or {}),'message':'发送前核验未通过，本次未发送，请重新预览'}
+    facts.append(db,facts.FINISH,attempt.nonce,attempt,facts.identity(attempt),
+        {'facts_fingerprint':facts.fingerprint(db,attempt,include_reads=False),'not_sent':True})
+    db.commit();clear(db)
+
+
+def finish_rejected(db,record,user,warehouse,attempt):
+    """A conclusive credential rejection preserves the prior printable overlay."""
+    _,_,_,event,_,_,_=local(db,record,user,warehouse,attempt=attempt,
+        actions=('sync_sending','sync_uncertain'))
+    original=facts.get(db,facts.FACT,attempt.nonce)
+    claim=legacy_sending.find(db,f'legacy:outbound-sync:{attempt.nonce}')
+    if (original is None or original.result.get('result_class')!='auth_rejected'
+            or claim is None or claim.state!='failed'):
+        prepare.reject(409,'原鉴权拒绝证据不完整，请核对原任务')
+    event.action='sync_failed'
+    event.result={**(event.result or {}),'message':'小满凭证已失效，本次未生效，请更新凭证后重新预览'}
+    facts.append(db,facts.FINISH,attempt.nonce,attempt,facts.identity(attempt),
+        {'facts_fingerprint':facts.fingerprint(db,attempt,include_reads=False),'auth_rejected':True})
+    db.commit();clear(db)
 
 
 def verify(db,record,user,warehouse,attempt,*,sender=False):
@@ -157,6 +216,9 @@ def verify(db,record,user,warehouse,attempt,*,sender=False):
         print('[outbound-execution] readback unavailable',flush=True)
     finally:clear(db)
     # Freeze the set BEFORE GET; newly arrived original facts invalidate that evidence.
+    if verified:
+        legacy_sending.finish(db, f'legacy:outbound-sync:{attempt.nonce}', 'succeeded',
+            {'original_readback_hash': plans.digest(after)}, str(attempt.data['record']['outbound_invoice_id']))
     facts.original_lock(db,attempt)
     changed_facts=any(facts.fingerprint(db,item)!=before_facts[item.nonce] for item in facts.chain(db,attempt))
     facts.observe(db,attempt,'verified' if verified else 'partial' if partial else 'unknown',after,reading=True)
@@ -179,6 +241,9 @@ def verify(db,record,user,warehouse,attempt,*,sender=False):
     else:
         result=legacy._finish_verified(db,event,attempt.data['plan'],after,commit_result=False,finisher_id=actor['id'])
         if result['status']=='sync_done':
+            legacy_sending.observe_formal(db,f'legacy:outbound-sync:{attempt.nonce}',
+                'legacy.outbound.remote','accepted',result_row=event,actor_id=attempt.data['actor_id'],
+                evidence_ref={'original_readback_hash':plans.digest(after)})
             # Inspection/recall/overlay and original FINISH commit atomically.
             db.flush()
             finished_record=prepare.mirror(db,record,actor,warehouse)
@@ -198,6 +263,11 @@ def verify(db,record,user,warehouse,attempt,*,sender=False):
 def recover(db,record,user,warehouse,event,attempt,*,repair=False,check_only=False):
     action=event.action
     sent=facts.get(db,facts.SEND,attempt.nonce) is not None
+    original=facts.get(db,facts.FACT,attempt.nonce)
+    if original is not None and original.result.get('result_class')=='auth_rejected':
+        db.commit();clear(db)
+        finish_rejected(db,record,user,warehouse,attempt)
+        prepare.reject(409,'小满凭证已失效，本次未生效，请更新凭证后重新预览')
     if action in ('sync_pending','sync_sending') and not facts.expired(attempt):
         invoice_id=attempt.data['invoice_id'];db.commit();clear(db)
         return response(db,record,user,invoice_id,warehouse,

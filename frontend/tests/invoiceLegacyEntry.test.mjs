@@ -26,8 +26,8 @@ test('editor shares one form state between new and legacy drawers', () => {
   assert.match(editor, /const legacyVisible = ref\(false\)/)
   assert.match(editor, /async function prepareCreate/)
   // 同一套初始化流程，只是打开不同的抽屉
-  assert.match(editor, /await prepareCreate\(orderType\)\s*\n\s*drawerVisible\.value = true/)
-  assert.match(editor, /await prepareCreate\(orderType\)\s*\n\s*legacyVisible\.value = true/)
+  assert.match(editor, /await prepareCreate\(orderType\)\s*\n\s*if \(ticket !== entrySequence\) return\s*\n\s*drawerVisible\.value = true/)
+  assert.match(editor, /await prepareCreate\(orderType\)\s*\n\s*if \(ticket !== entrySequence\) return\s*\n\s*legacyVisible\.value = true/)
 })
 
 test('legacy drawer restores the HEAD-era layout with legacy companions', () => {

@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from sqlalchemy import bindparam, text
 
 from app.core.config import get_settings
+from app.trade.service import formal_projection_enabled as local_mode
 from app.dingtalk.gmv_daily_service import VALID_ORDER_SQL
 from app.battle_report.pace import calendar_progress, pace_metrics
 
@@ -18,6 +19,21 @@ def money(value):
 def source_orders(db, report, members, now):
     if not members or now.date() < report.start_date:
         return [], []
+    if local_mode(db):
+        from app.trade.query_service import load_orders
+        from app.trade.refresh_service import projection_status
+        rows = load_orders(db, owner_ids=[m.ark_user_id for m in members],
+            date_from=report.start_date, date_to=min(report.end_date, now.date()))
+        raw = [{**row, "order_id": row["order_key"]} for row in rows]
+        orders, issues = normalize_orders(raw, report, members, now.date(), native=True)
+        from app.trade.return_adjustments import load_return_adjustments
+        _append_returns(orders, load_return_adjustments(db, report.start_date,
+            min(report.end_date, now.date()), owner_ids=[m.ark_user_id for m in members]),
+            {str(m.ark_user_id): m for m in members})
+        if projection_status(db, owner_ids=[m.ark_user_id for m in members],
+                date_from=report.start_date, date_to=min(report.end_date, now.date()))["status"] != "current":
+            issues.extend({"member_id": m.id, "order_no": None, "reason": "本地订单统计更新中"} for m in members)
+        return orders, issues
     schema = get_settings().BUSINESS_DB_NAME
     # Schema comes from validated Settings, never request input. Business mirror is read-only.
     statement = text(f"""
@@ -34,7 +50,12 @@ def source_orders(db, report, members, now):
     orders, issues = normalize_orders(raw, report, members, now.date())
     from app.sales_return.gmv import adjustments
     by_user = {str(m.okki_user_id): m for m in members}
-    for fact in adjustments(db, report.start_date, min(report.end_date, now.date()), by_user):
+    _append_returns(orders, adjustments(db, report.start_date, min(report.end_date, now.date()), by_user), by_user)
+    return orders, issues
+
+
+def _append_returns(orders, facts, by_user):
+    for fact in facts:
         member = by_user[fact["owner"]]
         orders.append({"order_id": fact["order_id"], "fact_key": fact["fact_key"],
                        "source_type": "sales_return", "return_id": fact["return_id"],
@@ -42,11 +63,10 @@ def source_orders(db, report, members, now):
                        "member_id": member.id, "user_name": member.user_name, "team": member.team,
                        "company_name": fact["customer_name"], "status_name": "退货冲减" if fact["amount"] < 0 else "退货冲销",
                        "amount_usd": money(fact["amount"]), "included_usd": money(fact["amount"])})
-    return orders, issues
 
 
-def normalize_orders(raw, report, members, today):
-    by_user = {m.okki_user_id: m for m in members}
+def normalize_orders(raw, report, members, today, *, native=False):
+    by_user = {str(m.ark_user_id if native else m.okki_user_id): m for m in members}
     seen, conflicts, issues = {}, set(), []
     for row in raw:
         row = dict(row)

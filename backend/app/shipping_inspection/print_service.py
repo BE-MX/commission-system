@@ -95,12 +95,12 @@ def _missing_print_models(db, items: list[dict]) -> dict[str, str]:
 def annotate_print_items(db, items: list[dict]) -> list[dict]:
     """打印/Word 专用：补类别和空规格，过滤 Other Items；不改动扫描/验货明细。"""
     items = items or []
-    accessory_ids = _accessory_product_ids(db)
-    models = _missing_print_models(db, items)
+    accessory_ids = _accessory_product_ids(db) if any(item.get("transaction_mode") != "local" for item in items) else set()
+    models = _missing_print_models(db, [item for item in items if item.get("transaction_mode") != "local"])
     result = []
     for item in items:
         product_id = _product_id_key(item.get("product_id"))
-        kind = "accessory" if product_id and product_id in accessory_ids else "hair"
+        kind = item.get("product_kind", "hair") if item.get("transaction_mode") == "local" else "accessory" if product_id and product_id in accessory_ids else "hair"
         annotated = {**item, "product_kind": kind}
         if is_other_accessory(annotated):
             continue
@@ -116,6 +116,8 @@ def _with_live_outbound_handler(db, record: dict) -> dict:
     from sqlalchemy.exc import SQLAlchemyError
     from app.invoice import okki_client
 
+    if record.get("transaction_mode") == "local":
+        return record
     invoice_id = record.get("outbound_invoice_id")
     if not invoice_id:
         # Legacy mirror schemas without the OKKI invoice bridge retain their

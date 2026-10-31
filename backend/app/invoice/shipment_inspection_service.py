@@ -14,6 +14,10 @@ from app.shipping_inspection.models import ShippingInspection, ShippingOperation
 
 
 def lock_for_record(db, record_id):
+    from app.shipping_inspection import local_outbound_service
+    native = local_outbound_service.lock_for_edit(db, str(record_id))
+    if native is not None:
+        return native
     record = outbound_service.get_outbound_record(db, str(record_id))
     remote_id = record.get('outbound_invoice_id') if record else None
     if not remote_id:

@@ -84,6 +84,10 @@ def query_stock_overview(
     items 已经包含 stock_status / stock_items, 前端无需二次请求。
     """
     settings = get_settings()
+    if settings.TRANSACTION_MODE == "local":
+        from app.stock.local_query_service import query
+        return query(db, page=page, page_size=page_size, status_filter=status_filter, sort_by=sort_by,
+            order=order, keyword=keyword, model=model, product_type=product_type, size=size, color=color, weight=weight)
     business_db = settings.BUSINESS_DB_NAME
     today = beijing_today()
     d30 = today - timedelta(days=30)
@@ -291,6 +295,9 @@ def _source_label_or_empty(source_int) -> str:
 def get_filter_options(db: Session) -> dict:
     """返回所有启用产品的筛选维度可选值(model/type/size/color/weight)。"""
     settings = get_settings()
+    if settings.TRANSACTION_MODE == "local":
+        from app.stock.local_query_service import filter_options
+        return filter_options(db)
     business_db = settings.BUSINESS_DB_NAME
 
     model_rows = db.execute(

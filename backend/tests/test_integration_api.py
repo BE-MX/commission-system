@@ -2121,6 +2121,7 @@ def test_two_real_sessions_racing_same_app_order_create_one_invoice(tmp_path):
         Invoice.__table__,
         InvoiceItem.__table__,
         InvoiceIngestRequest.__table__,
+        Base.metadata.tables["ark_invoice_customer_profiles"],
         StdPrice.__table__,
         PriceColorType.__table__,
         CustomerPriceRule.__table__,

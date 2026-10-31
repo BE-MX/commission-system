@@ -129,17 +129,37 @@ def _find_product(
             "error": "权限不足：需要 invoice_price:read 权限，请联系管理员分配",
         })
     try:
-        result = product_service.match_product(
-            db,
-            model=model,
-            color=color,
-            size=size,
-            unit=unit,
-        )
+        from app.trade.service import consumer_phase
+        phase = consumer_phase(db)
+        values = {"model": model, "color": color, "size": size, "unit": unit}
+        if phase == "legacy_only":
+            result = product_service.match_legacy_product(db, **values)
+        else:
+            from app.catalog.query_service import match_product
+            result = match_product(db, **values)
+            if phase == "transition":
+                from sqlalchemy import select
+                from app.catalog.models import CatalogExternalIdentity
+                native = result.get("matches", [])
+                mapped = set(db.scalars(select(CatalogExternalIdentity.external_product_id).where(
+                    CatalogExternalIdentity.source == "okki",
+                    CatalogExternalIdentity.sku_id.in_([i["local_sku_id"] for i in native])))) if native else set()
+                legacy = product_service.match_legacy_product(db, **values)
+                matches = native + [{**i, "source": "legacy"} for i in legacy.get("matches", [])
+                                    if str(i["product_id"]) not in mapped]
+                truncated = bool(result.get("truncated") or legacy.get("truncated"))
+                unique = len(matches) == 1 and not truncated
+                result = {"matches": matches, "is_unique": unique,
+                    "item": matches[0] if unique else None, "truncated": truncated, "source": "mixed"}
     except Exception as exc:  # noqa: BLE001 - MCP must not expose database details
         logger.exception("MCP product lookup failed")
         print(f"[mcp.price_tools] product lookup failed type={type(exc).__name__}", flush=True)
         return _json({"ok": False, "error": "产品查询失败，请稍后重试"})
+    # Catalog permission does not grant inventory visibility to MCP callers.
+    def catalog_only(item):
+        return {key: value for key, value in item.items() if key not in {"available_stock", "stock_warning"}}
+    result = {**result, "item": catalog_only(result["item"]) if result.get("item") else None,
+        "matches": [catalog_only(item) for item in result.get("matches", [])]}
     return _json({"ok": True, **result})
 
 

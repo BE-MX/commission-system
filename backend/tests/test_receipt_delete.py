@@ -56,7 +56,7 @@ def okki(monkeypatch):
         if state['fail_read']:
             raise okki_client.OkkiApiError('read unavailable')
         return deepcopy(state['detail'])
-    monkeypatch.setattr(lifecycle_remote, 'request', request)
+    monkeypatch.setattr(lifecycle_remote, '_request_raw', request)
     def read(db, path, params):
         assert path == '/v1/invoices/receipt/list'
         rows = [deepcopy(state['detail'])] if bool(params['removed']) == state['deleted'] else []
@@ -183,7 +183,7 @@ def test_delete_in_progress_blocks_receipt_recovery_and_edits(db, receipt, okki)
 
 
 def test_durable_marker_and_quarantine_exist_before_only_post(db, receipt, okki, monkeypatch):
-    original = lifecycle_remote.request
+    original = lifecycle_remote._request_raw
     def checked(token, kind, identity, *, remove=False):
         if remove:
             assert not db.in_transaction(), 'No authority/receipt locks across destructive I/O'
@@ -192,7 +192,7 @@ def test_durable_marker_and_quarantine_exist_before_only_post(db, receipt, okki,
             assert db.query(ReceiptLog).filter_by(receipt_id=row.id, action='delete_started').count() == 1
             db.rollback()
         return original(token, kind, identity, remove=remove)
-    monkeypatch.setattr(lifecycle_remote, 'request', checked)
+    monkeypatch.setattr(lifecycle_remote, '_request_raw', checked)
     assert remove(db, receipt[0], preview(db, receipt[0]))['status'] == 'deleted'
 
 
@@ -223,12 +223,12 @@ def test_remote_not_found_checks_global_identity_not_old_order(db, receipt, okki
 
 
 def test_failed_readback_retains_marker_and_get_only_recovery(db, receipt, okki, monkeypatch):
-    original = lifecycle_remote.request
+    original = lifecycle_remote._request_raw
     def fail_after_post(token, kind, identity, *, remove=False):
         result = original(token, kind, identity, remove=remove)
         if remove: okki['fail_read'] = True
         return result
-    monkeypatch.setattr(lifecycle_remote, 'request', fail_after_post)
+    monkeypatch.setattr(lifecycle_remote, '_request_raw', fail_after_post)
     assert remove(db, receipt[0], preview(db, receipt[0]))['status'] == 'uncertain'
     assert okki['posts'] == 1
     okki['fail_read'] = False

@@ -28,7 +28,14 @@ def get_overview(db, report_id, user, team=None):
         # Always compute ranks and PK against the complete authorized activity roster.
         return build_snapshot(db, report, members, beijing_now())
     report, members, orders, issues, now, detail_ids = context(db, report_id, user, team=team)
-    return overview(report, members, orders, issues, now, detail_ids)
+    data = overview(report, members, orders, issues, now, detail_ids)
+    from app.trade.service import formal_projection_enabled as local_mode
+    if local_mode(db):
+        from app.trade.refresh_service import projection_status
+        data["projection_status"] = projection_status(db, owner_ids=[m.ark_user_id for m in members],
+            date_from=report.start_date, date_to=min(report.end_date, now.date()))
+        data["source_synced_at"] = data["projection_status"]["last_projected_at"]
+    return data
 
 
 def get_daily(db, report_id, user, start=None, team=None):

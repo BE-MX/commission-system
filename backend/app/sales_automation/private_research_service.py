@@ -111,7 +111,7 @@ def _commerce_snapshot(db: Session, customer_id: int) -> dict:
     order_ids = [int(order.id) for order in orders]
     items = (
         db.query(CustomerOrderItem)
-        .filter(CustomerOrderItem.order_id.in_(order_ids))
+        .filter(CustomerOrderItem.order_id.in_(order_ids), CustomerOrderItem.projection_role == 'active')
         .all()
         if order_ids
         else []

@@ -33,7 +33,8 @@
  * 发货检验打印弹框（出库单 / 验货单共用）。
  * 弹框停留在列表页上，用户关掉就回到原来的列表和抽屉，不用按浏览器后退。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onDeactivated, onUnmounted, ref, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { Loading } from '@element-plus/icons-vue'
 import { fetchImageDataUrl, getInspectionRecord, getOutboundPrintData } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
@@ -51,6 +52,10 @@ const loading = ref(false)
 const loadError = ref('')
 const payload = ref(null)
 const frameRef = ref(null)
+const auth = useAuthStore()
+let sequence = 0, controller
+function cancel() { sequence++; controller?.abort(); payload.value = null; loading.value = false }
+
 
 const title = computed(() => (props.mode === 'inspection' ? '打印验货单' : '打印出库单'))
 
@@ -62,10 +67,10 @@ const docHtml = computed(() => {
 })
 
 // 验货照片要鉴权，转 data URL 带进 srcdoc；失败的图直接丢掉，不挡打印
-async function loadInspectionPhotos(photos) {
+async function loadInspectionPhotos(photos, signal) {
   const loaded = await Promise.all((photos || []).map(async photo => {
     try {
-      return { item_id: photo.item_id ?? null, dataUrl: await fetchImageDataUrl(photo.file_path) }
+      return { item_id: photo.item_id ?? null, dataUrl: await fetchImageDataUrl(photo.file_path, { signal }) }
     } catch {
       return null
     }
@@ -74,26 +79,33 @@ async function loadInspectionPhotos(photos) {
 }
 
 async function load() {
+  const request = ++sequence, id = props.recordId, mode = props.mode
+  controller?.abort(); controller = new AbortController()
+  const signal = controller.signal
+  const current = () => request === sequence && props.visible && id === props.recordId && mode === props.mode && !signal.aborted
   loading.value = true
   loadError.value = ''
   payload.value = null
   try {
-    if (props.mode === 'inspection') {
-      const res = await getInspectionRecord(props.recordId)
+    if (mode === 'inspection') {
+      const res = await getInspectionRecord(id, { signal })
+      if (!current()) return
       const data = res.data || {}
       if (data.status !== 'submitted' || data.outbound_sync_pending || data.required_recheck_ids?.length) {
         loadError.value = '出库资料待同步或待补验，请完成重新验货后打印'
         return
       }
       const items = data.items || []
-      payload.value = {
+      const nextPayload = {
         record: data,
         items,
-        photosDataUrls: await loadInspectionPhotos((data.photos || []).filter(photo => !photo.stale)),
+        photosDataUrls: await loadInspectionPhotos((data.photos || []).filter(photo => !photo.stale), signal),
         photoItemMap: Object.fromEntries(items.map(item => [item.item_id, item.product_name])),
       }
+      if (current()) payload.value = nextPayload
     } else {
-      const res = await getOutboundPrintData(props.recordId)
+      const res = await getOutboundPrintData(id, { signal })
+      if (!current()) return
       const data = res.data || {}
       payload.value = {
         record: data.record || {},
@@ -102,48 +114,60 @@ async function load() {
       }
     }
   } catch {
-    loadError.value = props.mode === 'inspection'
+    if (!current()) return
+    loadError.value = mode === 'inspection'
       ? '这张验货单加载失败（可能已被删除），原因见右上角报错提示'
       : '这张出库单加载失败，原因见右上角报错提示'
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 
 async function doPrint() {
   if (loading.value || loadError.value || !payload.value) return
+  const request = sequence, id = props.recordId, mode = props.mode, snapshot = payload.value
+  const current = () => request === sequence && props.visible && id === props.recordId && mode === props.mode && snapshot === payload.value
   loading.value = true
   try {
     if (props.mode === 'inspection') {
-      const latest = (await getInspectionRecord(props.recordId)).data || {}
+      const latest = (await getInspectionRecord(id)).data || {}
+      if (!current()) return
       if (latest.status !== 'submitted' || latest.outbound_sync_pending || latest.required_recheck_ids?.length
           || latest.edit_version !== payload.value.record.edit_version) {
         throw new Error('inspection changed')
       }
     } else {
-      const latest = (await getOutboundPrintData(props.recordId)).data || {}
+      const latest = (await getOutboundPrintData(id)).data || {}
+      if (!current()) return
       if (JSON.stringify(latest.record) !== JSON.stringify(payload.value.record)
           || JSON.stringify(latest.items) !== JSON.stringify(payload.value.items)) {
         throw new Error('outbound changed')
       }
     }
+    if (!current()) return
     const frame = frameRef.value
     if (!frame?.contentWindow) return
     // 必须先 focus：不聚焦时部分浏览器会把打印指令派给父文档，又变成打印整页
     frame.contentWindow.focus()
     frame.contentWindow.print()
   } catch {
+    if (!current()) return
     loadError.value = '单据资料已变化，请关闭后重新打开打印预览'
-  } finally { loading.value = false }
+  } finally { if (current()) loading.value = false }
 }
 
 function close() {
+  cancel()
   emit('update:visible', false)
 }
 
 watch(() => [props.visible, props.recordId, props.mode], ([isOpen]) => {
+  cancel()
   if (isOpen && props.recordId) load()
 }, { immediate: true })
+watch(() => JSON.stringify([auth.user?.id, auth.user?.roles, auth.user?.permissions]), close)
+onDeactivated(close)
+onUnmounted(cancel)
 </script>
 
 <style scoped>

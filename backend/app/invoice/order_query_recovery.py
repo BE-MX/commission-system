@@ -14,7 +14,7 @@ from app.core.queue_scan import take
 from app.core.time import beijing_now
 from app.invoice import edit_authority, linked_sync_service, okki_client, outbound_mode
 from app.invoice import order_push_facts as facts, order_query_plan as plan
-from app.invoice import order_sync_execution as push, outbound_task_service, xiaoman_service
+from app.invoice import order_sync_execution as push, outbound_task_service, xiaoman_service, sync_recovery
 from app.invoice.models import Invoice, InvoiceSyncLog
 from app.portal.event_models import AuditEvent
 from app.portal.errors import PortalError
@@ -52,7 +52,8 @@ def context(db, invoice_id, source):
     request = plan.request_snapshot(payload) if not issues else None
     if request != source['query_request'] or facts.digest(payload) != source['payload_fingerprint']:
         raise ValueError('Original request mapping changed')
-    binding = (push.capture(db, invoice, payload), facts.observation_fingerprint(db, invoice.id, source['attempt_key']))
+    binding = (push.capture(db, invoice, payload), facts.observation_fingerprint(db, invoice.id, source['attempt_key']),
+        sync_recovery.claim_binding(db,invoice,source['attempt_key']))
     lower, upper = plan.window(starts[0].created_at, source['query_window_end'])
     return invoice, actor, binding, lower, upper
 
@@ -144,7 +145,13 @@ def recover(db, invoice_id):
                     'recovery': 'automatic_get_only', 'product_list': validated})))
             db.flush()
             if invoice.outbound_auto_requested:
-                outbound_task_service.enqueue_outbound_task(db, invoice)
+                try:
+                    with db.begin_nested():outbound_task_service.enqueue_outbound_task(db, invoice)
+                except (ValueError,RuntimeError,SQLAlchemyError) as error:
+                    logger.warning('Recovered order outbound enrollment requires recovery (%s)',type(error).__name__)
+                    print('[invoice-query] outbound enrollment requires recovery',flush=True)
+                    result['outbound_pending']=True
+            sync_recovery.settle_original_claims(db,invoice,key,'automatic_original_get',detail,identity,formal=True)
             result['order_id'] = identity
             # Receipt intentions are deliberately not released by GET recovery.
         facts.append(db, invoice_id, key, RESULT + ':' + str(number), result,

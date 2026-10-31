@@ -129,6 +129,7 @@ class TestSchedulerRegistration:
                 "domestic_followup_daily_retry_15",
                 "domestic_followup_urgent",
                 "domestic_followup_maintenance",
+                "local_trade_projection",
                 "whatsapp_translation_pairing_cleanup",
                 "domestic_public_sea_daily",
                 "okki_outbound_reconcile",

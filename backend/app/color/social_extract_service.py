@@ -144,6 +144,10 @@ def aggregate_sales_by_color(db: Session) -> dict:
 
     TODO: 需要确认 okki_orders 表中颜色字段的列名和值格式。
     """
+    from app.trade.service import formal_projection_enabled
+    if formal_projection_enabled(db):
+        from app.color.local_sales_service import aggregate_sales
+        return aggregate_sales(db)
     from app.core.database import engine
 
     week_start = beijing_today() - timedelta(days=beijing_today().weekday())

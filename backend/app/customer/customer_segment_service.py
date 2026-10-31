@@ -106,7 +106,7 @@ def list_customers(db, user, *, page, page_size, keyword=None, customer_scope="p
     wa_accounts = {row.account_uid: row for row in db.query(WhatsAppAccount).all()}
     orders = db.query(CustomerOrder, logical_owner_expression(CustomerOrder, "order").label("logical_id")).filter(logical_owner_expression(CustomerOrder,"order").in_(ids)).all()
     by_order = defaultdict(list)
-    for row in db.query(CustomerOrderItem).filter(CustomerOrderItem.order_id.in_([row.id for row,_ in orders])):
+    for row in db.query(CustomerOrderItem).filter(CustomerOrderItem.order_id.in_([row.id for row,_ in orders]), CustomerOrderItem.projection_role == 'active'):
         by_order[row.order_id].append(row)
     by_customer = defaultdict(list)
     excluded = defaultdict(Counter)

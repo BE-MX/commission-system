@@ -30,7 +30,7 @@
         <!-- 二维码 -->
         <div class="qr-section">
           <img :src="cardData.qr_code_base64" alt="报工二维码" />
-          <div class="qr-hint">📷 微信拍照<br>报工扫码</div>
+          <div class="qr-hint">{{ cardData.transaction_mode === 'local' ? '使用已登录的小程序扫码报工' : '微信拍照报工扫码' }}</div>
         </div>
 
         <!-- 工序列表 -->

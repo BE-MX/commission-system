@@ -23,6 +23,8 @@ export function emptyInvoiceForm() {
     receipt_order_dirty: false, receipt_action_open: false, receipt_action_busy: false,
     receipt_remark_editing: false, receipt_remark_saving: false,
     presale_edit_blocked_reason: null,
+    local_deposit_amount: 0, local_deposit_charge: 0, commercial_source: 'unknown', is_private_order: false,
+    local_customer_id: null, transaction_route: 'legacy', authority_epoch: null, commerce_status: 'draft', shadow_status: null,
     id: null, invoice_no: '', order_type: 'stock', sales_user_id: null, customer_id: '', customer_name: '',
     customer_grade: null,
     contact_name: '', contact_phone: '', contact_email: '', delivery_address: '',
@@ -42,6 +44,7 @@ export function emptyInvoiceForm() {
 export function normalizeHairRow(line = {}) {
   return {
     id: line.id || null,
+    local_sku_id: line.local_sku_id || null, commercial_kind: line.commercial_kind || 'bulk',
     group_key: line.group_key || '',
     created_at: line.created_at || null,
     product_kind: 'hair',
@@ -119,6 +122,14 @@ export function buildInvoicePayload(form, hairDiscount = 0) {
       attachment_ids: draft.attachment_ids || [], remark: draft.remark || "" } : null,
     invoice_no: (form.invoice_no || '').trim() || null, sales_user_id: form.sales_user_id,
     order_type: form.order_type, customer_id: form.customer_id, customer_name: form.customer_name,
+    transaction_route: form.transaction_route || form.transaction_mode || 'legacy',
+    expected_authority_epoch: form.authority_epoch ?? null,
+    expected_commerce_version: form.commerce_version ?? null,
+    local_customer_id: form.local_customer_id || null,
+    ...((form.transaction_route || form.transaction_mode) === 'local' ? {
+      local_deposit_amount: Number(form.local_deposit_amount || 0), local_deposit_charge: Number(form.local_deposit_charge || 0),
+      commercial_source: form.commercial_source || 'unknown', is_private_order: Boolean(form.is_private_order),
+    } : {}),
     customer_grade: form.customer_grade || null,
     contact_name: form.contact_name || null, contact_phone: form.contact_phone || null,
     contact_email: form.contact_email || null, delivery_address: form.delivery_address || null,
@@ -145,6 +156,7 @@ export function buildInvoicePayload(form, hairDiscount = 0) {
       key: String(group.key), name: String(group.name || '').trim(), sort_order: Number(group.sort_order || index + 1),
     })),
     items: form.items.filter(line => !isInvoicePlaceholder(line)).map(line => ({
+      local_sku_id: line.local_sku_id || null, commercial_kind: line.commercial_kind || 'bulk',
       id: line.id || null, group_key: line.product_kind === 'accessory' ? null : line.group_key || null,
       product_kind: line.product_kind || 'hair', item_type: line.item_type,
       product_id: line.product_id, sku_id: line.sku_id, product_name: line.product_name,

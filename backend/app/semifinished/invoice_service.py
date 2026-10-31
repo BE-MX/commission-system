@@ -80,7 +80,7 @@ def prepare_invoice_sync(db: Session, invoice: Invoice, operator_id: int | None,
         return None
     for allocation, delta in changes:
         if delta > 0:
-            balance = lock_balance(db, allocation.material_id)
+            balance = lock_balance(db, allocation.material_id, route='legacy')
             available = qty(balance.on_hand_grams) - qty(balance.reserved_grams)
             if available < delta:
                 raise ValueError(f"半成品库存不足：物料ID {allocation.material_id} 可用 {available}g，需要新增占用 {delta}g")
@@ -147,7 +147,7 @@ def finalize_invoice_sync(db: Session, invoice_id: int, operation_key: str | Non
         raise RuntimeError("未找到对应的半成品待出库批次")
     for allocation in rows:
         delta = qty(allocation.pending_delta_grams)
-        balance = lock_balance(db, allocation.material_id)
+        balance = lock_balance(db, allocation.material_id, route='legacy')
         if delta > 0:
             if qty(balance.on_hand_grams) < delta or qty(balance.reserved_grams) < delta:
                 raise RuntimeError("半成品预占余额异常，无法完成正式出库")
@@ -193,7 +193,7 @@ def release_invoice_sync(db: Session, invoice_id: int, operation_key: str | None
     for allocation in rows:
         delta = qty(allocation.pending_delta_grams)
         if delta > 0:
-            balance = lock_balance(db, allocation.material_id)
+            balance = lock_balance(db, allocation.material_id, route='legacy')
             if qty(balance.reserved_grams) < delta:
                 raise RuntimeError("半成品预占余额异常，无法释放")
             balance.reserved_grams = qty(balance.reserved_grams) - delta

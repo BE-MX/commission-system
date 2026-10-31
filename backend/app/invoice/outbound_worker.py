@@ -13,7 +13,7 @@ from app.core.time import beijing_now,to_beijing_naive
 from app.portal import authority
 from app.portal.models import AuthorityBarrier
 from app.portal.order_models import OrderRequest,Conversion
-from app.invoice import outbound_mode,edit_authority,outbound_followup_execution as followup,okki_client
+from app.invoice import legacy_sending,outbound_mode,edit_authority,outbound_followup_execution as followup,okki_client
 from app.invoice import outbound_create_plan as plan,outbound_create_facts as facts,outbound_task_service as tasks
 from app.invoice.models import Invoice,OkkiOutboundTask,InvoiceSyncLog
 from app.invoice.cancellation_service import audit
@@ -212,6 +212,9 @@ def verify(db,invoice_id,attempt,*,sender=False):
         diagnose(db,'readback_unknown',error)
         verified=None
     finally:clear(db)
+    if verified:
+        legacy_sending.finish(db, f'legacy:outbound-worker:{attempt.nonce}', 'succeeded',
+            {'original_readback_hash': common.digest(verified)}, str(verified['outbound_invoice_id']))
     facts.original_lock(db,attempt)
     changed=facts.fingerprint(db,attempt)!=expected_facts
     read_key=facts.observe(db,attempt,'verified' if verified else 'unknown',verified,reading=True)
@@ -238,6 +241,9 @@ def verify(db,invoice_id,attempt,*,sender=False):
     if verified:
         from app.invoice.stock_reservations import remember_native
         remember_native(db,invoice.id,task.order_id,[verified])
+        legacy_sending.observe_formal(db, f'legacy:outbound-worker:{attempt.nonce}', 'legacy.outbound.remote', 'accepted',
+            result_row=task, actor_id=attempt.data['actor_id'],
+            evidence_ref={'original_readback_hash': common.digest(verified)})
     db.commit();clear(db)
     return {'status':'done' if verified else 'uncertain','posted':False}
 
@@ -249,16 +255,22 @@ def send(db,invoice_id,attempt,access_token):
     db.commit();clear(db)
     order,related,payload,shortages=evidence(db,dto,rows,metadata,original=attempt.data['order'])
     if related or shortages or payload!=attempt.data['payload']:reject(409,'原发送前出库或库存证据已变化')
-    actor,_,task,state,binding,_,_,_=local(db,invoice_id)
+    actor,invoice,task,state,binding,_,_,_=local(db,invoice_id)
     owned(db,task,state,binding,attempt,sender=True)
     if actor['id']!=attempt.data['actor_id'] or facts.get(db,facts.SEND,attempt.nonce) is not None:
         reject(409,'原后台发送已开始，禁止重发')
     facts.append(db,facts.SEND,attempt.nonce,attempt,{})
-    state.action='create_sending';db.commit();clear(db)
+    state.action='create_sending'
+    from app.commerce_shadow.hooks import capture_legacy_outbound
+    ticket = legacy_sending.start(db, invoice, f'legacy:outbound-worker:{attempt.nonce}', 'outbound_create', attempt.data['payload'],
+        {'actor_id': actor['id'], 'nonce': attempt.nonce, 'task_id': task.id, 'order_id': attempt.data['order_id'], 'binding_hash': common.digest(binding),
+         'command_input': capture_legacy_outbound(db, invoice, attempt.data['payload'], actor['id'],
+             request_key=f'legacy:outbound-worker:{attempt.nonce}')}, attempt.data['authority_epoch'])
+    db.commit();clear(db)
     result=None;result_class='unknown'
     try:
         if db.in_transaction() or db.new or db.dirty or db.deleted:raise RuntimeError('Worker POST has a local transaction')
-        result=okki_client._post_json('/v1/invoices/outbound/push',access_token,attempt.data['payload'],context='后台出库')
+        result=legacy_sending.invoke(db,ticket,'/v1/invoices/outbound/push',access_token,attempt.data['payload'],context='后台出库')
         if result is None:result_class='auth_rejected'
         elif isinstance(result,dict) and result.get('serial_id')==attempt.data['payload']['serial_id']:
             common.canonical_identity(result['outbound_invoice_id']);result_class='accepted'
@@ -332,6 +344,7 @@ def process(db,invoice_id,*,immediate=False):
         task.status='running';task.attempts+=1;task.last_error=None;task.updated_at=beijing_now()
         db.flush();db.refresh(task)
         nonce=str(uuid4());data={'protocol':1,'nonce':nonce,'invoice_id':invoice.id,'task_id':task.id,
+            'authority_epoch':legacy_sending.authorize(db,invoice).epoch,
             'order_id':common.canonical_identity(task.order_id),'actor_id':actor['id'],'lineage':metadata['lineage'],
             'binding_fingerprint':common.digest(binding),'task_fingerprint':common.digest(row_state(task)),
             'order':order,'payload':payload,'payload_fingerprint':common.digest(payload),

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import * as Vue from 'vue'
+import { newRequestKey } from '../src/utils/requestKey.js'
 import { useListPage } from '../src/composables/useListPage.js'
 import { useAsyncResource } from '../src/composables/useAsyncResource.js'
 import { useTableSort } from '../src/composables/useTableSort.js'
@@ -25,6 +26,7 @@ function execute(t, path, result, modules = {}, props = {}) {
     './composables/useProductionOrderTables': { useProductionOrderTables: () => ({}) },
     './composables/stockResources': { loadStockFilterOptions: async () => ({}), loadStockProgress: async () => ({}) },
     './composables/useProductionCart': { useProductionCart: () => ({ cartItems: Vue.ref([]), cartCount: Vue.ref(0), selectedCartIds: Vue.ref([]), loadCart() {} }) },
+    '../../utils/requestKey.js': { newRequestKey },
     './materialOptions': { loadMaterialOptions: async () => [] }, './safetyConfigPresentation': {},
     '@/utils/feedback': feedback, '@/utils/datetime': { currentBeijingDate: () => '2026-10-02', formatBeijingDateTime: String, formatBeijingTime: String },
     '@/stores/auth': { useAuthStore: () => ({ hasPermission: () => true }) },
@@ -200,6 +202,79 @@ test('cart read retains selectable data on error and reconciles selection only a
   fail = false; ids = [2]; await state.loadCart(); await flush(); assert.deepEqual(state.selectedCartIds.value, [2])
 })
 
+test('production checkout retries an uncertain result with the same key and changes identity when the body changes', async t => {
+  const calls = []; let nextKey = 0
+  const factory = execute(t, '../src/views/stock/composables/useProductionCart.js', 'useProductionCart', { '@/api/stock': {
+    createProductionOrder: async body => { calls.push(structuredClone(body)); throw new Error('uncertain transport') },
+  } })
+  const state = factory(() => `checkout-${++nextKey}`)
+  state.selectedCartIds.value = [1, 2]
+  const body = { batch_no: 'NATIVE-BATCH', remark: '', is_urgent: false, expected_delivery_date: null }
+  assert.equal(await state.generateOrder(body), false)
+  assert.equal(await state.generateOrder(body), false)
+  assert.equal(calls[0].request_key, calls[1].request_key)
+  assert.deepEqual(calls[1].cart_ids, [1, 2])
+  await state.generateOrder({ ...body, remark: 'changed' })
+  assert.notEqual(calls[2].request_key, calls[1].request_key)
+  assert.deepEqual(state.selectedCartIds.value, [1, 2])
+})
+
+test('production checkout prevents duplicate concurrent sends and retains unrelated selection after success', async t => {
+  const sent = deferred(); const calls = []
+  const factory = execute(t, '../src/views/stock/composables/useProductionCart.js', 'useProductionCart', { '@/api/stock': {
+    createProductionOrder: body => { calls.push(body); return sent.promise },
+    getProductionCart: async () => ({ data: { items: [{ id: 3 }], count: 1 } }),
+  } })
+  const state = factory(() => 'stable-key')
+  state.selectedCartIds.value = [1]
+  const body = { batch_no: 'NATIVE-BATCH' }
+  const first = state.generateOrder(body)
+  assert.equal(state.generating.value, true)
+  assert.equal(await state.generateOrder(body), false)
+  state.selectedCartIds.value = [1, 3]
+  sent.resolve({ message: 'created' }); assert.equal(await first, true)
+  assert.equal(calls.length, 1)
+  assert.deepEqual(state.selectedCartIds.value, [3])
+  assert.equal(state.generating.value, false)
+})
+
+test('production checkout releases pending state when command identity generation fails', async t => {
+  const calls = []; let unavailable = true
+  const factory = execute(t, '../src/views/stock/composables/useProductionCart.js', 'useProductionCart', { '@/api/stock': {
+    createProductionOrder: async body => { calls.push(body); return { message: 'created' } },
+    getProductionCart: async () => ({ data: { items: [], count: 0 } }),
+  } })
+  const state = factory(() => { if (unavailable) throw new Error('key unavailable'); return 'recovered-key' })
+  state.selectedCartIds.value = [1]
+  assert.equal(await state.generateOrder({ batch_no: 'NATIVE-BATCH' }), false)
+  assert.equal(state.generating.value, false)
+  assert.equal(calls.length, 0)
+  unavailable = false
+  assert.equal(await state.generateOrder({ batch_no: 'NATIVE-BATCH' }), true)
+  assert.equal(calls[0].request_key, 'recovered-key')
+})
+
+test('cart table refresh restores controlled selection and removes consumed rows despite emitted selection events', async t => {
+  const rows = Vue.ref([{ id: 1 }, { id: 3 }]), ids = Vue.ref([1, 3])
+  const state = execute(t, '../src/views/stock/SafetyConfig.vue', '{ cartTableRef, toggleCartSelection }', {
+    './composables/useProductionCart': { useProductionCart: () => ({ cartItems: rows, selectedCartIds: ids,
+      cartCount: Vue.ref(2), loadCart() {}, toggleSelection: selection => { ids.value = selection.map(row => row.id) } }) },
+  })
+  let tableSelection = []
+  state.cartTableRef.value = {
+    clearSelection() { tableSelection = []; state.toggleCartSelection([]) },
+    toggleRowSelection(row, selected) { if (selected) tableSelection.push(row); state.toggleCartSelection(tableSelection) },
+  }
+  await flush(); await flush()
+  assert.deepEqual(tableSelection.map(row => row.id), [1, 3])
+  ids.value = [3]; rows.value = [{ id: 3 }]
+  await flush(); await flush()
+  assert.deepEqual(tableSelection.map(row => row.id), [3])
+  assert.deepEqual(ids.value, [3])
+  state.toggleCartSelection([{ id: 1 }, { id: 3 }])
+  assert.deepEqual(ids.value, [3])
+})
+
 test('semifinished quote retries failed reads and ignores disabled or changed product scopes', async t => {
   const queue = []
   const props = Vue.reactive({ row: { product_id: 1 }, addToCart: async () => true })
@@ -241,6 +316,7 @@ test('mounted inventory empty slot renders first failure and retry, then retains
   let fail = true
   const listStatus = loadComponent('../../src/components/ListPageStatus.vue', { '@element-plus/icons-vue': {}, './GlassButton.vue': { default: slotShell } })
   const inventory = loadComponent('../../src/views/semifinished/InventoryManage.vue', {
+    '../../utils/requestKey.js': { newRequestKey },
     vue: { ...Vue, resolveDirective: () => ({}) },
     '@/utils/feedback': feedback, '@element-plus/icons-vue': {}, '@/components/TableTools.vue': { default: { setup: (_, { emit }) => () => Vue.h('button', { onClick: () => emit('refresh') }, 'fixture refresh') } },
     '@/composables/useTableView': { useTableView: tableView }, '@/composables/useListPage': { useListPage }, '@/composables/useAsyncResource': { useAsyncResource }, '@/composables/useListResourceScope': { watchListResourceScope },

@@ -28,20 +28,31 @@ def no_network(monkeypatch):
         pytest.fail("Real network or unmocked remote boundary is forbidden")
     monkeypatch.setattr(httpx, "request", forbidden)
     monkeypatch.setattr(lifecycle_remote, "read", forbidden)
-    monkeypatch.setattr(lifecycle_remote, "request", forbidden)
+    monkeypatch.setattr(lifecycle_remote, "_request_raw", forbidden)
     monkeypatch.setattr(remote, "order_receipts", forbidden)
     monkeypatch.setattr(remote, "order_active", forbidden)
     monkeypatch.setattr(linked_outbound_service, "find_related", forbidden)
     monkeypatch.setattr(outbound_delete_client, "read", forbidden)
-    monkeypatch.setattr(outbound_delete_client, "remove", forbidden)
+    monkeypatch.setattr(outbound_delete_client, "_request", forbidden)
     monkeypatch.setattr(okki_client, "ensure_access_token", lambda *a: "test-token")
     monkeypatch.setattr(outbound_delete_service, "ensure_access_token", lambda *a: "test-token")
 
 
 @pytest.fixture
-def user():
-    return {"sub": "1", "roles": [], "permissions": ["invoice:delete", "receipt:delete",
+def user(db):
+    value = {"sub": "1", "roles": [], "permissions": ["invoice:delete", "receipt:delete",
         "shipping_inspection:delete", "shipping_inspection:read_all"]}
+    replace_grants(db, 1, *value['permissions'])
+    return value
+
+
+def replace_grants(db, actor, *codes):
+    from app.auth.models import ArkUserRole, ArkRolePermission
+    from tests.authority_helpers import seed_authority
+    role_ids = [row.role_id for row in db.query(ArkUserRole).filter_by(user_id=actor)]
+    db.query(ArkRolePermission).filter(ArkRolePermission.role_id.in_(role_ids)).delete(synchronize_session=False)
+    db.commit()
+    seed_authority(db, actor, *codes)
 
 
 @pytest.fixture
@@ -85,6 +96,7 @@ def live(db, invoice, monkeypatch):
     def request(token, kind, identity, remove=False):
         assert token == "test-token"
         if remove:
+            assert not db.in_transaction(), 'HTTP cannot hold financial or authority locks'
             state["posts"].append(kind)
             db.refresh(invoice)
             assert invoice.status == "cancel_pending"
@@ -98,8 +110,9 @@ def live(db, invoice, monkeypatch):
         assert identity == "7"
         state["scope_calls"].append(okki_user_id)
         return deepcopy(record) if state.get("visible", True) else None
-    def remove_outbound(token, identity):
+    def remove_outbound(token, identity, *, remove=False):
         assert identity == "7" and token == "test-token"
+        assert remove and not db.in_transaction()
         state["posts"].append("outbound")
         db.refresh(invoice)
         assert invoice.cancellation["deletion"]["steps"]["outbound:7"]["status"] == "sending"
@@ -108,13 +121,13 @@ def live(db, invoice, monkeypatch):
         state["outbound"] = None
         return True
     monkeypatch.setattr(lifecycle_remote, "read", read)
-    monkeypatch.setattr(lifecycle_remote, "request", request)
+    monkeypatch.setattr(lifecycle_remote, "_request_raw", request)
     monkeypatch.setattr(remote, "order_receipts", lambda *a: [{"cash_collection_id": "88"}] if state["receipt"] else [])
     monkeypatch.setattr(remote, "order_active", lambda *a: state["order"] is not None and state.get("order_active", True))
     monkeypatch.setattr(linked_outbound_service, "find_related", lambda *a: [deepcopy(state["outbound"])] if state["outbound"] else [])
     monkeypatch.setattr(outbound_service, "get_record_by_outbound_invoice_id", record_by_id)
     monkeypatch.setattr(outbound_delete_client, "read", lambda *a: deepcopy(state["outbound"]))
-    monkeypatch.setattr(outbound_delete_client, "remove", remove_outbound)
+    monkeypatch.setattr(outbound_delete_client, "_request", remove_outbound)
     return state
 
 
@@ -243,7 +256,7 @@ def client(db, user):
 def test_api_requires_invoice_delete_and_explicit_confirmation(client, db, invoice, receipt, live, user):
     from tests.authority_helpers import seed_authority
     # Live entry authorization reads the actor's grants from the database.
-    seed_authority(db, 1, "invoice:delete", "receipt:delete",
+    replace_grants(db, 1, "invoice:delete", "receipt:delete",
                    "shipping_inspection:delete", "shipping_inspection:read_all")
     path = f"/api/invoice/invoices/{invoice.id}/deletion"
     user["permissions"].remove("invoice:delete")
@@ -260,7 +273,7 @@ def test_api_invoice_data_scope_blocks_other_salesperson(client, db, invoice, re
     from tests.authority_helpers import seed_authority
     # The other salesperson holds the same action grants; only the invoice data
     # scope blocks the read, so the denial must come from visibility, not rights.
-    seed_authority(db, 2, "invoice:delete", "receipt:delete",
+    replace_grants(db, 2, "invoice:delete", "receipt:delete",
                    "shipping_inspection:delete", "shipping_inspection:read_all")
     user["sub"] = "2"
     assert client.get(f"/api/invoice/invoices/{invoice.id}/deletion").status_code in (403, 404)
@@ -309,31 +322,31 @@ def test_outbound_changed_at_exact_delete_boundary_has_no_post(db, invoice, rece
 
 
 def test_receipt_changed_before_its_delete_preserves_completed_outbound(db, invoice, receipt, live, user, monkeypatch):
-    original = lifecycle_remote.request
+    original = lifecycle_remote._request_raw
     def changed(token, kind, identity, remove=False):
         if kind == "receipt" and not remove:
             result = deepcopy(live["receipt"])
             result["amount"] = "159"
             return result
         return original(token, kind, identity, remove=remove)
-    monkeypatch.setattr(lifecycle_remote, "request", changed)
+    monkeypatch.setattr(lifecycle_remote, "_request_raw", changed)
     assert execute(db, invoice, user)["status"] == "blocked"
     assert live["posts"] == ["outbound"]
     assert invoice.cancellation["deletion"]["steps"]["outbound:7"]["status"] == "done"
-    monkeypatch.setattr(lifecycle_remote, "request", original)
+    monkeypatch.setattr(lifecycle_remote, "_request_raw", original)
     assert execute(db, invoice, user)["status"] == "remote_deleted"
     assert live["posts"] == ["outbound", "receipt", "order"]
 
 
 def test_local_receipt_changed_during_delete_is_not_overwritten(db, invoice, receipt, live, user, monkeypatch):
-    original = outbound_delete_client.remove
-    def changed(*args):
-        result = original(*args)
+    original = outbound_delete_client._request
+    def changed(*args, **kwargs):
+        result = original(*args, **kwargs)
         db.execute(update(Receipt).where(Receipt.id == receipt.id).values(amount=169, version=2),
             execution_options={"synchronize_session": False})
         db.commit()
         return result
-    monkeypatch.setattr(outbound_delete_client, "remove", changed)
+    monkeypatch.setattr(outbound_delete_client, "_request", changed)
     assert execute(db, invoice, user)["status"] == "blocked"
     assert live["posts"] == ["outbound", "receipt"]
     db.refresh(receipt)
@@ -348,13 +361,13 @@ def test_local_receipt_changed_during_delete_is_not_overwritten(db, invoice, rec
     ("users", [{"id": "another-salesperson"}]), ("departments", ["another-department"]),
     (FIELD_ORDER_TYPE, "changed")])
 def test_parent_changed_during_children_deletion_requires_new_confirmation(db, invoice, receipt, live, user, monkeypatch, field, value):
-    original = lifecycle_remote.request
+    original = lifecycle_remote._request_raw
     def changed(token, kind, identity, remove=False):
         result = original(token, kind, identity, remove=remove)
         if kind == "receipt" and remove:
             live["order"][field] = value
         return result
-    monkeypatch.setattr(lifecycle_remote, "request", changed)
+    monkeypatch.setattr(lifecycle_remote, "_request_raw", changed)
     assert execute(db, invoice, user)["status"] == "blocked"
     assert live["posts"] == ["outbound", "receipt"]
     assert receipt.status == "remote_deleted"
@@ -381,7 +394,7 @@ def test_unsent_local_receipt_is_voided_with_amount_and_proof_retained(db, invoi
 
 
 def test_soft_deleted_order_detail_can_remain_readable_without_replaying(db, invoice, receipt, live, user, monkeypatch):
-    original = lifecycle_remote.request
+    original = lifecycle_remote._request_raw
     before = deepcopy(live["order"])
     def soft_delete(token, kind, identity, remove=False):
         result = original(token, kind, identity, remove=remove)
@@ -389,7 +402,7 @@ def test_soft_deleted_order_detail_can_remain_readable_without_replaying(db, inv
             live["order"] = before
             live["order_active"] = False
         return result
-    monkeypatch.setattr(lifecycle_remote, "request", soft_delete)
+    monkeypatch.setattr(lifecycle_remote, "_request_raw", soft_delete)
     assert execute(db, invoice, user)["status"] == "remote_deleted"
     assert live["order"] == before and invoice.status == "cancelled"
     assert execute(db, invoice, user)["status"] == "remote_deleted"
@@ -397,7 +410,7 @@ def test_soft_deleted_order_detail_can_remain_readable_without_replaying(db, inv
 
 
 def test_order_active_list_failure_after_post_keeps_unknown_and_does_not_replay(db, invoice, receipt, live, user, monkeypatch):
-    original = lifecycle_remote.request
+    original = lifecycle_remote._request_raw
     before = deepcopy(live["order"])
     fail = False
     def deletion_timeout(token, kind, identity, remove=False):
@@ -412,7 +425,7 @@ def test_order_active_list_failure_after_post_keeps_unknown_and_does_not_replay(
         if fail:
             raise ValueError("Incomplete active-list response")
         return live.get("order_active", True)
-    monkeypatch.setattr(lifecycle_remote, "request", deletion_timeout)
+    monkeypatch.setattr(lifecycle_remote, "_request_raw", deletion_timeout)
     monkeypatch.setattr(remote, "order_active", active)
     assert execute(db, invoice, user)["status"] == "uncertain"
     assert invoice.status == "cancel_pending"
@@ -468,10 +481,10 @@ def test_receipt_delete_is_independent_of_other_receipt_grants(db, invoice, rece
 def test_api_uses_current_receipt_delete_grant(client, db, invoice, receipt, live, user, method, live_granted):
     from tests.authority_helpers import seed_authority
     codes = ["invoice:delete", "shipping_inspection:delete", "shipping_inspection:read_all"]
-    seed_authority(db, 1, *codes, *(["receipt:delete"] if live_granted else ["receipt:admin"]))
+    version = deletion.preview(db, invoice, user)["version"]
+    replace_grants(db, 1, *codes, *(["receipt:delete"] if live_granted else ["receipt:admin"]))
     # A stale token grant must not bypass the current role configuration.
     path = f"/api/invoice/invoices/{invoice.id}/deletion"
-    version = deletion.preview(db, invoice, user)["version"]
     response = client.request(method, path, **({"json": {"expected_version": version, "confirmed": True}}
                                              if method == "POST" else {}))
     assert response.status_code == (200 if live_granted else 403)
@@ -506,6 +519,8 @@ def test_local_only_receipt_still_requires_delete_grant(db, invoice, receipt, li
 
 
 def test_super_admin_can_delete_related_receipt_without_action_grants(db, invoice, receipt, live, user):
+    from tests.authority_helpers import seed_authority
+    seed_authority(db, 2, roles=('super_admin',))
     user.update(sub="2", roles=["super_admin"], permissions=[])
     assert execute(db, invoice, user)["status"] == "remote_deleted"
     assert live["posts"] == ["outbound", "receipt", "order"]

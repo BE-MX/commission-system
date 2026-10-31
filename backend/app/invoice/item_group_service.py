@@ -146,8 +146,23 @@ def update_local(db, identity, body, user):
     from app.invoice import edit_authority
     from app.invoice.linked_sync_service import edit_version, ensure_idle
 
-    invoice, _ = edit_authority.prepare_local(db, identity, user, "invoice:write")
-    ensure_idle(invoice)
+    invoice, current = edit_authority.prepare_local(db, identity, user, "invoice:write")
+    if invoice.transaction_mode == "local":
+        from app.invoice.native_authority import require_write
+        from app.invoice.transition_gate import require_invoice
+        from app.customer.access_service import require_customer_access
+        current = require_write(db, current, "invoice:write")
+        if body.expected_authority_epoch is None:
+            raise HTTPException(409, "订单办理权版本不能为空，请重新读取")
+        require_invoice(db, invoice, "local", body.expected_authority_epoch)
+        require_customer_access(db, customer_id=invoice.local_customer_id, user=current,
+            action_permissions=["invoice:write"], manage_permissions=["customer:admin"])
+
+    if invoice.transaction_mode == "local":
+        if invoice.status in {"cancelled", "deleted"} or invoice.commerce_status in {"cancelled", "opening"}:
+            raise HTTPException(409, "订单已取消或尚未完成承接，不能调整分组")
+    else:
+        ensure_idle(invoice)
     load_groups(db, invoice)
     if edit_version(invoice) != body.expected_version:
         raise HTTPException(409, "订单业务数据已被修改，请刷新后再调整分组")

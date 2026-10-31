@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.portal import authority
 from app.invoice.okki_client import OkkiApiError
 from app.shipping_inspection import outbound_service, outbound_sync_service, outbound_sync_state
 
@@ -37,9 +36,7 @@ def preview(record_id: str, response: Response, db: Session = Depends(get_db),
             _sync=Depends(require_permission('invoice:sync'))):
     try:
         response.headers['Cache-Control'] = 'private, no-store'
-        if authority.get_settings().PORTAL_ENABLED:
-            return ok(outbound_sync_service.preview(db, record_id, user, force_authority=True, warehouse=True))
-        return ok(outbound_sync_service.preview(db, _record(db, record_id, user), user))
+        return ok(outbound_sync_service.preview(db, record_id, user, force_authority=True, warehouse=True))
     except (ValueError, OkkiApiError) as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
@@ -51,13 +48,9 @@ def synchronize(record_id: str, body: SyncRequest, response: Response, db: Sessi
                 _sync=Depends(require_permission('invoice:sync'))):
     try:
         response.headers['Cache-Control'] = 'private, no-store'
-        if authority.get_settings().PORTAL_ENABLED:
-            return ok(outbound_sync_service.synchronize(db, record_id, user, body.expected_version,
-                check_only=body.check_only, confirm_recheck=body.confirm_recheck, repair=body.repair,
-                force_authority=True, warehouse=True))
-        return ok(outbound_sync_service.synchronize(db, _record(db, record_id, user), user, body.expected_version,
-                                                    check_only=body.check_only, confirm_recheck=body.confirm_recheck,
-                                                    repair=body.repair))
+        return ok(outbound_sync_service.synchronize(db, record_id, user, body.expected_version,
+            check_only=body.check_only, confirm_recheck=body.confirm_recheck, repair=body.repair,
+            force_authority=True, warehouse=True))
     except (ValueError, OkkiApiError) as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
@@ -68,6 +61,8 @@ def allow_print_before_recheck(record_id: str, body: AllowPrintBeforeRecheckRequ
                                db: Session = Depends(get_db),
                                user=Depends(require_permission('shipping_inspection:admin'))):
     try:
+        from app.invoice.native_authority import require_write
+        user = require_write(db, user, 'shipping_inspection:admin')
         return ok(outbound_sync_state.allow_print_before_recheck(
             db, _record(db, record_id, user), int(user['sub']), body.reason.strip()))
     except ValueError as exc:

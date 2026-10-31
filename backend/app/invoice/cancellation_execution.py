@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.time import beijing_now
 from app.invoice import cancellation_service as cancel, cancellation_facts as facts
-from app.invoice import edit_authority, lifecycle_remote, okki_client
+from app.invoice import edit_authority, lifecycle_remote, okki_client, legacy_sending
 from app.portal.access_policy import employee_principal
 from app.portal.authority import lock_authority
 from app.portal.errors import PortalError
@@ -50,6 +50,20 @@ def public_result(db, invoice_id, user):
 
 def persist_result(db, attempt, observations):
     """Trusted original execution, never a new employee authorization or effect."""
+    # Persist original facts before applying CURRENT authorization. A revoked
+    # user, frozen route or moved epoch must not discard the original response.
+    db.rollback();db.expire_all()
+    lock_authority(db,force=True)
+    from app.commerce_transition import service as ownership
+    from app.invoice.models import Invoice
+    from sqlalchemy import select
+    ownership.lock_policy(db);ownership._lock_authority(db,attempt.invoice_id)
+    db.scalar(select(Invoice).where(Invoice.id==attempt.invoice_id).with_for_update())
+    facts.record(db,attempt,observations)
+    if any(row['effect_kind']=='readback_observation' and row['evidence']=='absent' for row in observations):
+        legacy_sending.finish(db,f'legacy:cancel-order:{attempt.invoice_id}:{attempt.key}','succeeded',
+            {'original_request_readback':True,'deleted':True},attempt.target)
+    db.commit()
     for retry in range(3):
         db.rollback()
         db.expire_all()
@@ -142,6 +156,9 @@ def remove_authorized(db, invoice_id, user):
         "lease_until":(beijing_now()+timedelta(minutes=5)).isoformat(), "evidence":proof,
         "updated_at":beijing_now().isoformat(), "message":"原执行意图已保存，等待远端结果"}
     cancel.audit(db, invoice, "cancel_step", attempt.actor_id, invoice.cancellation)
+    ticket=legacy_sending.start_removal(db,invoice,f'legacy:cancel-order:{attempt.invoice_id}:{attempt.key}',
+        'order',attempt.target,{'actor_id':attempt.actor_id,'task_key':attempt.key,'cancellation_token':attempt.token,
+        'binding_hash':facts.digest(attempt.binding)})
     try:
         db.commit()
     except SQLAlchemyError:
@@ -149,7 +166,7 @@ def remove_authorized(db, invoice_id, user):
         unavailable("原执行提交待核对，未继续发送删除，请读取原任务")
     observations = []
     try:
-        result = lifecycle_remote.request(api_token, "order", attempt.target, remove=True)
+        result = lifecycle_remote.request(api_token, "order", attempt.target, remove=True,db=db,ticket=ticket)
         observations.append(facts.observation(attempt, "delete_response",
             "succeeded" if result is True else "unknown", "accepted" if result is True else "unavailable"))
     except (okki_client.OkkiApiError, ValueError):

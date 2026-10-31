@@ -2,6 +2,8 @@
 import hashlib
 import json
 import logging
+from copy import deepcopy
+from types import SimpleNamespace
 from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -9,9 +11,9 @@ from uuid import uuid4
 from fastapi import HTTPException
 from app.auth.dependencies import require_permission
 from app.core.time import beijing_now
-from app.invoice import cancellation_service, lifecycle_remote, linked_outbound_service, okki_client, service
+from app.invoice import cancellation_service, lifecycle_remote, linked_outbound_service, okki_client, service, legacy_sending
 from app.invoice.linked_sync_service import edit_version
-from app.invoice.models import OkkiOutboundTask
+from app.invoice.models import Invoice, OkkiOutboundTask
 from app.receipt import access, deletion_evidence, remote, service as receipts
 from app.receipt.models import Receipt, ReceiptIntent
 from app.semifinished.models import InvoiceAllocation
@@ -90,10 +92,17 @@ def _guards(db, invoice, blockers):
 
 def collect(db, invoice, user):
     """Discover all live links and validate all permissions before any deletion."""
+    legacy_sending.authorize(db, invoice)
     stamp = _invoice_stamp(invoice)
     blockers = []
     _guards(db, invoice, blockers)
     local = _local_rows(db, invoice)
+    identity = invoice.id
+    local_stamp = _local_stamp(local)
+    invoice = SimpleNamespace(**{column.key: deepcopy(getattr(invoice, column.key)) for column in Invoice.__table__.columns},
+        items=[SimpleNamespace(**{column.key: deepcopy(getattr(item, column.key)) for column in item.__table__.columns}) for item in invoice.items])
+    local = [SimpleNamespace(**{column.key: deepcopy(getattr(row, column.key)) for column in Receipt.__table__.columns}) for row in local]
+    db.commit()  # Authorized capture only; no financial locks across provider reads.
     detail = lifecycle_remote.read(db, "order", invoice.xiaoman_order_id) if invoice.xiaoman_order_id else None
     if detail and (str(detail.get("company_id")) != str(invoice.customer_id)
                   or detail.get("currency") != invoice.currency):
@@ -138,6 +147,7 @@ def collect(db, invoice, user):
     details = []
     for row in indexed:
         identity = str(row["cash_collection_id"])
+        db.rollback()  # Discard pure mirror lookups before the next provider read.
         data = lifecycle_remote.read(db, "receipt", identity)
         if data is None or str(data.get("order_id")) != str(invoice.xiaoman_order_id) or data.get("currency") != invoice.currency:
             blockers.append(f"回款 {identity} 的远端证据不一致，请刷新核对")
@@ -159,10 +169,19 @@ def collect(db, invoice, user):
         elif row.sync_status == "syncing":
             blockers.append("回款正在发送，请稍后再删除")
         if row.xiaoman_receipt_id and row.xiaoman_receipt_id not in remote_ids:
+            db.rollback()
             if not _receipt_absent(db, invoice.xiaoman_order_id, row.xiaoman_receipt_id, invoice.currency):
                 blockers.append(f"回款 {row.receipt_no} 详情与有效列表不一致")
         if not row.xiaoman_receipt_id and row.sync_status not in {"pending", "failed"}:
             blockers.append(f"回款 {row.receipt_no} 尚未明确远端结果")
+    db.rollback()
+    current = _lock(db, invoice.id)
+    current_user = _current_actor(db, access.user_id(user),
+        *(['receipt:delete'] if indexed or any(r.status == 'active' for r in local) else []),
+        *(['shipping_inspection:delete'] if records else []))
+    access.ensure_invoice(db, current, current_user)
+    if _invoice_stamp(current) != stamp or _local_stamp(_local_rows(db, current)) != local_stamp:
+        raise ValueError('核对期间订单或原回款已变化，请重新预览')
     plan = {"invoice": stamp, "order": order, "outbounds": outbounds, "receipts": details,
             "local": _local_stamp(local),
             "blockers": sorted(set(blockers))}
@@ -185,6 +204,7 @@ def preview(db, invoice, user):
 
 
 def _lock(db, identity):
+    legacy_sending.authorize(db, identity)
     invoice = service.get_invoice(db, identity, for_update=True)
     db.refresh(invoice)
     return invoice
@@ -195,7 +215,19 @@ def _owned(db, identity, token):
     flow = _workflow(invoice)
     if flow.get("token") != token or datetime.fromisoformat(flow["lease_until"]) <= beijing_now():
         raise ValueError("删除执行权已变化或过期，请从订单发票页重新核对处理结果")
+    actor = _current_actor(db, flow['actor'])
+    access.ensure_invoice(db, invoice, actor)
+    legacy_sending.authorize(db, identity, flow.get('authority_epoch'))
     return invoice
+
+
+def _current_actor(db, actor, *permissions):
+    from app.auth.service import get_live_user_authorization
+    roles, current = get_live_user_authorization(db, actor)
+    required = {'invoice:delete', *permissions}
+    if not roles or ('super_admin' not in roles and not required.issubset(current)):
+        raise HTTPException(403, '当前账号无权继续删除，请由有权限账号核对原任务')
+    return {'sub': str(actor), 'id': actor, 'roles': roles, 'permissions': current}
 
 
 def _save(db, invoice, flow, actor, status, message):
@@ -216,37 +248,69 @@ def _receipt_absent(db, order_id, identity, currency):
     return deletion_evidence.absent(db, order_id, identity, currency)
 
 
+def _finish_original(db, step, identity, key):
+    """Retain original readback even if current authority no longer permits work."""
+    if not step.get('request_key'):
+        return
+    claim = legacy_sending.finish(db, step['request_key'], 'succeeded',
+        {'original_request_readback': True, 'deleted': True, 'cascade_step': key}, identity)
+    conflict = claim is not None and claim.state != 'succeeded'
+    db.commit()
+    if conflict:
+        raise ValueError('原删除结果与已记录证据冲突，办理权已冻结，请核对原任务')
+
+
+def _unconfirmed_state(db, step):
+    claim = legacy_sending.find(db, step['request_key']) if step.get('request_key') else None
+    state = 'failed' if claim is not None and claim.state in {'failed', 'not_sent'} else 'uncertain'
+    db.rollback()
+    return state
+
+
 def _delete_receipt(db, invoice_id, token, row, actor):
     identity = str(row["cash_collection_id"])
     key = "receipt:" + identity
     invoice = _owned(db, invoice_id, token)
-    state = _workflow(invoice).get("steps", {}).get(key, {}).get("status")
+    step = _workflow(invoice).get("steps", {}).get(key, {})
+    state = step.get('status')
+    order_id, currency = str(invoice.xiaoman_order_id), invoice.currency
     db.commit()
     if state == "done":
         return
     if state in {"sending", "uncertain"}:
-        if not _receipt_absent(db, invoice.xiaoman_order_id, identity, invoice.currency):
+        if not _receipt_absent(db, order_id, identity, currency):
             raise ValueError("原回款删除结果待核对，未重复发送删除")
     else:
         api_token = okki_client.ensure_access_token(db)
+        db.commit()
         current = lifecycle_remote.request(api_token, "receipt", identity)
         if current is not None:
-            if str(current.get("order_id")) != invoice.xiaoman_order_id or current.get("currency") != invoice.currency:
+            if str(current.get("order_id")) != order_id or current.get("currency") != currency:
                 raise ValueError("回款关联订单或币种变化，未删除")
             if current != row:
                 raise ValueError("回款资料在确认后变化，请刷新重新确认")
-            _step(db, invoice_id, token, key, {"status": "sending", "before": row}, actor)
+            db.rollback()
             _owned(db, invoice_id, token)
+            _current_actor(db, actor, 'receipt:delete')
+            request_key = f'cascade-remove:{invoice_id}:receipt:{identity}:{token}'
+            grant = legacy_sending.start_removal(db, invoice_id, request_key, 'receipt', identity,
+                {'actor_id': actor, 'cascade_token': token, 'step': key, 'original_receipt': row})
+            step = {'status': 'sending', 'before': row, 'request_key': request_key}
+            _step(db, invoice_id, token, key, step, actor)  # Claim + durable intent commit together.
+            db.commit()
             try:
-                lifecycle_remote.request(api_token, "receipt", identity, remove=True)
+                lifecycle_remote.request(api_token, "receipt", identity, remove=True, db=db, ticket=grant)
             except okki_client.OkkiApiError as exc:
                 _warn(exc)
-            if not _receipt_absent(db, invoice.xiaoman_order_id, identity, invoice.currency):
-                _step(db, invoice_id, token, key, {"status": "uncertain", "before": row}, actor)
+            db.rollback()
+            if not _receipt_absent(db, order_id, identity, currency):
+                _step(db, invoice_id, token, key, {**step, 'status': _unconfirmed_state(db, step)}, actor)
                 raise ValueError("小满回款删除结果待核对，未继续删除订单")
-        elif not _receipt_absent(db, invoice.xiaoman_order_id, identity, invoice.currency):
+        elif not _receipt_absent(db, order_id, identity, currency):
             raise ValueError("回款删除证据不一致")
-    _step(db, invoice_id, token, key, {"status": "done", "before": row}, actor)
+    db.rollback()
+    _finish_original(db, step, identity, key)
+    _step(db, invoice_id, token, key, {**step, 'status': 'done', 'before': row}, actor)
 
 
 def run(db, identity, user, expected_version):
@@ -272,7 +336,8 @@ def run(db, identity, user, expected_version):
     token = uuid4().hex
     previous = (invoice.cancellation or {}).get("previous_status", invoice.status)
     invoice.status = "cancel_pending"
-    flow = {**flow, "token": token, "lease_until": (beijing_now() + timedelta(minutes=5)).isoformat(),
+    authority = legacy_sending.authorize(db, identity)
+    flow = {**flow, 'authority_epoch': authority.epoch, "token": token, "lease_until": (beijing_now() + timedelta(minutes=5)).isoformat(),
             "order": plan["order"] or flow.get("order"), "plan": plan, "steps": flow.get("steps", {}), "actor": actor}
     invoice.cancellation = {**(invoice.cancellation or {}), "previous_status": previous}
     _save(db, invoice, flow, actor, "cascade_running", "已冻结订单，正在自动删除关联出库和回款")
@@ -284,9 +349,12 @@ def run(db, identity, user, expected_version):
             key = "outbound:" + str(doc["outbound_invoice_id"])
             record = records[str(doc["outbound_invoice_id"])]
             _step(db, identity, token, key, {"status": "sending", "before": doc, "record": record}, actor)
-            _owned(db, identity, token)
+            current = _owned(db, identity, token)
+            _current_actor(db, actor, 'shipping_inspection:delete')
+            order_id = current.xiaoman_order_id
+            db.commit()
             outbound_delete_service.delete_outbound(db, record, actor,
-                expected_order_id=invoice.xiaoman_order_id, expected_snapshot=doc)
+                expected_order_id=order_id, expected_snapshot=doc)
             _step(db, identity, token, key, {"status": "done", "number": doc.get("serial_id")}, actor)
         # Ambiguous receipt attempts may disappear from a later live preview.
         old = [v["before"] for k, v in flow["steps"].items() if k.startswith("receipt:")
@@ -297,13 +365,23 @@ def run(db, identity, user, expected_version):
         # Local ledger changes retain amounts, IDs, fee allocations and proofs.
         invoice = _owned(db, identity, token)
         reviewed_local = {row["id"]: row for row in plan["local"]}
-        for row in _local_rows(db, invoice):
+        local_ids = [row.id for row in _local_rows(db, invoice)]
+        order_id, currency = invoice.xiaoman_order_id, invoice.currency
+        db.commit()
+        for local_id in local_ids:
+            row = db.get(Receipt, local_id)
             if row.status != "active":
+                db.rollback()
                 continue
-            if row.xiaoman_receipt_id:
-                if not _receipt_absent(db, invoice.xiaoman_order_id, row.xiaoman_receipt_id, invoice.currency):
+            remote_id = row.xiaoman_receipt_id
+            db.rollback()
+            if remote_id:
+                if not _receipt_absent(db, order_id, remote_id, currency):
                     raise ValueError("仍有有效回款，未继续删除订单")
+                db.rollback()
                 invoice = _owned(db, identity, token)
+                _current_actor(db, actor, 'receipt:delete')
+                row = db.get(Receipt, local_id)
                 db.refresh(row, with_for_update=True)
                 if _local_stamp([row])[0] != reviewed_local.get(row.id):
                     raise ValueError("方舟回款在删除期间变化，请刷新后继续核对")
@@ -311,10 +389,14 @@ def run(db, identity, user, expected_version):
                 row.version += 1
                 receipts.log(db, row, "remote_deleted", REASON + "；已核实小满不存在，原资金和凭证保留", actor)
             else:
+                invoice = _owned(db, identity, token)
+                _current_actor(db, actor, 'receipt:delete')
+                row = db.get(Receipt, local_id)
                 db.refresh(row, with_for_update=True)
                 if _local_stamp([row])[0] != reviewed_local.get(row.id):
                     raise ValueError("方舟回款在删除期间变化，请刷新后继续核对")
                 receipts._void(db, row, REASON, actor)
+            db.commit()  # Each verified local receipt step precedes any further provider read.
         _step(db, identity, token, "local_receipts", {"status": "done"}, actor)
         # Verify no unreviewed links appeared before deleting the parent.
         invoice = _owned(db, identity, token)
@@ -326,19 +408,29 @@ def run(db, identity, user, expected_version):
         api_token = okki_client.ensure_access_token(db)
         invoice = _owned(db, identity, token)
         order_state = _workflow(invoice).get("steps", {}).get("order", {}).get("status")
+        order_step = _workflow(invoice).get('steps', {}).get('order', {})
+        order_id = str(invoice.xiaoman_order_id)
         db.commit()
         if order_state not in {"sending", "uncertain", "done"} and fresh["order"] is not None:
-            _step(db, identity, token, "order", {"status": "sending"}, actor)
             _owned(db, identity, token)
+            request_key = f'cascade-remove:{identity}:order:{order_id}:{token}'
+            grant = legacy_sending.start_removal(db, identity, request_key, 'order', order_id,
+                {'actor_id': actor, 'cascade_token': token, 'step': 'order', 'original_order': fresh['order']})
+            order_step = {'status': 'sending', 'request_key': request_key}
+            _step(db, identity, token, "order", order_step, actor)
+            db.commit()
             try:
-                lifecycle_remote.request(api_token, "order", invoice.xiaoman_order_id, remove=True)
+                lifecycle_remote.request(api_token, "order", order_id, remove=True, db=db, ticket=grant)
             except okki_client.OkkiApiError as exc:
                 _warn(exc)
-        after = lifecycle_remote.request(api_token, "order", invoice.xiaoman_order_id)
+        db.rollback()
+        after = lifecycle_remote.request(api_token, "order", order_id)
         if after is not None and remote.order_active(db, after):
-            _step(db, identity, token, "order", {"status": "uncertain"}, actor)
+            _step(db, identity, token, "order", {**order_step, 'status': _unconfirmed_state(db, order_step)}, actor)
             raise ValueError("小满订单删除结果待核对，未重复发送删除")
-        _step(db, identity, token, "order", {"status": "done"}, actor)
+        db.rollback()
+        _finish_original(db, order_step, order_id, 'order')
+        _step(db, identity, token, "order", {**order_step, 'status': 'done'}, actor)
         invoice = _owned(db, identity, token)
         invoice.status = "cancelled"
         flow = {**_workflow(invoice), "token": None, "lease_until": None}

@@ -12,9 +12,10 @@
     <section v-if="error" class="station-error" role="alert"><AlertCircle :size="20" /><div>{{ error }}<a v-if="loginRequired" :href="loginUrl">重新登录</a></div></section>
 
     <template v-if="!view">
-      <router-link v-if="!scannerOpen" v-any-permission="['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin']" class="station-secondary station-query" to="/shipping/inspections?from=station">查询验货单</router-link>
+      <router-link v-if="!scannerOpen" v-any-permission="['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin']" class="station-secondary station-query" :to="{ path: '/shipping/inspections', query: { from: 'station', transaction_mode: linkedOutbound ? 'local' : 'legacy' } }">查询验货单</router-link>
       <StationScanner v-if="scannerOpen" @decoded="decoded" @cancel="scannerOpen = false" />
       <template v-else>
+        <button v-if="linkedOutbound" class="station-secondary" type="button" :disabled="busy || loading || loginRequired || !selected" @click="openLinkedOutbound">打开订单指定的出库单</button>
         <button class="scan-button" type="button" :disabled="busy || loading || loginRequired || !operators.length" @click="scanTap"><ScanLine :size="34" /><span>{{ busy ? '正在校验出库单…' : selected ? `以 ${selected.name} 身份扫描` : '扫出库单二维码' }}</span><ArrowRight :size="21" /></button>
         <p class="scan-hint">扫描纸质出库单右上角二维码，拍照后提交检验</p>
       </template>
@@ -42,7 +43,8 @@
 </template>
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { onBeforeRouteLeave, useRoute } from 'vue-router'
+import { getOutboundPrintData } from '@/api/shipping'
 import { FullScreen as ScanLine, User as UserRound, CircleCheck as BadgeCheck, Right as ArrowRight, CircleCheckFilled as CheckCircle2, Warning as AlertCircle, Refresh as RefreshCw, Check, HomeFilled } from '@element-plus/icons-vue'
 import { confirmDanger } from '@/utils/feedback'
 import { useShippingStation } from './composables/useShippingStation'
@@ -53,6 +55,18 @@ import StationInstallHint from './components/StationInstallHint.vue'
 import StationQuickNav from './components/StationQuickNav.vue'
 import { captureStationScroll, restoredStationScroll } from './composables/stationScroll'
 const station = useShippingStation()
+const route = useRoute()
+const linkedOutbound = computed(() => /^local-[1-9]\d*$/.test(String(route.query.outbound || '')) ? String(route.query.outbound) : null)
+async function openLinkedOutbound() {
+  if (!selected.value || busy.value || !linkedOutbound.value) return
+  busy.value = true
+  try {
+    const response = await getOutboundPrintData(linkedOutbound.value)
+    busy.value = false
+    await decoded(response.data.qr_data)
+  } catch (e) { await fail(e) }
+  finally { busy.value = false }
+}
 const { operators, selected, operator, view, remark, busy, loading, scannerOpen, error, invalid, loginRequired,
   prompt, selectionVersion, receipt, progress, uploadStage, photos, videos, submitted, canWrite, missingRecheck, sessionId, dirty, pendingUpload, pendingSubmit,
   choose, startScan, decoded, refresh, upload, retryUpload, remove, submit, end, loadOperators, fail } = station

@@ -11,6 +11,7 @@ from app.core.response import ok
 from app.dingtalk import gmv_daily_config, gmv_daily_service
 from app.dingtalk.gmv_daily_schemas import (
     GmvDailyConfigUpdate,
+    GmvNativeConfigUpdate,
     GmvDailyPreviewRequest,
     GmvDailySendRequest,
 )
@@ -44,7 +45,7 @@ def get_gmv_daily_config(
 
 @router.put("/gmv-daily/config", summary="保存 GMV 日报配置")
 def update_gmv_daily_config(
-    request: GmvDailyConfigUpdate,
+    request: GmvDailyConfigUpdate | GmvNativeConfigUpdate,
     db: Session = Depends(get_db),
     _current_user: dict = Depends(require_permission("dingtalk:admin")),
 ):

@@ -173,11 +173,29 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
             "synced_at": utc_now().isoformat(),
         }
 
+    from app.trade.service import formal_projection_enabled as local_mode
+    from app.trade.service import consumer_phase
+    native = None
+    if local_mode(db):
+        from app.colorwork.local_service import template_statuses
+        native = template_statuses(db, template_id, rule)
+        if consumer_phase(db) == "local_only":
+            return native
     business_db = get_settings().BUSINESS_DB_NAME
     inv_time_col = _inventory_time_column(db)
     inv_time_select = f"MAX(i.`{inv_time_col}`)" if inv_time_col else "NULL"
     like_clauses = []
     params: dict = {}
+    from app.stock.local_query_service import legacy_excluded_products
+    excluded = legacy_excluded_products(db) if native is not None else set()
+    exclusion_clause = ""
+    if excluded:
+        keys = []
+        for index, identity in enumerate(sorted(excluded)):
+            key = f"excluded_{index}"
+            params[key] = identity
+            keys.append(f":{key}")
+        exclusion_clause = f"AND p.product_id NOT IN ({','.join(keys)})"
     for index, prefix in enumerate(rule["prefixes"]):
         key = f"prefix_{index}"
         like_clauses.append(f"p.name LIKE :{key}")
@@ -204,6 +222,7 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
             WHERE p.disable_flag = 0
               AND ({" OR ".join(like_clauses)})
               {weight_clause}
+              {exclusion_clause}
             GROUP BY p.color, p.size
         """),
         params,
@@ -239,6 +258,14 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
             if source_synced_at is None or stamp > source_synced_at:
                 source_synced_at = stamp
 
+    if native is not None:
+        # A display cell can contain disjoint products from both routes. Never
+        # turn their balances into one availability promise; local cells win.
+        return {**native, "statuses": {**statuses, **native["statuses"]},
+            "matched_products": matched_products + native["matched_products"], "source": "mixed",
+            "source_watermarks": {"legacy": source_synced_at, "local": native["source_synced_at"]},
+            "source_synced_at": min(source_synced_at, native["source_synced_at"])
+                if source_synced_at and native["source_synced_at"] else None}
     return {
         "template_id": template_id,
         "unmapped": False,

@@ -154,6 +154,12 @@ def resolve_customer(
     boundary. This resolver returns one canonical customer or one stable issue and never
     returns contact candidates or other PII from the customer library.
     """
+    from app.trade.service import local_mode
+    if local_mode():
+        from app.integration.local_service import resolve_customer as resolve_local_customer
+        return resolve_local_customer(db, submission, field=field)
+    if submission.ark_customer_id and submission.ark_customer_id.startswith("ark:"):
+        raise InvoiceValidationError([_issue("IDENTITY_SOURCE_MISMATCH", field, "当前入口尚未切换为本地交易")])
     if submission.ark_customer_id:
         row = _customer_by_id(db, submission.ark_customer_id)
         if row is None:
@@ -239,6 +245,12 @@ def resolve_product(
     *,
     field: str = "catalog_ref",
 ) -> dict:
+    from app.trade.service import local_mode
+    if local_mode():
+        from app.integration.local_service import resolve_product as resolve_local_product
+        return resolve_local_product(db, submission, field=field)
+    if submission.catalog_ref and (isinstance(submission.catalog_ref.product_id, str) or isinstance(submission.catalog_ref.sku_id, str)):
+        raise InvoiceValidationError([_issue("IDENTITY_SOURCE_MISMATCH", field, "当前入口尚未切换为本地交易")])
     if submission.catalog_ref is not None:
         if submission.product_kind == "accessory":
             try:

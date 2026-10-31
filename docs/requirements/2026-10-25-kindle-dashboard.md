@@ -1,6 +1,6 @@
 # Kindle personal dashboard
 
-Scope: PW3 5.15.1.1; tasks, personal notes and explicit message delivery. Membership usage is deferred. Implementation is local only; no production migration or release has run.
+Scope: PW3 5.15.1.1; tasks, personal notes and explicit message delivery. Membership usage is deferred. This document defines the interface and device contract. Release, migration and outstanding real-device acceptance evidence are maintained in [the current handoff](../handoff.md); a backend release does not certify device binding or synchronization.
 
 Entry: Personal efficiency / Kindle dashboard (`/inkboard`). New permissions `inkboard:read` and `inkboard:write`; the task projection additionally checks the current `task:read/write` permission. All data is scoped to the bound user's live account and permissions. Device tokens are opaque, hashed at rest, revocable, and cannot write tasks/notes or manage credentials.
 

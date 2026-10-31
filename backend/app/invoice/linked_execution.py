@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.time import beijing_now
-from app.invoice import edit_authority, linked_sync_service as linked, order_sync_execution as orders
+from app.invoice import legacy_sending, edit_authority, linked_sync_service as linked, order_sync_execution as orders
 from app.invoice import linked_outbound_service, service, xiaoman_service
 from app.portal.upstream_authority import begin_employee_document_write
 from app.receipt import balance, remote
@@ -36,6 +36,7 @@ def entry(db,invoice_id,user,*permissions,any_permission=False):
     elif any_permission and 'super_admin' not in current.get('roles',[]):
         if not set(permissions).intersection(current.get('permissions',[])):
             raise HTTPException(403,"当前账号无权查看关联同步",headers={'Cache-Control':'private, no-store'})
+    legacy_sending.authorize(db, invoice_id)
     invoice=edit_authority.lock_document(db,invoice_id,force=installed)
     edit_authority._visible(db,invoice,current)
     return invoice,current,installed
@@ -46,6 +47,7 @@ def _phase(db,invoice_id,identity,user,token=None,*,active=True):
         raise HTTPException(409,"关联同步阶段存在未提交事务")
     try:invoice,current=edit_authority.prepare_recovery(db,invoice_id,user,'invoice:sync')
     except SQLAlchemyError:_unavailable()
+    legacy_sending.authorize(db, invoice_id)
     row=db.get(linked.InvoiceLinkedSync,identity)
     if row is None or row.invoice_id!=invoice.id:raise HTTPException(404,"关联同步记录不存在")
     invoice,row=linked._lock(db,identity)

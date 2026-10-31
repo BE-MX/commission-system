@@ -66,7 +66,9 @@ def test_delete_only_grant_can_remove_own_unsynced_invoice(db, order, monkeypatc
     identity = order.id
     with api(db, {"sub": "1", "roles": [], "permissions": ["invoice:delete"]}) as client:
         assert client.delete(f"/api/invoice/invoices/{identity}").status_code == 200
-    assert db.get(Invoice, identity) is None
+    assert db.get(Invoice, identity).status == 'deleted'
+    from app.invoice import service
+    assert service.get_invoice(db, identity) is None
 
 
 @pytest.mark.parametrize("actor,codes,expected", [(1, ["invoice:write"], 403), (2, ["invoice:delete"], 404), (2, ["invoice:delete", "invoice:read_all"], 200)])
@@ -75,7 +77,7 @@ def test_local_delete_rechecks_live_grant_and_scope(db, order, actor, codes, exp
     identity = order.id
     with api(db, {"sub": str(actor), "roles": [], "permissions": ["invoice:delete", "invoice:read_all"]}) as client:
         assert client.delete(f"/api/invoice/invoices/{identity}").status_code == expected
-    assert (db.get(Invoice, identity) is None) == (expected == 200)
+    assert (db.get(Invoice, identity).status == 'deleted') == (expected == 200)
 
 
 def test_super_admin_keeps_existing_bypass(db, order):
@@ -121,7 +123,12 @@ def test_disabled_portal_legacy_remove_uses_live_delete_grant(db, order, monkeyp
     monkeypatch.setattr(get_settings(), "PORTAL_ENABLED", False)
     seed_authority(db, 1, *codes)
     calls = []
-    monkeypatch.setattr(cancellation_service, "remove_remote", lambda *args: calls.append(args[0]) or {"status": "remote_deleted"})
+    order.status, order.xiaoman_order_id = 'cancel_pending', '123'
+    order.cancellation = {'status': 'pending'}
+    db.commit()
+    monkeypatch.setattr(okki_client, 'ensure_access_token', lambda *args: 'fixture-token')
+    monkeypatch.setattr(cancellation_service, 'inspect', lambda *args: calls.append(args[0]) or
+        {'remote_exists': False, 'outbounds': [], 'remote_receipt_count': 0})
     user = {"sub": "1", "roles": [], "permissions": ["invoice:admin", "invoice:delete"]}
     with api(db, user) as client:
         response = client.post(f"/api/invoice/invoices/{order.id}/lifecycle",

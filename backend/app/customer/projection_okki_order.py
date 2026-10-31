@@ -237,6 +237,8 @@ def _project_okki_order(
         CustomerOrder.external_order_id == external_id,
     )
     order = order_query.with_for_update().one_or_none()
+    if order is not None and order.local_invoice_id is not None:
+        raise ProjectionError("ORDER_MANAGED_LOCALLY")
     if order is not None and order.customer_id != account.id:
         raise ProjectionError("ORDER_CUSTOMER_MISMATCH")
     values = {

@@ -377,8 +377,9 @@ def test_delete_invoice_blocked_when_synced(db):
     invoice.sync_status = "not_synced"
     service.delete_invoice(db, invoice)
     db.flush()
-    assert db.query(Invoice).count() == 0
-    assert db.query(InvoiceItem).count() == 0
+    assert db.query(Invoice).one().status == 'deleted'
+    assert service.get_invoice(db, invoice.id) is None
+    assert db.query(InvoiceItem).count() == 1
 
 
 def test_delete_external_api_invoice_without_ingest_record(db):
@@ -397,8 +398,9 @@ def test_delete_external_api_invoice_without_ingest_record(db):
 
     service.delete_invoice(db, invoice)
     db.flush()
-    assert db.query(Invoice).count() == 0
-    assert db.query(InvoiceItem).count() == 0
+    assert db.query(Invoice).one().status == 'deleted'
+    assert service.get_invoice(db, invoice.id) is None
+    assert db.query(InvoiceItem).count() == 1
 
 
 # ── workbook import ───────────────────────────────────────────

@@ -53,6 +53,25 @@ def query_public_inventory(
     sort_field: str = "",
     sort_order: str = "",
 ) -> dict:
+    from app.stock.local_query_service import public_local_rows
+    from app.trade.service import consumer_phase
+    phase = consumer_phase(db)
+    if phase == "legacy_only":
+        return _legacy_public_inventory(db, page, page_size, keyword, in_stock_only, sort_field, sort_order)
+    # Merge product identities, never balances. Sorting/pagination happens only
+    # after excluding unsafe mirrors and assembling the two disjoint catalogs.
+    local = public_local_rows(db, keyword)
+    legacy = [{**row, "source": "legacy"} for row in _legacy_public_inventory(
+        db, 1, None, keyword, in_stock_only)["items"]] if phase == "transition" else []
+    items = [*legacy, *[row for row in local if not in_stock_only or row["in_stock"]]]
+    field = sort_field if sort_field in {"type", "size", "color", "weight", "in_stock"} else "type"
+    items.sort(key=lambda row: (row[field], str(row["product_id"])), reverse=sort_order == "desc")
+    return {"total": len(items), "items": items[(page - 1) * page_size:page * page_size],
+            "source": "mixed" if phase == "transition" else "local"}
+
+
+def _legacy_public_inventory(db, page=1, page_size=20, keyword=None, in_stock_only=False,
+                             sort_field="", sort_order=""):
     """产品四要素 + 有货标识分页查询（有货口径 = 小满可用库存 enable_count > 0）。"""
     business_db = get_settings().BUSINESS_DB_NAME
 
@@ -61,6 +80,17 @@ def query_public_inventory(
     if keyword:
         kw_clause = "AND (p.name LIKE :kw OR p.model LIKE :kw)"
         params["kw"] = f"%{keyword.strip()}%"
+    from app.stock.local_query_service import legacy_excluded_products
+    from app.trade.service import consumer_phase
+    excluded = legacy_excluded_products(db) if consumer_phase(db) == "transition" else set()
+    if excluded:
+        # Bind each stable product identity; no request text is interpolated.
+        keys = []
+        for index, identity in enumerate(sorted(excluded)):
+            key = f"excluded_{index}"
+            params[key] = identity
+            keys.append(f":{key}")
+        kw_clause += f" AND p.product_id NOT IN ({','.join(keys)})"
 
     stock_clause = "AND COALESCE(inv.enable_count, 0) > 0" if in_stock_only else ""
 
@@ -108,7 +138,8 @@ def query_public_inventory(
             ORDER BY {order_sql}
             LIMIT :limit OFFSET :offset
         """),
-        {**params, "limit": page_size, "offset": (page - 1) * page_size},
+        {**params, "limit": page_size if page_size is not None else total,
+         "offset": (page - 1) * page_size if page_size is not None else 0},
     ).mappings().all()
 
     items = []

@@ -18,6 +18,11 @@ def get_in_transit_by_product_ids(db: Session, product_ids: list[int]) -> dict[i
     返回: {product_id: in_transit_qty}
     仅统计明细状态为「已提交」(0) 的数据。
     """
+    from app.trade.service import local_mode
+    if local_mode():
+        from app.stock.local_query_service import production_status
+        return {key: sum(item["in_transit_qty"] for item in value["items"])
+                for key, value in production_status(db, product_ids).items()}
     if not product_ids:
         return {}
 

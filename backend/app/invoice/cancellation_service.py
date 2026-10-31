@@ -33,19 +33,18 @@ def save(db, invoice, state, actor, message):
     invoice.cancellation = {**(invoice.cancellation or {}), **state,
                             "message": message, "updated_at": beijing_now().isoformat()}
     audit(db, invoice, "cancel_step", actor, invoice.cancellation)
+    result=deepcopy(invoice.cancellation)
     db.commit()
-    return invoice.cancellation
+    return result
 
 
 def begin(db, invoice, reason, actor, expected_version):
     from app.invoice.linked_sync_service import edit_version, ensure_idle
     if invoice.cancellation and invoice.cancellation["status"] != "aborted":
         return invoice.cancellation
-    from app.portal.authority import get_settings
-    if get_settings().PORTAL_ENABLED:
-        from app.invoice import cancellation_facts
-        if cancellation_facts.capture(db, invoice):
-            raise ValueError("已有原执行记录，请核对原任务，不能重启取消")
+    from app.invoice import cancellation_facts
+    if cancellation_facts.capture(db, invoice):
+        raise ValueError("已有原执行记录，请核对原任务，不能重启取消")
     ensure_idle(invoice)
     ensure_mutable(db, invoice)
     if not invoice.xiaoman_order_id:
@@ -148,6 +147,12 @@ def refresh_authorized(db, invoice_id, user):
     local, count = local_evidence(db, invoice.id, for_update=True)
     proof["blockers"].extend(local)
     proof["local_receipt_count"] = count
+    if not proof['remote_exists']:
+        from app.invoice import legacy_sending
+        for original in pending:
+            key=original.safe_diff_json['attempt_key']
+            legacy_sending.finish(db,f'legacy:cancel-order:{invoice.id}:{key}','succeeded',
+                {'original_request_readback':True,'deleted':True,'evidence_hash':facts.digest(proof)},str(invoice.xiaoman_order_id))
     if pending:
         facts.reconcile(db, invoice, "present" if proof["remote_exists"] else "absent", int(user["id"]))
     if state["status"] in TERMINAL:
@@ -158,9 +163,10 @@ def refresh_authorized(db, invoice_id, user):
 
 
 def refresh(db, invoice, actor):
-    proof = inspect(db, invoice)
-    invoice = service.get_invoice(db, invoice.id, for_update=True)
-    return apply_refresh(db, invoice, proof, actor)
+    if db.new or db.dirty or db.deleted:raise ValueError('请先保存后核对原取消任务')
+    identity=invoice.id
+    db.rollback()
+    return refresh_authorized(db,identity,{'id':int(actor)})
 
 
 def apply_refresh(db, invoice, proof, actor):
@@ -179,43 +185,13 @@ def apply_refresh(db, invoice, proof, actor):
 
 
 def remove_remote(db, invoice, actor):
-    if not invoice.cancellation:
-        raise ValueError("请先发起取消")
-    if invoice.cancellation["status"] in TERMINAL:
-        return invoice.cancellation
-    if invoice.cancellation["status"] in {"deleting", "uncertain"}:
-        return refresh(db, invoice, actor)
-    # Token acquisition may commit. Finish it before the final lock and POST.
-    token = okki_client.ensure_access_token(db)
-    proof = inspect(db, invoice)
-    invoice = service.get_invoice(db, invoice.id, for_update=True)
-    db.refresh(invoice)
-    if invoice.status != "cancel_pending" or invoice.cancellation["status"] not in {"pending", "blocked"}:
-        return invoice.cancellation
-    if proof["blockers"]:
-        return save(db, invoice, {"status": "blocked", "evidence": proof}, actor, "存在关联单据，未发送小满删除请求")
-    if not proof["remote_exists"]:
-        invoice.status = "cancelled"
-        return save(db, invoice, {"status": "remote_deleted", "evidence": proof}, actor, "已核实小满订单不存在，方舟原单保留")
-    token_id = uuid4().hex
-    save(db, invoice, {"status": "deleting", "token": token_id,
-                      "lease_until": (beijing_now() + timedelta(minutes=5)).isoformat(), "evidence": proof}, actor, "删除意图已保存，正在请求小满")
-    invoice = service.get_invoice(db, invoice.id, for_update=True)
-    db.refresh(invoice)
-    state = invoice.cancellation
-    if state["status"] != "deleting" or state["token"] != token_id or datetime.fromisoformat(state["lease_until"]) <= beijing_now():
-        raise ValueError("删除执行权已失效，请核对原任务")
-    try:
-        lifecycle_remote.request(token, "order", invoice.xiaoman_order_id, remove=True)
-        after = lifecycle_remote.request(token, "order", invoice.xiaoman_order_id)
-        if after is not None:
-            raise okki_client.OkkiOutcomeUncertainError("小满仍返回原订单")
-    except okki_client.OkkiApiError as exc:
-        logger.warning("Order cancellation awaits reconciliation (%s)", type(exc).__name__)
-        print(f"[invoice-cancel] awaits reconciliation ({type(exc).__name__})", flush=True)
-        return save(db, invoice, {"status": "uncertain"}, actor, "小满尚未确认删除；请核对审批、确认状态及下游单据，不会重发")
-    invoice.status = "cancelled"
-    return save(db, invoice, {"status": "remote_deleted"}, actor, "小满删除已回读确认；方舟原单、ID与审计记录保留")
+    """Legacy callers delegate to the installed, durable current executor."""
+    from app.invoice import cancellation_execution
+    if db.new or db.dirty or db.deleted:
+        raise ValueError('取消存在未提交修改，请先保存后核对原任务')
+    identity=invoice.id
+    db.rollback()
+    return cancellation_execution.remove_authorized(db,identity,{'id':int(actor)})
 
 
 def retain(db, invoice, reason, actor, confirmed):
@@ -234,11 +210,9 @@ def retain(db, invoice, reason, actor, confirmed):
 
 
 def abort(db, invoice, actor, reason):
-    from app.portal.authority import get_settings
-    if get_settings().PORTAL_ENABLED:
-        from app.invoice import cancellation_facts
-        if cancellation_facts.capture(db, invoice):
-            raise ValueError("原执行已有持久记录，不能当作未发送撤回")
+    from app.invoice import cancellation_facts
+    if cancellation_facts.capture(db, invoice):
+        raise ValueError("原执行已有持久记录，不能当作未发送撤回")
     if not invoice.cancellation or invoice.cancellation["status"] not in {"pending", "blocked"}:
         raise ValueError("仅尚未发送删除的取消流程可撤回")
     invoice.status = invoice.cancellation["previous_status"]

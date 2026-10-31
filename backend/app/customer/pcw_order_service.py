@@ -42,12 +42,14 @@ from sqlalchemy.orm import Session
 from app.auth.service import get_live_user_authorization
 from app.core.time import beijing_now, beijing_now_aware, to_beijing_time
 from app.customer import pcw_errors
+from app.customer.projection_common import sha256
 from app.customer.access_service import (
     CustomerAccessDenied,
     require_customer_access,
 )
 from app.customer.logical_customer_service import (
     logical_root_predicate,
+    logical_owner_expression,
     resolve_canonical_customer_id,
 )
 from app.customer.models import (
@@ -157,7 +159,7 @@ def _items_by_order(
         return {}
     rows = (
         db.query(CustomerOrderItem)
-        .filter(CustomerOrderItem.order_id.in_(order_ids))
+        .filter(CustomerOrderItem.order_id.in_(order_ids), CustomerOrderItem.projection_role == 'active')
         .order_by(CustomerOrderItem.id.asc())
         .all()
     )
@@ -341,7 +343,7 @@ def _classify_population(
     for order in orders:
         items = items_map.get(int(order.id), [])
         if not order.is_valid_business_order:
-            if order.order_status == ORDER_STATUS_TERMINATED:
+            if order.order_status == ORDER_STATUS_TERMINATED or (order.source_system == "ark" and order.order_status == "cancelled"):
                 excluded["cancelled"] += 1
             else:
                 excluded["invalid"] += 1
@@ -533,6 +535,13 @@ def _median_days(intervals: Sequence[int]) -> int:
 
 def _source_watermarks(db: Session, customer_id: int, now) -> list[dict]:
     """订单投影来源水位：优先小满 orders 同步游标，叠加本客户订单最近投影时间。"""
+    from app.trade.service import formal_projection_enabled
+    if formal_projection_enabled(db):
+        from app.trade.refresh_service import projection_status
+        state = projection_status(db)
+        return [{**source, "source": "ark" if source["source"] == "local" else "okki", "resource": "orders",
+                 "status": "fresh" if source["status"] == "current" else source["status"],
+                 "scope": "all_formal_orders"} for source in state["sources"]]
     entries: list[dict] = []
     cursors = (
         db.query(CustomerSyncCursor)
@@ -565,6 +574,7 @@ def _source_watermarks(db: Session, customer_id: int, now) -> list[dict]:
             order.synced_at
             for order in db.query(CustomerOrder.synced_at)
             .filter(logical_root_predicate(CustomerOrder, "order", customer_id))
+            .filter(CustomerOrder.source_system == "okki")
             .all()
             if order.synced_at is not None
         ),
@@ -822,6 +832,8 @@ def _upsert_window(
     anchor_date = days[-1]
     anchor_key = _batch_key(anchor_date)
     occurrence_key = f"reorder:{customer_id}:{family}:{anchor_key}"
+    if len(occurrence_key) > 160:
+        occurrence_key = f'reorder:{customer_id}:sha256:{sha256(family, anchor_key)}'
     window_from = anchor_date + timedelta(days=median_days - WINDOW_MARGIN_DAYS)
     window_to = anchor_date + timedelta(days=median_days + WINDOW_MARGIN_DAYS)
     sample_refs = _sample_refs(days)
@@ -1052,7 +1064,8 @@ def on_order_projected(db: Session, order_id: int) -> None:
     order = db.get(CustomerOrder, order_id)
     if order is None:
         raise pcw_errors.not_found("订单不存在", error_code="ORDER_NOT_FOUND")
-    canonical = resolve_canonical_customer_id(db, int(order.customer_id))
+    owner_id = db.query(logical_owner_expression(CustomerOrder, "order")).filter(CustomerOrder.id == order.id).scalar()
+    canonical = resolve_canonical_customer_id(db, int(owner_id)) if owner_id else None
     if canonical is None:
         logger.warning(
             "on_order_projected: 订单 %s 的存储客户 %s 无法解析为有效逻辑客户，跳过窗口重算",

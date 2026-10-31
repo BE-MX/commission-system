@@ -21,6 +21,8 @@ class ShippingInspection(Base):
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    local_outbound_id = Column(BigInteger, ForeignKey("ark_shipment_outbounds.id"), nullable=True, unique=True, comment="本地出库ID，历史检验保持为空")
+    local_outbound_version = Column(Integer, nullable=True, comment="本次检验对应的本地出库明细版本")
     outbound_record_id = Column(String(64), nullable=False, comment="OKKI 出库单 id")
     outbound_no = Column(String(64), comment="出库单号（冗余，便于检索与展示）")
     customer_name = Column(String(256), comment="客户名（冗余，列表展示用）")

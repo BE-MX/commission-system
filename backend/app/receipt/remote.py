@@ -261,6 +261,9 @@ def amount_fields(receipt):
 
 
 def push(db, receipt, snapshot, before_send=None):
+    from app.invoice import legacy_sending
+    if db is None or before_send is None:
+        raise ValueError("回款POST缺少持久办理权发送执行器")
     if receipt.payment_type not in receipt_types(db):
         raise ValueError("回款方式已失效，请修改后重试")
     fields = read(db, "/v1/invoices/receipt/fields")
@@ -286,9 +289,9 @@ def push(db, receipt, snapshot, before_send=None):
     # file_list intentionally omitted until a supported private file-transfer contract exists.
     for force in (False, True):
         token = okki_client.ensure_access_token(db, force=force)
-        if before_send:
-            before_send(payload)  # freeze and fence immediately before each POST
-        result = okki_client._post_json("/v1/invoices/receipt/push", token, payload, context="回款推送")
+        db.commit()  # End credential/read snapshots before the short sending claim.
+        ticket = before_send(payload)
+        result = legacy_sending.invoke(db, ticket, "/v1/invoices/receipt/push", token, payload, context="回款推送")
         if result is not None:
             if not isinstance(result, dict) or not str(result.get("cash_collection_id") or "").isdigit() or not result.get("cash_collection_no"):
                 raise okki_client.OkkiOutcomeUncertainError("回款响应缺少 ID 或编号，请核对小满，禁止重复创建")

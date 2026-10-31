@@ -496,6 +496,21 @@ def _four_batch_customer(db, code, user_id, *, split_last_day=False):
     return account, actor, days
 
 
+def test_long_family_preserves_display_and_uses_bounded_stable_window_identity(db):
+    account, actor, days = _four_batch_customer(db, 'C-PCW-LONG-FAMILY', 9740)
+    family = 'F'*256
+    db.query(CustomerOrderItem).update({'product_family': family})
+    first = compute_reorder_windows(db, customer_id=account.id)
+    assert first['failures'] == [] and first['windows_opened'] == 1
+    window = db.query(ReorderWindow).one()
+    assert window.product_family == family and len(window.occurrence_key) <= 160
+    assert {row.product_family for row in db.query(OrderAnalysisBatchMap)} == {family}
+    key = window.occurrence_key
+    second = compute_reorder_windows(db, customer_id=account.id)
+    assert second['failures'] == [] and db.query(ReorderWindow).count() == 1
+    assert db.query(ReorderWindow).one().occurrence_key == key
+
+
 def test_reorder_window_regular_median_and_same_day_merge(db):
     account, actor, days = _four_batch_customer(
         db, "C-PCW-R1", 9721, split_last_day=True,

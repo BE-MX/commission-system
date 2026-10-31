@@ -79,7 +79,7 @@
 - `backend/app/system/navigation_access_manifest.json`：`npm run build` 自动重写，随导航改动提交
 - `backend/tests/conftest.py`：导入新模型
 - **不改** `app/domestic/*`：归属变化有 3 条路径（`update_customer`、`customer_import_service._apply_row`、`release_stale_private_customers`），都走 ORM 赋值。所以照 `domestic_decision/event_hooks.py` 的做法挂 flush 监听器，一处覆盖全部路径，以后新增的认领/转交路径也自动生效（第一性原理：要监听的是「归属变了」这个事实，不是某几个函数）
-- 新迁移 `backend/alembic/versions/215_domestic_followup.py`
+- 新迁移 `backend/alembic/versions/246_domestic_followup.py`
 
 **后端测试新建**：
 - `backend/tests/domestic_followup_helpers.py`
@@ -841,18 +841,18 @@ git commit -m "feat(domestic-followup): add followup, item, attachment, alias, t
 
 ---
 
-### Task 3: Alembic 迁移 215
+### Task 3: Alembic 迁移 246
 
 **Files:**
-- Create: `backend/alembic/versions/215_domestic_followup.py`
+- Create: `backend/alembic/versions/246_domestic_followup.py`
 
 建之前按 AGENTS.md 再查一遍全部分支和全部 worktree 的最新编号。
 
 2026-10-30 实查结果：
-- main 的 head 是 `214_sales_return_ledger`（commit f79af949），所以本迁移用 215。
+- main 的 head 当时是 `214_sales_return_ledger`（commit f79af949），本迁移最初用 215；2026-10-31 合并前 main 并入 commerce-transition（迁移 227~245），改号为 246、接 `245_commerce_transition`。
 - worktree `C:/Users/windb/.codex/worktrees/commerce-transition/commission-system` 里有**未提交**的 214~226 迁移，已经和 main 的 214 撞号。那条线合并前需要重新编号。
 
-动手前再确认一次：跑 `python scripts/git_sweep.py`，再 `ls backend/alembic/versions`。如果 215 已被任何分支占用，顺延到下一个空号，并同步修改本计划里所有 `215_domestic_followup` 和 `down_revision`。
+动手前再确认一次：跑 `python scripts/git_sweep.py`，再 `ls backend/alembic/versions`。如果 215 已被任何分支占用，顺延到下一个空号，并同步修改本计划里所有 `246_domestic_followup` 和 `down_revision`。
 
 ```bash
 for b in $(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes); do git ls-tree --name-only "$b" backend/alembic/versions/ 2>/dev/null | grep -E '/21[4-9]_|/22[0-9]_'; done | sort -u
@@ -862,7 +862,7 @@ Expected：没有输出。如果有输出，把编号顺延到下一个空号，
 
 - [ ] **Step 1: 写迁移**
 
-`backend/alembic/versions/215_domestic_followup.py`：
+`backend/alembic/versions/246_domestic_followup.py`：
 
 ```python
 """domestic customer follow-up: records, items, attachments, aliases, tasks, outbox, config
@@ -872,16 +872,16 @@ Expected：没有输出。如果有输出，把编号顺延到下一个空号，
 FK 类型与目标列一致：客户 INT、用户 INT UNSIGNED、发货批次 BIGINT。
 downgrade 只删表；字典是用户可维护数据，不随 downgrade 删除。
 
-Revision ID: 215_domestic_followup
-Revises: 214_sales_return_ledger
+Revision ID: 246_domestic_followup
+Revises: 245_commerce_transition
 Create Date: 2026-10-30
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
-revision = "215_domestic_followup"
-down_revision = "214_sales_return_ledger"
+revision = "246_domestic_followup"
+down_revision = "245_commerce_transition"
 branch_labels = None
 depends_on = None
 
@@ -1111,7 +1111,7 @@ def downgrade():
 cd backend && .venv/Scripts/python.exe -m alembic heads
 ```
 
-Expected：只有一行 `215_domestic_followup (head)`。
+Expected：只有一行 `246_domestic_followup (head)`。
 
 **不要**执行 `alembic upgrade`。生产迁移只由 deploy.bat 执行；开发机现有配置连的是共享库。
 
@@ -1128,7 +1128,7 @@ Expected：只有一行 `215_domestic_followup (head)`。
 - [ ] **Step 4: 提交（创建后立即 git add，红线 5）**
 
 ```bash
-git add backend/alembic/versions/215_domestic_followup.py
+git add backend/alembic/versions/246_domestic_followup.py
 git commit -m "feat(domestic-followup): add migration 215 for follow-up tables and dict seeds"
 ```
 
@@ -8052,7 +8052,7 @@ Expected: PASS
 1. 确认有隔离库：本机 MySQL / Docker 起一个空库（`deploy/README.md` 没有登记现成的验收库）。没有就**停在这一步，告诉亮哥需要一个隔离库**，不要拿共享库凑合。
 2. 用临时环境变量把数据库指向隔离库。Settings 没有 `DATABASE_URL` 字段，`alembic/env.py` 用的是 `settings.commission_db_url`，所以要设置的是 `COMMISSION_DB_HOST`、`COMMISSION_DB_PORT`、`COMMISSION_DB_USER`、`COMMISSION_DB_PASSWORD`、`COMMISSION_DB_NAME` 这五个变量（`app/core/config.py:87-91`）：
    - **每次**执行 alembic 或启动后端前，先跑自检：`PY -c "from app.core.config import get_settings; print(get_settings().commission_db_url)"`。打印出来的 host 和库名不是隔离库，就立刻停下。
-   - 自检通过后执行 `alembic upgrade head`，确认 215 能从 214 正常升级；再执行 `alembic downgrade 214_sales_return_ledger`，确认能回退。只在隔离库上做。
+   - 自检通过后执行 `alembic upgrade head`，确认 246 能从 245 正常升级；再执行 `alembic downgrade 245_commerce_transition`，确认能回退。只在隔离库上做。
 3. 用同一组五个变量启动后端（启动前同样跑一次自检）和前端 dev，创建一个测试业务员，给它分配 `domestic_followup:read/write`。
 4. 用内置浏览器走一遍以下路径，每步截图存到 `tmp/followup-acceptance/`：
    - 直接保存一条文字记录 → 待办出现约定跟进。
@@ -8116,7 +8116,7 @@ Expected: PASS
 
 - [ ] **Step 3: handoff 待部署条目要点**
 
-- 分支 `claude/domestic-followup`，迁移 `215_domestic_followup`（新增 8 张表 + 3 个 sys_dict type 的初值），非破坏性，不需要冻结写实例。
+- 分支 `claude/domestic-followup`，迁移 `246_domestic_followup`（新增 8 张表 + 3 个 sys_dict type 的初值），非破坏性，不需要冻结写实例。
 - 部署只走 `deploy\deploy.bat`，由它统一执行迁移。
 - 部署后要亮哥在后台做的事：
   - 角色管理页给业务员分配 `domestic_followup:read/write`，给主管分配 `read_all`。

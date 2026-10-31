@@ -16,8 +16,9 @@
       <router-link to="/shipping/scan">← 返回出库检验主页</router-link>
     </div>
     <form class="inspection-filters" @submit.prevent="handleSearch">
+      <label>单据来源<el-select v-model="searchForm.transaction_mode"><el-option value="local" label="方舟本地出库"/><el-option value="legacy" label="小满历史出库"/></el-select></label>
       <label>验货单号 / 客户<el-input v-model="searchForm.keyword" clearable placeholder="输入单号或客户名称" /></label>
-      <label>订单 ID<el-input v-model="searchForm.orderId" clearable placeholder="输入小满订单 ID" /></label>
+      <label>订单 ID<el-input v-model="searchForm.orderId" clearable placeholder="输入所选来源的订单 ID" /></label>
       <label>提交检验人员<el-input v-model="searchForm.submittedByName" maxlength="100" clearable placeholder="输入提交人姓名" /></label>
       <label>对应业务员<el-input v-model="searchForm.salespersonName" maxlength="100" clearable placeholder="输入业务员姓名" /></label>
       <label>提交日期起<el-date-picker v-model="searchForm.dateFrom" type="date" value-format="YYYY-MM-DD" :disabled-date="disableFromDate" placeholder="选择开始日期" /></label>

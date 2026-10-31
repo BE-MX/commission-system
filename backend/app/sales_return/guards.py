@@ -30,3 +30,18 @@ def ensure_outbound_editable(db, record):
     if identity and db.scalar(select(ReturnItem.id).join(SalesReturn, SalesReturn.id == ReturnItem.return_id).where(
             ReturnItem.outbound_id == str(identity), SalesReturn.status == "effective").limit(1)):
         raise HTTPException(409, "该出库单已被生效退货引用，不能直接改量或删除；请先处理原退货单")
+
+
+def require_legacy_order(db, order_id, invoice_id=None):
+    """The existing return ledger owns only orders still on the legacy route."""
+    from sqlalchemy import or_
+    from app.invoice.models import Invoice
+    from app.invoice.transition_gate import allow_route, require_invoice
+    allow_route(db, "legacy")
+    predicates = [Invoice.xiaoman_order_id == str(order_id)]
+    if invoice_id is not None:
+        predicates.append(Invoice.id == invoice_id)
+    invoices = db.scalars(select(Invoice).where(or_(*predicates)).order_by(Invoice.id)
+        .with_for_update().execution_options(populate_existing=True)).all()
+    for invoice in invoices:
+        require_invoice(db, invoice, "legacy")

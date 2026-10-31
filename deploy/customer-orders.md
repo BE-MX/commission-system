@@ -1,8 +1,8 @@
 # 客户下单门户发布与验收
 
-客户确认入口 `https://shop.leshine.cloud`，北京后端承接；员工使用 `https://leshine.cloud`。`platforms.json` 仅登记发布目标，不证明站点已部署或业务已验收。实机结果见 `docs/requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md`。
+客户确认入口 `https://shop.leshine.cloud`，北京后端承接；员工使用 `https://leshine.cloud`。`platforms.json` 仅登记发布目标，不证明站点已部署或业务已验收。最近发布与实机验收见[交接文档](../docs/handoff.md)；[10 月 10 日准备记录](../docs/requirements/2026-09-30-customer-order-portal/09-production-readiness-2026-10-10.md)是历史阶段证据。
 
-2026-10-10 用户确认：方舟员工登记采购邮箱、联系人和密码，客户直接密码登录，不走邀请或邮箱验证码。客户、业务员及生产流程测试由用户选择操作；代理不编造客户、合同价、库存单位或执行身份。门户边界止于方舟正式 PI，回款/出库继续使用既有模块。
+2026-10-10 的员工登记密码登录已保留；后续增加申请审批及邮件激活，当前完整认证契约见[门户 API](../docs/requirements/2026-09-30-customer-order-portal/03-api-contract.md#当前认证契约2026-10-31-源码核对)。客户、业务员及生产流程测试由用户选择操作；代理不编造客户、合同价、库存单位或执行身份。门户边界止于方舟正式 PI，回款/出库继续使用既有模块。
 
 ## 固定版本与 HTTPS
 
@@ -20,7 +20,9 @@ deploy\deploy.bat --customer-portal-site verify --revision <full-sha>
 
 客户站随完整受管发布构建：冻结 pnpm-lock、禁用安装脚本，仅传静态制品，经摘要差异传输和受管切换到 `/var/www/ark-static/customer-orders`。不向办公室发布客户站，不传 .env/密码/业务数据。
 
-## 182→183、备份与恢复
+## 首次 182→183 迁移专项（历史基线）
+
+本节保存首次密码认证迁移的演练和保护条件，不是后续每次发布的固定目标。当前 schema 已高于 183 时不得照抄 182→183 演练或回滚；一般升级走[统一部署入口](README.md)对实际 schema 与候选链的预检。
 
 新增 `183_portal_password_login` 的父 revision 为 `182_announcement_reads`。只给账号表增 nullable `password_hash VARCHAR(255)`；不设默认密码、不激活历史账号、不删除业务行。downgrade 拒绝丢弃密码哈希。有权员工明确设置密码并恢复账号时，当前授权内 invited membership 转 active，disabled membership 不自动恢复。
 
@@ -60,7 +62,7 @@ python -m pytest --confcutdir=tests/portal_mysql tests/portal_mysql/test_mysql_p
 
 ## 受保护配置及分阶段开放
 
-逐键合并实际 .env，保留其他配置、权限和受限备份。默认开关仍false，不绕过require_enabled。
+逐键合并实际 .env，保留其他配置、权限和受限备份。源码默认开关为 false，不表示生产实际值。`prepare` 仅适用于尚未开启门户；当前 `customer_portal_config_remote.py` 的 `enable-access` 仍严格要求 schema 等于 `183_portal_password_login`。高于 183 的环境不能照抄首次开放命令，更不能 stamp/downgrade 绕过；后续首次开放需先修正并验证该入口的版本条件。`enable-orders`、`stop-orders`、`close` 按各自实际前提执行，不因这项限制一概退役。
 
 ```powershell
 deploy\deploy.bat --customer-portal-config prepare --revision <full-sha>
@@ -81,7 +83,8 @@ deploy\deploy.bat --customer-portal-config close --revision <full-sha>
 | PORTAL_ENABLED | 管理站点/真实客户/采购密码和授权目录；还需用户创建有效站点与真实授权 |
 | PORTAL_WRITES_ENABLED + 客户can_order | 报价、提交及客户确认；合同价/库存单位/刷新语义、失效与幂等/隔离验收 |
 | PORTAL_INVOICE_ENABLED | 正式PI及下载；完整提案、唯一建票、金额/PDF/存储及恢复验收 |
-| PORTAL_MAIL_ENABLED + PORTAL_NOTIFICATION_ENABLED | 业务通知；SMTP、批准真实收件范围、送达及失败恢复；不参与登录 |
+| PORTAL_MAIL_ENABLED | 总开关同时启用时投递邀请/验证码；邮件激活须验收实际送达，密码登录不依赖 SMTP |
+| PORTAL_MAIL_ENABLED + PORTAL_NOTIFICATION_ENABLED | 业务邮件通知；SMTP、批准真实收件范围、送达及失败恢复，与认证邮件分开验收 |
 | PORTAL_OUTBOUND_WORKER_ENABLED | 独立出库执行器，本轮false；门户打开不接管出库或启用自动回款/小满推送 |
 
 验收顺序：员工授权与账号→密码登录、撤权/跨客户隔离→商品/合同价→库存及价格失效→下单/重复提交/丢ACK恢复→员工完整提案/客户接受→唯一PI/下载→通知及失败恢复。写测试仅隔离库，真实发信和生产交易由用户在其批准范围操作。尚未完成验收的能力不得标为正式开放。

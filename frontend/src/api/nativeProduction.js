@@ -1,0 +1,10 @@
+import { productionClient as api } from './clients'
+export const getNativeProductionOrders = (params, config = {}) => api.get('/local/orders', { ...config, params })
+export const getNativeProductionOrder = (id, config = {}) => api.get(`/local/orders/${id}`, config)
+export const getNativeProductionReference = (config = {}) => api.get('/local/reference-data', config)
+export const getNativeSupplyOptions = (params, config = {}) => api.get('/local/supply-options', { ...config, params })
+export const getNativeMaterialOptions = (params, config = {}) => api.get('/local/material-options', { ...config, params })
+export const createNativeProduction = body => api.post('/local/orders', body)
+export const actNativeProductionItem = (id, action, body) => api.post(`/local/items/${id}/${action}`, body)
+export const releaseNativeProductionSupply = (id, body) => api.post(`/local/supplies/${id}/release`, body)
+export const reverseNativeProductionReceipt = (id, body) => api.post(`/local/receipts/${id}/reverse`, body)

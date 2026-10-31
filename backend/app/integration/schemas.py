@@ -57,16 +57,16 @@ class CustomerSubmission(StrictSchema):
     ark_customer_id: str | None = Field(
         default=None,
         min_length=1,
-        max_length=20,
-        pattern=r"^\d+$",
+        max_length=32,
+        pattern=r"^(?:ark:)?[1-9]\d*$",
     )
     name: str | None = Field(default=None, min_length=1, max_length=256)
     contact: CustomerContactSubmission = Field(default_factory=CustomerContactSubmission)
 
 
 class CatalogReference(StrictSchema):
-    product_id: int = Field(gt=0, strict=True)
-    sku_id: int = Field(gt=0, strict=True)
+    product_id: Annotated[int, Field(gt=0, strict=True)] | Annotated[str, Field(pattern=r"^ark:product:[1-9]\d*$")]
+    sku_id: Annotated[int, Field(gt=0, strict=True)] | Annotated[str, Field(pattern=r"^ark:sku:[1-9]\d*$")]
 
 
 class ProductDescriptionSubmission(StrictSchema):
@@ -178,8 +178,8 @@ class CanonicalCustomer(StrictSchema):
 
 
 class CanonicalCatalogReference(StrictSchema):
-    product_id: int
-    sku_id: int
+    product_id: int | str
+    sku_id: int | str
 
 
 class CanonicalProductDescription(StrictSchema):

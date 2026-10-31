@@ -246,6 +246,7 @@ def get_customer_orders(
     detail_by_order: dict[int, list[CustomerOrderItem]] = {}
     if include_items and page:
         detail_rows = db.query(CustomerOrderItem).filter(
+            CustomerOrderItem.projection_role == 'active',
             CustomerOrderItem.order_id.in_([row.id for row in page]),
         ).order_by(
             CustomerOrderItem.order_id, CustomerOrderItem.id,

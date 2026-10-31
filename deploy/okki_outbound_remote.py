@@ -210,6 +210,16 @@ def pause_schedule():
 
 
 
+def transaction_mode(config):
+    values = [line.split('=', 1)[1].strip().strip('\"\'')
+              for line in config.read_text(encoding='utf-8').splitlines()
+              if '=' in line and line.split('=', 1)[0].strip() == 'TRANSACTION_MODE']
+    mode = values[-1] if values else 'legacy'
+    if mode not in {'legacy', 'local'}:
+        raise RuntimeError('Invalid outbound TRANSACTION_MODE')
+    return mode
+
+
 def save(path, record):
     temporary = path.with_suffix('.next')
     temporary.write_text(json.dumps(record), encoding='utf-8')
@@ -242,6 +252,13 @@ def drain():
         if time.monotonic() >= deadline:
             raise RuntimeError('Outbound service still running; scheduling remains paused, inspect release journal')
         time.sleep(2)
+
+
+def disable_local_timer(mode):
+    if mode == 'local':
+        run(['systemctl', 'disable', TIMER])
+        if timer_state() != {'active': False, 'enabled': False}:
+            raise RuntimeError('Local outbound timer did not stay disabled')
 
 def run(args, **kwargs):
     result = subprocess.run(args, check=True, text=True, capture_output=True, timeout=300, **kwargs)
@@ -301,6 +318,7 @@ def execute_candidate(request):
     config = ROOT / '.ark-outbound.env'
     if not config.is_file() or config.stat().st_mode & 0o077:
         raise RuntimeError('Protected .ark-outbound.env required (mode 600)')
+    mode = transaction_mode(config)
     if not Path(NODE).is_file() or not (ROOT / 'auth.js').is_file():
         raise RuntimeError('Existing Node/auth runtime missing')
     for name, body in bodies.items():
@@ -312,6 +330,10 @@ def execute_candidate(request):
         if not target.exists(): target.symlink_to(ROOT / name)
     verify_modules(stage)
     run(['systemd-analyze', 'verify', str(stage / 'ark-okki-outbound-poller.service'), str(stage / 'ark-okki-outbound-poller.timer')])
+    observation = observe_mode(stage, config)
+    confirm_target(observation, previous, request)
+    if mode == 'local' and observation['mode'] == 'legacy':
+        raise RuntimeError('Local transaction configuration cannot enable legacy outbound execution')
     # Load only remote protected credentials. EXPLAIN validates UPDATE permission
     # without executing an UPDATE or touching task state.
     probe = """import mysql from 'mysql2/promise';
@@ -319,9 +341,8 @@ const c=await mysql.createConnection({host:process.env.ARK_DB_HOST,port:Number(p
 try {await c.query('SELECT id,status FROM ark_okki_outbound_tasks LIMIT 1'); await c.query('SELECT id,invoice_no FROM ark_invoices LIMIT 1'); await c.query(\"EXPLAIN UPDATE ark_okki_outbound_tasks SET status='pending' WHERE id=-1\"); const s=process.env.ARK_BUSINESS_DB_NAME; if(!/^[A-Za-z0-9_]+$/.test(s||''))throw Error('Invalid schema'); await c.query('SELECT order_id FROM `'+s+'`.okki_outbound_record_items LIMIT 1');} finally {await c.end();}"""
     if request['action'] not in {'prepare', 'freeze'} or not request.get('allow_pending'):
         probe = probe.replace("try {", "try {await c.query('SELECT linked_sync_id,sync_status,status,remark FROM ark_invoices LIMIT 0'); await c.query('SELECT invoice_id,order_id,attempts,reason,last_error,processed_at,updated_at FROM ark_okki_outbound_tasks LIMIT 0'); ")
-    run([NODE, '--env-file=' + str(config), '--input-type=module', '-e', probe], cwd=ROOT)
-    observation = observe_mode(stage, config)
-    confirm_target(observation, previous, request)
+    if mode == 'legacy' and observation['mode'] == 'legacy':
+        run([NODE, '--env-file=' + str(config), '--input-type=module', '-e', probe], cwd=ROOT)
     remember_mode(observation, stage.parent)
     if legacy_previous:
         confirm_legacy_receipt(previous, observation)

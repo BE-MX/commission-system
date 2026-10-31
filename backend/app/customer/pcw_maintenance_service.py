@@ -824,13 +824,13 @@ def create_sample_case(
     order = db.query(CustomerOrder).filter(
         CustomerOrder.id == sample_order_id,
         logical_root_predicate(CustomerOrder, "order", logical_id),
-    ).one_or_none()
+    ).populate_existing().with_for_update().one_or_none()
     if order is None:
         raise pcw_errors.customer_not_found()
     items = db.query(CustomerOrderItem).filter(
         CustomerOrderItem.order_id == order.id,
         CustomerOrderItem.id.in_(item_ids),
-    ).all()
+    ).populate_existing().with_for_update().all()
     if {int(row.id) for row in items} != set(item_ids):
         raise pcw_errors.bad_request(
             "样品明细不属于该订单", error_code="SAMPLE_ITEMS_INVALID"
@@ -850,9 +850,19 @@ def create_sample_case(
             SampleCase.sample_order_id == order.id,
             SampleCase.item_set_hash == item_set_hash,
             SampleCase.feedback_round == 1,
-        ).one_or_none()
+        ).populate_existing().with_for_update().one_or_none()
         if existing is not None:
             return {"case": _sample_dict(existing), "created": False}
+        if any(item.projection_role != 'active' for item in items):
+            raise pcw_errors.bad_request('历史聚合别名只供读取既有事项，新事项须关联真实明细',
+                error_code='SAMPLE_ITEMS_INVALID')
+        alias_ids = {item.historical_alias_id for item in items if item.historical_alias_id is not None}
+        if alias_ids:
+            old_cases = db.query(SampleCase).filter(SampleCase.sample_order_id == order.id,
+                SampleCase.stage != 'closed').populate_existing().with_for_update().all()
+            if any(alias_ids.intersection(case.sample_item_ids_json or []) for case in old_cases):
+                raise pcw_errors.conflict('原聚合行已有未结束样品事项，请继续原事项或核验归属后再新增',
+                    error_code='HISTORICAL_ALIAS_SAMPLE_REVIEW_REQUIRED')
         now = beijing_now()
         case = SampleCase(
             customer_id=logical_id,
@@ -875,7 +885,7 @@ def create_sample_case(
                 SampleCase.sample_order_id == order.id,
                 SampleCase.item_set_hash == item_set_hash,
                 SampleCase.feedback_round == 1,
-            ).one_or_none()
+            ).populate_existing().with_for_update().one_or_none()
             if winner is not None:
                 return {"case": _sample_dict(winner), "created": False}
             raise
@@ -1180,7 +1190,7 @@ def create_shipment_order_link(
     shipment = db.get(ShipmentTracking, shipment_id)
     if shipment is None:
         raise pcw_errors.not_found("运单不存在", error_code="SHIPMENT_NOT_FOUND")
-    order = db.query(CustomerOrder).filter(CustomerOrder.id == order_id).one_or_none()
+    order = db.query(CustomerOrder).filter(CustomerOrder.id == order_id).populate_existing().with_for_update().one_or_none()
     if order is None:
         raise pcw_errors.customer_not_found()
     _access_customer(db, customer_id=int(order.customer_id), actor_user_id=actor_user_id, write=True)
@@ -1188,7 +1198,7 @@ def create_shipment_order_link(
         item = db.query(CustomerOrderItem).filter(
             CustomerOrderItem.id == order_item_id,
             CustomerOrderItem.order_id == order.id,
-        ).one_or_none()
+        ).populate_existing().with_for_update().one_or_none()
         if item is None:
             raise pcw_errors.bad_request(
                 "明细不属于该订单", error_code="LINK_ITEM_INVALID"
@@ -1213,13 +1223,32 @@ def create_shipment_order_link(
             ShipmentOrderLink.order_id == order_id,
             ShipmentOrderLink.order_item_id == order_item_id,
             ShipmentOrderLink.link_role == link_role,
-        ).one_or_none()
+        ).populate_existing().with_for_update().one_or_none()
         if existing is not None:
             if (existing.linked_quantity or None) != (quantity_str or None):
                 raise pcw_errors.conflict(
                     "同一关联键已有不同数量的关联", error_code="LINK_CONFLICT"
                 )
             return {"link_id": existing.id, "created": False}
+        if order_item_id is not None and item.projection_role != 'active':
+            raise pcw_errors.bad_request('历史聚合别名只供读取既有关联，新关联须选择真实明细',
+                error_code='LINK_ITEM_INVALID')
+        # A generic old line has no proven per-member shipment quantities.
+        # Preserve its existing links and require review before overlapping links.
+        aliases = db.query(CustomerOrderItem.id).filter(
+            CustomerOrderItem.order_id == order.id,
+            CustomerOrderItem.projection_role == 'historical_alias',
+        )
+        if order_item_id is not None:
+            aliases = aliases.filter(CustomerOrderItem.id == item.historical_alias_id)
+        alias_ids = [identity for identity, in aliases.with_for_update().all()]
+        if alias_ids and db.query(ShipmentOrderLink.id).filter(
+            ShipmentOrderLink.order_id == order.id,
+            ShipmentOrderLink.order_item_id.in_(alias_ids),
+            ShipmentOrderLink.state == 'active',
+        ).with_for_update().first():
+            raise pcw_errors.conflict('原聚合行已有运单关联，须核验其真实明细归属后再新增关联',
+                error_code='HISTORICAL_ALIAS_LINK_REVIEW_REQUIRED')
         if quantity_str is not None:
             # 累计关联数量不得超出订单有效数量（双方已知才校验）
             target_qty = None
@@ -1228,15 +1257,16 @@ def create_shipment_order_link(
                 target_qty = item_row.quantity if item_row is not None else None
             else:
                 totals = db.query(func.sum(CustomerOrderItem.quantity)).filter(
+                    CustomerOrderItem.projection_role == 'active',
                     CustomerOrderItem.order_id == order.id,
-                ).scalar()
+                ).with_for_update().scalar()
                 target_qty = totals
             if target_qty is not None:
                 linked_rows = db.query(ShipmentOrderLink).filter(
                     ShipmentOrderLink.order_id == order.id,
                     ShipmentOrderLink.order_item_id == order_item_id,
                     ShipmentOrderLink.state == "active",
-                ).all()
+                ).populate_existing().with_for_update().all()
                 already = sum(
                     Decimal(row.linked_quantity)
                     for row in linked_rows

@@ -76,14 +76,10 @@ def _idle(db, invoice, record_id):
 
 def _prepare(db, record, user, *, desired_serial_id=None, expected_serial_id=None, number_only=False,
              force_authority=False, warehouse=False):
-    from app.portal import authority
-    if force_authority or authority.get_settings().PORTAL_ENABLED:
-        from app.shipping_inspection import outbound_prepare
-        return outbound_prepare.prepare(db, record, user, desired_serial_id=desired_serial_id,
-                                         expected_serial_id=expected_serial_id,
-                                         number_only=number_only, warehouse=warehouse)
-    return _prepare_legacy(db, record, user, desired_serial_id=desired_serial_id,
-                           expected_serial_id=expected_serial_id, number_only=number_only)
+    from app.shipping_inspection import outbound_prepare
+    return outbound_prepare.prepare(db, record, user, desired_serial_id=desired_serial_id,
+                                     expected_serial_id=expected_serial_id,
+                                     number_only=number_only, warehouse=warehouse)
 
 
 def _prepare_legacy(db, record, user, *, desired_serial_id=None, expected_serial_id=None, number_only=False):
@@ -162,8 +158,7 @@ def _prepare_legacy(db, record, user, *, desired_serial_id=None, expected_serial
 
 def preview(db, record, user, *, desired_serial_id=None, expected_serial_id=None, number_only=False,
             force_authority=False, warehouse=False):
-    from app.portal import authority
-    enabled = force_authority or authority.get_settings().PORTAL_ENABLED
+    enabled = True  # Installed authority is independent of portal rollout.
     try:
         invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
             expected_serial_id=expected_serial_id,
@@ -301,235 +296,14 @@ def _recover(db, event):
 
 
 def _repair_missing(db, record, user, invoice, event):
-    """Send one missing row after proving the previous write and all guards are stable."""
-    invoice = db.query(Invoice).filter_by(id=invoice.id).populate_existing().with_for_update().one()
-    _load_items(db, invoice)
-    event = state.lock(db, record['outbound_record_id'], int(user['sub']))
-    if event.action != 'sync_uncertain':
-        return {'status': event.action, 'recover': event.action in state.ACTIVE,
-                'message': (event.result or {}).get('message', '同步状态已变化，请重新核对')}
-    plan = event.payload['plan']
-    if edit_version(invoice) != plan['invoice_version']:
-        return {'status': 'sync_uncertain', 'message': '订单发票已变化，需人工核对'}
-    _idle(db, invoice, record['outbound_record_id'])
-    order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
-    if (str(order.get('order_id')) != str(plan['order'].get('order_id'))
-            or order.get('company_id') != plan['order'].get('company_id')
-            or order.get('currency') != plan['order'].get('currency')
-            or order.get('product_list') != plan['order'].get('product_list')):
-        return {'status': 'sync_uncertain', 'message': '小满订单已变化，需人工核对'}
-    related = linked_outbound_service.find_related(db, order)
-    if len(related) != 1 or str(related[0]['outbound_invoice_id']) != str(record['outbound_invoice_id']):
-        return {'status': 'sync_uncertain', 'message': '订单关联出库单已变化，需人工核对'}
-    inspection = db.query(ShippingInspection).filter_by(outbound_record_id=record['outbound_record_id']).with_for_update().populate_existing().first()
-    baseline = plan.get('inspection')
-    media = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection.id).with_for_update().all() if inspection else []
-    if (bool(inspection) != bool(baseline) or (baseline and
-            (inspection.id != baseline['id'] or inspection.status != baseline['status']
-             or inspection.edit_version != baseline['edit_version']
-             or {photo.id for photo in media} != set(baseline['media_ids'])))):
-        return {'status': 'sync_uncertain', 'message': '验货资料已变化，需人工核对'}
-    current = _read(db, record['outbound_invoice_id'])
-    try:
-        missing = plans.missing_only(plan['before'], current, plan)
-    except (ValueError, KeyError, TypeError) as exc:
-        return {'status': 'sync_uncertain', 'message': str(exc)}
-    last_step = event.payload.get('repair_step')
-    if last_step and str(last_step['order_record_id']) in missing:
-        return {'status': 'sync_uncertain', 'message': '上次补齐明细尚未在小满出现，需人工核对；不会重复推送'}
-    identity = missing[0]
-    actual = plans.index(current['record_list'], 'order_record_id')
-    expected = plans.index(plan['expected'], 'order_record_id')
-    rows = []
-    for key, row in expected.items():
-        if key in actual:
-            rows.append({**row, 'outbound_record_id': actual[key]['outbound_record_id'],
-                         'cost_unit_price_rmb': actual[key].get('cost_unit_price_rmb', 0)})
-        elif key == identity:
-            rows.append(dict(row))
-    payload = {'outbound_invoice_id': current['outbound_invoice_id'],
-               'handler': [str(x['user_id']) for x in current['handler_info']],
-               'remark': plan['remark_after'], 'record_list': rows}
-    if not payload['handler']:
-        return {'status': 'sync_uncertain', 'message': '小满出库单处理人缺失，需人工核对'}
-    require_additional(db, payload, before=current, invoice_id=invoice.id)
-    token = okki_client.ensure_access_token(db)
-    audit_service.record(db, event.action, event.operator_user_id, event.outbound_record_id,
-        context={'scope': 'outbound-sync-history', 'source': 'auto_repair'}, request_id=str(uuid4()),
-        payload=event.payload, result=event.result)
-    step_nonce = str(uuid4())
-    event.payload = {**event.payload, 'repair_step': {'order_record_id': identity,
-                     'missing_before': len(missing), 'nonce': step_nonce}}
-    event.operator_user_id = event.login_user_id = int(user['sub'])
-    from app.auth.models import ArkUser
-    actor = db.get(ArkUser, int(user['sub']))
-    event.operator_name = event.login_name = actor.real_name if actor else str(user['sub'])
-    event.result = {**(event.result or {}), 'started_at': str(beijing_now())}
-    event.action = 'sync_pending'
-    commit(db)
-
-    # The durable pending/sending transition is the same mutex used by normal sync.
-    invoice = db.query(Invoice).filter_by(id=invoice.id).populate_existing().with_for_update().one()
-    _load_items(db, invoice)
-    event = state.lock(db, record['outbound_record_id'], int(user['sub']))
-    if (event.action != 'sync_pending' or _expired(event)
-            or event.payload.get('repair_step', {}).get('nonce') != step_nonce):
-        raise ValueError('补齐执行权已失效，请重新核对')
-    event.action = 'sync_sending'
-    commit(db)
-
-    invoice = db.query(Invoice).filter_by(id=invoice.id).populate_existing().with_for_update().one()
-    _load_items(db, invoice)
-    event = state.lock(db, record['outbound_record_id'], int(user['sub']))
-    try:
-        _idle(db, invoice, record['outbound_record_id'])
-        if (event.action != 'sync_sending' or _expired(event)
-                or event.payload.get('repair_step', {}).get('nonce') != step_nonce
-                or edit_version(invoice) != plan['invoice_version']):
-            raise ValueError('补齐前订单发票已变化，请重新核对')
-        if _read(db, record['outbound_invoice_id']) != current:
-            raise ValueError('补齐前小满出库单已变化，请重新核对')
-        fresh_order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
-        if (fresh_order.get('product_list') != order.get('product_list')
-                or fresh_order.get('company_id') != order.get('company_id')
-                or fresh_order.get('currency') != order.get('currency')):
-            raise ValueError('补齐前小满订单已变化，请重新核对')
-    except (ValueError, okki_client.OkkiApiError):
-        event.action = 'sync_uncertain'
-        commit(db)
-        raise
-    try:
-        response = okki_client._post_json('/v1/invoices/outbound/push', token, payload, context='出库单缺失明细补齐')
-        if response is None:
-            event.action = 'sync_uncertain'
-            commit(db)
-            return {'status': 'sync_uncertain', 'message': '小满凭证失效，补齐未发送；请重新核对'}
-    except okki_client.OkkiApiError:
-        logger.warning('Outbound repair response uncertain record=%s order_record=%s', record['outbound_record_id'], identity)
-        print(f"[outbound_sync] repair response uncertain record={record['outbound_record_id']} order_record={identity}", flush=True)
-    result = _verify_finish(db, event)
-    if result['status'] != 'sync_uncertain':
-        return result
-    try:
-        after = _read(db, record['outbound_invoice_id'])
-        remaining = plans.missing_only(plan['before'], after, plan)
-    except (ValueError, KeyError, TypeError, okki_client.OkkiApiError):
-        return result
-    if identity not in remaining and len(remaining) < len(missing):
-        return {'status': 'sync_uncertain', 'recover': True, 'repairable': True,
-                'message': f'已补齐一条明细，正在继续核对剩余 {len(remaining)} 条'}
-    return {'status': 'sync_uncertain', 'message': '补齐结果未生效，需人工核对；不会重复推送'}
+    raise ValueError('旧补齐执行入口已停用，请通过当前出库核对入口恢复原任务')
 
 
-from app.invoice.stock_reservations import fenced, require_additional
-
-
-@fenced
 def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False,
                 desired_serial_id=None, expected_serial_id=None, number_only=False, repair=False, auto_recall=False,
                 source='pc', force_authority=False, warehouse=False):
-    from app.portal import authority
-    if force_authority or authority.get_settings().PORTAL_ENABLED:
-        from app.shipping_inspection import outbound_execution
-        return outbound_execution.synchronize(db, record, user, version, check_only=check_only,
-            confirm_recheck=confirm_recheck, desired_serial_id=desired_serial_id, number_only=number_only,
-            expected_serial_id=expected_serial_id,
-            repair=repair, auto_recall=auto_recall, source=source, warehouse=warehouse)
-    invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
-                                    expected_serial_id=expected_serial_id,
-                                    number_only=number_only, force_authority=force_authority, warehouse=warehouse)
-    if not isinstance(record, dict):
-        from app.shipping_inspection import outbound_service
-        record = outbound_service.get_outbound_record(db, str(record))
-        if record is None:
-            raise HTTPException(404, '出库单不存在')
-    if event.action in state.ACTIVE:
-        result = _recover(db, event)
-        if repair and not check_only and result['status'] == 'sync_uncertain' and event.action == 'sync_uncertain':
-            return _repair_missing(db, record, user, invoice, event)
-        return result
-    if check_only and plan['changed']:
-        return {'status': 'sync_failed', 'requires_preview': True, 'message': '尚未确认同步成功，请重新预览差异'}
-    if check_only:
-        event.payload = {'invoice_id': invoice.id, 'plan': plan}
-        return _verify_finish(db, event)
-    if plan['version'] != version:
-        raise ValueError('订单或出库单已变化，请重新预览后同步')
-    if plan['requires_recheck'] and not confirm_recheck:
-        commit(db)
-        return {'status': state.RECHECK, 'message': '订单已更新，出库单需要仓库确认“同步并重验”'}
-    if plan['requires_recheck'] and plan['inspection']['status'] == 'submitted' and not auto_recall:
-        raise ValueError('验货单已提交，请先撤回验货，再同步并重新验货')
-    if not plan['changed']:
-        event.payload = {'invoice_id': invoice.id, 'plan': plan}
-        event.source = source
-        return _verify_finish(db, event)
-    # Definite stock rejection precedes the durable sending intent. This shared
-    # executor fence keeps other Ark claims unchanged through the only POST.
-    require_additional(db, plan['payload'], before=plan['before'], invoice_id=invoice.id)
-    token = okki_client.ensure_access_token(db)
-    if event.payload:
-        audit_service.record(db, event.action, event.operator_user_id, event.outbound_record_id,
-            context={'scope': 'outbound-sync-history', 'source': event.source}, request_id=str(uuid4()),
-            payload=event.payload, result=event.result)
-    send_nonce = str(uuid4())
-    event.action = 'sync_pending'
-    event.source = source
-    event.payload = {'invoice_id': invoice.id, 'plan': plan, 'send_nonce': send_nonce,
-                     'auto_recall': auto_recall}
-    event.operator_user_id = event.login_user_id = int(user['sub'])
-    from app.auth.models import ArkUser
-    actor = db.get(ArkUser, int(user['sub']))
-    event.operator_name = event.login_name = actor.real_name if actor else str(user['sub'])
-    # Keep the previous verified overlay until the new request is verified.
-    event.result = {**(event.result or {}), 'started_at': str(beijing_now())}
-    commit(db)  # Durable intent BEFORE the only external POST.
-    invoice = db.query(Invoice).options(selectinload(Invoice.items)).filter_by(id=invoice.id).populate_existing().with_for_update().one()
-    _load_items(db, invoice)
-    event = state.lock(db, record['outbound_record_id'], int(user['sub']))
-    if (event.action != 'sync_pending' or event.payload['plan']['version'] != version
-            or event.payload.get('send_nonce') != send_nonce or event.payload.get('repair_step') or _expired(event)):
-        raise ValueError('原同步执行权已失效，请重新核对结果')
-    event.action = 'sync_sending'
-    commit(db)  # Distinguish safely cancellable preparation from potentially sent requests.
-    invoice = db.query(Invoice).filter_by(id=invoice.id).populate_existing().with_for_update().one()
-    _load_items(db, invoice)
-    event = state.lock(db, record['outbound_record_id'], int(user['sub']))
-    if (event.action != 'sync_sending' or event.payload['plan']['version'] != version
-            or event.payload.get('send_nonce') != send_nonce or event.payload.get('repair_step') or _expired(event)):
-        raise ValueError('原同步执行权已失效，请重新核对结果')
-    try:
-        _idle(db, invoice, record['outbound_record_id'])
-        current_inspection = db.query(ShippingInspection).filter_by(outbound_record_id=record['outbound_record_id']).with_for_update().populate_existing().first()
-        current_media = db.query(ShippingInspectionPhoto.id).filter_by(inspection_id=current_inspection.id).with_for_update().all() if current_inspection else []
-        baseline = plan.get('inspection')
-        if (bool(baseline) != bool(current_inspection) or (baseline and
-                (current_inspection.edit_version != baseline['edit_version'] or current_inspection.status != baseline['status']
-                 or {row.id for row in current_media} != set(baseline['media_ids'])))):
-            raise ValueError('验货资料已变化，请重新预览')
-        if edit_version(invoice) != plan['invoice_version'] or _read(db, record['outbound_invoice_id']) != plan['before']:
-            raise ValueError('发送前订单或出库单发生变化，请重新预览')
-        if plan['serial_changed']:
-            occupant = okki_client.find_outbound_by_serial(db, plan['serial_after'])
-            if occupant and str(occupant['outbound_invoice_id']) != str(record['outbound_invoice_id']):
-                raise ValueError('发送前新出库单号已被占用，请重新预览')
-        order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
-        if order != plan['order']:
-            raise ValueError('发送前小满订单发生变化，请重新预览')
-        if _expired(event):
-            raise ValueError('核对耗时过长，请重新预览后同步')
-    except (ValueError, okki_client.OkkiApiError):
-        event.action = 'sync_failed'
-        commit(db)
-        raise
-    try:
-        response = okki_client._post_json('/v1/invoices/outbound/push', token, plan['payload'], context='手动同步出库单')
-        if response is None:
-            # Authentication rejection proves no accepted write. Do not refresh/replay here.
-            event.action = 'sync_failed'
-            commit(db)
-            raise ValueError('小满凭证已过期，请重新预览后同步')
-    except okki_client.OkkiApiError:
-        logger.warning('Outbound sync response uncertain record=%s', record['outbound_record_id'])
-        print(f"[outbound_sync] response uncertain record={record['outbound_record_id']}", flush=True)
-    return _verify_finish(db, event)
+    from app.shipping_inspection import outbound_execution
+    return outbound_execution.synchronize(db, record, user, version, check_only=check_only,
+        confirm_recheck=confirm_recheck, desired_serial_id=desired_serial_id, number_only=number_only,
+        expected_serial_id=expected_serial_id, repair=repair, auto_recall=auto_recall,
+        source=source, warehouse=warehouse)

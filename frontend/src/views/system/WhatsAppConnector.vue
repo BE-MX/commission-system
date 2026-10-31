@@ -97,11 +97,11 @@
             <template #default="{ row }">
               <GlassButton v-permission="'whatsapp:write'" variant="link" left-icon="Refresh" :disabled="!row.can_read_body || row.consent_state !== 'active' || syncBusy" @click="handlePull(row, 'messages')">同步消息</GlassButton>
               <GlassButton variant="link" left-icon="View" :disabled="!row.can_read_body" @click="selectAccount(row)">查看对话</GlassButton>
-              <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row)" variant="link" @click="openBind(row)">重新关联</GlassButton>
-                <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row)" variant="link" @click="openConsent(row)">授权范围</GlassButton>
+              <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row)" variant="link" @click="openBind(row)" left-icon="Edit">重新关联</GlassButton>
+                <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row)" variant="link" @click="openConsent(row)" left-icon="Edit">授权范围</GlassButton>
                 <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row) && row.status === 'protected' && row.consent_state === 'active'" variant="link" left-icon="VideoPlay" :disabled="resumeBusy" @click="handleResume(row)">恢复采集</GlassButton>
               <GlassButton v-permission="'whatsapp:write'" variant="link" link-tone="danger" left-icon="Close" :disabled="['revoking', 'revoked', 'revoke_pending'].includes(row.status)" @click="handleRevoke(row)">解绑</GlassButton>
-              <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row) && row.status === 'revoke_pending'" variant="link" @click="confirmPhoneRemoval(row)">确认手机已移除</GlassButton>
+              <GlassButton v-permission="'whatsapp:write'" v-if="isOwner(row) && row.status === 'revoke_pending'" variant="link" @click="confirmPhoneRemoval(row)" left-icon="Edit">确认手机已移除</GlassButton>
             </template>
           </el-table-column>
         </el-table>

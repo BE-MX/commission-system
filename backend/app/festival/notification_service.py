@@ -494,6 +494,10 @@ def _detect_and_load_pending() -> list[dict]:
         detect_order_events(db)
         if service.ACTIVITY_GMV_WINDOW[0] <= now.date().isoformat() <= service.ACTIVITY_GMV_WINDOW[1]:
             service.get_headline_payload(db, None, None)
+        if service.local_mode(db):
+            from app.trade.refresh_service import projection_status
+            if projection_status(db)["status"] != "current":
+                return []
         rows = (db.query(FestivalEvent)
                 .filter(FestivalEvent.event_type.in_(_DINGTALK_ORDER_EVENT_TYPES))
                 .filter(FestivalEvent.dingtalk_sent_at.is_(None))
@@ -595,6 +599,10 @@ async def monitor_festival_events() -> dict:
 def _daily_claim(target_date: date) -> bool:
     key = f"delivery:daily:{target_date.isoformat()}"
     with SessionLocal() as db:
+        if service.local_mode(db):
+            from app.trade.refresh_service import projection_status
+            if projection_status(db)["status"] != "current":
+                return False
         try:
             db.add(FestivalState(
                 state_key=key,

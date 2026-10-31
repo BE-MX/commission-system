@@ -1,6 +1,97 @@
 {
-  "source_sha256": "f84bf2376e3d9273b6f7fa0f2ba261411decd53e0f3c5feaef620f1a62003d41",
+  "source_sha256": "28ece031426f7de8ec5d407c20625a05599107a91788a0a41fc4d6aafe970c45",
   "favorite_access": {
+    "NativeOutbound": [
+      {
+        "permission": "shipment:read"
+      },
+      {},
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
+          "sales_return:read"
+        ]
+      }
+    ],
+    "CommerceShadow": [
+      {
+        "permission": "commerce_shadow:read"
+      },
+      {},
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
+          "sales_return:read"
+        ]
+      }
+    ],
+    "CommerceTransition": [
+      {
+        "permission": "commerce_transition:admin"
+      },
+      {},
+      {
+        "anyPermission": [
+          "user:read",
+          "role:read",
+          "dict:read",
+          "ai:admin",
+          "mcp:admin",
+          "integration:admin",
+          "commerce_transition:admin",
+          "operations:read",
+          "operations:admin",
+          "dingtalk:admin",
+          "external_binding:read",
+          "external_binding:write",
+          "whatsapp:read",
+          "whatsapp:write",
+          "whatsapp_translation:admin"
+        ]
+      }
+    ],
     "PortalCatalog": [
       {
         "permission": "portal_site:admin"
@@ -73,6 +164,221 @@
           "portal_order:read",
           "portal_access:read",
           "portal_site:admin"
+        ]
+      }
+    ],
+    "CommerceMigration": [
+      {
+        "permission": "commerce_migration:admin"
+      },
+      {},
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
+          "sales_return:read"
+        ]
+      }
+    ],
+    "NativeOrders": [
+      {
+        "permission": "invoice:read"
+      },
+      {},
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
+          "sales_return:read"
+        ]
+      }
+    ],
+    "NativeFinance": [
+      {
+        "permission": "receipt:read"
+      },
+      {},
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
+          "sales_return:read"
+        ]
+      }
+    ],
+    "FinanceReference": [
+      {
+        "permission": "receipt:admin"
+      },
+      {},
+      {
+        "anyPermission": [
+          "invoice:read",
+          "invoice:write",
+          "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
+          "shipping_inspection:read",
+          "shipping_inspection:write",
+          "shipping_inspection:admin",
+          "invoice_price:read",
+          "invoice_okki:read",
+          "invoice_repair:read",
+          "festival:read",
+          "festival_order:read",
+          "battle_report:read",
+          "battle_report:admin",
+          "perf_goal:read",
+          "perf_goal:write",
+          "order_intelligence:read",
+          "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
+          "sales_return:read"
+        ]
+      }
+    ],
+    "CatalogProducts": [
+      {
+        "permission": "catalog:read"
+      },
+      {},
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "InventoryLedger": [
+      {
+        "permission": "inventory:read"
+      },
+      {},
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "TradeRoster": [
+      {
+        "anyPermission": [
+          "employee:read",
+          "employee:write"
+        ]
+      },
+      {},
+      {
+        "anyPermission": [
+          "employee:read",
+          "employee:write",
+          "supervisor:read",
+          "supervisor:write"
+        ]
+      }
+    ],
+    "TradeProjection": [
+      {
+        "permission": "employee:write"
+      },
+      {},
+      {
+        "anyPermission": [
+          "employee:read",
+          "employee:write",
+          "supervisor:read",
+          "supervisor:write"
         ]
       }
     ],
@@ -384,6 +690,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -398,6 +707,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -414,6 +725,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -428,6 +742,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -452,6 +768,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -466,6 +785,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -482,6 +803,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -496,6 +820,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -512,6 +838,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -526,6 +855,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -542,6 +873,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -556,6 +890,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -572,6 +908,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -586,6 +925,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -608,6 +949,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -622,6 +966,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -638,6 +984,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -652,6 +1001,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -668,6 +1019,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -682,6 +1036,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -698,6 +1054,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -712,6 +1071,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -728,6 +1089,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -742,6 +1106,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -758,6 +1124,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -772,6 +1141,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -1076,6 +1447,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -1090,6 +1464,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -1228,6 +1604,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1254,6 +1632,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1280,6 +1660,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1306,6 +1688,36 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
+          "production:read",
+          "production:write",
+          "production:print",
+          "production:admin",
+          "production_product:read",
+          "production_dashboard:read",
+          "production_route:read",
+          "semifinished:read",
+          "semifinished:write",
+          "semifinished:admin"
+        ]
+      }
+    ],
+    "NativeProduction": [
+      {
+        "permission": "production:read"
+      },
+      {
+        "permission": "production:read"
+      },
+      {
+        "anyPermission": [
+          "stock:read",
+          "stock:write",
+          "stock:admin",
+          "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1332,6 +1744,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1358,6 +1772,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1384,6 +1800,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1410,6 +1828,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1436,6 +1856,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1462,6 +1884,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1488,6 +1912,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1514,6 +1940,8 @@
           "stock:write",
           "stock:admin",
           "stock_daily:read",
+          "catalog:read",
+          "inventory:read",
           "production:read",
           "production:write",
           "production:print",
@@ -1725,6 +2153,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -1739,6 +2170,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -1763,6 +2196,9 @@
           "invoice:read",
           "invoice:write",
           "invoice:sync",
+          "receipt:read",
+          "receipt:write",
+          "receipt:admin",
           "shipping_inspection:read",
           "shipping_inspection:write",
           "shipping_inspection:admin",
@@ -1777,6 +2213,8 @@
           "perf_goal:write",
           "order_intelligence:read",
           "fx_settlement:read",
+          "shipment:read",
+          "commerce_shadow:read",
           "sales_return:read"
         ]
       }
@@ -2706,6 +3144,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2732,6 +3171,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2758,6 +3198,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2784,6 +3225,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2816,6 +3258,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2842,6 +3285,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2868,6 +3312,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2894,6 +3339,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2920,6 +3366,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2946,6 +3393,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",
@@ -2972,6 +3420,7 @@
           "ai:admin",
           "mcp:admin",
           "integration:admin",
+          "commerce_transition:admin",
           "operations:read",
           "operations:admin",
           "dingtalk:admin",

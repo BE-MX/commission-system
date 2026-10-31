@@ -23,7 +23,7 @@ class PublicPoolRuleConfig(Base):
         {"comment": "公海可视化筛选配置；每批次另存不可变规则快照"},
     )
 
-    id = Column(Integer, primary_key=True, comment="固定为1的全局配置ID")
+    id = Column(Integer, primary_key=True, autoincrement=False, comment="固定为1的全局配置ID")
     version = Column(Integer, nullable=False, comment="保存时递增的规则版本")
     rules_json = Column(JSON, nullable=False, comment="公海筛选条件的规范快照")
     quotas_json = Column(JSON, nullable=False, comment="公海各档及总量配额")

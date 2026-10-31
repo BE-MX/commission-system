@@ -50,15 +50,15 @@ def _to_float(value) -> float:
     return float(value or 0)
 
 
-def _display_exchange_rate(value) -> float:
-    """业务员侧按需求展示 exchange_rate/100。"""
+def _display_exchange_rate(value, payment_id="") -> float:
+    """Legacy mirrors scale FX by 100; native facts store CNY per USD."""
     if value is None:
         return 0
-    return float(Decimal(str(value)) / Decimal("100"))
+    return float(Decimal(str(value)) / (Decimal(1) if payment_id.startswith("ark-finance:") else Decimal("100")))
 
 
-def _commission_rmb(commission_usd, exchange_rate) -> float:
-    return round(_to_float(commission_usd) * _display_exchange_rate(exchange_rate), 2)
+def _commission_rmb(commission_usd, exchange_rate, payment_id="") -> float:
+    return round(_to_float(commission_usd) * _display_exchange_rate(exchange_rate, payment_id), 2)
 
 
 def _order_source_from_custom_fields(custom_fields: str | None) -> str | None:
@@ -116,11 +116,14 @@ def _current_business_context(db: Session, current_user: dict) -> tuple[ArkUser 
         if ark_user.phone:
             filters.append(UserBasic.user_mobile == ark_user.phone)
 
-        if filters:
+        if filters and db.query(CommissionDetail.id).filter(~CommissionDetail.payment_id.like("ark-finance:%")).first():
             matched = db.query(UserBasic.user_id).filter(or_(*filters)).all()
             candidate_ids.update(row.user_id for row in matched)
 
-    return ark_user, sorted(uid for uid in candidate_ids if uid)
+    candidate_ids = {uid for uid in candidate_ids if uid and not str(uid).startswith("ark:")}
+    if ark_user:
+        candidate_ids.add(f"ark:{ark_user.id}")
+    return ark_user, sorted(candidate_ids)
 
 
 def _self_role_condition(user_ids: list[str], role: str = ""):
@@ -258,6 +261,17 @@ def _my_confirmation(db: Session, batch_id: int, ark_user_id: str, user_ids: lis
 
 
 def _query_self_detail_rows(db: Session, batch_id: int, user_ids: list[str], role: str = ""):
+    from app.commission.query_service import detail_rows
+    rows = detail_rows(db, batch_id, user_ids, role)
+    has_legacy = db.query(CommissionDetail.id).filter(CommissionDetail.batch_id == batch_id,
+        ~CommissionDetail.payment_id.like("ark-finance:%"), CommissionDetail.status != "voided",
+        _self_role_condition(user_ids, role)).first()
+    if has_legacy:
+        rows.extend(_query_legacy_self_detail_rows(db, batch_id, user_ids, role))
+    return sorted(rows, key=lambda row: (row[8] or row[6] or date.min, row[0].id))
+
+
+def _query_legacy_self_detail_rows(db: Session, batch_id: int, user_ids: list[str], role: str = ""):
     SpUser = aliased(UserBasic)
     SvUser = aliased(UserBasic)
     Sv2User = aliased(UserBasic)
@@ -295,6 +309,7 @@ def _query_self_detail_rows(db: Session, batch_id: int, user_ids: list[str], rol
         OkkiOrder, CommissionDetail.order_id == OkkiOrder.order_id,
     ).filter(
         CommissionDetail.batch_id == batch_id,
+        ~CommissionDetail.payment_id.like("ark-finance:%"),
         CommissionDetail.status != "voided",
         _self_role_condition(user_ids, role),
     ).order_by(
@@ -303,13 +318,26 @@ def _query_self_detail_rows(db: Session, batch_id: int, user_ids: list[str], rol
     ).all()
 
 
+def _row_role_rmb(row, role):
+    if len(row) > 16 and row[16].get(role) is not None:
+        return _to_float(row[16][role])
+    return _commission_rmb(getattr(row[0], f'{role}_commission'), row[7] if row[7] is not None else row[10], row[0].payment_id)
+
+
+def _row_total_rmb(row, user_ids):
+    if len(row) > 16 and all(row[16].get(role) is not None for role in _related_roles(row[0], user_ids)):
+        return sum(_row_role_rmb(row, role) for role in _related_roles(row[0], user_ids))
+    sp, sv, sv2 = _role_commissions(row[0], user_ids)
+    return _commission_rmb(sp + sv + sv2, row[7] if row[7] is not None else row[10], row[0].payment_id)
+
+
 def _detail_schema_from_row(row) -> SalesCommissionDetailItem:
     (
         detail, customer_name, customer_country, salesperson_name, supervisor_name,
         second_supervisor_name, payment_date, payment_exchange_rate, collection_date,
         receipt_type, receipt_exchange_rate, order_no, order_name, payment_service_fee,
         receipt_service_fee, order_custom_fields,
-    ) = row
+    ) = row[:16]
     exchange_source = payment_exchange_rate if payment_exchange_rate is not None else receipt_exchange_rate
     return SalesCommissionDetailItem(
         id=detail.id,
@@ -325,22 +353,22 @@ def _detail_schema_from_row(row) -> SalesCommissionDetailItem:
         payment_amount=_to_float(detail.payment_amount),
         service_fee=_to_float(payment_service_fee if payment_service_fee is not None else receipt_service_fee),
         order_source=_order_source_from_custom_fields(order_custom_fields),
-        exchange_rate=_display_exchange_rate(exchange_source),
+        exchange_rate=_display_exchange_rate(exchange_source, detail.payment_id),
         salesperson_id=detail.salesperson_id,
         salesperson_name=salesperson_name,
         salesperson_rate=_to_float(detail.salesperson_rate),
         salesperson_commission=_to_float(detail.salesperson_commission),
-        salesperson_commission_rmb=_commission_rmb(detail.salesperson_commission, exchange_source),
+        salesperson_commission_rmb=_row_role_rmb(row, 'salesperson'),
         supervisor_id=detail.supervisor_id,
         supervisor_name=supervisor_name,
         supervisor_rate=_to_float(detail.supervisor_rate),
         supervisor_commission=_to_float(detail.supervisor_commission),
-        supervisor_commission_rmb=_commission_rmb(detail.supervisor_commission, exchange_source),
+        supervisor_commission_rmb=_row_role_rmb(row, 'supervisor'),
         second_supervisor_id=detail.second_supervisor_id,
         second_supervisor_name=second_supervisor_name,
         second_supervisor_rate=_to_float(detail.second_supervisor_rate),
         second_supervisor_commission=_to_float(detail.second_supervisor_commission),
-        second_supervisor_commission_rmb=_commission_rmb(detail.second_supervisor_commission, exchange_source),
+        second_supervisor_commission_rmb=_row_role_rmb(row, 'second_supervisor'),
         calc_rule_note=detail.calc_rule_note,
         status=detail.status,
     )
@@ -368,7 +396,7 @@ def _build_sales_batch_item(
         sp_total += sp
         sv_total += sv
         sv2_total += sv2
-        rmb_total += _commission_rmb(sp + sv + sv2, exchange_source)
+        rmb_total += _row_total_rmb(row, user_ids)
 
     return SalesCommissionBatchListItem(
         id=batch.id,
@@ -426,9 +454,9 @@ def _build_monthly_summary(rows, user_ids: list[str]) -> list[SalesCommissionMon
         commission_usd = sp + sv + sv2
         bucket = buckets.setdefault(month, {"usd": 0, "rmb": 0, "rates": []})
         bucket["usd"] += commission_usd
-        bucket["rmb"] += _commission_rmb(commission_usd, exchange_source)
+        bucket["rmb"] += _row_total_rmb(row, user_ids)
         if exchange_source is not None:
-            bucket["rates"].append(_display_exchange_rate(exchange_source))
+            bucket["rates"].append(_display_exchange_rate(exchange_source, detail.payment_id))
 
     result = []
     for month in sorted(buckets):
@@ -794,6 +822,7 @@ def execute_calculation(
         total_second_supervisor_commission=float(result.total_second_supervisor_commission),
         skipped_incomplete=result.skipped_incomplete,
         skipped_no_snapshot=result.skipped_no_snapshot,
+        skipped_dependency=result.skipped_dependency,
         errors=result.errors,
     ))
 

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.battle_report.models import BattleReport, BattleReportMember
+from app.trade.service import formal_projection_enabled as local_mode
 
 
 def is_admin(user: dict) -> bool:
@@ -22,6 +23,13 @@ def actor_id(user: dict) -> int:
 
 
 def bound_accounts(db: Session) -> list[dict]:
+    if local_mode(db):
+        from app.trade.models import SalesRoster
+        records = (db.query(ArkUser, SalesRoster).outerjoin(SalesRoster, SalesRoster.ark_user_id == ArkUser.id)
+            .filter(ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)).all())
+        return sorted([{"ark_user_id": employee.id, "okki_user_id": None,
+            "user_name": employee.real_name or employee.username, "team": roster.team if roster else ""}
+            for employee, roster in records], key=lambda row: (row["user_name"], row["ark_user_id"]))
     records = (db.query(ArkUser, ArkUserExternalBinding)
                .join(ArkUserExternalBinding, ArkUserExternalBinding.ark_user_id == ArkUser.id)
                .filter(ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None),
@@ -62,7 +70,10 @@ def load_report(db, report_id, user, *, lock=False):
         if can_read_all(user):
             return report, members, own
         current = {item["ark_user_id"]: item["okki_user_id"] for item in bound_accounts(db)}
-        if current.get(own.ark_user_id) != own.okki_user_id:
+        if local_mode(db):
+            if own.ark_user_id not in current:
+                raise HTTPException(422, "当前方舟账号已停用，请联系管理员核对")
+        elif current.get(own.ark_user_id) != own.okki_user_id:
             raise HTTPException(422, "当前账号的 OKKI 绑定已失效，请联系管理员在外部账号绑定中核对")
     return report, members, own
 

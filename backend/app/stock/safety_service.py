@@ -64,6 +64,11 @@ def query_safety_stock_list(
 
     所有筛选/排序/分页下沉到 SQL,主查询包含一次 LEFT JOIN 预聚合表,无主表 GROUP BY。
     """
+    if settings.TRANSACTION_MODE == "local":
+        from app.stock.local_query_service import query
+        return query(db, page=page, page_size=page_size, keyword=keyword, model=model, product_type=product_type,
+            size=size, color=color, weight=weight, sort_by=sort_by, order=order,
+            has_in_transit=has_in_transit, has_safety_stock=has_safety_stock, stock_status=stock_status)
     business_db = settings.BUSINESS_DB_NAME
     today = beijing_today()
     d30 = today - timedelta(days=30)
@@ -219,6 +224,9 @@ def save_safety_stock(
     - 校验 product_id 在 okki_products 存在
     - 使用 INSERT ... ON DUPLICATE KEY UPDATE
     """
+    if settings.TRANSACTION_MODE == "local":
+        from app.stock.local_query_service import save
+        return save(db, items, lead_time_days, safety_factor, source, updated_by)
     business_db = settings.BUSINESS_DB_NAME
     saved: list[int] = []
     failed: list[dict] = []
@@ -299,7 +307,7 @@ async def get_safety_stock_suggestion(
     - 销量为 0 时返回 insufficient_data
     """
     # 尝试 TFT
-    if TFT_SERVICE_ENABLED and TFT_SERVICE_URL:
+    if settings.TRANSACTION_MODE != "local" and TFT_SERVICE_ENABLED and TFT_SERVICE_URL:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.post(
@@ -356,6 +364,18 @@ async def batch_generate_suggestions(
     批量生成。product_ids=None 时查全部启用产品。
     返回 {source: 'formula'|'tft', tft_available: bool, items: [...]}
     """
+    if settings.TRANSACTION_MODE == "local":
+        from app.stock.local_query_service import query, sku_id
+        rows = query(db, all_rows=True)["items"]
+        selected = {sku_id(identity) for identity in product_ids} if product_ids else None
+        items = []
+        for row in rows:
+            if selected is not None and row["local_sku_id"] not in selected:
+                continue
+            suggestion = await get_safety_stock_suggestion(db, row["product_id"], lead_time_days, safety_factor, history_days)
+            items.append({**suggestion, "product_name": row["product_name"], "model": row["model"],
+                "current_safety_stock": row["safety_stock"], "version": row["version"]})
+        return {"source": SOURCE_FORMULA, "source_label": "本地销量公式估算", "tft_available": False, "items": items}
     business_db = settings.BUSINESS_DB_NAME
 
     if not product_ids:

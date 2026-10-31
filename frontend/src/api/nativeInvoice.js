@@ -1,0 +1,18 @@
+import { nativeInvoiceClient as api, invoiceClient } from './clients'
+export const getNativeInvoices = (params, config = {}) => api.get('/invoices', { ...config, params })
+export const getNativeInvoice = (id, config = {}) => invoiceClient.get(`/invoices/${id}`, config)
+export const getInvoiceCustomerOptions = (params, config = {}) => api.get('/customer-options', { ...config, params })
+export const getNativeInvoiceReference = (config = {}) => api.get('/reference-data', config)
+export const getNativeAssignees = (config = {}) => invoiceClient.get('/delegations/assignees', config)
+export const getNativeMerchandisers = (config = {}) => invoiceClient.get('/invoices/merchandiser-options', config)
+export const createNativeInvoice = body => api.post('/invoices', body)
+export const updateNativeInvoice = (id, body) => api.put(`/invoices/${id}`, body)
+export const confirmNativeInvoice = (id, body) => api.post(`/invoices/${id}/confirm`, body)
+export const cancelNativeInvoice = (id, body) => api.post(`/invoices/${id}/cancel`, body)
+export const amendNativeInvoice = (id, body) => api.post(`/invoices/${id}/amend`, body)
+export const getNativeSettlements = (id, config = {}) => api.get(`/invoices/${id}/shipments`, config)
+export const quoteNativeSettlement = (id, body, config = {}) => api.post(`/invoices/${id}/shipment-quotes`, body, config)
+export const createNativeSettlement = (id, body) => api.post(`/invoices/${id}/shipments`, body)
+export const actNativeSettlement = (id, action, body) => api.post(`/shipments/${id}/${action}`, body)
+
+export const getNativeShipments = (params, config = {}) => api.get('/shipments', { ...config, params })

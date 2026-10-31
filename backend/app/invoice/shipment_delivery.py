@@ -1,4 +1,5 @@
 """Presale shipment funding fence and one-shot pending outbound delivery."""
+from app.invoice import legacy_sending
 import logging
 from collections import defaultdict
 from datetime import timedelta
@@ -319,8 +320,8 @@ def _fence(db, outbound_id, token):
         ShipmentOutbound.status == "sending", ShipmentOutbound.lease_until > beijing_now(),
     ).values(lease_until=beijing_now() + timedelta(minutes=5),
              version=ShipmentOutbound.version + 1)).rowcount
-    db.commit()
     if not count:
+        db.rollback()
         raise ValueError("分批出库任务租约已失效，请核对原单")
 
 
@@ -334,6 +335,8 @@ def deliver(db, outbound_id):
         return
     invoice_id = outbound.invoice_id
     db.commit()  # Do not keep the identity lookup snapshot across the write lock.
+    ownership = legacy_sending.authorize(db, invoice_id)
+    expected_epoch = ownership.epoch
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
     ensure_active(invoice)
     db.refresh(outbound, with_for_update=True)
@@ -359,12 +362,19 @@ def deliver(db, outbound_id):
     outbound.version += 1
     db.commit()
     sent = False
+    send_round = 0
 
     def before_send():
-        nonlocal sent
+        nonlocal sent, send_round
+        legacy_sending.authorize(db, invoice_id, expected_epoch)
         require_additional(db, outbound.payload)
         _fence(db, outbound_id, token)
+        send_round += 1
+        ticket = legacy_sending.start(db, invoice_id, f'legacy:shipment:{outbound_id}:{token}:{send_round}', 'shipment_outbound_create', outbound.payload,
+            {'actor_id': settlement.created_by, 'outbound_id': outbound_id, 'settlement_id': outbound.settlement_id, 'payload_hash': outbound.payload_hash}, expected_epoch)
+        db.commit()
         sent = True
+        return ticket
 
     try:
         outbound = db.get(ShipmentOutbound, outbound_id)

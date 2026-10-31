@@ -51,7 +51,9 @@ _CACHE_TTL = 55.0  # 与 30s/60s 前端轮询错拍，避免每次轮询都恰�
 
 
 def _cached(kind: str, date_from: str | None, date_to: str | None, fn,
-            source: str | None = None) -> dict:
+            source: str | None = None, *, db=None) -> dict:
+    if db is not None and service.local_mode(db):
+        return fn()
     key = (kind, date_from, date_to, source)
     now = time.monotonic()
     hit = _CACHE.get(key)
@@ -84,7 +86,7 @@ def september_new_sign_board(
     _require_key(key)
     finalized = get_settings().FESTIVAL_SEPTEMBER_FINALIZED
     return ok(_cached('september-new-sign', beijing_today().isoformat(), str(finalized),
-                      lambda: september_service.get_payload(db, finalized=finalized)))
+                      lambda: september_service.get_payload(db, finalized=finalized), db=db))
 
 
 @router.get("/new-sign", summary="个人新签积分榜（大屏取数，免登录白名单）")
@@ -101,7 +103,7 @@ def new_sign_board(
     source = _norm_source(source)
     return ok(_cached("new-sign", date_from, date_to,
                       lambda: service.get_screen_payload(db, date_from, date_to, source=source),
-                      source=source))
+                      source=source, db=db))
 
 
 @router.get("/camps", summary="阵营新签 PK 榜（大屏取数，免登录白名单）")
@@ -118,7 +120,7 @@ def camps_board(
     source = _norm_source(source)
     return ok(_cached("camps", date_from, date_to,
                       lambda: service.get_camps_payload(db, date_from, date_to, source=source),
-                      source=source))
+                      source=source, db=db))
 
 
 @router.get("/headline", summary="摘要头条屏（排名汇总 + 事件滚动流，免登录白名单）")
@@ -136,7 +138,7 @@ def headline_board(
     source = _norm_source(source)
     data = _cached("headline", date_from, date_to,
                    lambda: service.get_headline_payload(db, date_from, date_to, source=source),
-                   source=source)
+                   source=source, db=db)
     if after_id is not None and source is None and not (date_from and date_to):
         # 排名等重计算结果继续共用缓存；未读事件按每台大屏自己的游标单独取，不能缓存。
         data = {**data, "popup_events": events_service.feed(db, after_id=after_id)}
@@ -156,13 +158,14 @@ def ai_tip(
     _require_key(key)
     date_from = _norm_date(date_from, "date_from")
     date_to = _norm_date(date_to, "date_to")
-    cache_key = ("ai-tip", date_from, date_to)
+    from app.trade.service import consumer_phase
+    cache_key = ("ai-tip", date_from, date_to, consumer_phase(db))
     now = time.monotonic()
     hit = _CACHE.get(cache_key)
-    if hit and now - hit[0] < _AI_TIP_TTL:
+    if not service.local_mode(db) and hit and now - hit[0] < _AI_TIP_TTL:
         return ok(hit[1])
     headline = _cached("headline", date_from, date_to,
-                       lambda: service.get_headline_payload(db, date_from, date_to))
+                       lambda: service.get_headline_payload(db, date_from, date_to), db=db)
     data = service.build_ai_tip(db, headline)
     _CACHE[cache_key] = (now, data)
     return ok(data)
@@ -182,7 +185,7 @@ def repurchase_board(
     source = _norm_source(source)
     return ok(_cached("repurchase", date_from, date_to,
                       lambda: service.get_repurchase_payload(db, date_from, date_to, source=source),
-                      source=source))
+                      source=source, db=db))
 
 
 @router.get("/teams", summary="团队人均积分榜（大屏取数，免登录白名单）")
@@ -199,7 +202,7 @@ def teams_board(
     source = _norm_source(source)
     return ok(_cached("teams", date_from, date_to,
                       lambda: service.get_teams_payload(db, date_from, date_to, source=source),
-                      source=source))
+                      source=source, db=db))
 
 
 @router.get("/reconcile", summary="双轨对账 okki vs ark（并跑期运维用，免登录白名单）")
@@ -213,4 +216,4 @@ def reconcile(
     date_from = _norm_date(date_from, "date_from")
     date_to = _norm_date(date_to, "date_to")
     return ok(_cached("reconcile", date_from, date_to,
-                      lambda: service.get_reconcile(db, date_from, date_to)))
+                      lambda: service.get_reconcile(db, date_from, date_to), db=db))

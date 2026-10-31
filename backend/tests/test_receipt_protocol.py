@@ -10,6 +10,7 @@ from app.core.time import beijing_now
 from app.invoice import okki_client
 from app.receipt import remote, sync_service
 from app.receipt.models import Receipt
+from tests.test_commerce_legacy_transition_sending import ready, ticket
 
 
 @pytest.fixture
@@ -50,7 +51,7 @@ def test_receipt_get_retries_network_timeout_only_once(monkeypatch, persistent):
     assert len(calls) == 2
 
 
-def test_real_helper_unwraps_types_fields_and_preserves_rate(monkeypatch, payload_row):
+def test_real_helper_unwraps_types_fields_and_preserves_rate(db, ready, monkeypatch, payload_row):
     prepare(monkeypatch, [{"id": "exchange_rate_usd", "require": 1}])
     calls = []
     def post(url, **kwargs):
@@ -58,7 +59,10 @@ def test_real_helper_unwraps_types_fields_and_preserves_rate(monkeypatch, payloa
         return httpx.Response(200, json={"code": 200, "data": {"cash_collection_id": 700, "cash_collection_no": "HK700"}})
     monkeypatch.setattr(httpx, "post", post)
     fence = []
-    result = remote.push(None, payload_row, {"exchange_rate": 725}, lambda payload: fence.append(True))
+    def before(payload):
+        fence.append(True)
+        return ticket(db, ready, 'receipt-helper-rate', payload)
+    result = remote.push(db, payload_row, {"exchange_rate": 725}, before)
     assert result["cash_collection_id"] == 700 and fence == [True]
     assert calls[0]["amount"] == calls[0]["real_amount"] == "121.11"
     assert all(calls[0][key] == "0" for key in ("bank_charge", "bank_charge_rmb", "bank_charge_usd"))
@@ -68,27 +72,33 @@ def test_real_helper_unwraps_types_fields_and_preserves_rate(monkeypatch, payloa
 
 @pytest.mark.parametrize("response", [httpx.Response(500, json={"message": "test"}),
     httpx.Response(200, text="not-json"), httpx.Response(200, json={"code": 200, "data": {}})])
-def test_ambiguous_http_result_never_becomes_retryable(monkeypatch, payload_row, response):
+def test_ambiguous_http_result_never_becomes_retryable(db, ready, monkeypatch, payload_row, response):
     prepare(monkeypatch)
     calls = []
     monkeypatch.setattr(httpx, "post", lambda *a, **k: calls.append(1) or response)
     with pytest.raises(okki_client.OkkiOutcomeUncertainError):
-        remote.push(None, payload_row, {"exchange_rate": 725})
+        remote.push(db, payload_row, {"exchange_rate": 725}, lambda payload: ticket(db, ready, 'receipt-helper-unknown', payload))
     assert calls == [1]
 
 
-def test_fence_after_all_read_preparation_prevents_post(monkeypatch, payload_row):
+def test_fence_after_all_read_preparation_prevents_post(db, monkeypatch, payload_row):
     prepare(monkeypatch)
     def lost(payload):
         raise ValueError("lease lost")
     with pytest.raises(ValueError, match="lease lost"):
-        remote.push(None, payload_row, {"exchange_rate": 725}, lost)
+        remote.push(db, payload_row, {"exchange_rate": 725}, lost)
 
 
-def test_custom_required_field_blocks_before_post(monkeypatch, payload_row):
+def test_custom_required_field_blocks_before_post(db, monkeypatch, payload_row):
     prepare(monkeypatch, [{"id": "1234", "name": "收款账号", "require": 1}])
     with pytest.raises(ValueError, match="收款账号"):
-        remote.push(None, payload_row, {"exchange_rate": 725})
+        remote.push(db, payload_row, {"exchange_rate": 725}, lambda payload: pytest.fail('must reject missing bank field before claiming'))
+
+
+@pytest.mark.parametrize('callback', [None, lambda payload: None])
+def test_detached_receipt_helper_cannot_post_without_persistent_executor(monkeypatch, payload_row, callback):
+    with pytest.raises(ValueError, match='持久办理权'):
+        remote.push(None, payload_row, {'exchange_rate':725}, callback)
 
 
 def test_unassociated_remote_receipt_does_not_block_other_orders(monkeypatch):
@@ -158,8 +168,11 @@ def test_time_window_rejects_final_root_total_change(monkeypatch, root):
 def test_worker_does_not_post_after_lease_expires_during_read(db, monkeypatch):
     from app.invoice.models import Invoice
     from app.receipt import attachments
+    from tests.authority_helpers import seed_authority
+    seed_authority(db, 1, 'receipt:write')
     invoice = Invoice(invoice_no="LEASE-TEST", order_type="production", customer_id="101", customer_name="Test",
-        invoice_date=date(2026, 9, 17), currency="USD", total_amount=500, xiaoman_order_id="2001", sync_status="synced")
+        invoice_date=date(2026, 9, 17), currency="USD", total_amount=500, xiaoman_order_id="2001", sync_status="synced",
+        sales_user_id=1, created_by=1)
     db.add(invoice); db.flush()
     row = Receipt(receipt_no="HK-LEASE", invoice_id=invoice.id, source="manual", request_key="lease-test-key",
         request_hash="test", amount=100, currency="USD", collection_date=date(2026, 9, 17), payment_type="T/T",

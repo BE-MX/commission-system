@@ -14,6 +14,13 @@ from app.order_intelligence.profile_analysis import (
 )
 
 
+@pytest.fixture(autouse=True)
+def legacy_computation_phase(monkeypatch):
+    # These tests deliberately use None/FakeDb and mock source loaders. Real
+    # installed-policy behavior is exercised by transition consumer integration.
+    monkeypatch.setattr(service, "local_mode", lambda db: False)
+
+
 def order(
     order_id: str,
     company_id: str,

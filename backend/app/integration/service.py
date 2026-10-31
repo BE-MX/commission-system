@@ -369,18 +369,15 @@ def _create_external_invoice_once(
         raise
 
     try:
-        payload = _internal_invoice_payload(
-            canonical,
-            row,
-            sales_user_id=principal.sales_user_id,
-        )
         with db.begin_nested():
-            invoice = invoice_service.create_invoice(
-                db,
-                payload,
-                user_id=principal.actor_user_id,
-                allow_external_source=True,
-            )
+            from app.trade.service import local_mode
+            if local_mode():
+                from app.integration.local_service import create_invoice
+                invoice = create_invoice(db, canonical, row, principal)
+            else:
+                payload = _internal_invoice_payload(canonical, row, sales_user_id=principal.sales_user_id)
+                invoice = invoice_service.create_invoice(
+                    db, payload, user_id=principal.actor_user_id, allow_external_source=True)
             expected = canonical["totals"]
             if (
                 _money_text(invoice.product_amount) != expected["product_amount"]

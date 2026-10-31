@@ -145,3 +145,10 @@ remote不再无条件恢复基线：规范v1保持旧timer禁用/停止，专项
 2026-10-09受管全量发布允许接续上一部署器的精确五字段completed回执：仅缺mode/fingerprint的旧格式，必须核验实际legacy模式、永久mode-floor、原timer基线，以及四个已安装文件的组合摘要。预检不改写历史回执；freeze按原规则暂停timer并生成本次规范回执，activate/verify保留现有ModeFence。部分缺字段、新模式、未完成回执或文件/基线不符均拒绝，不能用此入口补造历史成功或恢复旧执行器。
 
 受管publish、migration resume及历史159/160 finalizer现共用outbound回执/候选/实际verify核验。managed timer不再按原running记录无条件start；已知v1目标暂停，初始legacy按经核验baseline。缺receipt或仅installed_paused不能finalize，历史凭据不补造，需受审协调发布。fresh mode floor不能由历史legacy降低。共同guard失败只向受信登记目标请求pause，保留active service/字节/mode/业务事实；SSH/IO/审计/状态不明固定报未确认，不宣称已排空。success摘要含最新绑定outbound，静态后再check。当前本地替身/实际函数体证据不代表生产、真实systemd/cgroup或完整协议回退；I78/I79/I80现场门禁保持，具体终态见docs/handoff.md。
+
+
+### 本地交易模式的独立出库围栏
+
+切换时独立 worker 的受保护 `.ark-outbound.env` 必须与后端设置同为 `TRANSACTION_MODE=local`。poller 认领前、creator 入口与每次小满请求前均拒绝非 legacy；手工运行也读取受保护文件，进程旧 legacy 不能覆盖文件 local，显式空值/未知值拒绝。本地模式部署不探测交易镜像，freeze 与 activate 排空正在运行的工作后立即持久 disable timer；即使后续安装失败，也不会保留开机启用状态，verify 拒绝 local+active/enabled。
+
+上述围栏只覆盖仓库管理的独立出库 worker。部署本身不自动修改受保护配置，也不代表已完成全部外部同步器、存量任务与期初数据的切换核验；完整切换仍须逐实例检查并保留恢复证据。开发验证仅运行本地模拟进程，未操作云端服务。

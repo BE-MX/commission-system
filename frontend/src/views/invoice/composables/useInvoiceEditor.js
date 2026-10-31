@@ -1,4 +1,5 @@
 import { msgWarning, msgSuccessText, alertAction, confirmAction, isFeedbackCancelled } from '@/utils/feedback'
+import { newRequestKey } from '@/utils/requestKey'
 import { formatMoney } from '@/utils/money'
 import { computed, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useLinkedInvoiceSync } from './useLinkedInvoiceSync'
@@ -22,6 +23,7 @@ import {
 } from '@/api/invoice'
 import { INVOICE_SYNC_OUTCOME, validateThenSync } from './invoiceSyncFlow'
 import { useAuthStore } from '@/stores/auth'
+import { invoiceIsLocal } from '@/views/commerce-transition/routeState'
 import {
   applyTotalDiscountToRows,
   calculateBalance,
@@ -79,6 +81,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const lastSaveType = ref('business')
   const syncCompletionMessage = ref('')
   let pendingLinkedCompletion = null
+  let localAttempt = null
+  let entrySequence = 0
   const editorOpen = computed(() => drawerVisible.value || legacyVisible.value)
   const editorBusy = computed(() => orderSaving.value || saveAndSyncSubmitting.value || linked.busy.value || linked.loading.value
     || form.receipt_uploading || form.receipt_action_busy || form.receipt_remark_saving)
@@ -296,6 +300,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   let customerSelectionSeq = 0
   let customerContextSeq = 0
   let customerDefaultsPromise = Promise.resolve()
+  watch(() => form.transaction_route, () => { customerContextSeq++; customerSelectionSeq++; contactFillSeq++; customerRuleSeq++; accessories.invalidateCustomerContext() }, { flush: 'sync' })
   let invoiceNoSeq = 0
   let prevNoSeq = 0
   // 用户手输过发票号后，建议号不再覆盖
@@ -339,6 +344,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     lastOrderDate.value = ''
     Object.assign(form, emptyInvoiceForm(), {
       ...data,
+      transaction_route: data.transaction_route || data.transaction_mode || 'legacy',
+      local_customer_id: data.local_customer_id || (String(data.customer_id || '').startsWith('ark:') ? Number(String(data.customer_id).slice(4)) : null),
       receipt_draft: data.receipt_draft ? { ...data.receipt_draft, amount: data.receipt_draft.amount == null ? 0 : Number(data.receipt_draft.amount) } : null,
       shipping_fee: Number(data.shipping_fee || 0),
       surcharge_amount: Number(data.surcharge_amount || 0),
@@ -363,7 +370,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       : null
     ensureCustomerOption(selectedCustomer.value) // 编辑回显：客户可能不在当前候选里
     customerRule.value = null
-    if (form.customer_id) {
+    if (form.customer_id && !invoiceIsLocal(form)) {
       loadCustomerRule()
       // 编辑回显路径不走 fillContactDefaults（避免覆盖存的联系人），单独取上次订单日期
       refreshLastOrderDate()
@@ -494,6 +501,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   async function onCurrencyChange() {
+    if (invoiceIsLocal(form)) { form.currency = String(form.currency || '').trim().toUpperCase(); return }
     form.currency = String(form.currency || '').trim().toUpperCase()
     accessories.invalidateCustomerContext()
     await accessories.refreshAccessoryPrices()
@@ -585,27 +593,37 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   async function openCreate(orderType = 'stock') {
+    const ticket = ++entrySequence
     await prepareCreate(orderType)
+    if (ticket !== entrySequence) return
     drawerVisible.value = true
   }
 
   // 旧版下单入口：同样的初始化流程，只是打开旧版布局抽屉
   async function openLegacyCreate(orderType = 'stock') {
+    const ticket = ++entrySequence
     await prepareCreate(orderType)
+    if (ticket !== entrySequence) return
     legacyVisible.value = true
   }
 
   async function openEdit(id) {
+    const ticket = ++entrySequence
     const data = await getInvoice(id)
+    if (ticket !== entrySequence) return
     resetForm(data)
-    await linked.load(id)
+    if (!invoiceIsLocal(data)) await linked.load(id)
+    if (ticket !== entrySequence) return
     await loadSalesUsers()
+    if (ticket !== entrySequence) return
     drawerVisible.value = true
     searchCustomers('')
     loadMerchandisers()
     refreshPreviousInvoiceNo()
-    if (form.order_type === 'production') loadEntryOptions()
+    if (form.order_type === 'production' && !invoiceIsLocal(form)) loadEntryOptions()
   }
+
+  function cancelEntry() { entrySequence++; customerContextSeq++; customerSelectionSeq++; contactFillSeq++; customerRuleSeq++; customerSearch.reset() }
 
   async function applyScreenshotPreview(preview) {
     const patch = preview?.invoice_patch
@@ -684,6 +702,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     contactFillSeq++
     customerRuleSeq++
     form.customer_id = ''
+    form.local_customer_id = null
     form.customer_name = ''
     form.customer_grade = null
     form.contact_name = ''
@@ -694,6 +713,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     customerRule.value = null
     accessories.invalidateCustomerContext()
     refreshPreviousInvoiceNo()
+    if (invoiceIsLocal(form)) return
     await Promise.all([
       searchCustomers(''),
       ...accessories.hairItems.value.map(line => refreshLinePrice(line)),
@@ -765,6 +785,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
           id: line.id, group_key: line.group_key,
         })),
         expected_version: loadedUpdatedAt.value,
+        expected_authority_epoch: form.authority_epoch ?? null,
         expected_groups_version: loadedGroupVersion.value,
       })
       if (!saved) return null
@@ -818,6 +839,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const submittedReceiptStatus = form.receipt_draft?.status
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
     const submittedRows = form.items.filter(line => !isInvoicePlaceholder(line))
+    if (invoiceIsLocal(form)) {
+      if (!form.local_customer_id || submittedRows.some(line => !line.local_sku_id)) { msgWarning('请选择已核验的本地客户及每行本地 SKU'); return null }
+      if (Number(form.receipt_draft?.amount || 0)) { msgWarning('请先清空旧回款草稿，本地订单通过资金与应收登记'); return null }
+      payload.receipt_draft = null
+      const signature = JSON.stringify(payload)
+      if (!localAttempt || localAttempt.signature !== signature) localAttempt = { signature, request_key: newRequestKey() }
+      payload.request_key = localAttempt.request_key
+    }
     // A failed defaults request must not erase an existing customer grade.
     if (!customerGradeReady) delete payload.customer_grade
     const created = !form.id
@@ -829,6 +858,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
         ? await createInvoiceFromScreenshot(payload)
         : await createInvoice(payload)
     if (!saved) return null
+    localAttempt = null
     return finishInvoiceSave(saved, { created, groupOnly, payload, submittedRows, submittedSignature, submittedReceiptStatus })
   }
 
@@ -868,6 +898,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // 保存 → 校验 → 推送小满；只在确认成功后显示持续提示，失败保留编辑现场。
   async function saveAndSync() {
+    if (invoiceIsLocal(form)) { msgWarning('方舟独立订单请保存后在订单履约中确认，不发送小满'); return }
     if (saveAndSyncSubmitting.value) {
       msgWarning('发票正在保存并同步，请勿重复提交')
       return
@@ -991,7 +1022,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     onCurrencyChange,
     onInvoiceNoInput,
     onInvoiceNoBlur,
-    openCreate,
+    cancelEntry, openCreate,
     openLegacyCreate,
     openEdit,
     applyScreenshotPreview,

@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 def process_receipts():
+    if get_settings().TRANSACTION_MODE == "local":
+        return
     with SessionLocal() as db:
         try:
             invoice_link.recover_expired(db)

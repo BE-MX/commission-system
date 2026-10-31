@@ -18,6 +18,7 @@ def get(db, identity, user, *, lock=False):
     row = db.scalar(select(SalesReturn).where(SalesReturn.id == identity))
     access.ensure(db, row, user)
     if lock:
+        guards.require_legacy_order(db, row.order_id, row.invoice_id)
         guards.lock_order(db, row.order_id, row.invoice_id)
         row = db.scalar(select(SalesReturn).where(SalesReturn.id == identity).with_for_update()
                         .execution_options(populate_existing=True))
@@ -27,6 +28,7 @@ def get(db, identity, user, *, lock=False):
 
 def preview(db, body, user, *, exclude=None):
     from app.sales_return import funding, source_consistency, sources
+    guards.require_legacy_order(db, body.order_id)
     snapshot = sources.snapshot(db, body.order_id, user)
     source_consistency.verify(db, snapshot)
     previous = read_service.history(db, body.order_id, exclude=exclude)

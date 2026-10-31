@@ -166,7 +166,10 @@ def test_find_product_reuses_structured_catalog_and_permission(monkeypatch):
             "matches": [{"product_id": 11, "sku_id": 22, "product_name": "Genius/20/#1B/20g"}],
         }
 
-    monkeypatch.setattr("app.mcp.price_tools.product_service.match_product", fake_match)
+    # A pure adapter test uses no Session; phase integration is covered by the
+    # mixed-consumer suite with a real installed policy and both catalogs.
+    monkeypatch.setattr("app.trade.service.consumer_phase", lambda db: "legacy_only")
+    monkeypatch.setattr("app.mcp.price_tools.product_service.match_legacy_product", fake_match)
     denied = json.loads(
         _find_product(
             object(),

@@ -17,7 +17,10 @@ from app.festival import public_router, september_service as svc, service
 @pytest.fixture
 def september_db(monkeypatch):
     engine = create_engine('sqlite://')
+    from app.commerce_transition.models import PlatformPolicy
+    PlatformPolicy.__table__.create(engine)
     with engine.connect() as conn:
+        conn.execute(PlatformPolicy.__table__.insert().values(id=1, phase="legacy_only"))
         conn.execute(text("ATTACH DATABASE ':memory:' AS lsordertest"))
         conn.execute(text('CREATE TABLE lsordertest.user_rel_team (user_id TEXT, Team TEXT)'))
         conn.execute(text('CREATE TABLE lsordertest.okki_orders (order_id TEXT PRIMARY KEY, company_id TEXT, '

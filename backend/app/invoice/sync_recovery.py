@@ -8,7 +8,9 @@ from sqlalchemy import select
 
 from app.core.time import beijing_now
 from app.invoice import edit_authority, linked_sync_service as linked, lifecycle_remote, okki_client
-from app.invoice import service, uncertain_recovery, xiaoman_service, order_push_facts
+from app.invoice import service, uncertain_recovery, xiaoman_service, order_push_facts, legacy_sending
+from app.commerce_transition.models import SendingClaim, ClaimEvidence
+from app.commerce_transition.service import digest
 from app.invoice.lifecycle_guard import ensure_active
 from app.invoice.models import InvoiceLinkedSync
 from app.invoice.push_attempt import allow_recovery
@@ -16,6 +18,48 @@ from app.receipt import remote
 from app.semifinished.models import InvoiceAllocation
 
 logger = logging.getLogger(__name__)
+
+
+def original_claims(db, invoice, key):
+    claims=db.scalars(select(SendingClaim).where(SendingClaim.invoice_id==invoice.id,
+        SendingClaim.operation=='order_push').order_by(SendingClaim.id).with_for_update()
+        .execution_options(populate_existing=True)).all()
+    selected=[claim for claim in claims if key and (claim.responsibilities or {}).get('task_key')==key]
+    if any(claim.state in {'sending','unknown'} and claim not in selected for claim in claims):
+        raise ValueError('存在其他未决原发送责任，不能清除订单保护')
+    return selected
+
+
+def claim_binding(db, invoice, key):
+    return tuple((claim.id,claim.request_key,claim.route,claim.epoch,claim.payload_hash,claim.state,claim.external_id)
+        for claim in original_claims(db,invoice,key))
+
+
+def settle_original_claims(db, invoice, key, resolution, evidence=None, target=None, *, formal=False):
+    claims=original_claims(db,invoice,key)
+    if resolution=='confirm_not_created':
+        # Neither an operator note nor an empty mirror can prove a POST absent.
+        # Only immutable, definitive ORIGINAL results can permit a fresh create.
+        if not claims:
+            raise ValueError('没有原请求确定未发送凭证，历史单只能凭真实原单读回核对')
+        for claim in claims:
+            proof=db.scalars(select(ClaimEvidence).where(ClaimEvidence.claim_id==claim.id)).all()
+            if claim.state not in {'failed','not_sent'} or claim.external_id or not any(
+                row.outcome==claim.state and row.external_id is None and
+                (row.evidence or {}).get('definitive_original_request_result') is True for row in proof):
+                raise ValueError('原发送结果未知，禁止以租约过期或查无记录解除保护')
+        return
+    for claim in claims:
+        if claim.state in {'failed','not_sent'}:
+            continue  # A conclusively rejected auth round is already closed.
+        if claim.external_id and claim.external_id!=str(target):
+            raise ValueError('核对结果与原发送远端身份不一致')
+        legacy_sending.finish(db,claim.request_key,'succeeded',{
+            'original_request_readback':True,'readback_sha256':digest(evidence),
+            'review_resolution':resolution,'original_attempt_key':key},str(target))
+        legacy_sending.observe_formal(db,claim.request_key,'legacy.order.push','accepted' if formal else 'unknown',
+            result_row=invoice if formal else None,
+            evidence_ref={'original_attempt_key':key,'readback_sha256':digest(evidence)})
 
 
 def require_state(db, invoice, resolution, reason, *, target=None):
@@ -39,8 +83,8 @@ def require_state(db, invoice, resolution, reason, *, target=None):
     return row
 
 
-def capture(db, invoice, resolution, reason):
-    row = require_state(db, invoice, resolution, reason)
+def capture(db, invoice, resolution, reason, target=None):
+    row = require_state(db, invoice, resolution, reason, target=target)
     rows, _, issues, _ = xiaoman_service._build_product_rows(db, invoice, xiaoman_service.get_settings_row(db), editing=True, reconciling=True)
     if issues:
         raise ValueError("本地产品映射尚未完整核对")
@@ -53,7 +97,8 @@ def capture(db, invoice, resolution, reason):
         tuple(state(allocation) for allocation in allocations), deepcopy(rows),
         (invoice.sync_attempt or {}).get("attempt_key"),
         order_push_facts.observation_fingerprint(db, invoice.id, (invoice.sync_attempt or {}).get("attempt_key"))
-        if (invoice.sync_attempt or {}).get("attempt_key") else None)
+        if (invoice.sync_attempt or {}).get("attempt_key") else None,
+        claim_binding(db,invoice,(invoice.sync_attempt or {}).get('attempt_key')))
     return binding, rows
 
 
@@ -134,6 +179,7 @@ def resolve_late(db, invoice, user, resolution, reason, target):
     _, binding, issues, _ = xiaoman_service._build_product_rows(db, invoice, xiaoman_service.get_settings_row(db), editing=True, reconciling=True)
     if issues or xiaoman_service._assign_unique_ids(invoice, binding, validated):
         raise ValueError("原已受理明细不能完整回写")
+    settle_original_claims(db,invoice,key,resolution,evidence,reference)
     order_push_facts.review(db, invoice, key, resolution)
     from app.invoice.models import InvoiceSyncLog
     db.add(InvoiceSyncLog(invoice_id=invoice.id, action="push_fact_review", success=1,
@@ -153,12 +199,38 @@ def resolve(db, invoice_id, user, *, resolution, reason, xiaoman_order_id=None, 
             xiaoman_order_id = str(target["order_id"])
         if invoice.sync_status != "sync_uncertain" and order_push_facts.unresolved(db, invoice):
             return resolve_late(db, invoice, user, resolution, reason, xiaoman_order_id)
+        if resolution=='bind_order':
+            expected,rows=capture(db,invoice,resolution,reason,xiaoman_order_id)
+            identity=invoice.id
+            validation_document=SimpleNamespace(xiaoman_order_id=xiaoman_order_id,customer_id=invoice.customer_id,
+                currency=invoice.currency,total_amount=invoice.total_amount,surcharge_amount=invoice.surcharge_amount)
+            name=invoice.invoice_no
+            db.commit()
+            try:
+                evidence=lifecycle_remote.read(db,'order',xiaoman_order_id)
+                if not isinstance(evidence,dict) or evidence.get('name')!=name:
+                    raise ValueError('原订单名称读回与原绑定不一致')
+                uncertain_recovery.verify_existing(validation_document,rows,evidence)
+                evidence=deepcopy(evidence)
+            finally:
+                db.rollback();db.expire_all()
+            invoice,actor=edit_authority.prepare_recovery(db,identity,user,'invoice:admin')
+            actual,_=capture(db,invoice,resolution,reason,xiaoman_order_id)
+            if actual!=expected:raise ValueError('核对期间原订单或发送证据已变化')
+            original_key=(invoice.sync_attempt or {}).get('attempt_key')
+            settle_original_claims(db,invoice,original_key,resolution,evidence,xiaoman_order_id)
+            xiaoman_service.resolve_sync_uncertain(db,invoice,resolution=resolution,reason=reason,
+                xiaoman_order_id=xiaoman_order_id,operator_id=int(actor['id']))
+            order_push_facts.review(db,invoice,original_key,resolution)
+            db.commit()
+            return current_response(db,invoice_id,user)
         if resolution != "confirm_existing":
             # Validate the known accepted reference before any resolver writes.
             if resolution == "bind_order":
                 order_push_facts.check_review(db, invoice, (invoice.sync_attempt or {}).get("attempt_key"), resolution, xiaoman_order_id)
             require_state(db, invoice, resolution, reason, target=xiaoman_order_id)
             original_key=(invoice.sync_attempt or {}).get("attempt_key")
+            settle_original_claims(db,invoice,original_key,resolution)
             xiaoman_service.resolve_sync_uncertain(db, invoice, resolution=resolution, reason=reason,
                 xiaoman_order_id=xiaoman_order_id, operator_id=int(actor["id"]))
             order_push_facts.review(db,invoice,original_key,resolution)
@@ -184,6 +256,7 @@ def resolve(db, invoice_id, user, *, resolution, reason, xiaoman_order_id=None, 
         if actual != expected:
             raise HTTPException(409, "核对期间订单、映射或原执行任务已变化，请重新读取")
         original_key=(invoice.sync_attempt or {}).get("attempt_key")
+        settle_original_claims(db,invoice,original_key,resolution,evidence,target)
         uncertain_recovery.confirm_existing(db, invoice, reason, int(actor["id"]), evidence=evidence)
         order_push_facts.review(db,invoice,original_key,resolution)
         db.commit()

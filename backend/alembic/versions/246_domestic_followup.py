@@ -5,16 +5,16 @@
 FK 类型与目标列一致：客户 INT、用户 INT UNSIGNED、发货批次 BIGINT。
 downgrade 只删表；字典是用户可维护数据，不随 downgrade 删除。
 
-Revision ID: 215_domestic_followup
-Revises: 214_sales_return_ledger
+Revision ID: 246_domestic_followup
+Revises: 245_commerce_transition
 Create Date: 2026-10-30
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
-revision = "215_domestic_followup"
-down_revision = "214_sales_return_ledger"
+revision = "246_domestic_followup"
+down_revision = "245_commerce_transition"
 branch_labels = None
 depends_on = None
 

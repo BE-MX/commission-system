@@ -401,7 +401,7 @@ def test_frozen_metadata_matches_design_types_nullability_and_generated_expressi
                 assert column.computed is None, f"{table_name}.{column_name}"
 
 
-def test_frozen_core_metadata_independently_matches_all_31_orm_contracts():
+def test_frozen_core_metadata_matches_orm_except_explicit_later_revisions():
     migration = _load_migration()
 
     def unique_columns(table):
@@ -435,23 +435,46 @@ def test_frozen_core_metadata_independently_matches_all_31_orm_contracts():
     for table_name in CORE_TABLES:
         orm_table = ORM_CORE_TABLES[table_name]
         frozen_table = migration.TARGET_METADATA.tables[table_name]
-        assert tuple(frozen_table.c.keys()) == tuple(orm_table.c.keys()), table_name
-        for column_name in orm_table.c.keys():
+        added = {'ark_customer_orders': {"local_invoice_id"},
+            'ark_customer_order_items': {'local_invoice_item_id', 'projection_role', 'historical_alias_id'}}.get(table_name, set())
+        assert tuple(frozen_table.c.keys()) == tuple(name for name in orm_table.c.keys() if name not in added), table_name
+        for column_name in frozen_table.c.keys():
             orm_column = orm_table.c[column_name]
             frozen_column = frozen_table.c[column_name]
             assert frozen_column.nullable == orm_column.nullable, (
                 f"{table_name}.{column_name}"
             )
-            assert frozen_column.comment == orm_column.comment, (
-                f"{table_name}.{column_name}"
-            )
-            if (table_name, column_name) not in GENERATED_COLUMNS:
+            widths = {('ark_customer_order_items', 'product_name'): 512,
+                ('ark_customer_order_items', 'model'): 200, ('ark_customer_order_items', 'length'): 128,
+                ('ark_customer_order_items', 'product_family'): 256,
+                ('ark_customer_list_projections', 'primary_product_family'): 256}
+            resized = (table_name, column_name) in widths
+            if resized:
+                assert orm_column.type.length == widths[table_name, column_name]
+            if table_name == "ark_customer_order_items" and column_name == "product_name":
+                assert frozen_column.comment == "外部订单产品名称原值"
+                assert orm_column.comment == "订单产品名称原值"
+            else:
+                assert frozen_column.comment == orm_column.comment, f"{table_name}.{column_name}"
+            if (table_name, column_name) not in GENERATED_COLUMNS and not resized:
                 assert _normalized_mysql_type(frozen_column) == (
                     _normalized_mysql_type(orm_column)
                 ), f"{table_name}.{column_name}"
-        assert unique_columns(frozen_table) == unique_columns(orm_table), table_name
+        added_unique = {tuple([name]) for name in added if name in {'local_invoice_id', 'local_invoice_item_id'}}
+        assert unique_columns(frozen_table) == unique_columns(orm_table) - added_unique, table_name
         assert indexed_columns(orm_table) <= indexed_columns(frozen_table), table_name
         expected_foreign_keys = foreign_keys(orm_table)
+        references = {'local_invoice_id': ('ark_invoices', 'id'),
+            'local_invoice_item_id': ('ark_invoice_items', 'id'), 'historical_alias_id': ('ark_customer_order_items', 'id')}
+        for name in added & references.keys():
+            local_reference = ((name,), (references[name],), "RESTRICT", "RESTRICT")
+            assert local_reference in expected_foreign_keys
+            assert orm_table.c[name].nullable is True
+            expected_foreign_keys = expected_foreign_keys - {local_reference}
+        if 'projection_role' in added:
+            assert orm_table.c.projection_role.nullable is False
+            assert orm_table.c.projection_role.type.length == 24
+            assert orm_table.c.projection_role.server_default.arg == 'active'
         actual_foreign_keys = foreign_keys(frozen_table)
         assert expected_foreign_keys <= actual_foreign_keys, table_name
         if table_name != "ark_customer_acquisition_attributions":

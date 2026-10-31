@@ -18,6 +18,10 @@ def lookup_specs(db, identity, terms, length=None):
         return {'status': 'permission_denied', 'matches': [], 'available_lengths': []}
     if not terms or len(terms) > 6 or any(not isinstance(term, str) or not 2 <= len(term) <= 80 for term in terms):
         raise ValueError('invalid product scope')
+    from app.trade.service import local_mode
+    if local_mode():
+        from app.catalog.query_service import lookup_specs as native_specs
+        return native_specs(db, terms, length)
     columns = product_service._table_columns(db, 'okki_products')
     if not {'model', 'size', 'unit'}.issubset(columns):
         return {'status': 'unavailable', 'matches': [], 'available_lengths': []}

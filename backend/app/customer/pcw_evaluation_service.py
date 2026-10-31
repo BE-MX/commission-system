@@ -48,6 +48,7 @@ from app.customer.models import (
     CustomerSyncCursor,
 )
 from app.customer.pcw_idempotency import canonical_request_hash
+from app.customer.projection_common import sha256
 from app.customer.pcw_models import (
     CustomerEvaluationItem,
     CustomerEvaluationRun,
@@ -466,6 +467,10 @@ def _rule_reorder_window(db: Session, ctx: _EvalContext, counters: dict, dry_run
     for window in windows:
         key = f"reorder:{ctx.customer_id}:{window.product_family}"
         cycle = window.occurrence_key
+        if len(key) > 128:
+            key = f'reorder:{ctx.customer_id}:sha256:{sha256(window.product_family)}'
+        if len(cycle) > 64:
+            cycle = sha256(cycle)
         if window.state != "open":
             _cancel_covered_window(db, ctx, window, key, cycle, counters, dry_run)
             continue

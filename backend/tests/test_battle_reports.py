@@ -20,6 +20,10 @@ from app.core.database import get_db
 
 @pytest.fixture
 def setup(db, monkeypatch):
+    from app.core.config import get_settings
+    from app.commerce_transition.models import PlatformPolicy
+    monkeypatch.setattr(get_settings(), "BUSINESS_DB_NAME", "lsordertest")
+    assert db.get(PlatformPolicy, 1).phase == "legacy_only"
     now = datetime(2026, 9, 22, 12)
     monkeypatch.setattr(service, "beijing_now", lambda: now)
     monkeypatch.setattr(query_service, "beijing_now", lambda: now)

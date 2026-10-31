@@ -7,6 +7,8 @@ import * as settlement from '../src/views/invoice/composables/invoiceSettlement.
 import * as state from '../src/views/invoice/composables/invoiceEditorState.js'
 import * as pricing from '../src/views/invoice/composables/accessoryPricing.js'
 import * as money from '../src/utils/money.js'
+import { newRequestKey } from '../src/utils/requestKey.js'
+import * as routeState from '../src/views/commerce-transition/routeState.js'
 import * as receiptState from '../src/views/invoice/composables/invoiceReceiptState.js'
 
 const source = readFileSync(new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url), 'utf8')
@@ -22,7 +24,7 @@ async function harness(request = async () => defaults('上单备注'), createReq
     'suggestInvoiceNo', 'updateInvoice', 'updateInvoiceItemGroups'].map(name => [name, async () => ({})]))
   Object.assign(api, {
     getCustomerContactDefaults: request, getCustomerRule: async () => null,
-    getInvoice: async id => ({ ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id, customer_id: 'C1', ...invoiceData }),
+    getInvoice: async id => options.getInvoice ? options.getInvoice(id) : ({ ...state.emptyInvoiceForm(), ...defaults('本单已保存备注'), id, customer_id: 'C1', ...invoiceData }),
     createInvoice: async payload => { saved.push(payload); return createRequest ? createRequest(payload) : { ...payload, id: 10 } },
     updateInvoice: async (id, payload) => options.updateRequest
       ? options.updateRequest(id, payload) : (saved.push(payload), { ...payload, id }),
@@ -63,6 +65,8 @@ async function harness(request = async () => defaults('上单备注'), createReq
   const imports = {
     vue,
     '@/utils/money': money,
+    '@/utils/requestKey': { newRequestKey },
+    '@/views/commerce-transition/routeState': routeState,
     '@/utils/feedback': { msgWarning: message => warnings.push(message), msgSuccessText() {}, alertAction() {},
       confirmAction: async message => { confirmations.push(message); return confirm() },
       isFeedbackCancelled: error => ['cancel', 'close'].includes(error) },
@@ -667,6 +671,45 @@ test('linked retry announces completion when the earlier save-and-sync finally r
 })
 
 
+test('unified local create retries the original request key after response loss and never syncs old APIs', async t => {
+  let attempts = 0
+  const h = await harness(undefined, async payload => {
+    if (++attempts === 1) throw Error('response lost')
+    return { ...payload, id: 123, authority_epoch: 1, commerce_version: 1 }
+  })
+  t.after(h.stop)
+  Object.assign(h.editor.form, defaults('local draft'), { transaction_route: 'local', local_customer_id: 3, customer_id: 'ark:3', express_channel: 'FEDEX', items: [{ local_sku_id: 9, sku_id: 9, product_display: 'Local SKU', quantity: 1, price_per_piece: 0, total_price: 0 }] })
+  await assert.rejects(h.editor.saveDraft(), /response lost/)
+  await h.editor.saveDraft()
+  assert.equal(h.saved.length, 2)
+  assert.equal(h.saved[0].request_key, h.saved[1].request_key)
+  assert.equal(h.saved[1].transaction_route, 'local')
+  assert.equal(h.saved[1].items[0].local_sku_id, 9)
+  assert.equal(h.saved[1].receipt_draft, null)
+  await h.editor.saveAndSync()
+  assert.deepEqual(h.synced, [])
+  assert.equal(h.saved.length, 2)
+})
+
+test('switching to local cannot silently discard an entered old receipt draft', async t => {
+  const h = await harness(); t.after(h.stop)
+  Object.assign(h.editor.form, defaults('local draft'), { transaction_route: 'local', local_customer_id: 3, customer_id: 'ark:3', express_channel: 'FEDEX', receipt_draft: { amount: 8, status: 'draft' }, items: [{ local_sku_id: 9, sku_id: 9, product_display: 'Local SKU', quantity: 1, price_per_piece: 0, total_price: 0 }] })
+  await h.editor.saveDraft()
+  assert.equal(h.saved.length, 0)
+  assert.equal(h.editor.form.receipt_draft.amount, 8)
+})
+
+
+test('deactivating the unified editor invalidates a pending order read before it can reopen another route', async t => {
+  const request = deferred(), h = await harness(undefined, undefined, {}, undefined, { getInvoice: () => request.promise }); t.after(h.stop)
+  const opening = h.editor.openEdit(19)
+  h.editor.cancelEntry()
+  request.resolve({ ...state.emptyInvoiceForm(), id: 19, transaction_route: 'legacy' })
+  await opening
+  assert.equal(h.editor.drawerVisible.value, false)
+  assert.equal(h.editor.form.id, null)
+})
+
 function concurrentGroupRows() {
   return [1, 2].map(id => state.normalizeHairRow({
     id, group_key: 'a', product_id: 11, sku_id: 9011, product_name: `Product ${id}`,
@@ -830,4 +873,43 @@ test('group change while customer defaults are pending stays local and skips ext
     assert.equal(h.editor.linkedOperation.value, null)
     assert.equal(h.editor.synced?.length || 0, 0)
   } finally { h.stop() }
+})
+
+
+test('local grouped order save keeps group identity and ignores an empty entry row', async t => {
+  const h = await harness(); t.after(h.stop)
+  const row = state.normalizeHairRow({ local_sku_id: 9, sku_id: 9, group_key: 'a', product_display: 'Local SKU', quantity: 1, price_per_piece: 0, total_price: 0 })
+  Object.assign(h.editor.form, defaults('local grouped draft'), {
+    transaction_route: 'local', local_customer_id: 3, customer_id: 'ark:3', express_channel: 'FEDEX',
+    item_groups: [{ key: 'a', name: 'Group A', sort_order: 1 }],
+    items: [row, { ...state.emptyHairRow(), group_key: 'a' }],
+  })
+  await h.editor.saveDraft()
+  assert.deepEqual(h.warnings, [])
+  assert.equal(h.saved.length, 1)
+  assert.equal(h.saved[0].items.length, 1)
+  assert.equal(h.saved[0].items[0].group_key, 'a')
+  assert.equal(h.saved[0].items[0].local_sku_id, 9)
+  assert.equal(h.saved[0].transaction_route, 'local')
+  assert.equal(h.saved[0].inspection_requirement, 'detail')
+})
+
+
+test('local group-only save sends the loaded authority epoch without a legacy sync', async t => {
+  const patches = []
+  const h = await harness(undefined, undefined, {
+    ...concurrentInvoice(), transaction_route: 'local', authority_epoch: 6,
+    local_customer_id: 3, customer_id: 'ark:3', receipt_draft: null,
+    items: concurrentGroupRows().map(row => ({ ...row, local_sku_id: 9 })),
+  }, undefined, {
+    functionalGroups: true,
+    groupRequest: (id, payload) => { patches.push(payload); return { ...h.editor.form, id, item_groups_version: 'g2' } },
+  })
+  t.after(h.stop)
+  await h.editor.openEdit(7)
+  h.editor.form.item_groups[0].name = 'Local group'
+  await h.editor.saveDraft()
+  assert.equal(patches.length, 1)
+  assert.equal(patches[0].expected_authority_epoch, 6)
+  assert.deepEqual(h.synced, [])
 })

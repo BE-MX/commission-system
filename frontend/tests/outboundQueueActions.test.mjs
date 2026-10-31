@@ -87,3 +87,17 @@ test('failed deletion keeps row and page; confirmation in flight blocks double c
   assert.equal(list.list.value.length, 1)
   assert.equal(api.deletingId.value, null)
 })
+
+
+test('leaving the old source aborts a pending direct print and ignores its late payload', async () => {
+  let resolve, printed = 0, signal
+  const pending = new Promise(done => { resolve = done })
+  const api = factory(ref, watch, () => ({ query: {} }), () => ({}), async (_, config) => { signal = config.signal; return pending }, null, () => 'document', () => { printed++ }, null, () => {})()
+  const reading = api.openPrint({ outbound_record_id: 17, record_source: 'okki', can_print: true })
+  api.cancelMediaReads()
+  assert.equal(signal.aborted, true)
+  resolve({ data: { record: { id: 17 }, items: [] } })
+  await reading
+  assert.equal(printed, 0)
+  assert.equal(api.printingId.value, null)
+})

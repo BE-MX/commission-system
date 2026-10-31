@@ -35,8 +35,17 @@ from app.order_intelligence.filtering import (
     product_sql,
 )
 from app.order_intelligence.profile_analysis import analyze_customer_profiles
+from app.trade.service import formal_projection_enabled as local_mode
 
 logger = logging.getLogger("order_intelligence")
+
+
+def _consumer_coverage(db, scope, date_from, date_to):
+    if not local_mode(db):
+        return None
+    from app.trade.refresh_service import projection_status
+    return projection_status(db, owner_ids=[int(scope.user_id)] if scope.user_id else None,
+                             date_from=date_from, date_to=date_to)
 
 NEW_DEAL_FIELD = "22595163468"
 FIRST_RETURN_FIELD = "20528142733548"
@@ -136,6 +145,9 @@ def resolve_scope(
     requested_user_id: str | None = None,
     requested_team: str | None = None,
 ) -> AnalysisScope:
+    if local_mode(db) and requested_user_id is not None:
+        if not str(requested_user_id).isascii() or not str(requested_user_id).isdigit() or int(requested_user_id) <= 0:
+            raise HTTPException(422, "业务员必须使用本地方舟用户 ID")
     permissions = set(current_user.get("permissions") or [])
     roles = set(current_user.get("roles") or [])
     can_read_all = "order_intelligence:read_all" in permissions or "super_admin" in roles
@@ -151,6 +163,10 @@ def resolve_scope(
         ark_user_id = int(current_user.get("sub"))
     except (TypeError, ValueError):
         raise HTTPException(422, "当前登录账号无法识别，请重新登录") from None
+    if local_mode(db):
+        if requested_user_id and int(requested_user_id) != ark_user_id:
+            raise HTTPException(403, "无权查看其他业务员的订单分析")
+        return AnalysisScope("self", str(ark_user_id), None, False)
     binding = (
         db.query(ArkUserExternalBinding)
         .filter(
@@ -199,6 +215,10 @@ def _load_orders(
     date_to: date | None = None,
     filters: AnalysisFilters | None = None,
 ) -> list[dict]:
+    if local_mode(db):
+        from app.trade.query_service import load_orders
+        return [{**row, "amount_usd": float(row["amount_usd"])} for row in
+            load_orders(db, user_id=scope.user_id, team=scope.team, date_from=date_from, date_to=date_to, filters=filters)]
     schema = get_settings().BUSINESS_DB_NAME
     filters = filters or AnalysisFilters()
     scope_clause, params = _scope_sql(scope)
@@ -251,6 +271,9 @@ def _load_product_rows(
     date_to: date,
     filters: AnalysisFilters | None = None,
 ) -> list[dict]:
+    if local_mode(db):
+        from app.trade.query_service import load_product_rows
+        return load_product_rows(db, _load_orders(db, scope, date_from, date_to, filters), filters)
     schema = get_settings().BUSINESS_DB_NAME
     filters = filters or AnalysisFilters()
     scope_clause, params = _scope_sql(scope)
@@ -469,6 +492,7 @@ def _profile_analysis(
 ) -> dict:
     """画像历史限定到截至期末，统计期筛选只决定本期入选客户和商品分布。"""
     cache_key = (
+        get_settings().TRANSACTION_MODE,
         scope.mode,
         scope.user_id,
         scope.team,
@@ -484,7 +508,7 @@ def _profile_analysis(
     )
     now = monotonic()
     with _PROFILE_CACHE_LOCK:
-        cached = _PROFILE_CACHE.get(cache_key)
+        cached = None if local_mode(db) else _PROFILE_CACHE.get(cache_key)
         if cached and cached[0] > now:
             _PROFILE_CACHE.move_to_end(cache_key)
             return deepcopy(cached[1])
@@ -589,6 +613,7 @@ def get_filter_options(
     date_to: date | None = None,
 ) -> dict:
     cache_key = (
+        get_settings().TRANSACTION_MODE,
         scope.mode,
         scope.user_id,
         scope.team,
@@ -598,7 +623,7 @@ def get_filter_options(
     )
     now = monotonic()
     with _FILTER_CACHE_LOCK:
-        cached = _FILTER_CACHE.get(cache_key)
+        cached = None if local_mode(db) else _FILTER_CACHE.get(cache_key)
         if cached and cached[0] > now:
             _FILTER_CACHE.move_to_end(cache_key)
             return deepcopy(cached[1])
@@ -670,6 +695,7 @@ def get_customer_profile_analysis(
         include_cycles=True,
     )
     result.pop("customer_cycles", None)
+    result["projection_status"] = _consumer_coverage(db, scope, date_from, date_to)
     return result
 
 
@@ -692,7 +718,7 @@ def get_customer_order_timeline(
     ]
     rows.sort(key=lambda item: (item["account_date"], item["order_id"]), reverse=True)
     visible = rows[:max(1, min(limit, 100))]
-    return {
+    return {"projection_status": _consumer_coverage(db, scope, date_from, date_to),
         "company_id": target,
         "customer_name": rows[0]["company_name"] if rows else None,
         "window": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
@@ -731,7 +757,7 @@ def get_customer_repurchase_analysis(
     result = _profile_analysis(db, scope, date_from, date_to, AnalysisFilters())
     cycle = result["customer_cycles"].get(target)
     if cycle is None:
-        return {
+        return {"projection_status": _consumer_coverage(db, scope, date_from, date_to),
             "company_id": target,
             "found": False,
             "window": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
@@ -742,7 +768,7 @@ def get_customer_repurchase_analysis(
     for key in ("last_order_date", "expected_order_date", "abnormal_date"):
         if item.get(key) is not None:
             item[key] = item[key].isoformat()
-    return {
+    return {"projection_status": _consumer_coverage(db, scope, date_from, date_to),
         "company_id": target,
         "found": True,
         "window": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
@@ -770,8 +796,14 @@ def get_overview(
     from app.sales_return.gmv import adjustments
     # These behavioral analytics retain raw orders/counts. Net GMV is a distinct
     # signed fact total; a prior-period return must not become a new order here.
-    return_facts = adjustments(db, date_from, date_to, [scope.user_id] if scope.user_id else None)
-    if scope.team or not analysis_filters.is_empty():
+    if local_mode(db):
+        from app.trade.return_adjustments import load_return_adjustments, filter_return_adjustments
+        return_facts = load_return_adjustments(db, date_from, date_to,
+            owner_ids=[scope.user_id] if scope.user_id else None)
+        return_facts = filter_return_adjustments(db, return_facts, team=scope.team, filters=analysis_filters)
+    else:
+        return_facts = adjustments(db, date_from, date_to, [scope.user_id] if scope.user_id else None)
+    if not local_mode(db) and (scope.team or not analysis_filters.is_empty()):
         original_ids = {str(r["order_id"]) for r in _load_orders(db, scope, date(1900, 1, 1), date_to, analysis_filters)}
         return_facts = [f for f in return_facts if f["order_id"] in original_ids]
     return_amount = sum(float(f["amount"]) for f in return_facts)
@@ -801,7 +833,7 @@ def get_overview(
     source_known = sum(r["source_category"] != "unknown" for r in orders)
     model_known = sum(r["model"] != "未知" for r in products)
     color_known = sum(r["color"] != "未知" for r in products)
-    return {
+    return {"projection_status": _consumer_coverage(db, scope, date_from, date_to),
         "window": {"date_from": date_from, "date_to": date_to, "previous_from": previous_from, "previous_to": previous_to},
         "scope": {"mode": scope.mode, "can_read_all": scope.can_read_all, "user_id": scope.user_id, "team": scope.team},
         "filters": analysis_filters.to_dict(),
@@ -827,9 +859,9 @@ def get_overview(
             "non_positive_order_count": current_stats["non_positive_orders"],
         },
         "definitions": {
-            "new_sign": f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=是，按客户去重",
-            "repeat": f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=否；复购订单数按订单计数，复购金额按 amount_usd 求和",
-            "first_return": f"OKKI 订单自定义字段 {FIRST_RETURN_FIELD}=是，按客户去重",
+            "new_sign": "订单确认时新成交标记为是，按逻辑客户去重" if local_mode(db) else f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=是，按客户去重",
+            "repeat": "订单确认时新成交标记为否；复购金额按冻结USD经营金额求和" if local_mode(db) else f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=否；复购订单数按订单计数，复购金额按 amount_usd 求和",
+            "first_return": "订单确认时首返标记为是，按逻辑客户去重" if local_mode(db) else f"OKKI 订单自定义字段 {FIRST_RETURN_FIELD}=是，按客户去重",
             "repurchase_rate": "统计期首返客户数 ÷ 统计期新签客户数 × 100%；按客户去重，分母为 0 时记 0%",
             "gmv": "amount_usd/趋势/分布为原始有效销售额；net_gmv_usd=原始销售+本期退货生效日调整；人数和订单数保留原销售事实",
             "forecast": "最近 3 个自然月加权均值叠加截断趋势（-30%~+50%），少于 3 个月不预测",
@@ -921,7 +953,7 @@ def get_country_analysis(
         row["evidence_level"] = "high" if row["customers"] >= 30 else ("medium" if row["customers"] >= 10 else "low")
         row["marketing_advice"] = _marketing_advice(row)
     rows.sort(key=lambda item: (item["opportunity_score"], item["amount_usd"]), reverse=True)
-    return {"items": rows, "total": len(rows), "score_definition": "GMV 30% + 新签 25% + 复购率 25% + 同比趋势 20%；分数只用于内部排序"}
+    return {"projection_status": _consumer_coverage(db, scope, date_from, date_to), "items": rows, "total": len(rows), "score_definition": "GMV 30% + 新签 25% + 复购率 25% + 同比趋势 20%；分数只用于内部排序"}
 
 
 def _capability_labels(row: dict, medians: dict) -> list[str]:
@@ -1044,7 +1076,7 @@ def get_people_analysis(
             row["capability_labels"] = _capability_labels(row, medians)
             row["evidence_level"] = "high" if row["orders"] >= 30 else ("medium" if row["orders"] >= 10 else "low")
     rows.sort(key=lambda item: item["amount_usd"], reverse=True)
-    return {
+    return {"projection_status": _consumer_coverage(db, scope, date_from, date_to),
         "dimension": dimension,
         "items": rows,
         "total": len(rows),
@@ -1135,7 +1167,7 @@ def get_customer_actions(
     items = apply_items_sort(items, sort_field, sort_order, fields, tie_breaker="company_id")
     total = len(items)
     start = (page - 1) * page_size
-    return {
+    return {"projection_status": _consumer_coverage(db, scope, window_start, as_of),
         "items": items[start:start + page_size],
         "total": total,
         "page": page,

@@ -1,5 +1,7 @@
 # Customer portal frontend
 
+Current authentication supports password login and email activation after an approved access request. See the [current API contract](../docs/requirements/2026-09-30-customer-order-portal/03-api-contract.md#当前认证契约2026-10-31-源码核对) and [handoff](../docs/handoff.md). Versioned sections below preserve the evidence available at that time; they do not certify current production state.
+
 ## 2026-10-23 UI audit
 
 Public entry styling, readable supporting text and responsive controls now share the portal tokens. Invitation landing initializes the route before session restoration; the activation form calls its challenge handler. See [audit and scope](../docs/reports/2026-10-23-portal-oil-ui.md). Local intercepted-API evidence does not certify production.
@@ -62,7 +64,7 @@ A confirmed action notice explicitly labels the request state at the time of its
 
 The current bundle now has a bounded real app.main/OTP/JWT/owned-MySQL trade and refresh-receipt browser check in tests/applicationTrade.browser.mjs, run by backend/tests/portal_mysql/test_mysql_customer_application_browser.py. Business APIs are not route-mocked. Employee actions use real HTTP request contexts, not the Chinese admin UI. Upstream fixtures, loopback HTTP proxy, OTP broker and controlled response replacement are test-only; production and full acceptance remain open.
 
-Status: buildable Vue customer frontend with email/OTP and invitation activation,
+Historical v1.63 status: buildable Vue customer frontend with email/OTP and invitation activation,
 scoped collection search/filter/pagination, product details, session invalidation,
 sign-out recovery, in-memory cart, delivery form, server quote review, request
 submission and uncertain-result recovery, request list/details, proposal comparisons,

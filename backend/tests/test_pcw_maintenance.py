@@ -177,6 +177,36 @@ def test_reschedule_rejects_done_action_and_stale_versions(db):
     assert excinfo.value.error_code == "PLAN_VERSION_CONFLICT"
 
 
+def test_historical_alias_sample_responsibility_preserves_replay_and_blocks_overlap(db):
+    account, user = _setup(db)
+    order = _order(db, account, seq=8050, order_date=beijing_today() - timedelta(days=1))
+    source = _source_record(db, account, record_id=88050)
+    alias = _item(db, order, source, seq=8050, item_type='sample')
+    old = create_sample_case(db, customer_id=account.id, actor_user_id=user.id,
+        sample_order_id=order.id, sample_item_ids=[alias.id], idempotency_key='old-alias-sample')
+    alias.projection_role = 'historical_alias'
+    first = _item(db, order, source, seq=8051, item_type='sample')
+    second = _item(db, order, source, seq=8052, item_type='sample')
+    first.historical_alias_id = second.historical_alias_id = alias.id
+    db.commit()
+    assert create_sample_case(db, customer_id=account.id, actor_user_id=user.id,
+        sample_order_id=order.id, sample_item_ids=[alias.id], idempotency_key='old-alias-sample') == old
+    assert create_sample_case(db, customer_id=account.id, actor_user_id=user.id,
+        sample_order_id=order.id, sample_item_ids=[alias.id])['case']['id'] == old['case']['id']
+    with pytest.raises(pcw_errors.PcwError) as conflict:
+        create_sample_case(db, customer_id=account.id, actor_user_id=user.id,
+            sample_order_id=order.id, sample_item_ids=[first.id, second.id], idempotency_key='new-overlap-sample')
+    assert conflict.value.error_code == 'HISTORICAL_ALIAS_SAMPLE_REVIEW_REQUIRED'
+    db.commit()
+    assert db.query(SampleCase).count() == 1
+    case = db.get(SampleCase, old['case']['id'])
+    assert case.sample_item_ids_json == [alias.id] and case.stage == 'ordered'
+    case.stage = 'closed'; db.commit()
+    new = create_sample_case(db, customer_id=account.id, actor_user_id=user.id,
+        sample_order_id=order.id, sample_item_ids=[first.id, second.id])
+    assert new['created'] and new['case']['id'] != case.id
+
+
 def test_sample_case_requires_sample_order_and_stage_matrix(db):
     account, user = _setup(db)
     bulk_order = _order(db, account, seq=8001, order_date=beijing_today() - timedelta(days=1))

@@ -1,18 +1,20 @@
 # 门户 API 开发契约
 
-## v1.74 员工登记密码登录（2026-10-10）
+## 当前认证契约（2026-10-31 源码核对）
 
-用户确认 shop.leshine.cloud 由北京承接，员工登记采购邮箱/联系人/密码；客户直接密码登录，不再邀请或验证码认证。业务边界仍止于方舟 PI。旧邀请/OTP内容为历史记录，本节优先。
+客户直接密码登录、员工建号/重置密码与申请获批后的邮件激活并存。客户入口为 `shop.leshine.cloud`，业务边界止于方舟 PI；回款和履约继续由既有模块处理。以下版本章节保留当时设计与验收证据，认证冲突以本节及对应路由源码为准，实际生产开关与验收见[交接文档](../../handoff.md)。
 
-- 客户 POST `/api/portal/v1/auth/login`，email/password，沿用 bootstrap preauth Cookie/CSRF、可信代理、Origin和安全会话；原 challenges/verify 未挂载。
-- 员工 POST `/api/portal/admin/v1/customers/{access_id}/accounts`，Idempotency-Key及email/contact_name/password，同一原请求可恢复，不发邮件。PATCH `/accounts/{id}/password` 使用If-Match及password/reason，撤销旧会话；邀请/撤销邀请路由不再挂载。
-- 密码8–64字符且UTF-8≤72字节，复用bcrypt，不裁剪密码；不入回执/响应/日志/前端存储。锁外哈希前短事务核当前员工范围，完成时重新鉴权。
-- 183在180后仅增nullable password_hash，不设默认密码或激活历史账号。明确员工恢复时仅invited成员转active，disabled成员保持原值。
-- PORTAL_AUTH_SECRET为独立至少32字节密钥，参与耐久创建回执摘要；当前不得随意轮换，旧摘要keyring须另行验收。密码登录可关闭邮件和邮件密钥。
-- 门户启用不接管出库；必须同时显式开启OUTBOUND_WORKER才安装模式，既有持久模式不降级。旧认证邮件只保留过期秘密清理，不调度发送。
+- 客户 `POST /api/portal/v1/auth/login` 使用 `email/password`，沿用 bootstrap 预登录 Cookie/CSRF、可信代理、精确 Origin 与正式安全会话。密码登录本身不依赖 SMTP。
+- 公开 `POST /api/portal/v1/access-requests` 只提交申请；有权员工经 `/api/portal/admin/v1/access-requests/{id}/review` 审批，并绑定现有 enabled 且 can_order 的客户授权。内部邀请服务创建待激活账号、邀请及 outbox，公开输入不直接授予账号权限。
+- 客户收到邀请后，经单数 `POST /api/portal/v1/auth/challenge` 以 `email/purpose=activate/invitation_token` 请求验证码，再以 `/auth/activate` 的 `challenge_id/code/password` 设置密码并激活，签发正式会话。challenge schema 也接受 `purpose=login`；旧复数 `/auth/challenges` 和 `/auth/verify` 未挂载，不应据此构造旧验证码登录流程。
+- 员工 `POST /api/portal/admin/v1/customers/{access_id}/accounts` 使用 UUID `Idempotency-Key` 与 `email/contact_name/password`；同一原请求可恢复，不发邀请邮件。`PATCH /accounts/{id}/password` 使用 `If-Match`、`password/reason` 并撤销旧会话。员工直接创建/撤销邀请的旧路由未挂载，不等于审批流程的内部邀请机制退役。
+- 密码 8–64 字符且 UTF-8 ≤72 字节，复用 bcrypt，不裁剪密码；不入回执、响应、日志或前端存储。员工创建/重置密码的锁外哈希前后均校验当前授权。重置不自动恢复停用账号；明确员工恢复时仅 invited 成员可转 active，disabled/revoked 成员不自动恢复。
+- 迁移 `183_portal_password_login` 的父版本是 `182_announcement_reads`，只增加 nullable `password_hash`，不设默认密码或自动激活历史账号。后续升级以当前迁移链为准，不重跑旧首次上线步骤。
+- `PORTAL_AUTH_SECRET` 为独立至少 32 字节密钥，参与耐久创建回执摘要；不能随意轮换，旧摘要 keyring 须另行验收。
+- `PORTAL_ENABLED` 开启时每分钟注册 `portal_auth_cleanup`；总开关与 `PORTAL_MAIL_ENABLED` 同时开启时，每 5 秒注册 `portal_auth_mail`，投递邀请/验证码。业务通知另受通知开关控制；邮件激活依赖实际投递，不能用 outbox 入队或任务注册代替送达证明。
+- 门户启用不自动接管出库；只有总开关与 `PORTAL_OUTBOUND_WORKER_ENABLED` 同时开启才启用该 worker，既有持久模式不得降级。
 
-实际部署、升级、证书、配置和未完成业务验收见[生产准备记录](09-production-readiness-2026-10-10.md)与[发布步骤](../../../deploy/customer-orders.md)。本节是契约，不能证明生产已开放。
-
+核对来源：`backend/app/portal/router.py`、`admin_router.py`、`access_request_service.py`、`auth_service.py`、`password_service.py` 与 `backend/app/schedulers/registry.py`。发布步骤见[部署专题](../../../deploy/customer-orders.md)；[10 月 10 日生产准备](09-production-readiness-2026-10-10.md)保留该阶段证据。
 
 ## v1.72 实际只读GET404与历史读取
 

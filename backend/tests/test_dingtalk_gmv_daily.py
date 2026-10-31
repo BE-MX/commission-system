@@ -31,6 +31,7 @@ from app.dingtalk.gmv_daily_service import (
 )
 from app.dingtalk.models import DingTalkMessageLog
 from app.sales_return.models import ReturnEffect
+from app.commerce_transition.models import PlatformPolicy
 from app.system.models import SysDict
 from app.system import service as system_dict_service
 from app.system.schemas import DictItemCreate, DictItemUpdate
@@ -52,10 +53,11 @@ def gmv_db():
         ArkUser.__table__, ArkRole.__table__, ArkPermission.__table__,
         ArkUserRole.__table__, ArkRolePermission.__table__,
         ArkUserExternalBinding.__table__, SysDict.__table__, DingTalkMessageLog.__table__,
-        ReturnEffect.__table__,
+        ReturnEffect.__table__, PlatformPolicy.__table__,
     ):
         table.create(engine, checkfirst=True)
     with engine.begin() as connection:
+        connection.execute(PlatformPolicy.__table__.insert().values(id=1, phase="legacy_only"))
         connection.execute(text("""
             CREATE TABLE ark_receivables (
                 kind TEXT, remote_order_id TEXT, remote_order_name TEXT, customer_id TEXT

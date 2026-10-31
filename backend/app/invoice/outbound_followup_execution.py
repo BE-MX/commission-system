@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.invoice import edit_authority, linked_sync_service as linked, order_push_facts as facts
+from app.invoice import legacy_sending, edit_authority, linked_sync_service as linked, order_push_facts as facts
 from app.invoice import order_sync_execution as push, outbound_followup_service as legacy
 from app.invoice import outbound_task_service as tasks, uncertain_recovery, xiaoman_service
 from app.invoice.cancellation_service import audit
@@ -38,6 +38,7 @@ def verify_generation_target(row, invoice):
 
 
 def capture(db, invoice, *, worker_capture=False):
+    legacy_sending.authorize(db, invoice)
     linked.ensure_idle(invoice)
     if worker_capture:
         # Read-only worker capture may inspect its own running task; ownership is
@@ -181,11 +182,17 @@ def queue(db, invoice, task, info, shortages, actor):
     status, reason, latest_id = info["status"], info["reason"] or "", info["latest_id"]
     result = {"status": "manual", "message": "缺少已核实删除的原出库单，请人工核对后处理"}
     changed = False
-    if status == "pending":
+    if status is None:
+        result = {'status': 'manual', 'message': '自动出库任务尚未登记，请在取消 / 恢复中核对漏建任务'}
+    elif status == "pending":
         if reason.startswith("regenerate:") and latest_id and reason != f"regenerate:{latest_id}":
             task.reason = f"regenerate:{latest_id}"
             changed = True
         result = {"status": "pending", "message": "出库任务将按最新订单及库存核对后生成"}
+    elif status == 'failed':
+        # The original worker's conclusive pre-submit receipt owns its retry
+        # limit. Reporting that policy never changes the queue or sends HTTP.
+        result = legacy._failed_task_result(task)
     elif status == "waiting_stock":
         generation = reason.split(" ", 1)[0] if reason.startswith("regenerate:") else ""
         next_generation = f"regenerate:{latest_id}" if generation and latest_id else generation

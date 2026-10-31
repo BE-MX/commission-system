@@ -5,6 +5,7 @@ from app.invoice.shipment_cancellation_policy import CANCELLED_STATES
 
 
 def ensure_active(invoice):
+    ensure_legacy_transaction(invoice)
     if invoice.status in {"cancel_pending", "cancelled"}:
         raise ValueError("订单正在取消或已取消，请在取消处理记录中查看结果")
 
@@ -37,6 +38,15 @@ def presale_edit_blocked_reason(db, invoice):
     if isinstance(row.quote, dict) and row.quote.get("funding_version") == 2:
         return reason + "新增到账款请使用右侧“登记预售收款”，提交后无需保存主单；本批补款请在发货结算或整笔回款中处理。"
     return reason + "收款请通过原批次补款，先完成或处理原批次后再修改主单。"
+
+
+
+def ensure_legacy_transaction(invoice):
+    from app.trade.service import local_mode
+    if local_mode():
+        raise ValueError("交易已切换到方舟，历史单据需完成承接后通过本地入口办理")
+    if getattr(invoice, "transaction_mode", None) == "local":
+        raise ValueError("本地交易订单必须使用本地业务入口，禁止向小满发送或按旧同步流程修改")
 
 
 def ensure_mutable(db, invoice):

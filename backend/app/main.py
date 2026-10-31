@@ -38,6 +38,8 @@ _scheduler = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.COMMERCE_SHADOW_EXECUTION_ONLY:
+        raise RuntimeError('隔离验证进程不能启动正式API或后台worker')
     # Register acquired resources immediately and preserve every cleanup error.
     # ExitStack continues unwinding, but implicit exception contexts can lose
     # earlier failures across independent callbacks and SDK task groups.
@@ -55,6 +57,8 @@ async def lifespan(app: FastAPI):
             check_pdf_export_resources()
             check_expo_watermark()
             check_database_connection()
+            from app.commerce_migration.runtime_service import verify_transaction_authority
+            verify_transaction_authority(engine, settings.TRANSACTION_MODE, settings.COMMERCE_PHASE)
             outbound_mode = initialize_portal_outbound()
             load_business_rules()
             seed_admin_and_permissions()

@@ -90,6 +90,45 @@ def test_prepare_never_stops_or_installs(host):
     assert not any(c[:2] == ['systemctl', 'stop'] for c in host.commands)
 
 
+@pytest.mark.parametrize('setting', ['TRANSACTION_MODE=local', 'TRANSACTION_MODE = local'])
+def test_local_mode_never_probes_mirror_or_restores_timer(host, setting):
+    (host.root / '.ark-outbound.env').write_text(setting + '\n')
+    host.state['mode'] = remote.MODE
+    host.call('prepare', mode=remote.MODE)
+    host.call('freeze', mode=remote.MODE)
+    host.call('install', mode=remote.MODE)
+    host.call('activate', mode=remote.MODE)
+    assert host.call('verify', mode=remote.MODE)['schedule'] == {'active': False, 'enabled': False}
+    # The coordinated protocol imports the checksummed staged artifact. It
+    # must not issue a mode/mirror query or restore the legacy timer.
+    assert all(remote.IMPORT_PROBE in command for command in host.commands if '--input-type=module' in command)
+    assert not any(command[:2] == ['systemctl', 'start'] for command in host.commands)
+
+
+def test_local_failed_install_keeps_timer_persistently_disabled(host, monkeypatch):
+    (host.root / '.ark-outbound.env').write_text('TRANSACTION_MODE=local\n')
+    host.state['mode'] = remote.MODE
+    host.call('freeze', mode=remote.MODE)
+    assert not host.state['active'] and not host.state['enabled']
+    original_run = remote.run
+    def fail_install(command, **kwargs):
+        if command == ['systemctl', 'daemon-reload']:
+            raise RuntimeError('injected install failure')
+        return original_run(command, **kwargs)
+    monkeypatch.setattr(remote, 'run', fail_install)
+    with pytest.raises(RuntimeError, match='injected install failure'):
+        host.call('install', mode=remote.MODE)
+    assert not host.state['active'] and not host.state['enabled']
+
+
+def test_local_configuration_cannot_activate_a_legacy_database_receipt(host):
+    (host.root / '.ark-outbound.env').write_text('TRANSACTION_MODE=local\n')
+    with pytest.raises(RuntimeError, match='cannot enable legacy'):
+        host.call('prepare')
+    assert not any('okki_outbound_record_items' in str(command) for command in host.commands)
+    assert not any(command[:2] == ['systemctl', 'start'] for command in host.commands)
+
+
 @pytest.mark.parametrize('active,enabled', [(True, True), (False, True), (False, False), (True, False)])
 def test_coordinated_release_preserves_schedule_and_verifies_bytes(host, active, enabled):
     host.state.update(active=active, enabled=enabled)

@@ -68,9 +68,11 @@ def event_payload(attempt):
 
 def start(db,invoice_id,record,actor_id,plan,payload,auto_recall,source,warehouse,repair_step=None,parent=None,repair_before=None):
     from app.portal.order_models import Conversion
+    from app.invoice import legacy_sending
+    epoch = legacy_sending.authorize(db, invoice_id).epoch
     lineage=db.execute(select(Conversion.id,Conversion.request_id).where(Conversion.invoice_id==invoice_id)).all()
     nonce=str(uuid4())
-    data={'protocol':1,'nonce':nonce,'invoice_id':invoice_id,'actor_id':actor_id,
+    data={'protocol':1,'nonce':nonce,'invoice_id':invoice_id,'actor_id':actor_id,'authority_epoch':epoch,
           'lineage':[{'conversion_id':row.id,'request_id':row.request_id} for row in lineage],
           'record':deepcopy(record),'plan':deepcopy(plan),'payload':deepcopy(payload),
           'binding_fingerprint':plan['local_binding_fingerprint'],'plan_fingerprint':plans.digest(plan),
@@ -133,6 +135,8 @@ def original_lock(db,attempt):
     from app.portal.order_models import Conversion, OrderRequest
     from app.invoice.models import Invoice
     lock_authority(db,force=True)
+    from app.invoice.transition_gate import lock_platform
+    lock_platform(db)
     for row in attempt.data['lineage']:
         db.scalar(select(OrderRequest).where(OrderRequest.id==row['request_id']).with_for_update())
     for row in attempt.data['lineage']:

@@ -23,13 +23,31 @@
 
 回退保留新消息、来源映射和 checkpoint，不倒退水位、不删除重复候选、不 downgrade/drop 新结构。恢复旧发布需用旧代码、旧锁文件与原独立认证；若旧设备已注销或认证失效，需重扫码。尚未执行真实切换、备份恢复、生产迁移或部署演练。
 
-## 回款自动恢复与索引（175，待部署）
+## 回款自动恢复与索引（175）
 
 发送前临时故障最多连续恢复 5 次；已知 ID 详情读取失败最多连续 8 次。`exhausted` 须检查网络、权限、字段或索引任务后由原回款操作重试/刷新。`unknown` 没有确切远端 ID 时不能直接重发；`blocked` 金额/费用/身份冲突须核对原单，程序不会自动改金额或手续费。
 
 `receipt_index_refresh` 每 30 秒独立运行。查看 `[receipt-index]` 日志和 `ark_receipt_index_states` 的发布时间/租约。缺失或不完整索引会阻止发送；后台扫描失败保留旧快照，但发送仍须实时核验，不通过则拒绝。不得手工修改 checksum、水位、发送阶段或清空待核对状态强行放行。
 
 `ark_receipt_attempts` 保留准确响应 ID 与处理时间，可核查迟到响应和重复 ID 冲突。详情恢复仅 GET，发送开关关闭仍可运行；不应因为显示“同步成功”就将财务未生效当成已结清。发布须通过统一入口应用迁移 175，保留全部恢复证据。详见[状态与验收说明](requirements/2026-10-08-receipt-sync-recovery.md)。
+
+
+## 交易双路线过渡运行（开发分支，未发布）
+
+采用[双路线设计](requirements/2026-10-27-commerce-dual-route-design.md)，实现证据与范围见[开发验收报告](reports/2026-10-28-commerce-dual-route-implementation.md)。生产升级仍须具体环境发布授权并走 `deploy/deploy.bat`；开发测试、Git状态和下列步骤均不表示现场已切换。
+
+1. 固定包含245的唯一迁移链，下接已发布214。227–244是未发布本地候选重编号；126仍走其冻结证据链，138单例DDL已通过真实MySQL，不stamp或downgrade绕过。保留共享schema恢复日志、原媒体和所有原资金凭证。
+2. 清点实际后端、Scheduler、出库timer/creator、订单/回款协调器、交易采集、独立MCP/n8n及小满手工权限。客户档案/联系人/归属同步继续运行；交易writer需逐实例兼容回执或已撤权回执。试点页面保存证据不会自动改变第三方权限；现场无法强制排他时仅开隔离对比。
+3. 管理员在“交易试点配置”登记writer回执，以真实安装版本和撤权/强制执行证据提交。持久策略初始legacy_only；核验完整后用expected_version切transition。COMMERCE_PHASE仅作启动一致性检查，TRANSACTION_MODE不是过渡办理权开关；持久策略和writer不符合时启动/动作拒绝。
+4. 按真实盘点及旧责任核清凭证登记SKU/仓库、物料与生产范围。已知旧出库sending/unknown、旧running任务或待核对同步不允许新增本地实物范围。未有可信远端仓库映射时，同一映射SKU的本地桶与旧出库整SKU排他；未知SKU身份不能绕过该边界。
+5. 核实银行主体、账户ID集合、渠道和银行原流水。多个账户代码别名须归同一真实域；未映射旧回款或账户未知时拒绝本地新本金，即使勾选“完整”也不会放行。旧款身份核验只关联原账，不新建本金。
+6. 统一订单页选择正式路线；草稿无事实且epoch匹配时可改线，生效后固化。原订单默认沿旧路线结清；例外通过“交易历史承接”的强类型清单与prepare返回的完整闭包/epoch启用，不能逐单绕开共享款和生产责任。真实零余额结清使用settlement预览/应用接口，缺退款或未决原请求证据不能结清。
+7. “双路线核对”只处理验证输入与差异，不办理真实资金/发货。正式事务写observation/outbox，拒绝样本在原事务rollback后另记诊断。管理员导出固定run输入包，由独立受限候选库进程运行 `python -m app.commerce_shadow.cli`，再导入候选回执；完整命令与映射契约见[模块说明](../backend/app/commerce_shadow/README.md)。候选进程清除源环境、禁止HTTP及正式API启动，不接生产凭据；预期结果不会导入候选账本。缺映射/来源覆盖/前置版本显示incomplete。
+8. 正式经营统计同时检查小满来源和本地投影水位，交接未完或来源不完整不得发布最终榜单。对比数据始终零贡献。最后将所有旧订单/银行身份真实结清或完整承接后才能进入local_only，小满继续客户维护。
+
+异常恢复以原request_key/claim/run/batch为查询入口。超时先读回原对象，不换新键重发；迟到原响应/GET证据先独立保存，再重新校验当前权限、scope、epoch与任务token，失权不继续业务推进。旧删除/恢复与本地取消保留不同接口和语义，打印不豁免当前检验。撤权阻断后台尚未发送的新claim，已发送原事实仍可保存。
+
+已有本地责任后不得删账、恢复旧整库、downgrade或凭环境变量退回legacy_only；向前修复并保留全部身份/凭证。开发中的所有外部调用均为合成provider，真实银行、仓库、扫码设备和第三方权限执行仍由现场业务验收证明。
 
 ## 色卡工作台备份容量控制
 
@@ -343,7 +361,7 @@ python scripts/customer_domain_cutover.py verify-ready `
   --stopped-writer-manifest ops/stopped-writers-<nonce>.json `
   --expected-inventory-sha256 <inventory_sha256>
 
-# 4. 执行唯一允许的重建入口；内部会生成绑定 contract、DDL proof 和 receipt
+# 4. 执行唯一允许的重建入口；仅升级至126，生成绑定 contract、DDL proof 和 receipt
 python scripts/customer_domain_cutover.py apply-reset `
   --preflight-report backend/tmp/customer-domain-cutover/preflight-<nonce>.json `
   --suppression-manifest backend/tmp/customer-domain-cutover/suppressions-<nonce>.json `
@@ -364,7 +382,9 @@ python scripts/customer_domain_cutover.py verify-after `
   --target-profile-policy-backfill ops/target-profile-policy-<nonce>.json
 ```
 
-后验通过后，按顺序执行：重放 HMAC 抑制映射 → 仅启动新版本后端 → 用四类客户做烟测（已识别公司、个人邮箱 provisional、已有订单客户、DNC 客户）→ 核对客户档案/时间线/公海/机会/行动及 Agent 只读上下文 → 恢复调度器与外部 Worker → 撤维护页。任何一步失败都保持停写，保留 contract、DDL proof、receipt 和日志，不要手工补表或重跑同一个 nonce。
+后验必须在唯一 revision `126` 时执行。保存 contract、DDL proof 和 receipt 后，保持全部相关 writer 停止，通过统一发布入口重新计算待迁移链并完成后续迁移；不得先升到最新 head 再运行本次126后验，也不得在126结构上启动依赖后续字段的最新版应用。
+
+后续迁移完成后，按顺序执行：重放 HMAC 抑制映射 → 仅启动新版本后端 → 用四类客户做烟测（已识别公司、个人邮箱 provisional、已有订单客户、DNC 客户）→ 核对客户档案/时间线/公海/机会/行动及 Agent 只读上下文 → 恢复调度器与外部 Worker → 撤维护页。任何一步失败都保持停写，保留 contract、DDL proof、receipt 和日志，不要手工补表或重跑同一个 nonce。
 
 特别说明：`ark_sales_target_profiles` 不清空，迁移会校验原物理结构并强制回填版本化策略；旧客户业务表可清空，抑制登记必须保留。共享数据库不可达或仍有 writer 时，允许完成代码与隔离 MySQL 演练，但不得把它记录为“生产切换完成”。
 
@@ -1247,6 +1267,13 @@ grep "job completed" logs\service.log | tail -20
 - 安全：仅密钥登录（密码/root 已禁）；8001 不对外；系统防火墙无 ufw，靠腾讯云控制台防火墙（默认 22/80/443）
 - Linux 跨平台备忘：OpenCV 需 `libgl1 libglib2.0-0`；PDF 导出需 `fonts-noto-cjk`（缺了这些 pytest 挂 invoice/expo 图像用例）
 
+## 双路线与退货统计的集成边界（2026-10-31）
+
+- 旧退货已实际支付或收回的现金须在现有银行身份核验入口分别登记真实流水（sales_return_id、cash_movement=paid/recovered）。负数回款意图不等于银行已付款。未核验的旧现金阻止独立账户域使用；核验只关联原事实，不新增本金。已归本地的账户域允许补核验原历史现金，但不因此重新开放旧交易写入。
+- 退货效果按生效日作为独立有符号事实进入统计，不能重建销售订单、新客或复购次数。原小满业务员通过已核验名册映射；没有映射时保留独立外部身份，不能用相同数字猜方舟用户。原订单取消或转归属不删除已冻结的退货冲减。
+- 过渡期日报使用数据库持久phase选择配置和事实来源。旧部门ID与本地销售部门ID属于不同命名空间；未完成可信部门映射时显示金额和缺失依据，并阻止最终发送，不能按同号自动归属。
+- 有draft/effective旧退货责任的原单暂不允许承接，已冻结或已转本地的原单不能继续用旧退货入口办理。当前没有净退货责任承接协议；新增的旧退款银行身份也不伪造settled_evidence，仍会阻止最终退役到local_only，需完成该原单责任核验后再扩展，不以人工勾选绕过。
+
 ## PM 项目资料协作站（pm.leshine.work）部署
 
 后端复用现有 frp 链路（本地 8002），**零新增进程/NSSM 服务**；前端独立静态站点。上线 checklist：
@@ -1584,16 +1611,18 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
 
 ## 客户拍摄素材门户上线与恢复
 
+当前部署、存储与路由以[统一发布入口](../deploy/README.md)、[架构说明](architecture.md)及[交接记录](handoff.md)为准。下文 2026-08 的 IP 自签证书、关闭上游证书校验、仅本地存储和备案阻断段落是故障历史，不是现役配置建议；现有素材域 HTTPS 与 COS 已有后续发布/附件核验记录。
+
 目标入口固定为 `https://media.leshine.cloud`。方舟仍是业务主系统，媒体域上的后端连接同一业务数据库，只由 Nginx 暴露 `/api/customer-media/`；静态门户发布到 `/var/www/ark-dist/customer-media/`（IP 兜底入口，ark-ip-ssl.conf default_server root 拼接）与 `/var/www/ark-static/customer-media/`（域名入口，两套目录内容保持一致），原件位于私有目录 `/data/customer-media`，不得通过 Nginx `root/alias` 直接暴露。首期仅支持上传、审核、发布、查看和下载，不提供图片编辑。
 
-**IP 兜底入口（备案完成前可用，2026-08-14 实测）**：`.cloud` 域名 HTTPS 被机房未备案拦截（见上线门禁第 1 条），正式客户访问前可通过 `https://154.8.205.162/customer-media/` 使用门户——IP 入口走 `ark-ip-ssl.conf` 的 `default_server`（IP 自签证书），其通用 `location /api/ { proxy_pass http://127.0.0.1:8001 }` 已覆盖 `customer-media` 的 API 前缀，静态页 + 登录 + 素材接口全链可用（测试 `POST /api/customer-media/portal/login` 返回 401「邮箱或密码错误」、`GET /api/customer-media/portal/me` 返回 401「请先登录」即为后端正常响应）。两点限制：①IP 自签证书，浏览器会提示「不安全」，点继续访问即可，正式客户见不到此提示；②通用 `location /api/` 在 IP 入口是 5m body 限制，但 `/api/customer-media/` 已单独开 501m（见下条），素材上传/下载不受限。备案完成后回归 `.work` 正式域名 + 正式证书。
+**历史 IP 兜底调查（2026-08-14，保留排障依据）**：`.cloud` 域名 HTTPS 被机房未备案拦截（见上线门禁第 1 条），正式客户访问前可通过 `https://154.8.205.162/customer-media/` 使用门户——IP 入口走 `ark-ip-ssl.conf` 的 `default_server`（IP 自签证书），其通用 `location /api/ { proxy_pass http://127.0.0.1:8001 }` 已覆盖 `customer-media` 的 API 前缀，静态页 + 登录 + 素材接口全链可用（测试 `POST /api/customer-media/portal/login` 返回 401「邮箱或密码错误」、`GET /api/customer-media/portal/me` 返回 401「请先登录」即为后端正常响应）。两点限制：①IP 自签证书，浏览器会提示「不安全」，点继续访问即可，正式客户见不到此提示；②通用 `location /api/` 在 IP 入口是 5m body 限制，但 `/api/customer-media/` 已单独开 501m（见下条），素材上传/下载不受限。备案完成后回归 `.work` 正式域名 + 正式证书。
 
-**上传链路 relay 与存储根（2026-08-14 修复「门户图片无法显示」）**：素材原件的唯一存放点是北京云 `/data/customer-media`（云端 `backend/.env` 已配 `CUSTOMER_MEDIA_STORAGE_ROOT=/data/customer-media`——修复前缺省值是 Windows 路径 `D:\WORKSOURCE\customer-media`，在 Linux 上被解析成后端工作目录下的相对目录，文件根本读不到）。为保证「上传落云、门户同机读取」，办公室入口（119.28.107.92 `leshine.conf`）把 `location ^~ /api/customer-media/` 整体反代到 `https://154.8.205.162`（自签证书故 `proxy_ssl_verify off`；501m body、`proxy_request_buffering off`、3600s 超时），北京侧 `ark-ip-ssl.conf` 为同前缀单独开 501m；内部上传/审核/预览与门户读取由此全部落到北京云 8001 一个后端。两台机的 nginx 备份在各自 home 目录 `*.bak-20260814`。排障口诀：门户图裂先看北京云 `storage_for('local').root` 是否为 `/data/customer-media`，再看 `location` 是否命中 relay（北京 access.log 里来源 IP 应是 119.28.107.92）。
+**历史上传 relay 与存储根（2026-08-14 修复「门户图片无法显示」；后续已演进为 COS）**：素材原件的唯一存放点是北京云 `/data/customer-media`（云端 `backend/.env` 已配 `CUSTOMER_MEDIA_STORAGE_ROOT=/data/customer-media`——修复前缺省值是 Windows 路径 `D:\WORKSOURCE\customer-media`，在 Linux 上被解析成后端工作目录下的相对目录，文件根本读不到）。为保证「上传落云、门户同机读取」，办公室入口（119.28.107.92 `leshine.conf`）把 `location ^~ /api/customer-media/` 整体反代到 `https://154.8.205.162`（自签证书故 `proxy_ssl_verify off`；501m body、`proxy_request_buffering off`、3600s 超时），北京侧 `ark-ip-ssl.conf` 为同前缀单独开 501m；内部上传/审核/预览与门户读取由此全部落到北京云 8001 一个后端。两台机的 nginx 备份在各自 home 目录 `*.bak-20260814`。排障口诀：门户图裂先看北京云 `storage_for('local').root` 是否为 `/data/customer-media`，再看 `location` 是否命中 relay（北京 access.log 里来源 IP 应是 119.28.107.92）。
 
 ### 上线门禁
 
-1. DNS `media.leshine.cloud` 指向目标服务器，80/443 可达且 ICP/HTTPS 阻断已解除；证书签发后先用 `curl -I https://media.leshine.cloud/` 验证。当前已知现状（2026-08-13）：`leshine.cloud` 解析到 `154.8.205.162`，HTTP 会跳 HTTPS，但 HTTPS 连接被重置——**`.cloud` 后缀统一未备案，机房在出口按域名特征重置 TLS（连 `media.leshine.cloud` 同命，2026-08-13 独立验证：本机 `curl -skI https://media.leshine.cloud` 200、外部网络 TLS 握手 RST）**，因此在备案完成前不得宣称门户已上线；备案与 `.work` 正式域名落地前用上节 IP 兜底入口。
-2. 备份数据库。确认 `alembic heads` 只有一个 head，审阅 `114_customer_media_portal` 的 MySQL 离线 SQL，再执行 `alembic upgrade head`。迁移只允许在一个实例执行。
+1. 核对 `media.leshine.cloud` 的 DNS、80/443、有效证书及当前应用路由。2026-10-30 发布报告已记录素材域 HTTPS 200；这不是本轮实时检查，也不能替代登录态素材权限验收。2026-08 的 TLS 阻断只作历史故障依据。
+2. 生产迁移由 `deploy/deploy.bat` 对固定候选统一预检、协调 writer 并执行一次；核对实际 schema 与候选迁移链、备份和恢复条件。114 是该模块的初始迁移，不是当前升级目标；禁止在开发机或云节点单独执行 `alembic upgrade head`。
 3. 云端 `.env` 至少配置：
 
    ```env
