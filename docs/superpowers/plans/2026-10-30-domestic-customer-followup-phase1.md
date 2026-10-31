@@ -6338,9 +6338,10 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
   <el-drawer
     v-model="c.visible.value"
     :direction="isMobile ? 'btt' : 'rtl'"
-    :size="isMobile ? '92%' : '600px'"
+    :size="isMobile ? '92%' : '640px'"
     :title="c.step.value === 'review' ? '核对跟进记录' : '记一条跟进'"
     class="followup-composer"
+    append-to-body
     destroy-on-close
     :before-close="beforeClose"
     @closed="c.close()"
@@ -6483,7 +6484,7 @@ export function useFollowupComposer({ onSaved, onClosed } = {}) {
             <el-checkbox :model-value="isResolved(item)" @change="v => c.toggleResolved(item, v)">
               {{ item.category }}：{{ item.text }}
             </el-checkbox>
-            <el-input v-if="isResolved(item)" v-model="resolvedRow(item).resolution" size="small" placeholder="怎么解决的（可选）" />
+            <el-input v-if="isResolved(item)" v-model="resolvedRow(item).resolution" placeholder="怎么解决的（可选）" />
           </div>
         </el-form-item>
 
@@ -6587,7 +6588,7 @@ async function discardWithConfirm() {
 .shot img { width: 100%; height: 100%; object-fit: cover; }
 .shot-state { position: absolute; inset: auto 0 0; padding: 2px; font-size: 11px; text-align: center; color: var(--text-on-dark); background: var(--overlay-scrim); }
 .shot-remove { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border: 0; border-radius: 50%; color: var(--text-on-dark); background: var(--overlay-scrim); cursor: pointer; transition: transform 160ms var(--ease-out-strong); }
-.shot-remove:active { transform: scale(0.94); }
+.shot-remove:active { transform: scale(0.95); }
 .shot-name { display: block; padding: 6px; font-size: 11px; word-break: break-all; color: var(--text-secondary); }
 .shot-add { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); cursor: pointer; border-style: dashed; }
 .parsing-tip { margin: 0 0 12px; color: var(--text-secondary); }
@@ -6605,7 +6606,9 @@ async function discardWithConfirm() {
 </style>
 ```
 
-上面用到的变量都已在 `frontend/src/styles/tokens.css` 核对过：`--text-secondary`、`--border-color`、`--tag-neutral-bg`、`--color-warning-text`、`--color-danger`、`--color-success`、`--color-primary`、`--card-bg`、`--text-on-dark`、`--ease-out-strong`、`--radius-sm/md`。
+上面用到的变量都已在 `frontend/src/styles/tokens.css` 核对过：`--text-secondary`、`--border-color`、`--tag-neutral-bg`、`--color-warning-text`、`--color-danger`、`--color-success`、`--color-primary`、`--card-bg`、`--text-on-dark`、`--ease-out-strong`。`--radius-sm/md` 在 tokens.css 里只是注释里的刻度说明、没有真正定义，所以写成 `var(--radius-sm, 6px)` 走像素兜底（不是 hex，不违反红线 13）。
+
+**UI 债务门禁（实施时发现，计划初稿未覆盖）**：`scripts/audit_frontend_ui.py` 对新文件是零基线，下列写法都会让 `check_conventions.py` 失败：`el-input/el-select/el-date-picker` 的 `size="small"`、`el-tag` 上的静态 `type=`、`GlassButton` 非 md 尺寸、`el-dialog` 宽度不在 480/640/760、分页 layout 不是 `total, sizes, prev, pager, next` 或缺 `:page-sizes="[20, 50, 100]"`、表格缺 `border` / `class="list-table"` / `v-sticky-scrollbar`、列用固定 `width`。本节代码块已按门禁改好（状态标签走 `StatusBadge` + `followupStatus.js` 字典，抽屉 640px）。
 
 唯一新增的是 `--overlay-scrim`（截图上的半透明遮罩），见 Step 0。不要给 `var()` 写裸 hex 兜底值（红线 13；`check_conventions.py` 只查 6 位 hex，`#fff` 这类查不出来，要靠自觉）。
 
@@ -6624,14 +6627,14 @@ async function discardWithConfirm() {
     <div v-for="(row, index) in rows" :key="index" class="item-row">
       <el-input v-model="row.text" type="textarea" autosize maxlength="1000" />
       <div v-if="kind !== 'content'" class="item-meta">
-        <el-select v-model="row.category" size="small" class="item-category">
+        <el-select v-model="row.category" class="item-category">
           <el-option v-for="v in categories" :key="v" :value="v" :label="v" />
         </el-select>
         <el-checkbox v-model="row.severity" true-value="紧急" false-value="一般" size="small">紧急</el-checkbox>
         <el-checkbox v-model="row.record_only" size="small">仅记录，不跟进</el-checkbox>
       </div>
       <div class="item-tail">
-        <el-tag v-if="row.origin === 'ai_inferred'" size="small" type="info" effect="plain">AI 推断</el-tag>
+        <StatusBadge v-if="row.origin === 'ai_inferred'" value="AI 推断" size="small" />
         <GlassButton variant="link" left-icon="Delete" @click="rows.splice(index, 1)">删除</GlassButton>
       </div>
     </div>
@@ -6657,7 +6660,7 @@ defineEmits(['add'])
 .item-empty { margin: 4px 0; color: var(--text-secondary); font-size: 12px; }
 .item-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--border-color); }
 .item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.item-category { width: 120px; }
+.item-category { width: 160px; }
 .item-tail { display: flex; justify-content: space-between; align-items: center; }
 </style>
 ```
@@ -6693,6 +6696,7 @@ git commit -m "feat(domestic-followup): add follow-up composer drawer with AI re
 - Modify: `frontend/src/views/domestic/DomesticCustomers.vue`：操作列加「跟进」按钮（放在 canOperateCustomer 条件外，原有按钮包进 template，逻辑不动）
 - Modify: `frontend/src/router/index.js`：手机登录分流加客户跟进例外
 - Create: `frontend/src/views/domestic_followup/components/FollowupConfigDialog.vue`：admin 配置回访天数、紧急接收人、跟进频率
+- Create: `frontend/src/views/domestic_followup/followupStatus.js`：任务类型 / 条目类型 / 紧急程度的 StatusBadge 字典（UI 门禁禁止 el-tag 静态 type）
 - Modify: `backend/app/system/navigation_access_manifest.json`（由 `npm run build` 自动生成，随导航改动一起提交）
 
 **页面结构**（规格 5.3，原型第 4~6 屏）：
@@ -6725,7 +6729,7 @@ def search_users(db: Session, q: str, limit: int = 20) -> list[dict]:
 
 ```python
 @router.get("/users")
-def search_users(q: str = Query("", max_length=30), db: Session = Depends(get_db), _user=Depends(WRITE)):
+def search_users(q: str = Query("", max_length=30), db: Session = Depends(get_db), _user=Depends(_require_write)):
     return ok(task_service.search_users(db, q))
 ```
 
@@ -6762,7 +6766,7 @@ export function useFollowupWorkbench() {
   const dueTasks = ref([])
   const upcomingTasks = ref([])
   const drafts = ref([])
-  const records = reactive({ items: [], total: 0, page: 1, loading: false })
+  const records = reactive({ items: [], total: 0, page: 1, pageSize: 20, loading: false })
   const loading = ref(false)
 
   const filtered = computed(() => ({
@@ -6791,7 +6795,7 @@ export function useFollowupWorkbench() {
   async function loadRecords(page = 1) {
     records.loading = true
     try {
-      const res = await followupApi.followups({ mine: true, page, page_size: 20 })
+      const res = await followupApi.followups({ mine: true, page, page_size: records.pageSize })
       Object.assign(records, { items: res.items, total: res.total, page })
     } catch (e) { msgError(apiError(e, '记录加载失败'), e) } finally { records.loading = false }
   }
@@ -6825,33 +6829,53 @@ export function useFollowupWorkbench() {
 
 `receiptOk` 每次点击生成新的 request_id：第一次点击已经把任务关掉，第二次会撞上 409，这里把它当成功处理，不会重复记录。按钮在请求期间加 loading 防连点，见 Step 3。
 
-- [ ] **Step 3: 写 FollowupTaskCard.vue**
+- [ ] **Step 3: 写 followupStatus.js 与 FollowupTaskCard.vue**
+
+`frontend/src/views/domestic_followup/followupStatus.js`：
+
+```js
+/** 跟进域的状态字典：标签色调统一从这里取（DESIGN.md 状态标签 type 从字典取，el-tag 不写静态 type）。 */
+import { statusDictionary } from '@/utils/status'
+
+export const TASK_TYPE_STATUS = statusDictionary([
+  ['receipt', '收货回访', 'success'], ['plan', '约定跟进', 'primary'],
+  ['issue', '异常', 'danger'], ['suggestion', '意见', 'warning'],
+])
+
+export const ITEM_KIND_STATUS = statusDictionary([
+  ['issue', '异常', 'danger'], ['suggestion', '意见', 'warning'],
+])
+
+export const SEVERITY_STATUS = statusDictionary([['紧急', '紧急', 'danger'], ['一般', '一般', 'info']])
+```
+
+`FollowupTaskCard.vue`：
 
 ```vue
 <template>
   <article class="task-card" :class="{ 'is-overdue': task.overdue_days > 0, 'is-urgent': urgent }">
     <header class="task-head">
-      <el-tag size="small" :type="TYPE_TAG[task.task_type]" effect="plain">{{ TYPE_LABEL[task.task_type] }}</el-tag>
+      <StatusBadge :value="task.task_type" :dictionary="TASK_TYPE_STATUS" size="small" />
       <span class="task-due">{{ dueLabel }}</span>
-      <el-tag v-if="urgent" size="small" type="danger">紧急</el-tag>
+      <StatusBadge v-if="urgent" value="紧急" :dictionary="SEVERITY_STATUS" size="small" />
     </header>
     <p class="task-title">{{ task.title }}</p>
     <p v-if="task.task_type === 'receipt'" class="task-sub">
       {{ (task.payload.shipments || []).map(s => s.shipment_no).join('、') }}
     </p>
     <footer class="task-actions">
-      <GlassButton v-permission="'domestic_followup:write'" variant="primary" size="sm" @click="$emit('record', task)">记跟进</GlassButton>
-      <GlassButton v-if="task.task_type === 'receipt'" v-permission="'domestic_followup:write'" size="sm"
+      <GlassButton v-permission="'domestic_followup:write'" variant="primary" @click="$emit('record', task)">记跟进</GlassButton>
+      <GlassButton v-if="task.task_type === 'receipt'" v-permission="'domestic_followup:write'"
                    :loading="busy" @click="onReceiptOk">已回访无问题</GlassButton>
       <el-dropdown v-permission="'domestic_followup:write'" trigger="click" @command="days => $emit('snooze', task, days)">
-        <GlassButton variant="link" size="sm" right-icon="ArrowDown">顺延</GlassButton>
+        <GlassButton variant="link" right-icon="ArrowDown">顺延</GlassButton>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item v-for="d in [1, 3, 7]" :key="d" :command="d">{{ d }} 天</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <GlassButton variant="link" size="sm" @click="$emit('timeline', task)">时间线</GlassButton>
+      <GlassButton variant="link" @click="$emit('timeline', task)">时间线</GlassButton>
     </footer>
   </article>
 </template>
@@ -6861,12 +6885,11 @@ import { computed, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { currentBeijingDate } from '@/utils/datetime'
 import { taskDueLabel } from '../followupDraft'
+import { SEVERITY_STATUS, TASK_TYPE_STATUS } from '../followupStatus'
 
 // 「已回访无问题」用函数 prop 而非 emit：要 await 父组件的请求，按钮 loading 才能真正防连点
 const props = defineProps({ task: { type: Object, required: true }, onReceiptOk: { type: Function, required: true } })
 defineEmits(['record', 'snooze', 'timeline'])
-const TYPE_LABEL = { receipt: '收货回访', plan: '约定跟进', issue: '异常', suggestion: '意见' }
-const TYPE_TAG = { receipt: 'success', plan: 'primary', issue: 'danger', suggestion: 'warning' }
 const urgent = computed(() => props.task.payload?.severity === '紧急')
 const dueLabel = computed(() => taskDueLabel(props.task, currentBeijingDate()))
 const busy = ref(false)
@@ -6895,7 +6918,7 @@ async function onReceiptOk() {
 
 ```vue
 <template>
-  <DetailDrawer v-model="visible" :title="data?.customer.shop_name || '客户跟进'" width="520px" :loading="!data">
+  <DetailDrawer v-model="visible" :title="data?.customer.shop_name || '客户跟进'" width="640px" :loading="!data">
     <div v-if="data" class="timeline">
       <dl class="tl-head">
         <div><dt>等级</dt><dd>{{ data.customer.customer_level || '—' }}</dd></div>
@@ -6916,13 +6939,13 @@ async function onReceiptOk() {
             <p class="tl-summary">{{ e.data.summary || e.data.raw_text }}</p>
             <ul class="tl-items">
               <li v-for="i in e.data.items" :key="i.id" :class="`kind-${i.kind}`">
-                <el-tag v-if="i.kind !== 'content'" size="small" :type="i.kind === 'issue' ? 'danger' : 'warning'" effect="plain">{{ i.category }}</el-tag>
+                <StatusBadge v-if="i.kind !== 'content'" :value="i.kind" :dictionary="ITEM_KIND_STATUS" :label="i.category || undefined" size="small" />
                 {{ i.text }}<span v-if="i.status === 'resolved'" class="resolved">已解决</span>
               </li>
             </ul>
             <p class="tl-meta">{{ e.data.author_name }} · {{ e.data.channel || '—' }}<span v-if="e.data.next_date"> · 下次 {{ e.data.next_date }}</span></p>
             <div v-if="e.data.attachments.length" class="tl-shots">
-              <GlassButton v-for="a in e.data.attachments" :key="a.id" variant="link" size="sm" @click="preview(a)">截图 {{ a.seq }}</GlassButton>
+              <GlassButton v-for="a in e.data.attachments" :key="a.id" variant="link" @click="preview(a)">截图 {{ a.seq }}</GlassButton>
             </div>
           </template>
         </el-timeline-item>
@@ -6939,6 +6962,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { apiError, followupApi } from '@/api/domesticFollowup'
 import { msgError } from '@/utils/feedback'
+import { ITEM_KIND_STATUS } from '../followupStatus'
 
 defineEmits(['record'])
 const visible = ref(false)
@@ -6990,54 +7014,58 @@ defineExpose({ open })
 </style>
 ```
 
-`DetailDrawer.vue` 的宽度 prop 叫 `width`，还有 `loading`（已核对 DetailDrawer.vue:28-31）；`el-image-viewer` 要 `teleported`，否则会被困在抽屉定位层里（同 `CustomerMediaDirectoryDialog.vue:64`）。
+`DetailDrawer.vue` 的宽度 prop 叫 `width`，还有 `loading`（已核对 DetailDrawer.vue:28-31）；宽度按 DESIGN.md 抽屉白名单取 640px；`el-image-viewer` 要 `teleported`，否则会被困在抽屉定位层里（同 `CustomerMediaDirectoryDialog.vue:64`）。
 
 - [ ] **Step 5: 写 IssueBoard.vue**
 
-按 `system/DictManagement.vue` 的标记和样式结构写（红线 14：列表页的筛选区、表格、操作列 class 都照它）。实施时先打开 DictManagement.vue，复制它的外层容器、筛选栏和 `table-action-column` 结构，再填入以下内容：
+按 `system/DictManagement.vue` 的标记和样式结构写（红线 14：列表页的筛选区、表格、操作列 class 都照它）：外层 `table-card`、筛选栏 `toolbar` + `filter-w-sm`、表格 `border class="list-table" v-sticky-scrollbar`、列用 `min-width`、操作列按钮直接放进 `table-action-column`（不再包 `.table-actions` div）、分页照 `ExpoLeads.vue`。下面是落地版本：
 
 ```vue
 <template>
-  <div class="issue-board">
-    <div class="filter-bar">
+  <div class="issue-board table-card">
+    <div class="toolbar">
       <el-segmented v-model="query.status" :options="STATE_OPTIONS" @change="load(1)" />
-      <el-select v-model="query.kind" clearable placeholder="类型" class="w-120" @change="load(1)">
+      <el-select v-model="query.kind" clearable placeholder="类型" class="filter-w-sm" @change="load(1)">
         <el-option value="issue" label="异常" /><el-option value="suggestion" label="意见建议" />
       </el-select>
-      <el-select v-model="query.category" clearable placeholder="分类" class="w-120" @change="load(1)">
+      <el-select v-model="query.category" clearable placeholder="分类" class="filter-w-sm" @change="load(1)">
         <el-option v-for="v in categories" :key="v" :value="v" :label="v" />
       </el-select>
       <el-checkbox v-model="query.mine" @change="load(1)">只看我处理的</el-checkbox>
     </div>
-    <el-table v-loading="loading" :data="rows" row-key="id">
-      <el-table-column label="客户" prop="shop_name" min-width="140">
+    <el-table v-loading="loading" :data="rows" row-key="id" border class="list-table" v-sticky-scrollbar>
+      <el-table-column label="客户" prop="shop_name" min-width="140" show-overflow-tooltip>
         <template #default="{ row }"><GlassButton variant="link" @click="$emit('timeline', row.customer_id)">{{ row.shop_name }}</GlassButton></template>
       </el-table-column>
-      <el-table-column label="类型" width="80"><template #default="{ row }">{{ row.kind === 'issue' ? '异常' : '意见' }}</template></el-table-column>
-      <el-table-column label="分类" prop="category" width="100" />
+      <el-table-column label="类型" min-width="80"><template #default="{ row }">{{ row.kind === 'issue' ? '异常' : '意见' }}</template></el-table-column>
+      <el-table-column label="分类" prop="category" min-width="100" />
       <el-table-column label="内容" prop="text" min-width="240" show-overflow-tooltip />
-      <el-table-column label="紧急" width="70"><template #default="{ row }"><el-tag v-if="row.severity === '紧急'" type="danger" size="small">紧急</el-tag></template></el-table-column>
-      <el-table-column label="处理人" prop="handler_name" width="100" />
-      <el-table-column label="记录日" width="110"><template #default="{ row }">{{ formatBeijingDate(row.created_at) }}</template></el-table-column>
-      <el-table-column v-if="query.status === 'open'" class-name="table-action-column" label="操作" width="150" fixed="right">
+      <el-table-column label="紧急" min-width="80">
+        <template #default="{ row }"><StatusBadge v-if="row.severity === '紧急'" :value="row.severity" :dictionary="SEVERITY_STATUS" size="small" /></template>
+      </el-table-column>
+      <el-table-column label="处理人" prop="handler_name" min-width="100" />
+      <el-table-column label="记录日" min-width="110"><template #default="{ row }">{{ formatBeijingDate(row.created_at) }}</template></el-table-column>
+      <el-table-column v-if="query.status === 'open'" class-name="table-action-column" label="操作" min-width="160" fixed="right">
         <template #default="{ row }">
-          <div class="table-actions">
-            <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="Check" @click="resolve(row)">处理</GlassButton>
-            <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="Switch" @click="openTransfer(row)">转交</GlassButton>
-          </div>
+          <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="Check" @click="resolve(row)">处理</GlassButton>
+          <GlassButton v-permission="'domestic_followup:write'" variant="link" left-icon="Switch" @click="openTransfer(row)">转交</GlassButton>
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination v-model:current-page="page" :total="total" :page-size="50" layout="total, prev, pager, next" @current-change="load" />
+    <el-pagination
+      v-model:current-page="page" v-model:page-size="pageSize" :total="total"
+      :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next"
+      class="pager" @current-change="load" @size-change="load(1)"
+    />
 
-    <el-dialog v-model="transfer.visible" title="转交给" width="360px" append-to-body>
-      <el-select v-model="transfer.toUserId" filterable remote :remote-method="searchUsers" placeholder="输入姓名" class="w-full">
+    <el-dialog v-model="transfer.visible" title="转交给" width="480px" append-to-body>
+      <el-select v-model="transfer.toUserId" filterable remote :remote-method="searchUsers" placeholder="输入姓名" class="transfer-field">
         <el-option v-for="u in users" :key="u.id" :value="u.id" :label="u.real_name" />
       </el-select>
-      <el-input v-model="transfer.note" placeholder="交代一句（可选）" maxlength="200" class="mt-8" />
+      <el-input v-model="transfer.note" placeholder="交代一句（可选）" maxlength="200" class="transfer-field transfer-note" />
       <template #footer>
         <GlassButton @click="transfer.visible = false">取消</GlassButton>
-        <GlassButton variant="primary" :disabled="!transfer.toUserId" @click="submitTransfer">转交</GlassButton>
+        <GlassButton variant="primary" :disabled="!transfer.toUserId" :loading="transfer.saving" @click="submitTransfer">转交</GlassButton>
       </template>
     </el-dialog>
   </div>
@@ -7049,6 +7077,7 @@ import GlassButton from '@/components/GlassButton.vue'
 import { apiError, followupApi } from '@/api/domesticFollowup'
 import { formatBeijingDate } from '@/utils/datetime'
 import { isFeedbackCancelled, msgError, msgSuccessText, promptAction } from '@/utils/feedback'
+import { SEVERITY_STATUS } from '../followupStatus'
 
 defineProps({ categories: { type: Array, default: () => [] } })
 const emit = defineEmits(['timeline', 'changed'])
@@ -7057,15 +7086,16 @@ const query = reactive({ status: 'open', kind: '', category: '', mine: false })
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
+const pageSize = ref(20)
 const loading = ref(false)
 const users = ref([])
-const transfer = reactive({ visible: false, item: null, toUserId: null, note: '' })
+const transfer = reactive({ visible: false, item: null, toUserId: null, note: '', saving: false })
 
 async function load(p = page.value) {
   page.value = p
   loading.value = true
   try {
-    const res = await followupApi.items({ ...query, kind: query.kind || undefined, category: query.category || undefined, page: p })
+    const res = await followupApi.items({ ...query, kind: query.kind || undefined, category: query.category || undefined, page: p, page_size: pageSize.value })
     rows.value = res.items
     total.value = res.total
   } catch (e) { msgError(apiError(e, '加载失败'), e) } finally { loading.value = false }
@@ -7091,18 +7121,24 @@ async function searchUsers(q) {
 }
 
 async function submitTransfer() {
+  transfer.saving = true
   try {
     await followupApi.transferItem(transfer.item.id, { to_user_id: transfer.toUserId, note: transfer.note })
     msgSuccessText('已转交')
     transfer.visible = false
     await load()
     emit('changed')
-  } catch (e) { msgError(apiError(e, '转交失败'), e) }
+  } catch (e) { msgError(apiError(e, '转交失败'), e) } finally { transfer.saving = false }
 }
 
 onMounted(() => load(1))
 defineExpose({ load })
 </script>
+
+<style scoped>
+.transfer-field { width: 100%; }
+.transfer-note { margin-top: 8px; }
+</style>
 ```
 
 样式类（`filter-bar`、`w-120`、`table-actions` 等）以 DictManagement.vue 的实际类名为准，那里没有的就在本组件 `<style scoped>` 里用 token 写。
@@ -7120,12 +7156,15 @@ defineExpose({ load })
           <span class="wb-stat-label">{{ s.label }}<em v-if="s.key === 'issue' && w.summary.urgent">紧急 {{ w.summary.urgent }}</em></span>
         </button>
       </div>
-      <GlassButton v-permission="'domestic_followup:write'" variant="primary" left-icon="EditPen" @click="composer.open()">记一条跟进</GlassButton>
+      <div class="wb-actions">
+        <GlassButton v-permission="'domestic_followup:admin'" variant="link" left-icon="Setting" @click="configRef.open()">跟进设置</GlassButton>
+        <GlassButton v-permission="'domestic_followup:write'" variant="primary" left-icon="EditPen" @click="composer.open()">记一条跟进</GlassButton>
+      </div>
     </header>
 
     <el-alert v-if="w.drafts.value.length" type="info" :closable="false" class="wb-drafts">
       你有 {{ w.drafts.value.length }} 份草稿未确认：
-      <GlassButton v-for="d in w.drafts.value.slice(0, 3)" :key="d.id" variant="link" size="sm" @click="resumeDraft(d)">
+      <GlassButton v-for="d in w.drafts.value.slice(0, 3)" :key="d.id" variant="link" @click="resumeDraft(d)">
         {{ d.shop_name || d.followup_date }}
       </GlassButton>
     </el-alert>
@@ -7150,21 +7189,28 @@ defineExpose({ load })
         <IssueBoard :categories="composer.dicts.domestic_followup_category" @timeline="id => timelineRef.open(id)" @changed="w.loadTasks" />
       </el-tab-pane>
       <el-tab-pane label="我的记录" name="records" lazy>
-        <el-table v-loading="w.records.loading" :data="w.records.items" @row-click="r => timelineRef.open(r.customer_id)">
-          <el-table-column label="日期" prop="followup_date" width="110" />
-          <el-table-column label="客户" prop="shop_name" min-width="140" />
-          <el-table-column label="摘要" min-width="260" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.summary || row.raw_text }}</template>
-          </el-table-column>
-          <el-table-column label="下次" prop="next_date" width="110" />
-        </el-table>
-        <el-pagination :current-page="w.records.page" :total="w.records.total" :page-size="20" layout="total, prev, pager, next"
-                       @current-change="w.loadRecords" />
+        <div class="table-card">
+          <el-table v-loading="w.records.loading" :data="w.records.items" border class="list-table wb-records" v-sticky-scrollbar
+                    @row-click="r => timelineRef.open(r.customer_id)">
+            <el-table-column label="日期" prop="followup_date" min-width="110" />
+            <el-table-column label="客户" prop="shop_name" min-width="140" show-overflow-tooltip />
+            <el-table-column label="摘要" min-width="260" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.summary || row.raw_text }}</template>
+            </el-table-column>
+            <el-table-column label="下次" prop="next_date" min-width="110" />
+          </el-table>
+          <el-pagination
+            v-model:page-size="w.records.pageSize" :current-page="w.records.page" :total="w.records.total"
+            :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next"
+            class="pager" @current-change="w.loadRecords" @size-change="w.loadRecords(1)"
+          />
+        </div>
       </el-tab-pane>
     </el-tabs>
 
     <FollowupComposer :composer="composer" />
     <CustomerTimelineDrawer ref="timelineRef" @record="customer => composer.open({ customer })" />
+    <FollowupConfigDialog ref="configRef" />
   </div>
 </template>
 
@@ -7175,6 +7221,7 @@ import GlassButton from '@/components/GlassButton.vue'
 import { apiError } from '@/api/domesticFollowup'
 import { msgError } from '@/utils/feedback'
 import CustomerTimelineDrawer from './components/CustomerTimelineDrawer.vue'
+import FollowupConfigDialog from './components/FollowupConfigDialog.vue'
 import FollowupComposer from './components/FollowupComposer.vue'
 import FollowupTaskCard from './components/FollowupTaskCard.vue'
 import IssueBoard from './components/IssueBoard.vue'
@@ -7188,6 +7235,7 @@ const STATS = [
 const route = useRoute()
 const tab = ref('tasks')
 const timelineRef = ref(null)
+const configRef = ref(null)
 const w = useFollowupWorkbench()
 const composer = useFollowupComposer({
   onSaved: () => { if (tab.value === 'records') w.loadRecords(1) },
@@ -7221,6 +7269,8 @@ onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // �
 .followup-workbench { display: flex; flex-direction: column; gap: 12px; }
 .wb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .wb-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+.wb-actions { display: flex; align-items: center; gap: 8px; }
+.wb-records { cursor: pointer; }
 .wb-stat { display: flex; flex-direction: column; align-items: flex-start; min-width: 96px; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); background: var(--card-bg); cursor: pointer; transition: transform 160ms var(--ease-out-strong), border-color 160ms ease; }
 .wb-stat:active { transform: scale(0.97); }
 .wb-stat.active { border-color: var(--color-primary); }
@@ -7242,7 +7292,7 @@ onMounted(() => { w.loadTasks(); composer.loadDicts(); openFromQuery() })  // �
 
 ```vue
 <template>
-  <el-dialog v-model="visible" title="跟进设置" width="460px" append-to-body>
+  <el-dialog v-model="visible" title="跟进设置" width="480px" append-to-body>
     <el-form v-if="form" label-position="top">
       <el-form-item label="发货后几天提醒收货回访">
         <el-input-number v-model="form.receipt_delay_days" :min="1" :max="30" />
@@ -7325,7 +7375,7 @@ defineExpose({ open })
 
 `/users` 端点要求 write 权限：admin 角色同时也有 write，所以不需要另开权限。
 
-工作台接入：在 `FollowupWorkbench.vue` 的 `<header class="wb-head">` 里，主按钮之前加：
+工作台接入（Step 6 的代码块已包含这部分，下面仅说明改了哪里）：在 `FollowupWorkbench.vue` 的 `<header class="wb-head">` 里，主按钮之前加：
 
 ```vue
       <GlassButton v-permission="'domestic_followup:admin'" variant="link" left-icon="Setting" @click="configRef.open()">跟进设置</GlassButton>
