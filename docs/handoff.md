@@ -1,3 +1,13 @@
+## 2026-10-31 内贸客户跟进一期（Claude Code，待部署）
+
+- 工作区 `D:/MyProgram/commission-system-followup`，分支 `claude/domestic-followup`；迁移 `215_domestic_followup`，接在 `214_sales_return_ledger` 之后，仅新建 8 张表（见 database.md）并种三个 `sys_dict` type 初值，不改既有表，非破坏性，不需要冻结写实例。部署只走 `deploy\deploy.bat`，由它统一执行迁移；Scheduler 单活，3 个新任务（每日汇总 + 两次补发、紧急异常推送、每日维护）只在办公室 scheduler 实例上跑。
+- **部署后亮哥要在后台做的事**：
+  - 角色管理页给业务员分配 `domestic_followup:read` / `domestic_followup:write`，给主管分配 `domestic_followup:read_all`，给管理员分配 `domestic_followup:admin`。
+  - 工作台右上「跟进设置」里设置紧急异常接收人（`urgent_receiver_user_ids`）；不设则紧急异常只记日志、不推送。
+  - AI 管理页确认 `domestic_followup_parse`（文字归一化）与 `domestic_followup_ocr`（截图 OCR）两个 preset 绑定的是视觉模型。
+- **已知未做 / 一期简化**（详见 module-notes.md「内贸客户跟进」专题）：列表与时间线有 N+1 查询；后台 AI 解析线程占用 FastAPI 共享线程池；未绑定截图的物理文件不清理；AI 整理中用骨架屏代替分阶段进度文案；时间线不展开 OCR 文本，只给原图按钮；工作台没有搜索与筛选；决策台画像接入、小程序/微信 Agent 录入、历史 Excel 导入三项留到二期。
+- **已知测试环境问题（与本分支无关）**：`tests/portal_mysql/conftest.py` 在收集阶段报 `INTERNALERROR`，跑后端全量测试要加 `--ignore=tests/portal_mysql` 绕开，否则整个收集会被拖垮。
+
 ## 2026-10-30 外贸退货单（Codex，Git交付，未部署）
 
 - 隔离目录 `D:/MyProgram/commission-system-codex-sales-return-design`，分支 `codex/sales-return-design`，基点 `ecfba4b7`；[设计契约](requirements/2026-10-30-sales-return-order-design.md)、[实施验收记录](reports/2026-10-30-sales-return-implementation.md)。本轮按用户授权提交、合入 main 并推送 origin，不部署、不执行生产迁移；最终 Git 交付状态以引用读回为准。

@@ -845,3 +845,20 @@ JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发�
 ### 212_portal_customer_settings（2026-10-28，待部署）
 
 `ark_invoice_customer_profiles` 新增 nullable JSON delivery_json 与 delivery_version（默认1），门户/员工共用地址；`ark_order_portal_catalog_grants.unit_price` nullable NUMERIC(12,4)，仅当前客户授权商品USD专属价；`ark_shipping_inspections.shipment_tracking_id` nullable BIGINT 外键到 shipment_tracking.id，删除RESTRICT；另有 shipment_version（默认0），物流绑定不改变验货版本。迁移更新已有产品族缺货阈值及继承规格换算字段。不改 customer_info，不回写历史订单。
+
+## 内贸客户跟进（215_domestic_followup，接 214_sales_return_ledger，本地实现未部署）
+
+新建 8 张表，不改既有表；不建 ORM relationship（红线 9），关联由 service 显式查询。FK 类型与目标列一致：客户 `ark_domestic_customers.id` 为有符号 INT，用户 `ark_users.id` 为 unsigned INT，发货批次 `ark_domestic_shipments.id` 为 BIGINT。downgrade 只删表，三个 sys_dict type 的初值不随降级删除。
+
+| 表 | 主键与约束 | 主要字段 |
+| --- | --- | --- |
+| `ark_domestic_followups` | id BIGINT；`request_id` 唯一（客户端幂等键） | customer_id（草稿可空）、author_user_id、followup_date、channel、raw_text（业务员原文，永不被 AI 覆盖）、summary、state_changes JSON、next_date/next_plan/next_method、chat_title、source、status（draft/confirmed/discarded）、ai_status/ai_result/ai_error/ai_log_id、version（乐观锁）、confirmed_at |
+| `ark_domestic_followup_items` | id BIGINT；索引 (kind,status,customer_id) 和 (handler_user_id,status) | followup_id、customer_id（冗余供看板查询）、seq、kind（content/issue/suggestion）、text、category、severity、origin（user/ai_inferred）、status、handler_user_id、resolution、resolved_at、resolved_by_followup_id |
+| `ark_domestic_followup_attachments` | id BIGINT | followup_id（上传后未绑定为空）、uploader_user_id、seq、file_path（domestic 存储相对路径）、file_name、mime_type、file_size、ocr_status（pending/done/failed）、ocr_text、unreadable_note |
+| `ark_domestic_customer_aliases` | id INT；(alias_norm, customer_id) 唯一 | customer_id、alias、alias_norm（去空白小写）、hit_count、created_by |
+| `ark_domestic_followup_tasks` | id BIGINT；`source_key` 唯一（一个来源只生一次任务） | task_type（plan/receipt/issue/suggestion）、customer_id、assignee_user_id、title、due_date、status（todo/done/expired/cancelled）、snooze_count、payload JSON（批次列表/计划内容/条目摘要快照）、source_followup_id、source_item_id、closed_by_followup_id、closed_reason、closed_by_user_id、closed_at |
+| `ark_domestic_followup_task_shipments` | id BIGINT；`shipment_id` 唯一（保证每批次只提醒一次） | task_id（FK → 任务）、shipment_id（FK → `ark_domestic_shipments.id`） |
+| `ark_domestic_followup_digests` | id BIGINT；(user_id, digest_date, kind, ref_key) 唯一 | user_id、digest_date、kind（daily=每日汇总/urgent=紧急异常）、ref_key（daily 为空串，urgent 为 `item:<id>`）、title、markdown、attempts、last_error、pushed_at |
+| `ark_domestic_followup_config` | key VARCHAR(64) 主键 | value JSON、updated_by、updated_at |
+
+同迁移种三个 `sys_dict` 值域初值（迁移不 import 业务代码，初值与 `app/domestic_followup/constants.py` 的 `DICT_SEEDS` 手动保持一致）：`domestic_followup_state_change`（订单减少/增长等 14 项）、`domestic_followup_category`（质量/发货物流/色差/尺寸/价格/售后退换/服务/产品需求/其他）、`domestic_followup_channel`（微信/电话/视频号/到店/展会/其他）。口径与盲区见[模块说明](module-notes.md)。

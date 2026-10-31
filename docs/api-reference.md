@@ -2715,3 +2715,34 @@ GET `/api/portal/v1/orders/{request_id}/action-receipt`在当前客户cookie、�
 `GET /api/perf-goals/metric-orders` 新增可选 `listed_only: bool = false`。开启时在既有用户/战队/权限数据范围过滤后，再限于当前生效周期设有任意年度目标的人员，用于与公司全员目标汇总对应；不改变指标算法或扩大权限。省略或为 false 时保持原明细查询行为。`date_from` / `date_to` 由看板按所选年/季/月及统计截止传入，未来尚未开始周期的默认明细不发请求。
 
 服务端 `rate` / `prev_rate` / `overall_rate` / `gmv_rate` / `projected_rate` / `time_progress` 继续使用比例（如 `0.5`）；`delta_pp` 继续是百分点。主站 API 适配层仅把比例转成现有展示组件使用的百分数（如 `50`），不修改金额、人数、百分点或趋势数据。
+
+## 内贸客户跟进（215 迁移，本地实现，未部署）
+
+统一前缀 `/api/domestic-followup`；独立领域模块（红线 1），不挂内贸主路由。JSON 使用标准 `ok()` 信封。基础权限 `domestic_followup:read` / `domestic_followup:write`，配置项需 `domestic_followup:admin`；数据范围由 `visibility.py` 按当前客户归属过滤，口径及已知限制见[模块说明](module-notes.md)。
+
+| 方法 | 相对路径 | 请求与结果 |
+| --- | --- | --- |
+| GET/PUT | `/config` | 回访天数、上线日、紧急接收人、推送频率等配置；PUT 需 `admin`。 |
+| GET | `/dicts` | 三个 sys_dict type（状态变化/分类/沟通方式）当前值域，供前端下拉和 AI 运行时注入复用。 |
+| GET | `/users` | 按关键字搜索可指派用户（转交用）。 |
+| GET | `/customers/search` | 按当前用户可见范围搜索客户，`q` 关键字。 |
+| POST | `/customers/prospect` | 按店铺名建潜在客户（未成交线索先建档才能录跟进）。 |
+| GET | `/customers/{customer_id}/timeline` | 客户时间线：跟进记录 + 任务 + 发货/AI 背景；可读/可写分开判定，不可读时隐藏发货和 AI 背景（见模块说明）。 |
+| POST | `/attachments` | 上传跟进截图，≤10MB；先上传拿到附件 ID，建草稿或直接保存时再绑定。 |
+| GET | `/attachments/{attachment_id}/file` | 读取截图原图，鉴权后返回文件，不走静态目录直连。 |
+| POST | `/followups` | 直接保存一条跟进（不经 AI 草稿），已绑定未 OCR 的附件在后台线程补跑 OCR。 |
+| GET | `/followups` | 跟进记录列表，支持 `customer_id` / `mine` 过滤和分页。 |
+| POST | `/drafts` | 建 AI 草稿；创建成功后在后台线程跑 `ai_parse_service.run_parse`，前端轮询状态。 |
+| GET | `/drafts` | 当前用户未处理的草稿列表。 |
+| GET | `/drafts/{followup_id}` | 草稿详情（含 AI 原始结果，供表单回填）。 |
+| POST | `/drafts/{followup_id}/confirm` | 确认草稿，按确认内容生成跟进任务；`request_id` 幂等。 |
+| DELETE | `/drafts/{followup_id}` | 作废草稿。 |
+| GET | `/tasks` | 跟进任务列表：`scope=mine/visible`、`status`、`task_type`、`customer_id`、`due=today/upcoming/all`，分页。 |
+| GET | `/tasks/summary` | 任务计数卡（按类型），工作台首屏用。 |
+| POST | `/tasks/{task_id}/snooze` | 顺延任务到期日（`days`），记一次顺延次数。 |
+| POST | `/tasks/{task_id}/receipt-ok` | 收货回访任务一键「已联系，一切正常」，直接生成一条确认记录；`request_id` 幂等。 |
+| GET | `/items` | 异常/意见条目看板：`status`、`kind`（issue/suggestion）、`category`、`customer_id`、`mine`，分页。 |
+| POST | `/items/{item_id}/resolve` | 处理条目（关闭时校验操作人是当前处理人）。 |
+| POST | `/items/{item_id}/transfer` | 转交条目处理人。 |
+
+AI 整理走 `app.ai.service.chat` facade，预设 `domestic_followup_parse`（文字归一化）与 `domestic_followup_ocr`（截图 OCR）；两个 preset 须在 AI 管理页绑定视觉模型才能处理截图。输出宽进：坏字段只丢弃该字段，不整条拒绝。

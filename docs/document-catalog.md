@@ -210,9 +210,11 @@
 | [库存单自动回款与回款单管理 — 功能设计](<requirements/2026-09-17-receipt-management.md>) | `docs/requirements/2026-09-17-receipt-management.md` |
 | [回款功能交互原型](<requirements/2026-09-17-receipt-prototype/README.md>) | `docs/requirements/2026-09-17-receipt-prototype/README.md` |
 | [9月新签大屏设计方案](<requirements/2026-09-17-september-new-sign-screen.md>) | `docs/requirements/2026-09-17-september-new-sign-screen.md` |
+| [内贸客户跟进一期功能规格](<requirements/2026-10-30-domestic-customer-followup.md>) | `docs/requirements/2026-10-30-domestic-customer-followup.md` |
 | [Prototype Instructions](<requirements/customer-after-sales-prototype/AGENTS.md>) | `docs/requirements/customer-after-sales-prototype/AGENTS.md` |
 | [Customer After-sales Prototype](<requirements/customer-after-sales-prototype/README.md>) | `docs/requirements/customer-after-sales-prototype/README.md` |
 | [Customer After-sales Prototype Design QA](<requirements/customer-after-sales-prototype/design-qa.md>) | `docs/requirements/customer-after-sales-prototype/design-qa.md` |
+| [内贸客户跟进交互原型](<requirements/domestic-followup-prototype/index.html>) | `docs/requirements/domestic-followup-prototype/index.html` |
 | [Prototype Instructions](<requirements/salon-after-sales-policy-prototype/AGENTS.md>) | `docs/requirements/salon-after-sales-policy-prototype/AGENTS.md` |
 | [Salon After-sales Assurance Prototype](<requirements/salon-after-sales-policy-prototype/README.md>) | `docs/requirements/salon-after-sales-policy-prototype/README.md` |
 | [Design and interaction QA](<requirements/salon-after-sales-policy-prototype/design-qa.md>) | `docs/requirements/salon-after-sales-policy-prototype/design-qa.md` |
@@ -256,6 +258,7 @@
 | [WhatsApp Web Bidirectional Translation Extension Implementation Plan](<superpowers/plans/2026-09-03-whatsapp-translation-extension.md>) | `docs/superpowers/plans/2026-09-03-whatsapp-translation-extension.md` |
 | [Login ICP Footer Implementation Plan](<superpowers/plans/2026-09-04-login-icp-footer.md>) | `docs/superpowers/plans/2026-09-04-login-icp-footer.md` |
 | [WhatsApp Translation v1.2 Implementation Plan](<superpowers/plans/2026-09-04-whatsapp-translation-v1.2.md>) | `docs/superpowers/plans/2026-09-04-whatsapp-translation-v1.2.md` |
+| [内贸客户跟进一期 Implementation Plan](<superpowers/plans/2026-10-30-domestic-customer-followup-phase1.md>) | `docs/superpowers/plans/2026-10-30-domestic-customer-followup-phase1.md` |
 
 ## 设计规格（按原日期与范围使用）
 

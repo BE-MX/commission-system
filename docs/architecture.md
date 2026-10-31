@@ -120,6 +120,7 @@ hair.leshine.work / video.leshine.work → 新加坡现有静态站
 - `app/pm/` — PM 项目资料协作站（**独立 HMAC 门牌鉴权，不接平台 RBAC**；材料/版本/版本评论/任务/动态审计 + AI 差异管线，076 迁移；前端为 `frontend-pm/` 独立应用，2026-07-18 合入，版本评论 2026-07-19）
 - `app/mcp/` — MCP 网关（FastMCP streamable HTTP，`mount("/mcp")`；含统一客户 9 个只读工具；**个人 opaque token 鉴权**，解析出与登录 JWT 一致的 claims，继续执行领域 service 的权限、分类和数据范围；客户 Agent 不能借 MCP 绕过方舟或直接写外部来源。接入说明 `docs/mcp-tracking-integration.md`）
 - `app/operations/` — 运行与自动化中心（实例/任务/外部服务状态；任务结果、控制审计和暂停策略落库；跨服务器实例以服务+实例 claim 机器凭证主动心跳；`operations:read/admin` 分权，控制权限仅显式授予，不保存 root 凭证、不提供任意远程命令）
+- `app/domestic_followup/` — 内贸客户跟进（router/models/schemas + followup_service / task_service / ai_parse_service / attachment_service / config_service / dict_service / receipt_service / visibility / event_hooks；8 张新表，215 迁移，本地实现未部署）；AI 整理走 `app.ai.service` facade，归属变化由 `event_hooks.py` 的 `before_flush` 监听统一处理，内贸主模块 `app/domestic/` 不感知；专题见 `docs/module-notes.md`
 
 ## 前端结构
 
@@ -239,12 +240,13 @@ frontend/src/
 | `invoice:read` / `invoice:write` / `invoice:sync` / `invoice:read_all` | 订单发票（查看 / 创建编辑 / 同步到小满 / 数据范围：默认只见自己创建的发票，read_all 放开全部——067） |
 | `expo:read` / `expo:write` / `expo:admin` | 展会试戴（查看线索发型库 / 展位操作与反馈 / 库维护与删除客户数据） |
 | `dingtalk:admin` | 钉钉手动发送消息 / 查看消息与回调日志（2026-07-03 B-6 收口，原先仅登录即可） |
+| `domestic_followup:read` / `domestic_followup:write` / `domestic_followup:read_all` / `domestic_followup:admin` | 内贸客户跟进（查看 / 录入与处理待办 / 数据范围全部客户 / 配置回访天数与推送接收人，215 迁移，本地实现未部署） |
 
 完整权限清单见 `backend/app/auth/service.py` 的 `seed_role_permissions()`。
 
 ## 定时任务
 
-`backend/app/schedulers/registry.py` 注册 20 个稳定任务 ID（其中 WhatsApp 与公海日批次受开关控制，未启用时不注册但会在运行中心显示）：
+`backend/app/schedulers/registry.py` 注册 25 个稳定任务 ID（其中 WhatsApp 与公海日批次受开关控制，未启用时不注册但会在运行中心显示）：
 
 | Job | 类型 | 调度 | 功能 |
 |-----|------|------|------|
@@ -268,6 +270,11 @@ frontend/src/
 | `sales_public_pool_daily` | cron | 配置项（默认 07:30） | 智能获客公海日批次（受开关控制） |
 | `runtime_heartbeat_monitor` | interval | 每 60 秒 | 云端实例失联降级、告警与退役巡检 |
 | `operations_history_cleanup` | cron | 每天 03:45 | 运行历史与心跳保留期清理 |
+| `domestic_followup_daily` | cron | 周一至周六 09:00 | 内贸客户跟进每日钉钉汇总 |
+| `domestic_followup_daily_retry_05` | cron | 周一至周六 09:05 | 同上补发一次（钉钉抖动兜底，发件箱唯一键防重） |
+| `domestic_followup_daily_retry_15` | cron | 周一至周六 09:15 | 同上再补发一次 |
+| `domestic_followup_urgent` | interval | 每 60 秒 | 内贸客户跟进紧急异常/意见即时推送 |
+| `domestic_followup_maintenance` | cron | 每天 02:10 | 收货回访批次扫描、任务过期收口、草稿清理 |
 
 ## 核心数据流
 

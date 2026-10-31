@@ -1306,3 +1306,36 @@ Agent 委派只允许现有 customer_order_copilot 的只读准备型工具。re
 小满删除并重建同一产品明细时会给出行新的远端和本地明细 ID，旧实现只按远端身份判失效，导致同型号明细也要重拍，且旧照片绑定的本地明细已不存在，扫码页按当前明细分组时根本不渲染。同步计划现在在发送前快照旧本地↔远端明细身份；回读验证成功后按产品 ID＋SKU（缺失时名称、型号、单位）和数量做唯一一对一配对，把旧明细已有未失效照片改绑新明细并写 `media_carry_over` 审计，被沿用明细不再要求补拍；整单照片只在仍有未继承的实物变化或备注变化时失效。
 
 同日按用户确认调整补验口径：变更/新增实物或备注变化后只强制一张当前有效的整单照片，明细照片改为可选，不再逐条写入 `required_recheck_ids`；历史事件里遗留的明细 ID 在扫码、提交和详情读取时统一收敛为 `__whole__`，旧明细照片仍按失效归档。费用行仍不要求照片。数量变化、同型号重复行、旧照片已失效、费用行或证据关联缺失时保持原失效规则；预览版本哈希排除本地关联快照，镜像在预览与发送之间追上不会触发无谓重预览。照片优先绑新本地明细 ID，镜像未追上时绑 `okki:<远端ID>`，扫码、详情和验货 PDF 读取时解析为当前本地明细 ID。该规则不追溯恢复历史已失效照片：历史单的旧照片只能按原审计保留归档。
+
+## 内贸客户跟进（domestic_followup，215 迁移，本地实现未部署）
+
+独立领域模块 `backend/app/domestic_followup/`，8 张新表（见 database.md），前端入口 `views/domestic_followup/FollowupWorkbench.vue`，客户管理列表行加「跟进」按钮跳转工作台并打开该客户时间线抽屉。规格见 [内贸客户跟进](requirements/2026-10-30-domestic-customer-followup.md)，交互原型见 [domestic-followup-prototype/index.html](requirements/domestic-followup-prototype/index.html)，实施计划见 [2026-10-30-domestic-customer-followup-phase1.md](superpowers/plans/2026-10-30-domestic-customer-followup-phase1.md)。
+
+**核心口径**：
+- 一次触达一条记录；业务员原文 `raw_text` 永不被 AI 覆盖；AI 只写 `ai_result`，业务员确认时才落实际跟进条目。
+- 值域（状态变化/分类/沟通方式）维护在 `sys_dict` 的三个 type 里，AI 运行时注入到 prompt（红线 7）；后台加值即时生效，不改代码。
+- 任务 `source_key` 唯一：`plan:<跟进ID>` / `item:<条目ID>` / `receipt:<客户>:<发货日>:<最小批次>`；收货回访批次靠 `ark_domestic_followup_task_shipments.shipment_id` 唯一保证每批次只提醒一次。
+- 回访上线日 `receipt_launch_date` 在首次扫描时自动写入当天，此前发生的发货不补提醒；想补提醒历史发货，改这项配置即可。
+- **客户归属变化**由 `event_hooks.py` 的 `before_flush` 监听处理，内贸主模块（`app/domestic/`）不感知、不需要额外调用。三种情况：
+  - **公海（None）→ 新归属**：该客户所有未完成的约定跟进、收货回访转给新归属人，不限原负责人（公海期间任务可能临时派给了发货经办人）。
+  - **旧归属 → 新归属（转手）**：只把旧负责人名下未完成的约定跟进、收货回访改派给新负责人，不抢其他人自己承诺的约定跟进。
+  - **旧归属 → 公海（释放）**：该客户所有未完成的约定跟进、收货回访置为 `cancelled`，`closed_reason="客户释放"`。
+  - 异常/意见任务跟着条目处理人走，不跟客户走——三种情况都不动，因为问题已经发生，必须有人闭环。
+  - **注册前提**：监听随 `app.domestic_followup.models` 被导入时注册。主应用和 scheduler 进程都经过 `routers.py` 导入，覆盖线上所有路径；只导入 `app.domestic` 的独立脚本改归属时，不会迁移待办。
+  - **已知盲区**：`no_autoflush` 下查不到同一次 flush 里刚 `add`、还没 flush 的任务。业务上不存在「同一个 flush 里新建跟进任务又改客户归属」的路径，接受这个盲区。
+- **时间线可读/可写分开判定**：客户时间线（`GET /customers/{id}/timeline`）按当前用户对该客户的数据范围分别判定可读和可写；不可读时隐藏发货事实和 AI 背景两块，只露跟进记录本身,避免越权用户拼出完整客户画像。
+- **关闭待办时校验操作人**：`resolve_item` 只允许当前 `handler_user_id` 本人关闭异常/意见条目，否则 `PermissionError("无权处理该条目")`；转交（`transfer_item`）改变 `handler_user_id` 后处理权随之转移。
+- 推送走发件箱表 `ark_domestic_followup_digests`，`(user_id, digest_date, kind, ref_key)` 唯一键防重；未绑定钉钉的人不重试。紧急异常接收人在配置 `urgent_receiver_user_ids` 里维护，不设则只记日志、不推送。
+- **每日汇总补发**：`send_daily_digest_job` 在 09:00（mon-sat）正式发送，09:05 和 09:15 各跑一次同任务作为补发（钉钉抖动兜底），发件箱唯一键保证同人同日不会重复推送。
+- **停用用户不收推送**：发送前按 `ark_users.is_active` 过滤接收人，已停用账号不生成推送记录。
+- **AI 输出宽进**：解析结果走 schema 校验，坏字段只丢弃该字段，不整条拒绝；业务员确认前可见原始 `ai_result` 供核对/手改。
+- 隐私：AI 调用 `snapshot_mode="metadata"`，日志不落聊天原文和截图；截图存 domestic 存储，读取走鉴权端点 `GET /attachments/{id}/file`。验收和演示**不得使用真实客户聊天截图**。
+
+**已知未做 / 一期简化**（二期评估前不要求补齐）：
+- 列表与时间线有 N+1 查询（100 条约 400 次查询），一期数据量可接受。
+- 后台 AI 解析线程占用 FastAPI 共享线程池，没有独立队列或并发上限。
+- 未绑定（上传后未确认）的附件对应物理文件不清理，靠每人 24 小时 30 张上传上限兜底。
+- AI 整理中前端显示骨架屏 + 一句耗时提示，不是分阶段进度条（后端没有分阶段进度，假进度条不如骨架屏诚实）。
+- 时间线只给「截图 N」按钮看原图，不展开 OCR 文本（OCR 文本只在核对步 AI 失败时供抄写）。
+- 工作台没有搜索与筛选，只有按类型的计数卡 + 异常看板筛选；待办量小，先看使用情况再加。
+- 决策台画像接入、小程序/微信 Agent 录入、历史 Excel 导入三项留到二期（规格第七节）。
