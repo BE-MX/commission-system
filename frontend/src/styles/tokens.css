@@ -274,6 +274,7 @@
   --color-red-flat:       #e74c3c;   /* 扁平红（图表/警示装饰） */
   --color-red-deep:       #dc2626;   /* 深红（危险文字） */
   --text-on-dark:         #F5F2EE;   /* 深色面板上的主文字（Hero/侧栏标题） */
+  --overlay-scrim:         rgba(20, 20, 20, 0.55);   /* 缩略图上的状态条 / 删除按钮底 */
   --el-success:           #67c23a;   /* Element 语义色的变量化引用 */
   --el-warning:           #e6a23c;
   --el-danger:            #f56c6c;
